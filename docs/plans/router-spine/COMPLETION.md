@@ -389,6 +389,25 @@ Recorded in three places so the boundary survives this run: decision 53 and §3 
 the procedure and a new edge-case row in `protocol/spine.md`, and a boundary in
 `spine/AGENTS.md` telling the next person not to reintroduce a collision-free encoding.
 
+**The flag's first implementation was wrong, and the fourth review caught it.** It used
+`iconv` as an independent validity predicate, and glibc's `iconv` accepts sequences above
+U+10FFFF — `F4 90 80 80`, `F5 80 80 80` — which `json_string` correctly replaces. So those
+files rendered lossily and went unflagged: the flag and the rendering disagreed, which is
+what two independent predicates eventually do.
+
+The flag is now derived from the rendering rather than from a second opinion.
+`json_string` emits the six ASCII characters `\ufffd` only where it replaced a byte, while a
+heading that legitimately contains U+FFFD passes through as its raw UTF-8 bytes — verified.
+So the rendered text is an exact record of whether anything was lost, and the two cannot
+drift apart. Confirmed against both out-of-range sequences (flagged), ordinary UTF-8
+including `café ☕` (not flagged), and a legitimate U+FFFD (not flagged).
+
+The assertion for it is written against the report rather than the implementation: for every
+candidate, "flagged" must equal "its rendered headings contain a replacement." It fails
+against the `iconv` version.
+
+**Assertions 78 → 79.**
+
 ### Remediation 3 — 2026-08-24
 
 The second closure review confirmed the ignored-path write check, the dynamic symlink
