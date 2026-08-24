@@ -351,6 +351,41 @@ the reference and this one.
 
 ## Remediation rounds
 
+### Remediation 2 — 2026-08-24
+
+The closure review (the round-1 GPT verifier's own resumed session) confirmed all five of
+its gaps closed, both calibrations reproducing, the JSON schema unchanged, no source-text
+assertion reintroduced, and every targeted mutation triggering its assertion. It then
+returned `FAIL` on three defects in the remediation itself.
+`docs/plans/router-spine/REMEDIATION-2.md` carries the verdict verbatim and the
+adjudication. All three upheld and reproduced by the lead.
+
+| Gap | What was wrong | Fix | Lead's verification |
+|---|---|---|---|
+| Invalid UTF-8 in a **heading** still broke the document at exit 0 | Round 1 guarded pathnames only, because its brief asked for pathnames only. Third appearance of this class — backslashes in implementation, paths in round 1, headings now | Validation moved **inside `json_string`**, the one function every emitted string passes through. Malformed bytes render as visible `\xHH` placeholders | `printf '# bad \xff heading\n'` now parses, heading reads `# bad \xff heading`; an invalid path still excluded. Confirmed the guard is in `json_string`, not at either call site |
+| The repository no-write check was blind to ignored paths | `git status --porcelain` does not report ignored files, and an ignored directory is exactly where a cache or generated graph lands | Snapshot uses `--porcelain --ignored` | Mutated the scanner to write `graphify-out/repo-marker`: the suite now returns `RESULT 73 passed, 1 failed`, exit 1. Before, it passed |
+| 15 of 17 write-target link assertions could not fail | Round 1 broadened the check to every case report on the lead's instruction; only four fixtures hold a routing-file symlink, so the rest passed regardless | The qualifying reports are discovered dynamically, the check runs against those four, and an **empty set fails** | Read the guard at `spine/test/run.sh:273-277`; it is a `fail`, and the set is computed from the reports rather than hardcoded, so it self-maintains |
+
+**Assertions 83 → 74.** Down, deliberately: thirteen vacuous ones removed and two real ones
+added. A falling count was the honest outcome here, and a rising one would have been the
+warning sign.
+
+This round used `xhigh` at the same lane tier in a fresh lane — Stage 4's prescribed rung
+for a gap that survived a round through nearly-right work rather than a misread task. No
+tier change, because all three defects traced to briefs narrower than the defect rather than
+to the lane's execution.
+
+The lead also corrected `spine/AGENTS.md`, which claimed the fixture hash proves the scanner
+"writes nothing, anywhere." It proves nothing outside the fixture tree. The router now states
+the rule as the contract and names the four checks as evidence for it, with the gap between
+them explicit. That is the second router-level falsehood this work produced — the round-1
+review found the same class in `protocol/routers.md` — and both were in documents asserting
+the discipline they broke.
+
+All four gates pass after the merge, gate 2 still non-tautological, and both reference
+calibrations reproduce unchanged: 65 directories and 20 routers with `diffLines=136` and 7
+headings against 0 at the reference root, 20 directories and 4 routers here.
+
 ### Remediation 1 — 2026-08-24
 
 Both families verified, per Stage 4's rule for a mixed implementation, and they returned
@@ -406,10 +441,15 @@ Both reference calibrations reproduce unchanged after the fixes: 65 directories 
 routers with `diffLines=136` and 7 headings against 0 at the reference root, 20 directories
 and 4 routers here. All four gates pass, gate 2 still shown non-tautological.
 
-**Residual, and honest about it:** the three no-write checks cover the fixture tree, this
-repo, `$HOME` and `$TMPDIR`. A scanner writing to some other hardcoded absolute path is
-still invisible to them — verified, not assumed. Asserting "writes nothing anywhere" fully
-would need syscall tracing or a sandbox, neither of which belongs in a shell fixture
-harness, and the previous attempt to cover this by grepping the script's own source is
-exactly the fake test that got removed. The limitation is stated in the suite rather than
-papered over.
+**Residual, and honest about it:** the no-write checks cover the fixture tree, this repo,
+`$HOME` and `$TMPDIR`. A scanner writing to some other hardcoded absolute path is still
+invisible to them — verified, not assumed. Asserting "writes nothing anywhere" fully would
+need syscall tracing or a sandbox, neither of which belongs in a shell fixture harness, and
+the previous attempt to cover this by grepping the script's own source is exactly the fake
+test that got removed. The limitation is stated in the suite rather than papered over.
+
+Round 2 narrowed it further: the repo half of that coverage originally used
+`git status --porcelain`, which does not report ignored paths — so a write into
+`graphify-out/` or any other ignored directory inside this repository passed. That is the
+realistic case rather than an exotic one, since an ignored directory is exactly where a
+cache or a generated graph lands. See the Remediation 2 section.

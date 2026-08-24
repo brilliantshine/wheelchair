@@ -25,9 +25,14 @@ path in → refuse if outside a git repo → walk, skipping ignored, dotted and 
 
 ## Boundaries
 
-- **`scan.sh` writes nothing, anywhere.** No temp files, no caches, no edits to the
-  target. The harness proves it by hashing the whole fixture tree before and after every
-  scan, so a change that needs scratch space is a change that needs a different design.
+- **`scan.sh` writes nothing.** No temp files, no caches, no edits to the target. A
+  change that needs scratch space is a change that needs a different design. What the
+  harness checks is narrower than the rule: it hashes the fixture tree, compares this
+  repository's status including ignored paths, and runs each scan with `HOME` and `TMPDIR`
+  pointed at empty directories it then asserts are still empty. A write to some other
+  absolute path would pass. Proving the rule outright needs syscall tracing, which does not
+  belong in a shell harness — so the rule is the contract and those checks are evidence
+  for it, not a proof of it.
 - **A link path is never emitted as a write target.** Both symlink directions are live on
   this machine, so a write target is always the `realpath` result.
 - **The script classifies structure, never content.** Which of two real routing files is
