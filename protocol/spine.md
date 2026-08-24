@@ -178,6 +178,8 @@ belongs.
 | Two real routing files in one directory | Both reported with sizes, heading lists, and a unified-diff line count. The prompt proposes which is the router and why; the person confirms. Never an abort |
 | Two byte-identical routing files in one directory | Reported as a duplicate for consolidation. The script picks nothing |
 | A nested git working tree or submodule inside the target | Excluded from the walk and reported as a nested repository. Never a candidate |
+| A child directory that is a **symlink** | Excluded and reported as such; the walk never follows it. A link pointing inside the target aliases a directory the walk already reaches by its real path, and one pointing outside would otherwise have `/spine` proposing routers in a tree nobody named |
+| A path that is not valid UTF-8 | Excluded and reported with that reason. JSON is defined over Unicode text, so emitting the bytes would make the whole report unparseable |
 | Symlink broken, or resolving outside the target tree | Skip the directory and report. Never follow or repair |
 | Existing router in a foreign style | Additions and factual corrections only. Never reformatted, never measured against the format |
 | Existing router omits a child that earned no router | Reported as an observation. Not edited |

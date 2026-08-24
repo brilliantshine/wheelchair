@@ -78,9 +78,10 @@ stated only when it is true. `graphify-out/` is gitignored in almanac
 (`AGENTS.md:87`) but not everywhere. A `/spine` run either adds `graphify-out/` to the
 target repo's `.gitignore` as part of its own work, surfaced in the pre-write list like
 any other change, or it omits the sentence — it never asserts an ignore rule it did not
-verify. This repo is the live case: `.gitignore` here holds only `node_modules/`, so a
-root router written for it that claimed the per-clone fact without adding the line
-would be false on arrival.
+verify. This repo is the live case, and it went the first way: its `.gitignore` held
+only `node_modules/`, so the run that wrote the root router here added `graphify-out/`
+rather than drop the sentence. Had it done neither, the router would have been false on
+arrival.
 
 ## Hard rules
 

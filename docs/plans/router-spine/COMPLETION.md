@@ -37,13 +37,13 @@ assertions behind it and nothing else pretends to.
 
 | Spec item | Origin | Implemented at (file:line) | Validated by |
 |-----------|--------|----------------------------|--------------|
-| §1 `git init`, `.gitignore`, one baseline commit capturing the repo as it stood | this run | commit `6b8e58a` (37 paths, zero under `spine/`); `.gitignore:1` | `git rev-list --count HEAD` = 6; root-commit grep, with a negative control below |
-| §2 `protocol/routers.md` — the format, defined once | this run | `protocol/routers.md:1-93`; creation list `:21-49`; root additions `:47-49` | read-through against §2; five reference citations re-checked against the live files |
+| §1 `git init`, `.gitignore`, one baseline commit capturing the repo as it stood | this run | commit `6b8e58a` (37 paths, zero under `spine/`); `.gitignore:1` | `git rev-list --count HEAD` (6 when the gate ran, more since — the gate is `>= 2`); root-commit grep, with a negative control below |
+| §2 `protocol/routers.md` — the format, defined once | this run | `protocol/routers.md:1-94`; creation list `:21-49`; root additions `:47-49` | read-through against §2; five reference citations re-checked against the live files |
 | §2 guidance for creation, never a conformance test | this run | `protocol/routers.md:12-19` | stated first in the file, ahead of the list it governs; grounded in the reference's own non-conforming `tests/AGENTS.md` |
 | §2 no line cap, 22–133 as orientation only | this run | `protocol/routers.md:51-55` | verified against the reference: min 22 (`repair_coordination/`), max 133 (root) |
 | §2 navigation order, docstring rung only where the convention exists | this run | `protocol/routers.md:57-63` | reference's own justification re-read at its `AGENTS.md:62` |
-| §2 graphify policy, per-clone claim conditional on being true | this run | `protocol/routers.md:65-83` | exercised for real in §7 below: the claim was false here until `.gitignore:2` was added |
-| §2 hard rules — no line numbers, no exhaustive lists, no Mermaid | this run | `protocol/routers.md:85-88` | `grep -ril mermaid` over all four written routers returns nothing |
+| §2 graphify policy, per-clone claim conditional on being true | this run | `protocol/routers.md:65-84` | exercised for real in §7 below: the claim was false here until `.gitignore:2` was added |
+| §2 hard rules — no line numbers, no exhaustive lists, no Mermaid | this run | `protocol/routers.md:86-94` | `grep -ril mermaid` over all four written routers returns nothing |
 | §3 `spine/scan.sh` — one path in, JSON out, writes nothing anywhere | this run | `spine/scan.sh:1-284` | `spine/test/run.sh`, 44 assertions, exit-code gated |
 | §3 refuse a target outside a git repo, naming child repos **and** `.repo.git` hubs with lanes | this run | `spine/scan.sh:72-115`; refusal JSON `:106` | `run.sh` asserts non-zero exit and the exact repo/hub/lane sets |
 | §3 resolve every candidate through symlinks; never emit a link path as a write target | this run | `spine/scan.sh:141-176`, `:226-227` | both symlink directions asserted, plus `! test -L` over every write target in a report |
@@ -52,10 +52,10 @@ assertions behind it and nothing else pretends to.
 | §3 exclusions: git-ignored, dotted, nested working tree — each reported once, not descended into | this run | `spine/scan.sh:255-270` | `__pycache__`, `node_modules`, an ignored data dir, and a nested checkout each asserted with its reason |
 | §3 unmanaged surfaces reported, never read, never written | this run | `spine/scan.sh:169-171` | asserted present in the report and absent from every write target |
 | §4 which directories earn a router; the boundary-sentence guard; no ratio or threshold | this run | `protocol/spine.md:84-100` | applied for real in §7 and in both reference calibrations below |
-| §4 coverage naming — created routers only, immediate children only | this run | `protocol/spine.md:106-116` | §7's four routers name 17 non-earning directories between them, immediate only |
+| §4 coverage naming — created routers only, immediate children only | this run | `protocol/spine.md:106-116` | of the 16 non-earning directories in the tree, the four routers name the 11 that are an immediate child of a created router |
 | §4 the pointer row — nearest ancestor **that has a directory table**, at any depth | this run | `protocol/spine.md:118-135` | calibration 3 below, the only verification this rule has |
-| §4 filenames are stated in the pre-write list, never inferred | this run | `protocol/spine.md:72-76`, `:147` | the §7 confirm step stated `AGENTS.md` and its reason, and the user chose it |
-| §5 `protocol/spine.md` — the run sequence, separate from the format | this run | `protocol/spine.md:1-216`; sequence `:16-31` | `install.sh` registers `/spine` in both harnesses |
+| §4 filenames are stated in the pre-write list, never inferred | this run | `protocol/spine.md:72-76`, `:150` | the §7 confirm step stated `AGENTS.md` and its reason, and the user chose it |
+| §5 `protocol/spine.md` — the run sequence, separate from the format | this run | `protocol/spine.md:1-218`; sequence `:16-31` | `install.sh` registers `/spine` in both harnesses |
 | §5 `scan.sh` invoked by absolute path | this run | `protocol/spine.md:18-19` | matches how every other wrapper hardcodes the path to this repo |
 | §5 the pre-write list, then stop | this run | `protocol/spine.md:144-160` | the §7 run presented all nine items and blocked on the user before writing |
 | §5 extend and correct, never reformat | this run | `protocol/spine.md:137-142` | calibration 3: the reference's root router came back byte-identical apart from the one restored row |
@@ -64,12 +64,12 @@ assertions behind it and nothing else pretends to.
 | §6 the upkeep rule in Stage 3, before COMPLETION.md is written | this run | `protocol/implementation.md:87-92` | sits between the read-the-diff paragraph and the write-COMPLETION paragraph; names `routers.md` |
 | §6 Stage 4 gains the Routers check; its general sweep untouched | this run | `protocol/verification.md:39-41`; general sweep still at `:47-48` | diff is additive; the only removed line is the one that got extended |
 | §6 the COMPLETION template gains a Routers **section**, not a table row | this run | `protocol/templates/COMPLETION.md:27-33` | a section, since that file's only table is one row per spec item |
-| §7 this repo gets its own routers — root, `protocol/`, `skills/`, `spine/` | this run | `AGENTS.md:1-82`, `protocol/AGENTS.md:1-54`, `skills/AGENTS.md:1-41`, `spine/AGENTS.md:1-47` | exactly four, which is what §7 predicts; each 41–82 lines, inside the reference's range |
-| §7 `graphify-out/` added so the per-clone claim is true | this run | `.gitignore:2`; the claim at `AGENTS.md:55-56` | the run added the rule rather than asserting it unverified; surfaced at the confirm step |
-| §8 README's Layout tree and Usage block | this run | `README.md:18-21` (new protocol files), `:27-28` (`spine/`), `:31` (`spike/`), `:61-64` and `:76-88` (Usage) | the tree now lists every top-level directory; the slugs-only claim no longer implies `/adopt` is the sole path-taker |
+| §7 this repo gets its own routers — root, `protocol/`, `skills/`, `spine/` | this run | `AGENTS.md:1-94`, `protocol/AGENTS.md:1-54`, `skills/AGENTS.md:1-41`, `spine/AGENTS.md:1-47` | exactly four, which is what §7 predicts; each 41–94 lines, inside the reference's range |
+| §7 `graphify-out/` added so the per-clone claim is true | this run | `.gitignore:2`; the claim at `AGENTS.md:67-68` | the run added the rule rather than asserting it unverified; surfaced at the confirm step |
+| §8 README's Layout tree and Usage block | this run | `README.md:18-21` (new protocol files), `:27-28` (`spine/`), `:31` (`spike/`), `:61-64` and `:76-88` (Usage) | §8 required `spine/` and `spike/`, both present; the tree was since completed with `docs/plans/`, this repo's own routers and `protocol/AGENTS.md`, and the slugs-only claim no longer implies `/adopt` is the sole path-taker |
 | §8 `protocol/diagrams.md` gains a router row and stops naming `MAP.md` as the only terminal-read document | **pre-existing** | `protocol/diagrams.md:14`, `:19` | landed before this run; re-verified — the row is present and `:19` reads "MAP.md **and router documents**" |
-| §9 all nineteen edge cases | this run | `protocol/spine.md:171-196` | 19 rows, one per §9 row; 8 of them additionally asserted in `run.sh` |
-| §10 non-goals that bind implementation | this run | `protocol/spine.md:198-212` | the four standing prohibitions plus the five removed-in-review items; none reintroduced |
+| §9 all nineteen edge cases | this run | `protocol/spine.md:171-198` | 19 rows, one per §9 row; 8 of them additionally asserted in `run.sh` |
+| §10 non-goals that bind implementation | this run | `protocol/spine.md:200-218` | the four standing prohibitions plus the five removed-in-review items; none reintroduced |
 | §11 the validation block | this run | run below, with output pasted | all four gates pass; gate 2 shown to be non-tautological |
 | §11 fixtures under `mktemp -d`, outside every repo, fresh per run | this run | `spine/test/run.sh:7` and its `trap` | nothing is ever written inside this repo, so no fixture router can be committed or loaded as live guidance |
 | §11 `scan.sh` invoked once per case, each case its own target root | this run | `spine/test/run.sh:173-184` | 12 case roots, each scanned separately |
@@ -80,7 +80,8 @@ assertions behind it and nothing else pretends to.
 
 ```
 === GATE 1: baseline is not the only commit ===
-PASS (6 commits)
+PASS (6 commits)          # at the moment the gate ran; committing this report and
+                          # the remediation round added more. The gate asserts >= 2.
 
 === GATE 2: root commit contains no spine/ path ===
 PASS

@@ -28,8 +28,11 @@ spine/           scan.sh: resolves routing documents through symlinks, read-only
   test/run.sh          fixture assertions; builds its tree under the system temp directory
 skills/          Claude Code wrappers  → symlinked into ~/.claude/skills/
 codex/prompts/   Codex CLI wrappers    → symlinked into ~/.codex/prompts/
+docs/plans/      one directory per feature; the only mutable state
 spike/           throwaway experiments; nothing here is a contract
 install.sh       creates the symlinks (idempotent)
+AGENTS.md        this repo's own routers, one per directory that owns a rule —
+                 also protocol/, skills/ and spine/
 ```
 
 ## Install
@@ -58,11 +61,6 @@ From either harness, in the target project:
 /adopt path/to/plan.md        # normalize, report gaps, choose where it lands
 ```
 
-The four stage commands take slugs only. The two that take a path are `/adopt` and
-`/spine`, and neither is a stage: `/adopt` is the single on-ramp into the state machine, so
-there's one place to look when asking how a plan arrived, and `/spine` sits outside it
-entirely.
-
 It copies the document into `docs/plans/<slug>/` (the original is never moved or
 modified), synthesizes an `IDEA.md` for you to confirm, checks the tree for parts of the
 plan that are **already built**, and reports what the protocol needs that the document
@@ -72,6 +70,11 @@ Then it asks one question: land at `approved` (straight to `/implement`),
 The recommendation comes from the gap report rather than from your confidence, and the
 landing is recorded in the Decision Log — Stage 4 otherwise can't tell "vetted elsewhere"
 from "gate skipped."
+
+The four stage commands take slugs only. The two that take a path are `/adopt` and
+`/spine`, and neither is a stage: `/adopt` is the on-ramp into the state machine, so
+there's one place to look when asking how a plan arrived, and `/spine` sits outside it
+entirely.
 
 **Repo has no router documents?** Back-fill them:
 

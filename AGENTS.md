@@ -8,13 +8,17 @@ directory you are about to touch.
 
 Every stage reads its rules from `protocol/` and writes its state into
 `docs/plans/<slug>/`. Nothing a stage needs lives anywhere else — not in a wrapper, not
-in a context window. That is why there are three kinds of directory here and only three.
+in a context window. Everything here is one of four things, and the distinction is who
+reads it.
 
 | Kind | Directory | Read by |
 |---|---|---|
 | Canonical rules | `protocol/` | an agent executing a stage |
 | Per-feature state | `docs/plans/<slug>/` | every stage, to find out where the work stands |
 | Harness adapter | `skills/`, `codex/prompts/` | Claude Code and the Codex CLI, at registration |
+| Executable | `spine/`, `install.sh` | run by a command, not read as guidance |
+
+`spike/` is outside all four on purpose: throwaway, and its own README says so.
 
 Two rules follow, and between them they cover most of what can go wrong here:
 
@@ -36,6 +40,14 @@ Two rules follow, and between them they cover most of what can go wrong here:
 | `docs/` | — | `plans/<slug>/` per feature. State, not rules — nothing here is a contract |
 | `spike/` | — | throwaway experiments. Its own README says not to grow one into the real thing |
 
+## Files at the root
+
+| File | Role |
+|---|---|
+| `README.md` | What this workflow is and how to drive it, for a person arriving cold |
+| `install.sh` | Symlinks every wrapper into both harnesses. Idempotent, and it **globs** `skills/*/` and `codex/prompts/*.md`, so adding a command needs no edit here |
+| `.gitignore` | `node_modules/` and `graphify-out/`. The second is what lets a root router claim a graph cannot carry a contract |
+
 ## How to navigate (in order)
 
 1. **Read the router** for the directory you are touching.
@@ -43,8 +55,8 @@ Two rules follow, and between them they cover most of what can go wrong here:
    rule uses are the words it is stored under.
 3. **Graphify last**, under the policy below.
 
-No module-docstring rung: this repo is markdown plus two bash scripts, so there is no
-docstring convention for one to read.
+No module-docstring rung: this repo is markdown plus three shell scripts and one
+throwaway JS file, so there is no docstring convention for one to read.
 
 ## Graphify policy
 
