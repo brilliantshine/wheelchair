@@ -15,13 +15,20 @@ protocol/        canonical stage definitions — the single source of truth
                        re-grounded, above the code, no AI tells
   diagrams.md          where a diagram goes and what keeps it true: Mermaid on rendered
                        surfaces, arrow chains in terminals, redundant with its prose
+  routers.md           the router document format: what a directory owns, what must never
+                       happen there, where to go next — guidance for creation, not a test
+  spine.md             /spine: propose routers for a repo that has none, list every write
+                       first, and write nothing until a person confirms
   planning.md          Stage 1: map the code, set the north star, one question at a time
   plan-review.md       Stage 2: parallel GPT + Claude adversarial plan review
   implementation.md    Stage 3: lead + cheap worker lanes (Luna/Terra/Sonnet; Sol on escalation)
   verification.md      Stage 4: blind cross-family verify + remediation loop
   templates/           MAP.md, IDEA.md, PLAN.md, COMPLETION.md skeletons
+spine/           scan.sh: resolves routing documents through symlinks, read-only, JSON out
+  test/run.sh          fixture assertions; builds its tree under the system temp directory
 skills/          Claude Code wrappers  → symlinked into ~/.claude/skills/
 codex/prompts/   Codex CLI wrappers    → symlinked into ~/.codex/prompts/
+spike/           throwaway experiments; nothing here is a contract
 install.sh       creates the symlinks (idempotent)
 ```
 
@@ -51,8 +58,10 @@ From either harness, in the target project:
 /adopt path/to/plan.md        # normalize, report gaps, choose where it lands
 ```
 
-The four stage commands take slugs only. `/adopt` is the single on-ramp for work that
-didn't start here, so there's one place to look when asking how a plan arrived.
+The four stage commands take slugs only. The two that take a path are `/adopt` and
+`/spine`, and neither is a stage: `/adopt` is the single on-ramp into the state machine, so
+there's one place to look when asking how a plan arrived, and `/spine` sits outside it
+entirely.
 
 It copies the document into `docs/plans/<slug>/` (the original is never moved or
 modified), synthesizes an `IDEA.md` for you to confirm, checks the tree for parts of the
@@ -63,6 +72,20 @@ Then it asks one question: land at `approved` (straight to `/implement`),
 The recommendation comes from the gap report rather than from your confidence, and the
 landing is recorded in the Decision Log — Stage 4 otherwise can't tell "vetted elsewhere"
 from "gate skipped."
+
+**Repo has no router documents?** Back-fill them:
+
+```
+/spine path/to/working/tree     # propose a router per directory that owns a rule
+```
+
+`/spine` takes a path to a working tree, not a slug, and is outside the plan state machine —
+it writes documentation, so there is no plan and no review gate. It lists every file it would
+create or extend, and what changes in each, then writes nothing until you confirm. It refuses
+a target outside a git repository and names the repositories and worktree hubs it found
+instead, so the next command is obvious. Existing routing documents are extended and
+corrected, never reformatted. `protocol/routers.md` is the format;
+`protocol/spine.md` is the run sequence.
 
 Artifacts live in the target repo at `docs/plans/<slug>/`:
 

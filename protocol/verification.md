@@ -36,7 +36,9 @@ before this workflow ran and have never been reviewed against the Spec — verif
 exactly as rigorously as the rest, and do not read 'pre-existing' as 'already checked.'
 Check that the idea's non-goals weren't violated, that what the idea calls 'what good
 looks like' is actually true, and that no spec item was satisfied by letter but not
-intent. Verdict format: `VERDICT: PASS`, or
+intent. Check that the Routers section in COMPLETION.md is true: that the routers it claims
+were updated say what the change actually made true, and that a change which moved ownership
+between directories did not leave one side's router stale. Verdict format: `VERDICT: PASS`, or
 `VERDICT: FAIL` followed by one line per gap:
 `GAP: <spec item> — <what is missing or wrong> — <evidence>`."*
 

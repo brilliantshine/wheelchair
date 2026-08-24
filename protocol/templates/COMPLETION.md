@@ -24,6 +24,13 @@ exempt: Stage 4 verifies them like everything else.
 
 What differs from the Spec and why. "None" if none.
 
+## Routers
+
+What this change did to the routers (`AGENTS.md`/`CLAUDE.md`) in the directories it touched.
+Name each router updated and what became true in it. "None — this change moved no ownership
+and no router named a file it touched" is a valid answer, and is the common one; a blank
+section is not.
+
 ## Validation evidence
 
 Commands run and their pasted output (tests, builds, manual checks).

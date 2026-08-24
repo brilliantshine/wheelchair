@@ -84,6 +84,13 @@ Overlapping boundaries sequence.
 After each lane finishes: re-run its validation yourself and read the diff —
 `completed` is a claim, not a fact, and GPT lanes fabricate completions.
 
+Then sweep the routers. A change that moves ownership between directories updates the
+routers on both sides as part of this change. A change that adds or removes a file updates
+that directory's router only if it changes what the directory owns, or if the router named
+that file. A router that is now false is fixed here. `protocol/routers.md` is the format —
+read it before writing one, and note that it describes a router being *created* and is never
+a conformance test for one that already exists.
+
 When all tasks are done and full validation is green, write
 `docs/plans/<slug>/COMPLETION.md` from `templates/COMPLETION.md`: spec-item-by-item
 coverage with file:line references and each item's origin (`this run` or `pre-existing`),
