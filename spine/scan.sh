@@ -47,17 +47,20 @@ fi
 # followed by its hex, which keeps JSON parseable and keeps one bad byte distinct
 # from another.  It is deliberately **not** injective against all input: U+FFFD is
 # ordinary valid UTF-8, so a file containing it literally renders the same way.
-# That is why a file carrying malformed bytes is flagged in its directory's notes
-# rather than the rendering being trusted to tell two such files apart.
+# That is why a candidate whose *headings* carry such bytes is flagged in its
+# directory's notes rather than the rendering being trusted to tell two apart.
 #
 # One byte never reaches here: bash cannot hold NUL in a variable, so it is gone
 # before any string is passed in.  A candidate file containing NUL is detected
 # separately, against the file, and reported in that directory's notes.
 # A heading list is a human-readable summary, not a byte-faithful channel. Two
-# files whose content carries bytes that cannot be represented can render alike,
-# so the report says so rather than implying the headings distinguish them. Both
-# checks run against the file: bash strips NUL from any variable, and a malformed
-# UTF-8 byte is rendered as a marker that ordinary valid input can also produce.
+# files whose headings carry bytes that cannot be represented can render alike, so
+# the report says so rather than implying the headings distinguish them.
+#
+# NUL is the exception to the heading-only scope, and it is checked against the
+# whole file: bash drops it from any variable, so it never reaches a rendering that
+# could report it. Malformed UTF-8 is reported by the serializer itself, per
+# heading, in emit_headings.
 file_has_nul() {
   [[ -f $1 ]] || return 1
   ! cmp -s "$1" <(tr -d '\000' < "$1")

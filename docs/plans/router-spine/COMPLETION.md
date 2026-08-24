@@ -369,9 +369,9 @@ question went to the user, who settled it as **decision 53**: a heading list is 
 human-readable summary, not a byte-faithful channel.
 
 What that means concretely, and it is less code rather than more: the scan makes no promise
-that two files render distinguishably. A candidate whose content carries bytes that cannot be
-represented — NUL, or malformed UTF-8 — is flagged in its directory's notes and its heading
-list declared unreliable. The reader is told to go and look. This is the machinery the NUL
+that two files render distinguishably. A candidate **whose headings** carry bytes that cannot be
+represented is flagged in its directory's notes and its heading list declared unreliable; NUL
+is checked against the whole file, since bash drops it before any rendering could report it. The reader is told to go and look. This is the machinery the NUL
 case already required, generalised, and it dissolves the class instead of patching it: there
 is no longer a fidelity guarantee to violate.
 

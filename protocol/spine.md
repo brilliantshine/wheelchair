@@ -78,10 +78,12 @@ code and both broke on the calibration repo:
 A heading list is a **human-readable summary, not a byte-faithful channel.** It exists so the
 prompt can tell a real router from a pointer beside it, and both of those are ordinary markdown.
 The scan does not promise that two files render distinguishably: a malformed byte is shown as a
-visible marker, and ordinary valid text can produce the same marker. A candidate whose content
-carries bytes that cannot be represented **in its headings** is flagged in its directory's
-`notes` and its heading list declared unreliable, so the reader goes and looks instead of trusting
-a rendering that lost the difference. Chasing a collision-free encoding instead cost three
+visible marker, and ordinary valid text can produce the same marker. A candidate **whose headings** carry
+bytes that cannot be represented is flagged in its directory's `notes` and its heading list
+declared unreliable, so the reader goes and looks instead of trusting a rendering that lost the
+difference. Scoped to the headings because they are what the report carries: a malformed byte
+elsewhere in the file affects nothing it says. NUL is the exception and is checked against the
+whole file, because bash drops it before any rendering could report it. Chasing a collision-free encoding instead cost three
 remediation rounds and produced two representations that were each claimed collision-free and were
 not.
 

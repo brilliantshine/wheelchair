@@ -181,9 +181,12 @@ which candidates exist, which are symlinks, where each resolves, the size of eac
 The heading list is a **human-readable summary, not a byte-faithful channel** (decision 53). It is
 there so the prompt can tell a real router from a pointer beside it — a superset against three lines
 of prose — and both of those are ordinary markdown. The scan does not promise that any two files
-render distinguishably. A candidate whose content carries bytes that cannot be represented, meaning
-NUL or malformed UTF-8, is flagged in its directory's notes and its heading list declared unreliable;
-the reader is told to go and look rather than handed a rendering that quietly lost the difference. Where a directory holds two real files, also report a unified-diff line count between
+render distinguishably. A candidate **whose headings** carry bytes that cannot be
+represented is flagged in its directory's notes and its heading list declared unreliable; the reader
+is told to go and look rather than handed a rendering that quietly lost the difference. Scoped to the
+headings because they are what the report carries — a malformed byte elsewhere in the file changes
+nothing it says, since sizes are byte counts and the diff line count comes from `diff` itself. NUL is
+flagged wherever it appears, because bash drops it before any rendering happens. Where a directory holds two real files, also report a unified-diff line count between
 them. A link path is **never** emitted as a write target.
 
 Headings and a diff count rather than opening lines, because opening lines are exactly what fails on the
