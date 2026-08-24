@@ -197,6 +197,11 @@ printf '__pycache__/\nnode_modules/\ndata/\n' > "$newline_target/.gitignore"
 controls=$(make_repo controls)
 printf '# bell \a\n## vertical \v\n### delete \177\n' > "$controls/AGENTS.md"
 
+# 19. A malformed heading byte must be made visible by the common JSON-string
+# serializer rather than breaking stdout after a successful scan.
+invalid_heading=$(make_repo invalid-heading)
+printf '# bad \xff heading\n' > "$invalid_heading/AGENTS.md"
+
 umbrella_before=$(tree_hash "$fixture")
 # Guarded: the suite must stay runnable from a copy outside any git repo, which is
 # how a mutated scanner gets tested. An unguarded `git` here aborts the whole run with
@@ -204,7 +209,7 @@ umbrella_before=$(tree_hash "$fixture")
 repo_is_git=0
 if git -C "$repo" rev-parse --git-dir >/dev/null 2>&1; then repo_is_git=1; fi
 repo_status_before=""
-(( repo_is_git )) && repo_status_before=$(git -C "$repo" status --porcelain)
+(( repo_is_git )) && repo_status_before=$(git -C "$repo" status --porcelain --ignored)
 
 run_case workspace "$workspace"
 run_case differing "$differing"
@@ -224,9 +229,10 @@ run_case invalid-utf8 "$invalid_utf8"
 run_case invalid-target "$invalid_target"
 run_case newline-target "$newline_target"
 run_case controls "$controls"
+run_case invalid-heading "$invalid_heading"
 
-case_names=(workspace differing identical pointer unmanaged nested claude-link agents-link broken grouping ignored escaping directory-link outside-candidate invalid-utf8 invalid-target newline-target controls)
-json_case_names=(workspace differing identical pointer unmanaged nested claude-link agents-link broken grouping ignored escaping directory-link outside-candidate invalid-utf8 newline-target controls)
+case_names=(workspace differing identical pointer unmanaged nested claude-link agents-link broken grouping ignored escaping directory-link outside-candidate invalid-utf8 invalid-target newline-target controls invalid-heading)
+json_case_names=(workspace differing identical pointer unmanaged nested claude-link agents-link broken grouping ignored escaping directory-link outside-candidate invalid-utf8 newline-target controls invalid-heading)
 
 assert 'workspace refusal exits non-zero' bash -c '(( $1 != 0 ))' _ "${status[workspace]}"
 json_assert 'workspace names child repositories, hubs, and hub lanes' workspace '
@@ -255,7 +261,21 @@ json_assert 'pointer case reports both real files without aborting' pointer '
 import json, sys
 d=json.load(sys.stdin); assert d["ok"] and len(d["directories"][0]["candidates"])==2
 '
+link_target_cases=()
 for name in "${json_case_names[@]}"; do
+  if printf '%s' "${report[$name]}" | python3 -c '
+import json, sys
+assert any(c["isSymlink"] for directory in json.load(sys.stdin)["directories"] for c in directory["candidates"])
+' 2>/dev/null; then
+    link_target_cases+=("$name")
+  fi
+done
+if (( ${#link_target_cases[@]} == 0 )); then
+  fail 'write-target link check has no routing-file symlink reports'
+else
+  pass "write-target link check runs against ${#link_target_cases[@]} routing-file symlink reports"
+fi
+for name in "${link_target_cases[@]}"; do
   json_assert "$name write targets refer to real files, never symlink paths" "$name" '
 import json, os, sys
 d=json.load(sys.stdin)
@@ -348,6 +368,11 @@ import json, sys
 h=json.load(sys.stdin)["directories"][0]["candidates"][0]["headings"]
 assert h == ["# bell " + chr(7), "## vertical " + chr(11), "### delete " + chr(127)]
 '
+json_assert 'invalid UTF-8 heading is visibly marked and stdout stays usable' invalid-heading '
+import json, sys
+h=json.load(sys.stdin)["directories"][0]["candidates"][0]["headings"]
+assert h == [r"# bad \xff heading"]
+'
 
 for name in "${json_case_names[@]}"; do
   valid_json "$name"
@@ -368,8 +393,9 @@ no_raw_size_newlines() {
 assert 'sizes do not leave stat newlines inside JSON' no_raw_size_newlines "${case_names[@]}"
 
 # Per-case and umbrella hashes cover the fixture tree.  The repository snapshot
-# and empty HOME/TMPDIR sandboxes add the likely outside targets; together these
-# are not a proof that no write can occur anywhere in general.
+# covers tracked and ignored paths under the repository root; empty HOME/TMPDIR
+# sandboxes add likely outside targets. Together these are not a proof that no
+# write can occur anywhere in general.
 umbrella_after=$(tree_hash "$fixture")
 assert 'nothing anywhere in the fixture tree changed across every scan' \
   bash -c '[[ $1 == "$2" ]]' _ "$umbrella_before" "$umbrella_after"
@@ -378,7 +404,7 @@ assert 'sandbox HOME stayed empty across every scan' \
 assert 'sandbox TMPDIR stayed empty across every scan' \
   bash -c '[[ -z $(find "$1" -mindepth 1 -print -quit) ]]' _ "$sandbox_tmp"
 if (( repo_is_git )); then
-  repo_status_after=$(git -C "$repo" status --porcelain)
+  repo_status_after=$(git -C "$repo" status --porcelain --ignored)
   assert 'repository git status is byte-identical across the whole suite' \
     bash -c '[[ $1 == "$2" ]]' _ "$repo_status_before" "$repo_status_after"
 else
