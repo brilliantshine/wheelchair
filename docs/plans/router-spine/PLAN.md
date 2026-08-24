@@ -1,6 +1,6 @@
 ---
 slug: router-spine
-status: approved   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-08-22
 ---
 
@@ -776,8 +776,25 @@ cannot be declared finished never ships.
 
 ## Implementation Tasks
 
+Lanes T2 and T3 ran concurrently across separate git worktrees — T2 on branch
+`spine-script` at `/tmp/rs-spine-wt`, T3 on `master` in the main checkout — because
+`lanes.md` forbids two write-lanes in one checkout. T4 is a GPT lane and therefore
+sequenced after T2 rather than run beside it, since concurrent `codex exec` calls race the
+single account's one-shot refresh token.
+
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | §1: `git init`, `.gitignore` holding `node_modules/`, one baseline commit capturing the repo as it stood | repo root | lead | — | `test $(git rev-list --count HEAD) -ge 2`; no `spine/` path in the root commit | completed |
+| T2 | §3 + §11: `spine/scan.sh` (read-only, JSON to stdout, resolves every candidate through symlinks, never emits a link path as a write target) and `spine/test/run.sh` (fixture harness, exit-code gated) | `spine/` only | terra (worktree `spine-script`) | `01a0356e-2da3-7250-b79b-99397a22e204` | `bash spine/test/run.sh` — 44 assertions, exit-code gated | completed |
+| T3 | §2 + §5: `protocol/routers.md` (the format), `protocol/spine.md` (the run sequence), and the two thin wrappers | `protocol/routers.md`, `protocol/spine.md`, `skills/spine/`, `codex/prompts/spine.md` | sonnet | — | `./install.sh` registers `/spine`; no Mermaid in either doc; read-through against §2/§4/§5 | completed |
+| T4 | §6 + §8: the router-upkeep rule into Stage 3, the Routers check into the Stage 4 verifier brief, a Routers section into the COMPLETION template, and README's Layout tree and Usage block | `protocol/implementation.md`, `protocol/verification.md`, `protocol/templates/COMPLETION.md`, `README.md` | luna | `01a03579-b06b-7ea1-b826-8c38dae0bb63` | anchor greps; `git diff` shows only the named lines | completed |
+| T5 | §7: run the `/spine` procedure against this repo — four routers expected (root, `protocol/`, `skills/`, `spine/`) | new router files; `.gitignore` if `graphify-out/` is added | lead | — | four routers, each with a boundary sentence its parent does not state; user confirm before any write | |
+
+Every GPT brief carried the fails-twice guardrail. T2's brief fixed the JSON schema, which
+the Spec deliberately leaves open — that decision belonged in the plan and writing it into
+the brief is what kept T2 on the workhorse tier instead of pushing it to Sol. T4's brief
+carries every insertion point and every word of new text verbatim, which is what makes it
+transcription-tier.
 
 ## Log
 
