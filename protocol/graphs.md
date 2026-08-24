@@ -445,6 +445,7 @@ actually hit, in the rough order the server checks them:
 | 422 | `bad-was` | `was` carries a value this write isn't allowed to set |
 | 422 | `container-cycle` | this write would make some file reachable from itself through `graph` fields |
 | 422 | `container-orphan` | removing or retargeting a container would strand a subtree holding a verdict |
+| 422 | `container-unreadable-child` | that subtree walk hit a child file that doesn't parse, so it can't be shown to hold no verdicts. Repair the child by hand; the server never repairs one |
 | 500 | `internal` | anything unhandled |
 
 Four codes exist that a `PUT /graph` will never produce: `not-found` and `no-route`

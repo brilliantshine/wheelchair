@@ -1,0 +1,23 @@
+{
+  "edges": [
+    {"to":"finish","id":"store->finish","label":"done","from":"store"},
+    {"note":null,"was":null,"origin":"proposed","inferred":false,"value":null,"kind":"sequence","label":"done","to":"finish","from":"report","id":"report->finish"},
+    {"note":null,"was":null,"origin":"proposed","inferred":false,"value":null,"kind":"sequence","label":"review","to":"decide","from":"inspect","id":"inspect->decide"},
+    {"note":"Alternative path.","was":null,"origin":"proposed","inferred":true,"value":"fallback","kind":"reference","label":"no","to":"store","from":"decide","id":"decide->store"},
+    {"to":"report","id":"decide->report","label":"yes","from":"decide"},
+    {"to":"inspect","id":"gather->inspect","label":"then","from":"gather"}
+  ],
+  "source_detail": "fixture",
+  "nodes": [
+    {"y":140.0,"x":0.0,"graph":"timeline","label":"Timeline","id":"timeline","kind":"container"},
+    {"y":0.0,"x":480.0,"label":"Store","id":"store","kind":"artifact"},
+    {"y":140.0,"x":480.0,"label":"Report","id":"report"},
+    {"y":0.0,"x":240.0,"label":"Inspect","id":"inspect","kind":"action"},
+    {"y":0.0,"x":0.0,"label":"Gather","id":"gather","kind":"action"},
+    {"y":280.0,"x":720.0,"label":"Finish","id":"finish","kind":"outcome"},
+    {"y":140.0,"x":240.0,"graph":null,"note":"Choose a branch.","ref":"docs/plan.md","exclusive":true,"was":null,"origin":"proposed","kind":"decision","label":"Decide","id":"decide"}
+  ],
+  "title": "Canonical graph",
+  "schema": 1,
+  "source": "router"
+}

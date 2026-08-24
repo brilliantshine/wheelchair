@@ -1,0 +1,859 @@
+/*
+Routes (all responses use Cache-Control: no-store):
+  GET  /?path&token       token query      -> viewer/index.html
+  GET  /graph?path&token  token query      -> { hash, graph, children }
+  PUT  /graph?path        X-Graph-Token + matching Origin -> { hash }
+  PUT  /view?path         X-Graph-Token + matching Origin -> { hash }
+  GET  /whoami            no authentication -> { start_id }.
+
+Errors:
+  400 bad-path, bad-body
+  401 bad-token
+  403 bad-origin, not-registered
+  404 not-found, no-route
+  409 stale (also returns hash)
+  422 invalid-json (position), unknown-schema (schema), missing-label, bad-id,
+      edge-missing-node, bad-origin-value, bad-was, container-bad-name,
+      container-cycle, container-orphan, container-unreadable-child, preservation-rejected,
+      preservation-agreed, agent-verdict, structural-difference (ids),
+      bulk-not-additive
+  500 internal
+*/
+
+'use strict';
+
+const http = require('node:http');
+const fs = require('node:fs');
+const fsp = require('node:fs/promises');
+const path = require('node:path');
+const os = require('node:os');
+const crypto = require('node:crypto');
+
+const DEFAULT_PORT = 7373;
+const DAY = 24 * 60 * 60 * 1000;
+const REGISTERED_MAX_AGE = 30 * DAY;
+const ORIGINS = new Set(['proposed', 'agreed', 'rejected']);
+const SOURCES = new Set(['router', 'code-read', 'plan-proposal']);
+const CHILD_NAME = /^[a-z0-9_-]+$/;
+
+class ClientError extends Error {
+  constructor(status, code, detail, extra = {}) {
+    super(detail);
+    this.status = status;
+    this.code = code;
+    this.detail = detail;
+    this.extra = extra;
+  }
+}
+
+function fail(status, code, detail, extra) {
+  throw new ClientError(status, code, detail, extra);
+}
+
+function hashBytes(bytes) {
+  return crypto.createHash('sha256').update(bytes).digest('hex');
+}
+
+function orderedNode(node) {
+  return {
+    id: node.id, label: node.label, kind: node.kind, origin: node.origin,
+    was: node.was, exclusive: node.exclusive, ref: node.ref, note: node.note,
+    graph: node.graph, x: node.x, y: node.y,
+  };
+}
+
+function orderedEdge(edge) {
+  return {
+    id: edge.id, from: edge.from, to: edge.to, label: edge.label,
+    kind: edge.kind, value: edge.value, inferred: edge.inferred,
+    origin: edge.origin, was: edge.was, note: edge.note,
+  };
+}
+
+function canonicalBytes(graph) {
+  const result = {
+    schema: graph.schema,
+    title: graph.title,
+    source: graph.source,
+    source_detail: graph.source_detail,
+    nodes: [...graph.nodes].sort(compareId).map(orderedNode),
+    edges: [...graph.edges].sort(compareId).map(orderedEdge),
+  };
+  return Buffer.from(`${JSON.stringify(result, null, 2)}\n`);
+}
+
+function compareId(a, b) {
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+function rounded(value) {
+  const number = Number(value ?? 0);
+  return Math.round(Number.isFinite(number) ? number : 0);
+}
+
+// Canonicalization intentionally drops unknown keys.  checkOrigin is delayed by /view
+// because its structural-identity check is contractually earlier.
+function validateGraph(input, { checkOrigin = true } = {}) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    fail(400, 'bad-body', 'The request body must contain a graph object.');
+  }
+  if (input.schema !== 1) {
+    fail(422, 'unknown-schema', 'The graph schema is not supported.', { schema: input.schema });
+  }
+  if (typeof input.title !== 'string' || typeof input.source !== 'string' ||
+      !SOURCES.has(input.source) ||
+      !(input.source_detail === null || typeof input.source_detail === 'string') ||
+      !Array.isArray(input.nodes) || !Array.isArray(input.edges)) {
+    fail(422, 'unknown-schema', 'The graph does not have the schema 1 shape.', { schema: input.schema });
+  }
+
+  const nodeIds = new Set();
+  const edgeIds = new Set();
+  const nodes = input.nodes.map((raw) => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw) ||
+        typeof raw.id !== 'string' || raw.id.length === 0 || nodeIds.has(raw.id)) {
+      fail(422, 'bad-id', 'A node id is missing, empty, or duplicated.');
+    }
+    nodeIds.add(raw.id);
+    if (!Object.prototype.hasOwnProperty.call(raw, 'label') || typeof raw.label !== 'string') {
+      fail(422, 'missing-label', 'A node is missing its label.');
+    }
+    const node = {
+      id: raw.id,
+      label: raw.label,
+      kind: raw.kind ?? 'note',
+      origin: raw.origin ?? 'proposed',
+      was: raw.was ?? null,
+      exclusive: raw.exclusive ?? false,
+      ref: raw.ref ?? null,
+      note: raw.note ?? null,
+      graph: raw.graph ?? null,
+      x: rounded(raw.x),
+      y: rounded(raw.y),
+    };
+    if (checkOrigin && !ORIGINS.has(node.origin)) {
+      fail(422, 'bad-origin-value', 'An origin is outside the allowed set.');
+    }
+    if (node.graph !== null && (typeof node.graph !== 'string' || !CHILD_NAME.test(node.graph))) {
+      fail(422, 'container-bad-name', 'A container graph name is not a bare valid name.');
+    }
+    return node;
+  });
+  const edges = input.edges.map((raw) => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw) ||
+        typeof raw.id !== 'string' || raw.id.length === 0 || edgeIds.has(raw.id)) {
+      fail(422, 'bad-id', 'An edge id is missing, empty, or duplicated.');
+    }
+    edgeIds.add(raw.id);
+    if (!Object.prototype.hasOwnProperty.call(raw, 'label') || typeof raw.label !== 'string') {
+      fail(422, 'missing-label', 'An edge is missing its label.');
+    }
+    const edge = {
+      id: raw.id,
+      from: raw.from,
+      to: raw.to,
+      label: raw.label,
+      kind: raw.kind ?? 'sequence',
+      value: raw.value ?? null,
+      inferred: raw.inferred ?? false,
+      origin: raw.origin ?? 'proposed',
+      was: raw.was ?? null,
+      note: raw.note ?? null,
+    };
+    if (checkOrigin && !ORIGINS.has(edge.origin)) {
+      fail(422, 'bad-origin-value', 'An origin is outside the allowed set.');
+    }
+    return edge;
+  });
+  for (const edge of edges) {
+    if (typeof edge.from !== 'string' || typeof edge.to !== 'string' ||
+        !nodeIds.has(edge.from) || !nodeIds.has(edge.to)) {
+      fail(422, 'edge-missing-node', 'An edge names a node that is not present.');
+    }
+  }
+  return {
+    schema: 1, title: input.title, source: input.source,
+    source_detail: input.source_detail, nodes, edges,
+  };
+}
+
+function entryWithoutPosition(entry, isNode) {
+  const clone = { ...entry };
+  if (isNode) {
+    delete clone.x;
+    delete clone.y;
+  }
+  return JSON.stringify(isNode ? orderedNode({ ...clone, x: 0, y: 0 }) : orderedEdge(clone),
+    isNode ? ['id', 'label', 'kind', 'origin', 'was', 'exclusive', 'ref', 'note', 'graph'] :
+      ['id', 'from', 'to', 'label', 'kind', 'value', 'inferred', 'origin', 'was', 'note']);
+}
+
+function sameExceptPosition(left, right, isNode) {
+  if (isNode) {
+    const a = { ...left }; const b = { ...right };
+    delete a.x; delete a.y; delete b.x; delete b.y;
+    return JSON.stringify(orderedNode({ ...a, x: 0, y: 0 })) ===
+      JSON.stringify(orderedNode({ ...b, x: 0, y: 0 }));
+  }
+  return JSON.stringify(orderedEdge(left)) === JSON.stringify(orderedEdge(right));
+}
+
+function parseJson(bytes) {
+  try {
+    return JSON.parse(bytes.toString('utf8'));
+  } catch (error) {
+    const match = /position (\d+)/.exec(error.message);
+    fail(422, 'invalid-json', 'The graph file contains invalid JSON.',
+      { position: match ? Number(match[1]) : 0 });
+  }
+}
+
+async function readRaw(graphPath) {
+  try {
+    const bytes = await fsp.readFile(graphPath);
+    return { exists: true, bytes, hash: hashBytes(bytes) };
+  } catch (error) {
+    if (error.code === 'ENOENT') return { exists: false, bytes: null, hash: '' };
+    throw error;
+  }
+}
+
+function parseDisk(raw) {
+  return validateGraph(parseJson(raw.bytes));
+}
+
+function childPath(parentPath, name) {
+  return path.join(path.dirname(parentPath), `${name}.json`);
+}
+
+async function graphFromFile(graphPath) {
+  const raw = await readRaw(graphPath);
+  if (!raw.exists) return null;
+  return parseDisk(raw);
+}
+
+function mapById(entries) {
+  return new Map(entries.map((entry) => [entry.id, entry]));
+}
+
+// Agent preservation is deliberately outside HTTP handling: this is the format contract.
+// Everything an agent's PUT /graph is forbidden to do, in one place:
+//   - it may not grant itself a verdict (agent-verdict),
+//   - it must preserve every rejected entry verbatim and every agreed entry either verbatim or
+//     reset to proposed with was: "agreed" (preservation-rejected, preservation-agreed),
+//   - it may write `was` only as part of a reset, and may never clear a landed one (bad-was).
+// Removing an entry already reset to proposed is allowed: that is the second of the two visible
+// steps a superseded flow takes, instead of vanishing in one.
+function checkAgentWrite(current, incoming) {
+  for (const [oldEntries, newEntries, isNode] of [
+    [current.nodes, incoming.nodes, true], [current.edges, incoming.edges, false],
+  ]) {
+    const oldById = mapById(oldEntries);
+    const newById = mapById(newEntries);
+    for (const entry of newEntries) {
+      const old = oldById.get(entry.id);
+      if (!old || old.origin === 'proposed') {
+        if (entry.origin !== 'proposed') {
+          fail(422, 'agent-verdict', 'An agent may not set a verdict on a new or proposed entry.',
+            { ids: [entry.id] });
+        }
+      }
+    }
+    for (const old of oldEntries) {
+      const entry = newById.get(old.id);
+      if (old.origin === 'rejected' && (!entry || !sameExceptPosition(old, entry, isNode))) {
+        fail(422, 'preservation-rejected', 'A rejected entry must be preserved unchanged.',
+          { ids: [old.id] });
+      }
+      if (old.origin === 'agreed') {
+        const reset = entry && entry.origin === 'proposed' && entry.was === 'agreed';
+        if (!entry || (!sameExceptPosition(old, entry, isNode) && !reset)) {
+          fail(422, 'preservation-agreed', 'An agreed entry must be preserved or reset.',
+            { ids: [old.id] });
+        }
+      }
+    }
+    for (const entry of newEntries) {
+      const old = oldById.get(entry.id);
+      const resetNow = old && old.origin === 'agreed' && entry.origin === 'proposed';
+      const landedReset = old && old.origin === 'proposed' && old.was === 'agreed';
+      if (entry.was === null) {
+        if (landedReset) {
+          fail(422, 'bad-was', 'An agent may not clear a landed reset record.', { ids: [entry.id] });
+        }
+      } else if (!(entry.was === 'agreed' && (resetNow || landedReset))) {
+        fail(422, 'bad-was', 'An agent wrote a was value it is not allowed to write.', { ids: [entry.id] });
+      }
+    }
+  }
+}
+
+async function hasContainmentCycle(rootPath, incoming) {
+  const visiting = new Set();
+  const seen = new Set();
+  async function walk(filePath) {
+    if (visiting.has(filePath)) return true;
+    if (seen.has(filePath)) return false;
+    seen.add(filePath); visiting.add(filePath);
+    const graph = filePath === rootPath ? incoming : await graphFromFile(filePath);
+    if (graph) {
+      for (const node of graph.nodes) {
+        if (node.graph && await walk(childPath(filePath, node.graph))) return true;
+      }
+    }
+    visiting.delete(filePath);
+    return false;
+  }
+  return walk(rootPath);
+}
+
+async function subtreeHasVerdict(rootPath) {
+  const seen = new Set();
+  async function walk(filePath) {
+    if (seen.has(filePath)) return false;
+    seen.add(filePath);
+    const raw = await readRaw(filePath);
+    if (!raw.exists) return false;
+    let graph;
+    try {
+      graph = parseDisk(raw);
+    } catch {
+      // A child that will not parse cannot be shown to hold no verdicts, and this walk exists to
+      // stop verdict loss. Surface the corruption where it matters rather than orphaning the file.
+      fail(422, 'container-unreadable-child',
+        `The child graph ${filePath} does not parse, so its verdicts cannot be checked.`);
+    }
+    if ([...graph.nodes, ...graph.edges].some((entry) =>
+      entry.origin === 'agreed' || entry.origin === 'rejected')) return true;
+    for (const node of graph.nodes) {
+      if (node.graph && await walk(childPath(filePath, node.graph))) return true;
+    }
+    return false;
+  }
+  return walk(rootPath);
+}
+
+async function checkOrphans(graphPath, current, incoming) {
+  const nextById = mapById(incoming.nodes);
+  for (const oldNode of current.nodes) {
+    if (!oldNode.graph) continue;
+    const next = nextById.get(oldNode.id);
+    if (!next || next.graph !== oldNode.graph) {
+      if (await subtreeHasVerdict(childPath(graphPath, oldNode.graph))) {
+        fail(422, 'container-orphan', 'Removing or retargeting this container would orphan a verdict.',
+          { ids: [oldNode.id] });
+      }
+    }
+  }
+}
+
+function layout(graph) {
+  const ids = graph.nodes.map((node) => node.id);
+  const byId = mapById(graph.nodes);
+  const indegree = new Map(ids.map((id) => [id, 0]));
+  const outgoing = new Map(ids.map((id) => [id, []]));
+  for (const edge of graph.edges) {
+    indegree.set(edge.to, indegree.get(edge.to) + 1);
+    outgoing.get(edge.from).push(edge.to);
+  }
+  for (const targets of outgoing.values()) targets.sort();
+  const placed = new Map();
+  let row = 0;
+  let frontier = ids.filter((id) => indegree.get(id) === 0).sort();
+  if (frontier.length === 0 && ids.length) frontier = [[...ids].sort()[0]];
+  while (frontier.length) {
+    frontier.sort();
+    for (const id of frontier) placed.set(id, row);
+    const next = [];
+    for (const id of frontier) {
+      for (const target of outgoing.get(id)) {
+        if (!placed.has(target) && !next.includes(target)) next.push(target);
+      }
+    }
+    if (next.length) { frontier = next; row += 1; continue; }
+    const remaining = ids.filter((id) => !placed.has(id)).sort();
+    if (!remaining.length) break;
+    frontier = [remaining[0]];
+    row += 1;
+  }
+  const rows = new Map();
+  for (const [id, y] of placed) {
+    if (!rows.has(y)) rows.set(y, []);
+    rows.get(y).push(id);
+  }
+  const positions = new Map();
+  for (const [y, rowIds] of rows) {
+    rowIds.sort().forEach((id, column) => positions.set(id, { x: column * 240, y: y * 140 }));
+  }
+  return positions;
+}
+
+function retainDiskPositions(current, incoming) {
+  const oldById = mapById(current.nodes);
+  const positions = layout(incoming);
+  for (const node of incoming.nodes) {
+    const old = oldById.get(node.id);
+    const position = old ? { x: old.x, y: old.y } : positions.get(node.id);
+    node.x = position.x;
+    node.y = position.y;
+  }
+}
+
+let mutex = Promise.resolve();
+function withMutex(work) {
+  const next = mutex.then(work, work);
+  mutex = next.catch(() => {});
+  return next;
+}
+
+function configFromArgs(argv) {
+  const options = { port: DEFAULT_PORT, cacheRoot: null, open: null, stop: false };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === '--port') {
+      const port = Number(argv[++index]);
+      if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid --port.');
+      options.port = port;
+    } else if (arg === '--cache-root') {
+      if (!argv[index + 1]) throw new Error('Missing --cache-root value.');
+      options.cacheRoot = path.resolve(argv[++index]);
+    } else if (arg === '--open') {
+      if (!argv[index + 1]) throw new Error('Missing --open value.');
+      options.open = path.resolve(argv[++index]);
+    } else if (arg === '--stop') {
+      options.stop = true;
+    } else {
+      throw new Error(`Unknown argument: ${arg}`);
+    }
+  }
+  if (options.cacheRoot === null) options.cacheRoot = path.join(os.homedir(), '.cache', 'agent-graphs');
+  return options;
+}
+
+function lockPath(config) { return path.join(config.cacheRoot, '.server'); }
+function registeredPath(config) { return path.join(config.cacheRoot, '.registered'); }
+
+// Cache-root files (.server, .registered) hold a credential and pass 0o600. Graph files are
+// ordinary repo files that get committed, so they take the ordinary mode: an agent write should
+// not silently re-permission a file the person also edits and diffs.
+async function atomicWrite(filePath, bytes, mode = 0o644) {
+  const temp = path.join(path.dirname(filePath),
+    `.${path.basename(filePath)}.${crypto.randomBytes(4).toString('hex')}.tmp`);
+  let handle;
+  try {
+    handle = await fsp.open(temp, 'w', mode);
+    await handle.writeFile(bytes);
+    await handle.sync();
+    await handle.close();
+    handle = null;
+    await fsp.rename(temp, filePath);
+    await fsp.chmod(filePath, mode);
+  } catch (error) {
+    if (handle) await handle.close().catch(() => {});
+    await fsp.unlink(temp).catch(() => {});
+    throw error;
+  }
+}
+
+async function loadRegistered(config) {
+  try {
+    const parsed = JSON.parse(await fsp.readFile(registeredPath(config), 'utf8'));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch (error) {
+    if (error.code === 'ENOENT' || error instanceof SyntaxError) return {};
+    throw error;
+  }
+}
+
+async function saveRegistered(config, entries) {
+  const ordered = {};
+  for (const key of Object.keys(entries).sort()) ordered[key] = entries[key];
+  await fsp.mkdir(config.cacheRoot, { recursive: true, mode: 0o700 });
+  await atomicWrite(registeredPath(config), Buffer.from(`${JSON.stringify(ordered, null, 2)}\n`), 0o600);
+}
+
+async function pruneRegistered(config) {
+  const entries = await loadRegistered(config);
+  const cutoff = Date.now() - REGISTERED_MAX_AGE;
+  for (const [key, value] of Object.entries(entries)) {
+    if (!value || typeof value.added !== 'number' || value.added < cutoff) delete entries[key];
+  }
+  await saveRegistered(config, entries);
+  return entries;
+}
+
+async function registerPath(config, graphPath, opened) {
+  const entries = await loadRegistered(config);
+  const prior = entries[graphPath];
+  entries[graphPath] = { added: Date.now(), opened: Boolean(prior?.opened || opened) };
+  await saveRegistered(config, entries);
+}
+
+async function ensureRegistered(config, graphPath) {
+  const entries = await loadRegistered(config);
+  if (Object.prototype.hasOwnProperty.call(entries, graphPath)) return true;
+  const name = path.basename(graphPath, '.json');
+  for (const candidate of Object.keys(entries)) {
+    if (path.dirname(candidate) !== path.dirname(graphPath)) continue;
+    try {
+      const raw = await readRaw(candidate);
+      if (raw.exists && parseDisk(raw).nodes.some((node) => node.graph === name)) {
+        entries[graphPath] = { added: Date.now(), opened: false };
+        await saveRegistered(config, entries);
+        return true;
+      }
+    } catch {
+      // A broken registered parent cannot derive a new writable child.
+    }
+  }
+  return false;
+}
+
+async function unregisterDroppedSubtrees(config, droppedPaths) {
+  const entries = await loadRegistered(config);
+  const queue = [...new Set(droppedPaths)];
+  while (queue.length) {
+    const graphPath = queue.shift();
+    if (!Object.prototype.hasOwnProperty.call(entries, graphPath) || entries[graphPath].opened) continue;
+    let namedElsewhere = false;
+    for (const other of Object.keys(entries)) {
+      if (other === graphPath || path.dirname(other) !== path.dirname(graphPath)) continue;
+      try {
+        const raw = await readRaw(other);
+        if (raw.exists && parseDisk(raw).nodes.some((node) => node.graph === path.basename(graphPath, '.json'))) {
+          namedElsewhere = true; break;
+        }
+      } catch { /* broken graphs do not retain a descendant */ }
+    }
+    if (namedElsewhere) continue;
+    const children = [];
+    try {
+      const raw = await readRaw(graphPath);
+      if (raw.exists) children.push(...parseDisk(raw).nodes.filter((node) => node.graph)
+        .map((node) => childPath(graphPath, node.graph)));
+    } catch { /* no readable children to propagate */ }
+    delete entries[graphPath];
+    queue.push(...children);
+  }
+  await saveRegistered(config, entries);
+}
+
+function validPath(value) {
+  if (typeof value !== 'string' || !path.isAbsolute(value) || path.extname(value) !== '.json') {
+    fail(400, 'bad-path', 'The path must be an absolute .json path.');
+  }
+  return path.resolve(value);
+}
+
+function tokenMatches(candidate, token) {
+  if (typeof candidate !== 'string') return false;
+  const expected = Buffer.from(token, 'utf8');
+  const supplied = Buffer.from(candidate, 'utf8');
+  return expected.length === supplied.length && crypto.timingSafeEqual(expected, supplied);
+}
+
+function sendJson(response, status, body) {
+  response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+  response.end(JSON.stringify(body));
+}
+
+function sendError(response, error) {
+  if (error instanceof ClientError) {
+    sendJson(response, error.status, { error: error.code, detail: error.detail, ...error.extra });
+  } else {
+    sendJson(response, 500, { error: 'internal', detail: 'The server encountered an internal error.' });
+  }
+}
+
+function requireGetToken(url, state) {
+  if (!tokenMatches(url.searchParams.get('token'), state.lock.token)) {
+    fail(401, 'bad-token', 'The graph token is missing or invalid.');
+  }
+}
+
+function requirePutAuth(request, state) {
+  if (!tokenMatches(request.headers['x-graph-token'], state.lock.token)) {
+    fail(401, 'bad-token', 'The graph token is missing or invalid.');
+  }
+  if (request.headers.origin !== `http://127.0.0.1:${state.port}`) {
+    fail(403, 'bad-origin', 'The request origin does not match this viewer.');
+  }
+}
+
+async function requestBody(request) {
+  const chunks = [];
+  for await (const chunk of request) chunks.push(chunk);
+  let body;
+  try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
+  catch { fail(400, 'bad-body', 'The request body is not JSON.'); }
+  if (!body || typeof body !== 'object' || Array.isArray(body) || typeof body.hash !== 'string' ||
+      !body.graph || typeof body.graph !== 'object' || Array.isArray(body.graph)) {
+    fail(400, 'bad-body', 'The request body needs a hash string and graph object.');
+  }
+  return body;
+}
+
+function structuralDifference(current, incoming) {
+  const ids = [];
+  for (const [oldEntries, newEntries, fields] of [
+    [current.nodes, incoming.nodes, ['label', 'kind', 'exclusive', 'ref', 'note', 'graph']],
+    [current.edges, incoming.edges, ['from', 'to', 'label', 'kind', 'value', 'inferred', 'note']],
+  ]) {
+    const oldById = mapById(oldEntries); const newById = mapById(newEntries);
+    for (const id of new Set([...oldById.keys(), ...newById.keys()])) {
+      const before = oldById.get(id); const after = newById.get(id);
+      if (!before || !after || fields.some((field) => before[field] !== after[field])) ids.push(id);
+    }
+  }
+  return ids;
+}
+
+function checkViewChanges(current, incoming) {
+  const bad = structuralDifference(current, incoming);
+  if (bad.length || current.schema !== incoming.schema || current.title !== incoming.title ||
+      current.source !== incoming.source || current.source_detail !== incoming.source_detail) {
+    fail(422, 'structural-difference', 'The page changed graph structure.', { ids: bad });
+  }
+  let reversals = 0;
+  for (const [oldEntries, newEntries] of [[current.nodes, incoming.nodes], [current.edges, incoming.edges]]) {
+    const oldById = mapById(oldEntries);
+    for (const entry of newEntries) {
+      const old = oldById.get(entry.id);
+      if (!ORIGINS.has(entry.origin)) fail(422, 'bad-origin-value', 'An origin is outside the allowed set.');
+      const clearsWas = old.was !== null && entry.was === null;
+      const keepsWas = entry.was === old.was;
+      if (!(keepsWas || (clearsWas && entry.origin !== old.origin))) {
+        fail(422, 'bad-was', 'The page may only clear was while changing origin.', { ids: [entry.id] });
+      }
+      if (entry.origin !== old.origin && old.origin !== 'proposed') reversals += 1;
+    }
+  }
+  if (reversals > 1) fail(422, 'bulk-not-additive', 'A bulk verdict may reverse at most one existing verdict.');
+}
+
+async function handleGraphPut(request, response, url, state) {
+  requirePutAuth(request, state);
+  const graphPath = validPath(url.searchParams.get('path'));
+  const body = await requestBody(request);
+  const result = await withMutex(async () => {
+    if (!await ensureRegistered(state.config, graphPath)) fail(403, 'not-registered', 'This graph path is not registered.');
+    const raw = await readRaw(graphPath);
+    if (body.hash !== raw.hash) fail(409, 'stale', 'The graph changed since it was read.', { hash: raw.hash });
+    const incoming = validateGraph(body.graph);
+    const current = raw.exists ? parseDisk(raw) : null;
+    if (current) {
+      checkAgentWrite(current, incoming);
+      if (await hasContainmentCycle(graphPath, incoming)) {
+        fail(422, 'container-cycle', 'The write would create a containment cycle.');
+      }
+      await checkOrphans(graphPath, current, incoming);
+      retainDiskPositions(current, incoming);
+    } else {
+      if (await hasContainmentCycle(graphPath, incoming)) {
+        fail(422, 'container-cycle', 'The write would create a containment cycle.');
+      }
+      const positions = layout(incoming);
+      for (const node of incoming.nodes) Object.assign(node, positions.get(node.id));
+    }
+    const bytes = canonicalBytes(incoming);
+    await atomicWrite(graphPath, bytes);
+    if (current) {
+      const nextById = mapById(incoming.nodes);
+      const dropped = current.nodes.filter((node) => node.graph && (!nextById.get(node.id) || nextById.get(node.id).graph !== node.graph))
+        .map((node) => childPath(graphPath, node.graph));
+      await unregisterDroppedSubtrees(state.config, dropped);
+    }
+    return { hash: hashBytes(bytes) };
+  });
+  sendJson(response, 200, result);
+}
+
+async function handleViewPut(request, response, url, state) {
+  requirePutAuth(request, state);
+  const graphPath = validPath(url.searchParams.get('path'));
+  const body = await requestBody(request);
+  const result = await withMutex(async () => {
+    if (!await ensureRegistered(state.config, graphPath)) fail(403, 'not-registered', 'This graph path is not registered.');
+    const raw = await readRaw(graphPath);
+    if (!raw.exists) fail(404, 'not-found', 'The graph file does not exist.');
+    if (body.hash !== raw.hash) fail(409, 'stale', 'The graph changed since it was read.', { hash: raw.hash });
+    const current = parseDisk(raw);
+    const incoming = validateGraph(body.graph, { checkOrigin: false });
+    checkViewChanges(current, incoming);
+    const bytes = canonicalBytes(incoming);
+    await atomicWrite(graphPath, bytes);
+    return { hash: hashBytes(bytes) };
+  });
+  sendJson(response, 200, result);
+}
+
+async function handleGetGraph(response, url, state) {
+  requireGetToken(url, state);
+  const graphPath = validPath(url.searchParams.get('path'));
+  const allowed = await withMutex(() => ensureRegistered(state.config, graphPath));
+  if (!allowed) fail(403, 'not-registered', 'This graph path is not registered.');
+  const raw = await readRaw(graphPath);
+  if (!raw.exists) fail(404, 'not-found', 'The graph file does not exist.');
+  const graph = parseDisk(raw);
+  const children = {};
+  for (const name of new Set(graph.nodes.map((node) => node.graph).filter(Boolean))) {
+    children[name] = (await readRaw(childPath(graphPath, name))).exists;
+  }
+  sendJson(response, 200, { hash: raw.hash, graph, children });
+}
+
+async function handleRoot(response, url, state) {
+  requireGetToken(url, state);
+  const graphPath = validPath(url.searchParams.get('path'));
+  const allowed = await withMutex(() => ensureRegistered(state.config, graphPath));
+  if (!allowed) fail(403, 'not-registered', 'This graph path is not registered.');
+  try {
+    const html = await fsp.readFile(path.join(__dirname, 'index.html'));
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+    response.end(html);
+  } catch (error) {
+    throw error;
+  }
+}
+
+function whoami(port) {
+  return new Promise((resolve, reject) => {
+    const request = http.get({ host: '127.0.0.1', port, path: '/whoami', timeout: 500 }, (response) => {
+      const chunks = [];
+      response.on('data', (chunk) => chunks.push(chunk));
+      response.on('end', () => {
+        try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch (error) { reject(error); }
+      });
+    });
+    request.on('timeout', () => request.destroy(new Error('whoami timeout')));
+    request.on('error', reject);
+  });
+}
+
+function validLock(value) {
+  return value && Number.isInteger(value.pid) && Number.isInteger(value.port) &&
+    typeof value.token === 'string' && typeof value.start_id === 'string';
+}
+
+async function readLock(config) {
+  try {
+    const lock = JSON.parse(await fsp.readFile(lockPath(config), 'utf8'));
+    return validLock(lock) ? lock : null;
+  } catch { return null; }
+}
+
+async function existingServer(config) {
+  let lock;
+  try { lock = JSON.parse(await fsp.readFile(lockPath(config), 'utf8')); } catch { return { kind: 'corrupt' }; }
+  if (!validLock(lock)) return { kind: 'corrupt' };
+  try {
+    const identity = await whoami(lock.port);
+    if (identity.start_id === lock.start_id) return { kind: 'reuse', lock };
+    return { kind: 'foreign', lock };
+  } catch {
+    try { process.kill(lock.pid, 0); return { kind: 'foreign', lock }; }
+    catch (error) {
+      if (error.code === 'ESRCH') return { kind: 'stale', lock };
+      return { kind: 'foreign', lock };
+    }
+  }
+}
+
+function viewerUrl(lock, openPath) {
+  const base = `http://127.0.0.1:${lock.port}`;
+  return openPath ? `${base}/?path=${encodeURIComponent(openPath)}&token=${lock.token}` : base;
+}
+
+async function stopServer(config) {
+  let lock;
+  try { lock = JSON.parse(await fsp.readFile(lockPath(config), 'utf8')); }
+  catch (error) {
+    if (error.code === 'ENOENT') { console.log('No server lockfile.'); return; }
+    console.log('No usable server lockfile.'); return;
+  }
+  if (!validLock(lock)) { console.log('No usable server lockfile.'); return; }
+  try {
+    const identity = await whoami(lock.port);
+    if (identity.start_id !== lock.start_id) throw new Error('start id mismatch');
+    process.kill(lock.pid, 'SIGTERM');
+    await fsp.unlink(lockPath(config)).catch(() => {});
+    console.log('Server stopped.');
+  } catch {
+    console.error('Refused to stop a server not identified by this lockfile.');
+    process.exitCode = 1;
+  }
+}
+
+async function startServer(config) {
+  await fsp.mkdir(config.cacheRoot, { recursive: true, mode: 0o700 });
+  for (;;) {
+    let descriptor;
+    try {
+      descriptor = fs.openSync(lockPath(config), 'wx', 0o600);
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+      const known = await existingServer(config);
+      if (known.kind === 'reuse') return { reused: true, lock: known.lock };
+      if (known.kind === 'foreign') throw new Error('Refused to adopt a lockfile owned by another live process.');
+      await fsp.unlink(lockPath(config)).catch(() => {});
+      continue;
+    }
+    fs.closeSync(descriptor);
+    const lock = {
+      pid: process.pid, port: config.port,
+      token: crypto.randomBytes(32).toString('hex'),
+      start_id: crypto.randomBytes(16).toString('hex'),
+    };
+    fs.writeFileSync(lockPath(config), `${JSON.stringify(lock, null, 2)}\n`, { mode: 0o600 });
+    fs.chmodSync(lockPath(config), 0o600);
+    await pruneRegistered(config);
+    const state = { config, lock, port: config.port, server: null };
+    const server = http.createServer(async (request, response) => {
+      try {
+        const url = new URL(request.url, `http://127.0.0.1:${state.port}`);
+        if (request.method === 'GET' && url.pathname === '/whoami') {
+          sendJson(response, 200, { start_id: state.lock.start_id }); return;
+        }
+        if (request.method === 'GET' && url.pathname === '/') { await handleRoot(response, url, state); return; }
+        if (request.method === 'GET' && url.pathname === '/graph') { await handleGetGraph(response, url, state); return; }
+        if (request.method === 'PUT' && url.pathname === '/graph') { await handleGraphPut(request, response, url, state); return; }
+        if (request.method === 'PUT' && url.pathname === '/view') { await handleViewPut(request, response, url, state); return; }
+        fail(404, 'no-route', 'The requested route does not exist.');
+      } catch (error) { sendError(response, error); }
+    });
+    state.server = server;
+    server.on('error', async (error) => {
+      await fsp.unlink(lockPath(config)).catch(() => {});
+      console.error(error.message);
+      process.exitCode = 1;
+    });
+    const close = async () => {
+      await fsp.unlink(lockPath(config)).catch(() => {});
+      server.close();
+    };
+    process.once('SIGTERM', close);
+    process.once('SIGINT', close);
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(config.port, '127.0.0.1', resolve);
+    });
+    return { reused: false, lock };
+  }
+}
+
+async function main() {
+  const config = configFromArgs(process.argv.slice(2));
+  if (config.stop) { await stopServer(config); return; }
+  if (config.open) {
+    if (path.extname(config.open) !== '.json') throw new Error('--open must name a .json file.');
+    await fsp.mkdir(path.dirname(config.open), { recursive: true });
+    await registerPath(config, config.open, true);
+  }
+  const result = await startServer(config);
+  console.log(viewerUrl(result.lock, config.open));
+}
+
+main().catch((error) => {
+  console.error(error.message);
+  process.exitCode = 1;
+});

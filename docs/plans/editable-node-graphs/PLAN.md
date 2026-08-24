@@ -1336,6 +1336,7 @@ Lead decisions taken while writing it, none of which the Spec settles:
 | L3 | `GET /graph` returns `{hash, graph, children}`, where `children` says whether each named child file exists | §10 requires the affordance to be disabled for a missing child, and the page cannot stat a file |
 | L4 | The registered set records `opened: true` for a path given to `--open` | Un-registering an orphaned subtree must not evict a graph the person opened directly |
 | L5 | Layout pitch is 240 x 140 | Matches §3's own example coordinates |
+| L6 | A subtree walk that hits a child which does not parse **refuses** the retarget (`container-unreadable-child`) rather than treating it as verdict-free | Added at integration after reading the lane's diff. Silently allowing it orphans exactly the verdicts the walk exists to protect, and §10 already says a file that does not parse is reported, never repaired |
 
 ## Implementation Tasks
 
@@ -1345,9 +1346,9 @@ sequence behind the code they test.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | The server: routes, auth, discovery, the writable set, canonical serialization, preservation, containment, optimistic concurrency, the global lock, atomic writes, BFS layout | `viewer/server.js`, `viewer/package.json` | GPT Terra | | lead smoke script, then T5 | pending |
+| T1 | The server: routes, auth, discovery, the writable set, canonical serialization, preservation, containment, optimistic concurrency, the global lock, atomic writes, BFS layout | `viewer/server.js`, `viewer/package.json` | GPT Terra | `01a0361f-122e-7b81-9ad7-7d491da8d662` | lead smoke script green; 5 lead fixes applied on read | **done** |
 | T2 | The page: SVG rendering, selection and box-select, reachable edges, detail on the node, containment and breadcrumb, polling | `viewer/index.html` | Claude Sonnet | | T6 | pending |
-| T3 | The format document both harnesses read, and its two wrappers | `protocol/graphs.md`, `skills/graph/SKILL.md`, `codex/prompts/graph.md` | Claude Sonnet | | `./install.sh` twice | pending |
+| T3 | The format document both harnesses read, and its two wrappers | `protocol/graphs.md`, `skills/graph/SKILL.md`, `codex/prompts/graph.md` | Claude Sonnet | | `./install.sh` twice, idempotent; both harnesses register `/graph` | **done** — merged at `e4f039a`; lead added the `container-unreadable-child` row |
 | T4 | The three `planning.md` insertions, the `diagrams.md` section, the `plan-review.md` pointer, and the documentation sweep | `protocol/planning.md`, `protocol/diagrams.md`, `protocol/plan-review.md`, `AGENTS.md`, `protocol/AGENTS.md`, `skills/AGENTS.md`, `README.md`, `docs/plans/editable-node-graphs/MAP.md`, `install.sh`, `.gitignore` | Claude Sonnet | | `./install.sh` twice, `git status --porcelain` empty | pending |
 | T5 | The stdlib suite and its committed fixtures | `viewer/test/*.test.js`, `viewer/test/fixtures/` | GPT Terra | | `node --test 'viewer/test/*.test.js'` | pending |
 | T6 | The Chromium suite | `viewer/test/browser.spec.js` | Claude Sonnet | | `npm --prefix viewer run test:browser` | pending |

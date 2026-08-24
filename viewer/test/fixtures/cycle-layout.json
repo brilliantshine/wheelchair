@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "title": "Layout",
+  "source": "code-read",
+  "source_detail": null,
+  "nodes": [
+    {"id":"a","label":"A"},
+    {"id":"b","label":"B"},
+    {"id":"c","label":"C"},
+    {"id":"x","label":"X"},
+    {"id":"y","label":"Y"}
+  ],
+  "edges": [
+    {"id":"a->b","from":"a","to":"b","label":"to"},
+    {"id":"b->c","from":"b","to":"c","label":"to"},
+    {"id":"x->y","from":"x","to":"y","label":"to"},
+    {"id":"y->x","from":"y","to":"x","label":"to"}
+  ]
+}

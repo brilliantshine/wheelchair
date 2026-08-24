@@ -1,0 +1,11 @@
+{
+  "name": "agent-graph-viewer",
+  "private": true,
+  "version": "1.0.0",
+  "description": "The graph viewer for wheelchair. Runtime has no dependencies.",
+  "scripts": {
+    "test": "node --test 'test/*.test.js'",
+    "test:browser": "playwright test test/browser.spec.js --reporter=list"
+  },
+  "devDependencies": { "@playwright/test": "1.62.1" }
+}
