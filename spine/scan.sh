@@ -43,13 +43,61 @@ if ! valid_utf8 "$target"; then
 fi
 
 # Print a shell string as a JSON string.  Work byte-wise so every JSON control
-# character is escaped; ordinary UTF-8 bytes remain unchanged.
+# character is escaped.  A malformed UTF-8 byte becomes visible \xHH text: JSON
+# remains parseable, and no emitted field can silently carry invalid bytes.
 json_string() {
-  local value=$1 char code escaped='' i
-  LC_ALL=C
+  local value=$1 char code escaped='' i length next second third
+  local valid_sequence
+  local LC_ALL=C
+
+  # The serializer is the choke point for every string emitted in the report.
+  # Preserve valid multi-byte UTF-8 sequences, but render each malformed byte
+  # as a diagnostic \xHH placeholder rather than putting it in JSON verbatim.
+  length=${#value}
   for ((i = 0; i < ${#value}; i++)); do
     char=${value:i:1}
     printf -v code '%d' "'$char"
+
+    valid_sequence=0
+    if (( code >= 194 && code <= 223 && i + 1 < length )); then
+      printf -v next '%d' "'${value:i + 1:1}"
+      (( next >= 128 && next <= 191 )) && valid_sequence=2
+    elif (( code == 224 && i + 2 < length )); then
+      printf -v next '%d' "'${value:i + 1:1}"
+      printf -v second '%d' "'${value:i + 2:1}"
+      (( next >= 160 && next <= 191 && second >= 128 && second <= 191 )) && valid_sequence=3
+    elif (( (code >= 225 && code <= 236 || code >= 238 && code <= 239) && i + 2 < length )); then
+      printf -v next '%d' "'${value:i + 1:1}"
+      printf -v second '%d' "'${value:i + 2:1}"
+      (( next >= 128 && next <= 191 && second >= 128 && second <= 191 )) && valid_sequence=3
+    elif (( code == 237 && i + 2 < length )); then
+      printf -v next '%d' "'${value:i + 1:1}"
+      printf -v second '%d' "'${value:i + 2:1}"
+      (( next >= 128 && next <= 159 && second >= 128 && second <= 191 )) && valid_sequence=3
+    elif (( code == 240 && i + 3 < length )); then
+      printf -v next '%d' "'${value:i + 1:1}"
+      printf -v second '%d' "'${value:i + 2:1}"
+      printf -v third '%d' "'${value:i + 3:1}"
+      (( next >= 144 && next <= 191 && second >= 128 && second <= 191 && third >= 128 && third <= 191 )) && valid_sequence=4
+    elif (( (code >= 241 && code <= 243) && i + 3 < length )); then
+      printf -v next '%d' "'${value:i + 1:1}"
+      printf -v second '%d' "'${value:i + 2:1}"
+      printf -v third '%d' "'${value:i + 3:1}"
+      (( next >= 128 && next <= 191 && second >= 128 && second <= 191 && third >= 128 && third <= 191 )) && valid_sequence=4
+    elif (( code == 244 && i + 3 < length )); then
+      printf -v next '%d' "'${value:i + 1:1}"
+      printf -v second '%d' "'${value:i + 2:1}"
+      printf -v third '%d' "'${value:i + 3:1}"
+      (( next >= 128 && next <= 143 && second >= 128 && second <= 191 && third >= 128 && third <= 191 )) && valid_sequence=4
+    fi
+
+    if (( code >= 128 && ! valid_sequence )); then
+      escaped+='\\'
+      printf -v char 'x%02x' "$code"
+      escaped+=$char
+      continue
+    fi
+
     case $char in
       '"') escaped+='\"' ;;
       \\) escaped+='\\' ;;
@@ -67,6 +115,13 @@ json_string() {
         fi
         ;;
     esac
+
+    if (( valid_sequence )); then
+      for ((next = 1; next < valid_sequence; next++)); do
+        escaped+=${value:i + next:1}
+      done
+      i=$((i + valid_sequence - 1))
+    fi
   done
   printf '"%s"' "$escaped"
 }
@@ -80,28 +135,6 @@ json_array_strings() {
     first=0
   done
   printf ']'
-}
-
-# An invalid pathname cannot be a JSON string.  Keep it diagnostic rather than
-# repairing it: each non-ASCII byte is shown as a literal \xHH escape.
-json_path_string() {
-  local value=$1 char code escaped='' i
-  if valid_utf8 "$value"; then
-    json_string "$value"
-    return
-  fi
-  LC_ALL=C
-  for ((i = 0; i < ${#value}; i++)); do
-    char=${value:i:1}
-    printf -v code '%d' "'$char"
-    if (( code >= 128 )); then
-      printf -v char '\\x%02x' "$code"
-      escaped+=$char
-    else
-      escaped+=$char
-    fi
-  done
-  json_string "$escaped"
 }
 
 relative_to_target() {
@@ -290,7 +323,7 @@ emit_directory() {
 emit_excluded() {
   local dir=$1 reason=$2
   printf '{"path":'
-  json_path_string "$(relative_to_target "$dir")"
+  json_string "$(relative_to_target "$dir")"
   printf ',"reason":'
   json_string "$reason"
   printf '}'
