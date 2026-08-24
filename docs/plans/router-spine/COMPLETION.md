@@ -351,6 +351,42 @@ the reference and this one.
 
 ## Remediation rounds
 
+### Verification outcome — PASS, 2026-08-24
+
+Seven closure rounds. Both families verified the original implementation and disagreed; the
+GPT lane then reviewed every remediation. **Every gap it raised across six consecutive
+rounds was upheld** — none declined, none reviewer noise.
+
+| Round | Found | Nature |
+|---|---|---|
+| 1 | 5 gaps (GPT `FAIL`) + 8 observations (Claude `PASS`) | Real defects: symlink escape, invalid bytes in paths, a suite blind to outside writes |
+| 2 | 3 | Invalid bytes at a second site; a check blind to ignored paths; 15 assertions that could not fail |
+| 3 | 1 + 1 | Placeholder not injective; a NUL check reading through an external link |
+| 4 | 2 | The new flag's predicate drifted from the renderer; a surviving injectivity claim |
+| 5 | 2 | The flag inferred from rendered text — wrong in both directions |
+| 6 | 1 | Prose still describing the pre-narrowing scope |
+| 7 | none | **PASS** |
+
+The last three rounds were all one failure: a decision that narrowed a promise, with the
+promise still written down in places nobody grepped for. Three documents asserted things the
+same change had made false — `protocol/routers.md`, `spine/AGENTS.md`, and the plan's own §3.
+That is precisely the failure this feature exists to prevent, produced by the feature's own
+implementation, which is worth recording as the sharpest thing this run learned.
+
+The other through-line: **four separate defects came from building a second thing that
+guesses instead of asking the thing that knows.** A validity predicate beside a serializer, a
+substring sniff of the serializer's output, `iconv` beside the serializer's own byte checks,
+and originally a grep of the script's source text standing in for a behavioural assertion.
+Each was caught, none by the suite that shipped with it.
+
+Final state: 80 assertions, all four gates, both reference calibrations reproducing, JSON key
+set unchanged from what `protocol/spine.md` documents.
+
+**Documentation sweep before PR:** the four routers were re-checked against the tree rather
+than assumed — the root's script counts are accurate, `protocol/AGENTS.md` names every
+protocol file, `skills/AGENTS.md` names all six commands, `spine/AGENTS.md` names both files,
+and no document outside this report states a stale assertion count.
+
 ### Remediation 4 — 2026-08-24, and the end of the loop
 
 The third closure review found two defects. One was fixed; the other stopped the loop and
