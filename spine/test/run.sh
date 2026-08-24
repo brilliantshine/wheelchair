@@ -1,17 +1,23 @@
 #!/usr/bin/env bash
-# Fixture output stays in shell variables.  JSON is validated with python3's
-# json.tool when available; the small fallback checks the outer JSON structure.
+# Fixture output stays in shell variables.  python3 is required because the
+# assertions exercise JSON values, not merely its outer punctuation.
 set -euo pipefail
 
-scan="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scan.sh"
+if ! command -v python3 >/dev/null 2>&1; then
+  printf 'spine/test/run.sh: python3 is required for JSON assertions\n' >&2
+  exit 1
+fi
+
+scan=${SPINE_SCAN:-"$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scan.sh"}
+repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 fixture=$(mktemp -d)
-trap 'rm -rf "$fixture"' EXIT
+sandbox_home=$(mktemp -d)
+sandbox_tmp=$(mktemp -d)
+trap 'rm -rf "$fixture" "$sandbox_home" "$sandbox_tmp"' EXIT
 
 passes=0
 failures=0
-have_python=0
-command -v python3 >/dev/null 2>&1 && have_python=1
-declare -A report status before_hash after_hash
+declare -A report stderr status before_hash after_hash
 
 pass() { printf 'PASS %s\n' "$1"; passes=$((passes + 1)); }
 fail() { printf 'FAIL %s\n' "$1"; failures=$((failures + 1)); }
@@ -48,12 +54,15 @@ make_repo() {
 }
 
 run_case() {
-  local name=$1 root=$2 output code
+  local name=$1 root=$2 output code stderr_path
   before_hash[$name]=$(tree_hash "$root")
+  stderr_path=$sandbox_tmp/$name.stderr
   set +e
-  output=$("$scan" "$root")
+  output=$(HOME="$sandbox_home" TMPDIR="$sandbox_tmp" "$scan" "$root" 2>"$stderr_path")
   code=$?
   set -e
+  stderr[$name]=$(<"$stderr_path")
+  rm -f "$stderr_path"
   after_hash[$name]=$(tree_hash "$root")
   report[$name]=$output
   status[$name]=$code
@@ -66,32 +75,19 @@ run_case() {
 
 json_assert() {
   local description=$1 name=$2 program=$3
-  if (( have_python )); then
-    if printf '%s' "${report[$name]}" | python3 -c "$program"; then
-      pass "$description"
-    else
-      fail "$description"
-    fi
+  if printf '%s' "${report[$name]}" | python3 -c "$program"; then
+    pass "$description"
   else
-    # python3 is absent: this is intentionally only a structural JSON check.
-    if [[ ${report[$name]} == \{*\} && ${report[$name]} == *'"target"'* && ${report[$name]} == *'"directories"'* ]]; then
-      pass "$description (structural fallback)"
-    else
-      fail "$description (structural fallback)"
-    fi
+    fail "$description"
   fi
 }
 
 valid_json() {
   local name=$1
-  if (( have_python )); then
-    if printf '%s' "${report[$name]}" | python3 -m json.tool >/dev/null; then
-      pass "$name stdout is valid JSON"
-    else
-      fail "$name stdout is valid JSON"
-    fi
+  if printf '%s' "${report[$name]}" | python3 -m json.tool >/dev/null; then
+    pass "$name stdout is valid JSON"
   else
-    assert "$name stdout has JSON outer structure" bash -c '[[ $1 == \{*\} ]]' _ "${report[$name]}"
+    fail "$name stdout is valid JSON"
   fi
 }
 
@@ -168,7 +164,47 @@ printf '# Hidden\n' > "$ignored/data/AGENTS.md"
 escaping=$(make_repo escaping)
 printf '# trailing backslash \\\n## quote "q" and back\\slash\n### tab\there\n' > "$escaping/AGENTS.md"
 
+# 14. A directory symlink is an excluded alias, whether it points outside the
+# target or back to an ancestor; neither target may be walked.
+directory_link=$(make_repo directory-link)
+outside_directory=$fixture/outside-directory
+mkdir -p "$outside_directory/subdir" "$directory_link/d1"
+printf '# Outside\n' > "$outside_directory/subdir/AGENTS.md"
+ln -s "$outside_directory" "$directory_link/vendor-link"
+ln -s .. "$directory_link/d1/up"
+
+# 15. A candidate link that resolves to a real file outside its target root.
+outside_candidate=$(make_repo outside-candidate)
+outside_router=$fixture/outside-router.md
+printf '# External router\n' > "$outside_router"
+mkdir -p "$outside_candidate/docs"
+ln -s "$outside_router" "$outside_candidate/docs/CLAUDE.md"
+
+# 16. Invalid UTF-8 is excluded rather than emitted as invalid JSON.  A target
+# with the same defect refuses before it can produce a document.
+invalid_utf8=$(make_repo invalid-utf8)
+mkdir -p "$invalid_utf8"/$'bad\xff dir'
+invalid_target=$fixture/$'invalid-target-\xff'
+mkdir -p "$invalid_target"
+
+# 17. A pathname ending in a newline is a normal git target and must round-trip.
+newline_target=$fixture/$'newline target\n'
+mkdir -p "$newline_target"
+git -C "$newline_target" init -q
+printf '__pycache__/\nnode_modules/\ndata/\n' > "$newline_target/.gitignore"
+
+# 18. These controls must be JSON escapes, with no scanner warning on stderr.
+controls=$(make_repo controls)
+printf '# bell \a\n## vertical \v\n### delete \177\n' > "$controls/AGENTS.md"
+
 umbrella_before=$(tree_hash "$fixture")
+# Guarded: the suite must stay runnable from a copy outside any git repo, which is
+# how a mutated scanner gets tested. An unguarded `git` here aborts the whole run with
+# a bare `fatal: not a git repository` under `set -e`.
+repo_is_git=0
+if git -C "$repo" rev-parse --git-dir >/dev/null 2>&1; then repo_is_git=1; fi
+repo_status_before=""
+(( repo_is_git )) && repo_status_before=$(git -C "$repo" status --porcelain)
 
 run_case workspace "$workspace"
 run_case differing "$differing"
@@ -182,6 +218,15 @@ run_case broken "$broken"
 run_case grouping "$grouping"
 run_case ignored "$ignored"
 run_case escaping "$escaping"
+run_case directory-link "$directory_link"
+run_case outside-candidate "$outside_candidate"
+run_case invalid-utf8 "$invalid_utf8"
+run_case invalid-target "$invalid_target"
+run_case newline-target "$newline_target"
+run_case controls "$controls"
+
+case_names=(workspace differing identical pointer unmanaged nested claude-link agents-link broken grouping ignored escaping directory-link outside-candidate invalid-utf8 invalid-target newline-target controls)
+json_case_names=(workspace differing identical pointer unmanaged nested claude-link agents-link broken grouping ignored escaping directory-link outside-candidate invalid-utf8 newline-target controls)
 
 assert 'workspace refusal exits non-zero' bash -c '(( $1 != 0 ))' _ "${status[workspace]}"
 json_assert 'workspace names child repositories, hubs, and hub lanes' workspace '
@@ -210,13 +255,15 @@ json_assert 'pointer case reports both real files without aborting' pointer '
 import json, sys
 d=json.load(sys.stdin); assert d["ok"] and len(d["directories"][0]["candidates"])==2
 '
-json_assert 'all write targets refer to real files, never symlink paths' claude-link '
+for name in "${json_case_names[@]}"; do
+  json_assert "$name write targets refer to real files, never symlink paths" "$name" '
 import json, os, sys
 d=json.load(sys.stdin)
 for directory in d["directories"]:
     wt=directory["writeTarget"]
     if wt is not None: assert not os.path.islink(os.path.join(d["target"], wt))
 '
+done
 json_assert 'nested repository is excluded and has no candidate report' nested '
 import json, sys
 d=json.load(sys.stdin); assert {x["path"] for x in d["excluded"] if x["reason"]=="nested repository"}=={"vendor/upstream"}
@@ -267,8 +314,42 @@ import json, sys
 r=next(x for x in json.load(sys.stdin)["directories"] if x["path"]=="group only")
 assert r["candidates"]==[] and r["realCount"]==0 and r["writeTarget"] is None
 '
+json_assert 'directory symlinks outside and to an ancestor are excluded without a descent' directory-link '
+import json, sys
+d=json.load(sys.stdin)
+got={(x["path"], x["reason"]) for x in d["excluded"]}
+assert {("vendor-link", "directory symlink"), ("d1/up", "directory symlink")} <= got
+paths={x["path"] for x in d["directories"]}
+assert not any(path.startswith("vendor-link/") or path.startswith("d1/up/") for path in paths)
+'
+json_assert 'outside-target candidate is reported, skipped, and names no write target' outside-candidate '
+import json, sys
+r=next(x for x in json.load(sys.stdin)["directories"] if x["path"]=="docs")
+c=r["candidates"][0]
+assert c["name"]=="CLAUDE.md" and c["resolvesOutsideTarget"] and r["skipped"]
+assert r["writeTarget"] is None and c["size"] is None and c["headings"]==[]
+'
+json_assert 'invalid UTF-8 directory is excluded with a safe diagnostic path' invalid-utf8 '
+import json, sys
+d=json.load(sys.stdin)
+assert any(x["path"]==r"bad\xff dir" and x["reason"]=="path is not valid UTF-8" for x in d["excluded"])
+assert all(x["path"] != "badÿ dir" for x in d["directories"])
+'
+assert 'invalid UTF-8 target refuses with exit 2 and a clear stderr message' \
+  bash -c '[[ $1 == 2 && $2 == *"target path is not valid UTF-8"* ]]' _ "${status[invalid-target]}" "${stderr[invalid-target]}"
+assert 'newline target scan exits zero' bash -c '(( $1 == 0 ))' _ "${status[newline-target]}"
+json_assert 'newline target name is preserved exactly in JSON' newline-target '
+import json, sys
+assert json.load(sys.stdin)["target"].endswith("\n")
+'
+assert 'control-character headings produce no scanner stderr' bash -c '[[ -z $1 ]]' _ "${stderr[controls]}"
+json_assert 'control-character headings round-trip through JSON escapes' controls '
+import json, sys
+h=json.load(sys.stdin)["directories"][0]["candidates"][0]["headings"]
+assert h == ["# bell " + chr(7), "## vertical " + chr(11), "### delete " + chr(127)]
+'
 
-for name in workspace differing identical pointer unmanaged nested claude-link agents-link broken grouping ignored escaping; do
+for name in "${json_case_names[@]}"; do
   valid_json "$name"
 done
 
@@ -278,12 +359,31 @@ h=json.load(sys.stdin)["directories"][0]["candidates"][0]["headings"]
 assert h == ["# trailing backslash \\", "## quote \"q\" and back\\slash", "### tab\there"], h
 '
 
-# Per-case hashes cover each scanned root.  This covers the whole fixture
-# umbrella across every scan, so a write landing beside a case root -- or at the
-# top of the fixture tree -- is caught too.
+no_raw_size_newlines() {
+  local name
+  for name in "$@"; do
+    [[ ${report[$name]} != *$'\n,'* ]] || return 1
+  done
+}
+assert 'sizes do not leave stat newlines inside JSON' no_raw_size_newlines "${case_names[@]}"
+
+# Per-case and umbrella hashes cover the fixture tree.  The repository snapshot
+# and empty HOME/TMPDIR sandboxes add the likely outside targets; together these
+# are not a proof that no write can occur anywhere in general.
 umbrella_after=$(tree_hash "$fixture")
 assert 'nothing anywhere in the fixture tree changed across every scan' \
   bash -c '[[ $1 == "$2" ]]' _ "$umbrella_before" "$umbrella_after"
+assert 'sandbox HOME stayed empty across every scan' \
+  bash -c '[[ -z $(find "$1" -mindepth 1 -print -quit) ]]' _ "$sandbox_home"
+assert 'sandbox TMPDIR stayed empty across every scan' \
+  bash -c '[[ -z $(find "$1" -mindepth 1 -print -quit) ]]' _ "$sandbox_tmp"
+if (( repo_is_git )); then
+  repo_status_after=$(git -C "$repo" status --porcelain)
+  assert 'repository git status is byte-identical across the whole suite' \
+    bash -c '[[ $1 == "$2" ]]' _ "$repo_status_before" "$repo_status_after"
+else
+  printf 'SKIP repository git status check — %s is not a git repository\n' "$repo"
+fi
 
 printf 'RESULT %d passed, %d failed\n' "$passes" "$failures"
 (( failures == 0 ))
