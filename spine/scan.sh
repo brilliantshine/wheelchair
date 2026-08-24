@@ -43,8 +43,21 @@ if ! valid_utf8 "$target"; then
 fi
 
 # Print a shell string as a JSON string.  Work byte-wise so every JSON control
-# character is escaped.  A malformed UTF-8 byte becomes visible \xHH text: JSON
-# remains parseable, and no emitted field can silently carry invalid bytes.
+# character is escaped.  A malformed UTF-8 byte becomes a visible U+FFFD marker
+# followed by its hex, so JSON stays parseable and two different inputs never
+# collapse to the same output.
+#
+# One byte never reaches here: bash cannot hold NUL in a variable, so it is gone
+# before any string is passed in.  A candidate file containing NUL is detected
+# separately, against the file, and reported in that directory's notes.
+# bash strips NUL from any variable, so a NUL in a router's content is gone
+# before json_string sees it and two different files can render identically.
+# Detect it against the file and report it rather than pretend it was not there.
+file_has_nul() {
+  [[ -f $1 ]] || return 1
+  ! cmp -s "$1" <(tr -d '\000' < "$1")
+}
+
 json_string() {
   local value=$1 char code escaped='' i length next second third
   local valid_sequence
@@ -92,8 +105,13 @@ json_string() {
     fi
 
     if (( code >= 128 && ! valid_sequence )); then
-      escaped+='\\'
-      printf -v char 'x%02x' "$code"
+      # U+FFFD, then the byte in hex.  The replacement character is used because
+      # no literal input can produce it through JSON escaping, so a mangled byte
+      # never renders the same as text that merely spells one out: a raw 0xff
+      # gives "\ufffdff" while the four characters \xff give "\\xff".  Keeping the
+      # hex also separates one bad byte from another.
+      escaped+='\ufffd'
+      printf -v char '%02x' "$code"
       escaped+=$char
       continue
     fi
@@ -272,6 +290,11 @@ emit_directory() {
       notes+=("two real routing files differ — the prompt must propose which is the router")
     fi
   fi
+  for name in "${names[@]}"; do
+    if file_has_nul "$dir/$name"; then
+      notes+=("$name contains NUL bytes; its heading list is incomplete")
+    fi
+  done
   [[ -n $skip ]] && notes+=("$skip")
 
   printf '{"path":'

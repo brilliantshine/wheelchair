@@ -351,6 +351,50 @@ the reference and this one.
 
 ## Remediation rounds
 
+### Remediation 3 — 2026-08-24
+
+The second closure review confirmed the ignored-path write check, the dynamic symlink
+assertions, the router wording, schema stability, both calibrations and the gate-2 negative
+control all genuinely closed, then returned `FAIL` on one defect: the malformed-byte
+placeholder was **not injective**, and NUL never reached the claimed chokepoint.
+
+Reproduced both:
+
+```
+raw byte 0xff in a heading      -> "# bad \xff heading"
+the four characters \xff        -> "# bad \xff heading"      <- identical
+a file containing NUL           -> "# ab"
+the same file without NUL       -> "# ab"                    <- identical
+```
+
+Two different files rendered to the same parsed value, so the heading list could not be
+relied on to tell one file from another — in a report whose purpose is telling two routing
+files apart.
+
+**Fixed by the lead directly rather than a fourth lane dispatch.** The change is about
+twenty lines with a standard answer, and writing a brief precise enough to delegate it would
+have cost more than the edit.
+
+- A malformed byte now renders as **U+FFFD followed by its hex** (`# bad \ufffdff heading`).
+  No literal input can produce U+FFFD through JSON escaping, so a mangled byte never renders
+  the same as text that merely spells one out, and two different bad bytes stay distinct.
+- **NUL is detected against the file**, not through a variable, because bash drops NUL from
+  any variable before a string could reach `json_string`. A candidate carrying NUL gets a
+  note saying its heading list is incomplete. The comment above `json_string` now names this
+  as the one byte that does not reach it, instead of claiming every byte does.
+
+Two assertions were added and both proven to fail against the exact code that shipped the
+defect: reverting the placeholder fails the injectivity assertion (3 failures), removing the
+NUL detection fails the NUL assertion. Two existing assertions were pinned to the old
+rendering and were updated deliberately — the suite caught the behaviour change, which is
+what it is for.
+
+**Assertions 74 → 76.** Calibrations and the JSON key set unchanged.
+
+The honest limit, stated because the previous version of this section overstated it: the
+serializer is the chokepoint for every byte bash can hold, which is every byte except NUL.
+NUL is handled by a separate check against the file. There is no third path.
+
 ### Remediation 2 — 2026-08-24
 
 The closure review (the round-1 GPT verifier's own resumed session) confirmed all five of
@@ -362,7 +406,7 @@ adjudication. All three upheld and reproduced by the lead.
 
 | Gap | What was wrong | Fix | Lead's verification |
 |---|---|---|---|
-| Invalid UTF-8 in a **heading** still broke the document at exit 0 | Round 1 guarded pathnames only, because its brief asked for pathnames only. Third appearance of this class — backslashes in implementation, paths in round 1, headings now | Validation moved **inside `json_string`**, the one function every emitted string passes through. Malformed bytes render as visible `\xHH` placeholders | `printf '# bad \xff heading\n'` now parses, heading reads `# bad \xff heading`; an invalid path still excluded. Confirmed the guard is in `json_string`, not at either call site |
+| Invalid UTF-8 in a **heading** still broke the document at exit 0 | Round 1 guarded pathnames only, because its brief asked for pathnames only. Third appearance of this class — backslashes in implementation, paths in round 1, headings now | Validation moved **inside `json_string`**, the one function every emitted string passes through. Malformed bytes render as a visible U+FFFD marker plus their hex | `printf '# bad \xff heading\n'` now parses, heading reads `# bad \xff heading`; an invalid path still excluded. Confirmed the guard is in `json_string`, not at either call site |
 | The repository no-write check was blind to ignored paths | `git status --porcelain` does not report ignored files, and an ignored directory is exactly where a cache or generated graph lands | Snapshot uses `--porcelain --ignored` | Mutated the scanner to write `graphify-out/repo-marker`: the suite now returns `RESULT 73 passed, 1 failed`, exit 1. Before, it passed |
 | 15 of 17 write-target link assertions could not fail | Round 1 broadened the check to every case report on the lead's instruction; only four fixtures hold a routing-file symlink, so the rest passed regardless | The qualifying reports are discovered dynamically, the check runs against those four, and an **empty set fails** | Read the guard at `spine/test/run.sh:273-277`; it is a `fail`, and the set is computed from the reports rather than hardcoded, so it self-maintains |
 

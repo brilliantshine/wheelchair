@@ -201,6 +201,15 @@ printf '# bell \a\n## vertical \v\n### delete \177\n' > "$controls/AGENTS.md"
 # serializer rather than breaking stdout after a successful scan.
 invalid_heading=$(make_repo invalid-heading)
 printf '# bad \xff heading\n' > "$invalid_heading/AGENTS.md"
+# The collision cases: a raw malformed byte, the four characters that spell one
+# out, a *different* malformed byte, and a file carrying NUL — which bash drops
+# before any string reaches the serializer.
+mkdir -p "$invalid_heading/rawbyte" "$invalid_heading/literal" "$invalid_heading/otherbyte" "$invalid_heading/nul"
+printf '# m \xff x\n' > "$invalid_heading/rawbyte/AGENTS.md"
+printf '# m \\xff x\n' > "$invalid_heading/literal/AGENTS.md"
+printf '# m \xfe x\n' > "$invalid_heading/otherbyte/AGENTS.md"
+printf '# a' > "$invalid_heading/nul/AGENTS.md"
+printf '\000b\n' >> "$invalid_heading/nul/AGENTS.md"
 
 umbrella_before=$(tree_hash "$fixture")
 # Guarded: the suite must stay runnable from a copy outside any git repo, which is
@@ -352,7 +361,7 @@ assert r["writeTarget"] is None and c["size"] is None and c["headings"]==[]
 json_assert 'invalid UTF-8 directory is excluded with a safe diagnostic path' invalid-utf8 '
 import json, sys
 d=json.load(sys.stdin)
-assert any(x["path"]==r"bad\xff dir" and x["reason"]=="path is not valid UTF-8" for x in d["excluded"])
+assert any(x["path"]=="bad\ufffdff dir" and x["reason"]=="path is not valid UTF-8" for x in d["excluded"])
 assert all(x["path"] != "badÿ dir" for x in d["directories"])
 '
 assert 'invalid UTF-8 target refuses with exit 2 and a clear stderr message' \
@@ -371,7 +380,24 @@ assert h == ["# bell " + chr(7), "## vertical " + chr(11), "### delete " + chr(1
 json_assert 'invalid UTF-8 heading is visibly marked and stdout stays usable' invalid-heading '
 import json, sys
 h=json.load(sys.stdin)["directories"][0]["candidates"][0]["headings"]
-assert h == [r"# bad \xff heading"]
+# U+FFFD then the hex. A raw 0xff must NOT render the same as the literal text \xff.
+assert h == ["# bad \ufffdff heading"], h
+'
+
+json_assert 'a mangled byte never renders the same as text spelling one out' invalid-heading '
+import json, sys
+d=json.load(sys.stdin)
+h={r["path"]: r["candidates"][0]["headings"][0] for r in d["directories"] if r["candidates"]}
+raw, lit, other = h["rawbyte"], h["literal"], h["otherbyte"]
+assert raw != lit, ("collision: raw byte and literal text render alike", raw, lit)
+assert raw != other, ("two different bad bytes collapsed together", raw, other)
+assert lit == r"# m \xff x", lit
+'
+json_assert 'a candidate carrying NUL is reported rather than silently shortened' invalid-heading '
+import json, sys
+d=json.load(sys.stdin)
+n=[r for r in d["directories"] if r["path"]=="nul"][0]
+assert any("NUL" in x for x in n["notes"]), n["notes"]
 '
 
 for name in "${json_case_names[@]}"; do
