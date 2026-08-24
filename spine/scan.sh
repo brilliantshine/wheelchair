@@ -44,18 +44,28 @@ fi
 
 # Print a shell string as a JSON string.  Work byte-wise so every JSON control
 # character is escaped.  A malformed UTF-8 byte becomes a visible U+FFFD marker
-# followed by its hex, so JSON stays parseable and two different inputs never
-# collapse to the same output.
+# followed by its hex, which keeps JSON parseable and keeps one bad byte distinct
+# from another.  It is deliberately **not** injective against all input: U+FFFD is
+# ordinary valid UTF-8, so a file containing it literally renders the same way.
+# That is why a file carrying malformed bytes is flagged in its directory's notes
+# rather than the rendering being trusted to tell two such files apart.
 #
 # One byte never reaches here: bash cannot hold NUL in a variable, so it is gone
 # before any string is passed in.  A candidate file containing NUL is detected
 # separately, against the file, and reported in that directory's notes.
-# bash strips NUL from any variable, so a NUL in a router's content is gone
-# before json_string sees it and two different files can render identically.
-# Detect it against the file and report it rather than pretend it was not there.
+# A heading list is a human-readable summary, not a byte-faithful channel. Two
+# files whose content carries bytes that cannot be represented can render alike,
+# so the report says so rather than implying the headings distinguish them. Both
+# checks run against the file: bash strips NUL from any variable, and a malformed
+# UTF-8 byte is rendered as a marker that ordinary valid input can also produce.
 file_has_nul() {
   [[ -f $1 ]] || return 1
   ! cmp -s "$1" <(tr -d '\000' < "$1")
+}
+
+file_has_malformed_utf8() {
+  [[ -f $1 ]] || return 1
+  ! iconv -f UTF-8 -t UTF-8 < "$1" >/dev/null 2>&1
 }
 
 json_string() {
@@ -297,6 +307,9 @@ emit_directory() {
     [[ ${broken_flags[n]} == true || ${outside_flags[n]} == true ]] && continue
     if file_has_nul "$dir/${names[n]}"; then
       notes+=("${names[n]} contains NUL bytes; its heading list is incomplete")
+    fi
+    if file_has_malformed_utf8 "$dir/${names[n]}"; then
+      notes+=("${names[n]} contains malformed UTF-8; its heading list is unreliable and may not distinguish it from another such file")
     fi
   done
   [[ -n $skip ]] && notes+=("$skip")

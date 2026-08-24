@@ -29,6 +29,7 @@ None.
 
 | # | Decision | Rationale | Source |
 |---|----------|-----------|--------|
+| 53 | **A heading list is a human-readable summary, not a byte-faithful channel.** The scan does not promise that two files render distinguishably. A candidate whose content carries bytes that cannot be represented — NUL, or malformed UTF-8 — is flagged in its directory's notes and its heading list declared unreliable | Three remediation rounds went into chasing a fidelity guarantee the Spec never asked for. Two encodings were claimed collision-free and both were wrong: `\xHH` collided with text spelling it out, and U+FFFD collides with itself because it is ordinary valid UTF-8. The heading list exists to tell a real 8292-byte router from a 199-byte pointer beside it — both ordinary markdown. A corrupted router is a file to flag, not one to transcribe faithfully, and the flag is machinery the NUL case already needed | user (verification round 3) |
 | 1 | Routers are the spine; graphify is an opt-in supplement and never the source for "where does X live" or "what owns Y" | Already settled and written down in almanac's root `AGENTS.md`: `graphify-out/` is gitignored so it is per-clone and cannot carry a contract, and a point-in-time snapshot misroutes silently once stale | user |
 | 2 | Router documents follow almanac's shape — title, owned-by, one organizing idea, flow, file/role table, boundaries, test pointers | It is the reference implementation, proven across 20 directories | user |
 | 3 | No line numbers and no exhaustive file lists | almanac's own maintenance section names this as the staleness failure it designed out | defaulted |
@@ -175,7 +176,14 @@ foreign repo as its working directory, the same way every skill hardcodes the ab
 
 **Its job.** For each directory, resolve every candidate routing document with `realpath` and report:
 which candidates exist, which are symlinks, where each resolves, the size of each real file, and its
-**heading list**. Where a directory holds two real files, also report a unified-diff line count between
+**heading list**.
+
+The heading list is a **human-readable summary, not a byte-faithful channel** (decision 53). It is
+there so the prompt can tell a real router from a pointer beside it — a superset against three lines
+of prose — and both of those are ordinary markdown. The scan does not promise that any two files
+render distinguishably. A candidate whose content carries bytes that cannot be represented, meaning
+NUL or malformed UTF-8, is flagged in its directory's notes and its heading list declared unreliable;
+the reader is told to go and look rather than handed a rendering that quietly lost the difference. Where a directory holds two real files, also report a unified-diff line count between
 them. A link path is **never** emitted as a write target.
 
 Headings and a diff count rather than opening lines, because opening lines are exactly what fails on the

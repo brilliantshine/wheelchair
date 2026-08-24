@@ -351,6 +351,44 @@ the reference and this one.
 
 ## Remediation rounds
 
+### Remediation 4 — 2026-08-24, and the end of the loop
+
+The third closure review found two defects. One was fixed; the other stopped the loop and
+went to the user, which is what Stage 4 prescribes when a class survives repeated rounds.
+
+**Fixed: the NUL check read through a link pointing outside the target.** It opened the
+candidate path rather than checking where it resolved, so an external file's contents were
+disclosed in the report — violating the no-read rule stated two lines above it in the same
+function. Guarded to skip broken and outside-resolving candidates, with an assertion proven
+to fail against the unguarded version.
+
+**Stopped: byte-level injectivity.** The claim that U+FFFD cannot be produced by literal
+input was false — it is ordinary valid UTF-8. That was the second representation claimed
+collision-free and found not to be; `\xHH` was the first. Rather than attempt a third, the
+question went to the user, who settled it as **decision 53**: a heading list is a
+human-readable summary, not a byte-faithful channel.
+
+What that means concretely, and it is less code rather than more: the scan makes no promise
+that two files render distinguishably. A candidate whose content carries bytes that cannot be
+represented — NUL, or malformed UTF-8 — is flagged in its directory's notes and its heading
+list declared unreliable. The reader is told to go and look. This is the machinery the NUL
+case already required, generalised, and it dissolves the class instead of patching it: there
+is no longer a fidelity guarantee to violate.
+
+The heading list exists to tell a real 8292-byte router from a 199-byte pointer beside it.
+Both are ordinary markdown, and that judgement is unaffected. A corrupted router is a file to
+flag, not one to transcribe faithfully.
+
+The assertion added for this asserts the accepted collision explicitly — a malformed file and
+a valid lookalike **do** render identically — and then asserts that only the malformed one is
+flagged. It fails if the flag is removed.
+
+**Assertions 76 → 78.** Calibrations, gates and the JSON key set unchanged.
+
+Recorded in three places so the boundary survives this run: decision 53 and §3 in `PLAN.md`,
+the procedure and a new edge-case row in `protocol/spine.md`, and a boundary in
+`spine/AGENTS.md` telling the next person not to reintroduce a collision-free encoding.
+
 ### Remediation 3 — 2026-08-24
 
 The second closure review confirmed the ignored-path write check, the dynamic symlink
@@ -379,8 +417,8 @@ have cost more than the edit.
   This removed the collision with text spelling out `\xff`, and keeps two different bad
   bytes distinct. **It did not make the rendering injective**, and the claim originally
   written here that "no literal input can produce U+FFFD" is false: U+FFFD is ordinary valid
-  UTF-8, so a file containing it literally renders identically to a malformed byte. See the
-  open plan question below.
+  UTF-8, so a file containing it literally renders identically to a malformed byte. Settled
+  by decision 53 rather than a fourth encoding — see Remediation 4.
 - **NUL is detected against the file**, not through a variable, because bash drops NUL from
   any variable before a string could reach `json_string`. A candidate carrying NUL gets a
   note saying its heading list is incomplete. The comment above `json_string` now names this

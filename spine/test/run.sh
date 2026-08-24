@@ -211,6 +211,11 @@ mkdir -p "$invalid_heading/rawbyte" "$invalid_heading/literal" "$invalid_heading
 printf '# m \xff x\n' > "$invalid_heading/rawbyte/AGENTS.md"
 printf '# m \\xff x\n' > "$invalid_heading/literal/AGENTS.md"
 printf '# m \xfe x\n' > "$invalid_heading/otherbyte/AGENTS.md"
+# Literal U+FFFD: valid UTF-8, so it renders exactly as a malformed byte does.
+# The collision is accepted; what must hold is that only the malformed file is
+# flagged, so a reader is told which heading list not to trust.
+mkdir -p "$invalid_heading/literalfffd"
+printf '# m \xef\xbf\xbdff x\n' > "$invalid_heading/literalfffd/AGENTS.md"
 printf '# a' > "$invalid_heading/nul/AGENTS.md"
 printf '\000b\n' >> "$invalid_heading/nul/AGENTS.md"
 
@@ -387,6 +392,18 @@ h=json.load(sys.stdin)["directories"][0]["candidates"][0]["headings"]
 assert h == ["# bad \ufffdff heading"], h
 '
 
+json_assert 'a file with malformed bytes is flagged, and a valid lookalike is not' invalid-heading '
+import json, sys
+d=json.load(sys.stdin)
+m={r["path"]: r for r in d["directories"]}
+raw, look = m["rawbyte"], m["literalfffd"]
+# The two render identically -- that is accepted, not a defect.
+assert raw["candidates"][0]["headings"] == look["candidates"][0]["headings"]
+# What must hold: the malformed one is flagged and the valid one is not, so the
+# reader is told which heading list cannot be relied on.
+assert any("malformed UTF-8" in n for n in raw["notes"]), raw["notes"]
+assert not any("malformed UTF-8" in n for n in look["notes"]), look["notes"]
+'
 json_assert 'a mangled byte never renders the same as text spelling one out' invalid-heading '
 import json, sys
 d=json.load(sys.stdin)
