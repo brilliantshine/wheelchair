@@ -1,6 +1,6 @@
 ---
 slug: editable-node-graphs
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-08-22
 ---
 
@@ -33,10 +33,15 @@ None.
 
 Append-only. Entries are appended in numeric order; a citation is found by its number.
 
-Superseding entries: 70 supersedes 20, 21, 35, 44, 65. 71 supersedes 59 in part. 74 supersedes 50.
-75 supersedes 34 in part. 76 amends 49. 77 supersedes 60. 78 reconciles 36 and 47. 42 supersedes 27
-and part of 33. 40 supersedes 23 and 24 in part. 31 reverses 6. 37 supersedes 12 in part. 69 cuts the
-authoring half of 62.
+Superseding entries: **114 supersedes 48, 72, 93, 94, 99, 101, 105, 107, 108, 112 and the transport half of
+76 and 90. 116 supersedes 109. 118 supersedes 112. 119 restores the substance of 94 as a single lock. 120
+and 121 supersede 115 in part. 122 amends 110. 123 supersedes the write-time half of 118.**
+**92 supersedes 80.** 105 supersedes 101 in part; 106 and 107 extend 102; 109
+supersedes the enforcement half of 84. 70 supersedes 20, 21, 35, 44, 65. 71 supersedes 59 in part. 74 supersedes 50.
+75 supersedes 34 in part. 76 amends 49. 77 supersedes 60. **82 supersedes 78** (which had itself
+reconciled 36 and 47). **84 supersedes 80 in part.** **85 supersedes 13.** **92 supersedes 34 and 84 in
+part.** 42 supersedes 27 and part of 33. 40 supersedes 23 and 24 in part. 31 reverses 6. 37 supersedes 12
+in part. 69 cuts the authoring half of 62.
 
 Decisions 2, 3, 4, 10, 11 and 29 concern router documents and moved to
 `docs/plans/router-spine/` under decision 30; they are kept here as the record of how this plan
@@ -93,6 +98,41 @@ reached that split, not as work it performs.
 | 88 | An agent's `PUT` **omits `x` and `y` entirely**. The every-key rule governs files on disk, not wire payloads; the server fills positions before writing | §3 required every key present with integer positions while §6 said an agent never sends them. A strict validator would reject what a compliant producer sends | review-round-6 |
 | 89 | `protocol/graphs.md` carries a defaulting table for canonicalization: node `kind` `note`, `origin` `proposed`, `exclusive` false, `ref`/`note`/`graph` null; edge `kind` `sequence`, `value`/`note` null, `inferred` false. `label` has no default and its absence is a refusal | §13 asserts an exact canonical match from input with keys omitted, which is unpinnable without this. Positions round half-up via `Math.round` | review-round-6 |
 | 90 | `/events` is per-graph: `GET /events?path=<path>`, one stream per open graph | The server polled "each open file" and pushed to "the page" with no per-client scope — the same reason every patch names its graph | review-round-6 |
+| 112 | A `PUT` that adds or retargets a container takes the queue for its subtree **and** re-validates the whole reachable graph for cycles after applying, rolling back if one appears | Decision 107 stopped a parent reading a stale child, but two writes to disjoint subtrees could each pass their own check and compose into an A→B→A cycle. Checking before the write is not enough when the thing being checked is a property of the union | review-round-8 |
+| 124 | **Writes are atomic.** Serialize to a temp file in the same directory, `fsync`, then `rename`. This was decision 48's, and cutting the patch machinery took it along with the rest | 114 superseded 48 wholesale, and 48 carried two separate things: field-scoped patches, which deserved to go, and temp-file-rename persistence, which did not. Without it an interrupted write leaves a committed graph as invalid JSON — which §10 then refuses to serve and refuses to repair, so the graph is simply lost | review-round-9 |
+| 125 | Edges carry `was` too, in the same position after `origin` | The node key order gained it and the edge order did not, while every key must be present on every entry. Two incompatible contracts for a fixture author, and an agent may reset an approved edge exactly as it resets a node | review-round-9 |
+| 126 | A graph drops out of the writable set the moment nothing reachable references it. A container retargeted away un-registers the old child and everything below it | §6 permits retargeting a subtree holding only `proposed` entries — legal, because nothing is orphaned at that instant. But the old child stayed open, stayed writable for 30 days, and its own hash never changed, so a verdict recorded in it afterwards would sit in a file no traversal reaches. Legal at the moment of the retarget, wrong a minute later | review-round-9 |
+| 119 | **One global write lock.** The server holds a single mutex across the whole read-modify-write-rename of any write. Not per-file, not per-subtree — one | The cut removed the queues and replaced them with the claim that writes are "serial by construction, one process, one write at a time" — which is the exact proposition decision 94 was written to refute. A read-modify-write plus rename interleaves across awaits in Node whatever the process count. One mutex is five lines and makes the claim true instead of asserted | review-round-9 |
+| 120 | **Optimistic concurrency.** Every `PUT` carries the content hash the writer last read. The server refuses with 409 and the current hash if disk has moved since. The response to an accepted write returns the new stored hash | Closes three things at once: a tab up to a second stale could otherwise send a whole graph that silently reverts another tab's approve or an agent's reset — verdict loss, which the accepted risk does **not** cover; the page had no way to compute the hash it was told to compare against, since the server canonicalizes on write; and a refused write had no defined handling | review-round-9 |
+| 121 | The route split is a **contract, not a security boundary**, and the Spec says so. Both routes sit in the same trust domain — same token, and `Origin` is trivially forged by a non-browser client. What each route enforces is what that *kind* of write is checked for, which catches mistakes, not an agent determined to misuse the other route | Decision 115 claimed the server enforces the split "rather than trusting the page", which is false as written. An agent could `PUT /view` and flip `rejected`→`agreed`, which §6 forbids it from ever doing. Saying plainly what the boundary is worth is better than a guarantee that does not hold | review-round-9 |
+| 122 | `was` joins `x`, `y` and `origin` in what `PUT /view` may change | Nothing could ever clear it otherwise: only the page can rule, and the route contract refused its write. Decision 110's durable-reset field would have been set once and never reset | review-round-9 |
+| 123 | Depth is bounded **at traversal**, not at write. Any walk — the re-read, the exit gate, the preservation check — stops at 5 and reports rather than recursing | Containment carries no back-reference and a bare name resolves to a sibling, so more than one parent may name the same child and a write to a mid-tree graph cannot know its own depth from any root. A write-time check would pass a legitimately seven-deep chain built one file at a time and then silently truncate every traversal | review-round-9 |
+| 114 | **The concurrency machinery is cut.** No field-scoped patches, no `/events` stream, no client ids, no write queues. The page writes a whole graph exactly as an agent does. Supersedes 48, 72, 93, 94, 99, 101, 105, 107 and the transport half of 76 and 90 | Nine of the thirteen blocking findings in Rounds 6-8 were inside this machinery, and none of it existed in the spike — a 50-line server doing whole-file writes, which Collin used for an evening without losing anything. Patches were introduced to save a drag from an agent's concurrent write; every route being path-keyed, patch kinds, many-target patches, write queues, subtree queues, event streams and client identity are all downstream of that one choice | user |
+| 115 | Two write routes. `PUT /graph?path=` is an agent's: preservation-checked, positions ignored. `PUT /view?path=` is the page's: it must be **structurally identical** to what is on disk — same nodes, same edges, same labels, same values — differing only in positions and origins. Any structural difference is refused | The page can only move things and rule on them, which is exactly what authoring being cut already permits. Making that a route contract means the server enforces it rather than trusting the page, and it replaces the target-count discriminator that patches needed | user |
+| 116 | Additive-only is enforced by diffing the page's write against disk: many entries may move **from** `proposed`, and at most one may move **away from** an existing verdict | Supersedes decision 109's target-count rule, which only made sense while the page spoke in patches. Diffing against disk is the same check expressed on whole files | user |
+| 117 | The page polls `GET /graph` once a second and reloads when the content hash differs from what it last wrote or read. **A drag in flight when an agent writes is lost, and that is accepted** | Replaces the event stream and its client identity. Collin's call: "dragging something around is not something crucial that I wouldn't be too mad about the agent rewriting." The turn structure makes the window narrow anyway — an agent writes between turns, while a question is being read | user |
+| 118 | The cycle check runs on write with no rollback machinery | Decision 112 existed because two concurrent writes to disjoint subtrees could compose into a cycle after both passed. With writes serial by construction there is no composition to guard against | user |
+| 113 | Retargeting is defined for every case, not only "the child holds verdicts": `null`→name is allowed; name→`null` and name→other are refused when the **old** subtree holds any verdict, allowed otherwise; a container naming a missing child may be retargeted freely, since there is nothing to orphan | The rule said "the server checks the child" and the schema permits `graph: null` while §10 permits a missing child, so three of the four transitions were unstated | review-round-8 |
+| 105 | The page mints a random **client id** at load, sends it on `/events?path=&client=`, `PATCH` and `PUT`, and the server suppresses an echo only to the stream carrying that id. It is not a credential — the token still authenticates | Decision 101 stated a rule with no mechanism: nothing let the server tell one SSE stream from another, so a content hash — global by construction — was the only thing named. This also gives "following a container" a concrete interaction: the child read carries the parent's path | review-round-8 |
+| 106 | The cross-file preservation check is **recursive** over every graph reachable through containers, to the depth limit | It checked one level while nesting goes five deep, so removing a container orphaned a grandchild's verdicts — and §13 asserted that exact case was accepted | review-round-8 |
+| 107 | A parent write and every graph reachable from it share **one queue**. Per-file queues alone let a parent read a child before a verdict landed there | Decision 102's guard read the child outside the lock protecting it, so the retarget it exists to refuse could be accepted against stale state | review-round-8 |
+| 108 | §13 gains concurrency cases: overlapping `PUT`/`PATCH` with a lost-update assertion, and an assertion that a select-all emits **one** patch rather than one per entry — for verdicts and for a multi-node drag | 93 and 94 were prose. Every existing test passed against an implementation with neither, and the drag path still fanned out one patch per node | review-round-8 |
+| 109 | The **server** enforces additive-only, by target count: a patch naming more than one target may only move `proposed` entries; a single-target patch may reverse a verdict | The rule was bound to the page, where only a test helper could check it — the objection decision 74 was written on | review-round-8 |
+| 110 | A reset records `was: "agreed"` on the entry, cleared when a person rules again | The report lived in the turn, and `protocol/planning.md:4-6` says the docs are the state and the conversation disposable. A resumed session could not distinguish a reset entry from one never ruled on | review-round-8 |
+| 111 | §11's exception is the **pre-PR documentation sweep over routers this change makes false**, not two specific rows | Verified: `AGENTS.md:46` calls the repo markdown plus two bash scripts, and its Verification block lists the test surface — both falsified by this change and both outside a two-row licence | review-round-8 |
+| 101 | `/events` suppresses an echo only to the client that **originated** the write. Every other open page is notified, including of an agent's `PUT` | Self-echo suppression was written to stop the writing tab reloading its own change, and as stated it silenced the only transport for the case the feature exists for: an agent rewriting a graph you are looking at | review-round-7 |
+| 102 | Cross-file preservation covers **retargeting**, not only removal. An agent may not change or null a container's `graph` field while the child holds an `agreed` or `rejected` entry | Guarding removal alone left a hole with the same effect: point the container elsewhere and a file of verdicts is orphaned, dropping out of the re-read and the exit-gate walk with nothing refusing it | review-round-7 |
+| 103 | §1 gains `protocol/AGENTS.md` and `skills/AGENTS.md`. This change adds a file to each of those directories, so each router's file table gains a row | Verified: the sibling landed both routers today and neither mentions `protocol/graphs.md` or `skills/graph/`. §1 claimed "exactly two" router changes and "Nothing else", which was true when written and stopped being true when the sibling landed | review-round-7 |
+| 104 | The bulk-verdict test starts from a graph **already holding** `agreed` and `rejected` entries | Starting from `proposed` items only, it passed whether or not approve overwrote an existing verdict — a test that cannot fail on the bug it was written for | review-round-7 |
+| 92 | **Supersedes 34 and 84 in part.** `agreed` is a verdict at a point in time, not a lock. An agent **may** alter an entry Collin approved — doing so resets it to `proposed` and the turn says which entries it reset and why. `rejected` stays absolute: never re-proposed, never altered | Bulk approve is a default gesture, so after one select-all every entry is `agreed` and an agent could alter only `proposed` ones — while §4 requires the graph updated whenever the flow is discussed again. A flow superseded at question 12 could then be neither corrected nor removed, and the picture goes wrong with no remedy. Freezing was never the intent; being told when something you approved changed is | review-round-7 |
+| 93 | A verdict patch names **many** targets. A bulk verdict is one patch, not one per entry | The patch table's targets were singular, so a select-all over 25 nodes emitted 25 patches inside one debounce window | review-round-7 |
+| 94 | The server serialises writes per file through a queue. One process is not the same as one write at a time | §8 dropped locking because "every write goes through one process", but a read-modify-write plus rename interleaves across awaits in Node unless it is queued. Decision 93 shrinks the traffic; this makes the ordering correct rather than merely unlikely to break | review-round-7 |
+| 95 | Every cache path is `<cache-root>`-relative, lockfile included | The lockfile was hardcoded to `~/.cache/agent-graphs/.server` while the writable set used `<cache-root>`, so decision 91's isolation was defeated at the one file the tests plant and reclaim | review-round-7 |
+| 96 | `--open` creates the parent directory if it does not exist | `docs/plans/<slug>/graphs/` and the question-cache directory are both new on a first write, and atomic temp-file rename needs the directory present. Nothing said whose job it was | review-round-7 |
+| 97 | The producer sequence reads the token from the lockfile and sends it with an `Origin` header | Decision 87's three steps omitted authentication, so a compliant producer's first `PUT` would be refused and nothing told it where the token lives | review-round-7 |
+| 98 | BFS layering seeds from nodes with no incoming edge, then **repeatedly seeds the lowest unplaced id** until every node is placed | The fallback fired only when *no* node lacked an incoming edge, so an ordinary source chain beside a disconnected two-cycle left the cycle unplaced — the exact shape decision 83 was written for | review-round-7 |
+| 99 | Position rounding happens on the **patch** path, where floats actually arrive. §1 gains `viewer/test/fixtures/` and `viewer/test/browser.spec.js` | No `PUT` ever carries a float, since an agent omits positions — so `Math.round` was attached to nothing that runs. And the browser test had no stated filename; calling it `*.test.js` would have pulled it into the stdlib glob and fired the never-skip Chromium failure in the lane that needs no browser | review-round-7 |
+| 100 | The Spec states its **preconditions** and the implementer checks them before starting: the repo under git, `.gitignore` present, and the sibling's root router written | The plan asserted the post-sibling repo as fact. Verified today: the sibling is mid-implementation with git, `.gitignore`, `protocol/routers.md`, `protocol/spine.md` and `skills/spine/SKILL.md` landed, and `spine/scan.sh` and the root router not yet — so a worker starting now finds two of three preconditions unmet and nothing tells them to wait | review-round-7 |
 | 91 | The server takes `--cache-root`, defaulting to `~/.cache/agent-graphs`. The test suite sets it to a temporary directory and picks a free port | As specified the suite planted lockfiles and pruned the registered set at the real paths, so running tests clobbered the developer's live viewer state and fought a running instance | review-round-6 |
 | 73 | The exit gate accounts for every **`rejected`** entry, not every `agreed` one | `agreed` means the proposal was right and needs no prose. `rejected` means it is wrong and the Spec must say what replaced it. This also fixes the gate being sized for hand-picked approvals while the default gesture approves wholesale | review-round-4 |
 | 54 | A node's `label` is plain-language behaviour. The codebase's own vocabulary — a router's boundary phrasing, a docstring's terms — goes in `note`, never in the label | Found by using the spike: the router's own compressions ("stays nonmetric", "recurrence stays symbolic", "calendar dates carry provenance") were meaningless to the reader the diagram exists for. Earlier guidance to label "in the system's own words" was wrong, and is corrected in `protocol/diagrams.md` too | user (spike) |
@@ -144,6 +184,45 @@ been added to, a CLI specified in one section and forbidden in another, tests de
 unreachable in the same edit. The decisions were sound; the document was not. This section is built
 from them.
 
+```mermaid
+flowchart TD
+  A[you ask how a feature works,<br/>or a plan proposes a flow] --> B[agent writes a graph<br/>and prints a URL]
+  B --> C[you rearrange it so it reads]
+  C --> D{is it right?}
+  D -- yes --> E[approve — in bulk]
+  D -- no --> F[strike it — in bulk]
+  E --> G[next turn reads your verdicts]
+  F --> G
+  G --> H{anything struck<br/>left unaddressed?}
+  H -- yes --> I[it becomes the next question,<br/>or folds into the spec]
+  H -- no --> J[exit pass: the spec accounts<br/>for every rejection]
+  I --> J
+```
+
+The diagram restates the sections below and carries nothing they do not.
+
+### 0. Known contradictions, and which side wins
+
+Ten review rounds left five places where two sections disagree. They are recorded in Round 10's table
+and resolved here, because an implementer reads this section and not the review log. Where the Spec
+below still says otherwise, **this section is authoritative** — fix the other side as you go.
+
+| Contradiction | Resolution |
+|---|---|
+| §13's write-lock test says two un-awaited writes both land; decision 120 refuses the second with 409 | The test **retries on 409** and then both land. The lock proves no interleaving; the hash proves no lost update. They are different guarantees and the test needs both |
+| §10, §13 and one §8 line refuse a write nesting past depth 5; decision 123 bounds depth at traversal instead | **Traversal wins.** A write cannot know its own depth — containment has no back-reference and several parents may name one child. Delete the three write-time refusals |
+| The producer sequence omits the content hash decision 120 makes mandatory | Add it. A **create** — no file yet — carries the empty-string hash, and the server accepts that only when the file is absent |
+| Decision 126's two sentences disagree: "nothing reachable references it" versus "a container stops naming it" | **The first wins.** A child two parents name stays writable while either still points at it |
+| Bounding depth at traversal leaves the preservation walk blind below 5, which is the hole decision 106 closed | The preservation walk is **not depth-bounded**; it follows every reachable child and terminates on cycle detection. Only the re-read and the exit gate stop at 5, and they report rather than recurse |
+
+Two more worth carrying, from the same round:
+
+- A 409 on `PUT /view` cannot be retried by resending the stale payload — a structural check would refuse
+  it. The page **re-reads and re-applies its verdicts** to the new base, so a bulk approve survives an
+  agent's concurrent restructuring.
+- `was` is page-writable only to **clear** it, and only in the same write that sets an `origin`. Otherwise
+  a `was`-only write could fabricate or strip reset records while changing nothing else.
+
 ### 1. Everything this change touches
 
 | File | Action |
@@ -158,11 +237,17 @@ from them.
 | `viewer/server.js` | **new** — the server, the only writer |
 | `viewer/package.json` | **new** — one dev dependency, pinned Playwright, plus a `scripts` entry |
 | `viewer/package-lock.json` | **new**, committed |
-| `viewer/test/*.test.js` | **new** — the suite |
+| `viewer/test/*.test.js` | **new** — the stdlib suite |
+| `viewer/test/browser.spec.js` | **new** — the Chromium test. Named `.spec.js` deliberately so `node --test 'viewer/test/*.test.js'` excludes it; otherwise the never-skip Chromium failure fires in the lane that needs no browser |
+| `viewer/test/fixtures/` | **new**, committed — the canonical graphs §13 asserts against |
 | `install.sh` | two steps added: install viewer deps, install Chromium |
 | `.gitignore` | append `viewer/test/.tmp/` (the sibling creates the file) |
-| `README.md` | five corrections: list `protocol/graphs.md`, add `viewer/` to the tree, **remove `spike/` from it**, fix "the four stage commands take slugs only" for `/graph`, and stop describing `install.sh` as symlinks-only. Its Dependencies section gains Node, npm and Playwright |
-| the repo root router | one row added for `viewer/`, one removed for `spike/`. The sibling's `/spine` run creates that router before this change lands, so this change makes it stale in exactly two ways and fixes exactly those two. **This is not router production** — it is the pre-PR documentation sweep the sibling's own upkeep rule requires, and §11's non-goal is about building router tooling |
+| `AGENTS.md` (repo root) | swept for what this change falsifies. Its executable-file row, its "markdown plus three shell scripts and one throwaway JS file" line, its `spike/` note and its `.gitignore` row all go stale — the exact set is read at implementation time, because the sibling is still editing this file |
+| `MAP.md` | re-mapped against the current tree. It describes a repo with no code and no git; the tree now has seven commits, `.gitignore`, `spine/scan.sh`, `spine/test/run.sh` and four routers, and its `graph.json` reference is superseded by `graphs/<name>.json` |
+| `README.md` | seven corrections: `graphs/` added to the plan-artifact list, `/graph` to the Usage command block, list `protocol/graphs.md`, add `viewer/` to the tree, **remove `spike/` from it**, fix "the four stage commands take slugs only" for `/graph`, and stop describing `install.sh` as symlinks-only. Its Dependencies section gains Node, npm and Playwright |
+| `protocol/AGENTS.md` | one row for `protocol/graphs.md` in its file table |
+| `skills/AGENTS.md` | one row for `skills/graph/` |
+| the repo root router | `viewer/` added, `spike/` removed, the Verification block gains the two test commands. The sibling's `/spine` run creates that router before this change lands, so this change makes it stale in exactly two ways and fixes exactly those two. **This is not router production** — it is the pre-PR documentation sweep the sibling's own upkeep rule requires, and §11's non-goal is about building router tooling |
 | `spike/` | **deleted** |
 
 Nothing else. This table exists because `README.md` and the diagram mechanism both survived three
@@ -196,6 +281,9 @@ preservation contract, the read-back rule, and how the viewer is started.
       "kind": "decision", "origin": "proposed", "exclusive": true,
       "ref": "src/.../admission.py", "note": "Admission is a gate, not a coercion.",
       "graph": null, "x": 780, "y": 200 },
+    { "id": "refuse", "label": "left as words — no number is invented", "kind": "note",
+      "origin": "proposed", "exclusive": false, "ref": null, "note": null,
+      "graph": null, "x": 780, "y": 60 },
     { "id": "store", "label": "write it down, append-only", "kind": "step",
       "origin": "proposed", "exclusive": false, "ref": "src/.../repository.py",
       "note": null, "graph": null, "x": 1020, "y": 200 },
@@ -206,14 +294,19 @@ preservation contract, the read-back rule, and how the viewer is started.
   "edges": [
     { "id": "gate->store", "from": "gate", "to": "store", "label": "accepted",
       "kind": "data", "value": "an admitted temporal record", "inferred": false,
+      "origin": "proposed", "note": null },
+    { "id": "gate->refuse", "from": "gate", "to": "refuse", "label": "refused",
+      "kind": "sequence", "value": null, "inferred": false,
       "origin": "proposed", "note": null }
   ]
 }
 ```
 
 **Key order, exactly.** Top level: `schema`, `title`, `source`, `source_detail`, `nodes`, `edges`.
-Node: `id`, `label`, `kind`, `origin`, `exclusive`, `ref`, `note`, `graph`, `x`, `y`. Edge: `id`,
-`from`, `to`, `label`, `kind`, `value`, `inferred`, `origin`, `note`.
+Node: `id`, `label`, `kind`, `origin`, `was`, `exclusive`, `ref`, `note`, `graph`, `x`, `y`.
+Edge: `id`, `from`, `to`, `label`, `kind`, `value`, `inferred`, `origin`, `was`, `note`.
+`was` is null on both except on an entry an agent reset from `agreed` (decisions 110, 125) — an approved
+edge resets exactly as an approved node does.
 
 Every key is present on every entry, `null` or `false` where it does not apply. An omitted key and a
 null one serialize differently and byte-identity needs one answer.
@@ -258,17 +351,20 @@ byte-identical.
 on disk; the server fills positions before writing. A producer that sent them would be sending values it
 is not allowed to set.
 
-**Writing a graph** (decision 87). Start the server if it is not running, `--open` the path — which accepts
-a path whose file does not yet exist — then `PUT`. That sequence is stated here because nothing else told
+**Writing a graph** (decisions 87, 96, 97). Start the server if it is not running; `--open` the path, which
+accepts a path whose file does not yet exist and **creates its parent directory**; read the token from
+`<cache-root>/.server`; then `PUT` with that token and an `Origin` header matching the server's address. That sequence is stated here because nothing else told
 an agent how to write its first graph.
 
 **Where files live.** A plan's graphs: `docs/plans/<slug>/graphs/<name>.json`, committed. A question's:
-`~/.cache/agent-graphs/<repo-key>/<slug>/<name>.json` — a directory, not a single file, so a question
+`<cache-root>/<repo-key>/<slug>/<name>.json`, `<cache-root>` defaulting to `~/.cache/agent-graphs` — a
+directory, not a single file, so a question
 graph has somewhere to put a child. The entry graph is `<slug>/main.json`. Decision 85 supersedes 13,
 which named a different path and was still live in the log.
 
-A question's `<slug>` is derived by `/graph` from the question text the same way `planning.md` derives a
-plan slug: lowercased, non-alphanumerics to hyphens, trimmed, truncated to 40 characters. Collisions are
+A question's `<slug>` is derived by `/graph` from the question text by the convention `planning.md` asks for. That file
+says only "a short kebab-case slug", so the rule is stated here rather than cited: lowercased,
+non-alphanumerics to hyphens, trimmed, truncated to 40 characters. Collisions are
 handled by the two rows in §10. `<repo-key>` is the directory
 basename plus the first eight hex characters of a SHA-256 of the absolute path, because worktrees of one
 repo share a basename.
@@ -338,18 +434,27 @@ Every node and edge carries `origin`:
 Three values (decision 70). There is no `mine`: with authoring cut there is no human-authored content
 for it to describe.
 
-**Reversible by a person, never by an agent** (decisions 80, 84). An agent may not alter any origin other
-than `proposed`, and may not re-propose a rejected id.
+**`agreed` is a verdict, not a lock** (decision 92). An agent **may** alter an entry Collin approved when
+the flow it describes has changed — doing so resets that entry to `proposed`, records `was: "agreed"` on it, and the turn
+names every entry it reset and why. That field makes the reset durable: `planning.md` says the docs are the
+state and the conversation disposable, so a report living only in a turn would leave a resumed session unable
+to tell a reset entry from one never ruled on. A person ruling again clears it. Without this a graph freezes: bulk approve is a default gesture, so after one
+select-all everything is `agreed`, and a flow superseded ten questions later could be neither corrected
+nor removed.
 
-**A bulk verdict is additive only.** Approve moves `proposed` to `agreed` and touches nothing else; reject
-moves `proposed` to `rejected` and touches nothing else. **Reversing an existing verdict requires a
-single-item selection.** Without this rule one select-all and one approve converts every `rejected` entry
+`rejected` is absolute. An agent may never alter one, never delete one, and never re-propose its id. A
+person may reverse either verdict; an agent may reverse neither.
+
+**A bulk verdict is additive only** (decision 116), enforced by diffing the page's write against disk: any
+number of entries may move *from* `proposed`, and at most one may move *away from* an existing verdict. That
+distinguishes a bulk verdict from a deliberate single reversal by what changed, not by how it was sent. Without this rule one select-all and one approve converts every `rejected` entry
 to `agreed` — the person's own verdicts erased, silently, and with no prose obligation left behind to
 notice it by. Bulk is for ruling on the unruled; changing your own mind is deliberate.
 
-**Preservation contract.** An agent writing a graph must preserve every `agreed` and `rejected` entry
-verbatim including its origin, may alter or remove only `proposed` entries, and may not reuse a rejected
-id. "Previously rejected" is decided by **id**, not resemblance — ids are stable from creation, so the
+**Preservation contract.** An agent writing a graph must preserve every `rejected` entry verbatim
+including its origin, and may not reuse a rejected id. It may alter or remove a `proposed` entry freely. It may alter an
+`agreed` one only by resetting it to `proposed`, and may **remove** one only after that reset has landed — so a
+superseded flow goes in two visible steps rather than vanishing in one. "Previously rejected" is decided by **id**, not resemblance — ids are stable from creation, so the
 check is exact and a genuinely different proposal gets a different id.
 
 A `rejected` entry stays in the file, rendered struck through, never deleted. Deleting it means the next
@@ -358,17 +463,32 @@ agent has no record and re-proposes it.
 **Positions are the person's** (decision 75). An agent never sends them. The server keeps `x`/`y` from
 disk for every id it knows and assigns coordinates only to ids it has not seen — by breadth-first layering
 (decision 83): nodes with no incoming edge seed the first row, each unplaced successor goes one row below,
-and an edge that would revisit an already-placed node is a **back-edge**, ignored for layout. If no node
-lacks an incoming edge — a pure cycle, which §7 explicitly supports in its two-edge form — the lowest id
-seeds the first row. Within a row, left to right by id at a fixed grid pitch.
+and an edge that would revisit an already-placed node is a **back-edge**, ignored for layout. When no unplaced node lacks an
+incoming edge — a pure cycle, or a component disconnected from every source — the **lowest unplaced id
+seeds a new row**, repeating until every node has coordinates. Seeding once, and only when no node
+anywhere lacked an incoming edge, left a two-cycle beside an ordinary source chain unplaced: the exact
+shape this rule exists for. Within a row, left to right by id at a fixed grid pitch.
 
 Longest-path layering was specified first and needs a directed acyclic graph, which a retry arrow back to
 a gate immediately violates. It is not good layout either way; it is a starting point the person drags,
 and dragging is what the whole feature protects.
 
-**Across files.** A container's child is covered by the same contract. An agent may not remove a
-container node whose child holds any `agreed` or `rejected` entry — that would orphan a file of verdicts
-— and the server checks the child before accepting such a parent (decision 57).
+**Across files.** A container's child is covered by the same contract. An agent may not remove a container node whose child
+holds any `agreed` or `rejected` entry **anywhere in its subtree**, nor change or null that node's `graph`
+field (decisions 57, 102, 106) — the check is recursive to the depth limit, since a one-level check let
+removing a container orphan a grandchild's verdicts.
+
+**A retarget un-registers what it drops** (decision 126). When a container stops naming a child, that child
+and everything below it leave the writable set immediately. Otherwise a legal retarget — legal because the
+old subtree held only `proposed` entries — leaves a still-open tab able to record a verdict into a file that
+no traversal reaches: correct at the instant of the retarget, wrong a minute later.
+
+**Every retargeting case, not only the guarded one** (decision 113). `null`→a name is always allowed: there
+is no old subtree to orphan. A name→`null` or name→another name is refused when the old subtree holds any
+verdict and allowed otherwise. A container naming a **missing** child may be retargeted freely, because
+nothing is orphaned by pointing away from a file that is not there. Either one orphans a file of verdicts, dropping it out of the re-read and the
+exit-gate walk; guarding removal alone left the second door open. The server checks the child before
+accepting such a parent.
 
 ### 7. The viewer
 
@@ -401,79 +521,99 @@ visible somewhere or decision 54's relocated wording is unreachable and IDEA's p
 tells you where it came from is unmet.
 
 **Containment.** A container node carries a visible affordance to open it; a breadcrumb shows the trail;
-escape steps back, clearing a selection first if there is one. Following a container registers the child
-as readable (decision 78). Pan is alt-drag or the middle button, because the plain background drag is
+escape steps back, clearing a selection first if there is one. Following a container registers the child (decision 82,
+which supersedes 78 — read and write are one set). Pan is alt-drag or the middle button, because the plain background drag is
 selection.
 
 ### 8. The server
 
 Node's standard library only. Binds `127.0.0.1`, port 7373, `--port` to override, and `--cache-root`
-overriding `~/.cache/agent-graphs` (decision 91) — without it the test suite plants lockfiles and prunes
-the registered set at the real paths, clobbering a live viewer. Invoked by absolute
-path, `node <repo>/viewer/server.js`, the way the skills hardcode the absolute path to `protocol/`
-(decision 25).
+overriding `~/.cache/agent-graphs` (decision 91) — without it the test suite plants lockfiles and prunes the
+registered set at the real paths, clobbering a live viewer.
 
-**The only writer** (decision 74). There is no `--write` CLI. Routes:
-
-Every route is **path-keyed** (decision 81) — `path=` carries a url-encoded absolute path. Names exist
-only inside a graph's `graph` field and resolve to a sibling file.
+**The only writer**, and it writes whole graphs (decisions 74, 114). There is no `--write` CLI, no patches,
+no event stream and no write queue. Every route is path-keyed (decision 81): `path=` carries a url-encoded
+absolute path, and a `graph` field's bare name resolves to a sibling file, which is the only join between
+names and paths.
 
 | Route | Auth | Purpose |
 |---|---|---|
 | `GET /?path=<path>` | token in URL | the page, opened on that graph |
-| `GET /graph?path=<path>` | token in URL | read a graph |
-| `PUT /graph?path=<path>` | token + `Origin` | an agent replaces a whole graph, preservation-checked |
-| `PATCH /graph?path=<path>` | token + `Origin` | the page sends one patch |
-| `GET /events?path=<path>` | token in URL | server-sent events for that graph, one stream each |
+| `GET /graph?path=<path>` | token in URL | read a graph — also what the page polls |
+| `PUT /graph?path=<path>` | token + `Origin` | an **agent** replaces a whole graph, preservation-checked |
+| `PUT /view?path=<path>` | token + `Origin` | the **page** writes positions and verdicts |
 | `GET /whoami` | none | a start id, **not** the token |
 
-Every write goes through one process, so patches and agent writes serialise without a locking protocol
-between processes. `PUT` creates a graph that does not yet exist, provided its path is in the writable
-set — which is how a producer writes its first graph.
+**Why two write routes** (decisions 115, 121). They are checked for different things. This is a **contract,
+not a security boundary**: both routes take the same token, and `Origin` is trivially set by a non-browser
+client, so nothing stops a determined agent using the page's route. What the split buys is that each kind of
+write is validated for the mistakes that kind of write makes — it is the same protection a type gives you,
+not the protection a permission gives you. An agent's `PUT /graph` may restructure the graph but never sends positions — the server
+keeps those from disk for ids it knows and lays out ids it does not (§6). The page's `PUT /view` must be
+**structurally identical** to what is on disk: same nodes, same edges, same labels, same values, same
+containment. Only `x`, `y`, `origin` and `was` may differ, and anything else is refused — `was` because
+clearing it is a person ruling again, and nothing else can clear it (decision 122). That is exactly the
+authority the page has anyway now that authoring is cut, expressed where it can be checked.
 
-**Two patch kinds, and only two** (decision 72):
+**Additive-only, on the page's route** (decision 116). Diffing the incoming graph against disk: any number
+of entries may move *from* `proposed`, and at most one may move *away from* an existing verdict. That is a
+bulk verdict and a deliberate single reversal, distinguished by what changed rather than by how the page
+chose to send it.
 
-| Patch | Target | Fields |
-|---|---|---|
-| position | a node, in a named graph | `x`, `y` |
-| verdict | a node or an edge, in a named graph | `origin`, validated against the closed set |
+**Writes are atomic** (decision 124): serialize to a temp file in the same directory, `fsync`, `rename`.
+Cutting the patch machinery superseded decision 48 wholesale and took its temp-file rename with it, which
+would have left an interrupted write as a committed but invalid graph — refused and unrepairable by §10, so
+simply lost.
 
-Each names its graph, because containment means the open graph changes while a debounce timer may still
-be pending. The page sends them on drag-end and on each verdict, debounced 250 ms, and holds no unsaved
-state.
+**One global write lock** (decision 119). The server holds a single mutex across the whole read, modify,
+write and rename of any write. One process is *not* one write at a time — a read-modify-write plus rename
+interleaves across awaits in Node — and asserting otherwise was the mistake that cutting the queues
+introduced. One mutex is enough here: one person, one agent, no fleet.
+
+**Every write carries the hash the writer last read** (decision 120). If disk has moved since, the server
+refuses with 409 and the current hash, and the writer re-reads and retries. An accepted write's response
+returns the new stored hash, which is how the page knows its own bytes — the server canonicalizes, so the
+hash of what the page sent is not the hash of what landed. Without this a tab a second stale could send a
+whole graph that silently reverted another tab's approve or an agent's reset, which is verdict loss rather
+than the lost drag the accepted risk covers.
+
+**Cycles are refused at write; depth is bounded at traversal** (decision 123). Containment carries no
+back-reference and a bare name resolves to a sibling, so several parents may name one child and a write to a
+mid-tree graph cannot know its depth from any root. Every walk — the re-read, the exit gate, the preservation
+check — stops at 5 and reports instead of recursing.
+
+**The page polls** `GET /graph` once a second and reloads when the content hash differs from what it last
+wrote or read (decision 117). No push, no stream, no per-client identity. A drag in flight when an agent
+writes is lost — accepted, and narrow in practice because an agent writes between turns.
 
 **Write scope** (decisions 36, 47, 82). The writable set is a file, `<cache-root>/.registered`, mode 0600,
-read per request and extended by `node viewer/server.js --open <path>` — and by **following a container
-node from a graph already in the set**, which adds the child. Read and write are one set, not two.
+read per request and extended by `node viewer/server.js --open <path>` — which accepts a path whose file
+does not yet exist and creates its parent directory (decision 96) — and by following a container node from
+a graph already in the set, which adds the child. Read and write are one set. Entries older than 30 days
+are pruned on start.
 
-Splitting them was tried and broke containment: a person could open a child and not judge inside it, while
-the preservation contract and the tests both require child graphs to hold verdicts. The hazard decision 36
-guards against is a page widening authority to an *arbitrary* path; a child named by the `graph` field of
-a graph you already hold is not arbitrary. No other HTTP route widens the set.
+**Authentication** (decision 46). One token, minted at start, stored in the lockfile at `<cache-root>/.server`
+mode 0600. Both `PUT` routes carry it and present an `Origin` matching the server's own address; reads carry
+it in the URL and need no `Origin`, because browsers omit that header on same-origin GET. `GET /whoami`
+answers unauthenticated and returns a random start id distinct from the token, used only so a second start
+can tell whether the process holding the lockfile is this viewer. It is never a credential.
 
-Entries older than 30 days are pruned on start, so the file does not degrade into "every path ever opened
-is writable".
+**Discovery.** The lockfile is claimed with `O_EXCL` holding pid, port, token and start id. A start reuses an
+instance only when `/whoami` returns the start id in the lockfile; one whose pid is dead **and** whose
+`/whoami` is silent is cleared and reclaimed — pid liveness is not identity, since pids are reused. `--stop`
+shuts it down; there is deliberately no idle timeout.
 
-**Authentication** (decision 46). One token, minted at start, stored in the lockfile at mode 0600.
-Mutating requests carry it and present an `Origin` matching the server's own address. Reads carry it in
-the URL and need no `Origin`, because browsers omit that header on same-origin GET. `GET /whoami` answers
-unauthenticated and returns a random start id distinct from the token, used only so a second start can
-tell whether the process holding the lockfile is this viewer. It is never a credential.
-
-**Discovery.** A lockfile at `~/.cache/agent-graphs/.server` is claimed with `O_EXCL` holding pid, port,
-token and start id. A start reuses an instance only when `/whoami` returns the start id in the lockfile;
-a lockfile whose pid is dead **and** whose `/whoami` is silent is cleared and reclaimed. Pid liveness is
-not identity — pids are reused. `--stop` shuts it down; there is deliberately no idle timeout.
-
-**Change detection** (decisions 76, 90). The server polls each open file's size, mtime and content hash
-once a second and pushes to the stream for that path — `/events?path=` is per-graph, one stream per open
-graph, for the same reason every patch names its graph. The server owns detection; the page listens. A hash
-matching the server's own last write is not pushed. A change arriving while a pointer is down or a patch
-is in flight is queued and applied after the patch lands.
-
-**Startup.** The agent starts the server when it writes a graph and prints the URL (decision 17).
+**Producer sequence** (decisions 87, 97). Start the server if it is not running; `--open` the path; read the
+token from the lockfile; `PUT /graph` with that token and a matching `Origin`.
 
 ### 9. Where the code lives
+
+**Check before starting.** This plan assumes the sibling has landed. The implementer verifies three things
+and stops if any is missing: the repo is under git with a baseline commit, `.gitignore` exists, and the
+repo root router exists. As of 2026-08-24 all three hold — the sibling reached `verifying` with its
+scanner, its fixture harness, four routers and a `COMPLETION.md`. The check is stated anyway because it
+did **not** hold earlier the same day, and a worker starting from this document has no way to know which
+side of that they are on.
 
 The repo is already under git when this lands: the sibling runs `git init`, creates `.gitignore` and
 commits `spike/` (decision 40). This plan appends `viewer/test/.tmp/` to that file.
@@ -508,14 +648,16 @@ install mismatch is the real case — and a skip there is an untested lane weari
 | Unknown `schema` version | Refuse. Never guess, never migrate silently |
 | Container names a child that does not exist | The node renders with the affordance disabled and the condition is reported. Not an error for the whole graph |
 | Container cycle, or nesting deeper than 5 | Refuse the write that would create it. Every traversal — re-read, exit gate, cross-file check — is then finite |
-| `PUT` or `PATCH` for a path not in the writable set | Refused |
+| Either `PUT` route for a path not in the writable set | Refused |
 | A hand-edited file containing a container cycle | The write-time check cannot catch it, so every agent-side traversal — the re-read, the exit-gate walk, the cross-file check — is depth-bounded at 5 and reports a cycle rather than recursing |
-| `PATCH` with an `origin` outside the closed set | Refused |
+| A `PUT /view` carrying an `origin` outside the closed set | Refused |
+| A `PUT /view` differing structurally from disk — a node added, a label changed, a value retyped | Refused. The page may change positions and verdicts, nothing else |
 | Mutating request with a bad token or foreign `Origin` | Refused |
 | Read with a valid token and no `Origin` | Allowed |
-| Two tabs on one graph | Both allowed. Patches are field-scoped; each tab sees the other's change over `/events` |
-| Agent writes while a tab is open | Tab updates, deferred until any pointer-down and in-flight patch complete |
-| Server's own write | Not pushed — the hash matches what it just wrote |
+| Two tabs on one graph | Both allowed, last write wins. Each picks the other's change up on its next poll, within a second |
+| Agent writes while a tab is open | The tab reloads on its next poll. A drag in flight is lost |
+| A write the open tab itself made | Its own poll sees a hash it already knows and does not reload |
+| An agent's `PUT` while tabs are open | Each tab reloads on its next poll. A drag in flight at that moment is lost |
 | Edge naming a missing node | Refuse to serve; a graph that cannot be drawn is a bug in whatever wrote it |
 | A plan needs a second distinct flow | Another file in the same `graphs/` directory, referenced by no `graph` field |
 | Question slug collides, existing file holds no verdicts | Overwrite; question graphs are disposable |
@@ -529,10 +671,17 @@ install mismatch is the real case — and a skip there is an untested lane weari
 No authoring of any kind — no adding nodes or connections, no renaming, no editing what a connection
 carries. No rendering of the whole graphify graph. No shape beyond a box and a straight arrow, with the
 fork marker as the single exception. No Zed extension; Zed cannot host UI panels. Nothing multi-user. No
-diagram carrying meaning the surrounding prose does not. No production or maintenance of router
-documents, including `viewer/`'s own.
+diagram carrying meaning the surrounding prose does not. No production of router documents, and none written for
+`viewer/`. The single exception is the pre-PR documentation sweep over
+routers this change makes false (decision 111), which is more than two rows: the root router adds `viewer/`,
+drops `spike/`, gains the two test commands in its Verification block, and corrects whatever else this change
+falsifies — the exact set is read at implementation time, because the sibling is still editing that file
+today. Correcting facts, not authorship.
 
 ### 12. Four things the spike learned
+
+These belong in `viewer/index.html` as comments at the code they constrain, not only here — this document
+is archived when the plan closes, and the spike's own copies are deleted with it.
 
 `spike/` is deleted by this change, so these carry over as notes. Each cost a debugging cycle and none is
 visible to a DOM test.
@@ -566,16 +715,27 @@ committed; `viewer/test/.tmp/` holds only per-run scratch and is gitignored.
 - **Canonical round-trip.** Read a canonical graph, write it back untouched, assert byte identity. Then
   read a non-canonical one — shuffled keys, float positions, `exclusive` and `graph` misplaced, keys
   omitted — and assert the written form matches the canonical fixture exactly.
-- **Both patch kinds.** A position patch moves one node and changes no other byte. A verdict patch sets
-  `origin` on a node and on an edge. Each names its graph; one naming an unopened graph is refused; one
-  carrying an `origin` outside the closed set is refused.
+- **Both write routes.** `PUT /view` changing only positions, origins and `was` is accepted; one adding a
+  node, removing one, changing a label or retyping a value is refused, as is one carrying an `origin`
+  outside the closed set. `PUT /graph` carrying positions has them ignored in favour of disk.
+- **Optimistic concurrency.** A `PUT` carrying a stale hash is refused with 409 and the current hash; the
+  same write retried with that hash succeeds. An accepted write returns the new stored hash, and it matches
+  what a subsequent `GET` hashes to.
+- **The write lock holds.** Fire two writes to one graph without awaiting the first: both land, neither is
+  lost, and the file parses at every intermediate read.
 - **Preservation, through the server.** `PUT` a graph dropping an `agreed` node and assert refusal naming
   it. Repeat for a dropped `rejected` entry and for a re-proposed rejected id. Then `PUT` a legitimate
   rewrite touching only `proposed` entries and assert acceptance.
 - **Positions are ignored on `PUT`.** Send a graph whose positions differ from disk for known ids and
   assert the stored positions are unchanged; assert a new id receives one.
-- **Verdict reversal.** A `PATCH` moving `rejected` to `agreed` succeeds; a `PUT` from an agent altering
-  any non-`proposed` origin is refused.
+- **Verdict reversal.** A `PUT /view` moving `rejected` to `agreed` succeeds; a `PUT /graph` from an agent altering a
+  `rejected` entry is refused, and one altering an `agreed` entry is accepted only when it resets that
+  entry to `proposed`.
+- **Bulk verdicts are additive.** Starting from a graph that **already holds** `agreed` and `rejected`
+  entries, a select-all approve leaves both untouched and moves only `proposed` ones. Starting from
+  `proposed` items alone would pass whether or not the bug was present.
+- **Retargeting a container is refused.** `PUT` a parent whose container node points at a different child,
+  and again with its `graph` set to null, while the original child holds an `agreed` entry: both refused.
 - **Across files.** `PUT` a parent dropping a container whose child holds an `agreed` entry: refused.
   Repeat with a child holding only `proposed` entries: accepted.
 - **Containment faults.** A `graph` value that is not a bare name is refused; a cycle is refused; nesting
@@ -585,7 +745,26 @@ committed; `viewer/test/.tmp/` holds only per-run scratch and is gitignored.
 - **Discovery.** Start twice; one process, the second reusing the port after a matching start id. Kill
   and leave the lockfile; assert reclaim. Plant a lockfile whose pid is an unrelated live process; assert
   it is not adopted.
-- **Change detection.** A server write emits no `/events` message; an external write emits one.
+- **Change detection.** After an agent's `PUT /graph`, the page's next poll returns a hash it has not seen
+  and it reloads; after the page's own write it does not.
+- **Route authority.** A `PUT /view` that adds a node, removes one, changes a label or retypes a value is
+  refused; one changing only positions and origins is accepted. A `PUT /graph` carrying positions has them
+  ignored in favour of disk.
+- **One write per action.** A select-all approve issues exactly one `PUT /view`, and a select-all drag one
+  more — there is no per-entry fan-out because there are no patches.
+- **Additive-only, by diff.** A `PUT /view` moving many entries from `proposed` is accepted; one moving two
+  entries away from existing verdicts is refused; one moving a single entry away from a verdict succeeds.
+- **Recursive preservation.** `PUT` a parent removing a container whose *grandchild* holds an `agreed` entry:
+  refused.
+- **A retarget un-registers.** After retargeting away from a child, a `PUT /view` to that child is refused
+  as an unregistered path, even though it was writable a moment before.
+- **Atomicity.** Kill the process mid-write; the graph on disk is either the old one or the new one, never a
+  truncated file.
+- **Every retargeting case.** `null`→name accepted; name→`null` and name→other refused when the old subtree
+  holds a verdict and accepted when it does not; retargeting away from a missing child accepted.
+- **Cycles and depth.** A `PUT` creating A→B→A is refused, as is one nesting past the depth limit.
+- **Reset is durable.** After an agent resets an `agreed` entry the file carries `was: "agreed"`; after a
+  person rules again it does not.
 - **Pruning.** A registered entry older than 30 days is dropped on start; a recent one survives.
 - **Faults:** invalid JSON, unknown `schema`, an edge naming a missing node — each refused, never
   repaired.
@@ -595,7 +774,10 @@ would pass a drag that did nothing:
 
 - Dragging a node writes matching integer coordinates; dragging a multi-node selection moves every
   member.
-- A drag interrupted by an agent write mid-gesture loses neither side.
+- A drag interrupted by an agent write mid-gesture **loses the drag** and keeps the agent's write — the
+  accepted risk, asserted rather than assumed.
+- Clearing `was` works: after an agent resets an `agreed` entry, approving it again through the page removes
+  the field.
 - Box-select then approve sets `agreed` on every node **and** every edge whose endpoints are both
   selected.
 - Shift-clicking an implied edge removes it and it stays removed across later clicks.
@@ -614,6 +796,7 @@ established the first; the second is what the first real plan using this will sh
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A drag in flight when an agent writes is lost | Collin's call. The alternative was field-scoped patches, which produced nine of the thirteen blocking findings across Rounds 6-8 — every route path-keyed, patch kinds, many-target patches, write queues, subtree queues, an event stream and per-client identity, all downstream of saving one drag. The spike had none of it and lost nothing in an evening's use, and an agent writes between turns rather than mid-gesture | round 8 |
 | Zed has no zoom control for rendered Mermaid and a reported scroll bug on wide diagrams | Upstream editor limitation with no workaround available here. Mitigated by scope: diagrams in documents stay small, and anything wide enough to need panning is what the browser viewer exists for | planning |
 
 ## Review Rounds
@@ -887,12 +1070,33 @@ edit, five design changes with no Decision Log entry at all.
 So the decisions were treated as the source of truth and the prose was rebuilt from them.
 
 **Your job is different this round.** The Spec is new prose. Do not assume a prior finding's fix carried
-over — check it. The Review Rounds tables below carry every finding from Rounds 1-5 with its verdict; use
-them as a checklist and say plainly if any is open again in the new text. A rewrite can lose a fix as
-easily as a patch can fail to apply.
+over — check it.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| claude | blocking | Graph addressing had no name→path rule while write authority and `--open` were path-keyed | `upheld` | decision 81 — every route is path-keyed |
+| claude | blocking | A person could enter a child graph but not judge inside it; read and write authority had been split | `upheld` | decision 82 — one set again |
+| claude | blocking | The initial-layout algorithm was longest-path layering, which needs a DAG, while §7 supports a two-cycle | `upheld` | decision 83 — BFS with back-edges ignored |
+| claude | blocking | Select-all then approve converted every `rejected` entry to `agreed` | `upheld` | decision 84 — bulk verdicts additive only |
+| claude | major | All three `planning.md` insertions were placed in Step 4; the exit gate belongs in `## Exit` | `upheld` | corrected in §4 |
+| claude | major | Round 5's findings table was empty | `upheld` | recorded in Round 5 |
+| claude | major | Decision 13 was live and named a different question-graph path than §3 | `upheld` | decision 85 supersedes it |
+| claude | major | Decision 51's never-skip rule was dropped in the rewrite | `upheld` | decision 86 restores it |
+| claude | major | The producer's write sequence was never stated | `upheld` | decision 87 |
+| claude | major | The wire contract for `x`/`y` on an agent `PUT` was contradictory | `upheld` | decision 88 — the agent omits them |
+| claude | major | Canonicalization demanded an exact match from input with keys omitted, with no defaulting table | `upheld` | decision 89 |
+| claude | major | `/events` had no per-graph scope | `upheld` | decision 90 |
+| claude | major | The test suite operated on the developer's live lockfile and registered set | `upheld` | decision 91 — `--cache-root` |
+| claude | major | §1's README row omitted removing `spike/`, and the repo root router was absent from the table | `upheld` | both added |
+| claude | major | `/graph`'s question-slug derivation was unspecified | `upheld` | stated in §3 |
+| claude | minor | The schema example was an invalid graph — its only edge named a node that did not exist | `upheld` | a `store` node was added |
+| claude | minor | Float→integer rounding mode was unstated | `upheld` | `Math.round`, half up |
+| claude | minor | `.gitignore` covered a directory nothing created, and fixtures were absent from §1 | `upheld` | fixtures committed; see Round 7 |
+| claude | minor | `npm --prefix viewer` broke `install.sh`'s cwd-independence | `upheld` | uses `$ROOT` |
+| claude | minor | A hand-edited container cycle bypassed the write-time check | `upheld` | traversals depth-bounded at 5 |
+| claude | minor | "Removes it" read as deleting an edge rather than deselecting it | `upheld` | reworded |
+| claude | minor | The Decision Log's ordering claim was false | `upheld` | claim dropped |
+| claude | minor | §5 said "the diagram" singular for a plan holding two independent flows | `upheld` | one diagram each |
 
 ### Round 7 — 2026-08-24
 
@@ -927,16 +1131,226 @@ the working tree as settled truth.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| gpt | blocking | Live reload is specified incompatibly: tabs and agent `PUT`s must update open pages over `/events`, but server writes emit no `/events` message | `upheld` | Live and correct. Self-echo suppression was written to stop the *writing* client reloading its own change, but an agent `PUT` is also a server write and every other open page needs it. Fixed by decision 101. |
+| gpt | blocking | Cross-file preservation guards deletion but not retargeting: an agent may alter a `proposed` container's `graph` field or null it, orphaning a child that holds verdicts | `upheld` | Live and new — neither lane had found it. The contract refused only *removal* of the container node. Fixed by decision 102. |
+| gpt | blocking | One process does not serialise asynchronous `PUT` and `PATCH` handlers | `upheld` | Read against the pre-fix Spec; decision 94 had already added a per-file write queue. Both lanes reached it independently. |
+| gpt | blocking | BFS layout still leaves nodes unplaced when a source-rooted component sits beside a disconnected cycle | `upheld` | Also pre-fix; decision 98 repeatedly seeds the lowest unplaced id. Both lanes found this one too. |
+| gpt | major | §1's file table omits router updates the sibling now requires: adding `protocol/graphs.md` and `skills/graph/` makes `protocol/AGENTS.md` and `skills/AGENTS.md` stale | `upheld` | Live, and now concretely verifiable — the sibling landed both routers today and neither mentions the files this plan adds. Fixed by decision 103. |
+| gpt | major | Round 7's unified-authority fix is contradicted by stale prose still citing decision 78 | `upheld` | Pre-fix; §7 now cites decision 82. |
+| gpt | major | `--cache-root` does not consistently relocate server state; `.server` stayed hardcoded | `upheld` | Pre-fix; decision 95 made every cache path `<cache-root>`-relative. |
+| gpt | major | The Spec simultaneously requires and forbids the root-router edit | `upheld` | Pre-fix; §11 now names the two-row correction as the exception and calls it a documentation sweep rather than authorship. |
+| gpt | major | The first-graph sequence creates no parent directories | `upheld` | Pre-fix; decision 96 gives that to `--open`. |
+| gpt | minor | The additive-only bulk-verdict rule has no regression assertion — the test starts from `proposed` items, so it passes even if approve overwrites an existing verdict | `upheld` | Live. A test that cannot fail on the bug it was written for. Fixed by decision 104. |
+
+Six of the ten were read against the Spec as it stood before this round's remediation and were already
+closed by decisions 92-100. The four that were live are fixed by 101-104. Both lanes independently found
+the layout gap, the missing write queue and the stale decision-78 citation.
+
+### Round 8 — 2026-08-24
+
+**Changed since Round 7:** decisions 92-104, which between them close every blocking finding from Rounds 6
+and 7. The substantive ones:
+
+- **`agreed` is a verdict, not a lock** (92). Bulk approve is a default gesture, so after one select-all
+  everything is `agreed` — and the old contract let an agent alter only `proposed` entries while the
+  planning wiring requires the graph updated whenever that flow is discussed again. An approved graph
+  froze permanently. An agent may now alter an approved entry, which resets it to `proposed` and is
+  reported in the turn. `rejected` stays absolute.
+- **Write ordering** (93, 94). A bulk verdict is one patch naming many targets rather than one per entry,
+  and the server queues writes per file. One process is not one write at a time.
+- **Layout** (98) seeds repeatedly from the lowest unplaced id, so a cycle beside a source chain is placed.
+- **`/events`** (101) suppresses an echo only to the client that originated the write. Suppressing every
+  server write silenced the case the feature exists for — an agent rewriting a graph you are watching.
+- **Container retargeting** (102) is refused, not only removal. Pointing a container elsewhere orphans a
+  child holding verdicts just as effectively as deleting it.
+- **Preconditions** (100) are checked before work starts, and **§1 gained `protocol/AGENTS.md` and
+  `skills/AGENTS.md`** (103) because the sibling landed those routers and this change adds a file to each
+  of their directories.
+- Round 6's findings table, left empty under a preamble, is recorded — 23 rows. The supersession map
+  gained 82→78, 84→80, 85→13 and 92→34/84.
+
+**The sibling is now code, not a document.** `router-spine` reached `verifying` today: `protocol/routers.md`,
+`protocol/spine.md`, `spine/scan.sh`, its fixture harness, four routers and a `COMPLETION.md` all exist.
+Every claim this plan makes about the sibling is therefore checkable against real files for the first time
+— §1's router rows, §9's preconditions, and the boundary over who writes `viewer/`'s router. Check them
+against the artifacts rather than against `router-spine/PLAN.md`.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| claude | blocking | §10's edge-case row still carries the pre-decision-101 rule, and names a mechanism that cannot be per-client | `upheld` | A content hash is global by construction. Fixed by decision 105 — the client identifies itself. |
+| claude | blocking | §13's change-detection test asserts the behaviour decision 101 removed, so a correct implementation fails the suite | `upheld` | Third time a test has asserted a rule the Spec had deleted. Rewritten. |
+| claude | blocking | Decision 101 is unimplementable: nothing gives the server a way to identify the originating client over SSE | `upheld` | I wrote the rule and not the mechanism, and flagged that risk when launching this round. `grep client` across the Spec found no per-client identifier. Decision 105 adds one. |
+| claude | major | Decision 80 is live and contradicts 92 on the central new behaviour; the map never records 92→80 | `upheld` | Identical defect class to decision 13 in Round 6. Map corrected. |
+| claude | major | Decisions 93 and 94 are asserted in prose and tested nowhere | `upheld` | Every §13 test passes against an implementation with no write queue and one patch per entry. Decision 108 adds the cases. |
+| claude | major | Cross-file preservation is single-level while containment nests five deep, so removing a container orphans a grandchild's verdicts — and §13 asserts that case is accepted | `upheld` | The test's "child holding only `proposed` entries: accepted" is exactly the orphaning case when that child's own container points at a graph holding verdicts. Decision 106 makes the check recursive. |
+| claude | major | Decision 102's guard reads the child outside the queue that protects it | `upheld` | Per-file queues mean a parent's `PUT` can read the child before a verdict `PATCH` lands there, and accept the retarget 102 exists to refuse. Decision 107 puts a parent write and its reachable children on one queue. |
+| claude | major | Nothing says how the server distinguishes a bulk patch from a permitted single-item reversal | `upheld` | A rule bound to the page that only a test helper could check — the objection decision 74 was written on. Decision 109 moves enforcement to the server. |
+| claude | major | Decision 93's fan-out fix covered verdicts only; a multi-node drag still emits one patch per node | `upheld` | A select-all drag over 25 nodes reproduces the exact shape 93 was written against. |
+| claude | major | A decision-92 reset leaves no durable trace; the report lives in a turn the protocol calls disposable | `upheld` | `protocol/planning.md:4-6` — the docs are the state. A resumed session could not tell a reset entry from one never ruled on. Decision 110 records it in the file. |
+| claude | major | Decision 92's rationale names removal, but §6 grants only alteration-with-reset while §13 tests removal is refused | `upheld` | Removal was reachable only through an undocumented two-`PUT` dance. Stated properly. |
+| claude | major | The root router goes stale in more ways than the two rows §1 authorises, and §11 forbids fixing them | `upheld` | `AGENTS.md:46` says the repo is markdown plus two bash scripts, which this change falsifies, and the Verification block gains two commands. Decision 111 widens the exception to the sweep it always was. |
+| claude | minor | §1's README row misses the plan-artifact list and the Usage command block | `upheld` | `graphs/` is a committed plan artifact and `/graph` is a command; both belong. |
+| claude | minor | §3's schema example declares a fork with one arm, contradicting its own field definition | `upheld` | Same class as Round 6's invalid example, and agents copy the example as the reference. |
+| claude | minor | "Following a container" names no HTTP interaction and no validation rule | `upheld` | Folded into decision 105's client identity. |
+| claude | minor | `protocol/routers.md` states `.gitignore` holds only `node_modules/`, already false | `upheld` | A sibling defect, but this change edits that file's subject and the sweep should catch it. |
+| claude | minor | `MAP.md` carries two superseded facts | `upheld` | `graph.json` per decision 37, and "not under git" against the baseline commit. |
+| claude | noted | **Verified clean:** §9's three preconditions hold; §5's two edits are both outstanding; one row each is the right edit for `protocol/AGENTS.md` and `skills/AGENTS.md` and both table formats accommodate it; nothing the sibling shipped assumes `viewer/` has a router | `noted` | Also re-confirmed `npx --prefix` on npm 12.0.2 and that the `node --test` glob discovers while a bare directory does not. |
+
+| gpt | blocking | Decision 101 remains contradictory and unimplementable; §10 and §13 still require server writes to emit no event | `upheld` | Read pre-fix. Decision 105 gives the page a client id; §10's rows and §13's test are rewritten. Both lanes reached this independently. |
+| gpt | blocking | A per-file queue cannot protect the cross-file invariants, and simultaneous writes can create an A→B→A cycle after both checks pass | `upheld` | The first half was closed by decision 107. **The cycle half is live and new** — two disjoint subtrees each pass their own check and compose into a cycle. Fixed by decision 112. |
+| gpt | major | Decision 92 leaves removal of an `agreed` entry without a defined transition | `upheld` | Closed pre-report: the contract now states removal is legal only after the reset has landed, as two visible writes. |
+| gpt | major | Decision 102 does not define retargeting when there is no readable old child — null→name, missing-child→name, proposed-only-child | `upheld` | Live. The rule covered a subtree holding verdicts and said nothing about the three cases where there is nothing to check. Decision 113 enumerates them. |
+| gpt | major | §1 understates the required root-router edit | `upheld` | Closed by decision 111 — the exception is the sweep over what this change falsifies, not two rows. |
+| gpt | major | `MAP.md` no longer describes the current system and was omitted from §1's exhaustive table | `upheld` | Partly closed — a `MAP.md` row was added, but it named two stale facts and the lane found more. Widened to a full re-map. |
+| gpt | minor | §13 does not directly regress decisions 93 and 94 | `upheld` | Closed pre-report: the suite now asserts one patch per bulk action and overlapping writes with a lost-update check. |
+
+Five of the seven were read against the Spec before this round's remediation and were already closed by
+decisions 105-111. Two were live: the cycle-composition race and the undefined retargeting cases.
+
+### Round 9 — 2026-08-24
+
+**Changed since Round 8: the concurrency machinery is cut** (decisions 114-118). This is the third time
+this plan has been made smaller, after authoring and the router split, and it is the largest of the three.
+
+Removed: field-scoped patches, the `/events` stream, per-client identity, per-file and subtree write queues,
+and the post-write cycle re-validation. **Nine of the thirteen blocking findings in Rounds 6-8 were inside
+that machinery**, and none of it existed in the spike — a 50-line server doing whole-file writes, used for
+an evening without losing anything.
+
+What replaced it:
+
+- **Two write routes.** `PUT /graph` is an agent's: it may restructure, never sends positions, and the
+  server keeps those from disk. `PUT /view` is the page's: it must be **structurally identical** to disk —
+  same nodes, edges, labels, values, containment — differing only in `x`, `y` and `origin`. Anything else is
+  refused. That is the authority the page already had once authoring was cut, moved somewhere enforceable.
+- **Additive-only by diff** rather than by patch target count: many entries may move from `proposed`, at
+  most one away from an existing verdict.
+- **A one-second poll** rather than a push. The page reloads when the hash differs from what it last wrote
+  or read.
+- **Serial writes by construction**, so the cycle and depth checks need no rollback.
+
+The accepted cost, recorded as a risk: a drag in flight when an agent writes is lost. Collin's call — an
+agent writes between turns rather than mid-gesture, and losing a drag position is not losing data.
+
+**What to attack.** The reduction is the change; judge whether it went too far as readily as whether it
+went far enough. Does anything still assume a patch, a stream or a queue? Is `PUT /view`'s structural-
+identity rule actually checkable, and does it leave the page able to do everything §7 says it can? Does the
+poll interact correctly with the preservation contract and with containment? And does any test still assert
+behaviour that no longer exists — that has happened in three separate rounds.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
+### Round 10 — 2026-08-24
+
+**Changed since Round 9:** decisions 119-126, all made *after* the last reviewer read the document. Nothing
+has reviewed the plan as it now stands.
+
+Round 8 cut the concurrency machinery. Round 9 found that the cut went too far in one specific way and took
+two things with it that it should not have:
+
+- **One global write lock** (119). The cut replaced the queues with "writes are serial by construction, one
+  process, one write at a time" — verbatim the proposition decision 94 was written to refute. One mutex
+  makes the claim true rather than asserted.
+- **Optimistic concurrency** (120). Every write carries the hash its author last read; a stale write is
+  refused with 409 and the current hash. This closes real verdict loss — a tab one second stale could send a
+  whole graph reverting another tab's approve — and gives the page a hash it can actually compute, since the
+  server canonicalizes and now returns the stored hash.
+- **The route split is a contract, not a security boundary** (121), and the Spec says so. Both routes take
+  the same token and `Origin` is trivially forged; the split buys the protection a type gives you, not the
+  protection a permission gives you. The previous wording claimed enforcement that does not hold.
+- **`was` is writable by the page** (122) — nothing could ever clear it otherwise. **Depth is bounded at
+  traversal** (123), because containment has no back-reference and a write cannot know its own depth.
+- **Writes are atomic** (124). Cutting the patches superseded decision 48 wholesale, and 48 carried
+  temp-file-rename persistence as well as the patch machinery. Without it an interrupted write leaves a
+  committed but invalid graph, which §10 refuses to serve and refuses to repair.
+- **A retarget un-registers what it drops** (126). Retargeting away from a subtree holding only `proposed`
+  entries is legal at that instant, but the old child stayed open and writable, so a verdict recorded in it
+  afterwards sat in a file no traversal reached.
+- **Edges carry `was`** (125), which the node key order had and the edge order did not.
+
+**What to look for.** Two of the last round's findings were second-order consequences of a deletion —
+something rode along with the thing being cut. Decisions 119-126 are themselves a set of changes made
+between rounds, so the same question applies to them: what rode along, and what does each one break that it
+was not meant to touch? Check §13 hardest; a test asserting deleted behaviour has been found in four
+consecutive rounds.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| claude | blocking | §13's write-lock test asserts an outcome decision 120 makes impossible — two writes without awaiting both carry the same pre-read hash, so the second must be refused, not land | `upheld` | 119/120 written in one edit; the test and the decision contradict in adjacent bullets |
+| claude | blocking | Three places still assert a write-time depth refusal after 123 moved the bound to traversal | `upheld` | fifth consecutive round with a test asserting deleted behaviour |
+| claude | blocking | The producer sequence, stated twice, omits the content hash 120 makes mandatory, and no rule says what hash a create carries | `upheld` | 120 added; the sequence not updated. A compliant producer built from §3 is refused on its first write |
+| claude | blocking | 126 contradicts 82 and 123 for a child two parents name — its own first sentence states the correct rule and its second violates it | `upheld` | one decision, self-contradictory across two sentences |
+| claude | blocking | Bounding depth at traversal leaves the preservation check blind below 5 while the Spec asserts deeper trees are creatable | `upheld` | 123 broke 106 |
+| claude | major | 409 handling cannot hold on the page's route, and §13 asserts the opposite outcome | `upheld` | 120 versus 115: a `/view` retry after an agent restructures is refused, not retried, so discarding on 409 loses a bulk approve |
+| claude | major | The writable set has no removal mechanism, so 126's un-registering retarget cannot be implemented from §8 | `upheld` | 126 requires something §8 cannot do; 47 still live and unamended |
+| claude | major | `was` is page-writable with no constraint tying it to a verdict transition | `upheld` | 122 with no check — a `was`-only write passes both gates and defeats 110 |
+| claude | major | §3's schema example omits `was` on every node and edge while the rule below says every key is present | `upheld` | 125 landed in the key order and nowhere a fixture author looks |
+| claude | major | "Following a container registers the child" names no wire mechanism | `upheld` | 114 cut 105, which was the only mechanism it ever had — and 126 makes it newly load-bearing |
+| claude | major | §1 lists the repo root router twice with conflicting scope, one row carrying the "exactly two ways" claim 111 superseded | `upheld` | two rows, one stale |
+| claude | minor | Round 9's findings table is header-only | `upheld` | third time a round's table has been left empty |
+| claude | minor | §7 never mentions `was`, so the durable reset is invisible on the one surface a person uses | `upheld` | 110 and 122 with no rendering |
+| claude | minor | The supersession map records neither 124 restoring 48's atomic half, 125 extending 110, nor 126 amending 47 and 82 | `upheld` | the map is now itself behind |
+| claude | minor | Atomic writes bring a temp file into a committed directory with no naming, cleanup or ignore rule | `upheld` | 124's consequence; §13 deliberately kills mid-write, so the leftover is a case the suite creates |
+| claude | minor | §9 says the sibling "reached `verifying`"; it is `done` | `upheld` | verification PASS at `beec39c`. The three preconditions hold and §1's two router rows are correct |
+| claude | minor | Verified outstanding: §4's three insertions and §5's two edits are all still to do | `upheld` | no reference to graphs or the viewer in `planning.md`, `diagrams.md` or `plan-review.md`; every cited anchor is real |
+
+**Not remediated, deliberately.** Every finding above is a consequence of a change made between rounds:
+119/120 contradicting a test written in the same edit, 123 breaking 106, 126 self-contradictory across two
+sentences, 125 landing in one place and not the three that reference it, 114 having cut the only mechanism
+"following a container" ever had. None is a defect in the design, which has been stable since Round 8. The
+loop is now measuring the editing rather than the plan — see the note below.
 
 ## Prior Work
 
+Checked against the tree at `beec39c` on 2026-08-24. **Nothing in the Spec is already built.**
+`viewer/`, `protocol/graphs.md`, `skills/graph/` and `codex/prompts/graph.md` do not exist.
+
 | Spec item | State | Evidence (file:line) | Confidence |
 |-----------|-------|----------------------|------------|
+| All of §3, §7, §8, §13 | absent | no `viewer/`, no `protocol/graphs.md` | high |
+| §9's three preconditions | pre-existing | git baseline `beec39c`; `.gitignore:1-2`; `AGENTS.md:1` | high |
+| §12's four lessons | pre-existing, not reusable | `spike/graph.html`, deleted by this change; the lessons carry over as comments | high |
+
+`spike/` is **not** prior work. Its code is deleted by this change (§9) and its graph files carry
+render-time keys a later agent would copy as a format example. It is read once, by the page lane,
+as a taste reference — not as a base to extend.
+
+## Integration contract
+
+The lead pinned the wire contract, the canonical serialization and the page's DOM contract before
+dispatching, because three lanes implement against each other: the server, the page that calls it,
+and two test suites that assert both. The Spec fixes the rules; it does not fix status codes, error
+codes, body shapes or DOM hooks, and four lanes inventing those independently would not meet.
+
+The contract is reproduced as a header comment in `viewer/server.js` (routes, error codes, wire
+shapes) and in `protocol/graphs.md` (the producer-facing half). Its working copy lived at
+`~/.cache/implement/editable-node-graphs/contract.md` during the run.
+
+Lead decisions taken while writing it, none of which the Spec settles:
+
+| # | Decision | Why |
+|---|----------|-----|
+| L1 | Rule refusals are `422` with a machine-readable `error` code; a stale hash is `409`; auth is `401`/`403` | §13 asserts refusals by name, so each needs a distinct handle a test can match |
+| L2 | An agent's `PUT /graph` may never set an origin to `agreed` or `rejected` on an entry that is new or `proposed` on disk (`agent-verdict`) | §6 says an agent may reverse neither verdict. Granting one is the same act; without the check the preservation contract has a hole |
+| L3 | `GET /graph` returns `{hash, graph, children}`, where `children` says whether each named child file exists | §10 requires the affordance to be disabled for a missing child, and the page cannot stat a file |
+| L4 | The registered set records `opened: true` for a path given to `--open` | Un-registering an orphaned subtree must not evict a graph the person opened directly |
+| L5 | Layout pitch is 240 x 140 | Matches §3's own example coordinates |
 
 ## Implementation Tasks
 
+Four lanes run concurrently in the first round: the GPT lane in the main checkout, each Claude lane
+in its own git worktree, per `lanes.md`'s never-two-write-lanes-in-one-checkout rule. Rounds 2 and 3
+sequence behind the code they test.
+
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | The server: routes, auth, discovery, the writable set, canonical serialization, preservation, containment, optimistic concurrency, the global lock, atomic writes, BFS layout | `viewer/server.js`, `viewer/package.json` | GPT Terra | | lead smoke script, then T5 | pending |
+| T2 | The page: SVG rendering, selection and box-select, reachable edges, detail on the node, containment and breadcrumb, polling | `viewer/index.html` | Claude Sonnet | | T6 | pending |
+| T3 | The format document both harnesses read, and its two wrappers | `protocol/graphs.md`, `skills/graph/SKILL.md`, `codex/prompts/graph.md` | Claude Sonnet | | `./install.sh` twice | pending |
+| T4 | The three `planning.md` insertions, the `diagrams.md` section, the `plan-review.md` pointer, and the documentation sweep | `protocol/planning.md`, `protocol/diagrams.md`, `protocol/plan-review.md`, `AGENTS.md`, `protocol/AGENTS.md`, `skills/AGENTS.md`, `README.md`, `docs/plans/editable-node-graphs/MAP.md`, `install.sh`, `.gitignore` | Claude Sonnet | | `./install.sh` twice, `git status --porcelain` empty | pending |
+| T5 | The stdlib suite and its committed fixtures | `viewer/test/*.test.js`, `viewer/test/fixtures/` | GPT Terra | | `node --test 'viewer/test/*.test.js'` | pending |
+| T6 | The Chromium suite | `viewer/test/browser.spec.js` | Claude Sonnet | | `npm --prefix viewer run test:browser` | pending |
 
 ## Log
 
