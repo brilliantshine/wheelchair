@@ -1,0 +1,125 @@
+# Stage 2 — Plan review
+
+Adversarial cross-model review of a plan produced by Stage 1.
+
+**Input:** a plan slug. A plan written outside this workflow is brought in with
+`adopt.md` first; this stage does not take document paths.
+
+**Precondition:** `docs/plans/<slug>/PLAN.md` has `status: ready-for-review` (or
+`approved`, if the user explicitly wants another round). Otherwise refuse and name the
+missing stage.
+
+The reviewers report; **the lead adjudicates**. A reviewer's self-assigned severity is an
+opinion, not a gate — otherwise the reviewer controls when the loop terminates, and a
+lane told to "attack" always finds something to call major.
+
+## Round N
+
+N = 1 + the number of existing "Round" headings under Review Rounds.
+
+**Scope of the round:**
+
+- **Round 1** — the whole Spec.
+- **Round 2+** — the changes since the previous round, reviewed in depth, plus one
+  whole-Spec coherence pass (does it still hang together; did a fix contradict something
+  elsewhere). Unchanged sections that already passed a round are not re-litigated without
+  new evidence. Before launching, write a short **Changed since Round N-1** list into the
+  round's section — that list is what scopes the reviewers. If the plan is committed,
+  `git diff` on PLAN.md is the more reliable source for it.
+
+Launch two **independent** reviewers in parallel — each fresh-context, each given only
+the plan path and repo access, never this conversation. Read
+`~/src/wheelchair/protocol/lanes.md` for the
+exact invocations and cautions before launching.
+
+- **GPT lane** — `codex exec -m gpt-5.6-sol -s read-only -C "$PWD" -o "$OUT" - < brief`
+- **Claude lane** — Agent tool from Claude Code; `claude -p "<brief>"` from Codex.
+
+Both lanes are read-only here: a plan reviewer reads code and reports, it never edits.
+
+## The brief
+
+Both briefs carry the task, the severity ladder, and the adjudication record:
+
+> Read `docs/plans/<slug>/IDEA.md` first — the plain-language statement of what this is
+> for and what it is explicitly not doing — then `docs/plans/<slug>/PLAN.md`. Attack the
+> Spec: ambiguity a worker could misread, missing lifecycle and edge cases, contradictions
+> with the current code (verify against source, not the plan's claims), unverifiable
+> success criteria, simpler designs that meet the same goal, and any place the Spec has
+> drifted from the idea — solving a different problem, or reaching past the stated
+> non-goals.
+>
+> **Severity is defined by what it would do to an implementing worker, not by how much it
+> bothers you:**
+> - `blocking` — a worker following this Spec would build the wrong thing, or could not
+>   implement it as written.
+> - `major` — a worker would have to stop and ask before proceeding.
+> - `minor` — everything else: polish, taste, optional improvement, a better-but-not-
+>   necessary design.
+>
+> A finding you cannot tie to a concrete worker consequence is `minor`. Reporting nothing
+> is an acceptable outcome; padding severity is not.
+>
+> The Review Rounds table and Accepted Risks section record findings already settled.
+> Anything marked `declined` or `accepted-risk` was considered and closed with a
+> rationale — do not re-raise it unless you have concrete evidence that rationale is
+> factually wrong. If you do, prefix the line `RE-RAISE:` and cite the evidence.
+>
+> Report each finding on one line:
+> `SEVERITY: blocking|major|minor — <finding> — <evidence>`
+
+Slant the Claude lane additionally toward intent, measured against IDEA.md: is this the
+right shape for the stated problem, the simplest way it could be done, and does it still
+serve what the idea says it is for? Judge the GPT lane by its parsed SEVERITY lines only —
+its prose reads polished regardless of depth.
+
+Read each GPT lane's verdict from its `-o` file, and check the exit code: a non-zero
+exit means the lane died and its findings are missing, not that it found nothing.
+
+## Merge and triage
+
+Record every finding in the Review Rounds table and give each one a **lead verdict**:
+
+| Verdict | Meaning |
+|---|---|
+| `upheld` | Real at the reported severity. Fix it. |
+| `downgraded` | Real but over-severed. Record the true severity and why. |
+| `declined` | Not a defect. Record why; future rounds must honor it. |
+| `accepted-risk` | Real, not worth fixing. Promote to the Spec's Accepted Risks section. |
+| `user-decision` | A genuine fork. Append to Open Questions. |
+
+**You may not downgrade or decline a finding you have not checked** against the Spec or
+the code — the verdict cites evidence the same way the finding does. Downgrading is how
+this loop terminates, which is exactly why it needs a receipt; a round where you
+downgrade most findings means either the ladder isn't landing in the brief, or you are
+rationalizing your way to `approved`.
+
+Then act on the verdicts: `upheld` findings update the Spec (real design changes also get
+a Decision Log entry with source `review-round-N`); `downgraded` ones are fixed only if
+cheap, otherwise left with their recorded rationale; `accepted-risk` moves to Accepted
+Risks; `user-decision` findings drain through Open Questions **one at a time** under
+Stage 1 loop rules.
+
+Round summaries and `user-decision` questions shown to the user follow
+`~/src/wheelchair/protocol/writing.md` — finding
+IDs and round numbers get re-grounded on first use, and the summary reports what would
+break, not which reviewer said what.
+
+## Exit
+
+A round is clean when lead triage upholds **zero blocking and zero major** findings and
+no `user-decision` finding is still open. Both lanes' output feeds one triage — the gate
+is the triage, not two independently clean reports.
+
+Before setting the status, draw or refresh the Spec's Mermaid diagram per `diagrams.md`. This is
+the first moment the Spec is final, and the last moment anything is cheap to fix. Then set
+`status: approved`.
+
+**Cap: three rounds.** If round 3 does not produce a clean triage, stop and bring it to
+the user with the findings that keep recurring. Review that won't converge in three
+rounds is signalling an unresolved fork in the plan itself — that is a Stage 1 decision,
+not more review.
+
+The cap counts rounds since the last user decision, not rounds ever. Once the user
+settles the fork through Open Questions, the budget resets and reviewing may continue —
+the cap exists to force escalation, not to permanently bar further rounds.

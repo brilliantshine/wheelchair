@@ -1,0 +1,154 @@
+{
+  "schema": 1,
+  "title": "records — what is true in the story world",
+  "source": "router",
+  "source_detail": "almanac/src/almanac/records/AGENTS.md",
+  "nodes": [
+    {
+      "id": "record",
+      "label": "something happened in the story",
+      "kind": "external",
+      "ref": null,
+      "note": "A scene establishes a fact: someone moved, something changed, time passed.",
+      "x": 59,
+      "y": 186,
+      "graph": null,
+      "origin": "agreed"
+    },
+    {
+      "id": "author",
+      "label": "write it down as a change",
+      "kind": "step",
+      "ref": "records/authoring.py",
+      "note": "Creating entities and appending changes, including resolving the time reference the prose used.",
+      "x": 320,
+      "y": 180,
+      "graph": null,
+      "origin": "agreed"
+    },
+    {
+      "id": "time",
+      "label": "work out when it happened",
+      "kind": "step",
+      "ref": "records/timeline/AGENTS.md",
+      "note": "Story time is large enough to have its own package. Click in to see how a phrase about time becomes a date, or doesn't.",
+      "x": 609,
+      "y": 193,
+      "graph": "timeline",
+      "origin": "agreed"
+    },
+    {
+      "id": "state",
+      "label": "answer what was true at a moment",
+      "kind": "step",
+      "ref": "records/snapshots.py",
+      "note": "Point and throughout state resolution. With uncertain transition placement, answers come back as must/may envelopes rather than single values.",
+      "x": 877,
+      "y": 210,
+      "graph": null,
+      "origin": "agreed"
+    },
+    {
+      "id": "conflict",
+      "label": "notice when two facts disagree",
+      "kind": "decision",
+      "ref": "records/conflicts.py",
+      "note": "Temporal network, scene anchors, change time, character location, planned-versus-canon, spatial collisions. Its lifecycle is the one synchronized path for accepted-story conflicts.",
+      "x": 1254,
+      "y": 214,
+      "graph": null,
+      "origin": "agreed"
+    },
+    {
+      "id": "separate",
+      "label": "opinions are kept apart from facts",
+      "kind": "note",
+      "ref": "records/assessments.py",
+      "note": "Immutable assessment and semantic-uncertainty records, deliberately separate from the facts themselves. Where this attaches to the flow, the router does not say.",
+      "x": 840,
+      "y": 360,
+      "graph": null,
+      "origin": "agreed"
+    }
+  ],
+  "edges": [
+    {
+      "id": "record->author",
+      "from": "record",
+      "to": "author",
+      "label": "",
+      "origin": "proposed",
+      "note": null,
+      "kind": "data",
+      "value": "a fact established by a scene",
+      "inferred": true,
+      "_text": "a fact established by a scene",
+      "_inferred": true
+    },
+    {
+      "id": "author->time",
+      "from": "author",
+      "to": "time",
+      "label": "when?",
+      "origin": "proposed",
+      "note": null,
+      "kind": "data",
+      "value": "a time reference to resolve",
+      "inferred": false,
+      "_text": "a time reference to resolve",
+      "_inferred": false
+    },
+    {
+      "id": "time->state",
+      "from": "time",
+      "to": "state",
+      "label": "",
+      "origin": "mine",
+      "note": null,
+      "kind": "data",
+      "value": "a resolved point or range",
+      "inferred": false,
+      "_text": "a resolved point or range",
+      "_inferred": false
+    },
+    {
+      "id": "state->conflict",
+      "from": "state",
+      "to": "conflict",
+      "label": "",
+      "origin": "proposed",
+      "note": null,
+      "kind": "data",
+      "value": "accepted state to validate",
+      "inferred": true,
+      "_text": "accepted state to validate",
+      "_inferred": true
+    },
+    {
+      "id": "conflict->state",
+      "from": "conflict",
+      "to": "state",
+      "label": "re-check",
+      "origin": "proposed",
+      "note": null,
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "_text": "re-check",
+      "_inferred": false
+    },
+    {
+      "id": "author->record",
+      "from": "author",
+      "to": "record",
+      "label": "",
+      "origin": "mine",
+      "note": null,
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "_text": "",
+      "_inferred": false
+    }
+  ]
+}
