@@ -214,6 +214,11 @@ printf '# m \xfe x\n' > "$invalid_heading/otherbyte/AGENTS.md"
 # Literal U+FFFD: valid UTF-8, so it renders exactly as a malformed byte does.
 # The collision is accepted; what must hold is that only the malformed file is
 # flagged, so a reader is told which heading list not to trust.
+# Above U+10FFFF. glibc's iconv accepts these, so any flag built on an
+# independent validity predicate misses them while the serializer still replaces
+# the bytes -- the exact drift that made flag and rendering disagree.
+mkdir -p "$invalid_heading/aboverange"
+printf '# high \xf4\x90\x80\x80\n' > "$invalid_heading/aboverange/AGENTS.md"
 mkdir -p "$invalid_heading/literalfffd"
 printf '# m \xef\xbf\xbdff x\n' > "$invalid_heading/literalfffd/AGENTS.md"
 printf '# a' > "$invalid_heading/nul/AGENTS.md"
@@ -392,6 +397,23 @@ h=json.load(sys.stdin)["directories"][0]["candidates"][0]["headings"]
 assert h == ["# bad \ufffdff heading"], h
 '
 
+json_assert 'the flag follows the rendering, including bytes iconv accepts' invalid-heading '
+import json, sys
+d=json.load(sys.stdin)
+m={r["path"]: r for r in d["directories"]}
+# Every candidate whose rendered headings carry a replacement must be flagged, and
+# no other may be. Derived from the report itself, so it cannot drift from the code.
+for path, r in m.items():
+    if not r["candidates"]: continue
+    replaced = any("\ufffd" in h for h in r["candidates"][0]["headings"])
+    literal_only = path == "literalfffd"
+    flagged = any("malformed UTF-8" in n for n in r["notes"])
+    if literal_only:
+        assert not flagged, (path, "valid U+FFFD must not be flagged", r["notes"])
+    else:
+        assert flagged == replaced, (path, replaced, flagged, r["notes"])
+assert any("malformed UTF-8" in n for n in m["aboverange"]["notes"]), m["aboverange"]["notes"]
+'
 json_assert 'a file with malformed bytes is flagged, and a valid lookalike is not' invalid-heading '
 import json, sys
 d=json.load(sys.stdin)
@@ -404,7 +426,7 @@ assert raw["candidates"][0]["headings"] == look["candidates"][0]["headings"]
 assert any("malformed UTF-8" in n for n in raw["notes"]), raw["notes"]
 assert not any("malformed UTF-8" in n for n in look["notes"]), look["notes"]
 '
-json_assert 'a mangled byte never renders the same as text spelling one out' invalid-heading '
+json_assert 'a mangled byte stays distinct from text spelling \\xff, and from another mangled byte' invalid-heading '
 import json, sys
 d=json.load(sys.stdin)
 h={r["path"]: r["candidates"][0]["headings"][0] for r in d["directories"] if r["candidates"]}

@@ -63,9 +63,15 @@ file_has_nul() {
   ! cmp -s "$1" <(tr -d '\000' < "$1")
 }
 
-file_has_malformed_utf8() {
-  [[ -f $1 ]] || return 1
-  ! iconv -f UTF-8 -t UTF-8 < "$1" >/dev/null 2>&1
+# Ask the serializer, do not second-guess it.  An independent validity predicate
+# drifts from what json_string actually did -- glibc's iconv, for one, accepts
+# sequences above U+10FFFF that the serializer correctly replaces, so the file
+# rendered lossily and went unflagged.  json_string emits the six ASCII characters
+# \ufffd only where it replaced a byte; a heading that legitimately contains U+FFFD
+# passes through as its raw UTF-8 bytes.  So the rendered text is an exact record of
+# whether anything was lost, and flag and rendering cannot disagree by construction.
+rendering_replaced_bytes() {
+  [[ $1 == *'\ufffd'* ]]
 }
 
 json_string() {
@@ -115,11 +121,11 @@ json_string() {
     fi
 
     if (( code >= 128 && ! valid_sequence )); then
-      # U+FFFD, then the byte in hex.  The replacement character is used because
-      # no literal input can produce it through JSON escaping, so a mangled byte
-      # never renders the same as text that merely spells one out: a raw 0xff
-      # gives "\ufffdff" while the four characters \xff give "\\xff".  Keeping the
-      # hex also separates one bad byte from another.
+      # U+FFFD, then the byte in hex.  This keeps one bad byte distinct from
+      # another and avoids the earlier collision with text spelling out \xff.  It
+      # is **not** injective against all input -- U+FFFD is ordinary valid UTF-8,
+      # so a file containing it renders the same way.  That is accepted under
+      # decision 53; the directory's notes carry the flag that tells them apart.
       escaped+='\ufffd'
       printf -v char '%02x' "$code"
       escaped+=$char
@@ -243,7 +249,7 @@ emit_headings() {
 
 emit_directory() {
   local dir=$1 rel candidate name resolved='' broken outside=0 skip='' first=1 n
-  local -a names=() resolves=() broken_flags=() outside_flags=()
+  local -a names=() resolves=() broken_flags=() outside_flags=() headings_json=()
   local -A seen=()
   local real_count=0 identical=false diff_lines=null write_target=null
   local -a unmanaged=() notes=()
@@ -304,11 +310,14 @@ emit_directory() {
   # no-read rule above governs this too: an external link target is never opened,
   # so its contents are never disclosed in the report.
   for ((n = 0; n < ${#names[@]}; n++)); do
+    headings_json[n]=''
     [[ ${broken_flags[n]} == true || ${outside_flags[n]} == true ]] && continue
+    realpath_into resolved "$dir/${names[n]}"
+    headings_json[n]=$(emit_headings "$resolved")
     if file_has_nul "$dir/${names[n]}"; then
       notes+=("${names[n]} contains NUL bytes; its heading list is incomplete")
     fi
-    if file_has_malformed_utf8 "$dir/${names[n]}"; then
+    if rendering_replaced_bytes "${headings_json[n]}"; then
       notes+=("${names[n]} contains malformed UTF-8; its heading list is unreliable and may not distinguish it from another such file")
     fi
   done
@@ -342,8 +351,7 @@ emit_directory() {
     if [[ ${broken_flags[i]} == true || ${outside_flags[i]} == true ]]; then
       printf '[]'
     else
-      realpath_into resolved "$candidate"
-      emit_headings "$resolved"
+      printf '%s' "${headings_json[i]}"
     fi
     printf '}'
   done
