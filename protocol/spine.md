@@ -79,7 +79,7 @@ A heading list is a **human-readable summary, not a byte-faithful channel.** It 
 prompt can tell a real router from a pointer beside it, and both of those are ordinary markdown.
 The scan does not promise that two files render distinguishably: a malformed byte is shown as a
 visible marker, and ordinary valid text can produce the same marker. A candidate whose content
-carries bytes that cannot be represented — NUL, or malformed UTF-8 — is flagged in its directory's
+carries bytes that cannot be represented **in its headings** is flagged in its directory's
 `notes` and its heading list declared unreliable, so the reader goes and looks instead of trusting
 a rendering that lost the difference. Chasing a collision-free encoding instead cost three
 remediation rounds and produced two representations that were each claimed collision-free and were
@@ -189,7 +189,7 @@ belongs.
 | Two byte-identical routing files in one directory | Reported as a duplicate for consolidation. The script picks nothing |
 | A nested git working tree or submodule inside the target | Excluded from the walk and reported as a nested repository. Never a candidate |
 | A child directory that is a **symlink** | Excluded and reported as such; the walk never follows it. A link pointing inside the target aliases a directory the walk already reaches by its real path, and one pointing outside would otherwise have `/spine` proposing routers in a tree nobody named |
-| A candidate whose **content** carries NUL or malformed UTF-8 | Flagged in the directory's notes, heading list declared unreliable. The rendering is not guaranteed to distinguish it from another such file, which is why the flag exists |
+| A candidate whose **headings** carry bytes that cannot be represented, or whose content carries NUL | Flagged in the directory's notes, heading list declared unreliable. The rendering is not guaranteed to distinguish it from another such file, which is why the flag exists. A malformed byte in the body only is deliberately not flagged — nothing the report carries is affected by it |
 | A path that is not valid UTF-8 | Excluded and reported with that reason. JSON is defined over Unicode text, so emitting the bytes would make the whole report unparseable |
 | Symlink broken, or resolving outside the target tree | Skip the directory and report. Never follow or repair |
 | Existing router in a foreign style | Additions and factual corrections only. Never reformatted, never measured against the format |

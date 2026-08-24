@@ -395,18 +395,29 @@ U+10FFFF — `F4 90 80 80`, `F5 80 80 80` — which `json_string` correctly repl
 files rendered lossily and went unflagged: the flag and the rendering disagreed, which is
 what two independent predicates eventually do.
 
-The flag is now derived from the rendering rather than from a second opinion.
-`json_string` emits the six ASCII characters `\ufffd` only where it replaced a byte, while a
-heading that legitimately contains U+FFFD passes through as its raw UTF-8 bytes — verified.
-So the rendered text is an exact record of whether anything was lost, and the two cannot
-drift apart. Confirmed against both out-of-range sequences (flagged), ordinary UTF-8
-including `café ☕` (not flagged), and a legitimate U+FFFD (not flagged).
+The flag was then rebuilt twice more before it was right, and the fifth review caught both
+mistakes. Inferring it from the rendered text was wrong in **both** directions: it missed a
+malformed byte anywhere outside a heading, and it false-fired on ordinary Markdown that
+merely mentions `\ufffd`, because JSON-escaping that literal backslash produces the same
+characters the marker does.
+
+What it is now: `json_string` **reports** whether it replaced a byte, and `emit_headings`
+passes that flag back alongside the rendering. Nothing infers, nothing second-guesses. And
+the claim is scoped to the **heading list**, which is what the report carries — a malformed
+byte elsewhere in the file changes nothing the report says, since sizes are byte counts and
+the diff line count comes from `diff` itself, verified to handle such files as text. Flagging
+it would report something the reader cannot act on. Confirmed against both out-of-range sequences (flagged), ordinary UTF-8
+including `café ☕` (not flagged), a legitimate U+FFFD (not flagged), Markdown mentioning
+`\ufffd` (not flagged), and a body-only malformed byte (deliberately not flagged).
 
 The assertion for it is written against the report rather than the implementation: for every
 candidate, "flagged" must equal "its rendered headings contain a replacement." It fails
 against the `iconv` version.
 
-**Assertions 78 → 79.**
+**Assertions 78 → 80.** Three attempts at this flag: an independent validity predicate that
+drifted, an inference from the rendered text that was wrong in both directions, and finally
+the serializer reporting what it did. The lesson is the one this whole arc keeps teaching —
+derive it from the thing that knows, do not build a second thing that guesses.
 
 ### Remediation 3 — 2026-08-24
 

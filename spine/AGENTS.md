@@ -36,9 +36,11 @@ path in → refuse if outside a git repo → walk, skipping ignored, dotted and 
 - **A link path is never emitted as a write target.** Both symlink directions are live on
   this machine, so a write target is always the `realpath` result.
 - **A heading list is a summary, not a byte-faithful channel.** It exists to tell a real
-  router from a pointer beside it, both ordinary markdown. Two files carrying
-  unrepresentable bytes may render alike; such a file is flagged in its directory's notes
-  instead. Do not add an encoding meant to make the rendering collision-free — that was
+  router from a pointer beside it, both ordinary markdown. Two files whose headings
+  carry unrepresentable bytes may render alike; such a file is flagged in its directory's
+  notes instead. The flag comes from the serializer reporting what it replaced — never from
+  an independent validity check, and never from inspecting the rendered text, both of which
+  were tried and were wrong in opposite directions. Do not add an encoding meant to make the rendering collision-free — that was
   tried twice and both attempts were claimed collision-free and were not.
 - **The script classifies structure, never content.** Which of two real routing files is
   the router, and what filename a new router takes, are judgements for the prompt.

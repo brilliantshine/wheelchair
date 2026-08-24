@@ -219,6 +219,15 @@ printf '# m \xfe x\n' > "$invalid_heading/otherbyte/AGENTS.md"
 # the bytes -- the exact drift that made flag and rendering disagree.
 mkdir -p "$invalid_heading/aboverange"
 printf '# high \xf4\x90\x80\x80\n' > "$invalid_heading/aboverange/AGENTS.md"
+# Ordinary Markdown that merely mentions the escape. JSON-escaping its backslash
+# produces the same characters the replacement marker does, so any flag inferred
+# from the rendered text false-fires here.
+mkdir -p "$invalid_heading/mentions"
+printf '# literal \\ufffd text\n' > "$invalid_heading/mentions/AGENTS.md"
+# A malformed byte in the body, not in a heading. Deliberately NOT flagged: the
+# report carries headings, sizes and a diff count, and none of them is affected.
+mkdir -p "$invalid_heading/bodyonly"
+printf '# clean heading\nbody has \xff here\n' > "$invalid_heading/bodyonly/AGENTS.md"
 mkdir -p "$invalid_heading/literalfffd"
 printf '# m \xef\xbf\xbdff x\n' > "$invalid_heading/literalfffd/AGENTS.md"
 printf '# a' > "$invalid_heading/nul/AGENTS.md"
@@ -397,6 +406,16 @@ h=json.load(sys.stdin)["directories"][0]["candidates"][0]["headings"]
 assert h == ["# bad \ufffdff heading"], h
 '
 
+json_assert 'Markdown mentioning the escape is not flagged, and a body-only bad byte is not either' invalid-heading '
+import json, sys
+d=json.load(sys.stdin)
+m={r["path"]: r for r in d["directories"]}
+def flagged(p): return any("could not be represented" in n for n in m[p]["notes"])
+assert not flagged("mentions"), ("literal text false-fired", m["mentions"]["notes"])
+assert m["mentions"]["candidates"][0]["headings"] == [r"# literal \ufffd text"], m["mentions"]["candidates"][0]["headings"]
+assert not flagged("bodyonly"), ("body byte flagged though the report is unaffected", m["bodyonly"]["notes"])
+assert m["bodyonly"]["candidates"][0]["headings"] == ["# clean heading"]
+'
 json_assert 'the flag follows the rendering, including bytes iconv accepts' invalid-heading '
 import json, sys
 d=json.load(sys.stdin)
@@ -407,12 +426,12 @@ for path, r in m.items():
     if not r["candidates"]: continue
     replaced = any("\ufffd" in h for h in r["candidates"][0]["headings"])
     literal_only = path == "literalfffd"
-    flagged = any("malformed UTF-8" in n for n in r["notes"])
+    flagged = any("could not be represented" in n for n in r["notes"])
     if literal_only:
         assert not flagged, (path, "valid U+FFFD must not be flagged", r["notes"])
     else:
         assert flagged == replaced, (path, replaced, flagged, r["notes"])
-assert any("malformed UTF-8" in n for n in m["aboverange"]["notes"]), m["aboverange"]["notes"]
+assert any("could not be represented" in n for n in m["aboverange"]["notes"]), m["aboverange"]["notes"]
 '
 json_assert 'a file with malformed bytes is flagged, and a valid lookalike is not' invalid-heading '
 import json, sys
@@ -423,8 +442,8 @@ raw, look = m["rawbyte"], m["literalfffd"]
 assert raw["candidates"][0]["headings"] == look["candidates"][0]["headings"]
 # What must hold: the malformed one is flagged and the valid one is not, so the
 # reader is told which heading list cannot be relied on.
-assert any("malformed UTF-8" in n for n in raw["notes"]), raw["notes"]
-assert not any("malformed UTF-8" in n for n in look["notes"]), look["notes"]
+assert any("could not be represented" in n for n in raw["notes"]), raw["notes"]
+assert not any("could not be represented" in n for n in look["notes"]), look["notes"]
 '
 json_assert 'a mangled byte stays distinct from text spelling \\xff, and from another mangled byte' invalid-heading '
 import json, sys

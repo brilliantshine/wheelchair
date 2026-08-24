@@ -63,16 +63,21 @@ file_has_nul() {
   ! cmp -s "$1" <(tr -d '\000' < "$1")
 }
 
-# Ask the serializer, do not second-guess it.  An independent validity predicate
-# drifts from what json_string actually did -- glibc's iconv, for one, accepts
-# sequences above U+10FFFF that the serializer correctly replaces, so the file
-# rendered lossily and went unflagged.  json_string emits the six ASCII characters
-# \ufffd only where it replaced a byte; a heading that legitimately contains U+FFFD
-# passes through as its raw UTF-8 bytes.  So the rendered text is an exact record of
-# whether anything was lost, and flag and rendering cannot disagree by construction.
-rendering_replaced_bytes() {
-  [[ $1 == *'\ufffd'* ]]
-}
+# The flag comes from the serializer itself, reported alongside the rendering, not
+# inferred from it.  An independent validity predicate drifts -- glibc's iconv
+# accepts sequences above U+10FFFF that the serializer correctly replaces -- and
+# sniffing the rendered text is worse, because JSON escaping of a literal backslash
+# produces the same characters and ordinary Markdown mentioning \ufffd false-fires.
+#
+# The claim is scoped to the **heading list**, which is what the report carries. A
+# malformed byte elsewhere in the file changes nothing the report says: sizes are
+# byte counts, the diff line count is computed by diff itself, and neither is
+# affected. Flagging it would be reporting something the reader cannot act on.
+
+# Set by json_string when it replaces a byte.  The caller resets it and reads it
+# afterwards; sniffing the rendered text for the marker does not work, because JSON
+# escaping of a literal backslash produces the same characters.
+json_string_replaced=0
 
 json_string() {
   local value=$1 char code escaped='' i length next second third
@@ -126,6 +131,7 @@ json_string() {
       # is **not** injective against all input -- U+FFFD is ordinary valid UTF-8,
       # so a file containing it renders the same way.  That is accepted under
       # decision 53; the directory's notes carry the flag that tells them apart.
+      json_string_replaced=1
       escaped+='\ufffd'
       printf -v char '%02x' "$code"
       escaped+=$char
@@ -234,21 +240,28 @@ fi
 directories_json=''
 excluded_json=''
 
+# Prints "<0|1> <json-array>": whether any heading needed a byte replaced, then
+# the array itself.  The flag is reported rather than inferred from the text.
 emit_headings() {
-  local file=$1 line first=1
-  printf '['
-  while IFS= read -r line || [[ -n $line ]]; do
-    if [[ $line =~ ^#{1,6}\  ]]; then
-      (( first )) || printf ','
-      json_string "$line"
-      first=0
-    fi
-  done < "$file"
-  printf ']'
+  local file=$1 line first=1 body
+  json_string_replaced=0
+  body=$(
+    printf '['
+    while IFS= read -r line || [[ -n $line ]]; do
+      if [[ $line =~ ^#{1,6}\  ]]; then
+        (( first )) || printf ','
+        json_string "$line"
+        first=0
+      fi
+    done < "$file"
+    printf ']'
+    printf '\034%s' "$json_string_replaced"
+  )
+  printf '%s %s' "${body##*$'\034'}" "${body%$'\034'*}"
 }
 
 emit_directory() {
-  local dir=$1 rel candidate name resolved='' broken outside=0 skip='' first=1 n
+  local dir=$1 rel candidate name resolved='' broken outside=0 skip='' first=1 n rendered
   local -a names=() resolves=() broken_flags=() outside_flags=() headings_json=()
   local -A seen=()
   local real_count=0 identical=false diff_lines=null write_target=null
@@ -313,12 +326,13 @@ emit_directory() {
     headings_json[n]=''
     [[ ${broken_flags[n]} == true || ${outside_flags[n]} == true ]] && continue
     realpath_into resolved "$dir/${names[n]}"
-    headings_json[n]=$(emit_headings "$resolved")
+    rendered=$(emit_headings "$resolved")
+    headings_json[n]=${rendered#* }
     if file_has_nul "$dir/${names[n]}"; then
       notes+=("${names[n]} contains NUL bytes; its heading list is incomplete")
     fi
-    if rendering_replaced_bytes "${headings_json[n]}"; then
-      notes+=("${names[n]} contains malformed UTF-8; its heading list is unreliable and may not distinguish it from another such file")
+    if [[ ${rendered%% *} == 1 ]]; then
+      notes+=("${names[n]} has headings carrying bytes that could not be represented; its heading list is unreliable and may not distinguish it from another such file")
     fi
   done
   [[ -n $skip ]] && notes+=("$skip")
