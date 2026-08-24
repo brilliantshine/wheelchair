@@ -12,7 +12,35 @@ if [[ ! -e $1 || ! -d $1 ]]; then
   exit 2
 fi
 
-target=$(realpath "$1")
+# `realpath -z` plus `read -d ''` is deliberate: command substitution strips
+# every trailing newline, including a newline that is part of a legal pathname.
+realpath_into() {
+  local -n destination=$1
+  IFS= read -r -d '' destination < <(realpath -z -- "$2")
+}
+
+# git writes a newline terminator, so retain every pathname byte and remove only
+# that terminator before resolving it through the NUL-delimited helper above.
+git_toplevel_into() {
+  local -n destination=$1
+  local reported
+  IFS= read -r -d '' reported < <(git -C "$2" rev-parse --show-toplevel 2>/dev/null && printf '\0') || return 1
+  reported=${reported%$'\n'}
+  realpath_into "$1" "$reported"
+}
+
+valid_utf8() {
+  printf '%s' "$1" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1
+}
+
+if ! realpath_into target "$1"; then
+  printf '%s: could not resolve directory: %s\n' "${0##*/}" "$1" >&2
+  exit 2
+fi
+if ! valid_utf8 "$target"; then
+  printf '%s: target path is not valid UTF-8\n' "${0##*/}" >&2
+  exit 2
+fi
 
 # Print a shell string as a JSON string.  Work byte-wise so every JSON control
 # character is escaped; ordinary UTF-8 bytes remain unchanged.
@@ -32,8 +60,8 @@ json_string() {
       $'\r') escaped+='\r' ;;
       *)
         if (( code < 32 )); then
-          printf -v char '\u%04x' "$code"
-          escaped+=$char
+          printf -v hex '%04x' "$code"
+          escaped+="\\u$hex"
         else
           escaped+=$char
         fi
@@ -54,6 +82,28 @@ json_array_strings() {
   printf ']'
 }
 
+# An invalid pathname cannot be a JSON string.  Keep it diagnostic rather than
+# repairing it: each non-ASCII byte is shown as a literal \xHH escape.
+json_path_string() {
+  local value=$1 char code escaped='' i
+  if valid_utf8 "$value"; then
+    json_string "$value"
+    return
+  fi
+  LC_ALL=C
+  for ((i = 0; i < ${#value}; i++)); do
+    char=${value:i:1}
+    printf -v code '%d' "'$char"
+    if (( code >= 128 )); then
+      printf -v char '\\x%02x' "$code"
+      escaped+=$char
+    else
+      escaped+=$char
+    fi
+  done
+  json_string "$escaped"
+}
+
 relative_to_target() {
   local path=$1
   if [[ $path == "$target" ]]; then
@@ -70,8 +120,8 @@ inside_target() {
 }
 
 git_toplevel=''
-if git_toplevel=$(git -C "$target" rev-parse --show-toplevel 2>/dev/null); then
-  git_toplevel=$(realpath "$git_toplevel")
+if git_toplevel_into git_toplevel "$target"; then
+  :
 else
   # A refusal is still useful JSON.  Only immediate child directories can be
   # repositories or worktree hubs for this report.
@@ -82,9 +132,9 @@ else
     [[ -d $child ]] || continue
     base=${child##*/}
     [[ $base == . || $base == .. ]] && continue
-    child_real=$(realpath "$child")
+    realpath_into child_real "$child"
     child_top=''
-    if child_top=$(git -C "$child" rev-parse --show-toplevel 2>/dev/null) && [[ $(realpath "$child_top") == "$child_real" ]]; then
+    if git_toplevel_into child_top "$child" && [[ $child_top == "$child_real" ]]; then
       repositories+=("$base")
     fi
     if [[ -e $child/.repo.git || -L $child/.repo.git ]]; then
@@ -148,7 +198,7 @@ emit_directory() {
     if [[ -L $candidate && ! -f $candidate ]]; then
       broken=true
       skip=${skip:-"$name is a broken symlink"}
-    elif resolved=$(realpath "$candidate" 2>/dev/null) && [[ -f $resolved ]]; then
+    elif realpath_into resolved "$candidate" 2>/dev/null && [[ -f $resolved ]]; then
       if ! inside_target "$resolved"; then
         outside=true
         skip=${skip:-"$name resolves outside target"}
@@ -204,21 +254,22 @@ emit_directory() {
     if [[ ${broken_flags[i]} == true ]]; then
       printf 'null'
     else
-      resolved=$(realpath "$candidate")
+      realpath_into resolved "$candidate"
       json_string "$(relative_to_target "$resolved")"
     fi
     printf ',"broken":%s,"resolvesOutsideTarget":%s,"size":' "${broken_flags[i]}" "${outside_flags[i]}"
     if [[ ${broken_flags[i]} == true || ${outside_flags[i]} == true ]]; then
       printf 'null'
     else
-      resolved=$(realpath "$candidate")
-      stat -c %s "$resolved"
+      realpath_into resolved "$candidate"
+      size=$(stat -c %s "$resolved")
+      printf '%s' "$size"
     fi
     printf ',"headings":'
     if [[ ${broken_flags[i]} == true || ${outside_flags[i]} == true ]]; then
       printf '[]'
     else
-      resolved=$(realpath "$candidate")
+      realpath_into resolved "$candidate"
       emit_headings "$resolved"
     fi
     printf '}'
@@ -239,7 +290,7 @@ emit_directory() {
 emit_excluded() {
   local dir=$1 reason=$2
   printf '{"path":'
-  json_string "$(relative_to_target "$dir")"
+  json_path_string "$(relative_to_target "$dir")"
   printf ',"reason":'
   json_string "$reason"
   printf '}'
@@ -252,7 +303,7 @@ walk() {
   directories_json+=$entry
   shopt -s nullglob dotglob
   for child in "$dir"/*; do
-    [[ -d $child ]] || continue
+    [[ -L $child || -d $child ]] || continue
     base=${child##*/}
     [[ $base == . || $base == .. ]] && continue
     if git -C "$target" check-ignore -q -- "$child" 2>/dev/null; then
@@ -263,7 +314,15 @@ walk() {
       entry=$(emit_excluded "$child" dotted)
       if [[ -n $excluded_json ]]; then excluded_json+=','; fi
       excluded_json+=$entry
-    elif child_top=$(git -C "$child" rev-parse --show-toplevel 2>/dev/null) && [[ $(realpath "$child_top") != "$git_toplevel" ]]; then
+    elif ! valid_utf8 "$child"; then
+      entry=$(emit_excluded "$child" 'path is not valid UTF-8')
+      if [[ -n $excluded_json ]]; then excluded_json+=','; fi
+      excluded_json+=$entry
+    elif [[ -L $child && -d $child ]]; then
+      entry=$(emit_excluded "$child" 'directory symlink')
+      if [[ -n $excluded_json ]]; then excluded_json+=','; fi
+      excluded_json+=$entry
+    elif git_toplevel_into child_top "$child" && [[ $child_top != "$git_toplevel" ]]; then
       entry=$(emit_excluded "$child" 'nested repository')
       if [[ -n $excluded_json ]]; then excluded_json+=','; fi
       excluded_json+=$entry
