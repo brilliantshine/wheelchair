@@ -82,8 +82,23 @@ brief that now names all three.
 
 | # | Objective | Ownership boundary | Lane | Validation | Status |
 |---|-----------|--------------------|------|------------|--------|
-| RT1 | R1–R6: never descend into a directory symlink and report it excluded; exclude a path that is not valid UTF-8; preserve exotic path names through a NUL-delimited read; build control-character escapes without the malformed `printf`; keep `stat`'s newline out of the JSON. Then close R3 by sandboxing `HOME` and `TMPDIR` per scan and asserting both stay empty, asserting this repo's `git status` is unchanged across the suite, broadening the link check to every report, adding the missing outside-the-target fixture, and making a missing `python3` fail loudly | `spine/` only, in worktree `spine-fix` | terra | `bash spine/test/run.sh`; each new assertion proven to fail against the unfixed code | |
-| RT2 | R7–R13: correct the falsified illustration in the format document, fix the root router's two false statements and give it the file-to-role table the format requires, restore README's reading order and complete its Layout tree, and correct every wrong number and citation in COMPLETION.md | `protocol/routers.md`, `AGENTS.md`, `README.md`, `docs/plans/router-spine/COMPLETION.md`, `protocol/spine.md` (§9 row) | lead | re-read; every corrected number re-derived from the tree rather than restated | |
+| RT1 | R1–R6: never descend into a directory symlink and report it excluded; exclude a path that is not valid UTF-8; preserve exotic path names through a NUL-delimited read; build control-character escapes without the malformed `printf`; keep `stat`'s newline out of the JSON. Then close R3 by sandboxing `HOME` and `TMPDIR` per scan and asserting both stay empty, asserting this repo's `git status` is unchanged across the suite, broadening the link check to every report, adding the missing outside-the-target fixture, and making a missing `python3` fail loudly | `spine/` only, in worktree `spine-fix` | terra | `bash spine/test/run.sh`; each new assertion proven to fail against the unfixed code | completed (`0597a9a`), 44 → 83 assertions |
+| RT2 | R7–R13: correct the falsified illustration in the format document, fix the root router's two false statements and give it the file-to-role table the format requires, restore README's reading order and complete its Layout tree, and correct every wrong number and citation in COMPLETION.md | `protocol/routers.md`, `AGENTS.md`, `README.md`, `docs/plans/router-spine/COMPLETION.md`, `protocol/spine.md` (§9 rows) | lead | re-read; every corrected number re-derived from the tree rather than restated | completed (`1088064`) |
 
 RT1 and RT2 touch disjoint paths and run concurrently across separate worktrees, as
 `lanes.md` requires.
+
+## Round outcome
+
+All thirteen upheld gaps closed. Assertions 44 → 83, each new one demonstrated able to
+fail. Both reference calibrations reproduce unchanged; all four validation gates pass and
+gate 2 remains non-tautological.
+
+One defect was introduced by the remediation and caught on review before merge: the new
+repository-status assertion called `git` unguarded, aborting the suite with exit 128 when
+run from a copy outside a git repo — the exact conditions under which a mutated scanner is
+tested. Guarded, and it now prints a `SKIP` with the reason.
+
+Ready for closure review. Per Stage 4, the original GPT verifier's session is resumed for
+it rather than a fresh lane, since it raised the three code gaps and is the reviewer whose
+verdict has to move.

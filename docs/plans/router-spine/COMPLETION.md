@@ -351,4 +351,65 @@ the reference and this one.
 
 ## Remediation rounds
 
-None yet.
+### Remediation 1 — 2026-08-24
+
+Both families verified, per Stage 4's rule for a mixed implementation, and they returned
+opposite verdicts: the GPT lane `FAIL` with five gaps, the Claude lane `PASS` with eight
+observations. `docs/plans/router-spine/REMEDIATION-1.md` carries both verbatim and the
+adjudication. Thirteen gaps upheld, three re-scoped, none declined.
+
+They contradicted each other on three points, and each was settled by the lead reproducing
+it rather than by preferring a verdict. The GPT lane was right all three times, and in one
+case its own evidence understated the defect:
+
+- **Invalid UTF-8 in a path.** The Claude lane reported it could not break the hand-built
+  JSON, having tried quotes, backslash, newline, tab, control characters, NUL and emoji. It
+  never tried a byte that is not valid UTF-8, which is the class that breaks it. Reproduced:
+  `json.tool` exits 1 with `invalid start byte` while the scanner exits 0.
+- **Directory symlinks.** The Claude lane reported every dangerous symlink case yields a
+  skip, which was true of its fixture. With **no** routing file in the external tree the
+  rows come back unmarked, and `/spine` would propose creating routers in a tree nobody
+  named. The Claude lane's separate observation — an ancestor link producing 451 directory
+  entries — is the same root cause reached from the other side.
+- **Writes outside the fixture tree.** The Claude lane reported such mutations are caught;
+  both of its mutations wrote *inside* the fixture tree, which is caught. A mutation writing
+  an external marker passed 44/44.
+
+Fixed in `spine/` by the same GPT workhorse tier that built it — no escalation, because
+every defect was a case the original brief failed to name. The prose and report half was
+the lead's own.
+
+| Gap | Fix | Evidence |
+|---|---|---|
+| The walk followed directory symlinks | Never descends into one; reports it excluded with reason `directory symlink` | `spine/scan.sh` walk; re-ran the original repro — the external tree now yields no rows at all |
+| Invalid UTF-8 path made the document undecodable at exit 0 | Excluded with reason `path is not valid UTF-8`, byte shown as a `\xHH` diagnostic; an invalid **target** exits 2 | `json.tool` now accepts the output; predicate is `iconv -f UTF-8 -t UTF-8` |
+| A name ending in a newline was truncated | NUL-delimited `realpath -z` reads throughout | The case now scans successfully with the name preserved exactly, where before it refused |
+| `printf -v '\u%04x'` warned on stderr | Escape built from hex digits plus a literal `\u` | No scanner stderr for a heading carrying `0x07`, `0x0b`, `0x7f` |
+| `stat` newline inside the JSON | Size captured before printing | Asserted across every case report |
+| §11's "nothing outside the fixture tree was written" was not asserted | `HOME` and `TMPDIR` sandboxed per scan and asserted empty; this repo's `git status` compared across the whole suite; fixture hashes kept | The original mutation is now caught. Scope stated in-file at `spine/test/run.sh:370-372` |
+
+Also: the write-target link check now runs over every case report rather than one, a fixture
+was added for the previously untested "resolves outside the target tree" half of §9, and a
+missing `python3` refuses to run instead of silently degrading roughly twenty assertions to
+a punctuation check.
+
+**Assertions 44 → 83**, every new one demonstrated to fail against the unfixed code before
+being accepted.
+
+One defect was introduced by the remediation and caught by the lead on review: the new
+repository-status assertion called `git` unguarded, so the suite aborted with a bare
+`fatal: not a git repository` and exit 128 when run from a copy outside a git repo — which
+is exactly how a mutated scanner gets tested. Now guarded, and it prints a `SKIP` line with
+the reason instead.
+
+Both reference calibrations reproduce unchanged after the fixes: 65 directories and 20
+routers with `diffLines=136` and 7 headings against 0 at the reference root, 20 directories
+and 4 routers here. All four gates pass, gate 2 still shown non-tautological.
+
+**Residual, and honest about it:** the three no-write checks cover the fixture tree, this
+repo, `$HOME` and `$TMPDIR`. A scanner writing to some other hardcoded absolute path is
+still invisible to them — verified, not assumed. Asserting "writes nothing anywhere" fully
+would need syscall tracing or a sandbox, neither of which belongs in a shell fixture
+harness, and the previous attempt to cover this by grepping the script's own source is
+exactly the fake test that got removed. The limitation is stated in the suite rather than
+papered over.
