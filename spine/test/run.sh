@@ -177,6 +177,9 @@ ln -s .. "$directory_link/d1/up"
 outside_candidate=$(make_repo outside-candidate)
 outside_router=$fixture/outside-router.md
 printf '# External router\n' > "$outside_router"
+# NUL in the external target: the report must never disclose that it is there,
+# because the file is outside the target and the no-read rule covers every check.
+printf '\000\n' >> "$outside_router"
 mkdir -p "$outside_candidate/docs"
 ln -s "$outside_router" "$outside_candidate/docs/CLAUDE.md"
 
@@ -392,6 +395,13 @@ raw, lit, other = h["rawbyte"], h["literal"], h["otherbyte"]
 assert raw != lit, ("collision: raw byte and literal text render alike", raw, lit)
 assert raw != other, ("two different bad bytes collapsed together", raw, other)
 assert lit == r"# m \xff x", lit
+'
+json_assert 'an outside-resolving candidate is never opened, not even to check for NUL' outside-candidate '
+import json, sys
+d=json.load(sys.stdin)
+r=[x for x in d["directories"] if x["path"]=="docs"][0]
+assert r["skipped"], r
+assert not any("NUL" in n for n in r["notes"]), ("read through an external link", r["notes"])
 '
 json_assert 'a candidate carrying NUL is reported rather than silently shortened' invalid-heading '
 import json, sys

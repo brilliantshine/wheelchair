@@ -376,8 +376,11 @@ twenty lines with a standard answer, and writing a brief precise enough to deleg
 have cost more than the edit.
 
 - A malformed byte now renders as **U+FFFD followed by its hex** (`# bad \ufffdff heading`).
-  No literal input can produce U+FFFD through JSON escaping, so a mangled byte never renders
-  the same as text that merely spells one out, and two different bad bytes stay distinct.
+  This removed the collision with text spelling out `\xff`, and keeps two different bad
+  bytes distinct. **It did not make the rendering injective**, and the claim originally
+  written here that "no literal input can produce U+FFFD" is false: U+FFFD is ordinary valid
+  UTF-8, so a file containing it literally renders identically to a malformed byte. See the
+  open plan question below.
 - **NUL is detected against the file**, not through a variable, because bash drops NUL from
   any variable before a string could reach `json_string`. A candidate carrying NUL gets a
   note saying its heading list is incomplete. The comment above `json_string` now names this

@@ -232,7 +232,7 @@ emit_headings() {
 }
 
 emit_directory() {
-  local dir=$1 rel candidate name resolved='' broken outside=0 skip='' first=1
+  local dir=$1 rel candidate name resolved='' broken outside=0 skip='' first=1 n
   local -a names=() resolves=() broken_flags=() outside_flags=()
   local -A seen=()
   local real_count=0 identical=false diff_lines=null write_target=null
@@ -290,9 +290,13 @@ emit_directory() {
       notes+=("two real routing files differ — the prompt must propose which is the router")
     fi
   fi
-  for name in "${names[@]}"; do
-    if file_has_nul "$dir/$name"; then
-      notes+=("$name contains NUL bytes; its heading list is incomplete")
+  # Only for a candidate that resolves inside the target and is not broken.  The
+  # no-read rule above governs this too: an external link target is never opened,
+  # so its contents are never disclosed in the report.
+  for ((n = 0; n < ${#names[@]}; n++)); do
+    [[ ${broken_flags[n]} == true || ${outside_flags[n]} == true ]] && continue
+    if file_has_nul "$dir/${names[n]}"; then
+      notes+=("${names[n]} contains NUL bytes; its heading list is incomplete")
     fi
   done
   [[ -n $skip ]] && notes+=("$skip")
