@@ -20,7 +20,7 @@
     {
       "id": "finish",
       "label": "Finish",
-      "kind": "outcome",
+      "kind": "note",
       "origin": "proposed",
       "was": null,
       "exclusive": false,
@@ -33,7 +33,7 @@
     {
       "id": "gather",
       "label": "Gather",
-      "kind": "action",
+      "kind": "step",
       "origin": "proposed",
       "was": null,
       "exclusive": false,
@@ -46,7 +46,7 @@
     {
       "id": "inspect",
       "label": "Inspect",
-      "kind": "action",
+      "kind": "step",
       "origin": "proposed",
       "was": null,
       "exclusive": false,
@@ -72,7 +72,7 @@
     {
       "id": "store",
       "label": "Store",
-      "kind": "artifact",
+      "kind": "file",
       "origin": "proposed",
       "was": null,
       "exclusive": false,
@@ -85,7 +85,7 @@
     {
       "id": "timeline",
       "label": "Timeline",
-      "kind": "container",
+      "kind": "module",
       "origin": "proposed",
       "was": null,
       "exclusive": false,
@@ -114,7 +114,7 @@
       "from": "decide",
       "to": "store",
       "label": "no",
-      "kind": "reference",
+      "kind": "data",
       "value": "fallback",
       "inferred": true,
       "origin": "proposed",

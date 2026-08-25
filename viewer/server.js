@@ -12,7 +12,7 @@ Errors:
   403 bad-origin, not-registered
   404 not-found, no-route
   409 stale (also returns hash)
-  422 invalid-json (position), unknown-schema (schema), missing-label, bad-id,
+  422 invalid-json (position), unknown-schema (schema), missing-label, bad-id, bad-kind (ids),
       edge-missing-node, bad-origin-value, bad-was, container-bad-name,
       container-cycle, container-orphan, container-unreadable-child, preservation-rejected,
       preservation-agreed, agent-verdict, structural-difference (ids),
@@ -34,6 +34,8 @@ const DAY = 24 * 60 * 60 * 1000;
 const REGISTERED_MAX_AGE = 30 * DAY;
 const ORIGINS = new Set(['proposed', 'agreed', 'rejected']);
 const SOURCES = new Set(['router', 'code-read', 'plan-proposal']);
+const NODE_KINDS = new Set(['file', 'module', 'step', 'decision', 'external', 'note']);
+const EDGE_KINDS = new Set(['data', 'sequence']);
 const CHILD_NAME = /^[a-z0-9_-]+$/;
 
 class ClientError extends Error {
@@ -131,6 +133,9 @@ function validateGraph(input, { checkOrigin = true } = {}) {
       x: rounded(raw.x),
       y: rounded(raw.y),
     };
+    if (!NODE_KINDS.has(node.kind)) {
+      fail(422, 'bad-kind', 'A node kind is outside the allowed set.', { ids: [node.id] });
+    }
     if (checkOrigin && !ORIGINS.has(node.origin)) {
       fail(422, 'bad-origin-value', 'An origin is outside the allowed set.');
     }
@@ -160,6 +165,9 @@ function validateGraph(input, { checkOrigin = true } = {}) {
       was: raw.was ?? null,
       note: raw.note ?? null,
     };
+    if (!EDGE_KINDS.has(edge.kind)) {
+      fail(422, 'bad-kind', 'An edge kind is outside the allowed set.', { ids: [edge.id] });
+    }
     if (checkOrigin && !ORIGINS.has(edge.origin)) {
       fail(422, 'bad-origin-value', 'An origin is outside the allowed set.');
     }
@@ -641,8 +649,8 @@ async function handleGraphPut(request, response, url, state) {
     if (body.hash !== raw.hash) fail(409, 'stale', 'The graph changed since it was read.', { hash: raw.hash });
     const incoming = validateGraph(body.graph);
     const current = raw.exists ? parseDisk(raw) : null;
+    checkAgentWrite(current || { nodes: [], edges: [] }, incoming);
     if (current) {
-      checkAgentWrite(current, incoming);
       if (await hasContainmentCycle(graphPath, incoming)) {
         fail(422, 'container-cycle', 'The write would create a containment cycle.');
       }
@@ -787,6 +795,11 @@ async function stopServer(config) {
 async function startServer(config) {
   await fsp.mkdir(config.cacheRoot, { recursive: true, mode: 0o700 });
   for (;;) {
+    const lock = {
+      pid: process.pid, port: config.port,
+      token: crypto.randomBytes(32).toString('hex'),
+      start_id: crypto.randomBytes(16).toString('hex'),
+    };
     let descriptor;
     try {
       descriptor = fs.openSync(lockPath(config), 'wx', 0o600);
@@ -798,14 +811,18 @@ async function startServer(config) {
       await fsp.unlink(lockPath(config)).catch(() => {});
       continue;
     }
-    fs.closeSync(descriptor);
-    const lock = {
-      pid: process.pid, port: config.port,
-      token: crypto.randomBytes(32).toString('hex'),
-      start_id: crypto.randomBytes(16).toString('hex'),
-    };
-    fs.writeFileSync(lockPath(config), `${JSON.stringify(lock, null, 2)}\n`, { mode: 0o600 });
-    fs.chmodSync(lockPath(config), 0o600);
+    try {
+      fs.writeFileSync(descriptor, `${JSON.stringify(lock, null, 2)}\n`);
+      fs.fsyncSync(descriptor);
+      fs.closeSync(descriptor);
+      descriptor = null;
+    } catch (error) {
+      if (descriptor !== undefined && descriptor !== null) {
+        try { fs.closeSync(descriptor); } catch { /* preserve the original write error */ }
+      }
+      await fsp.unlink(lockPath(config)).catch(() => {});
+      throw error;
+    }
     await pruneRegistered(config);
     const state = { config, lock, port: config.port, server: null };
     const server = http.createServer(async (request, response) => {

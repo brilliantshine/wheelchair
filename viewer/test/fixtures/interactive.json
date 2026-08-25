@@ -4,8 +4,8 @@
   "source": "code-read",
   "source_detail": "viewer/test/fixtures/interactive.json (browser suite only)",
   "nodes": [
-    {"id":"a","label":"Gather input","kind":"action","origin":"proposed","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":150,"y":150},
-    {"id":"b","label":"Process input","kind":"action","origin":"proposed","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":450,"y":150},
+    {"id":"a","label":"Gather input","kind":"step","origin":"proposed","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":150,"y":150},
+    {"id":"b","label":"Process input","kind":"step","origin":"proposed","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":450,"y":150},
     {"id":"c","label":"Distant start","kind":"step","origin":"proposed","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":1350,"y":150},
     {"id":"d","label":"Distant end","kind":"step","origin":"proposed","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":2250,"y":150},
     {"id":"e","label":"Loop start","kind":"step","origin":"proposed","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":150,"y":650},

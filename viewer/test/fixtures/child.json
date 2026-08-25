@@ -4,7 +4,7 @@
   "source": "router",
   "source_detail": null,
   "nodes": [
-    {"id":"grand-box","label":"Grandchild","kind":"container","origin":"proposed","was":null,"exclusive":false,"ref":null,"note":null,"graph":"grandchild","x":0,"y":0}
+    {"id":"grand-box","label":"Grandchild","kind":"module","origin":"proposed","was":null,"exclusive":false,"ref":null,"note":null,"graph":"grandchild","x":0,"y":0}
   ],
   "edges": []
 }

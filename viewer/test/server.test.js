@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const {
-  fixture, makeDir, stage, startServer, request, getGraph, put, copy, sha256, freePort,
+  ROOT, fixture, makeDir, stage, startServer, request, getGraph, put, copy, sha256, freePort,
 } = require('./helpers/server');
 
 async function startFixture(name = 'canonical.json', target = name) {
@@ -35,6 +35,77 @@ function expect(result, status, error) {
 }
 async function graphPut(ctx, graph, hash, graphPath) { return put(ctx, '/graph', graph, hash, graphPath); }
 async function viewPut(ctx, graph, hash, graphPath, options) { return put(ctx, '/view', graph, hash, graphPath, options); }
+
+function waitForServerUrl(child) {
+  return new Promise((resolve, reject) => {
+    let output = ''; let errors = '';
+    const timeout = setTimeout(() => reject(new Error(`hooked server did not print its URL: ${errors}`)), 3000);
+    child.stdout.on('data', (chunk) => {
+      output += chunk;
+      const line = output.split(/\r?\n/).find((value) => value.startsWith('http://127.0.0.1:'));
+      if (line) { clearTimeout(timeout); resolve(line); }
+    });
+    child.stderr.on('data', (chunk) => { errors += chunk; });
+    child.once('exit', (code, signal) => {
+      clearTimeout(timeout);
+      reject(new Error(`hooked server exited before ready (${code ?? signal}): ${errors}`));
+    });
+  });
+}
+
+async function waitForFile(filePath, timeoutMs = 1500) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try { await fs.access(filePath); return; }
+    catch (error) {
+      if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${path.basename(filePath)}.`);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+  }
+}
+
+function waitForExit(child) {
+  return new Promise((resolve) => {
+    if (child.exitCode !== null || child.signalCode !== null) resolve();
+    else child.once('exit', resolve);
+  });
+}
+
+async function writeFaultHook(root) {
+  const hookPath = path.join(root, 'fault-hook.js');
+  await fs.writeFile(hookPath, `'use strict';
+const fs = require('node:fs');
+const fsp = require('node:fs/promises');
+const marker = process.env.GRAPH_TEST_MARKER;
+const mode = process.env.GRAPH_TEST_HOOK;
+function mark() { fs.writeFileSync(marker, 'ready'); }
+function pause() { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000); }
+if (mode === 'lock-close') {
+  const closeSync = fs.closeSync;
+  let paused = false;
+  fs.closeSync = function(fd) {
+    const result = closeSync.call(this, fd);
+    if (!paused) { paused = true; mark(); pause(); }
+    return result;
+  };
+}
+if (mode === 'before-rename') {
+  const rename = fsp.rename;
+  fsp.rename = async function(...args) { mark(); pause(); return rename.apply(this, args); };
+}
+`);
+  return hookPath;
+}
+
+function spawnHookedServer({ root, graphPath, port, hookPath, marker, mode }) {
+  return spawn(process.execPath, [
+    '--require', hookPath, 'viewer/server.js', '--port', String(port), '--cache-root', root, '--open', graphPath,
+  ], {
+    cwd: ROOT,
+    env: { ...process.env, GRAPH_TEST_MARKER: marker, GRAPH_TEST_HOOK: mode },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+}
 
 test('canonical round-trip canonicalizes byte-for-byte', async () => {
   await withFixture('canonical.json', async (ctx) => {
@@ -92,6 +163,36 @@ test('optimistic concurrency returns and accepts the current hash, including cre
     expect(await graphPut(ctx, graph, ''), 200);
     expect(await graphPut(ctx, graph, ''), 409, 'stale');
   } finally { await ctx.stop(); }
+});
+
+test('an agent create cannot pre-rule entries or claim a reset record', async () => {
+  const root = await makeDir(); const graphDir = path.join(root, 'graphs'); await fs.mkdir(graphDir, { recursive: true });
+  const missing = path.join(graphDir, 'new.json'); const ctx = await startServer({ cacheRoot: root, open: missing });
+  try {
+    const graph = await readFixtureGraph('cycle-layout.json');
+    const verdict = copy(graph); verdict.nodes[0].origin = 'agreed';
+    expect(await graphPut(ctx, verdict, ''), 422, 'agent-verdict');
+    const reset = copy(graph); reset.edges[0].was = 'agreed';
+    expect(await graphPut(ctx, reset, ''), 422, 'bad-was');
+    expect(await graphPut(ctx, graph, ''), 200);
+  } finally { await ctx.stop(); }
+});
+
+test('node and edge kinds are closed sets while omitted kinds default', async () => {
+  await withFixture('canonical.json', async (ctx) => {
+    const state = await getGraph(ctx);
+    const badNode = copy(state.graph); entry(badNode, 'gather').kind = 'action';
+    const nodeResult = await graphPut(ctx, badNode, state.hash); expect(nodeResult, 422, 'bad-kind');
+    assert.deepEqual(nodeResult.body.ids, ['gather']);
+    const badEdge = copy(state.graph); entry(badEdge, 'gather->inspect').kind = 'reference';
+    const edgeResult = await graphPut(ctx, badEdge, state.hash); expect(edgeResult, 422, 'bad-kind');
+    assert.deepEqual(edgeResult.body.ids, ['gather->inspect']);
+  });
+  await withFixture('cycle-layout.json', async (ctx) => {
+    const state = await getGraph(ctx);
+    assert.equal(entry(state.graph, 'a').kind, 'note');
+    assert.equal(entry(state.graph, 'a->b').kind, 'sequence');
+  });
 });
 
 test('the global write lock serializes concurrent writes and retry retains both changes', async () => {
@@ -279,6 +380,28 @@ test('discovery reuses matching locks, reclaims dead locks, and rejects foreign 
   assert.notEqual(code, 0);
 });
 
+test('the exclusive lock claim is never observable without its identity payload', async () => {
+  const root = await makeDir(); const graphDir = path.join(root, 'graphs'); await fs.mkdir(graphDir, { recursive: true });
+  const graphPath = await stage({ graphDir }, 'canonical.json'); const marker = path.join(root, 'lock-closed');
+  const hookPath = await writeFaultHook(root); const port = await freePort();
+  const first = spawnHookedServer({ root, graphPath, port, hookPath, marker, mode: 'lock-close' });
+  try {
+    await waitForFile(marker);
+    await assert.rejects(startServer({ cacheRoot: root, open: graphPath, port: await freePort() }));
+    const firstUrl = await waitForServerUrl(first);
+    const lock = JSON.parse(await fs.readFile(path.join(root, '.server'), 'utf8'));
+    assert.equal(lock.pid, first.pid);
+    assert.equal(lock.port, port);
+    assert.match(lock.token, /^[0-9a-f]{64}$/);
+    assert.match(lock.start_id, /^[0-9a-f]{32}$/);
+    assert.match(firstUrl, new RegExp(`^http://127\\.0\\.0\\.1:${port}/\\?`));
+  } finally {
+    if (first.exitCode === null) first.kill('SIGKILL');
+    await waitForExit(first);
+    await fs.unlink(path.join(root, '.server')).catch(() => {});
+  }
+});
+
 test('GET change detection exposes agent hashes and preserves the page write hash', async () => {
   await withFixture('canonical.json', async (ctx) => {
     let state = await getGraph(ctx); const agent = copy(state.graph); entry(agent, 'gather').note = 'agent';
@@ -290,13 +413,40 @@ test('GET change detection exposes agent hashes and preserves the page write has
   });
 });
 
-test('atomic writes leave a complete graph after a normal server write (mid-write kill is not reliably injectable)', async () => {
+test('a kill before rename leaves the committed graph as either whole version, never a partial write', async () => {
+  const oldBytes = await fixture('canonical.json');
+  let newBytes;
   await withFixture('canonical.json', async (ctx) => {
     const state = await getGraph(ctx); const graph = copy(state.graph); entry(graph, 'gather').note = 'atomic candidate';
     expect(await graphPut(ctx, graph, state.hash), 200);
-    const bytes = await fs.readFile(ctx.graphPath, 'utf8');
-    assert.doesNotThrow(() => JSON.parse(bytes));
+    newBytes = await fs.readFile(ctx.graphPath);
   });
+  for (const delay of [0, 3, 9]) {
+    const root = await makeDir(); const graphDir = path.join(root, 'graphs'); await fs.mkdir(graphDir, { recursive: true });
+    const graphPath = await stage({ graphDir }, 'canonical.json'); const marker = path.join(root, 'before-rename');
+    const hookPath = await writeFaultHook(root); const port = await freePort();
+    const child = spawnHookedServer({ root, graphPath, port, hookPath, marker, mode: 'before-rename' });
+    try {
+      const parsed = new URL(await waitForServerUrl(child));
+      const ctx = { root, graphDir, graphPath, port, child, url: `http://127.0.0.1:${port}`,
+        token: parsed.searchParams.get('token') };
+      const state = await getGraph(ctx); const graph = copy(state.graph); entry(graph, 'gather').note = 'atomic candidate';
+      const write = graphPut(ctx, graph, state.hash).catch((error) => error);
+      await waitForFile(marker);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      child.kill('SIGKILL'); await waitForExit(child);
+      const outcome = await write;
+      assert.ok(outcome instanceof Error || outcome.status !== 200, 'the injected kill must interrupt the write');
+      const bytes = await fs.readFile(graphPath);
+      assert.doesNotThrow(() => JSON.parse(bytes.toString('utf8')));
+      assert.ok(bytes.equals(oldBytes) || bytes.equals(newBytes), 'the committed graph is an exact old or new version');
+      assert.equal(path.basename(graphPath), 'canonical.json', 'a temporary name is never the committed graph');
+    } finally {
+      if (child.exitCode === null) child.kill('SIGKILL');
+      await waitForExit(child);
+      await fs.unlink(path.join(root, '.server')).catch(() => {});
+    }
+  }
 });
 
 test('registered paths are pruned by age at startup', async () => {
