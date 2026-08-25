@@ -3,6 +3,7 @@
   "title": "Layout",
   "source": "code-read",
   "source_detail": null,
+  "explanation": null,
   "nodes": [
     {"id":"a","label":"A"},
     {"id":"b","label":"B"},

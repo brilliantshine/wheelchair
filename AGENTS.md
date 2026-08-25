@@ -11,12 +11,22 @@ Every stage reads its rules from `protocol/` and writes its state into
 in a context window. Everything here is one of four things, and the distinction is who
 reads it.
 
+**One thing here breaks that, deliberately: the diagram-sensitivity dial.** It governs
+ordinary conversation turns, where no command runs and nothing under `protocol/` is
+otherwise read — so a rule that has to be in effect *before* Collin types cannot wait to be
+looked up. `sensitivity/set.sh` renders a delimited region of `protocol/sensitivity.md` into
+`~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`, which both harnesses load every turn in
+every project. That region is the one stage input resident in a context window, it is
+**this repo's and overwritten on every run**, and it stays a rendering rather than a copy:
+one source, one writer, nothing hand-maintained. Read it as the exception it is — anything
+else that wants to live in a context window belongs in `protocol/`.
+
 | Kind | Directory | Read by |
 |---|---|---|
 | Canonical rules | `protocol/` | an agent executing a stage |
 | Per-feature state | `docs/plans/<slug>/` | every stage, to find out where the work stands |
 | Harness adapter | `skills/`, `codex/prompts/` | Claude Code and the Codex CLI, at registration |
-| Executable | `spine/`, `viewer/`, `install.sh` | run by a command, not read as guidance |
+| Executable | `spine/`, `sensitivity/`, `viewer/`, `install.sh` | run by a command, not read as guidance |
 
 Two rules follow, and between them they cover most of what can go wrong here:
 
@@ -34,6 +44,7 @@ Two rules follow, and between them they cover most of what can go wrong here:
 | `protocol/` | [AGENTS.md](protocol/AGENTS.md) | the stage definitions, the writing and diagram rules, the router format, the document templates |
 | `skills/` | [AGENTS.md](skills/AGENTS.md) | the Claude Code wrappers and the convention every wrapper follows |
 | `spine/` | [AGENTS.md](spine/AGENTS.md) | `scan.sh`, the read-only scanner behind `/spine` |
+| `sensitivity/` | [AGENTS.md](sensitivity/AGENTS.md) | `set.sh`, the only writer of the two global instruction files |
 | `codex/` | — | `prompts/`, the Codex CLI wrappers. Same convention as `skills/`, one line each |
 | `docs/` | — | `plans/<slug>/` per feature. State, not rules — nothing here is a contract |
 | `viewer/` | — | the browser graph viewer — `index.html`, `server.js`. Started by an agent turn, never read as guidance |
@@ -43,7 +54,7 @@ Two rules follow, and between them they cover most of what can go wrong here:
 | File | Role |
 |---|---|
 | `README.md` | What this workflow is and how to drive it, for a person arriving cold |
-| `install.sh` | Renders every wrapper into both harnesses, substituting this clone's path for `{{WHEELCHAIR_ROOT}}`, and installs the viewer's dependencies. Idempotent, and it **globs** `skills/*/` and `codex/prompts/*.md`, so adding a command needs no edit here |
+| `install.sh` | Renders every wrapper into both harnesses, substituting this clone's path for `{{WHEELCHAIR_ROOT}}`, installs the viewer's dependencies, and — last, and warning rather than failing if it refuses — calls `sensitivity/set.sh` to render the dial's region into `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`. Those two files are **outside this tree**, and the region between the markers is overwritten. Idempotent, and it **globs** `skills/*/` and `codex/prompts/*.md`, so adding a command needs no edit here |
 | `.gitignore` | `node_modules/`, `graphify-out/`, and the two scratch paths the viewer's suites write, `viewer/test/.tmp/` and `test-results/`. `graphify-out/` is what lets a root router claim a graph cannot carry a contract |
 
 ## How to navigate (in order)
@@ -79,6 +90,7 @@ Rules:
 
 ```bash
 bash spine/test/run.sh                # the scanner's assertions, exit-code gated
+bash sensitivity/test/run.sh          # the dial's block writer, exit-code gated
 ./install.sh && ./install.sh          # idempotent; git status --porcelain stays empty
 node --test 'viewer/test/*.test.js'   # the glob is required
 npm --prefix viewer run test:browser  # Chromium; fails loudly if the browser is missing

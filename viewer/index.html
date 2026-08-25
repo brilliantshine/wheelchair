@@ -50,6 +50,27 @@
      toggled by `hidden`. */
   [hidden] { display: none !important; }
 
+  /* Sits directly under #topbar and pushes the canvas down by its own real height — see
+     resizeCanvas, which measures this element exactly the way it measures #topbar. #explain-body's
+     height is fixed, not max-height: a max-height that shrinks to fit short text would make the
+     canvas start higher for a two-sentence explanation than for a long one, which is exactly the
+     "canvas height changes with content length" bug this element exists to avoid. Below
+     #error-banner's z-index (6) on purpose — a transient banner is allowed to overlap this panel's
+     text, never the other way around. */
+  #explain-panel { position: fixed; left: 0; right: 0; top: 48px; z-index: 4;
+    background: var(--panel); border-bottom: 1px solid var(--line); }
+  #explain-toggle { display: flex; align-items: center; gap: 8px; width: 100%;
+    background: var(--panel-2); border: none; border-bottom: 1px solid var(--line);
+    color: var(--dim); font: inherit; font-size: 11px; letter-spacing: .04em;
+    text-transform: uppercase; text-align: left; cursor: pointer; padding: 7px 14px; }
+  #explain-toggle:hover { color: var(--ink); }
+  #explain-toggle .chevron { display: inline-block; font-size: 10px;
+    transition: transform .15s ease; }
+  #explain-panel.collapsed #explain-toggle .chevron { transform: rotate(-90deg); }
+  #explain-body { height: 84px; overflow-y: auto; margin: 0; padding: 10px 14px;
+    max-width: 860px; color: var(--ink); font-size: 12.5px; line-height: 1.55;
+    white-space: pre-wrap; }
+
   /* An <svg> left with height:auto falls back to its 150px intrinsic size and
      silently clips everything below it, while the markup stays perfect — a DOM
      test would still pass. The pixel height is set explicitly from JS
@@ -173,6 +194,10 @@
   let selectedIds = new Set();     // explicitly clicked/boxed/select-all ids
   let impliedRemoved = new Set();  // edges shift-clicked away while both ends stay selected
   let writing = false;
+  // Whether the explanation panel is open. Lives only here: not on the graph (a viewing
+  // preference isn't part of Collin's positions or the agent's claims) and not in storage
+  // (a poll or a navigation into a child graph must not reset it, but a reload must).
+  let explainExpanded = true;
 
   // ---- small helpers ---------------------------------------------------------
   function el(name, attrs) {
@@ -478,6 +503,7 @@
     impliedRemoved = new Set();
     clearFatal(); clearErrorBanner();
     document.title = graph.title || 'graph viewer';
+    syncExplainPanel();
     resizeCanvas();
     fitToView();
     render();
@@ -530,6 +556,44 @@
     else stepBack();
   });
 
+  // ---- explanation panel ------------------------------------------------------------------
+  // Built here, not in the static markup, so a `null` explanation can mean "no panel at all" —
+  // an element that merely sits `hidden` would still count as one to a DOM query, and the page
+  // must never keep around an empty shell for a graph that carries no explanation.
+  const explainPanel = document.createElement('div');
+  explainPanel.id = 'explain-panel';
+  const explainToggle = document.createElement('button');
+  explainToggle.type = 'button';
+  explainToggle.id = 'explain-toggle';
+  explainToggle.innerHTML = '<span class="chevron">▾</span><span>explanation</span>';
+  const explainBody = document.createElement('div');
+  explainBody.id = 'explain-body';
+  explainPanel.append(explainToggle, explainBody);
+  explainToggle.addEventListener('click', () => setExplainExpanded(!explainExpanded));
+
+  function setExplainExpanded(expanded) {
+    explainExpanded = expanded;
+    syncExplainPanel();
+    if (graph) render();
+  }
+
+  // Adds or removes the panel from the document — never just hides it, see above — and syncs its
+  // text and expanded/collapsed state to the current graph and `explainExpanded`. Called before
+  // resizeCanvas everywhere resizeCanvas is called: resizeCanvas measures this element's real,
+  // laid-out height to know where the canvas starts, so the DOM has to be settled first.
+  function syncExplainPanel() {
+    const text = graph && graph.explanation;
+    if (text == null) {
+      if (explainPanel.isConnected) explainPanel.remove();
+      return;
+    }
+    if (!explainPanel.isConnected) topbar.insertAdjacentElement('afterend', explainPanel);
+    explainBody.textContent = text;
+    explainPanel.classList.toggle('collapsed', !explainExpanded);
+    explainToggle.setAttribute('aria-expanded', String(explainExpanded));
+    explainBody.hidden = !explainExpanded;
+  }
+
   // ---- geometry ------------------------------------------------------------------
   // A box whose height never responds to its label keeps colliding with
   // something — the kind tag at a fixed offset from a box that stays a fixed
@@ -542,6 +606,18 @@
   function nodeHeight(n) {
     const lines = wrapText(n.label, 24, 3, firstLineCap(n)).length;
     return Math.max(NODE_H, 22 + (lines - 1) * 16 + 30);
+  }
+
+  // Three lines is as tall as a box gets, so a longer label loses its tail to
+  // the ellipsis wrapText leaves behind — and the box becomes the one place the
+  // sentence cannot be read. Both places that can show it in full (the hover
+  // tooltip below, and the selection panel) key off this rather than sniffing
+  // for a trailing ellipsis, which a label that genuinely ends in one would
+  // trip on its own.
+  function labelTruncated(n) {
+    const shown = wrapText(n.label, 24, 3, firstLineCap(n)).join(' ');
+    const full = String(n.label == null ? '' : n.label).split(/\s+/).filter(Boolean).join(' ');
+    return shown !== full;
   }
 
   function rectOverlapsAny(rect, nodes, excludeIds) {
@@ -598,6 +674,17 @@
     const g = el('g', attrs);
 
     const h = nodeHeight(n);
+
+    // Reading the whole label shouldn't cost a click. A native tooltip on the
+    // box carries the untruncated text at any zoom, and is added only where the
+    // box is actually hiding something — a tooltip echoing text already on
+    // screen is noise on every other node.
+    if (labelTruncated(n)) {
+      const tip = el('title');
+      tip.textContent = n.label;
+      g.appendChild(tip);
+    }
+
     g.appendChild(el('rect', { class: 'node-box', width: NODE_W, height: h, rx: 6 }));
 
     // §6: an agent may reset an entry Collin approved back to `proposed`,
@@ -786,6 +873,10 @@
     if (!item) return;
 
     const fields = [];
+    // First, above ref and note: it is the field the box failed to show, so it
+    // is what the panel was opened to read. Given more lines than the others
+    // because it is the one field with no length ceiling anywhere upstream.
+    if (node && labelTruncated(node)) fields.push(['detail-label', node.label, 12]);
     if (item.ref) fields.push(['detail-ref', item.ref]);
     if (item.note) fields.push(['detail-note', item.note]);
     if (!node && item.value) {
@@ -809,7 +900,7 @@
     let panelH = 0;
     if (fields.length) {
       let cursor = 18;
-      for (const [, raw] of fields) cursor += wrapText(raw, 32, 4).length * 14 + 6;
+      for (const [, raw, maxLines] of fields) cursor += wrapText(raw, 32, maxLines || 4).length * 14 + 6;
       panelH = cursor;
     }
     const panelTopOffset = 4;
@@ -866,8 +957,8 @@
     });
     let cursorY = 18;
     const textEls = [];
-    for (const [cls, raw] of fields) {
-      const t = textWithWrap(cls, 10, raw, 32, 4);
+    for (const [cls, raw, maxLines] of fields) {
+      const t = textWithWrap(cls, 10, raw, 32, maxLines || 4);
       t.setAttribute('y', String(cursorY));
       textEls.push(t);
       cursorY += t._lineCount * 14 + 6;
@@ -920,16 +1011,26 @@
     // Same lesson as the CSS comment above: the height has to be set as an
     // explicit pixel attribute, computed fresh on every layout change, or the
     // <svg> collapses to its 150px intrinsic size.
+    //
+    // The explanation panel is a second thing, besides the topbar, that pushes the canvas's top
+    // edge down — measured the same way, off its own real layout box, not a constant, since it
+    // has a different height expanded than collapsed and isn't there at all when there's no
+    // explanation. Skipping this measurement is exactly the bug the layout inventory in the plan
+    // warns about: the canvas would keep starting at the topbar's bottom edge and its top strip
+    // would sit buried under the panel.
     const top = topbar.getBoundingClientRect().height || 48;
-    const h = Math.max(200, window.innerHeight - top);
+    const panelH = explainPanel.isConnected ? explainPanel.getBoundingClientRect().height : 0;
+    const canvasTop = top + panelH;
+    const h = Math.max(200, window.innerHeight - canvasTop);
     const w = window.innerWidth;
     svg.setAttribute('width', String(w));
     svg.setAttribute('height', String(h));
-    svg.style.top = top + 'px';
+    svg.style.top = canvasTop + 'px';
   }
 
   function render() {
     if (!graph) return;
+    syncExplainPanel();
     resizeCanvas();
     svg.setAttribute('data-zoom', String(view.k));
     sourceEl.textContent = graph.source + (graph.source_detail ? ' · ' + graph.source_detail : '');
@@ -1158,6 +1259,7 @@
   window.__viewer = {
     get hash() { return lastHash; },
     get zoom() { return view.k; },
+    get explainExpanded() { return explainExpanded; },
     selection() { return [...effectiveSelectionIds()]; },
     graph() { return graph; },
   };

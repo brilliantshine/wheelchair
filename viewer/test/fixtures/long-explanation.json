@@ -3,7 +3,7 @@
   "title": "Browser interaction fixture",
   "source": "code-read",
   "source_detail": "viewer/test/fixtures/interactive.json (browser suite only)",
-  "explanation": "This fixture shows a short process, a distant pair, a loop, and a detailed data link. Look at the spacious layout and interaction targets; it intentionally leaves out application behavior beyond those examples.",
+  "explanation": "This fixture maps several deliberately separated interaction examples: a short left-to-right process, a distant pair that tests panning, a two-node loop, and a detailed data connection near the lower edge. Start with Gather input and Process input to see the ordinary sequence, then compare it with the far-away Distant start and Distant end pair. The loop is there to make direction and return paths visible without adding a larger workflow. Detailed node carries a reference, a note, and an inferred data edge so the inspector has meaningful content to display. Look for the wide canvas and the contrast between sparse regions and the annotated lower pair. It intentionally leaves out real application state, error paths, persistence, and any claim that these small flows form one connected system.",
   "nodes": [
     {"id":"a","label":"Gather input","kind":"step","origin":"proposed","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":150,"y":150},
     {"id":"b","label":"Process input","kind":"step","origin":"proposed","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":450,"y":150},

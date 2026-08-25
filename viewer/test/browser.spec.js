@@ -587,6 +587,53 @@ test('selecting an item expands ref, note, and an edge payload with its inferred
 });
 
 // ============================================================================================
+// A label too long for the box is readable in full in two places — the box's own tooltip and,
+// on selection, the top of the detail panel. A label that fits gets neither, so neither is
+// noise on an ordinary node.
+// ============================================================================================
+test('a label the box truncates is readable in full on hover and in the detail panel', async ({ page }) => {
+  const ctx = await launch('long-label.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const full = (await pageGraph(page)).nodes.find((n) => n.id === 'long').label;
+
+    // The box really is hiding text: what is painted ends in an ellipsis and is shorter than
+    // the label. Without this the two readouts below could be asserting against nothing.
+    const painted = (await page.locator('svg#canvas g.node[data-id="long"] text.node-label')
+      .allTextContents()).join(' ');
+    assert.ok(painted.endsWith('\u2026'), `expected the box to truncate, painted "${painted}"`);
+    assert.ok(painted.length < full.length);
+
+    assert.equal(
+      await page.locator('svg#canvas g.node[data-id="long"] > title').textContent(),
+      full,
+      'the box carries the untruncated label as its tooltip',
+    );
+
+    await clickNode(page, 'long');
+    const detail = page.locator('svg#canvas g.detail[data-for="long"]');
+    await expect(detail).toHaveCount(1);
+    // Wrapped across tspans in the panel, and textContent on the parent would run the last word
+    // of one line into the first of the next — read the lines and rejoin them.
+    const shownWords = (await detail.locator('.detail-label tspan').allTextContents())
+      .join(' ').split(/\s+/).filter(Boolean).join(' ');
+    assert.equal(shownWords, full.split(/\s+/).filter(Boolean).join(' '));
+
+    // A label that fits carries neither readout.
+    await clearSelectionViaButton(page);
+    assert.equal(await page.locator('svg#canvas g.node[data-id="short"] > title').count(), 0);
+    await clickNode(page, 'short');
+    const plain = page.locator('svg#canvas g.detail[data-for="short"]');
+    await expect(plain).toHaveCount(1);
+    assert.equal(await plain.locator('.detail-label').count(), 0, 'absent field is omitted, not empty');
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
 // No gesture and no control adds, renames or connects anything. Authoring is cut.
 // ============================================================================================
 test('no gesture or control adds, renames or connects anything', async ({ page }) => {
@@ -747,4 +794,293 @@ test('the browser suite never touches the live default cache root', async ({ pag
   }
   const after = await snapshot(live);
   assert.deepEqual(after, before);
+});
+
+// ============================================================================================
+// The explanation panel: a collapsible panel below the topbar, expanded when a graph with a
+// non-null explanation opens. Whether it exists at all, its layout impact on the canvas below it,
+// and the fixed-vs-scrolling height distinction are all real-layout questions — a DOM test would
+// see the markup and the text node and call it done, the same way the two scar comments in
+// index.html's CSS describe layout bugs (a 150px-collapsed <svg>, a `hidden` element left visible)
+// that "looked" correct to anything short of a real, laid-out browser.
+// ============================================================================================
+test('the explanation panel renders expanded when a graph opens, showing the explanation text', async ({ page }) => {
+  const ctx = await launch('interactive.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    assert.equal(await page.evaluate(() => window.__viewer.explainExpanded), true);
+    await expect(page.locator('#explain-panel')).toHaveCount(1);
+    await expect(page.locator('#explain-body')).toBeVisible();
+
+    const full = (await pageGraph(page)).explanation;
+    assert.equal((await page.locator('#explain-body').textContent()).trim(), full.trim());
+  } finally {
+    await ctx.stop();
+  }
+});
+
+test('the panel collapses and expands on click, and the canvas is fully usable in both states', async ({ page }) => {
+  const ctx = await launch('interactive.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+    assert.equal(await page.evaluate(() => window.__viewer.explainExpanded), true);
+    await expect(page.locator('#explain-body')).toBeVisible();
+
+    const toggle = page.locator('#explain-toggle');
+    await toggle.click();
+    assert.equal(await page.evaluate(() => window.__viewer.explainExpanded), false);
+    await expect(page.locator('#explain-body')).toBeHidden();
+    // Collapsing hides the text, not the panel itself — the toggle has to stay reachable.
+    await expect(page.locator('#explain-panel')).toHaveCount(1);
+
+    // Usable while collapsed: a real drag, landed on disk, not just an in-page selection check.
+    const beforeB = entry(await pageGraph(page), 'b');
+    const startB = await center(nodeBox(page, 'b'));
+    const collapsedCollector = collectViewResponses(page);
+    await page.mouse.move(startB.x, startB.y);
+    await page.mouse.down();
+    await page.mouse.move(startB.x + 30, startB.y + 12, { steps: 8 });
+    await page.mouse.up();
+    await expect.poll(() => collapsedCollector.responses.some((r) => r.status() === 200)).toBe(true);
+    collapsedCollector.stop();
+    const onDiskB = entry(await diskGraph(ctx), 'b');
+    assert.equal(onDiskB.x, beforeB.x + 30);
+    assert.equal(onDiskB.y, beforeB.y + 12);
+
+    await toggle.click();
+    assert.equal(await page.evaluate(() => window.__viewer.explainExpanded), true);
+    await expect(page.locator('#explain-body')).toBeVisible();
+
+    // Usable while expanded too: a click selects.
+    await clickNode(page, 'a');
+    assert.deepEqual(await selection(page), ['a']);
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// The layout inventory: resizeCanvas measured only #topbar, so a panel added below it left the
+// canvas starting at the topbar's own bottom edge — its top strip buried under the panel. "The
+// canvas is usable" is not enough to catch that; it has to be a node pinned to the canvas's own
+// top edge, reached by a real pan gesture, that is then actually clicked and dragged.
+// ============================================================================================
+test('a node panned into the topmost strip of the canvas is clickable and draggable with the panel expanded', async ({ page }) => {
+  const ctx = await launch('interactive.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+    assert.equal(await page.evaluate(() => window.__viewer.explainExpanded), true);
+
+    const canvasBox = await page.locator('svg#canvas').boundingBox();
+    const before = entry(await pageGraph(page), 'a');
+    let box = await nodeBox(page, 'a').boundingBox();
+
+    // Pan (alt-drag — a plain background drag is box-select) so node 'a''s own top edge lands a
+    // few px inside the canvas's top edge: pinned to the topmost strip, not merely "somewhere
+    // visible". The anchor point sits 15px inside the canvas's bottom-left corner, well inside
+    // fitToView's 60px margin, so it is guaranteed empty background, not another node.
+    const desiredTop = canvasBox.y + 6;
+    const dy = box.y - desiredTop;
+    const anchorX = canvasBox.x + 15, anchorY = canvasBox.y + canvasBox.height - 15;
+    await page.keyboard.down('Alt');
+    await page.mouse.move(anchorX, anchorY);
+    await page.mouse.down();
+    await page.mouse.move(anchorX, anchorY - dy, { steps: 10 });
+    await page.mouse.up();
+    await page.keyboard.up('Alt');
+
+    box = await nodeBox(page, 'a').boundingBox();
+    assert.ok(box.y >= canvasBox.y - 1 && box.y < canvasBox.y + 30,
+      `expected node 'a' pinned to the canvas's top strip, got box.y=${box.y}, canvas top=${canvasBox.y}`);
+
+    // Clickable there.
+    await clickNode(page, 'a');
+    assert.deepEqual(await selection(page), ['a']);
+    await clearSelectionViaButton(page);
+
+    // Draggable there, landed on disk.
+    const zoom = await pageZoom(page);
+    const start = await center(nodeBox(page, 'a'));
+    const collector = collectViewResponses(page);
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    await page.mouse.move(start.x + 44, start.y + 18, { steps: 8 });
+    await page.mouse.up();
+    await expect.poll(() => collector.responses.some((r) => r.status() === 200)).toBe(true);
+    collector.stop();
+
+    const onDisk = entry(await diskGraph(ctx), 'a');
+    assert.equal(onDisk.x, Math.round(before.x + 44 / zoom));
+    assert.equal(onDisk.y, Math.round(before.y + 18 / zoom));
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// `explanation: null` means no panel at all — an element sitting `hidden` would still be one
+// element to a DOM count, so this has to assert a count of 0, not merely an invisible one.
+// ============================================================================================
+test('a graph with a null explanation renders no panel at all', async ({ page }) => {
+  for (const fixtureName of ['verdicts.json', 'cycle-layout.json']) {
+    const ctx = await launch(fixtureName);
+    try {
+      await page.goto(pageUrl(ctx));
+      await ready(page);
+      assert.equal((await pageGraph(page)).explanation, null, `${fixtureName} fixture must carry a null explanation`);
+      await expect(page.locator('#explain-panel')).toHaveCount(0);
+    } finally {
+      await ctx.stop();
+    }
+  }
+});
+
+// ============================================================================================
+// A long explanation scrolls inside a bounded panel height instead of growing it: the canvas's
+// own height attribute — computed from real, laid-out element boxes via resizeCanvas — must come
+// out identical whether the explanation is two sentences or 800 characters.
+// ============================================================================================
+test('a long explanation scrolls inside a bounded panel without changing the canvas height', async ({ page }) => {
+  const shortCtx = await launch('interactive.json');
+  let shortHeight;
+  try {
+    await page.goto(pageUrl(shortCtx));
+    await ready(page);
+    shortHeight = await page.locator('svg#canvas').getAttribute('height');
+  } finally {
+    await shortCtx.stop();
+  }
+
+  const longCtx = await launch('long-explanation.json');
+  try {
+    await page.goto(pageUrl(longCtx));
+    await ready(page);
+    const longHeight = await page.locator('svg#canvas').getAttribute('height');
+    assert.equal(longHeight, shortHeight, 'the canvas height must not depend on the explanation length');
+
+    const [scrollHeight, clientHeight] = await page.evaluate(() => {
+      const body = document.getElementById('explain-body');
+      return [body.scrollHeight, body.clientHeight];
+    });
+    assert.ok(scrollHeight > clientHeight,
+      `expected the long explanation to overflow its fixed-height panel (scrollHeight=${scrollHeight}, clientHeight=${clientHeight})`);
+  } finally {
+    await longCtx.stop();
+  }
+});
+
+// ============================================================================================
+// The layout inventory: #error-banner sits above the topbar's own z-index specifically so a
+// panel below the topbar can never bury it. Faulted at the true boundary — the network request
+// itself aborted, not an internal call — so the page's own catch branch is what raises the
+// banner, and a real click at the banner's screen position is what proves nothing painted over it
+// (Playwright's actionability check hit-tests the click point and times out if something else
+// would receive it).
+// ============================================================================================
+test('the error banner stays visible and legible with the panel expanded', async ({ page }) => {
+  const ctx = await launch('interactive.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+    assert.equal(await page.evaluate(() => window.__viewer.explainExpanded), true);
+
+    await page.route('**/view*', (route) => route.abort());
+
+    await clickNode(page, 'a');
+    await page.locator('#approve').click();
+
+    const banner = page.locator('#error-banner');
+    await expect(banner).toBeVisible();
+    const text = (await banner.textContent()).trim();
+    assert.ok(text.length > 0, 'the banner carries readable text');
+    const box = await banner.boundingBox();
+    assert.ok(box && box.width > 0 && box.height > 0, 'the banner has a real, non-zero box');
+
+    await banner.click({ timeout: 3000 });
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// The layout inventory: #fatal's `inset: 48px 0 0 0` covers the canvas independently of the
+// panel and sits above it in z-index, so it must still cover the whole canvas area when the panel
+// is expanded. Faulted at the filesystem boundary the server itself reads from — the graph file
+// removed out from under a live poll — so the page's own pollOnce -> showFatal path (not an
+// internal call) is what raises the overlay.
+// ============================================================================================
+test('the fatal overlay still covers the canvas with the panel expanded', async ({ page }) => {
+  const ctx = await launch('interactive.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+    assert.equal(await page.evaluate(() => window.__viewer.explainExpanded), true);
+    await expect(page.locator('#explain-panel')).toHaveCount(1);
+
+    await fs.unlink(ctx.graphPath);
+    await expect.poll(() => page.locator('#fatal').isVisible(), { timeout: 3000 }).toBe(true);
+
+    const fatalBox = await page.locator('#fatal').boundingBox();
+    const vp = page.viewportSize();
+    assert.ok(fatalBox.y <= 49, `fatal should start at the topbar's bottom edge, got y=${fatalBox.y}`);
+    assert.ok(fatalBox.y + fatalBox.height >= vp.height - 1, 'fatal should reach the bottom of the viewport');
+    assert.ok(fatalBox.width >= vp.width - 1, 'fatal should span the full viewport width');
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// Collapse state lives in the tab: it must survive the once-a-second poll and a navigation into a
+// child graph, but a full page reload starts fresh. parent.json/child.json both carry a null
+// explanation in their fixture files, on purpose, so the "no panel at all" fixtures stay honest —
+// this test puts a real explanation on the parent with an agent PUT, exactly the way agentPut
+// already drives every other cross-graph write in this file, rather than editing a fixture.
+// ============================================================================================
+test('collapse state survives a poll and a child-graph navigation, but not a reload', async ({ page }) => {
+  const ctx = await launch('parent.json');
+  try {
+    await stage({ graphDir: ctx.graphDir }, 'child.json', 'child.json');
+    await agentPut(ctx, (g) => {
+      g.explanation = 'A short account of what this parent graph shows, for the collapse-state test.';
+    });
+
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+    assert.equal(await page.evaluate(() => window.__viewer.explainExpanded), true);
+    await expect(page.locator('#explain-panel')).toHaveCount(1);
+
+    await page.locator('#explain-toggle').click();
+    assert.equal(await page.evaluate(() => window.__viewer.explainExpanded), false);
+
+    // Survives the poll: wait past one full 1000ms cycle without touching the toggle.
+    await page.waitForTimeout(1300);
+    assert.equal(await page.evaluate(() => window.__viewer.explainExpanded), false);
+
+    // Survives navigating into a child graph — child.json carries no explanation, so no panel
+    // renders there, but the underlying state must not have silently reset to expanded.
+    await page.locator('svg#canvas g.open-child[data-graph="child"] rect.open-child-bg').click();
+    await page.waitForFunction(() => window.__viewer.graph() && window.__viewer.graph().title === 'Child');
+    assert.equal(await page.evaluate(() => window.__viewer.explainExpanded), false);
+    await expect(page.locator('#explain-panel')).toHaveCount(0, 'child.json has no explanation');
+
+    // Step back to the parent (breadcrumb) to see the still-collapsed state made visible again.
+    await page.locator('#breadcrumb .crumb').first().click();
+    await page.waitForFunction(() => window.__viewer.graph() && window.__viewer.graph().title === 'Parent');
+    assert.equal(await page.evaluate(() => window.__viewer.explainExpanded), false);
+    await expect(page.locator('#explain-panel')).toHaveCount(1);
+    await expect(page.locator('#explain-body')).toBeHidden();
+
+    // Does not survive a reload.
+    await page.reload();
+    await ready(page);
+    assert.equal(await page.evaluate(() => window.__viewer.explainExpanded), true);
+    await expect(page.locator('#explain-body')).toBeVisible();
+  } finally {
+    await ctx.stop();
+  }
 });
