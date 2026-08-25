@@ -4,6 +4,12 @@ slug: editable-node-graphs
 
 # How this works today
 
+This maps the repo as it stood when this plan started, before any of its own change had
+landed — the baseline the idea below argues against. The plan has since shipped: `/graph`,
+the schema in `protocol/graphs.md`, and the viewer under `viewer/` all exist now, and
+README.md describes them as current. What follows is deliberately the "before" picture,
+not a live description of today.
+
 ## End to end
 
 ```
@@ -16,8 +22,10 @@ slug: editable-node-graphs
                           /plan-review → /implement → /verify  (same shape)
 ```
 
-Nothing in that chain produces a picture. Every artifact is markdown a human reads
-top-to-bottom.
+Nothing in that chain produced a picture. Every artifact was markdown a human reads
+top-to-bottom. That's what this plan changed: `protocol/planning.md`'s "Drawing a flow"
+step now writes a graph mid-question and starts the viewer, so the loop above is no
+longer the whole picture — see README.md and `protocol/graphs.md` for what it does today.
 
 ## What happens
 
@@ -39,10 +47,13 @@ top-to-bottom.
 
 ## What matters for this change
 
-**This repo has real code now.** `spine/scan.sh` and `spine/test/run.sh` landed with the
-sibling plan; this change adds `viewer/` — `server.js`, `package.json` and a stdlib test
-suite are already in, `index.html` is the remaining piece — the first thing here needing a
-runtime and a port rather than a symlink. Node 26.7.0 and npm 12.0.2 are installed.
+**This repo already had real code when this plan started.** `spine/scan.sh` and
+`spine/test/run.sh` had landed with the sibling plan; this plan's own job was `viewer/` —
+`server.js`, `package.json` and a stdlib test suite existed already, `index.html` was the
+piece still to write, the first thing here needing a runtime and a port rather than a
+symlink. Node 26.7.0 and npm 12.0.2 were installed. `index.html` has since landed along
+with the rest of this plan — this paragraph describes the gap as it stood at the start,
+not what's missing now.
 
 **Plan artifacts live in the target repo, not this one.** A graph file at
 `docs/plans/<slug>/graphs/<name>.json` (`protocol/graphs.md:217`) lands in whatever project
