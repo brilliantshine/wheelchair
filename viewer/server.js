@@ -448,6 +448,7 @@ function temporaryPath(filePath) {
     `.${path.basename(filePath)}.${crypto.randomBytes(4).toString('hex')}.tmp`);
 }
 
+// Only ever call this under the global write mutex, and only for a graph file. See the call sites.
 async function sweepStaleTemps(filePath) {
   const directory = path.dirname(filePath);
   const prefix = `.${path.basename(filePath)}.`;
@@ -470,10 +471,7 @@ async function sweepStaleTemps(filePath) {
 // ordinary repo files that get committed, so they take the ordinary mode: an agent write should
 // not silently re-permission a file the person also edits and diffs.
 async function atomicWrite(filePath, bytes, mode = 0o644) {
-  // Endpoint writes are globally serialized, so a matching sibling at this point can only be
-  // a left-over from an interrupted earlier write, never another live write's temporary file.
-  await sweepStaleTemps(filePath);
-  const temp = temporaryPath(filePath);
+    const temp = temporaryPath(filePath);
   let handle;
   try {
     handle = await fsp.open(temp, 'w', mode);
@@ -699,6 +697,12 @@ async function handleGraphPut(request, response, url, state) {
       }
     }
     const bytes = canonicalBytes(incoming);
+    // Swept here and not inside atomicWrite: this is the only write path the global mutex
+    // serializes, so a matching sibling can only be an interrupted earlier write. `.registered`
+    // is also written by a separate short-lived `--open` process holding no lock, and sweeping
+    // there deleted that process's live temp and killed it on rename. It is also the only path
+    // that matters — a graph lives in a committed directory, the cache root does not.
+    await sweepStaleTemps(graphPath);
     await atomicWrite(graphPath, bytes);
     if (current) {
       const nextById = mapById(incoming.nodes);
@@ -724,6 +728,12 @@ async function handleViewPut(request, response, url, state) {
     const incoming = validateGraph(body.graph, { checkOrigin: false });
     checkViewChanges(current, incoming);
     const bytes = canonicalBytes(incoming);
+    // Swept here and not inside atomicWrite: this is the only write path the global mutex
+    // serializes, so a matching sibling can only be an interrupted earlier write. `.registered`
+    // is also written by a separate short-lived `--open` process holding no lock, and sweeping
+    // there deleted that process's live temp and killed it on rename. It is also the only path
+    // that matters — a graph lives in a committed directory, the cache root does not.
+    await sweepStaleTemps(graphPath);
     await atomicWrite(graphPath, bytes);
     return { hash: hashBytes(bytes) };
   });

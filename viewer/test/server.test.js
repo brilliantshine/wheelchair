@@ -269,7 +269,12 @@ test('PUT /graph ignores known positions and lays out new nodes', async () => {
     expect(await graphPut(ctx, graph, state.hash), 200);
     const stored = await getGraph(ctx);
     assert.deepEqual({ x: entry(stored.graph, 'gather').x, y: entry(stored.graph, 'gather').y }, { x: entry(state.graph, 'gather').x, y: entry(state.graph, 'gather').y });
-    assert.ok(Number.isInteger(entry(stored.graph, 'new').x)); assert.ok(Number.isInteger(entry(stored.graph, 'new').y));
+    // Number.isInteger passed against a layout that placed nothing: `rounded()` makes every served
+    // coordinate an integer, and an unplaced node keeps the 0 the validator defaults it to. Pin the
+    // coordinate the layout is specified to produce instead. `new` has no incoming edge, so it seeds
+    // row 0 with `gather` and `timeline`; sorted by id that puts it in column 1 at the 240x140 pitch.
+    assert.deepEqual({ x: entry(stored.graph, 'new').x, y: entry(stored.graph, 'new').y },
+      { x: 240, y: 0 }, 'a new id takes the position the layout assigns, not the one it was sent');
   });
 });
 
