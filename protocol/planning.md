@@ -30,7 +30,7 @@ and finish the question queue.
 
 **New:** derive a short kebab-case slug. Read the code the change will touch, then write
 MAP.md following
-`~/src/wheelchair/protocol/map.md`: end-to-end flow
+`map.md`, beside this file: end-to-end flow
 first, plain-text diagram, every specific claim carrying `file:line`, and an explicit list
 of what you did not check.
 
@@ -98,7 +98,7 @@ The user has not memorized this conversation and does not have the codebase in t
 Write every turn for someone arriving cold. The general prose rules — sized by what the
 reader needs to decide, every label and prior decision re-grounded on first use, above
 the code, no AI tells — live in
-`~/src/wheelchair/protocol/writing.md`; read it
+`writing.md`, beside this file; read it
 once per session and apply it to every turn. Specific to this loop:
 
 - **Consequence before mechanism.** Lead with what a choice means for how the thing behaves

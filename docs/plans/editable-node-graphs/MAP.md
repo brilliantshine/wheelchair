@@ -2,6 +2,12 @@
 slug: editable-node-graphs
 ---
 
+> **Redacted for publication.** Repository and directory names in this document are stand-ins:
+> the reference repo appears as `almanac`, and one employer's repositories as `atlas-*`,
+> `beacon` and `dev-tooling` under `~/src/work`. Absolute paths were rewritten to `~/src/...`.
+> This includes names inside pasted command output and `file:line` citations, so a path here is
+> a redaction rather than a result. Every observation, count and verdict is otherwise unchanged.
+
 # How this works today
 
 This maps the repo as it stood when this plan started, before any of its own change had

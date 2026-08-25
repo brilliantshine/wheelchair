@@ -20,7 +20,7 @@ Read `implemented-by` from COMPLETION.md frontmatter. The verifier comes from th
 The GPT verifier gets `workspace-write` only so it can run the test suite. Its brief
 forbids editing anything; confirm with `git status` when it returns, and discard any
 stray edits before trusting the verdict. Invocation details:
-`~/src/wheelchair/protocol/lanes.md`.
+`lanes.md`, in this same directory.
 
 The verifier gets the PLAN.md path, the COMPLETION.md path, and repo access — never the
 implementation conversation.
@@ -70,7 +70,7 @@ the user — that is a plan defect, not an implementation defect: reopen Stage 1
 point.
 
 When reporting rounds or gaps to the user, follow
-`~/src/wheelchair/protocol/writing.md`. In
+`writing.md`, beside this file. In
 particular: a gap ID or spec-item codename is a pointer into the docs, not shared
 vocabulary — re-ground it on first use, and report what behavior is wrong, not which
 identifiers are involved.

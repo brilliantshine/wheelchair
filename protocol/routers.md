@@ -6,8 +6,8 @@ and extends routers; the upkeep rule in Stage 3 (`protocol/implementation.md`) k
 them true as ownership moves between directories. Both read the format from this file
 rather than each carrying their own copy.
 
-The reference is `~/src/almanac`, 20 routers deep.
-Every claim below is grounded in it.
+This format was drawn from one repository carrying routers 20 directories deep, called `almanac`
+throughout. Every claim below is grounded in it — the observations are real, the name is a stand-in.
 
 ## Guidance for creation, never a conformance test
 

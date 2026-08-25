@@ -4,6 +4,12 @@ status: done   # planning | ready-for-review | approved | implementing | verifyi
 created: 2026-08-22
 ---
 
+> **Redacted for publication.** Repository and directory names in this document are stand-ins:
+> the reference repo appears as `almanac`, and one employer's repositories as `atlas-*`,
+> `beacon` and `dev-tooling` under `~/src/work`. Absolute paths were rewritten to `~/src/...`.
+> This includes names inside pasted command output and `file:line` citations, so a path here is
+> a redaction rather than a result. Every observation, count and verdict is otherwise unchanged.
+
 # A router document in every directory that owns a rule
 
 **Idea:** `IDEA.md` — what this is for and why, in plain language. Read it first; it is the

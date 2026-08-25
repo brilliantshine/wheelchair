@@ -4,6 +4,12 @@ status: confirmed   # draft | confirmed
 created: 2026-08-22
 ---
 
+> **Redacted for publication.** Repository and directory names in this document are stand-ins:
+> the reference repo appears as `almanac`, and one employer's repositories as `atlas-*`,
+> `beacon` and `dev-tooling` under `~/src/work`. Absolute paths were rewritten to `~/src/...`.
+> This includes names inside pasted command output and `file:line` citations, so a path here is
+> a redaction rather than a result. Every observation, count and verdict is otherwise unchanged.
+
 # Diagrams agents draw and Collin can redraw
 
 **Scope note (2026-08-22):** the router-document half of this idea moved to its own plan,

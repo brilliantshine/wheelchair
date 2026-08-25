@@ -29,7 +29,7 @@ N = 1 + the number of existing "Round" headings under Review Rounds.
 
 Launch two **independent** reviewers in parallel — each fresh-context, each given only
 the plan path and repo access, never this conversation. Read
-`~/src/wheelchair/protocol/lanes.md` for the
+`lanes.md`, in this same directory, for the
 exact invocations and cautions before launching.
 
 - **GPT lane** — `codex exec -m gpt-5.6-sol -s read-only -C "$PWD" -o "$OUT" - < brief`
@@ -101,7 +101,7 @@ Risks; `user-decision` findings drain through Open Questions **one at a time** u
 Stage 1 loop rules.
 
 Round summaries and `user-decision` questions shown to the user follow
-`~/src/wheelchair/protocol/writing.md` — finding
+`writing.md`, beside this file — finding
 IDs and round numbers get re-grounded on first use, and the summary reports what would
 break, not which reviewer said what.
 

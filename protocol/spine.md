@@ -16,7 +16,8 @@ sequence.
 ## The sequence
 
 1. Run the scanner by absolute path:
-   `~/src/wheelchair/spine/scan.sh <path>`.
+   `scan.sh` in this repo's `spine/` directory — if you are reading `<root>/protocol/spine.md`, it is
+   `<root>/spine/scan.sh <path>`.
    Absolute, because `/spine` runs with a foreign repo as its working directory — the
    same reason every skill in this repo hardcodes the absolute path to `protocol/`.
 2. If it refused (exit 1), report the refusal as it stands and stop. The target is not

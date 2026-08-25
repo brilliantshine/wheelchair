@@ -237,9 +237,8 @@ short kebab-case slug" for a plan; this is the concrete rule for a question, sta
 because the question path never goes through `planning.md` at all.
 
 `<repo-key>` is the repo's directory basename plus a hyphen plus the first eight hex
-characters of a SHA-256 hash of the absolute repo path — `wheelchair` at
-`~/src/wheelchair` becomes something like
-`wheelchair-3f2a91c0`. The hash is there because two worktrees of the same
+characters of a SHA-256 hash of the absolute repo path — a repo called `orchard` at
+`~/src/orchard` becomes something like `orchard-3f2a91c0`. The hash is there because two worktrees of the same
 repo share a basename; without it, a question asked from one worktree could collide with
 one asked from another.
 
@@ -252,8 +251,15 @@ verdict; pick a different slug rather than fighting the refusal.
 ## Writing a graph
 
 This is the part nothing else states, so it's stated here as commands, not description.
-Assume the repo lives at `~/src/wheelchair` and
-you're writing a fresh graph.
+You are reading this file at an absolute path — `<root>/protocol/graphs.md` — so you already
+know where this workflow is checked out. The commands below use `$WHEELCHAIR` for that root; set it
+from the path you read this file at, dropping the trailing `/protocol/graphs.md`:
+
+```bash
+WHEELCHAIR=<the root you resolved>       # the directory holding protocol/, viewer/ and spine/
+```
+
+Everything below assumes you are writing a fresh graph.
 
 **1. Start the server detached, then read the URL back out of its output.** The first
 `--open` against a cache root *is* the server: it binds the port and sits there handling
@@ -266,8 +272,8 @@ output instead. The same recipe below completes either way:
 
 ```bash
 LOG=$(mktemp)
-node ~/src/wheelchair/viewer/server.js \
-  --open ~/src/wheelchair/docs/plans/some-plan/graphs/checkout.json \
+node "$WHEELCHAIR/viewer/server.js" \
+  --open "$PWD/docs/plans/some-plan/graphs/checkout.json" \
   > "$LOG" 2>&1 < /dev/null &
 disown 2>/dev/null || true
 
@@ -303,7 +309,7 @@ genuinely absent, so this is safe exactly once, on a real create:
 ```bash
 PORT=7373
 TOKEN=9f3a...   # from step 1
-GRAPH_PATH=~/src/wheelchair/docs/plans/some-plan/graphs/checkout.json
+GRAPH_PATH="$PWD/docs/plans/some-plan/graphs/checkout.json"   # the plan lives in the repo you are working in
 PATH_ENC=$(node -e "console.log(encodeURIComponent(process.argv[1]))" "$GRAPH_PATH")
 
 curl -sS -X PUT "http://127.0.0.1:${PORT}/graph?path=${PATH_ENC}" \

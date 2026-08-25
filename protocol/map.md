@@ -45,7 +45,7 @@ Boxes and arrows only. If it needs a legend, it's too complicated — split it.
   Do not soften it and do not work around it silently.
 - **Follow the prose rules.** Jargon, filler, AI tells, and everything else about how the
   words themselves read:
-  `~/src/wheelchair/protocol/writing.md`.
+  `writing.md`, beside this file.
 
 ## Length
 

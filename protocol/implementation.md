@@ -18,7 +18,7 @@ The current session is the lead. The lead briefs, sequences, integrates, and val
 it does **not** bulk-implement; lead tokens are the expensive kind.
 
 Everything the lead writes for the user — status updates, the end-of-run summary —
-follows `~/src/wheelchair/protocol/writing.md`:
+follows `writing.md`, beside this file:
 sized by what the user needs to decide, every task ID and decision codename re-grounded
 on first use (they mean nothing after a day away), and above the code — behavior and
 areas, not function names.
@@ -51,7 +51,7 @@ the plan anyway. Assuming the lane will work it out is not.
 
 ## Lanes
 
-Read `~/src/wheelchair/protocol/lanes.md` for the
+Read `lanes.md`, in this same directory, for the
 exact invocations and cautions before launching any lane.
 
 - **GPT workhorse:** `codex exec -m gpt-5.6-terra -s workspace-write -C "$PWD" -o "$OUT"

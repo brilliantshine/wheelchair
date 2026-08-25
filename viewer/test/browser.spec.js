@@ -3,9 +3,9 @@
 // Real headless Chromium against the served page — not jsdom, which has no layout and would pass
 // a drag that did nothing. Every gesture below goes through real pointer events (page.mouse,
 // locator.click) or dispatched keyboard events; window.__viewer is read *only* to check state back,
-// never to drive the page. See docs/plans/editable-node-graphs/PLAN.md §13 (test:browser) and
-// ~/.cache/wheelchair/contract.md sections L and M for the exact
-// names and rules this file asserts against.
+// never to drive the page. The rules this file asserts against are in
+// docs/plans/editable-node-graphs/PLAN.md §13 (test:browser) and §7 (the viewer); the DOM names —
+// class names, data- attributes, control ids — are fixed by the page itself, viewer/index.html.
 
 const fs = require('node:fs/promises');
 const os = require('node:os');

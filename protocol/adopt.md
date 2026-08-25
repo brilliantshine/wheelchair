@@ -57,7 +57,7 @@ cases and failure behavior, and success criteria you could verify rather than as
 
 Present the synthesized `IDEA.md`, the prior-work findings, and the gap report together
 (written under
-`~/src/wheelchair/protocol/writing.md`), then ask
+`writing.md`, beside this file), then ask
 the **one** question: where should this land? The findings are awareness — the
 user corrects any you got wrong in the same reply.
 

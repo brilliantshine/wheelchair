@@ -4,6 +4,12 @@ date: 2026-08-24
 implemented-by: terra, sonnet, luna (lead: opus)
 ---
 
+> **Redacted for publication.** Repository and directory names in this document are stand-ins:
+> the reference repo appears as `almanac`, and one employer's repositories as `atlas-*`,
+> `beacon` and `dev-tooling` under `~/src/work`. Absolute paths were rewritten to `~/src/...`.
+> This includes names inside pasted command output and `file:line` citations, so a path here is
+> a redaction rather than a result. Every observation, count and verdict is otherwise unchanged.
+
 # Completion Report — A router document in every directory that owns a rule
 
 Written for a hostile reviewer: every claim checkable, no claim without evidence.
