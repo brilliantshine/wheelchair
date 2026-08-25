@@ -32,6 +32,10 @@ const crypto = require('node:crypto');
 const DEFAULT_PORT = 7373;
 const DAY = 24 * 60 * 60 * 1000;
 const REGISTERED_MAX_AGE = 30 * DAY;
+// A server that has claimed the lockfile but not yet bound is indistinguishable from an unrelated
+// live process. These bound how long a second starter waits for it to answer before giving up.
+const STARTUP_GRACE_ATTEMPTS = 20;
+const STARTUP_GRACE_INTERVAL_MS = 100;
 const ORIGINS = new Set(['proposed', 'agreed', 'rejected']);
 const SOURCES = new Set(['router', 'code-read', 'plan-proposal']);
 const NODE_KINDS = new Set(['file', 'module', 'step', 'decision', 'external', 'note']);
@@ -831,11 +835,27 @@ async function existingServer(config) {
     if (identity.start_id === lock.start_id) return { kind: 'reuse', lock };
     return { kind: 'foreign', lock };
   } catch {
-    try { process.kill(lock.pid, 0); return { kind: 'foreign', lock }; }
+    try { process.kill(lock.pid, 0); }
     catch (error) {
       if (error.code === 'ESRCH') return { kind: 'stale', lock };
       return { kind: 'foreign', lock };
     }
+    // The pid is alive and /whoami is silent. That is a live foreign process — or our own kind of
+    // server in the window between claiming the lockfile and binding the port, which contains a
+    // full read-and-write of the registered set and is milliseconds wide. Two starts at the same
+    // instant land in it, and treating the loser's view as foreign killed it outright: the
+    // documented producer sequence then reports that no URL was printed and exits. Give the holder
+    // that window to answer before calling it foreign. A genuinely unrelated process stays silent
+    // through it and still gets refused, one round of polling later.
+    for (let attempt = 0; attempt < STARTUP_GRACE_ATTEMPTS; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, STARTUP_GRACE_INTERVAL_MS));
+      try { process.kill(lock.pid, 0); } catch { return { kind: 'stale', lock }; }
+      try {
+        const identity = await whoami(lock.port);
+        return identity.start_id === lock.start_id ? { kind: 'reuse', lock } : { kind: 'foreign', lock };
+      } catch { /* still starting, or genuinely not ours */ }
+    }
+    return { kind: 'foreign', lock };
   }
 }
 

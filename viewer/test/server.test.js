@@ -385,6 +385,40 @@ test('whoami is unauthenticated identity, never a mutation credential', async ()
   });
 });
 
+test('two starts at the same instant leave one server, and the loser reuses it rather than dying', async () => {
+  // The winner claims the lockfile, then prunes the registered set and binds — a window of
+  // milliseconds in which its pid is alive and /whoami is silent, which is exactly what an
+  // unrelated live process looks like. Treating the loser's view as foreign killed it outright,
+  // and two agent lanes drawing graphs in one turn is an ordinary thing in this workflow.
+  const root = await makeDir(); const graphDir = path.join(root, 'graphs');
+  await fs.mkdir(graphDir, { recursive: true });
+  const repoRoot = path.resolve(__dirname, '..', '..');
+  const spawnStart = (name) => spawn(process.execPath,
+    ['viewer/server.js', '--cache-root', root, '--open', path.join(graphDir, name)],
+    { cwd: repoRoot, stdio: ['ignore', 'pipe', 'pipe'] });
+
+  const racers = [spawnStart('one.json'), spawnStart('two.json')];
+  const errors = racers.map(() => '');
+  racers.forEach((child, index) => {
+    child.stdout.resume();
+    child.stderr.on('data', (chunk) => { errors[index] += chunk.toString(); });
+  });
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 4500));
+    const died = racers.filter((child) => child.exitCode !== null && child.exitCode !== 0);
+    assert.deepEqual(died.map((child) => errors[racers.indexOf(child)]), [],
+      'neither starter may die; one becomes the server and the other reuses it');
+    assert.equal(racers.filter((child) => child.exitCode === null).length, 1,
+      'exactly one process stays up as the server');
+    assert.equal(racers.filter((child) => child.exitCode === 0).length, 1,
+      'the other exits cleanly, having reused it');
+  } finally {
+    for (const child of racers) {
+      if (child.exitCode === null) { child.kill('SIGKILL'); await waitForExit(child); }
+    }
+  }
+});
+
 test('discovery reuses matching locks, reclaims dead locks, and rejects foreign live locks', async () => {
   const first = await startFixture('canonical.json');
   try {
