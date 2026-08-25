@@ -544,6 +544,18 @@
     return Math.max(NODE_H, 22 + (lines - 1) * 16 + 30);
   }
 
+  // Three lines is as tall as a box gets, so a longer label loses its tail to
+  // the ellipsis wrapText leaves behind — and the box becomes the one place the
+  // sentence cannot be read. Both places that can show it in full (the hover
+  // tooltip below, and the selection panel) key off this rather than sniffing
+  // for a trailing ellipsis, which a label that genuinely ends in one would
+  // trip on its own.
+  function labelTruncated(n) {
+    const shown = wrapText(n.label, 24, 3, firstLineCap(n)).join(' ');
+    const full = String(n.label == null ? '' : n.label).split(/\s+/).filter(Boolean).join(' ');
+    return shown !== full;
+  }
+
   function rectOverlapsAny(rect, nodes, excludeIds) {
     for (const n of nodes) {
       if (excludeIds.includes(n.id)) continue;
@@ -598,6 +610,17 @@
     const g = el('g', attrs);
 
     const h = nodeHeight(n);
+
+    // Reading the whole label shouldn't cost a click. A native tooltip on the
+    // box carries the untruncated text at any zoom, and is added only where the
+    // box is actually hiding something — a tooltip echoing text already on
+    // screen is noise on every other node.
+    if (labelTruncated(n)) {
+      const tip = el('title');
+      tip.textContent = n.label;
+      g.appendChild(tip);
+    }
+
     g.appendChild(el('rect', { class: 'node-box', width: NODE_W, height: h, rx: 6 }));
 
     // §6: an agent may reset an entry Collin approved back to `proposed`,
@@ -786,6 +809,10 @@
     if (!item) return;
 
     const fields = [];
+    // First, above ref and note: it is the field the box failed to show, so it
+    // is what the panel was opened to read. Given more lines than the others
+    // because it is the one field with no length ceiling anywhere upstream.
+    if (node && labelTruncated(node)) fields.push(['detail-label', node.label, 12]);
     if (item.ref) fields.push(['detail-ref', item.ref]);
     if (item.note) fields.push(['detail-note', item.note]);
     if (!node && item.value) {
@@ -809,7 +836,7 @@
     let panelH = 0;
     if (fields.length) {
       let cursor = 18;
-      for (const [, raw] of fields) cursor += wrapText(raw, 32, 4).length * 14 + 6;
+      for (const [, raw, maxLines] of fields) cursor += wrapText(raw, 32, maxLines || 4).length * 14 + 6;
       panelH = cursor;
     }
     const panelTopOffset = 4;
@@ -866,8 +893,8 @@
     });
     let cursorY = 18;
     const textEls = [];
-    for (const [cls, raw] of fields) {
-      const t = textWithWrap(cls, 10, raw, 32, 4);
+    for (const [cls, raw, maxLines] of fields) {
+      const t = textWithWrap(cls, 10, raw, 32, maxLines || 4);
       t.setAttribute('y', String(cursorY));
       textEls.push(t);
       cursorY += t._lineCount * 14 + 6;

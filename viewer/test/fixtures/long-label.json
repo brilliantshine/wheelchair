@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "title": "Long labels",
+  "source": "router",
+  "source_detail": "fixture",
+  "nodes": [
+    {
+      "id": "long",
+      "label": "the installer renders one file this repo owns outright, and never symlinks a wrapper into either harness",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": "install.sh",
+      "note": null,
+      "graph": null,
+      "x": 200,
+      "y": 160
+    },
+    {
+      "id": "short",
+      "label": "Fits in the box",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 200,
+      "y": 520
+    }
+  ],
+  "edges": []
+}

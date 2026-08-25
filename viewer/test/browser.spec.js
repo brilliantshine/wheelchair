@@ -587,6 +587,53 @@ test('selecting an item expands ref, note, and an edge payload with its inferred
 });
 
 // ============================================================================================
+// A label too long for the box is readable in full in two places — the box's own tooltip and,
+// on selection, the top of the detail panel. A label that fits gets neither, so neither is
+// noise on an ordinary node.
+// ============================================================================================
+test('a label the box truncates is readable in full on hover and in the detail panel', async ({ page }) => {
+  const ctx = await launch('long-label.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const full = (await pageGraph(page)).nodes.find((n) => n.id === 'long').label;
+
+    // The box really is hiding text: what is painted ends in an ellipsis and is shorter than
+    // the label. Without this the two readouts below could be asserting against nothing.
+    const painted = (await page.locator('svg#canvas g.node[data-id="long"] text.node-label')
+      .allTextContents()).join(' ');
+    assert.ok(painted.endsWith('\u2026'), `expected the box to truncate, painted "${painted}"`);
+    assert.ok(painted.length < full.length);
+
+    assert.equal(
+      await page.locator('svg#canvas g.node[data-id="long"] > title').textContent(),
+      full,
+      'the box carries the untruncated label as its tooltip',
+    );
+
+    await clickNode(page, 'long');
+    const detail = page.locator('svg#canvas g.detail[data-for="long"]');
+    await expect(detail).toHaveCount(1);
+    // Wrapped across tspans in the panel, and textContent on the parent would run the last word
+    // of one line into the first of the next — read the lines and rejoin them.
+    const shownWords = (await detail.locator('.detail-label tspan').allTextContents())
+      .join(' ').split(/\s+/).filter(Boolean).join(' ');
+    assert.equal(shownWords, full.split(/\s+/).filter(Boolean).join(' '));
+
+    // A label that fits carries neither readout.
+    await clearSelectionViaButton(page);
+    assert.equal(await page.locator('svg#canvas g.node[data-id="short"] > title').count(), 0);
+    await clickNode(page, 'short');
+    const plain = page.locator('svg#canvas g.detail[data-for="short"]');
+    await expect(plain).toHaveCount(1);
+    assert.equal(await plain.locator('.detail-label').count(), 0, 'absent field is omitted, not empty');
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
 // No gesture and no control adds, renames or connects anything. Authoring is cut.
 // ============================================================================================
 test('no gesture or control adds, renames or connects anything', async ({ page }) => {
