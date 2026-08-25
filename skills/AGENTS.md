@@ -19,6 +19,7 @@ says when to use the command and what its argument is. The body is the pointer.
 | `verify/` | `protocol/verification.md` | a slug |
 | `adopt/` | `protocol/adopt.md` | a path to a plan document |
 | `spine/` | `protocol/spine.md` | a path to a working tree |
+| `graph/` | `protocol/graphs.md` | a question |
 
 ## Boundaries
 

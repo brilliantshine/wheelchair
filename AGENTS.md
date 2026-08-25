@@ -16,9 +16,7 @@ reads it.
 | Canonical rules | `protocol/` | an agent executing a stage |
 | Per-feature state | `docs/plans/<slug>/` | every stage, to find out where the work stands |
 | Harness adapter | `skills/`, `codex/prompts/` | Claude Code and the Codex CLI, at registration |
-| Executable | `spine/`, `install.sh` | run by a command, not read as guidance |
-
-`spike/` is outside all four on purpose: throwaway, and its own README says so.
+| Executable | `spine/`, `viewer/`, `install.sh` | run by a command, not read as guidance |
 
 Two rules follow, and between them they cover most of what can go wrong here:
 
@@ -38,7 +36,7 @@ Two rules follow, and between them they cover most of what can go wrong here:
 | `spine/` | [AGENTS.md](spine/AGENTS.md) | `scan.sh`, the read-only scanner behind `/spine` |
 | `codex/` | — | `prompts/`, the Codex CLI wrappers. Same convention as `skills/`, one line each |
 | `docs/` | — | `plans/<slug>/` per feature. State, not rules — nothing here is a contract |
-| `spike/` | — | throwaway experiments. Its own README says not to grow one into the real thing |
+| `viewer/` | — | the browser graph viewer — `index.html`, `server.js`. Started by an agent turn, never read as guidance |
 
 ## Files at the root
 
@@ -46,7 +44,7 @@ Two rules follow, and between them they cover most of what can go wrong here:
 |---|---|
 | `README.md` | What this workflow is and how to drive it, for a person arriving cold |
 | `install.sh` | Symlinks every wrapper into both harnesses. Idempotent, and it **globs** `skills/*/` and `codex/prompts/*.md`, so adding a command needs no edit here |
-| `.gitignore` | `node_modules/` and `graphify-out/`. The second is what lets a root router claim a graph cannot carry a contract |
+| `.gitignore` | `node_modules/`, `graphify-out/`, and `viewer/test/.tmp/`. The second is what lets a root router claim a graph cannot carry a contract |
 
 ## How to navigate (in order)
 
@@ -55,8 +53,9 @@ Two rules follow, and between them they cover most of what can go wrong here:
    rule uses are the words it is stored under.
 3. **Graphify last**, under the policy below.
 
-No module-docstring rung: this repo is markdown plus three shell scripts and one
-throwaway JS file, so there is no docstring convention for one to read.
+No module-docstring rung: `viewer/` is real JavaScript now, not the throwaway spike, but
+it's two files — a router's file/role table already says what each one does at that size,
+so there's still nothing a docstring would tell you faster.
 
 ## Graphify policy
 
@@ -79,12 +78,18 @@ Rules:
 ## Verification
 
 ```bash
-bash spine/test/run.sh          # the scanner's assertions, exit-code gated
-./install.sh && ./install.sh    # idempotent; git status --porcelain stays empty
+bash spine/test/run.sh                # the scanner's assertions, exit-code gated
+./install.sh && ./install.sh          # idempotent; git status --porcelain stays empty
+node --test 'viewer/test/*.test.js'   # the glob is required
+npm --prefix viewer run test:browser  # Chromium; fails loudly if the browser is missing
 ```
 
-There is no test suite for the protocol documents. What keeps them true is that each
+The glob on the `node --test` line is required, not decorative: on Node 26.7.0, pointing
+`--test` at a bare directory does not discover the suite.
+
+There is no test suite for the protocol documents — what keeps them true is that each
 stage refuses to run out of order and every stage's output is the next stage's input.
+`viewer/` is real code, and this is what runs its tests.
 
 ## Maintaining these routers
 

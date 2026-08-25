@@ -29,6 +29,7 @@ lands at one of the statuses the machine already has.
 | `writing.md` | How anything a person reads is written. Governs messages, not documents |
 | `map.md` | How to explain existing code: flow first, grounded in `file:line`, no filler |
 | `diagrams.md` | Which diagram a document gets, and what keeps it from lying |
+| `graphs.md` | The graph format read by both harnesses — schema, verdicts, preservation, how the viewer starts |
 | `routers.md` | The router format — what `/spine` creates and the Stage 3 upkeep rule maintains |
 | `spine.md` | The `/spine` run sequence. Takes a path, not a slug, and sits outside the state machine |
 | `templates/` | The skeletons a stage writes from: `MAP.md`, `IDEA.md`, `PLAN.md`, `COMPLETION.md` |

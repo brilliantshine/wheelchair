@@ -16,3 +16,9 @@ for p in "$ROOT"/codex/prompts/*.md; do
   ln -sfn "$p" ~/.codex/prompts/"$(basename "$p")"
   echo "codex prompt: /$(basename "$p" .md)"
 done
+
+npm --prefix "$ROOT/viewer" install
+echo "viewer deps: installed"
+
+npx --prefix "$ROOT/viewer" playwright install chromium
+echo "viewer chromium: installed"
