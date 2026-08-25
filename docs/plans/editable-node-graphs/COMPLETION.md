@@ -153,7 +153,7 @@ both suites.
 | `viewer/` has no router | By design (§9, decision 53). The next `/spine` run covers it |
 | A drag in flight when an agent writes is lost | Accepted risk from planning, now **asserted** rather than assumed: browser test 3 |
 | `--open` writes the registered set outside the global mutex | Accepted. The mutex is in-process and these are separate processes, so it could never have helped. Writes are atomic, so the worst case is one registration lost in a same-millisecond race |
-| The lockfile is written before the port is bound | Accepted. The bind-error handler unlinks it, so the state self-heals in milliseconds; binding first would not be safer, since the lockfile is both the exclusivity claim and the token's home |
+| The lockfile is claimed before the port is bound | **Corrected after the closure review, which showed this row described the wrong failure.** It said the bind-error handler unlinks the lockfile so the state self-heals — true when the *winner* fails to bind, and irrelevant to what actually happened: the winner bound fine and a simultaneous *loser* died, seeing a live pid and a silent `/whoami` and calling it a foreign process. Measured at 16 of 20 losers. Fixed rather than accepted — see Remediation 4 |
 | Atomicity under a mid-write kill is not asserted | The kill cannot be landed inside the write window without instrumenting the server. The suite asserts a complete graph after a normal write and says so in its own test name. A flaky test would be worse |
 | The detail panel overlaps a node when rows are tight | Deliberate. With a 140-unit row pitch and a panel around 90 tall, every adjacent placement covers something; attached-and-legible beats distant-and-clean, and distant is what the plan specified against |
 | Whether a drawn graph is a good explanation | Not testable, and §13 says so. The spike established it; the first real plan using this will show it again |
@@ -266,4 +266,49 @@ $ npm --prefix viewer run test:browser
 $ find viewer/test/.tmp -name '.*.tmp' | wc -l
 0
 ```
+
+### Remediation 4 — 2026-08-25, after the closure PASS
+
+The closure review returned `VERDICT: PASS` and named one thing it wanted a person to look at. This
+change landed **after** that PASS and has not been through a verifier.
+
+**Two viewers starting at the same instant: the loser died.** Between claiming the lockfile and
+binding the port, a server prunes the registered set — a full read and atomic write, so the window is
+milliseconds, not microseconds. A second starter in that window sees a valid lockfile, a live pid and
+a silent `/whoami`, which is exactly what §10's "unrelated live process" looks like, so it refused to
+adopt and exited. Under the documented producer sequence the agent's recipe then reports that no URL
+was printed and exits 1.
+
+Measured with two simultaneous cold starts, 20 rounds: **16 of 20 losers died** before the fix, **0**
+after, with 20 becoming the server and 20 reusing it.
+
+Pre-existing — the closure review measured the same failure on the original Stage 3 implementation and
+on round 1, at comparable rates, so no remediation caused it. What made it worth fixing rather than
+recording is that two agent lanes drawing graphs in one turn is ordinary in this workflow, and the
+failure lands on the primary documented path.
+
+The fix gives the lockfile holder a bounded grace window to answer `/whoami` before a second starter
+calls it foreign. A genuinely unrelated live process stays silent through the window and is still
+refused, one round of polling later. `viewer/server.js` `existingServer`.
+
+Regression test added and proven non-vacuous: it fails against the pre-fix server and passes against
+the fix. 25 stdlib assertions now, up from 24.
+
+```
+$ ./install.sh && ./install.sh          # idempotent, tree clean
+$ bash spine/test/run.sh
+RESULT 80 passed, 0 failed
+$ node --test 'viewer/test/*.test.js'
+ℹ tests 25   ℹ pass 25   ℹ fail 0
+$ npm --prefix viewer run test:browser
+  16 passed (15.5s)
+$ find viewer/test/.tmp -name '.*.tmp' | wc -l
+0
+```
+
+**Two fail-closed checks the closure review found with no test behind them**, recorded rather than
+fixed: the `Origin` check on both `PUT` routes, and the writable-set check on `PUT /graph`, can each be
+deleted with all 41 assertions still green. Neither is a Spec violation — §13 requires neither, and
+decision 121 says the route split is a contract rather than a security boundary — but both are one
+assertion each and worth adding if this code is touched again.
 
