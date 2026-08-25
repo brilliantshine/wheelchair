@@ -242,3 +242,28 @@ $ find viewer/test/.tmp -name '.*.tmp' | wc -l
 0
 ```
 
+### Remediation 3 — 2026-08-24
+
+Two gaps from the round-2 closure review. Both fixed by the lead directly under Stage 3's small-patch
+bypass; full detail in `REMEDIATION-3.md`.
+
+| Gap | What was wrong | What changed |
+|---|---|---|
+| Round 2's temp sweep raced live processes | The sweep was placed inside the shared write path on the argument that the global mutex made it safe. True for graph writes, false for the writable-set file, which `--open` writes from a short-lived process holding no lock — so it deleted other processes' in-flight temps and killed them on rename. **57 deaths** under concurrent `--open` against the round-2 form, **0** against the fix | Scoped to the two graph-write sites, inside the mutex. That is also the only place it matters: a graph lives in a committed directory, the cache root does not |
+| Another assertion that cannot fail | `PUT /graph ignores known positions` checked only that a coordinate was a whole number — which passes against a layout that places nothing, since every served coordinate is rounded. Same defect as the one round 2 fixed, in the test beside it | Pins the coordinate the layout is specified to produce. Proven to fail against a layout that stacks every node at the origin |
+
+The regression was the lead's, accepted in round 2 on an argument that was not checked against every
+call site. The verifier reproduced it without instrumentation and named the correct scoping.
+
+```
+$ ./install.sh && ./install.sh          # idempotent, tree clean
+$ bash spine/test/run.sh
+RESULT 80 passed, 0 failed
+$ node --test 'viewer/test/*.test.js'
+ℹ tests 24   ℹ pass 24   ℹ fail 0
+$ npm --prefix viewer run test:browser
+  16 passed (11.9s)
+$ find viewer/test/.tmp -name '.*.tmp' | wc -l
+0
+```
+
