@@ -1344,9 +1344,9 @@ and all three were defects in the test rather than in the server.
 
 | Failure | Reading | Fix |
 |---|---|---|
-| "adding a node is refused" expected , got  | The test added a *copy* of an existing node, so its id was a duplicate — a different and more basic violation the server catches first | The added node gets a new id |
-| Dropping an  node expected , got  | The test dropped the node but kept the edges naming it, leaving a graph that is malformed for a more basic reason. A producer that legitimately drops a node always drops its edges | Drop the node and its edges, isolating the assertion |
-| An agent altering a  entry expected , got  | The test had the page reverse that entry to  first, so by the time the agent touched it the server's answer was correct and the expectation was stale | Assert against the agent first; reverse last |
+| "adding a node is refused" expected `structural-difference`, got `bad-id` | The test added a *copy* of an existing node, so its id was a duplicate — a different and more basic violation the server catches first | The added node gets a new id |
+| Dropping an `agreed` node expected `preservation-agreed`, got `edge-missing-node` | The test dropped the node but kept the edges naming it, leaving a graph that is malformed for a more basic reason. A producer that legitimately drops a node always drops its edges | Drop the node and its edges, isolating the assertion |
+| An agent altering a `rejected` entry expected `preservation-rejected`, got `preservation-agreed` | The test had the page reverse that entry to `agreed` first, so by the time the agent touched it the server's answer was correct and the expectation was stale | Assert against the agent first; reverse last |
 
 None of these weakened an assertion — each isolates the rule it was written for. The suite is green
 at 21/21.
@@ -1355,7 +1355,7 @@ at 21/21.
 
 | Finding | Why accepted |
 |---|---|
-|  writes the registered set outside the global mutex, so two simultaneous  calls can race | The mutex is in-process and these are separate processes, so it could never have helped. Writes are atomic (temp file, rename), so the file is never corrupt; the worst case is one registration lost in a same-millisecond race, recovered by re-running  |
+| `--open` writes the registered set outside the global mutex, so two simultaneous `--open` calls can race | The mutex is in-process and these are separate processes, so it could never have helped. Writes are atomic (temp file, rename), so the file is never corrupt; the worst case is one registration lost in a same-millisecond race, recovered by re-running `--open` |
 | The lockfile is written and the registered set pruned *before* the port is bound, so a lock can briefly name a server that is not listening | The bind-error handler unlinks the lockfile, so the state self-heals in milliseconds. Binding first would not be safer — the lockfile is the exclusivity claim and also carries the token — and restructuring the startup path to close a same-millisecond window risks a worse bug than the one it closes |
 
 ## Implementation Tasks
