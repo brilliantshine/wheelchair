@@ -1,0 +1,887 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>graph viewer</title>
+<style>
+  :root {
+    --bg: #14161a; --panel: #1c1f25; --panel-2: #23262d; --line: #2a2f38;
+    --ink: #e6e8ec; --dim: #8b929e;
+    --proposed: #6b7280; --agreed: #4ea87b; --rejected: #c4645f; --accent: #5b9dd9;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+    font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, sans-serif; }
+
+  #topbar { position: fixed; inset: 0 0 auto 0; height: 48px; z-index: 5; display: flex;
+    align-items: center; gap: 14px; padding: 0 14px; background: var(--panel);
+    border-bottom: 1px solid var(--line); overflow: hidden; }
+  #breadcrumb { display: flex; gap: 2px; align-items: center; overflow: hidden;
+    white-space: nowrap; flex-shrink: 1; }
+  #breadcrumb .crumb { background: none; border: none; color: var(--dim); font: inherit;
+    cursor: pointer; padding: 3px 6px; border-radius: 3px; }
+  #breadcrumb .crumb:hover { color: var(--ink); background: var(--panel-2); }
+  #breadcrumb .crumb:last-of-type { color: var(--ink); font-weight: 600; }
+  #breadcrumb .crumb + .crumb::before { content: '\203a'; margin-right: 6px; color: var(--dim); }
+  #source { color: var(--dim); font-size: 12px; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; }
+  #legend { display: flex; align-items: center; gap: 6px; color: var(--dim); font-size: 11px;
+    white-space: nowrap; }
+  #legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
+  #controls { margin-left: auto; display: flex; gap: 8px; flex-shrink: 0; }
+  #controls button { background: var(--panel-2); border: 1px solid var(--line); color: var(--ink);
+    border-radius: 4px; padding: 5px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+  #controls button:hover:not(:disabled) { background: #2b3542; }
+  #controls button:disabled { opacity: .4; cursor: default; }
+
+  #error-banner { position: fixed; left: 14px; right: 14px; top: 56px; z-index: 6;
+    padding: 8px 12px; border-radius: 6px; font-size: 12px; background: #3a1f1f;
+    border: 1px solid var(--rejected); color: #f2d4d1; }
+  #poll-status { position: fixed; left: 14px; bottom: 14px; z-index: 6; padding: 6px 10px;
+    border-radius: 6px; font-size: 12px; background: #2a2a1f; border: 1px solid #8a8a4a;
+    color: #e6e4c8; }
+  #fatal { position: fixed; inset: 48px 0 0 0; z-index: 7; display: flex; align-items: center;
+    justify-content: center; color: var(--dim); font-size: 14px; padding: 40px; text-align: center;
+    background: var(--bg); }
+
+  /* An <svg> left with height:auto falls back to its 150px intrinsic size and
+     silently clips everything below it, while the markup stays perfect — a DOM
+     test would still pass. The pixel height is set explicitly from JS
+     (resizeCanvas, below) on load and on every viewport resize. */
+  svg#canvas { position: fixed; top: 48px; left: 0; touch-action: none; cursor: grab;
+    display: block; background: var(--bg); }
+  svg#canvas.panning { cursor: grabbing; }
+
+  .node .node-box { fill: #21252c; stroke: var(--proposed); stroke-width: 1.5; }
+  .node .node-label { fill: var(--ink); font-size: 12.5px; pointer-events: none; }
+  .node .node-kind { fill: var(--dim); font-size: 9.5px; letter-spacing: .03em;
+    pointer-events: none; text-transform: uppercase; }
+  .node .node-fork { fill: #d8b45f; font-size: 9.5px; pointer-events: none;
+    text-transform: uppercase; letter-spacing: .03em; }
+  .node.selected .node-box { fill: #2b3140; stroke: var(--accent); stroke-width: 2.5; }
+  .node.agreed .node-box { stroke: var(--agreed); }
+  .node.rejected .node-box { stroke: var(--rejected); stroke-dasharray: 4 3; }
+  .node.rejected { opacity: .5; }
+  .node.rejected .node-label { text-decoration: line-through; }
+  .node { cursor: move; }
+
+  .open-child { cursor: pointer; }
+  .open-child .open-child-bg { fill: #2c3340; stroke: var(--accent); stroke-width: 1; }
+  .open-child .open-child-label { fill: var(--accent); font-size: 9px; pointer-events: none; }
+  .open-child.disabled { cursor: default; }
+  .open-child.disabled .open-child-bg { stroke: var(--dim); stroke-dasharray: 2 2; }
+  .open-child.disabled .open-child-label { fill: var(--dim); }
+
+  .edge .edge-line { fill: none; stroke: var(--proposed); stroke-width: 1.5; }
+  .edge[data-kind="sequence"] .edge-line { stroke-dasharray: 3 3; opacity: .85; }
+  .edge .edge-band { stroke: transparent; fill: none; cursor: pointer; }
+  .edge .edge-label { fill: var(--dim); font-size: 11px; pointer-events: none; text-anchor: middle; }
+  .edge .edge-label-bg { fill: #14161a; stroke: var(--line); stroke-width: 1; pointer-events: none; }
+  .edge .edge-handle { fill: var(--proposed); opacity: 0; cursor: pointer; }
+  .edge:hover .edge-handle, .edge.selected .edge-handle { opacity: .9; }
+  .edge.selected .edge-line { stroke: var(--accent); stroke-width: 3; }
+  .edge.selected .edge-handle { fill: var(--accent); }
+  .edge.agreed .edge-line { stroke: var(--agreed); }
+  .edge.agreed .edge-handle { fill: var(--agreed); }
+  .edge.rejected .edge-line { stroke: var(--rejected); stroke-dasharray: 4 3; opacity: .5; }
+  .edge.rejected .edge-handle { fill: var(--rejected); }
+  .edge.rejected .edge-label { text-decoration: line-through; }
+
+  .detail .detail-bg { fill: var(--panel); stroke: var(--line); }
+  .detail text { fill: var(--ink); font-size: 11px; }
+  .detail .detail-ref { fill: var(--dim); font-family: ui-monospace, SFMono-Regular, monospace; }
+  .detail .detail-inferred { fill: #d8b45f; font-style: italic; }
+
+  #marquee { fill: rgba(91, 157, 217, .12); stroke: var(--accent); stroke-width: 1;
+    stroke-dasharray: 3 3; }
+</style>
+
+<header id="topbar">
+  <nav id="breadcrumb"></nav>
+  <span id="source"></span>
+  <span id="legend">
+    <i style="background:var(--agreed)"></i>agreed
+    <i style="background:var(--rejected)"></i>rejected
+  </span>
+  <div id="controls">
+    <button id="select-all">select all</button>
+    <button id="clear-selection" disabled>clear</button>
+    <button id="approve" disabled>approve</button>
+    <button id="reject" disabled>reject</button>
+    <button id="zoom-out">&minus;</button>
+    <button id="zoom-in">+</button>
+  </div>
+</header>
+<div id="error-banner" hidden></div>
+<div id="poll-status" hidden></div>
+<div id="fatal" hidden></div>
+<svg id="canvas"></svg>
+
+<script>
+(function () {
+  'use strict';
+
+  const NS = 'http://www.w3.org/2000/svg';
+  const NODE_W = 200, NODE_H = 74;
+  const MIN_ZOOM = 0.3, MAX_ZOOM = 2.5;
+  const POLL_MS = 1000;
+
+  const params = new URLSearchParams(location.search);
+  const token = params.get('token') || '';
+  let currentPath = params.get('path') || '';
+
+  const svg = document.getElementById('canvas');
+  const topbar = document.getElementById('topbar');
+  const breadcrumbNav = document.getElementById('breadcrumb');
+  const sourceEl = document.getElementById('source');
+  const errorBanner = document.getElementById('error-banner');
+  const pollStatus = document.getElementById('poll-status');
+  const fatalEl = document.getElementById('fatal');
+  const approveBtn = document.getElementById('approve');
+  const rejectBtn = document.getElementById('reject');
+  const clearBtn = document.getElementById('clear-selection');
+
+  // ---- state ---------------------------------------------------------------
+  let graph = null;          // last known-good canonical graph, as read or written
+  let lastHash = '';         // hash matching `graph`
+  let childrenMap = {};      // { name: exists }
+  let trail = [];            // [{path, title}] ancestors, root first
+  let view = { x: 0, y: 0, k: 1 };
+  let selectedIds = new Set();     // explicitly clicked/boxed/select-all ids
+  let impliedRemoved = new Set();  // edges shift-clicked away while both ends stay selected
+  let writing = false;
+
+  // ---- small helpers ---------------------------------------------------------
+  function el(name, attrs) {
+    const e = document.createElementNS(NS, name);
+    if (attrs) for (const k in attrs) {
+      if (attrs[k] !== undefined && attrs[k] !== null) e.setAttribute(k, attrs[k]);
+    }
+    return e;
+  }
+  function deepClone(x) { return JSON.parse(JSON.stringify(x)); }
+  function findNode(g, id) { return g.nodes.find((n) => n.id === id); }
+  function findEdge(g, id) { return g.edges.find((e) => e.id === id); }
+  function findItem(g, id) { return findNode(g, id) || findEdge(g, id); }
+  function isNodeId(id) { return !!findNode(graph, id); }
+  function dirnameOf(p) { return p.slice(0, p.lastIndexOf('/') + 1); }
+  async function safeJson(res) { try { return await res.json(); } catch { return {}; } }
+
+  function wrapText(label, maxChars, maxLines) {
+    const words = String(label == null ? '' : label).split(/\s+/).filter(Boolean);
+    const lines = [''];
+    for (const w of words) {
+      const i = lines.length - 1;
+      const attempt = lines[i] ? lines[i] + ' ' + w : w;
+      if (attempt.length <= maxChars) { lines[i] = attempt; continue; }
+      if (lines.length < maxLines) { lines.push(w); continue; }
+      lines[maxLines - 1] = lines[maxLines - 1].replace(/…$/, '') + '…';
+      break;
+    }
+    return lines;
+  }
+
+  function textWithWrap(cls, x, raw, wrapChars, maxLines) {
+    const t = el('text', { class: cls, x });
+    const lines = wrapText(raw, wrapChars, maxLines);
+    lines.forEach((line, i) => {
+      const tspan = el('tspan', { x, dy: i === 0 ? 0 : 14 });
+      tspan.textContent = line;
+      t.appendChild(tspan);
+    });
+    t._lineCount = lines.length;
+    return t;
+  }
+
+  // ---- wire ------------------------------------------------------------------
+  function graphUrl(path) {
+    return '/graph?path=' + encodeURIComponent(path) + '&token=' + encodeURIComponent(token);
+  }
+  function viewUrl(path) {
+    return '/view?path=' + encodeURIComponent(path);
+  }
+  function rootUrl(path) {
+    return '/?path=' + encodeURIComponent(path) + '&token=' + encodeURIComponent(token);
+  }
+
+  async function getGraph(path) {
+    let res;
+    try {
+      res = await fetch(graphUrl(path), { cache: 'no-store' });
+    } catch (err) {
+      return { ok: false, network: true, error: 'network', detail: String((err && err.message) || err) };
+    }
+    const body = await safeJson(res);
+    if (!res.ok) return { ok: false, status: res.status, error: body.error, detail: body.detail };
+    return { ok: true, hash: body.hash, graph: body.graph, children: body.children || {} };
+  }
+
+  // `mutateFn` expresses the *intent* of a write (a bulk verdict, or a set of
+  // final drag positions) against whatever graph object it is handed. On a 409
+  // we re-read the current graph and call it again against the fresh base —
+  // that is "re-apply pending verdicts to the new base" without ever resending
+  // the stale payload the structural check would refuse.
+  async function putView(mutateFn) {
+    if (writing) return false;
+    writing = true;
+    try {
+      for (let attempt = 0; attempt < 8; attempt++) {
+        const base = deepClone(graph);
+        mutateFn(base);
+        let res;
+        try {
+          res = await fetch(viewUrl(currentPath), {
+            method: 'PUT',
+            cache: 'no-store',
+            headers: { 'content-type': 'application/json', 'X-Graph-Token': token },
+            body: JSON.stringify({ hash: lastHash, graph: base }),
+          });
+        } catch (err) {
+          showErrorBanner({ error: 'network', detail: String((err && err.message) || err) });
+          return false;
+        }
+        if (res.ok) {
+          const body = await safeJson(res);
+          lastHash = body.hash;
+          graph = base;
+          selectedIds = pruneToExisting(selectedIds);
+          impliedRemoved = pruneToExisting(impliedRemoved);
+          clearErrorBanner();
+          render();
+          return true;
+        }
+        const body = await safeJson(res);
+        if (res.status === 409) {
+          const fresh = await getGraph(currentPath);
+          if (!fresh.ok) { showFatal(fresh); return false; }
+          graph = fresh.graph; lastHash = fresh.hash; childrenMap = fresh.children;
+          continue;
+        }
+        showErrorBanner({ status: res.status, error: body.error, detail: body.detail, ids: body.ids });
+        return false;
+      }
+      showErrorBanner({ error: 'stale', detail: 'Kept losing the race with a concurrent write — try again.' });
+      return false;
+    } finally {
+      writing = false;
+    }
+  }
+
+  function pruneToExisting(set) {
+    const result = new Set();
+    for (const id of set) if (findItem(graph, id)) result.add(id);
+    return result;
+  }
+
+  // ---- errors ------------------------------------------------------------------
+  function showErrorBanner(info) {
+    const parts = [];
+    if (info.status) parts.push(String(info.status));
+    if (info.error) parts.push(info.error);
+    let text = parts.join(' ');
+    if (info.detail) text += (text ? ': ' : '') + info.detail;
+    if (info.ids && info.ids.length) text += ' (' + info.ids.join(', ') + ')';
+    errorBanner.textContent = text || 'The write was refused.';
+    errorBanner.hidden = false;
+  }
+  function clearErrorBanner() { errorBanner.hidden = true; errorBanner.textContent = ''; }
+
+  function showFatal(info) {
+    let text;
+    if (info.status === 404 || info.error === 'not-found') {
+      text = 'This graph is gone — nothing exists at ' + currentPath + '.';
+    } else if (info.network) {
+      text = 'Lost the connection to the viewer server.';
+    } else {
+      text = [info.status, info.error, info.detail].filter(Boolean).join(' ') || 'Could not load this graph.';
+    }
+    fatalEl.textContent = text;
+    fatalEl.hidden = false;
+    svg.style.display = 'none';
+  }
+  function clearFatal() { fatalEl.hidden = true; svg.style.display = ''; }
+
+  // ---- selection ---------------------------------------------------------------
+  // Selecting both endpoints of an edge selects the edge (decision 63) so a
+  // bulk verdict over a region covers the arrows inside it. Shift-clicking such
+  // an implied edge removes it from the selection, and it stays removed only
+  // for as long as both endpoints stay selected — the moment either endpoint
+  // drops out, the suppression is meaningless and this clears it.
+  function effectiveSelectionIds() {
+    if (!graph) return new Set();
+    const nodeIdsSelected = new Set([...selectedIds].filter(isNodeId));
+    const result = new Set(selectedIds);
+    for (const e of graph.edges) {
+      const bothEnds = nodeIdsSelected.has(e.from) && nodeIdsSelected.has(e.to);
+      if (bothEnds) {
+        if (!impliedRemoved.has(e.id)) result.add(e.id);
+      } else {
+        impliedRemoved.delete(e.id);
+      }
+    }
+    return result;
+  }
+
+  function pick(id, additive) {
+    const isSel = effectiveSelectionIds().has(id);
+    if (!additive) {
+      selectedIds = new Set([id]);
+      impliedRemoved = new Set();
+    } else if (isSel) {
+      selectedIds.delete(id);
+      if (!isNodeId(id)) impliedRemoved.add(id);
+    } else {
+      selectedIds.add(id);
+      impliedRemoved.delete(id);
+    }
+    render();
+  }
+
+  function clearSelection() { selectedIds = new Set(); impliedRemoved = new Set(); }
+
+  document.getElementById('select-all').addEventListener('click', () => {
+    if (!graph) return;
+    selectedIds = new Set(graph.nodes.map((n) => n.id));
+    impliedRemoved = new Set();
+    render();
+  });
+  clearBtn.addEventListener('click', () => { clearSelection(); render(); });
+
+  // ---- verdicts ------------------------------------------------------------------
+  function applyOrigin(g, ids, verdict) {
+    for (const id of ids) {
+      const item = findNode(g, id) || findEdge(g, id);
+      if (item && item.origin !== verdict) {
+        item.origin = verdict;
+        // The page may only *clear* a `was`, and only in the same write that
+        // changes that entry's origin — never set one, never touch it when
+        // the origin does not change.
+        item.was = null;
+      }
+    }
+  }
+
+  approveBtn.addEventListener('click', () => {
+    const ids = [...effectiveSelectionIds()];
+    if (!ids.length) return;
+    putView((g) => applyOrigin(g, ids, 'agreed'));
+  });
+  rejectBtn.addEventListener('click', () => {
+    const ids = [...effectiveSelectionIds()];
+    if (!ids.length) return;
+    putView((g) => applyOrigin(g, ids, 'rejected'));
+  });
+
+  function commitDrag(positions) {
+    putView((g) => {
+      for (const [id, pos] of positions) {
+        const n = findNode(g, id);
+        if (n) { n.x = pos.x; n.y = pos.y; }
+      }
+    });
+  }
+
+  // ---- navigation ------------------------------------------------------------------
+  async function loadGraph(path) {
+    const result = await getGraph(path);
+    if (!result.ok) { showFatal(result); return false; }
+    currentPath = path;
+    graph = result.graph;
+    lastHash = result.hash;
+    childrenMap = result.children;
+    selectedIds = new Set();
+    impliedRemoved = new Set();
+    view = { x: 0, y: 0, k: 1 };
+    clearFatal(); clearErrorBanner();
+    document.title = graph.title || 'graph viewer';
+    render();
+    return true;
+  }
+
+  function openChild(name) {
+    if (childrenMap[name] === false) return;
+    const childPath = dirnameOf(currentPath) + name + '.json';
+    const parentEntry = { path: currentPath, title: (graph && graph.title) || currentPath };
+    loadGraph(childPath).then((ok) => {
+      if (ok) { trail.push(parentEntry); renderBreadcrumb(); }
+    });
+  }
+
+  function stepBack() {
+    if (!trail.length) return;
+    const parent = trail.pop();
+    loadGraph(parent.path).then((ok) => {
+      if (!ok) trail.push(parent);
+      renderBreadcrumb();
+    });
+  }
+
+  function goToCrumb(path) {
+    const idx = trail.findIndex((t) => t.path === path);
+    const truncated = idx === -1 ? trail.slice() : trail.slice(0, idx);
+    if (path === currentPath) return; // already here
+    loadGraph(path).then((ok) => { if (ok) { trail = truncated; renderBreadcrumb(); } });
+  }
+
+  function renderBreadcrumb() {
+    breadcrumbNav.innerHTML = '';
+    const entries = trail.concat([{ path: currentPath, title: (graph && graph.title) || currentPath }]);
+    for (const entry of entries) {
+      const btn = document.createElement('button');
+      btn.className = 'crumb';
+      btn.setAttribute('data-path', entry.path);
+      btn.textContent = entry.title;
+      btn.addEventListener('click', () => goToCrumb(entry.path));
+      breadcrumbNav.appendChild(btn);
+    }
+  }
+
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Escape') return;
+    // Escape clears a selection first if there is one, and only steps back out
+    // of a container once there is nothing left to clear.
+    if (effectiveSelectionIds().size) { clearSelection(); render(); }
+    else stepBack();
+  });
+
+  // ---- geometry ------------------------------------------------------------------
+  function rectExit(cx, cy, hw, hh, sx, sy) {
+    if (!sx && !sy) return [cx, cy];
+    const t = Math.min(
+      Math.abs(sx) > 1e-6 ? (hw + 4) / Math.abs(sx) : Infinity,
+      Math.abs(sy) > 1e-6 ? (hh + 4) / Math.abs(sy) : Infinity
+    );
+    return [cx + sx * t, cy + sy * t];
+  }
+
+  function buildMarkerDefs() {
+    const defs = el('defs');
+    for (const origin of ['proposed', 'agreed', 'rejected']) {
+      const marker = el('marker', {
+        id: 'arrow-' + origin, viewBox: '0 0 10 10', refX: 9, refY: 5,
+        markerWidth: 6, markerHeight: 6, orient: 'auto-start-reverse',
+      });
+      const colorVar = { proposed: 'var(--proposed)', agreed: 'var(--agreed)', rejected: 'var(--rejected)' }[origin];
+      marker.appendChild(el('path', { d: 'M0,0 L10,5 L0,10 Z', fill: colorVar }));
+      defs.appendChild(marker);
+    }
+    return defs;
+  }
+
+  function renderNodeGroup(root, n, effSel) {
+    const selected = effSel.has(n.id);
+    const cls = ['node'];
+    if (selected) cls.push('selected');
+    if (n.origin === 'rejected') cls.push('rejected');
+    if (n.origin === 'agreed') cls.push('agreed');
+    const attrs = {
+      class: cls.join(' '), 'data-id': n.id, 'data-origin': n.origin, 'data-kind': n.kind,
+      transform: 'translate(' + n.x + ',' + n.y + ')',
+    };
+    if (n.exclusive) attrs['data-exclusive'] = 'true';
+    const missing = n.graph !== null && childrenMap[n.graph] === false;
+    if (missing) attrs['data-child-missing'] = 'true';
+    const g = el('g', attrs);
+
+    g.appendChild(el('rect', { class: 'node-box', width: NODE_W, height: NODE_H, rx: 6 }));
+
+    const lines = wrapText(n.label, 24, 3);
+    lines.forEach((line, i) => {
+      const t = el('text', { class: 'node-label', x: 12, y: 22 + i * 16 });
+      t.textContent = line;
+      g.appendChild(t);
+    });
+
+    const kindTag = el('text', { class: 'node-kind', x: 12, y: NODE_H - 8 });
+    kindTag.textContent = n.kind;
+    g.appendChild(kindTag);
+
+    if (n.exclusive) {
+      const fork = el('text', { class: 'node-fork', x: NODE_W - 12, y: NODE_H - 8, 'text-anchor': 'end' });
+      fork.textContent = 'fork';
+      g.appendChild(fork);
+    }
+
+    if (n.graph !== null) {
+      const badge = el('g', {
+        class: 'open-child' + (missing ? ' disabled' : ''), 'data-graph': n.graph,
+        transform: 'translate(' + (NODE_W - 58) + ',6)',
+      });
+      badge.appendChild(el('rect', { width: 50, height: 16, rx: 3, class: 'open-child-bg' }));
+      const label = el('text', { class: 'open-child-label', x: 25, y: 11, 'text-anchor': 'middle' });
+      label.textContent = missing ? 'missing' : 'open ›';
+      badge.appendChild(label);
+      if (missing) {
+        const tip = el('title');
+        tip.textContent = 'child graph "' + n.graph + '" does not exist';
+        badge.appendChild(tip);
+      } else {
+        badge.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+        badge.addEventListener('pointerup', (ev) => { ev.stopPropagation(); openChild(n.graph); });
+      }
+      g.appendChild(badge);
+    }
+
+    g.addEventListener('pointerdown', (ev) => startNodeDrag(ev, n));
+    root.appendChild(g);
+  }
+
+  function renderEdgeGroup(root, e, a, b, pairIndex, pairCount, effSel) {
+    const selected = effSel.has(e.id);
+    const cls = ['edge'];
+    if (selected) cls.push('selected');
+    if (e.origin === 'rejected') cls.push('rejected');
+    if (e.origin === 'agreed') cls.push('agreed');
+    const g = el('g', { class: cls.join(' '), 'data-id': e.id, 'data-origin': e.origin, 'data-kind': e.kind });
+
+    const x1 = a.x + NODE_W / 2, y1 = a.y + NODE_H / 2;
+    const x2 = b.x + NODE_W / 2, y2 = b.y + NODE_H / 2;
+    const dx = x2 - x1, dy = y2 - y1;
+
+    // Trim to where the line crosses the node's rectangle, not a fixed radius
+    // from its centre — a radius trim buries the line end and the arrowhead
+    // under the box.
+    let [ax, ay] = rectExit(x1, y1, NODE_W / 2, NODE_H / 2, dx, dy);
+    let [bx, by] = rectExit(x2, y2, NODE_W / 2, NODE_H / 2, -dx, -dy);
+
+    // Two edges on one pair of nodes — including opposite directions — land on
+    // the same line and read as a single double-headed arrow. Fan them apart
+    // perpendicular to the line so each is separate geometry and independently
+    // hittable.
+    const pairKey = JSON.stringify([e.from, e.to].slice().sort());
+    const n = pairCount.get(pairKey) || 1;
+    if (n > 1) {
+      const L0 = Math.hypot(dx, dy) || 1;
+      const shift = (pairIndex.get(e.id) - (n - 1) / 2) * 14;
+      ax += (-dy / L0) * shift; ay += (dx / L0) * shift;
+      bx += (-dy / L0) * shift; by += (dx / L0) * shift;
+    }
+
+    const d = 'M' + ax + ',' + ay + ' L' + bx + ',' + by;
+    g.appendChild(el('path', { class: 'edge-line', d, 'marker-end': 'url(#arrow-' + e.origin + ')' }));
+
+    // The hit band is 24 *device* pixels at any zoom. The band's own
+    // stroke-width lives inside the pan/zoom transform, so to land on 24
+    // device pixels the local (pre-scale) width must be 24/zoom — 24 raw
+    // local units would be about 8 device px at the 0.3 zoom floor, worse than
+    // the ~14px gap that made the line unhittable in the first place. Recomputed
+    // on every render, so it tracks the current zoom.
+    const band = el('path', { class: 'edge-band', d, 'stroke-width': String(24 / view.k) });
+    band.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+    band.addEventListener('pointerup', (ev) => { ev.stopPropagation(); pick(e.id, ev.shiftKey); });
+    g.appendChild(band);
+
+    const ends = [['from', ax, ay], ['to', bx, by]];
+    for (const [end, hx, hy] of ends) {
+      const handle = el('circle', { class: 'edge-handle', 'data-end': end, cx: hx, cy: hy, r: 5 });
+      handle.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+      handle.addEventListener('pointerup', (ev) => { ev.stopPropagation(); pick(e.id, ev.shiftKey); });
+      g.appendChild(handle);
+    }
+
+    // A fork's outgoing edges are the one place shape carries meaning: each
+    // arm reads "if <label>" plus its payload where it has one, because
+    // without that a graph cannot distinguish "then both" from "then either".
+    const isForkArm = a.exclusive === true;
+    const payload = (e.kind === 'data' && e.value) ? e.value : null;
+    const text = isForkArm ? ('if ' + e.label + (payload ? ': ' + payload : '')) : e.label;
+
+    // Offset perpendicular to the line, clear of both node boxes, instead of
+    // centred on it — a centred label lands inside whichever box the gap is
+    // too narrow for. Nodes are appended to the canvas before edges (see
+    // render()), so this whole group, label included, paints above every box.
+    const L2 = Math.hypot(dx, dy) || 1;
+    const off = NODE_H / 2 + 16;
+    const mx = (ax + bx) / 2 + (dy / L2) * off;
+    const my = (ay + by) / 2 - (dx / L2) * off;
+    const width = Math.max(24, text.length * 6.2 + 14);
+    g.appendChild(el('rect', { class: 'edge-label-bg', x: mx - width / 2, y: my - 15, width, height: 18, rx: 3 }));
+    const label = el('text', { class: 'edge-label', x: mx, y: my - 2 });
+    label.textContent = text;
+    g.appendChild(label);
+
+    root.appendChild(g);
+  }
+
+  function renderDetail(root, id, nodeById) {
+    const node = findNode(graph, id);
+    const item = node || findEdge(graph, id);
+    if (!item) return;
+
+    const fields = [];
+    if (item.ref) fields.push(['detail-ref', item.ref]);
+    if (item.note) fields.push(['detail-note', item.note]);
+    if (!node && item.value) {
+      fields.push(['detail-value', item.value]);
+      fields.push(['detail-inferred', item.inferred ? 'inferred — not stated by the source' : 'stated by the source']);
+    }
+    // The group itself exists whenever exactly one item is selected, even with
+    // nothing to expand — only the per-field elements are conditionally
+    // omitted, never left present-but-empty.
+
+    let x, y;
+    if (node) {
+      x = node.x; y = node.y + NODE_H + 12;
+    } else {
+      const a = nodeById.get(item.from), b = nodeById.get(item.to);
+      if (!a || !b) return;
+      x = Math.min(a.x, b.x) + NODE_W / 2 - 105;
+      y = Math.max(a.y, b.y) + NODE_H + 34;
+    }
+
+    const g = el('g', { class: 'detail', 'data-for': id, transform: 'translate(' + x + ',' + y + ')' });
+    let cursorY = 18;
+    const textEls = [];
+    for (const [cls, raw] of fields) {
+      const t = textWithWrap(cls, 10, raw, 32, 4);
+      t.setAttribute('y', String(cursorY));
+      textEls.push(t);
+      cursorY += t._lineCount * 14 + 6;
+    }
+    if (fields.length) {
+      g.appendChild(el('rect', { class: 'detail-bg', x: 0, y: -4, width: 210, height: cursorY, rx: 6 }));
+    }
+    for (const t of textEls) g.appendChild(t);
+    root.appendChild(g);
+  }
+
+  function renderControlsState(effSel) {
+    const has = effSel.size > 0;
+    approveBtn.disabled = !has;
+    rejectBtn.disabled = !has;
+    clearBtn.disabled = !has;
+  }
+
+  function resizeCanvas() {
+    // Same lesson as the CSS comment above: the height has to be set as an
+    // explicit pixel attribute, computed fresh on every layout change, or the
+    // <svg> collapses to its 150px intrinsic size.
+    const top = topbar.getBoundingClientRect().height || 48;
+    const h = Math.max(200, window.innerHeight - top);
+    const w = window.innerWidth;
+    svg.setAttribute('width', String(w));
+    svg.setAttribute('height', String(h));
+    svg.style.top = top + 'px';
+  }
+
+  function render() {
+    if (!graph) return;
+    resizeCanvas();
+    svg.setAttribute('data-zoom', String(view.k));
+    sourceEl.textContent = graph.source + (graph.source_detail ? ' · ' + graph.source_detail : '');
+
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    svg.appendChild(buildMarkerDefs());
+    const root = el('g', { transform: 'translate(' + view.x + ',' + view.y + ') scale(' + view.k + ')' });
+    svg.appendChild(root);
+
+    const pairIndex = new Map(), pairCount = new Map();
+    for (const e of graph.edges) {
+      // JSON.stringify of the sorted pair, not a joined string: ids are only
+      // guaranteed unique within their own collection, not free of whatever
+      // separator a plain join would pick, so a delimiter-free key is the only
+      // one that can't collide.
+      const key = JSON.stringify([e.from, e.to].slice().sort());
+      pairIndex.set(e.id, pairCount.get(key) || 0);
+      pairCount.set(key, (pairCount.get(key) || 0) + 1);
+    }
+    const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
+    const effSel = effectiveSelectionIds();
+
+    // Nodes first, edges after: edges are trimmed to each box's boundary, so
+    // painting them second never buries a box's own content, and it is what
+    // lets an edge's own label — appended inside the same edge group — clear
+    // every node instead of being painted over by one.
+    for (const n of graph.nodes) renderNodeGroup(root, n, effSel);
+    for (const e of graph.edges) {
+      const a = nodeById.get(e.from), b = nodeById.get(e.to);
+      if (!a || !b) continue;
+      renderEdgeGroup(root, e, a, b, pairIndex, pairCount, effSel);
+    }
+
+    if (effSel.size === 1) renderDetail(root, [...effSel][0], nodeById);
+    renderControlsState(effSel);
+  }
+
+  window.addEventListener('resize', () => { if (graph) render(); });
+
+  // ---- pointer gestures ------------------------------------------------------------------
+  let dragState = null;
+  let panState = null;
+  let marqueeState = null;
+
+  function svgLocal(ev) {
+    const r = svg.getBoundingClientRect();
+    return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+  }
+
+  function startNodeDrag(ev, n) {
+    ev.stopPropagation();
+    const already = effectiveSelectionIds().has(n.id);
+    const ids = already ? [...effectiveSelectionIds()].filter(isNodeId) : [n.id];
+    const start = new Map();
+    for (const id of ids) {
+      const node = findNode(graph, id);
+      start.set(id, { x: node.x, y: node.y });
+    }
+    dragState = { primary: n.id, ids, start, x0: ev.clientX, y0: ev.clientY, moved: false };
+    svg.setPointerCapture(ev.pointerId);
+  }
+
+  svg.addEventListener('pointerdown', (ev) => {
+    if (ev.target.closest('.node') || ev.target.closest('.edge')) return;
+    // Pan is alt-drag or the middle button; the plain background drag is
+    // selection (box-select), so the two never collide.
+    if (ev.altKey || ev.button === 1) {
+      panState = { x0: view.x, y0: view.y, cx: ev.clientX, cy: ev.clientY };
+      svg.classList.add('panning');
+    } else {
+      const p = svgLocal(ev);
+      marqueeState = { x0: p.x, y0: p.y, x1: p.x, y1: p.y, shift: ev.shiftKey };
+    }
+    svg.setPointerCapture(ev.pointerId);
+  });
+
+  svg.addEventListener('pointermove', (ev) => {
+    if (dragState) {
+      if (!dragState.moved && Math.hypot(ev.clientX - dragState.x0, ev.clientY - dragState.y0) > 3) {
+        dragState.moved = true;
+      }
+      if (dragState.moved) {
+        const wdx = (ev.clientX - dragState.x0) / view.k;
+        const wdy = (ev.clientY - dragState.y0) / view.k;
+        for (const id of dragState.ids) {
+          const node = findNode(graph, id);
+          const s = dragState.start.get(id);
+          node.x = s.x + wdx; node.y = s.y + wdy;
+        }
+        render();
+      }
+    } else if (panState) {
+      view.x = panState.x0 + (ev.clientX - panState.cx);
+      view.y = panState.y0 + (ev.clientY - panState.cy);
+      render();
+    } else if (marqueeState) {
+      const p = svgLocal(ev);
+      marqueeState.x1 = p.x; marqueeState.y1 = p.y;
+      render(); drawMarquee();
+    }
+  });
+
+  svg.addEventListener('pointerup', (ev) => {
+    if (dragState) {
+      if (dragState.moved) {
+        const positions = [];
+        for (const id of dragState.ids) {
+          const node = findNode(graph, id);
+          node.x = Math.round(node.x); node.y = Math.round(node.y);
+          positions.push([id, { x: node.x, y: node.y }]);
+        }
+        render();
+        commitDrag(positions);
+      } else {
+        // setPointerCapture above retargets the click that would otherwise
+        // follow this pointerup to whatever happens to be under the pointer
+        // when it is released — not reliably the node — so selection can
+        // never be driven by "click". It fires here, on pointerup, and a drag
+        // is distinguished from a plain selection purely by whether the
+        // pointer moved past the small threshold above.
+        pick(dragState.primary, ev.shiftKey);
+      }
+      dragState = null;
+    } else if (panState) {
+      panState = null;
+      svg.classList.remove('panning');
+    } else if (marqueeState) {
+      finishMarquee(marqueeState, ev.shiftKey);
+      marqueeState = null;
+      render();
+    }
+  });
+
+  function finishMarquee(m, shift) {
+    const w = Math.abs(m.x1 - m.x0), h = Math.abs(m.y1 - m.y0);
+    if (w < 4 && h < 4) {
+      if (!shift) clearSelection();
+      return;
+    }
+    const bx = Math.min(m.x0, m.x1), by = Math.min(m.y0, m.y1);
+    if (!shift) { selectedIds = new Set(); impliedRemoved = new Set(); }
+    for (const n of graph.nodes) {
+      const sx = n.x * view.k + view.x, sy = n.y * view.k + view.y;
+      const sw = NODE_W * view.k, sh = NODE_H * view.k;
+      if (sx < bx + w && sx + sw > bx && sy < by + h && sy + sh > by) selectedIds.add(n.id);
+    }
+  }
+
+  function drawMarquee() {
+    if (!marqueeState) return;
+    svg.appendChild(el('rect', {
+      id: 'marquee',
+      x: Math.min(marqueeState.x0, marqueeState.x1),
+      y: Math.min(marqueeState.y0, marqueeState.y1),
+      width: Math.abs(marqueeState.x1 - marqueeState.x0),
+      height: Math.abs(marqueeState.y1 - marqueeState.y0),
+    }));
+  }
+
+  function zoomBy(factor, clientX, clientY) {
+    const r = svg.getBoundingClientRect();
+    const px = (clientX != null ? clientX : r.left + r.width / 2) - r.left;
+    const py = (clientY != null ? clientY : r.top + r.height / 2) - r.top;
+    const k = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, view.k * factor));
+    view.x = px - (px - view.x) * (k / view.k);
+    view.y = py - (py - view.y) * (k / view.k);
+    view.k = k;
+    render();
+  }
+
+  svg.addEventListener('wheel', (ev) => {
+    ev.preventDefault();
+    zoomBy(ev.deltaY < 0 ? 1.1 : 1 / 1.1, ev.clientX, ev.clientY);
+  }, { passive: false });
+
+  document.getElementById('zoom-in').addEventListener('click', () => zoomBy(1.2));
+  document.getElementById('zoom-out').addEventListener('click', () => zoomBy(1 / 1.2));
+
+  // ---- polling ------------------------------------------------------------------
+  // Reload when the content hash differs from the last one this page read or
+  // wrote; never on the page's own write, since that write already updated
+  // `lastHash` to match. A drag in flight when an agent writes mid-poll is
+  // lost — an accepted risk, not a bug to route around.
+  async function pollOnce() {
+    if (!currentPath) return;
+    const result = await getGraph(currentPath);
+    if (!result.ok) {
+      if (result.status === 404) { showFatal(result); return; }
+      pollStatus.hidden = false;
+      pollStatus.textContent = 'lost contact with the viewer server — retrying…';
+      return;
+    }
+    pollStatus.hidden = true;
+    if (result.hash !== lastHash) {
+      graph = result.graph;
+      lastHash = result.hash;
+      childrenMap = result.children;
+      selectedIds = pruneToExisting(selectedIds);
+      impliedRemoved = pruneToExisting(impliedRemoved);
+      render();
+    }
+  }
+
+  // ---- boot ------------------------------------------------------------------
+  (async function init() {
+    resizeCanvas();
+    const ok = await loadGraph(currentPath);
+    if (ok) renderBreadcrumb();
+    setInterval(pollOnce, POLL_MS);
+  })();
+
+  // Read-only: the browser suite drives real pointer gestures and only reads
+  // state back through this.
+  window.__viewer = {
+    get hash() { return lastHash; },
+    get zoom() { return view.k; },
+    selection() { return [...effectiveSelectionIds()]; },
+    graph() { return graph; },
+  };
+})();
+</script>
