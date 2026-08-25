@@ -1,0 +1,162 @@
+---
+slug: editable-node-graphs
+date: 2026-08-24
+implemented-by: terra (server, stdlib suite), sonnet (page, format document, protocol wiring, browser suite), lead opus
+---
+
+# Completion Report — Diagrams agents draw and Collin can redraw
+
+Written for a hostile reviewer: every claim checkable, no claim without evidence.
+
+```mermaid
+flowchart TD
+  A[an agent draws a graph and prints a URL] --> B[the page renders it in a browser]
+  B --> C[you rearrange it so it reads]
+  C --> D[you approve or strike, in bulk]
+  D --> E{what kind of write is this?}
+  E -- the page --> F[structurally identical to disk;<br/>only positions and verdicts may move]
+  E -- an agent --> G[may restructure, but never touches<br/>a struck entry and never grants itself a verdict]
+  F --> H[one lock, one hash, one atomic rename]
+  G --> H
+  H --> I[the next turn re-reads your verdicts]
+  I --> J[the spec accounts in prose for everything struck]
+```
+
+## What was built
+
+An agent writes a graph — ten to twenty-five boxes with labelled arrows, each carrying where it came
+from — to a JSON file and prints a URL. You open it, rearrange it so it reads, and approve or strike
+what is wrong in bulk. The next agent turn reads those verdicts. That is the return trip the idea
+document said no tool gives you: you could be shown a diagram, but you could not answer with one.
+
+## Spec coverage
+
+| Spec item | Origin | Implemented at (file:line) | Validated by |
+|-----------|--------|----------------------------|--------------|
+| §1 `protocol/graphs.md`, the format both harnesses read | this run | `protocol/graphs.md:1-458` | cold-read check; `./install.sh` registers `/graph` |
+| §1 `protocol/planning.md`, three insertions | this run | `:73` re-read before each question, `:127` draw a flow when one is discussed, `:177` the exit gate | read; no test — prose |
+| §1 `protocol/diagrams.md`, authoring from a graph | this run | `protocol/diagrams.md:73-95` | read |
+| §1 `protocol/plan-review.md` names that section | this run | `protocol/plan-review.md:113-117` | read |
+| §1 `skills/graph/SKILL.md`, `codex/prompts/graph.md` | this run | both files, 8 and 1 lines | `./install.sh` twice; `/graph` offered in both harnesses |
+| §1 `install.sh` gains two steps | this run | `install.sh:20-24` | run twice, idempotent, tree clean |
+| §1 `.gitignore` | this run | `.gitignore:3-4` | tree clean after both suites |
+| §1 routers and README swept | this run | `AGENTS.md:19,39,47,56,80-92`; `protocol/AGENTS.md:32`; `skills/AGENTS.md:22`; `README.md:18,34,60,79,108,121` | read against the tree |
+| §1 `MAP.md` re-mapped | this run | `docs/plans/editable-node-graphs/MAP.md` | read against the tree |
+| §1 `spike/` deleted | this run | commit `7f2d462` | absent from the tree |
+| §2 a graph is disposable, a router is its input never its output | this run | `protocol/graphs.md:10-40` | read |
+| §3 schema, key order, every key present | this run | `viewer/server.js:73` canonicalization, `:96` validation | round-trip test, byte identity |
+| §3 defaults; a missing label is a refusal | this run | `viewer/server.js:96-160` | `malformed on-disk graphs refuse without repair` |
+| §3 the wire omits `x`/`y`; positions are the person's | this run | `viewer/server.js:391` | `PUT /graph ignores known positions and lays out new nodes` |
+| §3 where files live, slug and repo-key derivation | this run | `protocol/graphs.md:215-250` | read — agent-side convention, no server code |
+| §3 producer sequence with the mandatory hash | this run | `protocol/graphs.md:251-327` | the lead's smoke script ran that exact sequence |
+| §3 read-back rule | this run | `protocol/graphs.md:328-346` | read |
+| §4 the three `planning.md` insertions | this run | as above | read |
+| §5 top level only, authored not generated | this run | `protocol/diagrams.md:73-95` | read |
+| §6 three origins; `agreed` is a verdict, not a lock | this run | `viewer/server.js:247` | `verdict reversal is page-only…` |
+| §6 preservation: `rejected` verbatim, `agreed` reset-then-remove | this run | `viewer/server.js:247-290` | `agent preservation protects agreed and rejected entries` |
+| §6 `was` makes a reset durable | this run | `viewer/server.js:277-289`, `:611` | `agent reset records are durable…`; browser `approving a reset entry through the page clears was` |
+| §6 a bulk verdict is additive only | this run | `viewer/server.js:626-632` | `bulk verdicts are additive and one reversal is permitted` |
+| §6 BFS layering with the re-seed | this run | `viewer/server.js:350-390` | `layout places every component, including a disconnected two-cycle` |
+| §6 cross-file preservation, recursive | this run | `viewer/server.js:310-349` | `container removal accepts proposed-only child and recursively finds grandchild verdicts` |
+| §6 a retarget un-registers what it drops | this run | `viewer/server.js:512-541` | `retargeting away unregisters a derivable child…` |
+| §6 every retargeting case | this run | `viewer/server.js:336-349` | `all containment retarget cases…` |
+| §7 verdict surface, not an editor | this run | `viewer/index.html` — no authoring path exists | browser `no gesture or control adds, renames or connects anything` |
+| §7 selection, box-select, bulk judgement | this run | `viewer/index.html:333,348` | browser `box-select then approve…` |
+| §7 implied edges, shift-click removes one | this run | `viewer/index.html:333-347` | browser `shift-clicking an implied edge removes it and it stays removed` |
+| §7 reachable edges, 24 device px at any zoom | this run | `viewer/index.html:608-700` | browser `an edge is selectable by label, band and endpoint handle at minimum zoom` |
+| §7 two edges on one pair fanned apart | this run | `viewer/index.html:608-621` | browser test 8 — **found broken by that test, then fixed** |
+| §7 detail at the item | this run | `viewer/index.html:715-846` | browser `selecting an item expands ref, note, and an edge payload…`; measured 76px from a node |
+| §7 containment, breadcrumb, escape | this run | `viewer/index.html:447` | manual; `children` map drives the disabled affordance |
+| §8 routes, auth, `Origin`, `/whoami` | this run | `viewer/server.js:574,634,671,690,705` | `whoami is unauthenticated identity, never a mutation credential`; browser `a page write carries an Origin the server accepts` |
+| §8 why two write routes | this run | `viewer/server.js:634` agent, `:671` page | `both write routes enforce their distinct authority` |
+| §8 atomic writes | this run | `viewer/server.js:439` | `atomic writes leave a complete graph after a normal server write` |
+| §8 one global write lock | this run | `viewer/server.js:403` | `the global write lock serializes concurrent writes and retry retains both changes` |
+| §8 optimistic concurrency by hash | this run | `viewer/server.js:634-641`, `:671-678` | `optimistic concurrency returns and accepts the current hash, including create` |
+| §8 cycles refused at write, depth bounded at traversal | this run | `viewer/server.js:291-309` | `all containment retarget cases, cycles, deep acyclic writes…` |
+| §8 the page polls; own writes do not reload | this run | `viewer/index.html:1044` | `GET change detection exposes agent hashes and preserves the page write hash` |
+| §8 write scope, derivation, 30-day prune | this run | `viewer/server.js:475,492` | `registered paths are pruned by age at startup` |
+| §8 lockfile discovery, reuse, reclaim, refuse | this run | `viewer/server.js:745,787` | `discovery reuses matching locks, reclaims dead locks, and rejects foreign live locks` |
+| §9 `viewer/` layout, one pinned dev dependency | this run | `viewer/package.json`, `viewer/package-lock.json` | `./install.sh` twice |
+| §9 the browser test never skips | this run | `viewer/test/browser.spec.js` — no skip guard, no config file | grep; suite fails loudly without Chromium |
+| §10 every edge case | this run | `viewer/server.js:96-160`, `:291-349`, `:690` | `malformed on-disk graphs refuse without repair`, `containment faults`, `faults` |
+| §11 non-goals | this run | no authoring, no graphify rendering, no Zed, no multi-user | browser test 10 |
+| §12 the four spike lessons as comments | this run | `viewer/index.html:45-48,552-560,590-600,~1000` | read; `spike/` deleted |
+| §13 the two suites | this run | `viewer/test/server.test.js` (21), `viewer/test/browser.spec.js` (13) | both green, pasted below |
+| §9 preconditions: git, `.gitignore`, root router | pre-existing | baseline `beec39c`; `.gitignore`; `AGENTS.md` | checked before dispatch |
+
+## Deviations from plan
+
+**Five wire-shape decisions the Spec does not settle** were made by the lead before dispatch and are
+recorded in `PLAN.md` as L1-L5: refusal status and error codes, `GET /graph`'s `children` map, the
+`opened` flag on a registered entry, and the layout pitch. Four lanes implementing against each other
+would not otherwise have met.
+
+**Two rules added, not just shapes.** Both are in `PLAN.md` as lead decisions:
+
+- **L2, `agent-verdict`.** The Spec says an agent may reverse neither verdict but never says it may
+  not *grant* itself one. Same act. Without the check, the preservation contract has a hole.
+- **L6, `container-unreadable-child`.** A subtree walk that hit a child which does not parse was
+  reporting it verdict-free, which orphans exactly what the walk exists to protect. It now refuses.
+  Found by reading the lane's diff, not by a test.
+
+**Three §13 assertions were corrected, not implemented as written**, because §0 resolves the
+contradictions they sat on: the write-lock test retries on 409 (the lock and the hash prove different
+things), and there is no depth refusal at write time to assert. Recorded in `PLAN.md`.
+
+**`spike/` was deleted by the lead at integration**, not by the sweep lane, so the page lane could
+read it as a taste reference first.
+
+## Routers
+
+| Router | What became true |
+|---|---|
+| `AGENTS.md` (root) | `viewer/` replaces `spike/` in both the four-kinds table and the where-to-go table; the `.gitignore` row names all four entries; the verification block gains both test commands and states why the `node --test` glob is required; the docstring-rung claim no longer rests on "no code here" |
+| `protocol/AGENTS.md` | one row for `graphs.md` |
+| `skills/AGENTS.md` | one row for `graph/` |
+| `spine/AGENTS.md` | untouched — this change moved nothing into or out of `spine/` |
+
+`viewer/` earns a router and **neither plan writes it** (§9, decision 53). It is covered by whatever
+`/spine` run happens after this lands. That is a known gap, listed below.
+
+## Validation evidence
+
+```
+$ ./install.sh && ./install.sh
+install.sh twice: OK
+$ git status --porcelain | wc -l
+0
+
+$ bash spine/test/run.sh
+RESULT 80 passed, 0 failed
+
+$ node --test 'viewer/test/*.test.js'
+ℹ tests 21
+ℹ pass 21
+ℹ fail 0
+
+$ npm --prefix viewer run test:browser
+  13 passed (7.5s)
+```
+
+The browser suite drives real headless Chromium against the served page. It contains no skip guard
+and no browser-availability check: with Chromium absent it fails loudly, which is the point.
+
+**Independently run by the lead, not reported by a lane.** Both GPT lanes shipped code they had never
+executed — their sandbox refused every loopback bind — so the server and the stdlib suite arrived
+entirely unvalidated. The lead ran a smoke script covering the producer sequence end to end, then
+both suites.
+
+## Known gaps / residual risks
+
+| Gap | Standing |
+|---|---|
+| `viewer/` has no router | By design (§9, decision 53). The next `/spine` run covers it |
+| A drag in flight when an agent writes is lost | Accepted risk from planning, now **asserted** rather than assumed: browser test 3 |
+| `--open` writes the registered set outside the global mutex | Accepted. The mutex is in-process and these are separate processes, so it could never have helped. Writes are atomic, so the worst case is one registration lost in a same-millisecond race |
+| The lockfile is written before the port is bound | Accepted. The bind-error handler unlinks it, so the state self-heals in milliseconds; binding first would not be safer, since the lockfile is both the exclusivity claim and the token's home |
+| Atomicity under a mid-write kill is not asserted | The kill cannot be landed inside the write window without instrumenting the server. The suite asserts a complete graph after a normal write and says so in its own test name. A flaky test would be worse |
+| The detail panel overlaps a node when rows are tight | Deliberate. With a 140-unit row pitch and a panel around 90 tall, every adjacent placement covers something; attached-and-legible beats distant-and-clean, and distant is what the plan specified against |
+| Whether a drawn graph is a good explanation | Not testable, and §13 says so. The spike established it; the first real plan using this will show it again |
+| Whether the three `planning.md` insertions produce a useful discussion | Same. Read by a person, not a test |
+
+## Remediation rounds
