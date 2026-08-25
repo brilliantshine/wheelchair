@@ -100,6 +100,15 @@
   .detail text { fill: var(--ink); font-size: 11px; }
   .detail .detail-ref { fill: var(--dim); font-family: ui-monospace, SFMono-Regular, monospace; }
   .detail .detail-inferred { fill: #d8b45f; font-style: italic; }
+  /* Nothing cleared inside the bounded search, so the panel sits on whatever
+     it landed on. It is already opaque and already painted last (see render,
+     where renderDetail runs after every node and edge is appended) — this is
+     the "read as a layer, not tangled geometry" half: a stroke and shadow
+     strong enough that the boundary is unambiguous at a glance. */
+  .detail.overlapping .detail-bg { stroke: var(--accent); stroke-width: 2;
+    filter: drop-shadow(0 2px 8px rgba(0, 0, 0, .7)); }
+  .detail-leader { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 2 3;
+    opacity: .8; pointer-events: none; }
 
   #marquee { fill: rgba(91, 157, 217, .12); stroke: var(--accent); stroke-width: 1;
     stroke-dasharray: 3 3; }
@@ -737,13 +746,14 @@
     }
     const panelTopOffset = 4;
 
-    let x, belowY, aboveY, excludeIds;
+    let x, belowY, aboveY, excludeIds, anchor;
     if (node) {
       const h = nodeHeight(node);
       x = node.x;
       belowY = node.y + h + 12;
       aboveY = node.y - panelH - 12;
       excludeIds = [node.id];
+      anchor = { x: node.x + NODE_W / 2, y: node.y + h / 2 };
     } else {
       const a = nodeById.get(item.from), b = nodeById.get(item.to);
       if (!a || !b) return;
@@ -752,31 +762,40 @@
       belowY = Math.max(a.y + ha, b.y + hb) + 34;
       aboveY = Math.min(a.y, b.y) - panelH - 22;
       excludeIds = [a.id, b.id];
+      anchor = { x: (a.x + b.x) / 2 + NODE_W / 2, y: (a.y + ha / 2 + b.y + hb / 2) / 2 };
     }
 
     // A single flip to the opposite side isn't enough on its own: the node
     // above (or below) an edge's two endpoints isn't necessarily clear either,
     // and a fixed jump can still land on a *third* node further along in that
     // direction. Search outward in steps on each side and take whichever
-    // clears in fewer of them; only if both searches exhaust without clearing
-    // does this fall back to the original below position.
+    // clears in fewer of them. This step-search is a nudge, not a corridor to
+    // empty canvas: it stays attached to the item, so it is bounded to two
+    // steps (~48 user units) each way. If neither side clears inside that
+    // bound, the panel goes to its natural adjacent position (belowY) anyway
+    // and is marked `overlapping`, which the CSS above turns into a visibly
+    // layered panel instead of a silently buried one.
+    const STEP = 24, STEP_LIMIT = 2;
     function firstClear(startY, step) {
       if (!panelH) return { y: startY, steps: 0 };
-      for (let i = 0; i < 12; i += 1) {
+      for (let i = 0; i <= STEP_LIMIT; i += 1) {
         const y = startY + i * step;
         const box = { x, y: y - panelTopOffset, w: panelW, h: panelH };
         if (!rectOverlapsAny(box, graph.nodes, excludeIds)) return { y, steps: i };
       }
       return null;
     }
-    const below = firstClear(belowY, 24);
-    const above = firstClear(aboveY, -24);
-    let y;
-    if (below && (!above || below.steps <= above.steps)) y = below.y;
-    else if (above) y = above.y;
-    else y = belowY;
+    const below = firstClear(belowY, STEP);
+    const above = firstClear(aboveY, -STEP);
+    let y, overlapping;
+    if (below && (!above || below.steps <= above.steps)) { y = below.y; overlapping = false; }
+    else if (above) { y = above.y; overlapping = false; }
+    else { y = belowY; overlapping = true; }
 
-    const g = el('g', { class: 'detail', 'data-for': id, transform: 'translate(' + x + ',' + y + ')' });
+    const g = el('g', {
+      class: 'detail' + (overlapping ? ' overlapping' : ''), 'data-for': id,
+      transform: 'translate(' + x + ',' + y + ')',
+    });
     let cursorY = 18;
     const textEls = [];
     for (const [cls, raw] of fields) {
@@ -786,6 +805,20 @@
       cursorY += t._lineCount * 14 + 6;
     }
     if (fields.length) {
+      // Forced onto whatever it overlaps — a short leader line back to the
+      // selected item keeps the association legible even where the panel
+      // itself is no longer sitting in obviously-empty space. Drawn first (so
+      // the opaque background below paints over the segment that crosses the
+      // panel) and clamped to the panel's own rect, so it reads as pointing
+      // from the item to this panel rather than as a stray line.
+      if (overlapping) {
+        const rx0 = 0, rx1 = panelW, ry0 = -panelTopOffset, ry1 = -panelTopOffset + cursorY;
+        const lx = anchor.x - x, ly = anchor.y - y;
+        const cx = Math.max(rx0, Math.min(rx1, lx)), cy = Math.max(ry0, Math.min(ry1, ly));
+        if (cx !== lx || cy !== ly) {
+          g.appendChild(el('line', { class: 'detail-leader', x1: lx, y1: ly, x2: cx, y2: cy }));
+        }
+      }
       g.appendChild(el('rect', { class: 'detail-bg', x: 0, y: -panelTopOffset, width: panelW, height: cursorY, rx: 6 }));
     }
     for (const t of textEls) g.appendChild(t);
