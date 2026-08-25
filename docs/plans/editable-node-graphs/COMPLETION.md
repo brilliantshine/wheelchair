@@ -160,3 +160,47 @@ both suites.
 | Whether the three `planning.md` insertions produce a useful discussion | Same. Read by a person, not a test |
 
 ## Remediation rounds
+
+### Remediation 1 — 2026-08-24
+
+Both blind verifiers returned FAIL. Seven gaps, all reproduced by the lead before being briefed out,
+recorded verbatim in `REMEDIATION-1.md`. Six were closed by lanes; every fix was re-verified by the
+lead running the code, not by reading a lane's report.
+
+| Gap | What was wrong | What changed |
+|---|---|---|
+| Bulk verdicts (found by **both** verifiers) | The page set the verdict on every selected entry, so select-all approve on a graph holding two or more struck entries was refused outright and nothing was ruled. With exactly one struck entry it silently reversed it | A bulk verdict rules only on the unruled; a selection of exactly one already-ruled entry still reverses it, which is the deliberate change of mind §6 permits. `viewer/index.html:374-397` |
+| Verdicts on create | The agent-write checks ran only when the file already existed, so an agent could create a graph with entries already approved or struck — and a struck entry is then permanently immutable | The check runs against an empty graph on create. `viewer/server.js:643` |
+| Producer sequence | Step 1 of the only document telling an agent how to write its first graph blocked forever, because the first `--open` *is* the server. Verified: exit 124 cold, exit 0 warm | The sequence backgrounds the server and reads the URL from its output, and the document says *why* so an agent can reason rather than follow a recipe. `protocol/graphs.md` |
+| `kind` domains | §3 states closed sets for node and edge `kind`; nothing validated them, and the suite's own canonical fixture had drifted outside the Spec | `422 bad-kind`; every fixture brought back inside; a missing `kind` still defaults. `viewer/server.js` |
+| Lockfile claim | Created empty with `O_EXCL`, filled a moment later, so a simultaneous starter could read the empty claim as corrupt and delete it | The payload is written through the same exclusively-created descriptor. `viewer/server.js` |
+| Atomicity assertion | Asserted a complete graph after a **normal** write, which a non-atomic implementation also passes | Real injected fault: the rename is hooked, the process SIGKILLed at varied delays, and the committed graph must be exactly one whole version |
+| One write per action | Required by §13, asserted nowhere | Counted on the request event, so an in-flight duplicate cannot be missed |
+| `MAP.md` / `README.md` | Described the repository before the change; `MAP.md` called `index.html` outstanding after it shipped | `MAP.md` now says which moment it describes and notes what has since landed; the README's "only non-markdown piece" claim corrected |
+
+**Two gaps were about tests that could not fail.** The bulk-verdict rule was asserted by hand-building
+a payload that already obeyed it, and the gesture was driven on a graph where the violating case could
+not arise. That is why a real bug passed two suites. The new assertions start from a graph that
+already holds verdicts and drive the real controls, and each was **proven non-vacuous** by reverting
+the behaviour in a scratch copy and watching it fail.
+
+Three of the four new server assertions likewise fail against the pre-remediation server, checked by
+reverting `viewer/server.js` and re-running.
+
+Two non-blocking observations were recorded rather than fixed, in `REMEDIATION-1.md`: the detail panel
+for an edge lands two rows away and darkens an unrelated node, which is Collin's call; and the four
+validation commands cannot be parallelized, because the router scanner's suite compares gitignored
+scratch before and after.
+
+```
+$ ./install.sh && ./install.sh          # idempotent
+$ git status --porcelain | wc -l
+0
+$ bash spine/test/run.sh
+RESULT 80 passed, 0 failed
+$ node --test 'viewer/test/*.test.js'
+ℹ tests 24   ℹ pass 24   ℹ fail 0
+$ npm --prefix viewer run test:browser
+  16 passed (11.9s)
+```
+
