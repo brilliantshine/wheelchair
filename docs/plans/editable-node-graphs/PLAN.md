@@ -1338,6 +1338,26 @@ Lead decisions taken while writing it, none of which the Spec settles:
 | L5 | Layout pitch is 240 x 140 | Matches §3's own example coordinates |
 | L6 | A subtree walk that hits a child which does not parse **refuses** the retarget (`container-unreadable-child`) rather than treating it as verdict-free | Added at integration after reading the lane's diff. Silently allowing it orphans exactly the verdicts the walk exists to protect, and §10 already says a file that does not parse is reported, never repaired |
 
+**Three test failures adjudicated at integration.** The lane wrote the suite but its sandbox refused
+every loopback bind, so it shipped 21 tests it had never run. The lead ran them: 18 passed, 3 failed,
+and all three were defects in the test rather than in the server.
+
+| Failure | Reading | Fix |
+|---|---|---|
+| "adding a node is refused" expected , got  | The test added a *copy* of an existing node, so its id was a duplicate — a different and more basic violation the server catches first | The added node gets a new id |
+| Dropping an  node expected , got  | The test dropped the node but kept the edges naming it, leaving a graph that is malformed for a more basic reason. A producer that legitimately drops a node always drops its edges | Drop the node and its edges, isolating the assertion |
+| An agent altering a  entry expected , got  | The test had the page reverse that entry to  first, so by the time the agent touched it the server's answer was correct and the expectation was stale | Assert against the agent first; reverse last |
+
+None of these weakened an assertion — each isolates the rule it was written for. The suite is green
+at 21/21.
+
+**Two static findings from the same lane, both accepted rather than fixed:**
+
+| Finding | Why accepted |
+|---|---|
+|  writes the registered set outside the global mutex, so two simultaneous  calls can race | The mutex is in-process and these are separate processes, so it could never have helped. Writes are atomic (temp file, rename), so the file is never corrupt; the worst case is one registration lost in a same-millisecond race, recovered by re-running  |
+| The lockfile is written and the registered set pruned *before* the port is bound, so a lock can briefly name a server that is not listening | The bind-error handler unlinks the lockfile, so the state self-heals in milliseconds. Binding first would not be safer — the lockfile is the exclusivity claim and also carries the token — and restructuring the startup path to close a same-millisecond window risks a worse bug than the one it closes |
+
 ## Implementation Tasks
 
 Four lanes run concurrently in the first round: the GPT lane in the main checkout, each Claude lane
@@ -1350,7 +1370,7 @@ sequence behind the code they test.
 | T2 | The page: SVG rendering, selection and box-select, reachable edges, detail on the node, containment and breadcrumb, polling | `viewer/index.html` | Claude Sonnet | | T6 | pending |
 | T3 | The format document both harnesses read, and its two wrappers | `protocol/graphs.md`, `skills/graph/SKILL.md`, `codex/prompts/graph.md` | Claude Sonnet | | `./install.sh` twice, idempotent; both harnesses register `/graph` | **done** — merged at `e4f039a`; lead added the `container-unreadable-child` row |
 | T4 | The three `planning.md` insertions, the `diagrams.md` section, the `plan-review.md` pointer, and the documentation sweep | `protocol/planning.md`, `protocol/diagrams.md`, `protocol/plan-review.md`, `AGENTS.md`, `protocol/AGENTS.md`, `skills/AGENTS.md`, `README.md`, `docs/plans/editable-node-graphs/MAP.md`, `install.sh`, `.gitignore` | Claude Sonnet | | `./install.sh` twice, `git status --porcelain` empty | pending |
-| T5 | The stdlib suite and its committed fixtures | `viewer/test/*.test.js`, `viewer/test/fixtures/` | GPT Terra | | `node --test 'viewer/test/*.test.js'` | pending |
+| T5 | The stdlib suite and its committed fixtures | `viewer/test/*.test.js`, `viewer/test/fixtures/` | GPT Terra | `01a03628-c18a-7663-9e20-bc3f1d542b3f` | `node --test 'viewer/test/*.test.js'` — **21/21** | **done** — lane could not bind a port in its sandbox, so the lead ran it; three test defects adjudicated below |
 | T6 | The Chromium suite | `viewer/test/browser.spec.js` | Claude Sonnet | | `npm --prefix viewer run test:browser` | pending |
 
 ## Log

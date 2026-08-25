@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "title": "Verdicts",
+  "source": "plan-proposal",
+  "source_detail": null,
+  "nodes": [
+    {
+      "id": "agree",
+      "label": "Agree",
+      "kind": "note",
+      "origin": "proposed",
+      "was": "agreed",
+      "exclusive": false,
+      "ref": null,
+      "note": "replacement",
+      "graph": null,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "id": "propose",
+      "label": "Propose",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 240,
+      "y": 0
+    },
+    {
+      "id": "reject",
+      "label": "Reject",
+      "kind": "note",
+      "origin": "agreed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 480,
+      "y": 0
+    }
+  ],
+  "edges": [
+    {
+      "id": "agree->propose",
+      "from": "agree",
+      "to": "propose",
+      "label": "next",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "propose->reject",
+      "from": "propose",
+      "to": "reject",
+      "label": "next",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "rejected",
+      "was": null,
+      "note": null
+    }
+  ]
+}

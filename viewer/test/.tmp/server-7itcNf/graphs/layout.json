@@ -1,0 +1,123 @@
+{
+  "schema": 1,
+  "title": "Layout",
+  "source": "code-read",
+  "source_detail": null,
+  "nodes": [
+    {
+      "id": "a",
+      "label": "A",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "id": "b",
+      "label": "B",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 0,
+      "y": 140
+    },
+    {
+      "id": "c",
+      "label": "C",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 0,
+      "y": 280
+    },
+    {
+      "id": "x",
+      "label": "X",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 0,
+      "y": 420
+    },
+    {
+      "id": "y",
+      "label": "Y",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 0,
+      "y": 560
+    }
+  ],
+  "edges": [
+    {
+      "id": "a->b",
+      "from": "a",
+      "to": "b",
+      "label": "to",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "b->c",
+      "from": "b",
+      "to": "c",
+      "label": "to",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "x->y",
+      "from": "x",
+      "to": "y",
+      "label": "to",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "y->x",
+      "from": "y",
+      "to": "x",
+      "label": "to",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    }
+  ]
+}

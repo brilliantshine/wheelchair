@@ -1,0 +1,173 @@
+{
+  "schema": 1,
+  "title": "Canonical graph",
+  "source": "router",
+  "source_detail": "fixture",
+  "nodes": [
+    {
+      "id": "decide",
+      "label": "Decide",
+      "kind": "decision",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": true,
+      "ref": "docs/plan.md",
+      "note": "Choose a branch.",
+      "graph": null,
+      "x": 240,
+      "y": 140
+    },
+    {
+      "id": "finish",
+      "label": "Finish",
+      "kind": "outcome",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 720,
+      "y": 280
+    },
+    {
+      "id": "gather",
+      "label": "Gather",
+      "kind": "action",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": "atomic candidate",
+      "graph": null,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "id": "inspect",
+      "label": "Inspect",
+      "kind": "action",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 240,
+      "y": 0
+    },
+    {
+      "id": "report",
+      "label": "Report",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 480,
+      "y": 140
+    },
+    {
+      "id": "store",
+      "label": "Store",
+      "kind": "artifact",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 480,
+      "y": 0
+    },
+    {
+      "id": "timeline",
+      "label": "Timeline",
+      "kind": "container",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": "timeline",
+      "x": 0,
+      "y": 140
+    }
+  ],
+  "edges": [
+    {
+      "id": "decide->report",
+      "from": "decide",
+      "to": "report",
+      "label": "yes",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "decide->store",
+      "from": "decide",
+      "to": "store",
+      "label": "no",
+      "kind": "reference",
+      "value": "fallback",
+      "inferred": true,
+      "origin": "proposed",
+      "was": null,
+      "note": "Alternative path."
+    },
+    {
+      "id": "gather->inspect",
+      "from": "gather",
+      "to": "inspect",
+      "label": "then",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "inspect->decide",
+      "from": "inspect",
+      "to": "decide",
+      "label": "review",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "report->finish",
+      "from": "report",
+      "to": "finish",
+      "label": "done",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "store->finish",
+      "from": "store",
+      "to": "finish",
+      "label": "done",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    }
+  ]
+}
