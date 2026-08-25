@@ -3,6 +3,7 @@
   "title": "Bulk verdicts on a graph already holding verdicts",
   "source": "plan-proposal",
   "source_detail": null,
+  "explanation": null,
   "nodes": [
     {"id":"agreed1","label":"Already agreed","kind":"note","origin":"agreed","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":150,"y":150},
     {"id":"rejected1","label":"Already struck one","kind":"note","origin":"rejected","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":450,"y":150},

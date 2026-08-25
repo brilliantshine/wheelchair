@@ -10,20 +10,32 @@ holding the map, the north star, the decision log, the spec, every review round,
 got built. A stage refuses to run out of order, so you can close the laptop mid-plan and pick it up
 a week later.
 
+The same problem runs the other way. An agent needs a harness to stay on a plan; the person
+reviewing its work needs one just as much. Left alone, both model families report in one flat
+register — paragraphs of hedged, evenly-weighted prose where nothing reads as more important than
+anything else, so you can't skim it and you can't tell what you already agreed to. The protocol
+constrains the reporting as hard as it constrains the work: rules for how anything a person reads
+gets written, and a picture whenever the answer has a shape.
+
 It runs the same from Claude Code and from the Codex CLI, through wrappers that are pointers and
 nothing else.
 
 ## Answering with a picture
 
 Prose is a bad medium for a shape. Ask how something works, or let a plan propose a flow, and an
-agent draws it and opens it:
+agent draws it and opens it — and says what it's showing you, in the panel above the picture:
 
-![The viewer: a flow with approved, unruled and struck entries](docs/viewer.png)
+![The viewer: an explanation panel above a flow with approved, unruled and struck entries](docs/viewer.png)
 
 You drag the boxes until it reads, then **approve or strike in bulk** — select a region, one
 gesture. Green is approved, dashed red struck, grey not yet ruled on. The next agent turn reads
 your verdicts before it asks its next question, and at the end of planning the spec has to account
-in prose for everything you struck.
+in prose for everything you struck. The panel is the agent's, not yours: it says what the picture
+shows, what to look at, and what it leaves out, and it gets rewritten every redraw — one click
+collapses it and hands the canvas back.
+
+You don't have to ask for any of this. `/diagram-sensitivity` sets how eagerly a picture turns
+up on an ordinary question, and the words still carry the whole answer at every setting.
 
 The rules that make that safe to share with an agent: it can restructure a graph freely, but it can
 never alter something you struck, never reuse its id, and never mark its own work approved. It
@@ -44,6 +56,8 @@ protocol/        canonical stage definitions — the single source of truth
                        surfaces, arrow chains in terminals, redundant with its prose
   graphs.md            the graph format read by both harnesses: schema, verdicts,
                        preservation, how the viewer starts
+  sensitivity.md       the diagram-sensitivity dial: the region rendered into both
+                       harnesses' always-on files, and what each level draws
   routers.md           the router document format: what a directory owns, what must never
                        happen there, where to go next — guidance for creation, not a test
   spine.md             /spine: propose routers for a repo that has none, list every write
@@ -55,13 +69,16 @@ protocol/        canonical stage definitions — the single source of truth
   templates/           MAP.md, IDEA.md, PLAN.md, COMPLETION.md skeletons
 spine/           scan.sh: resolves routing documents through symlinks, read-only, JSON out
   test/run.sh          fixture assertions; builds its tree under the system temp directory
+sensitivity/     set.sh: the only writer of the two global instruction files, all-or-nothing
+  test/run.sh          fixture assertions; never touches the real ~/.claude or ~/.codex
 skills/          Claude Code wrappers  → rendered into ~/.claude/skills/
 codex/prompts/   Codex CLI wrappers    → rendered into ~/.codex/prompts/
 docs/plans/      one directory per feature; the only mutable state
 viewer/          index.html and server.js — the browser viewer a graph opens in
-install.sh       renders the wrappers and installs viewer/'s dependencies (idempotent)
+install.sh       renders the wrappers, installs viewer/'s dependencies, and writes the
+                 dial's region into both harnesses' always-on files (idempotent)
 AGENTS.md        this repo's own routers, one per directory that owns a rule —
-                 also protocol/, skills/ and spine/
+                 also protocol/, skills/, spine/ and sensitivity/
 ```
 
 ## Install
@@ -77,8 +94,18 @@ you cloned it. Edits to `protocol/` still take effect immediately in both harnes
 the rendered wrapper points back into your working tree; editing a wrapper itself needs a
 re-run. Restart running sessions to pick up new skill/prompt registrations. The same
 run also installs `viewer/`'s npm dependencies and its pinned Chromium via Playwright.
-`spine/scan.sh`, `spine/test/run.sh`, and `install.sh` itself are shell, not markdown —
-`viewer/` is the one piece with its own package dependencies and a long-running server.
+`spine/scan.sh`, `spine/test/run.sh`, `sensitivity/set.sh`, and `install.sh` itself are shell,
+not markdown — `viewer/` is the one piece with its own package dependencies and a
+long-running server.
+
+The last step reaches **outside** the clone. `protocol/sensitivity.md`'s delimited region is
+*rendered* into `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` — the files both harnesses load
+on every turn — because the diagram-sensitivity dial has to be in effect before you type, and
+on an ordinary question no command runs to look it up. Only the bytes between the markers are
+this repo's, and only they are overwritten; everything else in those files is left alone. That
+region is the one thing here whose edits need a re-run, and if the writer refuses — duplicated
+markers, a hand-edited level, a non-empty `AGENTS.override.md` — it warns and changes nothing
+rather than failing the install.
 
 ## Usage
 
@@ -90,7 +117,14 @@ From either harness, in the target project:
 /implement <slug>             # lead + workers; ends with COMPLETION.md
 /verify <slug>                # blind cross-family verify; remediate until PASS
 /graph <question>             # answer a question with a picture instead of just prose
+/diagram-sensitivity [level]  # report the dial, or set it: ask, default, high
 ```
+
+`/diagram-sensitivity` is how eagerly an unasked-for picture shows up. `ask` is the old
+behaviour — nothing is drawn unless you ask, except a planning turn proposing a flow, which
+always draws. `default` draws when the shape *is* the answer. `high` draws whenever there's a
+shape at all, and tightens the prose around it without dropping anything from it. It is one
+setting, global, and it survives reinstalling.
 
 **Already have a plan document?** Fast-forward it in:
 
@@ -108,10 +142,11 @@ The recommendation comes from the gap report rather than from your confidence, a
 landing is recorded in the Decision Log — Stage 4 otherwise can't tell "vetted elsewhere"
 from "gate skipped."
 
-The stage commands take slugs only. `/graph` takes a question, and `/adopt` and `/spine`
-take a path — none of the three is a stage: `/graph` answers on the spot without touching
-`status:`, `/adopt` is the on-ramp into the state machine, so there's one place to look
-when asking how a plan arrived, and `/spine` sits outside it entirely.
+The stage commands take slugs only. `/graph` takes a question, `/adopt` and `/spine` take a
+path, and `/diagram-sensitivity` takes a level or nothing — none of the four is a stage:
+`/graph` answers on the spot without touching `status:`, `/adopt` is the on-ramp into the state
+machine, so there's one place to look when asking how a plan arrived, `/spine` sits outside it
+entirely, and `/diagram-sensitivity` sets a preference rather than doing any work.
 
 **Repo has no router documents?** Back-fill them:
 

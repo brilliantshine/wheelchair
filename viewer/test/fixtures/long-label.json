@@ -3,6 +3,7 @@
   "title": "Long labels",
   "source": "router",
   "source_detail": "fixture",
+  "explanation": null,
   "nodes": [
     {
       "id": "long",

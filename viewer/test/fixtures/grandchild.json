@@ -3,6 +3,7 @@
   "title": "Grandchild",
   "source": "router",
   "source_detail": null,
+  "explanation": null,
   "nodes": [
     {"id":"verdict","label":"Verdict","kind":"note","origin":"agreed","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":0,"y":0}
   ],

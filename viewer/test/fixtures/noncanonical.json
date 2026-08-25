@@ -18,6 +18,7 @@
     {"y":140.4,"x":239.6,"graph":null,"note":"Choose a branch.","ref":"docs/plan.md","exclusive":true,"was":null,"origin":"proposed","kind":"decision","label":"Decide","id":"decide"}
   ],
   "title": "Canonical graph",
+  "explanation": "This graph follows gathering through inspection and a decision, then branches through reporting or storage before finishing.",
   "schema": 1,
   "source": "router"
 }

@@ -89,6 +89,7 @@ function canonicalBytes(graph) {
     title: graph.title,
     source: graph.source,
     source_detail: graph.source_detail,
+    explanation: graph.explanation,
     nodes: [...graph.nodes].sort(compareId).map(orderedNode),
     edges: [...graph.edges].sort(compareId).map(orderedEdge),
   };
@@ -116,6 +117,7 @@ function validateGraph(input, { checkOrigin = true } = {}) {
   if (typeof input.title !== 'string' || typeof input.source !== 'string' ||
       !SOURCES.has(input.source) ||
       !(input.source_detail === null || typeof input.source_detail === 'string') ||
+      !(input.explanation === undefined || input.explanation === null || typeof input.explanation === 'string') ||
       !Array.isArray(input.nodes) || !Array.isArray(input.edges)) {
     fail(422, 'unknown-schema', 'The graph does not have the schema 1 shape.', { schema: input.schema });
   }
@@ -192,7 +194,7 @@ function validateGraph(input, { checkOrigin = true } = {}) {
   }
   return {
     schema: 1, title: input.title, source: input.source,
-    source_detail: input.source_detail, nodes, edges,
+    source_detail: input.source_detail, explanation: input.explanation ?? null, nodes, edges,
   };
 }
 
@@ -662,7 +664,8 @@ function structuralDifference(current, incoming) {
 function checkViewChanges(current, incoming) {
   const bad = structuralDifference(current, incoming);
   if (bad.length || current.schema !== incoming.schema || current.title !== incoming.title ||
-      current.source !== incoming.source || current.source_detail !== incoming.source_detail) {
+      current.source !== incoming.source || current.source_detail !== incoming.source_detail ||
+      current.explanation !== incoming.explanation) {
     fail(422, 'structural-difference', 'The page changed graph structure.', { ids: bad });
   }
   let reversals = 0;

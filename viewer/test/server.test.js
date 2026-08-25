@@ -137,6 +137,27 @@ test('canonical round-trip canonicalizes byte-for-byte', async () => {
   });
 });
 
+test('explanation written through /graph is retained on disk in canonical order', async () => {
+  await withFixture('canonical.json', async (ctx) => {
+    const state = await getGraph(ctx); const graph = copy(state.graph);
+    graph.explanation = 'This write verifies that the graph account survives canonicalization.';
+    expect(await graphPut(ctx, graph, state.hash), 200);
+    const stored = JSON.parse(await fs.readFile(ctx.graphPath, 'utf8'));
+    assert.equal(stored.explanation, graph.explanation);
+    assert.deepEqual(Object.keys(stored), ['schema', 'title', 'source', 'source_detail', 'explanation', 'nodes', 'edges']);
+  });
+});
+
+test('explanation accepts only strings or null', async () => {
+  await withFixture('canonical.json', async (ctx) => {
+    const state = await getGraph(ctx);
+    for (const value of [42, { account: 'not a string' }]) {
+      const graph = copy(state.graph); graph.explanation = value;
+      expect(await graphPut(ctx, graph, state.hash), 422, 'unknown-schema');
+    }
+  });
+});
+
 test('both write routes enforce their distinct authority', async () => {
   await withFixture('canonical.json', async (ctx) => {
     let state = await getGraph(ctx);
@@ -161,6 +182,16 @@ test('both write routes enforce their distinct authority', async () => {
     const after = await getGraph(ctx);
     assert.equal(entry(after.graph, 'inspect').x, entry(state.graph, 'inspect').x);
     assert.equal(entry(after.graph, 'inspect').y, entry(state.graph, 'inspect').y);
+  });
+});
+
+test('/view cannot alter explanation', async () => {
+  await withFixture('canonical.json', async (ctx) => {
+    const before = await fs.readFile(ctx.graphPath);
+    const state = await getGraph(ctx); const graph = copy(state.graph);
+    graph.explanation = 'The page must not replace the agent account.';
+    expect(await viewPut(ctx, graph, state.hash), 422, 'structural-difference');
+    assert.deepEqual(await fs.readFile(ctx.graphPath), before);
   });
 });
 

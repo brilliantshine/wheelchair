@@ -133,6 +133,19 @@ already running, and print the URL that turn. The format and how the viewer star
 untouched — `protocol/map.md` bans Mermaid there because the map is read in a terminal, and
 that is unchanged.
 
+**This trigger fires at every diagram-sensitivity level, including the lowest.** It is the
+floor, not something the dial turns down: `protocol/sensitivity.md`'s `ask` means nothing is
+drawn *unprompted*, and a planning turn proposing a flow is already an explicit part of this
+stage. Above `ask`, the dial's property test applies to a planning turn like any other, so a
+shape-bearing question that is **not** a proposed flow — a choice between two arrangements,
+where a thing should live — draws too.
+
+Which file it lands in follows from that. A turn discussing a flow refreshes **that flow's**
+existing graph. A turn deciding between two arrangements is not a flow and has no existing
+graph to refresh, so it writes **its own file** in the same directory. Both are the practice
+this workflow was built on: a plan typically ends with roughly one graph per shape-bearing
+question, most of them decision graphs rather than flows.
+
 ### Recording answers
 
 When the user answers: append the decision and rationale to the Decision Log, remove the

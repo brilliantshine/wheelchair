@@ -1,11 +1,14 @@
 # The graph format
 
 A graph is what an agent draws when Collin asks how something works, or when a plan
-proposes a flow worth seeing rather than just reading. This file is the only thing
-either harness — the Claude skill and the Codex prompt — reads before that first write,
-and it has to be enough on its own: get the schema wrong and the server refuses the
-file; get the producer sequence wrong and nothing ever reaches a screen; get the
-verdict rules wrong and an agent silently erases something Collin already ruled on.
+proposes a flow worth seeing rather than just reading. Three things send an agent here,
+and this file is the only thing any of them reads before that first write: `/graph` in
+either harness, a planning turn drawing a flow, and — with nobody asking for a picture —
+an ordinary turn whose answer earned one under the diagram-sensitivity dial
+(`protocol/sensitivity.md`). It has to be enough on its own: get the schema wrong and the
+server refuses the file; get the producer sequence wrong and nothing ever reaches a
+screen; get the verdict rules wrong and an agent silently erases something Collin already
+ruled on.
 
 ## What a graph is, and isn't
 
@@ -48,6 +51,7 @@ A graph is one JSON file:
   "title": "how a phrase about time becomes a date, or doesn't",
   "source": "router",
   "source_detail": "src/almanac/records/timeline/AGENTS.md",
+  "explanation": "Admission is the only gate: everything downstream assumes a record already passed it. Leaves out how the timeline itself is stored.",
   "nodes": [
     { "id": "gate", "label": "accept it as a real measurement, or refuse",
       "kind": "decision", "origin": "proposed", "was": null, "exclusive": true,
@@ -91,6 +95,24 @@ Field by field:
   shape the way `schema` and `source` are checked, but leaving it empty defeats the
   entire point of the `source` field — a "router" claim with nothing pointing at the
   router is unverifiable. Always fill it in.
+- **`explanation`** — a string, or `null`. One or two sentences saying what the picture
+  shows, what to look at, and what it leaves out. All three: the third is the one that
+  gets dropped, and it is the one that stops a reader assuming a gap is a claim. The
+  viewer renders it as a panel below the topbar, expanded when the graph opens, and shows
+  **no panel at all** when the field is `null` — so a graph drawn without one arrives
+  silent, with the boxes left to speak for themselves.
+
+  Write it in plain language, same register as a `label`. Not a caption of the file
+  ("this graph has five nodes"), and never a restatement of the `title`, which already
+  names what the graph answers. What the panel is for is the part a reader could not get
+  by looking: which arrow is the interesting one, what the drawing is arguing, what was
+  deliberately left off it.
+
+  It carries **no verdict** and is outside the preservation contract below entirely. An
+  agent rewrites it freely on every redraw, exactly as it redraws an unruled box —
+  because an approved wording an agent may not touch goes stale the moment the picture
+  moves underneath it. Verdicts stay on the nodes and edges, which are what make claims
+  about the code.
 - **`id`** (node and edge) — non-empty and unique within its own collection (nodes and
   edges are separate namespaces). Missing, empty, or duplicated draws `bad-id`. Ids are
   permanent once a verdict lands on them — see Verdicts below — so pick one you'd be
@@ -160,7 +182,7 @@ crowding one graph past the point Collin can read it.
 ## Key order and canonical form
 
 The file on disk is byte-canonical, always. Top-level keys, in this exact order:
-`schema`, `title`, `source`, `source_detail`, `nodes`, `edges`. Node keys: `id`,
+`schema`, `title`, `source`, `source_detail`, `explanation`, `nodes`, `edges`. Node keys: `id`,
 `label`, `kind`, `origin`, `was`, `exclusive`, `ref`, `note`, `graph`, `x`, `y`. Edge
 keys: `id`, `from`, `to`, `label`, `kind`, `value`, `inferred`, `origin`, `was`, `note`.
 
@@ -177,7 +199,8 @@ canonicalizes: your `PUT` body can have keys in any order, can omit anything tha
 default, and never needs sorting or reindenting. What you're required to get right is
 the *shape* — the fields the server actually checks — not the formatting.
 
-Defaults applied when canonicalizing a body that omits a key: node `kind` → `"note"`,
+Defaults applied when canonicalizing a body that omits a key: top-level `explanation` →
+`null`. Node `kind` → `"note"`,
 `origin` → `"proposed"`, `was` → `null`, `exclusive` → `false`, `ref`/`note`/`graph` →
 `null`. Edge `kind` → `"sequence"`, `value` → `null`, `inferred` → `false`, `origin` →
 `"proposed"`, `was` → `null`, `note` → `null`. **`label` has no default** — omit it and
@@ -227,8 +250,9 @@ pictures, not one nested under the other. A question is different: its entry gra
 always named `main.json` — `<slug>/main.json` — because a question, unlike a plan, has
 no other name for its own top-level file to be found by.
 
-A plan's slug already exists — it's the plan's own. A question has none yet, so `/graph`
-derives one from the question text: lowercase it, collapse every run of
+A plan's slug already exists — it's the plan's own. A question has none yet, so whichever
+producer answers it — `/graph`, or an unprompted turn drawing under the dial — derives one
+from the question text the same way: lowercase it, collapse every run of
 non-alphanumeric characters to a single hyphen, trim leading and trailing hyphens,
 truncate to 40 characters, then trim a trailing hyphen the truncation may have left.
 "How does the timeline admission gate decide what to keep?" becomes
@@ -316,12 +340,17 @@ curl -sS -X PUT "http://127.0.0.1:${PORT}/graph?path=${PATH_ENC}" \
   -H "X-Graph-Token: ${TOKEN}" \
   -H "Origin: http://127.0.0.1:${PORT}" \
   -H "Content-Type: application/json" \
-  --data-binary '{"hash": "", "graph": {"schema": 1, "title": "...", "source": "code-read", "source_detail": "...", "nodes": [...], "edges": [...]}}'
+  --data-binary '{"hash": "", "graph": {"schema": 1, "title": "...", "source": "code-read", "source_detail": "...", "explanation": "...", "nodes": [...], "edges": [...]}}'
 ```
 
 `Origin` must equal the server's own address exactly — not omitted, not
 `localhost`. A successful write responds `{"hash": "<new>"}`; keep that hash if you
 intend to write this same file again in the same turn.
+
+**Send `explanation` on every write.** It has a default, so omitting it is not an error —
+it is a graph that opens with no panel and nothing said about it, which is the failure the
+field exists against. Write the one or two sentences the field's entry above describes,
+including what the picture leaves out.
 
 **3. Show it.** The graph exists now, so put it in front of Collin rather than leaving him to
 click a URL out of your turn:
@@ -379,11 +408,12 @@ disk.
 
 **Whichever producer wrote a graph reads it back before its next turn on the same
 subject.** For a plan, that's the re-read `protocol/planning.md` requires before
-composing each question. For a question, `/graph` records the file it wrote, and the
-next turn on that question reads it first. This rule lives here, not in
-`planning.md`, because the question path never goes through `planning.md` at all —
-stating it only in the planning stage document would leave the question path with no
-read-back rule whatsoever.
+composing each question. For a question, the producer records the file it wrote and the
+next turn on that question reads it first — the same rule whether `/graph` wrote it or an
+unprompted turn did, because Collin's verdicts are on the file, not on how it got there.
+This rule lives here, not in `planning.md`, because the question path never goes through
+`planning.md` at all — stating it only in the planning stage document would leave the
+question path with no read-back rule whatsoever.
 
 ## Verdicts and the preservation contract
 
@@ -474,7 +504,7 @@ actually hit, in the rough order the server checks them:
 | 403 | `bad-origin` | `Origin` is missing or doesn't match the server's address |
 | 403 | `not-registered` | this path isn't in the writable set and isn't derivable from a graph that is |
 | 409 | `stale` | the hash you sent doesn't match what's on disk; the body carries the current one |
-| 422 | `unknown-schema` | `schema` isn't `1` |
+| 422 | `unknown-schema` | `schema` isn't `1`, or a top-level field is the wrong type — `title` or `source` not a string, `source` outside the closed set, `source_detail` or `explanation` neither a string nor `null`, `nodes` or `edges` not an array |
 | 422 | `missing-label` | a node or edge has no `label` |
 | 422 | `bad-kind` | a node's `kind` is outside `file`/`module`/`step`/`decision`/`external`/`note`, or an edge's is outside `data`/`sequence`. A missing `kind` is not this — it defaults instead |
 | 422 | `bad-id` | an id is missing, empty, or duplicated |
