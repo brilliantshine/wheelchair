@@ -101,6 +101,18 @@ function collectViewResponses(page) {
   return { responses, stop: () => page.off('response', listener) };
 }
 
+// Counts requests the page actually issued, not responses that happened to arrive — a request is
+// counted the instant it is sent, before any network round trip, so a hypothetical per-entry
+// fan-out is caught even if some of the extra requests are still in flight when we look.
+function collectViewRequests(page) {
+  const requests = [];
+  const listener = (req) => {
+    if (req.method() === 'PUT' && req.url().includes('/view')) requests.push(req);
+  };
+  page.on('request', listener);
+  return { requests, stop: () => page.off('request', listener) };
+}
+
 // ============================================================================================
 // Dragging a node writes matching integer coordinates to disk.
 // ============================================================================================
@@ -275,6 +287,162 @@ test('box-select then approve sets agreed on every selected node and implied edg
     assert.equal(entry(onDisk, 'a').origin, 'agreed');
     assert.equal(entry(onDisk, 'b').origin, 'agreed');
     assert.equal(entry(onDisk, 'a->b').origin, 'agreed');
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// R5a — the bulk gesture, driven through the real UI, on a graph that already holds verdicts.
+// Starting from an all-unruled fixture (as the earlier box-select test does) cannot exercise the
+// additive-only rule at all: there is nothing already-ruled to protect. bulk-verdicts.json holds
+// one already-agreed node+edge, two already-rejected nodes and one already-rejected edge, and
+// several unruled ones, so select-all + approve either (a) rules only the unruled and is accepted,
+// which is the fix, or (b) is refused outright with nothing ruled, which was the bug: the old page
+// set origin on every selected entry unconditionally, so two-or-more already-ruled entries in the
+// selection produced more than one reversal and the server's additive-only check refused the whole
+// write (PLAN.md §6, §13 "Bulk verdicts are additive").
+// ============================================================================================
+test('select-all approve on a graph already holding verdicts rules only the unruled, and a lone reversal still works', async ({ page }) => {
+  const ctx = await launch('bulk-verdicts.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const unruled = ['unruled1', 'unruled2', 'unruled3', 'agreed1->unruled1', 'unruled1->unruled2'];
+    const struck = ['rejected1', 'rejected2', 'rejected1->rejected2'];
+    const approved = ['agreed1', 'unruled2->unruled3'];
+
+    const collector = collectViewResponses(page);
+    await page.locator('#select-all').click();
+    await page.locator('#approve').click();
+    await expect.poll(() => collector.responses.some((r) => r.status() === 200)).toBe(true);
+    collector.stop();
+
+    // The write was accepted, not refused: every response the page received back is 200, never
+    // the 422 bulk-not-additive the original bug produced.
+    assert.ok(collector.responses.length > 0, 'the approve click issued a write');
+    for (const resp of collector.responses) {
+      assert.equal(resp.status(), 200, `expected the bulk approve to be accepted, got ${resp.status()}`);
+    }
+
+    const onDisk = await diskGraph(ctx);
+    for (const id of unruled) {
+      assert.equal(entry(onDisk, id).origin, 'agreed', `${id} should have been ruled on`);
+    }
+    for (const id of struck) {
+      assert.equal(entry(onDisk, id).origin, 'rejected', `${id} must stay struck`);
+    }
+    for (const id of approved) {
+      assert.equal(entry(onDisk, id).origin, 'agreed', `${id} must stay approved`);
+    }
+
+    // The deliberate single reversal §6 permits still works: selecting exactly one already-struck
+    // entry and approving it reverses that one entry, clearing its reset record.
+    await clickNode(page, 'rejected1');
+    assert.deepEqual(await selection(page), ['rejected1'], 'exactly one entry selected, no implied edge');
+
+    const single = collectViewResponses(page);
+    await page.locator('#approve').click();
+    await expect.poll(() => single.responses.some((r) => r.status() === 200)).toBe(true);
+    single.stop();
+
+    const afterReversal = await diskGraph(ctx);
+    assert.equal(entry(afterReversal, 'rejected1').origin, 'agreed', 'the lone struck entry reversed');
+    assert.equal(entry(afterReversal, 'rejected1').was, null, 'its reset record is cleared');
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// R5a, mirror case — select-all + reject on a graph holding approved entries leaves them approved
+// and strikes only the unruled. Same additive-only rule, opposite verdict.
+// ============================================================================================
+test('select-all reject on a graph already holding verdicts strikes only the unruled', async ({ page }) => {
+  const ctx = await launch('bulk-verdicts.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const unruled = ['unruled1', 'unruled2', 'unruled3', 'agreed1->unruled1', 'unruled1->unruled2'];
+    const struck = ['rejected1', 'rejected2', 'rejected1->rejected2'];
+    const approved = ['agreed1', 'unruled2->unruled3'];
+
+    const collector = collectViewResponses(page);
+    await page.locator('#select-all').click();
+    await page.locator('#reject').click();
+    await expect.poll(() => collector.responses.some((r) => r.status() === 200)).toBe(true);
+    collector.stop();
+
+    assert.ok(collector.responses.length > 0, 'the reject click issued a write');
+    for (const resp of collector.responses) {
+      assert.equal(resp.status(), 200, `expected the bulk reject to be accepted, got ${resp.status()}`);
+    }
+
+    const onDisk = await diskGraph(ctx);
+    for (const id of unruled) {
+      assert.equal(entry(onDisk, id).origin, 'rejected', `${id} should have been struck`);
+    }
+    for (const id of approved) {
+      assert.equal(entry(onDisk, id).origin, 'agreed', `${id} must stay approved`);
+    }
+    for (const id of struck) {
+      assert.equal(entry(onDisk, id).origin, 'rejected', `${id} must stay struck`);
+    }
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// R5b — one write per action (PLAN.md §13). There is no per-entry fan-out because there are no
+// patches: a select-all approve is one PUT /view, and a select-all drag is one more. Counting is
+// done on the *requests* the page issues (the 'request' event, which fires the instant a request is
+// sent) rather than on responses that happened to arrive, and each count is checked only after
+// waiting well past when a queued second write would have appeared — the page's write queue drains
+// one job at a time, so a hypothetical per-entry fan-out would show up shortly after the first
+// response, not simultaneously with it.
+// ============================================================================================
+test('select-all approve issues exactly one PUT /view, and a select-all drag issues exactly one more', async ({ page }) => {
+  const ctx = await launch('interactive.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const approveReqs = collectViewRequests(page);
+    const approveResps = collectViewResponses(page);
+    await page.locator('#select-all').click();
+    await page.locator('#approve').click();
+    await expect.poll(() => approveResps.responses.some((r) => r.status() === 200)).toBe(true);
+    // Well past the first response, so a queued second write from a fan-out bug would have drained
+    // and been captured by now.
+    await page.waitForTimeout(1500);
+    approveReqs.stop();
+    approveResps.stop();
+    assert.equal(approveReqs.requests.length, 1,
+      `expected exactly one PUT /view for the select-all approve, got ${approveReqs.requests.length}`);
+
+    // The selection survives the write (performWrite only prunes ids that stopped existing), so
+    // the same select-all selection is what gets dragged next.
+    assert.ok((await selection(page)).length > 1, 'the selection is still the whole graph');
+
+    const dragReqs = collectViewRequests(page);
+    const dragResps = collectViewResponses(page);
+    const start = await center(nodeBox(page, 'a'));
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    await page.mouse.move(start.x + 55, start.y + 21, { steps: 8 });
+    await page.mouse.up();
+    await expect.poll(() => dragResps.responses.some((r) => r.status() === 200)).toBe(true);
+    await page.waitForTimeout(1500);
+    dragReqs.stop();
+    dragResps.stop();
+    assert.equal(dragReqs.requests.length, 1,
+      `expected exactly one more PUT /view for the select-all drag, got ${dragReqs.requests.length}`);
+
+    const onDisk = await diskGraph(ctx);
+    assert.equal(entry(onDisk, 'a').x, 150 + 55, 'the drag landed for the dragged node');
   } finally {
     await ctx.stop();
   }

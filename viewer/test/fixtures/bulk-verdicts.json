@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "title": "Bulk verdicts on a graph already holding verdicts",
+  "source": "plan-proposal",
+  "source_detail": null,
+  "nodes": [
+    {"id":"agreed1","label":"Already agreed","kind":"note","origin":"agreed","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":150,"y":150},
+    {"id":"rejected1","label":"Already struck one","kind":"note","origin":"rejected","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":450,"y":150},
+    {"id":"rejected2","label":"Already struck two","kind":"note","origin":"rejected","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":750,"y":150},
+    {"id":"unruled1","label":"Unruled one","kind":"note","origin":"proposed","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":150,"y":450},
+    {"id":"unruled2","label":"Unruled two","kind":"note","origin":"proposed","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":450,"y":450},
+    {"id":"unruled3","label":"Unruled three","kind":"note","origin":"proposed","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":750,"y":450}
+  ],
+  "edges": [
+    {"id":"agreed1->unruled1","from":"agreed1","to":"unruled1","label":"next","kind":"sequence","value":null,"inferred":false,"origin":"proposed","was":null,"note":null},
+    {"id":"unruled1->unruled2","from":"unruled1","to":"unruled2","label":"next","kind":"sequence","value":null,"inferred":false,"origin":"proposed","was":null,"note":null},
+    {"id":"unruled2->unruled3","from":"unruled2","to":"unruled3","label":"next","kind":"sequence","value":null,"inferred":false,"origin":"agreed","was":null,"note":null},
+    {"id":"rejected1->rejected2","from":"rejected1","to":"rejected2","label":"next","kind":"sequence","value":null,"inferred":false,"origin":"rejected","was":null,"note":null}
+  ]
+}
