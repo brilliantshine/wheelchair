@@ -232,7 +232,7 @@ derives one from the question text: lowercase it, collapse every run of
 non-alphanumeric characters to a single hyphen, trim leading and trailing hyphens,
 truncate to 40 characters, then trim a trailing hyphen the truncation may have left.
 "How does the timeline admission gate decide what to keep?" becomes
-`how-does-the-timeline-admission-gate-decide-what-to`. `planning.md` asks only for "a
+`how-does-the-timeline-admission-gate-dec`. `planning.md` asks only for "a
 short kebab-case slug" for a plan; this is the concrete rule for a question, stated here
 because the question path never goes through `planning.md` at all.
 

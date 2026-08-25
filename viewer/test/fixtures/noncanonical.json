@@ -9,13 +9,13 @@
   ],
   "source_detail": "fixture",
   "nodes": [
-    {"y":140.0,"x":0.0,"graph":"timeline","label":"Timeline","id":"timeline","kind":"module"},
-    {"y":0.0,"x":480.0,"label":"Store","id":"store","kind":"file"},
-    {"y":140.0,"x":480.0,"label":"Report","id":"report"},
-    {"y":0.0,"x":240.0,"label":"Inspect","id":"inspect","kind":"step"},
-    {"y":0.0,"x":0.0,"label":"Gather","id":"gather","kind":"step"},
-    {"y":280.0,"x":720.0,"label":"Finish","id":"finish","kind":"note"},
-    {"y":140.0,"x":240.0,"graph":null,"note":"Choose a branch.","ref":"docs/plan.md","exclusive":true,"was":null,"origin":"proposed","kind":"decision","label":"Decide","id":"decide"}
+    {"y":140.49,"x":-0.5,"graph":"timeline","label":"Timeline","id":"timeline","kind":"module"},
+    {"y":-0.5,"x":479.6,"label":"Store","id":"store","kind":"file"},
+    {"y":139.6,"x":479.5,"label":"Report","id":"report"},
+    {"y":-0.5,"x":239.5,"label":"Inspect","id":"inspect","kind":"step"},
+    {"y":-0.5,"x":-0.5,"label":"Gather","id":"gather","kind":"step"},
+    {"y":280.4,"x":720.49,"label":"Finish","id":"finish","kind":"note"},
+    {"y":140.4,"x":239.6,"graph":null,"note":"Choose a branch.","ref":"docs/plan.md","exclusive":true,"was":null,"origin":"proposed","kind":"decision","label":"Decide","id":"decide"}
   ],
   "title": "Canonical graph",
   "schema": 1,

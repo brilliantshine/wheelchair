@@ -76,17 +76,33 @@ async function writeFaultHook(root) {
   await fs.writeFile(hookPath, `'use strict';
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
+const path = require('node:path');
 const marker = process.env.GRAPH_TEST_MARKER;
 const mode = process.env.GRAPH_TEST_HOOK;
 function mark() { fs.writeFileSync(marker, 'ready'); }
 function pause() { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000); }
-if (mode === 'lock-close') {
-  const closeSync = fs.closeSync;
+function pauseForRelease() {
+  const release = marker + '.release'; const deadline = Date.now() + 3000;
+  while (!fs.existsSync(release) && Date.now() < deadline) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+  }
+}
+if (mode === 'lock-claim-window') {
+  const openSync = fs.openSync;
   let paused = false;
-  fs.closeSync = function(fd) {
-    const result = closeSync.call(this, fd);
-    if (!paused) { paused = true; mark(); pause(); }
+  fs.openSync = function(...args) {
+    const result = openSync.apply(this, args);
+    if (!paused && path.basename(String(args[0])) === '.server' && args[1] === 'wx') {
+      paused = true; mark(); pauseForRelease();
+    }
     return result;
+  };
+  const linkSync = fs.linkSync;
+  fs.linkSync = function(...args) {
+    if (!paused && path.basename(String(args[1])) === '.server') {
+      paused = true; mark(); pauseForRelease();
+    }
+    return linkSync.apply(this, args);
   };
 }
 if (mode === 'before-rename') {
@@ -124,9 +140,11 @@ test('canonical round-trip canonicalizes byte-for-byte', async () => {
 test('both write routes enforce their distinct authority', async () => {
   await withFixture('canonical.json', async (ctx) => {
     let state = await getGraph(ctx);
-    const view = copy(state.graph); entry(view, 'gather').x = 99.6; entry(view, 'gather').origin = 'agreed';
+    const view = copy(state.graph); entry(view, 'gather').x = 99.6; entry(view, 'gather').y = -0.5; entry(view, 'gather').origin = 'agreed';
     expect(await viewPut(ctx, view, state.hash), 200);
     state = await getGraph(ctx);
+    assert.equal(entry(state.graph, 'gather').x, 100);
+    assert.equal(entry(state.graph, 'gather').y, 0);
     for (const mutate of [
       (g) => g.nodes.push({ ...copy(g.nodes[0]), id: 'added-by-the-page' }),
       (g) => g.nodes.pop(),
@@ -380,22 +398,36 @@ test('discovery reuses matching locks, reclaims dead locks, and rejects foreign 
   assert.notEqual(code, 0);
 });
 
-test('the exclusive lock claim is never observable without its identity payload', async () => {
+test('a second starter sees a complete lock or no lock during an atomic claim', async () => {
   const root = await makeDir(); const graphDir = path.join(root, 'graphs'); await fs.mkdir(graphDir, { recursive: true });
-  const graphPath = await stage({ graphDir }, 'canonical.json'); const marker = path.join(root, 'lock-closed');
-  const hookPath = await writeFaultHook(root); const port = await freePort();
-  const first = spawnHookedServer({ root, graphPath, port, hookPath, marker, mode: 'lock-close' });
+  const graphPath = await stage({ graphDir }, 'canonical.json'); const marker = path.join(root, 'lock-claim-window');
+  const hookPath = await writeFaultHook(root); const firstPort = await freePort(); const secondPort = await freePort();
+  const first = spawnHookedServer({ root, graphPath, port: firstPort, hookPath, marker, mode: 'lock-claim-window' });
+  let second;
   try {
     await waitForFile(marker);
-    await assert.rejects(startServer({ cacheRoot: root, open: graphPath, port: await freePort() }));
-    const firstUrl = await waitForServerUrl(first);
+    let observation;
+    try {
+      const lock = JSON.parse(await fs.readFile(path.join(root, '.server'), 'utf8'));
+      observation = { kind: 'complete', lock };
+    } catch (error) { observation = { kind: error.code === 'ENOENT' ? 'absent' : 'corrupt' }; }
+    assert.ok(observation.kind === 'absent' || observation.kind === 'complete',
+      `the claim window exposed ${observation.kind}, not a usable lock or no lock`);
+    if (observation.kind === 'complete') {
+      assert.match(observation.lock.token, /^[0-9a-f]{64}$/);
+      assert.match(observation.lock.start_id, /^[0-9a-f]{32}$/);
+    }
+    second = await startServer({ cacheRoot: root, open: graphPath, port: secondPort });
+    const firstUrl = waitForServerUrl(first);
+    await fs.writeFile(`${marker}.release`, 'continue');
     const lock = JSON.parse(await fs.readFile(path.join(root, '.server'), 'utf8'));
-    assert.equal(lock.pid, first.pid);
-    assert.equal(lock.port, port);
+    assert.equal(lock.pid, second.child.pid);
+    assert.equal(lock.port, secondPort);
     assert.match(lock.token, /^[0-9a-f]{64}$/);
     assert.match(lock.start_id, /^[0-9a-f]{32}$/);
-    assert.match(firstUrl, new RegExp(`^http://127\\.0\\.0\\.1:${port}/\\?`));
+    assert.match(await firstUrl, new RegExp(`^http://127\\.0\\.0\\.1:${secondPort}/\\?`));
   } finally {
+    if (second) await second.stop();
     if (first.exitCode === null) first.kill('SIGKILL');
     await waitForExit(first);
     await fs.unlink(path.join(root, '.server')).catch(() => {});
@@ -441,6 +473,15 @@ test('a kill before rename leaves the committed graph as either whole version, n
       assert.doesNotThrow(() => JSON.parse(bytes.toString('utf8')));
       assert.ok(bytes.equals(oldBytes) || bytes.equals(newBytes), 'the committed graph is an exact old or new version');
       assert.equal(path.basename(graphPath), 'canonical.json', 'a temporary name is never the committed graph');
+      const recovery = await startServer({ cacheRoot: root, open: graphPath, port: await freePort() });
+      try {
+        const recovered = await getGraph(recovery); const successful = copy(recovered.graph);
+        entry(successful, 'gather').note = 'post-kill cleanup';
+        expect(await graphPut(recovery, successful, recovered.hash), 200);
+        const leftovers = (await fs.readdir(graphDir)).filter((name) =>
+          /^\.canonical\.json\.[0-9a-f]{8}\.tmp$/.test(name));
+        assert.deepEqual(leftovers, [], 'a successful write must sweep a killed write\'s stale sibling');
+      } finally { await recovery.stop(); }
     } finally {
       if (child.exitCode === null) child.kill('SIGKILL');
       await waitForExit(child);
@@ -483,7 +524,11 @@ test('layout places every component, including a disconnected two-cycle', async 
   const ctx = await startServer({ cacheRoot: root, open: target });
   try {
     const graph = await readFixtureGraph('cycle-layout.json'); expect(await graphPut(ctx, graph, ''), 200);
-    const stored = await getGraph(ctx); for (const node of stored.graph.nodes) { assert.ok(Number.isInteger(node.x), node.id); assert.ok(Number.isInteger(node.y), node.id); }
+    const stored = await getGraph(ctx);
+    assert.deepEqual(Object.fromEntries(stored.graph.nodes.map((node) => [node.id, { x: node.x, y: node.y }])), {
+      a: { x: 0, y: 0 }, b: { x: 0, y: 140 }, c: { x: 0, y: 280 },
+      x: { x: 0, y: 420 }, y: { x: 0, y: 560 },
+    });
   } finally { await ctx.stop(); }
 });
 

@@ -48,6 +48,8 @@ class ClientError extends Error {
   }
 }
 
+class InternalError extends Error {}
+
 function fail(status, code, detail, extra) {
   throw new ClientError(status, code, detail, extra);
 }
@@ -441,12 +443,37 @@ function configFromArgs(argv) {
 function lockPath(config) { return path.join(config.cacheRoot, '.server'); }
 function registeredPath(config) { return path.join(config.cacheRoot, '.registered'); }
 
+function temporaryPath(filePath) {
+  return path.join(path.dirname(filePath),
+    `.${path.basename(filePath)}.${crypto.randomBytes(4).toString('hex')}.tmp`);
+}
+
+async function sweepStaleTemps(filePath) {
+  const directory = path.dirname(filePath);
+  const prefix = `.${path.basename(filePath)}.`;
+  let names;
+  try { names = await fsp.readdir(directory); }
+  catch (error) {
+    if (error.code === 'ENOENT') return;
+    throw error;
+  }
+  await Promise.all(names.filter((name) => {
+    const nonce = name.slice(prefix.length, -'.tmp'.length);
+    return name.startsWith(prefix) && name.endsWith('.tmp') && /^[0-9a-f]{8}$/.test(nonce);
+  }).map(async (name) => {
+    try { await fsp.unlink(path.join(directory, name)); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+  }));
+}
+
 // Cache-root files (.server, .registered) hold a credential and pass 0o600. Graph files are
 // ordinary repo files that get committed, so they take the ordinary mode: an agent write should
 // not silently re-permission a file the person also edits and diffs.
 async function atomicWrite(filePath, bytes, mode = 0o644) {
-  const temp = path.join(path.dirname(filePath),
-    `.${path.basename(filePath)}.${crypto.randomBytes(4).toString('hex')}.tmp`);
+  // Endpoint writes are globally serialized, so a matching sibling at this point can only be
+  // a left-over from an interrupted earlier write, never another live write's temporary file.
+  await sweepStaleTemps(filePath);
+  const temp = temporaryPath(filePath);
   let handle;
   try {
     handle = await fsp.open(temp, 'w', mode);
@@ -568,6 +595,8 @@ function sendJson(response, status, body) {
 function sendError(response, error) {
   if (error instanceof ClientError) {
     sendJson(response, error.status, { error: error.code, detail: error.detail, ...error.extra });
+  } else if (error instanceof InternalError) {
+    sendJson(response, 500, { error: 'internal', detail: error.message });
   } else {
     sendJson(response, 500, { error: 'internal', detail: 'The server encountered an internal error.' });
   }
@@ -661,7 +690,13 @@ async function handleGraphPut(request, response, url, state) {
         fail(422, 'container-cycle', 'The write would create a containment cycle.');
       }
       const positions = layout(incoming);
-      for (const node of incoming.nodes) Object.assign(node, positions.get(node.id));
+      for (const node of incoming.nodes) {
+        const position = positions.get(node.id);
+        if (!position) {
+          throw new InternalError(`Layout did not assign a position to node ${node.id}.`);
+        }
+        Object.assign(node, position);
+      }
     }
     const bytes = canonicalBytes(incoming);
     await atomicWrite(graphPath, bytes);
@@ -743,6 +778,33 @@ function validLock(value) {
     typeof value.token === 'string' && typeof value.start_id === 'string';
 }
 
+function claimLock(config, lock) {
+  const target = lockPath(config);
+  const temp = temporaryPath(target);
+  let descriptor;
+  let linking = false;
+  try {
+    descriptor = fs.openSync(temp, 'wx', 0o600);
+    fs.writeFileSync(descriptor, `${JSON.stringify(lock, null, 2)}\n`);
+    fs.fsyncSync(descriptor);
+    fs.closeSync(descriptor);
+    descriptor = null;
+    linking = true;
+    fs.linkSync(temp, target);
+    return true;
+  } catch (error) {
+    if (linking && error.code === 'EEXIST') return false;
+    throw error;
+  } finally {
+    if (descriptor !== undefined && descriptor !== null) {
+      try { fs.closeSync(descriptor); } catch { /* preserve the original write error */ }
+    }
+    try { fs.unlinkSync(temp); } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+  }
+}
+
 async function readLock(config) {
   try {
     const lock = JSON.parse(await fsp.readFile(lockPath(config), 'utf8'));
@@ -800,28 +862,13 @@ async function startServer(config) {
       token: crypto.randomBytes(32).toString('hex'),
       start_id: crypto.randomBytes(16).toString('hex'),
     };
-    let descriptor;
-    try {
-      descriptor = fs.openSync(lockPath(config), 'wx', 0o600);
-    } catch (error) {
-      if (error.code !== 'EEXIST') throw error;
+    const claimed = claimLock(config, lock);
+    if (!claimed) {
       const known = await existingServer(config);
       if (known.kind === 'reuse') return { reused: true, lock: known.lock };
       if (known.kind === 'foreign') throw new Error('Refused to adopt a lockfile owned by another live process.');
       await fsp.unlink(lockPath(config)).catch(() => {});
       continue;
-    }
-    try {
-      fs.writeFileSync(descriptor, `${JSON.stringify(lock, null, 2)}\n`);
-      fs.fsyncSync(descriptor);
-      fs.closeSync(descriptor);
-      descriptor = null;
-    } catch (error) {
-      if (descriptor !== undefined && descriptor !== null) {
-        try { fs.closeSync(descriptor); } catch { /* preserve the original write error */ }
-      }
-      await fsp.unlink(lockPath(config)).catch(() => {});
-      throw error;
     }
     await pruneRegistered(config);
     const state = { config, lock, port: config.port, server: null };
