@@ -176,13 +176,18 @@
   function dirnameOf(p) { return p.slice(0, p.lastIndexOf('/') + 1); }
   async function safeJson(res) { try { return await res.json(); } catch { return {}; } }
 
-  function wrapText(label, maxChars, maxLines) {
+  // `firstLineMaxChars` lets the first line alone wrap narrower than the rest —
+  // used when a node has a container badge sitting in the top-right corner, so
+  // the label wraps clear of it instead of running underneath.
+  function wrapText(label, maxChars, maxLines, firstLineMaxChars) {
+    const cap0 = firstLineMaxChars == null ? maxChars : firstLineMaxChars;
     const words = String(label == null ? '' : label).split(/\s+/).filter(Boolean);
     const lines = [''];
     for (const w of words) {
       const i = lines.length - 1;
+      const cap = i === 0 ? cap0 : maxChars;
       const attempt = lines[i] ? lines[i] + ' ' + w : w;
-      if (attempt.length <= maxChars) { lines[i] = attempt; continue; }
+      if (attempt.length <= cap) { lines[i] = attempt; continue; }
       if (lines.length < maxLines) { lines.push(w); continue; }
       lines[maxLines - 1] = lines[maxLines - 1].replace(/…$/, '') + '…';
       break;
@@ -390,6 +395,28 @@
     });
   }
 
+  // Fits the whole graph inside the current viewport, with a margin, and
+  // centres it — a person should not have to pan before they can read it. Caps
+  // at 1x rather than magnifying small graphs to fill empty space: the fix for
+  // "jammed at the edge with room to spare" is centring, not enlarging.
+  function fitToView() {
+    if (!graph || !graph.nodes.length) { view = { x: 0, y: 0, k: 1 }; return; }
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const n of graph.nodes) {
+      const h = nodeHeight(n);
+      minX = Math.min(minX, n.x); minY = Math.min(minY, n.y);
+      maxX = Math.max(maxX, n.x + NODE_W); maxY = Math.max(maxY, n.y + h);
+    }
+    const margin = 60;
+    const availW = Math.max(100, svg.clientWidth - margin * 2);
+    const availH = Math.max(100, svg.clientHeight - margin * 2);
+    const contentW = Math.max(1, maxX - minX), contentH = Math.max(1, maxY - minY);
+    const fit = Math.min(availW / contentW, availH / contentH);
+    const k = Math.max(MIN_ZOOM, Math.min(1, fit));
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+    view = { k, x: svg.clientWidth / 2 - cx * k, y: svg.clientHeight / 2 - cy * k };
+  }
+
   // ---- navigation ------------------------------------------------------------------
   async function loadGraph(path) {
     const result = await getGraph(path);
@@ -400,9 +427,10 @@
     childrenMap = result.children;
     selectedIds = new Set();
     impliedRemoved = new Set();
-    view = { x: 0, y: 0, k: 1 };
     clearFatal(); clearErrorBanner();
     document.title = graph.title || 'graph viewer';
+    resizeCanvas();
+    fitToView();
     render();
     return true;
   }
@@ -454,6 +482,33 @@
   });
 
   // ---- geometry ------------------------------------------------------------------
+  // A box whose height never responds to its label keeps colliding with
+  // something — the kind tag at a fixed offset from a box that stays a fixed
+  // height, an edge trimmed to a box that isn't as tall as it looks. The
+  // height is a function of how many lines the label actually wrapped to, and
+  // everything downstream (the kind tag position, edge trimming, box-select
+  // hit testing, fit-to-view) is computed from *this*, not from a constant.
+  const FIRST_LINE_CHARS_WITH_BADGE = 16;
+  function firstLineCap(n) { return n.graph !== null ? FIRST_LINE_CHARS_WITH_BADGE : 24; }
+  function nodeHeight(n) {
+    const lines = wrapText(n.label, 24, 3, firstLineCap(n)).length;
+    return Math.max(NODE_H, 22 + (lines - 1) * 16 + 30);
+  }
+
+  function rectOverlapsAny(rect, nodes, excludeIds) {
+    for (const n of nodes) {
+      if (excludeIds.includes(n.id)) continue;
+      const h = nodeHeight(n);
+      if (rect.x < n.x + NODE_W && rect.x + rect.w > n.x &&
+          rect.y < n.y + h && rect.y + rect.h > n.y) return true;
+    }
+    return false;
+  }
+
+  function rectsOverlap(r1, r2) {
+    return r1.x < r2.x + r2.w && r1.x + r1.w > r2.x && r1.y < r2.y + r2.h && r1.y + r1.h > r2.y;
+  }
+
   function rectExit(cx, cy, hw, hh, sx, sy) {
     if (!sx && !sy) return [cx, cy];
     const t = Math.min(
@@ -492,21 +547,27 @@
     if (missing) attrs['data-child-missing'] = 'true';
     const g = el('g', attrs);
 
-    g.appendChild(el('rect', { class: 'node-box', width: NODE_W, height: NODE_H, rx: 6 }));
+    const h = nodeHeight(n);
+    g.appendChild(el('rect', { class: 'node-box', width: NODE_W, height: h, rx: 6 }));
 
-    const lines = wrapText(n.label, 24, 3);
+    // A container's open/missing badge sits in the top-right corner. Left at
+    // the default wrap width, the first line of a long label runs under it —
+    // the badge painted over the text rather than beside it. Reserving fewer
+    // characters on the first line alone (subsequent lines still use the full
+    // width) keeps the label clear of the badge without touching its position.
+    const lines = wrapText(n.label, 24, 3, firstLineCap(n));
     lines.forEach((line, i) => {
       const t = el('text', { class: 'node-label', x: 12, y: 22 + i * 16 });
       t.textContent = line;
       g.appendChild(t);
     });
 
-    const kindTag = el('text', { class: 'node-kind', x: 12, y: NODE_H - 8 });
+    const kindTag = el('text', { class: 'node-kind', x: 12, y: h - 8 });
     kindTag.textContent = n.kind;
     g.appendChild(kindTag);
 
     if (n.exclusive) {
-      const fork = el('text', { class: 'node-fork', x: NODE_W - 12, y: NODE_H - 8, 'text-anchor': 'end' });
+      const fork = el('text', { class: 'node-fork', x: NODE_W - 12, y: h - 8, 'text-anchor': 'end' });
       fork.textContent = 'fork';
       g.appendChild(fork);
     }
@@ -535,7 +596,7 @@
     root.appendChild(g);
   }
 
-  function renderEdgeGroup(root, e, a, b, pairIndex, pairCount, effSel) {
+  function renderEdgeGroup(root, e, a, b, pairIndex, pairCount, effSel, placedLabels) {
     const selected = effSel.has(e.id);
     const cls = ['edge'];
     if (selected) cls.push('selected');
@@ -543,27 +604,38 @@
     if (e.origin === 'agreed') cls.push('agreed');
     const g = el('g', { class: cls.join(' '), 'data-id': e.id, 'data-origin': e.origin, 'data-kind': e.kind });
 
-    const x1 = a.x + NODE_W / 2, y1 = a.y + NODE_H / 2;
-    const x2 = b.x + NODE_W / 2, y2 = b.y + NODE_H / 2;
+    // Each endpoint's own actual height (see nodeHeight): a box whose height
+    // grew to fit a wrapped label still has to trim edges at *its* boundary,
+    // not a shared constant that no longer matches it.
+    const ha = nodeHeight(a), hb = nodeHeight(b);
+    const x1 = a.x + NODE_W / 2, y1 = a.y + ha / 2;
+    const x2 = b.x + NODE_W / 2, y2 = b.y + hb / 2;
     const dx = x2 - x1, dy = y2 - y1;
 
     // Trim to where the line crosses the node's rectangle, not a fixed radius
     // from its centre — a radius trim buries the line end and the arrowhead
     // under the box.
-    let [ax, ay] = rectExit(x1, y1, NODE_W / 2, NODE_H / 2, dx, dy);
-    let [bx, by] = rectExit(x2, y2, NODE_W / 2, NODE_H / 2, -dx, -dy);
+    let [ax, ay] = rectExit(x1, y1, NODE_W / 2, ha / 2, dx, dy);
+    let [bx, by] = rectExit(x2, y2, NODE_W / 2, hb / 2, -dx, -dy);
 
     // Two edges on one pair of nodes — including opposite directions — land on
     // the same line and read as a single double-headed arrow. Fan them apart
     // perpendicular to the line so each is separate geometry and independently
-    // hittable.
+    // hittable. The perpendicular has to come from a direction shared by both
+    // edges of the pair, not each edge's own dx/dy: for e->f and f->e those are
+    // exact opposites, so an index-based offset computed from each edge's own
+    // direction flips sign right along with it and cancels out — both edges
+    // landed on identical geometry. Canonicalizing on the same sorted-pair
+    // order used for pairKey fixes the basis so the index actually separates them.
     const pairKey = JSON.stringify([e.from, e.to].slice().sort());
     const n = pairCount.get(pairKey) || 1;
     if (n > 1) {
-      const L0 = Math.hypot(dx, dy) || 1;
+      const canonSign = e.from < e.to ? 1 : -1;
+      const cdx = dx * canonSign, cdy = dy * canonSign;
+      const L0 = Math.hypot(cdx, cdy) || 1;
       const shift = (pairIndex.get(e.id) - (n - 1) / 2) * 14;
-      ax += (-dy / L0) * shift; ay += (dx / L0) * shift;
-      bx += (-dy / L0) * shift; by += (dx / L0) * shift;
+      ax += (-cdy / L0) * shift; ay += (cdx / L0) * shift;
+      bx += (-cdy / L0) * shift; by += (cdx / L0) * shift;
     }
 
     const d = 'M' + ax + ',' + ay + ' L' + bx + ',' + by;
@@ -599,11 +671,25 @@
     // centred on it — a centred label lands inside whichever box the gap is
     // too narrow for. Nodes are appended to the canvas before edges (see
     // render()), so this whole group, label included, paints above every box.
+    //
+    // A fixed offset only clears the *line's own* two nodes. Two arms leaving
+    // one node at similar angles still land close together regardless of the
+    // constant, because neither knows the other exists. Rather than guess a
+    // bigger constant — which just moves the collision to the next graph with
+    // a third arm — push a label that lands on an already-placed one further
+    // out, checking again, until it clears or a handful of tries run out.
     const L2 = Math.hypot(dx, dy) || 1;
-    const off = NODE_H / 2 + 16;
-    const mx = (ax + bx) / 2 + (dy / L2) * off;
-    const my = (ay + by) / 2 - (dx / L2) * off;
+    const baseOff = Math.max(ha, hb) / 2 + 16;
     const width = Math.max(24, text.length * 6.2 + 14);
+    let off = baseOff, mx, my;
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      mx = (ax + bx) / 2 + (dy / L2) * off;
+      my = (ay + by) / 2 - (dx / L2) * off;
+      const candidate = { x: mx - width / 2, y: my - 15, w: width, h: 18 };
+      if (!placedLabels.some((r) => rectsOverlap(candidate, r))) { placedLabels.push(candidate); break; }
+      off += 16;
+      if (attempt === 11) placedLabels.push(candidate);
+    }
     const labelBg = el('rect', { class: 'edge-label-bg', x: mx - width / 2, y: my - 15, width, height: 18, rx: 3 });
     const label = el('text', { class: 'edge-label', x: mx, y: my - 2 });
     label.textContent = text;
@@ -633,15 +719,62 @@
     // nothing to expand — only the per-field elements are conditionally
     // omitted, never left present-but-empty.
 
-    let x, y;
+    // The panel's height has to be known *before* choosing where it goes: it
+    // expands at the item by design, but expanding blindly downward buries
+    // whatever sits below — another node in the row underneath, or a nearby
+    // edge label. Measure the wrapped content first, then pick whichever side
+    // (below, or above) doesn't land on another node.
+    // Matches the actual <rect class="detail-bg"> built below exactly: local
+    // y=-4, height=cursorY. A collision box that doesn't match those two
+    // numbers checks the wrong rectangle and can pass a placement that the
+    // real, slightly-offset box still overlaps by the difference.
+    const panelW = 210;
+    let panelH = 0;
+    if (fields.length) {
+      let cursor = 18;
+      for (const [, raw] of fields) cursor += wrapText(raw, 32, 4).length * 14 + 6;
+      panelH = cursor;
+    }
+    const panelTopOffset = 4;
+
+    let x, belowY, aboveY, excludeIds;
     if (node) {
-      x = node.x; y = node.y + NODE_H + 12;
+      const h = nodeHeight(node);
+      x = node.x;
+      belowY = node.y + h + 12;
+      aboveY = node.y - panelH - 12;
+      excludeIds = [node.id];
     } else {
       const a = nodeById.get(item.from), b = nodeById.get(item.to);
       if (!a || !b) return;
+      const ha = nodeHeight(a), hb = nodeHeight(b);
       x = Math.min(a.x, b.x) + NODE_W / 2 - 105;
-      y = Math.max(a.y, b.y) + NODE_H + 34;
+      belowY = Math.max(a.y + ha, b.y + hb) + 34;
+      aboveY = Math.min(a.y, b.y) - panelH - 22;
+      excludeIds = [a.id, b.id];
     }
+
+    // A single flip to the opposite side isn't enough on its own: the node
+    // above (or below) an edge's two endpoints isn't necessarily clear either,
+    // and a fixed jump can still land on a *third* node further along in that
+    // direction. Search outward in steps on each side and take whichever
+    // clears in fewer of them; only if both searches exhaust without clearing
+    // does this fall back to the original below position.
+    function firstClear(startY, step) {
+      if (!panelH) return { y: startY, steps: 0 };
+      for (let i = 0; i < 12; i += 1) {
+        const y = startY + i * step;
+        const box = { x, y: y - panelTopOffset, w: panelW, h: panelH };
+        if (!rectOverlapsAny(box, graph.nodes, excludeIds)) return { y, steps: i };
+      }
+      return null;
+    }
+    const below = firstClear(belowY, 24);
+    const above = firstClear(aboveY, -24);
+    let y;
+    if (below && (!above || below.steps <= above.steps)) y = below.y;
+    else if (above) y = above.y;
+    else y = belowY;
 
     const g = el('g', { class: 'detail', 'data-for': id, transform: 'translate(' + x + ',' + y + ')' });
     let cursorY = 18;
@@ -653,7 +786,7 @@
       cursorY += t._lineCount * 14 + 6;
     }
     if (fields.length) {
-      g.appendChild(el('rect', { class: 'detail-bg', x: 0, y: -4, width: 210, height: cursorY, rx: 6 }));
+      g.appendChild(el('rect', { class: 'detail-bg', x: 0, y: -panelTopOffset, width: panelW, height: cursorY, rx: 6 }));
     }
     for (const t of textEls) g.appendChild(t);
     root.appendChild(g);
@@ -707,10 +840,22 @@
     // lets an edge's own label — appended inside the same edge group — clear
     // every node instead of being painted over by one.
     for (const n of graph.nodes) renderNodeGroup(root, n, effSel);
+    // Seeded with each fork node's own tag before any edge label is placed: an
+    // arm's label landing on the "fork" marker it belongs to is the same
+    // collision as two arms landing on each other, just against a fixed
+    // element instead of another label, and it defeats the one place shape
+    // carries meaning if the tag is unreadable underneath it.
+    const placedLabels = [];
+    for (const n of graph.nodes) {
+      if (n.exclusive) {
+        const h = nodeHeight(n);
+        placedLabels.push({ x: n.x + NODE_W - 60, y: n.y + h - 22, w: 56, h: 20 });
+      }
+    }
     for (const e of graph.edges) {
       const a = nodeById.get(e.from), b = nodeById.get(e.to);
       if (!a || !b) continue;
-      renderEdgeGroup(root, e, a, b, pairIndex, pairCount, effSel);
+      renderEdgeGroup(root, e, a, b, pairIndex, pairCount, effSel, placedLabels);
     }
 
     if (effSel.size === 1) renderDetail(root, [...effSel][0], nodeById);
@@ -823,7 +968,7 @@
     if (!shift) { selectedIds = new Set(); impliedRemoved = new Set(); }
     for (const n of graph.nodes) {
       const sx = n.x * view.k + view.x, sy = n.y * view.k + view.y;
-      const sw = NODE_W * view.k, sh = NODE_H * view.k;
+      const sw = NODE_W * view.k, sh = nodeHeight(n) * view.k;
       if (sx < bx + w && sx + sw > bx && sy < by + h && sy + sh > by) selectedIds.add(n.id);
     }
   }

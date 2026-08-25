@@ -1,1 +1,0 @@
-{"schema":1,"title":"Dangling","source":"router","source_detail":null,"nodes":[{"id":"a","label":"A"}],"edges":[{"id":"a->z","from":"a","to":"z","label":"missing"}]}

@@ -1,4 +1,4 @@
 node_modules/
 graphify-out/
 viewer/test/.tmp/
-viewer/test-results/
+test-results/
