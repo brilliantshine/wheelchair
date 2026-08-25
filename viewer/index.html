@@ -71,6 +71,11 @@
   .node.rejected .node-label { text-decoration: line-through; }
   .node { cursor: move; }
 
+  /* Quiet, not alarming: this is information ("an agent reset this"), not an error.
+     Same amber as the fork tag and the inferred-edge note — the page's existing
+     colour for "worth a second look", not a new warning colour. */
+  .was-mark { fill: #d8b45f; opacity: .8; pointer-events: none; }
+
   .open-child { cursor: pointer; }
   .open-child .open-child-bg { fill: #2c3340; stroke: var(--accent); stroke-width: 1; }
   .open-child .open-child-label { fill: var(--accent); font-size: 9px; pointer-events: none; }
@@ -244,50 +249,75 @@
   // we re-read the current graph and call it again against the fresh base —
   // that is "re-apply pending verdicts to the new base" without ever resending
   // the stale payload the structural check would refuse.
-  async function putView(mutateFn) {
-    if (writing) return false;
+  //
+  // A write started while one is already in flight cannot just be dropped: the
+  // page would go on showing the moved position (or the applied verdict) while
+  // it was never sent, so the person sees a change that isn't on disk. Instead
+  // each call is queued and drains one at a time — every call still produces
+  // exactly one PUT /view for its own mutateFn, never more, but a second call
+  // that arrives mid-write waits for the first to settle instead of vanishing.
+  let writeQueue = [];
+
+  function putView(mutateFn) {
+    return new Promise((resolve) => {
+      writeQueue.push({ mutateFn, resolve });
+      drainWriteQueue();
+    });
+  }
+
+  async function drainWriteQueue() {
+    if (writing) return;
+    const job = writeQueue.shift();
+    if (!job) return;
     writing = true;
+    let result;
     try {
-      for (let attempt = 0; attempt < 8; attempt++) {
-        const base = deepClone(graph);
-        mutateFn(base);
-        let res;
-        try {
-          res = await fetch(viewUrl(currentPath), {
-            method: 'PUT',
-            cache: 'no-store',
-            headers: { 'content-type': 'application/json', 'X-Graph-Token': token },
-            body: JSON.stringify({ hash: lastHash, graph: base }),
-          });
-        } catch (err) {
-          showErrorBanner({ error: 'network', detail: String((err && err.message) || err) });
-          return false;
-        }
-        if (res.ok) {
-          const body = await safeJson(res);
-          lastHash = body.hash;
-          graph = base;
-          selectedIds = pruneToExisting(selectedIds);
-          impliedRemoved = pruneToExisting(impliedRemoved);
-          clearErrorBanner();
-          render();
-          return true;
-        }
-        const body = await safeJson(res);
-        if (res.status === 409) {
-          const fresh = await getGraph(currentPath);
-          if (!fresh.ok) { showFatal(fresh); return false; }
-          graph = fresh.graph; lastHash = fresh.hash; childrenMap = fresh.children;
-          continue;
-        }
-        showErrorBanner({ status: res.status, error: body.error, detail: body.detail, ids: body.ids });
-        return false;
-      }
-      showErrorBanner({ error: 'stale', detail: 'Kept losing the race with a concurrent write — try again.' });
-      return false;
+      result = await performWrite(job.mutateFn);
     } finally {
       writing = false;
     }
+    job.resolve(result);
+    if (writeQueue.length) drainWriteQueue();
+  }
+
+  async function performWrite(mutateFn) {
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const base = deepClone(graph);
+      mutateFn(base);
+      let res;
+      try {
+        res = await fetch(viewUrl(currentPath), {
+          method: 'PUT',
+          cache: 'no-store',
+          headers: { 'content-type': 'application/json', 'X-Graph-Token': token },
+          body: JSON.stringify({ hash: lastHash, graph: base }),
+        });
+      } catch (err) {
+        showErrorBanner({ error: 'network', detail: String((err && err.message) || err) });
+        return false;
+      }
+      if (res.ok) {
+        const body = await safeJson(res);
+        lastHash = body.hash;
+        graph = base;
+        selectedIds = pruneToExisting(selectedIds);
+        impliedRemoved = pruneToExisting(impliedRemoved);
+        clearErrorBanner();
+        render();
+        return true;
+      }
+      const body = await safeJson(res);
+      if (res.status === 409) {
+        const fresh = await getGraph(currentPath);
+        if (!fresh.ok) { showFatal(fresh); return false; }
+        graph = fresh.graph; lastHash = fresh.hash; childrenMap = fresh.children;
+        continue;
+      }
+      showErrorBanner({ status: res.status, error: body.error, detail: body.detail, ids: body.ids });
+      return false;
+    }
+    showErrorBanner({ error: 'stale', detail: 'Kept losing the race with a concurrent write — try again.' });
+    return false;
   }
 
   function pruneToExisting(set) {
@@ -371,10 +401,20 @@
   clearBtn.addEventListener('click', () => { clearSelection(); render(); });
 
   // ---- verdicts ------------------------------------------------------------------
+  // §6: "A bulk verdict is additive only" — any number of entries may move *from*
+  // `proposed`, and at most one may move *away from* an existing verdict, and the
+  // server enforces that by diffing the write. A selection of two or more is always
+  // a bulk gesture here, so it only ever touches unruled entries — an already-ruled
+  // one sitting inside a select-all stays exactly as it was. A selection of exactly
+  // one is the deliberate single reversal §6 carves out: it applies regardless of
+  // what the item already carried, agreed/rejected included.
   function applyOrigin(g, ids, verdict) {
+    const bulk = ids.length > 1;
     for (const id of ids) {
       const item = findNode(g, id) || findEdge(g, id);
-      if (item && item.origin !== verdict) {
+      if (!item) continue;
+      if (bulk && item.origin !== 'proposed') continue;
+      if (item.origin !== verdict) {
         item.origin = verdict;
         // The page may only *clear* a `was`, and only in the same write that
         // changes that entry's origin — never set one, never touch it when
@@ -554,10 +594,25 @@
     if (n.exclusive) attrs['data-exclusive'] = 'true';
     const missing = n.graph !== null && childrenMap[n.graph] === false;
     if (missing) attrs['data-child-missing'] = 'true';
+    if (n.was) attrs['data-was'] = n.was;
     const g = el('g', attrs);
 
     const h = nodeHeight(n);
     g.appendChild(el('rect', { class: 'node-box', width: NODE_W, height: h, rx: 6 }));
+
+    // §6: an agent may reset an entry Collin approved back to `proposed`,
+    // recording `was` on it. Rendered identically to a never-ruled entry it is
+    // indistinguishable from one nobody has looked at — this quiet dot in the
+    // corner opposite the open-child badge is the only place a person can see
+    // the difference. It disappears the moment the person rules again, which
+    // already clears `was` (see applyOrigin).
+    if (n.was) {
+      const mark = el('circle', { class: 'was-mark', cx: 8, cy: 8, r: 3 });
+      const tip = el('title');
+      tip.textContent = 'Reset by an agent — was ' + n.was;
+      mark.appendChild(tip);
+      g.appendChild(mark);
+    }
 
     // A container's open/missing badge sits in the top-right corner. Left at
     // the default wrap width, the first line of a long label runs under it —
@@ -611,7 +666,9 @@
     if (selected) cls.push('selected');
     if (e.origin === 'rejected') cls.push('rejected');
     if (e.origin === 'agreed') cls.push('agreed');
-    const g = el('g', { class: cls.join(' '), 'data-id': e.id, 'data-origin': e.origin, 'data-kind': e.kind });
+    const attrs = { class: cls.join(' '), 'data-id': e.id, 'data-origin': e.origin, 'data-kind': e.kind };
+    if (e.was) attrs['data-was'] = e.was;
+    const g = el('g', attrs);
 
     // Each endpoint's own actual height (see nodeHeight): a box whose height
     // grew to fit a wrapped label still has to trim edges at *its* boundary,
@@ -708,6 +765,17 @@
     }
     g.appendChild(labelBg);
     g.appendChild(label);
+
+    // Same quiet marker as a node's (see renderNodeGroup): a dot at the label's
+    // corner, present only while `was` is set, gone the moment the edge is
+    // ruled on again.
+    if (e.was) {
+      const mark = el('circle', { class: 'was-mark', cx: mx - width / 2, cy: my - 15, r: 3 });
+      const tip = el('title');
+      tip.textContent = 'Reset by an agent — was ' + e.was;
+      mark.appendChild(tip);
+      g.appendChild(mark);
+    }
 
     root.appendChild(g);
   }
@@ -830,6 +898,22 @@
     approveBtn.disabled = !has;
     rejectBtn.disabled = !has;
     clearBtn.disabled = !has;
+
+    // A bulk selection (two or more) only rules on the unruled — an already-ruled
+    // entry caught inside a select-all is left exactly as it was. Say so on the
+    // button, but only when it's actually true of the current selection, so a
+    // plain single or all-unruled selection isn't cluttered with a caveat that
+    // doesn't apply to it.
+    let hint = '';
+    if (effSel.size > 1 && graph) {
+      const alreadyRuled = [...effSel].some((id) => {
+        const item = findItem(graph, id);
+        return item && item.origin !== 'proposed';
+      });
+      if (alreadyRuled) hint = 'Applies only to unruled items — existing verdicts are left alone.';
+    }
+    approveBtn.title = hint;
+    rejectBtn.title = hint;
   }
 
   function resizeCanvas() {
