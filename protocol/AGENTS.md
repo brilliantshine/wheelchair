@@ -51,5 +51,5 @@ lands at one of the statuses the machine already has.
 ## Tests
 
 None — these are documents. The check that they work is that a stage run from either
-harness produces the same artifacts, and that `install.sh` symlinks rather than copies,
-so an edit here takes effect immediately in both.
+harness produces the same artifacts, and that a rendered wrapper points back into this
+working tree, so an edit here takes effect immediately in both without reinstalling.

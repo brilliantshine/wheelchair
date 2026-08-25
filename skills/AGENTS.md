@@ -1,7 +1,8 @@
 # `skills/` — the Claude Code wrappers
 
 Owned by [the repo root](../AGENTS.md). One directory per command, each holding a single
-`SKILL.md`. `install.sh` symlinks each into `~/.claude/skills/`.
+`SKILL.md`. `install.sh` renders each into `~/.claude/skills/`, substituting this clone's path
+for the `{{WHEELCHAIR_ROOT}}` placeholder the committed wrapper carries.
 
 The organizing idea: **a wrapper is a pointer, not a document.** Its body names one
 `protocol/` file by absolute path and says what the argument is. Everything else about
@@ -38,5 +39,6 @@ says when to use the command and what its argument is. The body is the pointer.
 ./install.sh && ./install.sh
 ```
 
-Idempotent, and the second run leaves `git status --porcelain` empty. The symlinks it
-creates are what makes an edit in `protocol/` take effect without reinstalling.
+Idempotent, and the second run leaves `git status --porcelain` empty. What makes an edit in
+`protocol/` take effect without reinstalling is that the rendered wrapper points back into this
+working tree — not the wrapper's own contents, which are a copy and do need a re-run when changed.

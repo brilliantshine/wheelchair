@@ -28,11 +28,11 @@ protocol/        canonical stage definitions — the single source of truth
   templates/           MAP.md, IDEA.md, PLAN.md, COMPLETION.md skeletons
 spine/           scan.sh: resolves routing documents through symlinks, read-only, JSON out
   test/run.sh          fixture assertions; builds its tree under the system temp directory
-skills/          Claude Code wrappers  → symlinked into ~/.claude/skills/
-codex/prompts/   Codex CLI wrappers    → symlinked into ~/.codex/prompts/
+skills/          Claude Code wrappers  → rendered into ~/.claude/skills/
+codex/prompts/   Codex CLI wrappers    → rendered into ~/.codex/prompts/
 docs/plans/      one directory per feature; the only mutable state
 viewer/          index.html and server.js — the browser viewer a graph opens in
-install.sh       creates the symlinks and installs viewer/'s dependencies (idempotent)
+install.sh       renders the wrappers and installs viewer/'s dependencies (idempotent)
 AGENTS.md        this repo's own routers, one per directory that owns a rule —
                  also protocol/, skills/ and spine/
 ```
@@ -43,8 +43,12 @@ AGENTS.md        this repo's own routers, one per directory that owns a rule —
 ./install.sh
 ```
 
-Wrappers are symlinks, so edits to `protocol/` take effect immediately in both
-harnesses. Restart running sessions to pick up new skill/prompt registrations. The same
+A wrapper has to name an absolute path, because a command runs with your target repo as its
+working directory and a relative path would resolve nowhere. The repo therefore cannot hold
+one: wrappers carry a `{{WHEELCHAIR_ROOT}}` placeholder and `install.sh` substitutes wherever
+you cloned it. Edits to `protocol/` still take effect immediately in both harnesses, because
+the rendered wrapper points back into your working tree; editing a wrapper itself needs a
+re-run. Restart running sessions to pick up new skill/prompt registrations. The same
 run also installs `viewer/`'s npm dependencies and its pinned Chromium via Playwright.
 `spine/scan.sh`, `spine/test/run.sh`, and `install.sh` itself are shell, not markdown —
 `viewer/` is the one piece with its own package dependencies and a long-running server.

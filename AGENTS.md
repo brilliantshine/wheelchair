@@ -43,7 +43,7 @@ Two rules follow, and between them they cover most of what can go wrong here:
 | File | Role |
 |---|---|
 | `README.md` | What this workflow is and how to drive it, for a person arriving cold |
-| `install.sh` | Symlinks every wrapper into both harnesses. Idempotent, and it **globs** `skills/*/` and `codex/prompts/*.md`, so adding a command needs no edit here |
+| `install.sh` | Renders every wrapper into both harnesses, substituting this clone's path for `{{WHEELCHAIR_ROOT}}`, and installs the viewer's dependencies. Idempotent, and it **globs** `skills/*/` and `codex/prompts/*.md`, so adding a command needs no edit here |
 | `.gitignore` | `node_modules/`, `graphify-out/`, and the two scratch paths the viewer's suites write, `viewer/test/.tmp/` and `test-results/`. `graphify-out/` is what lets a root router claim a graph cannot carry a contract |
 
 ## How to navigate (in order)
