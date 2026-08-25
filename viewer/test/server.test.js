@@ -385,6 +385,50 @@ test('whoami is unauthenticated identity, never a mutation credential', async ()
   });
 });
 
+test('--show opens a browser once, and never while a tab is already on that graph', async () => {
+  // The whole point of the not-while-watched rule: an agent redrawing a graph every turn must not
+  // stack up browser windows. An open tab picks the new version up on its own poll within a second.
+  const first = await startFixture('canonical.json');
+  const repoRoot = path.resolve(__dirname, '..', '..');
+  const record = path.join(first.root, 'launched.txt');
+  const opener = path.join(first.root, 'fake-browser.sh');
+  await fs.writeFile(opener, `#!/usr/bin/env bash\necho "$1" >> ${record}\n`, { mode: 0o755 });
+
+  const show = (extraArgs = [], env = {}) => new Promise((resolve) => {
+    const child = spawn(process.execPath,
+      ['viewer/server.js', '--cache-root', first.root, '--port', String(first.port),
+       '--show', first.graphPath, ...extraArgs],
+      { cwd: repoRoot, stdio: 'ignore', env: { ...process.env, WHEELCHAIR_BROWSER: opener, ...env } });
+    child.once('exit', resolve);
+  });
+  const launches = async () => {
+    try { return (await fs.readFile(record, 'utf8')).trim().split('\n').filter(Boolean); }
+    catch { return []; }
+  };
+
+  try {
+    await show();
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    const opened = await launches();
+    assert.equal(opened.length, 1, '--show on an unwatched graph opens exactly one window');
+    assert.ok(opened[0].includes(encodeURIComponent(first.graphPath)), 'the URL names the graph');
+    assert.ok(opened[0].includes(first.token), 'the URL carries the token the page needs');
+
+    // A page polling GET /graph is what marks the graph as watched.
+    await getGraph(first);
+    await show();
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    assert.equal((await launches()).length, 1, 'a second --show must not open a window over a live tab');
+
+    // And the escape hatch, for anyone on a headless box.
+    await fs.rm(record, { force: true });
+    await show(['--no-browser']);
+    await show([], { WHEELCHAIR_NO_BROWSER: '1' });
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    assert.deepEqual(await launches(), [], '--no-browser and WHEELCHAIR_NO_BROWSER both suppress it');
+  } finally { await first.stop(); }
+});
+
 test('two starts at the same instant leave one server, and the loser reuses it rather than dying', async () => {
   // The winner claims the lockfile, then prunes the registered set and binds — a window of
   // milliseconds in which its pid is alive and /whoami is silent, which is exactly what an
@@ -393,8 +437,12 @@ test('two starts at the same instant leave one server, and the loser reuses it r
   const root = await makeDir(); const graphDir = path.join(root, 'graphs');
   await fs.mkdir(graphDir, { recursive: true });
   const repoRoot = path.resolve(__dirname, '..', '..');
+  // Both racers share one port and one cache root — that is the race. It must be a *free* port,
+  // not the default: a viewer the person left running on 7373 would otherwise fail this test with
+  // EADDRINUSE and look like the regression it is written to catch.
+  const racePort = await freePort();
   const spawnStart = (name) => spawn(process.execPath,
-    ['viewer/server.js', '--cache-root', root, '--open', path.join(graphDir, name)],
+    ['viewer/server.js', '--cache-root', root, '--port', String(racePort), '--open', path.join(graphDir, name)],
     { cwd: repoRoot, stdio: ['ignore', 'pipe', 'pipe'] });
 
   const racers = [spawnStart('one.json'), spawnStart('two.json')];

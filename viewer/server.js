@@ -28,12 +28,17 @@ const fsp = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const crypto = require('node:crypto');
+const { spawn } = require('node:child_process');
 
 const DEFAULT_PORT = 7373;
 const DAY = 24 * 60 * 60 * 1000;
 const REGISTERED_MAX_AGE = 30 * DAY;
 // A server that has claimed the lockfile but not yet bound is indistinguishable from an unrelated
 // live process. These bound how long a second starter waits for it to answer before giving up.
+// A page polls every second, so anything read inside this window means a tab is live on that graph.
+const WATCHED_WINDOW_MS = 4000;
+// How long --open waits for the graph to be written before giving up on showing it.
+const LAUNCH_WAIT_MS = 15000;
 const STARTUP_GRACE_ATTEMPTS = 20;
 const STARTUP_GRACE_INTERVAL_MS = 100;
 const ORIGINS = new Set(['proposed', 'agreed', 'rejected']);
@@ -421,7 +426,8 @@ function withMutex(work) {
 }
 
 function configFromArgs(argv) {
-  const options = { port: DEFAULT_PORT, cacheRoot: null, open: null, stop: false };
+  const options = { port: DEFAULT_PORT, cacheRoot: null, open: null, stop: false, show: false,
+    browser: process.env.WHEELCHAIR_NO_BROWSER !== '1' };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--port') {
@@ -434,6 +440,12 @@ function configFromArgs(argv) {
     } else if (arg === '--open') {
       if (!argv[index + 1]) throw new Error('Missing --open value.');
       options.open = path.resolve(argv[++index]);
+    } else if (arg === '--show') {
+      if (!argv[index + 1]) throw new Error('Missing --show value.');
+      options.open = path.resolve(argv[++index]);
+      options.show = true;
+    } else if (arg === '--no-browser') {
+      options.browser = false;
     } else if (arg === '--stop') {
       options.stop = true;
     } else {
@@ -747,6 +759,10 @@ async function handleViewPut(request, response, url, state) {
 async function handleGetGraph(response, url, state) {
   requireGetToken(url, state);
   const graphPath = validPath(url.searchParams.get('path'));
+  // The page polls this route once a second, so a recent read means a tab is already showing this
+  // graph. That is what stops a redraw from stacking up browser windows: an open tab picks the new
+  // version up on its own poll, and needs no help.
+  state.watched.set(graphPath, Date.now());
   const allowed = await withMutex(() => ensureRegistered(state.config, graphPath));
   if (!allowed) fail(403, 'not-registered', 'This graph path is not registered.');
   const raw = await readRaw(graphPath);
@@ -901,7 +917,7 @@ async function startServer(config) {
       continue;
     }
     await pruneRegistered(config);
-    const state = { config, lock, port: config.port, server: null };
+    const state = { config, lock, port: config.port, server: null, watched: new Map() };
     const server = http.createServer(async (request, response) => {
       try {
         const url = new URL(request.url, `http://127.0.0.1:${state.port}`);
@@ -909,6 +925,11 @@ async function startServer(config) {
           sendJson(response, 200, { start_id: state.lock.start_id }); return;
         }
         if (request.method === 'GET' && url.pathname === '/') { await handleRoot(response, url, state); return; }
+        if (request.method === 'GET' && url.pathname === '/watching') {
+          requireGetToken(url, state);
+          const seen = state.watched.get(validPath(url.searchParams.get('path'))) || 0;
+          sendJson(response, 200, { watched: Date.now() - seen < WATCHED_WINDOW_MS }); return;
+        }
         if (request.method === 'GET' && url.pathname === '/graph') { await handleGetGraph(response, url, state); return; }
         if (request.method === 'PUT' && url.pathname === '/graph') { await handleGraphPut(request, response, url, state); return; }
         if (request.method === 'PUT' && url.pathname === '/view') { await handleViewPut(request, response, url, state); return; }
@@ -935,6 +956,34 @@ async function startServer(config) {
   }
 }
 
+// Ask the running server whether a page is already polling this graph. A redraw should not stack
+// up browser windows — an open tab picks the new version up on its own poll within a second.
+async function alreadyWatched(lock, graphPath) {
+  try {
+    const body = await new Promise((resolve, reject) => {
+      const request = http.get(
+        { host: '127.0.0.1', port: lock.port, path: `/watching?path=${encodeURIComponent(graphPath)}&token=${lock.token}`, timeout: 1500 },
+        (response) => { let text = ''; response.on('data', (c) => { text += c; }); response.on('end', () => resolve(text)); });
+      request.on('timeout', () => request.destroy(new Error('timeout')));
+      request.on('error', reject);
+    });
+    return JSON.parse(body).watched === true;
+  } catch { return false; }
+}
+
+// Best effort by design: a headless box, an SSH session or a machine with no handler should print
+// the URL and carry on, never fail the write that just succeeded.
+function launchBrowser(url) {
+  const opener = process.env.WHEELCHAIR_BROWSER
+    || (process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open');
+  try {
+    const child = spawn(opener, [url], { stdio: 'ignore', detached: true });
+    child.on('error', () => {});
+    child.unref();
+    return true;
+  } catch { return false; }
+}
+
 async function main() {
   const config = configFromArgs(process.argv.slice(2));
   if (config.stop) { await stopServer(config); return; }
@@ -944,7 +993,11 @@ async function main() {
     await registerPath(config, config.open, true);
   }
   const result = await startServer(config);
-  console.log(viewerUrl(result.lock, config.open));
+  const url = viewerUrl(result.lock, config.open);
+  console.log(url);
+  if (config.show && config.browser && !(await alreadyWatched(result.lock, config.open))) {
+    launchBrowser(url);
+  }
 }
 
 main().catch((error) => {

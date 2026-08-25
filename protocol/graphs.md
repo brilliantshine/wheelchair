@@ -323,6 +323,25 @@ curl -sS -X PUT "http://127.0.0.1:${PORT}/graph?path=${PATH_ENC}" \
 `localhost`. A successful write responds `{"hash": "<new>"}`; keep that hash if you
 intend to write this same file again in the same turn.
 
+**3. Show it.** The graph exists now, so put it in front of Collin rather than leaving him to
+click a URL out of your turn:
+
+```bash
+node "$WHEELCHAIR/viewer/server.js" --show "$GRAPH_PATH"
+```
+
+This is a separate step from `--open` and the order matters: `--open` runs *before* the graph is
+written, so opening a browser there would show an empty page. `--show` runs after the write.
+
+It opens nothing when a tab is already on that graph — the server knows, because a live page polls
+it every second — so redrawing the same graph turn after turn will not stack up windows. The open
+tab picks up your new version on its own poll. Still print the URL in your turn; the browser is a
+convenience, not the record.
+
+`--no-browser`, or `WHEELCHAIR_NO_BROWSER=1` in the environment, suppresses the launch for a
+headless box or an SSH session. The launch is best-effort either way: a machine with no handler
+prints the URL and carries on, and never fails a write that already succeeded.
+
 **Every node and edge you introduce must carry `origin: "proposed"`** (or omit it,
 since that's the default). The server checks this on every write — any id that's new,
 or that was `proposed` on disk, must arrive `proposed` — and refuses with
