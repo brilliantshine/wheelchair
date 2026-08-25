@@ -15,6 +15,8 @@ protocol/        canonical stage definitions — the single source of truth
                        re-grounded, above the code, no AI tells
   diagrams.md          where a diagram goes and what keeps it true: Mermaid on rendered
                        surfaces, arrow chains in terminals, redundant with its prose
+  graphs.md            the graph format read by both harnesses: schema, verdicts,
+                       preservation, how the viewer starts
   routers.md           the router document format: what a directory owns, what must never
                        happen there, where to go next — guidance for creation, not a test
   spine.md             /spine: propose routers for a repo that has none, list every write
@@ -29,8 +31,8 @@ spine/           scan.sh: resolves routing documents through symlinks, read-only
 skills/          Claude Code wrappers  → symlinked into ~/.claude/skills/
 codex/prompts/   Codex CLI wrappers    → symlinked into ~/.codex/prompts/
 docs/plans/      one directory per feature; the only mutable state
-spike/           throwaway experiments; nothing here is a contract
-install.sh       creates the symlinks (idempotent)
+viewer/          index.html and server.js — the browser viewer a graph opens in
+install.sh       creates the symlinks and installs viewer/'s dependencies (idempotent)
 AGENTS.md        this repo's own routers, one per directory that owns a rule —
                  also protocol/, skills/ and spine/
 ```
@@ -42,7 +44,9 @@ AGENTS.md        this repo's own routers, one per directory that owns a rule —
 ```
 
 Wrappers are symlinks, so edits to `protocol/` take effect immediately in both
-harnesses. Restart running sessions to pick up new skill/prompt registrations.
+harnesses. Restart running sessions to pick up new skill/prompt registrations. The same
+run also installs `viewer/`'s npm dependencies and its pinned Chromium via Playwright —
+the one piece of this workflow that isn't just markdown.
 
 ## Usage
 
@@ -53,6 +57,7 @@ From either harness, in the target project:
 /plan-review <slug>           # cross-model review rounds until approved
 /implement <slug>             # lead + workers; ends with COMPLETION.md
 /verify <slug>                # blind cross-family verify; remediate until PASS
+/graph <question>             # answer a question with a picture instead of just prose
 ```
 
 **Already have a plan document?** Fast-forward it in:
@@ -71,10 +76,10 @@ The recommendation comes from the gap report rather than from your confidence, a
 landing is recorded in the Decision Log — Stage 4 otherwise can't tell "vetted elsewhere"
 from "gate skipped."
 
-The four stage commands take slugs only. The two that take a path are `/adopt` and
-`/spine`, and neither is a stage: `/adopt` is the on-ramp into the state machine, so
-there's one place to look when asking how a plan arrived, and `/spine` sits outside it
-entirely.
+The stage commands take slugs only. `/graph` takes a question, and `/adopt` and `/spine`
+take a path — none of the three is a stage: `/graph` answers on the spot without touching
+`status:`, `/adopt` is the on-ramp into the state machine, so there's one place to look
+when asking how a plan arrived, and `/spine` sits outside it entirely.
 
 **Repo has no router documents?** Back-fill them:
 
@@ -100,6 +105,8 @@ Artifacts live in the target repo at `docs/plans/<slug>/`:
   stable while the plan churns. Every later stage reads it to check for drift.
 - **PLAN.md** — the mutating work: question queue, watch list, decision log, spec,
   accepted risks, review rounds, prior work, implementation tasks.
+- **`graphs/`** — one JSON file per flow discussed in Stage 1, opened in the browser
+  viewer; disposable, never a contract once the plan is done.
 - **COMPLETION.md**, **REMEDIATION-N.md** — implementation output and verification loops.
 
 The `status:` field in PLAN.md frontmatter is the state machine (`planning →
@@ -111,6 +118,11 @@ run out of order.
 - `codex` CLI (v0.146+) for GPT lanes — headless via `codex exec`, models `gpt-5.6-luna`,
   `gpt-5.6-terra`, and `gpt-5.6-sol`. See `protocol/lanes.md`.
 - `claude` CLI for Claude lanes when driving from Codex.
+- Node (26.7.0 here) and npm — `viewer/`'s runtime; `install.sh` runs
+  `npm --prefix viewer install`.
+- Playwright, pinned in `viewer/package.json` and installed by `install.sh`'s
+  `playwright install chromium` step — the viewer's one dev dependency, and the only way
+  to run its browser test.
 
 This workflow deliberately does **not** use the `async-subagents`/pi runtime, even
 though global guidance prefers it for general delegation — both harnesses drive the same

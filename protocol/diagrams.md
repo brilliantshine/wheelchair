@@ -69,3 +69,27 @@ flowchart TD
 
 That renders, and the sentence "a request comes in, gets checked for an API key, then goes on a
 queue where a worker writes it to the database" says the same thing. Both, always.
+
+## Authoring a Spec diagram from a graph
+
+A plan's graph — `docs/plans/<slug>/graphs/<name>.json` — is the input when one exists. Draw
+the Spec's Mermaid from it rather than from scratch.
+
+Show the **top level only**, marking which nodes hold a child graph underneath. Anyone who
+wants the detail opens that graph directly.
+
+Two independent flows — two files in `graphs/` that no `graph` field references — get one
+diagram each. No cap applies beyond the one above: two flows are two pictures.
+
+It is authored, not generated: no merge rule, no origin filter, no label escaping. A person
+is drawing a picture from a picture.
+
+`rejected` entries are left out. They are accounted for in prose instead, by the exit gate in
+`planning.md` — which is why that gate walks every graph reachable through a container even
+though the diagram itself only ever shows the top level: a rejection buried in a child graph
+still needs a sentence, even though it never appears on the canvas.
+
+A diagram drawn from a router or a docstring, above, is a translation, not an extraction —
+the source's own compressions have to be unpacked for a reader outside that module. A graph
+is the same translation one step further along: its labels are already plain-language
+behaviour, not the codebase's own vocabulary, so of the three inputs this is the cheap one.

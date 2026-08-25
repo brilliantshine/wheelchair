@@ -111,9 +111,10 @@ A round is clean when lead triage upholds **zero blocking and zero major** findi
 no `user-decision` finding is still open. Both lanes' output feeds one triage — the gate
 is the triage, not two independently clean reports.
 
-Before setting the status, draw or refresh the Spec's Mermaid diagram per `diagrams.md`. This is
-the first moment the Spec is final, and the last moment anything is cheap to fix. Then set
-`status: approved`.
+Before setting the status, draw or refresh the Spec's Mermaid diagram per `diagrams.md` —
+if the plan has a graph under `docs/plans/<slug>/graphs/`, its "Authoring a Spec diagram
+from a graph" section says how to draw from it. This is the first moment the Spec is final,
+and the last moment anything is cheap to fix. Then set `status: approved`.
 
 **Cap: three rounds.** If round 3 does not produce a clean triage, stop and bring it to
 the user with the findings that keep recurring. Review that won't converge in three

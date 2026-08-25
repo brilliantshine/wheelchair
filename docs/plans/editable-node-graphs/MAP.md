@@ -30,24 +30,25 @@ top-to-bottom.
    **plain-text** diagram, `file:line` on every claim. The protocol explicitly bans Mermaid
    here, because the map gets read in a terminal (`protocol/map.md:25-26`).
 3. It shows the map to you, then writes `IDEA.md` and stops for your confirmation before
-   any design question (`protocol/planning.md:52-59`).
+   any design question (`protocol/planning.md:44-51`).
 4. Once confirmed, it enumerates every open question into `PLAN.md` and asks exactly one
    per turn, recording each answer in an append-only Decision Log
-   (`protocol/planning.md:61-133`).
+   (`protocol/planning.md:61-154`).
 5. `PLAN.md`'s frontmatter `status:` is the state machine, and each later stage refuses to
-   run out of order (`README.md:76-79`).
+   run out of order (`README.md:112-114`).
 
 ## What matters for this change
 
-**This repo contains no code.** 23 markdown files and `install.sh` — no `package.json`, no
-source of any kind. A viewer would be the first executable thing here, and the first thing
-that needs a runtime and a port rather than a symlink. Node 26.7.0 and npm 12.0.2 are
-installed.
+**This repo has real code now.** `spine/scan.sh` and `spine/test/run.sh` landed with the
+sibling plan; this change adds `viewer/` — `server.js`, `package.json` and a stdlib test
+suite are already in, `index.html` is the remaining piece — the first thing here needing a
+runtime and a port rather than a symlink. Node 26.7.0 and npm 12.0.2 are installed.
 
-**Plan artifacts live in the target repo, not this one.** So a graph file at
-`docs/plans/<slug>/graph.json` lands in whatever project you are planning, while the viewer
-that opens it has to be installed once and globally. Those are two different homes, and
-`install.sh` currently only knows how to make symlinks.
+**Plan artifacts live in the target repo, not this one.** A graph file at
+`docs/plans/<slug>/graphs/<name>.json` (`protocol/graphs.md:217`) lands in whatever project
+you are planning, while the viewer that opens it is installed once, here, and invoked by
+absolute path. Those are two different homes, and `install.sh` now installs the viewer's
+npm dependencies and its pinned Chromium alongside the symlinks.
 
 **graphify gives a summarizer real material, not just adjacency.** The graph for
 `almanac` is 14.5 MB, 7,033 nodes, 25,926 edges — your read is right, nobody reads
@@ -75,9 +76,13 @@ cut. So the summarizer cannot take a query result and lay it out — it has to n
 (`--context` edge filters, or starting from one named symbol) and then choose what to keep.
 Deciding *how* it narrows is a design question, not an implementation detail.
 
-**This repo is not under git.** `git rev-parse` fails from the root and finds no parent
-repo. The PR-as-the-atomic-unit discipline in your global instructions has no mechanism
-here — changes land by editing files, and there is no review gate or revert path.
+**This repo was not under git; the sibling plan fixed that.** `git rev-parse` failed from
+the root when this was written. `router-spine`'s `git init` (decision 40, superseding
+23-24) landed first, and the tree carries real history now: a baseline commit, then the
+router work, then this plan — 28 commits as of 2026-08-24 (`git log --oneline | wc -l`) and
+still climbing while sibling lanes land. The PR-as-the-atomic-unit discipline in your
+global instructions still has no mechanism inside this repo alone: there is a revert path
+now, but no remote and no review gate short of `/plan-review` itself.
 
 ## Not checked
 

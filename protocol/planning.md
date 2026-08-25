@@ -70,6 +70,18 @@ drifted — you are solving a different problem than the one stated, or scope ha
 what the idea describes — say so plainly instead of continuing. Drift is not resolved
 silently in the Spec.
 
+Before composing the question, also re-read every graph under `docs/plans/<slug>/graphs/`
+and every graph reachable from one through a container node, depth-bounded at 5 — a walk
+that hits the bound reports a cycle rather than recursing, because a hand-edited file can
+hold a containment cycle the server's write-time check never saw. An unaccounted `rejected`
+entry is an input to this turn.
+
+A rejection usually means "not this," which is a defensible default under the
+decide-don't-ask filter above: fold it into the Spec, log it in the Decision Log with source
+`user`, and say so in one line. It becomes the turn's question only when striking it left
+something genuinely open — the struck entry was load-bearing and nothing else covers it, or
+the rejection contradicts a logged decision.
+
 Present exactly **one** question per turn, in this shape:
 
 > **Where this fits** — one plain sentence connecting the question to the idea.
@@ -112,6 +124,15 @@ question is too big: split it.
 If the explanation is a lasting fact about the system rather than a detail of this one
 decision, add it to MAP.md so the next session gets it for free.
 
+### Drawing a flow
+
+When a turn discusses a flow — a proposed design, not just a fact about the current code —
+write or update a graph under `docs/plans/<slug>/graphs/`, start the viewer if it is not
+already running, and print the URL that turn. The format and how the viewer starts are
+`protocol/graphs.md`'s; this loop only triggers it. `MAP.md`'s plain-text diagram is
+untouched — `protocol/map.md` bans Mermaid there because the map is read in a terminal, and
+that is unchanged.
+
 ### Recording answers
 
 When the user answers: append the decision and rationale to the Decision Log, remove the
@@ -152,6 +173,13 @@ When Open Questions and the Watch List are both empty, write the final Spec pass
 a fresh agent with no conversation history could implement from the Spec alone — behavior,
 boundaries, edge cases, non-goals, and concrete validation commands. Set frontmatter
 `status: ready-for-review` and tell the user the next step is plan-review.
+
+Before that pass is done, the Spec must account in prose for every `rejected` entry across
+`docs/plans/<slug>/graphs/` and everything reachable from it through a container — the same
+walk as above, depth-bounded at 5 and reporting a cycle rather than recursing. `agreed`
+needs no prose; it means the proposal was right. One sentence may cover many rejections —
+striking a whole region is one decision, not fifteen — so the gate is "no rejection
+unaddressed," not "one paragraph each."
 
 No Mermaid diagram is drawn in the Spec at this point. Stage 2 rewrites the Spec for every
 upheld finding, so a diagram drawn here is stale before anyone reads it — `diagrams.md` puts it
