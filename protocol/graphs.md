@@ -99,10 +99,10 @@ Field by field:
   **no default**. Omit it and the server refuses the whole write with `missing-label`,
   naming the offending id — a missing label is a refusal, never a silent repair.
 - **`kind`** (node) — one of `file`, `module`, `step`, `decision`, `external`, `note`.
-  It is metadata, rendered as a text tag on the box, and it drives no shape. Nothing
-  validates it against that list — there is no `bad-kind` error code — so a typo here
-  is not a write-time failure, only a worse tag on the page. Pick from the six anyway;
-  consistency is the only thing making the tag readable across graphs.
+  It is metadata, rendered as a text tag on the box, and it drives no shape. The server
+  checks every entry against that list and refuses anything else with `bad-kind`, naming
+  the offending id — a typo here is a write-time failure, not just a worse tag. Omitting
+  `kind` is not a typo: it still defaults to `note`, same as before.
 - **`origin`** — one of `proposed`, `agreed`, `rejected`, checked against exactly that
   set (`bad-origin-value` otherwise). See Verdicts below; an agent never sends anything
   but `proposed` for content it is introducing.
@@ -138,7 +138,8 @@ Field by field:
 - **`kind`** (edge) — `data` when something moves along the edge, `sequence` when it's
   only ordering. Default `sequence`, the weaker claim, for the same reason `exclusive`
   defaults to `false`: an agent that cannot tell which kind an edge is should not assert
-  the stronger one.
+  the stronger one. The server checks this set too — anything outside `data`/`sequence`
+  draws the same `bad-kind` refusal as an out-of-set node `kind`.
 - **`value`** (edge) — names what a `data` edge carries. `null` for a `sequence` edge or
   a `data` edge with nothing worth naming yet.
 - **`inferred`** (edge) — `true` when `value` was reconstructed rather than read
@@ -254,17 +255,32 @@ This is the part nothing else states, so it's stated here as commands, not descr
 Assume the repo lives at `~/src/wheelchair` and
 you're writing a fresh graph.
 
-**1. Start the server and register the path.** It accepts a path whose file doesn't
-exist yet, and creates the parent directory for you:
+**1. Start the server detached, then read the URL back out of its output.** The first
+`--open` against a cache root *is* the server: it binds the port and sits there handling
+requests, so the command that started it never returns. Every later `--open` against
+that same cache root instead finds a server already running, prints the identical shape
+of URL, and exits in a tenth of a second. Nothing about the command line tells you in
+advance which of those two this call is going to be, so never run it in the foreground
+and wait for it to finish — background it unconditionally and recover the URL from its
+output instead. The same recipe below completes either way:
 
 ```bash
+LOG=$(mktemp)
 node ~/src/wheelchair/viewer/server.js \
-  --open ~/src/wheelchair/docs/plans/some-plan/graphs/checkout.json
+  --open ~/src/wheelchair/docs/plans/some-plan/graphs/checkout.json \
+  > "$LOG" 2>&1 < /dev/null &
+disown 2>/dev/null || true
+
+for _ in $(seq 1 100); do
+  grep -q '^http' "$LOG" && break
+  sleep 0.1
+done
+URL=$(grep '^http' "$LOG") || { echo "server never printed a URL:"; cat "$LOG"; exit 1; }
+echo "$URL"
 ```
 
-This is idempotent — a server already running on this machine is reused, not
-duplicated — and it prints the page's URL on its own line, already carrying the port
-and the token:
+It accepts a path whose file doesn't exist yet, and creates the parent directory for you
+either way. The line it prints carries the port and the token:
 
 ```
 http://127.0.0.1:7373/?path=%2Fhome%2Fcollin%2F...%2Fcheckout.json&token=9f3a...
@@ -435,6 +451,7 @@ actually hit, in the rough order the server checks them:
 | 409 | `stale` | the hash you sent doesn't match what's on disk; the body carries the current one |
 | 422 | `unknown-schema` | `schema` isn't `1` |
 | 422 | `missing-label` | a node or edge has no `label` |
+| 422 | `bad-kind` | a node's `kind` is outside `file`/`module`/`step`/`decision`/`external`/`note`, or an edge's is outside `data`/`sequence`. A missing `kind` is not this — it defaults instead |
 | 422 | `bad-id` | an id is missing, empty, or duplicated |
 | 422 | `edge-missing-node` | an edge names a `from`/`to` id that isn't in this file |
 | 422 | `bad-origin-value` | an `origin` outside `proposed`/`agreed`/`rejected` |

@@ -45,8 +45,9 @@ AGENTS.md        this repo's own routers, one per directory that owns a rule —
 
 Wrappers are symlinks, so edits to `protocol/` take effect immediately in both
 harnesses. Restart running sessions to pick up new skill/prompt registrations. The same
-run also installs `viewer/`'s npm dependencies and its pinned Chromium via Playwright —
-the one piece of this workflow that isn't just markdown.
+run also installs `viewer/`'s npm dependencies and its pinned Chromium via Playwright.
+`spine/scan.sh`, `spine/test/run.sh`, and `install.sh` itself are shell, not markdown —
+`viewer/` is the one piece with its own package dependencies and a long-running server.
 
 ## Usage
 
