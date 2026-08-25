@@ -53,9 +53,9 @@ Two rules follow, and between them they cover most of what can go wrong here:
    rule uses are the words it is stored under.
 3. **Graphify last**, under the policy below.
 
-No module-docstring rung: `viewer/` is real JavaScript now, not the throwaway spike, but
-it's two files — a router's file/role table already says what each one does at that size,
-so there's still nothing a docstring would tell you faster.
+No module-docstring rung: `viewer/` is real JavaScript, but it is two files — the page and
+the server — and a router's file/role table already says what each one does at that size, so
+there is still nothing a docstring would tell you faster.
 
 ## Graphify policy
 
