@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "title": "Browser interaction fixture",
+  "source": "code-read",
+  "source_detail": "viewer/test/fixtures/interactive.json (browser suite only)",
+  "nodes": [
+    {"id":"a","label":"Gather input","kind":"action","origin":"proposed","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":150,"y":150},
+    {"id":"b","label":"Process input","kind":"action","origin":"proposed","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":450,"y":150},
+    {"id":"c","label":"Distant start","kind":"step","origin":"proposed","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":1350,"y":150},
+    {"id":"d","label":"Distant end","kind":"step","origin":"proposed","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":2250,"y":150},
+    {"id":"e","label":"Loop start","kind":"step","origin":"proposed","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":150,"y":650},
+    {"id":"f","label":"Loop end","kind":"step","origin":"proposed","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":1050,"y":650},
+    {"id":"g","label":"Detailed node","kind":"step","origin":"proposed","was":null,"exclusive":false,"ref":"src/example.js","note":"A note worth reading.","graph":null,"x":150,"y":1050},
+    {"id":"h","label":"Plain node","kind":"note","origin":"proposed","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":450,"y":1050}
+  ],
+  "edges": [
+    {"id":"a->b","from":"a","to":"b","label":"then","kind":"sequence","value":null,"inferred":false,"origin":"proposed","was":null,"note":null},
+    {"id":"c->d","from":"c","to":"d","label":"far","kind":"sequence","value":null,"inferred":false,"origin":"proposed","was":null,"note":null},
+    {"id":"e->f","from":"e","to":"f","label":"there","kind":"sequence","value":null,"inferred":false,"origin":"proposed","was":null,"note":null},
+    {"id":"f->e","from":"f","to":"e","label":"back","kind":"sequence","value":null,"inferred":false,"origin":"proposed","was":null,"note":null},
+    {"id":"g->h","from":"g","to":"h","label":"carries","kind":"data","value":"a widget","inferred":true,"origin":"proposed","was":null,"note":null}
+  ]
+}

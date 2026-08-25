@@ -23,8 +23,29 @@ async function freePort() {
   });
 }
 
+// Every server the suite starts gets its own scratch directory, and nothing ever removed them:
+// a few hundred accumulate per run. They are gitignored so nothing failed, which is exactly why
+// it would have gone unnoticed. Prune once per process, and only what is old enough to belong to
+// a finished run, so a concurrent suite is never swept out from under itself.
+let pruned = false;
+async function pruneStaleScratch() {
+  if (pruned) return;
+  pruned = true;
+  const cutoff = Date.now() - 60 * 60 * 1000;
+  let entries;
+  try { entries = await fs.readdir(TMP_ROOT); } catch { return; }
+  await Promise.all(entries.map(async (name) => {
+    const full = path.join(TMP_ROOT, name);
+    try {
+      const info = await fs.stat(full);
+      if (info.mtimeMs < cutoff) await fs.rm(full, { recursive: true, force: true });
+    } catch { /* a concurrent run may have removed it already */ }
+  }));
+}
+
 async function makeDir(prefix = 'server-') {
   await fs.mkdir(TMP_ROOT, { recursive: true });
+  await pruneStaleScratch();
   return fs.mkdtemp(path.join(TMP_ROOT, prefix));
 }
 
