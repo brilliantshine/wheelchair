@@ -1,6 +1,6 @@
 ---
 slug: editable-node-graphs
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-08-22
 ---
 
@@ -1367,11 +1367,11 @@ sequence behind the code they test.
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | The server: routes, auth, discovery, the writable set, canonical serialization, preservation, containment, optimistic concurrency, the global lock, atomic writes, BFS layout | `viewer/server.js`, `viewer/package.json` | GPT Terra | `01a0361f-122e-7b81-9ad7-7d491da8d662` | lead smoke script green; 5 lead fixes applied on read | **done** |
-| T2 | The page: SVG rendering, selection and box-select, reachable edges, detail on the node, containment and breadcrumb, polling | `viewer/index.html` | Claude Sonnet | | 21 wire-protocol assertions against the live server; DOM contract verified by the lead; T6 next | **done** — merged at `90700d6` |
+| T2 | The page: SVG rendering, selection and box-select, reachable edges, detail on the node, containment and breadcrumb, polling | `viewer/index.html` | Claude Sonnet | | 13/13 browser; two blocking defects and six layout defects found by screenshotting and fixed | **done** — merged at `90700d6`, then three follow-up passes |
 | T3 | The format document both harnesses read, and its two wrappers | `protocol/graphs.md`, `skills/graph/SKILL.md`, `codex/prompts/graph.md` | Claude Sonnet | | `./install.sh` twice, idempotent; both harnesses register `/graph` | **done** — merged at `e4f039a`; lead added the `container-unreadable-child` row |
 | T4 | The three `planning.md` insertions, the `diagrams.md` section, the `plan-review.md` pointer, and the documentation sweep | `protocol/planning.md`, `protocol/diagrams.md`, `protocol/plan-review.md`, `AGENTS.md`, `protocol/AGENTS.md`, `skills/AGENTS.md`, `README.md`, `docs/plans/editable-node-graphs/MAP.md`, `install.sh`, `.gitignore` | Claude Sonnet | | `./install.sh` twice green and idempotent; `node --test` 21/21; `bash spine/test/run.sh` 80/80; tree clean | **done** — merged at `04916fe` |
 | T5 | The stdlib suite and its committed fixtures | `viewer/test/*.test.js`, `viewer/test/fixtures/` | GPT Terra | `01a03628-c18a-7663-9e20-bc3f1d542b3f` | `node --test 'viewer/test/*.test.js'` — **21/21** | **done** — lane could not bind a port in its sandbox, so the lead ran it; three test defects adjudicated below |
-| T6 | The Chromium suite | `viewer/test/browser.spec.js` | Claude Sonnet | | `npm --prefix viewer run test:browser` | pending |
+| T6 | The Chromium suite | `viewer/test/browser.spec.js` | Claude Sonnet | | `npm --prefix viewer run test:browser` — **13/13** | **done** — test 8 caught a real geometry bug; the lane refused to assert around it |
 
 ## Log
 
