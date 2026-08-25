@@ -204,3 +204,41 @@ $ npm --prefix viewer run test:browser
   16 passed (11.9s)
 ```
 
+### Remediation 2 — 2026-08-24
+
+Both verifiers returned FAIL again on four gaps. **Three of the four were tests that could not fail** —
+the same class that let a real user-facing bug pass two suites in round 1, and what both verifiers were
+told to hunt. The lane ran at `xhigh` on the same tier in a fresh lane, because the one surviving gap
+was nearly-right work that missed an edge case rather than a lane that misread the task.
+
+| Gap | What was wrong | What changed |
+|---|---|---|
+| Lockfile claim (**survived round 1**) | Round 1 moved the payload onto the exclusively-created descriptor, but `open` publishes the pathname before anything is written into it, so a second starter still saw an empty file and deleted it. The round-1 test paused after the payload had landed, so it could not reach the race | The payload is written to a temp and hard-linked into place — `link` fails if the target exists, so exclusivity and contents arrive together. `viewer/server.js` `claimLock` |
+| Orphaned temp files | A killed write left `.<name>.<hex>.tmp` beside the target; 11 survived a suite run. In a plan that is an untracked file in a committed directory, and §13 requires a clean tree | Swept before each write, which the global lock makes safe: a matching sibling can only be a leftover |
+| Layout test could not fail | It asserted only that a coordinate was a whole number — and an unplaced node keeps the `0` the validator defaults it to. The only guard on decision 98, passing against a reverted layout | Pins every coordinate. **And the code half**: `Object.assign(node, positions.get(id))` was a silent no-op for an unplaced id, so the server wrote nodes stacked at the origin rather than failing. It now refuses with `500 internal` |
+| Rounding half-up asserted nowhere | §13 names float positions as one of the four things the non-canonical fixture is non-canonical *in*; it had none | Floats added including the `.5` cases where the rule has a choice, plus an assertion on the stored integer through the page's route |
+
+**Non-vacuity proven by the lead, not by the lane** — the lane hit its fails-twice guardrail and stopped
+before this step, correctly, because its sandbox could not bind a loopback socket. Reverting decision
+98's re-seed in a scratch copy fails with `Layout did not assign a position to node x`; reverting the
+lock claim to the round-1 create-then-fill form fails with `the claim window exposed corrupt, not a
+usable lock or no lock`.
+
+The fresh verifier additionally confirmed, by running rather than reading: never-skip proven by pointing
+Playwright at an empty browser path (16 failed, loudly); the producer sequence run verbatim from
+genuinely cold through to a graph on disk, and warm in 123ms; containment driven by hand — open
+affordance, breadcrumb, escape clearing a selection before stepping back, and a child writable with no
+separate `--open`; all six lead decisions faithful; the router sweep true.
+
+```
+$ ./install.sh && ./install.sh          # idempotent, tree clean
+$ bash spine/test/run.sh
+RESULT 80 passed, 0 failed
+$ node --test 'viewer/test/*.test.js'
+ℹ tests 24   ℹ pass 24   ℹ fail 0
+$ npm --prefix viewer run test:browser
+  16 passed (12.0s)
+$ find viewer/test/.tmp -name '.*.tmp' | wc -l
+0
+```
+
