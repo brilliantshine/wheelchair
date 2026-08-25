@@ -42,6 +42,14 @@
     justify-content: center; color: var(--dim); font-size: 14px; padding: 40px; text-align: center;
     background: var(--bg); }
 
+  /* The `hidden` attribute only hides an element because the UA stylesheet gives it
+     display:none, and ANY author display rule beats that — so #fatal's display:flex above left
+     an opaque, invisible overlay covering the whole canvas and swallowing every click. The page
+     rendered perfectly and could not be used. Invisible to a DOM test, and to reading the
+     markup; it took a real browser and a screenshot. Keep this rule above every element that is
+     toggled by `hidden`. */
+  [hidden] { display: none !important; }
+
   /* An <svg> left with height:auto falls back to its 150px intrinsic size and
      silently clips everything below it, while the markup stays perfect — a DOM
      test would still pass. The pixel height is set explicitly from JS
@@ -73,8 +81,11 @@
   .edge .edge-line { fill: none; stroke: var(--proposed); stroke-width: 1.5; }
   .edge[data-kind="sequence"] .edge-line { stroke-dasharray: 3 3; opacity: .85; }
   .edge .edge-band { stroke: transparent; fill: none; cursor: pointer; }
-  .edge .edge-label { fill: var(--dim); font-size: 11px; pointer-events: none; text-anchor: middle; }
-  .edge .edge-label-bg { fill: #14161a; stroke: var(--line); stroke-width: 1; pointer-events: none; }
+  /* The label is one of the three ways an edge is reachable — by its label, by the band along
+     the line, and by a handle at each end. pointer-events:none here silently removed one of the
+     three: a click on the label fell through to the canvas and started a box-select instead. */
+  .edge .edge-label { fill: var(--dim); font-size: 11px; cursor: pointer; text-anchor: middle; }
+  .edge .edge-label-bg { fill: #14161a; stroke: var(--line); stroke-width: 1; cursor: pointer; }
   .edge .edge-handle { fill: var(--proposed); opacity: 0; cursor: pointer; }
   .edge:hover .edge-handle, .edge.selected .edge-handle { opacity: .9; }
   .edge.selected .edge-line { stroke: var(--accent); stroke-width: 3; }
@@ -593,9 +604,14 @@
     const mx = (ax + bx) / 2 + (dy / L2) * off;
     const my = (ay + by) / 2 - (dx / L2) * off;
     const width = Math.max(24, text.length * 6.2 + 14);
-    g.appendChild(el('rect', { class: 'edge-label-bg', x: mx - width / 2, y: my - 15, width, height: 18, rx: 3 }));
+    const labelBg = el('rect', { class: 'edge-label-bg', x: mx - width / 2, y: my - 15, width, height: 18, rx: 3 });
     const label = el('text', { class: 'edge-label', x: mx, y: my - 2 });
     label.textContent = text;
+    for (const part of [labelBg, label]) {
+      part.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+      part.addEventListener('pointerup', (ev) => { ev.stopPropagation(); pick(e.id, ev.shiftKey); });
+    }
+    g.appendChild(labelBg);
     g.appendChild(label);
 
     root.appendChild(g);
