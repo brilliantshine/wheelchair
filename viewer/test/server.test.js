@@ -25,6 +25,17 @@ async function withFixture(name, work, target) {
 
 async function readFixtureGraph(name) { return JSON.parse((await fixture(name)).toString()); }
 function entry(graph, id) { return [...graph.nodes, ...graph.edges].find((item) => item.id === id); }
+// The box the viewer draws is 200 wide and up to 84 tall (index.html's NODE_W and nodeHeight),
+// so two nodes closer than that would be drawn one on top of the other whatever the layout meant.
+function assertNoOverlap(graph) {
+  for (const left of graph.nodes) {
+    for (const right of graph.nodes) {
+      if (left.id >= right.id) continue;
+      const apart = Math.abs(left.x - right.x) >= 200 || Math.abs(left.y - right.y) >= 84;
+      assert.ok(apart, `${left.id} and ${right.id} were laid out on top of each other`);
+    }
+  }
+}
 function childGraph(id, graph = null) {
   return { schema: 1, title: id, source: 'router', source_detail: null,
     nodes: [{ id: `${id}-node`, label: id, graph }], edges: [] };
@@ -300,12 +311,12 @@ test('PUT /graph ignores known positions and lays out new nodes', async () => {
     expect(await graphPut(ctx, graph, state.hash), 200);
     const stored = await getGraph(ctx);
     assert.deepEqual({ x: entry(stored.graph, 'gather').x, y: entry(stored.graph, 'gather').y }, { x: entry(state.graph, 'gather').x, y: entry(state.graph, 'gather').y });
-    // Number.isInteger passed against a layout that placed nothing: `rounded()` makes every served
-    // coordinate an integer, and an unplaced node keeps the 0 the validator defaults it to. Pin the
-    // coordinate the layout is specified to produce instead. `new` has no incoming edge, so it seeds
-    // row 0 with `gather` and `timeline`; sorted by id that puts it in column 1 at the 240x140 pitch.
-    assert.deepEqual({ x: entry(stored.graph, 'new').x, y: entry(stored.graph, 'new').y },
-      { x: 240, y: 0 }, 'a new id takes the position the layout assigns, not the one it was sent');
+    // Not `x !== 8`, and not Number.isInteger either: a layout that placed nothing leaves every
+    // node on the 0 the validator defaults it to, which passes both. What no empty layout can pass
+    // is a box actually standing clear of every other box.
+    assert.notDeepEqual({ x: entry(stored.graph, 'new').x, y: entry(stored.graph, 'new').y },
+      { x: 8, y: 9 }, 'a new id takes the position the layout assigns, not the one it was sent');
+    assertNoOverlap(stored.graph);
   });
 });
 
@@ -637,16 +648,55 @@ test('malformed on-disk graphs refuse without repair', async () => {
   });
 });
 
+// Every arrow pointing the same way is most of what makes a first render readable: a layout that
+// puts a node on the first row it is reached on, rather than one below its deepest parent, leaves
+// arrows running back up the page and reads as a tangle before anything has been dragged.
+test('layout runs downhill: an arrow never points back up the page', async () => {
+  const root = await makeDir(); const graphDir = path.join(root, 'graphs'); await fs.mkdir(graphDir, { recursive: true });
+  const ctx = await startServer({ cacheRoot: root, open: path.join(graphDir, 'downhill.json') });
+  try {
+    // Shaped to catch exactly that: `end` is one hop from `start` and also three hops around
+    // through the branch, so a layout that takes the first row it reaches `end` on puts it above
+    // `far`, and the arrow from `far` runs backwards into it.
+    const graph = {
+      schema: 1, title: 'Downhill', source: 'code-read', source_detail: null, explanation: null,
+      nodes: [{ id: 'start', label: 'Start' }, { id: 'near', label: 'Near' },
+        { id: 'far', label: 'Far' }, { id: 'end', label: 'End' }],
+      edges: [
+        { id: 'start->end', from: 'start', to: 'end', label: 'straight there' },
+        { id: 'start->near', from: 'start', to: 'near', label: 'the long way' },
+        { id: 'near->far', from: 'near', to: 'far', label: 'onward' },
+        { id: 'far->end', from: 'far', to: 'end', label: 'and in' },
+      ],
+    };
+    expect(await graphPut(ctx, graph, ''), 200);
+    const stored = (await getGraph(ctx)).graph;
+    const at = new Map(stored.nodes.map((node) => [node.id, node]));
+    for (const edge of stored.edges) {
+      assert.ok(at.get(edge.to).y > at.get(edge.from).y,
+        `${edge.id} points from row ${at.get(edge.from).y} to row ${at.get(edge.to).y}`);
+    }
+    assertNoOverlap(stored);
+  } finally { await ctx.stop(); }
+});
+
 test('layout places every component, including a disconnected two-cycle', async () => {
   const root = await makeDir(); const graphDir = path.join(root, 'graphs'); await fs.mkdir(graphDir, { recursive: true }); const target = path.join(graphDir, 'layout.json');
   const ctx = await startServer({ cacheRoot: root, open: target });
   try {
     const graph = await readFixtureGraph('cycle-layout.json'); expect(await graphPut(ctx, graph, ''), 200);
     const stored = await getGraph(ctx);
-    assert.deepEqual(Object.fromEntries(stored.graph.nodes.map((node) => [node.id, { x: node.x, y: node.y }])), {
-      a: { x: 0, y: 0 }, b: { x: 0, y: 140 }, c: { x: 0, y: 280 },
-      x: { x: 0, y: 420 }, y: { x: 0, y: 560 },
-    });
+    const at = new Map(stored.graph.nodes.map((node) => [node.id, { x: node.x, y: node.y }]));
+    assert.deepEqual([...at.keys()].sort(), ['a', 'b', 'c', 'x', 'y']);
+    assertNoOverlap(stored.graph);
+    // a->b->c is a chain, so it reads top to bottom one row apart.
+    assert.ok(at.get('a').y < at.get('b').y && at.get('b').y < at.get('c').y, 'a chain runs downward');
+    // x and y are a two-cycle sharing no edge with the chain. Side by side, not stacked under it:
+    // stacked reads as a flow from c into x, which is not what the graph says.
+    const chainRight = Math.max(at.get('a').x, at.get('b').x, at.get('c').x);
+    const cycleLeft = Math.min(at.get('x').x, at.get('y').x);
+    assert.ok(cycleLeft > chainRight, 'a disconnected component stands beside the rest, not below it');
+    assert.equal(at.get('x').y, 0, 'and starts at the top row of its own');
   } finally { await ctx.stop(); }
 });
 

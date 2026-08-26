@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "title": "Label crowding",
+  "source": "code-read",
+  "source_detail": null,
+  "explanation": null,
+  "nodes": [
+    {"id": "start", "label": "the turn begins and the question is read"},
+    {"id": "left", "label": "one branch takes the cheap path"},
+    {"id": "right", "label": "the other branch takes the slow path"},
+    {"id": "middle", "label": "both branches meet again here"},
+    {"id": "end", "label": "the answer is written out"}
+  ],
+  "edges": [
+    {"id": "start->left", "from": "start", "to": "left", "label": "if the cheap path is open at all"},
+    {"id": "start->right", "from": "start", "to": "right", "label": "if the cheap path is closed"},
+    {"id": "start->end", "from": "start", "to": "end", "label": "if the answer was already known before the turn began"},
+    {"id": "left->middle", "from": "left", "to": "middle", "label": "which costs one lookup"},
+    {"id": "right->middle", "from": "right", "to": "middle", "label": "which costs a full read of the file"},
+    {"id": "middle->end", "from": "middle", "to": "end", "label": "once both are in hand"}
+  ]
+}
