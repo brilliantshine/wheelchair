@@ -143,6 +143,42 @@ test('dragging a single node writes matching integer coordinates to disk', async
 });
 
 // ============================================================================================
+// A graph the server has just laid out is readable before anything is dragged: no edge label sits
+// on top of a node's own words. The fixture is built to crowd them — five boxes, six labelled
+// arrows, one of them skipping a row so its midpoint falls where the middle row's boxes are — and
+// three of its labels landed on a box before the placement search learned to look at boxes at all.
+// Real Chromium and real bounding boxes, because the label's width is measured text, not a number
+// the page could be asked for.
+// ============================================================================================
+test('a freshly laid out graph puts no edge label on top of a node box', async ({ page }) => {
+  const root = await makeDir('browser-');
+  const graphDir = path.join(root, 'graphs');
+  await fs.mkdir(graphDir, { recursive: true });
+  // PUT to a path with nothing on it yet: that is the one route where the server lays a graph out
+  // rather than keeping the positions it already has, which is the state under test.
+  const ctx = await startServer({ cacheRoot: root, open: path.join(graphDir, 'crowded.json') });
+  try {
+    const fixture = JSON.parse(await fs.readFile(path.join(__dirname, 'fixtures', 'label-crowding.json'), 'utf8'));
+    const written = await put(ctx, '/graph', fixture, '');
+    assert.equal(written.status, 200, JSON.stringify(written.body));
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+    const covered = await page.evaluate(() => {
+      const boxes = [...document.querySelectorAll('.node-box')].map((el) => el.getBoundingClientRect());
+      return [...document.querySelectorAll('.edge-label')].filter((label) => {
+        const r = label.getBoundingClientRect();
+        return boxes.some((b) => r.left < b.right - 2 && r.right > b.left + 2
+          && r.top < b.bottom - 2 && r.bottom > b.top + 2);
+      }).map((label) => label.textContent);
+    });
+    assert.deepEqual(covered, [], 'these labels are sitting on a box');
+    assert.equal((await page.locator('.edge-label').all()).length, fixture.edges.length);
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
 // Dragging a multi-node selection moves every member.
 // ============================================================================================
 test('dragging a multi-node selection moves every member', async ({ page }) => {

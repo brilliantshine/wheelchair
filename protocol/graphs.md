@@ -214,10 +214,14 @@ not a valid edge.
 **On the wire, an agent omits `x` and `y` entirely** — not sends them as `null`, leaves
 the keys out of the object. The every-key rule above governs the canonical file on
 disk; it says nothing about what you send. The server keeps the position it already has
-on disk for any id it recognizes, and lays out any id it doesn't by breadth-first
-layering from whatever has no incoming edge. Positions are Collin's to set by dragging;
-sending them at all would be asserting a value you have no authority over, even though
-the server will simply discard whatever you send in favor of disk.
+on disk for any id it recognizes, and lays out any id it doesn't: a retry arrow back to
+a gate is turned around so every arrow can point down the page, each box goes one row
+below its deepest parent, rows are ordered to cross as few arrows as they can, and each
+box then slides toward the middle of whatever it connects to. Pieces of the graph that
+share no arrow are laid out separately and set side by side, since stacking them would
+read as a flow that isn't there. Positions are Collin's to set by dragging; sending them
+at all would be asserting a value you have no authority over, even though the server
+will simply discard whatever you send in favor of disk.
 
 ## Where a graph's content comes from
 

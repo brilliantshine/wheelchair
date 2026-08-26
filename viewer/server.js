@@ -368,45 +368,239 @@ async function checkOrphans(graphPath, current, incoming) {
   }
 }
 
+// The first render is the one Collin reads before he has dragged anything, so the layout is worth
+// more than a grid: it is a small Sugiyama pass. Break cycles so every edge can point down, put
+// each node one row below its deepest parent, order each row so arrows cross as little as they
+// can, then pull each box toward the middle of what it connects to. Disconnected pieces are laid
+// out on their own and set side by side, because stacking them reads as a flow that isn't there.
+const LAYER_GAP = 140;
+const NODE_PITCH = 260;
+// A bend point is not drawn — the viewer draws every edge as one straight line — but reserving it
+// a slot keeps a row from closing over the diagonal that has to pass through it.
+const BEND_PITCH = 160;
+const COMPONENT_GAP = 200;
+
 function layout(graph) {
-  const ids = graph.nodes.map((node) => node.id);
-  const byId = mapById(graph.nodes);
-  const indegree = new Map(ids.map((id) => [id, 0]));
-  const outgoing = new Map(ids.map((id) => [id, []]));
-  for (const edge of graph.edges) {
-    indegree.set(edge.to, indegree.get(edge.to) + 1);
-    outgoing.get(edge.from).push(edge.to);
-  }
-  for (const targets of outgoing.values()) targets.sort();
-  const placed = new Map();
-  let row = 0;
-  let frontier = ids.filter((id) => indegree.get(id) === 0).sort();
-  if (frontier.length === 0 && ids.length) frontier = [[...ids].sort()[0]];
-  while (frontier.length) {
-    frontier.sort();
-    for (const id of frontier) placed.set(id, row);
-    const next = [];
-    for (const id of frontier) {
-      for (const target of outgoing.get(id)) {
-        if (!placed.has(target) && !next.includes(target)) next.push(target);
-      }
-    }
-    if (next.length) { frontier = next; row += 1; continue; }
-    const remaining = ids.filter((id) => !placed.has(id)).sort();
-    if (!remaining.length) break;
-    frontier = [remaining[0]];
-    row += 1;
-  }
-  const rows = new Map();
-  for (const [id, y] of placed) {
-    if (!rows.has(y)) rows.set(y, []);
-    rows.get(y).push(id);
-  }
+  const ids = graph.nodes.map((node) => node.id).sort();
+  if (!ids.length) return new Map();
+  const known = new Set(ids);
+  // Sorted and deduplicated, and self edges dropped: the same graph has to lay out the same way
+  // however its arrays happen to be ordered, and a self edge constrains nothing.
+  const pairs = [...new Set(graph.edges
+    .filter((edge) => edge.from !== edge.to && known.has(edge.from) && known.has(edge.to))
+    .map((edge) => JSON.stringify([edge.from, edge.to])))].sort().map((key) => JSON.parse(key));
+
+  const acyclic = breakCycles(ids, pairs);
+  const layer = layerByLongestPath(ids, acyclic);
   const positions = new Map();
-  for (const [y, rowIds] of rows) {
-    rowIds.sort().forEach((id, column) => positions.set(id, { x: column * 240, y: y * 140 }));
+  let cursor = 0;
+  for (const group of components(ids, pairs)) {
+    const top = Math.min(...group.map((id) => layer.get(id)));
+    const local = new Map(group.map((id) => [id, layer.get(id) - top]));
+    const placed = placeComponent(group, local, acyclic.filter(([from]) => local.has(from)));
+    let min = Infinity, max = -Infinity;
+    for (const point of placed.values()) { min = Math.min(min, point.x); max = Math.max(max, point.x); }
+    for (const [id, point] of placed) positions.set(id, { x: point.x - min + cursor, y: point.y });
+    cursor += max - min + NODE_PITCH + COMPONENT_GAP;
   }
   return positions;
+}
+
+// Depth-first in id order; an edge that closes back onto the stack is a cycle's back edge, and it
+// is turned around rather than dropped, so a cycle still pulls its two ends near each other.
+function breakCycles(ids, pairs) {
+  const outgoing = new Map(ids.map((id) => [id, []]));
+  for (const [from, to] of pairs) outgoing.get(from).push(to);
+  const state = new Map(ids.map((id) => [id, 'unseen']));
+  const back = new Set();
+  for (const root of ids) {
+    if (state.get(root) !== 'unseen') continue;
+    state.set(root, 'open');
+    const stack = [{ id: root, next: 0 }];
+    while (stack.length) {
+      const frame = stack[stack.length - 1];
+      const targets = outgoing.get(frame.id);
+      if (frame.next >= targets.length) { state.set(frame.id, 'done'); stack.pop(); continue; }
+      const to = targets[frame.next++];
+      if (state.get(to) === 'open') { back.add(JSON.stringify([frame.id, to])); continue; }
+      if (state.get(to) === 'unseen') { state.set(to, 'open'); stack.push({ id: to, next: 0 }); }
+    }
+  }
+  // Deduplicated again after turning edges around: a two-cycle's two edges become the same edge
+  // once one of them is reversed, and counting it twice would weight it twice in every median.
+  return [...new Set(pairs
+    .map(([from, to]) => back.has(JSON.stringify([from, to])) ? [to, from] : [from, to])
+    .map((pair) => JSON.stringify(pair)))].map((key) => JSON.parse(key));
+}
+
+// One row below the deepest parent, never the first row a search happens to reach it on: that is
+// what makes every arrow point downward, which is most of what "readable" means here.
+function layerByLongestPath(ids, edges) {
+  const preds = new Map(ids.map((id) => [id, []]));
+  const succs = new Map(ids.map((id) => [id, []]));
+  for (const [from, to] of edges) { preds.get(to).push(from); succs.get(from).push(to); }
+  const remaining = new Map(ids.map((id) => [id, preds.get(id).length]));
+  const layer = new Map();
+  let ready = ids.filter((id) => remaining.get(id) === 0);
+  while (ready.length) {
+    const next = [];
+    for (const id of ready) layer.set(id, Math.max(0, ...preds.get(id).map((from) => layer.get(from) + 1)));
+    for (const id of ready) {
+      for (const to of succs.get(id)) {
+        remaining.set(to, remaining.get(to) - 1);
+        if (remaining.get(to) === 0) next.push(to);
+      }
+    }
+    ready = next.sort();
+  }
+  // Nothing should be left — the edge set is acyclic by here — but a node the walk never reached
+  // still needs a row rather than an undefined one.
+  for (const id of ids) if (!layer.has(id)) layer.set(id, 0);
+  return layer;
+}
+
+function components(ids, pairs) {
+  const parent = new Map(ids.map((id) => [id, id]));
+  const find = (id) => {
+    while (parent.get(id) !== id) { parent.set(id, parent.get(parent.get(id))); id = parent.get(id); }
+    return id;
+  };
+  for (const [from, to] of pairs) {
+    const left = find(from), right = find(to);
+    if (left !== right) parent.set(left, right);
+  }
+  const groups = new Map();
+  for (const id of ids) {
+    const root = find(id);
+    if (!groups.has(root)) groups.set(root, []);
+    groups.get(root).push(id);
+  }
+  return [...groups.values()].sort((left, right) => left[0] < right[0] ? -1 : 1);
+}
+
+function placeComponent(group, layerOf, edges) {
+  const depth = Math.max(...group.map((id) => layerOf.get(id))) + 1;
+  const rows = Array.from({ length: depth }, () => []);
+  const boxes = new Set(group);
+  for (const id of group) rows[layerOf.get(id)].push(id);
+
+  // An edge spanning more than one row gets a bend point on each row it crosses, so the rows in
+  // between order themselves around the diagonal instead of parking a box on top of it.
+  const links = new Map();
+  const cell = (id) => {
+    if (!links.has(id)) links.set(id, { up: [], down: [] });
+    return links.get(id);
+  };
+  for (const [from, to] of edges) {
+    let previous = from;
+    for (let row = layerOf.get(from) + 1; row < layerOf.get(to); row += 1) {
+      const bend = JSON.stringify([from, to, row]);
+      rows[row].push(bend);
+      cell(previous).down.push(bend);
+      cell(bend).up.push(previous);
+      previous = bend;
+    }
+    cell(previous).down.push(to);
+    cell(to).up.push(previous);
+  }
+  for (const row of rows) for (const id of row) cell(id);
+
+  // Sweep down then up, each row reordered to the median of where its neighbours in the row it
+  // just came from sit. Keep the best ordering seen, not the last: a sweep can undo its own gain.
+  let order = rows.map((row) => row.slice());
+  let best = order.map((row) => row.slice());
+  let fewest = crossings(order, links);
+  for (let pass = 0; pass < 8; pass += 1) {
+    const down = pass % 2 === 0;
+    const walk = down ? order.map((_, i) => i).slice(1) : order.map((_, i) => i).slice(0, -1).reverse();
+    for (const index of walk) {
+      const rank = new Map(order[down ? index - 1 : index + 1].map((id, at) => [id, at]));
+      const was = new Map(order[index].map((id, at) => [id, at]));
+      const key = new Map(order[index].map((id, at) => {
+        const near = neighbours(links, id, down ? 'up' : 'down', rank);
+        return [id, near.length ? median(near) : at];
+      }));
+      order[index] = order[index].slice()
+        .sort((left, right) => key.get(left) - key.get(right) || was.get(left) - was.get(right));
+    }
+    const count = crossings(order, links);
+    if (count < fewest) { fewest = count; best = order.map((row) => row.slice()); }
+  }
+  order = best;
+
+  // Columns last: each box slides toward the middle of what it connects to, and the row is packed
+  // back apart afterwards. A bend point reads both of its sides at once, since what it stands for
+  // is the straight line between them.
+  const pitch = new Map();
+  for (const row of rows) for (const id of row) pitch.set(id, boxes.has(id) ? NODE_PITCH : BEND_PITCH);
+  const x = new Map();
+  for (const row of order) {
+    let at = 0;
+    for (const id of row) { x.set(id, at); at += pitch.get(id); }
+  }
+  for (let pass = 0; pass < 6; pass += 1) {
+    const down = pass % 2 === 0;
+    const walk = down ? order.map((_, i) => i) : order.map((_, i) => i).reverse();
+    for (const index of walk) {
+      const wanted = order[index].map((id) => {
+        const sides = boxes.has(id) ? [down ? 'up' : 'down'] : ['up', 'down'];
+        const near = sides.flatMap((side) => neighbours(links, id, side, x)).sort((a, b) => a - b);
+        return near.length ? median(near) : x.get(id);
+      });
+      const packed = pack(wanted, order[index].map((id) => pitch.get(id)));
+      order[index].forEach((id, at) => x.set(id, packed[at]));
+    }
+  }
+  return new Map(group.map((id) => [id, { x: Math.round(x.get(id)), y: layerOf.get(id) * LAYER_GAP }]));
+}
+
+function neighbours(links, id, side, of) {
+  return links.get(id)[side].map((other) => of.get(other))
+    .filter((value) => value !== undefined).sort((left, right) => left - right);
+}
+
+function median(sorted) {
+  const mid = sorted.length >> 1;
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+// Pool adjacent violators: the placement closest to what each box wanted that still keeps the
+// row in its chosen order with every neighbouring pair at least a pitch apart. Anything greedier
+// drags a whole row sideways to satisfy its leftmost member.
+function pack(wanted, pitches) {
+  const offset = [0];
+  for (let i = 1; i < wanted.length; i += 1) offset.push(offset[i - 1] + pitches[i - 1]);
+  const blocks = [];
+  for (let i = 0; i < wanted.length; i += 1) {
+    let block = { sum: wanted[i] - offset[i], count: 1 };
+    while (blocks.length) {
+      const previous = blocks[blocks.length - 1];
+      if (previous.sum / previous.count <= block.sum / block.count) break;
+      blocks.pop();
+      block = { sum: previous.sum + block.sum, count: previous.count + block.count };
+    }
+    blocks.push(block);
+  }
+  const placed = [];
+  for (const block of blocks) {
+    for (let i = 0; i < block.count; i += 1) placed.push(block.sum / block.count);
+  }
+  return placed.map((value, i) => value + offset[i]);
+}
+
+function crossings(order, links) {
+  let total = 0;
+  for (let index = 0; index + 1 < order.length; index += 1) {
+    const rank = new Map(order[index + 1].map((id, at) => [id, at]));
+    const landings = [];
+    for (const id of order[index]) {
+      for (const to of links.get(id).down) if (rank.has(to)) landings.push(rank.get(to));
+    }
+    for (let i = 0; i < landings.length; i += 1) {
+      for (let j = i + 1; j < landings.length; j += 1) if (landings[i] > landings[j]) total += 1;
+    }
+  }
+  return total;
 }
 
 function retainDiskPositions(current, incoming) {

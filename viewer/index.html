@@ -827,22 +827,34 @@
     //
     // A fixed offset only clears the *line's own* two nodes. Two arms leaving
     // one node at similar angles still land close together regardless of the
-    // constant, because neither knows the other exists. Rather than guess a
-    // bigger constant — which just moves the collision to the next graph with
-    // a third arm — push a label that lands on an already-placed one further
-    // out, checking again, until it clears or a handful of tries run out.
+    // constant, because neither knows the other exists, and a third box in the
+    // way knows nothing about either. Rather than guess a bigger constant —
+    // which just moves the collision to the next graph — search: try spots
+    // nearest the natural one first, take the first that hits nothing already
+    // placed, and settle for the natural one if nothing is clear.
+    //
+    // The spots cover both ways a label can move and still belong to its own arrow. Sideways off
+    // the line, alternating sides, so it never walks off in one direction. And along the line away
+    // from the midpoint, because sideways alone cannot save an arrow that crosses two rows: its
+    // midpoint sits inside the row in between, where every sideways step lands on another box,
+    // while a quarter of the way toward either end is clear air between rows.
     const L2 = Math.hypot(dx, dy) || 1;
     const baseOff = Math.max(ha, hb) / 2 + 16;
     const width = Math.max(24, text.length * 6.2 + 14);
-    let off = baseOff, mx, my;
-    for (let attempt = 0; attempt < 12; attempt += 1) {
-      mx = (ax + bx) / 2 + (dy / L2) * off;
-      my = (ay + by) / 2 - (dx / L2) * off;
-      const candidate = { x: mx - width / 2, y: my - 15, w: width, h: 18 };
-      if (!placedLabels.some((r) => rectsOverlap(candidate, r))) { placedLabels.push(candidate); break; }
-      off += 16;
-      if (attempt === 11) placedLabels.push(candidate);
+    const rectAt = (p) => ({ x: p.x - width / 2, y: p.y - 15, w: width, h: 18 });
+    const spots = [];
+    for (let step = 0; step < 6; step += 1) {
+      for (const along of [0.5, 0.36, 0.64, 0.24, 0.76]) {
+        for (const sign of [1, -1]) spots.push([along, (baseOff + step * 16) * sign]);
+      }
     }
+    const points = spots.map(([along, off]) => ({
+      x: ax + (bx - ax) * along + (dy / L2) * off,
+      y: ay + (by - ay) * along - (dx / L2) * off,
+    }));
+    const spot = points.find((p) => !placedLabels.some((r) => rectsOverlap(rectAt(p), r))) || points[0];
+    const { x: mx, y: my } = spot;
+    placedLabels.push(rectAt(spot));
     const labelBg = el('rect', { class: 'edge-label-bg', x: mx - width / 2, y: my - 15, width, height: 18, rx: 3 });
     const label = el('text', { class: 'edge-label', x: mx, y: my - 2 });
     label.textContent = text;
@@ -1058,18 +1070,12 @@
     // lets an edge's own label — appended inside the same edge group — clear
     // every node instead of being painted over by one.
     for (const n of graph.nodes) renderNodeGroup(root, n, effSel);
-    // Seeded with each fork node's own tag before any edge label is placed: an
-    // arm's label landing on the "fork" marker it belongs to is the same
-    // collision as two arms landing on each other, just against a fixed
-    // element instead of another label, and it defeats the one place shape
-    // carries meaning if the tag is unreadable underneath it.
-    const placedLabels = [];
-    for (const n of graph.nodes) {
-      if (n.exclusive) {
-        const h = nodeHeight(n);
-        placedLabels.push({ x: n.x + NODE_W - 60, y: n.y + h - 22, w: 56, h: 20 });
-      }
-    }
+    // Seeded with every box before any edge label is placed: a label landing on a node is the
+    // same collision as two labels landing on each other, just against a fixed element instead
+    // of another label, and it is the worse of the two — it hides a box's own words, which are
+    // the ones carrying the answer. Whole boxes, so this covers a fork's tag as well: the tag is
+    // drawn inside its box, and it is the one place shape itself means something.
+    const placedLabels = graph.nodes.map((n) => ({ x: n.x, y: n.y, w: NODE_W, h: nodeHeight(n) }));
     for (const e of graph.edges) {
       const a = nodeById.get(e.from), b = nodeById.get(e.to);
       if (!a || !b) continue;
