@@ -50,8 +50,9 @@ protocol/        canonical stage definitions — the single source of truth
   lanes.md             how every stage spawns a subagent (codex exec / Claude)
   adopt.md             on-ramp: fast-forward an externally-written plan in
   map.md               how to explain existing code: flow first, grounded, no filler
-  writing.md           how anything user-facing is written: sized by the reader, labels
-                       re-grounded, above the code, no AI tells
+  writing.md           how anything user-facing is written: answer what was asked,
+                       hold the rest, sized by the reader, labels re-grounded, above the
+                       code, no AI tells
   diagrams.md          where a diagram goes and what keeps it true: Mermaid on rendered
                        surfaces, arrow chains in terminals, redundant with its prose
   graphs.md            the graph format read by both harnesses: schema, verdicts,
