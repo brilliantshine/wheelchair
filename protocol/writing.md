@@ -7,6 +7,33 @@ lane briefs are contracts between agents and are exempt. This file governs messa
 The failure it exists against: output sized by what the agent did instead of what the
 reader needs — fluent, structured, long, and useless to the person reading it.
 
+## Answer the question, hold the rest
+
+An answer can be correct, relevant, and still unreadable, because everything the reader
+will eventually need arrived at once. A two-part question comes back covering eight
+things. Every addition passes "does the reader need this?" on its own — they do eventually
+need the fragility, the sequencing, the thing worth fixing while you are already in there.
+They fail collectively, by burying the two answers that were asked for.
+
+So the test is not whether an item is worth saying. It is whether it was asked for.
+
+- Answer what was asked, completely. Withholding never applies to the answer itself:
+  "want me to explain?" in place of an explanation is worse than any verbosity. And this
+  governs what gets said, never how much work gets done.
+- Everything else gets one line naming it, and the reader pulls it if they want it:
+  "there's a fragility in where the state ends up living — want it?" One line, not a
+  paragraph with an offer attached.
+- Where the held item genuinely does not parse until the answer lands, say that and wait.
+  Not "do you understand?" every turn, which is condescending and slow — only where the
+  dependency is real.
+- When the reader summarizes back in their own words and they are right, say so and add
+  only the one correction that changes what they would do. Three corrections after "yes,
+  exactly" contradicts the yes, and re-deriving their summary spends the turn on what they
+  already had.
+
+This section decides what belongs in the message. The next one decides how much of what is
+left to write.
+
 ## Size it by the reader, not by the work
 
 Before writing, answer: what does this person need to know or decide? Write that, cut
@@ -16,22 +43,22 @@ their own proposal restated back to them all go.
 A reply to a coworker's question is a few sentences: the answer, the tradeoff they're
 deciding, the ask. Not a section-per-topic briefing.
 
-Bad (a real draft):
+Bad:
 
-> **Stores:** you're right — done. The producer only scans history to figure out each
-> store's first sale date, so it can say "sales are down partly because 3 stores are
-> still ramping." The registry's opened date answers that directly, and reading the
-> registry is the exact surface you kept on atlas-api…
+> **Suites:** you're right — done. The report generator only scans run history to work
+> out each suite's first green build, so it can say "coverage is down partly because 3
+> suites are still stabilizing." The build metadata's added-at date answers that
+> directly, and reading build metadata is the exact surface you kept on the collector…
 > *[two more bold sections and a bolded **Question:**]*
 
-Good (what was actually sent):
+Good:
 
-> Storyteller explains some sales moves with lines like "3 stores are still ramping," so
-> it needs store age — you were right, no engine work needed. Item age covers one edge
-> case: is an item with zero sales last period genuinely new, or returning after a gap.
-> A call for you: with a fixed lookback (say 12 months), an item gone longer than that
-> gets labeled "new" when it comes back. Accept that? If yes, both sections come off the
-> blocked list with zero engine work.
+> The report explains some coverage moves with lines like "3 suites are still
+> stabilizing," so it needs suite age — you were right, no collector work needed. Test
+> age covers one edge case: is a suite with zero runs last period genuinely new, or
+> dormant and back. A call for you: with a fixed lookback (say 90 days), a suite dormant
+> longer than that gets labeled "new" when it returns. Accept that? If yes, both sections
+> come off the blocked list with zero collector work.
 
 Same decision, a third of the words. What got cut: mechanism the reader didn't need to
 decide, and restatements of the reader's own suggestion.
@@ -42,8 +69,8 @@ Shorthand coined during the work — R1, D4, B5, "the audit", "the ledger questi
 pointer into a document, not vocabulary the reader shares. The reader arrives cold: days
 away, other work in between, none of it loaded.
 
-Expand each label on first use in every message: "R1 (the ruling that producers may not
-read raw sales data)". Bare after that, within the same message. The same goes for
+Expand each label on first use in every message: "R1 (the ruling that a report may not
+read raw run history)". Bare after that, within the same message. The same goes for
 earlier decisions — never "as we decided in Q3"; say what was decided, in a clause.
 
 If expanding every label makes the message unwieldy, the message covers too much. Split
@@ -52,8 +79,8 @@ it or cut it. Labels belong in the docs, where they're anchored. Messages stand 
 ## Stay above the code
 
 The reader works at structure and behavior. Report what part of the system does what —
-"the producer that explains store ramp-up", not `compute_store_maturity()` — and what
-changed about the behavior, not which functions were touched.
+"the report section that explains suite stabilization", not `compute_suite_maturity()` —
+and what changed about the behavior, not which functions were touched.
 
 Drop to code only when the point needs it, and then ground it completely: which area,
 what that code does, why it matters to this message. "composition.py still builds both
@@ -77,9 +104,11 @@ what can the reader not act on?
 
 Shape:
 
-- A bold label and colon restating the line ("**Performance:** performance improved…").
-  Convert to prose. A bold lead-in ending in a period, followed by genuinely new detail,
-  is fine.
+- A bold label opening a section, colon or period either way. A bolded lead reads as
+  orderly, which is what makes it dangerous: it makes adding a topic feel free, so a
+  two-part question comes back as a five-topic briefing. Bold a phrase inside a sentence
+  that would otherwise be missed, never a topic header. Write prose. A message with enough
+  separate topics to need headers covers too much — cut it or split it.
 - Bolding every noun. Title case headings. Decorative emojis.
 - Forced threes and intro-body-conclusion scaffolding. Use the natural number and shape.
 
