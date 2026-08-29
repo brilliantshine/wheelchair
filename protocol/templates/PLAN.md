@@ -63,6 +63,12 @@ re-raise them.
 
 ### Round 1 — <date>
 
+**Lanes:** <family / model>; <family / model>; cross-family: <yes|no>.
+
+Written for every round, including one where the table below stays empty. The table gets a row
+per finding, so a clean round would otherwise leave no record of which gate ran — which is the
+round where knowing it matters most. `protocol/plan-review.md` shows a filled example.
+
 <!-- Round 2+: list what changed since the previous round; that list scopes the reviewers. -->
 
 **Changed since Round N-1:** n/a (first round — whole Spec in scope)

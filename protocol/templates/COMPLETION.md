@@ -2,11 +2,24 @@
 slug: <slug>
 date: <YYYY-MM-DD>
 implemented-by: <lanes/models used, e.g. "terra (lead: fable)" or "sonnet, terra">
+verified-by: []   # Stage 4 appends; Stage 3 leaves this empty. Shape below.
 ---
 
 # Completion Report — <Title>
 
 Written for a hostile reviewer: every claim checkable, no claim without evidence.
+
+`verified-by` starts empty and Stage 4 appends to it — one entry per verifier per round, so a
+mixed-family round contributes two. Rounds append and never overwrite: that stage loops through
+remediation and forbids erasing history, and what checked round 3 is not what checked round 1.
+`lane` and `checks` together say whether that pair crossed families, so nothing restates it.
+
+```yaml
+verified-by:
+  - round: <n>
+    lane: <verifier lane/model>
+    checks: <the implementing lane it checked>
+```
 
 ## Spec coverage
 
