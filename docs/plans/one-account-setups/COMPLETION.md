@@ -2,7 +2,13 @@
 slug: one-account-setups
 date: 2026-08-26
 implemented-by: terra (tasks 1-3, 5), luna (task 4), sonnet (task 6); lead: opus
-verified-by: []   # Stage 4 appends; Stage 3 leaves this empty. Shape below.
+verified-by:
+  - round: 1
+    lane: gpt-5.6-sol
+    checks: sonnet
+  - round: 1
+    lane: claude-opus-5 (default reviewer)
+    checks: terra
 ---
 
 # Completion Report — It runs on whichever one of the two accounts you have
@@ -179,6 +185,24 @@ place that gets covered is the user this change was written for.
 `protocol/implementation.md:77-79` about whether concurrent GPT lanes are safe. Spec §6 puts it
 out of scope and it remains unresolved; `implementation.md` gained one deferring clause and
 nothing more.
+
+## Verification
+
+**Round 1 — 2026-08-26. Both verifiers PASS after one remediation round.**
+
+Checked by two fresh lanes, each cross-family to part of the work: `gpt-5.6-sol` against the
+Sonnet-built README, and the Claude family's default reviewer against the Terra- and Luna-built
+scripts, protocol documents and templates. Implementation spanned both families, so
+`verification.md` calls for one verifier per implementing family rather than one overall.
+
+Neither verifier saw the implementation conversation. Both had `git status` checked on return; the
+GPT lane held `workspace-write` only to run the suites and made no edits.
+
+They did not find the same things. Both caught the missing re-run line and the stale dial-writer
+claim; only the Claude lane caught the new `install/` directory missing from the router indexes.
+One verifier would have passed a change that left a new top-level directory unindexed, in a repo
+whose premise is that its routers say what owns what. That is the cross-family gate earning its
+keep on this run — one gap, and the one that would have shipped.
 
 ## Remediation rounds
 

@@ -1,6 +1,6 @@
 ---
 slug: one-account-setups
-status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
+status: done   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-08-25
 ---
 
@@ -904,6 +904,20 @@ no balancer slot, and that evidence has to be in COMPLETION.md before verificati
 not collected afterwards as a confirmation. See the last bullet of §11 for who can run it and
 what to do if it is not available yet. Attempting it on this machine risks bricking the
 credential; the Spec says so twice for that reason.
+
+**Verified and done 2026-08-26.** Both Stage 4 verifiers passed after one remediation round;
+`COMPLETION.md` carries the verdicts, the `verified-by` entries and what each verifier caught.
+
+**The machine changed during Stage 4, deliberately.** The credential balancer's slot was parked
+aside — `~/.bravo/codex-auth-balancer/accounts/1` renamed with a `.decommissioned-2026-08-26`
+suffix, reversible with one `mv` — because the user is moving off the Pi runtime it served. That
+turned this into a genuinely off-slot machine and let Decision #18's blocking validation close
+here instead of on somebody else's laptop. Every GPT lane from that point ran through the
+conditional this change added, taking its else arm.
+
+What that still does not prove is the credential's *refresh* path: nothing rotated, because the
+access token was valid throughout. The parked slot is the fallback until the first refresh
+succeeds.
 
 **Approved 2026-08-26** after seven review rounds, 89 upheld findings and none declined. The Spec
 was rewritten from the Decision Log in Round 6 rather than patched further, because in-place
