@@ -54,19 +54,18 @@ the plan anyway. Assuming the lane will work it out is not.
 Read `lanes.md`, in this same directory, for the
 exact invocations and cautions before launching any lane.
 
-- **GPT workhorse:** `codex exec -m gpt-5.6-terra -s workspace-write -C "$PWD" -o "$OUT"
-  - < brief`. Terra takes every GPT brief that leaves the lane a decision to make.
-- **GPT transcription lane:** the same call with `-m gpt-5.6-luna`, for briefs where the
-  plan already made every decision — the files, the change, and the pattern to copy are
-  all named and the lane invents nothing.
-- **Claude workhorse:** Agent tool with `model: sonnet` (from Codex:
-  `claude --model sonnet -p "<brief>"`). UI/frontend implementation and taste-sensitive
-  surfaces go here, never to a GPT lane. Sonnet takes the mechanical Claude-side work too;
-  there is no Luna-equivalent third tier on that side.
+`lanes.md` owns tier selection and every lane invocation. On a Claude-only machine,
+transcription briefs that would have gone to Luna stay on Sonnet: the Claude side has two
+tiers, so nothing drops to Haiku. On a ChatGPT-only machine, interface, frontend, and
+other taste-sensitive work goes to a GPT lane because no Claude lane exists; state that
+cost at dispatch rather than refusing the task. Where a Claude lane is available, those
+surfaces remain Claude work — the one-account exception does not permit rerouting one
+family's logged-out work on a two-family machine.
 
-Reasoning effort needs no flag at dispatch — every lane starts at `high` from
-`~/.codex/config.toml`. Raising it to `xhigh` is an escalation rung, not a dispatch
-choice; anything below high is a downgrade. See lanes.md.
+`lanes.md` determines and reports when a lane returned nothing. Stage 3 stops with that
+task recorded **unstarted**, not attempted; do not reroute its brief to the other family.
+Its escalation ladder is untouched: it is for a lane that came back wrong, and a lane that
+never ran has nothing to escalate.
 
 Sol and Opus are not implementation lanes. A brief reaches one only after a cheaper lane
 came back wrong, by lanes.md's "Escalate the model only on evidence" — a task that merely
@@ -76,7 +75,8 @@ loop, not a bigger model, is what makes a cheap lane safe.
 
 Because `codex exec` blocks, run each lane as a background Bash call and collect the
 `-o` files as they finish. Parallelize only disjoint ownership boundaries — and only
-across separate worktrees, since two write-lanes in one checkout corrupt each other.
+across separate worktrees, where `lanes.md`'s credential rules allow it, since two
+write-lanes in one checkout corrupt each other.
 Overlapping boundaries sequence.
 
 ## Integration and exit
@@ -95,8 +95,9 @@ When all tasks are done and full validation is green, write
 `docs/plans/<slug>/COMPLETION.md` from `templates/COMPLETION.md`: spec-item-by-item
 coverage with file:line references and each item's origin (`this run` or `pre-existing`),
 deviations from the Spec, pasted validation evidence, residual risks, and the implementing
-lanes in frontmatter (Stage 4 picks the opposite family from it). Every spec item gets a
-row including the pre-existing ones — coverage is the point, and Stage 4 verifies them
+lanes in frontmatter (Stage 4 selects and records its verifier under
+`verification.md`). Every spec item gets a row including the pre-existing ones — coverage
+is the point, and Stage 4 verifies them
 too. Set `status: verifying` and hand off to Stage 4.
 
 COMPLETION.md is written for a hostile reviewer: every claim checkable, no claim

@@ -29,18 +29,19 @@ real_codex="$HOME/.codex/AGENTS.md"
 real_claude_before=$(file_state "$real_claude")
 real_codex_before=$(file_state "$real_codex")
 
-declare -A claude codex output status
+declare -A claude codex output status present
 new_case() {
   local name=$1 base
   base=$fixture/$name
   mkdir -p "$base/claude" "$base/codex"
   claude[$name]=$base/claude
   codex[$name]=$base/codex
+  present[$name]=claude,codex
 }
 run_case() {
   local name=$1
   set +e
-  output[$name]=$(WHEELCHAIR_CLAUDE_HOME="${claude[$name]}" WHEELCHAIR_CODEX_HOME="${codex[$name]}" "$writer" "${@:2}" 2>&1)
+  output[$name]=$(WHEELCHAIR_PRESENT="${present[$name]}" WHEELCHAIR_CLAUDE_HOME="${claude[$name]}" WHEELCHAIR_CODEX_HOME="${codex[$name]}" "$writer" "${@:2}" 2>&1)
   status[$name]=$?
   set -e
 }
@@ -60,6 +61,26 @@ if [[ ${status[source_sane]} != 0 ]]; then
   printf 'FATAL %s\n' "the writer refuses this repo's own protocol/sensitivity.md: ${output[source_sane]}" >&2
   exit 2
 fi
+
+# Presence is command availability, not whether a redirected home already exists.
+new_case presence_claude
+present[presence_claude]=claude
+run_case presence_claude
+run_case presence_claude --report
+assert 'claude-only writes Claude and reports Codex unavailable' bash -c '[[ $1 == 0 && -f $2 && ! -e $3 && $4 == *"diagram-sensitivity: default"* && $4 == *"codex is not on this machine"* ]]' _ "${status[presence_claude]}" "$(target_claude presence_claude)" "$(target_codex presence_claude)" "${output[presence_claude]}"
+
+new_case presence_codex
+present[presence_codex]=codex
+run_case presence_codex
+run_case presence_codex --report
+assert 'codex-only writes Codex and reports Claude unavailable' bash -c '[[ $1 == 0 && ! -e $2 && -f $3 && $4 == *"diagram-sensitivity: default"* && $4 == *"claude is not on this machine"* ]]' _ "${status[presence_codex]}" "$(target_claude presence_codex)" "$(target_codex presence_codex)" "${output[presence_codex]}"
+
+new_case presence_neither
+present[presence_neither]=''
+before_c=$(file_state "$(target_claude presence_neither)")
+before_d=$(file_state "$(target_codex presence_neither)")
+run_case presence_neither
+assert 'neither present reports and writes nothing' bash -c '[[ $1 == 0 && $2 == *"neither claude nor codex is on this machine"* && $3 == "$4" && $5 == "$6" ]]' _ "${status[presence_neither]}" "${output[presence_neither]}" "$(file_state "$(target_claude presence_neither)")" "$before_c" "$(file_state "$(target_codex presence_neither)")" "$before_d"
 
 # Writing: existing prose, a missing target, three explicit positions, and an
 # edited owned region all keep their unowned bytes intact.

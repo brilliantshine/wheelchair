@@ -1,6 +1,6 @@
 ---
 slug: one-account-setups
-status: approved   # planning | ready-for-review | approved | implementing | verifying | done
+status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-08-25
 ---
 
@@ -873,8 +873,23 @@ than anything about the design. Brought to the user with that distinction rather
 
 ## Implementation Tasks
 
+Sequenced, not parallel: one checkout, and two write-lanes in one checkout corrupt each other
+(`protocol/lanes.md:101-104`). GPT lanes would have to sequence regardless — the rule this change
+restates in §5.
+
+Dependency order: the shell work is independent and goes first so a green suite exists early;
+`lanes.md` is the hub the three stage docs point at, so it settles before they move; the doc sweep
+needs the shell behaviour final; the README goes last and to a Claude lane, because its opening is
+Collin's voice.
+
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| 1 | `set.sh` and `install.sh` honour presence; new install suite; existing sensitivity cases pinned | `sensitivity/set.sh`, `sensitivity/test/run.sh`, `install.sh`, `install/test/run.sh` | terra | `01a04f12-5f15-7e63-84fe-436fd35d0839` | `bash sensitivity/test/run.sh` 62/0, `bash install/test/run.sh` 12/0, both re-run by the lead; behaviours exercised directly | done |
+| 2 | `protocol/lanes.md`: presence rule, lane-death rule, credential conditional + resume, effort-flag reason, concurrency restatement, `:29-31`, `:93` pointer | `protocol/lanes.md` | terra | `01a04f18-d175-7983-9a22-c6fb032b8dbb` | grep assertions green; lead read the conditional at both dispatch and resume, the restated concurrency rule, the corrected flag reason, and the stage-rule boundary sentence | done |
+| 3 | The three stage docs take their one-account rules and drop restated invocations | `protocol/plan-review.md`, `protocol/verification.md`, `protocol/implementation.md` | terra | `01a04f1c-36dd-7c82-a24b-e2ca58f70c14` | grep assertions green, re-run by the lead; Opus named only in `verification.md`; Stage 3's unstarted rule and the cap exemption read directly | done |
+| 4 | `verified-by` into the completion template; `**Lanes:**` slot into the plan template | `protocol/templates/COMPLETION.md`, `protocol/templates/PLAN.md` | luna | | grep assertions in brief | pending |
+| 5 | `protocol/sensitivity.md`'s six places, the four routers, three skill descriptions, `adopt.md:67`, two shell header comments | `protocol/sensitivity.md`, `AGENTS.md`, `protocol/AGENTS.md`, `skills/AGENTS.md`, `sensitivity/AGENTS.md`, `skills/*/SKILL.md`, `protocol/adopt.md`, header comments only in `install.sh`/`sensitivity/set.sh` | terra | | `bash sensitivity/test/run.sh`, `./install.sh` twice | pending |
+| 6 | README: the opening sentence, the six stale spots, the dependency list, and a new section on what one account costs | `README.md` | sonnet | | read-back; prose per `protocol/writing.md` | pending |
 
 ## Log
 
