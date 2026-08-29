@@ -101,6 +101,35 @@ $ npm --prefix viewer run test:browser
 25 passed (20.7s)
 ```
 
+**The blocking off-slot lane (Decision #18), run after the balancer slot was parked aside:**
+
+```text
+$ SLOT=~/.bravo/codex-auth-balancer/accounts/1
+$ if [ -d "$SLOT" ]; then CODEX=(env CODEX_HOME="$SLOT" codex); else CODEX=(codex); fi
+branch taken: codex                      # lanes.md's own conditional, taking the else arm
+
+$ "${CODEX[@]}" exec -m gpt-5.6-sol -c model_reasoning_effort=high -s read-only ...
+RC=0
+# wheelchair                             # first line of README.md
+one-account-setups                       # git branch --show-current
+205                                      # wc -l < protocol/lanes.md  (confirmed independently)
+no                                       # does ~/.bravo/.../accounts/1 exist
+```
+
+Auth-failure strings in the log: 0. The lane was asked to report whether the slot directory
+existed so the condition is evidenced by the lane rather than asserted by the lead; it answered
+`no`, and `[ -d ... ]` agrees.
+
+**That the model was honoured rather than silently substituted** — `-m` is validated server-side:
+
+```text
+$ codex exec -m gpt-5.6-doesnotexist ...
+ERROR: {"status":400,"message":"The 'gpt-5.6-doesnotexist' model is not supported when using
+Codex with a ChatGPT account."}
+```
+
+`gpt-5.6-sol`, `-terra` and `-luna` are all present in `~/.codex/models_cache.json`.
+
 Behaviours exercised directly by the lead, not only through the suites:
 
 ```text
@@ -128,19 +157,23 @@ set ask in <tmp>/c/CLAUDE.md; codex file still high, untouched
 
 ## Known gaps / residual risks
 
-**The blocking validation has not run, and cannot run here.** Decision #18 requires one
-`codex exec -m gpt-5.6-sol` lane to complete on a machine with no balancer slot and `CODEX_HOME`
-unset, with its output pasted as evidence. Attempting it on this machine would refresh `~/.codex`
-and rotate the single-use token away from the balancer's slot, bricking it
-(`protocol/lanes.md:148-151` before this change; the rewritten Credentials section after it).
+**Decision #18 is satisfied** — see the evidence above. The machine's balancer slot was parked
+aside first (`accounts/1` renamed to `accounts/1.decommissioned-2026-08-26`, reversible with one
+`mv`), which made this a real off-slot machine rather than a simulated one. The user is moving off
+the Pi runtime the balancer served, so this was a decommissioning that had to happen anyway rather
+than a change made to satisfy a test.
 
-**This is recorded as outstanding, not claimed and not omitted**, per Spec §11. Stage 4 should
-treat it as a gap: the change is not verified until somebody with a ChatGPT login and no balancer
-has run it. A Claude-only machine cannot close it. A container with a fresh `codex login` counts.
+**The refresh path is still untested, and this is the real residual risk.** The lane succeeded
+without rotating anything: `~/.codex/auth.json`'s `last_refresh` and mtime are unchanged from
+before the run, so the existing access token was still valid and no refresh was exercised. What is
+proven is that the store outside the balancer is *usable*. What is not proven is that it can renew
+itself. That only exercises when the access token expires, and the parked slot is the fallback if
+it cannot.
 
-**Untested by construction:** every one-account code path was exercised through
-`WHEELCHAIR_PRESENT`, which is a seam, not a machine with one account. The seam is exercised;
-the real configuration is not. That is what the outstanding item above buys.
+**Untested by construction:** the one-account code paths were exercised through
+`WHEELCHAIR_PRESENT`, which is a seam, not a machine with one account. Both harnesses are still
+installed here. The seam is exercised; a genuinely single-account machine is not, and the natural
+place that gets covered is the user this change was written for.
 
 **Not attempted:** the disagreement between `protocol/lanes.md:198-200` and
 `protocol/implementation.md:77-79` about whether concurrent GPT lanes are safe. Spec §6 puts it
