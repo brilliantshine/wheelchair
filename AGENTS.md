@@ -26,7 +26,7 @@ else that wants to live in a context window belongs in `protocol/`.
 | Canonical rules | `protocol/` | an agent executing a stage |
 | Per-feature state | `docs/plans/<slug>/` | every stage, to find out where the work stands |
 | Harness adapter | `skills/`, `codex/prompts/` | Claude Code and the Codex CLI, at registration |
-| Executable | `spine/`, `sensitivity/`, `viewer/`, `install.sh` | run by a command, not read as guidance |
+| Executable | `spine/`, `sensitivity/`, `install/`, `viewer/`, `install.sh` | run by a command, not read as guidance |
 
 Two rules follow, and between them they cover most of what can go wrong here:
 
@@ -45,6 +45,7 @@ Two rules follow, and between them they cover most of what can go wrong here:
 | `skills/` | [AGENTS.md](skills/AGENTS.md) | the Claude Code wrappers and the convention every wrapper follows |
 | `spine/` | [AGENTS.md](spine/AGENTS.md) | `scan.sh`, the read-only scanner behind `/spine` |
 | `sensitivity/` | [AGENTS.md](sensitivity/AGENTS.md) | `set.sh`, the only writer of each present harness's global instruction file |
+| `install/` | — | `test/run.sh`, the installer fixture suite. Temp harness homes only; real global files stay untouched |
 | `codex/` | — | `prompts/`, the Codex CLI wrappers. Same convention as `skills/`, one line each |
 | `docs/` | — | `plans/<slug>/` per feature. State, not rules — nothing here is a contract |
 | `viewer/` | — | the browser graph viewer — `index.html`, `server.js`. Started by an agent turn, never read as guidance |

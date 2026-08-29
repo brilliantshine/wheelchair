@@ -182,4 +182,23 @@ nothing more.
 
 ## Remediation rounds
 
-None yet.
+### Remediation 1 — 2026-08-26
+
+Both verifiers returned FAIL on round 1. Gap list, routing and the reason each gap was missed are
+in `REMEDIATION-1.md`; all three were defects in the Stage 3 briefs rather than in the lanes.
+
+| Gap | Fixed at | Lane |
+|-----|----------|------|
+| §7's required line about re-running the installer after adding a harness — absent from the repo entirely | `README.md:100`, folded into the existing sentence about re-running for an edited wrapper | sonnet |
+| §10 — `README.md:60-61` still described the dial writer as rendering into *both* harnesses' files, contradicting `protocol/AGENTS.md:33`. The words straddle a line break, so §10's search cannot match them | `README.md:60-61`, matching `protocol/AGENTS.md:33` verbatim rather than composing a third wording | sonnet |
+| The new top-level `install/` directory appeared in no router index — only in the Verification list | `AGENTS.md:29` (Kind table) and `:48` ("Where to go"); `README.md:77-78` (Layout block) | terra, sonnet |
+
+Validation re-run after remediation: `spine` 80/0, `sensitivity` 62/0, `install` 12/0,
+`./install.sh` exit 0 twice, `node --test` 29/0, browser suite 25 passed.
+
+Spec-coverage rows this adds, which the original table omitted:
+
+| Spec item | Origin | Implemented at (file:line) | Validated by |
+|-----------|--------|----------------------------|--------------|
+| §7 installing a harness afterwards needs a re-run — a line, not a mechanism | this run | `README.md:100` | both verifiers' round-1 gap; re-checked after the fix |
+| §10 the `install/` directory is indexed where the repo indexes directories | this run | `AGENTS.md:29`, `:48`, `README.md:77-78` | `grep -n 'install/' AGENTS.md README.md` |

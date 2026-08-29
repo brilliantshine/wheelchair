@@ -57,7 +57,7 @@ protocol/        canonical stage definitions — the single source of truth
                        surfaces, arrow chains in terminals, redundant with its prose
   graphs.md            the graph format read by both harnesses: schema, verdicts,
                        preservation, how the viewer starts
-  sensitivity.md       the diagram-sensitivity dial: the region rendered into both
+  sensitivity.md       the diagram-sensitivity dial: the region rendered into present
                        harnesses' always-on files, and what each level draws
   routers.md           the router document format: what a directory owns, what must never
                        happen there, where to go next — guidance for creation, not a test
@@ -74,6 +74,8 @@ spine/           scan.sh: resolves routing documents through symlinks, read-only
 sensitivity/     set.sh: the only writer of whichever harness files are present,
                  all-or-nothing across them
   test/run.sh          fixture assertions; never touches the real ~/.claude or ~/.codex
+install/         test/run.sh: fixture assertions for install.sh — never writes the real
+                 ~/.claude or ~/.codex
 skills/          Claude Code wrappers → rendered into ~/.claude/skills/ when claude is present
 codex/prompts/   Codex CLI wrappers → rendered into ~/.codex/prompts/ when codex is present
 docs/plans/      one directory per feature; the only mutable state
@@ -95,8 +97,9 @@ working directory and a relative path would resolve nowhere. The repo therefore 
 one: wrappers carry a `{{WHEELCHAIR_ROOT}}` placeholder and `install.sh` substitutes wherever
 you cloned it. Edits to `protocol/` still take effect immediately in every present harness,
 because the rendered wrapper points back into your working tree; editing a wrapper itself
-needs a re-run. Restart running sessions to pick up new skill/prompt registrations. The same
-run also installs `viewer/`'s npm dependencies and its pinned Chromium via Playwright.
+needs a re-run, and so does installing a harness afterward — it has no wrappers until then.
+Restart running sessions to pick up new skill/prompt registrations. The same run also
+installs `viewer/`'s npm dependencies and its pinned Chromium via Playwright.
 `spine/scan.sh`, `spine/test/run.sh`, `sensitivity/set.sh`, and `install.sh` itself are shell,
 not markdown — `viewer/` is the one piece with its own package dependencies and a
 long-running server.
