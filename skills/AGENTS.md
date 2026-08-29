@@ -44,8 +44,8 @@ Idempotent, and the second run leaves `git status --porcelain` empty. What makes
 `protocol/` take effect without reinstalling is that the rendered wrapper points back into this
 working tree — not the wrapper's own contents, which are a copy and do need a re-run when changed.
 
-**One exception.** `protocol/sensitivity.md`'s delimited region is *rendered* into
-`~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` rather than pointed at, because the dial has to
-be in effect before a turn starts. Editing that region does need a re-run — or a
+**One exception.** `protocol/sensitivity.md`'s delimited region is *rendered* into each
+present harness's global instruction file rather than pointed at, because the dial has to be in
+effect before a turn starts. Editing that region does need a re-run — or a
 `/diagram-sensitivity` call, which drives the same writer. Everything else in that file is
 outside the region and behaves like every other `protocol/` file.

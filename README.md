@@ -2,8 +2,9 @@
 
 Agents are good at writing code and bad at being held to a plan. This is the harness that holds
 them to one: map how the code works, agree what good looks like, plan against it one question at a
-time, have a **different model family** try to tear the plan apart, build it with cheap worker
-lanes, then have the other family try to prove the result wrong.
+time, have a **different model family** try to tear the plan apart — or, on one account, a fresh
+reviewer that never saw the conversation — build it with cheap worker lanes, then have a second
+one try to prove the result wrong.
 
 The documents are the state. Not a context window, not a conversation — a directory per feature
 holding the map, the north star, the decision log, the spec, every review round, and what actually
@@ -57,27 +58,31 @@ protocol/        canonical stage definitions — the single source of truth
                        surfaces, arrow chains in terminals, redundant with its prose
   graphs.md            the graph format read by both harnesses: schema, verdicts,
                        preservation, how the viewer starts
-  sensitivity.md       the diagram-sensitivity dial: the region rendered into both
+  sensitivity.md       the diagram-sensitivity dial: the region rendered into present
                        harnesses' always-on files, and what each level draws
   routers.md           the router document format: what a directory owns, what must never
                        happen there, where to go next — guidance for creation, not a test
   spine.md             /spine: propose routers for a repo that has none, list every write
                        first, and write nothing until a person confirms
   planning.md          Stage 1: map the code, set the north star, one question at a time
-  plan-review.md       Stage 2: parallel GPT + Claude adversarial plan review
-  implementation.md    Stage 3: lead + cheap worker lanes (Luna/Terra/Sonnet; Sol on escalation)
-  verification.md      Stage 4: blind cross-family verify + remediation loop
+  plan-review.md       Stage 2: two independent reviewers, cross-family when available
+  implementation.md    Stage 3: lead + cheap worker lanes from whichever family is present
+                       (escalation only on evidence)
+  verification.md      Stage 4: blind verify, cross-family when available, + remediation loop
   templates/           MAP.md, IDEA.md, PLAN.md, COMPLETION.md skeletons
 spine/           scan.sh: resolves routing documents through symlinks, read-only, JSON out
   test/run.sh          fixture assertions; builds its tree under the system temp directory
-sensitivity/     set.sh: the only writer of the two global instruction files, all-or-nothing
+sensitivity/     set.sh: the only writer of whichever harness files are present,
+                 all-or-nothing across them
   test/run.sh          fixture assertions; never touches the real ~/.claude or ~/.codex
-skills/          Claude Code wrappers  → rendered into ~/.claude/skills/
-codex/prompts/   Codex CLI wrappers    → rendered into ~/.codex/prompts/
+install/         test/run.sh: fixture assertions for install.sh — never writes the real
+                 ~/.claude or ~/.codex
+skills/          Claude Code wrappers → rendered into ~/.claude/skills/ when claude is present
+codex/prompts/   Codex CLI wrappers → rendered into ~/.codex/prompts/ when codex is present
 docs/plans/      one directory per feature; the only mutable state
 viewer/          index.html and server.js — the browser viewer a graph opens in
 install.sh       renders the wrappers, installs viewer/'s dependencies, and writes the
-                 dial's region into both harnesses' always-on files (idempotent)
+                 dial's region into each present harness's always-on file (idempotent)
 AGENTS.md        this repo's own routers, one per directory that owns a rule —
                  also protocol/, skills/, spine/ and sensitivity/
 ```
@@ -91,22 +96,23 @@ AGENTS.md        this repo's own routers, one per directory that owns a rule —
 A wrapper has to name an absolute path, because a command runs with your target repo as its
 working directory and a relative path would resolve nowhere. The repo therefore cannot hold
 one: wrappers carry a `{{WHEELCHAIR_ROOT}}` placeholder and `install.sh` substitutes wherever
-you cloned it. Edits to `protocol/` still take effect immediately in both harnesses, because
-the rendered wrapper points back into your working tree; editing a wrapper itself needs a
-re-run. Restart running sessions to pick up new skill/prompt registrations. The same
-run also installs `viewer/`'s npm dependencies and its pinned Chromium via Playwright.
+you cloned it. Edits to `protocol/` still take effect immediately in every present harness,
+because the rendered wrapper points back into your working tree; editing a wrapper itself
+needs a re-run, and so does installing a harness afterward — it has no wrappers until then.
+Restart running sessions to pick up new skill/prompt registrations. The same run also
+installs `viewer/`'s npm dependencies and its pinned Chromium via Playwright.
 `spine/scan.sh`, `spine/test/run.sh`, `sensitivity/set.sh`, and `install.sh` itself are shell,
 not markdown — `viewer/` is the one piece with its own package dependencies and a
 long-running server.
 
 The last step reaches **outside** the clone. `protocol/sensitivity.md`'s delimited region is
-*rendered* into `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` — the files both harnesses load
-on every turn — because the diagram-sensitivity dial has to be in effect before you type, and
-on an ordinary question no command runs to look it up. Only the bytes between the markers are
-this repo's, and only they are overwritten; everything else in those files is left alone. That
-region is the one thing here whose edits need a re-run, and if the writer refuses — duplicated
-markers, a hand-edited level, a non-empty `AGENTS.override.md` — it warns and changes nothing
-rather than failing the install.
+*rendered* into `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, or both — whichever harness or
+harnesses are present — because the diagram-sensitivity dial has to be in effect before you
+type, and on an ordinary question no command runs to look it up. Only the bytes between the
+markers are this repo's, and only they are overwritten; everything else in those files is left
+alone. That region is the one thing here whose edits need a re-run, and if the writer refuses —
+duplicated markers, a hand-edited level, a non-empty `AGENTS.override.md` — it warns and changes
+nothing rather than failing the install.
 
 ## Usage
 
@@ -114,9 +120,9 @@ From either harness, in the target project:
 
 ```
 /plan <slug or description>   # build/resume the plan, one question at a time
-/plan-review <slug>           # cross-model review rounds until approved
+/plan-review <slug>           # review rounds, cross-family when available, until approved
 /implement <slug>             # lead + workers; ends with COMPLETION.md
-/verify <slug>                # blind cross-family verify; remediate until PASS
+/verify <slug>                # blind verify, cross-family when available; remediate until PASS
 /graph <question>             # answer a question with a picture instead of just prose
 /diagram-sensitivity [level]  # report the dial, or set it: ask, default, high
 ```
@@ -138,7 +144,8 @@ modified), synthesizes an `IDEA.md` for you to confirm, checks the tree for part
 plan that are **already built**, and reports what the protocol needs that the document
 lacks — usually validation commands, non-goals, and edge cases.
 Then it asks one question: land at `approved` (straight to `/implement`),
-`ready-for-review` (run the cross-model gate), or `planning` (real holes to talk through).
+`ready-for-review` (run the review gate, cross-family when available), or `planning` (real
+holes to talk through).
 The recommendation comes from the gap report rather than from your confidence, and the
 landing is recorded in the Decision Log — Stage 4 otherwise can't tell "vetted elsewhere"
 from "gate skipped."
@@ -201,7 +208,23 @@ the launch on a headless box.
 It binds `127.0.0.1` only, and every route needs a token minted at start. `protocol/graphs.md` is
 the format and the full producer sequence.
 
+## What one account costs
+
+Two model families fail in different places — a mistake one walks straight past is the kind
+the other one catches — and that is most of why Stage 2's review and Stage 4's verify are
+worth running. One account still runs both gates, but there is only one family to draw a
+reviewer or a verifier from, so that gap disappears, and nothing in the one-account path gets
+it back.
+
+What one account keeps is the blindness: the reviewer and the verifier still never see the
+conversation that produced the plan or the build, only the document and the repo. That part
+costs nothing to keep, and it doesn't change here.
+
 ## Dependencies
+
+Exactly one of `codex` or `claude` is required — `install.sh` runs on either alone. Both
+together unlock the cross-family gates above; with one, Stage 2 and Stage 4 run inside the
+single family you have. Node is required either way, for the viewer.
 
 - `codex` CLI (v0.146+) for GPT lanes — headless via `codex exec`, models `gpt-5.6-luna`,
   `gpt-5.6-terra`, and `gpt-5.6-sol`. See `protocol/lanes.md`.

@@ -7,15 +7,15 @@ afterwards.
 The dial has to be in effect *before* Collin types, because the turns it governs are
 ordinary questions where no slash command runs and nothing under `protocol/` is otherwise
 read. So the rule and the current level do not live here to be looked up: they live in a
-delimited region below, **rendered into `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`**,
-which both harnesses load on every turn in every project. By the time a question arrives
+delimited region below, **rendered into each present harness's global instruction file**,
+which that harness loads on every turn in every project. By the time a question arrives
 the level is already in the window and no agent spends a tool call finding it.
 
 ## The region
 
-Everything between the markers is what lands in both global files. `sensitivity/set.sh`
-extracts it, substitutes `{{WHEELCHAIR_ROOT}}`, and writes it — nothing else reads this
-region and nothing else writes those files.
+Everything between the markers is what lands in each present global file.
+`sensitivity/set.sh` extracts it, substitutes `{{WHEELCHAIR_ROOT}}`, and writes it —
+nothing else reads this region or writes the installed copies.
 
 <!-- wheelchair:diagram-sensitivity start -->
 ## Answering with a picture
@@ -24,8 +24,7 @@ diagram-sensitivity: default
 
 Three levels — `ask`, `default`, `high`. This block is owned by the wheelchair repo and
 rewritten in place. Move the dial with `/diagram-sensitivity <level>`, never by editing
-these lines: an edit here is overwritten the next time the writer runs, and editing one
-file leaves the other harness at the old level, silently, until it does.
+these lines: an edit here is overwritten the next time the writer runs.
 
 An answer has a **shape** when it names three or more things that relate to each other, or
 it has a branch, or the order matters. No shape, no picture — at every level, including
@@ -58,35 +57,36 @@ diagram-sensitivity: <ask|default|high>
 ```
 
 Three things parse it — a refresh that must preserve an existing level, the bare command
-that reports and compares the two files, and the suite that strips it before comparing
+that reports the present harness files, and the suite that strips it before comparing
 regions — so the form is fixed rather than tolerant. Intact markers around zero such
 lines, or around two, is **malformed**: refused on the same footing as a broken marker,
 never repaired and never defaulted over.
 
 ## The writer's contract
 
-`sensitivity/set.sh` is the only thing that writes either global file. It is an executable
+`sensitivity/set.sh` is the only thing that writes a present harness's global file. It is an
+executable
 rather than a paragraph telling an agent what to write, because a guard written as prose is
 a guard an agent can skip — `spine/scan.sh` is the same call.
 
-The level is resolved **once, across both files, before either is written**:
+The level is resolved **once, across the present files, before any is written**:
 
-| Both files | Resolved level |
+| Present files' blocks | Resolved level |
 |---|---|
-| Neither holds a block | The requested level, or `default` when none was requested |
-| One holds a block | That block's level, unless a level was requested |
-| Both hold blocks, same level | That level, unless a level was requested |
-| Both hold blocks, different levels | **Refuse.** Report both, require an explicit level |
+| No present files | Report, write nothing, exit 0 |
+| None hold a block | The requested level, or `default` when none was requested |
+| One or more hold blocks, same level | That level, unless a level was requested |
+| Two hold blocks, different levels | **Refuse.** Report both, require an explicit level |
 
-Resolving per file instead would make the divergent dial reachable through the very rule
-meant to prevent it: one file at `high`, the other markerless, and seeding `default` into
-the second leaves the harnesses disagreeing.
+With one present harness, its block supplies the level, or the writer uses `default`.
+Resolving separately on two would make a divergent dial reachable: one file at `high`, the
+other markerless, and seeding `default` into the second leaves them disagreeing.
 
 The rest of the contract, in `sensitivity/AGENTS.md`'s words as well as here: duplicated or
 malformed markers refuse without touching anything; a non-empty `AGENTS.override.md` in the
-Codex home refuses, naming it; the write across both files is all-or-nothing, preflighted
-then committed; a missing target file is created holding just the block; and content between
-the markers is this repo's, overwritten on every run.
+Codex home refuses, naming it; the write across all present files is all-or-nothing,
+preflighted then committed; a present harness's missing target file is created holding just
+the block; and content between the markers is this repo's, overwritten on every run.
 
 `install.sh` calls the writer **last**, after the wrappers, npm and Chromium, and a refusal
 **warns without failing the install** — `install.sh` runs under `set -euo pipefail`, so a
@@ -97,17 +97,17 @@ unrelated to what that check tests. None of the other commands depends on the bl
 
 `/diagram-sensitivity`, from either harness:
 
-- **With a level** — `ask`, `default` or `high` — sets it in both files, creating the block
-  where it is absent. Run `sensitivity/set.sh <level>` and report what it says.
-- **Bare** — reports the resolved level. Run `sensitivity/set.sh --report`, which reads both
-  files and writes neither. A disagreement between them is reported as a disagreement, never
-  resolved by picking one.
+- **With a level** — `ask`, `default` or `high` — sets it in every present file, creating the
+  block where it is absent. Run `sensitivity/set.sh <level>` and report what it says.
+- **Bare** — reports the resolved level. Run `sensitivity/set.sh --report`, which reads present
+  files, names absent harnesses, and writes neither. A disagreement between two present files is
+  reported as a disagreement, never resolved by picking one.
 - **An unrecognised level** is refused, naming the three that exist.
 
 The paths are absolute in the rendered wrapper, as every wrapper's are.
 
 Moving the dial does not affect a session already running; it applies from the next one.
-Both harnesses read their global file at session start, and nothing re-reads it mid-session.
+A harness reads its global file at session start, and nothing re-reads it mid-session.
 
 ## What the dial does not govern
 

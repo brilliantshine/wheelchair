@@ -1,6 +1,6 @@
 # Stage 2 — Plan review
 
-Adversarial cross-model review of a plan produced by Stage 1.
+Adversarial review of a plan produced by Stage 1, through two independent lenses.
 
 **Input:** a plan slug. A plan written outside this workflow is brought in with
 `adopt.md` first; this stage does not take document paths.
@@ -17,6 +17,11 @@ lane told to "attack" always finds something to call major.
 
 N = 1 + the number of existing "Round" headings under Review Rounds.
 
+Directly under this round heading, write `**Lanes:**` and name each reviewer's family and
+model, followed by whether the round was cross-family. For example:
+`**Lanes:** GPT / gpt-5.6-sol; Claude / default reviewer model; cross-family: yes.`
+This records the gate even when both lenses return no findings.
+
 **Scope of the round:**
 
 - **Round 1** — the whole Spec.
@@ -27,13 +32,12 @@ N = 1 + the number of existing "Round" headings under Review Rounds.
   round's section — that list is what scopes the reviewers. If the plan is committed,
   `git diff` on PLAN.md is the more reliable source for it.
 
-Launch two **independent** reviewers in parallel — each fresh-context, each given only
-the plan path and repo access, never this conversation. Read
-`lanes.md`, in this same directory, for the
-exact invocations and cautions before launching.
-
-- **GPT lane** — `codex exec -m gpt-5.6-sol -s read-only -C "$PWD" -o "$OUT" - < brief`
-- **Claude lane** — Agent tool from Claude Code; `claude -p "<brief>"` from Codex.
+Launch two **independent** reviewers — each fresh-context, each given only the plan path
+and repo access, never this conversation. With both families available, launch the
+cross-family pair in parallel, as today. With one family, use both reviewers from that
+family: Claude reviewers may run in parallel; GPT reviewers run one after the other, as
+`lanes.md` requires. Read `lanes.md`, in this same directory, for the exact lane
+invocations and cautions before launching.
 
 Both lanes are read-only here: a plan reviewer reads code and reports, it never edits.
 
@@ -68,13 +72,23 @@ Both briefs carry the task, the severity ladder, and the adjudication record:
 > Report each finding on one line:
 > `SEVERITY: blocking|major|minor — <finding> — <evidence>`
 
-Slant the Claude lane additionally toward intent, measured against IDEA.md: is this the
-right shape for the stated problem, the simplest way it could be done, and does it still
-serve what the idea says it is for? Judge the GPT lane by its parsed SEVERITY lines only —
-its prose reads polished regardless of depth.
+Brief one reviewer for the **mechanics lens**: attack ambiguity, missing lifecycle,
+contradictions with the code, and unverifiable success criteria in the Spec. Brief the
+other for the **intent lens**, measured against IDEA.md: is this the right and simplest
+shape for the stated problem, and does it still serve what the idea says it is for? In a
+cross-family round, retain the existing slant by giving Claude the intent lens. In a
+one-family round, the lens — not the family — is the whole distinction between the two
+reviews. Judge GPT findings by their parsed SEVERITY lines only — its prose reads polished
+regardless of depth.
 
-Read each GPT lane's verdict from its `-o` file, and check the exit code: a non-zero
-exit means the lane died and its findings are missing, not that it found nothing.
+`lanes.md` determines and reports when a lane returned nothing. For an ordinary dead
+lane, stop the stage: do not treat missing findings as a clean review, and do not triage a
+partial round. A round ended this way does not count against the cap because it produced
+no triage. An announced authentication failure is different: run the one-account path and
+name the login failure in the round's **Lanes:** line. If the other reviewer already
+reported, retain that review as the lens it was briefed for and run one further reviewer
+from the surviving family under the missing lens; do not restart the round or discard the
+completed review.
 
 ## Merge and triage
 
@@ -116,10 +130,10 @@ if the plan has a graph under `docs/plans/<slug>/graphs/`, its "Authoring a Spec
 from a graph" section says how to draw from it. This is the first moment the Spec is final,
 and the last moment anything is cheap to fix. Then set `status: approved`.
 
-**Cap: three rounds.** If round 3 does not produce a clean triage, stop and bring it to
-the user with the findings that keep recurring. Review that won't converge in three
-rounds is signalling an unresolved fork in the plan itself — that is a Stage 1 decision,
-not more review.
+**Cap: three triaged rounds.** A round ended by a dead lane does not count. If round 3
+does not produce a clean triage, stop and bring it to the user with the findings that keep
+recurring. Review that won't converge in three rounds is signalling an unresolved fork in
+the plan itself — that is a Stage 1 decision, not more review.
 
 The cap counts rounds since the last user decision, not rounds ever. Once the user
 settles the fork through Open Questions, the budget resets and reviewing may continue —

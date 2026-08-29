@@ -9,6 +9,16 @@ workflow is deliberately built on `codex exec` so both harnesses drive the same 
 and lanes are inspectable with plain shell. That is an intentional override; don't
 "correct" it back to the pi runtime.
 
+## What "present" means
+
+A family is present when its command resolves on `PATH`: `claude` or `codex`. Presence is
+never inferred from a home directory existing: an installed tool may not have made one yet,
+and an uninstalled one may have left one behind. Nothing is declared by hand. A stage already
+running inside a harness may assume its own family is present; it only checks the other family.
+
+`WHEELCHAIR_PRESENT` is a testing seam. When it is set, including to the empty string, it
+replaces the `PATH` check with its comma-separated list of commands; production never sets it.
+
 ## GPT lane — `codex exec`
 
 Blocking and headless. Long briefs go in a file and pipe through stdin. Capture the
@@ -19,16 +29,22 @@ resumed later:
 BRIEF=$(mktemp) OUT=$(mktemp) LOG=$(mktemp)
 SLOT=~/.bravo/codex-auth-balancer/accounts/1
 # ... write the brief to $BRIEF ...
-CODEX_HOME="$SLOT" codex exec -m gpt-5.6-sol -c model_reasoning_effort=high \
+if [ -d "$SLOT" ]; then
+  CODEX=(env CODEX_HOME="$SLOT" codex)
+else
+  CODEX=(codex)  # leave CODEX_HOME unset; an existing user setting remains theirs
+fi
+"${CODEX[@]}" exec -m gpt-5.6-sol -c model_reasoning_effort=high \
   -s read-only -C "$PWD" --json -o "$OUT" - < "$BRIEF" > "$LOG" 2>&1
 RC=$?
 TID=$(grep -m1 -o '"thread_id":"[^"]*"' "$LOG" | cut -d'"' -f4)
 cat "$OUT"   # the report — parse this, not the event stream
 ```
 
-`CODEX_HOME` points at the **balancer's slot directory**, not at `~/.codex` and not at a copy
-of either. See "Credentials" below — this is the only safe form on a single account, and the
-explicit `-c model_reasoning_effort=high` is mandatory because of it.
+When the slot exists, `CODEX_HOME` points at that directory. When it does not, this invocation
+does not set it: `codex` uses its ordinary login, or an existing user setting remains theirs.
+See "Credentials — balancer setup" below. The explicit
+`-c model_reasoning_effort=high` belongs on every GPT lane in either configuration.
 
 `RC` and `TID` both matter: a non-zero `RC` means the lane died and `$OUT` may be empty
 or truncated, and `TID` is the only handle for resuming it. Record the thread id in the
@@ -49,11 +65,12 @@ plan doc next to the task it ran.
   - `gpt-5.6-sol` — judgment lanes (planning, plan review, verification). It reaches
     implementation only as an escalation ("Escalate the model only on evidence" below).
 
-  Reasoning effort **does** need a flag at dispatch. `model_reasoning_effort = "high"` lives
-  in `~/.codex/config.toml`, and lanes run with `CODEX_HOME` pointed at the balancer's slot
-  directory, which has no `config.toml` — so the global default is not read and a lane silently
-  falls back to the model's own default while appearing to work. Pass
-  `-c model_reasoning_effort=high` on every lane. High is the floor, not the ceiling —
+  Reasoning effort **does** need a flag at dispatch. The balancer slot has a `config.toml` for
+  project trust levels, but no `model_reasoning_effort`, so a lane using it would otherwise fall
+  back to the model's default while appearing to work. An ordinary `~/.codex/config.toml`
+  already sets `model_reasoning_effort = "high"`; passing the same flag there is correct and
+  costs nothing. Pass `-c model_reasoning_effort=high` on every lane. High is the floor, not
+  the ceiling —
   `-c model_reasoning_effort=xhigh` is the escalation rung below a tier change, and 5.6
   `xhigh` is genuine wire-level xhigh (verified). Anything *below* high is a downgrade;
   don't pass one unless you mean it.
@@ -69,7 +86,14 @@ Run lanes in a **background** Bash call so a foreground timeout can't kill them.
 **Continuation** — the remediation and closure-review path:
 
 ```bash
-codex exec resume "$TID" -m "$MODEL" -o "$OUT2" "<follow-up>"
+SLOT=~/.bravo/codex-auth-balancer/accounts/1
+if [ -d "$SLOT" ]; then
+  CODEX=(env CODEX_HOME="$SLOT" codex)
+else
+  CODEX=(codex)  # leave CODEX_HOME unset; an existing user setting remains theirs
+fi
+"${CODEX[@]}" exec resume "$TID" -m "$MODEL" -c model_reasoning_effort=high \
+  -o "$OUT2" "<follow-up>"
 ```
 
 `-m` repeats the model the lane already ran — Terra for an implementation lane, Sol for a
@@ -90,12 +114,27 @@ changed.
 From Claude Code: the Agent tool (`model: sonnet` for workers, default for reviewers).
 From Codex: `claude --model sonnet -p "<brief>"`, or plain `claude -p` for review lanes.
 
-UI/frontend implementation and taste-sensitive surfaces go here, never to a GPT lane.
+For UI/frontend implementation and taste-sensitive surfaces, see
+`protocol/implementation.md`; it owns the placement rule.
 
 Sonnet runs every Claude implementation lane, transcription work included; Opus reaches
 one only as an escalation, by the same rule as Sol. The Claude side is two tiers, not
 three — work that would go to Luna on a GPT lane stays on Sonnet here rather than dropping
 to Haiku. The Luna tier is a codex-lane thing.
+
+## When a lane returns nothing
+
+Dispatch reports a dead lane when `codex exec` exits non-zero, when its `-o` file is empty, or
+when a Claude agent returns no report. Report which lane died and what it said. This file owns
+that detection and report because they are part of dispatching; the stage documents own what
+their stages do next. Do not look here for rules about findings, verdicts, rounds, retries, or
+fallbacks.
+
+A lane that reports it is not authenticated is different: the tool stated its own condition;
+it is not an inference from a dead lane. On the GPT side, that includes `no Codex credentials
+were found`, `Run codex login`, and `token could not be refreshed. Please log out and sign in
+again`. Claude has no equivalent quotable string, so the rule remains family-neutral. The stage
+documents, not this one, say what follows from an authentication report.
 
 ## Rules that apply to every lane
 
@@ -130,7 +169,14 @@ to Haiku. The Luna tier is a codex-lane thing.
   iterating."* Your review loop is its only course correction.
 - **Judge GPT output by evidence, not prose.** Sol reads polished regardless of depth —
   parse the `SEVERITY`/`GAP` lines and the pasted evidence, ignore the fluency.
-## Credentials
+
+## Credentials — balancer setup
+
+This section describes a machine using the credential balancer. Its slot is a directory holding
+the live `auth.json`; pointing `CODEX_HOME` at it gives a lane that directory, not any of the
+balancer's machinery. Raw `codex exec` never calls `prepareLaunch`, never takes a lease, and
+never calls `syncBack`. The rule is to point at whichever `auth.json` is live; the slot is where
+that file lives on this machine.
 
 There is **one** ChatGPT account and its refresh token is single-use: spending it mints a
 replacement and voids the one spent. A copy of a credential is therefore not a second
@@ -149,9 +195,9 @@ leaves every other copy holding a stub.
   token is spent the moment the slot refreshes. Running `codex login` to fix it rotates the
   account away from the slot and breaks every Pi lane instead — the two stores ping-pong, one
   dead at a time.
-- **Sequence GPT lanes; never run them concurrently against one slot.** The balancer takes a
-  refresh lock on its own lease path, but a raw `codex exec` does not, so two lanes can race the
-  single-use rotation — the failure that used to brick this setup weekly.
+- **Sequence GPT lanes; do not run them concurrently.** They share one `auth.json`, and a raw
+  `codex exec` takes no lock on it, whether the file sits in the balancer's slot or in
+  `~/.codex`.
 - If a token genuinely is revoked, recover headlessly: `CODEX_HOME=<slotDir> codex exec
   --skip-git-repo-check "say ok"` forces a refresh while the refresh token is still live
   (`codex login status` does not refresh), and only if that reports revoked,

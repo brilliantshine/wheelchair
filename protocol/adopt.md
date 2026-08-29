@@ -64,7 +64,7 @@ user corrects any you got wrong in the same reply.
 | Landing | When | Next |
 |---|---|---|
 | `approved` | Already reviewed to your satisfaction; gaps are minor or absent. | `/implement <slug>` |
-| `ready-for-review` | Not yet adversarially reviewed, or you want the cross-model pass anyway. | `/plan-review <slug>` |
+| `ready-for-review` | Not yet adversarially reviewed, or you want the adversarial pass anyway. | `/plan-review <slug>` |
 | `planning` | Real holes — the Spec would not survive contact with a worker. | `/plan <slug>` |
 
 **Recommend a landing from the gap report, not from the user's confidence.** If the

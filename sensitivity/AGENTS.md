@@ -1,21 +1,22 @@
 # `sensitivity/` — the diagram-sensitivity block writer
 
-Owned by [the repo root](../AGENTS.md). `set.sh` is the only writer of the two global
-files; it renders the delimited region from `protocol/sensitivity.md` into them.
+Owned by [the repo root](../AGENTS.md). `set.sh` is the only writer of each present
+harness's global file; it renders the delimited region from `protocol/sensitivity.md` there.
 
-The organizing idea: **one level is resolved across both files before either is written,
-so the harnesses cannot disagree.**
+The organizing idea: **one level is resolved across the present files before any is written,
+so present harnesses cannot disagree.**
 
 | File | Role |
 |---|---|
-| `set.sh` | Renders, validates, reports, and updates `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` — both files together, or neither |
+| `set.sh` | Renders, validates, reports, and updates present harness files — every target together, or none |
 | `test/run.sh` | Fixture assertions under the system temp directory; gates on exit code |
 
 ## Boundaries
 
 - Content between the markers is this repo's and is overwritten. Do not hand-edit it
   expecting the edit to survive; bytes outside the markers are never touched.
-- The paired write is all-or-nothing. A refusal is never a repair. What delivers that is the
+- The present-target write is all-or-nothing. A refusal is never a repair. What delivers that
+  is the
   preflight, which is what the suite reaches; the rollback after the first rename is a race
   guard for a window the preflight cannot close, and nothing exercises it.
 - **The region probes are a regression tripwire, not a conformance test.** `test/run.sh` greps

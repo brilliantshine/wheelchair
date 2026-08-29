@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Render the diagram-sensitivity block into both global harness files.
+# Render the diagram-sensitivity block into present global harness files.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -11,6 +11,19 @@ claude_home=${WHEELCHAIR_CLAUDE_HOME:-"$HOME/.claude"}
 codex_home=${WHEELCHAIR_CODEX_HOME:-"$HOME/.codex"}
 claude_target="$claude_home/CLAUDE.md"
 codex_target="$codex_home/AGENTS.md"
+
+# Testing seam: when set (including to empty), this replaces PATH detection.
+if [[ ${WHEELCHAIR_PRESENT+x} ]]; then
+  case ",$WHEELCHAIR_PRESENT," in *,claude,*) claude_present=1 ;; *) claude_present=0 ;; esac
+  case ",$WHEELCHAIR_PRESENT," in *,codex,*) codex_present=1 ;; *) codex_present=0 ;; esac
+else
+  command -v claude >/dev/null 2>&1 && claude_present=1 || claude_present=0
+  command -v codex >/dev/null 2>&1 && codex_present=1 || codex_present=0
+fi
+
+targets=()
+(( claude_present )) && targets+=("$claude_target")
+(( codex_present )) && targets+=("$codex_target")
 
 usage_refusal() {
   local given=${*:-'<none>'}
@@ -89,30 +102,45 @@ describe_malformed() {
   fi
 }
 
-inspect "$claude_target"
-inspect "$codex_target"
+for target in "${targets[@]}"; do
+  inspect "$target"
+done
 
 if [[ $mode == report ]]; then
-  for target in "$claude_target" "$codex_target"; do
+  (( claude_present )) || printf 'diagram-sensitivity: claude is not on this machine\n'
+  (( codex_present )) || printf 'diagram-sensitivity: codex is not on this machine\n'
+  for target in "${targets[@]}"; do
     if [[ ${state[$target]} == malformed ]]; then
       describe_malformed "$target"
       exit 1
     fi
   done
-  if [[ ${state[$claude_target]} == absent && ${state[$codex_target]} == absent ]]; then
+  if (( ${#targets[@]} == 0 )); then
+    exit 0
+  fi
+  dial_installed=0
+  for target in "${targets[@]}"; do
+    [[ ${state[$target]} == valid ]] && dial_installed=1
+  done
+  if (( ! dial_installed )); then
     printf 'diagram-sensitivity dial is not installed; run ./install.sh\n'
     exit 0
   fi
-  if [[ ${state[$claude_target]} == valid && ${state[$codex_target]} == valid && ${levels[$claude_target]} != "${levels[$codex_target]}" ]]; then
+  if (( ${#targets[@]} == 2 )) && [[ ${state[$claude_target]} == valid && ${state[$codex_target]} == valid && ${levels[$claude_target]} != "${levels[$codex_target]}" ]]; then
     printf '%s: diagram-sensitivity levels disagree: %s is %s; %s is %s\n' \
       "${0##*/}" "$claude_target" "${levels[$claude_target]}" "$codex_target" "${levels[$codex_target]}" >&2
     exit 1
   fi
-  if [[ ${state[$claude_target]} == valid ]]; then
-    printf 'diagram-sensitivity: %s\n' "${levels[$claude_target]}"
-  else
-    printf 'diagram-sensitivity: %s\n' "${levels[$codex_target]}"
-  fi
+  for target in "${targets[@]}"; do
+    if [[ ${state[$target]} == valid ]]; then
+      printf 'diagram-sensitivity: %s\n' "${levels[$target]}"
+      exit 0
+    fi
+  done
+fi
+
+if (( ${#targets[@]} == 0 )); then
+  printf 'diagram-sensitivity: neither claude nor codex is on this machine; nothing written\n'
   exit 0
 fi
 
@@ -128,7 +156,7 @@ if [[ ${state[$source_file]} != valid ]]; then
   exit 1
 fi
 
-for target in "$claude_target" "$codex_target"; do
+for target in "${targets[@]}"; do
   if [[ ${state[$target]} == malformed ]]; then
     describe_malformed "$target"
     exit 1
@@ -136,36 +164,36 @@ for target in "$claude_target" "$codex_target"; do
 done
 
 override="$codex_home/AGENTS.override.md"
-if [[ -s $override ]]; then
+if (( codex_present )) && [[ -s $override ]]; then
   printf '%s: refusing while non-empty override exists: %s\n' "${0##*/}" "$override" >&2
   exit 1
 fi
 
 if [[ -n $requested ]]; then
   resolved=$requested
-elif [[ ${state[$claude_target]} == valid && ${state[$codex_target]} == valid ]]; then
-  if [[ ${levels[$claude_target]} != "${levels[$codex_target]}" ]]; then
-    printf '%s: diagram-sensitivity levels disagree: %s is %s; %s is %s; pass ask, default, or high explicitly\n' \
-      "${0##*/}" "$claude_target" "${levels[$claude_target]}" "$codex_target" "${levels[$codex_target]}" >&2
-    exit 1
-  fi
-  resolved=${levels[$claude_target]}
-elif [[ ${state[$claude_target]} == valid ]]; then
-  resolved=${levels[$claude_target]}
-elif [[ ${state[$codex_target]} == valid ]]; then
-  resolved=${levels[$codex_target]}
 else
-  resolved=default
+  resolved=''
+  for target in "${targets[@]}"; do
+    if [[ ${state[$target]} == valid ]]; then
+      if [[ -n $resolved && $resolved != "${levels[$target]}" ]]; then
+        printf '%s: diagram-sensitivity levels disagree: %s is %s; %s is %s; pass ask, default, or high explicitly\n' \
+          "${0##*/}" "${targets[0]}" "${levels[${targets[0]}]}" "$target" "${levels[$target]}" >&2
+        exit 1
+      fi
+      resolved=${levels[$target]}
+    fi
+  done
+  [[ -n $resolved ]] || resolved=default
 fi
 
 # Do not touch either file until every condition common to the pair is known.
-for target in "$claude_target" "$codex_target"; do
+for target in "${targets[@]}"; do
   if [[ -e $target && ! -w $target ]]; then
     printf '%s: target is not writable: %s\n' "${0##*/}" "$target" >&2
     exit 1
   fi
 done
-for target in "$claude_target" "$codex_target"; do
+for target in "${targets[@]}"; do
   directory=${target%/*}
   if ! mkdir -p -- "$directory" || [[ ! -w $directory ]]; then
     printf '%s: target directory cannot be created or written: %s\n' "${0##*/}" "$directory" >&2
@@ -183,7 +211,7 @@ sed -n "${start_lines[$source_file]},${end_lines[$source_file]}p" "$source_file"
   sed -E "s/^diagram-sensitivity: (ask|default|high)$/diagram-sensitivity: $resolved/" > "$rendered"
 
 declare -A output backup existed
-for target in "$claude_target" "$codex_target"; do
+for target in "${targets[@]}"; do
   directory=${target%/*}
   output[$target]=$(mktemp "$directory/.wheelchair-sensitivity.XXXXXX")
   cleanup_paths+=("${output[$target]}")
@@ -219,14 +247,18 @@ restore() {
   fi
 }
 
-if ! mv -f -- "${output[$claude_target]}" "$claude_target"; then
-  printf '%s: could not write %s\n' "${0##*/}" "$claude_target" >&2
-  exit 1
-fi
-if ! mv -f -- "${output[$codex_target]}" "$codex_target"; then
-  restore "$claude_target"
-  printf '%s: could not write %s; restored %s\n' "${0##*/}" "$codex_target" "$claude_target" >&2
-  exit 1
-fi
+written=()
+for target in "${targets[@]}"; do
+  if ! mv -f -- "${output[$target]}" "$target"; then
+    for restored in "${written[@]}"; do restore "$restored"; done
+    printf '%s: could not write %s; restored prior target(s)\n' "${0##*/}" "$target" >&2
+    exit 1
+  fi
+  written+=("$target")
+done
 
-printf 'diagram-sensitivity: set %s in %s and %s\n' "$resolved" "$claude_target" "$codex_target"
+if (( ${#targets[@]} == 1 )); then
+  printf 'diagram-sensitivity: set %s in %s\n' "$resolved" "${targets[0]}"
+else
+  printf 'diagram-sensitivity: set %s in %s and %s\n' "$resolved" "${targets[0]}" "${targets[1]}"
+fi
