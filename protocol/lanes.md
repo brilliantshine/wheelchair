@@ -3,11 +3,10 @@
 How every stage in this workflow spawns a subagent. Stage docs reference this file
 instead of repeating invocations.
 
-**Use the Codex CLI headless for GPT lanes. Do not use async-subagents or raw `pi` for
-this workflow** — even though global guidance prefers them for general delegation. This
-workflow is deliberately built on `codex exec` so both harnesses drive the same binary
-and lanes are inspectable with plain shell. That is an intentional override; don't
-"correct" it back to the pi runtime.
+**GPT lanes run the Codex CLI headless.** The workflow is built on `codex exec` so both
+harnesses drive the same binary and every lane is inspectable from a plain shell. If other
+guidance on your machine prefers a different subagent runtime, this file wins here — a lane you
+cannot reproduce by hand is a lane you cannot debug.
 
 ## What "present" means
 
@@ -27,24 +26,17 @@ resumed later:
 
 ```bash
 BRIEF=$(mktemp) OUT=$(mktemp) LOG=$(mktemp)
-SLOT=~/.bravo/codex-auth-balancer/accounts/1
 # ... write the brief to $BRIEF ...
-if [ -d "$SLOT" ]; then
-  CODEX=(env CODEX_HOME="$SLOT" codex)
-else
-  CODEX=(codex)  # leave CODEX_HOME unset; an existing user setting remains theirs
-fi
-"${CODEX[@]}" exec -m gpt-5.6-sol -c model_reasoning_effort=high \
+codex exec -m gpt-5.6-sol -c model_reasoning_effort=high \
   -s read-only -C "$PWD" --json -o "$OUT" - < "$BRIEF" > "$LOG" 2>&1
 RC=$?
 TID=$(grep -m1 -o '"thread_id":"[^"]*"' "$LOG" | cut -d'"' -f4)
 cat "$OUT"   # the report — parse this, not the event stream
 ```
 
-When the slot exists, `CODEX_HOME` points at that directory. When it does not, this invocation
-does not set it: `codex` uses its ordinary login, or an existing user setting remains theirs.
-See "Credentials — balancer setup" below. The explicit
-`-c model_reasoning_effort=high` belongs on every GPT lane in either configuration.
+This sets no `CODEX_HOME`: `codex` uses its ordinary login, and a value you set yourself stays
+yours. See Credentials below. The explicit `-c model_reasoning_effort=high` belongs on every GPT
+lane.
 
 `RC` and `TID` both matter: a non-zero `RC` means the lane died and `$OUT` may be empty
 or truncated, and `TID` is the only handle for resuming it. Record the thread id in the
@@ -65,11 +57,10 @@ plan doc next to the task it ran.
   - `gpt-5.6-sol` — judgment lanes (planning, plan review, verification). It reaches
     implementation only as an escalation ("Escalate the model only on evidence" below).
 
-  Reasoning effort **does** need a flag at dispatch. The balancer slot has a `config.toml` for
-  project trust levels, but no `model_reasoning_effort`, so a lane using it would otherwise fall
-  back to the model's default while appearing to work. An ordinary `~/.codex/config.toml`
-  already sets `model_reasoning_effort = "high"`; passing the same flag there is correct and
-  costs nothing. Pass `-c model_reasoning_effort=high` on every lane. High is the floor, not
+  Reasoning effort **does** need a flag at dispatch. `~/.codex/config.toml` may set
+  `model_reasoning_effort` and may not, and a `CODEX_HOME` pointed somewhere without one leaves a
+  lane falling back to the model's default while appearing to work. Passing the flag is correct
+  either way and costs nothing, so pass `-c model_reasoning_effort=high` on every lane. High is the floor, not
   the ceiling —
   `-c model_reasoning_effort=xhigh` is the escalation rung below a tier change, and 5.6
   `xhigh` is genuine wire-level xhigh (verified). Anything *below* high is a downgrade;
@@ -86,13 +77,7 @@ Run lanes in a **background** Bash call so a foreground timeout can't kill them.
 **Continuation** — the remediation and closure-review path:
 
 ```bash
-SLOT=~/.bravo/codex-auth-balancer/accounts/1
-if [ -d "$SLOT" ]; then
-  CODEX=(env CODEX_HOME="$SLOT" codex)
-else
-  CODEX=(codex)  # leave CODEX_HOME unset; an existing user setting remains theirs
-fi
-"${CODEX[@]}" exec resume "$TID" -m "$MODEL" -c model_reasoning_effort=high \
+codex exec resume "$TID" -m "$MODEL" -c model_reasoning_effort=high \
   -o "$OUT2" "<follow-up>"
 ```
 
@@ -170,36 +155,25 @@ documents, not this one, say what follows from an authentication report.
 - **Judge GPT output by evidence, not prose.** Sol reads polished regardless of depth —
   parse the `SEVERITY`/`GAP` lines and the pasted evidence, ignore the fluency.
 
-## Credentials — balancer setup
+## Credentials
 
-This section describes a machine using the credential balancer. Its slot is a directory holding
-the live `auth.json`; pointing `CODEX_HOME` at it gives a lane that directory, not any of the
-balancer's machinery. Raw `codex exec` never calls `prepareLaunch`, never takes a lease, and
-never calls `syncBack`. The rule is to point at whichever `auth.json` is live; the slot is where
-that file lives on this machine.
+`codex exec` reads its credential from `~/.codex`, or from wherever `CODEX_HOME` points if you
+have set it. Nothing here sets it; a value you chose stays yours.
 
-There is **one** ChatGPT account and its refresh token is single-use: spending it mints a
-replacement and voids the one spent. A copy of a credential is therefore not a second
-credential — it is a second claim on a one-shot ticket, and whichever copy refreshes first
-leaves every other copy holding a stub.
+What matters is that a ChatGPT account's refresh token is **single-use**: spending it mints a
+replacement and voids the one spent. Two consequences follow, and they are the reason this
+section exists at all.
 
-- **Point `CODEX_HOME` at the balancer's slot directory** —
-  `~/.bravo/codex-auth-balancer/accounts/<n>` — so any refresh happens in place, in the
-  canonical file. This is what `bravo-pi-mono/docs/specs/codex-auth-balancer/design.md:34`
-  prescribes for headless use.
-- **Never copy an auth directory or an `auth.json`.** The balancer's own source calls the
-  copied-credential path opt-in legacy and documents the failure: a child that rotates the
-  refresh token leaves canonical holding a consumed one, which bricks on its next refresh. Its
-  mitigation is failover to another slot. With one account there is nothing to fail over to.
-- **Don't use `~/.codex` for lanes.** It is a separate store outside the balancer's sync, so its
-  token is spent the moment the slot refreshes. Running `codex login` to fix it rotates the
-  account away from the slot and breaks every Pi lane instead — the two stores ping-pong, one
-  dead at a time.
-- **Sequence GPT lanes; do not run them concurrently.** They share one `auth.json`, and a raw
-  `codex exec` takes no lock on it, whether the file sits in the balancer's slot or in
-  `~/.codex`.
-- If a token genuinely is revoked, recover headlessly: `CODEX_HOME=<slotDir> codex exec
-  --skip-git-repo-check "say ok"` forces a refresh while the refresh token is still live
-  (`codex login status` does not refresh), and only if that reports revoked,
-  `CODEX_HOME=<slotDir> codex login --device-auth`. The browser flow runs `codex logout` first
-  and cannot complete headlessly, so a failed attempt leaves the slot strictly worse off.
+- **Never copy an auth directory or an `auth.json`.** A copy is not a second credential, it is a
+  second claim on a one-shot ticket, and whichever copy refreshes first leaves every other copy
+  holding a stub. If you keep more than one store, expect exactly one of them to work.
+- **Sequence GPT lanes; do not run them concurrently.** They share one `auth.json` and a raw
+  `codex exec` takes no lock on it, so two lanes crossing a refresh at the same moment can race
+  the rotation. Whether the tool guards this internally is unresolved — the OAuth locks in the
+  binary belong to its MCP client, not to ChatGPT login — so this rule is the conservative
+  reading rather than a measured one.
+
+If a token is revoked, recover headlessly first: `codex exec --skip-git-repo-check "say ok"`
+forces a refresh while the refresh token is still live, which `codex login status` does not do.
+Only if that reports revoked, `codex login --device-auth`. The browser flow runs `codex logout`
+first and cannot complete headlessly, so a failed attempt leaves you strictly worse off.
