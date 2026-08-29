@@ -1,6 +1,6 @@
 ---
 slug: one-account-setups
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-08-25
 ---
 
