@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Render the diagram-sensitivity block into both global harness files.
+# Render the diagram-sensitivity block into present global harness files.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

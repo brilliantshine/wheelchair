@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# Render the workflow entry points into both harnesses, and install the viewer's deps. Idempotent.
+# Render workflow entry points into present harnesses, and install the viewer's deps. Idempotent.
 #
 # The wrappers are rendered rather than symlinked because a wrapper has to name an ABSOLUTE path: a
 # command runs with some other repo as its working directory, so a relative path resolves nowhere.
 # The repo therefore cannot contain a real path — it carries the {{WHEELCHAIR_ROOT}} placeholder and
 # this script substitutes wherever the clone actually is. Editing anything under protocol/ still
-# takes effect immediately in both harnesses, because the rendered wrapper points back into this
+# takes effect immediately in each rendered harness, because the wrapper points back into this
 # working tree. Editing a wrapper itself needs a re-run.
 #
 # One thing here is rendered rather than pointed at, so editing it DOES need a re-run: the
-# delimited region of protocol/sensitivity.md that the last step writes into ~/.claude/CLAUDE.md
-# and ~/.codex/AGENTS.md. Those two files sit outside this tree; only the bytes between the markers
-# are this repo's, and only they are overwritten. /diagram-sensitivity drives the same writer, so a
+# delimited region of protocol/sensitivity.md that the last step writes into each present global
+# harness file. Those files sit outside this tree; only the bytes between the markers are this
+# repo's, and only they are overwritten. /diagram-sensitivity drives the same writer, so a
 # re-run of this script is not the only way to move the dial.
 set -euo pipefail
 

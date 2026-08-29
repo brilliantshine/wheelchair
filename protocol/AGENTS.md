@@ -21,16 +21,16 @@ lands at one of the statuses the machine already has.
 | File | Role |
 |---|---|
 | `planning.md` | Stage 1. Map the code before the idea; one question at a time, the queue lives in the doc |
-| `plan-review.md` | Stage 2. Parallel GPT and Claude adversarial review; the lead adjudicates every finding |
+| `plan-review.md` | Stage 2. Two independent adversarial reviewers; the lead adjudicates every finding |
 | `implementation.md` | Stage 3. The lead briefs and integrates, cheap lanes implement |
-| `verification.md` | Stage 4. A verifier from the opposite model family tries to falsify the completion claims |
+| `verification.md` | Stage 4. A fresh verifier tries to falsify the completion claims |
 | `adopt.md` | The on-ramp for a plan document written elsewhere |
 | `lanes.md` | How every stage spawns a subagent. **The only place invocations live** |
 | `writing.md` | How anything a person reads is written. Governs messages, not documents |
 | `map.md` | How to explain existing code: flow first, grounded in `file:line`, no filler |
 | `diagrams.md` | Which diagram a document gets, and what keeps it from lying |
 | `graphs.md` | The graph format read by both harnesses — schema, verdicts, preservation, how the viewer starts |
-| `sensitivity.md` | The diagram-sensitivity dial: the region rendered into both harnesses' always-on files, and what each level draws |
+| `sensitivity.md` | The diagram-sensitivity dial: the region rendered into present harnesses' always-on files, and what each level draws |
 | `routers.md` | The router format — what `/spine` creates and the Stage 3 upkeep rule maintains |
 | `spine.md` | The `/spine` run sequence. Takes a path, not a slug, and sits outside the state machine |
 | `templates/` | The skeletons a stage writes from: `MAP.md`, `IDEA.md`, `PLAN.md`, `COMPLETION.md` |
@@ -53,13 +53,13 @@ lands at one of the statuses the machine already has.
 
 None — these are documents. The check that they work is that a stage run from either
 harness produces the same artifacts, and that a rendered wrapper points back into this
-working tree, so an edit here takes effect immediately in both without reinstalling.
+working tree, so an edit here takes effect immediately in every rendered harness.
 
 `sensitivity.md` is the one file here that does not: its delimited region is rendered into
-`~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`, so editing inside the markers needs
-`sensitivity/set.sh` to run before it reaches either harness. `bash sensitivity/test/run.sh`
-asserts what lands there — that both files receive the same region, that it matches this source
-after substitution, and that every rule the plan requires the region to carry is still in it.
+each present harness's global instruction file, so editing inside the markers needs
+`sensitivity/set.sh` to run before it reaches that harness. `bash sensitivity/test/run.sh`
+asserts what lands there — that present targets receive the substituted region and, when both
+are present, match each other; and that every rule the plan requires the region to carry remains.
 
 **That last part is a regression tripwire, not a conformance test**, and the difference matters
 if you are the one editing the region. It greps for a phrase per rule, so it catches a rule
