@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "title": "Groups fixture",
+  "source": "code-read",
+  "source_detail": "viewer/test/fixtures/groups-basic.json (browser suite only)",
+  "explanation": "Two options: [the left branch](#left-branch) rejects the request outright, while [the far branch](#far-branch) is a distant alternative laid out far to the right. See [the docs](docs/readme.md) for background reading.",
+  "groups": [
+    {"id": "left-branch", "nodes": ["gate", "refuse"]},
+    {"id": "far-branch", "nodes": ["far"]}
+  ],
+  "nodes": [
+    {"id":"gate","label":"Check the gate","kind":"decision","origin":"proposed","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":150,"y":150},
+    {"id":"refuse","label":"Refuse the request","kind":"step","origin":"rejected","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":450,"y":150},
+    {"id":"outside","label":"Outside the group","kind":"step","origin":"proposed","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":750,"y":150},
+    {"id":"other","label":"Not in any group yet","kind":"step","origin":"proposed","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":150,"y":650},
+    {"id":"far","label":"A distant alternative","kind":"step","origin":"proposed","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":3000,"y":150}
+  ],
+  "edges": [
+    {"id":"gate->refuse","from":"gate","to":"refuse","label":"if unresolved","kind":"sequence","value":null,"inferred":false,"origin":"proposed","was":null,"note":null},
+    {"id":"gate->outside","from":"gate","to":"outside","label":"continues","kind":"sequence","value":null,"inferred":false,"origin":"proposed","was":"agreed","note":null},
+    {"id":"gate->other","from":"gate","to":"other","label":"else","kind":"sequence","value":null,"inferred":false,"origin":"proposed","was":null,"note":null}
+  ]
+}

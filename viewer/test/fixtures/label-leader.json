@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "title": "two sources feeding the same three steps",
+  "source": "code-read",
+  "source_detail": "fixture: enough crowding that some labels cannot sit on their own line",
+  "explanation": null,
+  "nodes": [
+    { "id": "cache", "label": "look in the cache first" },
+    { "id": "disk", "label": "read it off disk instead" },
+    { "id": "parse", "label": "turn the bytes into a record" },
+    { "id": "check", "label": "check it against the schema" },
+    { "id": "store", "label": "put the record in the index" }
+  ],
+  "edges": [
+    { "id": "cache->parse", "from": "cache", "to": "parse", "label": "on a hit, with nothing left to read" },
+    { "id": "cache->check", "from": "cache", "to": "check", "label": "on a hit that was written by an older version" },
+    { "id": "cache->store", "from": "cache", "to": "store", "label": "on a hit already checked once this run" },
+    { "id": "disk->parse", "from": "disk", "to": "parse", "label": "on a miss, once the file has been opened" },
+    { "id": "disk->check", "from": "disk", "to": "check", "label": "on a miss, before anything trusts it" },
+    { "id": "disk->store", "from": "disk", "to": "store", "label": "on a miss the schema check already cleared" }
+  ]
+}

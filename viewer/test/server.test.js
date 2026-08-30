@@ -25,13 +25,17 @@ async function withFixture(name, work, target) {
 
 async function readFixtureGraph(name) { return JSON.parse((await fixture(name)).toString()); }
 function entry(graph, id) { return [...graph.nodes, ...graph.edges].find((item) => item.id === id); }
-// The box the viewer draws is 200 wide and up to 84 tall (index.html's NODE_W and nodeHeight),
-// so two nodes closer than that would be drawn one on top of the other whatever the layout meant.
+// The box the viewer draws is 200 wide and up to 116 tall (index.html's NODE_W and nodeHeight,
+// at the five-line label cap), so two nodes closer than that would be drawn one on top of the
+// other whatever the layout meant. Hardcoded rather than imported: server.js exports nothing and
+// this suite spawns it as a child process, so there is nothing to import, and an export added
+// only to feed a test would be a module-shape change for one assertion. The browser suite holds
+// the other end of this coupling, where a real five-line box is measured against a real layout.
 function assertNoOverlap(graph) {
   for (const left of graph.nodes) {
     for (const right of graph.nodes) {
       if (left.id >= right.id) continue;
-      const apart = Math.abs(left.x - right.x) >= 200 || Math.abs(left.y - right.y) >= 84;
+      const apart = Math.abs(left.x - right.x) >= 200 || Math.abs(left.y - right.y) >= 116;
       assert.ok(apart, `${left.id} and ${right.id} were laid out on top of each other`);
     }
   }
@@ -155,7 +159,71 @@ test('explanation written through /graph is retained on disk in canonical order'
     expect(await graphPut(ctx, graph, state.hash), 200);
     const stored = JSON.parse(await fs.readFile(ctx.graphPath, 'utf8'));
     assert.equal(stored.explanation, graph.explanation);
-    assert.deepEqual(Object.keys(stored), ['schema', 'title', 'source', 'source_detail', 'explanation', 'nodes', 'edges']);
+    assert.deepEqual(Object.keys(stored), ['schema', 'title', 'source', 'source_detail', 'explanation', 'groups', 'nodes', 'edges']);
+  });
+});
+
+test('groups canonicalize member lists, order, and byte round-trip', async () => {
+  await withFixture('canonical.json', async (ctx) => {
+    let state = await getGraph(ctx); const graph = copy(state.graph);
+    graph.explanation = 'See [the right branch](#right) and [the left branch](#left).';
+    graph.groups = [
+      { id: 'right', nodes: ['store', 'report', 'store'] },
+      { id: 'left', nodes: ['inspect', 'gather'] },
+    ];
+    expect(await graphPut(ctx, graph, state.hash), 200);
+    state = await getGraph(ctx);
+    assert.deepEqual(state.graph.groups, [
+      { id: 'left', nodes: ['gather', 'inspect'] },
+      { id: 'right', nodes: ['report', 'store'] },
+    ]);
+    const before = await fs.readFile(ctx.graphPath);
+    expect(await graphPut(ctx, state.graph, state.hash), 200);
+    assert.deepEqual(await fs.readFile(ctx.graphPath), before);
+    assert.deepEqual(Object.keys(JSON.parse(before)),
+      ['schema', 'title', 'source', 'source_detail', 'explanation', 'groups', 'nodes', 'edges']);
+  });
+});
+
+test('groups default on writes and reads of legacy disk files', async () => {
+  await withFixture('canonical.json', async (ctx) => {
+    let state = await getGraph(ctx); const omitted = copy(state.graph); delete omitted.groups;
+    expect(await graphPut(ctx, omitted, state.hash), 200);
+    assert.deepEqual((await getGraph(ctx)).graph.groups, []);
+
+    const legacy = JSON.parse(await fs.readFile(ctx.graphPath, 'utf8')); delete legacy.groups;
+    await fs.writeFile(ctx.graphPath, JSON.stringify(legacy));
+    state = await getGraph(ctx);
+    assert.deepEqual(state.graph.groups, []);
+  });
+});
+
+test('groups refuse malformed claims and unmatched explanation references', async () => {
+  await withFixture('canonical.json', async (ctx) => {
+    const state = await getGraph(ctx);
+    for (const [code, change] of [
+      ['unknown-schema', (graph) => { graph.groups = {}; }],
+      ['bad-id', (graph) => { graph.groups = [{ id: 'left', nodes: ['gather'] }, { id: 'left', nodes: ['inspect'] }]; }],
+      ['group-bad-name', (graph) => { graph.groups = [{ id: 'left.branch', nodes: ['gather'] }]; }],
+      ['group-missing-node', (graph) => { graph.groups = [{ id: 'left', nodes: [] }]; }],
+      ['group-missing-node', (graph) => { graph.groups = [{ id: 'left', nodes: ['gather', 'nobody'] }]; }],
+      ['group-missing-node', (graph) => { graph.groups = [{ id: 'left', nodes: [7] }]; }],
+      ['group-missing-node', (graph) => { graph.groups = [{ id: 'left' }]; }],
+      ['bad-id', (graph) => { graph.groups = ['left']; }],
+      ['explanation-missing-group', (graph) => { graph.explanation = 'See [the left branch](#left).'; }],
+      ['group-unreferenced', (graph) => { graph.groups = [{ id: 'left', nodes: ['gather'] }]; }],
+    ]) {
+      const graph = copy(state.graph); change(graph);
+      expect(await graphPut(ctx, graph, state.hash), 422, code);
+    }
+  });
+});
+
+test('ordinary markdown links in explanations do not require groups', async () => {
+  await withFixture('canonical.json', async (ctx) => {
+    const state = await getGraph(ctx); const graph = copy(state.graph);
+    graph.explanation = 'Read [the router](protocol/routers.md) or [the site](https://example.com).';
+    expect(await graphPut(ctx, graph, state.hash), 200);
   });
 });
 
@@ -203,6 +271,21 @@ test('/view cannot alter explanation', async () => {
     graph.explanation = 'The page must not replace the agent account.';
     expect(await viewPut(ctx, graph, state.hash), 422, 'structural-difference');
     assert.deepEqual(await fs.readFile(ctx.graphPath), before);
+  });
+});
+
+test('/view cannot alter groups and accepts an untouched deep clone', async () => {
+  await withFixture('canonical.json', async (ctx) => {
+    let state = await getGraph(ctx); const grouped = copy(state.graph);
+    grouped.explanation = 'See [the left branch](#left).';
+    grouped.groups = [{ id: 'left', nodes: ['gather'] }];
+    expect(await graphPut(ctx, grouped, state.hash), 200);
+
+    state = await getGraph(ctx);
+    expect(await viewPut(ctx, copy(state.graph), state.hash), 200);
+    state = await getGraph(ctx);
+    const changed = copy(state.graph); changed.groups[0].nodes = ['inspect'];
+    expect(await viewPut(ctx, changed, state.hash), 422, 'structural-difference');
   });
 });
 
@@ -677,6 +760,25 @@ test('layout runs downhill: an arrow never points back up the page', async () =>
         `${edge.id} points from row ${at.get(edge.from).y} to row ${at.get(edge.to).y}`);
     }
     assertNoOverlap(stored);
+  } finally { await ctx.stop(); }
+});
+
+test('a fresh layout keeps consecutive rows 140 pixels apart', async () => {
+  const root = await makeDir(); const graphDir = path.join(root, 'graphs'); await fs.mkdir(graphDir, { recursive: true });
+  const ctx = await startServer({ cacheRoot: root, open: path.join(graphDir, 'pitch.json') });
+  try {
+    const graph = {
+      schema: 1, title: 'Pitch', source: 'code-read', source_detail: null, explanation: null,
+      nodes: [{ id: 'first', label: 'First' }, { id: 'second', label: 'Second' }, { id: 'third', label: 'Third' }],
+      edges: [
+        { id: 'first->second', from: 'first', to: 'second', label: 'then' },
+        { id: 'second->third', from: 'second', to: 'third', label: 'then' },
+      ],
+    };
+    expect(await graphPut(ctx, graph, ''), 200);
+    const at = new Map((await getGraph(ctx)).graph.nodes.map((node) => [node.id, node]));
+    assert.equal(at.get('second').y - at.get('first').y, 140);
+    assert.equal(at.get('third').y - at.get('second').y, 140);
   } finally { await ctx.stop(); }
 });
 

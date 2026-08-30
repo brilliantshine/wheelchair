@@ -30,6 +30,21 @@ async function launch(fixtureName, targetName = fixtureName) {
   return startServer({ cacheRoot: root, open: graphPath });
 }
 
+// label-crowding.json has to land on a path with nothing on it yet: that is the one route where
+// the server lays a graph out itself (invents positions) rather than keeping ones already on disk,
+// which is the state the label-placement search runs against. Shared by every test below that
+// needs this fixture, so each gets its own fresh, isolated server the same way `launch` does.
+async function launchLabelCrowding() {
+  const root = await makeDir('browser-');
+  const graphDir = path.join(root, 'graphs');
+  await fs.mkdir(graphDir, { recursive: true });
+  const ctx = await startServer({ cacheRoot: root, open: path.join(graphDir, 'crowded.json') });
+  const fixture = JSON.parse(await fs.readFile(path.join(__dirname, 'fixtures', 'label-crowding.json'), 'utf8'));
+  const written = await put(ctx, '/graph', fixture, '');
+  assert.equal(written.status, 200, JSON.stringify(written.body));
+  return { ctx, fixture };
+}
+
 function pageUrl(ctx) {
   return `${ctx.url}/?path=${encodeURIComponent(ctx.graphPath)}&token=${encodeURIComponent(ctx.token)}`;
 }
@@ -73,9 +88,17 @@ async function pageZoom(page) {
 
 function nodeBox(page, id) { return page.locator(`svg#canvas g.node[data-id="${id}"] rect.node-box`); }
 function edgeLine(page, id) { return page.locator(`svg#canvas g.edge[data-id="${id}"] path.edge-line`); }
-function edgeLabel(page, id) { return page.locator(`svg#canvas g.edge[data-id="${id}"] text.edge-label`); }
+// Not scoped under g.edge any more: the label lives in its own layer, appended after every edge
+// group (see index.html's render()), so it is found by its own data-id instead.
+function edgeLabel(page, id) { return page.locator(`svg#canvas text.edge-label[data-id="${id}"]`); }
 function edgeHandle(page, id, end) {
   return page.locator(`svg#canvas g.edge[data-id="${id}"] circle.edge-handle[data-end="${end}"]`);
+}
+// A marked phrase in the explanation panel — a <span class="group-ref"> carrying only the group
+// id (see index.html's buildExplainBody), found here rather than by its visible text since two
+// different phrases could otherwise collide.
+function groupRef(page, id) {
+  return page.locator(`#explain-body .group-ref[data-group="${id}"]`);
 }
 
 async function center(locator) {
@@ -149,30 +172,162 @@ test('dragging a single node writes matching integer coordinates to disk', async
 // three of its labels landed on a box before the placement search learned to look at boxes at all.
 // Real Chromium and real bounding boxes, because the label's width is measured text, not a number
 // the page could be asked for.
+//
+// Checked on .edge-label-bg, not .edge-label: the background rect is what is actually drawn over
+// a box, and it is 14px wider than the text it holds (see the width assertion below) — measuring
+// only the text would leave seven pixels a side unchecked on either end.
 // ============================================================================================
 test('a freshly laid out graph puts no edge label on top of a node box', async ({ page }) => {
-  const root = await makeDir('browser-');
-  const graphDir = path.join(root, 'graphs');
-  await fs.mkdir(graphDir, { recursive: true });
-  // PUT to a path with nothing on it yet: that is the one route where the server lays a graph out
-  // rather than keeping the positions it already has, which is the state under test.
-  const ctx = await startServer({ cacheRoot: root, open: path.join(graphDir, 'crowded.json') });
+  const { ctx, fixture } = await launchLabelCrowding();
   try {
-    const fixture = JSON.parse(await fs.readFile(path.join(__dirname, 'fixtures', 'label-crowding.json'), 'utf8'));
-    const written = await put(ctx, '/graph', fixture, '');
-    assert.equal(written.status, 200, JSON.stringify(written.body));
     await page.goto(pageUrl(ctx));
     await ready(page);
     const covered = await page.evaluate(() => {
       const boxes = [...document.querySelectorAll('.node-box')].map((el) => el.getBoundingClientRect());
-      return [...document.querySelectorAll('.edge-label')].filter((label) => {
-        const r = label.getBoundingClientRect();
+      return [...document.querySelectorAll('.edge-label-bg')].filter((bg) => {
+        const r = bg.getBoundingClientRect();
         return boxes.some((b) => r.left < b.right - 2 && r.right > b.left + 2
           && r.top < b.bottom - 2 && r.bottom > b.top + 2);
-      }).map((label) => label.textContent);
+      }).map((bg) => bg.getAttribute('data-id'));
     });
-    assert.deepEqual(covered, [], 'these labels are sitting on a box');
+    assert.deepEqual(covered, [], 'these label backgrounds are sitting on a box');
+    // The one existing assertion that would catch a measuring element (.label-metric) wearing the
+    // wrong class: Playwright's all() does not filter hidden elements, so a measurer counted as
+    // .edge-label would inflate this past fixture.edges.length.
     assert.equal((await page.locator('.edge-label').all()).length, fixture.edges.length);
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// The collision rectangle the placement search tests is the one actually drawn: every
+// .edge-label-bg is exactly its label's measured text width plus the 14px background padding,
+// never the old per-character estimate. Compared in the SVG's own local units — the bg's `width`
+// attribute against the label's own getComputedTextLength() — so the page's current zoom never
+// enters into it. label-crowding.json's shortest label is 21 characters, comfortably past the
+// Math.max(24, ...) floor, so every label here is long enough that the floor can't mask a
+// mis-measured width by coincidentally producing the same 14px difference.
+// ============================================================================================
+test('every edge label background is exactly its measured text width plus 14px', async ({ page }) => {
+  const { ctx } = await launchLabelCrowding();
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+    const diffs = await page.evaluate(() => {
+      return [...document.querySelectorAll('.edge-label-bg')].map((bg) => {
+        const id = bg.getAttribute('data-id');
+        const label = document.querySelector(`text.edge-label[data-id="${id}"]`);
+        const width = parseFloat(bg.getAttribute('width'));
+        return { id, diff: width - (label.getComputedTextLength() + 14) };
+      });
+    });
+    assert.ok(diffs.length > 0, 'expected at least one edge label background');
+    for (const { id, diff } of diffs) {
+      assert.ok(Math.abs(diff) < 1, `edge "${id}": expected bg width to be text length + 14, off by ${diff}`);
+    }
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// The assertion standing for the whole change: no label is left floating with nothing tying it to
+// its own arrow. Read straight off the rendered SVG's own local coordinates (the edge-line's `d`
+// attribute and the edge-label-bg's x/y/width/height) rather than screen bounding boxes — a
+// horizontal or vertical edge-line reports a degenerate (zero-width or zero-height)
+// getBoundingClientRect in Chromium, which would make a real intersection look like a miss.
+// ============================================================================================
+test('every edge label on the crowding fixture touches its own line or carries a leader back to it', async ({ page }) => {
+  const { ctx, fixture } = await launchLabelCrowding();
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+    const results = await page.evaluate(() => {
+      // Same clip test as index.html's rectIntersectsSegment, computed independently here against
+      // the real, rendered DOM rather than by calling back into the page's own implementation.
+      function intersects(rect, x1, y1, x2, y2) {
+        const dx = x2 - x1, dy = y2 - y1;
+        const p = [-dx, dx, -dy, dy];
+        const q = [x1 - rect.x, rect.x + rect.w - x1, y1 - rect.y, rect.y + rect.h - y1];
+        let tMin = 0, tMax = 1;
+        for (let i = 0; i < 4; i += 1) {
+          if (p[i] === 0) { if (q[i] < 0) return false; continue; }
+          const t = q[i] / p[i];
+          if (p[i] < 0) { if (t > tMax) return false; if (t > tMin) tMin = t; }
+          else { if (t < tMin) return false; if (t < tMax) tMax = t; }
+        }
+        return tMin <= tMax;
+      }
+      return [...document.querySelectorAll('g.edge')].map((edge) => {
+        const id = edge.getAttribute('data-id');
+        const d = edge.querySelector('path.edge-line').getAttribute('d');
+        const [, x1, y1, x2, y2] = d.match(/M([-\d.]+),([-\d.]+) L([-\d.]+),([-\d.]+)/).map(Number);
+        const bg = document.querySelector(`rect.edge-label-bg[data-id="${id}"]`);
+        const rect = {
+          x: parseFloat(bg.getAttribute('x')), y: parseFloat(bg.getAttribute('y')),
+          w: parseFloat(bg.getAttribute('width')), h: parseFloat(bg.getAttribute('height')),
+        };
+        const hasLeader = !!document.querySelector(`line.edge-leader[data-id="${id}"]`);
+        return { id, tied: hasLeader || intersects(rect, x1, y1, x2, y2) };
+      });
+    });
+    assert.equal(results.length, fixture.edges.length);
+    for (const { id, tied } of results) {
+      assert.ok(tied, `edge "${id}": label neither touches its own line nor carries a leader back to it`);
+    }
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// The other half of the same guarantee, and the only test that draws a leader at all: crowd
+// enough labels into one pair of rows and some of them cannot sit on their own line, which is
+// exactly when a reader can no longer tell which words belong to which arrow. The dashed leader
+// back to the line is what answers it. Without this fixture the leader path never runs — on the
+// crowding fixture every label now lands on its own line, so none is drawn there.
+// ============================================================================================
+test('a label with nowhere on its own line to sit is drawn with a leader back to it', async ({ page }) => {
+  const root = await makeDir('browser-');
+  const graphDir = path.join(root, 'graphs');
+  await fs.mkdir(graphDir, { recursive: true });
+  const ctx = await startServer({ cacheRoot: root, open: path.join(graphDir, 'leaders.json') });
+  try {
+    const fixture = JSON.parse(await fs.readFile(path.join(__dirname, 'fixtures', 'label-leader.json'), 'utf8'));
+    const written = await put(ctx, '/graph', fixture, '');
+    assert.equal(written.status, 200, JSON.stringify(written.body));
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const leaders = await page.evaluate(() => [...document.querySelectorAll('line.edge-leader')].map((line) => {
+      const id = line.getAttribute('data-id');
+      const bg = document.querySelector(`rect.edge-label-bg[data-id="${id}"]`);
+      const edge = document.querySelector(`g.edge[data-id="${id}"] path.edge-line`);
+      const [, x1, y1, x2, y2] = edge.getAttribute('d').match(/M([-\d.]+),([-\d.]+) L([-\d.]+),([-\d.]+)/).map(Number);
+      const at = (name) => parseFloat(line.getAttribute(name));
+      const box = {
+        x: parseFloat(bg.getAttribute('x')), y: parseFloat(bg.getAttribute('y')),
+        w: parseFloat(bg.getAttribute('width')), h: parseFloat(bg.getAttribute('height')),
+      };
+      // Perpendicular distance from the leader's far end to the edge's own line. A leader that
+      // does not land on the line it claims to point at is worse than no leader at all.
+      const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1;
+      return {
+        id,
+        offLine: Math.abs((at('x2') - x1) * dy - (at('y2') - y1) * dx) / len,
+        startsUnderLabel: at('x1') >= box.x && at('x1') <= box.x + box.w
+          && at('y1') >= box.y && at('y1') <= box.y + box.h,
+        dashes: getComputedStyle(line).strokeDasharray,
+      };
+    }));
+
+    assert.ok(leaders.length > 0, 'this fixture exists to crowd at least one label off its own line');
+    for (const leader of leaders) {
+      assert.ok(leader.offLine < 0.5, `${leader.id}: the leader ends ${leader.offLine} away from the line it points at`);
+      assert.ok(leader.startsUnderLabel, `${leader.id}: the leader should start under the label it belongs to`);
+      assert.notEqual(leader.dashes, 'none', `${leader.id}: a leader is dashed, so it never reads as another arrow`);
+    }
   } finally {
     await ctx.stop();
   }
@@ -555,6 +710,33 @@ test('an edge is selectable by label, band and endpoint handle at minimum zoom',
 });
 
 // ============================================================================================
+// Hovering a label reveals its edge's endpoint handles. This used to come free from
+// `.edge:hover .edge-handle` because the label lived inside g.edge; now that it's in its own
+// layer (see index.html's render()), the label has to toggle a stand-in class on the edge group
+// itself on pointerenter/pointerleave, and this is the test that would catch that affordance
+// silently disappearing with the move.
+// ============================================================================================
+test("hovering a label reveals its edge's endpoint handles", async ({ page }) => {
+  const ctx = await launch('interactive.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const handle = edgeHandle(page, 'c->d', 'from');
+    const opacity = () => handle.evaluate((el) => parseFloat(getComputedStyle(el).opacity));
+    assert.ok((await opacity()) < 0.1, 'the handle starts hidden');
+
+    await edgeLabel(page, 'c->d').hover();
+    await expect.poll(opacity).toBeGreaterThan(0.5);
+
+    await page.mouse.move(0, 0);
+    await expect.poll(opacity).toBeLessThan(0.1);
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
 // Two edges between one pair of nodes, one in each direction, are drawn on separate geometry and
 // each is independently selectable — on a single geometry they would read as one double-headed
 // arrow and one band would cover the other.
@@ -664,6 +846,86 @@ test('a label the box truncates is readable in full on hover and in the detail p
     const plain = page.locator('svg#canvas g.detail[data-for="short"]');
     await expect(plain).toHaveCount(1);
     assert.equal(await plain.locator('.detail-label').count(), 0, 'absent field is omitted, not empty');
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// A label that needs every line the cap allows (five) but no more draws all five, plain — no
+// ellipsis, no tooltip. Both escapes in the previous test are gated on labelTruncated, so a label
+// that fits exactly must trip neither.
+// ============================================================================================
+test('a label needing all five lines draws five lines, with no ellipsis and no tooltip', async ({ page }) => {
+  const root = await makeDir('browser-');
+  const graphDir = path.join(root, 'graphs');
+  await fs.mkdir(graphDir, { recursive: true });
+  const ctx = await startServer({ cacheRoot: root, open: path.join(graphDir, 'five-lines.json') });
+  try {
+    const label = 'the installer renders one file this repo owns outright, and never symlinks a wrapper into either harness';
+    const fixture = {
+      schema: 1, title: 'Five lines', source: 'router', source_detail: 'fixture', explanation: null,
+      nodes: [{ id: 'wide', label }],
+      edges: [],
+    };
+    const written = await put(ctx, '/graph', fixture, '');
+    assert.equal(written.status, 200, JSON.stringify(written.body));
+
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const lines = await page.locator('svg#canvas g.node[data-id="wide"] text.node-label').allTextContents();
+    assert.equal(lines.length, 5);
+    assert.equal(lines.join(' '), label.split(/\s+/).filter(Boolean).join(' '));
+    assert.ok(!lines.join(' ').includes('…'), 'a label that fits exactly is never truncated');
+    assert.equal(await page.locator('svg#canvas g.node[data-id="wide"] > title').count(), 0,
+      'a label that fits carries no tooltip');
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// The page's five-line cap (viewer/index.html, NODE_LABEL_MAX_LINES) and the server's row pitch
+// (viewer/server.js, LAYER_GAP) share no module, so nothing structural stops one moving without
+// the other — this is the test that would catch it. It measures the box's real, laid-out height
+// against the actual vertical distance the server put between two rows, rather than hard-coding
+// either number, so it still holds if both change together and still fails if only one does.
+// ============================================================================================
+test('a five-line box stays shorter than the server\'s row pitch', async ({ page }) => {
+  const root = await makeDir('browser-');
+  const graphDir = path.join(root, 'graphs');
+  await fs.mkdir(graphDir, { recursive: true });
+  // PUT to a path with nothing on it yet: the one route where the server invents positions
+  // (lays the graph out) rather than keeping what's on disk.
+  const ctx = await startServer({ cacheRoot: root, open: path.join(graphDir, 'row-pitch.json') });
+  try {
+    const label = 'the installer renders one file this repo owns outright, and never symlinks a wrapper into either harness';
+    const fixture = {
+      schema: 1, title: 'Row pitch', source: 'router', source_detail: 'fixture', explanation: null,
+      nodes: [{ id: 'top', label }, { id: 'bottom', label: 'a second row' }],
+      edges: [{ id: 'top->bottom', from: 'top', to: 'bottom', label: '' }],
+    };
+    const written = await put(ctx, '/graph', fixture, '');
+    assert.equal(written.status, 200, JSON.stringify(written.body));
+
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const laidOut = await pageGraph(page);
+    const top = entry(laidOut, 'top');
+    const bottom = entry(laidOut, 'bottom');
+    assert.notEqual(top.y, bottom.y, 'the two nodes landed on different rows');
+    const rowPitch = Math.abs(bottom.y - top.y);
+
+    // boundingBox() is screen pixels and the row pitch is graph coordinates, so the zoom has to
+    // come back out of the measurement — comparing the two directly would let an oversized box
+    // pass on any graph the page opened zoomed out.
+    const box = await nodeBox(page, 'top').boundingBox();
+    assert.ok(box, 'the five-line box has a layout box');
+    const drawnHeight = box.height / await pageZoom(page);
+    assert.ok(drawnHeight < rowPitch,
+      `box height ${drawnHeight} must stay under the row pitch ${rowPitch}`);
   } finally {
     await ctx.stop();
   }
@@ -1116,6 +1378,228 @@ test('collapse state survives a poll and a child-graph navigation, but not a rel
     await ready(page);
     assert.equal(await page.evaluate(() => window.__viewer.explainExpanded), true);
     await expect(page.locator('#explain-body')).toBeVisible();
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// Groups: a marked phrase in the explanation — `[the left branch](#left-branch)` — is what a
+// reader points at instead of a position word. Hovering it lights the group's nodes and every
+// arrow with both ends inside it, and dims everything else. Read off the `.group-dim` class
+// render() adds to everything *outside* the hovered group (index.html's renderNodeGroup /
+// renderEdgeGroup), not a "lit" class of its own: the whole treatment is dimming the rest, and
+// what's inside the group is simply left alone — which is also why this must never touch the
+// selection: approve stays disabled throughout, since a hover that looked like a selection while
+// the button stayed disabled would be a worse lie than no highlight at all.
+// ============================================================================================
+test('hovering a marked phrase lights the group and dims everything outside it, leaving approve disabled', async ({ page }) => {
+  const ctx = await launch('groups-basic.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    await groupRef(page, 'left-branch').hover();
+
+    // Inside the group: never dimmed.
+    await expect(page.locator('g.node[data-id="gate"].group-dim')).toHaveCount(0);
+    await expect(page.locator('g.node[data-id="refuse"].group-dim')).toHaveCount(0);
+    await expect(page.locator('g.edge[data-id="gate->refuse"].group-dim')).toHaveCount(0);
+
+    // Outside the group: dimmed, including an edge with only one end inside it — groupLitSet
+    // requires both ends.
+    await expect(page.locator('g.node[data-id="outside"].group-dim')).toHaveCount(1);
+    await expect(page.locator('g.node[data-id="far"].group-dim')).toHaveCount(1);
+    await expect(page.locator('g.edge[data-id="gate->outside"].group-dim')).toHaveCount(1);
+    // Its was-mark too: that dot is drawn into the label layer rather than into g.edge, so it is
+    // the one piece of a dimmed edge that could stay at full brightness on its own.
+    await expect(page.locator('circle.was-mark[data-id="gate->outside"].group-dim')).toHaveCount(1);
+
+    await expect(page.locator('#approve')).toBeDisabled();
+
+    // Transient: it goes when the pointer leaves, however it left.
+    await page.mouse.move(0, 0);
+    await expect(page.locator('.group-dim')).toHaveCount(0);
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// The assertion that would catch an unguarded syncExplainPanel: hovering fires a render() (to draw
+// the highlight), and render() calls syncExplainPanel() first. Rebuilding the panel body on every
+// one of those calls would destroy the very span the pointer is on — firing that span's own
+// `pointerleave`, clearing the highlight, and re-rendering again, a loop. Proven by identity: the
+// exact same DOM node before and after, not merely the same text.
+// ============================================================================================
+test('hovering a marked phrase does not rebuild the panel', async ({ page }) => {
+  const ctx = await launch('groups-basic.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    await page.evaluate(() => {
+      window.__testSpan = document.querySelector('#explain-body .group-ref[data-group="left-branch"]');
+    });
+
+    await groupRef(page, 'left-branch').hover();
+    await expect(page.locator('g.node[data-id="gate"].group-dim')).toHaveCount(0);
+    await page.mouse.move(0, 0);
+    await expect(page.locator('.group-dim')).toHaveCount(0);
+
+    const same = await page.evaluate(() =>
+      document.querySelector('#explain-body .group-ref[data-group="left-branch"]') === window.__testSpan);
+    assert.ok(same, 'the marked-phrase span must survive a hover unchanged — syncExplainPanel rebuilt it');
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// Clicking a marked phrase makes the group the selection, through the existing
+// effectiveSelectionIds / applyOrigin path — no separate code adds the arrow between two members.
+// Approve then covers the whole option in one press, and the bulk-additive rule (already covered
+// elsewhere in this file for select-all) leaves an already-ruled member exactly as it was: `refuse`
+// starts `rejected` and must stay that way.
+// ============================================================================================
+test('clicking a marked phrase selects exactly the group, approves it, and leaves an already-ruled member untouched', async ({ page }) => {
+  const ctx = await launch('groups-basic.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    await groupRef(page, 'left-branch').click();
+    assert.deepEqual(await selection(page), ['gate', 'gate->refuse', 'refuse'].sort());
+
+    const collector = collectViewResponses(page);
+    await page.locator('#approve').click();
+    await expect.poll(() => collector.responses.some((r) => r.status() === 200)).toBe(true);
+    collector.stop();
+
+    const onDisk = await diskGraph(ctx);
+    assert.equal(entry(onDisk, 'gate').origin, 'agreed');
+    assert.equal(entry(onDisk, 'gate->refuse').origin, 'agreed');
+    assert.equal(entry(onDisk, 'refuse').origin, 'rejected', 'an already-ruled member must be left untouched');
+    // Neither the node outside the group nor its edge was swept in.
+    assert.equal(entry(onDisk, 'outside').origin, 'proposed');
+    assert.equal(entry(onDisk, 'gate->outside').origin, 'proposed');
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// Clicking a group with a member off-screen brings it into view by translating only — the scale
+// never changes. Zoomed to the ceiling first so the far group's one member lands well outside the
+// canvas; the assertion that matters is that the zoom level is identical before and after, which
+// is what distinguishes "moved into view" from "zoomed to fit."
+// ============================================================================================
+test('clicking a group with a member off-screen brings it into view without changing zoom', async ({ page }) => {
+  const ctx = await launch('groups-basic.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    for (let i = 0; i < 15; i += 1) await page.locator('#zoom-in').click();
+    const zoomBefore = await pageZoom(page);
+    assert.equal(zoomBefore, 2.5, 'expected the zoom ceiling');
+
+    const canvasBox = await page.locator('svg#canvas').boundingBox();
+    let farBox = await nodeBox(page, 'far').boundingBox();
+    const offScreen = farBox.x + farBox.width < canvasBox.x || farBox.x > canvasBox.x + canvasBox.width
+      || farBox.y + farBox.height < canvasBox.y || farBox.y > canvasBox.y + canvasBox.height;
+    assert.ok(offScreen, 'expected "far" to start outside the canvas at this zoom');
+
+    await groupRef(page, 'far-branch').click();
+    assert.deepEqual(await selection(page), ['far']);
+
+    assert.equal(await pageZoom(page), zoomBefore, 'the scale must not change');
+    farBox = await nodeBox(page, 'far').boundingBox();
+    assert.ok(
+      farBox.x >= canvasBox.x - 1 && farBox.x + farBox.width <= canvasBox.x + canvasBox.width + 1
+        && farBox.y >= canvasBox.y - 1 && farBox.y + farBox.height <= canvasBox.y + canvasBox.height + 1,
+      `expected "far" fully inside the canvas after the click, got box=${JSON.stringify(farBox)}, canvas=${JSON.stringify(canvasBox)}`,
+    );
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// The assertion that catches members captured at span-build time, or a rebuild guard keyed on the
+// prose alone: an agent redraw changes a group's `nodes` while the explanation string stays
+// byte-identical, and both the hover and the click have to follow the new membership, not the one
+// that existed when the marked-phrase span was created. Driven the way the existing poll tests do
+// — write a new version of the graph through the server (as an agent would) and let the page's
+// poll pick it up, never through the page itself.
+// ============================================================================================
+test("a redraw that changes a group's nodes while the explanation stays byte-identical relights and rules the new membership", async ({ page }) => {
+  const ctx = await launch('groups-basic.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+    const explanationBefore = (await pageGraph(page)).explanation;
+
+    await agentPut(ctx, (g) => {
+      const group = g.groups.find((gr) => gr.id === 'left-branch');
+      group.nodes = ['gate', 'other']; // drops 'refuse', adds 'other' — the prose is untouched
+    });
+
+    // The page polls every 1000ms; give it a full cycle to pick up the new hash.
+    await expect.poll(async () => {
+      const g = await pageGraph(page);
+      return g.groups.find((gr) => gr.id === 'left-branch').nodes;
+    }, { timeout: 3000 }).toEqual(['gate', 'other']);
+    assert.equal((await pageGraph(page)).explanation, explanationBefore, 'the prose must stay byte-identical');
+
+    await groupRef(page, 'left-branch').hover();
+    await expect(page.locator('g.node[data-id="gate"].group-dim')).toHaveCount(0);
+    await expect(page.locator('g.node[data-id="other"].group-dim')).toHaveCount(0);
+    await expect(page.locator('g.edge[data-id="gate->other"].group-dim')).toHaveCount(0);
+    // The dropped member is outside the group now and dims like anything else outside it.
+    await expect(page.locator('g.node[data-id="refuse"].group-dim')).toHaveCount(1);
+    await page.mouse.move(0, 0);
+
+    await groupRef(page, 'left-branch').click();
+    assert.deepEqual(await selection(page), ['gate', 'gate->other', 'other'].sort());
+
+    const collector = collectViewResponses(page);
+    await page.locator('#approve').click();
+    await expect.poll(() => collector.responses.some((r) => r.status() === 200)).toBe(true);
+    collector.stop();
+
+    const onDisk = await diskGraph(ctx);
+    assert.equal(entry(onDisk, 'gate').origin, 'agreed');
+    assert.equal(entry(onDisk, 'other').origin, 'agreed');
+    assert.equal(entry(onDisk, 'gate->other').origin, 'agreed');
+    // 'refuse' left the group and was never selected — its pre-existing verdict is untouched.
+    assert.equal(entry(onDisk, 'refuse').origin, 'rejected');
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// The reference grammar (GROUP_REFERENCE_RE) is parsed independently on the server (validation)
+// and here (marking up spans) — this is the only test pinning the two to the same answer. A
+// non-`#` markdown link, `[the docs](docs/readme.md)`, does not match it (a reference needs a
+// `#id` target), so it must render as its own literal brackets and parens, not vanish into a dead
+// marked phrase.
+// ============================================================================================
+test('the page renders a non-# markdown link as plain text, not a marked phrase', async ({ page }) => {
+  const ctx = await launch('groups-basic.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const body = await page.locator('#explain-body').textContent();
+    assert.ok(body.includes('[the docs](docs/readme.md)'), `expected the literal link text, got: ${body}`);
+
+    // Exactly the two real references became marked phrases — the non-# link did not become a
+    // third one.
+    await expect(page.locator('#explain-body .group-ref')).toHaveCount(2);
+    assert.equal(await page.locator('#explain-body .group-ref[data-group="left-branch"]').textContent(), 'the left branch');
+    assert.equal(await page.locator('#explain-body .group-ref[data-group="far-branch"]').textContent(), 'the far branch');
   } finally {
     await ctx.stop();
   }

@@ -51,7 +51,10 @@ A graph is one JSON file:
   "title": "how a phrase about time becomes a date, or doesn't",
   "source": "router",
   "source_detail": "src/almanac/records/timeline/AGENTS.md",
-  "explanation": "Admission is the only gate: everything downstream assumes a record already passed it. Leaves out how the timeline itself is stored.",
+  "explanation": "Admission is the only gate: everything downstream assumes a record already cleared [the admission decision](#admission). Leaves out how the timeline itself is stored.",
+  "groups": [
+    { "id": "admission", "nodes": ["gate", "refuse"] }
+  ],
   "nodes": [
     { "id": "gate", "label": "accept it as a real measurement, or refuse",
       "kind": "decision", "origin": "proposed", "was": null, "exclusive": true,
@@ -108,18 +111,59 @@ Field by field:
   by looking: which arrow is the interesting one, what the drawing is arguing, what was
   deliberately left off it.
 
-  It carries **no verdict** and is outside the preservation contract below entirely. An
-  agent rewrites it freely on every redraw, exactly as it redraws an unruled box —
-  because an approved wording an agent may not touch goes stale the moment the picture
-  moves underneath it. Verdicts stay on the nodes and edges, which are what make claims
-  about the code.
+  It carries **no verdict** and is outside the preservation contract below entirely, and
+  `groups` — the next field — sits outside it on the same terms. Both are the agent's own
+  claim about its picture, rewritten freely on every redraw exactly as it redraws an
+  unruled box, because an approved wording, or a region an agent may not touch, goes
+  stale the moment the picture moves underneath it. Verdicts stay on the nodes and edges,
+  which are what make claims about the code.
+- **`groups`** — an array of `{id, nodes}`, each naming a set of node ids in this file,
+  sorted by `id` like `nodes` and `edges`. Defaults to `[]` when omitted.
+
+  An agent describing a picture reaches for a position word — "the left branch", "the
+  bottom cluster", "option A" — and that word points at an arrangement the reader may
+  since have dragged into a different shape. A marked phrase means the reader never has
+  to work out which boxes were meant. It is worst exactly where it matters most: when an
+  agent lays out options for Collin to choose between.
+
+  A reference is written `[the left branch](#left-branch)`: the bracketed phrase is what
+  the reader sees and can point at, the target is `#` followed by a group's `id`. Only a
+  `#`-prefixed target is a reference — `[the router](protocol/routers.md)` and
+  `[here](https://example.com)` are ordinary text, which is what keeps everyday prose from
+  turning into a write refusal. The grammar is exactly one regular expression, stated here
+  once and used verbatim by the server and the page, since the two files share no code:
+
+  ```
+  \[([^\[\]]+)\]\(#([a-z0-9_-]+)\)
+  ```
+
+  Capture 1 is the phrase, capture 2 the group id. A reference never nests — `[^\[\]]+`
+  can't span a bracket — so that's a property of the expression, not a rule either file
+  has to enforce on its own.
+
+  A group's own `id` matches `^[a-z0-9_-]+$`, the same shape a child graph name already
+  requires, and for the same reason: the reference above ends at `)`, so an id containing
+  `)` or `]` would be legal but unreferenceable. `nodes` names ids that are nodes in this
+  same file — never an edge, and never an id that only exists in a child graph. Duplicate
+  ids inside one group's `nodes` are deduplicated rather than refused, since a repeat just
+  names the same box twice, and the member list is sorted when canonicalizing. An arrow
+  with both ends inside the group lights up with it, the same rule the page already uses
+  when a selection spans both endpoints, so the reader gets the region, not just the
+  boxes.
+
+  See "What the server refuses" below for what an entry that's missing, malformed, or
+  unreferenced draws.
 - **`id`** (node and edge) — non-empty and unique within its own collection (nodes and
   edges are separate namespaces). Missing, empty, or duplicated draws `bad-id`. Ids are
   permanent once a verdict lands on them — see Verdicts below — so pick one you'd be
   fine seeing again in six months, not `n1`.
 - **`label`** — plain-language behavior, per "What a graph is" above. The one field with
   **no default**. Omit it and the server refuses the whole write with `missing-label`,
-  naming the offending id — a missing label is a refusal, never a silent repair.
+  naming the offending id — a missing label is a refusal, never a silent repair. A box
+  wraps a label to five lines of 24 characters, so the most it can hold is **124
+  characters** — five full lines plus the four spaces at the breaks. Treat that as a
+  ceiling, not a budget: wrapping breaks on whole words, so a label whose words fall badly
+  truncates well short of it.
 - **`kind`** (node) — one of `file`, `module`, `step`, `decision`, `external`, `note`.
   It is metadata, rendered as a text tag on the box, and it drives no shape. The server
   checks every entry against that list and refuses anything else with `bad-kind`, naming
@@ -182,7 +226,8 @@ crowding one graph past the point Collin can read it.
 ## Key order and canonical form
 
 The file on disk is byte-canonical, always. Top-level keys, in this exact order:
-`schema`, `title`, `source`, `source_detail`, `explanation`, `nodes`, `edges`. Node keys: `id`,
+`schema`, `title`, `source`, `source_detail`, `explanation`, `groups`, `nodes`, `edges`.
+Group keys: `id`, `nodes`. Node keys: `id`,
 `label`, `kind`, `origin`, `was`, `exclusive`, `ref`, `note`, `graph`, `x`, `y`. Edge
 keys: `id`, `from`, `to`, `label`, `kind`, `value`, `inferred`, `origin`, `was`, `note`.
 
@@ -191,8 +236,9 @@ omitted key and a null one would serialize identically otherwise, and byte-ident
 re-serializing an already-canonical file must produce the same bytes — needs one
 answer, not two that happen to look alike.
 
-Two-space indent, `nodes` and `edges` each sorted by `id`, one trailing newline, `x`/`y`
-always integers (rounded half-up).
+Two-space indent, `nodes`, `edges`, and `groups` each sorted by `id`, one trailing
+newline, `x`/`y` always integers (rounded half-up). A group's own `nodes` list is
+deduplicated and sorted too.
 
 **This describes what lands on disk, not what you have to send.** The server
 canonicalizes: your `PUT` body can have keys in any order, can omit anything that has a
@@ -200,7 +246,7 @@ default, and never needs sorting or reindenting. What you're required to get rig
 the *shape* — the fields the server actually checks — not the formatting.
 
 Defaults applied when canonicalizing a body that omits a key: top-level `explanation` →
-`null`. Node `kind` → `"note"`,
+`null`, `groups` → `[]`. Node `kind` → `"note"`,
 `origin` → `"proposed"`, `was` → `null`, `exclusive` → `false`, `ref`/`note`/`graph` →
 `null`. Edge `kind` → `"sequence"`, `value` → `null`, `inferred` → `false`, `origin` →
 `"proposed"`, `was` → `null`, `note` → `null`. **`label` has no default** — omit it and
@@ -356,6 +402,12 @@ it is a graph that opens with no panel and nothing said about it, which is the f
 field exists against. Write the one or two sentences the field's entry above describes,
 including what the picture leaves out.
 
+**Mark a position word, and define its group.** When the explanation you're about to send
+reaches for "the left branch", "the bottom cluster", "option A", or anything else that
+names an arrangement rather than a box, turn it into a reference and add the `groups`
+entry it points at. A position word left unmarked is a claim the reader can't check once
+the boxes have moved.
+
 **3. Show it.** The graph exists now, so put it in front of Collin rather than leaving him to
 click a URL out of your turn:
 
@@ -508,11 +560,15 @@ actually hit, in the rough order the server checks them:
 | 403 | `bad-origin` | `Origin` is missing or doesn't match the server's address |
 | 403 | `not-registered` | this path isn't in the writable set and isn't derivable from a graph that is |
 | 409 | `stale` | the hash you sent doesn't match what's on disk; the body carries the current one |
-| 422 | `unknown-schema` | `schema` isn't `1`, or a top-level field is the wrong type — `title` or `source` not a string, `source` outside the closed set, `source_detail` or `explanation` neither a string nor `null`, `nodes` or `edges` not an array |
+| 422 | `unknown-schema` | `schema` isn't `1`, or a top-level field is the wrong type — `title` or `source` not a string, `source` outside the closed set, `source_detail` or `explanation` neither a string nor `null`, `nodes`, `edges`, or `groups` not an array |
 | 422 | `missing-label` | a node or edge has no `label` |
 | 422 | `bad-kind` | a node's `kind` is outside `file`/`module`/`step`/`decision`/`external`/`note`, or an edge's is outside `data`/`sequence`. A missing `kind` is not this — it defaults instead |
-| 422 | `bad-id` | an id is missing, empty, or duplicated |
+| 422 | `bad-id` | an id is missing, empty, or duplicated — nodes, edges, and groups are each their own namespace, and a group entry that isn't even an object counts as a bad id too |
+| 422 | `group-bad-name` | a group id outside `^[a-z0-9_-]+$` |
+| 422 | `group-missing-node` | a group's `nodes` is missing, not an array of strings, empty, or names an id that isn't a node in this file |
 | 422 | `edge-missing-node` | an edge names a `from`/`to` id that isn't in this file |
+| 422 | `explanation-missing-group` | the explanation carries a `#`-prefixed reference to a group not in `groups` |
+| 422 | `group-unreferenced` | a group in `groups` that the explanation never references |
 | 422 | `bad-origin-value` | an `origin` outside `proposed`/`agreed`/`rejected` |
 | 422 | `container-bad-name` | a `graph` value that isn't `null` and isn't `^[a-z0-9_-]+$` |
 | 422 | `agent-verdict` | you set `agreed`/`rejected` on an entry that's new or was `proposed` on disk |
@@ -523,6 +579,11 @@ actually hit, in the rough order the server checks them:
 | 422 | `container-orphan` | removing or retargeting a container would strand a subtree holding a verdict |
 | 422 | `container-unreadable-child` | that subtree walk hit a child file that doesn't parse, so it can't be shown to hold no verdicts. Repair the child by hand; the server never repairs one |
 | 500 | `internal` | anything unhandled |
+
+Two of those refuse things that look harmless rather than obviously broken: an empty
+member list (`group-missing-node`) and a group nothing in the explanation ever points at
+(`group-unreferenced`) are both refused, because either one is a group that highlights
+nothing — the silent failure the whole feature exists against.
 
 Four codes exist that a `PUT /graph` will never produce: `not-found` and `no-route`
 belong to reads and to unknown routes (this route can create, so a missing file is

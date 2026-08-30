@@ -4,6 +4,7 @@
   "source": "router",
   "source_detail": "fixture",
   "explanation": "This graph follows gathering through inspection and a decision, then branches through reporting or storage before finishing.",
+  "groups": [],
   "nodes": [
     {
       "id": "decide",

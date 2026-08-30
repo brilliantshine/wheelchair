@@ -7,7 +7,7 @@
   "nodes": [
     {
       "id": "long",
-      "label": "the installer renders one file this repo owns outright, and never symlinks a wrapper into either harness",
+      "label": "the installer renders one file this repo owns outright, and never symlinks a wrapper into either harness or leaves a stale copy behind after removal",
       "kind": "step",
       "origin": "proposed",
       "was": null,
