@@ -2,7 +2,16 @@
 slug: graph-legibility
 date: 2026-08-29
 implemented-by: sonnet, gpt-5.6-terra (lead: opus)
-verified-by: []
+verified-by:
+  - round: 1
+    lane: gpt-5.6-sol
+    checks: sonnet
+  - round: 1
+    lane: claude-opus-5 (default reviewer)
+    checks: gpt-5.6-terra
+  - round: 2
+    lane: gpt-5.6-sol (resumed, closure review)
+    checks: sonnet
 ---
 
 # Completion Report — A graph you can read without touching it
@@ -114,7 +123,7 @@ in the tree, and that check is recorded in `PLAN.md`.
 | Offsets run 0 to 144 in steps of 16; offset 0 emitted once | this run | `viewer/index.html:1082-1089` | `browser.spec.js:241` — every crowding-fixture label now sits on its own line |
 | The collision rectangle is measured: `max(24, measured + 14)` | this run | `viewer/index.html:1069-1070` | `browser.spec.js:212` — each background is exactly its text width plus 14 |
 | Cached in a `Map` keyed by label string, filled from one reused hidden element; not batched | this run | `viewer/index.html:810-822` | read it — one `Map`, one element, no second pass |
-| The measurer takes `.label-metric`, sharing only the font declaration | this run | `viewer/index.html:136`, `:146`, `:1349` | `browser.spec.js:191` — the label count still equals the edge count |
+| The measurer takes `.label-metric`, sharing only the font declaration | this run | `viewer/index.html:136`, `:146`, `:1349` | `browser.spec.js:197` — the label count still equals the edge count |
 | `visibility: hidden`, never `display: none`; re-created after each canvas clear | this run | `viewer/index.html:146`, `:1349` | `browser.spec.js:212` would read zero widths if either were wrong |
 | Labels move into one layer appended after every edge group | this run | `viewer/index.html:1393`, `:1396` | `browser.spec.js:241`, `:291` locate labels outside `g.edge` |
 | Everything from the label's geometry moves with it: label, background, `was-mark`, leader | this run | `viewer/index.html:1124-1155` | `browser.spec.js:1396` finds the `was-mark` in the layer by `data-id` |
@@ -156,7 +165,7 @@ in the tree, and that check is recorded in `PLAN.md`.
 | The canonical key-order assertion | eight keys | `server.test.js:158` |
 | The `edgeLabel` helper | dropped its `g.edge` scope | `browser.spec.js:93` |
 | The long-label truncation fixture | a label `wrapText` still truncates at cap 5 | `long-label.json`, asserted at `browser.spec.js:812` |
-| The no-label-on-a-box assertion | `.edge-label` → `.edge-label-bg` | `browser.spec.js:180` |
+| The no-label-on-a-box assertion | `.edge-label` → `.edge-label-bg` | `browser.spec.js:180-193` |
 
 ## Deviations from plan
 
@@ -198,8 +207,11 @@ into `g.edge`, it was the one piece of a dimmed edge left at full brightness. Co
 `viewer/test/fixtures/`, which no router enumerates. `protocol/AGENTS.md:32` describes `graphs.md`
 as "the graph format read by both harnesses — schema, verdicts, preservation, how the viewer
 starts", and `groups` is part of the schema that line already covers. `AGENTS.md:68` claims
-`viewer/` is "two files", still true. No ownership moved between directories and no router named a
-file this change touched, so nothing here became false.
+`viewer/` is "two files", still true. `protocol/AGENTS.md:32` does name `graphs.md`, which this
+change modified — but the upkeep rule (`protocol/implementation.md:88`) turns on a change that
+*adds or removes* a file, and on whether what a directory owns moved. Neither happened: `graphs.md`
+gained a key, and the one line describing it still describes it. No ownership moved between
+directories, so nothing here became false.
 
 ## Validation evidence
 
@@ -278,4 +290,37 @@ Two more this run introduced or exposed:
 
 ## Remediation rounds
 
-None yet — Stage 4 appends here.
+### Remediation 1 — 2026-08-29
+
+Two verifiers, each cross-family to part of a mixed implementation: `gpt-5.6-sol` checking the
+Sonnet-built page work, a fresh Opus lane checking the Terra-built server work. Opus returned PASS.
+Sol returned FAIL on two gaps; the full list and the adjudication are in `REMEDIATION-1.md`.
+
+One gap upheld, and it was in this document rather than in the code: the Routers section closed by
+claiming no router names a file this change touched, two sentences after reasoning about the
+protocol router naming `graphs.md`. The conclusion was right and the reason was wrong. Rewritten
+above to say what actually makes the answer "none" — the upkeep rule turns on a file being added or
+removed, or on ownership moving, and neither happened.
+
+One gap declined: Sol could not execute either suite in its runner — every server test hit `listen
+EPERM` and Chromium refused to start — so it reported the passes as unverifiable. That is a fact
+about the runner, not about the work. Opus ran both suites independently on the branch head, and
+the lead ran both before writing this report. It does mean Sol's check reached the source but not
+the gates, which the gate line says.
+
+Also corrected, raised by Opus as an observation rather than a gap: `protocol/graphs.md` carried
+the tautology "it matters most exactly where it matters most", a mangling of the idea's "It is
+worst exactly where it matters most", inside the paragraph whose whole job is to make an agent
+reach for groups in the first place.
+
+No code changed in this round. Both suites re-run by the lead afterwards:
+
+```
+$ node --test 'viewer/test/*.test.js'
+ℹ tests 36
+ℹ pass 36
+ℹ fail 0
+
+$ npm --prefix viewer run test:browser
+  38 passed (26.3s)
+```

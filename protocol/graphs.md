@@ -123,8 +123,8 @@ Field by field:
   An agent describing a picture reaches for a position word — "the left branch", "the
   bottom cluster", "option A" — and that word points at an arrangement the reader may
   since have dragged into a different shape. A marked phrase means the reader never has
-  to work out which boxes were meant, and it matters most exactly where it matters most:
-  when an agent lays out options for Collin to choose between.
+  to work out which boxes were meant. It is worst exactly where it matters most: when an
+  agent lays out options for Collin to choose between.
 
   A reference is written `[the left branch](#left-branch)`: the bracketed phrase is what
   the reader sees and can point at, the target is `#` followed by a group's `id`. Only a
