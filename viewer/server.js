@@ -13,7 +13,8 @@ Errors:
   404 not-found, no-route
   409 stale (also returns hash)
   422 invalid-json (position), unknown-schema (schema), missing-label, bad-id, bad-kind (ids),
-      edge-missing-node, bad-origin-value, bad-was, container-bad-name,
+      edge-missing-node, group-bad-name, group-missing-node, explanation-missing-group,
+      group-unreferenced, bad-origin-value, bad-was, container-bad-name,
       container-cycle, container-orphan, container-unreadable-child, preservation-rejected,
       preservation-agreed, agent-verdict, structural-difference (ids),
       bulk-not-additive
@@ -45,7 +46,12 @@ const ORIGINS = new Set(['proposed', 'agreed', 'rejected']);
 const SOURCES = new Set(['router', 'code-read', 'plan-proposal']);
 const NODE_KINDS = new Set(['file', 'module', 'step', 'decision', 'external', 'note']);
 const EDGE_KINDS = new Set(['data', 'sequence']);
-const CHILD_NAME = /^[a-z0-9_-]+$/;
+// Child graph names and group ids share one shape, and for the same reason both times:
+// the name has to survive being written into a path or into a `[phrase](#id)` reference.
+const BARE_NAME = /^[a-z0-9_-]+$/;
+// The page carries this identical expression because the two files share no module. Its narrow
+// target syntax keeps ordinary markdown links out of the graph-reference contract.
+const GROUP_REFERENCE = /\[([^\[\]]+)\]\(#([a-z0-9_-]+)\)/g;
 
 class ClientError extends Error {
   constructor(status, code, detail, extra = {}) {
@@ -83,6 +89,10 @@ function orderedEdge(edge) {
   };
 }
 
+function orderedGroup(group) {
+  return { id: group.id, nodes: [...new Set(group.nodes)].sort() };
+}
+
 function canonicalBytes(graph) {
   const result = {
     schema: graph.schema,
@@ -90,6 +100,7 @@ function canonicalBytes(graph) {
     source: graph.source,
     source_detail: graph.source_detail,
     explanation: graph.explanation,
+    groups: [...graph.groups].sort(compareId).map(orderedGroup),
     nodes: [...graph.nodes].sort(compareId).map(orderedNode),
     edges: [...graph.edges].sort(compareId).map(orderedEdge),
   };
@@ -118,6 +129,7 @@ function validateGraph(input, { checkOrigin = true } = {}) {
       !SOURCES.has(input.source) ||
       !(input.source_detail === null || typeof input.source_detail === 'string') ||
       !(input.explanation === undefined || input.explanation === null || typeof input.explanation === 'string') ||
+      !(input.groups === undefined || Array.isArray(input.groups)) ||
       !Array.isArray(input.nodes) || !Array.isArray(input.edges)) {
     fail(422, 'unknown-schema', 'The graph does not have the schema 1 shape.', { schema: input.schema });
   }
@@ -152,10 +164,26 @@ function validateGraph(input, { checkOrigin = true } = {}) {
     if (checkOrigin && !ORIGINS.has(node.origin)) {
       fail(422, 'bad-origin-value', 'An origin is outside the allowed set.');
     }
-    if (node.graph !== null && (typeof node.graph !== 'string' || !CHILD_NAME.test(node.graph))) {
+    if (node.graph !== null && (typeof node.graph !== 'string' || !BARE_NAME.test(node.graph))) {
       fail(422, 'container-bad-name', 'A container graph name is not a bare valid name.');
     }
     return node;
+  });
+  const groupIds = new Set();
+  const groups = (input.groups ?? []).map((raw) => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw) ||
+        typeof raw.id !== 'string' || raw.id.length === 0 || groupIds.has(raw.id)) {
+      fail(422, 'bad-id', 'A group id is missing, empty, or duplicated.');
+    }
+    groupIds.add(raw.id);
+    if (!BARE_NAME.test(raw.id)) {
+      fail(422, 'group-bad-name', 'A group id must be a bare valid name.');
+    }
+    if (!Array.isArray(raw.nodes) || raw.nodes.length === 0 ||
+        raw.nodes.some((id) => typeof id !== 'string' || !nodeIds.has(id))) {
+      fail(422, 'group-missing-node', 'A group must name one or more nodes in this graph.');
+    }
+    return { id: raw.id, nodes: raw.nodes };
   });
   const edges = input.edges.map((raw) => {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw) ||
@@ -192,9 +220,23 @@ function validateGraph(input, { checkOrigin = true } = {}) {
       fail(422, 'edge-missing-node', 'An edge names a node that is not present.');
     }
   }
+  // A group exists only to make a specific passage of the account point at graph boxes. Check
+  // both sides so neither a dangling link nor a silent, never-highlighted group reaches the page.
+  const referencedGroups = new Set(Array.from((input.explanation ?? '').matchAll(GROUP_REFERENCE),
+    (match) => match[2]));
+  for (const id of referencedGroups) {
+    if (!groupIds.has(id)) {
+      fail(422, 'explanation-missing-group', 'The explanation references a group that is not present.');
+    }
+  }
+  for (const group of groups) {
+    if (!referencedGroups.has(group.id)) {
+      fail(422, 'group-unreferenced', 'A group must be referenced by the explanation.');
+    }
+  }
   return {
     schema: 1, title: input.title, source: input.source,
-    source_detail: input.source_detail, explanation: input.explanation ?? null, nodes, edges,
+    source_detail: input.source_detail, explanation: input.explanation ?? null, groups, nodes, edges,
   };
 }
 
@@ -373,6 +415,10 @@ async function checkOrphans(graphPath, current, incoming) {
 // each node one row below its deepest parent, order each row so arrows cross as little as they
 // can, then pull each box toward the middle of what it connects to. Disconnected pieces are laid
 // out on their own and set side by side, because stacking them reads as a flow that isn't there.
+// Held against the page's tallest possible box, which is 116 at its five-line label cap
+// (NODE_LABEL_MAX_LINES in viewer/index.html). The two files share no module, so nothing
+// structural stops one of these numbers moving without the other; the browser suite measures a
+// real five-line box against a real layout and is what actually catches it.
 const LAYER_GAP = 140;
 const NODE_PITCH = 260;
 // A bend point is not drawn — the viewer draws every edge as one straight line — but reserving it
@@ -857,9 +903,13 @@ function structuralDifference(current, incoming) {
 
 function checkViewChanges(current, incoming) {
   const bad = structuralDifference(current, incoming);
+  // The page deep-clones its graph before sending it back, so array identity would reject every
+  // drag. Compare the canonical representation instead, which also ignores harmless member repeats.
+  const sameGroups = JSON.stringify([...current.groups].sort(compareId).map(orderedGroup)) ===
+    JSON.stringify([...incoming.groups].sort(compareId).map(orderedGroup));
   if (bad.length || current.schema !== incoming.schema || current.title !== incoming.title ||
       current.source !== incoming.source || current.source_detail !== incoming.source_detail ||
-      current.explanation !== incoming.explanation) {
+      current.explanation !== incoming.explanation || !sameGroups) {
     fail(422, 'structural-difference', 'The page changed graph structure.', { ids: bad });
   }
   let reversals = 0;

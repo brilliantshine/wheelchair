@@ -20,5 +20,6 @@
   "title": "Canonical graph",
   "explanation": "This graph follows gathering through inspection and a decision, then branches through reporting or storage before finishing.",
   "schema": 1,
+  "groups": [],
   "source": "router"
 }
