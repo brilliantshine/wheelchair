@@ -94,6 +94,12 @@ function edgeLabel(page, id) { return page.locator(`svg#canvas text.edge-label[d
 function edgeHandle(page, id, end) {
   return page.locator(`svg#canvas g.edge[data-id="${id}"] circle.edge-handle[data-end="${end}"]`);
 }
+// A marked phrase in the explanation panel — a <span class="group-ref"> carrying only the group
+// id (see index.html's buildExplainBody), found here rather than by its visible text since two
+// different phrases could otherwise collide.
+function groupRef(page, id) {
+  return page.locator(`#explain-body .group-ref[data-group="${id}"]`);
+}
 
 async function center(locator) {
   const box = await locator.boundingBox();
@@ -1372,6 +1378,228 @@ test('collapse state survives a poll and a child-graph navigation, but not a rel
     await ready(page);
     assert.equal(await page.evaluate(() => window.__viewer.explainExpanded), true);
     await expect(page.locator('#explain-body')).toBeVisible();
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// Groups: a marked phrase in the explanation — `[the left branch](#left-branch)` — is what a
+// reader points at instead of a position word. Hovering it lights the group's nodes and every
+// arrow with both ends inside it, and dims everything else. Read off the `.group-dim` class
+// render() adds to everything *outside* the hovered group (index.html's renderNodeGroup /
+// renderEdgeGroup), not a "lit" class of its own: the whole treatment is dimming the rest, and
+// what's inside the group is simply left alone — which is also why this must never touch the
+// selection: approve stays disabled throughout, since a hover that looked like a selection while
+// the button stayed disabled would be a worse lie than no highlight at all.
+// ============================================================================================
+test('hovering a marked phrase lights the group and dims everything outside it, leaving approve disabled', async ({ page }) => {
+  const ctx = await launch('groups-basic.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    await groupRef(page, 'left-branch').hover();
+
+    // Inside the group: never dimmed.
+    await expect(page.locator('g.node[data-id="gate"].group-dim')).toHaveCount(0);
+    await expect(page.locator('g.node[data-id="refuse"].group-dim')).toHaveCount(0);
+    await expect(page.locator('g.edge[data-id="gate->refuse"].group-dim')).toHaveCount(0);
+
+    // Outside the group: dimmed, including an edge with only one end inside it — groupLitSet
+    // requires both ends.
+    await expect(page.locator('g.node[data-id="outside"].group-dim')).toHaveCount(1);
+    await expect(page.locator('g.node[data-id="far"].group-dim')).toHaveCount(1);
+    await expect(page.locator('g.edge[data-id="gate->outside"].group-dim')).toHaveCount(1);
+    // Its was-mark too: that dot is drawn into the label layer rather than into g.edge, so it is
+    // the one piece of a dimmed edge that could stay at full brightness on its own.
+    await expect(page.locator('circle.was-mark[data-id="gate->outside"].group-dim')).toHaveCount(1);
+
+    await expect(page.locator('#approve')).toBeDisabled();
+
+    // Transient: it goes when the pointer leaves, however it left.
+    await page.mouse.move(0, 0);
+    await expect(page.locator('.group-dim')).toHaveCount(0);
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// The assertion that would catch an unguarded syncExplainPanel: hovering fires a render() (to draw
+// the highlight), and render() calls syncExplainPanel() first. Rebuilding the panel body on every
+// one of those calls would destroy the very span the pointer is on — firing that span's own
+// `pointerleave`, clearing the highlight, and re-rendering again, a loop. Proven by identity: the
+// exact same DOM node before and after, not merely the same text.
+// ============================================================================================
+test('hovering a marked phrase does not rebuild the panel', async ({ page }) => {
+  const ctx = await launch('groups-basic.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    await page.evaluate(() => {
+      window.__testSpan = document.querySelector('#explain-body .group-ref[data-group="left-branch"]');
+    });
+
+    await groupRef(page, 'left-branch').hover();
+    await expect(page.locator('g.node[data-id="gate"].group-dim')).toHaveCount(0);
+    await page.mouse.move(0, 0);
+    await expect(page.locator('.group-dim')).toHaveCount(0);
+
+    const same = await page.evaluate(() =>
+      document.querySelector('#explain-body .group-ref[data-group="left-branch"]') === window.__testSpan);
+    assert.ok(same, 'the marked-phrase span must survive a hover unchanged — syncExplainPanel rebuilt it');
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// Clicking a marked phrase makes the group the selection, through the existing
+// effectiveSelectionIds / applyOrigin path — no separate code adds the arrow between two members.
+// Approve then covers the whole option in one press, and the bulk-additive rule (already covered
+// elsewhere in this file for select-all) leaves an already-ruled member exactly as it was: `refuse`
+// starts `rejected` and must stay that way.
+// ============================================================================================
+test('clicking a marked phrase selects exactly the group, approves it, and leaves an already-ruled member untouched', async ({ page }) => {
+  const ctx = await launch('groups-basic.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    await groupRef(page, 'left-branch').click();
+    assert.deepEqual(await selection(page), ['gate', 'gate->refuse', 'refuse'].sort());
+
+    const collector = collectViewResponses(page);
+    await page.locator('#approve').click();
+    await expect.poll(() => collector.responses.some((r) => r.status() === 200)).toBe(true);
+    collector.stop();
+
+    const onDisk = await diskGraph(ctx);
+    assert.equal(entry(onDisk, 'gate').origin, 'agreed');
+    assert.equal(entry(onDisk, 'gate->refuse').origin, 'agreed');
+    assert.equal(entry(onDisk, 'refuse').origin, 'rejected', 'an already-ruled member must be left untouched');
+    // Neither the node outside the group nor its edge was swept in.
+    assert.equal(entry(onDisk, 'outside').origin, 'proposed');
+    assert.equal(entry(onDisk, 'gate->outside').origin, 'proposed');
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// Clicking a group with a member off-screen brings it into view by translating only — the scale
+// never changes. Zoomed to the ceiling first so the far group's one member lands well outside the
+// canvas; the assertion that matters is that the zoom level is identical before and after, which
+// is what distinguishes "moved into view" from "zoomed to fit."
+// ============================================================================================
+test('clicking a group with a member off-screen brings it into view without changing zoom', async ({ page }) => {
+  const ctx = await launch('groups-basic.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    for (let i = 0; i < 15; i += 1) await page.locator('#zoom-in').click();
+    const zoomBefore = await pageZoom(page);
+    assert.equal(zoomBefore, 2.5, 'expected the zoom ceiling');
+
+    const canvasBox = await page.locator('svg#canvas').boundingBox();
+    let farBox = await nodeBox(page, 'far').boundingBox();
+    const offScreen = farBox.x + farBox.width < canvasBox.x || farBox.x > canvasBox.x + canvasBox.width
+      || farBox.y + farBox.height < canvasBox.y || farBox.y > canvasBox.y + canvasBox.height;
+    assert.ok(offScreen, 'expected "far" to start outside the canvas at this zoom');
+
+    await groupRef(page, 'far-branch').click();
+    assert.deepEqual(await selection(page), ['far']);
+
+    assert.equal(await pageZoom(page), zoomBefore, 'the scale must not change');
+    farBox = await nodeBox(page, 'far').boundingBox();
+    assert.ok(
+      farBox.x >= canvasBox.x - 1 && farBox.x + farBox.width <= canvasBox.x + canvasBox.width + 1
+        && farBox.y >= canvasBox.y - 1 && farBox.y + farBox.height <= canvasBox.y + canvasBox.height + 1,
+      `expected "far" fully inside the canvas after the click, got box=${JSON.stringify(farBox)}, canvas=${JSON.stringify(canvasBox)}`,
+    );
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// The assertion that catches members captured at span-build time, or a rebuild guard keyed on the
+// prose alone: an agent redraw changes a group's `nodes` while the explanation string stays
+// byte-identical, and both the hover and the click have to follow the new membership, not the one
+// that existed when the marked-phrase span was created. Driven the way the existing poll tests do
+// — write a new version of the graph through the server (as an agent would) and let the page's
+// poll pick it up, never through the page itself.
+// ============================================================================================
+test("a redraw that changes a group's nodes while the explanation stays byte-identical relights and rules the new membership", async ({ page }) => {
+  const ctx = await launch('groups-basic.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+    const explanationBefore = (await pageGraph(page)).explanation;
+
+    await agentPut(ctx, (g) => {
+      const group = g.groups.find((gr) => gr.id === 'left-branch');
+      group.nodes = ['gate', 'other']; // drops 'refuse', adds 'other' — the prose is untouched
+    });
+
+    // The page polls every 1000ms; give it a full cycle to pick up the new hash.
+    await expect.poll(async () => {
+      const g = await pageGraph(page);
+      return g.groups.find((gr) => gr.id === 'left-branch').nodes;
+    }, { timeout: 3000 }).toEqual(['gate', 'other']);
+    assert.equal((await pageGraph(page)).explanation, explanationBefore, 'the prose must stay byte-identical');
+
+    await groupRef(page, 'left-branch').hover();
+    await expect(page.locator('g.node[data-id="gate"].group-dim')).toHaveCount(0);
+    await expect(page.locator('g.node[data-id="other"].group-dim')).toHaveCount(0);
+    await expect(page.locator('g.edge[data-id="gate->other"].group-dim')).toHaveCount(0);
+    // The dropped member is outside the group now and dims like anything else outside it.
+    await expect(page.locator('g.node[data-id="refuse"].group-dim')).toHaveCount(1);
+    await page.mouse.move(0, 0);
+
+    await groupRef(page, 'left-branch').click();
+    assert.deepEqual(await selection(page), ['gate', 'gate->other', 'other'].sort());
+
+    const collector = collectViewResponses(page);
+    await page.locator('#approve').click();
+    await expect.poll(() => collector.responses.some((r) => r.status() === 200)).toBe(true);
+    collector.stop();
+
+    const onDisk = await diskGraph(ctx);
+    assert.equal(entry(onDisk, 'gate').origin, 'agreed');
+    assert.equal(entry(onDisk, 'other').origin, 'agreed');
+    assert.equal(entry(onDisk, 'gate->other').origin, 'agreed');
+    // 'refuse' left the group and was never selected — its pre-existing verdict is untouched.
+    assert.equal(entry(onDisk, 'refuse').origin, 'rejected');
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// The reference grammar (GROUP_REFERENCE_RE) is parsed independently on the server (validation)
+// and here (marking up spans) — this is the only test pinning the two to the same answer. A
+// non-`#` markdown link, `[the docs](docs/readme.md)`, does not match it (a reference needs a
+// `#id` target), so it must render as its own literal brackets and parens, not vanish into a dead
+// marked phrase.
+// ============================================================================================
+test('the page renders a non-# markdown link as plain text, not a marked phrase', async ({ page }) => {
+  const ctx = await launch('groups-basic.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const body = await page.locator('#explain-body').textContent();
+    assert.ok(body.includes('[the docs](docs/readme.md)'), `expected the literal link text, got: ${body}`);
+
+    // Exactly the two real references became marked phrases — the non-# link did not become a
+    // third one.
+    await expect(page.locator('#explain-body .group-ref')).toHaveCount(2);
+    assert.equal(await page.locator('#explain-body .group-ref[data-group="left-branch"]').textContent(), 'the left branch');
+    assert.equal(await page.locator('#explain-body .group-ref[data-group="far-branch"]').textContent(), 'the far branch');
   } finally {
     await ctx.stop();
   }

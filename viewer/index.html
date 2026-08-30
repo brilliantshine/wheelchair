@@ -70,6 +70,10 @@
   #explain-body { height: 84px; overflow-y: auto; margin: 0; padding: 10px 14px;
     max-width: 860px; color: var(--ink); font-size: 12.5px; line-height: 1.55;
     white-space: pre-wrap; }
+  /* The only visual difference from surrounding prose: the brackets, the parens and the id are
+     never shown (see buildExplainBody), so the dotted underline is what tells a reader these
+     particular words point at boxes. */
+  .group-ref { text-decoration: underline dotted var(--accent); cursor: pointer; }
 
   /* An <svg> left with height:auto falls back to its 150px intrinsic size and
      silently clips everything below it, while the markup stays perfect — a DOM
@@ -149,6 +153,18 @@
   .edge-leader.agreed { stroke: var(--agreed); }
   .edge-leader.rejected { stroke: var(--rejected); }
 
+  /* Hovering a marked phrase must never look like a selection — `.selected` (above) is an accent
+     stroke and fill meaning "this is what approve/reject would rule," and a hover that read the
+     same while the buttons stayed disabled would be a worse lie than no highlight at all. So the
+     hover treatment is entirely this one class, applied only to what falls *outside* the hovered
+     group: everything in it is left plain (which is what reads as "lit" against the rest), and
+     placed after .rejected/.agreed above so it wins on equal specificity — an already-ruled item
+     dims like anything else here when it isn't in the hovered group. Reaches the label layer's own
+     elements too (edge-label, edge-label-bg, edge-leader), since they no longer live inside g.edge
+     and a plain `.edge` descendant rule can't reach them (see render()'s label-layer comment). */
+  .node.group-dim, .edge.group-dim, .edge-label.group-dim, .edge-label-bg.group-dim,
+  .edge-leader.group-dim, .was-mark.group-dim { opacity: .2; }
+
   .detail .detail-bg { fill: var(--panel); stroke: var(--line); }
   .detail text { fill: var(--ink); font-size: 11px; }
   .detail .detail-ref { fill: var(--dim); font-family: ui-monospace, SFMono-Regular, monospace; }
@@ -202,6 +218,11 @@
   const NODE_LABEL_MAX_LINES = 5;
   const MIN_ZOOM = 0.3, MAX_ZOOM = 2.5;
   const POLL_MS = 1000;
+  // The page carries this identical expression because the two files share no module
+  // (viewer/server.js's GROUP_REFERENCE). Its narrow `#id` target syntax is what keeps an ordinary
+  // markdown link — `[text](some/path)`, `[text](https://…)` — out of the reference contract on
+  // both sides; a link this doesn't match is left as literal text, never a dead marked phrase.
+  const GROUP_REFERENCE_RE = /\[([^\[\]]+)\]\(#([a-z0-9_-]+)\)/g;
 
   const params = new URLSearchParams(location.search);
   const token = params.get('token') || '';
@@ -231,6 +252,15 @@
   // preference isn't part of Collin's positions or the agent's claims) and not in storage
   // (a poll or a navigation into a child graph must not reset it, but a reload must).
   let explainExpanded = true;
+  // The group id a marked phrase is currently hovered over, or null. Read fresh out of `graph`
+  // on every render (see groupLitSet below) rather than resolved once here — a hover has to
+  // relight against whatever membership the *current* graph holds, including one an agent redraw
+  // changed without the span itself being rebuilt.
+  let hoveredGroupId = null;
+  // What `explainBody`'s spans were last built from — the explanation text and the graph's
+  // canonicalized groups together, not the text alone (see syncExplainPanel). Compared on every
+  // render so the marked-phrase spans are rebuilt only when one of those two actually changed.
+  let explainSyncKey = null;
 
   // ---- small helpers ---------------------------------------------------------
   function el(name, attrs) {
@@ -458,6 +488,58 @@
   });
   clearBtn.addEventListener('click', () => { clearSelection(); render(); });
 
+  // ---- groups ------------------------------------------------------------------
+  // Pure: takes a group's node ids and the graph and returns exactly what a hover lights — the
+  // member nodes and the edges with both ends among them — touching no module state. Must not
+  // reuse `effectiveSelectionIds`: that function reads module-level `selectedIds` and, for every
+  // edge whose ends are not both selected, calls `impliedRemoved.delete(e.id)` — borrowing it here
+  // would silently discard every shift-click edge suppression the reader had set, on every hover.
+  function groupLitSet(nodeIds, g) {
+    const members = new Set(nodeIds);
+    const edgeIds = new Set();
+    for (const e of g.edges) {
+      if (members.has(e.from) && members.has(e.to)) edgeIds.add(e.id);
+    }
+    return { nodeIds: members, edgeIds };
+  }
+
+  // New entry point for a marked-phrase click, not `pick`: a click here always replaces the
+  // selection with the whole group, matching what `pick` does on a non-additive click — never
+  // additive, never a toggle, so pressing approve or reject covers the whole option in one press.
+  function selectGroup(id) {
+    if (!graph) return;
+    const group = graph.groups.find((g) => g.id === id);
+    if (!group) return;
+    selectedIds = new Set(group.nodes);
+    impliedRemoved = new Set();
+    centreGroupIfNeeded(group.nodes);
+    render();
+  }
+
+  // Reuses fitToView's bounding-box arithmetic (below) but translates only — the scale never
+  // changes, so a group larger than the canvas at the current zoom (reachable at the 2.5x ceiling)
+  // ends up as visible as it can be rather than shrunk to fit. A no-op when every member already
+  // sits inside the current viewport, so a click on a fully-visible group never moves the picture.
+  function centreGroupIfNeeded(nodeIds) {
+    if (!graph || !nodeIds.length) return;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const id of nodeIds) {
+      const n = findNode(graph, id);
+      if (!n) continue;
+      const h = nodeHeight(n);
+      minX = Math.min(minX, n.x); minY = Math.min(minY, n.y);
+      maxX = Math.max(maxX, n.x + NODE_W); maxY = Math.max(maxY, n.y + h);
+    }
+    if (!Number.isFinite(minX)) return;
+    const k = view.k;
+    const visLeft = -view.x / k, visTop = -view.y / k;
+    const visRight = (svg.clientWidth - view.x) / k, visBottom = (svg.clientHeight - view.y) / k;
+    if (minX >= visLeft && maxX <= visRight && minY >= visTop && maxY <= visBottom) return;
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+    view.x = svg.clientWidth / 2 - cx * k;
+    view.y = svg.clientHeight / 2 - cy * k;
+  }
+
   // ---- verdicts ------------------------------------------------------------------
   // §6: "A bulk verdict is additive only" — any number of entries may move *from*
   // `proposed`, and at most one may move *away from* an existing verdict, and the
@@ -614,17 +696,63 @@
   // text and expanded/collapsed state to the current graph and `explainExpanded`. Called before
   // resizeCanvas everywhere resizeCanvas is called: resizeCanvas measures this element's real,
   // laid-out height to know where the canvas starts, so the DOM has to be settled first.
+  //
+  // render() calls this on every render, including one fired purely by a hover over a marked
+  // phrase — rebuilding the body on every one of those calls would destroy the very span the
+  // pointer is on, firing its own `pointerleave`, which clears the highlight and re-renders: a
+  // loop. The rebuild is guarded on whether the panel's inputs actually changed, keyed on the
+  // explanation string *and* the canonicalized groups, not the string alone — an agent redraw can
+  // keep its prose byte-identical while changing which nodes a group holds, and `pollOnce` swaps
+  // `graph` and re-renders with no other signal.
   function syncExplainPanel() {
     const text = graph && graph.explanation;
     if (text == null) {
       if (explainPanel.isConnected) explainPanel.remove();
+      explainSyncKey = null;
       return;
     }
     if (!explainPanel.isConnected) topbar.insertAdjacentElement('afterend', explainPanel);
-    explainBody.textContent = text;
+    const key = JSON.stringify([text, graph.groups]);
+    if (key !== explainSyncKey) {
+      explainSyncKey = key;
+      // The rebuild is about to remove whatever span the pointer was on — that span no longer
+      // exists, so the hover it was driving has to go with it.
+      hoveredGroupId = null;
+      buildExplainBody(text);
+    }
     explainPanel.classList.toggle('collapsed', !explainExpanded);
     explainToggle.setAttribute('aria-expanded', String(explainExpanded));
     explainBody.hidden = !explainExpanded;
+  }
+
+  // Splits the explanation on GROUP_REFERENCE_RE and rebuilds `explainBody` from scratch: plain
+  // text between matches as text nodes, each match as a <span> carrying only the phrase and the
+  // group id. Built with createElement/textContent, never innerHTML — the explanation is
+  // agent-written and this page holds a token that can write verdicts, so turning that string into
+  // HTML would let an agent's prose execute script inside the one surface enforcing "an agent
+  // proposes, only a person rules." `explainBody.textContent = text` was that barrier before groups
+  // existed; this keeps it, just per-segment instead of for the whole string.
+  function buildExplainBody(text) {
+    while (explainBody.firstChild) explainBody.removeChild(explainBody.firstChild);
+    let last = 0;
+    for (const match of text.matchAll(GROUP_REFERENCE_RE)) {
+      const [full, phrase, groupId] = match;
+      if (match.index > last) explainBody.appendChild(document.createTextNode(text.slice(last, match.index)));
+      const span = document.createElement('span');
+      span.className = 'group-ref';
+      span.dataset.group = groupId;
+      // Stores only the id. Members are resolved from the current `graph` at the moment of a
+      // hover or a click (see groupLitSet / selectGroup) — capturing a member list here would
+      // light, and on click rule, whatever membership existed when the span was built, stale the
+      // moment a redraw changes it without touching this span.
+      span.textContent = phrase;
+      span.addEventListener('pointerenter', () => { hoveredGroupId = groupId; render(); });
+      span.addEventListener('pointerleave', () => { hoveredGroupId = null; render(); });
+      span.addEventListener('click', () => selectGroup(groupId));
+      explainBody.appendChild(span);
+      last = match.index + full.length;
+    }
+    if (last < text.length) explainBody.appendChild(document.createTextNode(text.slice(last)));
   }
 
   // ---- geometry ------------------------------------------------------------------
@@ -739,12 +867,18 @@
     return defs;
   }
 
-  function renderNodeGroup(root, n, effSel) {
+  function renderNodeGroup(root, n, effSel, hoverLit) {
     const selected = effSel.has(n.id);
     const cls = ['node'];
     if (selected) cls.push('selected');
     if (n.origin === 'rejected') cls.push('rejected');
     if (n.origin === 'agreed') cls.push('agreed');
+    // Never `.selected` for this: that class is an accent stroke and fill meaning "this is the
+    // selection," and a hover that looked identical while the approve button stayed disabled would
+    // be a worse lie than no highlight at all. `group-dim` is the hover treatment's own class,
+    // applied only to what falls outside the hovered group — nothing in it changes appearance,
+    // which is the "lit" half of the effect; everything else visibly recedes.
+    if (hoverLit && !hoverLit.nodeIds.has(n.id)) cls.push('group-dim');
     const attrs = {
       class: cls.join(' '), 'data-id': n.id, 'data-origin': n.origin, 'data-kind': n.kind,
       transform: 'translate(' + n.x + ',' + n.y + ')',
@@ -829,12 +963,16 @@
     root.appendChild(g);
   }
 
-  function renderEdgeGroup(root, labelLayer, e, a, b, pairIndex, pairCount, effSel, nodeBoxRects, labelRects) {
+  function renderEdgeGroup(root, labelLayer, e, a, b, pairIndex, pairCount, effSel, nodeBoxRects, labelRects, hoverLit) {
     const selected = effSel.has(e.id);
     const cls = ['edge'];
     if (selected) cls.push('selected');
     if (e.origin === 'rejected') cls.push('rejected');
     if (e.origin === 'agreed') cls.push('agreed');
+    // Same not-.selected treatment as a node's (see renderNodeGroup): dimming is the whole effect,
+    // and it applies to an edge only when it is outside the hovered group — an edge with just one
+    // end inside does not qualify, matching groupLitSet's both-ends rule.
+    if (hoverLit && !hoverLit.edgeIds.has(e.id)) cls.push('group-dim');
     const attrs = { class: cls.join(' '), 'data-id': e.id, 'data-origin': e.origin, 'data-kind': e.kind };
     if (e.was) attrs['data-was'] = e.was;
     const g = el('g', attrs);
@@ -972,6 +1110,12 @@
     if (selected) labelClass.push('selected');
     if (e.origin === 'rejected') labelClass.push('rejected');
     if (e.origin === 'agreed') labelClass.push('agreed');
+    // The label moved out of g.edge into its own layer (see render()), so an ancestor `.edge`
+    // rule can no longer reach it — this class has to be set on the label itself or half the
+    // dimmed picture (the boxes and lines) reads correctly while the other half (the words on
+    // them) does not.
+    const dimmed = hoverLit && !hoverLit.edgeIds.has(e.id);
+    if (dimmed) labelClass.push('group-dim');
 
     // Drawn first, same ordering as detail-leader further down, so its dashes never cross the
     // label's own opaque background — only when the label actually landed somewhere its rectangle
@@ -982,13 +1126,16 @@
       const leaderClass = ['edge-leader'];
       if (e.origin === 'rejected') leaderClass.push('rejected');
       if (e.origin === 'agreed') leaderClass.push('agreed');
+      if (dimmed) leaderClass.push('group-dim');
       labelLayer.appendChild(el('line', {
         class: leaderClass.join(' '), 'data-id': e.id, x1: mx, y1: my, x2: lx, y2: ly,
       }));
     }
 
+    const labelBgClass = ['edge-label-bg'];
+    if (dimmed) labelBgClass.push('group-dim');
     const labelBg = el('rect', {
-      class: 'edge-label-bg', 'data-id': e.id, x: mx - width / 2, y: my - 15, width, height: 18, rx: 3,
+      class: labelBgClass.join(' '), 'data-id': e.id, x: mx - width / 2, y: my - 15, width, height: 18, rx: 3,
     });
     const label = el('text', { class: labelClass.join(' '), 'data-id': e.id, x: mx, y: my - 2 });
     label.textContent = text;
@@ -1011,7 +1158,12 @@
     // painted-last to buried under any later edge's line, and it is the only
     // place a reader can see that an agent reset an edge.
     if (e.was) {
-      const mark = el('circle', { class: 'was-mark', 'data-id': e.id, cx: mx - width / 2, cy: my - 15, r: 3 });
+      // Dimmed with the rest of its edge: an edge group's was-mark lives in the label layer, not
+      // inside g.edge, so it is the one piece of a dimmed edge that would otherwise stay at full
+      // brightness — an amber dot burning through a dimmed picture, pointing at nothing the
+      // reader asked about.
+      const markClass = dimmed ? 'was-mark group-dim' : 'was-mark';
+      const mark = el('circle', { class: markClass, 'data-id': e.id, cx: mx - width / 2, cy: my - 15, r: 3 });
       const tip = el('title');
       tip.textContent = 'Reset by an agent — was ' + e.was;
       mark.appendChild(tip);
@@ -1212,10 +1364,15 @@
     }
     const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
     const effSel = effectiveSelectionIds();
+    // Resolved fresh against the current graph on every render, never a list captured when the
+    // marked-phrase span was built (see buildExplainBody) — a redraw that changed a group's
+    // membership has to relight the new set on the very next hover, not whatever it held before.
+    const hoverGroup = hoveredGroupId && graph.groups.find((g) => g.id === hoveredGroupId);
+    const hoverLit = hoverGroup ? groupLitSet(hoverGroup.nodes, graph) : null;
 
     // Nodes first, edges after: edges are trimmed to each box's boundary, so
     // painting them second never buries a box's own content.
-    for (const n of graph.nodes) renderNodeGroup(root, n, effSel);
+    for (const n of graph.nodes) renderNodeGroup(root, n, effSel, hoverLit);
     // Seeded with every box before any edge label is placed: a label landing on a node is the
     // same collision as two labels landing on each other, just against a fixed element instead
     // of another label, and it is the worse of the two — it hides a box's own words, which are
@@ -1237,7 +1394,7 @@
     for (const e of graph.edges) {
       const a = nodeById.get(e.from), b = nodeById.get(e.to);
       if (!a || !b) continue;
-      renderEdgeGroup(root, labelLayer, e, a, b, pairIndex, pairCount, effSel, nodeBoxRects, labelRects);
+      renderEdgeGroup(root, labelLayer, e, a, b, pairIndex, pairCount, effSel, nodeBoxRects, labelRects, hoverLit);
     }
     root.appendChild(labelLayer);
 
