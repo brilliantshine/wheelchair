@@ -670,6 +670,86 @@ test('a label the box truncates is readable in full on hover and in the detail p
 });
 
 // ============================================================================================
+// A label that needs every line the cap allows (five) but no more draws all five, plain — no
+// ellipsis, no tooltip. Both escapes in the previous test are gated on labelTruncated, so a label
+// that fits exactly must trip neither.
+// ============================================================================================
+test('a label needing all five lines draws five lines, with no ellipsis and no tooltip', async ({ page }) => {
+  const root = await makeDir('browser-');
+  const graphDir = path.join(root, 'graphs');
+  await fs.mkdir(graphDir, { recursive: true });
+  const ctx = await startServer({ cacheRoot: root, open: path.join(graphDir, 'five-lines.json') });
+  try {
+    const label = 'the installer renders one file this repo owns outright, and never symlinks a wrapper into either harness';
+    const fixture = {
+      schema: 1, title: 'Five lines', source: 'router', source_detail: 'fixture', explanation: null,
+      nodes: [{ id: 'wide', label }],
+      edges: [],
+    };
+    const written = await put(ctx, '/graph', fixture, '');
+    assert.equal(written.status, 200, JSON.stringify(written.body));
+
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const lines = await page.locator('svg#canvas g.node[data-id="wide"] text.node-label').allTextContents();
+    assert.equal(lines.length, 5);
+    assert.equal(lines.join(' '), label.split(/\s+/).filter(Boolean).join(' '));
+    assert.ok(!lines.join(' ').includes('…'), 'a label that fits exactly is never truncated');
+    assert.equal(await page.locator('svg#canvas g.node[data-id="wide"] > title').count(), 0,
+      'a label that fits carries no tooltip');
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// The page's five-line cap (viewer/index.html, NODE_LABEL_MAX_LINES) and the server's row pitch
+// (viewer/server.js, LAYER_GAP) share no module, so nothing structural stops one moving without
+// the other — this is the test that would catch it. It measures the box's real, laid-out height
+// against the actual vertical distance the server put between two rows, rather than hard-coding
+// either number, so it still holds if both change together and still fails if only one does.
+// ============================================================================================
+test('a five-line box stays shorter than the server\'s row pitch', async ({ page }) => {
+  const root = await makeDir('browser-');
+  const graphDir = path.join(root, 'graphs');
+  await fs.mkdir(graphDir, { recursive: true });
+  // PUT to a path with nothing on it yet: the one route where the server invents positions
+  // (lays the graph out) rather than keeping what's on disk.
+  const ctx = await startServer({ cacheRoot: root, open: path.join(graphDir, 'row-pitch.json') });
+  try {
+    const label = 'the installer renders one file this repo owns outright, and never symlinks a wrapper into either harness';
+    const fixture = {
+      schema: 1, title: 'Row pitch', source: 'router', source_detail: 'fixture', explanation: null,
+      nodes: [{ id: 'top', label }, { id: 'bottom', label: 'a second row' }],
+      edges: [{ id: 'top->bottom', from: 'top', to: 'bottom', label: '' }],
+    };
+    const written = await put(ctx, '/graph', fixture, '');
+    assert.equal(written.status, 200, JSON.stringify(written.body));
+
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const laidOut = await pageGraph(page);
+    const top = entry(laidOut, 'top');
+    const bottom = entry(laidOut, 'bottom');
+    assert.notEqual(top.y, bottom.y, 'the two nodes landed on different rows');
+    const rowPitch = Math.abs(bottom.y - top.y);
+
+    // boundingBox() is screen pixels and the row pitch is graph coordinates, so the zoom has to
+    // come back out of the measurement — comparing the two directly would let an oversized box
+    // pass on any graph the page opened zoomed out.
+    const box = await nodeBox(page, 'top').boundingBox();
+    assert.ok(box, 'the five-line box has a layout box');
+    const drawnHeight = box.height / await pageZoom(page);
+    assert.ok(drawnHeight < rowPitch,
+      `box height ${drawnHeight} must stay under the row pitch ${rowPitch}`);
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
 // No gesture and no control adds, renames or connects anything. Authoring is cut.
 // ============================================================================================
 test('no gesture or control adds, renames or connects anything', async ({ page }) => {

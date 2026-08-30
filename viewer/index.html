@@ -167,6 +167,12 @@
 
   const NS = 'http://www.w3.org/2000/svg';
   const NODE_W = 200, NODE_H = 74;
+  // The one place this number is written. All three call sites that wrap a label read it from
+  // here rather than carrying their own literal, because a box's tallest possible height has to
+  // stay under the row pitch the server lays graphs out at (LAYER_GAP, viewer/server.js) — three
+  // independent copies of the same number could drift from each other and from that pitch with
+  // nothing to catch it.
+  const NODE_LABEL_MAX_LINES = 5;
   const MIN_ZOOM = 0.3, MAX_ZOOM = 2.5;
   const POLL_MS = 1000;
 
@@ -604,18 +610,18 @@
   const FIRST_LINE_CHARS_WITH_BADGE = 16;
   function firstLineCap(n) { return n.graph !== null ? FIRST_LINE_CHARS_WITH_BADGE : 24; }
   function nodeHeight(n) {
-    const lines = wrapText(n.label, 24, 3, firstLineCap(n)).length;
+    const lines = wrapText(n.label, 24, NODE_LABEL_MAX_LINES, firstLineCap(n)).length;
     return Math.max(NODE_H, 22 + (lines - 1) * 16 + 30);
   }
 
-  // Three lines is as tall as a box gets, so a longer label loses its tail to
+  // NODE_LABEL_MAX_LINES lines is as tall as a box gets, so a longer label loses its tail to
   // the ellipsis wrapText leaves behind — and the box becomes the one place the
   // sentence cannot be read. Both places that can show it in full (the hover
   // tooltip below, and the selection panel) key off this rather than sniffing
   // for a trailing ellipsis, which a label that genuinely ends in one would
   // trip on its own.
   function labelTruncated(n) {
-    const shown = wrapText(n.label, 24, 3, firstLineCap(n)).join(' ');
+    const shown = wrapText(n.label, 24, NODE_LABEL_MAX_LINES, firstLineCap(n)).join(' ');
     const full = String(n.label == null ? '' : n.label).split(/\s+/).filter(Boolean).join(' ');
     return shown !== full;
   }
@@ -706,7 +712,7 @@
     // the badge painted over the text rather than beside it. Reserving fewer
     // characters on the first line alone (subsequent lines still use the full
     // width) keeps the label clear of the badge without touching its position.
-    const lines = wrapText(n.label, 24, 3, firstLineCap(n));
+    const lines = wrapText(n.label, 24, NODE_LABEL_MAX_LINES, firstLineCap(n));
     lines.forEach((line, i) => {
       const t = el('text', { class: 'node-label', x: 12, y: 22 + i * 16 });
       t.textContent = line;
