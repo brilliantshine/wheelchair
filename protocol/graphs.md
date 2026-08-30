@@ -360,7 +360,14 @@ echo "$URL"
 ```
 
 It accepts a path whose file doesn't exist yet, and creates the parent directory for you
-either way. The line it prints carries the port and the token:
+either way. It is also what makes that path **writable**: a `PUT` to a path no `--open`
+has named is refused with `not-registered`, and the only files that get in without one of
+their own are child graphs, reached through a `graph` field on a node in an
+already-opened file beside them. So this step is not optional once you already hold a
+token — going straight to the `PUT` with a port and token read out of the lockfile is
+exactly the shortcut that earns that refusal.
+
+The line it prints carries the port and the token:
 
 ```
 http://127.0.0.1:7373/?path=%2Fhome%2Fcollin%2F...%2Fcheckout.json&token=9f3a...
