@@ -30,6 +30,21 @@ async function launch(fixtureName, targetName = fixtureName) {
   return startServer({ cacheRoot: root, open: graphPath });
 }
 
+// label-crowding.json has to land on a path with nothing on it yet: that is the one route where
+// the server lays a graph out itself (invents positions) rather than keeping ones already on disk,
+// which is the state the label-placement search runs against. Shared by every test below that
+// needs this fixture, so each gets its own fresh, isolated server the same way `launch` does.
+async function launchLabelCrowding() {
+  const root = await makeDir('browser-');
+  const graphDir = path.join(root, 'graphs');
+  await fs.mkdir(graphDir, { recursive: true });
+  const ctx = await startServer({ cacheRoot: root, open: path.join(graphDir, 'crowded.json') });
+  const fixture = JSON.parse(await fs.readFile(path.join(__dirname, 'fixtures', 'label-crowding.json'), 'utf8'));
+  const written = await put(ctx, '/graph', fixture, '');
+  assert.equal(written.status, 200, JSON.stringify(written.body));
+  return { ctx, fixture };
+}
+
 function pageUrl(ctx) {
   return `${ctx.url}/?path=${encodeURIComponent(ctx.graphPath)}&token=${encodeURIComponent(ctx.token)}`;
 }
@@ -73,7 +88,9 @@ async function pageZoom(page) {
 
 function nodeBox(page, id) { return page.locator(`svg#canvas g.node[data-id="${id}"] rect.node-box`); }
 function edgeLine(page, id) { return page.locator(`svg#canvas g.edge[data-id="${id}"] path.edge-line`); }
-function edgeLabel(page, id) { return page.locator(`svg#canvas g.edge[data-id="${id}"] text.edge-label`); }
+// Not scoped under g.edge any more: the label lives in its own layer, appended after every edge
+// group (see index.html's render()), so it is found by its own data-id instead.
+function edgeLabel(page, id) { return page.locator(`svg#canvas text.edge-label[data-id="${id}"]`); }
 function edgeHandle(page, id, end) {
   return page.locator(`svg#canvas g.edge[data-id="${id}"] circle.edge-handle[data-end="${end}"]`);
 }
@@ -149,30 +166,162 @@ test('dragging a single node writes matching integer coordinates to disk', async
 // three of its labels landed on a box before the placement search learned to look at boxes at all.
 // Real Chromium and real bounding boxes, because the label's width is measured text, not a number
 // the page could be asked for.
+//
+// Checked on .edge-label-bg, not .edge-label: the background rect is what is actually drawn over
+// a box, and it is 14px wider than the text it holds (see the width assertion below) — measuring
+// only the text would leave seven pixels a side unchecked on either end.
 // ============================================================================================
 test('a freshly laid out graph puts no edge label on top of a node box', async ({ page }) => {
-  const root = await makeDir('browser-');
-  const graphDir = path.join(root, 'graphs');
-  await fs.mkdir(graphDir, { recursive: true });
-  // PUT to a path with nothing on it yet: that is the one route where the server lays a graph out
-  // rather than keeping the positions it already has, which is the state under test.
-  const ctx = await startServer({ cacheRoot: root, open: path.join(graphDir, 'crowded.json') });
+  const { ctx, fixture } = await launchLabelCrowding();
   try {
-    const fixture = JSON.parse(await fs.readFile(path.join(__dirname, 'fixtures', 'label-crowding.json'), 'utf8'));
-    const written = await put(ctx, '/graph', fixture, '');
-    assert.equal(written.status, 200, JSON.stringify(written.body));
     await page.goto(pageUrl(ctx));
     await ready(page);
     const covered = await page.evaluate(() => {
       const boxes = [...document.querySelectorAll('.node-box')].map((el) => el.getBoundingClientRect());
-      return [...document.querySelectorAll('.edge-label')].filter((label) => {
-        const r = label.getBoundingClientRect();
+      return [...document.querySelectorAll('.edge-label-bg')].filter((bg) => {
+        const r = bg.getBoundingClientRect();
         return boxes.some((b) => r.left < b.right - 2 && r.right > b.left + 2
           && r.top < b.bottom - 2 && r.bottom > b.top + 2);
-      }).map((label) => label.textContent);
+      }).map((bg) => bg.getAttribute('data-id'));
     });
-    assert.deepEqual(covered, [], 'these labels are sitting on a box');
+    assert.deepEqual(covered, [], 'these label backgrounds are sitting on a box');
+    // The one existing assertion that would catch a measuring element (.label-metric) wearing the
+    // wrong class: Playwright's all() does not filter hidden elements, so a measurer counted as
+    // .edge-label would inflate this past fixture.edges.length.
     assert.equal((await page.locator('.edge-label').all()).length, fixture.edges.length);
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// The collision rectangle the placement search tests is the one actually drawn: every
+// .edge-label-bg is exactly its label's measured text width plus the 14px background padding,
+// never the old per-character estimate. Compared in the SVG's own local units — the bg's `width`
+// attribute against the label's own getComputedTextLength() — so the page's current zoom never
+// enters into it. label-crowding.json's shortest label is 21 characters, comfortably past the
+// Math.max(24, ...) floor, so every label here is long enough that the floor can't mask a
+// mis-measured width by coincidentally producing the same 14px difference.
+// ============================================================================================
+test('every edge label background is exactly its measured text width plus 14px', async ({ page }) => {
+  const { ctx } = await launchLabelCrowding();
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+    const diffs = await page.evaluate(() => {
+      return [...document.querySelectorAll('.edge-label-bg')].map((bg) => {
+        const id = bg.getAttribute('data-id');
+        const label = document.querySelector(`text.edge-label[data-id="${id}"]`);
+        const width = parseFloat(bg.getAttribute('width'));
+        return { id, diff: width - (label.getComputedTextLength() + 14) };
+      });
+    });
+    assert.ok(diffs.length > 0, 'expected at least one edge label background');
+    for (const { id, diff } of diffs) {
+      assert.ok(Math.abs(diff) < 1, `edge "${id}": expected bg width to be text length + 14, off by ${diff}`);
+    }
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// The assertion standing for the whole change: no label is left floating with nothing tying it to
+// its own arrow. Read straight off the rendered SVG's own local coordinates (the edge-line's `d`
+// attribute and the edge-label-bg's x/y/width/height) rather than screen bounding boxes — a
+// horizontal or vertical edge-line reports a degenerate (zero-width or zero-height)
+// getBoundingClientRect in Chromium, which would make a real intersection look like a miss.
+// ============================================================================================
+test('every edge label on the crowding fixture touches its own line or carries a leader back to it', async ({ page }) => {
+  const { ctx, fixture } = await launchLabelCrowding();
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+    const results = await page.evaluate(() => {
+      // Same clip test as index.html's rectIntersectsSegment, computed independently here against
+      // the real, rendered DOM rather than by calling back into the page's own implementation.
+      function intersects(rect, x1, y1, x2, y2) {
+        const dx = x2 - x1, dy = y2 - y1;
+        const p = [-dx, dx, -dy, dy];
+        const q = [x1 - rect.x, rect.x + rect.w - x1, y1 - rect.y, rect.y + rect.h - y1];
+        let tMin = 0, tMax = 1;
+        for (let i = 0; i < 4; i += 1) {
+          if (p[i] === 0) { if (q[i] < 0) return false; continue; }
+          const t = q[i] / p[i];
+          if (p[i] < 0) { if (t > tMax) return false; if (t > tMin) tMin = t; }
+          else { if (t < tMin) return false; if (t < tMax) tMax = t; }
+        }
+        return tMin <= tMax;
+      }
+      return [...document.querySelectorAll('g.edge')].map((edge) => {
+        const id = edge.getAttribute('data-id');
+        const d = edge.querySelector('path.edge-line').getAttribute('d');
+        const [, x1, y1, x2, y2] = d.match(/M([-\d.]+),([-\d.]+) L([-\d.]+),([-\d.]+)/).map(Number);
+        const bg = document.querySelector(`rect.edge-label-bg[data-id="${id}"]`);
+        const rect = {
+          x: parseFloat(bg.getAttribute('x')), y: parseFloat(bg.getAttribute('y')),
+          w: parseFloat(bg.getAttribute('width')), h: parseFloat(bg.getAttribute('height')),
+        };
+        const hasLeader = !!document.querySelector(`line.edge-leader[data-id="${id}"]`);
+        return { id, tied: hasLeader || intersects(rect, x1, y1, x2, y2) };
+      });
+    });
+    assert.equal(results.length, fixture.edges.length);
+    for (const { id, tied } of results) {
+      assert.ok(tied, `edge "${id}": label neither touches its own line nor carries a leader back to it`);
+    }
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// The other half of the same guarantee, and the only test that draws a leader at all: crowd
+// enough labels into one pair of rows and some of them cannot sit on their own line, which is
+// exactly when a reader can no longer tell which words belong to which arrow. The dashed leader
+// back to the line is what answers it. Without this fixture the leader path never runs — on the
+// crowding fixture every label now lands on its own line, so none is drawn there.
+// ============================================================================================
+test('a label with nowhere on its own line to sit is drawn with a leader back to it', async ({ page }) => {
+  const root = await makeDir('browser-');
+  const graphDir = path.join(root, 'graphs');
+  await fs.mkdir(graphDir, { recursive: true });
+  const ctx = await startServer({ cacheRoot: root, open: path.join(graphDir, 'leaders.json') });
+  try {
+    const fixture = JSON.parse(await fs.readFile(path.join(__dirname, 'fixtures', 'label-leader.json'), 'utf8'));
+    const written = await put(ctx, '/graph', fixture, '');
+    assert.equal(written.status, 200, JSON.stringify(written.body));
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const leaders = await page.evaluate(() => [...document.querySelectorAll('line.edge-leader')].map((line) => {
+      const id = line.getAttribute('data-id');
+      const bg = document.querySelector(`rect.edge-label-bg[data-id="${id}"]`);
+      const edge = document.querySelector(`g.edge[data-id="${id}"] path.edge-line`);
+      const [, x1, y1, x2, y2] = edge.getAttribute('d').match(/M([-\d.]+),([-\d.]+) L([-\d.]+),([-\d.]+)/).map(Number);
+      const at = (name) => parseFloat(line.getAttribute(name));
+      const box = {
+        x: parseFloat(bg.getAttribute('x')), y: parseFloat(bg.getAttribute('y')),
+        w: parseFloat(bg.getAttribute('width')), h: parseFloat(bg.getAttribute('height')),
+      };
+      // Perpendicular distance from the leader's far end to the edge's own line. A leader that
+      // does not land on the line it claims to point at is worse than no leader at all.
+      const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1;
+      return {
+        id,
+        offLine: Math.abs((at('x2') - x1) * dy - (at('y2') - y1) * dx) / len,
+        startsUnderLabel: at('x1') >= box.x && at('x1') <= box.x + box.w
+          && at('y1') >= box.y && at('y1') <= box.y + box.h,
+        dashes: getComputedStyle(line).strokeDasharray,
+      };
+    }));
+
+    assert.ok(leaders.length > 0, 'this fixture exists to crowd at least one label off its own line');
+    for (const leader of leaders) {
+      assert.ok(leader.offLine < 0.5, `${leader.id}: the leader ends ${leader.offLine} away from the line it points at`);
+      assert.ok(leader.startsUnderLabel, `${leader.id}: the leader should start under the label it belongs to`);
+      assert.notEqual(leader.dashes, 'none', `${leader.id}: a leader is dashed, so it never reads as another arrow`);
+    }
   } finally {
     await ctx.stop();
   }
@@ -549,6 +698,33 @@ test('an edge is selectable by label, band and endpoint handle at minimum zoom',
     // 3) an endpoint handle
     await edgeHandle(page, 'c->d', 'from').click();
     assert.deepEqual(await selection(page), ['c->d']);
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// Hovering a label reveals its edge's endpoint handles. This used to come free from
+// `.edge:hover .edge-handle` because the label lived inside g.edge; now that it's in its own
+// layer (see index.html's render()), the label has to toggle a stand-in class on the edge group
+// itself on pointerenter/pointerleave, and this is the test that would catch that affordance
+// silently disappearing with the move.
+// ============================================================================================
+test("hovering a label reveals its edge's endpoint handles", async ({ page }) => {
+  const ctx = await launch('interactive.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const handle = edgeHandle(page, 'c->d', 'from');
+    const opacity = () => handle.evaluate((el) => parseFloat(getComputedStyle(el).opacity));
+    assert.ok((await opacity()) < 0.1, 'the handle starts hidden');
+
+    await edgeLabel(page, 'c->d').hover();
+    await expect.poll(opacity).toBeGreaterThan(0.5);
+
+    await page.mouse.move(0, 0);
+    await expect.poll(opacity).toBeLessThan(0.1);
   } finally {
     await ctx.stop();
   }
