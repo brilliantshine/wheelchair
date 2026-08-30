@@ -101,6 +101,17 @@ npm --prefix viewer run test:browser  # Chromium; fails loudly if the browser is
 The glob on the `node --test` line is required, not decorative: on Node 26.7.0, pointing
 `--test` at a bare directory does not discover the suite.
 
+**Never check the viewer by starting a server by hand.** A `--open` or `--show` start
+reuses whatever already holds the lock under the default cache root
+(`viewer/server.js:1092`), and that process runs the code it was launched with — which,
+after any edit of yours, is not yours. Canonicalization drops unknown keys by design
+(`:119`), so a write carrying a field the running build predates comes back `200` with
+the field gone: the check looks like it ran and quietly disagrees with the code you just
+wrote. Start your own with `--port` and `--cache-root`, the way the suite's helper does
+(`viewer/test/helpers/server.js:87`). There is no cache-root environment variable —
+`server.js` reads only `WHEELCHAIR_NO_BROWSER` and `WHEELCHAIR_BROWSER` — so exporting
+one puts you straight back on the default root.
+
 There is no test suite for the protocol documents — what keeps them true is that each
 stage refuses to run out of order and every stage's output is the next stage's input.
 `viewer/` is real code, and this is what runs its tests.
