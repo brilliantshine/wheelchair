@@ -1,0 +1,318 @@
+{
+  "schema": 1,
+  "title": "what a visible group's rectangle is made of",
+  "source": "plan-proposal",
+  "source_detail": "group-boxes Q1 — the boundary's geometry",
+  "explanation": "Two ways to draw a group's boundary, each with what it costs below it. [The derived side](#derived-side) gets half the no-ambiguity requirement for nothing and pays when a member is dragged far away; [the own-rectangle side](#own-rectangle-side) keeps a stable box and pays by letting the member list and the drawing disagree. It leaves out how either one is enforced during a drag, which is the next question.",
+  "groups": [
+    {
+      "id": "derived-side",
+      "nodes": [
+        "derived",
+        "derived-free",
+        "derived-nothing-stored",
+        "derived-swallow"
+      ]
+    },
+    {
+      "id": "own-rectangle-side",
+      "nodes": [
+        "own-page-write",
+        "own-rect",
+        "own-stable",
+        "own-two-truths"
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "derived",
+      "label": "drawn around wherever its members currently sit",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 260,
+      "y": 140
+    },
+    {
+      "id": "derived-free",
+      "label": "a member is inside by construction",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 0,
+      "y": 280
+    },
+    {
+      "id": "derived-nothing-stored",
+      "label": "no new geometry on disk, no new write the page may make",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 260,
+      "y": 280
+    },
+    {
+      "id": "derived-swallow",
+      "label": "drag one member far and the box grows over unrelated boxes",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 520,
+      "y": 280
+    },
+    {
+      "id": "guarantee",
+      "label": "nothing half in, nothing outside sitting inside",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 563,
+      "y": 420
+    },
+    {
+      "id": "next",
+      "label": "left open: what stops a non-member drifting in",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 823,
+      "y": 420
+    },
+    {
+      "id": "own-page-write",
+      "label": "the page must be allowed to write group geometry back",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 780,
+      "y": 280
+    },
+    {
+      "id": "own-rect",
+      "label": "a rectangle you drag and resize yourself",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 1040,
+      "y": 140
+    },
+    {
+      "id": "own-stable",
+      "label": "the box keeps the size and place you gave it",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 1040,
+      "y": 280
+    },
+    {
+      "id": "own-two-truths",
+      "label": "the member list and the drawing can disagree",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 1300,
+      "y": 280
+    },
+    {
+      "id": "question",
+      "label": "what is a group's rectangle made of",
+      "kind": "decision",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": true,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 650,
+      "y": 0
+    }
+  ],
+  "edges": [
+    {
+      "id": "derived->free",
+      "from": "derived",
+      "to": "derived-free",
+      "label": "gets you",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "derived->nothing-stored",
+      "from": "derived",
+      "to": "derived-nothing-stored",
+      "label": "gets you",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "derived->swallow",
+      "from": "derived",
+      "to": "derived-swallow",
+      "label": "costs you",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "free->guarantee",
+      "from": "derived-free",
+      "to": "guarantee",
+      "label": "half of it, free",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "own-rect->page-write",
+      "from": "own-rect",
+      "to": "own-page-write",
+      "label": "costs you",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "own-rect->stable",
+      "from": "own-rect",
+      "to": "own-stable",
+      "label": "gets you",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "own-rect->two-truths",
+      "from": "own-rect",
+      "to": "own-two-truths",
+      "label": "costs you",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "question->derived",
+      "from": "question",
+      "to": "derived",
+      "label": "derived from the members",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "question->own-rect",
+      "from": "question",
+      "to": "own-rect",
+      "label": "its own rectangle",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "swallow->next",
+      "from": "derived-swallow",
+      "to": "next",
+      "label": "both land here",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "two-truths->guarantee",
+      "from": "own-two-truths",
+      "to": "guarantee",
+      "label": "all of it, in code",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "two-truths->next",
+      "from": "own-two-truths",
+      "to": "next",
+      "label": "both land here",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    }
+  ]
+}

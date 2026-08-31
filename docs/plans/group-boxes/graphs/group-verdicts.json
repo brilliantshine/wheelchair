@@ -1,0 +1,243 @@
+{
+  "schema": 1,
+  "title": "whether a group is something you rule on",
+  "source": "plan-proposal",
+  "source_detail": "group-boxes Q1 — do visible groups join the verdict system",
+  "explanation": "The reason groups were left out of verdicts sits at the top, and the two answers hang off it. [Staying out](#staying-out) changes no code at all and leaves you with words as the only way to push back on a grouping; [coming in](#coming-in) costs three separate surfaces, listed under it. It leaves out what happens to a group's members' own verdicts, which are unaffected either way.",
+  "groups": [
+    {
+      "id": "coming-in",
+      "nodes": [
+        "yes",
+        "yes-page",
+        "yes-preserve",
+        "yes-select"
+      ]
+    },
+    {
+      "id": "staying-out",
+      "nodes": [
+        "no",
+        "no-cost",
+        "no-gain"
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "no",
+      "label": "groups stay outside verdicts, exactly as today",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 130,
+      "y": 280
+    },
+    {
+      "id": "no-cost",
+      "label": "a grouping you disagree with is pushed back on in words only",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 0,
+      "y": 420
+    },
+    {
+      "id": "no-gain",
+      "label": "no change to the write path, the save route or the buttons",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 260,
+      "y": 420
+    },
+    {
+      "id": "q",
+      "label": "is a named, drawn group a claim worth ruling on",
+      "kind": "decision",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": true,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 455,
+      "y": 140
+    },
+    {
+      "id": "stale",
+      "label": "an approved region goes stale the moment boxes move under it",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": "protocol/graphs.md",
+      "note": "Verdicts stay on the nodes and edges, which are what make claims about the code.",
+      "graph": null,
+      "x": 455,
+      "y": 0
+    },
+    {
+      "id": "yes",
+      "label": "a visible group carries a verdict the way a box does",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 780,
+      "y": 280
+    },
+    {
+      "id": "yes-page",
+      "label": "the page's save route has to let group state through",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": "viewer/server.js",
+      "note": "checkViewChanges currently refuses any change to groups as a structural-difference.",
+      "graph": null,
+      "x": 520,
+      "y": 420
+    },
+    {
+      "id": "yes-preserve",
+      "label": "an agent redrawing may no longer restate a group freely",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 780,
+      "y": 420
+    },
+    {
+      "id": "yes-select",
+      "label": "the boundary becomes something you click, with its own panel",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 1040,
+      "y": 420
+    }
+  ],
+  "edges": [
+    {
+      "id": "no->cost",
+      "from": "no",
+      "to": "no-cost",
+      "label": "costs you",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "no->gain",
+      "from": "no",
+      "to": "no-gain",
+      "label": "gets you",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "q->no",
+      "from": "q",
+      "to": "no",
+      "label": "no, it is the drawing's own claim",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "q->yes",
+      "from": "q",
+      "to": "yes",
+      "label": "yes, it says something about the system",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "stale->q",
+      "from": "stale",
+      "to": "q",
+      "label": "the reason they were left out",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "yes->page",
+      "from": "yes",
+      "to": "yes-page",
+      "label": "costs you",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "yes->preserve",
+      "from": "yes",
+      "to": "yes-preserve",
+      "label": "costs you",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "yes->select",
+      "from": "yes",
+      "to": "yes-select",
+      "label": "costs you",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    }
+  ]
+}
