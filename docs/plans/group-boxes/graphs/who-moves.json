@@ -1,0 +1,291 @@
+{
+  "schema": 1,
+  "title": "when a group lands on an arranged picture, who moves",
+  "source": "plan-proposal",
+  "source_detail": "group-boxes Q1 after review round 2 — the arriving group or the boxes it landed on",
+  "explanation": "A group arriving on a graph you have arranged lands at coordinates that have nothing to do with yours, and something has to give. [The three answers](#answers) differ in which side that is. [The fresh-graph case](#fresh-case) runs down the left: it is the same fork with none of your work at stake, and only the third answer touches it. It leaves out how the boundary itself is drawn, which is settled.",
+  "groups": [
+    {
+      "id": "answers",
+      "nodes": [
+        "opt-both",
+        "opt-newcomer",
+        "opt-residents"
+      ]
+    },
+    {
+      "id": "fresh-case",
+      "nodes": [
+        "fresh",
+        "fresh-cost"
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "arrives",
+      "label": "an agent adds a visible group to a graph you arranged",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 248,
+      "y": 0
+    },
+    {
+      "id": "both-cost",
+      "label": "the layout has to learn about groups — the largest piece of work here",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 520,
+      "y": 560
+    },
+    {
+      "id": "fresh",
+      "label": "a brand new graph, nothing of yours on it yet",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 508,
+      "y": 0
+    },
+    {
+      "id": "fresh-cost",
+      "label": "the layout scatters a group's members across rows",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": "viewer/server.js",
+      "note": null,
+      "graph": null,
+      "x": 508,
+      "y": 140
+    },
+    {
+      "id": "lands",
+      "label": "so its box lands on boxes you placed",
+      "kind": "decision",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": true,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 248,
+      "y": 280
+    },
+    {
+      "id": "new-coords",
+      "label": "its new boxes are placed by a fresh layout, unrelated to yours",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": "viewer/server.js",
+      "note": "retainDiskPositions keeps disk positions for known ids and lays out the rest.",
+      "graph": null,
+      "x": 248,
+      "y": 140
+    },
+    {
+      "id": "newcomer-cost",
+      "label": "a group turning visible over boxes you placed still moves yours",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 0,
+      "y": 560
+    },
+    {
+      "id": "opt-both",
+      "label": "move it, and teach the first layout to keep members together",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 520,
+      "y": 420
+    },
+    {
+      "id": "opt-newcomer",
+      "label": "move the arriving group instead",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 0,
+      "y": 420
+    },
+    {
+      "id": "opt-residents",
+      "label": "push the boxes it landed on out of the way",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 260,
+      "y": 420
+    },
+    {
+      "id": "residents-cost",
+      "label": "your arrangement is rearranged by something that landed at random",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 260,
+      "y": 560
+    }
+  ],
+  "edges": [
+    {
+      "id": "arrives->coords",
+      "from": "arrives",
+      "to": "new-coords",
+      "label": "and so",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "both->cost",
+      "from": "opt-both",
+      "to": "both-cost",
+      "label": "costs",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "coords->lands",
+      "from": "new-coords",
+      "to": "lands",
+      "label": "sooner or later",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "fresh->cost",
+      "from": "fresh",
+      "to": "fresh-cost",
+      "label": "because layout knows no groups",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "freshcost->both",
+      "from": "fresh-cost",
+      "to": "opt-both",
+      "label": "only this one fixes it",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "lands->both",
+      "from": "lands",
+      "to": "opt-both",
+      "label": "both, plus the first render",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "lands->newcomer",
+      "from": "lands",
+      "to": "opt-newcomer",
+      "label": "your picture keeps its place",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "lands->residents",
+      "from": "lands",
+      "to": "opt-residents",
+      "label": "the newcomer keeps its place",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "newcomer->cost",
+      "from": "opt-newcomer",
+      "to": "newcomer-cost",
+      "label": "costs",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "residents->cost",
+      "from": "opt-residents",
+      "to": "residents-cost",
+      "label": "costs",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    }
+  ]
+}

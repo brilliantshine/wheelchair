@@ -1,0 +1,242 @@
+{
+  "schema": 1,
+  "title": "how much a group's boundary says on its own",
+  "source": "plan-proposal",
+  "source_detail": "group-boxes Q1 — where the name and the description live",
+  "explanation": "A group cannot use the panel a box uses, so its words go on the boundary, on hover, or split. [The three answers](#answers) differ only in how much is on screen before you point at anything, and [what each costs](#costs) is on the row below. It leaves out the boundary's own geometry, which decision 8 already settled as derived from the members.",
+  "groups": [
+    {
+      "id": "answers",
+      "nodes": [
+        "everything",
+        "hover-only",
+        "one-line"
+      ]
+    },
+    {
+      "id": "costs",
+      "nodes": [
+        "everything-cost",
+        "hover-cost",
+        "one-line-cost"
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "everything",
+      "label": "the name and the whole description, wrapped",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 0,
+      "y": 280
+    },
+    {
+      "id": "everything-cost",
+      "label": "three groups add three paragraphs to a crowded picture",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 0,
+      "y": 420
+    },
+    {
+      "id": "existing",
+      "label": "a box already cuts a label too long for it and hovers the rest",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": "viewer/index.html",
+      "note": null,
+      "graph": null,
+      "x": 517,
+      "y": -21
+    },
+    {
+      "id": "hover-cost",
+      "label": "the sentence is there but nothing on screen says so",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 260,
+      "y": 420
+    },
+    {
+      "id": "hover-only",
+      "label": "the name, and the description only when you point at it",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 260,
+      "y": 280
+    },
+    {
+      "id": "no-panel",
+      "label": "a group has no selection panel to put words in",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": "viewer/index.html",
+      "note": "renderDetail runs only when exactly one item is selected.",
+      "graph": null,
+      "x": 158,
+      "y": -28
+    },
+    {
+      "id": "one-line",
+      "label": "the name, plus one line of the description",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 520,
+      "y": 280
+    },
+    {
+      "id": "one-line-cost",
+      "label": "a long sentence is cut, and the rest needs a hover",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 520,
+      "y": 420
+    },
+    {
+      "id": "q",
+      "label": "how much does the boundary say unprompted",
+      "kind": "decision",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": true,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 161,
+      "y": 140
+    }
+  ],
+  "edges": [
+    {
+      "id": "all->cost",
+      "from": "everything",
+      "to": "everything-cost",
+      "label": "costs",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "existing->one",
+      "from": "existing",
+      "to": "one-line",
+      "label": "the same pattern, already built",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "hover->cost",
+      "from": "hover-only",
+      "to": "hover-cost",
+      "label": "costs",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "no-panel->q",
+      "from": "no-panel",
+      "to": "q",
+      "label": "so the words go on the boundary",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "one->cost",
+      "from": "one-line",
+      "to": "one-line-cost",
+      "label": "costs",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "q->all",
+      "from": "q",
+      "to": "everything",
+      "label": "the sentence always reads in full",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "q->hover",
+      "from": "q",
+      "to": "hover-only",
+      "label": "the picture stays quiet",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "q->one",
+      "from": "q",
+      "to": "one-line",
+      "label": "a line is enough to say what it is",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    }
+  ]
+}

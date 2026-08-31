@@ -53,7 +53,7 @@ A graph is one JSON file:
   "source_detail": "src/almanac/records/timeline/AGENTS.md",
   "explanation": "Admission is the only gate: everything downstream assumes a record already cleared [the admission decision](#admission). Leaves out how the timeline itself is stored.",
   "groups": [
-    { "id": "admission", "nodes": ["gate", "refuse"] }
+    { "id": "admission", "label": null, "note": null, "visible": false, "nodes": ["gate", "refuse"] }
   ],
   "nodes": [
     { "id": "gate", "label": "accept it as a real measurement, or refuse",
@@ -117,8 +117,9 @@ Field by field:
   unruled box, because an approved wording, or a region an agent may not touch, goes
   stale the moment the picture moves underneath it. Verdicts stay on the nodes and edges,
   which are what make claims about the code.
-- **`groups`** — an array of `{id, nodes}`, each naming a set of node ids in this file,
-  sorted by `id` like `nodes` and `edges`. Defaults to `[]` when omitted.
+- **`groups`** — an array of `{id, label, note, visible, nodes}`, each naming a set of
+  node ids in this file, sorted by `id` like `nodes` and `edges`. Defaults to `[]` when
+  omitted.
 
   An agent describing a picture reaches for a position word — "the left branch", "the
   bottom cluster", "option A" — and that word points at an arrangement the reader may
@@ -151,8 +152,72 @@ Field by field:
   when a selection spans both endpoints, so the reader gets the region, not just the
   boxes.
 
-  See "What the server refuses" below for what an entry that's missing, malformed, or
-  unreferenced draws.
+  A group can also be **drawn**. `visible` — boolean, default `false` — left alone is
+  today's behaviour in full: an invisible highlight set that exists only so a phrase can
+  point at it. Set it `true` and the group becomes a named rectangle around its members,
+  sitting on the canvas rather than behind a click, with `label` — the name on the
+  boundary — and `note` — one sentence saying what the system is — printed on its top
+  edge. Both are required, non-empty strings, exactly when `visible` is `true`, and must
+  be `null` otherwise: a hidden group has no text to hide, and a drawn one is never
+  anonymous. A group whose name needs no sentence is a group whose members probably did
+  not need drawing round.
+
+  Two visible groups may never name the same node. This also settles nesting: a group
+  nested inside another shares every one of its members, so it trips the same check.
+  Invisible groups carry none of this — they overlap each other and any visible group
+  freely, exactly as they do today, since two phrases are allowed to point at overlapping
+  sets.
+
+  The requirement that a group be referenced by the explanation (`group-unreferenced`,
+  below) now applies to invisible groups only. A visible group is drawn on the canvas, so
+  it is self-evidently not silent — a phrase may still reference one, and it behaves
+  exactly as it does today when it does.
+
+  A group still carries no verdict — no `origin`, no `was`, none of it covered by the
+  preservation contract below, rewritten freely by an agent on every redraw. A drawn
+  boundary strengthens that reasoning rather than weakening it: the box is derived from
+  wherever its members currently sit, nothing keeps it honest once they're dragged, and a
+  verdict on it would be a verdict on a shape a drag can invalidate.
+
+  A node inside a group may still carry its own child graph — the two mechanisms are
+  orthogonal. A box can be a member of a drawn system and an open door to a deeper
+  picture at the same time. A group itself never holds one: it names boxes in this same
+  file, and is not a doorway to another.
+
+  A drawn group has a name, a sentence and a boundary, and nothing else you pick. There
+  is no colour, no shape, no collapsing it down to a single box — canonicalization drops
+  keys it doesn't know, so a group carrying anything beyond the five above loses it on
+  the way to disk with nothing said.
+
+  A group's boundary is never stored: nothing about it lands on disk, and the page draws
+  it fresh around wherever its members currently sit. `viewer/server.js` and
+  `viewer/index.html` both compute that box and share no module, so the numbers are
+  stated once here and copied into each:
+
+  ```
+  GROUP_PAD    = 24    // clearance on the left, right and bottom
+  GROUP_HEADER = 38    // extra clearance above, holding the name and the note line
+  GROUP_GAP    = 16    // a moved unit lands exactly this far past the rectangle that bound it
+  ```
+
+  For a visible group whose members are `M`:
+
+  ```
+  minX = min(m.x)                       maxX = max(m.x + nodeWidth)
+  minY = min(m.y)                       maxY = max(m.y + nodeHeight(m))
+  box  = { x: minX - GROUP_PAD,
+           y: minY - GROUP_PAD - GROUP_HEADER,
+           w: (maxX - minX) + 2 * GROUP_PAD,
+           h: (maxY - minY) + 2 * GROUP_PAD + GROUP_HEADER }
+  ```
+
+  The page measures each node's real height; the server holds every node to a fixed
+  200-by-116 box regardless. The server's box is therefore never smaller than the page's,
+  only ever taller — the disagreement can only push something further clear of a
+  boundary, never leave it inside one.
+
+  See "What the server refuses" below for what an entry that's missing, malformed,
+  unreferenced, or drawn wrong draws.
 - **`id`** (node and edge) — non-empty and unique within its own collection (nodes and
   edges are separate namespaces). Missing, empty, or duplicated draws `bad-id`. Ids are
   permanent once a verdict lands on them — see Verdicts below — so pick one you'd be
@@ -227,7 +292,7 @@ crowding one graph past the point Collin can read it.
 
 The file on disk is byte-canonical, always. Top-level keys, in this exact order:
 `schema`, `title`, `source`, `source_detail`, `explanation`, `groups`, `nodes`, `edges`.
-Group keys: `id`, `nodes`. Node keys: `id`,
+Group keys: `id`, `label`, `note`, `visible`, `nodes`. Node keys: `id`,
 `label`, `kind`, `origin`, `was`, `exclusive`, `ref`, `note`, `graph`, `x`, `y`. Edge
 keys: `id`, `from`, `to`, `label`, `kind`, `value`, `inferred`, `origin`, `was`, `note`.
 
@@ -246,7 +311,9 @@ default, and never needs sorting or reindenting. What you're required to get rig
 the *shape* — the fields the server actually checks — not the formatting.
 
 Defaults applied when canonicalizing a body that omits a key: top-level `explanation` →
-`null`, `groups` → `[]`. Node `kind` → `"note"`,
+`null`, `groups` → `[]`. Group `visible` → `false` when the key is **absent** — an explicit
+`visible: null` is a non-boolean and draws `group-bad-shape`, the one key here where a null and a
+missing key differ. Group `label`/`note` → `null`. Node `kind` → `"note"`,
 `origin` → `"proposed"`, `was` → `null`, `exclusive` → `false`, `ref`/`note`/`graph` →
 `null`. Edge `kind` → `"sequence"`, `value` → `null`, `inferred` → `false`, `origin` →
 `"proposed"`, `was` → `null`, `note` → `null`. **`label` has no default** — omit it and
@@ -409,11 +476,15 @@ it is a graph that opens with no panel and nothing said about it, which is the f
 field exists against. Write the one or two sentences the field's entry above describes,
 including what the picture leaves out.
 
-**Mark a position word, and define its group.** When the explanation you're about to send
-reaches for "the left branch", "the bottom cluster", "option A", or anything else that
-names an arrangement rather than a box, turn it into a reference and add the `groups`
-entry it points at. A position word left unmarked is a claim the reader can't check once
-the boxes have moved.
+**Mark a position word, and define its group — or draw one.** When the explanation
+you're about to send reaches for "the left branch", "the bottom cluster", "option A", or
+anything else that names an arrangement rather than a box, turn it into a reference and
+add the `groups` entry it points at. A position word left unmarked is a claim the reader
+can't check once the boxes have moved.
+
+Separately, whether or not the explanation reaches for a phrase: when a set of boxes
+reads as one system whose parts belong on screen with the rest of the flow, draw it —
+give its `groups` entry `visible: true`, a `label`, and a `note`.
 
 **3. Show it.** The graph exists now, so put it in front of Collin rather than leaving him to
 click a URL out of your turn:
@@ -535,6 +606,12 @@ orphan when there wasn't one before. Likewise, a container currently naming a **
 child — the file that `graph` points at doesn't exist — may be retargeted freely, since
 pointing away from a file that isn't there orphans nothing.
 
+## Choosing a group or a container node
+
+A **group** is for a set of steps that reads as one system and whose parts belong on
+screen with the rest of the flow. A **container node** is for a flow whose insides
+matter but would bury the outer picture.
+
 ## Depth and cycles
 
 **Traversal — the re-read before each question, the exit-gate walk, this format's own
@@ -573,9 +650,14 @@ actually hit, in the rough order the server checks them:
 | 422 | `bad-id` | an id is missing, empty, or duplicated — nodes, edges, and groups are each their own namespace, and a group entry that isn't even an object counts as a bad id too |
 | 422 | `group-bad-name` | a group id outside `^[a-z0-9_-]+$` |
 | 422 | `group-missing-node` | a group's `nodes` is missing, not an array of strings, empty, or names an id that isn't a node in this file |
+| 422 | `group-bad-shape` | `visible` is not a boolean, or `label`/`note` is neither a string nor `null` |
+| 422 | `group-missing-label` | a group with `visible: true` whose `label` is absent, `null`, or empty |
+| 422 | `group-missing-note` | a group with `visible: true` whose `label` is present but `note` is absent, `null`, or empty |
+| 422 | `group-hidden-text` | a group with `visible: false` carrying a non-null `label` or `note` |
+| 422 | `group-overlap` | two visible groups name the same node |
 | 422 | `edge-missing-node` | an edge names a `from`/`to` id that isn't in this file |
 | 422 | `explanation-missing-group` | the explanation carries a `#`-prefixed reference to a group not in `groups` |
-| 422 | `group-unreferenced` | a group in `groups` that the explanation never references |
+| 422 | `group-unreferenced` | an invisible group in `groups` that the explanation never references |
 | 422 | `bad-origin-value` | an `origin` outside `proposed`/`agreed`/`rejected` |
 | 422 | `container-bad-name` | a `graph` value that isn't `null` and isn't `^[a-z0-9_-]+$` |
 | 422 | `agent-verdict` | you set `agreed`/`rejected` on an entry that's new or was `proposed` on disk |
@@ -588,9 +670,11 @@ actually hit, in the rough order the server checks them:
 | 500 | `internal` | anything unhandled |
 
 Two of those refuse things that look harmless rather than obviously broken: an empty
-member list (`group-missing-node`) and a group nothing in the explanation ever points at
-(`group-unreferenced`) are both refused, because either one is a group that highlights
-nothing — the silent failure the whole feature exists against.
+member list (`group-missing-node`) and an invisible group nothing in the explanation
+ever points at (`group-unreferenced`) are both refused, because either one is a group
+that highlights nothing — the silent failure the whole feature exists against. A visible
+group is exempt from the second: drawn on the canvas, it is never silent, so nothing
+requires the explanation to name it too.
 
 Four codes exist that a `PUT /graph` will never produce: `not-found` and `no-route`
 belong to reads and to unknown routes (this route can create, so a missing file is

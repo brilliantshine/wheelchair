@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "title": "Visible groups fixture",
+  "source": "code-read",
+  "source_detail": "viewer/test/fixtures/groups-visible.json (browser suite only)",
+  "explanation": "The [alpha subsystem](#alpha-group) handles intake, while the beta pair absorbs overflow separately.",
+  "groups": [
+    {"id": "alpha-group", "label": "Group Alpha — the primary intake and validation subsystem", "note": "This one sentence explains what the alpha subsystem does for the whole picture.", "visible": true, "nodes": ["alpha"]},
+    {"id": "beta-group", "label": "Beta pair", "note": "Two nodes that share the overflow work between them.", "visible": true, "nodes": ["beta1", "beta2"]}
+  ],
+  "nodes": [
+    {"id":"alpha","label":"Alpha","kind":"step","origin":"proposed","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":100,"y":100},
+    {"id":"beta1","label":"Beta One","kind":"step","origin":"proposed","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":700,"y":100},
+    {"id":"beta2","label":"Beta Two","kind":"step","origin":"proposed","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":1100,"y":100},
+    {"id":"edge-above","label":"Edge Above","kind":"step","origin":"proposed","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":50,"y":-280},
+    {"id":"edge-below","label":"Edge Below","kind":"step","origin":"proposed","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":50,"y":320}
+  ],
+  "edges": [
+    {"id":"edge-above->edge-below","from":"edge-above","to":"edge-below","label":"redirect","kind":"sequence","value":null,"inferred":false,"origin":"proposed","was":null,"note":null}
+  ]
+}

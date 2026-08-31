@@ -40,6 +40,48 @@ function assertNoOverlap(graph) {
     }
   }
 }
+const GROUP_PAD = 24;
+const GROUP_HEADER = 38;
+const GROUP_GAP = 16;
+function node(id) {
+  return { id, label: id, kind: 'note', origin: 'proposed', was: null, exclusive: false,
+    ref: null, note: null, graph: null, x: 0, y: 0 };
+}
+function visibleGroup(id, nodes) {
+  return { id, label: id, note: `${id} is a visible system.`, visible: true, nodes };
+}
+function inlineGraph(ids, groups = [], edges = []) {
+  return { schema: 1, title: 'placement', source: 'router', source_detail: null, explanation: null,
+    groups, nodes: ids.map(node), edges: edges.map(([from, to], index) => ({ id: `${from}-${to}-${index}`,
+      from, to, label: '', kind: 'sequence', value: null, inferred: false, origin: 'proposed', was: null, note: null })) };
+}
+function position(graph, id) { return entry(graph, id); }
+function groupBox(graph, group) {
+  const members = [...new Set(group.nodes)].map((id) => position(graph, id));
+  const minX = Math.min(...members.map((item) => item.x)); const maxX = Math.max(...members.map((item) => item.x + 200));
+  const minY = Math.min(...members.map((item) => item.y)); const maxY = Math.max(...members.map((item) => item.y + 116));
+  return { x: minX - GROUP_PAD, y: minY - GROUP_PAD - GROUP_HEADER,
+    w: maxX - minX + 2 * GROUP_PAD, h: maxY - minY + 2 * GROUP_PAD + GROUP_HEADER };
+}
+function nodeBox(graph, id) { const item = position(graph, id); return { x: item.x, y: item.y, w: 200, h: 116 }; }
+function clearsGroupBox(left, right) {
+  return left.x >= right.x + right.w + GROUP_GAP || right.x >= left.x + left.w + GROUP_GAP ||
+    left.y >= right.y + right.h + GROUP_GAP || right.y >= left.y + left.h + GROUP_GAP;
+}
+async function createGraph(graph) {
+  const root = await makeDir(); const graphDir = path.join(root, 'graphs'); await fs.mkdir(graphDir, { recursive: true });
+  const graphPath = path.join(graphDir, 'new.json'); const ctx = await startServer({ cacheRoot: root, open: graphPath });
+  try {
+    expect(await graphPut(ctx, graph, ''), 200);
+    return { ctx, graph: (await getGraph(ctx)).graph };
+  } catch (error) { await ctx.stop(); throw error; }
+}
+async function setPositions(ctx, graph, positions) {
+  const moved = copy(graph);
+  for (const [id, point] of Object.entries(positions)) Object.assign(position(moved, id), point);
+  expect(await viewPut(ctx, moved, (await getGraph(ctx)).hash), 200);
+  return (await getGraph(ctx)).graph;
+}
 function childGraph(id, graph = null) {
   return { schema: 1, title: id, source: 'router', source_detail: null,
     nodes: [{ id: `${id}-node`, label: id, graph }], edges: [] };
@@ -174,14 +216,35 @@ test('groups canonicalize member lists, order, and byte round-trip', async () =>
     expect(await graphPut(ctx, graph, state.hash), 200);
     state = await getGraph(ctx);
     assert.deepEqual(state.graph.groups, [
-      { id: 'left', nodes: ['gather', 'inspect'] },
-      { id: 'right', nodes: ['report', 'store'] },
+      { id: 'left', label: null, note: null, visible: false, nodes: ['gather', 'inspect'] },
+      { id: 'right', label: null, note: null, visible: false, nodes: ['report', 'store'] },
     ]);
     const before = await fs.readFile(ctx.graphPath);
     expect(await graphPut(ctx, state.graph, state.hash), 200);
     assert.deepEqual(await fs.readFile(ctx.graphPath), before);
-    assert.deepEqual(Object.keys(JSON.parse(before)),
+    const parsed = JSON.parse(before);
+    assert.deepEqual(Object.keys(parsed.groups[0]), ['id', 'label', 'note', 'visible', 'nodes']);
+    assert.deepEqual(Object.keys(parsed),
       ['schema', 'title', 'source', 'source_detail', 'explanation', 'groups', 'nodes', 'edges']);
+  });
+});
+
+test('visible groups round-trip without explanation references', async () => {
+  await withFixture('canonical.json', async (ctx) => {
+    let state = await getGraph(ctx); const graph = copy(state.graph);
+    graph.groups = [{
+      id: 'left', label: 'The left branch', note: 'Gathers the input and inspects it.',
+      visible: true, nodes: ['gather', 'inspect'],
+    }];
+    expect(await graphPut(ctx, graph, state.hash), 200);
+    state = await getGraph(ctx);
+    assert.deepEqual(state.graph.groups, [{
+      id: 'left', label: 'The left branch', note: 'Gathers the input and inspects it.',
+      visible: true, nodes: ['gather', 'inspect'],
+    }]);
+    const before = await fs.readFile(ctx.graphPath);
+    expect(await graphPut(ctx, state.graph, state.hash), 200);
+    assert.deepEqual(await fs.readFile(ctx.graphPath), before);
   });
 });
 
@@ -212,10 +275,43 @@ test('groups refuse malformed claims and unmatched explanation references', asyn
       ['bad-id', (graph) => { graph.groups = ['left']; }],
       ['explanation-missing-group', (graph) => { graph.explanation = 'See [the left branch](#left).'; }],
       ['group-unreferenced', (graph) => { graph.groups = [{ id: 'left', nodes: ['gather'] }]; }],
+      ['group-bad-shape', (graph) => {
+        graph.explanation = 'See [the left branch](#left).';
+        graph.groups = [{ id: 'left', visible: 'yes', nodes: ['gather'] }];
+      }],
+      ['group-bad-shape', (graph) => {
+        graph.explanation = 'See [the left branch](#left).';
+        graph.groups = [{ id: 'left', label: 7, nodes: ['gather'] }];
+      }],
+      // An explicit null is a non-boolean, not an omission: the only key in this schema where the
+      // two differ, so it is the only one that needs saying out loud.
+      ['group-bad-shape', (graph) => {
+        graph.explanation = 'See [the left branch](#left).';
+        graph.groups = [{ id: 'left', visible: null, nodes: ['gather'] }];
+      }],
+      ['group-missing-label', (graph) => { graph.groups = [{ id: 'left', visible: true, note: 'Points to the branch.', nodes: ['gather'] }]; }],
+      ['group-missing-note', (graph) => { graph.groups = [{ id: 'left', visible: true, label: 'The left branch', nodes: ['gather'] }]; }],
+      ['group-hidden-text', (graph) => {
+        graph.explanation = 'See [the left branch](#left).';
+        graph.groups = [{ id: 'left', visible: false, label: 'The left branch', nodes: ['gather'] }];
+      }],
+      ['group-overlap', (graph) => {
+        graph.groups = [
+          { id: 'left', label: 'The left branch', note: 'Gathers the input.', visible: true, nodes: ['gather'] },
+          { id: 'right', label: 'The right branch', note: 'Also gathers the input.', visible: true, nodes: ['gather'] },
+        ];
+      }],
     ]) {
       const graph = copy(state.graph); change(graph);
       expect(await graphPut(ctx, graph, state.hash), 422, code);
     }
+    const invisibleOverlap = copy(state.graph);
+    invisibleOverlap.explanation = 'See [the left branch](#left) and [the right branch](#right).';
+    invisibleOverlap.groups = [
+      { id: 'left', nodes: ['gather'] },
+      { id: 'right', nodes: ['gather'] },
+    ];
+    expect(await graphPut(ctx, invisibleOverlap, state.hash), 200);
   });
 });
 
@@ -400,6 +496,271 @@ test('PUT /graph ignores known positions and lays out new nodes', async () => {
     assert.notDeepEqual({ x: entry(stored.graph, 'new').x, y: entry(stored.graph, 'new').y },
       { x: 8, y: 9 }, 'a new id takes the position the layout assigns, not the one it was sent');
     assertNoOverlap(stored.graph);
+  });
+});
+
+test('an all-new rewrite group moves itself clear instead of moving the picture on disk', async () => {
+  await withFixture('canonical.json', async (ctx) => {
+    let graph = await setPositions(ctx, (await getGraph(ctx)).graph,
+      { gather: { x: 0, y: 0 }, inspect: { x: 1000, y: 0 }, report: { x: 2000, y: 0 }, store: { x: 3000, y: 0 } });
+    const before = new Map(graph.nodes.map((item) => [item.id, { x: item.x, y: item.y }]));
+    const next = copy(graph); next.nodes.push(node('new-a'), node('new-b'));
+    next.edges.push({ id: 'new-a-gather', from: 'new-a', to: 'gather', label: '', kind: 'sequence', value: null,
+      inferred: false, origin: 'proposed', was: null, note: null });
+    next.groups = [visibleGroup('new-group', ['new-a', 'new-b'])];
+    expect(await graphPut(ctx, next, (await getGraph(ctx)).hash), 200);
+    graph = (await getGraph(ctx)).graph;
+    for (const [id, point] of before) assert.deepEqual(position(graph, id), { ...position(graph, id), ...point });
+    // gather's centre packs this two-member block first at (-130, 0) and (130, 0). Its box
+    // crowds gather, so newcomer mode has to translate the block itself.
+    assert.notDeepEqual({ x: position(graph, 'new-a').x, y: position(graph, 'new-a').y }, { x: -130, y: 0 });
+    assert.notDeepEqual({ x: position(graph, 'new-b').x, y: position(graph, 'new-b').y }, { x: 130, y: 0 });
+  });
+});
+
+test('a changed resident group evicts residents once and leaves its disk members still', async () => {
+  await withFixture('canonical.json', async (ctx) => {
+    let graph = await setPositions(ctx, (await getGraph(ctx)).graph,
+      { gather: { x: 0, y: 0 }, inspect: { x: 260, y: 0 }, report: { x: 100, y: 0 }, store: { x: 900, y: 0 } });
+    const next = copy(graph); next.groups = [visibleGroup('system', ['gather', 'inspect'])];
+    expect(await graphPut(ctx, next, (await getGraph(ctx)).hash), 200);
+    graph = (await getGraph(ctx)).graph;
+    assert.deepEqual({ x: position(graph, 'gather').x, y: position(graph, 'gather').y }, { x: 0, y: 0 });
+    assert.deepEqual({ x: position(graph, 'inspect').x, y: position(graph, 'inspect').y }, { x: 260, y: 0 });
+    assert.notDeepEqual({ x: position(graph, 'report').x, y: position(graph, 'report').y }, { x: 100, y: 0 });
+    assert.ok(clearsGroupBox(groupBox(graph, graph.groups[0]), nodeBox(graph, 'report')));
+    const once = graph.nodes.map((item) => ({ id: item.id, x: item.x, y: item.y }));
+    expect(await graphPut(ctx, graph, (await getGraph(ctx)).hash), 200);
+    assert.deepEqual((await getGraph(ctx)).graph.nodes.map((item) => ({ id: item.id, x: item.x, y: item.y })), once);
+  });
+});
+
+test('placement separates overlapping group rectangles and translates a visible-group victim whole', async () => {
+  await withFixture('canonical.json', async (ctx) => {
+    let graph = await setPositions(ctx, (await getGraph(ctx)).graph,
+      { gather: { x: 0, y: 0 }, inspect: { x: 260, y: 0 }, report: { x: 230, y: 0 }, store: { x: 490, y: 0 } });
+    const first = copy(graph); first.groups = [visibleGroup('later', ['report', 'store'])];
+    expect(await graphPut(ctx, first, (await getGraph(ctx)).hash), 200);
+    graph = (await getGraph(ctx)).graph;
+    const initialDelta = { x: position(graph, 'store').x - position(graph, 'report').x,
+      y: position(graph, 'store').y - position(graph, 'report').y };
+    const next = copy(graph); next.groups.push(visibleGroup('anchor', ['gather', 'inspect']));
+    expect(await graphPut(ctx, next, (await getGraph(ctx)).hash), 200);
+    graph = (await getGraph(ctx)).graph;
+    const anchor = graph.groups.find((group) => group.id === 'anchor'); const later = graph.groups.find((group) => group.id === 'later');
+    assert.ok(clearsGroupBox(groupBox(graph, anchor), groupBox(graph, later)));
+    assert.deepEqual({ x: position(graph, 'store').x - position(graph, 'report').x,
+      y: position(graph, 'store').y - position(graph, 'report').y }, initialDelta);
+  });
+});
+
+test('placement sees padding-only overlap between two group boxes', async () => {
+  await withFixture('canonical.json', async (ctx) => {
+    let graph = await setPositions(ctx, (await getGraph(ctx)).graph,
+      { gather: { x: 0, y: 0 }, inspect: { x: 220, y: 0 }, report: { x: 1000, y: 0 }, store: { x: 2000, y: 0 } });
+    const first = copy(graph); first.groups = [visibleGroup('later', ['inspect'])];
+    expect(await graphPut(ctx, first, (await getGraph(ctx)).hash), 200);
+    graph = await setPositions(ctx, (await getGraph(ctx)).graph, { gather: { x: 0, y: 0 }, inspect: { x: 220, y: 0 } });
+    const later = graph.groups[0]; const anchor = visibleGroup('anchor', ['gather']);
+    const anchorBox = groupBox(graph, anchor); const laterBox = groupBox(graph, later);
+    // At 220px apart, the 24px padding overlaps by 28px. Neither 200px-wide member box is
+    // wholly inside the other group box, so a pass that notices nodes rather than units misses it.
+    assert.ok(anchorBox.x < laterBox.x + laterBox.w && laterBox.x < anchorBox.x + anchorBox.w);
+    const contains = (outer, inner) => outer.x <= inner.x && outer.y <= inner.y &&
+      outer.x + outer.w >= inner.x + inner.w && outer.y + outer.h >= inner.y + inner.h;
+    assert.equal(contains(anchorBox, nodeBox(graph, 'inspect')), false);
+    assert.equal(contains(laterBox, nodeBox(graph, 'gather')), false);
+    const next = copy(graph); next.groups.push(anchor);
+    expect(await graphPut(ctx, next, (await getGraph(ctx)).hash), 200);
+    graph = (await getGraph(ctx)).graph;
+    assert.ok(clearsGroupBox(groupBox(graph, graph.groups.find((group) => group.id === 'anchor')),
+      groupBox(graph, graph.groups.find((group) => group.id === 'later'))));
+  });
+});
+
+test('making a persisted invisible group visible starts placement without a membership change', async () => {
+  await withFixture('canonical.json', async (ctx) => {
+    let graph = await setPositions(ctx, (await getGraph(ctx)).graph,
+      { gather: { x: 0, y: 0 }, inspect: { x: 260, y: 0 }, report: { x: 100, y: 0 }, store: { x: 1000, y: 0 } });
+    const hidden = copy(graph); hidden.groups = [{ id: 'system', label: null, note: null, visible: false, nodes: ['gather', 'inspect'] }];
+    hidden.explanation = 'The [system](#system) is present but hidden.';
+    expect(await graphPut(ctx, hidden, (await getGraph(ctx)).hash), 200);
+    graph = (await getGraph(ctx)).graph;
+    const shown = copy(graph); Object.assign(shown.groups[0], { visible: true, label: 'system', note: 'system is visible.' });
+    expect(await graphPut(ctx, shown, (await getGraph(ctx)).hash), 200);
+    graph = (await getGraph(ctx)).graph;
+    assert.notDeepEqual({ x: position(graph, 'report').x, y: position(graph, 'report').y }, { x: 100, y: 0 },
+      'a false-to-true visibility transition is a changed group and evicts its intruder');
+  });
+});
+
+test('when two resident groups arrive together, the earlier id is the anchor', async () => {
+  await withFixture('canonical.json', async (ctx) => {
+    let graph = await setPositions(ctx, (await getGraph(ctx)).graph,
+      { gather: { x: 0, y: 0 }, inspect: { x: 220, y: 0 }, report: { x: 1000, y: 0 }, store: { x: 2000, y: 0 } });
+    const next = copy(graph); next.groups = [visibleGroup('early', ['gather']), visibleGroup('later', ['inspect'])];
+    expect(await graphPut(ctx, next, (await getGraph(ctx)).hash), 200);
+    graph = (await getGraph(ctx)).graph;
+    assert.deepEqual({ x: position(graph, 'gather').x, y: position(graph, 'gather').y }, { x: 0, y: 0 });
+    assert.notDeepEqual({ x: position(graph, 'inspect').x, y: position(graph, 'inspect').y }, { x: 220, y: 0 });
+  });
+});
+
+test('equal displacement directions prefer left before right, up, and down', async () => {
+  await withFixture('canonical.json', async (ctx) => {
+    let graph = await setPositions(ctx, (await getGraph(ctx)).graph,
+      { gather: { x: 0, y: 0 }, inspect: { x: 0, y: 0 }, report: { x: 0, y: -194 }, store: { x: 0, y: 156 } });
+    const next = copy(graph); next.groups = [visibleGroup('anchor', ['gather'])];
+    expect(await graphPut(ctx, next, (await getGraph(ctx)).hash), 200);
+    graph = (await getGraph(ctx)).graph;
+    assert.deepEqual({ x: position(graph, 'inspect').x, y: position(graph, 'inspect').y }, { x: -240, y: 0 },
+      'the vertical exits are blocked and left wins the equal horizontal displacement tie');
+  });
+});
+
+test('ring-zero lattice cells enumerate by row and then column', async () => {
+  await withFixture('canonical.json', async (ctx) => {
+    let graph = await setPositions(ctx, (await getGraph(ctx)).graph,
+      { gather: { x: 100, y: 100 }, inspect: { x: 360, y: 240 }, report: { x: 1000, y: 0 }, store: { x: 2000, y: 0 } });
+    const first = copy(graph); first.groups = [visibleGroup('system', ['gather', 'inspect'])];
+    expect(await graphPut(ctx, first, (await getGraph(ctx)).hash), 200);
+    graph = await setPositions(ctx, (await getGraph(ctx)).graph,
+      { gather: { x: 100, y: 100 }, inspect: { x: 360, y: 240 } });
+    const expanded = copy(graph); expanded.nodes.push(node('new-member')); expanded.groups[0].nodes.push('new-member');
+    expect(await graphPut(ctx, expanded, (await getGraph(ctx)).hash), 200);
+    graph = (await getGraph(ctx)).graph;
+    assert.deepEqual({ x: position(graph, 'new-member').x, y: position(graph, 'new-member').y }, { x: 360, y: 100 },
+      'the first empty ring-zero cell is row 0, column 1 rather than row 1, column 0');
+  });
+});
+
+test('a disk free node crowding an unchanged group stays put when another node is added', async () => {
+  await withFixture('canonical.json', async (ctx) => {
+    let graph = await setPositions(ctx, (await getGraph(ctx)).graph,
+      { gather: { x: 0, y: 0 }, inspect: { x: 260, y: 0 }, report: { x: 1000, y: 0 }, store: { x: 2000, y: 0 } });
+    const grouped = copy(graph); grouped.groups = [visibleGroup('system', ['gather', 'inspect'])];
+    expect(await graphPut(ctx, grouped, (await getGraph(ctx)).hash), 200);
+    graph = await setPositions(ctx, (await getGraph(ctx)).graph, { report: { x: 100, y: 0 } });
+    const next = copy(graph); next.nodes.push(node('elsewhere'));
+    expect(await graphPut(ctx, next, (await getGraph(ctx)).hash), 200);
+    graph = (await getGraph(ctx)).graph;
+    assert.deepEqual({ x: position(graph, 'report').x, y: position(graph, 'report').y }, { x: 100, y: 0 },
+      'the pass ran for the new id but did not correct a free node already on disk');
+  });
+});
+
+test('mixed-membership groups tuck a new member beside their disk members', async () => {
+  await withFixture('canonical.json', async (ctx) => {
+    let graph = await setPositions(ctx, (await getGraph(ctx)).graph,
+      { gather: { x: 100, y: 100 }, inspect: { x: 360, y: 100 }, report: { x: 900, y: 0 }, store: { x: 1200, y: 0 } });
+    const next = copy(graph); next.groups = [visibleGroup('system', ['gather', 'inspect'])];
+    expect(await graphPut(ctx, next, (await getGraph(ctx)).hash), 200);
+    graph = (await getGraph(ctx)).graph;
+    const old = new Map(['gather', 'inspect'].map((id) => [id, { x: position(graph, id).x, y: position(graph, id).y }]));
+    const expanded = copy(graph); expanded.nodes.push(node('new-member')); expanded.groups[0].nodes.push('new-member');
+    expect(await graphPut(ctx, expanded, (await getGraph(ctx)).hash), 200);
+    graph = (await getGraph(ctx)).graph;
+    for (const [id, point] of old) assert.deepEqual({ x: position(graph, id).x, y: position(graph, id).y }, point);
+    const newcomer = position(graph, 'new-member');
+    assert.deepEqual({ x: newcomer.x, y: newcomer.y }, { x: -160, y: 100 },
+      'above ring 0, the chosen empty cell adds the least area to the group box');
+  });
+});
+
+test('all-new group packing uses its edge-neighbour anchor, not its pre-pack centroid', async () => {
+  await withFixture('canonical.json', async (ctx) => {
+    let graph = await setPositions(ctx, (await getGraph(ctx)).graph,
+      { gather: { x: 10000, y: 500 }, inspect: { x: 0, y: 0 }, report: { x: 500, y: 0 }, store: { x: 800, y: 0 } });
+    const next = copy(graph); next.nodes.push(node('new-a'), node('new-b'));
+    next.edges.push({ id: 'new-a-gather', from: 'new-a', to: 'gather', label: '', kind: 'sequence', value: null,
+      inferred: false, origin: 'proposed', was: null, note: null });
+    next.groups = [visibleGroup('pair', ['new-a', 'new-b'])];
+    expect(await graphPut(ctx, next, (await getGraph(ctx)).hash), 200);
+    graph = (await getGraph(ctx)).graph;
+    assert.equal(position(graph, 'new-b').x - position(graph, 'new-a').x, 260);
+    assert.equal(position(graph, 'new-b').y, position(graph, 'new-a').y);
+    const packedX = (position(graph, 'new-a').x + position(graph, 'new-b').x) / 2;
+    // The centred block initially crowds its neighbour and newcomer mode moves it upward, but
+    // not sideways. The members' pre-pack centroid is near the other component, not gather.x.
+    assert.equal(packedX, position(graph, 'gather').x,
+      'the packed block keeps the horizontal landing derived from its edge neighbour');
+  });
+});
+
+test('a create keeps an all-new group anchored and moves a free node that crowds it', async () => {
+  const created = await createGraph(inlineGraph(['a', 'b', 'free'], [visibleGroup('pair', ['a', 'b'])], [['a', 'free']]));
+  try {
+    const pair = created.graph.groups[0];
+    assert.deepEqual({ x: position(created.graph, 'a').x, y: position(created.graph, 'a').y }, { x: 100, y: 0 },
+      'resident mode keeps the create-time packed block at its anchor');
+    assert.equal(position(created.graph, 'b').x - position(created.graph, 'a').x, 260);
+    assert.equal(position(created.graph, 'b').y, position(created.graph, 'a').y);
+    assert.deepEqual({ x: position(created.graph, 'free').x, y: position(created.graph, 'free').y }, { x: 0, y: 156 },
+      'the free node starts at y=140, crowds the packed block, and is the unit that gives way');
+    assert.ok(clearsGroupBox(groupBox(created.graph, pair), nodeBox(created.graph, 'free')));
+  } finally { await created.ctx.stop(); }
+});
+
+test('a create is deterministic, keeps group-less layout intact, and permits matching group and node ids', async () => {
+  const source = inlineGraph(['same', 'member', 'free'], [visibleGroup('same', ['member'])]);
+  const first = await createGraph(copy(source)); const second = await createGraph(copy(source));
+  try {
+    assert.deepEqual(first.graph.nodes.map((item) => ({ id: item.id, x: item.x, y: item.y })),
+      second.graph.nodes.map((item) => ({ id: item.id, x: item.x, y: item.y })));
+  } finally { await first.ctx.stop(); await second.ctx.stop(); }
+  const plain = inlineGraph(['a', 'b', 'c']); const noGroups = await createGraph(copy(plain));
+  // The pass filters on `visible`, so the group-less bound above says nothing about an invisible
+  // one — which every graph in the repo today has, and which must still lay out untouched.
+  const invisible = inlineGraph(['a', 'b', 'c'], [{ id: 'pair', label: null, note: null, visible: false, nodes: ['a', 'b'] }]);
+  invisible.explanation = 'The [first pair](#pair) leads.';
+  const other = await createGraph(invisible);
+  try {
+    const expected = [{ id: 'a', x: 0, y: 0 }, { id: 'b', x: 460, y: 0 }, { id: 'c', x: 920, y: 0 }];
+    assert.deepEqual(noGroups.graph.nodes.map((item) => ({ id: item.id, x: item.x, y: item.y })), expected);
+    assert.deepEqual(other.graph.nodes.map((item) => ({ id: item.id, x: item.x, y: item.y })), expected);
+  } finally { await noGroups.ctx.stop(); await other.ctx.stop(); }
+});
+
+test('the movement search rejects a short blocked exit and lands exactly at the group gap', async () => {
+  await withFixture('canonical.json', async (ctx) => {
+    let graph = await setPositions(ctx, (await getGraph(ctx)).graph,
+      { gather: { x: 0, y: 0 }, inspect: { x: 230, y: 0 }, report: { x: 450, y: 0 }, store: { x: 230, y: 250 } });
+    const next = copy(graph); next.groups = [visibleGroup('anchor', ['gather'])];
+    expect(await graphPut(ctx, next, (await getGraph(ctx)).hash), 200);
+    graph = (await getGraph(ctx)).graph;
+    const anchor = groupBox(graph, graph.groups[0]); const moved = nodeBox(graph, 'inspect');
+    assert.equal(moved.y + moved.h + GROUP_GAP, anchor.y,
+      'the short right exit is blocked, so the clear upward landing wins at exactly GROUP_GAP');
+  });
+});
+
+test('an unchanged redraw preserves a dragged intruder, while a later resident evicts an earlier unchanged group', async () => {
+  await withFixture('canonical.json', async (ctx) => {
+    let graph = await setPositions(ctx, (await getGraph(ctx)).graph,
+      { gather: { x: 0, y: 0 }, inspect: { x: 260, y: 0 }, report: { x: 900, y: 0 }, store: { x: 1200, y: 0 } });
+    const grouped = copy(graph); grouped.groups = [visibleGroup('system', ['gather', 'inspect'])];
+    expect(await graphPut(ctx, grouped, (await getGraph(ctx)).hash), 200);
+    graph = await setPositions(ctx, (await getGraph(ctx)).graph, { report: { x: 100, y: 0 } });
+    const dragged = { x: position(graph, 'report').x, y: position(graph, 'report').y };
+    expect(await graphPut(ctx, graph, (await getGraph(ctx)).hash), 200);
+    graph = (await getGraph(ctx)).graph;
+    assert.deepEqual({ x: position(graph, 'report').x, y: position(graph, 'report').y }, dragged);
+  });
+  await withFixture('canonical.json', async (ctx) => {
+    let graph = await setPositions(ctx, (await getGraph(ctx)).graph,
+      { gather: { x: 230, y: 0 }, inspect: { x: 0, y: 0 }, report: { x: 260, y: 0 }, store: { x: 900, y: 0 } });
+    const initial = copy(graph); initial.groups = [visibleGroup('early', ['gather']), visibleGroup('later', ['inspect'])];
+    expect(await graphPut(ctx, initial, (await getGraph(ctx)).hash), 200);
+    graph = await setPositions(ctx, (await getGraph(ctx)).graph,
+      { gather: { x: 230, y: 0 }, inspect: { x: 0, y: 0 }, report: { x: 260, y: 0 } });
+    const grown = copy(graph); grown.groups.find((group) => group.id === 'later').nodes.push('report');
+    expect(await graphPut(ctx, grown, (await getGraph(ctx)).hash), 200);
+    graph = (await getGraph(ctx)).graph;
+    const early = graph.groups.find((group) => group.id === 'early'); const later = graph.groups.find((group) => group.id === 'later');
+    assert.deepEqual({ x: position(graph, 'inspect').x, y: position(graph, 'inspect').y }, { x: 0, y: 0 });
+    assert.deepEqual({ x: position(graph, 'report').x, y: position(graph, 'report').y }, { x: 260, y: 0 });
+    assert.ok(clearsGroupBox(groupBox(graph, early), groupBox(graph, later)),
+      'the changed later group evicts the unchanged earlier group instead of leaving boundaries overlapping');
   });
 });
 

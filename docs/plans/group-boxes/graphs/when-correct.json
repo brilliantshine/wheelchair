@@ -1,0 +1,304 @@
+{
+  "schema": 1,
+  "title": "when a group's box gets made correct",
+  "source": "plan-proposal",
+  "source_detail": "group-boxes Q1 — which write establishes the no-ambiguity guarantee",
+  "explanation": "The top is [what the server already does on every write after a file's first](#today): it places only a box the file has never held, and leaves every other one where you dragged it. [The three answers below](#answers) are what could happen on the write where a group first turns visible. It leaves out a file's genuine first write, where the layout runs over everything and all three behave the same.",
+  "groups": [
+    {
+      "id": "answers",
+      "nodes": [
+        "opt-nothing",
+        "opt-nudge",
+        "opt-relayout"
+      ]
+    },
+    {
+      "id": "today",
+      "nodes": [
+        "keeps",
+        "lays-out",
+        "write"
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "goal",
+      "label": "the picture is unambiguous the moment it is drawn",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 390,
+      "y": 700
+    },
+    {
+      "id": "group-arrives",
+      "label": "a group turns visible on this write",
+      "kind": "decision",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": true,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 260,
+      "y": 280
+    },
+    {
+      "id": "keeps",
+      "label": "every box already there keeps where you dragged it",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": "viewer/server.js",
+      "note": null,
+      "graph": null,
+      "x": 260,
+      "y": 140
+    },
+    {
+      "id": "lays-out",
+      "label": "only a box the file never held before gets placed",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": "viewer/server.js",
+      "note": null,
+      "graph": null,
+      "x": 520,
+      "y": 140
+    },
+    {
+      "id": "nothing-cost",
+      "label": "the box swallows whatever the members are already spread across",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 0,
+      "y": 560
+    },
+    {
+      "id": "nudge-cost",
+      "label": "a few boxes move, each one that would have read as a member it is not",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 260,
+      "y": 560
+    },
+    {
+      "id": "opt-nothing",
+      "label": "nothing happens",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 0,
+      "y": 420
+    },
+    {
+      "id": "opt-nudge",
+      "label": "move only the non-members standing inside the new box",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 260,
+      "y": 420
+    },
+    {
+      "id": "opt-relayout",
+      "label": "lay the whole graph out again",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 520,
+      "y": 420
+    },
+    {
+      "id": "relayout-cost",
+      "label": "every box you placed by hand jumps somewhere else",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 520,
+      "y": 560
+    },
+    {
+      "id": "write",
+      "label": "an agent rewrites a graph already on disk",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": "viewer/server.js",
+      "note": null,
+      "graph": null,
+      "x": 390,
+      "y": 0
+    }
+  ],
+  "edges": [
+    {
+      "id": "group->nothing",
+      "from": "group-arrives",
+      "to": "opt-nothing",
+      "label": "you accept the first paint as it falls",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "group->nudge",
+      "from": "group-arrives",
+      "to": "opt-nudge",
+      "label": "your arrangement wins except where it lies",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "group->relayout",
+      "from": "group-arrives",
+      "to": "opt-relayout",
+      "label": "placement wins over your arrangement",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "keeps->group",
+      "from": "keeps",
+      "to": "group-arrives",
+      "label": "so, on the write that adds a group",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "nothing->cost",
+      "from": "opt-nothing",
+      "to": "nothing-cost",
+      "label": "costs",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "nudge->cost",
+      "from": "opt-nudge",
+      "to": "nudge-cost",
+      "label": "costs",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "nudge-cost->goal",
+      "from": "nudge-cost",
+      "to": "goal",
+      "label": "reaches",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "relayout->cost",
+      "from": "opt-relayout",
+      "to": "relayout-cost",
+      "label": "costs",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "relayout-cost->goal",
+      "from": "relayout-cost",
+      "to": "goal",
+      "label": "reaches",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "write->keeps",
+      "from": "write",
+      "to": "keeps",
+      "label": "for an id it recognises",
+      "kind": "data",
+      "value": "the position on disk",
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "write->lays-out",
+      "from": "write",
+      "to": "lays-out",
+      "label": "for an id it does not",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    }
+  ]
+}

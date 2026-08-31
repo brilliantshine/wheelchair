@@ -163,7 +163,25 @@
      elements too (edge-label, edge-label-bg, edge-leader), since they no longer live inside g.edge
      and a plain `.edge` descendant rule can't reach them (see render()'s label-layer comment). */
   .node.group-dim, .edge.group-dim, .edge-label.group-dim, .edge-label-bg.group-dim,
-  .edge-leader.group-dim, .was-mark.group-dim { opacity: .2; }
+  .edge-leader.group-dim, .was-mark.group-dim, .group-region.group-dim,
+  .group-header.group-dim { opacity: .2; }
+
+  /* A visible group's boundary: fill-opacity, not opacity — the shared .group-dim rule above sets
+     the real compositing opacity, and a rect that already carried its own `opacity` would fight
+     that rule at equal specificity instead of dimming further on top of it. pointer-events:none
+     because this rect is scenery; the interior stays fully open to a marquee and to a node dragged
+     across the boundary. The hover class is set from JS on the specific rect a header points at
+     (see attachGroupHeaderGesture) — the header and its boundary are siblings under different
+     layers, too far apart in the DOM for a CSS sibling selector to bridge them. */
+  .group-region { fill: var(--accent); fill-opacity: .06; stroke: var(--line); stroke-width: 1;
+    pointer-events: none; }
+  .group-region.group-region-hover { stroke: var(--accent); stroke-width: 2; }
+
+  .group-header-label { fill: var(--ink); font-size: 13px; pointer-events: none; }
+  .group-header-note { fill: var(--dim); font-size: 11px; pointer-events: none; }
+  /* Same two explicit properties .edge-band relies on above: an SVG rect defaults to a solid black
+     fill, and fill:none alone takes no pointer events without pointer-events:all next to it. */
+  .group-header-hit { fill: none; pointer-events: all; cursor: pointer; }
 
   .detail .detail-bg { fill: var(--panel); stroke: var(--line); }
   .detail text { fill: var(--ink); font-size: 11px; }
@@ -223,6 +241,11 @@
   // markdown link — `[text](some/path)`, `[text](https://…)` — out of the reference contract on
   // both sides; a link this doesn't match is left as literal text, never a dead marked phrase.
   const GROUP_REFERENCE_RE = /\[([^\[\]]+)\]\(#([a-z0-9_-]+)\)/g;
+  // Copied from protocol/graphs.md, same idiom as GROUP_REFERENCE_RE above and
+  // NODE_LABEL_MAX_LINES: viewer/server.js holds the other copy of these two numbers (and its own
+  // GROUP_GAP, which the page never uses), and the two files share no module to hold them once.
+  const GROUP_PAD = 24;    // clearance on the left, right and bottom
+  const GROUP_HEADER = 38; // extra clearance above, holding the name and the note line
 
   const params = new URLSearchParams(location.search);
   const token = params.get('token') || '';
@@ -503,6 +526,39 @@
     return { nodeIds: members, edgeIds };
   }
 
+  // The plain bounding box of a set of member nodes — no pad, no header. Shared by
+  // centreGroupIfNeeded's invisible-group case, fitToView's node pass and visibleGroupBox below,
+  // so the one loop over nodeHeight(n) exists once. Returns null for an empty or fully-missing set,
+  // the same "nothing to bound" signal centreGroupIfNeeded used to fold into its own early return.
+  function nodesBoundingBox(nodeIds) {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const id of nodeIds) {
+      const n = findNode(graph, id);
+      if (!n) continue;
+      const h = nodeHeight(n);
+      minX = Math.min(minX, n.x); minY = Math.min(minY, n.y);
+      maxX = Math.max(maxX, n.x + NODE_W); maxY = Math.max(maxY, n.y + h);
+    }
+    if (!Number.isFinite(minX)) return null;
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  }
+
+  // The cross-file contract at the top of this file, applied to one visible group's members. Never
+  // widened for anything drawn inside it — the server models every node as 200 by 116 and so
+  // computes a box that is never smaller than this one; widening the page's box here would let it
+  // exceed the server's, and a node the server pushed clear could end up inside a boundary the
+  // reader can see. Returns null exactly when nodesBoundingBox does — a group naming no node
+  // present in this graph, which validateGraph does not allow but a stale poll mid-write might
+  // still hand the page for one frame.
+  function visibleGroupBox(group) {
+    const bounds = nodesBoundingBox(group.nodes);
+    if (!bounds) return null;
+    return {
+      x: bounds.x - GROUP_PAD, y: bounds.y - GROUP_PAD - GROUP_HEADER,
+      w: bounds.w + 2 * GROUP_PAD, h: bounds.h + 2 * GROUP_PAD + GROUP_HEADER,
+    };
+  }
+
   // New entry point for a marked-phrase click, not `pick`: a click here always replaces the
   // selection with the whole group, matching what `pick` does on a non-additive click — never
   // additive, never a toggle, so pressing approve or reject covers the whole option in one press.
@@ -512,7 +568,9 @@
     if (!group) return;
     selectedIds = new Set(group.nodes);
     impliedRemoved = new Set();
-    centreGroupIfNeeded(group.nodes);
+    // A visible group's own drawn box, header included, so a click never leaves that header
+    // off-screen — an invisible group has no box drawn at all, so it keeps centring on members.
+    centreGroupIfNeeded(group.visible === true ? visibleGroupBox(group) : nodesBoundingBox(group.nodes));
     render();
   }
 
@@ -520,17 +578,9 @@
   // changes, so a group larger than the canvas at the current zoom (reachable at the 2.5x ceiling)
   // ends up as visible as it can be rather than shrunk to fit. A no-op when every member already
   // sits inside the current viewport, so a click on a fully-visible group never moves the picture.
-  function centreGroupIfNeeded(nodeIds) {
-    if (!graph || !nodeIds.length) return;
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const id of nodeIds) {
-      const n = findNode(graph, id);
-      if (!n) continue;
-      const h = nodeHeight(n);
-      minX = Math.min(minX, n.x); minY = Math.min(minY, n.y);
-      maxX = Math.max(maxX, n.x + NODE_W); maxY = Math.max(maxY, n.y + h);
-    }
-    if (!Number.isFinite(minX)) return;
+  function centreGroupIfNeeded(box) {
+    if (!graph || !box) return;
+    const minX = box.x, minY = box.y, maxX = box.x + box.w, maxY = box.y + box.h;
     const k = view.k;
     const visLeft = -view.x / k, visTop = -view.y / k;
     const visRight = (svg.clientWidth - view.x) / k, visBottom = (svg.clientHeight - view.y) / k;
@@ -595,6 +645,16 @@
       const h = nodeHeight(n);
       minX = Math.min(minX, n.x); minY = Math.min(minY, n.y);
       maxX = Math.max(maxX, n.x + NODE_W); maxY = Math.max(maxY, n.y + h);
+    }
+    // A visible group's box can run past its members' own bounds on every side (the pad, and the
+    // header above), so a graph opening at fit has to be bounded against the box, not just what it
+    // encloses, or the fitted view clips a header sitting right at the edge of the picture.
+    for (const group of graph.groups) {
+      if (group.visible !== true) continue;
+      const box = visibleGroupBox(group);
+      if (!box) continue;
+      minX = Math.min(minX, box.x); minY = Math.min(minY, box.y);
+      maxX = Math.max(maxX, box.x + box.w); maxY = Math.max(maxY, box.y + box.h);
     }
     const margin = 60;
     const availW = Math.max(100, svg.clientWidth - margin * 2);
@@ -810,15 +870,42 @@
   // those frames would cost the most. The element that does the measuring does not survive a
   // render — render() clears the whole canvas — so it is re-created there (see render()); only
   // the cache has to survive, and it lives at module scope so it does.
+  //
+  // Keyed on size *and* text, not text alone: `.label-metric`'s CSS rule fixes the element at
+  // 11px, which is right for every edge label but wrong for a 13px group name, and measuring the
+  // latter through this cache without a size key would both return the wrong width and poison the
+  // entry for the next edge label that happens to carry the same string. JSON.stringify of the
+  // pair, same delimiter-free idiom as pairKey below, since a group name is free to contain
+  // whatever plain separator a joined key would pick.
   const labelWidthCache = new Map();
   let labelMetricEl = null;
 
-  function measureLabelWidth(text) {
-    if (labelWidthCache.has(text)) return labelWidthCache.get(text);
+  function measureLabelWidth(text, size = 11) {
+    const key = JSON.stringify([size, text]);
+    if (labelWidthCache.has(key)) return labelWidthCache.get(key);
+    // Set as an inline style, not a presentation attribute through el() — a presentation
+    // attribute loses to `.label-metric`'s own CSS rule, which would silently keep every
+    // measurement at 11px while this function's cache key still claimed otherwise.
+    labelMetricEl.style.fontSize = size + 'px';
     labelMetricEl.textContent = text;
     const w = labelMetricEl.getComputedTextLength();
-    labelWidthCache.set(text, w);
+    labelWidthCache.set(key, w);
     return w;
+  }
+
+  // Cuts `text` to the widest prefix that fits `maxWidth` at `size`, trailing it with the same
+  // single "…" wrapText leaves behind (never the three-dot ".…" a naive append onto an
+  // already-ellipsised slice would produce) so a cut string reads the same way everywhere on the
+  // page. There is no character budget to binary-search on, unlike wrapText — only a pixel one —
+  // so this measures candidates directly instead of estimating.
+  function cutToWidth(text, maxWidth, size) {
+    const raw = String(text == null ? '' : text);
+    if (measureLabelWidth(raw, size) <= maxWidth) return { text: raw, cut: false };
+    for (let n = raw.length - 1; n > 0; n -= 1) {
+      const candidate = raw.slice(0, n).replace(/\s+$/, '').replace(/…$/, '') + '…';
+      if (measureLabelWidth(candidate, size) <= maxWidth) return { text: candidate, cut: true };
+    }
+    return { text: '…', cut: true };
   }
 
   // Liang-Barsky segment-vs-rect clip test: whether any part of the segment (x1,y1)-(x2,y2) falls
@@ -865,6 +952,93 @@
       defs.appendChild(marker);
     }
     return defs;
+  }
+
+  // The svg's own pointerdown handler (see below) takes capture for any target that is not `.node`
+  // or `.edge`, which would retarget this hit rect's pointerup to the svg and run finishMarquee's
+  // under-4px branch — clearSelection — instead. Self-capture is what keeps the whole gesture on
+  // this one element: stopPropagation up front so the svg's handler never runs and never takes
+  // capture, then this element takes its own, so its own pointerup fires wherever the pointer is
+  // released. `capturedId` lives only in this closure, read and written by this element's own three
+  // handlers and nothing else — there is no pending flag shared with a different element for a
+  // release off-window to strand.
+  function attachGroupHeaderGesture(hitRect, groupId, regionEl) {
+    let capturedId = null;
+    hitRect.addEventListener('pointerdown', (ev) => {
+      ev.stopPropagation();
+      hitRect.setPointerCapture(ev.pointerId);
+      capturedId = ev.pointerId;
+    });
+    hitRect.addEventListener('pointerup', (ev) => {
+      if (capturedId === null) return;
+      const matched = ev.pointerId === capturedId;
+      hitRect.releasePointerCapture(capturedId);
+      capturedId = null;
+      if (matched) selectGroup(groupId);
+    });
+    // Both release without selecting: a pointerup carrying a different pointer id is some other
+    // simultaneous pointer, not the gesture this rect captured, and a cancel has nothing left to
+    // finish.
+    hitRect.addEventListener('pointercancel', () => {
+      if (capturedId === null) return;
+      hitRect.releasePointerCapture(capturedId);
+      capturedId = null;
+    });
+    // Lifts the boundary's stroke while the header is hovered — the cursor swap is a plain CSS
+    // rule on .group-header-hit and needs no JS. Never touches hoveredGroupId or group-dim: the
+    // drawn box already shows its members, so dimming here would only flicker as the pointer
+    // crossed it (see the plan).
+    if (regionEl) {
+      hitRect.addEventListener('pointerenter', () => regionEl.classList.add('group-region-hover'));
+      hitRect.addEventListener('pointerleave', () => regionEl.classList.remove('group-region-hover'));
+    }
+  }
+
+  // One visible group's name and note along the top of its box, and the only place a click on that
+  // box can land. `box` is the full geometry-contract box (computed once in render(), see
+  // visibleGroupBox) — never widened here to fit either string, for the same reason the box itself
+  // is never widened: a node the server pushed clear of it must never end up looking contained by
+  // a boundary the page stretched to fit some words.
+  function renderGroupHeader(headerLayer, group, box, regionEl, hoverGroup, labelRects) {
+    const dimmed = hoverGroup && hoverGroup.id !== group.id;
+    const maxTextWidth = box.w - 24;
+    const labelCut = cutToWidth(group.label, maxTextWidth, 13);
+    const noteCut = cutToWidth(group.note, maxTextWidth, 11);
+
+    const g = el('g', { class: 'group-header' + (dimmed ? ' group-dim' : ''), 'data-group': group.id });
+
+    const labelText = el('text', { class: 'group-header-label', x: box.x + 12, y: box.y + 17 });
+    labelText.textContent = labelCut.text;
+    g.appendChild(labelText);
+
+    const noteText = el('text', { class: 'group-header-note', x: box.x + 12, y: box.y + 32 });
+    noteText.textContent = noteCut.text;
+    g.appendChild(noteText);
+
+    // Sized to the two drawn strings — the wider of the two plus 12, by GROUP_HEADER — not the
+    // full width of the box, so a node dragged into the box's top strip past this rect is never
+    // fought for space with it.
+    const hitWidth = Math.max(measureLabelWidth(labelCut.text, 13), measureLabelWidth(noteCut.text, 11)) + 12;
+    const hitRect = el('rect', {
+      class: 'group-header-hit', 'data-group': group.id,
+      x: box.x, y: box.y, width: hitWidth, height: GROUP_HEADER,
+    });
+    // The full text goes on the thing the reader is already pointing at, not on the boundary rect
+    // they cannot hit (pointer-events: none there) — and only when a cut actually happened; on an
+    // uncut header the drawn words already say everything the title would.
+    if (labelCut.cut || noteCut.cut) {
+      const tip = el('title');
+      tip.textContent = group.label + '\n' + group.note;
+      hitRect.appendChild(tip);
+    }
+    attachGroupHeaderGesture(hitRect, group.id, regionEl);
+    g.appendChild(hitRect);
+
+    // The search's recoverable tier, never the mandatory one (nodeBoxRects): a label overlapping a
+    // header is still words over words, and it still gets a leader line back to its own arrow — the
+    // exact case nodeBoxRects exists to make impossible for a node box instead.
+    labelRects.push({ x: box.x, y: box.y, w: hitWidth, h: GROUP_HEADER });
+    headerLayer.appendChild(g);
   }
 
   function renderNodeGroup(root, n, effSel, hoverLit) {
@@ -1370,6 +1544,35 @@
     const hoverGroup = hoveredGroupId && graph.groups.find((g) => g.id === hoveredGroupId);
     const hoverLit = hoverGroup ? groupLitSet(hoverGroup.nodes, graph) : null;
 
+    // A visible group's boundary and its words want opposite paint orders, so they are two layers,
+    // not one. The region layer — one boundary rect per visible group — goes in first, beneath
+    // every node, arrow and label below, so a boundary can never paint over anything drawn inside
+    // it. The header layer — each group's name, note and only hit target — is built now, while
+    // every group's box is cheap to look up, but only appended to `root` once every edge group
+    // below has been (see the header-layer comment further down): the final order is region layer,
+    // nodes, edges, header layer, label layer.
+    const visibleGroups = graph.groups.filter((g) => g.visible === true);
+    const groupBoxes = new Map();
+    const groupRegionEls = new Map();
+    const regionLayer = el('g', { class: 'group-region-layer' });
+    for (const group of visibleGroups) {
+      const box = visibleGroupBox(group);
+      if (!box) continue;
+      groupBoxes.set(group.id, box);
+      const cls = ['group-region'];
+      // Same rule as a node or an edge: dims with everything outside a hovered marked phrase's
+      // group, and never for the header's own hover (see attachGroupHeaderGesture), which must
+      // never touch this class at all.
+      if (hoverGroup && hoverGroup.id !== group.id) cls.push('group-dim');
+      const rect = el('rect', {
+        class: cls.join(' '), 'data-group': group.id,
+        x: box.x, y: box.y, width: box.w, height: box.h, rx: 6,
+      });
+      groupRegionEls.set(group.id, rect);
+      regionLayer.appendChild(rect);
+    }
+    root.appendChild(regionLayer);
+
     // Nodes first, edges after: edges are trimmed to each box's boundary, so
     // painting them second never buries a box's own content.
     for (const n of graph.nodes) renderNodeGroup(root, n, effSel, hoverLit);
@@ -1383,6 +1586,21 @@
     // label is not.
     const nodeBoxRects = graph.nodes.map((n) => ({ x: n.x, y: n.y, w: NODE_W, h: nodeHeight(n) }));
     const labelRects = [];
+
+    // Every header's hit rect is measured and pushed into labelRects here, before the edge loop
+    // below both fills and reads it (see renderEdgeGroup) — seeding it after that loop had already
+    // run would hand a finished search a list nothing reads, and the seeding would silently do
+    // nothing. A header's geometry depends only on its group's box, already computed above, never
+    // on an edge, so there is nothing to wait for. The <g> built here is not appended to `root`
+    // until after the edge loop, though: appending it now would paint headers under every edge,
+    // the exact over-painting the header layer exists to avoid.
+    const headerLayer = el('g', { class: 'group-header-layer' });
+    for (const group of visibleGroups) {
+      const box = groupBoxes.get(group.id);
+      if (!box) continue;
+      renderGroupHeader(headerLayer, group, box, groupRegionEls.get(group.id), hoverGroup, labelRects);
+    }
+
     // Every label's own geometry — its text, background, was-mark and leader line — is appended
     // here instead of into each edge's own g.edge, and this single <g> is appended once, after
     // every edge group below, rather than interleaved with them: appending a label right after its
@@ -1396,6 +1614,7 @@
       if (!a || !b) continue;
       renderEdgeGroup(root, labelLayer, e, a, b, pairIndex, pairCount, effSel, nodeBoxRects, labelRects, hoverLit);
     }
+    root.appendChild(headerLayer);
     root.appendChild(labelLayer);
 
     if (effSel.size === 1) renderDetail(root, [...effSel][0], nodeById);
@@ -1584,6 +1803,13 @@
     get explainExpanded() { return explainExpanded; },
     selection() { return [...effectiveSelectionIds()]; },
     graph() { return graph; },
+    // The one entry here that is not a plain read-back. A group's name is measured at 13px while
+    // every edge label is measured at 11, through one cache and one hidden element pinned to 11px
+    // by CSS — so a size applied as a presentation attribute instead of an inline style measures
+    // at the wrong size and silently poisons the entry for any edge label carrying that same
+    // string. Neither failure shows up in the rendered picture, and both are what the browser
+    // suite checks through this.
+    measureLabelWidth(text, size) { return measureLabelWidth(text, size); },
   };
 })();
 </script>

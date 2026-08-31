@@ -30,6 +30,22 @@ async function launch(fixtureName, targetName = fixtureName) {
   return startServer({ cacheRoot: root, open: graphPath });
 }
 
+// Like `launch`, but the graph bytes are a literal built by the caller rather than a named file
+// under fixtures/ — written straight to disk before the server starts, exactly as `stage` writes
+// a fixture file's bytes, so the positions given here are exactly what the page draws: no `PUT`
+// runs, so `layout()` and the placement pass (`handleGraphPut`, server.js) never see this graph
+// and never move a node from where it is written. Used only where the shared fixtures' existing
+// geometry can't reach a case (see the G9 tests below, which need a visible group's member placed
+// far from the rest of the graph's centroid with no other test's assertions riding on it).
+async function launchInline(graphObj) {
+  const root = await makeDir('browser-');
+  const graphDir = path.join(root, 'graphs');
+  await fs.mkdir(graphDir, { recursive: true });
+  const graphPath = path.join(graphDir, 'inline.json');
+  await fs.writeFile(graphPath, JSON.stringify(graphObj));
+  return startServer({ cacheRoot: root, open: graphPath });
+}
+
 // label-crowding.json has to land on a path with nothing on it yet: that is the one route where
 // the server lays a graph out itself (invents positions) rather than keeping ones already on disk,
 // which is the state the label-placement search runs against. Shared by every test below that
@@ -1488,6 +1504,103 @@ test('clicking a marked phrase selects exactly the group, approves it, and leave
   }
 });
 
+// A minimal graph for the two G9 tests below: a single node far from a visible group's one
+// member, so fitToView zooms out to hold both and 15 zoom-in clicks (the same recipe the
+// off-screen centring test above uses) pushes the far member well outside a small canvas —
+// giving centreGroupIfNeeded's box argument somewhere real to matter. Built inline with
+// launchInline rather than a fixtures/ file: nothing else needs this shape, and every other test
+// against groups-visible.json would have its own geometry disturbed by an extra far-flung node
+// changing that fixture's default fit-to-view zoom.
+function farGroupGraph() {
+  return {
+    schema: 1,
+    title: 'G9 fixture',
+    source: 'code-read',
+    source_detail: null,
+    explanation: 'The [far group](#far-group) sits far from everything else.',
+    groups: [
+      { id: 'far-group', label: 'Far Group', note: 'A group placed far from the rest.', visible: true, nodes: ['far'] },
+    ],
+    nodes: [
+      { id: 'anchor', label: 'Anchor', kind: 'step', origin: 'proposed', was: null, exclusive: false, ref: null, note: null, graph: null, x: 150, y: 150 },
+      { id: 'far', label: 'Far', kind: 'step', origin: 'proposed', was: null, exclusive: false, ref: null, note: null, graph: null, x: 3000, y: 150 },
+    ],
+    edges: [],
+  };
+}
+
+// ============================================================================================
+// centreGroupIfNeeded takes a visible group's full box, header included (selectGroup,
+// index.html:573) — not just its members' bounds — so a click never leaves the group's own header
+// off-screen. The existing centring test above proves the *translate-only, unchanged-zoom* part
+// of this gesture, but it does so on groups-basic.json, whose group carries no `visible` flag, so
+// it exercises the nodesBoundingBox branch, never visibleGroupBox. It says nothing about the
+// branch this test targets.
+//
+// The canvas is shrunk for this test alone (not the file's 2600x1300 default) because the gap
+// between the two boxes' centres is a fixed 19 world units regardless of the group's size — real,
+// but small enough that it only shows up as clipping against a canvas short enough for those
+// pixels to matter.
+// ============================================================================================
+test("clicking a visible group whose header would clear the canvas by only a little brings the header fully into view", async ({ page }) => {
+  const ctx = await launchInline(farGroupGraph());
+  try {
+    await page.setViewportSize({ width: 900, height: 620 });
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    for (let i = 0; i < 15; i += 1) await page.locator('#zoom-in').click();
+    assert.equal(await pageZoom(page), 2.5, 'expected the zoom ceiling');
+
+    await groupRef(page, 'far-group').click();
+    assert.deepEqual(await selection(page), ['far']);
+
+    const canvasBox = await page.locator('svg#canvas').boundingBox();
+    const headerBox = await page.locator('g.group-header[data-group="far-group"] rect.group-header-hit').boundingBox();
+    assert.ok(headerBox.y >= canvasBox.y - 1,
+      `expected the group's header fully below the canvas top after centring, got header.y=${headerBox.y} canvas.y=${canvasBox.y}`);
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// fitToView bounds itself against every visible group's box, not just node bounds (index.html,
+// fitToView, `:652-659`), so a graph opening at fit shows whole boundaries rather than clipping a
+// header sitting at the picture's edge. `far-group`'s member is the topmost thing in this graph,
+// so its header — 62 world units above the member (GROUP_PAD + GROUP_HEADER) — is the very top of
+// the content fitToView has to fit. Loaded fresh, with no click and no zoom: fitToView alone has
+// to get this right.
+//
+// The viewport and the member's y are tuned deliberately, not arbitrary: fitToView's own margin
+// is 60px, one world unit short of the header's 62-unit offset, so a correct fit always lands the
+// header at exactly +60 (see the comment on the assertion below) while dropping the group box
+// from the bound can clip it by at most 2px — a real gap, just a narrow one baked into how close
+// those two constants already sit, not something a wider fixture could open up further. The
+// numbers here put the node bbox's own fit just past 1:1 zoom so that ceiling is the one in play.
+// ============================================================================================
+test("a graph opening at fit shows a visible group's header whole, not clipped at the edge", async ({ page }) => {
+  const graphObj = farGroupGraph();
+  graphObj.explanation = null;
+  graphObj.nodes[1].x = 150; // no longer "far": here the point is the header's position, not off-screen centring
+  graphObj.nodes[1].y = -309; // the topmost thing in the graph, well above 'anchor' (see comment above)
+  const ctx = await launchInline(graphObj);
+  try {
+    await page.setViewportSize({ width: 900, height: 700 });
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const canvasBox = await page.locator('svg#canvas').boundingBox();
+    const headerBox = await page.locator('g.group-header[data-group="far-group"] rect.group-header-hit').boundingBox();
+    // Correct fitToView lands the header exactly at the 60px margin from the canvas top; dropping
+    // the group-box bound instead fits the node alone and clips the header by up to 2px above it.
+    assert.ok(headerBox.y >= canvasBox.y - 1,
+      `expected the group's header inside the viewport on load, got header.y=${headerBox.y} canvas.y=${canvasBox.y}`);
+  } finally {
+    await ctx.stop();
+  }
+});
+
 // ============================================================================================
 // Clicking a group with a member off-screen brings it into view by translating only — the scale
 // never changes. Zoomed to the ceiling first so the far group's one member lands well outside the
@@ -1600,6 +1713,438 @@ test('the page renders a non-# markdown link as plain text, not a marked phrase'
     await expect(page.locator('#explain-body .group-ref')).toHaveCount(2);
     assert.equal(await page.locator('#explain-body .group-ref[data-group="left-branch"]').textContent(), 'the left branch');
     assert.equal(await page.locator('#explain-body .group-ref[data-group="far-branch"]').textContent(), 'the far branch');
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// Visible groups (docs/plans/group-boxes/PLAN.md): a group carrying `visible: true` is drawn as a
+// named boundary around its members. Nine assertions below cover it, against groups-visible.json
+// except the first, which builds its own graph — see that test's own comment for why.
+// ============================================================================================
+
+// ============================================================================================
+// The drift assertion — decision 17's whole reason to exist. viewer/server.js and
+// viewer/index.html each hold their own copy of GROUP_PAD / GROUP_HEADER / GROUP_GAP, sharing no
+// module, so nothing structural stops one moving without the other. This measures a graph the
+// SERVER laid out against the boundary the PAGE draws for it — not a fixture staged straight to
+// disk, which would only ever compare the page against itself (decision 29; the pattern to copy
+// is the row-pitch test above, at the layout constants).
+//
+// It needs two `PUT /graph` writes, not one. A single PUT to an empty path is a create, and on a
+// create every changed group is in resident mode with only free nodes moving (decision 39) — but a
+// create's positions come out of layout(), which this test cannot hand-pick, so there would be no
+// way to build "exactly one non-member is pushed" on purpose. So: the first PUT creates the graph
+// with the group absent, so its members are ordinary new nodes; a `PUT /view` — a plain drag, the
+// same thing a person does to arrange a picture — then plants the members and the intruder at
+// exact, known coordinates; the second PUT /graph adds the group as visible over those on-disk
+// positions, which is resident mode and pushes the intruder clear. The push itself is computed by
+// the server's real placeGroupUnits pass, not by this test.
+//
+// The fixture is built so the push is exactly one non-member, and horizontal. The server models
+// every node as 200x116 while the page draws its real height (74 for a one-line label), so the two
+// only ever agree on the left, right and top edges — a downward push would render at
+// GROUP_GAP + (116 - 74) off from what an exact assertion expects, failing against *correct* code.
+// The intruder sits at x=180, barely overlapping the two-member block's right edge (at x=224) and
+// far from its top or bottom, so "move right by the smallest amount that clears" beats every other
+// direction by a wide margin (60 vs 156/194/420 — down, up, left).
+// ============================================================================================
+test('a visible group pushes exactly one non-member clear, at exactly GROUP_GAP, in the direction both files must agree on', async ({ page }) => {
+  const GROUP_GAP = 16;
+  const root = await makeDir('browser-');
+  const graphDir = path.join(root, 'graphs');
+  await fs.mkdir(graphDir, { recursive: true });
+  const ctx = await startServer({ cacheRoot: root, open: path.join(graphDir, 'group-drift.json') });
+  try {
+    // 1. Create: the group is absent, so 'm', 'm2' and 'x' are all ordinary new nodes.
+    const created = {
+      schema: 1, title: 'Group drift', source: 'router', source_detail: null, explanation: null,
+      nodes: [{ id: 'm', label: 'M' }, { id: 'm2', label: 'M2' }, { id: 'x', label: 'X' }],
+      edges: [],
+    };
+    let written = await put(ctx, '/graph', created, '');
+    assert.equal(written.status, 200, JSON.stringify(written.body));
+
+    // 2. Drag: plant 'm'/'m2' as a 200-wide, two-row block and 'x' overlapping its right edge.
+    const dragged = (await getGraph(ctx)).graph;
+    for (const [id, point] of [['m', { x: 0, y: 0 }], ['m2', { x: 0, y: 140 }], ['x', { x: 180, y: 0 }]]) {
+      Object.assign(dragged.nodes.find((n) => n.id === id), point);
+    }
+    written = await put(ctx, '/view', dragged, written.body.hash);
+    assert.equal(written.status, 200, JSON.stringify(written.body));
+
+    // 3. Make the group visible over the on-disk members: resident mode, which pushes 'x'.
+    const grouped = copy(dragged);
+    grouped.groups = [{ id: 'sys', label: 'System', note: 'A note about the system.', visible: true, nodes: ['m', 'm2'] }];
+    written = await put(ctx, '/graph', grouped, written.body.hash);
+    assert.equal(written.status, 200, JSON.stringify(written.body));
+
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const laidOut = await pageGraph(page);
+    assert.equal(entry(laidOut, 'm').x, 0); assert.equal(entry(laidOut, 'm').y, 0);
+    assert.equal(entry(laidOut, 'm2').x, 0); assert.equal(entry(laidOut, 'm2').y, 140);
+    assert.notEqual(entry(laidOut, 'x').x, 180, 'the intruder must actually have moved');
+    assert.equal(entry(laidOut, 'x').y, 0, 'the push must be horizontal, not vertical');
+
+    // Every member's real box sits inside the rendered boundary; the intruder's does not.
+    const zoom = await pageZoom(page);
+    const boundaryEl = page.locator('rect.group-region[data-group="sys"]');
+    const boundary = await boundaryEl.boundingBox();
+    for (const id of ['m', 'm2']) {
+      const box = await nodeBox(page, id).boundingBox();
+      assert.ok(box.x >= boundary.x && box.x + box.width <= boundary.x + boundary.width &&
+        box.y >= boundary.y && box.y + box.height <= boundary.y + boundary.height,
+        `${id}'s box must sit inside the rendered boundary`);
+    }
+    const xLocator = nodeBox(page, 'x');
+    const xBox = await xLocator.boundingBox();
+    assert.ok(xBox.x > boundary.x + boundary.width, 'the intruder must render clear of the boundary, not inside it');
+
+    // The exact distance. getBoundingClientRect() on an SVG shape includes half its own
+    // stroke-width past its geometric edge on every side (measured directly: a 1px-stroke boundary
+    // and a 1.5px-stroke node box together read exactly 1.25 local units short of the true gap at
+    // zoom 1) — corrected out here, from the elements' own computed styles, rather than papered
+    // over with a loose epsilon, so the comparison below is still exact.
+    const boundaryStroke = await boundaryEl.evaluate((el) => parseFloat(getComputedStyle(el).strokeWidth));
+    const xStroke = await xLocator.evaluate((el) => parseFloat(getComputedStyle(el).strokeWidth));
+    const rawDistance = (xBox.x - (boundary.x + boundary.width)) / zoom;
+    const distance = rawDistance + boundaryStroke / 2 + xStroke / 2;
+    assert.ok(Math.abs(distance - GROUP_GAP) < 0.05,
+      `expected the intruder exactly GROUP_GAP (${GROUP_GAP}) past the boundary, got ${distance}`);
+
+    // The horizontal distance above moves when either file's GROUP_PAD does, but GROUP_HEADER only
+    // ever changes the box's top edge, so nothing above would notice it drifting. The top is the
+    // one vertical edge that *is* exactly assertable: the server's 116px node model and the page's
+    // real height disagree only on the bottom. Same stroke correction, opposite sign — here both
+    // rects grow toward each other rather than apart.
+    const GROUP_PAD = 24, GROUP_HEADER = 38;
+    const topMember = await nodeBox(page, 'm').boundingBox();
+    const topGap = (topMember.y - boundary.y) / zoom + xStroke / 2 - boundaryStroke / 2;
+    assert.ok(Math.abs(topGap - (GROUP_PAD + GROUP_HEADER)) < 0.05,
+      `expected the boundary exactly GROUP_PAD + GROUP_HEADER (${GROUP_PAD + GROUP_HEADER}) above its topmost member, got ${topGap}`);
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// A name or note too long for the box is cut with the same ellipsis a node label uses, at its own
+// size — 13px for the name, 11 for the note (decision 27) — and the header's <title> carries both
+// strings in full, since the drawn text alone no longer says everything once it is cut.
+// ============================================================================================
+test('a group name and note too long for the box are cut, and the header tooltip carries both in full', async ({ page }) => {
+  const ctx = await launch('groups-visible.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const graph = await pageGraph(page);
+    const group = graph.groups.find((g) => g.id === 'alpha-group');
+    const labelEl = page.locator('g.group-header[data-group="alpha-group"] text.group-header-label');
+    const noteEl = page.locator('g.group-header[data-group="alpha-group"] text.group-header-note');
+    const drawnLabel = await labelEl.textContent();
+    const drawnNote = await noteEl.textContent();
+
+    assert.ok(drawnLabel.endsWith('…'), `expected the label to be cut, got ${JSON.stringify(drawnLabel)}`);
+    assert.ok(drawnLabel.length < group.label.length, 'the drawn label must be shorter than the source');
+    assert.ok(drawnNote.endsWith('…'), `expected the note to be cut, got ${JSON.stringify(drawnNote)}`);
+    assert.ok(drawnNote.length < group.note.length, 'the drawn note must be shorter than the source');
+
+    assert.equal(await labelEl.evaluate((el) => getComputedStyle(el).fontSize), '13px');
+    assert.equal(await noteEl.evaluate((el) => getComputedStyle(el).fontSize), '11px');
+
+    const title = await page.locator('g.group-header[data-group="alpha-group"] rect.group-header-hit > title').textContent();
+    assert.ok(title.includes(group.label), 'the tooltip must carry the whole label');
+    assert.ok(title.includes(group.note), 'the tooltip must carry the whole note');
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// Clicking a header selects exactly its members and enables approve, driven through a real
+// pointer gesture — locator.click() dispatches actual pointerdown/pointerup — which is what proves
+// the header's own stopPropagation + self setPointerCapture path (decision 34) actually works
+// against the svg's own setPointerCapture (:1441/:1650 above). A call through window.__viewer or a
+// dispatched synthetic event would never touch that path at all.
+// ============================================================================================
+// ============================================================================================
+// The hit rect is drawn `fill: none` and sized to the two drawn strings, not the full width of
+// the box (decision 24 / the plan's `renderGroupHeader`) — a worker left to guess ships either a
+// black bar across the picture (no `fill: none`) or a rect stretched to the box's own width. The
+// click test above already guards against the dead-target failure (`pointer-events: all` missing
+// entirely would fail it); this guards the other two ways the header can visibly go wrong.
+// beta-group's two-word label and short note leave most of its 648px-wide box empty, so a hit
+// rect stretched to the box would be trivially distinguishable from one sized to the text.
+// ============================================================================================
+test('the header hit rect is invisible and sized to its text, not the full box', async ({ page }) => {
+  const ctx = await launch('groups-visible.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const hitRect = page.locator('g.group-header[data-group="beta-group"] rect.group-header-hit');
+    const fill = await hitRect.evaluate((el) => getComputedStyle(el).fill);
+    assert.equal(fill, 'none', `expected the hit rect to paint nothing, got fill=${fill}`);
+
+    const hitBox = await hitRect.boundingBox();
+    const boundaryBox = await page.locator('rect.group-region[data-group="beta-group"]').boundingBox();
+    assert.ok(hitBox.width < boundaryBox.width * 0.6,
+      `expected the hit rect meaningfully narrower than the group's boundary, got hit=${hitBox.width} boundary=${boundaryBox.width}`);
+  } finally {
+    await ctx.stop();
+  }
+});
+
+test('clicking a group header selects exactly its members and enables approve', async ({ page }) => {
+  const ctx = await launch('groups-visible.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    await page.locator('g.group-header[data-group="beta-group"] rect.group-header-hit').click();
+    assert.deepEqual(await selection(page), ['beta1', 'beta2'].sort());
+    await expect(page.locator('#approve')).toBeEnabled();
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// locator.click() presses and releases on the same element, so it fires pointerup there whether
+// or not the header actually takes its own setPointerCapture — it cannot tell the capture apart
+// from an accident of geometry. This drives the two ends of the gesture separately: press on the
+// header, move well away — here, over 'alpha' in a different group entirely — and release there.
+// Without `hitRect.setPointerCapture` (attachGroupHeaderGesture), the svg's own pointerdown
+// handler would have taken capture instead (it runs first on any target that isn't `.node` or
+// `.edge`, unless stopPropagation heads it off), retargeting this release to the svg's own
+// pointerup, which runs finishMarquee and clears the selection instead of selecting the group.
+// ============================================================================================
+test('pressing a group header and releasing away from it still selects the group', async ({ page }) => {
+  const ctx = await launch('groups-visible.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const headerCenter = await center(page.locator('g.group-header[data-group="beta-group"] rect.group-header-hit'));
+    const farPoint = await center(nodeBox(page, 'alpha'));
+
+    await page.mouse.move(headerCenter.x, headerCenter.y);
+    await page.mouse.down();
+    await page.mouse.move(farPoint.x, farPoint.y, { steps: 8 });
+    await page.mouse.up();
+
+    assert.deepEqual(await selection(page), ['beta1', 'beta2'].sort(),
+      'the header must take its own pointer capture, so its own pointerup still fires wherever the pointer was released');
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// The boundary rect takes no pointer events at all (decision 24) — its interior stays fully open
+// to a marquee. Started just left of 'beta1' and just below both members: inside the group's
+// GROUP_PAD margin, on no node and on no header, so this pointerdown must fall through to the
+// svg's own handler and box-select normally.
+// ============================================================================================
+test('a marquee started on empty canvas inside a group boundary still box-selects', async ({ page }) => {
+  const ctx = await launch('groups-visible.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const beta1Box = await nodeBox(page, 'beta1').boundingBox();
+    const beta2Box = await nodeBox(page, 'beta2').boundingBox();
+    const x0 = beta1Box.x - 10;
+    const y0 = beta1Box.y + beta1Box.height + 5;
+    const x1 = beta2Box.x + beta2Box.width + 10;
+    const y1 = beta1Box.y - 10;
+
+    await page.mouse.move(x0, y0);
+    await page.mouse.down();
+    await page.mouse.move(x1, y1, { steps: 6 });
+    await page.mouse.up();
+
+    assert.deepEqual(await selection(page), ['beta1', 'beta2'].sort());
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// Paint order, not geometry: every boundary rect must precede every node, edge and label in
+// *document* order inside root. Checked on order rather than geometry because the geometric form
+// is false by construction — a boundary contains its own members, and an edge from a member to a
+// non-member must cross it.
+//
+// The header layer gets the same treatment: it is appended after every edge and before the label
+// layer (the plan's "Drawing it" section), so a group's words are never buried under the graph
+// drawn over them, and an edge label is never buried under a header either. Checking only that
+// boundaries precede nodes/edges/labels (as this test used to) says nothing about where the
+// header layer itself lands — moving `root.appendChild(headerLayer)` earlier, ahead of the edge
+// loop, would leave every one of those assertions passing.
+// ============================================================================================
+test('every group boundary precedes every node, edge and label, and every header follows every edge and precedes every label, in document order', async ({ page }) => {
+  const ctx = await launch('groups-visible.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const order = await page.evaluate(() => {
+      const root = document.querySelector('svg#canvas > g');
+      const all = [...root.querySelectorAll('*')];
+      const lastIndexOfAny = (selector) => {
+        let last = -1;
+        all.forEach((el, i) => { if (el.matches(selector)) last = i; });
+        return last;
+      };
+      const firstIndexOfAny = (selector) => all.findIndex((el) => el.matches(selector));
+      return {
+        lastBoundary: lastIndexOfAny('rect.group-region'),
+        firstNode: firstIndexOfAny('g.node'),
+        firstEdge: firstIndexOfAny('g.edge'),
+        lastEdge: lastIndexOfAny('g.edge'),
+        firstLabel: firstIndexOfAny('text.edge-label'),
+        firstHeader: firstIndexOfAny('g.group-header'),
+        lastHeader: lastIndexOfAny('g.group-header'),
+      };
+    });
+    assert.ok(order.lastBoundary >= 0, 'expected at least one boundary rect');
+    assert.ok(order.lastBoundary < order.firstNode, 'every boundary must precede every node');
+    assert.ok(order.lastBoundary < order.firstEdge, 'every boundary must precede every edge');
+    assert.ok(order.lastBoundary < order.firstLabel, 'every boundary must precede every label');
+
+    assert.ok(order.firstHeader >= 0, 'expected at least one header');
+    assert.ok(order.lastEdge < order.firstHeader, 'every header must follow every edge');
+    assert.ok(order.lastHeader < order.firstLabel, 'every header must precede every label');
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// An edge label that would land on a group's header is displaced clear of it — header hit rects
+// are seeded into labelRects before the edge loop runs (decision 37), so the search's very first
+// candidate (the plain segment midpoint) rejects a spot on the header and moves to the next one.
+// 'edge-above' and 'edge-below' (groups-visible.json) sit far apart on a vertical line whose
+// midpoint falls inside 'alpha-group's header, with nothing else nearby — room to displace into.
+// Asserted this way deliberately: the search's last resort is that same midpoint regardless of any
+// collision, so avoidance only proves anything against a fixture where a clear spot actually
+// exists nearby, never against a crowded one where landing on the header could be coincidence.
+// ============================================================================================
+test("an edge label that would land on a group's header is displaced clear of it", async ({ page }) => {
+  const ctx = await launch('groups-visible.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const headerHit = await page.locator('g.group-header[data-group="alpha-group"] rect.group-header-hit').boundingBox();
+    const labelBox = await page.locator('text.edge-label[data-id="edge-above->edge-below"]').boundingBox();
+
+    const overlaps = labelBox.x < headerHit.x + headerHit.width && labelBox.x + labelBox.width > headerHit.x &&
+      labelBox.y < headerHit.y + headerHit.height && labelBox.y + labelBox.height > headerHit.y;
+    assert.ok(!overlaps,
+      `expected the label displaced clear of the header, got label=${JSON.stringify(labelBox)} header=${JSON.stringify(headerHit)}`);
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// Hovering a header changes the cursor and lifts the boundary's stroke, but never sets
+// hoveredGroupId and never dims anything — the drawn box already shows its members, so dimming
+// here would only flicker as the pointer crosses it. Hovering the marked phrase for the *same*
+// group is a different trigger doing a different job, covered above (groups-basic.json,
+// "hovering a marked phrase lights the group..."), which this test leaves untouched and passing.
+// ============================================================================================
+test('hovering a group header dims nothing, and lifts the boundary stroke until the pointer leaves', async ({ page }) => {
+  const ctx = await launch('groups-visible.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const boundary = page.locator('rect.group-region[data-group="alpha-group"]');
+    const strokeWidthOf = () => boundary.evaluate((el) => getComputedStyle(el).strokeWidth);
+    const before = await strokeWidthOf();
+
+    await page.locator('g.group-header[data-group="alpha-group"] rect.group-header-hit').hover();
+    await expect(page.locator('.group-dim')).toHaveCount(0);
+    const during = await strokeWidthOf();
+    assert.notEqual(during, before, `expected the boundary's stroke to change on hover, stayed at ${before}`);
+
+    await page.mouse.move(0, 0);
+    const after = await strokeWidthOf();
+    assert.equal(after, before, `expected the boundary's stroke to return to ${before} once the pointer left, got ${after}`);
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// Hovering a marked phrase dims every *other* visible group's boundary and header, not just nodes
+// and edges — the same treatment those already get, extended to the two new layers — and leaves
+// the hovered group's own boundary and header plain.
+// ============================================================================================
+test('hovering a marked phrase dims every other visible group, leaving its own boundary and header plain', async ({ page }) => {
+  const ctx = await launch('groups-visible.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    await groupRef(page, 'alpha-group').hover();
+
+    await expect(page.locator('rect.group-region[data-group="alpha-group"].group-dim')).toHaveCount(0);
+    await expect(page.locator('g.group-header[data-group="alpha-group"].group-dim')).toHaveCount(0);
+
+    await expect(page.locator('rect.group-region[data-group="beta-group"].group-dim')).toHaveCount(1);
+    await expect(page.locator('g.group-header[data-group="beta-group"].group-dim')).toHaveCount(1);
+
+    // The class alone proves nothing (decision 42): adding `group-dim` is a no-op until the CSS
+    // selector list at index.html's .group-dim rule actually names these two layers. Read the
+    // rendered effect instead — the hovered group's boundary and header must stay at full opacity,
+    // every other visible group's must be measurably reduced.
+    const opacityOf = (locator) => locator.evaluate((el) => getComputedStyle(el).opacity);
+    const alphaRegionOpacity = await opacityOf(page.locator('rect.group-region[data-group="alpha-group"]'));
+    const alphaHeaderOpacity = await opacityOf(page.locator('g.group-header[data-group="alpha-group"]'));
+    const betaRegionOpacity = await opacityOf(page.locator('rect.group-region[data-group="beta-group"]'));
+    const betaHeaderOpacity = await opacityOf(page.locator('g.group-header[data-group="beta-group"]'));
+
+    assert.equal(alphaRegionOpacity, '1', `expected the hovered group's boundary at full opacity, got ${alphaRegionOpacity}`);
+    assert.equal(alphaHeaderOpacity, '1', `expected the hovered group's header at full opacity, got ${alphaHeaderOpacity}`);
+    assert.ok(Number(betaRegionOpacity) < 1, `expected the other group's boundary dimmed, got opacity ${betaRegionOpacity}`);
+    assert.ok(Number(betaHeaderOpacity) < 1, `expected the other group's header dimmed, got opacity ${betaHeaderOpacity}`);
+
+    await page.mouse.move(0, 0);
+    await expect(page.locator('.group-dim')).toHaveCount(0);
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// measureLabelWidth is keyed on size and text together (decision 27): the same string must come
+// back genuinely larger at 13px than at 11 — the assertion that catches the size being applied as
+// a presentation attribute .label-metric's own CSS rule would silently override — and measuring it
+// at 13 must not change what an edge label carrying that same string gets back at 11. The calls
+// are ordered 11, 13, 11 so a cache keyed on text alone (poisoned by the 13px call) would show up
+// on the second 11px read, not just fail to appear on the first.
+// ============================================================================================
+test('measureLabelWidth is keyed on size, not just text', async ({ page }) => {
+  const ctx = await launch('groups-visible.json');
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const text = 'a shared label string';
+    const first11 = await page.evaluate((t) => window.__viewer.measureLabelWidth(t, 11), text);
+    const at13 = await page.evaluate((t) => window.__viewer.measureLabelWidth(t, 13), text);
+    const second11 = await page.evaluate((t) => window.__viewer.measureLabelWidth(t, 11), text);
+
+    assert.ok(at13 > first11, `expected 13px to measure wider than 11px, got ${at13} vs ${first11}`);
+    assert.equal(second11, first11, 'measuring at 13 must not poison the 11px cache entry for the same string');
   } finally {
     await ctx.stop();
   }

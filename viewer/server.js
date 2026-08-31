@@ -13,8 +13,10 @@ Errors:
   404 not-found, no-route
   409 stale (also returns hash)
   422 invalid-json (position), unknown-schema (schema), missing-label, bad-id, bad-kind (ids),
-      edge-missing-node, group-bad-name, group-missing-node, explanation-missing-group,
-      group-unreferenced, bad-origin-value, bad-was, container-bad-name,
+      edge-missing-node, group-bad-name, group-missing-node, group-bad-shape (ids),
+      group-missing-label (ids), group-missing-note (ids), group-hidden-text (ids),
+      group-overlap (ids), explanation-missing-group, group-unreferenced, bad-origin-value,
+      bad-was, container-bad-name,
       container-cycle, container-orphan, container-unreadable-child, preservation-rejected,
       preservation-agreed, agent-verdict, structural-difference (ids),
       bulk-not-additive
@@ -90,7 +92,10 @@ function orderedEdge(edge) {
 }
 
 function orderedGroup(group) {
-  return { id: group.id, nodes: [...new Set(group.nodes)].sort() };
+  return {
+    id: group.id, label: group.label, note: group.note, visible: group.visible,
+    nodes: [...new Set(group.nodes)].sort(),
+  };
 }
 
 function canonicalBytes(graph) {
@@ -183,8 +188,45 @@ function validateGraph(input, { checkOrigin = true } = {}) {
         raw.nodes.some((id) => typeof id !== 'string' || !nodeIds.has(id))) {
       fail(422, 'group-missing-node', 'A group must name one or more nodes in this graph.');
     }
-    return { id: raw.id, nodes: raw.nodes };
+    // `undefined`, not `??`: an omitted `visible` defaults to false, but an explicit null is a
+    // non-boolean and is refused below. This is the one key in the schema where the two differ,
+    // and deliberately — `label` and `note` carry null as a real value (required, on an invisible
+    // group), so a group entry already distinguishes them, and a drawn-or-not flag that quietly
+    // accepted a null would be the silent failure this server refuses everywhere else.
+    const visible = raw.visible === undefined ? false : raw.visible;
+    const label = raw.label ?? null;
+    const note = raw.note ?? null;
+    if (typeof visible !== 'boolean' ||
+        !(label === null || typeof label === 'string') ||
+        !(note === null || typeof note === 'string')) {
+      fail(422, 'group-bad-shape', 'A group visible flag must be a boolean and its label and note strings or null.', { ids: [raw.id] });
+    }
+    if (visible) {
+      if (label === null || label.length === 0) {
+        fail(422, 'group-missing-label', 'A visible group must carry a label.', { ids: [raw.id] });
+      }
+      if (note === null || note.length === 0) {
+        fail(422, 'group-missing-note', 'A visible group must carry a note.', { ids: [raw.id] });
+      }
+    } else if (label !== null || note !== null) {
+      fail(422, 'group-hidden-text', 'An invisible group may not carry a label or a note.', { ids: [raw.id] });
+    }
+    return { id: raw.id, label, note, visible, nodes: raw.nodes };
   });
+  // Two drawn regions sharing a box is the ambiguous membership the visible group exists to
+  // remove; it also settles nesting, since a nested group shares every one of its members.
+  // Invisible groups are unconstrained, exactly as they are today.
+  const visibleMemberOwner = new Map();
+  for (const group of [...groups].sort(compareId)) {
+    if (!group.visible) continue;
+    for (const nodeId of [...new Set(group.nodes)].sort()) {
+      const owner = visibleMemberOwner.get(nodeId);
+      if (owner !== undefined) {
+        fail(422, 'group-overlap', 'Two visible groups name the same node.', { ids: [owner, group.id] });
+      }
+      visibleMemberOwner.set(nodeId, group.id);
+    }
+  }
   const edges = input.edges.map((raw) => {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw) ||
         typeof raw.id !== 'string' || raw.id.length === 0 || edgeIds.has(raw.id)) {
@@ -221,7 +263,8 @@ function validateGraph(input, { checkOrigin = true } = {}) {
     }
   }
   // A group exists only to make a specific passage of the account point at graph boxes. Check
-  // both sides so neither a dangling link nor a silent, never-highlighted group reaches the page.
+  // dangling links, and require invisible groups to be referenced because they have no other way
+  // to be seen.
   const referencedGroups = new Set(Array.from((input.explanation ?? '').matchAll(GROUP_REFERENCE),
     (match) => match[2]));
   for (const id of referencedGroups) {
@@ -230,6 +273,7 @@ function validateGraph(input, { checkOrigin = true } = {}) {
     }
   }
   for (const group of groups) {
+    if (group.visible) continue;
     if (!referencedGroups.has(group.id)) {
       fail(422, 'group-unreferenced', 'A group must be referenced by the explanation.');
     }
@@ -421,6 +465,12 @@ async function checkOrphans(graphPath, current, incoming) {
 // real five-line box against a real layout and is what actually catches it.
 const LAYER_GAP = 140;
 const NODE_PITCH = 260;
+// Copied from protocol/graphs.md; viewer/index.html holds the other copy of the first two.
+const GROUP_PAD = 24;      // clearance on the left, right and bottom
+const GROUP_HEADER = 38;   // extra clearance above, holding the name and the note line
+const GROUP_GAP = 16;      // a moved unit lands exactly this far past the rectangle that bound it
+const GROUP_NODE_W = 200;
+const GROUP_NODE_H = 116;
 // A bend point is not drawn — the viewer draws every edge as one straight line — but reserving it
 // a slot keeps a row from closing over the diagonal that has to pass through it.
 const BEND_PITCH = 160;
@@ -657,6 +707,191 @@ function retainDiskPositions(current, incoming) {
     const position = old ? { x: old.x, y: old.y } : positions.get(node.id);
     node.x = position.x;
     node.y = position.y;
+  }
+}
+
+function nodeRect(node) { return { x: node.x, y: node.y, w: GROUP_NODE_W, h: GROUP_NODE_H }; }
+
+function canonicalGroupNodes(group) { return [...new Set(group.nodes)].sort(); }
+
+function groupRect(group, nodes) {
+  const members = canonicalGroupNodes(group).map((id) => nodes.get(id));
+  const minX = Math.min(...members.map((node) => node.x));
+  const maxX = Math.max(...members.map((node) => node.x + GROUP_NODE_W));
+  const minY = Math.min(...members.map((node) => node.y));
+  const maxY = Math.max(...members.map((node) => node.y + GROUP_NODE_H));
+  return {
+    x: minX - GROUP_PAD,
+    y: minY - GROUP_PAD - GROUP_HEADER,
+    w: maxX - minX + 2 * GROUP_PAD,
+    h: maxY - minY + 2 * GROUP_PAD + GROUP_HEADER,
+  };
+}
+
+function clearsBy(a, b, gap) {
+  return a.x >= b.x + b.w + gap || b.x >= a.x + a.w + gap ||
+    a.y >= b.y + b.h + gap || b.y >= a.y + a.h + gap;
+}
+
+function overlaps(a, b) {
+  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+}
+
+function groupChanged(group, previous) {
+  const old = previous.get(group.id);
+  return !old || !old.visible || JSON.stringify(canonicalGroupNodes(old)) !== JSON.stringify(canonicalGroupNodes(group));
+}
+
+function latticeRing(ring, cMax, rMax) {
+  const cells = [];
+  for (let row = -ring; row <= rMax + ring; row += 1) {
+    for (let column = -ring; column <= cMax + ring; column += 1) {
+      if (ring === 0 || row === -ring || row === rMax + ring || column === -ring || column === cMax + ring) {
+        cells.push({ column, row });
+      }
+    }
+  }
+  return cells;
+}
+
+function meanCentres(nodes) {
+  return {
+    x: Math.round(nodes.reduce((sum, node) => sum + node.x + GROUP_NODE_W / 2, 0) / nodes.length),
+    y: Math.round(nodes.reduce((sum, node) => sum + node.y + GROUP_NODE_H / 2, 0) / nodes.length),
+  };
+}
+
+function placeNewGroupMembers(incoming, current, newIds) {
+  const nodes = mapById(incoming.nodes);
+  const positioned = new Set(current ? current.nodes.map((node) => node.id) : []);
+  const visible = incoming.groups.filter((group) => group.visible).sort(compareId);
+  for (const group of visible) {
+    const members = canonicalGroupNodes(group);
+    const newcomers = members.filter((id) => newIds.has(id));
+    if (!newcomers.length) continue;
+    const memberSet = new Set(members);
+    const oldMembers = members.filter((id) => !newIds.has(id));
+    if (!oldMembers.length) {
+      const neighbours = new Set();
+      for (const edge of incoming.edges) {
+        const other = memberSet.has(edge.from) && !memberSet.has(edge.to) ? edge.to :
+          memberSet.has(edge.to) && !memberSet.has(edge.from) ? edge.from : null;
+        if (other && positioned.has(other)) neighbours.add(other);
+      }
+      const anchor = meanCentres((neighbours.size ? [...neighbours].sort().map((id) => nodes.get(id)) :
+        members.map((id) => nodes.get(id))));
+      const columns = Math.ceil(Math.sqrt(members.length));
+      const originX = Math.round(anchor.x - ((columns - 1) * NODE_PITCH + GROUP_NODE_W) / 2);
+      const rows = Math.ceil(members.length / columns);
+      const originY = Math.round(anchor.y - ((rows - 1) * LAYER_GAP + GROUP_NODE_H) / 2);
+      members.forEach((id, index) => {
+        const node = nodes.get(id);
+        node.x = Math.round(originX + (index % columns) * NODE_PITCH);
+        node.y = Math.round(originY + Math.floor(index / columns) * LAYER_GAP);
+      });
+    } else {
+      const oldNodes = oldMembers.map((id) => nodes.get(id));
+      const minX = Math.min(...oldNodes.map((node) => node.x));
+      const maxX = Math.max(...oldNodes.map((node) => node.x + GROUP_NODE_W));
+      const minY = Math.min(...oldNodes.map((node) => node.y));
+      const maxY = Math.max(...oldNodes.map((node) => node.y + GROUP_NODE_H));
+      const originX = minX, originY = minY;
+      const cMax = Math.max(0, Math.ceil((maxX - minX) / NODE_PITCH) - 1);
+      const rMax = Math.max(0, Math.ceil((maxY - minY) / LAYER_GAP) - 1);
+      const placed = oldMembers.slice();
+      for (const id of newcomers) {
+        const empty = (cell) => {
+          const candidate = { x: originX + cell.column * NODE_PITCH, y: originY + cell.row * LAYER_GAP,
+            w: NODE_PITCH, h: LAYER_GAP };
+          return incoming.nodes.every((node) => node.id === id || !overlaps(candidate, nodeRect(node)));
+        };
+        let chosen = null;
+        for (let ring = 0; !chosen; ring += 1) {
+          const choices = latticeRing(ring, cMax, rMax).filter(empty);
+          if (!choices.length) continue;
+          if (ring === 0) { chosen = choices[0]; break; }
+          const before = groupRect({ nodes: placed }, nodes);
+          chosen = choices.reduce((best, cell) => {
+            const candidate = { ...nodes.get(id), x: originX + cell.column * NODE_PITCH, y: originY + cell.row * LAYER_GAP };
+            const afterNodes = new Map(nodes); afterNodes.set(id, candidate);
+            const after = groupRect({ nodes: [...placed, id] }, afterNodes);
+            const added = after.w * after.h - before.w * before.h;
+            return !best || added < best.added ? { cell, added } : best;
+          }, null).cell;
+        }
+        const node = nodes.get(id);
+        node.x = Math.round(originX + chosen.column * NODE_PITCH);
+        node.y = Math.round(originY + chosen.row * LAYER_GAP);
+        placed.push(id);
+      }
+    }
+    for (const id of members) positioned.add(id);
+  }
+}
+
+function placeGroupUnits(incoming, current) {
+  const oldNodes = new Set(current ? current.nodes.map((node) => node.id) : []);
+  const newIds = new Set(incoming.nodes.filter((node) => !oldNodes.has(node.id)).map((node) => node.id));
+  const priorGroups = new Map((current ? current.groups : []).map((group) => [group.id, group]));
+  const changed = new Set(incoming.groups.filter((group) => group.visible && groupChanged(group, priorGroups)).map((group) => group.id));
+  if (!newIds.size && !changed.size) return;
+
+  placeNewGroupMembers(incoming, current, newIds);
+  const nodes = mapById(incoming.nodes);
+  const visible = incoming.groups.filter((group) => group.visible).sort(compareId);
+  const grouped = new Set(visible.flatMap(canonicalGroupNodes));
+  const units = [
+    ...visible.map((group) => ({ key: `group:${group.id}`, group, nodes: canonicalGroupNodes(group) })),
+    ...incoming.nodes.filter((node) => !grouped.has(node.id)).sort(compareId)
+      .map((node) => ({ key: `node:${node.id}`, node, nodes: [node.id] })),
+  ];
+  const order = new Map(units.map((unit, index) => [unit.key, index]));
+  const rectOf = (unit) => unit.group ? groupRect(unit.group, nodes) : nodeRect(nodes.get(unit.node.id));
+  const crowds = (left, right) => !clearsBy(rectOf(left), rectOf(right), GROUP_GAP);
+  const isResident = (unit) => unit.group && changed.has(unit.group.id) &&
+    !(current && unit.nodes.every((id) => newIds.has(id)));
+  const isNewcomer = (unit) => unit.group ? current && changed.has(unit.group.id) && unit.nodes.every((id) => newIds.has(id)) :
+    newIds.has(unit.node.id);
+  const settled = new Set();
+  const move = (unit) => {
+    const others = units.filter((other) => other !== unit).map((other) => rectOf(other));
+    const rect = rectOf(unit);
+    if (!others.some((other) => !clearsBy(rect, other, GROUP_GAP))) return false;
+    const directions = [
+      { axis: 'x', sign: -1, candidate: (other) => other.x - GROUP_GAP - rect.w },
+      { axis: 'x', sign: 1, candidate: (other) => other.x + other.w + GROUP_GAP },
+      { axis: 'y', sign: -1, candidate: (other) => other.y - GROUP_GAP - rect.h },
+      { axis: 'y', sign: 1, candidate: (other) => other.y + other.h + GROUP_GAP },
+    ];
+    const landings = directions.map((direction) => {
+      const candidates = others.map((other) => direction.candidate(other)).filter((position) =>
+        direction.sign * (position - rect[direction.axis]) > 0).sort((a, b) =>
+        direction.sign > 0 ? a - b : b - a);
+      for (const position of candidates) {
+        const candidate = { ...rect, [direction.axis]: Math.round(position) };
+        if (others.every((other) => clearsBy(candidate, other, GROUP_GAP))) {
+          return { axis: direction.axis, delta: candidate[direction.axis] - rect[direction.axis] };
+        }
+      }
+      return null;
+    }).filter(Boolean);
+    landings.sort((left, right) => Math.abs(left.delta) - Math.abs(right.delta));
+    const landing = landings[0];
+    if (!landing) throw new InternalError('Group placement found no clear landing.');
+    for (const id of unit.nodes) nodes.get(id)[landing.axis] = Math.round(nodes.get(id)[landing.axis] + landing.delta);
+    settled.add(unit.key);
+    return true;
+  };
+  for (const unit of units) {
+    if (settled.has(unit.key)) continue;
+    if (isNewcomer(unit)) move(unit);
+    else if (isResident(unit)) {
+      for (const victim of units) {
+        if (victim === unit || settled.has(victim.key)) continue;
+        if (isResident(victim) && order.get(victim.key) < order.get(unit.key)) continue;
+        if (crowds(victim, unit)) move(victim);
+      }
+    }
   }
 }
 
@@ -946,6 +1181,7 @@ async function handleGraphPut(request, response, url, state) {
       }
       await checkOrphans(graphPath, current, incoming);
       retainDiskPositions(current, incoming);
+      placeGroupUnits(incoming, current);
     } else {
       if (await hasContainmentCycle(graphPath, incoming)) {
         fail(422, 'container-cycle', 'The write would create a containment cycle.');
@@ -958,6 +1194,7 @@ async function handleGraphPut(request, response, url, state) {
         }
         Object.assign(node, position);
       }
+      placeGroupUnits(incoming, null);
     }
     const bytes = canonicalBytes(incoming);
     // Swept here and not inside atomicWrite: this is the only write path the global mutex
