@@ -89,6 +89,9 @@ is drawing a picture from a picture.
 though the diagram itself only ever shows the top level: a rejection buried in a child graph
 still needs a sentence, even though it never appears on the canvas.
 
+A visible group in the graph is drawn in the Mermaid as a `subgraph` carrying the group's
+`label`. Containment is unaffected and still shows the top level only.
+
 A diagram drawn from a router or a docstring, above, is a translation, not an extraction —
 the source's own compressions have to be unpacked for a reader outside that module. A graph
 is the same translation one step further along: its labels are already plain-language
