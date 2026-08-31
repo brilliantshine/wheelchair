@@ -76,6 +76,16 @@ plan doc next to the task it ran.
   don't pass one unless you mean it.
 - `-s` — `read-only` for plan reviewers, `workspace-write` for implementers and for
   verifiers that must run a test suite.
+
+  **`workspace-write` alone cannot bind a localhost port**, so add
+  `-c sandbox_workspace_write.network_access=true` to any lane that runs a suite. Every server
+  test in `viewer/` starts a real server, and a headless browser starts one too, so without
+  this the suite dies on `listen EPERM: operation not permitted 127.0.0.1` — or, for Chromium,
+  on `sandbox_host_linux.cc ... Operation not permitted` before a single test body runs.
+  Verified both ways on one repo: the same brief failed that way without the flag and ran the
+  full suite with it. The failure names the sandbox rather than the code, but a lane that hits
+  it reports *no* validation, so its "completed" is a claim with nothing behind it — re-run the
+  suite yourself before believing either the pass or the failure.
 - `-C` — the target repo. Add `--skip-git-repo-check` only outside a git repo.
 - `-o FILE` — the final message. Always read this file; never scrape stdout.
 - `--json` emits JSONL events if you need to watch progress; the last message still
@@ -93,8 +103,12 @@ else
   CODEX=(codex)  # leave CODEX_HOME unset; an existing user setting remains theirs
 fi
 "${CODEX[@]}" exec resume "$TID" -m "$MODEL" -c model_reasoning_effort=high \
+  -c sandbox_workspace_write.network_access=true \
   -o "$OUT2" "<follow-up>"
 ```
+
+The network flag is in that line because a resume drops it (below) and because remediation and
+closure review are the resumes that run suites. It is inert on a lane that isn't writing.
 
 `-m` repeats the model the lane already ran — Terra for an implementation lane, Sol for a
 reviewer or verifier. A resume is not the moment to change tier: escalating mid-thread
@@ -105,6 +119,19 @@ a fresh lane on a rewritten brief.
 inherits the sandbox mode and working directory from the recorded session (verified: a
 `workspace-write` lane resumes still able to write, in the same repo). `--last` picks
 the newest session instead of an explicit id, but is unsafe once several lanes have run.
+
+**It does not inherit `-c` overrides, though — repeat every one of them on the resume.** The
+sandbox *mode* carries; the config that tunes it does not. Verified for
+`sandbox_workspace_write.network_access` on one thread: three resumes without it failed to bind
+a localhost port, and the same thread with it repeated bound immediately. Whether
+`model_reasoning_effort` behaves the same way was not tested and is hard to observe from
+outside — which is the reason to repeat it rather than find out. The continuation block above
+already does, and that is the safe default for any `-c` flag: state it again, since a dropped
+one fails silently in both directions.
+
+This is the quiet one, because a resumed lane that has lost its network access still produces a
+confident report — it simply has no test run behind it. A closure review is exactly where that
+matters, since the whole question is whether remediation held.
 
 Start a fresh lane instead of resuming when the role changes or the contract materially
 changed.
