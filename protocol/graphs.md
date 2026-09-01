@@ -121,13 +121,15 @@ Field by field:
   node ids in this file, sorted by `id` like `nodes` and `edges`. Defaults to `[]` when
   omitted.
 
-  An agent describing a picture reaches for a position word — "the left branch", "the
-  bottom cluster", "option A" — and that word points at an arrangement the reader may
-  since have dragged into a different shape. A marked phrase means the reader never has
-  to work out which boxes were meant. It is worst exactly where it matters most: when an
-  agent lays out options for Collin to choose between.
+  At the moment you write an explanation you have no positional knowledge at all: you are
+  forbidden from sending `x`/`y`, and the layout runs after your write. So "the left
+  branch" or "the bottom cluster" is not a vague reference, it is an invented one — and a
+  reader who has since dragged the boxes cannot even repair it. Name a set of boxes by
+  what it **is**, and point a reference at that name. An explanation that claims a
+  position is refused (`positional-claim`, below). It matters most exactly where it is
+  most tempting: when an agent lays out options for Collin to choose between.
 
-  A reference is written `[the left branch](#left-branch)`: the bracketed phrase is what
+  A reference is written `[the retry path](#retry-path)`: the bracketed phrase is what
   the reader sees and can point at, the target is `#` followed by a group's `id`. Only a
   `#`-prefixed target is a reference — `[the router](protocol/routers.md)` and
   `[here](https://example.com)` are ordinary text, which is what keeps everyday prose from
@@ -332,9 +334,23 @@ a gate is turned around so every arrow can point down the page, each box goes on
 below its deepest parent, rows are ordered to cross as few arrows as they can, and each
 box then slides toward the middle of whatever it connects to. Pieces of the graph that
 share no arrow are laid out separately and set side by side, since stacking them would
-read as a flow that isn't there. Positions are Collin's to set by dragging; sending them
-at all would be asserting a value you have no authority over, even though the server
-will simply discard whatever you send in favor of disk.
+read as a flow that isn't there.
+
+Where an arrow meets a box follows from that, and it is the page's decision rather than
+the server's. An arrow carrying the flow forward leaves the bottom edge of its box and
+arrives on the top edge of the next; anything that is not the flow forward — a step back
+up, a link across one row — takes the sides instead, so the two kinds are told apart at a
+glance. The page tries those in order and takes the first whose straight line crosses
+neither of the two boxes it connects, which is why an occasional arrow uses a face you
+would not have picked: the alternative was a line drawn through a box. Several arrows
+meeting one face are spread along it rather than stacked on one point, so a fork visibly
+fans out from one edge. The line is always straight — the format has no bent arrow, and
+an arrow from a box back to itself is refused (`self-edge`) rather than drawn, because a
+repetition belongs in the box's own label.
+
+Positions are Collin's to set by dragging; sending them at all would be asserting a value
+you have no authority over, even though the server will simply discard whatever you send
+in favor of disk.
 
 ## Where a graph's content comes from
 
@@ -476,11 +492,12 @@ it is a graph that opens with no panel and nothing said about it, which is the f
 field exists against. Write the one or two sentences the field's entry above describes,
 including what the picture leaves out.
 
-**Mark a position word, and define its group — or draw one.** When the explanation
-you're about to send reaches for "the left branch", "the bottom cluster", "option A", or
-anything else that names an arrangement rather than a box, turn it into a reference and
-add the `groups` entry it points at. A position word left unmarked is a claim the reader
-can't check once the boxes have moved.
+**Name a set of boxes by what it is, and define its group — or draw one.** When the
+explanation you're about to send reaches for several boxes at once, call them what they
+are — "the retry path", "the two answers" — turn that into a reference, and add the
+`groups` entry it points at. Reaching instead for where they sit — "the left branch",
+"the bottom cluster", "the box on the right" — refuses the write (`positional-claim`),
+because you have not seen the layout and the reader has since moved it.
 
 Separately, whether or not the explanation reaches for a phrase: when a set of boxes
 reads as one system whose parts belong on screen with the rest of the flow, draw it —
@@ -656,10 +673,12 @@ actually hit, in the rough order the server checks them:
 | 422 | `group-hidden-text` | a group with `visible: false` carrying a non-null `label` or `note` |
 | 422 | `group-overlap` | two visible groups name the same node |
 | 422 | `edge-missing-node` | an edge names a `from`/`to` id that isn't in this file |
+| 422 | `self-edge` | an edge whose `from` and `to` are the same node |
 | 422 | `explanation-missing-group` | the explanation carries a `#`-prefixed reference to a group not in `groups` |
 | 422 | `group-unreferenced` | an invisible group in `groups` that the explanation never references |
 | 422 | `bad-origin-value` | an `origin` outside `proposed`/`agreed`/`rejected` |
 | 422 | `container-bad-name` | a `graph` value that isn't `null` and isn't `^[a-z0-9_-]+$` |
+| 422 | `positional-claim` | the `explanation`, or a group's `label` or `note`, says where something sits. Text inside backticks or double quotes is exempt, so a graph about this rule can quote the phrase it forbids. A node's or edge's own prose is not read |
 | 422 | `agent-verdict` | you set `agreed`/`rejected` on an entry that's new or was `proposed` on disk |
 | 422 | `preservation-rejected` | a `rejected` entry was dropped, altered, or its id reused |
 | 422 | `preservation-agreed` | an `agreed` entry was dropped without a landed reset, or altered without resetting |

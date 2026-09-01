@@ -228,6 +228,19 @@
 
   const NS = 'http://www.w3.org/2000/svg';
   const NODE_W = 200, NODE_H = 74;
+  // Where an arrow meets a box, and how several arrows meeting one face are told apart. Kept
+  // here rather than in protocol/graphs.md alongside GROUP_PAD and its neighbours, because
+  // server.js draws no arrows — there is no second copy for these five to drift from.
+  const EDGE_FAN_OUT = 18; // pitch for a bundle of departures
+  const EDGE_FAN_IN = 32; // pitch for a bundle containing any arrival — an arrowhead needs room
+  const FACE_MARGIN = 8; // clearance kept at each end of a face before slotting starts
+  const ANCHOR_CLEAR = 4; // how far outside its face an anchor sits, matching rectExit's hw + 4
+  // Shortest anchor-to-anchor line worth drawing; a candidate face pair shorter than this is
+  // skipped for the next one in the preference list (see chooseFaces). This has to exceed
+  // 2 * ANCHOR_CLEAR, or a candidate whose faces nearly touch could pass this check while its
+  // two anchors — each already pushed ANCHOR_CLEAR outside its own face — have crossed past
+  // each other.
+  const MIN_DRAW = 12;
   // The one place this number is written. All three call sites that wrap a label read it from
   // here rather than carrying their own literal, because a box's tallest possible height has to
   // stay under the row pitch the server lays graphs out at (LAYER_GAP, viewer/server.js) — three
@@ -930,6 +943,58 @@
     return tMin <= tMax;
   }
 
+  // Where a face's anchor sits: centred on the face, ANCHOR_CLEAR outside the box — the same
+  // clearance rectExit already keeps (hw + 4) above, just addressed by face name instead of by
+  // direction vector.
+  function faceAnchor(n, face) {
+    const h = nodeHeight(n);
+    const cx = n.x + NODE_W / 2, cy = n.y + h / 2;
+    if (face === 'top') return [cx, n.y - ANCHOR_CLEAR];
+    if (face === 'bottom') return [cx, n.y + h + ANCHOR_CLEAR];
+    if (face === 'left') return [n.x - ANCHOR_CLEAR, cy];
+    return [n.x + NODE_W + ANCHOR_CLEAR, cy];
+  }
+
+  // The preference list an edge from `a` to `b` tries, in order: bottom-to-top for a step
+  // forward, then whichever sides face each other, then the same flank twice, then top-to-bottom
+  // as the last non-fallback shape. Bottom-to-top is gated on the source's bottom edge rather
+  // than its midline on purpose — the midline would admit two boxes overlapping vertically and
+  // then draw a bottom-to-top arrow running upward, which a drag can reach.
+  //
+  // `recip` — some other edge runs this one's `to` back to its `from` — swaps the flank and the
+  // facing-sides entries, so a two-way relationship loops down one side instead of drawing one
+  // double-headed line down the middle. Nothing else about the list changes.
+  function faceCandidates(a, b, recip) {
+    const list = [];
+    if (b.y >= a.y + nodeHeight(a)) list.push(['bottom', 'top']);
+    const facing = (b.x + NODE_W / 2) > (a.x + NODE_W / 2) ? ['right', 'left'] : ['left', 'right'];
+    const flanks = [['right', 'right'], ['left', 'left']];
+    if (recip) list.push(flanks[0], flanks[1], facing);
+    else list.push(facing, flanks[0], flanks[1]);
+    list.push(['top', 'bottom']);
+    return list;
+  }
+
+  // The first candidate face pair whose straight anchor-to-anchor line is long enough to bother
+  // drawing and crosses neither box — or null, meaning every candidate failed and the edge falls
+  // back to today's centre-to-centre rectExit trim in renderEdgeGroup. This is a *try*: a back
+  // edge between two horizontally separated boxes still gets the sides, and only falls past them
+  // where the sides would draw straight through a box — the shape a fresh three-cycle layout
+  // produces, putting the back edge's two boxes overlapping in x.
+  function chooseFaces(a, b, recip) {
+    const ra = { x: a.x, y: a.y, w: NODE_W, h: nodeHeight(a) };
+    const rb = { x: b.x, y: b.y, w: NODE_W, h: nodeHeight(b) };
+    for (const pair of faceCandidates(a, b, recip)) {
+      const [x1, y1] = faceAnchor(a, pair[0]);
+      const [x2, y2] = faceAnchor(b, pair[1]);
+      if (Math.hypot(x2 - x1, y2 - y1) < MIN_DRAW) continue;
+      if (rectIntersectsSegment(ra, x1, y1, x2, y2)) continue;
+      if (rectIntersectsSegment(rb, x1, y1, x2, y2)) continue;
+      return pair;
+    }
+    return null;
+  }
+
   // Nearest point on the segment (x1,y1)-(x2,y2) to (px,py) — the leader line's far end, so it
   // points at the closest part of the edge's own line rather than one of its fixed ends.
   function closestPointOnSegment(px, py, x1, y1, x2, y2) {
@@ -1137,7 +1202,7 @@
     root.appendChild(g);
   }
 
-  function renderEdgeGroup(root, labelLayer, e, a, b, pairIndex, pairCount, effSel, nodeBoxRects, labelRects, hoverLit) {
+  function renderEdgeGroup(root, labelLayer, e, a, b, anchors, effSel, nodeBoxRects, labelRects, hoverLit) {
     const selected = effSel.has(e.id);
     const cls = ['edge'];
     if (selected) cls.push('selected');
@@ -1151,42 +1216,37 @@
     if (e.was) attrs['data-was'] = e.was;
     const g = el('g', attrs);
 
-    // Each endpoint's own actual height (see nodeHeight): a box whose height
-    // grew to fit a wrapped label still has to trim edges at *its* boundary,
-    // not a shared constant that no longer matches it.
-    const ha = nodeHeight(a), hb = nodeHeight(b);
-    const x1 = a.x + NODE_W / 2, y1 = a.y + ha / 2;
-    const x2 = b.x + NODE_W / 2, y2 = b.y + hb / 2;
-    const dx = x2 - x1, dy = y2 - y1;
-
-    // Trim to where the line crosses the node's rectangle, not a fixed radius
-    // from its centre — a radius trim buries the line end and the arrowhead
-    // under the box.
-    let [ax, ay] = rectExit(x1, y1, NODE_W / 2, ha / 2, dx, dy);
-    let [bx, by] = rectExit(x2, y2, NODE_W / 2, hb / 2, -dx, -dy);
-
-    // Two edges on one pair of nodes — including opposite directions — land on
-    // the same line and read as a single double-headed arrow. Fan them apart
-    // perpendicular to the line so each is separate geometry and independently
-    // hittable. The perpendicular has to come from a direction shared by both
-    // edges of the pair, not each edge's own dx/dy: for e->f and f->e those are
-    // exact opposites, so an index-based offset computed from each edge's own
-    // direction flips sign right along with it and cancels out — both edges
-    // landed on identical geometry. Canonicalizing on the same sorted-pair
-    // order used for pairKey fixes the basis so the index actually separates them.
-    const pairKey = JSON.stringify([e.from, e.to].slice().sort());
-    const n = pairCount.get(pairKey) || 1;
-    if (n > 1) {
-      const canonSign = e.from < e.to ? 1 : -1;
-      const cdx = dx * canonSign, cdy = dy * canonSign;
-      const L0 = Math.hypot(cdx, cdy) || 1;
-      const shift = (pairIndex.get(e.id) - (n - 1) / 2) * 14;
-      ax += (-cdy / L0) * shift; ay += (cdx / L0) * shift;
-      bx += (-cdy / L0) * shift; by += (cdx / L0) * shift;
+    // render()'s pre-pass (see chooseFaces and the bundling loop there) has already picked this
+    // edge's two anchors, on whichever faces and slots keep every drawn line off both boxes. An
+    // edge with `anchors === null` is the one every candidate face pair failed for — reached only
+    // where the sides would cross a box, such as a three-cycle's back edge over horizontally
+    // overlapping boxes — and falls back to the same centre-to-centre rectExit trim this file
+    // always used: it cannot cross a box by construction, whatever the layout, so it is the
+    // guaranteed-clean case rather than one to reason about.
+    let ax, ay, bx, by;
+    if (anchors) {
+      [ax, ay] = anchors.from;
+      [bx, by] = anchors.to;
+    } else {
+      // Each endpoint's own actual height (see nodeHeight): a box whose height grew to fit a
+      // wrapped label still has to trim edges at *its* boundary, not a shared constant that no
+      // longer matches it.
+      const ha = nodeHeight(a), hb = nodeHeight(b);
+      const x1 = a.x + NODE_W / 2, y1 = a.y + ha / 2;
+      const x2 = b.x + NODE_W / 2, y2 = b.y + hb / 2;
+      const cdx = x2 - x1, cdy = y2 - y1;
+      [ax, ay] = rectExit(x1, y1, NODE_W / 2, ha / 2, cdx, cdy);
+      [bx, by] = rectExit(x2, y2, NODE_W / 2, hb / 2, -cdx, -cdy);
     }
 
     const d = 'M' + ax + ',' + ay + ' L' + bx + ',' + by;
     g.appendChild(el('path', { class: 'edge-line', d, 'marker-end': 'url(#arrow-' + e.origin + ')' }));
+
+    // The label ladder below derives its perpendicular from this — the anchor-to-anchor line,
+    // the one actually drawn — not from the two boxes' centres. A face pair rarely sits on the
+    // centre-to-centre line (a bottom-to-top arrow between two boxes of different width doesn't),
+    // so the centre-to-centre delta would skew every offset away from the line on screen.
+    const dx = bx - ax, dy = by - ay;
 
     // The hit band is 24 *device* pixels at any zoom. The band's own
     // stroke-width lives inside the pan/zoom transform, so to land on 24
@@ -1526,17 +1586,101 @@
     const root = el('g', { transform: 'translate(' + view.x + ',' + view.y + ') scale(' + view.k + ')' });
     svg.appendChild(root);
 
-    const pairIndex = new Map(), pairCount = new Map();
-    for (const e of graph.edges) {
-      // JSON.stringify of the sorted pair, not a joined string: ids are only
-      // guaranteed unique within their own collection, not free of whatever
-      // separator a plain join would pick, so a delimiter-free key is the only
-      // one that can't collide.
-      const key = JSON.stringify([e.from, e.to].slice().sort());
-      pairIndex.set(e.id, pairCount.get(key) || 0);
-      pairCount.set(key, (pairCount.get(key) || 0) + 1);
-    }
     const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
+
+    // Every edge's two anchors, computed here in two phases because phase 2 needs every edge's
+    // faces already chosen — a bundle can only be spread once its whole membership is known.
+    //
+    // Phase 1: which faces. A reciprocal pair — some other edge running this one's `to` back to
+    // its `from` — tries the same flank before the facing sides (see faceCandidates); two edges
+    // sharing the same `from` and `to` are duplicates, not a reciprocal pair, and are told apart
+    // by phase 2's slotting below instead. JSON.stringify of the ordered pair, not a joined
+    // string: ids are only guaranteed unique within their own collection, not free of whatever
+    // separator a plain join would pick.
+    const dirSeen = new Set(graph.edges.map((e) => JSON.stringify([e.from, e.to])));
+    const faceChoice = new Map(); // edge.id -> [fromFace, toFace], or null for the rectExit fallback
+    for (const e of graph.edges) {
+      const a = nodeById.get(e.from), b = nodeById.get(e.to);
+      if (!a || !b) continue;
+      const recip = dirSeen.has(JSON.stringify([e.to, e.from]));
+      faceChoice.set(e.id, chooseFaces(a, b, recip));
+    }
+
+    // Phase 2: where on the face. Every arrow *end* that landed on a face — a departure from its
+    // source, an arrival at its target — is bundled by (node, face); an edge that fell back to
+    // rectExit (faceChoice is null) chose no face pair, so there is no bundle for it to join.
+    const bundles = new Map();
+    const bundleEnd = (nodeId, face, edgeId, otherId, isArrival) => {
+      const key = JSON.stringify([nodeId, face]);
+      if (!bundles.has(key)) bundles.set(key, []);
+      bundles.get(key).push({ edgeId, otherId, isArrival });
+    };
+    for (const e of graph.edges) {
+      const choice = faceChoice.get(e.id);
+      if (!choice) continue;
+      bundleEnd(e.from, choice[0], e.id, e.to, false);
+      bundleEnd(e.to, choice[1], e.id, e.from, true);
+    }
+
+    const edgeAnchors = new Map(); // edge.id -> { from: [x,y], to: [x,y] }
+    for (const [key, items] of bundles) {
+      const [nodeId, face] = JSON.parse(key);
+      const n = nodeById.get(nodeId);
+      const h = nodeHeight(n);
+      // x for a top or bottom face, y for a left or right one — the axis a bundle spreads along.
+      const axis = (face === 'top' || face === 'bottom') ? 'x' : 'y';
+      // Ordered by the other endpoint's centre along that axis, then by edge id, so two arrows
+      // between the same pair of boxes — same axis position on both counts but one — still land
+      // in a stable, distinct order.
+      items.sort((p, q) => {
+        const op = nodeById.get(p.otherId), oq = nodeById.get(q.otherId);
+        const vp = axis === 'x' ? op.x + NODE_W / 2 : op.y + nodeHeight(op) / 2;
+        const vq = axis === 'x' ? oq.x + NODE_W / 2 : oq.y + nodeHeight(oq) / 2;
+        if (vp !== vq) return vp - vq;
+        return p.edgeId < q.edgeId ? -1 : p.edgeId > q.edgeId ? 1 : 0;
+      });
+      // An arrowhead is the thing that needs room, so a bundle carrying any arrival gets the
+      // wider pitch even where most of its members are departures.
+      let pitch = items.some((it) => it.isArrival) ? EDGE_FAN_IN : EDGE_FAN_OUT;
+      const usable = (axis === 'x' ? NODE_W : h) - 2 * FACE_MARGIN;
+      const count = items.length;
+      if (count > 1 && (count - 1) * pitch > usable) pitch = usable / (count - 1);
+      const [cx, cy] = faceAnchor(n, face);
+      items.forEach((it, i) => {
+        const off = (i - (count - 1) / 2) * pitch;
+        const point = axis === 'x' ? [cx + off, cy] : [cx, cy + off];
+        const rec = edgeAnchors.get(it.edgeId) || {};
+        rec[it.isArrival ? 'to' : 'from'] = point;
+        edgeAnchors.set(it.edgeId, rec);
+      });
+    }
+
+    // Phase 2 slots each anchor by its bundle position alone, with no view of the box it sits
+    // beside — chooseFaces already cleared this edge against both boxes, but only for the face
+    // pair's *centres*, and a slot offset moves the anchor off that centre. When a face carries
+    // more than one arrow (common enough: see the count in PLAN.md §3) the offset can push the
+    // moved anchor back into one of the two boxes the face check just cleared it against. Recheck
+    // every edge's *final* anchors here, once every bundle has assigned them and before anything
+    // is drawn, and drop the entry for any edge whose slotted line crosses either box — dropping
+    // it makes renderEdgeGroup take its `anchors === null` branch below, the same fallback an edge
+    // already takes when no candidate face pair passes, trimming the real centre-to-centre line
+    // with rectExit instead. One pass: this does not re-bundle or re-choose faces, and a dropped
+    // edge simply leaves a gap in its former bundles' slot numbering, which is harmless. rectExit
+    // cannot cross a box for two disjoint boxes by construction, so it is always a safe landing
+    // spot rather than a case that needs its own reasoning here.
+    for (const e of graph.edges) {
+      const rec = edgeAnchors.get(e.id);
+      if (!rec) continue;
+      const a = nodeById.get(e.from), b = nodeById.get(e.to);
+      if (!a || !b) continue;
+      const ra = { x: a.x, y: a.y, w: NODE_W, h: nodeHeight(a) };
+      const rb = { x: b.x, y: b.y, w: NODE_W, h: nodeHeight(b) };
+      const [x1, y1] = rec.from, [x2, y2] = rec.to;
+      if (rectIntersectsSegment(ra, x1, y1, x2, y2) || rectIntersectsSegment(rb, x1, y1, x2, y2)) {
+        edgeAnchors.delete(e.id);
+      }
+    }
+
     const effSel = effectiveSelectionIds();
     // Resolved fresh against the current graph on every render, never a list captured when the
     // marked-phrase span was built (see buildExplainBody) — a redraw that changed a group's
@@ -1612,7 +1756,7 @@
     for (const e of graph.edges) {
       const a = nodeById.get(e.from), b = nodeById.get(e.to);
       if (!a || !b) continue;
-      renderEdgeGroup(root, labelLayer, e, a, b, pairIndex, pairCount, effSel, nodeBoxRects, labelRects, hoverLit);
+      renderEdgeGroup(root, labelLayer, e, a, b, edgeAnchors.get(e.id) || null, effSel, nodeBoxRects, labelRects, hoverLit);
     }
     root.appendChild(headerLayer);
     root.appendChild(labelLayer);

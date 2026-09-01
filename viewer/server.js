@@ -13,10 +13,10 @@ Errors:
   404 not-found, no-route
   409 stale (also returns hash)
   422 invalid-json (position), unknown-schema (schema), missing-label, bad-id, bad-kind (ids),
-      edge-missing-node, group-bad-name, group-missing-node, group-bad-shape (ids),
+      edge-missing-node, self-edge (ids), group-bad-name, group-missing-node, group-bad-shape (ids),
       group-missing-label (ids), group-missing-note (ids), group-hidden-text (ids),
       group-overlap (ids), explanation-missing-group, group-unreferenced, bad-origin-value,
-      bad-was, container-bad-name,
+      bad-was, container-bad-name, positional-claim,
       container-cycle, container-orphan, container-unreadable-child, preservation-rejected,
       preservation-agreed, agent-verdict, structural-difference (ids),
       bulk-not-additive
@@ -54,6 +54,21 @@ const BARE_NAME = /^[a-z0-9_-]+$/;
 // The page carries this identical expression because the two files share no module. Its narrow
 // target syntax keeps ordinary markdown links out of the graph-reference contract.
 const GROUP_REFERENCE = /\[([^\[\]]+)\]\(#([a-z0-9_-]+)\)/g;
+const POSITIONAL_CLAIMS = [
+  /\b(?:on|to|down|up|along) the (?:left|right)\b/i,
+  /\bat the (?:top|bottom)\b/i,
+  /\bthe (?:leftmost|rightmost|topmost|bottommost)\b/i,
+  /\bdown the (?:middle|centre|center)\b/i,
+  /\bthe (?:left|right|top|bottom|upper|lower|middle)(?:most)?[- ]?(?:hand )?(?:branch|arm|arms|box|boxes|node|nodes|column|cluster|group|half|side|path|row|one|ones|two|three|route)\b/i,
+  /\bthe (?:\w+ )?(?:box|boxes|node|nodes|group|step|steps|arrow|arrows|answers?|options?) (?:above|below|beside)\b/i,
+  /\bthe row (?:above|below)\b/i,
+  /\b(?:above|below|beside|underneath) (?:it|them|that|these|those)\b/i,
+  /\b(?:sits|sit|sitting|hangs|hang|hanging|runs|run|running|stands|stand|lands|land) (?:just )?(?:at|on|in|down|up)? ?the (?:top|bottom|left|right|middle|centre|center)\b/i,
+  /\b(?:sits|sit|sitting|hangs|hang|hanging|stands|stand) (?:just )?(?:above|below|beside|under|underneath|next to)\b/i,
+  /\bside by side\b/i,
+  /\bthe same (?:row|column)\b/i,
+  /\blisted (?:under|below|above) it\b/i,
+];
 
 class ClientError extends Error {
   constructor(status, code, detail, extra = {}) {
@@ -261,6 +276,9 @@ function validateGraph(input, { checkOrigin = true } = {}) {
         !nodeIds.has(edge.from) || !nodeIds.has(edge.to)) {
       fail(422, 'edge-missing-node', 'An edge names a node that is not present.');
     }
+    if (edge.from === edge.to) {
+      fail(422, 'self-edge', 'An edge may not connect a node back to itself.', { ids: [edge.id] });
+    }
   }
   // A group exists only to make a specific passage of the account point at graph boxes. Check
   // dangling links, and require invisible groups to be referenced because they have no other way
@@ -343,15 +361,76 @@ function mapById(entries) {
   return new Map(entries.map((entry) => [entry.id, entry]));
 }
 
+// Text an agent quotes is exempt, so a graph about this rule can quote the phrase the rule
+// forbids. Three delimiters only: the backtick and the straight double quote, each pairing with
+// itself, and the typographic pair. Not the apostrophe in either spelling — U+2019 is the
+// typographic apostrophe, so both forms are indistinguishable from a possessive, and exempting
+// what sits between any two of them would exempt most sentences. An unpaired delimiter masks
+// nothing and the scan resumes at the next character: masking to the end of the string instead
+// would let one stray quote exempt the rest of an explanation, a whole-check bypass reachable by
+// a typo. The mask preserves length rather than deleting, which is what lets a match offset index
+// the original text, so the refusal can quote what the agent actually wrote — and it means a
+// phrase can never match *across* a quoted span, so quoting interrupts a phrase consistently
+// instead of the answer depending on whether the quote happened to sit between two spaces.
+function maskQuotedSpans(text) {
+  const masked = text.split('');
+  for (let index = 0; index < text.length;) {
+    const opener = text[index];
+    const closer = opener === '`' || opener === '"' ? opener : opener === '“' ? '”' : null;
+    if (!closer) { index += 1; continue; }
+    const end = text.indexOf(closer, index + 1);
+    if (end < 0) { index += 1; continue; }
+    for (let maskedIndex = index; maskedIndex <= end; maskedIndex += 1) masked[maskedIndex] = '\0';
+    index = end + 1;
+  }
+  return masked.join('');
+}
+
+function positionalClaim(text) {
+  const masked = maskQuotedSpans(text);
+  for (const pattern of POSITIONAL_CLAIMS) {
+    const match = pattern.exec(masked);
+    if (match) return match;
+  }
+  return null;
+}
+
+// An agent has no idea where anything is: it is forbidden from sending x/y and the layout runs
+// after the write, so a sentence claiming a position is not a vague reference but an invented one.
+// The list is a reflex-catcher rather than a proof — it reads the account and a group's own name
+// and sentence, never a node's or an edge's, because measured over every committed graph those
+// two fields cost more false catches than they caught real claims.
+function checkAgentProse(incoming) {
+  const check = (text, ids) => {
+    if (typeof text !== 'string' || text.length === 0) return;
+    const match = positionalClaim(text);
+    if (!match) return;
+    const phrase = text.slice(match.index, match.index + match[0].length);
+    fail(422, 'positional-claim', `The agent account makes the positional claim ${JSON.stringify(phrase)}.`,
+      ids ? { ids } : undefined);
+  };
+  check(incoming.explanation);
+  for (const group of [...incoming.groups].sort(compareId)) {
+    check(group.label, [group.id]);
+    check(group.note, [group.id]);
+  }
+}
+
 // Agent preservation is deliberately outside HTTP handling: this is the format contract.
 // Everything an agent's PUT /graph is forbidden to do, in one place:
 //   - it may not grant itself a verdict (agent-verdict),
 //   - it must preserve every rejected entry verbatim and every agreed entry either verbatim or
 //     reset to proposed with was: "agreed" (preservation-rejected, preservation-agreed),
-//   - it may write `was` only as part of a reset, and may never clear a landed one (bad-was).
+//   - it may write `was` only as part of a reset, and may never clear a landed one (bad-was),
+//   - it may not claim where anything sits (positional-claim, above).
 // Removing an entry already reset to proposed is allowed: that is the second of the two visible
 // steps a superseded flow takes, instead of vanishing in one.
+//
+// The prose check belongs here and never in validateGraph, which parseDisk runs on every read:
+// nine committed graphs already carry a position word, and refusing them there would make them
+// unopenable, undraggable and unusable as containment parents.
 function checkAgentWrite(current, incoming) {
+  checkAgentProse(incoming);
   for (const [oldEntries, newEntries, isNode] of [
     [current.nodes, incoming.nodes, true], [current.edges, incoming.edges, false],
   ]) {
@@ -479,11 +558,9 @@ const COMPONENT_GAP = 200;
 function layout(graph) {
   const ids = graph.nodes.map((node) => node.id).sort();
   if (!ids.length) return new Map();
-  const known = new Set(ids);
-  // Sorted and deduplicated, and self edges dropped: the same graph has to lay out the same way
-  // however its arrays happen to be ordered, and a self edge constrains nothing.
+  // Sorted and deduplicated so the same graph lays out the same way however its arrays happen to
+  // be ordered.
   const pairs = [...new Set(graph.edges
-    .filter((edge) => edge.from !== edge.to && known.has(edge.from) && known.has(edge.to))
     .map((edge) => JSON.stringify([edge.from, edge.to])))].sort().map((key) => JSON.parse(key));
 
   const acyclic = breakCycles(ids, pairs);

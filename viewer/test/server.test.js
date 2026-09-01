@@ -208,7 +208,7 @@ test('explanation written through /graph is retained on disk in canonical order'
 test('groups canonicalize member lists, order, and byte round-trip', async () => {
   await withFixture('canonical.json', async (ctx) => {
     let state = await getGraph(ctx); const graph = copy(state.graph);
-    graph.explanation = 'See [the right branch](#right) and [the left branch](#left).';
+    graph.explanation = 'See [the report output](#right) and [the input review](#left).';
     graph.groups = [
       { id: 'right', nodes: ['store', 'report', 'store'] },
       { id: 'left', nodes: ['inspect', 'gather'] },
@@ -233,13 +233,13 @@ test('visible groups round-trip without explanation references', async () => {
   await withFixture('canonical.json', async (ctx) => {
     let state = await getGraph(ctx); const graph = copy(state.graph);
     graph.groups = [{
-      id: 'left', label: 'The left branch', note: 'Gathers the input and inspects it.',
+      id: 'left', label: 'Input review', note: 'Gathers the input and inspects it.',
       visible: true, nodes: ['gather', 'inspect'],
     }];
     expect(await graphPut(ctx, graph, state.hash), 200);
     state = await getGraph(ctx);
     assert.deepEqual(state.graph.groups, [{
-      id: 'left', label: 'The left branch', note: 'Gathers the input and inspects it.',
+      id: 'left', label: 'Input review', note: 'Gathers the input and inspects it.',
       visible: true, nodes: ['gather', 'inspect'],
     }]);
     const before = await fs.readFile(ctx.graphPath);
@@ -273,32 +273,32 @@ test('groups refuse malformed claims and unmatched explanation references', asyn
       ['group-missing-node', (graph) => { graph.groups = [{ id: 'left', nodes: [7] }]; }],
       ['group-missing-node', (graph) => { graph.groups = [{ id: 'left' }]; }],
       ['bad-id', (graph) => { graph.groups = ['left']; }],
-      ['explanation-missing-group', (graph) => { graph.explanation = 'See [the left branch](#left).'; }],
+      ['explanation-missing-group', (graph) => { graph.explanation = 'See [the input review](#left).'; }],
       ['group-unreferenced', (graph) => { graph.groups = [{ id: 'left', nodes: ['gather'] }]; }],
       ['group-bad-shape', (graph) => {
-        graph.explanation = 'See [the left branch](#left).';
+        graph.explanation = 'See [the input review](#left).';
         graph.groups = [{ id: 'left', visible: 'yes', nodes: ['gather'] }];
       }],
       ['group-bad-shape', (graph) => {
-        graph.explanation = 'See [the left branch](#left).';
+        graph.explanation = 'See [the input review](#left).';
         graph.groups = [{ id: 'left', label: 7, nodes: ['gather'] }];
       }],
       // An explicit null is a non-boolean, not an omission: the only key in this schema where the
       // two differ, so it is the only one that needs saying out loud.
       ['group-bad-shape', (graph) => {
-        graph.explanation = 'See [the left branch](#left).';
+        graph.explanation = 'See [the input review](#left).';
         graph.groups = [{ id: 'left', visible: null, nodes: ['gather'] }];
       }],
       ['group-missing-label', (graph) => { graph.groups = [{ id: 'left', visible: true, note: 'Points to the branch.', nodes: ['gather'] }]; }],
-      ['group-missing-note', (graph) => { graph.groups = [{ id: 'left', visible: true, label: 'The left branch', nodes: ['gather'] }]; }],
+      ['group-missing-note', (graph) => { graph.groups = [{ id: 'left', visible: true, label: 'Input review', nodes: ['gather'] }]; }],
       ['group-hidden-text', (graph) => {
-        graph.explanation = 'See [the left branch](#left).';
-        graph.groups = [{ id: 'left', visible: false, label: 'The left branch', nodes: ['gather'] }];
+        graph.explanation = 'See [the input review](#left).';
+        graph.groups = [{ id: 'left', visible: false, label: 'Input review', nodes: ['gather'] }];
       }],
       ['group-overlap', (graph) => {
         graph.groups = [
-          { id: 'left', label: 'The left branch', note: 'Gathers the input.', visible: true, nodes: ['gather'] },
-          { id: 'right', label: 'The right branch', note: 'Also gathers the input.', visible: true, nodes: ['gather'] },
+          { id: 'left', label: 'Input review', note: 'Gathers the input.', visible: true, nodes: ['gather'] },
+          { id: 'right', label: 'Report output', note: 'Also gathers the input.', visible: true, nodes: ['gather'] },
         ];
       }],
     ]) {
@@ -306,7 +306,7 @@ test('groups refuse malformed claims and unmatched explanation references', asyn
       expect(await graphPut(ctx, graph, state.hash), 422, code);
     }
     const invisibleOverlap = copy(state.graph);
-    invisibleOverlap.explanation = 'See [the left branch](#left) and [the right branch](#right).';
+    invisibleOverlap.explanation = 'See [the input review](#left) and [the report output](#right).';
     invisibleOverlap.groups = [
       { id: 'left', nodes: ['gather'] },
       { id: 'right', nodes: ['gather'] },
@@ -330,6 +330,103 @@ test('explanation accepts only strings or null', async () => {
       const graph = copy(state.graph); graph.explanation = value;
       expect(await graphPut(ctx, graph, state.hash), 422, 'unknown-schema');
     }
+  });
+});
+
+test('agent prose refuses positional claims in explanations and groups', async () => {
+  await withFixture('canonical.json', async (ctx) => {
+    const state = await getGraph(ctx);
+    const explanation = copy(state.graph); explanation.explanation = 'The left branch handles input.';
+    const explanationResult = await graphPut(ctx, explanation, state.hash); expect(explanationResult, 422, 'positional-claim');
+    assert.ok(explanationResult.body.detail.includes('The left branch'));
+
+    // The quoted span sits *before* the claim, so the offset the mask hands back is only usable
+    // against the original text because the mask preserved its length. Deleting the span instead
+    // would slide every later offset left and quote a phrase the agent never wrote.
+    const offset = copy(state.graph);
+    offset.explanation = 'The account calls it "the widget" and the left branch handles input.';
+    const offsetResult = await graphPut(ctx, offset, state.hash); expect(offsetResult, 422, 'positional-claim');
+    assert.ok(offsetResult.body.detail.includes('"the left branch"'),
+      `detail should quote the original phrase, got: ${offsetResult.body.detail}`);
+
+    const label = copy(state.graph);
+    label.groups = [{ id: 'label', label: 'The left branch', note: 'Input review.', visible: true, nodes: ['gather'] }];
+    const labelResult = await graphPut(ctx, label, state.hash); expect(labelResult, 422, 'positional-claim');
+    assert.deepEqual(labelResult.body.ids, ['label']);
+
+    const note = copy(state.graph);
+    note.groups = [{ id: 'note', label: 'Input review', note: 'The right branch handles output.', visible: true, nodes: ['gather'] }];
+    const noteResult = await graphPut(ctx, note, state.hash); expect(noteResult, 422, 'positional-claim');
+    assert.deepEqual(noteResult.body.ids, ['note']);
+
+    const explanationFirst = copy(state.graph);
+    explanationFirst.explanation = 'The left branch handles input.';
+    explanationFirst.groups = [{ id: 'group', label: 'The right branch', note: 'Output review.', visible: true, nodes: ['gather'] }];
+    const firstResult = await graphPut(ctx, explanationFirst, state.hash); expect(firstResult, 422, 'positional-claim');
+    assert.ok(!Object.hasOwn(firstResult.body, 'ids'));
+
+    const groups = copy(state.graph);
+    groups.groups = [
+      { id: 'z', label: 'The left branch', note: 'Input review.', visible: true, nodes: ['gather'] },
+      { id: 'a', label: 'The right branch', note: 'Output review.', visible: true, nodes: ['inspect'] },
+    ];
+    const groupsResult = await graphPut(ctx, groups, state.hash); expect(groupsResult, 422, 'positional-claim');
+    assert.deepEqual(groupsResult.body.ids, ['a']);
+  });
+});
+
+test('quoted spans mask positional claims without masking apostrophes or stray delimiters', async () => {
+  await withFixture('canonical.json', async (ctx) => {
+    async function write(explanation) {
+      const state = await getGraph(ctx); const graph = copy(state.graph); graph.explanation = explanation;
+      return graphPut(ctx, graph, state.hash);
+    }
+    for (const explanation of [
+      'The account says `the left branch` handles input.',
+      'The account says "the left branch" handles input.',
+      'The account says “the left branch” handles input.',
+      'The left`review` branch handles input.',
+    ]) expect(await write(explanation), 200);
+    expect(await write("don't say the left branch; it isn't valid"), 422, 'positional-claim');
+    expect(await write('don’t say the left branch; it isn’t valid'), 422, 'positional-claim');
+    expect(await write('A lone ` leaves the left branch exposed.'), 422, 'positional-claim');
+  });
+});
+
+test('positional claims leave the downhill vocabulary, node text, and page reads alone', async () => {
+  await withFixture('canonical.json', async (ctx) => {
+    async function write(explanation) {
+      const state = await getGraph(ctx); const graph = copy(state.graph); graph.explanation = explanation;
+      return graphPut(ctx, graph, state.hash);
+    }
+    for (const explanation of [
+      'Each arrow points down the page.', 'The work travels downhill.', 'A child is one row below its deepest parent.',
+    ]) expect(await write(explanation), 200);
+    expect(await write('The two reviews are side by side.'), 422, 'positional-claim');
+    expect(await write('The retry box is on the same row as the payment box.'), 422, 'positional-claim');
+
+    const state = await getGraph(ctx); const nodeText = copy(state.graph); entry(nodeText, 'gather').label = 'The left branch';
+    expect(await graphPut(ctx, nodeText, state.hash), 200);
+  });
+  await withFixture('canonical.json', async (ctx) => {
+    const disk = copy((await getGraph(ctx)).graph); disk.explanation = 'The left branch handles input.';
+    await fs.writeFile(ctx.graphPath, JSON.stringify(disk));
+    const state = await getGraph(ctx); assert.equal(state.graph.explanation, disk.explanation);
+    const moved = copy(state.graph); entry(moved, 'gather').x += 1;
+    expect(await viewPut(ctx, moved, state.hash), 200);
+  });
+});
+
+test('self edges are refused after missing endpoints', async () => {
+  await withFixture('canonical.json', async (ctx) => {
+    const state = await getGraph(ctx); const graph = copy(state.graph);
+    graph.edges.push({ id: 'gather-loop', from: 'gather', to: 'gather', label: 'again' });
+    const result = await graphPut(ctx, graph, state.hash); expect(result, 422, 'self-edge');
+    assert.deepEqual(result.body.ids, ['gather-loop']);
+
+    const missing = copy(state.graph);
+    missing.edges.push({ id: 'missing-loop', from: 'missing', to: 'missing', label: 'again' });
+    expect(await graphPut(ctx, missing, state.hash), 422, 'edge-missing-node');
   });
 });
 
@@ -373,7 +470,7 @@ test('/view cannot alter explanation', async () => {
 test('/view cannot alter groups and accepts an untouched deep clone', async () => {
   await withFixture('canonical.json', async (ctx) => {
     let state = await getGraph(ctx); const grouped = copy(state.graph);
-    grouped.explanation = 'See [the left branch](#left).';
+    grouped.explanation = 'See [the input review](#left).';
     grouped.groups = [{ id: 'left', nodes: ['gather'] }];
     expect(await graphPut(ctx, grouped, state.hash), 200);
 
