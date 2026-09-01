@@ -10,9 +10,10 @@
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 const assert = require('node:assert/strict');
 const { test, expect } = require('@playwright/test');
-const { makeDir, stage, startServer, getGraph, put, copy, sha256 } = require('./helpers/server');
+const { makeDir, stage, startServer, getGraph, put, copy, sha256, ROOT } = require('./helpers/server');
 
 // The fixture's world extent runs to x=2300, y=974 (node d, node h's box). A default ~1280x720
 // viewport would put the far group off-screen at zoom 1; widen it once for the whole file so every
@@ -1400,7 +1401,7 @@ test('collapse state survives a poll and a child-graph navigation, but not a rel
 });
 
 // ============================================================================================
-// Groups: a marked phrase in the explanation — `[the left branch](#left-branch)` — is what a
+// Groups: a marked phrase in the explanation — `[the refusal path](#refusal-path)` — is what a
 // reader points at instead of a position word. Hovering it lights the group's nodes and every
 // arrow with both ends inside it, and dims everything else. Read off the `.group-dim` class
 // render() adds to everything *outside* the hovered group (index.html's renderNodeGroup /
@@ -1415,7 +1416,7 @@ test('hovering a marked phrase lights the group and dims everything outside it, 
     await page.goto(pageUrl(ctx));
     await ready(page);
 
-    await groupRef(page, 'left-branch').hover();
+    await groupRef(page, 'refusal-path').hover();
 
     // Inside the group: never dimmed.
     await expect(page.locator('g.node[data-id="gate"].group-dim')).toHaveCount(0);
@@ -1455,16 +1456,16 @@ test('hovering a marked phrase does not rebuild the panel', async ({ page }) => 
     await ready(page);
 
     await page.evaluate(() => {
-      window.__testSpan = document.querySelector('#explain-body .group-ref[data-group="left-branch"]');
+      window.__testSpan = document.querySelector('#explain-body .group-ref[data-group="refusal-path"]');
     });
 
-    await groupRef(page, 'left-branch').hover();
+    await groupRef(page, 'refusal-path').hover();
     await expect(page.locator('g.node[data-id="gate"].group-dim')).toHaveCount(0);
     await page.mouse.move(0, 0);
     await expect(page.locator('.group-dim')).toHaveCount(0);
 
     const same = await page.evaluate(() =>
-      document.querySelector('#explain-body .group-ref[data-group="left-branch"]') === window.__testSpan);
+      document.querySelector('#explain-body .group-ref[data-group="refusal-path"]') === window.__testSpan);
     assert.ok(same, 'the marked-phrase span must survive a hover unchanged — syncExplainPanel rebuilt it');
   } finally {
     await ctx.stop();
@@ -1484,7 +1485,7 @@ test('clicking a marked phrase selects exactly the group, approves it, and leave
     await page.goto(pageUrl(ctx));
     await ready(page);
 
-    await groupRef(page, 'left-branch').click();
+    await groupRef(page, 'refusal-path').click();
     assert.deepEqual(await selection(page), ['gate', 'gate->refuse', 'refuse'].sort());
 
     const collector = collectViewResponses(page);
@@ -1623,7 +1624,7 @@ test('clicking a group with a member off-screen brings it into view without chan
       || farBox.y + farBox.height < canvasBox.y || farBox.y > canvasBox.y + canvasBox.height;
     assert.ok(offScreen, 'expected "far" to start outside the canvas at this zoom');
 
-    await groupRef(page, 'far-branch').click();
+    await groupRef(page, 'distant-alternative').click();
     assert.deepEqual(await selection(page), ['far']);
 
     assert.equal(await pageZoom(page), zoomBefore, 'the scale must not change');
@@ -1654,18 +1655,18 @@ test("a redraw that changes a group's nodes while the explanation stays byte-ide
     const explanationBefore = (await pageGraph(page)).explanation;
 
     await agentPut(ctx, (g) => {
-      const group = g.groups.find((gr) => gr.id === 'left-branch');
+      const group = g.groups.find((gr) => gr.id === 'refusal-path');
       group.nodes = ['gate', 'other']; // drops 'refuse', adds 'other' — the prose is untouched
     });
 
     // The page polls every 1000ms; give it a full cycle to pick up the new hash.
     await expect.poll(async () => {
       const g = await pageGraph(page);
-      return g.groups.find((gr) => gr.id === 'left-branch').nodes;
+      return g.groups.find((gr) => gr.id === 'refusal-path').nodes;
     }, { timeout: 3000 }).toEqual(['gate', 'other']);
     assert.equal((await pageGraph(page)).explanation, explanationBefore, 'the prose must stay byte-identical');
 
-    await groupRef(page, 'left-branch').hover();
+    await groupRef(page, 'refusal-path').hover();
     await expect(page.locator('g.node[data-id="gate"].group-dim')).toHaveCount(0);
     await expect(page.locator('g.node[data-id="other"].group-dim')).toHaveCount(0);
     await expect(page.locator('g.edge[data-id="gate->other"].group-dim')).toHaveCount(0);
@@ -1673,7 +1674,7 @@ test("a redraw that changes a group's nodes while the explanation stays byte-ide
     await expect(page.locator('g.node[data-id="refuse"].group-dim')).toHaveCount(1);
     await page.mouse.move(0, 0);
 
-    await groupRef(page, 'left-branch').click();
+    await groupRef(page, 'refusal-path').click();
     assert.deepEqual(await selection(page), ['gate', 'gate->other', 'other'].sort());
 
     const collector = collectViewResponses(page);
@@ -1711,8 +1712,8 @@ test('the page renders a non-# markdown link as plain text, not a marked phrase'
     // Exactly the two real references became marked phrases — the non-# link did not become a
     // third one.
     await expect(page.locator('#explain-body .group-ref')).toHaveCount(2);
-    assert.equal(await page.locator('#explain-body .group-ref[data-group="left-branch"]').textContent(), 'the left branch');
-    assert.equal(await page.locator('#explain-body .group-ref[data-group="far-branch"]').textContent(), 'the far branch');
+    assert.equal(await page.locator('#explain-body .group-ref[data-group="refusal-path"]').textContent(), 'the refusal path');
+    assert.equal(await page.locator('#explain-body .group-ref[data-group="distant-alternative"]').textContent(), 'the distant alternative');
   } finally {
     await ctx.stop();
   }
@@ -2145,6 +2146,412 @@ test('measureLabelWidth is keyed on size, not just text', async ({ page }) => {
 
     assert.ok(at13 > first11, `expected 13px to measure wider than 11px, got ${at13} vs ${first11}`);
     assert.equal(second11, first11, 'measuring at 13 must not poison the 11px cache entry for the same string');
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// Which face an arrow meets, and where on it (docs/plans/how-a-graph-reads/PLAN.md §3). Every
+// graph below is built inline with launchInline and explicit positions, the same reason the G9
+// fixture above is: nothing in fixtures/ needs this exact shape, and layout() never runs over an
+// inline graph, so the positions written here are exactly what the page draws.
+//
+// A minimal node or edge, filled out to the shape validateGraph expects (see groups-basic.json
+// for the full field list) — only `id`, `x` and `y` vary from one call to the next, since no test
+// below reads a label, kind or origin.
+function faceNode(id, x, y) {
+  return {
+    id, label: id, kind: 'step', origin: 'proposed', was: null,
+    exclusive: false, ref: null, note: null, graph: null, x, y,
+  };
+}
+function faceEdge(id, from, to) {
+  return { id, from, to, label: id, kind: 'sequence', value: null, inferred: false, origin: 'proposed', was: null, note: null };
+}
+function faceGraph(nodes, edges) {
+  return { schema: 1, title: 'Face geometry fixture', source: 'code-read', source_detail: null, explanation: null, groups: [], nodes, edges };
+}
+
+// Read straight off the rendered SVG, the same way the label-crowding test above does: an edge's
+// two endpoints from its path's `d`, a node's box from its group's own translate and its
+// rect.node-box's width/height (not from the graph's x/y and a re-derived height, which would
+// just be asserting nodeHeight against itself).
+async function edgeGeom(page, id) {
+  return page.evaluate((edgeId) => {
+    const line = document.querySelector(`g.edge[data-id="${edgeId}"] path.edge-line`);
+    const [, x1, y1, x2, y2] = line.getAttribute('d').match(/M([-\d.]+),([-\d.]+) L([-\d.]+),([-\d.]+)/).map(Number);
+    return { x1, y1, x2, y2 };
+  }, id);
+}
+async function nodeBoxGeom(page, id) {
+  return page.evaluate((nodeId) => {
+    const g = document.querySelector(`g.node[data-id="${nodeId}"]`);
+    const [, x, y] = g.getAttribute('transform').match(/translate\(([-\d.]+),([-\d.]+)\)/).map(Number);
+    const rect = g.querySelector('rect.node-box');
+    return { x, y, w: parseFloat(rect.getAttribute('width')), h: parseFloat(rect.getAttribute('height')) };
+  }, id);
+}
+
+// ============================================================================================
+// The forward case: a step that carries the flow down the page leaves the source's bottom edge
+// and lands on the target's top edge, each anchor ANCHOR_CLEAR (4) outside the box it belongs to
+// — the same clearance rectExit already kept. Neither node has a second edge on the face in
+// question, so slotting contributes no offset and the line runs straight down the shared centre.
+// ============================================================================================
+test("a forward arrow's endpoints sit ANCHOR_CLEAR outside the source's bottom edge and the target's top edge", async ({ page }) => {
+  const ctx = await launchInline(faceGraph(
+    [faceNode('a', 0, 0), faceNode('b', 0, 140)],
+    [faceEdge('a->b', 'a', 'b')],
+  ));
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const { x1, y1, x2, y2 } = await edgeGeom(page, 'a->b');
+    const a = await nodeBoxGeom(page, 'a');
+    const b = await nodeBoxGeom(page, 'b');
+
+    assert.equal(x1, a.x + a.w / 2, 'the source anchor sits centred on the bottom face');
+    assert.equal(y1, a.y + a.h + 4, 'the source anchor sits 4px below the bottom edge');
+    assert.equal(x2, b.x + b.w / 2, 'the target anchor sits centred on the top face');
+    assert.equal(y2, b.y - 4, 'the target anchor sits 4px above the top edge');
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// A back edge — here, from a lower-right box to an upper-left one — is not a step forward, so it
+// never takes the bottom-top pair. With the two boxes' x-ranges disjoint (a: x400-600, b: x0-200),
+// the facing sides pass cleanly and there is nothing to push it further down the preference list.
+// ============================================================================================
+test('a back edge between two horizontally separated boxes uses the side faces', async ({ page }) => {
+  const ctx = await launchInline(faceGraph(
+    [faceNode('a', 400, 300), faceNode('b', 0, 0)],
+    [faceEdge('a->b', 'a', 'b')],
+  ));
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const { x1, y1, x2, y2 } = await edgeGeom(page, 'a->b');
+    const a = await nodeBoxGeom(page, 'a');
+    const b = await nodeBoxGeom(page, 'b');
+
+    // A side face keeps the box's vertical centre; only a top or bottom face would move y off it.
+    assert.equal(y1, a.y + a.h / 2, "the source anchor sits on a's vertical centre — a side face");
+    assert.equal(y2, b.y + b.h / 2, "the target anchor sits on b's vertical centre — a side face");
+    assert.ok(x1 === a.x - 4 || x1 === a.x + a.w + 4, `expected the source anchor on a's left or right face, got x=${x1}`);
+    assert.ok(x2 === b.x - 4 || x2 === b.x + b.w + 4, `expected the target anchor on b's left or right face, got x=${x2}`);
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// The same back edge, but with the two boxes' x-ranges overlapping (a: x0-200, b: x50-250) rather
+// than disjoint. The facing sides and the same flank would each draw straight through one of the
+// two boxes, so the preference list falls all the way to top-to-bottom, the one candidate left
+// that clears both — the shape a fresh three-cycle layout produces for a back edge.
+// ============================================================================================
+test('a back edge between two boxes whose x-ranges overlap uses top-to-bottom instead, because the sides would cross a box', async ({ page }) => {
+  const ctx = await launchInline(faceGraph(
+    [faceNode('a', 0, 300), faceNode('b', 50, 0)],
+    [faceEdge('a->b', 'a', 'b')],
+  ));
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const { x1, y1, x2, y2 } = await edgeGeom(page, 'a->b');
+    const a = await nodeBoxGeom(page, 'a');
+    const b = await nodeBoxGeom(page, 'b');
+
+    assert.equal(x1, a.x + a.w / 2, "the source anchor sits centred on a's top face");
+    assert.equal(y1, a.y - 4, "the source anchor sits 4px above a's top edge");
+    assert.equal(x2, b.x + b.w / 2, "the target anchor sits centred on b's bottom face");
+    assert.equal(y2, b.y + b.h + 4, "the target anchor sits 4px below b's bottom edge");
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// The headline guard: over every graph committed to the repo — not one chosen pair — no rendered
+// arrow's straight line passes through either box it connects. `git ls-files` rather than a
+// hardcoded list, so a graph added by a later plan is covered automatically. Each file is copied
+// into its own scratch server the same way `stage` copies a fixtures/ file, since `stage` itself
+// only reaches into viewer/test/fixtures.
+// ============================================================================================
+test("no drawn arrow's line passes through either box it connects, over every committed graph", async ({ page }) => {
+  const files = execFileSync('git', ['ls-files', 'docs/plans/*/graphs/*.json'], { cwd: ROOT })
+    .toString().split('\n').filter(Boolean);
+  assert.ok(files.length > 0, 'expected at least one committed graph to check');
+
+  for (const file of files) {
+    const root = await makeDir('browser-');
+    const graphDir = path.join(root, 'graphs');
+    await fs.mkdir(graphDir, { recursive: true });
+    const graphPath = path.join(graphDir, path.basename(file));
+    await fs.copyFile(path.join(ROOT, file), graphPath);
+    const ctx = await startServer({ cacheRoot: root, open: graphPath });
+    try {
+      await page.goto(pageUrl(ctx));
+      await ready(page);
+
+      const crossings = await page.evaluate(() => {
+        // Same Liang-Barsky clip test as index.html's rectIntersectsSegment, computed
+        // independently against the real, rendered DOM rather than by calling back into the
+        // page's own implementation.
+        function intersects(rect, x1, y1, x2, y2) {
+          const dx = x2 - x1, dy = y2 - y1;
+          const p = [-dx, dx, -dy, dy];
+          const q = [x1 - rect.x, rect.x + rect.w - x1, y1 - rect.y, rect.y + rect.h - y1];
+          let tMin = 0, tMax = 1;
+          for (let i = 0; i < 4; i += 1) {
+            if (p[i] === 0) { if (q[i] < 0) return false; continue; }
+            const t = q[i] / p[i];
+            if (p[i] < 0) { if (t > tMax) return false; if (t > tMin) tMin = t; }
+            else { if (t < tMin) return false; if (t < tMax) tMax = t; }
+          }
+          return tMin <= tMax;
+        }
+        const boxOf = (id) => {
+          const g = document.querySelector(`g.node[data-id="${id}"]`);
+          const [, x, y] = g.getAttribute('transform').match(/translate\(([-\d.]+),([-\d.]+)\)/).map(Number);
+          const rect = g.querySelector('rect.node-box');
+          return { x, y, w: parseFloat(rect.getAttribute('width')), h: parseFloat(rect.getAttribute('height')) };
+        };
+        const graph = window.__viewer.graph();
+        const bad = [];
+        for (const e of graph.edges) {
+          const line = document.querySelector(`g.edge[data-id="${e.id}"] path.edge-line`);
+          if (!line) continue;
+          const [, x1, y1, x2, y2] = line.getAttribute('d').match(/M([-\d.]+),([-\d.]+) L([-\d.]+),([-\d.]+)/).map(Number);
+          const ra = boxOf(e.from), rb = boxOf(e.to);
+          if (intersects(ra, x1, y1, x2, y2) || intersects(rb, x1, y1, x2, y2)) bad.push(e.id);
+        }
+        return bad;
+      });
+      assert.deepEqual(crossings, [], `edge(s) crossing a box in ${file}: ${crossings.join(', ')}`);
+    } finally {
+      await ctx.stop();
+    }
+  }
+});
+
+// ============================================================================================
+// The pre-slot face check only ever sees a face pair's *centres* — chooseFaces runs before any
+// bundle exists, so it has no way to know a face will end up carrying more than one arrow. Here,
+// source `s` has two outgoing arrows whose targets both sit up and to its left, so both take the
+// facing-sides candidate on s's left face; slotting then spreads that bundle's two members 9px
+// apart, and the one pushed toward the source's own vertical centre lands back inside the source
+// box the face check had just cleared it against. render()'s post-slot recheck (see the comment
+// above the loop that reads edgeAnchors right after the bundling loop) exists to catch exactly
+// this and reroute the offending edge to the same rectExit fallback a failed face search already
+// uses, rather than drawing the slotted line uncorrected.
+// ============================================================================================
+test('a departure slotted toward its own box is rerouted to the centre-to-centre fallback instead of crossing it', async ({ page }) => {
+  const ctx = await launchInline(faceGraph(
+    [faceNode('s', 0, 400), faceNode('t1', -600, 100), faceNode('t2', -192, 244)],
+    [faceEdge('s->t1', 's', 't1'), faceEdge('s->t2', 's', 't2')],
+  ));
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const s = await nodeBoxGeom(page, 's');
+    const t1 = await nodeBoxGeom(page, 't1');
+    const t2 = await nodeBoxGeom(page, 't2');
+    const g1 = await edgeGeom(page, 's->t1');
+    const g2 = await edgeGeom(page, 's->t2');
+
+    // Same Liang-Barsky clip test as index.html's rectIntersectsSegment, computed independently
+    // here (not by calling back into the page) — the same test the headline sweep above uses.
+    function intersects(rect, x1, y1, x2, y2) {
+      const dx = x2 - x1, dy = y2 - y1;
+      const p = [-dx, dx, -dy, dy];
+      const q = [x1 - rect.x, rect.x + rect.w - x1, y1 - rect.y, rect.y + rect.h - y1];
+      let tMin = 0, tMax = 1;
+      for (let i = 0; i < 4; i += 1) {
+        if (p[i] === 0) { if (q[i] < 0) return false; continue; }
+        const t = q[i] / p[i];
+        if (p[i] < 0) { if (t > tMax) return false; if (t > tMin) tMin = t; }
+        else { if (t < tMin) return false; if (t < tMax) tMax = t; }
+      }
+      return tMin <= tMax;
+    }
+
+    assert.ok(!intersects(s, g1.x1, g1.y1, g1.x2, g1.y2), 's->t1 crosses the source box');
+    assert.ok(!intersects(t1, g1.x1, g1.y1, g1.x2, g1.y2), 's->t1 crosses its target box');
+    assert.ok(!intersects(s, g2.x1, g2.y1, g2.x2, g2.y2), 's->t2 crosses the source box');
+    assert.ok(!intersects(t2, g2.x1, g2.y1, g2.x2, g2.y2), 's->t2 crosses its target box');
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// Two edges sharing the same `from` and `to` are duplicates, not a reciprocal pair (there is no
+// edge running the other way), so they take the same face pair — bottom-to-top, both boxes on the
+// same x here — and are told apart only by phase 2's slotting. Adjacent slots, not distinct faces:
+// the edge-id tie-break in the sort is what keeps two edges between the same pair of boxes from
+// landing on the same point.
+// ============================================================================================
+test("two arrows sharing a from and to land on adjacent, distinct slots at both ends", async ({ page }) => {
+  const ctx = await launchInline(faceGraph(
+    [faceNode('a', 0, 0), faceNode('b', 0, 140)],
+    [faceEdge('a->b1', 'a', 'b'), faceEdge('a->b2', 'a', 'b')],
+  ));
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const g1 = await edgeGeom(page, 'a->b1');
+    const g2 = await edgeGeom(page, 'a->b2');
+
+    assert.notEqual(g1.x1, g2.x1, 'the two departures from a must land on distinct slots');
+    assert.notEqual(g1.x2, g2.x2, 'the two arrivals at b must land on distinct slots');
+    // EDGE_FAN_OUT (18) at a, where both ends are departures; EDGE_FAN_IN (32) at b, where both
+    // ends are arrivals — an arrowhead needs more room than a bare departure does.
+    assert.equal(Math.abs(g1.x1 - g2.x1), 18, 'expected the departure pitch (EDGE_FAN_OUT)');
+    assert.equal(Math.abs(g1.x2 - g2.x2), 32, 'expected the arrival pitch (EDGE_FAN_IN)');
+    assert.equal(g1.y1, g2.y1, 'both departures stay on the same face, at the same height');
+    assert.equal(g1.y2, g2.y2, 'both arrivals stay on the same face, at the same height');
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// The case the deleted perpendicular fan handled worst: two boxes whose rectangles overlap
+// outright (a: (0,0)-(200,74), b: (0,-40)-(200,34) — equal x, overlapping y). The fan shifted both
+// endpoints perpendicular to a centre-to-centre line that, for an equal-x pair, ran straight
+// through both boxes to begin with. Face choice + slotting replaces it: the same-flank pair
+// (right-right) clears both boxes because its anchors sit outside their shared right edge, and the
+// two duplicate edges still land on distinct, non-fanned slots there.
+// ============================================================================================
+test('two arrows between boxes whose rectangles overlap land on distinct slots, with no perpendicular fan', async ({ page }) => {
+  const ctx = await launchInline(faceGraph(
+    [faceNode('a', 0, 0), faceNode('b', 0, -40)],
+    [faceEdge('a->b1', 'a', 'b'), faceEdge('a->b2', 'a', 'b')],
+  ));
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const g1 = await edgeGeom(page, 'a->b1');
+    const g2 = await edgeGeom(page, 'a->b2');
+    const a = await nodeBoxGeom(page, 'a');
+    const b = await nodeBoxGeom(page, 'b');
+
+    // No perpendicular fan: every anchor sits exactly on the shared right face (x = box right
+    // edge + 4), never off it at an angle — the fan's own failure mode on an equal-x pair.
+    const rightFace = a.x + a.w + 4;
+    assert.equal(rightFace, b.x + b.w + 4, 'the two boxes share a right edge in this fixture');
+    for (const [label, v] of [['g1.x1', g1.x1], ['g1.x2', g1.x2], ['g2.x1', g2.x1], ['g2.x2', g2.x2]]) {
+      assert.equal(v, rightFace, `expected ${label} on the shared right face, got ${v}`);
+    }
+    assert.notEqual(g1.y1, g2.y1, 'the two departures from a must land on distinct slots');
+    assert.notEqual(g1.y2, g2.y2, 'the two arrivals at b must land on distinct slots');
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// Two more shapes that are not a step forward: p->q sits on one row (a same-row pair, not
+// reciprocal), and r->s runs from below back up to a box further along (an upward arrow). Neither
+// satisfies the bottom-to-top forward test, so both fall through to the facing sides.
+// ============================================================================================
+test('a same-row arrow and an upward arrow both use side faces', async ({ page }) => {
+  const ctx = await launchInline(faceGraph(
+    [faceNode('p', 0, 0), faceNode('q', 400, 0), faceNode('r', 0, 300), faceNode('s', 600, 0)],
+    [faceEdge('p->q', 'p', 'q'), faceEdge('r->s', 'r', 's')],
+  ));
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    for (const [id, from, to] of [['p->q', 'p', 'q'], ['r->s', 'r', 's']]) {
+      const { x1, y1, x2, y2 } = await edgeGeom(page, id);
+      const a = await nodeBoxGeom(page, from);
+      const b = await nodeBoxGeom(page, to);
+      assert.equal(y1, a.y + a.h / 2, `${id}: expected the source anchor on its vertical centre — a side face`);
+      assert.equal(y2, b.y + b.h / 2, `${id}: expected the target anchor on its vertical centre — a side face`);
+      assert.ok(x1 === a.x - 4 || x1 === a.x + a.w + 4, `${id}: expected the source anchor on a left or right face`);
+      assert.ok(x2 === b.x - 4 || x2 === b.x + b.w + 4, `${id}: expected the target anchor on a left or right face`);
+    }
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// Three departures from one box's bottom face, to three targets spread left, centre and right on
+// the row below. Bundled and ordered by each target's own centre x, so the anchor nearest the
+// left-hand target sits left of centre, and the one nearest the right-hand target sits right of
+// it — at the fan-out pitch (18), since none of these three ends is an arrival.
+// ============================================================================================
+test('a bundle of three arrows on one face gets three distinct anchors at the right pitch, in the right order', async ({ page }) => {
+  const ctx = await launchInline(faceGraph(
+    [faceNode('src', 400, 0), faceNode('t1', 0, 300), faceNode('t2', 400, 300), faceNode('t3', 800, 300)],
+    [faceEdge('src->t1', 'src', 't1'), faceEdge('src->t2', 'src', 't2'), faceEdge('src->t3', 'src', 't3')],
+  ));
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const src = await nodeBoxGeom(page, 'src');
+    const centre = src.x + src.w / 2;
+    const g1 = await edgeGeom(page, 'src->t1');
+    const g2 = await edgeGeom(page, 'src->t2');
+    const g3 = await edgeGeom(page, 'src->t3');
+
+    assert.equal(g1.y1, src.y + src.h + 4);
+    assert.equal(g2.y1, src.y + src.h + 4);
+    assert.equal(g3.y1, src.y + src.h + 4);
+    assert.equal(g1.x1, centre - 18, "t1 is leftmost, so src->t1 takes the leftmost slot");
+    assert.equal(g2.x1, centre, "t2 sits under src's own centre, so src->t2 takes the middle slot");
+    assert.equal(g3.x1, centre + 18, "t3 is rightmost, so src->t3 takes the rightmost slot");
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// One correction to an earlier draft of the plan, already adjudicated: Decision 34 replaced the
+// per-orientation rule with the preference list above and supersedes Decision 18, so a vertically
+// stacked reciprocal pair no longer runs "down opposite flanks" — a->b still takes the forward
+// bottom-to-top pair (nothing about being part of a reciprocal pair changes candidate 1, only the
+// order of candidates 2 and 3), and only b->a, which fails the forward test, falls to the
+// same-flank preference reciprocal pairs get and lands on the right. What the test actually
+// guards is non-collinearity: two arrows between the same pair of boxes must never draw the one
+// double-headed line the deleted perpendicular fan used to prevent by a different, now-removed
+// mechanism.
+// ============================================================================================
+test('a vertically stacked reciprocal pair is drawn on two separate, non-collinear geometries', async ({ page }) => {
+  const ctx = await launchInline(faceGraph(
+    [faceNode('a', 460, 0), faceNode('b', 460, 140)],
+    [faceEdge('a->b', 'a', 'b'), faceEdge('b->a', 'b', 'a')],
+  ));
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const ab = await edgeGeom(page, 'a->b');
+    const ba = await edgeGeom(page, 'b->a');
+
+    assert.deepEqual(ab, { x1: 560, y1: 78, x2: 560, y2: 136 }, 'a->b: bottom-to-top, down the middle');
+    assert.deepEqual(ba, { x1: 664, y1: 177, x2: 664, y2: 37 }, 'b->a: the same-flank preference a reciprocal pair gets, up the right');
+
+    // Non-collinear: the four points cannot all lie on one line, which is the substantive
+    // guarantee this test exists for (see the comment above on why "opposite flanks" no longer
+    // holds literally).
+    const cross = (ba.x1 - ab.x1) * (ab.y2 - ab.y1) - (ba.y1 - ab.y1) * (ab.x2 - ab.x1);
+    assert.notEqual(cross, 0, 'expected b->a to fall off a->b\'s own line, not run parallel to or along it');
+    assert.notEqual(ab.x1, ba.x1, 'the two arrows must not share a vertical geometry either');
   } finally {
     await ctx.stop();
   }
