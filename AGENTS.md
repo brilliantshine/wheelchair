@@ -55,6 +55,7 @@ Two rules follow, and between them they cover most of what can go wrong here:
 | File | Role |
 |---|---|
 | `README.md` | What this workflow is and how to drive it, for a person arriving cold |
+| `CONTRIBUTING.md` | The conventions, source-of-truth boundaries, and validation commands for someone changing this repository |
 | `install.sh` | Renders each present harness's wrappers, substituting this clone's path for `{{WHEELCHAIR_ROOT}}`, installs the viewer's dependencies, and — last, and warning rather than failing if it refuses — calls `sensitivity/set.sh` to render the dial's region into each present global instruction file. Those files are **outside this tree**, and the region between the markers is overwritten. Idempotent, and it **globs** `skills/*/` and `codex/prompts/*.md`, so adding a command needs no edit here |
 | `.gitignore` | `node_modules/`, `graphify-out/`, and the two scratch paths the viewer's suites write, `viewer/test/.tmp/` and `test-results/`. `graphify-out/` is what lets a root router claim a graph cannot carry a contract |
 
