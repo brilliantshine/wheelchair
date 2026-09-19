@@ -27,24 +27,18 @@ resumed later:
 
 ```bash
 BRIEF=$(mktemp) OUT=$(mktemp) LOG=$(mktemp)
-SLOT=~/.bravo/codex-auth-balancer/accounts/1
 # ... write the brief to $BRIEF ...
-if [ -d "$SLOT" ]; then
-  CODEX=(env CODEX_HOME="$SLOT" codex)
-else
-  CODEX=(codex)  # leave CODEX_HOME unset; an existing user setting remains theirs
-fi
-"${CODEX[@]}" exec -m gpt-5.6-sol -c model_reasoning_effort=high \
+codex exec -m gpt-5.6-sol -c model_reasoning_effort=high \
   -s read-only -C "$PWD" --json -o "$OUT" - < "$BRIEF" > "$LOG" 2>&1
 RC=$?
 TID=$(grep -m1 -o '"thread_id":"[^"]*"' "$LOG" | cut -d'"' -f4)
 cat "$OUT"   # the report — parse this, not the event stream
 ```
 
-When the slot exists, `CODEX_HOME` points at that directory. When it does not, this invocation
-does not set it: `codex` uses its ordinary login, or an existing user setting remains theirs.
-See "Credentials — balancer setup" below. The explicit
-`-c model_reasoning_effort=high` belongs on every GPT lane in either configuration.
+`CODEX_HOME` stays unset: lanes share the user's ordinary codex login, and an existing user
+setting remains theirs. Before the first GPT dispatch of a session, run the preflight — see
+"Credentials — single account" below. The explicit
+`-c model_reasoning_effort=high` belongs on every GPT lane.
 
 `RC` and `TID` both matter: a non-zero `RC` means the lane died and `$OUT` may be empty
 or truncated, and `TID` is the only handle for resuming it. Record the thread id in the
@@ -65,11 +59,11 @@ plan doc next to the task it ran.
   - `gpt-5.6-sol` — judgment lanes (planning, plan review, verification). It reaches
     implementation only as an escalation ("Escalate the model only on evidence" below).
 
-  Reasoning effort **does** need a flag at dispatch. The balancer slot has a `config.toml` for
-  project trust levels, but no `model_reasoning_effort`, so a lane using it would otherwise fall
-  back to the model's default while appearing to work. An ordinary `~/.codex/config.toml`
-  already sets `model_reasoning_effort = "high"`; passing the same flag there is correct and
-  costs nothing. Pass `-c model_reasoning_effort=high` on every lane. High is the floor, not
+  Reasoning effort **does** need a flag at dispatch. `~/.codex/config.toml` may set
+  `model_reasoning_effort = "high"`, but a lane must not depend on that being true on a given
+  machine — a missing setting falls back to the model's default while appearing to work.
+  Passing the flag where the config already agrees costs nothing.
+  Pass `-c model_reasoning_effort=high` on every lane. High is the floor, not
   the ceiling —
   `-c model_reasoning_effort=xhigh` is the escalation rung below a tier change, and 5.6
   `xhigh` is genuine wire-level xhigh (verified). Anything *below* high is a downgrade;
@@ -96,13 +90,7 @@ Run lanes in a **background** Bash call so a foreground timeout can't kill them.
 **Continuation** — the remediation and closure-review path:
 
 ```bash
-SLOT=~/.bravo/codex-auth-balancer/accounts/1
-if [ -d "$SLOT" ]; then
-  CODEX=(env CODEX_HOME="$SLOT" codex)
-else
-  CODEX=(codex)  # leave CODEX_HOME unset; an existing user setting remains theirs
-fi
-"${CODEX[@]}" exec resume "$TID" -m "$MODEL" -c model_reasoning_effort=high \
+codex exec resume "$TID" -m "$MODEL" -c model_reasoning_effort=high \
   -c sandbox_workspace_write.network_access=true \
   -o "$OUT2" "<follow-up>"
 ```
@@ -197,36 +185,42 @@ documents, not this one, say what follows from an authentication report.
 - **Judge GPT output by evidence, not prose.** Sol reads polished regardless of depth —
   parse the `SEVERITY`/`GAP` lines and the pasted evidence, ignore the fluency.
 
-## Credentials — balancer setup
+## Credentials — single account
 
-This section describes a machine using the credential balancer. Its slot is a directory holding
-the live `auth.json`; pointing `CODEX_HOME` at it gives a lane that directory, not any of the
-balancer's machinery. Raw `codex exec` never calls `prepareLaunch`, never takes a lease, and
-never calls `syncBack`. The rule is to point at whichever `auth.json` is live; the slot is where
-that file lives on this machine.
+There is **one** ChatGPT account, its refresh token is single-use — spending it mints a
+replacement and voids the one spent — and `codex exec` takes no lock on `auth.json`. codex
+refreshes only when a request comes back 401 after the access token expires (verified against
+the retired balancer's design notes: access tokens live ~10 days and codex has no proactive
+refresh). So the race is not "two lanes at once"; it is "two lanes at once **while the token
+is expired**" — both spend the same refresh token, the loser writes back a dead credential,
+and the account bricks. A copy of a credential is not a second credential — it is a second
+claim on a one-shot ticket — so per-lane copies of `auth.json` make this worse, never better.
 
-There is **one** ChatGPT account and its refresh token is single-use: spending it mints a
-replacement and voids the one spent. A copy of a credential is therefore not a second
-credential — it is a second claim on a one-shot ticket, and whichever copy refreshes first
-leaves every other copy holding a stub.
+Concurrency is safe exactly when no lane can cross the expiry boundary mid-run. The preflight
+makes that true at dispatch:
 
-- **Point `CODEX_HOME` at the balancer's slot directory** —
-  `~/.bravo/codex-auth-balancer/accounts/<n>` — so any refresh happens in place, in the
-  canonical file. This is what `bravo-pi-mono/docs/specs/codex-auth-balancer/design.md:34`
-  prescribes for headless use.
-- **Never copy an auth directory or an `auth.json`.** The balancer's own source calls the
-  copied-credential path opt-in legacy and documents the failure: a child that rotates the
-  refresh token leaves canonical holding a consumed one, which bricks on its next refresh. Its
-  mitigation is failover to another slot. With one account there is nothing to fail over to.
-- **Don't use `~/.codex` for lanes.** It is a separate store outside the balancer's sync, so its
-  token is spent the moment the slot refreshes. Running `codex login` to fix it rotates the
-  account away from the slot and breaks every Pi lane instead — the two stores ping-pong, one
-  dead at a time.
-- **Sequence GPT lanes; do not run them concurrently.** They share one `auth.json`, and a raw
-  `codex exec` takes no lock on it, whether the file sits in the balancer's slot or in
-  `~/.codex`.
-- If a token genuinely is revoked, recover headlessly: `CODEX_HOME=<slotDir> codex exec
-  --skip-git-repo-check "say ok"` forces a refresh while the refresh token is still live
-  (`codex login status` does not refresh), and only if that reports revoked,
-  `CODEX_HOME=<slotDir> codex login --device-auth`. The browser flow runs `codex logout` first
-  and cannot complete headlessly, so a failed attempt leaves the slot strictly worse off.
+```bash
+<wheelchair-root>/codex/preflight.sh
+```
+
+Under a lock it reads the token's remaining life; with more than the margin left (24h by
+default — it only needs to exceed the longest lane) it does nothing, otherwise it performs the
+refresh itself, one process, persisted atomically before the lock releases. Run it **before
+the first GPT dispatch of a session and before any parallel fan-out**. Its exit code is the
+dispatch rule:
+
+- `0` — fan out freely.
+- `1` — transient refresh failure (network, 5xx). **Sequence GPT lanes this session**; the
+  token may expire mid-session and sequencing is the only thing that makes a mid-run refresh
+  single-spender.
+- `2` — the refresh token itself was rejected. No lane will authenticate; stop and report.
+  Recovery is `codex login --device-auth` headlessly, or the browser flow at a desk. (The
+  browser flow runs `codex logout` first and cannot complete over SSH, so a failed attempt
+  leaves things strictly worse off.)
+
+Never copy `auth.json` or an auth directory to give a lane "its own" credential, and never run
+`codex login` while lanes are in flight — both are second claims on the one-shot ticket.
+
+The preflight's own refresh exchange (near-expiry branch) is ported from the retired
+balancer's `codex-oauth.ts` but has not yet been exercised against a live near-expiry token;
+its fresh-token, missing-auth, and rejected-token branches are verified.
