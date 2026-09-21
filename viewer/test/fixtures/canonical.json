@@ -16,8 +16,8 @@
       "ref": "docs/plan.md",
       "note": "Choose a branch.",
       "graph": null,
-      "x": 240,
-      "y": 140
+      "x": 130,
+      "y": 280
     },
     {
       "id": "finish",
@@ -29,8 +29,8 @@
       "ref": null,
       "note": null,
       "graph": null,
-      "x": 720,
-      "y": 280
+      "x": 130,
+      "y": 560
     },
     {
       "id": "gather",
@@ -42,7 +42,7 @@
       "ref": null,
       "note": null,
       "graph": null,
-      "x": 0,
+      "x": 130,
       "y": 0
     },
     {
@@ -55,8 +55,8 @@
       "ref": null,
       "note": null,
       "graph": null,
-      "x": 240,
-      "y": 0
+      "x": 130,
+      "y": 140
     },
     {
       "id": "report",
@@ -68,8 +68,8 @@
       "ref": null,
       "note": null,
       "graph": null,
-      "x": 480,
-      "y": 140
+      "x": 0,
+      "y": 420
     },
     {
       "id": "store",
@@ -81,8 +81,8 @@
       "ref": null,
       "note": null,
       "graph": null,
-      "x": 480,
-      "y": 0
+      "x": 260,
+      "y": 420
     },
     {
       "id": "timeline",
@@ -94,8 +94,8 @@
       "ref": null,
       "note": null,
       "graph": "timeline",
-      "x": 0,
-      "y": 140
+      "x": 720,
+      "y": 0
     }
   ],
   "edges": [

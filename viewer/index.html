@@ -243,9 +243,9 @@
   const MIN_DRAW = 12;
   // The one place this number is written. All three call sites that wrap a label read it from
   // here rather than carrying their own literal, because a box's tallest possible height has to
-  // stay under the row pitch the server lays graphs out at (LAYER_GAP, viewer/server.js) — three
-  // independent copies of the same number could drift from each other and from that pitch with
-  // nothing to catch it.
+  // stay under GROUP_NODE_H (viewer/server.js), which is what the server reserves for it — three
+  // independent copies of the same number could drift from each other and from that reservation
+  // with nothing to catch it.
   const NODE_LABEL_MAX_LINES = 5;
   const MIN_ZOOM = 0.3, MAX_ZOOM = 2.5;
   const POLL_MS = 1000;
@@ -255,8 +255,8 @@
   // both sides; a link this doesn't match is left as literal text, never a dead marked phrase.
   const GROUP_REFERENCE_RE = /\[([^\[\]]+)\]\(#([a-z0-9_-]+)\)/g;
   // Copied from protocol/graphs.md, same idiom as GROUP_REFERENCE_RE above and
-  // NODE_LABEL_MAX_LINES: viewer/server.js holds the other copy of these two numbers (and its own
-  // GROUP_GAP, which the page never uses), and the two files share no module to hold them once.
+  // NODE_LABEL_MAX_LINES: viewer/server.js holds the other copy of these two numbers, and the two
+  // files share no module to hold them once.
   const GROUP_PAD = 24;    // clearance on the left, right and bottom
   const GROUP_HEADER = 38; // extra clearance above, holding the name and the note line
 
@@ -647,21 +647,17 @@
     });
   }
 
-  // Fits the whole graph inside the current viewport, with a margin, and
-  // centres it — a person should not have to pan before they can read it. Caps
-  // at 1x rather than magnifying small graphs to fill empty space: the fix for
-  // "jammed at the edge with room to spare" is centring, not enlarging.
+  // Opens the graph at normal size — never shrunk to fit — bounded against every node plus every
+  // visible group's rectangle (the pad, and the header above, can run past the members' own
+  // bounds), so a header sitting at the edge of the picture is never clipped. The choice is per
+  // axis, not one decision for the whole picture: an axis on which the content fits the canvas
+  // within the margin is centred, exactly as it always has been; an axis on which it does not is
+  // anchored at the start of the content, one margin in. Nothing here scales — see
+  // centreGroupIfNeeded above, which this reuses the same "translate, never scale" idea from.
   function fitToView() {
     if (!graph || !graph.nodes.length) { view = { x: 0, y: 0, k: 1 }; return; }
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const n of graph.nodes) {
-      const h = nodeHeight(n);
-      minX = Math.min(minX, n.x); minY = Math.min(minY, n.y);
-      maxX = Math.max(maxX, n.x + NODE_W); maxY = Math.max(maxY, n.y + h);
-    }
-    // A visible group's box can run past its members' own bounds on every side (the pad, and the
-    // header above), so a graph opening at fit has to be bounded against the box, not just what it
-    // encloses, or the fitted view clips a header sitting right at the edge of the picture.
+    const bounds = nodesBoundingBox(graph.nodes.map((n) => n.id));
+    let minX = bounds.x, minY = bounds.y, maxX = bounds.x + bounds.w, maxY = bounds.y + bounds.h;
     for (const group of graph.groups) {
       if (group.visible !== true) continue;
       const box = visibleGroupBox(group);
@@ -672,11 +668,11 @@
     const margin = 60;
     const availW = Math.max(100, svg.clientWidth - margin * 2);
     const availH = Math.max(100, svg.clientHeight - margin * 2);
-    const contentW = Math.max(1, maxX - minX), contentH = Math.max(1, maxY - minY);
-    const fit = Math.min(availW / contentW, availH / contentH);
-    const k = Math.max(MIN_ZOOM, Math.min(1, fit));
-    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
-    view = { k, x: svg.clientWidth / 2 - cx * k, y: svg.clientHeight / 2 - cy * k };
+    view = {
+      k: 1,
+      x: maxX - minX <= availW ? svg.clientWidth / 2 - (minX + maxX) / 2 : margin - minX,
+      y: maxY - minY <= availH ? svg.clientHeight / 2 - (minY + maxY) / 2 : margin - minY,
+    };
   }
 
   // ---- navigation ------------------------------------------------------------------

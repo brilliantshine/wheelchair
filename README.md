@@ -29,7 +29,9 @@ agent draws it and opens it — and says what it's showing you, in the panel abo
 ![The viewer: an explanation panel above a flow with approved, unruled and struck entries](docs/viewer.png)
 
 You drag the boxes until it reads, then **approve or strike in bulk** — select a region, one
-gesture. Green is approved, dashed red struck, grey not yet ruled on. The next agent turn reads
+gesture. A drag lasts until the next agent write, which lays the whole picture out again: the
+layout is meant to be right without your help, and dragging is how you fix what it got wrong
+in the meantime. Your verdicts are the durable thing, not your arrangement. Green is approved, dashed red struck, grey not yet ruled on. The next agent turn reads
 your verdicts before it asks its next question, and at the end of planning the spec has to account
 in prose for everything you struck. The panel is the agent's, not yours: it says what the picture
 shows, what to look at, and what it leaves out, and it gets rewritten every redraw — one click

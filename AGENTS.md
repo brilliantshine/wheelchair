@@ -104,7 +104,7 @@ The glob on the `node --test` line is required, not decorative: on Node 26.7.0, 
 
 **Never check the viewer by starting a server by hand.** A `--open` or `--show` start
 reuses whatever already holds the lock under the default cache root
-(`viewer/server.js:1092`), and that process runs the code it was launched with — which,
+(`viewer/server.js:1367`), and that process runs the code it was launched with — which,
 after any edit of yours, is not yours. Canonicalization drops unknown keys by design
 (`:119`), so a write carrying a field the running build predates comes back `200` with
 the field gone: the check looks like it ran and quietly disagrees with the code you just
