@@ -13,10 +13,12 @@ ruled on.
 ## What a graph is, and isn't
 
 Disposable. Each graph answers one question or carries one proposed flow inside a
-plan, and it exists for the life of that plan or that question, not longer. Its job is
-to hold node positions: Collin drags boxes around until the picture reads, and a graph
-is what lets that arrangement survive past the turn it was drawn in. Nothing else needs
-it to survive.
+plan, and it exists for the life of that plan or that question, not longer. It does not
+exist to carry an arrangement across turns: it holds whatever positions the layout most
+recently chose, plus anything a drag has set on top of them since. Dragging still works,
+and a dragged position still survives a page reload and the viewer's own one-second
+refresh. What it does not survive is the next agent write — a redraw lays the picture out
+fresh and replaces every position, dragged or not.
 
 No agent reads a graph to learn how the system works, and none is written expecting to
 still be true a month later. When a graph goes stale — the flow it describes has moved
@@ -164,6 +166,15 @@ Field by field:
   anonymous. A group whose name needs no sentence is a group whose members probably did
   not need drawing round.
 
+  Drawing a group costs something in how its insides get laid out, and it is worth
+  weighing against a container node (see "Choosing a group or a container node" below)
+  before reaching for one. Which *row* a member sits on is decided by the group's own
+  arrows alone, never by anything outside it. An arrow reaching in from outside the
+  group meets the rectangle, not the member it actually points at. And a box that is not
+  a member, but sits on a path between two that are, turns into an arrow pointing
+  backwards into the group once the group collapses to one box for the rest of the
+  picture — it still renders, the same as any other loop.
+
   Two visible groups may never name the same node. This also settles nesting: a group
   nested inside another shares every one of its members, so it trips the same check.
   Invisible groups carry none of this — they overlap each other and any visible group
@@ -199,7 +210,6 @@ Field by field:
   ```
   GROUP_PAD    = 24    // clearance on the left, right and bottom
   GROUP_HEADER = 38    // extra clearance above, holding the name and the note line
-  GROUP_GAP    = 16    // a moved unit lands exactly this far past the rectangle that bound it
   ```
 
   For a visible group whose members are `M`:
@@ -214,9 +224,10 @@ Field by field:
   ```
 
   The page measures each node's real height; the server holds every node to a fixed
-  200-by-116 box regardless. The server's box is therefore never smaller than the page's,
-  only ever taller — the disagreement can only push something further clear of a
-  boundary, never leave it inside one.
+  200-by-116 box regardless, and that fixed height now sets how tall a row of boxes is
+  laid out as well as a group's rectangle. Either way the server's box is never smaller
+  than the page's, only ever taller — the disagreement can only add clearance somewhere,
+  never leave a box crowded or inside a boundary that should clear it.
 
   See "What the server refuses" below for what an entry that's missing, malformed,
   unreferenced, or drawn wrong draws.
@@ -328,13 +339,15 @@ not a valid edge.
 
 **On the wire, an agent omits `x` and `y` entirely** — not sends them as `null`, leaves
 the keys out of the object. The every-key rule above governs the canonical file on
-disk; it says nothing about what you send. The server keeps the position it already has
-on disk for any id it recognizes, and lays out any id it doesn't: a retry arrow back to
-a gate is turned around so every arrow can point down the page, each box goes one row
-below its deepest parent, rows are ordered to cross as few arrows as they can, and each
-box then slides toward the middle of whatever it connects to. Pieces of the graph that
-share no arrow are laid out separately and set side by side, since stacking them would
-read as a flow that isn't there.
+disk; it says nothing about what you send. Every write lays the whole graph out fresh,
+whether the file existed before or not — nothing already on disk is kept. A group with
+`visible: true` is laid out first, from its own members and the arrows between them
+alone, and stands in as one box for what follows; every ungrouped box is itself. Over
+that picture of boxes: a retry arrow back to a gate is turned around so every arrow can
+point down the page, each box goes one row below its deepest parent, rows are ordered to
+cross as few arrows as they can, and each box then slides toward the middle of whatever
+it connects to. Pieces of the graph that share no arrow are laid out separately and set
+side by side, since stacking them would read as a flow that isn't there.
 
 Where an arrow meets a box follows from that, and it is the page's decision rather than
 the server's. An arrow carrying the flow forward leaves the bottom edge of its box and
@@ -348,9 +361,11 @@ fans out from one edge. The line is always straight — the format has no bent a
 an arrow from a box back to itself is refused (`self-edge`) rather than drawn, because a
 repetition belongs in the box's own label.
 
-Positions are Collin's to set by dragging; sending them at all would be asserting a value
-you have no authority over, even though the server will simply discard whatever you send
-in favor of disk.
+An agent still never sends `x`/`y`, and the reason is no longer that a position is
+someone else's to set. It is that nobody's position survives a write: the layout decides
+every one of them on the way to disk, so a position you send is discarded along with the
+dragged one it lands beside. Dragging is how Collin fixes what the layout got wrong,
+between one write and the next, and that is the whole of its authority now.
 
 ## Where a graph's content comes from
 

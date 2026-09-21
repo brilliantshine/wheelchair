@@ -1,0 +1,299 @@
+{
+  "schema": 1,
+  "title": "what to do when a box outside a group falls between two boxes inside it",
+  "source": "plan-proposal",
+  "source_detail": "Q3 of docs/plans/groups-in-the-layout/PLAN.md, plus a count over every graph file under docs/plans and ~/.cache/agent-graphs",
+  "explanation": "Collapsing a group into one unit can turn a straight chain into a loop, and that is a new failure mode this design introduces rather than one it inherits. [Letting it render](#let-it-render) leans on the loop breaker the layout already has and draws one arrow running backwards through the boundary. [Refusing the write](#refuse-the-write) makes the agent fix its group before anything is drawn, at the cost of rejecting a graph that is otherwise legal. The count is the thing to look at: this is not a corner case.",
+  "groups": [
+    {
+      "id": "let-it-render",
+      "label": "let it render",
+      "note": "The recommendation. Uses machinery the layout already has.",
+      "visible": true,
+      "nodes": [
+        "accept",
+        "breaker",
+        "confusing",
+        "honest"
+      ]
+    },
+    {
+      "id": "refuse-the-write",
+      "label": "refuse the write",
+      "note": "Makes the agent redraw its group, and rejects a legal graph to do it.",
+      "visible": true,
+      "nodes": [
+        "punishes",
+        "refuse",
+        "teaches"
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "accept",
+      "label": "let the picture be drawn anyway",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 0,
+      "y": 525
+    },
+    {
+      "id": "breaker",
+      "label": "the loop breaker the layout already has turns one of the two arrows around instead of dropping it",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": "viewer/server.js",
+      "note": "breakCycles",
+      "graph": null,
+      "x": 260,
+      "y": 525
+    },
+    {
+      "id": "claim",
+      "label": "an agent draws a group holding two steps, with a step that is not a member standing between them in the flow",
+      "kind": "external",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 465,
+      "y": 0
+    },
+    {
+      "id": "collapse",
+      "label": "the group becomes one unit, so both of those arrows become arrows between the unit and the box between them",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 325,
+      "y": 140
+    },
+    {
+      "id": "confusing",
+      "label": "but the reader watches a chain leave the box and come back into it, with one arrow pointing the wrong way",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 0,
+      "y": 665
+    },
+    {
+      "id": "counted",
+      "label": "measured on this machine: 4 of the 49 drawn groups across 94 graph files have a non-member cutting through them this way",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 606,
+      "y": 140
+    },
+    {
+      "id": "honest",
+      "label": "the result is an honest rendering of a group the agent drew badly, and nothing is hidden",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 260,
+      "y": 665
+    },
+    {
+      "id": "loop",
+      "label": "which is a loop — the unit feeds that box and that box feeds the unit back",
+      "kind": "decision",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": true,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 325,
+      "y": 280
+    },
+    {
+      "id": "punishes",
+      "label": "but the graph describes something real, and the honest fix may be a group the agent should not have to abandon",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 565,
+      "y": 443
+    },
+    {
+      "id": "refuse",
+      "label": "refuse the write, naming the group and the box caught between its members",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 825,
+      "y": 443
+    },
+    {
+      "id": "teaches",
+      "label": "the agent has to fix the group before any picture exists",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 565,
+      "y": 583
+    }
+  ],
+  "edges": [
+    {
+      "id": "accept-breaker",
+      "from": "accept",
+      "to": "breaker",
+      "label": "handled by",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "breaker-confusing",
+      "from": "breaker",
+      "to": "confusing",
+      "label": "what it costs",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "breaker-honest",
+      "from": "breaker",
+      "to": "honest",
+      "label": "what it buys",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "claim-collapse",
+      "from": "claim",
+      "to": "collapse",
+      "label": "the chosen design then",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "claim-count",
+      "from": "claim",
+      "to": "counted",
+      "label": "how often this happens",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "collapse-loop",
+      "from": "collapse",
+      "to": "loop",
+      "label": "and that produces",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "loop-accept",
+      "from": "loop",
+      "to": "accept",
+      "label": "option one",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "loop-refuse",
+      "from": "loop",
+      "to": "refuse",
+      "label": "option two",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "refuse-punishes",
+      "from": "refuse",
+      "to": "punishes",
+      "label": "what it costs",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "refuse-teaches",
+      "from": "refuse",
+      "to": "teaches",
+      "label": "what it buys",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    }
+  ]
+}

@@ -1,0 +1,333 @@
+{
+  "schema": 1,
+  "title": "how much of a graph should be visible the moment it opens",
+  "source": "plan-proposal",
+  "source_detail": "Q4 of docs/plans/groups-in-the-layout/PLAN.md — what replaces fitToView's shrink-everything-to-one-screen rule",
+  "explanation": "The page shrinks every graph to one screen when it opens, as far down as a third of normal size, and that is the cramming. [Never shrinking](#never-shrink) is the recommendation: a graph that already fits opens centred exactly as it does today, and one that does not opens readable with the rest reachable by panning. [Keeping a floor under the shrinking](#shrink-with-a-floor) rescues a graph that only just overflows and nothing larger, and [dropping the centring as well](#never-centre) buys one rule with no branch in it. Leaves out whether a control to fit everything on demand should replace what is being taken away — that is the last question.",
+  "groups": [
+    {
+      "id": "never-centre",
+      "label": "never shrink and never centre",
+      "note": "One rule with no branch in it, and a small graph pays for it.",
+      "visible": true,
+      "nodes": [
+        "corner",
+        "no-centring"
+      ]
+    },
+    {
+      "id": "never-shrink",
+      "label": "never shrink",
+      "note": "The recommendation. Keeps today's behaviour for anything that already fits.",
+      "visible": true,
+      "nodes": [
+        "full-size",
+        "readable-big",
+        "unchanged-small"
+      ]
+    },
+    {
+      "id": "shrink-with-a-floor",
+      "label": "shrink, but only so far",
+      "note": "Rescues a near miss, and only a near miss.",
+      "visible": true,
+      "nodes": [
+        "floor",
+        "near-miss",
+        "only-near-miss"
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "corner",
+      "label": "one rule with no branch to get wrong, but a small graph is jammed against an edge with room to spare — the complaint centring was added to fix",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 910,
+      "y": 630
+    },
+    {
+      "id": "cramming",
+      "label": "a large graph therefore opens with labels too small to read, even though panning and scrolling have worked since the first version",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 650,
+      "y": 280
+    },
+    {
+      "id": "floor",
+      "label": "shrink to fit as today, but never below about three-quarters of normal size",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 0,
+      "y": 583
+    },
+    {
+      "id": "full-size",
+      "label": "always normal size — centred when the picture fits the window, otherwise starting where the flow starts",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 520,
+      "y": 941
+    },
+    {
+      "id": "near-miss",
+      "label": "a graph that only just overflows stays whole and still readable",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 260,
+      "y": 583
+    },
+    {
+      "id": "no-centring",
+      "label": "always normal size and always start where the flow starts, whether the picture fits or not",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 1170,
+      "y": 630
+    },
+    {
+      "id": "only-near-miss",
+      "label": "but anything much larger overflows the window anyway once the floor bites, so the floor rescues only the near misses",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 0,
+      "y": 723
+    },
+    {
+      "id": "open",
+      "label": "a graph opens, either for the first time or by stepping into a child picture",
+      "kind": "external",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": "viewer/index.html",
+      "note": "loadGraph calls fitToView once per graph opened, never on the refresh that picks up a redraw",
+      "graph": null,
+      "x": 650,
+      "y": 0
+    },
+    {
+      "id": "pick",
+      "label": "what should it do instead?",
+      "kind": "decision",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": true,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 650,
+      "y": 420
+    },
+    {
+      "id": "readable-big",
+      "label": "a graph that does not fit opens readable and continues past the edge, which is what panning was built for",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 780,
+      "y": 941
+    },
+    {
+      "id": "today",
+      "label": "the page scales the whole picture to one screen, as far down as a third of normal size, then centres it",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": "viewer/index.html",
+      "note": "fitToView",
+      "graph": null,
+      "x": 650,
+      "y": 140
+    },
+    {
+      "id": "unchanged-small",
+      "label": "a graph that already fits opens exactly the way it does today",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 520,
+      "y": 1081
+    }
+  ],
+  "edges": [
+    {
+      "id": "cram-pick",
+      "from": "cramming",
+      "to": "pick",
+      "label": "so",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "floor-limit",
+      "from": "floor",
+      "to": "only-near-miss",
+      "label": "and how little that is",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "floor-near",
+      "from": "floor",
+      "to": "near-miss",
+      "label": "what it buys",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "full-big",
+      "from": "full-size",
+      "to": "readable-big",
+      "label": "for one that does not",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "full-small",
+      "from": "full-size",
+      "to": "unchanged-small",
+      "label": "for a graph that fits",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "nocentre-corner",
+      "from": "no-centring",
+      "to": "corner",
+      "label": "what it buys, and what it costs",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "open-today",
+      "from": "open",
+      "to": "today",
+      "label": "and today",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "pick-floor",
+      "from": "pick",
+      "to": "floor",
+      "label": "shrink, but only so far",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "pick-full",
+      "from": "pick",
+      "to": "full-size",
+      "label": "never shrink",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "pick-nocentre",
+      "from": "pick",
+      "to": "no-centring",
+      "label": "never shrink and never centre",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "today-cram",
+      "from": "today",
+      "to": "cramming",
+      "label": "with the result that",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    }
+  ]
+}

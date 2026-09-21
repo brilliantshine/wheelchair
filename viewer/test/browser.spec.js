@@ -47,10 +47,10 @@ async function launchInline(graphObj) {
   return startServer({ cacheRoot: root, open: graphPath });
 }
 
-// label-crowding.json has to land on a path with nothing on it yet: that is the one route where
-// the server lays a graph out itself (invents positions) rather than keeping ones already on disk,
-// which is the state the label-placement search runs against. Shared by every test below that
-// needs this fixture, so each gets its own fresh, isolated server the same way `launch` does.
+// label-crowding.json is written through PUT /graph, which lays every graph out fresh whether or
+// not a file already existed at that path (D5) — this is the layout state the label-placement
+// search below runs against. Shared by every test below that needs this fixture, so each gets its
+// own fresh, isolated server the same way `launch` does.
 async function launchLabelCrowding() {
   const root = await makeDir('browser-');
   const graphDir = path.join(root, 'graphs');
@@ -397,13 +397,17 @@ test('dragging a multi-node selection moves every member', async ({ page }) => {
 // freshly-polled (undragged) node — the visible drag never lands, while the agent's unrelated field
 // change (which the page's structural-identity check has to preserve verbatim) does. This is the
 // accepted risk in decision 117 / PLAN.md §13, asserted here rather than assumed.
+//
+// What "undragged" lands on has moved, not the property. Every PUT /graph now lays the whole graph
+// out fresh (D5), so the agent's write below carries 'a' off interactive.json's hand-written
+// (150,150) to wherever that layout puts it — that laid-out position, read straight off disk right
+// after the agent write, is what the drag has to fail to disturb, not the fixture's original one.
 // ============================================================================================
 test('a drag interrupted by an agent write mid-gesture loses the drag and keeps the agent write', async ({ page }) => {
   const ctx = await launch('interactive.json');
   try {
     await page.goto(pageUrl(ctx));
     await ready(page);
-    const before = entry(await pageGraph(page), 'a');
     const start = await center(nodeBox(page, 'a'));
 
     await page.mouse.move(start.x, start.y);
@@ -411,6 +415,7 @@ test('a drag interrupted by an agent write mid-gesture loses the drag and keeps 
     await page.mouse.move(start.x + 77, start.y + 33, { steps: 5 }); // dragState.moved = true
 
     await agentPut(ctx, (g) => { entry(g, 'b').note = 'agent wrote this mid-drag'; });
+    const laidOut = entry(await diskGraph(ctx), 'a');
 
     // Let the page's 1000ms poll pick up the new hash and swap `graph` out from under the drag,
     // with no further pointermove to reapply the offset onto the fresh object.
@@ -422,8 +427,8 @@ test('a drag interrupted by an agent write mid-gesture loses the drag and keeps 
     collector.stop();
 
     const onDisk = await diskGraph(ctx);
-    assert.equal(entry(onDisk, 'a').x, before.x, 'the drag did not land');
-    assert.equal(entry(onDisk, 'a').y, before.y, 'the drag did not land');
+    assert.equal(entry(onDisk, 'a').x, laidOut.x, 'the drag did not land');
+    assert.equal(entry(onDisk, 'a').y, laidOut.y, 'the drag did not land');
     assert.equal(entry(onDisk, 'b').note, 'agent wrote this mid-drag', "the agent's write survived");
   } finally {
     await ctx.stop();
@@ -913,8 +918,7 @@ test('a five-line box stays shorter than the server\'s row pitch', async ({ page
   const root = await makeDir('browser-');
   const graphDir = path.join(root, 'graphs');
   await fs.mkdir(graphDir, { recursive: true });
-  // PUT to a path with nothing on it yet: the one route where the server invents positions
-  // (lays the graph out) rather than keeping what's on disk.
+  // A fresh path; PUT /graph lays out whatever is written to it, same as any other write now (D5).
   const ctx = await startServer({ cacheRoot: root, open: path.join(graphDir, 'row-pitch.json') });
   try {
     const label = 'the installer renders one file this repo owns outright, and never symlinks a wrapper into either harness';
@@ -1506,10 +1510,10 @@ test('clicking a marked phrase selects exactly the group, approves it, and leave
 });
 
 // A minimal graph for the two G9 tests below: a single node far from a visible group's one
-// member, so fitToView zooms out to hold both and 15 zoom-in clicks (the same recipe the
-// off-screen centring test above uses) pushes the far member well outside a small canvas —
-// giving centreGroupIfNeeded's box argument somewhere real to matter. Built inline with
-// launchInline rather than a fixtures/ file: nothing else needs this shape, and every other test
+// member. The graph never opens shrunk (D11), so 'far' sits well outside a modest canvas from the
+// very first frame; 15 zoom-in clicks (the same recipe the off-screen centring test above uses)
+// push it further still — giving centreGroupIfNeeded's box argument somewhere real to matter.
+// Built inline with launchInline rather than a fixtures/ file: nothing else needs this shape, and every other test
 // against groups-visible.json would have its own geometry disturbed by an extra far-flung node
 // changing that fixture's default fit-to-view zoom.
 function farGroupGraph() {
@@ -1567,20 +1571,27 @@ test("clicking a visible group whose header would clear the canvas by only a lit
 
 // ============================================================================================
 // fitToView bounds itself against every visible group's box, not just node bounds (index.html,
-// fitToView, `:652-659`), so a graph opening at fit shows whole boundaries rather than clipping a
-// header sitting at the picture's edge. `far-group`'s member is the topmost thing in this graph,
-// so its header — 62 world units above the member (GROUP_PAD + GROUP_HEADER) — is the very top of
-// the content fitToView has to fit. Loaded fresh, with no click and no zoom: fitToView alone has
-// to get this right.
+// fitToView), so an opening view shows whole boundaries rather than clipping a header sitting at
+// the picture's edge — the header stays unclipped for the same reason it always has, even though
+// the graph no longer opens fitted (D11/D13): the scale is always 1, and this fixture overflows
+// vertically, so the opening view anchors at the top of the content rather than centring it (D18).
+// `far-group`'s member is the topmost thing in this graph, so its header — 62 world units above
+// the member (GROUP_PAD + GROUP_HEADER) — is the very top of the content the anchor has to
+// include. Loaded fresh, with no click and no zoom: fitToView alone has to get this right.
 //
 // The viewport and the member's y are tuned deliberately, not arbitrary: fitToView's own margin
-// is 60px, one world unit short of the header's 62-unit offset, so a correct fit always lands the
-// header at exactly +60 (see the comment on the assertion below) while dropping the group box
-// from the bound can clip it by at most 2px — a real gap, just a narrow one baked into how close
-// those two constants already sit, not something a wider fixture could open up further. The
-// numbers here put the node bbox's own fit just past 1:1 zoom so that ceiling is the one in play.
+// is 60px, one world unit short of the header's 62-unit offset, so a correct anchor always lands
+// the header at exactly +60 (see the assertion below) while dropping the group box from the bound
+// clips it by up to 2px — a real gap, just a narrow one baked into how close those two constants
+// already sit, not something a wider fixture could open up further.
+//
+// The assertion pins that exact offset rather than just checking the header is on-screen: an
+// implementation that centred the vertical axis instead of anchoring it would still clear the
+// canvas top here (it would land lower, further from clipping, not closer), so an on-screen check
+// alone cannot tell anchoring from centring. Only pinning the margin does — this is what closes
+// the gap the too-tall branch was found untested for.
 // ============================================================================================
-test("a graph opening at fit shows a visible group's header whole, not clipped at the edge", async ({ page }) => {
+test("a graph too tall for the window opens anchored at its top edge, not clipping a group header there", async ({ page }) => {
   const graphObj = farGroupGraph();
   graphObj.explanation = null;
   graphObj.nodes[1].x = 150; // no longer "far": here the point is the header's position, not off-screen centring
@@ -1590,13 +1601,153 @@ test("a graph opening at fit shows a visible group's header whole, not clipped a
     await page.setViewportSize({ width: 900, height: 700 });
     await page.goto(pageUrl(ctx));
     await ready(page);
+    assert.equal(await pageZoom(page), 1, 'the graph never opens shrunk');
 
     const canvasBox = await page.locator('svg#canvas').boundingBox();
     const headerBox = await page.locator('g.group-header[data-group="far-group"] rect.group-header-hit').boundingBox();
-    // Correct fitToView lands the header exactly at the 60px margin from the canvas top; dropping
-    // the group-box bound instead fits the node alone and clips the header by up to 2px above it.
-    assert.ok(headerBox.y >= canvasBox.y - 1,
-      `expected the group's header inside the viewport on load, got header.y=${headerBox.y} canvas.y=${canvasBox.y}`);
+    // A correct anchor lands the header exactly at the 60px margin from the canvas top; dropping
+    // the group-box bound instead bounds the node alone and clips the header by up to 2px above it.
+    assert.ok(Math.abs(headerBox.y - (canvasBox.y + 60)) < 2,
+      `expected the group's header anchored at the 60px margin from the canvas top, got header.y=${headerBox.y} canvas.y=${canvasBox.y}`);
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// D18's anchoring only fires once a picture overflows the canvas on some axis. Both opening tests
+// above lean on a fixture that overflows vertically (~595 world units of content against ~530
+// usable pixels — see the comment on farGroupGraph), so neither exercises the branch where an axis
+// fits and is centred: an implementation that always anchored, never centred, would pass both. This
+// is that fixture — a two-node chain small enough to fit a modest viewport on both axes, laid out
+// by a real PUT /graph rather than hand-placed, so the picture opens centred exactly as it always
+// has (D11's "fits both ways" case).
+// ============================================================================================
+test('a graph that fits the window on both axes opens centred, not anchored', async ({ page }) => {
+  const root = await makeDir('browser-');
+  const graphDir = path.join(root, 'graphs');
+  await fs.mkdir(graphDir, { recursive: true });
+  const ctx = await startServer({ cacheRoot: root, open: path.join(graphDir, 'centred.json') });
+  try {
+    const graphObj = {
+      schema: 1, title: 'Centred', source: 'router', source_detail: null, explanation: null,
+      nodes: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }],
+      edges: [{ id: 'a->b', from: 'a', to: 'b', label: '' }],
+    };
+    const written = await put(ctx, '/graph', graphObj, '');
+    assert.equal(written.status, 200, JSON.stringify(written.body));
+
+    await page.setViewportSize({ width: 900, height: 700 });
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+    assert.equal(await pageZoom(page), 1, 'the graph never opens shrunk');
+
+    const canvasBox = await page.locator('svg#canvas').boundingBox();
+    const aBox = await nodeBox(page, 'a').boundingBox();
+    const bBox = await nodeBox(page, 'b').boundingBox();
+    const left = Math.min(aBox.x, bBox.x), right = Math.max(aBox.x + aBox.width, bBox.x + bBox.width);
+    const top = Math.min(aBox.y, bBox.y), bottom = Math.max(aBox.y + aBox.height, bBox.y + bBox.height);
+
+    const leftMargin = left - canvasBox.x, rightMargin = (canvasBox.x + canvasBox.width) - right;
+    const topMargin = top - canvasBox.y, bottomMargin = (canvasBox.y + canvasBox.height) - bottom;
+    assert.ok(Math.abs(leftMargin - rightMargin) < 2,
+      `expected the content centred horizontally, got left=${leftMargin} right=${rightMargin}`);
+    assert.ok(Math.abs(topMargin - bottomMargin) < 2,
+      `expected the content centred vertically, got top=${topMargin} bottom=${bottomMargin}`);
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// D18's other overflow branch: an axis too wide, rather than too tall, anchors at the start of the
+// content instead of centring — nothing above covers it, since the shared farGroupGraph fixture
+// overflows vertically and the fixture above fits both ways. Three disconnected single-node
+// components lay out 460 world units apart (UNIT_GUTTER + COMPONENT_GAP past each unit's own
+// width), so three of them run 1120 units wide against a much shorter viewport — while staying one
+// row tall, so the vertical axis still fits and centres. That mix is the point: the two axes are
+// decided independently, not as one decision for the whole picture.
+// ============================================================================================
+test('a graph too wide for the window opens anchored at its left edge, centred top to bottom', async ({ page }) => {
+  const root = await makeDir('browser-');
+  const graphDir = path.join(root, 'graphs');
+  await fs.mkdir(graphDir, { recursive: true });
+  const ctx = await startServer({ cacheRoot: root, open: path.join(graphDir, 'wide.json') });
+  try {
+    const graphObj = {
+      schema: 1, title: 'Wide', source: 'router', source_detail: null, explanation: null,
+      nodes: [{ id: 'p', label: 'P' }, { id: 'q', label: 'Q' }, { id: 'r', label: 'R' }],
+      edges: [],
+    };
+    const written = await put(ctx, '/graph', graphObj, '');
+    assert.equal(written.status, 200, JSON.stringify(written.body));
+
+    await page.setViewportSize({ width: 900, height: 700 });
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+    assert.equal(await pageZoom(page), 1, 'the graph never opens shrunk');
+
+    const canvasBox = await page.locator('svg#canvas').boundingBox();
+    const boxes = await Promise.all(['p', 'q', 'r'].map((id) => nodeBox(page, id).boundingBox()));
+    const left = Math.min(...boxes.map((b) => b.x)), right = Math.max(...boxes.map((b) => b.x + b.width));
+    const top = Math.min(...boxes.map((b) => b.y)), bottom = Math.max(...boxes.map((b) => b.y + b.height));
+    assert.ok(right - left > canvasBox.width, 'the fixture must actually overflow the canvas horizontally');
+
+    const leftMargin = left - canvasBox.x;
+    assert.ok(Math.abs(leftMargin - 60) < 2,
+      `expected the content anchored one margin (60) inside the left edge, got ${leftMargin}`);
+
+    const topMargin = top - canvasBox.y, bottomMargin = (canvasBox.y + canvasBox.height) - bottom;
+    assert.ok(Math.abs(topMargin - bottomMargin) < 2,
+      `expected the content centred vertically, since that axis fits, got top=${topMargin} bottom=${bottomMargin}`);
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// D18's last branch: both axes overflow at once, so both anchor and neither centres — nothing
+// above covers it, since every fixture so far overflows on exactly one axis (farGroupGraph
+// vertically above, the three-component fixture horizontally). Reuses farGroupGraph with only its
+// y changed, the same way the too-tall test above does: 'far' keeps its default x=3000, already
+// well past the canvas, and moves to y=-309 so far-group's header — the topmost thing in the
+// picture, as in the too-tall test above — is also above 'anchor'. The two edges this test pins
+// sit on two different elements, 'anchor' on x and the header on y, because the content's bounding
+// rectangle is the union of every node and every visible group's box, not any one shape's own box.
+// ============================================================================================
+test('a graph too big for the window on both axes opens anchored at its top-left corner', async ({ page }) => {
+  const graphObj = farGroupGraph();
+  graphObj.explanation = null;
+  graphObj.nodes[1].y = -309; // 'far' stays at its default x=3000; only the vertical axis changes
+  const ctx = await launchInline(graphObj);
+  try {
+    await page.setViewportSize({ width: 900, height: 700 });
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+    assert.equal(await pageZoom(page), 1, 'the graph never opens shrunk');
+
+    const canvasBox = await page.locator('svg#canvas').boundingBox();
+    const anchorBox = await nodeBox(page, 'anchor').boundingBox();
+    const farBox = await nodeBox(page, 'far').boundingBox();
+    const headerBox = await page.locator('g.group-header[data-group="far-group"] rect.group-header-hit').boundingBox();
+
+    const left = Math.min(anchorBox.x, farBox.x, headerBox.x);
+    const right = Math.max(anchorBox.x + anchorBox.width, farBox.x + farBox.width, headerBox.x + headerBox.width);
+    const top = Math.min(anchorBox.y, farBox.y, headerBox.y);
+    const bottom = Math.max(anchorBox.y + anchorBox.height, farBox.y + farBox.height, headerBox.y + headerBox.height);
+    // fitToView anchors an axis when the content does not fit within the 60px margin on each
+    // side, not when it exceeds the raw canvas — so the sanity check below matches that margin,
+    // the same arithmetic fitToView itself uses (`availW`/`availH`, index.html:669-670).
+    assert.ok(right - left > canvasBox.width - 120, 'the fixture must actually overflow the canvas horizontally');
+    assert.ok(bottom - top > canvasBox.height - 120, 'the fixture must actually overflow the canvas vertically');
+
+    // Neither axis fits, so neither centres: the content's top-left corner — 'anchor's left edge
+    // on x, far-group's header top on y — lands exactly one margin (60px) inside the canvas's own
+    // top-left corner, on both axes at once.
+    assert.ok(Math.abs(anchorBox.x - (canvasBox.x + 60)) < 2,
+      `expected the content anchored one margin (60) inside the left edge, got ${anchorBox.x - canvasBox.x}`);
+    assert.ok(Math.abs(headerBox.y - (canvasBox.y + 60)) < 2,
+      `expected the content anchored one margin (60) inside the top edge, got ${headerBox.y - canvasBox.y}`);
   } finally {
     await ctx.stop();
   }
@@ -1726,104 +1877,59 @@ test('the page renders a non-# markdown link as plain text, not a marked phrase'
 // ============================================================================================
 
 // ============================================================================================
-// The drift assertion — decision 17's whole reason to exist. viewer/server.js and
-// viewer/index.html each hold their own copy of GROUP_PAD / GROUP_HEADER / GROUP_GAP, sharing no
-// module, so nothing structural stops one moving without the other. This measures a graph the
-// SERVER laid out against the boundary the PAGE draws for it — not a fixture staged straight to
-// disk, which would only ever compare the page against itself (decision 29; the pattern to copy
-// is the row-pitch test above, at the layout constants).
+// The drift assertion. viewer/server.js and viewer/index.html each hold their own copy of
+// GROUP_PAD and GROUP_HEADER, sharing no module (IDEA.md's standing constraint), so nothing
+// structural stops one moving without the other. This measures a graph the SERVER laid out
+// against the boundary the PAGE draws for it — not a fixture staged straight to disk, which would
+// only ever compare the page against itself (the pattern to copy is the row-pitch test above, at
+// the layout constants).
 //
-// It needs two `PUT /graph` writes, not one. A single PUT to an empty path is a create, and on a
-// create every changed group is in resident mode with only free nodes moving (decision 39) — but a
-// create's positions come out of layout(), which this test cannot hand-pick, so there would be no
-// way to build "exactly one non-member is pushed" on purpose. So: the first PUT creates the graph
-// with the group absent, so its members are ordinary new nodes; a `PUT /view` — a plain drag, the
-// same thing a person does to arrange a picture — then plants the members and the intruder at
-// exact, known coordinates; the second PUT /graph adds the group as visible over those on-disk
-// positions, which is resident mode and pushes the intruder clear. The push itself is computed by
-// the server's real placeGroupUnits pass, not by this test.
-//
-// The fixture is built so the push is exactly one non-member, and horizontal. The server models
-// every node as 200x116 while the page draws its real height (74 for a one-line label), so the two
-// only ever agree on the left, right and top edges — a downward push would render at
-// GROUP_GAP + (116 - 74) off from what an exact assertion expects, failing against *correct* code.
-// The intruder sits at x=180, barely overlapping the two-member block's right edge (at x=224) and
-// far from its top or bottom, so "move right by the smallest amount that clears" beats every other
-// direction by a wide margin (60 vs 156/194/420 — down, up, left).
+// The shove this test used to also cover — a visible group pushing a non-member clear — went with
+// placeGroupUnits (D6/D19): a group is now laid out as one unit before the outer pass ever runs,
+// which makes an overlap between a group's rectangle and a non-member's box impossible to produce
+// rather than something to shove apart after the fact. What survives is the one guard nothing else
+// gives: a group is written through a real PUT /graph (the server's own placement, not a hand-set
+// position), then the PAGE's rendered boundary is measured against its topmost member. GROUP_HEADER
+// only ever changes the top edge, so the top is the one place a page/server disagreement over
+// either constant would show up.
 // ============================================================================================
-test('a visible group pushes exactly one non-member clear, at exactly GROUP_GAP, in the direction both files must agree on', async ({ page }) => {
-  const GROUP_GAP = 16;
+test("a visible group's boundary sits GROUP_PAD + GROUP_HEADER above its topmost member, in the direction both files must agree on", async ({ page }) => {
+  const GROUP_PAD = 24, GROUP_HEADER = 38;
   const root = await makeDir('browser-');
   const graphDir = path.join(root, 'graphs');
   await fs.mkdir(graphDir, { recursive: true });
   const ctx = await startServer({ cacheRoot: root, open: path.join(graphDir, 'group-drift.json') });
   try {
-    // 1. Create: the group is absent, so 'm', 'm2' and 'x' are all ordinary new nodes.
-    const created = {
+    const graphObj = {
       schema: 1, title: 'Group drift', source: 'router', source_detail: null, explanation: null,
-      nodes: [{ id: 'm', label: 'M' }, { id: 'm2', label: 'M2' }, { id: 'x', label: 'X' }],
-      edges: [],
+      nodes: [{ id: 'm', label: 'M' }, { id: 'm2', label: 'M2' }],
+      edges: [{ id: 'm->m2', from: 'm', to: 'm2', label: '' }],
+      groups: [{ id: 'sys', label: 'System', note: 'A note about the system.', visible: true, nodes: ['m', 'm2'] }],
     };
-    let written = await put(ctx, '/graph', created, '');
-    assert.equal(written.status, 200, JSON.stringify(written.body));
-
-    // 2. Drag: plant 'm'/'m2' as a 200-wide, two-row block and 'x' overlapping its right edge.
-    const dragged = (await getGraph(ctx)).graph;
-    for (const [id, point] of [['m', { x: 0, y: 0 }], ['m2', { x: 0, y: 140 }], ['x', { x: 180, y: 0 }]]) {
-      Object.assign(dragged.nodes.find((n) => n.id === id), point);
-    }
-    written = await put(ctx, '/view', dragged, written.body.hash);
-    assert.equal(written.status, 200, JSON.stringify(written.body));
-
-    // 3. Make the group visible over the on-disk members: resident mode, which pushes 'x'.
-    const grouped = copy(dragged);
-    grouped.groups = [{ id: 'sys', label: 'System', note: 'A note about the system.', visible: true, nodes: ['m', 'm2'] }];
-    written = await put(ctx, '/graph', grouped, written.body.hash);
+    const written = await put(ctx, '/graph', graphObj, '');
     assert.equal(written.status, 200, JSON.stringify(written.body));
 
     await page.goto(pageUrl(ctx));
     await ready(page);
 
+    // 'm' precedes 'm2' along the arrow between them, so the layout puts it on the group's first
+    // row — the topmost member, and the one the header sits above.
     const laidOut = await pageGraph(page);
-    assert.equal(entry(laidOut, 'm').x, 0); assert.equal(entry(laidOut, 'm').y, 0);
-    assert.equal(entry(laidOut, 'm2').x, 0); assert.equal(entry(laidOut, 'm2').y, 140);
-    assert.notEqual(entry(laidOut, 'x').x, 180, 'the intruder must actually have moved');
-    assert.equal(entry(laidOut, 'x').y, 0, 'the push must be horizontal, not vertical');
+    assert.ok(entry(laidOut, 'm').y < entry(laidOut, 'm2').y, "expected 'm' laid out above 'm2'");
 
-    // Every member's real box sits inside the rendered boundary; the intruder's does not.
     const zoom = await pageZoom(page);
     const boundaryEl = page.locator('rect.group-region[data-group="sys"]');
     const boundary = await boundaryEl.boundingBox();
-    for (const id of ['m', 'm2']) {
-      const box = await nodeBox(page, id).boundingBox();
-      assert.ok(box.x >= boundary.x && box.x + box.width <= boundary.x + boundary.width &&
-        box.y >= boundary.y && box.y + box.height <= boundary.y + boundary.height,
-        `${id}'s box must sit inside the rendered boundary`);
-    }
-    const xLocator = nodeBox(page, 'x');
-    const xBox = await xLocator.boundingBox();
-    assert.ok(xBox.x > boundary.x + boundary.width, 'the intruder must render clear of the boundary, not inside it');
+    const topLocator = nodeBox(page, 'm');
+    const topMember = await topLocator.boundingBox();
 
-    // The exact distance. getBoundingClientRect() on an SVG shape includes half its own
-    // stroke-width past its geometric edge on every side (measured directly: a 1px-stroke boundary
-    // and a 1.5px-stroke node box together read exactly 1.25 local units short of the true gap at
-    // zoom 1) — corrected out here, from the elements' own computed styles, rather than papered
-    // over with a loose epsilon, so the comparison below is still exact.
+    // getBoundingClientRect() on an SVG shape includes half its own stroke-width past its
+    // geometric edge on every side — corrected out here, from the elements' own computed styles,
+    // rather than papered over with a loose epsilon, so the comparison below is still exact. Both
+    // rects grow toward each other here, so the two corrections have opposite sign.
     const boundaryStroke = await boundaryEl.evaluate((el) => parseFloat(getComputedStyle(el).strokeWidth));
-    const xStroke = await xLocator.evaluate((el) => parseFloat(getComputedStyle(el).strokeWidth));
-    const rawDistance = (xBox.x - (boundary.x + boundary.width)) / zoom;
-    const distance = rawDistance + boundaryStroke / 2 + xStroke / 2;
-    assert.ok(Math.abs(distance - GROUP_GAP) < 0.05,
-      `expected the intruder exactly GROUP_GAP (${GROUP_GAP}) past the boundary, got ${distance}`);
-
-    // The horizontal distance above moves when either file's GROUP_PAD does, but GROUP_HEADER only
-    // ever changes the box's top edge, so nothing above would notice it drifting. The top is the
-    // one vertical edge that *is* exactly assertable: the server's 116px node model and the page's
-    // real height disagree only on the bottom. Same stroke correction, opposite sign — here both
-    // rects grow toward each other rather than apart.
-    const GROUP_PAD = 24, GROUP_HEADER = 38;
-    const topMember = await nodeBox(page, 'm').boundingBox();
-    const topGap = (topMember.y - boundary.y) / zoom + xStroke / 2 - boundaryStroke / 2;
+    const topStroke = await topLocator.evaluate((el) => parseFloat(getComputedStyle(el).strokeWidth));
+    const topGap = (topMember.y - boundary.y) / zoom + topStroke / 2 - boundaryStroke / 2;
     assert.ok(Math.abs(topGap - (GROUP_PAD + GROUP_HEADER)) < 0.05,
       `expected the boundary exactly GROUP_PAD + GROUP_HEADER (${GROUP_PAD + GROUP_HEADER}) above its topmost member, got ${topGap}`);
   } finally {

@@ -534,30 +534,29 @@ async function checkOrphans(graphPath, current, incoming) {
 }
 
 // The first render is the one Collin reads before he has dragged anything, so the layout is worth
-// more than a grid: it is a small Sugiyama pass. Break cycles so every edge can point down, put
-// each node one row below its deepest parent, order each row so arrows cross as little as they
-// can, then pull each box toward the middle of what it connects to. Disconnected pieces are laid
-// out on their own and set side by side, because stacking them reads as a flow that isn't there.
-// Held against the page's tallest possible box, which is 116 at its five-line label cap
-// (NODE_LABEL_MAX_LINES in viewer/index.html). The two files share no module, so nothing
-// structural stops one of these numbers moving without the other; the browser suite measures a
-// real five-line box against a real layout and is what actually catches it.
+// more than a grid: it is a small Sugiyama pass over units, whose rows grow for the tallest thing
+// standing on them. A drawn group first lays out its members, then takes one slot among the other
+// units, then lets those members reorder within their settled rows by the arrows that cross its
+// boundary. The server reserves 116 for a box's tallest possible page height (NODE_LABEL_MAX_LINES
+// in viewer/index.html); the two files share no module, so the browser suite measures a real
+// five-line box against a real layout and is what actually catches their constants drifting.
 const LAYER_GAP = 140;
 const NODE_PITCH = 260;
 // Copied from protocol/graphs.md; viewer/index.html holds the other copy of the first two.
 const GROUP_PAD = 24;      // clearance on the left, right and bottom
 const GROUP_HEADER = 38;   // extra clearance above, holding the name and the note line
-const GROUP_GAP = 16;      // a moved unit lands exactly this far past the rectangle that bound it
 const GROUP_NODE_W = 200;
 const GROUP_NODE_H = 116;
 // A bend point is not drawn — the viewer draws every edge as one straight line — but reserving it
 // a slot keeps a row from closing over the diagonal that has to pass through it.
 const BEND_PITCH = 160;
 const COMPONENT_GAP = 200;
+const UNIT_GUTTER = NODE_PITCH - GROUP_NODE_W;
+const ROW_CLEARANCE = LAYER_GAP - GROUP_NODE_H;
 
-function layout(graph) {
+function layout(graph, sizeOf = () => ({ w: GROUP_NODE_W, h: GROUP_NODE_H }), separateComponents = true) {
   const ids = graph.nodes.map((node) => node.id).sort();
-  if (!ids.length) return new Map();
+  if (!ids.length) return { positions: new Map(), order: [], links: new Map() };
   // Sorted and deduplicated so the same graph lays out the same way however its arrays happen to
   // be ordered.
   const pairs = [...new Set(graph.edges
@@ -565,18 +564,33 @@ function layout(graph) {
 
   const acyclic = breakCycles(ids, pairs);
   const layer = layerByLongestPath(ids, acyclic);
-  const positions = new Map();
-  let cursor = 0;
-  for (const group of components(ids, pairs)) {
+  const parts = components(ids, pairs).map((group) => {
     const top = Math.min(...group.map((id) => layer.get(id)));
-    const local = new Map(group.map((id) => [id, layer.get(id) - top]));
-    const placed = placeComponent(group, local, acyclic.filter(([from]) => local.has(from)));
-    let min = Infinity, max = -Infinity;
-    for (const point of placed.values()) { min = Math.min(min, point.x); max = Math.max(max, point.x); }
-    for (const [id, point] of placed) positions.set(id, { x: point.x - min + cursor, y: point.y });
-    cursor += max - min + NODE_PITCH + COMPONENT_GAP;
+    return { group, local: new Map(group.map((id) => [id, layer.get(id) - top])) };
+  });
+  const heights = [];
+  for (const { group, local } of parts) for (const id of group) {
+    const row = local.get(id);
+    heights[row] = Math.max(heights[row] || 0, sizeOf(id).h);
   }
-  return positions;
+  const origins = [0];
+  for (let row = 1; row < heights.length; row += 1) origins[row] = origins[row - 1] + heights[row - 1] + ROW_CLEARANCE;
+  const positions = new Map();
+  const order = Array.from({ length: origins.length }, () => []);
+  const links = new Map();
+  let cursor = 0;
+  for (const { group, local } of parts) {
+    const placed = placeComponent(group, local, acyclic.filter(([from, to]) => local.has(from) && local.has(to)), sizeOf, origins);
+    let min = Infinity, right = -Infinity;
+    for (const [id, point] of placed.positions) {
+      min = Math.min(min, point.x); right = Math.max(right, point.x + sizeOf(id).w);
+    }
+    for (const [id, point] of placed.positions) positions.set(id, { x: point.x - min + cursor, y: point.y });
+    placed.order.forEach((row, index) => order[index].push(...row));
+    for (const [id, link] of placed.links) links.set(id, link);
+    cursor += right - min + UNIT_GUTTER + (separateComponents ? COMPONENT_GAP : 0);
+  }
+  return { positions, order, links };
 }
 
 // Depth-first in id order; an edge that closes back onto the stack is a cycle's back edge, and it
@@ -651,7 +665,7 @@ function components(ids, pairs) {
   return [...groups.values()].sort((left, right) => left[0] < right[0] ? -1 : 1);
 }
 
-function placeComponent(group, layerOf, edges) {
+function placeComponent(group, layerOf, edges, sizeOf, origins) {
   const depth = Math.max(...group.map((id) => layerOf.get(id))) + 1;
   const rows = Array.from({ length: depth }, () => []);
   const boxes = new Set(group);
@@ -705,7 +719,7 @@ function placeComponent(group, layerOf, edges) {
   // back apart afterwards. A bend point reads both of its sides at once, since what it stands for
   // is the straight line between them.
   const pitch = new Map();
-  for (const row of rows) for (const id of row) pitch.set(id, boxes.has(id) ? NODE_PITCH : BEND_PITCH);
+  for (const row of rows) for (const id of row) pitch.set(id, boxes.has(id) ? sizeOf(id).w + UNIT_GUTTER : BEND_PITCH);
   const x = new Map();
   for (const row of order) {
     let at = 0;
@@ -724,7 +738,11 @@ function placeComponent(group, layerOf, edges) {
       order[index].forEach((id, at) => x.set(id, packed[at]));
     }
   }
-  return new Map(group.map((id) => [id, { x: Math.round(x.get(id)), y: layerOf.get(id) * LAYER_GAP }]));
+  return {
+    positions: new Map(group.map((id) => [id, { x: Math.round(x.get(id)), y: origins[layerOf.get(id)] }])),
+    order,
+    links,
+  };
 }
 
 function neighbours(links, id, side, of) {
@@ -776,19 +794,6 @@ function crossings(order, links) {
   return total;
 }
 
-function retainDiskPositions(current, incoming) {
-  const oldById = mapById(current.nodes);
-  const positions = layout(incoming);
-  for (const node of incoming.nodes) {
-    const old = oldById.get(node.id);
-    const position = old ? { x: old.x, y: old.y } : positions.get(node.id);
-    node.x = position.x;
-    node.y = position.y;
-  }
-}
-
-function nodeRect(node) { return { x: node.x, y: node.y, w: GROUP_NODE_W, h: GROUP_NODE_H }; }
-
 function canonicalGroupNodes(group) { return [...new Set(group.nodes)].sort(); }
 
 function groupRect(group, nodes) {
@@ -805,169 +810,77 @@ function groupRect(group, nodes) {
   };
 }
 
-function clearsBy(a, b, gap) {
-  return a.x >= b.x + b.w + gap || b.x >= a.x + a.w + gap ||
-    a.y >= b.y + b.h + gap || b.y >= a.y + a.h + gap;
-}
-
-function overlaps(a, b) {
-  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
-}
-
-function groupChanged(group, previous) {
-  const old = previous.get(group.id);
-  return !old || !old.visible || JSON.stringify(canonicalGroupNodes(old)) !== JSON.stringify(canonicalGroupNodes(group));
-}
-
-function latticeRing(ring, cMax, rMax) {
-  const cells = [];
-  for (let row = -ring; row <= rMax + ring; row += 1) {
-    for (let column = -ring; column <= cMax + ring; column += 1) {
-      if (ring === 0 || row === -ring || row === rMax + ring || column === -ring || column === cMax + ring) {
-        cells.push({ column, row });
-      }
-    }
-  }
-  return cells;
-}
-
-function meanCentres(nodes) {
-  return {
-    x: Math.round(nodes.reduce((sum, node) => sum + node.x + GROUP_NODE_W / 2, 0) / nodes.length),
-    y: Math.round(nodes.reduce((sum, node) => sum + node.y + GROUP_NODE_H / 2, 0) / nodes.length),
-  };
-}
-
-function placeNewGroupMembers(incoming, current, newIds) {
-  const nodes = mapById(incoming.nodes);
-  const positioned = new Set(current ? current.nodes.map((node) => node.id) : []);
-  const visible = incoming.groups.filter((group) => group.visible).sort(compareId);
-  for (const group of visible) {
-    const members = canonicalGroupNodes(group);
-    const newcomers = members.filter((id) => newIds.has(id));
-    if (!newcomers.length) continue;
-    const memberSet = new Set(members);
-    const oldMembers = members.filter((id) => !newIds.has(id));
-    if (!oldMembers.length) {
-      const neighbours = new Set();
-      for (const edge of incoming.edges) {
-        const other = memberSet.has(edge.from) && !memberSet.has(edge.to) ? edge.to :
-          memberSet.has(edge.to) && !memberSet.has(edge.from) ? edge.from : null;
-        if (other && positioned.has(other)) neighbours.add(other);
-      }
-      const anchor = meanCentres((neighbours.size ? [...neighbours].sort().map((id) => nodes.get(id)) :
-        members.map((id) => nodes.get(id))));
-      const columns = Math.ceil(Math.sqrt(members.length));
-      const originX = Math.round(anchor.x - ((columns - 1) * NODE_PITCH + GROUP_NODE_W) / 2);
-      const rows = Math.ceil(members.length / columns);
-      const originY = Math.round(anchor.y - ((rows - 1) * LAYER_GAP + GROUP_NODE_H) / 2);
-      members.forEach((id, index) => {
-        const node = nodes.get(id);
-        node.x = Math.round(originX + (index % columns) * NODE_PITCH);
-        node.y = Math.round(originY + Math.floor(index / columns) * LAYER_GAP);
-      });
-    } else {
-      const oldNodes = oldMembers.map((id) => nodes.get(id));
-      const minX = Math.min(...oldNodes.map((node) => node.x));
-      const maxX = Math.max(...oldNodes.map((node) => node.x + GROUP_NODE_W));
-      const minY = Math.min(...oldNodes.map((node) => node.y));
-      const maxY = Math.max(...oldNodes.map((node) => node.y + GROUP_NODE_H));
-      const originX = minX, originY = minY;
-      const cMax = Math.max(0, Math.ceil((maxX - minX) / NODE_PITCH) - 1);
-      const rMax = Math.max(0, Math.ceil((maxY - minY) / LAYER_GAP) - 1);
-      const placed = oldMembers.slice();
-      for (const id of newcomers) {
-        const empty = (cell) => {
-          const candidate = { x: originX + cell.column * NODE_PITCH, y: originY + cell.row * LAYER_GAP,
-            w: NODE_PITCH, h: LAYER_GAP };
-          return incoming.nodes.every((node) => node.id === id || !overlaps(candidate, nodeRect(node)));
-        };
-        let chosen = null;
-        for (let ring = 0; !chosen; ring += 1) {
-          const choices = latticeRing(ring, cMax, rMax).filter(empty);
-          if (!choices.length) continue;
-          if (ring === 0) { chosen = choices[0]; break; }
-          const before = groupRect({ nodes: placed }, nodes);
-          chosen = choices.reduce((best, cell) => {
-            const candidate = { ...nodes.get(id), x: originX + cell.column * NODE_PITCH, y: originY + cell.row * LAYER_GAP };
-            const afterNodes = new Map(nodes); afterNodes.set(id, candidate);
-            const after = groupRect({ nodes: [...placed, id] }, afterNodes);
-            const added = after.w * after.h - before.w * before.h;
-            return !best || added < best.added ? { cell, added } : best;
-          }, null).cell;
-        }
-        const node = nodes.get(id);
-        node.x = Math.round(originX + chosen.column * NODE_PITCH);
-        node.y = Math.round(originY + chosen.row * LAYER_GAP);
-        placed.push(id);
-      }
-    }
-    for (const id of members) positioned.add(id);
-  }
-}
-
-function placeGroupUnits(incoming, current) {
-  const oldNodes = new Set(current ? current.nodes.map((node) => node.id) : []);
-  const newIds = new Set(incoming.nodes.filter((node) => !oldNodes.has(node.id)).map((node) => node.id));
-  const priorGroups = new Map((current ? current.groups : []).map((group) => [group.id, group]));
-  const changed = new Set(incoming.groups.filter((group) => group.visible && groupChanged(group, priorGroups)).map((group) => group.id));
-  if (!newIds.size && !changed.size) return;
-
-  placeNewGroupMembers(incoming, current, newIds);
+function positionGraph(incoming) {
   const nodes = mapById(incoming.nodes);
   const visible = incoming.groups.filter((group) => group.visible).sort(compareId);
   const grouped = new Set(visible.flatMap(canonicalGroupNodes));
-  const units = [
-    ...visible.map((group) => ({ key: `group:${group.id}`, group, nodes: canonicalGroupNodes(group) })),
-    ...incoming.nodes.filter((node) => !grouped.has(node.id)).sort(compareId)
-      .map((node) => ({ key: `node:${node.id}`, node, nodes: [node.id] })),
-  ];
-  const order = new Map(units.map((unit, index) => [unit.key, index]));
-  const rectOf = (unit) => unit.group ? groupRect(unit.group, nodes) : nodeRect(nodes.get(unit.node.id));
-  const crowds = (left, right) => !clearsBy(rectOf(left), rectOf(right), GROUP_GAP);
-  const isResident = (unit) => unit.group && changed.has(unit.group.id) &&
-    !(current && unit.nodes.every((id) => newIds.has(id)));
-  const isNewcomer = (unit) => unit.group ? current && changed.has(unit.group.id) && unit.nodes.every((id) => newIds.has(id)) :
-    newIds.has(unit.node.id);
-  const settled = new Set();
-  const move = (unit) => {
-    const others = units.filter((other) => other !== unit).map((other) => rectOf(other));
-    const rect = rectOf(unit);
-    if (!others.some((other) => !clearsBy(rect, other, GROUP_GAP))) return false;
-    const directions = [
-      { axis: 'x', sign: -1, candidate: (other) => other.x - GROUP_GAP - rect.w },
-      { axis: 'x', sign: 1, candidate: (other) => other.x + other.w + GROUP_GAP },
-      { axis: 'y', sign: -1, candidate: (other) => other.y - GROUP_GAP - rect.h },
-      { axis: 'y', sign: 1, candidate: (other) => other.y + other.h + GROUP_GAP },
-    ];
-    const landings = directions.map((direction) => {
-      const candidates = others.map((other) => direction.candidate(other)).filter((position) =>
-        direction.sign * (position - rect[direction.axis]) > 0).sort((a, b) =>
-        direction.sign > 0 ? a - b : b - a);
-      for (const position of candidates) {
-        const candidate = { ...rect, [direction.axis]: Math.round(position) };
-        if (others.every((other) => clearsBy(candidate, other, GROUP_GAP))) {
-          return { axis: direction.axis, delta: candidate[direction.axis] - rect[direction.axis] };
+  const inner = new Map();
+  for (const group of visible) {
+    const members = canonicalGroupNodes(group); const memberSet = new Set(members);
+    const placed = layout({ nodes: members.map((id) => ({ id })),
+      edges: incoming.edges.filter((edge) => memberSet.has(edge.from) && memberSet.has(edge.to)) },
+    () => ({ w: GROUP_NODE_W, h: GROUP_NODE_H }), false);
+    const relative = new Map(members.map((id) => [id, { id, ...placed.positions.get(id) }]));
+    inner.set(group.id, { ...placed, rect: groupRect(group, relative) });
+  }
+
+  const unitOf = new Map();
+  for (const group of visible) for (const id of canonicalGroupNodes(group)) unitOf.set(id, `group:${group.id}`);
+  for (const node of incoming.nodes) if (!unitOf.has(node.id)) unitOf.set(node.id, `node:${node.id}`);
+  const sizes = new Map();
+  for (const group of visible) sizes.set(`group:${group.id}`, inner.get(group.id).rect);
+  for (const node of incoming.nodes) if (!grouped.has(node.id)) sizes.set(`node:${node.id}`, { w: GROUP_NODE_W, h: GROUP_NODE_H });
+  const pairs = [...new Set(incoming.edges.map((edge) => JSON.stringify([unitOf.get(edge.from), unitOf.get(edge.to)])))].map((key) => JSON.parse(key))
+    .filter(([from, to]) => from !== to).sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+  const outer = layout({ nodes: [...sizes.keys()].sort().map((id) => ({ id })),
+    edges: pairs.map(([from, to]) => ({ from, to })) }, (id) => sizes.get(id), true);
+  for (const group of visible) {
+    const data = inner.get(group.id); const at = outer.positions.get(`group:${group.id}`);
+    for (const id of canonicalGroupNodes(group)) {
+      const point = data.positions.get(id);
+      Object.assign(nodes.get(id), { x: Math.round(at.x + point.x - data.rect.x), y: Math.round(at.y + point.y - data.rect.y) });
+    }
+  }
+  for (const node of incoming.nodes) if (!grouped.has(node.id)) Object.assign(node, outer.positions.get(`node:${node.id}`));
+  reorderGroupedRows(incoming, visible, inner, nodes);
+}
+
+function reorderGroupedRows(incoming, visible, inner, nodes) {
+  const snapshot = new Map(incoming.nodes.map((node) => [node.id, node.x + GROUP_NODE_W / 2]));
+  const pairs = [...new Set(incoming.edges.map((edge) => JSON.stringify([edge.from, edge.to])))].sort().map(JSON.parse);
+  for (const group of visible) {
+    const data = inner.get(group.id); const members = new Set(canonicalGroupNodes(group));
+    const centre = (id) => members.has(id) ? nodes.get(id).x + GROUP_NODE_W / 2 : snapshot.get(id);
+    const externalCrossings = (order) => order.reduce((total, row) => {
+      const landings = [];
+      for (const id of row) {
+        if (!members.has(id)) continue;
+        for (const [from, to] of pairs) {
+          const other = from === id ? to : to === id ? from : null;
+          if (other && !members.has(other)) landings.push(snapshot.get(other));
         }
       }
-      return null;
-    }).filter(Boolean);
-    landings.sort((left, right) => Math.abs(left.delta) - Math.abs(right.delta));
-    const landing = landings[0];
-    if (!landing) throw new InternalError('Group placement found no clear landing.');
-    for (const id of unit.nodes) nodes.get(id)[landing.axis] = Math.round(nodes.get(id)[landing.axis] + landing.delta);
-    settled.add(unit.key);
-    return true;
-  };
-  for (const unit of units) {
-    if (settled.has(unit.key)) continue;
-    if (isNewcomer(unit)) move(unit);
-    else if (isResident(unit)) {
-      for (const victim of units) {
-        if (victim === unit || settled.has(victim.key)) continue;
-        if (isResident(victim) && order.get(victim.key) < order.get(unit.key)) continue;
-        if (crowds(victim, unit)) move(victim);
+      for (let i = 0; i < landings.length; i += 1) for (let j = i + 1; j < landings.length; j += 1) {
+        if (landings[i] > landings[j]) total += 1;
       }
+      return total;
+    }, 0);
+    for (let rowIndex = 0; rowIndex < data.order.length; rowIndex += 1) {
+      const row = data.order[rowIndex];
+      const was = new Map(row.map((id, index) => [id, index]));
+      const movable = row.filter((id) => members.has(id) && pairs.some(([from, to]) => from === id || to === id));
+      if (movable.length < 2) continue;
+      const key = new Map(movable.map((id) => {
+        const near = pairs.flatMap(([from, to]) => from === id ? [centre(to)] : to === id ? [centre(from)] : []).sort((a, b) => a - b);
+        return [id, median(near)];
+      }));
+      const proposedMembers = movable.slice().sort((left, right) => key.get(left) - key.get(right) || was.get(left) - was.get(right));
+      const candidate = data.order.map((item) => item.slice()); let next = 0;
+      candidate[rowIndex] = row.map((id) => movable.includes(id) ? proposedMembers[next++] : id);
+      if (crossings(candidate, data.links) + externalCrossings(candidate) > crossings(data.order, data.links) + externalCrossings(data.order)) continue;
+      const slots = movable.map((id) => nodes.get(id).x);
+      proposedMembers.forEach((id, index) => { nodes.get(id).x = slots[index]; });
+      data.order = candidate;
     }
   }
 }
@@ -1257,22 +1170,12 @@ async function handleGraphPut(request, response, url, state) {
         fail(422, 'container-cycle', 'The write would create a containment cycle.');
       }
       await checkOrphans(graphPath, current, incoming);
-      retainDiskPositions(current, incoming);
-      placeGroupUnits(incoming, current);
     } else {
       if (await hasContainmentCycle(graphPath, incoming)) {
         fail(422, 'container-cycle', 'The write would create a containment cycle.');
       }
-      const positions = layout(incoming);
-      for (const node of incoming.nodes) {
-        const position = positions.get(node.id);
-        if (!position) {
-          throw new InternalError(`Layout did not assign a position to node ${node.id}.`);
-        }
-        Object.assign(node, position);
-      }
-      placeGroupUnits(incoming, null);
     }
+    positionGraph(incoming);
     const bytes = canonicalBytes(incoming);
     // Swept here and not inside atomicWrite: this is the only write path the global mutex
     // serializes, so a matching sibling can only be an interrupted earlier write. `.registered`
