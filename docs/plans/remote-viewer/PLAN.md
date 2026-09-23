@@ -1,6 +1,6 @@
 ---
 slug: remote-viewer
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-09-23
 ---
 
@@ -29,8 +29,8 @@ promoted to a Constraint or Accepted Risk, or waved off by the user.
 | # | Noticed | What needs looking into | Raised to user? | Outcome |
 |---|---------|-------------------------|-----------------|---------|
 | 1 | mapping | Hearth has Node v20.19.2, and the repo was developed against Node 26 (`README.md:234`). Run the viewer suites on hearth to find out whether anything depends on a newer Node. | yes | settled — Decision Log #33, #34: `server.test.js` passes 55/55 on Node 20 when named explicitly; the quoted glob fails there; browser suite blocked by missing system libraries |
-| 2 | mapping | What environment a Codex CLI session sets, so `--open` can label a graph Claude or Codex. Claude sets `CLAUDECODE=1`. | yes | done — remediated once (missing plan `graphs/` directory bug; 13 missing test cases), `ed25735` |
-| 3 | mapping | Lingering is off for `collin` (`Linger=no`), so a systemd user service stops at logout. Turning it on (`loginctl enable-linger`) may need `sudo`. | yes | done, `605e1ca` |
+| 2 | mapping | What environment a Codex CLI session sets, so `--open` can label a graph Claude or Codex. Claude sets `CLAUDECODE=1`. | yes | settled — Decision Log #31 |
+| 3 | mapping | Lingering is off for `collin` (`Linger=no`), so a systemd user service stops at logout. Turning it on (`loginctl enable-linger`) may need `sudo`. | yes | settled — Decision Log #32 |
 | 4 | mapping | Whether `tailscale serve` passes the browser's `Origin` header through unchanged. The write check depends on it. | yes | settled — blocking validation on hearth, Spec "Validation" |
 | 5 | queue | If the always-on service is down, an agent's `--open` starts its own server with a random token, and the service's later start "reuses" it and exits (`server.js:1376-1378`). Under systemd that's a restart loop, and the token breaks bookmarks. The lasting token and the service's startup both have to cover it. | yes | settled — Decision Log #14, #17 |
 | 6 | queue | `/whoami` is unauthenticated (`server.js:1388`) and would be reachable over the tailnet. It returns only a random start id; check nothing else relies on it staying local. | yes | settled — only `existingServer` and `stopServer` call it (`server.js:1314`, `:1334`, `:1356`), always over `127.0.0.1`; the start id grants nothing without the token. No change |
@@ -49,7 +49,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 5 | Session and harness are recorded when `--open` registers a graph, in that graph's entry in `.registered`, not in the graph file | `--open` runs in the agent's shell, where the tmux and harness environment is visible. The graph file drops unknown fields, and the entry already exists per graph | defaulted |
 | 6 | Whether a session is still running is checked against tmux each time the list is built | The list is only accurate if it asks tmux at the moment of viewing; a stored flag goes stale | defaulted |
 | 7 | Registry retention stays 30 days (`REGISTERED_MAX_AGE`, `server.js:38`) | Nothing in the idea needs a different window | defaulted |
-| 8 | Other devices reach the viewer through `tailscale serve` (HTTPS on the machine's tailnet name, forwarding to `127.0.0.1:<port>`). The server keeps listening on `127.0.0.1` only, and its write check accepts the served `https://<tailnet name>` origin alongside `http://127.0.0.1:<port>` | HTTPS and reboot survival with no certificate work, and no new network exposure in the server itself. Binding the tailnet address gives plain HTTP and boot ordering; SSH forwarding is impractical on a phone | running |
+| 8 | Other devices reach the viewer through `tailscale serve` (HTTPS on the machine's tailnet name, forwarding to `127.0.0.1:<port>`). The server keeps listening on `127.0.0.1` only, and its write check accepts the served `https://<tailnet name>` origin alongside `http://127.0.0.1:<port>` | HTTPS and reboot survival with no certificate work, and no new network exposure in the server itself. Binding the tailnet address gives plain HTTP and boot ordering; SSH forwarding is impractical on a phone | user |
 | 9 | Setup never runs `sudo` silently. The one-time `tailscale serve` command is run by the person, or by the installer only after it says so and asks | `sudo` changes the machine's network setup outside this repo's tree; the person should see it happen | defaulted |
 | 10 | Whether a machine serves is decided once, at install. `./install.sh` checks for a display and, when there is none, asks whether to set the machine up as an always-on viewer. `--serve` opts in without asking and `--no-serve` declines without asking. After that, whether the machine serves is read from what setup wrote, never guessed at runtime | A per-call guess misfires (an SSH session into a laptop looks headless); asking once lets a person confirm it | user |
 | 11 | The choice is recorded as `<cache-root>/.serving`, JSON holding the served origin (for example `{"origin": "https://hearth.taileb4e52.ts.net"}`), written by the installer. The server reads it at start | The server already keeps its state in the cache root, and the suites isolate by `--cache-root` (`viewer/test/helpers/server.js:87`), so this needs no new configuration location or test seam | defaulted |
@@ -1039,13 +1039,13 @@ Filled by Stage 3. One row per worker brief.
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | 1 | Server lifecycle and identity: lasting token, listen-first start-up, `/whoami` with nonce proof and `code`, `.server` as information with self-repair, `--stop`/`--if-stale`/`--rotate-token`/`--url`/`--service`, shutdown order, start-up rollback, silent-holder grace, `.serving` origin and URLs | `viewer/server.js` (lifecycle and auth), `viewer/test/server.test.js`, `viewer/test/helpers/`, new `viewer/test/lifecycle.test.js`, new `viewer/test/hooks/` | GPT / gpt-5.6-terra, worktree `rv-server` | `01a0d06d-2827-7ab0-83c7-97c78b0be201` | done — remediated once (17 missing test cases; lead fixed the ignore-sigterm hook), `e2bf049` |
-| 2 | Registration and the lists: signed `POST /register` and `/watching`, the server's own registration, session and harness, `.plans` and `--register-plan`, path limits, pruning | `viewer/server.js` (registration), new `viewer/test/registration.test.js`, `viewer/test/hooks/` | GPT / gpt-5.6-terra, worktree `rv-server`, after 1 | | as task 1 | running |
-| 3 | Page and document routes: `/` list page, `/list`, `/plan`, `/doc`, `/docs`, `/assets/`, CSP, per-request reads | `viewer/server.js` (routes), new `viewer/test/routes.test.js` | GPT / gpt-5.6-terra, worktree `rv-server`, after 2 | | as task 1 | pending |
+| 2 | Registration and the lists: signed `POST /register` and `/watching`, the server's own registration, session and harness, `.plans` and `--register-plan`, path limits, pruning | `viewer/server.js` (registration), new `viewer/test/registration.test.js`, `viewer/test/hooks/` | GPT / gpt-5.6-terra, worktree `rv-server`, after 1 | `01a0d07d-500c-7a91-976b-82e4d056ac6f` | as task 1 | done — remediated once (missing plan `graphs/` directory bug; 13 missing test cases), `ed25735` |
+| 3 | Page and document routes: `/` list page, `/list`, `/plan`, `/doc`, `/docs`, `/assets/`, CSP, per-request reads | `viewer/server.js` (routes), new `viewer/test/routes.test.js` | GPT / gpt-5.6-terra, worktree `rv-server`, after 2 | `01a0d090-0dc0-7510-b8c1-e9aa57948504` | as task 1 | done, `605e1ca` |
 | 4 | Graph viewer on touch: viewport tag, one-finger pan, pinch, Select toggle, second-finger and cancel handling, narrow top bar; Playwright config for Chromium and Firefox; package test scripts | `viewer/index.html`, new `viewer/playwright.config.js`, `viewer/package.json`, new `viewer/test/touch.spec.js` | Claude / sonnet, worktree | Claude agent (worktree `worktree-agent-ac9337bde14a0fbb7`) | done, `c1a1b96` |
 | 5 | List and document pages with the built-in Markdown renderer | new `viewer/list.html`, `viewer/list.js`, `viewer/doc.html`, `viewer/doc.js`, new `viewer/test/render.spec.js` | Claude / sonnet, worktree | Claude agent (worktree `worktree-agent-aba6edcfb2edfe1b1`) | done, `9ce03ad` |
 | 6 | Installer: serving decision, `.serving`, systemd unit, linger, `tailscale serve` prompt, `--no-serve`, `--stop --if-stale`, both browsers; fixture suite | `install.sh`, `install/test/run.sh` | GPT / gpt-5.6-terra, worktree `rv-installer` | `01a0d06d-302f-7630-8151-5fbd310fdf24` | done, `6c696a3` |
 | 7 | Documents: `protocol/graphs.md` contract, the `--register-plan` step in five stage documents, README, CONTRIBUTING, AGENTS.md | `protocol/graphs.md`, `protocol/planning.md`, `protocol/plan-review.md`, `protocol/implementation.md`, `protocol/verification.md`, `protocol/adopt.md`, `README.md`, `CONTRIBUTING.md`, `AGENTS.md` | Claude / sonnet, worktree | Claude agent (worktree `worktree-agent-ad349f27b785d5655`) | done, `0ecd269`; AGENTS.md "never start a server by hand" paragraph left for the router sweep |
-| 8 | End-to-end browser cases for the list and document pages through the real server, and any glue they expose | new `viewer/test/pages.spec.js`; fixes in `viewer/list.js`, `viewer/doc.js` | Claude / sonnet, after 3, 4, 5 | | `npm --prefix viewer run test:browser` | pending |
+| 8 | End-to-end browser cases for the list and document pages through the real server, and any glue they expose | new `viewer/test/pages.spec.js`; fixes in `viewer/list.js`, `viewer/doc.js` | Claude / sonnet, after 3, 4, 5 | Claude agent (main checkout) | `npm --prefix viewer run test:browser` | done, `546e7a5` |
 
 ## Log
 
@@ -1077,3 +1077,10 @@ Filled by Stage 3. One row per worker brief.
   laptop and phone: Decision Log #94-#95 and an IDEA constraint. These entries add
   validation only, after approval. They change no behaviour in the Spec, so no new review
   round was run; Stage 4 verifies them like everything else.
+- 2026-09-23: Stage 3 done. All eight tasks merged into `remote-viewer`; 192/192 browser
+  tests (Chromium and Firefox), 102/102 unit tests, installer 41/41, sensitivity 62/62,
+  spine 80/80, `./install.sh` twice idempotent. The blocking hearth checks are not yet run;
+  they need Collin's `sudo` step and devices (COMPLETION.md, Known gaps). Status set to
+  verifying.
+- 2026-09-23: A lead script had overwritten the outcome cells of Watch List #2 and #3 and
+  of Decision Log #8 with task statuses (commit `c245f40`); restored from `c245f40~1`.
