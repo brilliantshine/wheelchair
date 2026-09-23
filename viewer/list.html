@@ -1,0 +1,82 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>graphs &amp; plans</title>
+<style>
+  :root {
+    --bg: #14161a; --panel: #1c1f25; --panel-2: #23262d; --line: #2a2f38;
+    --ink: #e6e8ec; --dim: #8b929e;
+    --proposed: #6b7280; --agreed: #4ea87b; --rejected: #c4645f; --accent: #5b9dd9;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--ink);
+    font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, sans-serif;
+    overflow-x: hidden; }
+  [hidden] { display: none !important; }
+
+  header#topbar { position: sticky; top: 0; z-index: 5; padding: 12px 16px;
+    background: var(--panel); border-bottom: 1px solid var(--line); }
+  header#topbar h1 { margin: 0; font-size: 15px; font-weight: 600; }
+
+  main { max-width: 920px; margin: 0 auto; padding: 16px; }
+
+  #error-banner { margin: 0 0 14px; padding: 8px 12px; border-radius: 6px; font-size: 12px;
+    background: #3a1f1f; border: 1px solid var(--rejected); color: #f2d4d1; }
+
+  h2.section-title { font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--dim); margin: 0 0 10px; }
+
+  #empty { color: var(--dim); padding: 10px 2px; }
+
+  section.group { margin-bottom: 16px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 8px; overflow: hidden; }
+  section.group > header { display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+    background: var(--panel-2); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  section.group > header .name { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+  section.group > header .badge { font-size: 11px; padding: 2px 6px; border-radius: 3px;
+    color: var(--dim); border: 1px solid var(--line); flex-shrink: 0; }
+  section.group > header .badge.ended { color: var(--rejected); border-color: var(--rejected); }
+  section.group > header code { background: var(--bg); border: 1px solid var(--line);
+    border-radius: 4px; padding: 2px 6px; font-size: 11px; color: var(--ink);
+    user-select: all; word-break: break-all; max-width: 100%; }
+
+  ul.graph-list { list-style: none; margin: 0; padding: 0; }
+  ul.graph-list li { border-top: 1px solid var(--line); }
+  ul.graph-list li:first-child { border-top: none; }
+  ul.graph-list a { display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+    color: var(--ink); text-decoration: none; min-width: 0; }
+  ul.graph-list a:hover { background: var(--panel-2); }
+  .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .harness { font-size: 11px; color: var(--dim); border: 1px solid var(--line);
+    border-radius: 3px; padding: 1px 6px; flex-shrink: 0; }
+  .age { margin-left: auto; font-size: 11px; color: var(--dim); flex-shrink: 0;
+    white-space: nowrap; padding-left: 8px; }
+
+  #plans-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--panel); }
+  table.plans { width: 100%; border-collapse: collapse; }
+  table.plans th, table.plans td { text-align: left; padding: 8px 10px; border-top: 1px solid var(--line);
+    font-size: 12.5px; white-space: nowrap; }
+  table.plans thead th { color: var(--dim); font-weight: 500; border-top: none;
+    background: var(--panel-2); }
+  table.plans tbody tr:first-child td { border-top: none; }
+  table.plans a { color: var(--accent); text-decoration: none; }
+  table.plans a:hover { text-decoration: underline; }
+
+  section + section.plans-section { margin-top: 22px; }
+</style>
+
+<header id="topbar"><h1>graphs &amp; plans</h1></header>
+<main>
+  <div id="error-banner" hidden></div>
+  <p id="empty" hidden>No graphs or plans are registered yet.</p>
+  <section id="sessions-section" hidden>
+    <h2 class="section-title">Graphs</h2>
+    <div id="sessions"></div>
+  </section>
+  <section id="plans-section" class="plans-section" hidden>
+    <h2 class="section-title">Plans</h2>
+    <div id="plans-wrap"></div>
+  </section>
+</main>
+<script src="/assets/list.js"></script>

@@ -1,5 +1,6 @@
 <!doctype html>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>graph viewer</title>
 <style>
   :root {
@@ -8,7 +9,7 @@
     --proposed: #6b7280; --agreed: #4ea87b; --rejected: #c4645f; --accent: #5b9dd9;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+  html, body { margin: 0; height: 100%; overflow-x: hidden; background: var(--bg); color: var(--ink);
     font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, sans-serif; }
 
   #topbar { position: fixed; inset: 0 0 auto 0; height: 48px; z-index: 5; display: flex;
@@ -31,6 +32,26 @@
     border-radius: 4px; padding: 5px 10px; font: inherit; font-size: 12px; cursor: pointer; }
   #controls button:hover:not(:disabled) { background: #2b3542; }
   #controls button:disabled { opacity: .4; cursor: default; }
+  /* Only ever shown by JS (see updateSelectToggleVisibility): touch is detected per pointer, not
+     by device, so CSS alone (`(pointer: coarse)`) can't cover the "a touch pointer has been seen"
+     half of Decision Log #30. `hidden` is the resting state; JS clears it. */
+  #select-toggle.active { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+
+  /* Decision Log #35: below 600px the legend and source are dropped rather than squeezed, and the
+     controls become the one thing in the bar that scrolls — sideways, inside the bar's own fixed
+     48px, never the page. `min-width: 0` is what lets a flex item shrink past its content's natural
+     width in the first place; without it #controls would keep its full six-button width and spill
+     past the bar for #topbar's `overflow: hidden` (above) to silently swallow, exactly the
+     "clipped and unreachable" bug this rule exists to avoid. */
+  @media (max-width: 599px) {
+    #legend, #source { display: none; }
+    #breadcrumb { min-width: 0; }
+    /* flex-shrink:0 (above) is what keeps #controls at its full six/seven-button width on a wide
+       bar; here that has to give — shrink it to whatever room #breadcrumb leaves, and let its own
+       overflow-x carry the rest, rather than #topbar's overflow:hidden clipping it unreachably. */
+    #controls { flex-shrink: 1; min-width: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    #controls button { flex-shrink: 0; }
+  }
 
   #error-banner { position: fixed; left: 14px; right: 14px; top: 56px; z-index: 6;
     padding: 8px 12px; border-radius: 6px; font-size: 12px; background: #3a1f1f;
@@ -209,6 +230,7 @@
     <i style="background:var(--rejected)"></i>rejected
   </span>
   <div id="controls">
+    <button id="select-toggle" hidden aria-pressed="false" title="One-finger drag box-selects; tap a node or edge to add or remove it">select</button>
     <button id="select-all">select all</button>
     <button id="clear-selection" disabled>clear</button>
     <button id="approve" disabled>approve</button>
@@ -274,6 +296,7 @@
   const approveBtn = document.getElementById('approve');
   const rejectBtn = document.getElementById('reject');
   const clearBtn = document.getElementById('clear-selection');
+  const selectToggleBtn = document.getElementById('select-toggle');
 
   // ---- state ---------------------------------------------------------------
   let graph = null;          // last known-good canonical graph, as read or written
@@ -297,6 +320,15 @@
   // canonicalized groups together, not the text alone (see syncExplainPanel). Compared on every
   // render so the marked-phrase spans are rebuilt only when one of those two actually changed.
   let explainSyncKey = null;
+  // Whether the Select toggle is on. Touch-only (Objective 4/Decision Log #29): a mouse pointer
+  // always box-selects on a plain drag regardless of this flag, so it is read nowhere a mouse
+  // gesture is handled.
+  let selectMode = false;
+  // Set the first time a touch pointer is seen (Decision Log #30) — touch is detected per
+  // pointer, never by device, so a touchscreen laptop that starts with the mouse only reveals the
+  // toggle once a finger actually lands, the same as `(pointer: coarse)` reveals it up front on a
+  // phone.
+  let sawTouch = false;
 
   // ---- small helpers ---------------------------------------------------------
   function el(name, attrs) {
@@ -523,6 +555,29 @@
     render();
   });
   clearBtn.addEventListener('click', () => { clearSelection(); render(); });
+
+  // A tap on a node or edge is additive under the Select toggle the same way a shift-click is —
+  // it adds to or removes from the selection rather than replacing it — but only for a touch
+  // pointer; a mouse click while the toggle happens to be on (it never shows for a mouse-only
+  // context, but a touchscreen laptop can have both) still replaces the selection unless shift is
+  // actually held (Objective 4).
+  function pickAdditive(ev) { return ev.shiftKey || (selectMode && ev.pointerType === 'touch'); }
+
+  // Shown when `(pointer: coarse)` matches — a phone, up front — or a touch pointer has been seen
+  // (`sawTouch`, set from the first touch pointerdown below) — a touchscreen laptop whose primary
+  // pointer is a mouse, only once a finger actually shows up (Decision Log #30).
+  const coarsePointerQuery = window.matchMedia('(pointer: coarse)');
+  function updateSelectToggleVisibility() {
+    selectToggleBtn.hidden = !(coarsePointerQuery.matches || sawTouch);
+  }
+  coarsePointerQuery.addEventListener('change', updateSelectToggleVisibility);
+  updateSelectToggleVisibility();
+
+  selectToggleBtn.addEventListener('click', () => {
+    selectMode = !selectMode;
+    selectToggleBtn.classList.toggle('active', selectMode);
+    selectToggleBtn.setAttribute('aria-pressed', String(selectMode));
+  });
 
   // ---- groups ------------------------------------------------------------------
   // Pure: takes a group's node ids and the graph and returns exactly what a hover lights — the
@@ -1252,14 +1307,14 @@
     // on every render, so it tracks the current zoom.
     const band = el('path', { class: 'edge-band', d, 'stroke-width': String(24 / view.k) });
     band.addEventListener('pointerdown', (ev) => ev.stopPropagation());
-    band.addEventListener('pointerup', (ev) => { ev.stopPropagation(); pick(e.id, ev.shiftKey); });
+    band.addEventListener('pointerup', (ev) => { ev.stopPropagation(); pick(e.id, pickAdditive(ev)); });
     g.appendChild(band);
 
     const ends = [['from', ax, ay], ['to', bx, by]];
     for (const [end, hx, hy] of ends) {
       const handle = el('circle', { class: 'edge-handle', 'data-end': end, cx: hx, cy: hy, r: 5 });
       handle.addEventListener('pointerdown', (ev) => ev.stopPropagation());
-      handle.addEventListener('pointerup', (ev) => { ev.stopPropagation(); pick(e.id, ev.shiftKey); });
+      handle.addEventListener('pointerup', (ev) => { ev.stopPropagation(); pick(e.id, pickAdditive(ev)); });
       g.appendChild(handle);
     }
 
@@ -1371,7 +1426,7 @@
     label.textContent = text;
     for (const part of [labelBg, label]) {
       part.addEventListener('pointerdown', (ev) => ev.stopPropagation());
-      part.addEventListener('pointerup', (ev) => { ev.stopPropagation(); pick(e.id, ev.shiftKey); });
+      part.addEventListener('pointerup', (ev) => { ev.stopPropagation(); pick(e.id, pickAdditive(ev)); });
       // Hovering the label used to reveal these same endpoint handles for free, by CSS :hover on
       // the ancestor g.edge (see the comment on .edge:hover above). Now that the label lives
       // outside that group, it has to toggle the stand-in class on `g` itself.
@@ -1767,6 +1822,15 @@
   let dragState = null;
   let panState = null;
   let marqueeState = null;
+  // Touch pointers currently down, by pointerId, holding each one's last known client
+  // coordinates — populated from the capturing pointerdown listener below and kept current on
+  // every move, since a pinch's own midpoint and distance are computed from both fingers'
+  // positions regardless of which one is moving on a given event (Decision Log #29/#30).
+  const touchPoints = new Map();
+  // Set only while exactly two touch pointers are down and pinching. `prevMid`/`prevDist` are the
+  // midpoint (svg-local) and distance from the *previous* pointermove (or from pinch start), not
+  // from the gesture's beginning — see pinchMove below for why the math is incremental.
+  let pinchState = null;
 
   function svgLocal(ev) {
     const r = svg.getBoundingClientRect();
@@ -1786,11 +1850,102 @@
     svg.setPointerCapture(ev.pointerId);
   }
 
+  // Ends whatever single-pointer gesture is in progress exactly where it stands — a dragged box
+  // keeps its new position and is saved, same as a mouse drag saves (Objective 2) — without
+  // inventing a click the way a plain pointerup's "didn't move" branch does (below). Shared by a
+  // second finger landing (starts a pinch) and by a pointercancel on the canvas (Objective 2's
+  // "ends any gesture in progress the same way").
+  function interruptGesture() {
+    if (dragState) {
+      if (dragState.moved) {
+        const positions = [];
+        for (const id of dragState.ids) {
+          const node = findNode(graph, id);
+          node.x = Math.round(node.x); node.y = Math.round(node.y);
+          positions.push([id, { x: node.x, y: node.y }]);
+        }
+        render();
+        commitDrag(positions);
+      }
+      dragState = null;
+    } else if (panState) {
+      panState = null;
+      svg.classList.remove('panning');
+    } else if (marqueeState) {
+      finishMarquee(marqueeState, marqueeState.shift);
+      marqueeState = null;
+      render();
+    }
+  }
+
+  // Continues an active pinch on a touch pointermove, recomputed from the *previous* move's
+  // midpoint and distance rather than the gesture's starting values. That is what lets two
+  // fingers translating together (no distance change) pan the view, and two fingers pinching in
+  // place (no midpoint change) zoom it, from the same formula: the world point that sat under the
+  // previous midpoint is kept under the new one, at the new zoom. A pure anchor-preserving zoom
+  // (as zoomBy does for the mouse wheel) leaves the view untouched when the fingers only
+  // translate, since its ratio-of-k is 1 — wrong for a pinch, which fans out and drifts together.
+  function pinchMove() {
+    const a = touchPoints.get(pinchState.idA);
+    const b = touchPoints.get(pinchState.idB);
+    if (!a || !b) return;
+    const r = svg.getBoundingClientRect();
+    const la = { x: a.x - r.left, y: a.y - r.top };
+    const lb = { x: b.x - r.left, y: b.y - r.top };
+    const mid = { x: (la.x + lb.x) / 2, y: (la.y + lb.y) / 2 };
+    const dist = Math.hypot(la.x - lb.x, la.y - lb.y) || pinchState.prevDist;
+    const worldX = (pinchState.prevMid.x - view.x) / view.k;
+    const worldY = (pinchState.prevMid.y - view.y) / view.k;
+    const k = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, view.k * (dist / pinchState.prevDist)));
+    view.x = mid.x - worldX * k;
+    view.y = mid.y - worldY * k;
+    view.k = k;
+    pinchState.prevMid = mid;
+    pinchState.prevDist = dist;
+    render();
+  }
+
+  // Capture phase, ahead of every node's, edge's and the canvas's own bubble-phase pointerdown
+  // listener (below), so a second finger landing anywhere — on a node mid-drag included — is
+  // claimed for a pinch before startNodeDrag or the marquee/pan branch below ever sees it. A
+  // single touch pointer falls straight through unclaimed: it drives whichever ordinary gesture
+  // its target starts, exactly like a mouse pointer would.
+  svg.addEventListener('pointerdown', (ev) => {
+    if (ev.pointerType !== 'touch') return;
+    touchPoints.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    if (!sawTouch) { sawTouch = true; updateSelectToggleVisibility(); }
+    if (touchPoints.size < 2) return;
+    ev.preventDefault();
+    ev.stopImmediatePropagation();
+    if (pinchState) return; // a third-or-later finger: already pinching, nothing more to start
+    const idB = ev.pointerId;
+    const idA = [...touchPoints.keys()].find((id) => id !== idB);
+    interruptGesture();
+    const a = touchPoints.get(idA), b = touchPoints.get(idB);
+    const r = svg.getBoundingClientRect();
+    pinchState = {
+      idA, idB,
+      prevMid: { x: (a.x + b.x) / 2 - r.left, y: (a.y + b.y) / 2 - r.top },
+      prevDist: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+    };
+    svg.setPointerCapture(idB);
+  }, { capture: true });
+
   svg.addEventListener('pointerdown', (ev) => {
     if (ev.target.closest('.node') || ev.target.closest('.edge')) return;
-    // Pan is alt-drag or the middle button; the plain background drag is
-    // selection (box-select), so the two never collide.
-    if (ev.altKey || ev.button === 1) {
+    // Pan is alt-drag or the middle button for a mouse; a plain background drag is selection
+    // (box-select) — unchanged for a mouse (Objective 4). A touch pointer has no alt or middle
+    // button: one finger pans on empty canvas, unless the Select toggle is on, which makes a
+    // one-finger drag box-select instead (Decision Log #29, #30).
+    if (ev.pointerType === 'touch') {
+      if (selectMode) {
+        const p = svgLocal(ev);
+        marqueeState = { x0: p.x, y0: p.y, x1: p.x, y1: p.y, shift: ev.shiftKey };
+      } else {
+        panState = { x0: view.x, y0: view.y, cx: ev.clientX, cy: ev.clientY };
+        svg.classList.add('panning');
+      }
+    } else if (ev.altKey || ev.button === 1) {
       panState = { x0: view.x, y0: view.y, cx: ev.clientX, cy: ev.clientY };
       svg.classList.add('panning');
     } else {
@@ -1801,6 +1956,13 @@
   });
 
   svg.addEventListener('pointermove', (ev) => {
+    if (ev.pointerType === 'touch' && touchPoints.has(ev.pointerId)) {
+      touchPoints.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    }
+    if (pinchState && (ev.pointerId === pinchState.idA || ev.pointerId === pinchState.idB)) {
+      pinchMove();
+      return;
+    }
     if (dragState) {
       if (!dragState.moved && Math.hypot(ev.clientX - dragState.x0, ev.clientY - dragState.y0) > 3) {
         dragState.moved = true;
@@ -1827,6 +1989,15 @@
   });
 
   svg.addEventListener('pointerup', (ev) => {
+    if (ev.pointerType === 'touch') {
+      touchPoints.delete(ev.pointerId);
+      if (pinchState && (ev.pointerId === pinchState.idA || ev.pointerId === pinchState.idB)) {
+        // Lifting one finger of a pinch resumes nothing — not even for the finger still down —
+        // until a new touch starts (Objective 2).
+        pinchState = null;
+        return;
+      }
+    }
     if (dragState) {
       if (dragState.moved) {
         const positions = [];
@@ -1844,7 +2015,7 @@
         // never be driven by "click". It fires here, on pointerup, and a drag
         // is distinguished from a plain selection purely by whether the
         // pointer moved past the small threshold above.
-        pick(dragState.primary, ev.shiftKey);
+        pick(dragState.primary, pickAdditive(ev));
       }
       dragState = null;
     } else if (panState) {
@@ -1855,6 +2026,20 @@
       marqueeState = null;
       render();
     }
+  });
+
+  // A pointercancel ends whatever gesture that pointer was driving the same way a second finger
+  // landing does (Objective 2) — committing a moved drag, but never inventing a tap out of one
+  // that hadn't moved, and never resuming a marquee or pan for a pointer that wasn't driving one.
+  svg.addEventListener('pointercancel', (ev) => {
+    if (ev.pointerType === 'touch') {
+      touchPoints.delete(ev.pointerId);
+      if (pinchState && (ev.pointerId === pinchState.idA || ev.pointerId === pinchState.idB)) {
+        pinchState = null;
+        return;
+      }
+    }
+    interruptGesture();
   });
 
   function finishMarquee(m, shift) {

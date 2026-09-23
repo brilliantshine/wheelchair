@@ -61,10 +61,12 @@ workflow.
 
 ## Installation and generated files
 
-Run `./install.sh` after cloning, after changing a wrapper, or after installing another
-harness. It renders wrappers into the harness homes, installs the viewer dependencies
-and Chromium, then updates the diagram-sensitivity block. This reaches outside the
-clone; the fixture suites below do not.
+Run `./install.sh` after cloning, after changing a wrapper, after installing another
+harness, or after pulling a change under `viewer/`. It renders wrappers into the harness
+homes, installs the viewer dependencies and both Chromium and Firefox, stops any
+already-running viewer that isn't running the code you just pulled, then updates the
+diagram-sensitivity block. This reaches outside the clone; the fixture suites below do
+not.
 
 Edits under `protocol/` normally take effect immediately because installed wrappers
 point back to this checkout. The exception is the delimited region in
@@ -81,13 +83,15 @@ bash spine/test/run.sh
 bash sensitivity/test/run.sh
 bash install/test/run.sh
 ./install.sh && ./install.sh
-node --test 'viewer/test/*.test.js'
+node --test viewer/test/*.test.js
 npm --prefix viewer run test:browser
 ```
 
-The quoted glob in the Node test command is required. Protocol documents have no test
-suite; review their rendered output and make sure each stage still produces the input
-the next stage expects.
+The glob in the Node test command must be unquoted, expanded by the shell — a quoted
+glob isn't discovered on Node 20, which is what the always-on service runs. The browser
+suite runs in both Chromium and Firefox. Protocol documents have no test suite; review
+their rendered output and make sure each stage still produces the input the next stage
+expects.
 
 Do not validate viewer changes against a manually started default server: it may reuse
 an older process. Use the suites, or start an isolated server with both `--port` and
