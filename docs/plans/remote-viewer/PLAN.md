@@ -1,6 +1,6 @@
 ---
 slug: remote-viewer
-status: approved   # planning | ready-for-review | approved | implementing | verifying | done
+status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-09-23
 ---
 
@@ -1038,6 +1038,14 @@ Filled by Stage 3. One row per worker brief.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| 1 | Server lifecycle and identity: lasting token, listen-first start-up, `/whoami` with nonce proof and `code`, `.server` as information with self-repair, `--stop`/`--if-stale`/`--rotate-token`/`--url`/`--service`, shutdown order, start-up rollback, silent-holder grace, `.serving` origin and URLs | `viewer/server.js` (lifecycle and auth), `viewer/test/server.test.js`, `viewer/test/helpers/`, new `viewer/test/lifecycle.test.js`, new `viewer/test/hooks/` | GPT / gpt-5.6-terra, worktree `rv-server` | | `node --test viewer/test/*.test.js`; `npx --prefix viewer playwright test viewer/test/browser.spec.js --browser=chromium` | pending |
+| 2 | Registration and the lists: signed `POST /register` and `/watching`, the server's own registration, session and harness, `.plans` and `--register-plan`, path limits, pruning | `viewer/server.js` (registration), new `viewer/test/registration.test.js`, `viewer/test/hooks/` | GPT / gpt-5.6-terra, worktree `rv-server`, after 1 | | as task 1 | pending |
+| 3 | Page and document routes: `/` list page, `/list`, `/plan`, `/doc`, `/docs`, `/assets/`, CSP, per-request reads | `viewer/server.js` (routes), new `viewer/test/routes.test.js` | GPT / gpt-5.6-terra, worktree `rv-server`, after 2 | | as task 1 | pending |
+| 4 | Graph viewer on touch: viewport tag, one-finger pan, pinch, Select toggle, second-finger and cancel handling, narrow top bar; Playwright config for Chromium and Firefox; package test scripts | `viewer/index.html`, new `viewer/playwright.config.js`, `viewer/package.json`, new `viewer/test/touch.spec.js` | Claude / sonnet, worktree | | `npm --prefix viewer run test:browser` (both projects); `node --test viewer/test/*.test.js` | pending |
+| 5 | List and document pages with the built-in Markdown renderer | new `viewer/list.html`, `viewer/list.js`, `viewer/doc.html`, `viewer/doc.js`, new `viewer/test/render.spec.js` | Claude / sonnet, worktree | | `npx --prefix viewer playwright test viewer/test/render.spec.js --browser=chromium` and `--browser=firefox` | pending |
+| 6 | Installer: serving decision, `.serving`, systemd unit, linger, `tailscale serve` prompt, `--no-serve`, `--stop --if-stale`, both browsers; fixture suite | `install.sh`, `install/test/run.sh` | GPT / gpt-5.6-terra, worktree `rv-installer` | | `bash install/test/run.sh`; `bash sensitivity/test/run.sh` | pending |
+| 7 | Documents: `protocol/graphs.md` contract, the `--register-plan` step in five stage documents, README, CONTRIBUTING, AGENTS.md | `protocol/graphs.md`, `protocol/planning.md`, `protocol/plan-review.md`, `protocol/implementation.md`, `protocol/verification.md`, `protocol/adopt.md`, `README.md`, `CONTRIBUTING.md`, `AGENTS.md` | Claude / sonnet, worktree | | `bash spine/test/run.sh`; `git diff --stat` limited to the boundary | pending |
+| 8 | End-to-end browser cases for the list and document pages through the real server, and any glue they expose | new `viewer/test/pages.spec.js`; fixes in `viewer/list.js`, `viewer/doc.js` | Claude / sonnet, after 3, 4, 5 | | `npm --prefix viewer run test:browser` | pending |
 
 ## Log
 
