@@ -1,6 +1,12 @@
 /*
 Routes (all responses use Cache-Control: no-store):
+  GET  /?token            token query      -> viewer/list.html
   GET  /?path&token       token query      -> viewer/index.html
+  GET  /list?token        token query      -> { sessions, plans }
+  GET  /plan?dir&token    token query      -> { dir, slug, files }
+  GET  /docs?plan&token   token query      -> viewer/doc.html
+  GET  /doc?plan&file&token token query    -> raw Markdown
+  GET  /assets/list.js, /assets/doc.js     -> page scripts (no token)
   GET  /graph?path&token  token query      -> { hash, graph, children }
   PUT  /graph?path        X-Graph-Token + matching Origin -> { hash }
   PUT  /view?path         X-Graph-Token + matching Origin -> { hash }
@@ -36,14 +42,16 @@ const { spawn } = require('node:child_process');
 const DEFAULT_PORT = 7373;
 const DAY = 24 * 60 * 60 * 1000;
 const REGISTERED_MAX_AGE = 30 * DAY;
-// A server that has claimed the lockfile but not yet bound is indistinguishable from an unrelated
-// live process. These bound how long a second starter waits for it to answer before giving up.
+const REGISTRY_PRUNE_INTERVAL_MS = 60 * 60 * 1000;
+const REGISTER_SIGNATURE_WINDOW_MS = 60 * 1000;
+const PAGE_CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 // A page polls every second, so anything read inside this window means a tab is live on that graph.
 const WATCHED_WINDOW_MS = 4000;
 // How long --open waits for the graph to be written before giving up on showing it.
 const LAUNCH_WAIT_MS = 15000;
 const STARTUP_GRACE_ATTEMPTS = 20;
 const STARTUP_GRACE_INTERVAL_MS = 100;
+const STOP_WAIT_MS = 5000;
 const ORIGINS = new Set(['proposed', 'agreed', 'rejected']);
 const SOURCES = new Set(['router', 'code-read', 'plan-proposal']);
 const NODE_KINDS = new Set(['file', 'module', 'step', 'decision', 'external', 'note']);
@@ -474,17 +482,18 @@ function checkAgentWrite(current, incoming) {
   }
 }
 
-async function hasContainmentCycle(rootPath, incoming) {
+async function hasContainmentCycle(rootPath, incoming, config) {
   const visiting = new Set();
   const seen = new Set();
   async function walk(filePath) {
     if (visiting.has(filePath)) return true;
     if (seen.has(filePath)) return false;
     seen.add(filePath); visiting.add(filePath);
-    const graph = filePath === rootPath ? incoming : await graphFromFile(filePath);
+    const safePath = filePath === rootPath ? rootPath : await validGraphPath(config, filePath);
+    const graph = safePath === rootPath ? incoming : await graphFromFile(safePath);
     if (graph) {
       for (const node of graph.nodes) {
-        if (node.graph && await walk(childPath(filePath, node.graph))) return true;
+        if (node.graph && await walk(childPath(safePath, node.graph))) return true;
       }
     }
     visiting.delete(filePath);
@@ -493,12 +502,13 @@ async function hasContainmentCycle(rootPath, incoming) {
   return walk(rootPath);
 }
 
-async function subtreeHasVerdict(rootPath) {
+async function subtreeHasVerdict(rootPath, config) {
   const seen = new Set();
   async function walk(filePath) {
     if (seen.has(filePath)) return false;
     seen.add(filePath);
-    const raw = await readRaw(filePath);
+    const safePath = await validGraphPath(config, filePath);
+    const raw = await readRaw(safePath);
     if (!raw.exists) return false;
     let graph;
     try {
@@ -507,25 +517,25 @@ async function subtreeHasVerdict(rootPath) {
       // A child that will not parse cannot be shown to hold no verdicts, and this walk exists to
       // stop verdict loss. Surface the corruption where it matters rather than orphaning the file.
       fail(422, 'container-unreadable-child',
-        `The child graph ${filePath} does not parse, so its verdicts cannot be checked.`);
+        `The child graph ${safePath} does not parse, so its verdicts cannot be checked.`);
     }
     if ([...graph.nodes, ...graph.edges].some((entry) =>
       entry.origin === 'agreed' || entry.origin === 'rejected')) return true;
     for (const node of graph.nodes) {
-      if (node.graph && await walk(childPath(filePath, node.graph))) return true;
+      if (node.graph && await walk(childPath(safePath, node.graph))) return true;
     }
     return false;
   }
   return walk(rootPath);
 }
 
-async function checkOrphans(graphPath, current, incoming) {
+async function checkOrphans(graphPath, current, incoming, config) {
   const nextById = mapById(incoming.nodes);
   for (const oldNode of current.nodes) {
     if (!oldNode.graph) continue;
     const next = nextById.get(oldNode.id);
     if (!next || next.graph !== oldNode.graph) {
-      if (await subtreeHasVerdict(childPath(graphPath, oldNode.graph))) {
+      if (await subtreeHasVerdict(childPath(graphPath, oldNode.graph), config)) {
         fail(422, 'container-orphan', 'Removing or retargeting this container would orphan a verdict.',
           { ids: [oldNode.id] });
       }
@@ -894,7 +904,8 @@ function withMutex(work) {
 
 function configFromArgs(argv) {
   const options = { port: DEFAULT_PORT, cacheRoot: null, open: null, stop: false, show: false,
-    browser: process.env.WHEELCHAIR_NO_BROWSER !== '1' };
+    browser: process.env.WHEELCHAIR_NO_BROWSER !== '1', service: false, rotateToken: false,
+    url: false, ifStale: false, registerPlan: null };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--port') {
@@ -915,6 +926,18 @@ function configFromArgs(argv) {
       options.browser = false;
     } else if (arg === '--stop') {
       options.stop = true;
+    } else if (arg === '--if-stale') {
+      options.ifStale = true;
+    } else if (arg === '--service') {
+      options.service = true;
+      options.browser = false;
+    } else if (arg === '--rotate-token') {
+      options.rotateToken = true;
+    } else if (arg === '--url') {
+      options.url = true;
+    } else if (arg === '--register-plan') {
+      if (!argv[index + 1]) throw new Error('Missing --register-plan value.');
+      options.registerPlan = path.resolve(argv[++index]);
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -924,7 +947,10 @@ function configFromArgs(argv) {
 }
 
 function lockPath(config) { return path.join(config.cacheRoot, '.server'); }
+function tokenPath(config) { return path.join(config.cacheRoot, '.token'); }
+function servingPath(config) { return path.join(config.cacheRoot, '.serving'); }
 function registeredPath(config) { return path.join(config.cacheRoot, '.registered'); }
+function plansPath(config) { return path.join(config.cacheRoot, '.plans'); }
 
 function temporaryPath(filePath) {
   return path.join(path.dirname(filePath),
@@ -972,8 +998,14 @@ async function atomicWrite(filePath, bytes, mode = 0o644) {
 }
 
 async function loadRegistered(config) {
+  return loadRegistry(registeredPath(config));
+}
+
+async function loadPlans(config) { return loadRegistry(plansPath(config)); }
+
+async function loadRegistry(filePath) {
   try {
-    const parsed = JSON.parse(await fsp.readFile(registeredPath(config), 'utf8'));
+    const parsed = JSON.parse(await fsp.readFile(filePath, 'utf8'));
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
   } catch (error) {
     if (error.code === 'ENOENT' || error instanceof SyntaxError) return {};
@@ -982,27 +1014,70 @@ async function loadRegistered(config) {
 }
 
 async function saveRegistered(config, entries) {
+  return saveRegistry(config, registeredPath(config), entries);
+}
+
+async function savePlans(config, entries) { return saveRegistry(config, plansPath(config), entries); }
+
+async function saveRegistry(config, filePath, entries) {
   const ordered = {};
   for (const key of Object.keys(entries).sort()) ordered[key] = entries[key];
   await fsp.mkdir(config.cacheRoot, { recursive: true, mode: 0o700 });
-  await atomicWrite(registeredPath(config), Buffer.from(`${JSON.stringify(ordered, null, 2)}\n`), 0o600);
+  await atomicWrite(filePath, Buffer.from(`${JSON.stringify(ordered, null, 2)}\n`), 0o600);
 }
 
-async function pruneRegistered(config) {
-  const entries = await loadRegistered(config);
-  const cutoff = Date.now() - REGISTERED_MAX_AGE;
-  for (const [key, value] of Object.entries(entries)) {
-    if (!value || typeof value.added !== 'number' || value.added < cutoff) delete entries[key];
+async function newestPlanMtime(planPath) {
+  let newest = 0;
+  async function walk(directory) {
+    let entries;
+    try { entries = await fsp.readdir(directory, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      const candidate = path.join(directory, entry.name);
+      if (entry.isDirectory()) await walk(candidate);
+      else if (entry.isFile() && entry.name.endsWith('.md')) {
+        try { newest = Math.max(newest, (await fsp.stat(candidate)).mtimeMs); } catch { /* raced removal */ }
+      }
+    }
   }
-  await saveRegistered(config, entries);
-  return entries;
+  await walk(planPath); return newest;
 }
 
-async function registerPath(config, graphPath, opened) {
+async function pathMtime(filePath) {
+  try { return (await fsp.stat(filePath)).mtimeMs; } catch { return 0; }
+}
+
+async function pruneRegistry(config, filePath, entries, mtime) {
+  const cutoff = Date.now() - REGISTERED_MAX_AGE;
+  let removed = false;
+  for (const [key, value] of Object.entries(entries)) {
+    const fresh = Math.max(Number(value?.added) || 0, await mtime(key));
+    if (!value || fresh < cutoff) { delete entries[key]; removed = true; }
+  }
+  if (removed) await saveRegistry(config, filePath, entries);
+  return { entries, removed };
+}
+
+// Task 3 calls this while building /list.  It is deliberately stateful so a five-second poll
+// cannot turn registry retention into a five-second pair of rewrites.
+async function pruneRegistries(config, state, { force = false } = {}) {
+  if (!force && state.lastRegistryPrune && Date.now() - state.lastRegistryPrune < REGISTRY_PRUNE_INTERVAL_MS) return;
+  const graphs = await loadRegistered(config); const plans = await loadPlans(config);
+  await pruneRegistry(config, registeredPath(config), graphs, pathMtime);
+  await pruneRegistry(config, plansPath(config), plans, newestPlanMtime);
+  state.lastRegistryPrune = Date.now();
+}
+
+async function registerPath(config, graphPath, opened, session = null, harness = 'other') {
   const entries = await loadRegistered(config);
   const prior = entries[graphPath];
-  entries[graphPath] = { added: Date.now(), opened: Boolean(prior?.opened || opened) };
+  entries[graphPath] = { added: Date.now(), opened: Boolean(prior?.opened || opened), session, harness };
   await saveRegistered(config, entries);
+}
+
+async function registerPlanPath(config, planPath, session, harness) {
+  const entries = await loadPlans(config);
+  entries[planPath] = { added: Date.now(), session, harness };
+  await savePlans(config, entries);
 }
 
 async function ensureRegistered(config, graphPath) {
@@ -1012,7 +1087,7 @@ async function ensureRegistered(config, graphPath) {
   for (const candidate of Object.keys(entries)) {
     if (path.dirname(candidate) !== path.dirname(graphPath)) continue;
     try {
-      const raw = await readRaw(candidate);
+      const raw = await readRaw(await validGraphPath(config, candidate));
       if (raw.exists && parseDisk(raw).nodes.some((node) => node.graph === name)) {
         entries[graphPath] = { added: Date.now(), opened: false };
         await saveRegistered(config, entries);
@@ -1061,6 +1136,68 @@ function validPath(value) {
   return path.resolve(value);
 }
 
+function inside(directory, candidate) {
+  const relative = path.relative(directory, candidate);
+  return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
+}
+
+function isPlanGraphsDirectory(directory) {
+  const plan = path.dirname(directory);
+  return path.basename(directory) === 'graphs' && BARE_NAME.test(path.basename(plan)) &&
+    path.basename(path.dirname(plan)) === 'plans' && path.basename(path.dirname(path.dirname(plan))) === 'docs';
+}
+
+async function validGraphPath(config, value, { createParent = false } = {}) {
+  const lexical = validPath(value);
+  let actual;
+  try { actual = await fsp.realpath(lexical); }
+  catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    let parent;
+    try {
+      if (createParent && inside(path.resolve(config.cacheRoot), lexical)) {
+        await fsp.mkdir(path.dirname(lexical), { recursive: true });
+      }
+      const lexicalParent = path.dirname(lexical);
+      if (createParent && isPlanGraphsDirectory(lexicalParent)) {
+        const plan = await validPlanPath(path.dirname(lexicalParent));
+        await fsp.mkdir(path.join(plan, 'graphs'), { recursive: true });
+        parent = await fsp.realpath(path.join(plan, 'graphs'));
+      } else {
+        parent = await fsp.realpath(lexicalParent);
+      }
+    }
+    catch { fail(400, 'bad-path', 'The graph path has no real parent directory.'); }
+    actual = path.join(parent, path.basename(lexical));
+  }
+  let cache;
+  try { cache = await fsp.realpath(config.cacheRoot); }
+  catch { cache = path.resolve(config.cacheRoot); }
+  const parent = path.dirname(actual);
+  if (!inside(cache, actual) && !isPlanGraphsDirectory(parent)) {
+    fail(400, 'bad-path', 'The graph path is outside a plan graphs directory or the cache root.');
+  }
+  return actual;
+}
+
+async function validPlanPath(value) {
+  if (typeof value !== 'string' || !path.isAbsolute(value)) fail(400, 'bad-path', 'The plan path must be absolute.');
+  let actual;
+  try {
+    const stat = await fsp.stat(value);
+    if (!stat.isDirectory()) fail(400, 'bad-path', 'The plan path must be a directory.');
+    actual = await fsp.realpath(value);
+  } catch (error) {
+    if (error instanceof ClientError) throw error;
+    fail(400, 'bad-path', 'The plan path must be an existing directory.');
+  }
+  if (!BARE_NAME.test(path.basename(actual)) || path.basename(path.dirname(actual)) !== 'plans' ||
+      path.basename(path.dirname(path.dirname(actual))) !== 'docs') {
+    fail(400, 'bad-path', 'The plan path must be under docs/plans.');
+  }
+  return actual;
+}
+
 function tokenMatches(candidate, token) {
   if (typeof candidate !== 'string') return false;
   const expected = Buffer.from(token, 'utf8');
@@ -1071,6 +1208,11 @@ function tokenMatches(candidate, token) {
 function sendJson(response, status, body) {
   response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
   response.end(JSON.stringify(body));
+}
+
+function sendFile(response, status, bytes, contentType, extraHeaders = {}) {
+  response.writeHead(status, { 'content-type': contentType, 'cache-control': 'no-store', ...extraHeaders });
+  response.end(bytes);
 }
 
 function sendError(response, error) {
@@ -1093,9 +1235,65 @@ function requirePutAuth(request, state) {
   if (!tokenMatches(request.headers['x-graph-token'], state.lock.token)) {
     fail(401, 'bad-token', 'The graph token is missing or invalid.');
   }
-  if (request.headers.origin !== `http://127.0.0.1:${state.port}`) {
+  if (request.headers.origin !== `http://127.0.0.1:${state.port}` && request.headers.origin !== state.servedOrigin) {
     fail(403, 'bad-origin', 'The request origin does not match this viewer.');
   }
+}
+
+function requireOrigin(request, state) {
+  if (request.headers.origin !== `http://127.0.0.1:${state.port}` && request.headers.origin !== state.servedOrigin) {
+    fail(403, 'bad-origin', 'The request origin does not match this viewer.');
+  }
+}
+
+function signatureMatches(signature, token, signed) {
+  return tokenMatches(signature, crypto.createHmac('sha256', token).update(signed).digest('hex'));
+}
+
+function requireSignedAuth(request, state, signed) {
+  const timestamp = request.headers['x-graph-timestamp'];
+  const numeric = typeof timestamp === 'string' && /^\d+$/.test(timestamp) ? Number(timestamp) : NaN;
+  if (!Number.isSafeInteger(numeric) || Math.abs(Date.now() - numeric) > REGISTER_SIGNATURE_WINDOW_MS ||
+      !signatureMatches(request.headers['x-graph-signature'], state.lock.token, signed)) {
+    fail(401, 'bad-signature', 'The registration signature is missing, invalid, or expired.');
+  }
+  requireOrigin(request, state);
+}
+
+async function rawRequestBody(request) {
+  const chunks = [];
+  for await (const chunk of request) chunks.push(chunk);
+  return Buffer.concat(chunks);
+}
+
+async function registrationBody(request, state) {
+  const bytes = await rawRequestBody(request);
+  const timestamp = request.headers['x-graph-timestamp'];
+  requireSignedAuth(request, state, Buffer.concat([Buffer.from(`${timestamp}\n`), bytes]));
+  let body;
+  try { body = JSON.parse(bytes.toString('utf8')); } catch { fail(400, 'bad-body', 'The request body is not JSON.'); }
+  if (!body || typeof body !== 'object' || Array.isArray(body) ||
+      !['graph', 'plan'].includes(body.kind) || typeof body.path !== 'string' ||
+      !(body.session === null || typeof body.session === 'string') ||
+      !['claude', 'codex', 'other'].includes(body.harness) ||
+      (body.kind === 'graph' && typeof body.opened !== 'boolean')) {
+    fail(400, 'bad-body', 'The registration body has the wrong shape.');
+  }
+  return body;
+}
+
+async function handleRegister(request, response, state) {
+  const body = await registrationBody(request, state);
+  await withMutex(async () => {
+    if (body.kind === 'graph') {
+      const graphPath = await validGraphPath(state.config, body.path);
+      await registerPath(state.config, graphPath, body.opened, body.session, body.harness);
+    } else {
+      const planPath = await validPlanPath(body.path);
+      await registerPlanPath(state.config, planPath, body.session, body.harness);
+    }
+  });
+  sendJson(response, 200, { ok: true });
 }
 
 async function requestBody(request) {
@@ -1156,7 +1354,7 @@ function checkViewChanges(current, incoming) {
 
 async function handleGraphPut(request, response, url, state) {
   requirePutAuth(request, state);
-  const graphPath = validPath(url.searchParams.get('path'));
+  const graphPath = await validGraphPath(state.config, url.searchParams.get('path'));
   const body = await requestBody(request);
   const result = await withMutex(async () => {
     if (!await ensureRegistered(state.config, graphPath)) fail(403, 'not-registered', 'This graph path is not registered.');
@@ -1166,12 +1364,12 @@ async function handleGraphPut(request, response, url, state) {
     const current = raw.exists ? parseDisk(raw) : null;
     checkAgentWrite(current || { nodes: [], edges: [] }, incoming);
     if (current) {
-      if (await hasContainmentCycle(graphPath, incoming)) {
+      if (await hasContainmentCycle(graphPath, incoming, state.config)) {
         fail(422, 'container-cycle', 'The write would create a containment cycle.');
       }
-      await checkOrphans(graphPath, current, incoming);
+      await checkOrphans(graphPath, current, incoming, state.config);
     } else {
-      if (await hasContainmentCycle(graphPath, incoming)) {
+      if (await hasContainmentCycle(graphPath, incoming, state.config)) {
         fail(422, 'container-cycle', 'The write would create a containment cycle.');
       }
     }
@@ -1197,7 +1395,7 @@ async function handleGraphPut(request, response, url, state) {
 
 async function handleViewPut(request, response, url, state) {
   requirePutAuth(request, state);
-  const graphPath = validPath(url.searchParams.get('path'));
+  const graphPath = await validGraphPath(state.config, url.searchParams.get('path'));
   const body = await requestBody(request);
   const result = await withMutex(async () => {
     if (!await ensureRegistered(state.config, graphPath)) fail(403, 'not-registered', 'This graph path is not registered.');
@@ -1222,7 +1420,7 @@ async function handleViewPut(request, response, url, state) {
 
 async function handleGetGraph(response, url, state) {
   requireGetToken(url, state);
-  const graphPath = validPath(url.searchParams.get('path'));
+  const graphPath = await validGraphPath(state.config, url.searchParams.get('path'));
   // The page polls this route once a second, so a recent read means a tab is already showing this
   // graph. That is what stops a redraw from stacking up browser windows: an open tab picks the new
   // version up on its own poll, and needs no help.
@@ -1234,28 +1432,204 @@ async function handleGetGraph(response, url, state) {
   const graph = parseDisk(raw);
   const children = {};
   for (const name of new Set(graph.nodes.map((node) => node.graph).filter(Boolean))) {
-    children[name] = (await readRaw(childPath(graphPath, name))).exists;
+    const child = await validGraphPath(state.config, childPath(graphPath, name));
+    children[name] = (await readRaw(child)).exists;
   }
   sendJson(response, 200, { hash: raw.hash, graph, children });
 }
 
-async function handleRoot(response, url, state) {
-  requireGetToken(url, state);
-  const graphPath = validPath(url.searchParams.get('path'));
-  const allowed = await withMutex(() => ensureRegistered(state.config, graphPath));
-  if (!allowed) fail(403, 'not-registered', 'This graph path is not registered.');
+async function registeredPlanPath(config, value) {
+  let actual;
   try {
-    const html = await fsp.readFile(path.join(__dirname, 'index.html'));
-    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
-    response.end(html);
-  } catch (error) {
-    throw error;
+    if (typeof value !== 'string' || !path.isAbsolute(value)) throw new Error('not an absolute path');
+    const info = await fsp.stat(value);
+    if (!info.isDirectory()) throw new Error('not a directory');
+    actual = await fsp.realpath(value);
+  } catch {
+    fail(403, 'not-registered', 'This plan directory is not registered.');
   }
+  const plans = await loadPlans(config);
+  if (!Object.prototype.hasOwnProperty.call(plans, actual)) {
+    fail(403, 'not-registered', 'This plan directory is not registered.');
+  }
+  // A registry left behind by a manually edited file must not broaden what this reader can
+  // reach. Normal registration has already made this check, but it is intentionally repeated
+  // for every document read.
+  try { return await validPlanPath(actual); }
+  catch { fail(403, 'not-registered', 'This plan directory is not registered.'); }
 }
 
-function whoami(port) {
+function byteCompare(left, right) {
+  return Buffer.compare(Buffer.from(left), Buffer.from(right));
+}
+
+async function planFiles(planPath) {
+  const files = [];
+  async function walk(directory) {
+    let entries;
+    try { entries = await fsp.readdir(directory, { withFileTypes: true }); }
+    catch { return; }
+    for (const entry of entries) {
+      const candidate = path.join(directory, entry.name);
+      if (entry.isDirectory()) await walk(candidate);
+      else if (entry.isFile() && entry.name.endsWith('.md')) files.push(path.relative(planPath, candidate));
+    }
+  }
+  await walk(planPath);
+  return files.sort(byteCompare);
+}
+
+async function documentPath(planPath, file) {
+  if (typeof file !== 'string' || file.length === 0 || path.isAbsolute(file) || !file.endsWith('.md') ||
+      file.split(/[\\/]+/).includes('..')) {
+    fail(404, 'not-found', 'The document file does not exist.');
+  }
+  const lexical = path.resolve(planPath, file);
+  if (!inside(planPath, lexical)) fail(404, 'not-found', 'The document file does not exist.');
+  let actual;
+  try {
+    actual = await fsp.realpath(lexical);
+    const info = await fsp.stat(actual);
+    if (!info.isFile() || !actual.endsWith('.md') || !inside(planPath, actual)) {
+      fail(404, 'not-found', 'The document file does not exist.');
+    }
+  } catch (error) {
+    if (error instanceof ClientError) throw error;
+    fail(404, 'not-found', 'The document file does not exist.');
+  }
+  return actual;
+}
+
+async function tmuxSessions() {
+  return new Promise((resolve) => {
+    let output = '';
+    let child;
+    try { child = spawn('tmux', ['list-sessions', '-F', '#S'], { stdio: ['ignore', 'pipe', 'ignore'] }); }
+    catch { resolve(new Set()); return; }
+    child.stdout.on('data', (chunk) => { output += chunk; });
+    child.once('error', () => resolve(new Set()));
+    child.once('close', (code) => {
+      if (code !== 0) { resolve(new Set()); return; }
+      resolve(new Set(output.split(/\r?\n/).filter(Boolean)));
+    });
+  });
+}
+
+function attachCommand(name) {
+  return `tmux attach -t '${name.replace(/'/g, "'\\''")}'`;
+}
+
+async function graphGroups(config) {
+  const entries = await loadRegistered(config);
+  const groups = new Map();
+  for (const [registeredPath, entry] of Object.entries(entries)) {
+    if (!entry?.opened) continue;
+    let graphPath;
+    let info;
+    try {
+      graphPath = await validGraphPath(config, registeredPath);
+      info = await fsp.stat(graphPath);
+      if (!info.isFile()) continue;
+    } catch { continue; }
+    let title = path.basename(graphPath);
+    try {
+      const graph = JSON.parse(await fsp.readFile(graphPath, 'utf8'));
+      if (typeof graph?.title === 'string') title = graph.title;
+    } catch { /* an unreadable graph still belongs in the list by its file name */ }
+    const session = typeof entry.session === 'string' ? entry.session : null;
+    const graph = { path: graphPath, title, harness: ['claude', 'codex', 'other'].includes(entry.harness) ? entry.harness : 'other', modified: info.mtimeMs };
+    if (!groups.has(session)) groups.set(session, []);
+    groups.get(session).push(graph);
+  }
+  const running = await tmuxSessions();
+  return [...groups.entries()].map(([name, graphs]) => {
+    graphs.sort((left, right) => right.modified - left.modified || byteCompare(left.path, right.path));
+    const alive = name !== null && running.has(name);
+    return { name, running: alive, attach: alive ? attachCommand(name) : null, graphs };
+  }).sort((left, right) => right.graphs[0].modified - left.graphs[0].modified ||
+    byteCompare(left.name === null ? '' : left.name, right.name === null ? '' : right.name));
+}
+
+async function planSummaries(config) {
+  const entries = await loadPlans(config);
+  const plans = [];
+  for (const [registeredPath, entry] of Object.entries(entries)) {
+    let planPath;
+    try { planPath = await validPlanPath(registeredPath); }
+    catch { continue; }
+    let status = null;
+    try {
+      const bytes = await fsp.readFile(path.join(planPath, 'PLAN.md'), 'utf8');
+      const frontmatter = bytes.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+      const line = frontmatter?.[1].match(/^status:\s*(.*)$/m);
+      if (line) status = line[1].replace(/\s*#.*$/, '').trim();
+    } catch { /* A plan without PLAN.md reports null status. */ }
+    plans.push({ dir: planPath, slug: path.basename(planPath),
+      repo: path.basename(path.dirname(path.dirname(path.dirname(planPath)))), status,
+      session: typeof entry?.session === 'string' ? entry.session : null,
+      harness: ['claude', 'codex', 'other'].includes(entry?.harness) ? entry.harness : 'other',
+      added: Number(entry?.added) || 0 });
+  }
+  return plans.sort((left, right) => right.added - left.added || byteCompare(left.dir, right.dir));
+}
+
+async function handleList(response, url, state) {
+  requireGetToken(url, state);
+  const body = await withMutex(async () => {
+    await pruneRegistries(state.config, state);
+    return { sessions: await graphGroups(state.config), plans: await planSummaries(state.config) };
+  });
+  sendJson(response, 200, body);
+}
+
+async function handlePlan(response, url, state) {
+  requireGetToken(url, state);
+  const planPath = await registeredPlanPath(state.config, url.searchParams.get('dir'));
+  sendJson(response, 200, { dir: planPath, slug: path.basename(planPath), files: await planFiles(planPath) });
+}
+
+async function handleDoc(response, url, state) {
+  requireGetToken(url, state);
+  const planPath = await registeredPlanPath(state.config, url.searchParams.get('plan'));
+  const filePath = await documentPath(planPath, url.searchParams.get('file'));
+  try { sendFile(response, 200, await fsp.readFile(filePath), 'text/markdown; charset=utf-8'); }
+  catch { fail(404, 'not-found', 'The document file does not exist.'); }
+}
+
+async function servePage(response, name, csp = false) {
+  const html = await fsp.readFile(path.join(__dirname, name));
+  sendFile(response, 200, html, 'text/html; charset=utf-8', csp ? { 'content-security-policy': PAGE_CSP } : {});
+}
+
+async function handleDocs(response, url, state) {
+  requireGetToken(url, state);
+  await registeredPlanPath(state.config, url.searchParams.get('plan'));
+  await servePage(response, 'doc.html', true);
+}
+
+async function handleAsset(response, url) {
+  const name = url.pathname.slice('/assets/'.length);
+  if (!['list.js', 'doc.js'].includes(name)) fail(404, 'no-route', 'The requested route does not exist.');
+  const script = await fsp.readFile(path.join(__dirname, name));
+  sendFile(response, 200, script, 'text/javascript; charset=utf-8');
+}
+
+async function handleRoot(response, url, state) {
+  requireGetToken(url, state);
+  if (!url.searchParams.has('path')) {
+    await servePage(response, 'list.html', true);
+    return;
+  }
+  const graphPath = await validGraphPath(state.config, url.searchParams.get('path'));
+  const allowed = await withMutex(() => ensureRegistered(state.config, graphPath));
+  if (!allowed) fail(403, 'not-registered', 'This graph path is not registered.');
+  await servePage(response, 'index.html');
+}
+
+function whoami(port, nonce) {
   return new Promise((resolve, reject) => {
-    const request = http.get({ host: '127.0.0.1', port, path: '/whoami', timeout: 500 }, (response) => {
+    const suffix = nonce ? `?nonce=${encodeURIComponent(nonce)}` : '';
+    const request = http.get({ host: '127.0.0.1', port, path: `/whoami${suffix}`, timeout: 500 }, (response) => {
       const chunks = [];
       response.on('data', (chunk) => chunks.push(chunk));
       response.on('end', () => {
@@ -1272,14 +1646,16 @@ function validLock(value) {
     typeof value.token === 'string' && typeof value.start_id === 'string';
 }
 
-function claimLock(config, lock) {
-  const target = lockPath(config);
+// The old lock claim used this exact hard-link publication pattern.  A token needs the
+// same single-winner property, but .server is deliberately only information now.
+function claimToken(config, token) {
+  const target = tokenPath(config);
   const temp = temporaryPath(target);
   let descriptor;
   let linking = false;
   try {
     descriptor = fs.openSync(temp, 'wx', 0o600);
-    fs.writeFileSync(descriptor, `${JSON.stringify(lock, null, 2)}\n`);
+    fs.writeFileSync(descriptor, `${token}\n`);
     fs.fsyncSync(descriptor);
     fs.closeSync(descriptor);
     descriptor = null;
@@ -1306,127 +1682,265 @@ async function readLock(config) {
   } catch { return null; }
 }
 
-async function existingServer(config) {
-  let lock;
-  try { lock = JSON.parse(await fsp.readFile(lockPath(config), 'utf8')); } catch { return { kind: 'corrupt' }; }
-  if (!validLock(lock)) return { kind: 'corrupt' };
+async function readToken(config) {
   try {
-    const identity = await whoami(lock.port);
-    if (identity.start_id === lock.start_id) return { kind: 'reuse', lock };
-    return { kind: 'foreign', lock };
-  } catch {
-    try { process.kill(lock.pid, 0); }
-    catch (error) {
-      if (error.code === 'ESRCH') return { kind: 'stale', lock };
-      return { kind: 'foreign', lock };
-    }
-    // The pid is alive and /whoami is silent. That is a live foreign process — or our own kind of
-    // server in the window between claiming the lockfile and binding the port, which contains a
-    // full read-and-write of the registered set and is milliseconds wide. Two starts at the same
-    // instant land in it, and treating the loser's view as foreign killed it outright: the
-    // documented producer sequence then reports that no URL was printed and exits. Give the holder
-    // that window to answer before calling it foreign. A genuinely unrelated process stays silent
-    // through it and still gets refused, one round of polling later.
-    for (let attempt = 0; attempt < STARTUP_GRACE_ATTEMPTS; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, STARTUP_GRACE_INTERVAL_MS));
-      try { process.kill(lock.pid, 0); } catch { return { kind: 'stale', lock }; }
-      try {
-        const identity = await whoami(lock.port);
-        return identity.start_id === lock.start_id ? { kind: 'reuse', lock } : { kind: 'foreign', lock };
-      } catch { /* still starting, or genuinely not ours */ }
-    }
-    return { kind: 'foreign', lock };
-  }
+    const token = (await fsp.readFile(tokenPath(config), 'utf8')).trim();
+    return /^[0-9a-f]{64}$/.test(token) ? token : null;
+  } catch { return null; }
 }
 
-function viewerUrl(lock, openPath) {
-  const base = `http://127.0.0.1:${lock.port}`;
+async function ensureToken(config) {
+  let token = await readToken(config);
+  if (token) return token;
+  const candidate = crypto.randomBytes(32).toString('hex');
+  if (claimToken(config, candidate)) return candidate;
+  token = await readToken(config);
+  if (!token) throw new Error('Could not create the viewer token.');
+  return token;
+}
+
+async function servedOrigin(config) {
+  try {
+    const value = JSON.parse(await fsp.readFile(servingPath(config), 'utf8'));
+    return value && value.serve === true && typeof value.origin === 'string' && /^https:\/\//.test(value.origin)
+      ? value.origin.replace(/\/$/, '') : null;
+  } catch { return null; }
+}
+
+async function viewerUrl(lock, openPath, config) {
+  const base = await servedOrigin(config) || `http://127.0.0.1:${lock.port}`;
   return openPath ? `${base}/?path=${encodeURIComponent(openPath)}&token=${lock.token}` : base;
 }
 
-async function stopServer(config) {
-  let lock;
-  try { lock = JSON.parse(await fsp.readFile(lockPath(config), 'utf8')); }
-  catch (error) {
-    if (error.code === 'ENOENT') { console.log('No server lockfile.'); return; }
-    console.log('No usable server lockfile.'); return;
-  }
-  if (!validLock(lock)) { console.log('No usable server lockfile.'); return; }
+async function sessionLabel() {
+  if (!process.env.TMUX) return null;
+  return new Promise((resolve) => {
+    const child = spawn('tmux', ['display-message', '-p', '-t', process.env.TMUX_PANE || '', '#S'],
+      { stdio: ['ignore', 'pipe', 'ignore'] });
+    let output = '';
+    child.stdout.on('data', (chunk) => { output += chunk; });
+    child.on('error', () => resolve(null));
+    child.on('exit', (code) => resolve(code === 0 && output.trim() ? output.trim() : null));
+  });
+}
+
+async function harnessLabel() {
   try {
-    const identity = await whoami(lock.port);
-    if (identity.start_id !== lock.start_id) throw new Error('start id mismatch');
-    process.kill(lock.pid, 'SIGTERM');
-    await fsp.unlink(lockPath(config)).catch(() => {});
-    console.log('Server stopped.');
+    await fsp.access('/proc');
   } catch {
-    console.error('Refused to stop a server not identified by this lockfile.');
-    process.exitCode = 1;
+    return process.env.CLAUDECODE === '1' ? 'claude' : 'other';
+  }
+  let pid = process.pid;
+  const seen = new Set();
+  while (Number.isInteger(pid) && pid > 1 && !seen.has(pid)) {
+    seen.add(pid);
+    try {
+      const name = (await fsp.readFile(`/proc/${pid}/comm`, 'utf8')).trim();
+      if (name === 'claude' || name === 'codex') return name;
+      const stat = await fsp.readFile(`/proc/${pid}/stat`, 'utf8');
+      const tail = stat.slice(stat.lastIndexOf(')') + 1).trim().split(/\s+/);
+      pid = Number(tail[1]); // state is field 3; ppid (field 4) is the next field.
+    } catch { break; }
+  }
+  return 'other';
+}
+
+async function registrationMetadata() {
+  const [session, harness] = await Promise.all([sessionLabel(), harnessLabel()]);
+  return { session, harness };
+}
+
+function proofFor(nonce, token) {
+  return crypto.createHmac('sha256', token).update(nonce).digest('hex');
+}
+
+function proofMatches(proof, nonce, token) {
+  return typeof proof === 'string' && tokenMatches(proof, proofFor(nonce, token));
+}
+
+async function identifyHolder(config, { retrySilent = true, allowOlderStop = false } = {}) {
+  const deadline = Date.now() + (retrySilent ? STARTUP_GRACE_ATTEMPTS * STARTUP_GRACE_INTERVAL_MS : 0);
+  let sawSilent = false;
+  for (;;) {
+    const nonce = crypto.randomBytes(16).toString('hex');
+    try {
+      const identity = await whoami(config.port, nonce);
+      const lock = await readLock(config); // after /whoami: the holder has had a chance to repair it.
+      const diskToken = await readToken(config);
+      const candidates = [...new Set([lock && lock.token, diskToken].filter(Boolean))];
+      const matchingToken = candidates.find((token) => proofMatches(identity.proof, nonce, token));
+      if (matchingToken && lock && lock.start_id === identity.start_id &&
+          Number.isInteger(identity.pid) && lock.pid === identity.pid) {
+        return { kind: 'ours', identity, lock, token: matchingToken };
+      }
+      if (allowOlderStop && identity && identity.proof === undefined && lock &&
+          identity.start_id === lock.start_id && Number.isInteger(lock.pid)) {
+        return { kind: 'older', identity, lock, token: lock.token };
+      }
+      if (identity && identity.proof === undefined && typeof identity.start_id === 'string') return { kind: 'older-foreign' };
+      return { kind: 'foreign' };
+    } catch (error) {
+      if (error && error.code === 'ECONNREFUSED') return { kind: 'none' };
+      sawSilent = true;
+      if (!retrySilent || Date.now() >= deadline) return { kind: sawSilent ? 'foreign' : 'none' };
+      await new Promise((resolve) => setTimeout(resolve, STARTUP_GRACE_INTERVAL_MS));
+    }
+  }
+}
+
+async function waitForPidExit(pid) {
+  const deadline = Date.now() + STOP_WAIT_MS;
+  while (Date.now() < deadline) {
+    try { process.kill(pid, 0); } catch (error) { if (error.code === 'ESRCH') return true; }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  try { process.kill(pid, 0); return false; } catch (error) { return error.code === 'ESRCH'; }
+}
+
+async function stopServer(config, { ifStale = false } = {}) {
+  const holder = await identifyHolder(config, { retrySilent: true, allowOlderStop: true });
+  if (holder.kind === 'none') { console.log('No viewer running.'); return { stopped: false, none: true }; }
+  if (holder.kind === 'older-foreign') {
+    console.error('a viewer from an older version is running; run ./install.sh'); process.exitCode = 1; return { failed: true };
+  }
+  if (holder.kind !== 'ours' && holder.kind !== 'older') {
+    console.error('Refused to stop a process it cannot identify.'); process.exitCode = 1; return { failed: true };
+  }
+  if (ifStale && holder.kind === 'ours' && holder.identity.code === await currentCode()) {
+    console.log('Viewer is current.'); return { stopped: false, current: true };
+  }
+  const pid = holder.lock.pid;
+  try { process.kill(pid, 'SIGTERM'); } catch (error) {
+    if (error.code === 'ESRCH') return { stopped: true };
+    throw error;
+  }
+  if (!(await waitForPidExit(pid))) {
+    console.error('Viewer did not exit within 5 seconds.'); process.exitCode = 1; return { failed: true };
+  }
+  console.log('Server stopped.'); return { stopped: true };
+}
+
+async function writeServerRecord(config, lock) {
+  const target = lockPath(config); const temp = temporaryPath(target);
+  await fsp.writeFile(temp, `${JSON.stringify(lock, null, 2)}\n`, { mode: 0o600 });
+  await fsp.rename(temp, target);
+}
+
+async function removeOwnServerRecord(config, startId) {
+  const current = await readLock(config);
+  if (current && current.start_id === startId) await fsp.unlink(lockPath(config)).catch(() => {});
+}
+
+async function currentCode() {
+  return hashBytes(await fsp.readFile(__filename)).slice(0, 12);
+}
+
+function listen(server, port) {
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, '127.0.0.1', () => { server.removeListener('error', reject); resolve(); });
+  });
+}
+
+// This stays inside the start mutex and after listen: a losing starter therefore never writes a
+// registry, and an early /register waits until the starter's prune and own entry are complete.
+async function afterListenStartup(state) {
+  await pruneRegistries(state.config, state, { force: true });
+  if (state.ownRegistration) {
+    const { path: graphPath, opened, session, harness } = state.ownRegistration;
+    await registerPath(state.config, graphPath, opened, session, harness);
   }
 }
 
 async function startServer(config) {
   await fsp.mkdir(config.cacheRoot, { recursive: true, mode: 0o700 });
-  for (;;) {
-    const lock = {
-      pid: process.pid, port: config.port,
-      token: crypto.randomBytes(32).toString('hex'),
-      start_id: crypto.randomBytes(16).toString('hex'),
-    };
-    const claimed = claimLock(config, lock);
-    if (!claimed) {
-      const known = await existingServer(config);
-      if (known.kind === 'reuse') return { reused: true, lock: known.lock };
-      if (known.kind === 'foreign') throw new Error('Refused to adopt a lockfile owned by another live process.');
-      await fsp.unlink(lockPath(config)).catch(() => {});
-      continue;
-    }
-    await pruneRegistered(config);
-    const state = { config, lock, port: config.port, server: null, watched: new Map() };
-    const server = http.createServer(async (request, response) => {
-      try {
-        const url = new URL(request.url, `http://127.0.0.1:${state.port}`);
-        if (request.method === 'GET' && url.pathname === '/whoami') {
-          sendJson(response, 200, { start_id: state.lock.start_id }); return;
-        }
-        if (request.method === 'GET' && url.pathname === '/') { await handleRoot(response, url, state); return; }
-        if (request.method === 'GET' && url.pathname === '/watching') {
-          requireGetToken(url, state);
-          const seen = state.watched.get(validPath(url.searchParams.get('path'))) || 0;
-          sendJson(response, 200, { watched: Date.now() - seen < WATCHED_WINDOW_MS }); return;
-        }
-        if (request.method === 'GET' && url.pathname === '/graph') { await handleGetGraph(response, url, state); return; }
-        if (request.method === 'PUT' && url.pathname === '/graph') { await handleGraphPut(request, response, url, state); return; }
-        if (request.method === 'PUT' && url.pathname === '/view') { await handleViewPut(request, response, url, state); return; }
-        fail(404, 'no-route', 'The requested route does not exist.');
-      } catch (error) { sendError(response, error); }
+  const token = await ensureToken(config);
+  const lock = { pid: process.pid, port: config.port, token, start_id: crypto.randomBytes(16).toString('hex') };
+  const state = { config, lock, port: config.port, server: null, watched: new Map(), code: await currentCode(),
+    servedOrigin: await servedOrigin(config), closing: false, lastRegistryPrune: 0,
+    ownRegistration: config.open ? { path: config.open, opened: true, ...(await registrationMetadata()) } : null };
+  const server = http.createServer(async (request, response) => {
+    try {
+      const url = new URL(request.url, `http://127.0.0.1:${state.port}`);
+      if (request.method === 'GET' && url.pathname === '/whoami') {
+        const recorded = await readLock(config);
+        if (!recorded || recorded.start_id !== state.lock.start_id) await writeServerRecord(config, state.lock);
+        const body = { start_id: state.lock.start_id, pid: process.pid, code: state.code };
+        const nonce = url.searchParams.get('nonce');
+        if (nonce) body.proof = proofFor(nonce, state.lock.token);
+        sendJson(response, 200, body); return;
+      }
+      if (request.method === 'GET' && url.pathname.startsWith('/assets/')) { await handleAsset(response, url); return; }
+      if (request.method === 'GET' && url.pathname === '/') { await handleRoot(response, url, state); return; }
+      if (request.method === 'GET' && url.pathname === '/list') { await handleList(response, url, state); return; }
+      if (request.method === 'GET' && url.pathname === '/plan') { await handlePlan(response, url, state); return; }
+      if (request.method === 'GET' && url.pathname === '/docs') { await handleDocs(response, url, state); return; }
+      if (request.method === 'GET' && url.pathname === '/doc') { await handleDoc(response, url, state); return; }
+      if (request.method === 'GET' && url.pathname === '/watching') {
+        const timestamp = request.headers['x-graph-timestamp'];
+        requireSignedAuth(request, state, `${timestamp}\n${request.url}`);
+        const watchedPath = await validGraphPath(state.config, url.searchParams.get('path'));
+        const seen = state.watched.get(watchedPath) || 0;
+        sendJson(response, 200, { watched: Date.now() - seen < WATCHED_WINDOW_MS }); return;
+      }
+      if (request.method === 'POST' && url.pathname === '/register') { await handleRegister(request, response, state); return; }
+      if (request.method === 'GET' && url.pathname === '/graph') { await handleGetGraph(response, url, state); return; }
+      if (request.method === 'PUT' && url.pathname === '/graph') { await handleGraphPut(request, response, url, state); return; }
+      if (request.method === 'PUT' && url.pathname === '/view') { await handleViewPut(request, response, url, state); return; }
+      requireGetToken(url, state);
+      fail(404, 'no-route', 'The requested route does not exist.');
+    } catch (error) { sendError(response, error); }
+  });
+  state.server = server;
+  try {
+    await withMutex(async () => {
+      await listen(server, config.port);
+      await writeServerRecord(config, lock);
+      await afterListenStartup(state);
     });
-    state.server = server;
-    server.on('error', async (error) => {
-      await fsp.unlink(lockPath(config)).catch(() => {});
-      console.error(error.message);
-      process.exitCode = 1;
-    });
-    const close = async () => {
-      await fsp.unlink(lockPath(config)).catch(() => {});
-      server.close();
-    };
-    process.once('SIGTERM', close);
-    process.once('SIGINT', close);
-    await new Promise((resolve, reject) => {
-      server.once('error', reject);
-      server.listen(config.port, '127.0.0.1', resolve);
-    });
-    return { reused: false, lock };
+  } catch (error) {
+    await new Promise((resolve) => server.close(() => resolve()));
+    await removeOwnServerRecord(config, lock.start_id);
+    throw error;
   }
+  const close = () => {
+    if (state.closing) return; state.closing = true;
+    server.close(async () => { await removeOwnServerRecord(config, lock.start_id); });
+  };
+  server.on('error', async (error) => {
+    if (!state.closing) { state.closing = true; server.close(async () => { await removeOwnServerRecord(config, lock.start_id); }); }
+    console.error(error.message); process.exitCode = 1;
+  });
+  process.once('SIGTERM', close); process.once('SIGINT', close);
+  return { reused: false, lock };
 }
 
 // Ask the running server whether a page is already polling this graph. A redraw should not stack
 // up browser windows — an open tab picks the new version up on its own poll within a second.
-async function alreadyWatched(lock, graphPath) {
+function signedHeaders(token, signed) {
+  const timestamp = String(Date.now());
+  return { 'x-graph-timestamp': timestamp,
+    'x-graph-signature': crypto.createHmac('sha256', token).update(`${timestamp}\n`).update(signed).digest('hex') };
+}
+
+async function signedRegistration(holder, registration) {
+  const bytes = Buffer.from(JSON.stringify(registration));
+  const headers = { ...signedHeaders(holder.token, bytes), 'content-type': 'application/json', origin: `http://127.0.0.1:${holder.lock.port}` };
+  const result = await new Promise((resolve, reject) => {
+    const request = http.request({ host: '127.0.0.1', port: holder.lock.port, path: '/register', method: 'POST', headers, timeout: 1500 },
+      (response) => { let text = ''; response.on('data', (c) => { text += c; }); response.on('end', () => resolve({ status: response.statusCode, text })); });
+    request.on('timeout', () => request.destroy(new Error('registration timeout'))); request.on('error', reject);
+    request.end(bytes);
+  });
+  if (result.status !== 200) throw new Error(`Viewer registration failed (${result.status}): ${result.text}`);
+}
+
+async function alreadyWatched(holder, graphPath) {
   try {
+    const requestPath = `/watching?path=${encodeURIComponent(graphPath)}`;
     const body = await new Promise((resolve, reject) => {
       const request = http.get(
-        { host: '127.0.0.1', port: lock.port, path: `/watching?path=${encodeURIComponent(graphPath)}&token=${lock.token}`, timeout: 1500 },
+        { host: '127.0.0.1', port: holder.lock.port, path: requestPath, headers: { ...signedHeaders(holder.token, requestPath), origin: `http://127.0.0.1:${holder.lock.port}` }, timeout: 1500 },
         (response) => { let text = ''; response.on('data', (c) => { text += c; }); response.on('end', () => resolve(text)); });
       request.on('timeout', () => request.destroy(new Error('timeout')));
       request.on('error', reject);
@@ -1450,16 +1964,90 @@ function launchBrowser(url) {
 
 async function main() {
   const config = configFromArgs(process.argv.slice(2));
-  if (config.stop) { await stopServer(config); return; }
-  if (config.open) {
-    if (path.extname(config.open) !== '.json') throw new Error('--open must name a .json file.');
-    await fsp.mkdir(path.dirname(config.open), { recursive: true });
-    await registerPath(config, config.open, true);
+  if (config.stop) { await stopServer(config, { ifStale: config.ifStale }); return; }
+  if (config.rotateToken) {
+    await fsp.mkdir(config.cacheRoot, { recursive: true, mode: 0o700 });
+    const token = crypto.randomBytes(32).toString('hex'); const temp = temporaryPath(tokenPath(config));
+    await fsp.writeFile(temp, `${token}\n`, { mode: 0o600 }); await fsp.rename(temp, tokenPath(config));
+    const result = await stopServer(config);
+    const url = await viewerUrl({ port: config.port, token }, null, config);
+    console.log(`${url}/?token=${token}`);
+    if (result.failed) console.error('The server must be restarted to use the new token.');
+    return;
   }
-  const result = await startServer(config);
-  const url = viewerUrl(result.lock, config.open);
+  if (config.url) {
+    await fsp.mkdir(config.cacheRoot, { recursive: true, mode: 0o700 });
+    let token = await ensureToken(config);
+    const holder = await identifyHolder(config, { retrySilent: false });
+    if (holder.kind === 'ours') {
+      token = holder.lock.token;
+      const onDisk = await readToken(config);
+      if (onDisk && onDisk !== token) console.error('Warning: token rotation is waiting for the server to restart.');
+    }
+    const base = await viewerUrl({ port: config.port, token }, null, config);
+    console.log(`${base}/?token=${token}`);
+    return;
+  }
+  if (config.registerPlan) {
+    try {
+      config.registerPlan = await validPlanPath(config.registerPlan);
+      const deadline = Date.now() + STARTUP_GRACE_ATTEMPTS * STARTUP_GRACE_INTERVAL_MS;
+      let holder;
+      do {
+        holder = await identifyHolder(config, { retrySilent: false });
+        if (holder.kind !== 'none') break;
+        if (Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, STARTUP_GRACE_INTERVAL_MS));
+      } while (Date.now() < deadline);
+      if (holder?.kind === 'ours') {
+        await signedRegistration(holder, { kind: 'plan', path: config.registerPlan, ...(await registrationMetadata()) });
+      } else if (holder && holder.kind !== 'none') {
+        console.error(holder.kind === 'older-foreign' ? 'Warning: a viewer from an older version is running; run ./install.sh' : 'Warning: viewer registration was refused.');
+      }
+    } catch (error) {
+      console.error(`Warning: ${error.message}`);
+    }
+    return;
+  }
+  if (config.open) {
+    config.open = await validGraphPath(config, config.open, { createParent: true });
+  }
+  let result;
+  let takeovers = 0;
+  let closingRetryDeadline = 0;
+  for (;;) {
+    try { result = await startServer(config); break; }
+    catch (error) {
+      if (error.code !== 'EADDRINUSE') throw error;
+      const holder = await identifyHolder(config, { retrySilent: true });
+      if (holder.kind === 'none') {
+        if (!closingRetryDeadline) closingRetryDeadline = Date.now() + STARTUP_GRACE_ATTEMPTS * STARTUP_GRACE_INTERVAL_MS;
+        if (Date.now() < closingRetryDeadline) {
+          await new Promise((resolve) => setTimeout(resolve, STARTUP_GRACE_INTERVAL_MS));
+          continue;
+        }
+        throw new Error('Refused to use a port held by a process it cannot identify.');
+      }
+      if (holder.kind === 'ours') {
+        if (!config.service) { result = { reused: true, lock: holder.lock, registrationToken: holder.token }; break; }
+        if (takeovers >= 3) throw new Error('Viewer service gave up after three takeovers.');
+        takeovers += 1;
+        const stopped = await stopServer(config);
+        if (stopped.failed) throw new Error('Viewer service could not stop the existing viewer.');
+        continue;
+      }
+      if (holder.kind === 'older-foreign') throw new Error('a viewer from an older version is running; run ./install.sh');
+      throw new Error('Refused to use a port held by a process it cannot identify.');
+    }
+  }
+  if (result.reused && config.open) {
+    try {
+      await signedRegistration({ lock: result.lock, token: result.registrationToken },
+        { kind: 'graph', path: config.open, opened: true, ...(await registrationMetadata()) });
+    } catch (error) { throw new Error(error.message); }
+  }
+  const url = await viewerUrl(result.lock, config.open, config);
   console.log(url);
-  if (config.show && config.browser && !(await alreadyWatched(result.lock, config.open))) {
+  if (config.show && config.browser && !(await alreadyWatched({ lock: result.lock, token: result.registrationToken || result.lock.token }, config.open))) {
     launchBrowser(url);
   }
 }
