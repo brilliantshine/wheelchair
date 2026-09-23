@@ -1,6 +1,12 @@
 /*
 Routes (all responses use Cache-Control: no-store):
+  GET  /?token            token query      -> viewer/list.html
   GET  /?path&token       token query      -> viewer/index.html
+  GET  /list?token        token query      -> { sessions, plans }
+  GET  /plan?dir&token    token query      -> { dir, slug, files }
+  GET  /docs?plan&token   token query      -> viewer/doc.html
+  GET  /doc?plan&file&token token query    -> raw Markdown
+  GET  /assets/list.js, /assets/doc.js     -> page scripts (no token)
   GET  /graph?path&token  token query      -> { hash, graph, children }
   PUT  /graph?path        X-Graph-Token + matching Origin -> { hash }
   PUT  /view?path         X-Graph-Token + matching Origin -> { hash }
@@ -38,6 +44,7 @@ const DAY = 24 * 60 * 60 * 1000;
 const REGISTERED_MAX_AGE = 30 * DAY;
 const REGISTRY_PRUNE_INTERVAL_MS = 60 * 60 * 1000;
 const REGISTER_SIGNATURE_WINDOW_MS = 60 * 1000;
+const PAGE_CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 // A page polls every second, so anything read inside this window means a tab is live on that graph.
 const WATCHED_WINDOW_MS = 4000;
 // How long --open waits for the graph to be written before giving up on showing it.
@@ -1203,6 +1210,11 @@ function sendJson(response, status, body) {
   response.end(JSON.stringify(body));
 }
 
+function sendFile(response, status, bytes, contentType, extraHeaders = {}) {
+  response.writeHead(status, { 'content-type': contentType, 'cache-control': 'no-store', ...extraHeaders });
+  response.end(bytes);
+}
+
 function sendError(response, error) {
   if (error instanceof ClientError) {
     sendJson(response, error.status, { error: error.code, detail: error.detail, ...error.extra });
@@ -1426,18 +1438,192 @@ async function handleGetGraph(response, url, state) {
   sendJson(response, 200, { hash: raw.hash, graph, children });
 }
 
+async function registeredPlanPath(config, value) {
+  let actual;
+  try {
+    if (typeof value !== 'string' || !path.isAbsolute(value)) throw new Error('not an absolute path');
+    const info = await fsp.stat(value);
+    if (!info.isDirectory()) throw new Error('not a directory');
+    actual = await fsp.realpath(value);
+  } catch {
+    fail(403, 'not-registered', 'This plan directory is not registered.');
+  }
+  const plans = await loadPlans(config);
+  if (!Object.prototype.hasOwnProperty.call(plans, actual)) {
+    fail(403, 'not-registered', 'This plan directory is not registered.');
+  }
+  // A registry left behind by a manually edited file must not broaden what this reader can
+  // reach. Normal registration has already made this check, but it is intentionally repeated
+  // for every document read.
+  try { return await validPlanPath(actual); }
+  catch { fail(403, 'not-registered', 'This plan directory is not registered.'); }
+}
+
+function byteCompare(left, right) {
+  return Buffer.compare(Buffer.from(left), Buffer.from(right));
+}
+
+async function planFiles(planPath) {
+  const files = [];
+  async function walk(directory) {
+    let entries;
+    try { entries = await fsp.readdir(directory, { withFileTypes: true }); }
+    catch { return; }
+    for (const entry of entries) {
+      const candidate = path.join(directory, entry.name);
+      if (entry.isDirectory()) await walk(candidate);
+      else if (entry.isFile() && entry.name.endsWith('.md')) files.push(path.relative(planPath, candidate));
+    }
+  }
+  await walk(planPath);
+  return files.sort(byteCompare);
+}
+
+async function documentPath(planPath, file) {
+  if (typeof file !== 'string' || file.length === 0 || path.isAbsolute(file) || !file.endsWith('.md') ||
+      file.split(/[\\/]+/).includes('..')) {
+    fail(404, 'not-found', 'The document file does not exist.');
+  }
+  const lexical = path.resolve(planPath, file);
+  if (!inside(planPath, lexical)) fail(404, 'not-found', 'The document file does not exist.');
+  let actual;
+  try {
+    actual = await fsp.realpath(lexical);
+    const info = await fsp.stat(actual);
+    if (!info.isFile() || !actual.endsWith('.md') || !inside(planPath, actual)) {
+      fail(404, 'not-found', 'The document file does not exist.');
+    }
+  } catch (error) {
+    if (error instanceof ClientError) throw error;
+    fail(404, 'not-found', 'The document file does not exist.');
+  }
+  return actual;
+}
+
+async function tmuxSessions() {
+  return new Promise((resolve) => {
+    let output = '';
+    let child;
+    try { child = spawn('tmux', ['list-sessions', '-F', '#S'], { stdio: ['ignore', 'pipe', 'ignore'] }); }
+    catch { resolve(new Set()); return; }
+    child.stdout.on('data', (chunk) => { output += chunk; });
+    child.once('error', () => resolve(new Set()));
+    child.once('close', (code) => {
+      if (code !== 0) { resolve(new Set()); return; }
+      resolve(new Set(output.split(/\r?\n/).filter(Boolean)));
+    });
+  });
+}
+
+function attachCommand(name) {
+  return `tmux attach -t '${name.replace(/'/g, "'\\''")}'`;
+}
+
+async function graphGroups(config) {
+  const entries = await loadRegistered(config);
+  const groups = new Map();
+  for (const [registeredPath, entry] of Object.entries(entries)) {
+    if (!entry?.opened) continue;
+    let graphPath;
+    let info;
+    try {
+      graphPath = await validGraphPath(config, registeredPath);
+      info = await fsp.stat(graphPath);
+      if (!info.isFile()) continue;
+    } catch { continue; }
+    let title = path.basename(graphPath);
+    try {
+      const graph = JSON.parse(await fsp.readFile(graphPath, 'utf8'));
+      if (typeof graph?.title === 'string') title = graph.title;
+    } catch { /* an unreadable graph still belongs in the list by its file name */ }
+    const session = typeof entry.session === 'string' ? entry.session : null;
+    const graph = { path: graphPath, title, harness: ['claude', 'codex', 'other'].includes(entry.harness) ? entry.harness : 'other', modified: info.mtimeMs };
+    if (!groups.has(session)) groups.set(session, []);
+    groups.get(session).push(graph);
+  }
+  const running = await tmuxSessions();
+  return [...groups.entries()].map(([name, graphs]) => {
+    graphs.sort((left, right) => right.modified - left.modified || byteCompare(left.path, right.path));
+    const alive = name !== null && running.has(name);
+    return { name, running: alive, attach: alive ? attachCommand(name) : null, graphs };
+  }).sort((left, right) => right.graphs[0].modified - left.graphs[0].modified ||
+    byteCompare(left.name === null ? '' : left.name, right.name === null ? '' : right.name));
+}
+
+async function planSummaries(config) {
+  const entries = await loadPlans(config);
+  const plans = [];
+  for (const [registeredPath, entry] of Object.entries(entries)) {
+    let planPath;
+    try { planPath = await validPlanPath(registeredPath); }
+    catch { continue; }
+    let status = null;
+    try {
+      const bytes = await fsp.readFile(path.join(planPath, 'PLAN.md'), 'utf8');
+      const frontmatter = bytes.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+      const line = frontmatter?.[1].match(/^status:\s*(.*)$/m);
+      if (line) status = line[1].replace(/\s*#.*$/, '').trim();
+    } catch { /* A plan without PLAN.md reports null status. */ }
+    plans.push({ dir: planPath, slug: path.basename(planPath),
+      repo: path.basename(path.dirname(path.dirname(path.dirname(planPath)))), status,
+      session: typeof entry?.session === 'string' ? entry.session : null,
+      harness: ['claude', 'codex', 'other'].includes(entry?.harness) ? entry.harness : 'other',
+      added: Number(entry?.added) || 0 });
+  }
+  return plans.sort((left, right) => right.added - left.added || byteCompare(left.dir, right.dir));
+}
+
+async function handleList(response, url, state) {
+  requireGetToken(url, state);
+  const body = await withMutex(async () => {
+    await pruneRegistries(state.config, state);
+    return { sessions: await graphGroups(state.config), plans: await planSummaries(state.config) };
+  });
+  sendJson(response, 200, body);
+}
+
+async function handlePlan(response, url, state) {
+  requireGetToken(url, state);
+  const planPath = await registeredPlanPath(state.config, url.searchParams.get('dir'));
+  sendJson(response, 200, { dir: planPath, slug: path.basename(planPath), files: await planFiles(planPath) });
+}
+
+async function handleDoc(response, url, state) {
+  requireGetToken(url, state);
+  const planPath = await registeredPlanPath(state.config, url.searchParams.get('plan'));
+  const filePath = await documentPath(planPath, url.searchParams.get('file'));
+  try { sendFile(response, 200, await fsp.readFile(filePath), 'text/markdown; charset=utf-8'); }
+  catch { fail(404, 'not-found', 'The document file does not exist.'); }
+}
+
+async function servePage(response, name, csp = false) {
+  const html = await fsp.readFile(path.join(__dirname, name));
+  sendFile(response, 200, html, 'text/html; charset=utf-8', csp ? { 'content-security-policy': PAGE_CSP } : {});
+}
+
+async function handleDocs(response, url, state) {
+  requireGetToken(url, state);
+  await registeredPlanPath(state.config, url.searchParams.get('plan'));
+  await servePage(response, 'doc.html', true);
+}
+
+async function handleAsset(response, url) {
+  const name = url.pathname.slice('/assets/'.length);
+  if (!['list.js', 'doc.js'].includes(name)) fail(404, 'no-route', 'The requested route does not exist.');
+  const script = await fsp.readFile(path.join(__dirname, name));
+  sendFile(response, 200, script, 'text/javascript; charset=utf-8');
+}
+
 async function handleRoot(response, url, state) {
   requireGetToken(url, state);
+  if (!url.searchParams.has('path')) {
+    await servePage(response, 'list.html', true);
+    return;
+  }
   const graphPath = await validGraphPath(state.config, url.searchParams.get('path'));
   const allowed = await withMutex(() => ensureRegistered(state.config, graphPath));
   if (!allowed) fail(403, 'not-registered', 'This graph path is not registered.');
-  try {
-    const html = await fsp.readFile(path.join(__dirname, 'index.html'));
-    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
-    response.end(html);
-  } catch (error) {
-    throw error;
-  }
+  await servePage(response, 'index.html');
 }
 
 function whoami(port, nonce) {
@@ -1684,7 +1870,12 @@ async function startServer(config) {
         if (nonce) body.proof = proofFor(nonce, state.lock.token);
         sendJson(response, 200, body); return;
       }
+      if (request.method === 'GET' && url.pathname.startsWith('/assets/')) { await handleAsset(response, url); return; }
       if (request.method === 'GET' && url.pathname === '/') { await handleRoot(response, url, state); return; }
+      if (request.method === 'GET' && url.pathname === '/list') { await handleList(response, url, state); return; }
+      if (request.method === 'GET' && url.pathname === '/plan') { await handlePlan(response, url, state); return; }
+      if (request.method === 'GET' && url.pathname === '/docs') { await handleDocs(response, url, state); return; }
+      if (request.method === 'GET' && url.pathname === '/doc') { await handleDoc(response, url, state); return; }
       if (request.method === 'GET' && url.pathname === '/watching') {
         const timestamp = request.headers['x-graph-timestamp'];
         requireSignedAuth(request, state, `${timestamp}\n${request.url}`);
@@ -1696,6 +1887,7 @@ async function startServer(config) {
       if (request.method === 'GET' && url.pathname === '/graph') { await handleGetGraph(response, url, state); return; }
       if (request.method === 'PUT' && url.pathname === '/graph') { await handleGraphPut(request, response, url, state); return; }
       if (request.method === 'PUT' && url.pathname === '/view') { await handleViewPut(request, response, url, state); return; }
+      requireGetToken(url, state);
       fail(404, 'no-route', 'The requested route does not exist.');
     } catch (error) { sendError(response, error); }
   });
