@@ -22,6 +22,20 @@ the last few decisions instead of by what it was for.
 Input: an existing slug (resume) or a short description (new plan). A plan written outside
 this workflow is brought in with `adopt.md` first, then continues here by slug.
 
+**Register the plan directory with the viewer as soon as it exists** — immediately, on
+resume or after adoption; right after writing MAP.md, for a new plan. You are reading
+this document at `<root>/protocol/planning.md`, so `WHEELCHAIR` is that path with
+`/protocol/planning.md` dropped, the same rule `graphs.md` uses:
+
+```bash
+node "$WHEELCHAIR/viewer/server.js" --register-plan <repo>/docs/plans/<slug>
+```
+
+It returns at once, never starts a server, and never fails the stage: it registers
+through a running viewer if one answers, and otherwise does nothing. On any error it
+prints one warning line — pass it on to Collin in your turn, including "a viewer from an
+older version is running; run ./install.sh", and carry on.
+
 **Resume:** read MAP.md, IDEA.md, then PLAN.md. Give a 2–3 sentence state summary (the
 idea, what's settled, what's open) and continue the loop at the first open question.
 

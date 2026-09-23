@@ -6,6 +6,19 @@ plan is fully satisfied.
 **Precondition:** `status: verifying` and `docs/plans/<slug>/COMPLETION.md` exists.
 Otherwise refuse and name the missing stage.
 
+**Register the plan directory with the viewer at the start**, before anything else. You
+are reading this document at `<root>/protocol/verification.md`, so `WHEELCHAIR` is that
+path with `/protocol/verification.md` dropped, the same rule `graphs.md` uses:
+
+```bash
+node "$WHEELCHAIR/viewer/server.js" --register-plan <repo>/docs/plans/<slug>
+```
+
+It returns at once, never starts a server, and never fails the stage: it registers
+through a running viewer if one answers, and otherwise does nothing. On any error it
+prints one warning line — pass it on to Collin in your turn, including "a viewer from an
+older version is running; run ./install.sh", and carry on.
+
 ## Reviewer selection
 
 Read `implemented-by` from COMPLETION.md frontmatter. Where it names several lanes — for

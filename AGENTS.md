@@ -48,7 +48,7 @@ Two rules follow, and between them they cover most of what can go wrong here:
 | `install/` | — | `test/run.sh`, the installer fixture suite. Temp harness homes only; real global files stay untouched |
 | `codex/` | — | `prompts/`, the Codex CLI wrappers. Same convention as `skills/`, one line each |
 | `docs/` | — | `plans/<slug>/` per feature. State, not rules — nothing here is a contract |
-| `viewer/` | — | the browser graph viewer — `index.html`, `server.js`. Started by an agent turn, never read as guidance |
+| `viewer/` | — | the browser graph viewer, its list and document pages, and the server behind all three — `index.html`, `list.html`, `list.js`, `doc.html`, `doc.js`, `server.js`, `playwright.config.js`. Started by an agent turn, never read as guidance |
 
 ## Files at the root
 
@@ -56,7 +56,7 @@ Two rules follow, and between them they cover most of what can go wrong here:
 |---|---|
 | `README.md` | What this workflow is and how to drive it, for a person arriving cold |
 | `CONTRIBUTING.md` | The conventions, source-of-truth boundaries, and validation commands for someone changing this repository |
-| `install.sh` | Renders each present harness's wrappers, substituting this clone's path for `{{WHEELCHAIR_ROOT}}`, installs the viewer's dependencies, and — last, and warning rather than failing if it refuses — calls `sensitivity/set.sh` to render the dial's region into each present global instruction file. Those files are **outside this tree**, and the region between the markers is overwritten. Idempotent, and it **globs** `skills/*/` and `codex/prompts/*.md`, so adding a command needs no edit here |
+| `install.sh` | Renders each present harness's wrappers, substituting this clone's path for `{{WHEELCHAIR_ROOT}}`, installs the viewer's dependencies, stops any running viewer that isn't running the code just pulled, decides once whether this machine serves the viewer to other tailnet devices (asking only on a headless machine that hasn't decided yet), and — last, and warning rather than failing if it refuses — calls `sensitivity/set.sh` to render the dial's region into each present global instruction file. Those files are **outside this tree**, and the region between the markers is overwritten. Idempotent, and it **globs** `skills/*/` and `codex/prompts/*.md`, so adding a command needs no edit here |
 | `.gitignore` | `node_modules/`, `graphify-out/`, and the two scratch paths the viewer's suites write, `viewer/test/.tmp/` and `test-results/`. `graphify-out/` is what lets a root router claim a graph cannot carry a contract |
 
 ## How to navigate (in order)
@@ -66,9 +66,10 @@ Two rules follow, and between them they cover most of what can go wrong here:
    rule uses are the words it is stored under.
 3. **Graphify last**, under the policy below.
 
-No module-docstring rung: `viewer/` is real JavaScript, but it is two files — the page and
-the server — and a router's file/role table already says what each one does at that size, so
-there is still nothing a docstring would tell you faster.
+No module-docstring rung: `viewer/` is real JavaScript, but it is seven files — the graph
+page, the list and document pages and their scripts, the server, and its Playwright config —
+and a router's file/role table already says what each one does at that size, so there is
+still nothing a docstring would tell you faster.
 
 ## Graphify policy
 
@@ -95,12 +96,15 @@ bash spine/test/run.sh                # the scanner's assertions, exit-code gate
 bash sensitivity/test/run.sh          # the dial's block writer, exit-code gated
 bash install/test/run.sh              # presence-aware installer assertions, exit-code gated
 ./install.sh && ./install.sh          # idempotent; git status --porcelain stays empty
-node --test 'viewer/test/*.test.js'   # the glob is required
-npm --prefix viewer run test:browser  # Chromium; fails loudly if the browser is missing
+node --test viewer/test/*.test.js     # unquoted glob; works on Node 20 and 26
+npm --prefix viewer run test:browser  # Chromium and Firefox; fails loudly if either is missing
 ```
 
-The glob on the `node --test` line is required, not decorative: on Node 26.7.0, pointing
-`--test` at a bare directory does not discover the suite.
+The glob on the `node --test` line matters twice over. Pointing `--test` at a bare
+directory doesn't discover the suite on Node 26.7.0. And the glob has to be left unquoted,
+for the shell to expand into a list of files, rather than quoted and handed to Node as a
+literal pattern — quoted, it fails to find the suite on Node 20, which is what the
+always-on viewer service runs. Unquoted is the one form that works on both.
 
 **Never check the viewer by starting a server by hand.** A `--open` or `--show` start
 reuses whatever already holds the lock under the default cache root
