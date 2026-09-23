@@ -36,14 +36,13 @@ const { spawn } = require('node:child_process');
 const DEFAULT_PORT = 7373;
 const DAY = 24 * 60 * 60 * 1000;
 const REGISTERED_MAX_AGE = 30 * DAY;
-// A server that has claimed the lockfile but not yet bound is indistinguishable from an unrelated
-// live process. These bound how long a second starter waits for it to answer before giving up.
 // A page polls every second, so anything read inside this window means a tab is live on that graph.
 const WATCHED_WINDOW_MS = 4000;
 // How long --open waits for the graph to be written before giving up on showing it.
 const LAUNCH_WAIT_MS = 15000;
 const STARTUP_GRACE_ATTEMPTS = 20;
 const STARTUP_GRACE_INTERVAL_MS = 100;
+const STOP_WAIT_MS = 5000;
 const ORIGINS = new Set(['proposed', 'agreed', 'rejected']);
 const SOURCES = new Set(['router', 'code-read', 'plan-proposal']);
 const NODE_KINDS = new Set(['file', 'module', 'step', 'decision', 'external', 'note']);
@@ -894,7 +893,8 @@ function withMutex(work) {
 
 function configFromArgs(argv) {
   const options = { port: DEFAULT_PORT, cacheRoot: null, open: null, stop: false, show: false,
-    browser: process.env.WHEELCHAIR_NO_BROWSER !== '1' };
+    browser: process.env.WHEELCHAIR_NO_BROWSER !== '1', service: false, rotateToken: false,
+    url: false, ifStale: false };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--port') {
@@ -915,6 +915,15 @@ function configFromArgs(argv) {
       options.browser = false;
     } else if (arg === '--stop') {
       options.stop = true;
+    } else if (arg === '--if-stale') {
+      options.ifStale = true;
+    } else if (arg === '--service') {
+      options.service = true;
+      options.browser = false;
+    } else if (arg === '--rotate-token') {
+      options.rotateToken = true;
+    } else if (arg === '--url') {
+      options.url = true;
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -924,6 +933,8 @@ function configFromArgs(argv) {
 }
 
 function lockPath(config) { return path.join(config.cacheRoot, '.server'); }
+function tokenPath(config) { return path.join(config.cacheRoot, '.token'); }
+function servingPath(config) { return path.join(config.cacheRoot, '.serving'); }
 function registeredPath(config) { return path.join(config.cacheRoot, '.registered'); }
 
 function temporaryPath(filePath) {
@@ -1093,7 +1104,7 @@ function requirePutAuth(request, state) {
   if (!tokenMatches(request.headers['x-graph-token'], state.lock.token)) {
     fail(401, 'bad-token', 'The graph token is missing or invalid.');
   }
-  if (request.headers.origin !== `http://127.0.0.1:${state.port}`) {
+  if (request.headers.origin !== `http://127.0.0.1:${state.port}` && request.headers.origin !== state.servedOrigin) {
     fail(403, 'bad-origin', 'The request origin does not match this viewer.');
   }
 }
@@ -1253,9 +1264,10 @@ async function handleRoot(response, url, state) {
   }
 }
 
-function whoami(port) {
+function whoami(port, nonce) {
   return new Promise((resolve, reject) => {
-    const request = http.get({ host: '127.0.0.1', port, path: '/whoami', timeout: 500 }, (response) => {
+    const suffix = nonce ? `?nonce=${encodeURIComponent(nonce)}` : '';
+    const request = http.get({ host: '127.0.0.1', port, path: `/whoami${suffix}`, timeout: 500 }, (response) => {
       const chunks = [];
       response.on('data', (chunk) => chunks.push(chunk));
       response.on('end', () => {
@@ -1272,14 +1284,16 @@ function validLock(value) {
     typeof value.token === 'string' && typeof value.start_id === 'string';
 }
 
-function claimLock(config, lock) {
-  const target = lockPath(config);
+// The old lock claim used this exact hard-link publication pattern.  A token needs the
+// same single-winner property, but .server is deliberately only information now.
+function claimToken(config, token) {
+  const target = tokenPath(config);
   const temp = temporaryPath(target);
   let descriptor;
   let linking = false;
   try {
     descriptor = fs.openSync(temp, 'wx', 0o600);
-    fs.writeFileSync(descriptor, `${JSON.stringify(lock, null, 2)}\n`);
+    fs.writeFileSync(descriptor, `${token}\n`);
     fs.fsyncSync(descriptor);
     fs.closeSync(descriptor);
     descriptor = null;
@@ -1306,118 +1320,183 @@ async function readLock(config) {
   } catch { return null; }
 }
 
-async function existingServer(config) {
-  let lock;
-  try { lock = JSON.parse(await fsp.readFile(lockPath(config), 'utf8')); } catch { return { kind: 'corrupt' }; }
-  if (!validLock(lock)) return { kind: 'corrupt' };
+async function readToken(config) {
   try {
-    const identity = await whoami(lock.port);
-    if (identity.start_id === lock.start_id) return { kind: 'reuse', lock };
-    return { kind: 'foreign', lock };
-  } catch {
-    try { process.kill(lock.pid, 0); }
-    catch (error) {
-      if (error.code === 'ESRCH') return { kind: 'stale', lock };
-      return { kind: 'foreign', lock };
-    }
-    // The pid is alive and /whoami is silent. That is a live foreign process — or our own kind of
-    // server in the window between claiming the lockfile and binding the port, which contains a
-    // full read-and-write of the registered set and is milliseconds wide. Two starts at the same
-    // instant land in it, and treating the loser's view as foreign killed it outright: the
-    // documented producer sequence then reports that no URL was printed and exits. Give the holder
-    // that window to answer before calling it foreign. A genuinely unrelated process stays silent
-    // through it and still gets refused, one round of polling later.
-    for (let attempt = 0; attempt < STARTUP_GRACE_ATTEMPTS; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, STARTUP_GRACE_INTERVAL_MS));
-      try { process.kill(lock.pid, 0); } catch { return { kind: 'stale', lock }; }
-      try {
-        const identity = await whoami(lock.port);
-        return identity.start_id === lock.start_id ? { kind: 'reuse', lock } : { kind: 'foreign', lock };
-      } catch { /* still starting, or genuinely not ours */ }
-    }
-    return { kind: 'foreign', lock };
-  }
+    const token = (await fsp.readFile(tokenPath(config), 'utf8')).trim();
+    return /^[0-9a-f]{64}$/.test(token) ? token : null;
+  } catch { return null; }
 }
 
-function viewerUrl(lock, openPath) {
-  const base = `http://127.0.0.1:${lock.port}`;
+async function ensureToken(config) {
+  let token = await readToken(config);
+  if (token) return token;
+  const candidate = crypto.randomBytes(32).toString('hex');
+  if (claimToken(config, candidate)) return candidate;
+  token = await readToken(config);
+  if (!token) throw new Error('Could not create the viewer token.');
+  return token;
+}
+
+async function servedOrigin(config) {
+  try {
+    const value = JSON.parse(await fsp.readFile(servingPath(config), 'utf8'));
+    return value && value.serve === true && typeof value.origin === 'string' && /^https:\/\//.test(value.origin)
+      ? value.origin.replace(/\/$/, '') : null;
+  } catch { return null; }
+}
+
+async function viewerUrl(lock, openPath, config) {
+  const base = await servedOrigin(config) || `http://127.0.0.1:${lock.port}`;
   return openPath ? `${base}/?path=${encodeURIComponent(openPath)}&token=${lock.token}` : base;
 }
 
-async function stopServer(config) {
-  let lock;
-  try { lock = JSON.parse(await fsp.readFile(lockPath(config), 'utf8')); }
-  catch (error) {
-    if (error.code === 'ENOENT') { console.log('No server lockfile.'); return; }
-    console.log('No usable server lockfile.'); return;
-  }
-  if (!validLock(lock)) { console.log('No usable server lockfile.'); return; }
-  try {
-    const identity = await whoami(lock.port);
-    if (identity.start_id !== lock.start_id) throw new Error('start id mismatch');
-    process.kill(lock.pid, 'SIGTERM');
-    await fsp.unlink(lockPath(config)).catch(() => {});
-    console.log('Server stopped.');
-  } catch {
-    console.error('Refused to stop a server not identified by this lockfile.');
-    process.exitCode = 1;
+function proofFor(nonce, token) {
+  return crypto.createHmac('sha256', token).update(nonce).digest('hex');
+}
+
+function proofMatches(proof, nonce, token) {
+  return typeof proof === 'string' && tokenMatches(proof, proofFor(nonce, token));
+}
+
+async function identifyHolder(config, { retrySilent = true, allowOlderStop = false } = {}) {
+  const deadline = Date.now() + (retrySilent ? STARTUP_GRACE_ATTEMPTS * STARTUP_GRACE_INTERVAL_MS : 0);
+  let sawSilent = false;
+  for (;;) {
+    const nonce = crypto.randomBytes(16).toString('hex');
+    try {
+      const identity = await whoami(config.port, nonce);
+      const lock = await readLock(config); // after /whoami: the holder has had a chance to repair it.
+      const diskToken = await readToken(config);
+      const candidates = [...new Set([lock && lock.token, diskToken].filter(Boolean))];
+      const matchingToken = candidates.find((token) => proofMatches(identity.proof, nonce, token));
+      if (matchingToken && lock && lock.start_id === identity.start_id &&
+          Number.isInteger(identity.pid) && lock.pid === identity.pid) {
+        return { kind: 'ours', identity, lock, token: matchingToken };
+      }
+      if (allowOlderStop && identity && identity.proof === undefined && lock &&
+          identity.start_id === lock.start_id && Number.isInteger(lock.pid)) {
+        return { kind: 'older', identity, lock, token: lock.token };
+      }
+      if (identity && identity.proof === undefined && typeof identity.start_id === 'string') return { kind: 'older-foreign' };
+      return { kind: 'foreign' };
+    } catch (error) {
+      if (error && error.code === 'ECONNREFUSED') return { kind: 'none' };
+      sawSilent = true;
+      if (!retrySilent || Date.now() >= deadline) return { kind: sawSilent ? 'foreign' : 'none' };
+      await new Promise((resolve) => setTimeout(resolve, STARTUP_GRACE_INTERVAL_MS));
+    }
   }
 }
 
+async function waitForPidExit(pid) {
+  const deadline = Date.now() + STOP_WAIT_MS;
+  while (Date.now() < deadline) {
+    try { process.kill(pid, 0); } catch (error) { if (error.code === 'ESRCH') return true; }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  try { process.kill(pid, 0); return false; } catch (error) { return error.code === 'ESRCH'; }
+}
+
+async function stopServer(config, { ifStale = false } = {}) {
+  const holder = await identifyHolder(config, { retrySilent: true, allowOlderStop: true });
+  if (holder.kind === 'none') { console.log('No viewer running.'); return { stopped: false, none: true }; }
+  if (holder.kind === 'older-foreign') {
+    console.error('a viewer from an older version is running; run ./install.sh'); process.exitCode = 1; return { failed: true };
+  }
+  if (holder.kind !== 'ours' && holder.kind !== 'older') {
+    console.error('Refused to stop a process it cannot identify.'); process.exitCode = 1; return { failed: true };
+  }
+  if (ifStale && holder.kind === 'ours' && holder.identity.code === await currentCode()) {
+    console.log('Viewer is current.'); return { stopped: false, current: true };
+  }
+  const pid = holder.lock.pid;
+  try { process.kill(pid, 'SIGTERM'); } catch (error) {
+    if (error.code === 'ESRCH') return { stopped: true };
+    throw error;
+  }
+  if (!(await waitForPidExit(pid))) {
+    console.error('Viewer did not exit within 5 seconds.'); process.exitCode = 1; return { failed: true };
+  }
+  console.log('Server stopped.'); return { stopped: true };
+}
+
+async function writeServerRecord(config, lock) {
+  const target = lockPath(config); const temp = temporaryPath(target);
+  await fsp.writeFile(temp, `${JSON.stringify(lock, null, 2)}\n`, { mode: 0o600 });
+  await fsp.rename(temp, target);
+}
+
+async function removeOwnServerRecord(config, startId) {
+  const current = await readLock(config);
+  if (current && current.start_id === startId) await fsp.unlink(lockPath(config)).catch(() => {});
+}
+
+async function currentCode() {
+  return hashBytes(await fsp.readFile(__filename)).slice(0, 12);
+}
+
+function listen(server, port) {
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, '127.0.0.1', () => { server.removeListener('error', reject); resolve(); });
+  });
+}
+
+// Task 2 inserts pruneRegistered and own graph registration here.  It stays inside the
+// start mutex and after listen, which is the lifecycle ordering contract.
+async function afterListenStartup(_state) {}
+
 async function startServer(config) {
   await fsp.mkdir(config.cacheRoot, { recursive: true, mode: 0o700 });
-  for (;;) {
-    const lock = {
-      pid: process.pid, port: config.port,
-      token: crypto.randomBytes(32).toString('hex'),
-      start_id: crypto.randomBytes(16).toString('hex'),
-    };
-    const claimed = claimLock(config, lock);
-    if (!claimed) {
-      const known = await existingServer(config);
-      if (known.kind === 'reuse') return { reused: true, lock: known.lock };
-      if (known.kind === 'foreign') throw new Error('Refused to adopt a lockfile owned by another live process.');
-      await fsp.unlink(lockPath(config)).catch(() => {});
-      continue;
-    }
-    await pruneRegistered(config);
-    const state = { config, lock, port: config.port, server: null, watched: new Map() };
-    const server = http.createServer(async (request, response) => {
-      try {
-        const url = new URL(request.url, `http://127.0.0.1:${state.port}`);
-        if (request.method === 'GET' && url.pathname === '/whoami') {
-          sendJson(response, 200, { start_id: state.lock.start_id }); return;
-        }
-        if (request.method === 'GET' && url.pathname === '/') { await handleRoot(response, url, state); return; }
-        if (request.method === 'GET' && url.pathname === '/watching') {
-          requireGetToken(url, state);
-          const seen = state.watched.get(validPath(url.searchParams.get('path'))) || 0;
-          sendJson(response, 200, { watched: Date.now() - seen < WATCHED_WINDOW_MS }); return;
-        }
-        if (request.method === 'GET' && url.pathname === '/graph') { await handleGetGraph(response, url, state); return; }
-        if (request.method === 'PUT' && url.pathname === '/graph') { await handleGraphPut(request, response, url, state); return; }
-        if (request.method === 'PUT' && url.pathname === '/view') { await handleViewPut(request, response, url, state); return; }
-        fail(404, 'no-route', 'The requested route does not exist.');
-      } catch (error) { sendError(response, error); }
+  const token = await ensureToken(config);
+  const lock = { pid: process.pid, port: config.port, token, start_id: crypto.randomBytes(16).toString('hex') };
+  const state = { config, lock, port: config.port, server: null, watched: new Map(), code: await currentCode(),
+    servedOrigin: await servedOrigin(config), closing: false };
+  const server = http.createServer(async (request, response) => {
+    try {
+      const url = new URL(request.url, `http://127.0.0.1:${state.port}`);
+      if (request.method === 'GET' && url.pathname === '/whoami') {
+        const recorded = await readLock(config);
+        if (!recorded || recorded.start_id !== state.lock.start_id) await writeServerRecord(config, state.lock);
+        const body = { start_id: state.lock.start_id, pid: process.pid, code: state.code };
+        const nonce = url.searchParams.get('nonce');
+        if (nonce) body.proof = proofFor(nonce, state.lock.token);
+        sendJson(response, 200, body); return;
+      }
+      if (request.method === 'GET' && url.pathname === '/') { await handleRoot(response, url, state); return; }
+      if (request.method === 'GET' && url.pathname === '/watching') {
+        requireGetToken(url, state);
+        const seen = state.watched.get(validPath(url.searchParams.get('path'))) || 0;
+        sendJson(response, 200, { watched: Date.now() - seen < WATCHED_WINDOW_MS }); return;
+      }
+      if (request.method === 'GET' && url.pathname === '/graph') { await handleGetGraph(response, url, state); return; }
+      if (request.method === 'PUT' && url.pathname === '/graph') { await handleGraphPut(request, response, url, state); return; }
+      if (request.method === 'PUT' && url.pathname === '/view') { await handleViewPut(request, response, url, state); return; }
+      fail(404, 'no-route', 'The requested route does not exist.');
+    } catch (error) { sendError(response, error); }
+  });
+  state.server = server;
+  try {
+    await withMutex(async () => {
+      await listen(server, config.port);
+      await writeServerRecord(config, lock);
+      await afterListenStartup(state);
     });
-    state.server = server;
-    server.on('error', async (error) => {
-      await fsp.unlink(lockPath(config)).catch(() => {});
-      console.error(error.message);
-      process.exitCode = 1;
-    });
-    const close = async () => {
-      await fsp.unlink(lockPath(config)).catch(() => {});
-      server.close();
-    };
-    process.once('SIGTERM', close);
-    process.once('SIGINT', close);
-    await new Promise((resolve, reject) => {
-      server.once('error', reject);
-      server.listen(config.port, '127.0.0.1', resolve);
-    });
-    return { reused: false, lock };
+  } catch (error) {
+    await new Promise((resolve) => server.close(() => resolve()));
+    await removeOwnServerRecord(config, lock.start_id);
+    throw error;
   }
+  const close = () => {
+    if (state.closing) return; state.closing = true;
+    server.close(async () => { await removeOwnServerRecord(config, lock.start_id); });
+  };
+  server.on('error', async (error) => {
+    if (!state.closing) { state.closing = true; server.close(async () => { await removeOwnServerRecord(config, lock.start_id); }); }
+    console.error(error.message); process.exitCode = 1;
+  });
+  process.once('SIGTERM', close); process.once('SIGINT', close);
+  return { reused: false, lock };
 }
 
 // Ask the running server whether a page is already polling this graph. A redraw should not stack
@@ -1450,14 +1529,64 @@ function launchBrowser(url) {
 
 async function main() {
   const config = configFromArgs(process.argv.slice(2));
-  if (config.stop) { await stopServer(config); return; }
+  if (config.stop) { await stopServer(config, { ifStale: config.ifStale }); return; }
+  if (config.rotateToken) {
+    await fsp.mkdir(config.cacheRoot, { recursive: true, mode: 0o700 });
+    const token = crypto.randomBytes(32).toString('hex'); const temp = temporaryPath(tokenPath(config));
+    await fsp.writeFile(temp, `${token}\n`, { mode: 0o600 }); await fsp.rename(temp, tokenPath(config));
+    const result = await stopServer(config);
+    const url = await viewerUrl({ port: config.port, token }, null, config);
+    console.log(`${url}/?token=${token}`);
+    if (result.failed) console.error('The server must be restarted to use the new token.');
+    return;
+  }
+  if (config.url) {
+    await fsp.mkdir(config.cacheRoot, { recursive: true, mode: 0o700 });
+    let token = await ensureToken(config);
+    const holder = await identifyHolder(config, { retrySilent: false });
+    if (holder.kind === 'ours') {
+      token = holder.lock.token;
+      const onDisk = await readToken(config);
+      if (onDisk && onDisk !== token) console.error('Warning: token rotation is waiting for the server to restart.');
+    }
+    const base = await viewerUrl({ port: config.port, token }, null, config);
+    console.log(`${base}/?token=${token}`);
+    return;
+  }
   if (config.open) {
     if (path.extname(config.open) !== '.json') throw new Error('--open must name a .json file.');
     await fsp.mkdir(path.dirname(config.open), { recursive: true });
     await registerPath(config, config.open, true);
   }
-  const result = await startServer(config);
-  const url = viewerUrl(result.lock, config.open);
+  let result;
+  let takeovers = 0;
+  let closingRetryDeadline = 0;
+  for (;;) {
+    try { result = await startServer(config); break; }
+    catch (error) {
+      if (error.code !== 'EADDRINUSE') throw error;
+      const holder = await identifyHolder(config, { retrySilent: true });
+      if (holder.kind === 'none') {
+        if (!closingRetryDeadline) closingRetryDeadline = Date.now() + STARTUP_GRACE_ATTEMPTS * STARTUP_GRACE_INTERVAL_MS;
+        if (Date.now() < closingRetryDeadline) {
+          await new Promise((resolve) => setTimeout(resolve, STARTUP_GRACE_INTERVAL_MS));
+          continue;
+        }
+        throw new Error('Refused to use a port held by a process it cannot identify.');
+      }
+      if (holder.kind === 'ours') {
+        if (!config.service) { result = { reused: true, lock: holder.lock }; break; }
+        if (takeovers >= 3) throw new Error('Viewer service gave up after three takeovers.');
+        takeovers += 1;
+        const stopped = await stopServer(config);
+        if (stopped.failed) throw new Error('Viewer service could not stop the existing viewer.');
+        continue;
+      }
+      if (holder.kind === 'older-foreign') throw new Error('a viewer from an older version is running; run ./install.sh');
+      throw new Error('Refused to use a port held by a process it cannot identify.');
+    }
+  }
+  const url = await viewerUrl(result.lock, config.open, config);
   console.log(url);
   if (config.show && config.browser && !(await alreadyWatched(result.lock, config.open))) {
     launchBrowser(url);

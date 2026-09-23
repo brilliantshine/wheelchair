@@ -67,7 +67,7 @@ function waitForLine(child) {
     const timeout = setTimeout(() => reject(new Error(`server did not print its URL: ${errors}`)), 5000);
     child.stdout.on('data', (chunk) => {
       output += chunk;
-      const line = output.split(/\r?\n/).find((value) => value.startsWith('http://127.0.0.1:'));
+      const line = output.split(/\r?\n/).find((value) => /^https?:\/\//.test(value));
       if (line) { clearTimeout(timeout); resolve(line); }
     });
     child.stderr.on('data', (chunk) => { errors += chunk; });
@@ -112,7 +112,7 @@ async function request(ctx, route, { method = 'GET', graphPath = ctx.graphPath, 
   if (method === 'PUT') {
     headers['content-type'] = 'application/json';
     if (token !== undefined) headers['x-graph-token'] = token;
-    if (origin) headers.origin = ctx.url;
+    if (origin) headers.origin = typeof origin === 'string' ? origin : ctx.url;
   }
   const response = await fetch(url, {
     method, headers, body: body === undefined ? undefined : JSON.stringify(body),
