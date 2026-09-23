@@ -3,7 +3,10 @@
 // Deliberately tiny fault seams for lifecycle races.  They are selected only by tests through
 // GRAPH_TEST_HOOK, so production's listener and filesystem calls stay untouched.
 const fs = require('node:fs/promises');
+const fssync = require('node:fs');
 const net = require('node:net');
+const http = require('node:http');
+const { EventEmitter } = require('node:events');
 const path = require('node:path');
 
 const mode = process.env.GRAPH_TEST_HOOK;
@@ -34,4 +37,27 @@ if (mode === 'ignore-sigterm') {
     if (!process.listeners('SIGTERM').includes(ignore)) process.on('SIGTERM', ignore);
   }, 10);
   timer.unref();
+}
+if (mode === 'pause-before-register') {
+  const request = http.request;
+  http.request = function(options, ...args) {
+    if (options.path === '/register' && process.env.GRAPH_TEST_MARKER) {
+      const outgoing = new EventEmitter();
+      fssync.writeFileSync(process.env.GRAPH_TEST_MARKER, 'ready');
+      outgoing.end = function(...endArgs) {
+        const timer = setInterval(() => {
+          if (fssync.existsSync(process.env.GRAPH_TEST_MARKER)) return;
+          clearInterval(timer);
+          const actual = request.call(this, options, ...args);
+          actual.on('error', (error) => outgoing.emit('error', error));
+          actual.on('timeout', () => outgoing.emit('timeout'));
+          actual.end(...endArgs);
+        }, 10);
+        return outgoing;
+      };
+      outgoing.destroy = (error) => { if (error) outgoing.emit('error', error); };
+      return outgoing;
+    }
+    return request.call(this, options, ...args);
+  };
 }

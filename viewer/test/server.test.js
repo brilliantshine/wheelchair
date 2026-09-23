@@ -1078,12 +1078,13 @@ test('a kill before rename leaves the committed graph as either whole version, n
   }
 });
 
-test('registered paths are left for Task 2 startup pruning', async () => {
+test('registered paths are pruned by age at startup', async () => {
   const root = await makeDir(); const graphDir = path.join(root, 'graphs'); await fs.mkdir(graphDir, { recursive: true });
   const old = await stage({ graphDir }, 'canonical.json', 'old.json'); const recent = await stage({ graphDir }, 'canonical.json', 'recent.json'); const opened = await stage({ graphDir }, 'canonical.json', 'opened.json');
+  const stale = new Date(Date.now() - 31 * 86400000); await fs.utimes(old, stale, stale);
   await fs.writeFile(path.join(root, '.registered'), JSON.stringify({ [old]: { added: Date.now() - 31 * 86400000, opened: false }, [recent]: { added: Date.now(), opened: false } }));
   const ctx = await startServer({ cacheRoot: root, open: opened });
-  try { const entries = JSON.parse(await fs.readFile(path.join(root, '.registered'))); assert.ok(entries[old]); assert.ok(entries[recent]); } finally { await ctx.stop(); }
+  try { const entries = JSON.parse(await fs.readFile(path.join(root, '.registered'))); assert.equal(entries[old], undefined); assert.ok(entries[recent]); } finally { await ctx.stop(); }
 });
 
 test('agent reset records are durable and page verdicts clear them only while changing origin', async () => {
