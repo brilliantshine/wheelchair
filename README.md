@@ -102,7 +102,10 @@ you cloned it. Edits to `protocol/` still take effect immediately in every prese
 because the rendered wrapper points back into your working tree; editing a wrapper itself
 needs a re-run, and so does installing a harness afterward — it has no wrappers until then.
 Restart running sessions to pick up new skill/prompt registrations. The same run also
-installs `viewer/`'s npm dependencies and its pinned Chromium via Playwright.
+installs `viewer/`'s npm dependencies and its pinned Chromium and Firefox via Playwright, and
+stops any already-running viewer that isn't running the code you just pulled — so re-run
+`./install.sh` after pulling a change under `viewer/`, or an always-on viewer keeps answering
+with the code it started with.
 `spine/scan.sh`, `spine/test/run.sh`, `sensitivity/set.sh`, and `install.sh` itself are shell,
 not markdown — `viewer/` is the one piece with its own package dependencies and a
 long-running server.
@@ -210,6 +213,36 @@ the launch on a headless box.
 It binds `127.0.0.1` only, and every route needs a token minted at start. `protocol/graphs.md` is
 the format and the full producer sequence.
 
+Its suites: `node --test viewer/test/*.test.js` (unquoted — a quoted glob isn't discovered on
+Node 20) for the server, and `npm --prefix viewer run test:browser`, which runs in both
+Chromium and Firefox.
+
+### Reaching it from a phone or another laptop
+
+A machine can opt in to being an always-on viewer, reachable over your private Tailscale
+network. `./install.sh --serve` sets it up; `--no-serve` declines. With neither flag, the
+installer decides once: on a machine with no display it asks at the prompt, and on a machine
+with a display it declines on its own. A machine already set up keeps its choice on every
+later `./install.sh` run and is never asked again.
+
+Setup needs one thing done by hand, since nothing here runs `sudo` silently: it prints
+`sudo tailscale serve --bg 7373` and asks before running it, or prints it for you to run
+yourself if you'd rather. After that the machine answers `https://<name>.<tailnet>.ts.net`
+to any device on the tailnet, and nothing outside it.
+
+`node viewer/server.js --url` prints the bookmark address — the served one on a machine
+that opted in, `http://127.0.0.1:<port>` otherwise — with the token already in it. Save
+that. `node viewer/server.js --rotate-token` replaces the token and prints the new bookmark,
+for when an old one needs retiring; every device holding the old address needs the new one
+after that.
+
+The bookmark opens a list page: every graph, grouped by the tmux session and the agent
+(Claude or Codex) that drew it, newest first, and every plan the workflow has registered,
+each showing its status and its documents (MAP, IDEA, PLAN and the rest), readable on a
+phone. Documents are read-only there; agents and the terminal still write them. Panning,
+pinching and dragging boxes, and marking entries agreed or rejected, all work on a
+touchscreen the same as with a mouse.
+
 ## What one account costs
 
 Two model families fail in different places — a mistake one walks straight past is the kind
@@ -234,8 +267,8 @@ single family you have. Node is required either way, for the viewer.
 - Node and npm — `viewer/`'s runtime (developed against Node 26); `install.sh` runs
   `npm --prefix viewer install`.
 - Playwright, pinned in `viewer/package.json` and installed by `install.sh`'s
-  `playwright install chromium` step — the viewer's one dev dependency, and the only way
-  to run its browser test.
+  `playwright install chromium firefox` step — the viewer's one dev dependency, and the
+  only way to run its browser suite, which runs in both browsers.
 
 Delegation deliberately goes through `codex exec` and the Claude CLI rather than any other
 subagent runtime, so both harnesses drive the same binaries and every lane is inspectable from a

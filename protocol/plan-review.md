@@ -5,6 +5,19 @@ Adversarial review of a plan produced by Stage 1, through two independent lenses
 **Input:** a plan slug. A plan written outside this workflow is brought in with
 `adopt.md` first; this stage does not take document paths.
 
+**Register the plan directory with the viewer at the start**, before anything else. You
+are reading this document at `<root>/protocol/plan-review.md`, so `WHEELCHAIR` is that
+path with `/protocol/plan-review.md` dropped, the same rule `graphs.md` uses:
+
+```bash
+node "$WHEELCHAIR/viewer/server.js" --register-plan <repo>/docs/plans/<slug>
+```
+
+It returns at once, never starts a server, and never fails the stage: it registers
+through a running viewer if one answers, and otherwise does nothing. On any error it
+prints one warning line — pass it on to Collin in your turn, including "a viewer from an
+older version is running; run ./install.sh", and carry on.
+
 **Precondition:** `docs/plans/<slug>/PLAN.md` has `status: ready-for-review` (or
 `approved`, if the user explicitly wants another round). Otherwise refuse and name the
 missing stage.
