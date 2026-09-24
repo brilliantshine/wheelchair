@@ -152,6 +152,9 @@ On every other message it carries, capped at 2,000 characters total (D34):
 - A visible one-line notice, shown to the reader rather than to the model, the one time the
   confirmed list changes, on a harness that displays a `UserPromptSubmit` `systemMessage`
   (D43, D45).
+  Checked live on 2026-09-24 (Claude Code 2.1.282, Codex CLI 0.156.0): both display it in
+  their interactive windows, so `seen/set.sh` passes `notice` for both and grants D38's
+  write access on both.
 
 It returns nothing at all when there is no confirmed entry, no gap, and no change to
 report. On Codex, the hook runs only after the reader approves it once in `/hooks`, and a
