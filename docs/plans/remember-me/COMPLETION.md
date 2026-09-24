@@ -57,14 +57,15 @@ flowchart TD
 
 ## Deviations from plan
 
-- **The `/wheelchair` Tailscale mapping isn't added yet, but the live viewer already runs
-  this code.** Running the validation step `./install.sh && ./install.sh` on hearth, which is
+- **The live viewer ran this code before verification, and before the `/wheelchair`
+  Tailscale mapping existed.** Running the validation step `./install.sh && ./install.sh` on hearth, which is
   a serving machine, restarted the always-on service on the `remember-me` code. The installer
   had no terminal to ask on, so it printed the `/wheelchair` mapping command for later instead
   of running it. The existing `/` mapping forwards every path, so
   `https://hearth.taileb4e52.ts.net/wheelchair/…` already works through it. Checked:
   `/` answers `308` to `/wheelchair/`, `/wheelchair/whoami` answers `200` with a `start_id`,
-  and `/wheelchair/` without a cookie answers `401`.
+  and `/wheelchair/` without a cookie answers `401`. Collin added the `/wheelchair` mapping
+  on 2026-09-24 (see the coverage row for the checks done since).
 - **Test fixes by the lead.** In `lifecycle.test.js`, an exit assertion expected an exit code
   from a process ended by `SIGTERM`; it now checks that the process exited. The
   lost-freed-port race test from remote-viewer was flaky under browser-suite load, so its
@@ -73,10 +74,15 @@ flowchart TD
 
 ## Routers
 
-`AGENTS.md` (root): the two `viewer/server.js` citations in the "Never check the viewer by
-starting a server by hand" paragraph were updated to `:2108-2109` and `:148`. The `viewer/`
-row already listed every file except `signin.html`, which stays covered by the row's "the list
-and document pages" wording. No other router names a changed file or lost ownership.
+`AGENTS.md` (root):
+- The two `viewer/server.js` citations in the "Never check the viewer by starting a server by
+  hand" paragraph were updated to `:2108-2109` and `:148`.
+- The `viewer/` row now names `signin.html` and describes the sign-in page.
+- The "No module-docstring rung" paragraph counts eight files. The first version of this
+  report said the existing wording covered `signin.html`; verification round 1 showed it
+  didn't, and remediation 1 fixed it.
+
+No other router names a changed file or lost ownership.
 
 ## Validation evidence
 
@@ -105,16 +111,6 @@ $ git status --porcelain                       # only the lead's AGENTS.md citat
 
 ## Known gaps / residual risks
 
-- **The blocking hearth checks aren't run yet.** They need Collin to run the `/wheelchair`
-  mapping command, then:
-  - `curl` the served `/wheelchair/whoami` expecting `200` with a `start_id`;
-  - on the phone in Firefox, open the bookmark and later the plain `/wheelchair/` address;
-  - open an agent link;
-  - open the same link from another website in the browser;
-  - open it in a private window;
-  - make an edit;
-  - rerun `./install.sh`, which should offer no command;
-  - repeat on a laptop.
 - **The laptop checks, a link tapped from another website, and an edit saved on the phone
   are still to do.** The laptop was off on 2026-09-24.
 - **The installer warns about lingering even when it is on.** On hearth, `Linger=yes`, yet a

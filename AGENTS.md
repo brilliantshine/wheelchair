@@ -48,7 +48,7 @@ Two rules follow, and between them they cover most of what can go wrong here:
 | `install/` | — | `test/run.sh`, the installer fixture suite. Temp harness homes only; real global files stay untouched |
 | `codex/` | — | `prompts/`, the Codex CLI wrappers. Same convention as `skills/`, one line each |
 | `docs/` | — | `plans/<slug>/` per feature. State, not rules — nothing here is a contract |
-| `viewer/` | — | the browser graph viewer, its list and document pages, and the server behind all three — `index.html`, `list.html`, `list.js`, `doc.html`, `doc.js`, `server.js`, `playwright.config.js`. Started by an agent turn, never read as guidance |
+| `viewer/` | — | the browser graph viewer, its list and document pages, the sign-in page a browser gets before it is remembered, and the server behind them — `index.html`, `list.html`, `list.js`, `doc.html`, `doc.js`, `signin.html`, `server.js`, `playwright.config.js`. Started by an agent turn, never read as guidance |
 
 ## Files at the root
 
@@ -66,8 +66,9 @@ Two rules follow, and between them they cover most of what can go wrong here:
    rule uses are the words it is stored under.
 3. **Graphify last**, under the policy below.
 
-No module-docstring rung: `viewer/` is real JavaScript, but it is seven files — the graph
-page, the list and document pages and their scripts, the server, and its Playwright config —
+No module-docstring rung: `viewer/` is real JavaScript, but it is eight files — the graph
+page, the list and document pages and their scripts, the sign-in page, the server, and its
+Playwright config —
 and a router's file/role table already says what each one does at that size, so there is
 still nothing a docstring would tell you faster.
 
