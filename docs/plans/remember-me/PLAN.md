@@ -59,6 +59,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 18 | Supersedes the `SameSite` value in #4: the cookie is `SameSite=Lax` | A token link opened from another site (a chat or mail page) would otherwise land on a `401`. `Lax` still withholds the cookie from cross-site `PUT`s, and those are also refused by the `Origin` check | review-round-1 |
 | 19 | Supersedes the `X-Graph-Token` clause of #8: the pages never send `X-Graph-Token` and never read `token` from their address; they rely on the cookie alone | The redirect means a page never has a token in its address, so the fallback was dead code | review-round-1 |
 | 20 | Supersedes the graph-URL part of #9. The graph URLs `--open` and `--show` print carry no token: `<base>/wheelchair/?path=…`. `--show` alone passes a token-bearing URL (`…&token=…`) to the local browser it launches, and never prints that URL. `--url` still prints the bookmark with the token. A page route reached with no valid cookie and no token answers `401` with a small HTML page (same CSP as `list.html`) saying this device isn't remembered yet and to open the bookmark once; JSON routes keep answering `401` JSON | Links carried to other devices stay token-free; the local browser on the machine running the command, which already holds the token on disk, keeps working even if never remembered | user |
+| 21 | Supersedes the status-reading part of #17: the installer reads `tailscale serve status --json` and looks up `Web["<name>:443"].Handlers["/wheelchair"].Proxy` and `…Handlers["/"].Proxy`, where `<name>` is the served origin's host. A mapping "points at the viewer's port" when its `Proxy` is `http://127.0.0.1:$port` or starts with `http://127.0.0.1:$port/`. The fixture's `tailscale` shim emits that JSON shape | Text output has no stable format and the fixture's differs from hearth's; the JSON on hearth has exactly this shape | review-round-2 |
+| 22 | `--no-serve` never prints the global `sudo tailscale serve --https=443 off`. It prints `sudo tailscale serve --https=443 --set-path /wheelchair off` when the `/wheelchair` mapping points at the viewer's port, and `sudo tailscale serve --https=443 --set-path / off` only when `/` does. When `tailscale` is missing or its status can't be read, it prints no command and says why | The global form would remove a future hub at `/`; the path form is Tailscale's documented per-path removal (checked on hearth as a blocking step) | review-round-2 |
 
 ## Spec
 
@@ -99,9 +101,9 @@ with a valid token, that response sets the cookie; with an invalid token but a v
 it redirects without touching the cookie; with neither, it is `401` (Decision Log #3, #16).
 Later requests carry the cookie. The cookie is
 `wheelchair_remember=<value>; Path=/wheelchair; HttpOnly; Secure; SameSite=Lax;
-Max-Age=34560000` (Decision Log #4, #6, #7, #18). The two page routes set it again on
-every response to a request that authenticated, so it renews on every visit. The JSON
-routes never send `Set-Cookie`.
+Max-Age=34560000` (Decision Log #4, #6, #7, #18). A page route's `200` response to a
+request with a valid cookie sets it again, so it renews on every visit. Of the redirects,
+only the valid-token one sets it. The JSON routes never send `Set-Cookie`.
 
 The cookie's value is the hex HMAC-SHA256, keyed by the running server's token, of the fixed
 label `wheelchair-remember-v1` (Decision Log #5). The server accepts a cookie only when it
@@ -112,7 +114,10 @@ changes the token and so invalidates every cookie at once. The cookie is never a
 ### Authentication per route
 
 - Page routes (`/wheelchair/`, `/wheelchair/docs`): a valid cookie, or a `token`
-  parameter handled by the redirect above. Otherwise `401`.
+  parameter handled by the redirect above. Otherwise `401` with a small HTML page, under the
+  same CSP as `list.html`, whether the request had a wrong token or none. The page says this
+  browser isn't signed in to the viewer: open the bookmark link once, and if the token was
+  rotated, use the new link from `node viewer/server.js --url` (Decision Log #20).
 - JSON read routes (`/wheelchair/list`, `/plan`, `/doc`, `GET /graph`) and unknown routes
   under the prefix: a valid cookie or a valid `?token=`, answered directly with no redirect
   and no `Set-Cookie`, so agents' `curl` read-back keeps working (Decision Log #14).
@@ -141,7 +146,8 @@ Every printed URL is under `/wheelchair/`. `--open` and `--show` print
 `&token=…` added to the local browser it launches, and never prints that form. A page route
 reached with no valid cookie and no token answers `401` with a small HTML page, under the
 same CSP as `list.html`, saying the device isn't remembered yet and to open the bookmark
-once. JSON routes keep answering `401` JSON. All
+once. JSON routes keep answering `401` JSON. Both are specified under "Authentication per
+route". All
 their requests to the server use the prefixed routes. To identify a holder they call
 `/wheelchair/whoami?nonce=…`. If the answer has no `start_id`, whatever its status, they call
 `/whoami?nonce=…` at the root and apply the normal proof check to that answer (Decision Log
@@ -154,13 +160,18 @@ A root answer with no `proof` falls under remote-viewer Decision Log #85's exist
 ### The installer
 
 The installer manages only mappings that point at the viewer's port (Decision Log #17). It
-reads the `/wheelchair` line and the `/` line of `tailscale serve status` by path. It offers
+reads the `/wheelchair` and `/` mappings from `tailscale serve status --json` (`Web["<name>:443"].Handlers[<path>].Proxy`;
+a mapping points at the viewer's port when its `Proxy` is `http://127.0.0.1:$port` or starts
+with `http://127.0.0.1:$port/`) (Decision Log #21). It offers
 `sudo tailscale serve --bg --set-path /wheelchair http://127.0.0.1:$port/wheelchair` when the
 `/wheelchair` line is missing, and `sudo tailscale serve --bg $port` only when `/` has no
 mapping at all. It never offers to replace a `/` mapping that points anywhere else. It never
-runs `sudo` silently (remote-viewer Decision Log #9). `--no-serve` prints the command that
-removes the `/wheelchair` mapping, and the one for `/` only when `/` points at the viewer's
-port. The bookmark it prints comes from `--url`, so it is
+runs `sudo` silently (remote-viewer Decision Log #9). `--no-serve` never prints the global
+`sudo tailscale serve --https=443 off`. It prints
+`sudo tailscale serve --https=443 --set-path /wheelchair off` when the `/wheelchair` mapping
+points at the viewer's port, and `sudo tailscale serve --https=443 --set-path / off` only
+when `/` does. When `tailscale` is missing or its status can't be read, it prints no command
+and says why (Decision Log #22). The bookmark it prints comes from `--url`, so it is
 the prefixed one (Decision Log #12).
 
 ### Documents
@@ -168,9 +179,15 @@ the prefixed one (Decision Log #12).
 `protocol/graphs.md`: every URL and `curl` example moves under `/wheelchair/`, including
 the `PUT` to `http://127.0.0.1:${PORT}/wheelchair/graph`, whose `Origin` stays
 `http://127.0.0.1:${PORT}` (an origin carries no path). It also documents
-the `308` an old root path now gets. `README.md`: the address is
+the `308` an old root path now gets. Its example of the line `--open` prints drops
+`&token=`, and "The line it prints carries the port and the token" becomes a statement that
+the printed line carries no token, so the `PUT` reads the port and token from `.server`, as
+step 1 already says. `README.md`: the address is
 `https://hearth.taileb4e52.ts.net/wheelchair/`, the token link is needed once per device, and
-the root is free for other services. `AGENTS.md`'s citations are updated where lines move.
+the root is free for other services. Its sentence that every route needs the token
+(`README.md:216`) becomes "the pages need the bookmark link once per browser; agents'
+requests use the token or a signature". Its `sudo tailscale serve --bg 7373` instruction
+(`:236`) becomes the two mapping commands the installer offers. `AGENTS.md`'s citations are updated where lines move.
 
 ### Not in this change
 
@@ -210,7 +227,10 @@ a page response renews the cookie and a JSON response never sets it; the cookie 
 answers `401` JSON; a holder that answers `/wheelchair/whoami`
 with `401` and root `/whoami` with a valid `proof` is stopped by `--stop --if-stale` and
 refused with the older-version message by `--open`; a holder whose root `/whoami` has no
-`proof` falls under the remote-viewer #85 rule.
+`proof` falls under the remote-viewer #85 rule; the same pre-prefix holder is refused with
+the older-version message by `--show`, `--register-plan` (warning, exit 0), `--rotate-token`
+and `--service`, and `--url` warns that the running viewer is older code; `--rotate-token`
+prints the prefixed bookmark `<base>/wheelchair/?token=…`.
 
 New browser cases, in both projects: opening the `?token=` URL lands on `/wheelchair/` with
 no `token` in `page.url()`; reloading `/wheelchair/` in the same context shows the list; a
@@ -232,7 +252,16 @@ Blocking, on hearth, after `./install.sh --serve` and the new `sudo tailscale se
 - typing `https://hearth.taileb4e52.ts.net/wheelchair/` later shows the list;
 - an edit saves;
 - the old bookmark still ends up on the list;
-- repeat on a laptop.
+- on the remembered phone, an agent-printed link `https://hearth.taileb4e52.ts.net/wheelchair/?path=…`
+  (no token) opens the graph;
+- the same link pasted into a chat or mail app and tapped from there also opens it (`Lax`,
+  Decision Log #18);
+- in a private window that was never remembered, the same link shows the "open the bookmark
+  link once" page;
+- `sudo tailscale serve --https=443 --set-path /wheelchair off` is accepted by this
+  Tailscale version, checked with `tailscale serve --help` or a dry run, not by removing the
+  live mapping;
+- repeat the phone checks on a laptop.
 
 ## Accepted Risks
 
@@ -242,6 +271,8 @@ re-raise them.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| Two viewers on the same machine with different tokens (for example a second cache root on another port) share one `wheelchair_remember` cookie at `127.0.0.1`, because browsers don't separate cookies by port; opening one overwrites the other's | Only a development setup runs two viewers; opening the other's bookmark once restores it | 2 |
+| A future service served at another path of `https://hearth.taileb4e52.ts.net` shares the viewer's origin, so its pages could call `/wheelchair/…` with the browser's cookie | Path scoping keeps the cookie from being sent to other paths, not from being used by same-origin code. Anything Collin serves there is his own. Serving it on another port or host would separate them | 2 |
 | The first-visit URL, which carries the token, may be kept in a browser's history as the redirect source, and so may the URL `--show` opens in the local browser | Browsers differ on whether they record a redirect's source, and the token must arrive in some URL once. The `--show` case is on the machine that already holds the token on disk (Decision Log #20); links carried to other devices never carry it | 1 |
 | A client following outdated instructions against a root route gets a `308` rather than working | Every route moves; the `308` body names the new path, and `protocol/graphs.md` is updated in the same change | — |
 
@@ -272,7 +303,9 @@ Triage: 3 blocking and 2 major upheld, and one `user-decision` opened as Q3. Not
 
 Review count reset: Collin settled Q3 (printed agent links drop the token).
 
-**Lanes:** GPT / gpt-5.6-sol (mechanics lens); Claude / default reviewer model (intent lens); cross-family: yes.
+**Lanes:** GPT / gpt-5.6-sol (mechanics lens, thread `01a0d174-57e9-7c50-9405-563c3caa67f4`); Claude / default reviewer model (intent lens); cross-family: yes.
+
+Triage: 1 major upheld, so the round is not clean. It and every minor are fixed below.
 
 **Changed since Round 1:**
 - Decision Log #14–#20 and the Spec text they changed;
@@ -286,6 +319,34 @@ Review count reset: Collin settled Q3 (printed agent links drop the token).
 - printed links carry no token, while `--show` opens a token link locally;
 - the "open the bookmark once" `401` page;
 - the updated IDEA line on agent links, the reworded accepted risk, and the new validation cases.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| Claude | major | "Read the `/wheelchair` line and the `/` line of `tailscale serve status` by path" has no defined format; the real output (`|-- / proxy http://127.0.0.1:7373`) and the fixture (`install/test/run.sh:118`, one line with no path field) differ | upheld | Decision Log #21: parse `tailscale serve status --json` (on hearth: `Web` → `"hearth.taileb4e52.ts.net:443"` → `Handlers` → `"/"` → `Proxy`), and the fixture emits that shape |
+| GPT, Claude | minor | `--no-serve`'s removal commands aren't given; carrying forward `sudo tailscale serve --https=443 off` would remove every mapping on 443, a future hub included | upheld | Decision Log #22 |
+| Claude | minor | `protocol/graphs.md`'s `--open` example lines still show `&token=`, and "The line it prints carries the port and the token" would be false | upheld | Spec Documents names both |
+| GPT, Claude | minor | README's "every route needs the token" (`README.md:216`) and the single `sudo tailscale serve --bg 7373` command (`:236`) become false | upheld | Spec Documents names both |
+| Claude | minor | No hearth check opens an agent link on the remembered phone, on a device that isn't remembered, or from another app (what `Lax` is for) | upheld | Blocking hearth checks extended |
+| Claude | minor | The page-route renewal rule ("set it again on every response that authenticated") contradicts "a wrong token with a valid cookie redirects without touching the cookie" | upheld | Spec: 200 page responses renew; of the redirects, only a valid-token one sets it |
+| Claude | minor | A page route with an invalid token and no cookie: HTML or JSON, and "not remembered yet" is misleading after a rotation; the HTML-`401` rule sits under "The commands" | upheld | Spec: moved into "Authentication per route"; the page's text covers both cases |
+| Claude | minor | `--rotate-token` prints its own bookmark (`viewer/server.js:1981`), untested for the prefix | upheld | Validation case added |
+| Claude | minor | Two viewers on `127.0.0.1` with different tokens share one cookie (browsers don't separate by port) | accepted-risk | Accepted Risks |
+| Claude | minor | A future service at the root shares the viewer's origin and could call `/wheelchair/…` with the browser's cookie; path scoping keeps the cookie from being sent, not from being used same-origin | accepted-risk | Accepted Risks; IDEA's claim is about what the viewer sets, which holds |
+| GPT | minor | The pre-prefix holder's refusal is validated only for `--open` and `--stop --if-stale`, not `--url`, `--register-plan`, `--rotate-token` | upheld | Validation cases added |
+
+### Round 3 — 2026-09-23
+
+**Lanes:** GPT / gpt-5.6-sol (mechanics lens); Claude / default reviewer model (intent lens); cross-family: yes.
+
+**Changed since Round 2:**
+- Decision Log #21 (reading `tailscale serve status --json`, and the fixture shape);
+- #22 (path-specific `--no-serve` removal, and never the global `off`);
+- the cookie-renewal wording;
+- the `401` HTML page moved into "Authentication per route", with rotation-aware text;
+- the `graphs.md` and README items in Documents;
+- the new blocking hearth checks (agent link on the phone, from another app, in a private window, and the removal syntax);
+- the new validation cases for pre-prefix holders and `--rotate-token`'s bookmark;
+- two new accepted risks.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
