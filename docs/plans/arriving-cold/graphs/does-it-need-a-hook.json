@@ -77,8 +77,8 @@
       "ref": null,
       "note": null,
       "graph": null,
-      "x": 332,
-      "y": 482
+      "x": 600,
+      "y": 503
     },
     {
       "id": "h-cost",
@@ -90,8 +90,8 @@
       "ref": null,
       "note": null,
       "graph": null,
-      "x": 592,
-      "y": 482
+      "x": 357,
+      "y": 499
     },
     {
       "id": "s-chat",

@@ -40,6 +40,10 @@ name=garbage-struck; mkdir -p "$fixture/$name"; printf '%s' $'## Confirmed\n- 20
 run "$name" suggest added 'say it plainly'
 assert 'suggest refuses garbage inside Struck without changing the file' bash -c '[[ $1 == 1 && $2 == "wording: malformed wording list" && $3 == $4 ]]' _ "$status" "$output" "$before" "$(fingerprint "$(path "$name")")"
 
+name=duplicate-phrase; mkdir -p "$fixture/$name"; printf '%s' $'## Confirmed\n- 2026-09-24 — "a" — first\n\n## Proposed\n\n## Struck\n- 2026-09-24 — "A" — second\n' > "$(path "$name")"; before=$(fingerprint "$(path "$name")")
+run "$name" remove a
+assert 'remove refuses duplicate phrases across sections without changing the file' bash -c '[[ $1 == 1 && $2 == "wording: malformed wording list" && $3 == $4 ]]' _ "$status" "$output" "$before" "$(fingerprint "$(path "$name")")"
+
 name=preamble; mkdir -p "$fixture/$name"; printf '%s' $'A hand-written preamble.\n## Confirmed\n- 2026-09-24 — "carried" — keep this\n\n## Proposed\n\n## Struck\n' > "$(path "$name")"
 run "$name" suggest added 'say it plainly'
 assert 'suggest accepts a preamble, keeps it, and adds the row' bash -c '[[ $1 == 0 ]] && head -n 1 "$2" | grep -qx "A hand-written preamble\." && grep -q "\"added\"" "$2"' _ "$status" "$(path "$name")"

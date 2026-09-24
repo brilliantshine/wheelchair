@@ -44,6 +44,7 @@ def confirmed(path):
         return []
     section = []
     header_positions = set(positions)
+    phrases = set()
     for index, line in enumerate(lines[positions[0] + 1:], positions[0] + 1):
         if index in header_positions:
             continue
@@ -51,6 +52,10 @@ def confirmed(path):
             continue
         if not ENTRY.match(line):
             return []
+        phrase = ENTRY.match(line).group(1).strip().casefold()
+        if phrase in phrases:
+            return []
+        phrases.add(phrase)
         if index < positions[1]:
             section.append(line)
     return section

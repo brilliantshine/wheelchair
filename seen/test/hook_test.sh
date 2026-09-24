@@ -40,6 +40,9 @@ assert 'garbage inside Confirmed makes wording list empty' bash -c '[[ $1 == 0 &
 put garbage-struck $'## Confirmed\n- 2026-09-24 — "canary" — nope\n\n## Proposed\n\n## Struck\ngarbage\n'; run garbage-struck notice '{}'
 assert 'garbage inside Struck makes wording list empty' bash -c '[[ $1 == 0 && -z $2 ]]' _ "$status" "$output"
 
+put duplicate-phrase $'## Confirmed\n- 2026-09-24 — "a" — first\n\n## Proposed\n\n## Struck\n- 2026-09-24 — "A" — second\n'; run duplicate-phrase notice '{}'
+assert 'duplicate phrases across sections make wording list empty' bash -c '[[ $1 == 0 && -z $2 ]]' _ "$status" "$output"
+
 put preamble $'A hand-written preamble.\n## Confirmed\n- 2026-09-24 — "carried" — keep this\n\n## Proposed\n\n## Struck\n'; run preamble notice '{}'
 assert 'preamble is ignored and confirmed entry is carried' bash -c '[[ $1 == 0 && $2 == *"\"carried\""* ]]' _ "$status" "$(ctx "$output")"
 

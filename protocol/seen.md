@@ -101,8 +101,9 @@ always names exactly one row (D29, D39).
 
 **Well-formed means exactly this.** The three headers each appear once, in the order above,
 and every line after `## Confirmed` — in any of the three sections — is either blank or an
-entry in the format above. Free text above `## Confirmed` is allowed and ignored. Any other
-line inside a section makes the whole file malformed: the hook then treats the list as
+entry in the format above, and no two entries anywhere carry the same phrase (compared as
+above). Free text above `## Confirmed` is allowed and ignored. Any other line inside a
+section, or a repeated phrase, makes the whole file malformed: the hook then treats the list as
 empty, and `seen/wording.sh` refuses every verb with exit 1, leaving the file unchanged
 (Remediation 2).
 
@@ -145,8 +146,8 @@ and it never reads anything inside a repository — a user-level hook fires in e
 repository it is pointed at, trusted or not, so nothing it reads may be attacker-controlled
 (D21, D22, D30).
 
-It exits 0 at once, with no output and no file touched, when `WHEELCHAIR_LANE` is set (any
-value) or its input carries an `agent_id`. The environment variable marks a headless lane —
+It exits 0 at once, with no output and no file touched, when `WHEELCHAIR_LANE` is set to a
+non-empty value or its input carries an `agent_id`. The environment variable marks a headless lane —
 `codex exec` and `claude -p` invocations from `protocol/lanes.md` — since those run on the
 reader's own login and would otherwise trip this same hook; `agent_id` marks a Claude Code
 subagent, which never passes through a shell the marker could reach (D47, D51).
@@ -154,7 +155,9 @@ subagent, which never passes through a shell the marker could reach (D47, D51).
 On every other message it carries, capped at 2,000 characters total (D34):
 
 - The confirmed wording list — `## Confirmed` from `~/.wheelchair/wording.md` — newest
-  first, with a trailing count of any entries left out to fit the cap.
+  first, with a trailing count of any entries left out to fit the cap. In the degenerate case
+  where the list's header line alone would exceed the cap (an installed path thousands of
+  characters long), the list is left out entirely.
 - On the first message after a gap of four hours or more since this **session's** last
   message, one line giving how long it has been. This is a session clock, kept per session
   under `~/.cache/wheelchair/sessions/<session-id>` and overwritten on every message; it is
@@ -227,8 +230,10 @@ notice on a non-zero exit, so the hook exits 0 on every path it controls and onl
 reaches that notice. A missing or malformed wording list or `SEEN.md` is treated as empty
 rather than repaired. The hook's own two state files are the exceptions, because it rewrites
 them anyway: the session clock file is overwritten on every message whether or not it parsed,
-and a missing or unreadable `confirmed.last` counts as empty — the current confirmed entries
-are announced as added (on a harness that shows the notice) and the file is rewritten with
-them, so a damaged copy heals on the next message instead of switching the notice off. This is the most important
-property in this document — a turn this feature blocks or delays is a failure noticed every
+a missing `confirmed.last` is written silently with the current list (nothing to compare
+against yet), and an unreadable one counts as empty — the current confirmed entries are
+announced as added (on a harness that shows the notice) and the file is rewritten with them,
+so a damaged copy heals instead of switching the notice off. With an empty list there is
+nothing to announce, so an unreadable copy is left until the list next changes. This is the
+most important property in this document — a turn this feature blocks or delays is a failure noticed every
 time, while a turn it fails to improve is only today's behaviour.

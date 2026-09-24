@@ -52,12 +52,19 @@ def sections(text):
     if positions != sorted(positions):
         return None
     header_positions = set(positions)
+    phrases = set()
     for index, line in enumerate(lines[positions[0] + 1:], positions[0] + 1):
         if index in header_positions:
             continue
         entry = line.rstrip("\r\n")
         if entry.strip() and not ENTRY.match(entry):
             return None
+        if entry.strip():
+            phrase = ENTRY.match(entry).group(1)
+            normalized = key(phrase)
+            if normalized in phrases:
+                return None
+            phrases.add(normalized)
     groups = {}
     for number, header in enumerate(HEADERS):
         begin = positions[number] + 1

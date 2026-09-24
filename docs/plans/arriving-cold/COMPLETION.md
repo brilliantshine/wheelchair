@@ -21,6 +21,9 @@ verified-by:
   - round: 4
     lane: gpt-5.6-sol
     checks: sonnet
+  - round: 5
+    lane: gpt-5.6-sol
+    checks: sonnet
 ---
 
 # Completion Report — Knowing what you have actually seen
@@ -263,3 +266,23 @@ The code is right — Remediation 1 made `confirmed.last` self-heal on purpose, 
 Claude verifier's finding that a corrupt copy otherwise disabled the notice for good — and the
 prose was never updated. Fixed by the lead: `protocol/seen.md` "Failing open" now names both of
 the hook's own state files as exceptions and says what happens to each.
+
+### Remediation 5 — 2026-09-24
+
+Verification round 5 (`gpt-5.6-sol`, asked for one exhaustive pass of `protocol/seen.md`
+against the scripts) reported four gaps:
+
+```
+GAP: Wording-list uniqueness — `protocol/seen.md:98-100` says each case-insensitive, trimmed phrase appears once and every verb names exactly one row, but duplicate valid rows are accepted as well-formed; `remove` moves only the first match and leaves the duplicate — `seen/wording.sh:44-66,130-141`; reproduced at HEAD
+GAP: Lane bypass — `protocol/seen.md:148-152` says any set value of `WHEELCHAIR_LANE` exits immediately without touching files, but `seen/hook.sh:161` tests truthiness; `WHEELCHAIR_LANE=` still emits context and creates state
+GAP: `confirmed.last` lifecycle — `protocol/seen.md:230-232` says missing or unreadable cache entries are announced as added and rewritten, but a missing file is seeded silently; an unreadable cache is not rewritten when the confirmed list is empty — `seen/hook.sh:179-184`; both reproduced at HEAD
+GAP: Context truncation — `protocol/seen.md:154-157` promises confirmed entries plus an omitted-entry count within the 2,000-character cap, but when the installed script path makes the fixed header too long, `seen/hook.sh:153-155` drops the entire wording section without an omitted count; reproduced with a valid 2,119-character hook path, yielding empty output
+```
+
+- Uniqueness — a code fix (gpt-5.6-terra, high): a repeated phrase anywhere makes the file
+  malformed; the hook treats it as empty and `wording.sh` refuses it. Tests added (hook 24,
+  wording 16 passing). `protocol/seen.md`'s well-formed paragraph names the rule.
+- The other three were prose claiming more than the code does, and the code's behaviour is the
+  intended one (an empty `WHEELCHAIR_LANE` is not a marker; a missing `confirmed.last` is seeded
+  silently per D43; a header longer than the cap is a degenerate path). `protocol/seen.md` now
+  says exactly that. Fixed by the lead.
