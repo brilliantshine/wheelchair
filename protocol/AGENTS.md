@@ -43,6 +43,10 @@ lands at one of the statuses the machine already has.
 - **Never add a second gate for a rule that already has one.** Two overlapping
   instructions with neither marked authoritative is worse than one in an imperfect place.
   The router-spine plan's own review caught this twice.
+- **`planning.md` Step 2 owns how an idea document's stated kind is read** — the exact
+  sentences, comment stripping, and what an unstated one falls back to. Stages 2 and the
+  adoption side door point at it; none of them restates it. The what-this-build-is-for plan
+  shipped that matcher twice in wordings that disagreed, and review caught it as blocking.
 - **A template edit is a contract change.** Stage 3 tells lanes to write COMPLETION.md
   from `templates/COMPLETION.md`, so a rule added to the prose and not the template
   reaches nobody.

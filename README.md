@@ -185,7 +185,7 @@ Artifacts live in the target repo at `docs/plans/<slug>/`:
   it is explicitly not doing. Written and confirmed before any design question, then held
   stable while the plan churns. Every later stage reads it to check for drift.
 - **PLAN.md** — the mutating work: question queue, watch list, decision log, spec,
-  accepted risks, review rounds, prior work, implementation tasks.
+  deferred, accepted risks, review rounds, prior work, implementation tasks.
 - **`graphs/`** — one JSON file per flow discussed in Stage 1, opened in the browser
   viewer; disposable, never a contract once the plan is done.
 - **COMPLETION.md**, **REMEDIATION-N.md** — implementation output and verification loops.

@@ -50,6 +50,19 @@ non-goals, and concrete validation commands.
 A Mermaid diagram of the flow belongs here, added by Stage 2 at approval — not while the
 Spec is still churning. See `protocol/diagrams.md`.
 
+## Deferred
+
+Work this plan left undone because of the kind of build it states. Not "not worth fixing" —
+that is Accepted Risks. This is what the next plan starts from if this one earns a second life.
+
+| Source | What was skipped | Why it is out of scope here | What it would take |
+|---|---|---|---|
+|   |   |   |   |
+
+`Source` is `planning`, `review-round-N`, or `adopted`. It is what tells a later reviewer which
+rows it may argue with: a `planning` or `adopted` row is a proposal and is fair game; a
+`review-round-N` row was adjudicated by the lead and is settled.
+
 ## Accepted Risks
 
 Real issues consciously not fixed, each with the reason. Part of the spec, not review
@@ -77,8 +90,8 @@ round where knowing it matters most. `protocol/plan-review.md` shows a filled ex
 |------|----------|---------|--------------|------------|
 
 Reported severity is the reviewer's opinion; the lead verdict
-(`upheld`/`downgraded`/`declined`/`accepted-risk`/`user-decision`) is what gates the
-exit. Downgrades and declines cite evidence.
+(`upheld`/`downgraded`/`declined`/`accepted-risk`/`deferred`/`user-decision`) is what gates the
+exit. Downgrades, declines and deferrals cite evidence.
 
 ## Prior Work
 

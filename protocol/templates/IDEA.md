@@ -25,6 +25,18 @@ What is wrong or missing today, and who it affects. Concrete, not abstract.
 How we would know it worked, described in things you could observe from outside — not
 internal mechanics.
 
+## How solid this has to be
+
+<!-- Replace this whole block, comment included, with ONE of the two sentences below as a
+     plain paragraph — no list marker — then keep going in your own words.
+
+     **This is a demo.**  (then: what it has to do convincingly, and for whom)
+     **People are going to depend on this.**  (then: who, and what breaks for them if it is
+     wrong)
+
+     Review reads this to decide what the plan has to cover. Work you knowingly skip because
+     of it belongs in the plan's Deferred section. -->
+
 ## Not doing
 
 Explicit non-goals: the things someone might reasonably assume are included but aren't.

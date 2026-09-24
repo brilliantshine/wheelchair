@@ -77,13 +77,36 @@ Both briefs carry the task, the severity ladder, and the adjudication record:
 > A finding you cannot tie to a concrete worker consequence is `minor`. Reporting nothing
 > is an acceptable outcome; padding severity is not.
 >
-> The Review Rounds table and Accepted Risks section record findings already settled.
-> Anything marked `declined` or `accepted-risk` was considered and closed with a
+> The idea document's "How solid this has to be" section says what kind of build this is
+> and, in the author's own words, what it has to do and for whom. Together those set **what
+> the Spec has to cover** — not how hard you grade what it does cover. Inside that scope the
+> ladder above applies exactly as written: ambiguity is still `major`, a Spec that could not
+> be implemented is still `blocking`. Outside it, do not stay silent and do not grade it as a
+> defect: report it once per distinct area, at `minor`, beginning the finding
+> `OUT-OF-SCOPE:`, so it can be written down for whoever picks this up later. One line per
+> area, not per unhandled case. Whether the section states a kind at all, and what to do when
+> it does not, is decided by the rule in `<wheelchair-root>/protocol/planning.md` Step 2.
+> Read it there.
+>
+> The Review Rounds table, the Accepted Risks section, and any Deferred row whose `Source` is
+> a review round record findings already settled.
+> Anything marked `declined`, `accepted-risk` or `deferred` was considered and closed with a
 > rationale — do not re-raise it unless you have concrete evidence that rationale is
-> factually wrong. If you do, prefix the line `RE-RAISE:` and cite the evidence.
+> factually wrong. If you do, prefix the line `RE-RAISE:` and cite the evidence. A Deferred
+> row whose `Source` is `planning` or `adopted` is **not** settled: nobody adjudicated it, so
+> it is yours to attack like anything else in the Spec.
 >
 > Report each finding on one line:
 > `SEVERITY: blocking|major|minor — <finding> — <evidence>`
+
+**Substitute a real absolute path for `<wheelchair-root>` when you compose the brief.** You are
+reading this file at `<root>/protocol/plan-review.md`, so you already know the root — the same
+derivation `graphs.md` and `spine.md` spell out. A relative `protocol/planning.md` resolves
+nowhere in a reviewer lane: the lane runs with the **target** repo as its working directory, and
+`protocol/` exists only in this clone. `install.sh` states the rule for every wrapper for the
+same reason. A reviewer that cannot open the match rule falls back to the strict reading and
+grades every demo plan as something people depend on — silently, and on exactly the path the
+statement exists to serve.
 
 Brief one reviewer for the **mechanics lens**: attack ambiguity, missing lifecycle,
 contradictions with the code, and unverifiable success criteria in the Spec. Brief the
@@ -113,19 +136,26 @@ Record every finding in the Review Rounds table and give each one a **lead verdi
 | `downgraded` | Real but over-severed. Record the true severity and why. |
 | `declined` | Not a defect. Record why; future rounds must honor it. |
 | `accepted-risk` | Real, not worth fixing. Promote to the Spec's Accepted Risks section. |
+| `deferred` | Real, and outside what this build's stated kind has to cover. Record why; promote to the Spec's Deferred section. Future rounds must honor it. |
 | `user-decision` | A genuine fork. Append to Open Questions. |
 
-**You may not downgrade or decline a finding you have not checked** against the Spec or
-the code — the verdict cites evidence the same way the finding does. Downgrading is how
-this loop terminates, which is exactly why it needs a receipt; a round where you
-downgrade most findings means either the ladder isn't landing in the brief, or you are
-rationalizing your way to `approved`.
+**You may not downgrade, decline, or defer a finding you have not checked** against the Spec
+or the code — the verdict cites evidence the same way the finding does. Those three are how
+this loop terminates, which is exactly why each needs a receipt; a round where you downgrade
+most findings means either the ladder isn't landing in the brief, or you are rationalizing
+your way to `approved`.
+
+A `deferred` verdict is a ruling about **scope**, not severity: the work is real and falls
+outside what this build's stated kind has to cover. The receipt says why it falls outside. A
+finding a reviewer marked `OUT-OF-SCOPE:` that you judge to be *in* scope does not take
+`deferred` — it takes whichever ordinary verdict fits, and if that is `upheld` the answer goes
+into the Spec like any other. The reviewer's scope call is a report; yours is the ruling.
 
 Then act on the verdicts: `upheld` findings update the Spec (real design changes also get
 a Decision Log entry with source `review-round-N`); `downgraded` ones are fixed only if
 cheap, otherwise left with their recorded rationale; `accepted-risk` moves to Accepted
-Risks; `user-decision` findings drain through Open Questions **one at a time** under
-Stage 1 loop rules.
+Risks; `deferred` moves to Deferred with `Source: review-round-N`; `user-decision` findings
+drain through Open Questions **one at a time** under Stage 1 loop rules.
 
 Round summaries and `user-decision` questions shown to the user follow
 `writing.md`, beside this file — finding
@@ -135,7 +165,8 @@ break, not which reviewer said what.
 ## Exit
 
 A round is clean when lead triage upholds **zero blocking and zero major** findings and
-no `user-decision` finding is still open. Both lanes' output feeds one triage — the gate
+no `user-decision` finding is still open. A `deferred` finding does not count against the
+gate, exactly as an `accepted-risk` one does not. Both lanes' output feeds one triage — the gate
 is the triage, not two independently clean reports.
 
 Before setting the status, draw or refresh the Spec's Mermaid diagram per `diagrams.md` —

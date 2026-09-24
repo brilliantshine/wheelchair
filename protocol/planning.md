@@ -64,6 +64,21 @@ build the question queue and do not ask a design question in the same turn. Gett
 north star wrong makes every subsequent question wrong, and this is the cheapest possible
 moment to catch it. Set `status: confirmed` once the user agrees.
 
+**What counts as a statement of the kind.** In the idea document's "How solid this has to be"
+section, strip HTML comments, then take the first non-blank line. The section states a kind only
+if that line begins with `**This is a demo.**` or `**People are going to depend on this.**` —
+those exact characters, `**` markers and final period included, with no list marker, blockquote
+marker or heading before them. Anything else — an empty section, a first line that begins some
+other way, or the template's comment left unreplaced — states no kind. The section must also
+carry at least one further non-blank line of the author's own words after that sentence: the
+sentence says which kind, and the words after it say what this build actually has to do and for
+whom, which is what a reviewer measures coverage against. A section holding the sentence and
+nothing else states no kind either.
+
+**Do not present the idea document for confirmation until the section states a kind.** Every
+later stage reads that same rule from here; where a stage has to act on a section that states
+none, it reads it as **People are going to depend on this.**
+
 ## Step 3 — build the question queue
 
 Once the idea is confirmed, create PLAN.md from `templates/PLAN.md`.
@@ -76,6 +91,12 @@ context, the realistic options, and your recommendation with a one-line why.
 overturn does not enter the queue. Decide it yourself and record it in the Decision Log
 with source `defaulted` — the user can reopen any of these later. The queue holds only
 genuine forks: irreversible, taste-dependent, or requirements-shaped calls.
+
+**The stated kind bounds what the Spec has to cover.** A question about behavior the idea's
+statement puts out of scope is not a question for the queue at all — it is a decision to skip,
+and it gets a `planning` row in PLAN.md's Deferred section. A demo that gets run once from a
+prepared file does not need a spec for input nobody will type; write down that you skipped it
+and why, so the plan that hardens it later has somewhere to start.
 
 ## Step 4 — the discussion loop
 
@@ -167,6 +188,10 @@ question from Open Questions, fold the consequence into the Spec, and cascade �
 remove, or reorder downstream questions the answer affects. Save the file **before**
 responding, then present the next question.
 
+A decision that **parks work** — leaves something undone because of the stated kind — writes its
+Deferred row in the same turn, with `Source: planning`. Doing it later means not doing it: the
+reason the work was skipped is clearest at the moment it is skipped.
+
 The Decision Log is append-only: a reversal is a new entry superseding the old, never an
 edit.
 
@@ -190,9 +215,11 @@ the user waves it off. The Watch List must be empty before Stage 1 exits.
 
 IDEA.md is stable, not frozen. A newly discovered hard constraint may be added to its
 Constraints section directly — say so in the turn ("adding X to constraints; it's a hard
-limit in the current code"). Any change to What / Why / What good looks like / Not doing is
-a scope change: propose it explicitly, get the user's agreement, and log it in the Decision
-Log with source `idea-change`.
+limit in the current code"). Any change to What / Why / What good looks like / How solid this
+has to be / Not doing is a scope change: propose it explicitly, get the user's agreement, and
+log it in the Decision Log with source `idea-change`. The kind is set when the idea is
+confirmed; changing it later moves the bar every subsequent stage grades against, which is why
+it goes through this door rather than growing quietly the way Constraints may.
 
 ## Exit
 

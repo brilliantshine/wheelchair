@@ -38,8 +38,22 @@ older version is running; run ./install.sh", and carry on.
 
 **4. Synthesize `IDEA.md`** from `templates/IDEA.md`. External docs are written as design,
 not intent, so most of this is inference: pull out what is being built, why, what good
-looks like, and the non-goals. **Mark every inferred line** — the user is confirming your
-reading of their document, and they can only correct what is visibly a guess.
+looks like, how solid it has to be, and the non-goals. **Mark every inferred line** — the user
+is confirming your reading of their document, and they can only correct what is visibly a guess.
+
+**Two rules for "How solid this has to be."** Write one of the two sentences
+`protocol/planning.md` Step 2 defines, **verbatim**, as the section's first line — an adopted
+plan never runs Step 2 (see **Adopted** at the top of `planning.md`), so a paragraph matching
+neither sentence would reach no gate at all and every later stage would read the plan as strict.
+
+And mark that inference **outside** the section — in the gap report (step 7) and in the landing
+question below — never inside it. That rule reads the section's opening, so a marker put there
+can stop the section matching at all; keeping the mark out entirely is the version that cannot
+be got wrong. This is the one exception to "mark every inferred line" above.
+
+Set `IDEA.md`'s `status` explicitly: `draft` while the kind is inferred, `confirmed` only once
+the user has answered the landing question. Nothing else in this workflow sets it for an adopted
+plan, and the scope-change rule in `planning.md` turns on that transition.
 
 **5. Build `PLAN.md`** from `templates/PLAN.md`:
 
@@ -48,6 +62,8 @@ reading of their document, and they can only correct what is visibly a guess.
   vagueness you are supposed to be reporting.
 - Decisions the document already made go into the Decision Log with source `adopted`.
 - Anything the document raises but leaves unresolved goes into Open Questions.
+- Anything the document says it is knowingly leaving undone goes in the Deferred section with
+  `Source: adopted`. Like a `planning` row, it is a proposal a later reviewer may attack.
 - Anything you noticed that needs looking into goes on the Watch List.
 
 **6. Check what already exists.** A plan brought in from outside is often partly built —
@@ -69,7 +85,7 @@ cases and failure behavior, and success criteria you could verify rather than as
 
 ## Where it lands
 
-Present the synthesized `IDEA.md`, the prior-work findings, and the gap report together
+Present the synthesized `IDEA.md`, the inferred kind, the prior-work findings, and the gap report together
 (written under
 `writing.md`, beside this file), then ask
 the **one** question: where should this land? The findings are awareness — the
