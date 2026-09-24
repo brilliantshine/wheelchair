@@ -156,8 +156,9 @@ On every other message it carries, capped at 2,000 characters total (D34):
 
 - The confirmed wording list — `## Confirmed` from `~/.wheelchair/wording.md` — newest
   first, with a trailing count of any entries left out to fit the cap. In the degenerate case
-  where the list's header line alone would exceed the cap (an installed path thousands of
-  characters long), the list is left out entirely.
+  where not even the list's header line plus that count line fits under the cap (only
+  possible with an installed path close to 2,000 characters long), the list is left out
+  entirely.
 - On the first message after a gap of four hours or more since this **session's** last
   message, one line giving how long it has been. This is a session clock, kept per session
   under `~/.cache/wheelchair/sessions/<session-id>` and overwritten on every message; it is

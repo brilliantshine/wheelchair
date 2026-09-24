@@ -27,6 +27,9 @@ verified-by:
   - round: 6
     lane: gpt-5.6-sol
     checks: sonnet
+  - round: 7
+    lane: gpt-5.6-sol
+    checks: sonnet
 ---
 
 # Completion Report — Knowing what you have actually seen
@@ -301,3 +304,15 @@ GAP: Codex `writable_roots` installer prose — `protocol/seen.md:197-198` says 
 
 The code matches the Spec (which names all three cases); `protocol/seen.md` now names the
 middle case too. Fixed by the lead.
+
+### Remediation 7 — 2026-09-24
+
+Verification round 7 (`gpt-5.6-sol`): the round-6 gap resolved; one mismatch left on the
+degenerate truncation path Remediation 5 had described too narrowly —
+
+```
+GAP: Context truncation (D34) — `protocol/seen.md:158-160` says the wording list is omitted entirely only when its header alone exceeds 2,000 characters, but `seen/hook.sh:150-160` also omits it when the header fits but the required omission-count line makes the total exceed the cap — reproduced with a 1,985-character header: header plus omission line was 2,014 characters and the hook returned no output.
+```
+
+`protocol/seen.md` now states the condition as the code implements it: the list is left out
+only when the header plus the count line cannot fit. Fixed by the lead.
