@@ -2,7 +2,13 @@
 slug: remote-viewer
 date: 2026-09-23
 implemented-by: "terra (tasks 1, 2, 3, 6), sonnet (tasks 4, 5, 7, 8) (lead: opus 5.5)"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude default reviewer
+    checks: terra
+  - round: 1
+    lane: gpt-5.6-sol
+    checks: sonnet
 ---
 
 # Completion Report — See and rule on hearth's graphs from a phone or laptop
@@ -161,4 +167,46 @@ Firefox, 55/55 unit tests.
 
 ## Remediation rounds
 
-(none yet)
+### Remediation 1 — 2026-09-23
+
+Round 1 gate: the Claude default reviewer checked the GPT-built tasks (1, 2, 3, 6), and
+gpt-5.6-sol checked the Claude-built tasks (4, 5, 7, 8). Both checks crossed families. Both
+returned FAIL; the gaps are verbatim in `REMEDIATION-1.md`.
+
+What changed:
+
+- `--rotate-token` and service takeover no longer stop a viewer running older code; only
+  `--stop` does (`viewer/server.js`, `stopServer` takes `allowOlderStop`, passed `true` only
+  from the `--stop` branch of `main`). `--rotate-token` now refuses it with the upgrade
+  message and exits 1.
+- `--register-plan` retries a silent holder for 2 s (`identifyHolder` with
+  `retrySilent: true`).
+- A no-op `afterServiceStop()` step in `main`, between a service's stop and its re-listen,
+  gives the tests a place to pause. Production never replaces it.
+- New and strengthened tests: old-version viewer refused by `--rotate-token` and left
+  running; `--register-plan` against a silent holder that starts answering; `--rotate-token`
+  and `--stop` leave `.server` to the exiting server; shutdown releases the port before
+  removing only its own `.server`; a starter that loses the freed port registers through the
+  new holder; a refused `POST /register` leaves both lists byte-identical; the old-version
+  fixture answers `404` to `/register`, is refused by `--register-plan`, is stopped by
+  `--stop --if-stale`, and never receives the token in any URL or header; `--service` runs
+  into its three-takeover limit against four successive holders and exits 1, with the
+  fourth left running.
+- `README.md:85`, `:198`, `:213` now describe the viewer's several pages and the lasting
+  token (`6fe74fd`).
+
+Validation, run by the lead after the last change:
+
+```text
+$ node --test viewer/test/*.test.js
+# tests 109
+# pass 109
+# fail 0
+
+$ npm --prefix viewer run test:browser
+  192 passed (1.0m)
+
+$ bash install/test/run.sh      -> RESULT 41 passed, 0 failed
+$ bash sensitivity/test/run.sh  -> RESULT 62 passed, 0 failed
+$ bash spine/test/run.sh        -> RESULT 80 passed, 0 failed
+```
