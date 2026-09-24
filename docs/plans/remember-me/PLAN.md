@@ -1,6 +1,6 @@
 ---
 slug: remember-me
-status: planning   # planning | ready-for-review | approved | implementing | verifying | done
+status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-09-23
 ---
 
@@ -15,27 +15,7 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q4: Find out now how Tailscale forwards a path, or keep designing around not knowing?
-- **Context:** Plan review rounds 2–4. Whether `tailscale serve --set-path /wheelchair`
-  strips `/wheelchair` before forwarding, and how it joins the target's own path, decides
-  the mapping command (Decision Log #2, #25). It couldn't be checked without `sudo`, so the
-  Spec carries a fallback. Each of the last three rounds found a new hole in that fallback:
-  what counts as the check passing, what happens when neither target works, and how to
-  replace a mapping that already exists.
-- **Options:** (a) Find out now with a harmless probe, in about two minutes of Collin's
-  time. The lead starts a tiny local server that only echoes the path it receives, on a
-  spare port, and holds no secrets. Collin runs
-  `sudo tailscale serve --bg --set-path /wheelchair-probe http://127.0.0.1:<probe port>/wheelchair-probe`.
-  The lead requests `https://hearth.taileb4e52.ts.net/wheelchair-probe/x` and reads which
-  path arrived, and reads the Handlers key from `tailscale serve status --json`. Collin
-  then runs `sudo tailscale serve --https=443 --set-path /wheelchair-probe off`, which also
-  proves the per-path removal (#22) and that `/` survives it. The Spec then names the one
-  right mapping command, and #25's fallback is deleted. (b) Keep the fallback and specify
-  its missing parts: a success test of `200` with a `start_id`, a third outcome when
-  neither target works, and a replace step with its own `sudo` prompt.
-- **Recommendation:** (a). It turns three rounds of guessing into one fact, removes the
-  fallback machinery entirely, and settles two other open points (the removal syntax and
-  the Handlers key spelling) at the same time.
+None. Every question is settled; see the Decision Log.
 
 ## Watch List
 
@@ -48,9 +28,9 @@ promoted to a Constraint or Accepted Risk, or waved off by the user.
 
 | # | Noticed | What needs looking into | Raised to user? | Outcome |
 |---|---------|-------------------------|-----------------|---------|
-| 1 | mapping | Whether `tailscale serve --set-path /wheelchair` strips the prefix before proxying. The design in Decision Log #2 is meant to work either way; it still needs a check on hearth. | yes | settled — blocking hearth check in Validation (Decision Log #13) |
+| 1 | mapping | Whether `tailscale serve --set-path /wheelchair` strips the prefix before proxying. The design in Decision Log #2 is meant to work either way; it still needs a check on hearth. | yes | settled — probed on hearth 2026-09-23 (Decision Log #27): Tailscale strips the mount path and appends the rest to the target's path |
 | 2 | mapping | Whether Chromium and Firefox store a cookie from `http://127.0.0.1:<port>`, and whether they accept `Secure` there. This is the address agents print on a laptop that isn't serving. | yes | settled — checked on hearth with Playwright 1.62.1: both store `Secure` and plain cookies set on a `303` from `http://127.0.0.1`, send them under `/wheelchair`, and not to `/other`. Decision Log #7 |
-| 3 | mapping | Whether `tailscale serve` passes `Set-Cookie` and `Cookie` through unchanged. | yes | settled — blocking hearth check in Validation (Decision Log #13) |
+| 3 | mapping | Whether `tailscale serve` passes `Set-Cookie` and `Cookie` through unchanged. | yes | settled — probed on hearth 2026-09-23 (Decision Log #27): both pass through unchanged, and `Host` arrives as `hearth.taileb4e52.ts.net` |
 | 4 | queue | Whether a URL the browser was redirected away from ends up in its history (Chromium and Firefox). The idea says the token leaves the history after the first visit. | yes | settled — Accepted Risks: the first-visit URL itself may be kept, which is what IDEA's "after that first visit" allows |
 
 ## Decision Log
@@ -85,6 +65,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 24 | The installer reads `tailscale serve status --json` with `node -e` (Node is already required), gets the host from `served_origin`, including in `--no-serve`, and treats a Handlers key of either `/wheelchair` or `/wheelchair/` as the prefix mapping. With no host name, `--no-serve` prints no command and says why | `sed` can't reliably walk nested JSON; Tailscale's key spelling for a set path was checked only for `/`; `--no-serve` needs the host to look anything up | review-round-3 |
 | 25 | The mapping target defaults to `http://127.0.0.1:$port/wheelchair` (#2). If the blocking `curl …/wheelchair/whoami` check shows the request doesn't reach `/wheelchair/whoami` (for example it lands on `/wheelchair/wheelchair/whoami`, or on `/whoami`), the target becomes whichever of `http://127.0.0.1:$port/wheelchair` and `http://127.0.0.1:$port` makes that check pass. That is a one-line change in `install.sh`, and nothing in the viewer changes. The implementer records which form Tailscale needed in COMPLETION.md | Tailscale's joining of mount path and target path couldn't be checked without `sudo`; the viewer's prefix is the same either way | review-round-3 |
 | 26 | `--no-serve` takes the host from the origin recorded in `.serving`, not from `served_origin`. With no recorded origin it prints no command and says the viewer isn't set up to serve, so there is nothing to remove | The origin is already on disk; `served_origin`'s messages describe setup failing, which is the wrong reason here | review-round-4 |
+| 27 | Probed on hearth with a throwaway path-echo server (Collin ran the two `sudo` commands). `tailscale serve --set-path /wheelchair-probe http://127.0.0.1:<p>/wheelchair-probe` delivered `/wheelchair-probe/x` as `/wheelchair-probe/x`, `/wheelchair-probe` as `/wheelchair-probe`, and `/wheelchair-probe/a/b?q=1` intact: the mount path is stripped and the rest appended to the target's path. `Set-Cookie` and `Cookie` passed through unchanged. `tailscale serve status --json` recorded the mapping under the key `"/wheelchair-probe"`, with no trailing slash. `sudo tailscale serve --https=443 --set-path /wheelchair-probe off` removed only that mapping, leaving `/`. So the mapping is exactly `/wheelchair` → `http://127.0.0.1:$port/wheelchair`. Supersedes #25 (no fallback) and confirms #2, #22 and #24's key spelling | Collin chose to find out rather than design around the unknown (Q4) | user |
 
 ## Spec
 
@@ -112,11 +93,9 @@ Every request to a path outside `/wheelchair` answers `308` with `Location` set 
 (Decision Log #10). The pages' `<script src>` and every URL they build use the prefix.
 
 Serving setup maps `/wheelchair` → `http://127.0.0.1:<port>/wheelchair` and keeps `/` →
-`http://127.0.0.1:<port>` for the redirect (Decision Log #12). The target defaults to
-`http://127.0.0.1:<port>/wheelchair`. If the blocking hearth check shows requests don't
-arrive at `/wheelchair/…`, the target becomes whichever of that and
-`http://127.0.0.1:<port>` makes the check pass, a one-line change in `install.sh` with
-nothing changed in the viewer (Decision Log #2, #25).
+`http://127.0.0.1:<port>` for the redirect (Decision Log #12). Tailscale strips the mount
+path and appends the rest to the target's path, so `/wheelchair/list` arrives at the viewer
+as `/wheelchair/list` (probed on hearth, Decision Log #27).
 
 ### The first visit and after
 
@@ -277,7 +256,8 @@ says why; serving setup calls `node … --url` last and prints its output last.
 
 Blocking, on hearth, after `./install.sh --serve` and the new `sudo tailscale serve` step
 (Decision Log #13):
-- `curl -s https://hearth.taileb4e52.ts.net/wheelchair/whoami` returns the viewer's JSON;
+- `curl -s -w '%{http_code}' https://hearth.taileb4e52.ts.net/wheelchair/whoami` answers
+  `200` with a body containing `start_id` (a `308` body means the mapping is wrong);
 - on the phone in Firefox, the new bookmark lands on `/wheelchair/` with no token in the
   address;
 - typing `https://hearth.taileb4e52.ts.net/wheelchair/` later shows the list;
@@ -424,6 +404,24 @@ Triage: 2 major findings, both about the Tailscale mapping target, opened as Q4;
 | GPT | minor | The `--url` exception still contradicts "every command other than the two stop forms refuses that holder" | upheld | Spec reworded: every command except the two stop forms and `--url` |
 | GPT | minor | No fixture case for `tailscale serve status --json` failing or returning malformed JSON | upheld | Fixture case added |
 
+### Round 5 — 2026-09-23
+
+Review count reset: Collin settled Q4 by probing Tailscale on hearth.
+
+**Lanes:** GPT / gpt-5.6-sol (mechanics lens); Claude / default reviewer model (intent lens); cross-family: yes.
+
+**Changed since Round 4:**
+- Decision Log #26 (`--no-serve` takes the host from `.serving`);
+- #27 (Tailscale's behaviour, probed; #25's fallback deleted);
+- the "Where the viewer lives" paragraph on the mapping;
+- the `--url` wording in "The commands";
+- the stricter `curl` success rule in the hearth checks;
+- the unreadable-status fixture case;
+- Watch List #1 and #3 settled.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
@@ -449,4 +447,6 @@ Filled by Stage 3. One row per worker brief.
   Status back to ready-for-review; review rounds count again from here.
 - 2026-09-23: Plan review stopped after round 4, the third round since Q3, with Q4 open
   (Tailscale's path handling, the recurring finding of rounds 2–4). Status back to planning.
+- 2026-09-23: Q4 settled by probing Tailscale on hearth (Decision Log #27). Status back to
+  ready-for-review; review rounds count again from here.
 
