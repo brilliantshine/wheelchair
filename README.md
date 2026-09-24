@@ -82,7 +82,8 @@ install/         test/run.sh: fixture assertions for install.sh — never writes
 skills/          Claude Code wrappers → rendered into ~/.claude/skills/ when claude is present
 codex/prompts/   Codex CLI wrappers → rendered into ~/.codex/prompts/ when codex is present
 docs/plans/      one directory per feature; the only mutable state
-viewer/          index.html and server.js — the browser viewer a graph opens in
+viewer/          the graph viewer, the list and document pages and their scripts, the
+                 server, and its Playwright config
 install.sh       renders the wrappers, installs viewer/'s dependencies, and writes the
                  dial's region into each present harness's always-on file (idempotent)
 AGENTS.md        this repo's own routers, one per directory that owns a rule —
@@ -195,7 +196,8 @@ run out of order.
 
 ## The viewer
 
-The graph viewer is a single HTML file and a Node server with no runtime dependencies. Start it and
+The graph viewer is several pages — the graph itself, a list of graphs and plans, and a
+document reader — served by a Node server with no runtime dependencies. Start it and
 show a graph:
 
 ```bash
@@ -210,8 +212,10 @@ is already on that graph, so an agent redrawing every turn will not stack up win
 picks the new version up on its own poll. `--no-browser`, or `WHEELCHAIR_NO_BROWSER=1`, suppresses
 the launch on a headless box.
 
-It binds `127.0.0.1` only, and every route needs a token minted at start. `protocol/graphs.md` is
-the format and the full producer sequence.
+It binds `127.0.0.1` only. A token is created once, the first time it starts, and lasts until
+`--rotate-token` replaces it — every route needs it except `/whoami` and the two `/assets/`
+scripts (`list.js`, `doc.js`), which need none. `protocol/graphs.md` is the format and the
+full producer sequence.
 
 Its suites: `node --test viewer/test/*.test.js` (unquoted — a quoted glob isn't discovered on
 Node 20) for the server, and `npm --prefix viewer run test:browser`, which runs in both
