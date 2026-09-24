@@ -212,3 +212,22 @@ $ bash install/test/run.sh → RESULT 70 passed, 0 failed
 $ node --test viewer/test/*.test.js → # pass 125 # fail 0
 $ ./install.sh (on the real homes, after the change) → exit 0; git status --porcelain empty
 ```
+
+### Remediation 2 — 2026-09-24
+
+Verification round 2: the Claude verifier passed the scripts; `gpt-5.6-sol` failed one gap
+(`REMEDIATION-2.md`) — a valid row beside a garbled line inside a section was still carried.
+Remediation 1's brief had told the lane to skip such lines, so the brief, not the lane, was at
+fault; the rule is now decided in `REMEDIATION-2.md`: inside the three sections every line is
+blank or a valid entry, otherwise the file is malformed. Fixed by a fresh gpt-5.6-terra lane at
+`xhigh` (thread `01a0d56d-4f58-7171-904a-d64be24b1159`): the hook treats such a file as empty,
+`wording.sh` refuses it (exit 1, file unchanged); a preamble above `## Confirmed` stays allowed.
+The lead also fixed the Claude verifier's two prose notes (README `install.sh` line;
+`protocol/seen.md` refusal list).
+
+```
+$ WHEELCHAIR_LANE=1 bash seen/test/run.sh → exit 0; hook 23 passed, wording 15 passed, set 18 passed, cross-file all PASS
+$ env -u WHEELCHAIR_LANE bash seen/test/run.sh → exit 0
+$ bash install/test/run.sh, sensitivity/test/run.sh, spine/test/run.sh → exit 0
+lead probe: valid row + "garbage" inside ## Confirmed → hook prints nothing; wording.sh suggest → "wording: malformed wording list", exit 1, file byte-identical
+```

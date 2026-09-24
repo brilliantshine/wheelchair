@@ -51,6 +51,13 @@ def sections(text):
         positions.append(found[0])
     if positions != sorted(positions):
         return None
+    header_positions = set(positions)
+    for index, line in enumerate(lines[positions[0] + 1:], positions[0] + 1):
+        if index in header_positions:
+            continue
+        entry = line.rstrip("\r\n")
+        if entry.strip() and not ENTRY.match(entry):
+            return None
     groups = {}
     for number, header in enumerate(HEADERS):
         begin = positions[number] + 1

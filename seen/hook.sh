@@ -43,8 +43,15 @@ def confirmed(path):
     if positions != sorted(positions):
         return []
     section = []
-    for line in lines[positions[0] + 1:positions[1]]:
-        if line.startswith("- ") and ENTRY.match(line):
+    header_positions = set(positions)
+    for index, line in enumerate(lines[positions[0] + 1:], positions[0] + 1):
+        if index in header_positions:
+            continue
+        if not line.strip():
+            continue
+        if not ENTRY.match(line):
+            return []
+        if index < positions[1]:
             section.append(line)
     return section
 
@@ -55,7 +62,9 @@ def parse_entries(lines):
         match = ENTRY.match(line)
         if not match:
             return None
-        result.append((match.group(1), match.group(2), match.group(3), index))
+        phrase = match.group(1)
+        instead_start = len('- 0000-00-00 — "') + len(phrase) + len('" — ')
+        result.append((line[2:12], phrase, line[instead_start:], index))
     return result
 
 
@@ -195,7 +204,7 @@ try:
     import re
     import sys
     import tempfile
-    ENTRY = re.compile(r'^- (\d{4}-\d{2}-\d{2}) — "([^"\n]+)" — (.+)$')
+    ENTRY = re.compile(r'^- \d{4}-\d{2}-\d{2} — "([^"\n]+)" — .+$')
     main()
 except BaseException:
     # A hook failure must look exactly like no hook output.

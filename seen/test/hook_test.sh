@@ -34,6 +34,15 @@ assert 'malformed wording file yields no output exit zero' bash -c '[[ $1 == 0 &
 put missing-struck $'## Confirmed\n- 2026-09-24 — "canary" — nope\n\n## Proposed\n'; run missing-struck notice '{}'
 assert 'missing Struck header makes wording list empty' bash -c '[[ $1 == 0 && -z $2 ]]' _ "$status" "$output"
 
+put garbage-confirmed $'## Confirmed\n- 2026-09-24 — "canary" — nope\ngarbage\n\n## Proposed\n\n## Struck\n'; run garbage-confirmed notice '{}'
+assert 'garbage inside Confirmed makes wording list empty' bash -c '[[ $1 == 0 && -z $2 ]]' _ "$status" "$output"
+
+put garbage-struck $'## Confirmed\n- 2026-09-24 — "canary" — nope\n\n## Proposed\n\n## Struck\ngarbage\n'; run garbage-struck notice '{}'
+assert 'garbage inside Struck makes wording list empty' bash -c '[[ $1 == 0 && -z $2 ]]' _ "$status" "$output"
+
+put preamble $'A hand-written preamble.\n## Confirmed\n- 2026-09-24 — "carried" — keep this\n\n## Proposed\n\n## Struck\n'; run preamble notice '{}'
+assert 'preamble is ignored and confirmed entry is carried' bash -c '[[ $1 == 0 && $2 == *"\"carried\""* ]]' _ "$status" "$(ctx "$output")"
+
 put badclock $'## Confirmed\n\n## Proposed\n\n## Struck\n'; mkdir -p "$(base badclock)/state/sessions"; printf nonsense > "$(base badclock)/state/sessions/one"; run badclock notice '{"session_id":"one"}'
 assert 'malformed session overwritten without a gap' bash -c '[[ -z $1 && $2 == *Z ]]' _ "$output" "$(cat "$(base badclock)/state/sessions/one")"
 

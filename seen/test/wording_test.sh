@@ -32,6 +32,18 @@ assert 'remove refuses phrase not in Confirmed' bash -c '[[ $1 == 1 ]]' _ "$stat
 run bad suggest $'bad\nphrase' instead
 assert 'invalid phrase uses exit 2 and usage' bash -c '[[ $1 == 2 && $2 == *usage:* ]]' _ "$status" "$output"
 
+name=garbage-confirmed; mkdir -p "$fixture/$name"; printf '%s' $'## Confirmed\n- 2026-09-24 — "canary" — nope\ngarbage\n\n## Proposed\n\n## Struck\n' > "$(path "$name")"; before=$(fingerprint "$(path "$name")")
+run "$name" suggest added 'say it plainly'
+assert 'suggest refuses garbage inside Confirmed without changing the file' bash -c '[[ $1 == 1 && $2 == "wording: malformed wording list" && $3 == $4 ]]' _ "$status" "$output" "$before" "$(fingerprint "$(path "$name")")"
+
+name=garbage-struck; mkdir -p "$fixture/$name"; printf '%s' $'## Confirmed\n- 2026-09-24 — "canary" — nope\n\n## Proposed\n\n## Struck\ngarbage\n' > "$(path "$name")"; before=$(fingerprint "$(path "$name")")
+run "$name" suggest added 'say it plainly'
+assert 'suggest refuses garbage inside Struck without changing the file' bash -c '[[ $1 == 1 && $2 == "wording: malformed wording list" && $3 == $4 ]]' _ "$status" "$output" "$before" "$(fingerprint "$(path "$name")")"
+
+name=preamble; mkdir -p "$fixture/$name"; printf '%s' $'A hand-written preamble.\n## Confirmed\n- 2026-09-24 — "carried" — keep this\n\n## Proposed\n\n## Struck\n' > "$(path "$name")"
+run "$name" suggest added 'say it plainly'
+assert 'suggest accepts a preamble, keeps it, and adds the row' bash -c '[[ $1 == 0 ]] && head -n 1 "$2" | grep -qx "A hand-written preamble\." && grep -q "\"added\"" "$2"' _ "$status" "$(path "$name")"
+
 poison_cwd=$fixture/import-poison; mkdir -p "$poison_cwd"
 printf 'open("json.marker", "w").write("pwned")\n' > "$poison_cwd/json.py"
 printf 'open("datetime.marker", "w").write("pwned")\n' > "$poison_cwd/datetime.py"
