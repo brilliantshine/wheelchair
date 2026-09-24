@@ -34,7 +34,7 @@ async function startServerWithEnv({ root, port, open, env }) {
   });
   const parsed = new URL(url);
   return {
-    root, port, graphPath: open, url: `http://127.0.0.1:${port}`, token: parsed.searchParams.get('token'), child,
+    root, port, graphPath: open, url: `http://127.0.0.1:${port}/wheelchair`, token: (await fs.readFile(path.join(root, '.token'), 'utf8')).trim(), child,
     async stop() {
       if (child.exitCode === null) child.kill('SIGTERM');
       await new Promise((resolve) => { const timer = setTimeout(resolve, 1500); child.once('exit', () => clearTimeout(timer) || resolve()); });
@@ -45,7 +45,7 @@ async function startServerWithEnv({ root, port, open, env }) {
 }
 
 async function get(ctx, pathname, token = ctx.token) {
-  const url = new URL(pathname, ctx.url);
+  const url = new URL(`${ctx.url}${pathname.startsWith('/wheelchair') ? pathname.slice('/wheelchair'.length) : pathname}`);
   if (token !== null) url.searchParams.set('token', token);
   const response = await fetch(url);
   const text = await response.text();
@@ -54,11 +54,24 @@ async function get(ctx, pathname, token = ctx.token) {
   return { status: response.status, body, headers: response.headers };
 }
 
+async function raw(ctx, pathname, { method = 'GET', headers = {}, body, redirect = 'manual' } = {}) {
+  const response = await fetch(`${ctx.url}${pathname}`, { method, headers, body, redirect });
+  const text = await response.text();
+  let parsed;
+  try { parsed = text ? JSON.parse(text) : null; } catch { parsed = text; }
+  return { status: response.status, body: parsed, headers: response.headers };
+}
+
+async function remember(ctx, pathname = '/') {
+  const response = await raw(ctx, `${pathname}${pathname.includes('?') ? '&' : '?'}token=${ctx.token}`);
+  assert.equal(response.status, 303); return response.headers.get('set-cookie');
+}
+
 async function register(ctx, body) {
   const bytes = JSON.stringify(body); const timestamp = String(Date.now());
   const signature = crypto.createHmac('sha256', ctx.token).update(`${timestamp}\n`).update(bytes).digest('hex');
   const response = await fetch(`${ctx.url}/register`, { method: 'POST', body: bytes, headers: {
-    origin: ctx.url, 'content-type': 'application/json', 'x-graph-timestamp': timestamp, 'x-graph-signature': signature,
+    origin: new URL(ctx.url).origin, 'content-type': 'application/json', 'x-graph-timestamp': timestamp, 'x-graph-signature': signature,
   } });
   assert.equal(response.status, 200, await response.text());
 }
@@ -133,14 +146,20 @@ test('/doc returns 404 for non-Markdown files, parent paths, and a symlink leadi
   } finally { await ctx.stop(); }
 });
 
-test('/docs and the root list have CSP while a graph root keeps the index page header-free', async () => {
+test('/wheelchair/docs and list have CSP while a graph page keeps the index page header-free', async () => {
   const root = await makeDir(); const plan = await makePlan(root); const graph = path.join(root, 'graphs', 'main.json');
   await fs.mkdir(path.dirname(graph), { recursive: true }); await fs.writeFile(graph, '{"title":"main"}');
   const ctx = await startServer({ cacheRoot: root, port: await freePort(), open: graph });
   try {
     await registerPlan(ctx, plan);
-    const docs = await get(ctx, `/docs?plan=${encodeURIComponent(plan)}`); const list = await get(ctx, '/');
-    const index = await get(ctx, `/?path=${encodeURIComponent(graph)}`);
+    const tokenPage = await fetch(`${ctx.url}/?token=${ctx.token}`, { redirect: 'manual' });
+    const cookie = tokenPage.headers.get('set-cookie');
+    const fetchPage = async (pathname) => {
+      const url = new URL(`${ctx.url}${pathname}`); const response = await fetch(url, { headers: { cookie } });
+      return { status: response.status, body: await response.text(), headers: response.headers };
+    };
+    const docs = await fetchPage(`/docs?plan=${encodeURIComponent(plan)}`); const list = await fetchPage('/');
+    const index = await fetchPage(`/?path=${encodeURIComponent(graph)}`);
     const csp = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
     assert.equal(docs.status, 200); assert.equal(list.status, 200); assert.equal(index.status, 200);
     assert.equal(docs.headers.get('content-security-policy'), csp); assert.equal(list.headers.get('content-security-policy'), csp);
@@ -173,7 +192,8 @@ test('a page changed on disk is served changed without restarting the server', a
   const ctx = await startServer({ cacheRoot: await makeDir(), port: await freePort() });
   try {
     await fs.writeFile(page, `${original}${marker}`);
-    const response = await get(ctx, '/'); assert.equal(response.status, 200); assert.match(response.body, new RegExp(marker));
+    const first = await fetch(`${ctx.url}/?token=${ctx.token}`, { redirect: 'manual' }); const response = await fetch(`${ctx.url}/`, { headers: { cookie: first.headers.get('set-cookie') } });
+    assert.equal(response.status, 200); assert.match(await response.text(), new RegExp(marker));
   } finally { await fs.writeFile(page, original); await ctx.stop(); }
 });
 
@@ -192,5 +212,101 @@ test('list-build pruning writes only when it removes entries and never rewrites 
     await new Promise((resolve) => setTimeout(resolve, 20));
     assert.equal((await get(ctx, '/list')).status, 200); const twice = await fs.stat(registry);
     assert.equal(twice.mtimeMs, once.mtimeMs, 'the hourly guard prevents a second rewrite');
+  } finally { await ctx.stop(); }
+});
+
+test('GET /wheelchair/?token redirects without the token and sets the remember cookie attributes', async () => {
+  const ctx = await startServer({ cacheRoot: await makeDir(), port: await freePort() });
+  try {
+    const response = await raw(ctx, `/?path=kept&token=${ctx.token}`);
+    assert.equal(response.status, 303); assert.equal(response.headers.get('location'), '/wheelchair/?path=kept');
+    assert.equal(response.headers.get('set-cookie'), /^wheelchair_remember=[0-9a-f]{64}; Path=\/wheelchair; HttpOnly; Secure; SameSite=Lax; Max-Age=34560000$/.exec(response.headers.get('set-cookie'))?.[0]);
+  } finally { await ctx.stop(); }
+});
+
+test('a remember cookie reads the page, list, plan, document, and graph', async () => {
+  const root = await makeDir(); const graph = path.join(root, 'graphs', 'main.json'); const plan = await makePlan(root);
+  await fs.mkdir(path.dirname(graph), { recursive: true }); await fs.writeFile(graph, await fs.readFile(path.join(FIXTURES, 'canonical.json'))); await fs.writeFile(path.join(plan, 'PLAN.md'), '# plan');
+  const ctx = await startServer({ cacheRoot: root, port: await freePort(), open: graph });
+  try {
+    await registerPlan(ctx, plan); const cookie = await remember(ctx);
+    for (const route of ['/', '/list', `/plan?dir=${encodeURIComponent(plan)}`, `/doc?plan=${encodeURIComponent(plan)}&file=PLAN.md`, `/graph?path=${encodeURIComponent(graph)}`]) {
+      assert.equal((await raw(ctx, route, { headers: { cookie } })).status, 200, route);
+    }
+  } finally { await ctx.stop(); }
+});
+
+test('JSON reads accept token directly and never set a remember cookie', async () => {
+  const root = await makeDir(); const graph = path.join(root, 'graphs', 'main.json'); const plan = await makePlan(root);
+  await fs.mkdir(path.dirname(graph), { recursive: true }); await fs.writeFile(graph, await fs.readFile(path.join(FIXTURES, 'canonical.json'))); await fs.writeFile(path.join(plan, 'PLAN.md'), '# plan');
+  const ctx = await startServer({ cacheRoot: root, port: await freePort(), open: graph });
+  try {
+    await registerPlan(ctx, plan);
+    for (const route of ['/list', `/plan?dir=${encodeURIComponent(plan)}`, `/doc?plan=${encodeURIComponent(plan)}&file=PLAN.md`, `/graph?path=${encodeURIComponent(graph)}`]) {
+      const join = route.includes('?') ? '&' : '?'; const response = await raw(ctx, `${route}${join}token=${ctx.token}`);
+      assert.equal(response.status, 200, route); assert.equal(response.headers.get('set-cookie'), null, route);
+    }
+  } finally { await ctx.stop(); }
+});
+
+test('a wrong page token redirects with a valid cookie, but otherwise gets the sign-in page', async () => {
+  const ctx = await startServer({ cacheRoot: await makeDir(), port: await freePort() });
+  try {
+    const cookie = await remember(ctx); const redirect = await raw(ctx, '/?token=wrong', { headers: { cookie } });
+    assert.equal(redirect.status, 303); assert.equal(redirect.headers.get('location'), '/wheelchair/'); assert.equal(redirect.headers.get('set-cookie'), null);
+    const denied = await raw(ctx, '/?token=wrong'); assert.equal(denied.status, 401); assert.match(denied.body, /This browser isn't signed in/);
+  } finally { await ctx.stop(); }
+});
+
+test('wrong cookies and cookies from before a rotation are refused', async () => {
+  const root = await makeDir(); const port = await freePort(); const ctx = await startServer({ cacheRoot: root, port });
+  let replacement;
+  try {
+    assert.equal((await raw(ctx, '/', { headers: { cookie: 'wheelchair_remember=wrong' } })).status, 401);
+    const old = await remember(ctx); const rotated = await run(['--cache-root', root, '--port', String(port), '--rotate-token']); assert.equal(rotated.code, 0, rotated.stderr);
+    replacement = await startServer({ cacheRoot: root, port }); assert.equal((await raw(replacement, '/', { headers: { cookie: old } })).status, 401);
+  } finally { await replacement?.stop(); await ctx.stop(); }
+});
+
+test('a remember cookie is not a token, header token, or registration key', async () => {
+  const ctx = await startServer({ cacheRoot: await makeDir(), port: await freePort() });
+  try {
+    const cookie = await remember(ctx); const value = cookie.match(/wheelchair_remember=([^;]+)/)[1];
+    assert.equal((await raw(ctx, `/list?token=${value}`)).status, 401);
+    assert.equal((await raw(ctx, '/graph', { method: 'PUT', headers: { 'x-graph-token': value, origin: new URL(ctx.url).origin } })).status, 401);
+    assert.equal((await raw(ctx, '/register', { method: 'POST', headers: { cookie }, body: '{}' })).status, 401);
+  } finally { await ctx.stop(); }
+});
+
+test('PUT graph and view accept a remember cookie only from a permitted origin', async () => {
+  const root = await makeDir(); const graph = path.join(root, 'graphs', 'main.json'); await fs.mkdir(path.dirname(graph), { recursive: true }); await fs.writeFile(graph, await fs.readFile(path.join(FIXTURES, 'canonical.json')));
+  const ctx = await startServer({ cacheRoot: root, port: await freePort(), open: graph });
+  try {
+    const cookie = await remember(ctx); const current = await raw(ctx, `/graph?path=${encodeURIComponent(graph)}&token=${ctx.token}`);
+    const body = JSON.stringify({ hash: current.body.hash, graph: current.body.graph }); const headers = { cookie, origin: new URL(ctx.url).origin, 'content-type': 'application/json' };
+    assert.equal((await raw(ctx, `/view?path=${encodeURIComponent(graph)}`, { method: 'PUT', headers, body })).status, 200);
+    assert.equal((await raw(ctx, `/view?path=${encodeURIComponent(graph)}`, { method: 'PUT', headers: { ...headers, origin: 'https://foreign.invalid' }, body })).status, 403);
+  } finally { await ctx.stop(); }
+});
+
+test('root routes move to /wheelchair and /wheelchair gains its trailing slash', async () => {
+  const ctx = await startServer({ cacheRoot: await makeDir(), port: await freePort() });
+  try {
+    const origin = new URL(ctx.url).origin;
+    for (const route of ['/whoami?x=1', '/graph?x=1', '/list?x=1', '/wheelchairish?x=1']) {
+      const response = await fetch(`${origin}${route}`, { redirect: 'manual' }); assert.equal(response.status, 308);
+      assert.equal(response.headers.get('location'), `/wheelchair${route}`); assert.deepEqual(await response.json(), { error: 'moved', detail: 'The viewer moved under /wheelchair.', location: `/wheelchair${route}` });
+    }
+    const bare = await fetch(ctx.url, { redirect: 'manual' }); assert.equal(bare.status, 308); assert.equal(bare.headers.get('location'), '/wheelchair/');
+  } finally { await ctx.stop(); }
+});
+
+test('page responses renew the Lax cookie while JSON responses do not, and anonymous pages explain sign-in', async () => {
+  const ctx = await startServer({ cacheRoot: await makeDir(), port: await freePort() });
+  try {
+    const cookie = await remember(ctx); const page = await raw(ctx, '/', { headers: { cookie } });
+    assert.match(page.headers.get('set-cookie'), /SameSite=Lax/); const list = await raw(ctx, `/list?token=${ctx.token}`); assert.equal(list.headers.get('set-cookie'), null);
+    const anonymous = await raw(ctx, '/'); assert.equal(anonymous.status, 401); assert.match(anonymous.body, /Open your bookmark link once/); assert.match(anonymous.body, /<code>node viewer\/server\.js --url<\/code>/); assert.equal(anonymous.headers.get('content-security-policy'), "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+    assert.equal((await raw(ctx, '/list')).status, 401);
   } finally { await ctx.stop(); }
 });

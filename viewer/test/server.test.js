@@ -1047,9 +1047,9 @@ test('a kill before rename leaves the committed graph as either whole version, n
     const hookPath = await writeFaultHook(root); const port = await freePort();
     const child = spawnHookedServer({ root, graphPath, port, hookPath, marker, mode: 'before-rename' });
     try {
-      const parsed = new URL(await waitForServerUrl(child));
-      const ctx = { root, graphDir, graphPath, port, child, url: `http://127.0.0.1:${port}`,
-        token: parsed.searchParams.get('token') };
+      await waitForServerUrl(child);
+      const ctx = { root, graphDir, graphPath, port, child, url: `http://127.0.0.1:${port}/wheelchair`,
+        token: (await fs.readFile(path.join(root, '.token'), 'utf8')).trim() };
       const state = await getGraph(ctx); const graph = copy(state.graph); entry(graph, 'gather').note = 'atomic candidate';
       const write = graphPut(ctx, graph, state.hash).catch((error) => error);
       await waitForFile(marker);
