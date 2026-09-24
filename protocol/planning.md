@@ -113,7 +113,9 @@ Write every turn for someone arriving cold. The general prose rules — sized by
 reader needs to decide, every label and prior decision re-grounded on first use, above
 the code, no AI tells — live in
 `writing.md`, beside this file; read it
-once per session and apply it to every turn. Specific to this loop:
+once per session and apply it to every turn. This stage also keeps the plan's record of
+what the reader has seen — write and read it per `seen.md`, beside this file, before
+composing a turn. Specific to this loop:
 
 - **Consequence before mechanism.** Lead with what a choice means for how the thing behaves
   or what work it creates; the implementation detail comes after, if at all.

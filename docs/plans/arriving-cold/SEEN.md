@@ -1,0 +1,21 @@
+2026-09-24T21:49:38Z new c7b6 the hook starts Python in a way that runs code files from the project folder it fires in, so a cloned repository could execute code on every message
+2026-09-24T21:49:38Z new e84c a partly damaged wording file still has its readable rows passed to the agent, where the plan says a damaged file counts as empty
+2026-09-24T21:49:38Z new 64b5 the hook's tests fail when run inside a marked helper agent, because the marker leaks into them
+2026-09-24T21:49:38Z new 2c22 the rules document hands the installer's details to a directory guide that does not contain them
+2026-09-24T21:49:38Z new b17d the record template holds fake history lines that would look like a real past turn
+2026-09-24T21:49:38Z new 8fc6 the one-line wording question can clash with planning's one-question-per-turn rule, with no ordering stated
+2026-09-24T21:49:38Z new 8657 the README says the hook carries the plan record, which it never reads, and omits the installer's new step
+2026-09-24T21:50:44Z shown c7b6
+2026-09-24T21:50:44Z shown e84c
+2026-09-24T21:50:44Z shown 64b5
+2026-09-24T21:50:44Z shown 2c22
+2026-09-24T21:50:44Z shown b17d
+2026-09-24T21:50:44Z shown 8fc6
+2026-09-24T21:50:44Z shown 8657
+2026-09-24T21:50:44Z turn
+2026-09-24T21:57:55Z new c4cd a wording file with a valid rule plus one garbled line still has the rule passed along, where any garbled line should make the whole file count as empty
+2026-09-24T21:58:28Z shown c4cd
+2026-09-24T21:58:28Z turn
+2026-09-24T22:19:01Z new ada6 verification rounds 3 to 8 each found the rules document describing the scripts slightly wrong; the last one, about how an extremely long install path cuts the wording list, survived two fixes
+2026-09-24T22:19:01Z shown ada6
+2026-09-24T22:19:01Z turn

@@ -116,4 +116,5 @@ When reporting rounds or gaps to the user, follow
 `writing.md`, beside this file. In
 particular: a gap ID or spec-item codename is a pointer into the docs, not shared
 vocabulary — re-ground it on first use, and report what behavior is wrong, not which
-identifiers are involved.
+identifiers are involved. This stage also keeps the plan's record of what the user has
+seen — write and read it per `seen.md`, beside this file, before composing a turn.

@@ -62,6 +62,11 @@ protocol/        canonical stage definitions — the single source of truth
                        preservation, how the viewer starts
   sensitivity.md       the diagram-sensitivity dial: the region rendered into present
                        harnesses' always-on files, and what each level draws
+  seen.md              what the reader has seen: the plan record SEEN.md, read and written
+                       only by a stage, and the wording list, carried into every turn by a
+                       per-turn hook alongside a session gap line and a one-time change
+                       notice — the hook never carries the plan record, and nothing here is
+                       added to any agent's standing instructions
   routers.md           the router document format: what a directory owns, what must never
                        happen there, where to go next — guidance for creation, not a test
   spine.md             /spine: propose routers for a repo that has none, list every write
@@ -71,12 +76,16 @@ protocol/        canonical stage definitions — the single source of truth
   implementation.md    Stage 3: lead + cheap worker lanes from whichever family is present
                        (escalation only on evidence)
   verification.md      Stage 4: blind verify, cross-family when available, + remediation loop
-  templates/           MAP.md, IDEA.md, PLAN.md, COMPLETION.md skeletons
+  templates/           MAP.md, IDEA.md, PLAN.md, COMPLETION.md, SEEN.md skeletons
 spine/           scan.sh: resolves routing documents through symlinks, read-only, JSON out
   test/run.sh          fixture assertions; builds its tree under the system temp directory
 sensitivity/     set.sh: the only writer of whichever harness files are present,
                  all-or-nothing across them
   test/run.sh          fixture assertions; never touches the real ~/.claude or ~/.codex
+seen/            hook.sh: the per-turn UserPromptSubmit hook both harnesses call;
+                 wording.sh: the only writer of the wording list; set.sh: the installer's
+                 writer of both harnesses' hook entry
+  test/run.sh          fixture assertions; never touches a real home
 install/         test/run.sh: fixture assertions for install.sh — never writes the real
                  ~/.claude or ~/.codex
 skills/          Claude Code wrappers → rendered into ~/.claude/skills/ when claude is present
@@ -84,10 +93,11 @@ codex/prompts/   Codex CLI wrappers → rendered into ~/.codex/prompts/ when cod
 docs/plans/      one directory per feature; the only mutable state
 viewer/          the graph viewer, the list and document pages and their scripts, the
                  server, and its Playwright config
-install.sh       renders the wrappers, installs viewer/'s dependencies, and writes the
+install.sh       renders the wrappers, installs viewer/'s dependencies, adds the seen/ hook
+                 and wording grants to each present harness's settings, and writes the
                  dial's region into each present harness's always-on file (idempotent)
 AGENTS.md        this repo's own routers, one per directory that owns a rule —
-                 also protocol/, skills/, spine/ and sensitivity/
+                 also protocol/, skills/, spine/, sensitivity/ and seen/
 ```
 
 ## Install
@@ -110,6 +120,11 @@ with the code it started with.
 `spine/scan.sh`, `spine/test/run.sh`, `sensitivity/set.sh`, and `install.sh` itself are shell,
 not markdown — `viewer/` is the one piece with its own package dependencies and a
 long-running server.
+
+Before that, `install.sh` calls `seen/set.sh`, which also reaches outside the clone: it
+writes each present harness's own `UserPromptSubmit` hook entry and grants the wording
+script write access, into that harness's own settings files, and warns rather than failing
+the install if it refuses — `protocol/seen.md`'s installer section is the exact contract.
 
 The last step reaches **outside** the clone. `protocol/sensitivity.md`'s delimited region is
 *rendered* into `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, or both — whichever harness or

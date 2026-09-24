@@ -97,6 +97,12 @@ else
   echo "viewer chromium: installed"
 fi
 
+if "$ROOT/seen/set.sh"; then
+  echo "seen hook: installed"
+else
+  echo "seen hook: warning — not installed" >&2
+fi
+
 if "$ROOT/sensitivity/set.sh"; then
   echo "diagram sensitivity: installed"
 else
