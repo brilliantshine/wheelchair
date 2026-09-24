@@ -68,6 +68,8 @@ def tidy(group, last):
     # Entries first, then one blank line before the next header, so the file keeps its shape.
     while group and not group[-1].strip():
         group.pop()
+    while group and not group[0].strip():
+        group.pop(0)
     return group + ([] if last else ["\n"])
 
 
