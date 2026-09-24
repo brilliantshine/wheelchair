@@ -1,0 +1,210 @@
+{
+  "schema": 1,
+  "title": "does the record of what you've seen still need a hook",
+  "source": "plan-proposal",
+  "source_detail": "Q7 in docs/plans/arriving-cold/PLAN.md",
+  "explanation": "Stage turns are covered either way, because the stage now reads and writes the record itself. The fork is only about ordinary chat: [stages only](#stages-only) leaves it untouched, while [a hook for chat](#with-hook) covers it at the price of an installer writing into your settings files. Leaves out what the stage writes, already settled.",
+  "groups": [
+    {
+      "id": "stages-only",
+      "label": "stages only",
+      "note": "Nothing installed outside the clone.",
+      "visible": true,
+      "nodes": [
+        "s-chat",
+        "s-cost"
+      ]
+    },
+    {
+      "id": "with-hook",
+      "label": "plus a hook for chat",
+      "note": "A file-reading hook in both harnesses' settings.",
+      "visible": true,
+      "nodes": [
+        "h-chat",
+        "h-close",
+        "h-cost"
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "chat",
+      "label": "an ordinary message, no stage command",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 154,
+      "y": 0
+    },
+    {
+      "id": "fork",
+      "label": "does anything run on ordinary chat",
+      "kind": "decision",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": true,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 154,
+      "y": 140
+    },
+    {
+      "id": "h-chat",
+      "label": "hook reads the files and hands the turn the four-hour check and the wording list",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 462,
+      "y": 342
+    },
+    {
+      "id": "h-close",
+      "label": "a wording list injected every turn is a standing instruction by another route",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 332,
+      "y": 482
+    },
+    {
+      "id": "h-cost",
+      "label": "installer writes into your Claude and Codex settings files",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 592,
+      "y": 482
+    },
+    {
+      "id": "s-chat",
+      "label": "ordinary chat behaves exactly as today",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 24,
+      "y": 342
+    },
+    {
+      "id": "s-cost",
+      "label": "no four-hour re-grounding outside a stage; wording list only reaches stage turns",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 24,
+      "y": 482
+    },
+    {
+      "id": "stage",
+      "label": "a stage turn: reads the record, explains what you missed, marks it shown",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 1076,
+      "y": 0
+    }
+  ],
+  "edges": [
+    {
+      "id": "chat->fork",
+      "from": "chat",
+      "to": "fork",
+      "label": "you send it",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "fork->h-chat",
+      "from": "fork",
+      "to": "h-chat",
+      "label": "a hook",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "fork->s-chat",
+      "from": "fork",
+      "to": "s-chat",
+      "label": "nothing",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "h-chat->h-close",
+      "from": "h-chat",
+      "to": "h-close",
+      "label": "and",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "h-chat->h-cost",
+      "from": "h-chat",
+      "to": "h-cost",
+      "label": "costs",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "s-chat->s-cost",
+      "from": "s-chat",
+      "to": "s-cost",
+      "label": "costs",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    }
+  ]
+}

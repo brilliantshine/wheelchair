@@ -106,7 +106,6 @@ bends every turn afterwards, in every project, with nothing on screen saying why
   message and your answer.
 - **One account, and quota is a hard stop.** There is a single Codex login with no fallback,
   so anything that fires on every turn has to be cheap enough to fire on every turn.
-- **Both harnesses expose a per-turn mechanism, and neither has been proven to work here.**
-  The map records what the Codex binary carries and what Claude Code offers; nothing has
-  actually been fired. If that turns out not to hold, this idea needs revisiting before
-  anything is designed.
+- **Both harnesses expose a per-turn mechanism, and both have been proven to work here.** A
+  user-level hook fired and reached the model on Claude Code and on the Codex CLI (`MAP.md`
+  item 3).

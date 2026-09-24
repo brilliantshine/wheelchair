@@ -42,11 +42,12 @@ nothing on either path records what you were shown
 2. **One wheelchair rule reaches an ordinary turn, and the repo treats it as a deliberate
    one-off.** `protocol/sensitivity.md:20-49` is a delimited region that
    `sensitivity/set.sh` renders into each present harness's global instruction file, because
-   the dial "has to be in effect *before* Collin types" (`protocol/sensitivity.md:8-12`). The
+   the dial "has to be in effect *before* Collin types" (`protocol/sensitivity.md:7-12`). The
    root `AGENTS.md` names this the one thing that breaks the layout on purpose and says
    anything else wanting to live in a context window belongs in `protocol/`. Both harnesses
    are present here (`codex` and `claude` both resolve on `PATH`), and both installed copies
-   read `diagram-sensitivity: high` (`~/.codex/AGENTS.md:67`, `~/.claude/CLAUDE.md:302`).
+   read `diagram-sensitivity: default` (`~/.codex/AGENTS.md:4`, `~/.claude/CLAUDE.md:4`; both
+   read `high` when this map was first written).
 
 3. **Both harnesses also ship a hook engine, and wheelchair uses neither.** The Codex binary
    carries a `codex_hooks` crate with an engine, a dispatcher and a per-event module set
@@ -95,12 +96,12 @@ nothing on either path records what you were shown
 
 4. **A stage does rounds of work you never see.** Stage 2 launches two independent reviewers
    per round, each fresh-context and handed only the plan path, never the conversation
-   (`protocol/plan-review.md:35-40`), and runs up to three triaged rounds before it must
-   escalate (`:164`). What reaches you is a summary the lead composes after triage
-   (`:147-150`). Stage 3 and Stage 4 have the same shape with worker and verifier lanes.
+   (`protocol/plan-review.md:48-50`), and runs up to three triaged rounds before it must
+   escalate (`:148-150`). What reaches you is a summary the lead composes after triage
+   (`:130-133`). Stage 3 and Stage 4 have the same shape with worker and verifier lanes.
 
 5. **Every lane the protocol knows about is blocking.** A GPT lane is `codex exec`, headless,
-   captured through `-o` (`protocol/lanes.md:28-36`); a Claude lane is the Agent tool or
+   captured through `-o` (`protocol/lanes.md:22-36`); a Claude lane is the Agent tool or
    `claude -p` (`:127-130`). Nothing in the protocol runs a lane that is not waited on. A
    hook is the first thing here that could run one off the turn's critical path — the config
    carries an `async` flag (item 3).
@@ -110,14 +111,14 @@ nothing on either path records what you were shown
    the work. None is about the reader.
 
 7. **The gap is currently closed with standing prose rules, in six places.**
-   `protocol/planning.md:118` opens the question-writing section with "the user has not
+   `protocol/planning.md:111` opens the question-writing section with "the user has not
    memorized this conversation and does not have the codebase in their head — write every
    turn for someone arriving cold." `protocol/writing.md:66-77` makes re-grounding every
    coined label on first use a standing rule, on the stated premise that "the reader arrives
    cold: days away, other work in between, none of it loaded." Five stage documents point
-   user-facing text at that file: `protocol/map.md:48`, `protocol/adopt.md:76`,
-   `protocol/plan-review.md:147`, `protocol/implementation.md:20-22`,
-   `protocol/verification.md:103`.
+   user-facing text at that file: `protocol/map.md:48`, `protocol/adopt.md:74`,
+   `protocol/plan-review.md:131`, `protocol/implementation.md:34`,
+   `protocol/verification.md:116`.
 
 8. **Those rules ask for a judgment that needs a fact nothing supplies.** The agent composing
    the turn holds its own context, in which the review rounds, the map build and the worker
@@ -126,17 +127,17 @@ nothing on either path records what you were shown
    This is the failure the plan is about, and it is not a wording defect in any of the six
    rules above.
 
-9. **Resume is defined by the session boundary, not by you.** `protocol/planning.md:25-27`
+9. **Resume is defined by the session boundary, not by you.** `protocol/planning.md:39-41`
    defines the resume path — read the three documents, give a 2–3 sentence state summary,
    continue at the first open question — and it fires when a *new session* starts on an
    existing slug. A long gap inside one session is not a resume to any code here.
 
 10. **Graph verdicts are the one place your state is already recorded, and they record it per
     entry.** Every node and edge carries `origin` — `proposed`, `agreed`, `rejected`
-    (`protocol/graphs.md:571-577`) — and a reset writes `was: "agreed"` specifically because
+    (`protocol/graphs.md:602-608`) — and a reset writes `was: "agreed"` specifically because
     "the graph file is the state and the conversation is disposable," so a report living only
     in a turn leaves a resumed session unable to tell a fresh reset from something nobody has
-    ever ruled on (`:582-586`). That is the closest existing precedent for what this plan
+    ever ruled on (`:610-617`). That is the closest existing precedent for what this plan
     needs, and it is scoped to one graph, not to a session.
 
 ## What matters for this change
@@ -165,8 +166,8 @@ nothing on either path records what you were shown
 ## Problems found
 
 - **The repo's copy of the dial's level is not the live level, and reading it will mislead
-  you.** `protocol/sensitivity.md:23` says `default`; both installed copies say `high`. That
-  is by design — the writer resolves the level from the present files, not from the repo
+  you.** `protocol/sensitivity.md:23` says `default`, and the installed copies happen to agree today,
+  but they said `high` when this map was first written. That is by design — the writer resolves the level from the present files, not from the repo
   (`protocol/sensitivity.md:72-83`) — but it means the region in the repo is a template whose
   level line is inert, and nothing says so at the point someone would read it. Worth knowing
   before this plan proposes writing a second thing into the same harness homes.
