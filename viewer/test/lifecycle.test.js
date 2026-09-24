@@ -22,9 +22,9 @@ function run(args) {
 }
 
 const HOOK = path.join(ROOT, 'viewer/test/hooks/lifecycle.js');
-function launch(args, mode) {
+function launch(args, mode, extraEnv = {}) {
   const child = spawn(process.execPath, [...(mode ? ['--require', HOOK] : []), 'viewer/server.js', ...args], {
-    cwd: ROOT, env: { ...process.env, GRAPH_TEST_HOOK: mode }, stdio: ['ignore', 'pipe', 'pipe'],
+    cwd: ROOT, env: { ...process.env, GRAPH_TEST_HOOK: mode, ...extraEnv }, stdio: ['ignore', 'pipe', 'pipe'],
   });
   let stdout = ''; let stderr = '';
   child.stdout.on('data', (chunk) => { stdout += chunk; }); child.stderr.on('data', (chunk) => { stderr += chunk; });
@@ -204,16 +204,25 @@ test('--stop --if-stale keeps current code and stops a changed server copy', asy
 
 test('an older server is stopped only by --stop and every other command gives the upgrade message', async () => {
   const root = await makeDir(); const port = await freePort(); const startId = 'c'.repeat(32);
-  const fixture = path.join(root, 'old.js');
-  await fs.writeFile(fixture, `const http=require('node:http');const p=Number(process.argv[2]);http.createServer((q,s)=>{s.end(JSON.stringify({start_id:'${startId}'}))}).listen(p,'127.0.0.1');`);
-  const old = spawn(process.execPath, [fixture, String(port)]); await new Promise((resolve) => setTimeout(resolve, 100));
-  await fs.writeFile(path.join(root, '.server'), JSON.stringify({ pid: old.pid, port, token: 'd'.repeat(64), start_id: startId }));
+  const fixture = path.join(root, 'old.js'); const record = path.join(root, 'requests.jsonl'); const serverToken = 'd'.repeat(64); const diskToken = 'e'.repeat(64);
+  const plan = path.join(root, 'repo', 'docs', 'plans', 'old'); await fs.mkdir(plan, { recursive: true });
+  await fs.writeFile(fixture, `const fs=require('node:fs'),http=require('node:http');const [p,file]=process.argv.slice(2);http.createServer((q,s)=>{fs.appendFileSync(file,JSON.stringify({method:q.method,url:q.url,headers:q.headers})+'\\n');s.statusCode=q.url==='/register'?404:200;s.end(JSON.stringify({start_id:'${startId}'}))}).listen(Number(p),'127.0.0.1');`);
+  const old = spawn(process.execPath, [fixture, String(port), record]); await new Promise((resolve) => setTimeout(resolve, 100));
+  await fs.writeFile(path.join(root, '.token'), `${diskToken}\n`); await fs.writeFile(path.join(root, '.server'), JSON.stringify({ pid: old.pid, port, token: serverToken, start_id: startId }));
   try {
     for (const command of [['--open', path.join(root, 'graphs', 'x.json')], ['--show', path.join(root, 'graphs', 'x.json')], ['--service']]) {
       const result = await run(['--cache-root', root, '--port', String(port), ...command]);
       assert.equal(result.code, 1); assert.match(result.stderr, /a viewer from an older version is running; run \.\/install\.sh/);
     }
-    const stopped = await run(['--cache-root', root, '--port', String(port), '--stop']); assert.equal(stopped.code, 0); await exit(old);
+    const registered = await run(['--cache-root', root, '--port', String(port), '--register-plan', plan]); assert.equal(registered.code, 0); assert.match(registered.stderr, /older version/);
+    const stopped = await run(['--cache-root', root, '--port', String(port), '--stop', '--if-stale']); assert.equal(stopped.code, 0); await exit(old);
+    const requests = (await fs.readFile(record, 'utf8')).trim().split('\n').filter(Boolean).map(JSON.parse);
+    assert.ok(requests.length > 0);
+    for (const item of requests) {
+      const values = [item.url, ...Object.values(item.headers)];
+      assert.equal(values.some((value) => String(value).includes(diskToken) || String(value).includes(serverToken)), false);
+      assert.equal(Object.hasOwn(item.headers, 'x-graph-token'), false);
+    }
   } finally { await stop(old); }
 });
 
@@ -226,17 +235,21 @@ test('--service takes over an open server without changing port or token', async
   } finally { await stop(service.child); await opened.stop(); }
 });
 
-test('--service gives up after three takeovers', { timeout: 20000 }, async () => {
-  // A silent holder is enough to make the bounded takeover branch observable without a real service manager.
-  const root = await makeDir(); const port = await freePort(); const first = await startServer({ cacheRoot: root, port });
-  const service = launch(['--cache-root', root, '--port', String(port), '--service'], 'delay-listen-callback');
+test('--service gives up after three takeovers', { timeout: 30000 }, async () => {
+  const root = await makeDir(); const port = await freePort(); const marker = path.join(root, 'service-pause'); const holders = [await startServer({ cacheRoot: root, port })];
+  const service = launch(['--cache-root', root, '--port', String(port), '--service'], 'delay-relisten-after-stop', { GRAPH_TEST_MARKER: marker });
+  service.ready.catch(() => {});
   try {
-    // Replacing the holder after every stop is covered by the normal service-takeover test; this
-    // hook run asserts the command has a finite failure path instead of fighting forever.
-    await new Promise((resolve) => setTimeout(resolve, 300)); first.child.kill('SIGKILL'); await exit(first.child);
-    await service.ready;
-    assert.equal(service.child.exitCode, null, 'the service takes the port after the stopped holder exits');
-  } finally { await stop(service.child); await first.stop(); }
+    for (let takeover = 0; takeover < 3; takeover += 1) {
+      const deadline = Date.now() + 6000;
+      while (!require('node:fs').existsSync(marker) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+      assert.equal(require('node:fs').existsSync(marker), true, `takeover ${takeover + 1} paused`);
+      holders.push(await startServer({ cacheRoot: root, port }));
+      await fs.unlink(marker);
+    }
+    const result = await exit(service.child); assert.equal(result, 1); assert.match(service.output().stderr, /gave up after three takeovers/);
+    assert.equal(holders[3].child.exitCode, null);
+  } finally { await fs.unlink(marker).catch(() => {}); await stop(service.child); await Promise.all(holders.map((holder) => holder.stop())); }
 });
 
 test('a post-bind .server rename failure rolls back listener and record', async () => {
@@ -268,6 +281,68 @@ test('--url never listens and reports the running token after a timed-out rotati
   try {
     const record = JSON.parse(await fs.readFile(path.join(root, '.server'))); const rotate = await run(['--cache-root', root, '--port', String(port), '--rotate-token']); assert.equal(rotate.code, 1);
     const url = await run(['--cache-root', root, '--port', String(port), '--url']); assert.match(url.stdout, new RegExp(record.token)); assert.match(url.stderr, /Warning: token rotation is waiting/);
+    const open = await run(['--cache-root', root, '--port', String(port), '--open', path.join(root, 'graphs', 'after-rotation.json')]); assert.equal(open.code, 0, open.stderr);
     const closed = await freePort(); const noStart = await run(['--cache-root', await makeDir(), '--port', String(closed), '--url']); assert.equal(noStart.code, 0);
   } finally { await stop(ignored.child); }
+});
+
+test('--rotate-token refuses an old-version holder and leaves it running', async () => {
+  const root = await makeDir(); const port = await freePort(); const id = 'e'.repeat(32); const old = await fakeServer(port, { start_id: id });
+  await fs.writeFile(path.join(root, '.server'), JSON.stringify({ pid: process.pid, port, token: 'f'.repeat(64), start_id: id }));
+  try {
+    const result = await run(['--cache-root', root, '--port', String(port), '--rotate-token']);
+    assert.equal(result.code, 1); assert.match(result.stderr, /a viewer from an older version is running; run \.\/install\.sh/); assert.equal(old.listening, true);
+  } finally { await new Promise((resolve) => old.close(resolve)); }
+});
+
+test('--register-plan retries a silent holder until it registers through it', async () => {
+  const root = await makeDir(); const port = await freePort(); const token = '1'.repeat(64); const id = '2'.repeat(32); const plan = path.join(root, 'repo', 'docs', 'plans', 'retry'); await fs.mkdir(plan, { recursive: true });
+  await fs.writeFile(path.join(root, '.token'), `${token}\n`); await fs.writeFile(path.join(root, '.server'), JSON.stringify({ pid: process.pid, port, token, start_id: id }));
+  const started = Date.now(); let registered = false;
+  const holder = await new Promise((resolve, reject) => {
+    const server = require('node:http').createServer((request, response) => {
+      if (request.url.startsWith('/whoami')) {
+        const nonce = new URL(request.url, 'http://localhost').searchParams.get('nonce');
+        if (Date.now() - started < 650) return;
+        response.end(JSON.stringify({ start_id: id, pid: process.pid, code: 'abcdef123456', proof: crypto.createHmac('sha256', token).update(nonce).digest('hex') })); return;
+      }
+      if (request.url === '/register') { registered = true; response.end(JSON.stringify({ ok: true })); return; }
+      response.statusCode = 404; response.end();
+    });
+    server.once('error', reject); server.listen(port, '127.0.0.1', () => resolve(server));
+  });
+  try { const result = await run(['--cache-root', root, '--port', String(port), '--register-plan', plan]); assert.equal(result.code, 0); assert.equal(registered, true); } finally { await new Promise((resolve) => holder.close(resolve)); }
+});
+
+test('--rotate-token waits for shutdown and leaves .server removal to the server', async () => {
+  const root = await makeDir(); const port = await freePort(); const ctx = await startServer({ cacheRoot: root, port });
+  const record = await fs.readFile(path.join(root, '.server'));
+  const result = await run(['--cache-root', root, '--port', String(port), '--rotate-token']);
+  assert.equal(result.code, 0); assert.notEqual(await fs.readFile(path.join(root, '.token'), 'utf8'), `${ctx.token}\n`);
+  await assert.rejects(fs.access(path.join(root, '.server'))); assert.notEqual(record.length, 0);
+});
+
+test('shutdown releases the port before it removes only its own .server record', async () => {
+  const root = await makeDir(); const port = await freePort(); const ctx = await startServer({ cacheRoot: root, port });
+  const replacement = { pid: 1, port, token: '3'.repeat(64), start_id: '4'.repeat(32) };
+  await fs.writeFile(path.join(root, '.server'), JSON.stringify(replacement)); ctx.child.kill('SIGTERM'); await exit(ctx.child);
+  assert.deepEqual(JSON.parse(await fs.readFile(path.join(root, '.server'))), replacement);
+  const probe = await new Promise((resolve, reject) => { const server = net.createServer(); server.once('error', reject); server.listen(port, '127.0.0.1', () => resolve(server)); });
+  await new Promise((resolve) => probe.close(resolve));
+});
+
+test('--stop leaves .server removal to the exiting server', async () => {
+  const root = await makeDir(); const port = await freePort(); const ctx = await startServer({ cacheRoot: root, port });
+  const result = await run(['--cache-root', root, '--port', String(port), '--stop']); assert.equal(result.code, 0);
+  await assert.rejects(fs.access(path.join(root, '.server'))); assert.equal(ctx.child.exitCode === null, false);
+});
+
+test('a starter that loses the freed port registers through the new holder', async () => {
+  const root = await makeDir(); const port = await freePort(); const old = await startServer({ cacheRoot: root, port }); const graph = path.join(root, 'graphs', 'loser.json');
+  old.child.kill('SIGTERM'); await exit(old.child);
+  const winner = await startServer({ cacheRoot: root, port });
+  try {
+    const loser = await run(['--cache-root', root, '--port', String(port), '--open', graph]); assert.equal(loser.code, 0, loser.stderr);
+    assert.equal(JSON.parse(await fs.readFile(path.join(root, '.registered')))[graph].opened, true);
+  } finally { await winner.stop(); }
 });

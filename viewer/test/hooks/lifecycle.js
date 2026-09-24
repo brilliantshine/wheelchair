@@ -61,3 +61,16 @@ if (mode === 'pause-before-register') {
     return request.call(this, options, ...args);
   };
 }
+if (mode === 'delay-relisten-after-stop') {
+  globalThis.__wheelchairAfterServiceStop = async () => {
+    const marker = process.env.GRAPH_TEST_MARKER;
+    if (!marker) throw new Error('delay-relisten-after-stop needs GRAPH_TEST_MARKER');
+    fssync.writeFileSync(marker, 'paused');
+    await new Promise((resolve) => {
+      const timer = setInterval(() => {
+        if (fssync.existsSync(marker)) return;
+        clearInterval(timer); resolve();
+      }, 10);
+    });
+  };
+}

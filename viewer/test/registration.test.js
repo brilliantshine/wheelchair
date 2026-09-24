@@ -92,6 +92,18 @@ test('register rejects unsigned, stale, foreign-origin, and out-of-scope paths',
   } finally { await ctx.stop(); }
 });
 
+test('a refused POST /register leaves .registered and .plans byte-identical', async () => {
+  const root = await makeDir(); const ctx = await startServer({ cacheRoot: root, port: await freePort() });
+  const registered = path.join(root, '.registered'); const plans = path.join(root, '.plans');
+  try {
+    await fs.writeFile(registered, '{}\n'); await fs.writeFile(plans, '{}\n');
+    const before = await Promise.all([fs.readFile(registered), fs.readFile(plans)]);
+    const result = await register(ctx, { kind: 'graph', path: '/tmp/refused.json', opened: true, session: null, harness: 'other' });
+    assert.equal(result.status, 400); assert.equal(result.body.error, 'bad-path');
+    assert.deepEqual(await Promise.all([fs.readFile(registered), fs.readFile(plans)]), before);
+  } finally { await ctx.stop(); }
+});
+
 test('commands reuse a proven server and register without exposing its token', async () => {
   const root = await makeDir(); const port = await freePort(); const graph = path.join(root, 'graphs', 'reused.json'); await fs.mkdir(path.dirname(graph), { recursive: true });
   const plan = path.join(root, 'repo', 'docs', 'plans', 'slug'); await fs.mkdir(plan, { recursive: true });

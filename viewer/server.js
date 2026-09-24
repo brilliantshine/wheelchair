@@ -1797,8 +1797,8 @@ async function waitForPidExit(pid) {
   try { process.kill(pid, 0); return false; } catch (error) { return error.code === 'ESRCH'; }
 }
 
-async function stopServer(config, { ifStale = false } = {}) {
-  const holder = await identifyHolder(config, { retrySilent: true, allowOlderStop: true });
+async function stopServer(config, { ifStale = false, allowOlderStop = false } = {}) {
+  const holder = await identifyHolder(config, { retrySilent: true, allowOlderStop });
   if (holder.kind === 'none') { console.log('No viewer running.'); return { stopped: false, none: true }; }
   if (holder.kind === 'older-foreign') {
     console.error('a viewer from an older version is running; run ./install.sh'); process.exitCode = 1; return { failed: true };
@@ -1915,6 +1915,13 @@ async function startServer(config) {
   return { reused: false, lock };
 }
 
+// Test hooks may replace this through globalThis; production intentionally has no service delay.
+async function afterServiceStop() {
+  if (typeof globalThis.__wheelchairAfterServiceStop === 'function') {
+    await globalThis.__wheelchairAfterServiceStop();
+  }
+}
+
 // Ask the running server whether a page is already polling this graph. A redraw should not stack
 // up browser windows — an open tab picks the new version up on its own poll within a second.
 function signedHeaders(token, signed) {
@@ -1964,7 +1971,7 @@ function launchBrowser(url) {
 
 async function main() {
   const config = configFromArgs(process.argv.slice(2));
-  if (config.stop) { await stopServer(config, { ifStale: config.ifStale }); return; }
+  if (config.stop) { await stopServer(config, { ifStale: config.ifStale, allowOlderStop: true }); return; }
   if (config.rotateToken) {
     await fsp.mkdir(config.cacheRoot, { recursive: true, mode: 0o700 });
     const token = crypto.randomBytes(32).toString('hex'); const temp = temporaryPath(tokenPath(config));
@@ -1994,7 +2001,7 @@ async function main() {
       const deadline = Date.now() + STARTUP_GRACE_ATTEMPTS * STARTUP_GRACE_INTERVAL_MS;
       let holder;
       do {
-        holder = await identifyHolder(config, { retrySilent: false });
+        holder = await identifyHolder(config, { retrySilent: true });
         if (holder.kind !== 'none') break;
         if (Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, STARTUP_GRACE_INTERVAL_MS));
       } while (Date.now() < deadline);
@@ -2033,6 +2040,7 @@ async function main() {
         takeovers += 1;
         const stopped = await stopServer(config);
         if (stopped.failed) throw new Error('Viewer service could not stop the existing viewer.');
+        await afterServiceStop();
         continue;
       }
       if (holder.kind === 'older-foreign') throw new Error('a viewer from an older version is running; run ./install.sh');
