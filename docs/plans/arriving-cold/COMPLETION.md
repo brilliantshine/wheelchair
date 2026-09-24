@@ -18,6 +18,9 @@ verified-by:
   - round: 3
     lane: gpt-5.6-sol
     checks: sonnet
+  - round: 4
+    lane: gpt-5.6-sol
+    checks: sonnet
 ---
 
 # Completion Report — Knowing what you have actually seen
@@ -247,3 +250,16 @@ Fixed by the lead (Claude family, which wrote the prose): `protocol/seen.md`, "T
 list", now carries a "Well-formed means exactly this" paragraph stating the rule, the allowed
 preamble, and both scripts' behaviour. Small enough that a separate remediation file would only
 repeat this paragraph.
+
+### Remediation 4 — 2026-09-24
+
+Verification round 4 (`gpt-5.6-sol`): one prose gap —
+
+```
+GAP: Failing-open cache contract — `protocol/seen.md:227-228` says malformed `confirmed.last` is treated as empty rather than repaired, but `seen/hook.sh:179-184` overwrites it with the current list; reproduced at HEAD, and `seen/test/hook_test.sh:54-56` explicitly requires that self-heal behavior
+```
+
+The code is right — Remediation 1 made `confirmed.last` self-heal on purpose, adopting the
+Claude verifier's finding that a corrupt copy otherwise disabled the notice for good — and the
+prose was never updated. Fixed by the lead: `protocol/seen.md` "Failing open" now names both of
+the hook's own state files as exceptions and says what happens to each.

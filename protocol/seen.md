@@ -224,8 +224,11 @@ Two, set only by the fixture suites and never in production, the same convention
 Every path here fails open. A hook that exits non-zero, times out, or returns unparseable
 output lets the turn proceed with nothing injected — the harness may print its own one-line
 notice on a non-zero exit, so the hook exits 0 on every path it controls and only a timeout
-reaches that notice. A missing or malformed wording list, `confirmed.last`, or `SEEN.md` is
-treated as empty rather than repaired. The one exception is the session clock file: the hook
-overwrites it on every message regardless of whether it parsed. This is the most important
+reaches that notice. A missing or malformed wording list or `SEEN.md` is treated as empty
+rather than repaired. The hook's own two state files are the exceptions, because it rewrites
+them anyway: the session clock file is overwritten on every message whether or not it parsed,
+and a missing or unreadable `confirmed.last` counts as empty — the current confirmed entries
+are announced as added (on a harness that shows the notice) and the file is rewritten with
+them, so a damaged copy heals on the next message instead of switching the notice off. This is the most important
 property in this document — a turn this feature blocks or delays is a failure noticed every
 time, while a turn it fails to improve is only today's behaviour.
