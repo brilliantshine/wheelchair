@@ -66,7 +66,7 @@ both_wrappers_landed() {
 
 last_line_is() { [[ ${1##*$'\n'} == "$2" ]]; }
 
-declare -A home claude codex shim present output status tty display input args dns loginctl_status node_stop_status tailscale_absent serve_status serve_status_exit
+declare -A home claude codex shim present output status tty display input args dns loginctl_status linger node_stop_status tailscale_absent serve_status serve_status_exit
 status_with_handlers() {
   printf '{"TCP":{"443":{"HTTPS":true}},"Web":{"fixture.tailnet.ts.net:443":{"Handlers":%s}}}' "$1"
 }
@@ -84,6 +84,7 @@ new_case() {
   args[$name]=''
   dns[$name]=fixture.tailnet.ts.net.
   loginctl_status[$name]=0
+  linger[$name]=no
   node_stop_status[$name]=0
   tailscale_absent[$name]=0
   serve_status[$name]=$(status_with_handlers '{}')
@@ -116,6 +117,7 @@ EOF
   cat > "$dir/loginctl" <<'EOF'
 #!/usr/bin/env bash
 printf 'loginctl %s\n' "$*" >> "$WHEELCHAIR_SHIM_LOG"
+if [[ $1 == show-user ]]; then printf '%s\n' "${WHEELCHAIR_LINGER:-no}"; exit 0; fi
 exit "${WHEELCHAIR_LOGINCTL_STATUS:-0}"
 EOF
   cat > "$dir/tailscale" <<'EOF'
@@ -157,6 +159,7 @@ run_case() {
     "WHEELCHAIR_TAILSCALE_SERVE_STATUS=${serve_status[$name]}"
     "WHEELCHAIR_TAILSCALE_SERVE_STATUS_EXIT=${serve_status_exit[$name]}"
     "WHEELCHAIR_LOGINCTL_STATUS=${loginctl_status[$name]}"
+    "WHEELCHAIR_LINGER=${linger[$name]}"
     "WHEELCHAIR_NODE_STOP_STATUS=${node_stop_status[$name]}")
   [[ ${display[$name]} == 1 ]] && command+=(DISPLAY=:fixture)
   set +e
@@ -286,6 +289,14 @@ args[linger_refused]=--serve
 loginctl_status[linger_refused]=1
 run_case linger_refused
 assert 'a refused linger request prints the visible sudo recovery command' bash -c '[[ $1 == *"sudo loginctl enable-linger fixture-user"* && $1 == *"will stop at logout"* ]]' _ "${output[linger_refused]}"
+
+new_case linger_already_on
+args[linger_already_on]=--serve
+loginctl_status[linger_already_on]=1
+linger[linger_already_on]=yes
+run_case linger_already_on
+assert 'lingering already on prints no linger warning' bash -c '[[ $1 != *"will stop at logout"* && $1 != *"sudo loginctl enable-linger"* ]]' _ "${output[linger_already_on]}"
+assert 'lingering already on is not requested again' bash -c '! grep -q "loginctl enable-linger" "$1"' _ "${home[linger_already_on]}/commands.log"
 
 new_case tailscale_declined
 args[tailscale_declined]=--serve

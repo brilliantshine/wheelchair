@@ -255,7 +255,10 @@ EOF
   systemctl --user daemon-reload
   systemctl --user enable --now wheelchair-viewer.service
   systemctl --user restart wheelchair-viewer.service
-  if ! loginctl enable-linger "$USER"; then
+  # Ask first: without a terminal an unneeded enable-linger is refused, which would warn
+  # about a setting that is already on.
+  if [[ $(loginctl show-user "$USER" -p Linger --value 2>/dev/null) != yes ]] &&
+      ! loginctl enable-linger "$USER"; then
     printf 'viewer: run later: sudo loginctl enable-linger %s\n' "$USER" >&2
     echo 'viewer: warning — the viewer service will stop at logout until lingering is enabled' >&2
   fi
