@@ -16,3 +16,6 @@
 2026-09-24T21:57:55Z new c4cd a wording file with a valid rule plus one garbled line still has the rule passed along, where any garbled line should make the whole file count as empty
 2026-09-24T21:58:28Z shown c4cd
 2026-09-24T21:58:28Z turn
+2026-09-24T22:19:01Z new ada6 verification rounds 3 to 8 each found the rules document describing the scripts slightly wrong; the last one, about how an extremely long install path cuts the wording list, survived two fixes
+2026-09-24T22:19:01Z shown ada6
+2026-09-24T22:19:01Z turn
