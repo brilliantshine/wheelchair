@@ -1,6 +1,6 @@
 ---
 slug: remember-me
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-09-23
 ---
 
@@ -465,10 +465,10 @@ Filled by Stage 3. One row per worker brief.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| 1 | Server: `/wheelchair` prefix, root `308`s, cookie auth and first-visit redirect, `401` sign-in page, prefixed and token-free printed URLs, `--show`'s local token URL, `/whoami` fallback | `viewer/server.js`, new `viewer/signin.html`, `viewer/test/*.test.js`, `viewer/test/helpers/`, `viewer/test/hooks/`, `viewer/test/fixtures/` | GPT / gpt-5.6-terra, worktree `rm-server` | | `node --test viewer/test/*.test.js` | pending |
-| 2 | Pages: prefix everywhere, no token in pages; browser suites updated and the new browser cases | `viewer/index.html`, `viewer/list.html`, `viewer/list.js`, `viewer/doc.html`, `viewer/doc.js`, `viewer/test/*.spec.js` | Claude / sonnet, after 1 | | `npm --prefix viewer run test:browser` | pending |
-| 3 | Installer: JSON status reading, `/wheelchair` mapping offer, root only when unmapped, path-specific `--no-serve`, origin kept | `install.sh`, `install/test/run.sh` | GPT / gpt-5.6-terra, worktree `rm-installer` | | `bash install/test/run.sh`; `bash sensitivity/test/run.sh` | pending |
-| 4 | Documents: `protocol/graphs.md`, README, AGENTS.md | `protocol/graphs.md`, `README.md`, `AGENTS.md`, `CONTRIBUTING.md` | Claude / sonnet, worktree | | `bash spine/test/run.sh` | pending |
+| 1 | Server: `/wheelchair` prefix, root `308`s, cookie auth and first-visit redirect, `401` sign-in page, prefixed and token-free printed URLs, `--show`'s local token URL, `/whoami` fallback | `viewer/server.js`, new `viewer/signin.html`, `viewer/test/*.test.js`, `viewer/test/helpers/`, `viewer/test/hooks/`, `viewer/test/fixtures/` | GPT / gpt-5.6-terra, worktree `rm-server` | `01a0d208-a37f-7413-9ae3-b568d39f8cf2` | `node --test viewer/test/*.test.js` | done — resumed once for the pre-prefix tests; lead fixed one exit assertion |
+| 2 | Pages: prefix everywhere, no token in pages; browser suites updated and the new browser cases | `viewer/index.html`, `viewer/list.html`, `viewer/list.js`, `viewer/doc.html`, `viewer/doc.js`, `viewer/test/*.spec.js` | Claude / sonnet, after 1 | Claude agent (main checkout) | `npm --prefix viewer run test:browser` | done, `2f09afa` |
+| 3 | Installer: JSON status reading, `/wheelchair` mapping offer, root only when unmapped, path-specific `--no-serve`, origin kept | `install.sh`, `install/test/run.sh` | GPT / gpt-5.6-terra, worktree `rm-installer` | `01a0d208-b8fc-7d00-9348-703f2571dd82` | `bash install/test/run.sh`; `bash sensitivity/test/run.sh` | done |
+| 4 | Documents: `protocol/graphs.md`, README, AGENTS.md | `protocol/graphs.md`, `README.md`, `AGENTS.md`, `CONTRIBUTING.md` | Claude / sonnet, worktree | Claude agent (worktree) | `bash spine/test/run.sh` | done, `d5eea43` |
 
 ## Log
 
@@ -486,4 +486,9 @@ Filled by Stage 3. One row per worker brief.
 - 2026-09-23: Q4 settled by probing Tailscale on hearth (Decision Log #27). Status back to
   ready-for-review; review rounds count again from here.
 - 2026-09-23: Round 5 clean. Spec diagram drawn. Status set to approved.
+- 2026-09-23: Stage 3 done. 122/122 unit (three runs, one under load), 202/202 browser,
+  installer 63/63, sensitivity 62/62, spine 80/80. The validation run of `./install.sh`
+  restarted hearth's service on this code, and the live viewer works under `/wheelchair/`
+  through the existing root mapping. The `/wheelchair` mapping command and the phone and
+  laptop checks remain for Collin. Status set to verifying.
 
