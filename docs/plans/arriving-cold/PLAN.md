@@ -95,6 +95,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D52 | A malformed session clock file is overwritten with the current time and reports no gap; D14's match is on the script path alone, ignoring the arguments D49 adds; the hook's gap line reads "this session's last message was …", and `protocol/seen.md` tells a stage to use its plan clock and not that line | Round 6 minors and one major: "treated as empty rather than repaired" would have disabled the clock for good; matching the whole command would duplicate the group when a D49 constant changed; and the stage would otherwise see two disagreeing clocks | review-round-6 |
 | D53 | **Supersedes D32 and the stretch half of D50.** After a gap, the stage is given only the fact — how long since the plan's last turn — and re-grounds from the plan itself, the way the resume summary in `protocol/planning.md` Step 1 already does: what the work is for, where it stands, and what this turn is about to lean on. No set of past entries is computed or replayed. The plan clock (`turn` lines, written last, D50) stays, because it is what detects the gap | Round 6 escalation. The precise re-grounding rule broke in a new way in each of Rounds 4, 5 and 6. Coming back to a plan already begins with a resume summary, so the precise version added little beyond the timing logic that kept failing | user |
 | D54 | **One fixed order for a stage's writes at the end of a turn**, immediately before its text: (1) `shown` for the entries this turn explains; (2) if this turn changes the plan's `status`, `closed` for every entry still unshown; (3) the `turn` line. A record with no `turn` line yet has no gap. On a resume after a gap, the resume summary in `protocol/planning.md` **is** the re-grounding, not an addition to it. The four-hour number is stated once in `protocol/seen.md`; `seen/hook.sh`'s constant names that file in a comment, and the suite checks the two agree | Round 7: three rules each claimed to be the last write, and closing before the final summary would hide the worker results it was about to explain; a first turn had no defined clock; a resume after a gap could stack two re-groundings; the threshold lived in two places | review-round-7 |
+| D55 | **Closing happens only on a stage's exit status**: the turn that sets `ready-for-review`, `approved`, `verifying` or `done`. Setting `planning` or `implementing`, which a stage does on entry, closes nothing. On the first turn after a gap, the entry grounding (D31) covers what the turn leans on, and the re-grounding (D53) adds only what the work is for and where it stands; it applies to a resumed run of any stage, and a planning resume summary names settled decisions only as far as the next question depends on them. "Nothing after the `turn` line" means nothing further in `SEEN.md`. `protocol/seen.md` states the threshold as one line, `gap-threshold: 4h`, which the suite parses | Round 8, both lanes: `/implement` sets `implementing` at its start and can stop mid-run on a dead lane, so closing on any status change hid accepted results from the resumed run. The rest are Round 8 minors: two groundings overlapping on a gap turn, "resume" defined only for planning, the resume summary's "what's settled" against `IDEA.md`'s "without reciting your own decisions", an over-broad "nothing written", and a threshold with no parseable form | review-round-8 |
 
 ## Spec
 
@@ -183,13 +184,14 @@ plan's record, grounds each unshown entry **that turn leans on**, and appends `s
 exactly those, in the end-of-turn order below (D54). Entries the turn does not lean on stay unshown. A turn with nothing to ground
 reads exactly as it does today.
 
-**Closing (D31).** A turn that changes the plan's `status` appends `closed` for every entry
-still unshown, after its `shown` lines, so entries its own summary explains are never closed.
+**Closing (D31, D55).** A turn that sets an exit status — `ready-for-review`, `approved`,
+`verifying` or `done` — appends `closed` for every entry still unshown, after its `shown` lines.
+Setting `planning` or `implementing` closes nothing, so entries its own summary explains are never closed.
 Closed entries are never surfaced.
 
 **End-of-turn order (D54).** Immediately before a stage turn's text, in this order: `shown`
-lines, then `closed` lines if the status changed, then the `turn` line. Nothing is written
-after the `turn` line.
+lines, then `closed` lines if this turn set an exit status, then the `turn` line. Nothing
+further is written to `SEEN.md` in that turn (D55).
 
 **The plan's clock (D48, D50).** At the start of each turn to the reader, the stage reads the
 time of the latest `turn` line in `SEEN.md`; four hours or more before now is a gap for this
@@ -202,8 +204,11 @@ session gap line (D52).
 **After a gap (D53).** On a turn that found a gap, the stage re-grounds from the plan itself,
 as the resume summary does: what the work is for, where it stands, and what this turn is about
 to lean on — never a recital of your own decisions. No past entries are replayed and nothing
-is appended for the re-grounding. When the turn is a resume, the resume summary is the
-re-grounding (D54).
+is appended for the re-grounding. What the turn leans on is already covered by the entry
+grounding above, so the re-grounding adds only what the work is for and where it stands
+(D55). It applies to a resumed run of any stage. For planning, the resume summary is the
+re-grounding, and it names settled decisions only as far as the next question depends on them
+(D54, D55).
 
 No lane, no model call and no firing condition exist for this feature (D20). It never runs on
 a subagent's own turns (D4) — a worker lane does not write the record; the lead that accepts
@@ -247,7 +252,8 @@ wheelchair: wording list — added "hidden work"; removed "ledger"
 Past 160 characters it ends with how many more changes there were. The gap line appears only
 when there is a gap. Confirmed entries go newest first; when they do
 not fit, the last line gives how many were left out. The cap is a named constant in `seen/hook.sh`. The four-hour threshold is stated once in
-`protocol/seen.md`, and the hook's constant names that file in a comment (D54).
+`protocol/seen.md`, as the line `gap-threshold: 4h`, and the hook's constant names that file in
+a comment (D54, D55).
 
 ### The installer
 
@@ -372,8 +378,8 @@ under two concurrent writers. The hook also: returns a `systemMessage` naming an
 confirmed list changes, and none on the following message; stays silent when
 `confirmed.last` is missing; invoked with `no-notice`, leaves `confirmed.last` untouched; keeps a separate clock per session; exits 0 with no output and no state change when `WHEELCHAIR_LANE=1` or when its input carries
 `agent_id`; overwrites a malformed session file and reports no gap; rewrites rather than
-duplicates its group when only its arguments change; its four-hour constant equals the number
-stated in `protocol/seen.md`. `grep` confirms every
+duplicates its group when only its arguments change; its four-hour constant equals the
+`gap-threshold:` line in `protocol/seen.md`. `grep` confirms every
 lane invocation in `protocol/lanes.md` carries `WHEELCHAIR_LANE=1`. `seen/wording.sh` also: `confirm` and `strike` each move exactly the named `## Proposed` row and
 refuse a phrase not there; `suggest` refuses a phrase present in any section; `remove` moves a
 confirmed row to `## Struck`; a phrase differing only in case names the same row. The
@@ -431,6 +437,15 @@ re-raise them.
 
 ## Review Rounds
 
+### Round 9 — 2026-09-24
+
+**Lanes:** GPT / gpt-5.6-sol (mechanics); Claude / default reviewer model (intent); cross-family: yes.
+
+**Changed since Round 8:** closing only on exit statuses; the gap turn's re-grounding adding only
+purpose and standing, applying to any stage's resumed run, and the planning resume summary's
+limit on settled decisions; "nothing further in `SEEN.md`"; the `gap-threshold: 4h` line (all
+D55). Third round since D53, the last before escalation.
+
 ### Round 8 — 2026-09-24
 
 **Lanes:** GPT / gpt-5.6-sol (mechanics); Claude / default reviewer model (intent); cross-family: yes.
@@ -438,6 +453,17 @@ re-raise them.
 **Changed since Round 7:** the end-of-turn write order, the empty-record clock, the resume
 summary as the re-grounding, and the threshold's single statement (D54); the Failing open
 exception for the session clock; the free-chat accepted risk. Second round since D53.
+
+Seven findings. Not clean: one blocking, raised by both lanes, fixed by D55.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| both | blocking/minor | `/implement` sets `implementing` at its start and can stop on a dead lane; closing on any status change hides accepted results from the resumed run | `upheld` (blocking) | Checked `protocol/implementation.md:51,78`. D55 closes only on exit statuses |
+| claude | minor | "The resume summary is the re-grounding" contradicts "never a recital of your own decisions" | `upheld` | D55 |
+| claude | minor | "Resume" is defined only for planning | `upheld` | D55: re-grounding applies to any stage's resumed run |
+| claude | minor | Entry grounding and re-grounding overlap on a gap turn | `upheld` | D55 |
+| claude | minor | "Nothing written after the `turn` line" reads as every file | `upheld` | Scoped to `SEEN.md` |
+| claude | minor | The threshold has no parseable form for the suite to match | `upheld` | `gap-threshold: 4h` |
 
 ### Round 7 — 2026-09-24
 
@@ -666,6 +692,7 @@ Filled by Stage 3. One row per worker brief.
 
 ## Log
 
+- 2026-09-24 — Round 8 triaged: D55. Round 9 next, the last before the cap.
 - 2026-09-24 — Round 7 triaged: D54. Round 8 next.
 - 2026-09-24 — Escalation settled as D53 (simplified after-gap re-grounding). Round 7 next.
 - 2026-09-24 — Round 6 triaged: D50–D52. Cap reached with the gap rule recurring; brought to
