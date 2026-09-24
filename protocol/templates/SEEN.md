@@ -6,8 +6,8 @@ edited or deleted. Copying this template creates no events — the body below st
 until a stage appends its first line. What an appended line looks like, for illustration
 only (none of this is real history):
 
-2026-09-24T09:40Z turn
-2026-09-24T10:02Z new 7c1e round 2 found the spec never said what happens when the settings file is malformed
-2026-09-24T10:05Z shown 7c1e
-2026-09-24T10:05Z turn
+    2026-09-24T09:40Z turn
+    2026-09-24T10:02Z new 7c1e round 2 found the spec never said what happens when the settings file is malformed
+    2026-09-24T10:05Z shown 7c1e
+    2026-09-24T10:05Z turn
 -->
