@@ -24,6 +24,9 @@ verified-by:
   - round: 5
     lane: gpt-5.6-sol
     checks: sonnet
+  - round: 6
+    lane: gpt-5.6-sol
+    checks: sonnet
 ---
 
 # Completion Report — Knowing what you have actually seen
@@ -286,3 +289,15 @@ GAP: Context truncation — `protocol/seen.md:154-157` promises confirmed entrie
   intended one (an empty `WHEELCHAIR_LANE` is not a marker; a missing `confirmed.last` is seeded
   silently per D43; a header longer than the cap is a degenerate path). `protocol/seen.md` now
   says exactly that. Fixed by the lead.
+
+### Remediation 6 — 2026-09-24
+
+Verification round 6 (`gpt-5.6-sol`): all round-5 gaps resolved, both test modes green; one
+prose omission —
+
+```
+GAP: Codex `writable_roots` installer prose — `protocol/seen.md:197-198` says that when the table exists, `seen/set.sh` adds to an existing `writable_roots` line; the script also creates that line when the table exists without it — reproduced with `[sandbox_workspace_write]` containing only `network_access`; `seen/set.sh:209-216` inserted a new `writable_roots` line successfully.
+```
+
+The code matches the Spec (which names all three cases); `protocol/seen.md` now names the
+middle case too. Fixed by the lead.

@@ -195,8 +195,9 @@ live check this document already records (D38, D43). On Claude Code, `seen/set.s
 `Bash(<root>/seen/wording.sh:*)` to `permissions.allow` and the wording directory to
 `sandbox.filesystem.allowWrite`. On Codex, it adds the wording directory to
 `writable_roots` under `[sandbox_workspace_write]` in `~/.codex/config.toml` — adding the
-table if absent, otherwise adding to the one existing `writable_roots` line — and touches
-no other byte of the file (D38, D42). Where this document says `~/.wheelchair`, the script
+table if absent, inserting a `writable_roots` line right under the table's header if the
+table has none, or else adding to the one existing `writable_roots` line — and touches no
+other byte of the file (D38, D42). Where this document says `~/.wheelchair`, the script
 itself writes that path's resolved, absolute form (for example `/home/collin/.wheelchair`),
 never the literal `~/.wheelchair` string, since neither the JSON nor the TOML it edits
 expands a tilde. The directory itself is created only once every check below has passed,
