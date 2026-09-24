@@ -169,3 +169,40 @@ beside four moshi groups; `~/.codex/config.toml` gained two lines; `~/.wheelchai
   applied to them.
 
 ## Remediation rounds
+
+### Remediation 1 — 2026-09-24
+
+Verification round 1 failed on seven gaps (`REMEDIATION-1.md`). Fixed:
+
+- **Python ran with the working directory on its import path** (the security gap). All three
+  scripts now run `python3 -I -` (`seen/hook.sh:7`, `seen/wording.sh:2`, `seen/set.sh:26`), and
+  the hook's imports sit inside its fail-open wrapper. The verifier's exploit — a `json.py` that
+  writes a marker and a `re.py` that raises, planted in the working directory — was re-run by the
+  lead: no marker, exit 0, normal output, for both the hook and `wording.sh`. New tests plant the
+  same files (`seen/test/hook_test.sh`, `seen/test/wording_test.sh`).
+- **A partly malformed wording file** now counts as empty unless its three headers appear once
+  each, in order — the rule `wording.sh` already applied.
+- **Hook tests inherited `WHEELCHAIR_LANE`** from a marked lane; every fixture now runs with it
+  unset, and the suite passes both ways.
+- **Installer contract** is now stated in `protocol/seen.md` "The installer's reach" rather than
+  delegated; `seen/AGENTS.md` points there and states the `-I` isolation.
+- **SEEN template** body is empty; the illustration sits indented inside the comment.
+- **Wording question vs one-question rule**: `protocol/seen.md` states the yes/no line is an
+  aside under that rule, always last.
+- **README** no longer says the hook carries the plan record; names the `seen/set.sh` step; lists
+  `seen/` among routers.
+- Adopted minors: a corrupt `confirmed.last` self-heals instead of disabling notices; an
+  instead-only edit is announced as `changed "<phrase>"`; `set.sh` without `tomllib` exits 1 with
+  a one-line message naming Python 3.11.
+
+Validation after remediation:
+
+```
+$ bash seen/test/run.sh → exit 0; hook 20 passed, wording 12 passed, set 18 passed, cross-file all PASS
+$ WHEELCHAIR_LANE=1 bash seen/test/run.sh → exit 0
+$ bash spine/test/run.sh → RESULT 80 passed, 0 failed
+$ bash sensitivity/test/run.sh → RESULT 62 passed, 0 failed
+$ bash install/test/run.sh → RESULT 70 passed, 0 failed
+$ node --test viewer/test/*.test.js → # pass 125 # fail 0
+$ ./install.sh (on the real homes, after the change) → exit 0; git status --porcelain empty
+```
