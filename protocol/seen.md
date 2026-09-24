@@ -118,7 +118,10 @@ by temp-file-and-rename (D35, D39).
 asks what a word means, asks for something simpler — the stage runs `suggest` and, only if
 the script accepted it, ends that turn with **one short line**, always last, never more than
 one sentence, for example: `Add "hidden work" to your wording list (explain it before
-leaning on it)? yes/no`. The reader's next reply runs `confirm` or `strike`. No answer
+leaning on it)? yes/no`. This line is not a question under `protocol/planning.md`'s
+one-question rule (Step 4) — it is a one-line aside, and it always comes after the turn's
+single question during planning, or after the turn's content in every other stage, as its
+very last line. The reader's next reply runs `confirm` or `strike`. No answer
 leaves the entry in `## Proposed`, and it is never asked about again. At most one such line
 per turn. Ordinary chat outside a stage makes no suggestions — it only carries the
 confirmed list, via the hook. Removing a confirmed entry is a plain request in any
@@ -163,11 +166,40 @@ every run so an approval survives a reinstall (D36).
 
 ## The installer's reach
 
-`install.sh` calls `seen/set.sh`, which writes each present harness's hook entry and grants
-the wording script write access to `~/.wheelchair/`, following the same own-entries-only,
-refuse-rather-than-repair contract `sensitivity/set.sh` already uses for the dial (D26, D36,
-D38, D42, D43). `seen/AGENTS.md` is the router for exactly which files it touches and what
-it refuses on.
+`install.sh` calls `seen/set.sh` before `sensitivity/set.sh`, so this reach happens first
+and the dial's own warn-not-fail step still runs last. For each harness found on `PATH`
+(the presence rule `protocol/lanes.md` uses):
+
+- **Claude Code** — `~/.claude/settings.json` gets one `UserPromptSubmit` group whose
+  single handler is `{"type": "command", "command": "<root>/seen/hook.sh claude notice",
+  "timeout": 2}`.
+- **Codex** — `~/.codex/hooks.json` gets the same shape of group, with `codex notice` in
+  place of `claude notice`.
+
+Its own group is recognised by the script path its command starts with, arguments ignored
+(D14, D52); a rerun rewrites that one group in place rather than adding another, and every
+other hook, group and key in the file is left exactly where it is (D26).
+
+Grants happen only on a harness recorded above as displaying the notice — both, per the
+live check this document already records (D38, D43). On Claude Code, `seen/set.sh` adds
+`Bash(<root>/seen/wording.sh:*)` to `permissions.allow` and the wording directory to
+`sandbox.filesystem.allowWrite`. On Codex, it adds the wording directory to
+`writable_roots` under `[sandbox_workspace_write]` in `~/.codex/config.toml` — adding the
+table if absent, otherwise adding to the one existing `writable_roots` line — and touches
+no other byte of the file (D38, D42). Where this document says `~/.wheelchair`, the script
+itself writes that path's resolved, absolute form (for example `/home/collin/.wheelchair`),
+never the literal `~/.wheelchair` string, since neither the JSON nor the TOML it edits
+expands a tilde. The directory itself is created only once every check below has passed,
+never before — Codex's sandbox drops a writable root that doesn't exist yet.
+
+It refuses — exit 1, nothing written, no directory created — on invalid JSON, a JSON root
+that is not an object, a wrongly shaped `hooks`, event list, group, `permissions`, `allow`,
+`sandbox`, `filesystem`, or `allowWrite`, TOML that does not parse, or a `writable_roots`
+that is not a one-line array; it needs Python 3.11 or newer. When it creates or changes the
+Codex hook entry it prints `run /hooks in Codex once to approve the wheelchair hook` (D36);
+a rerun with nothing left to change writes byte-identical output and prints nothing.
+`install.sh` warns rather than failing the install if it refuses, the same contract
+`sensitivity/set.sh`'s own writer already uses for the dial.
 
 ## Test seams
 
