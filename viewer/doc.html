@@ -1,0 +1,86 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>plan documents</title>
+<style>
+  :root {
+    --bg: #14161a; --panel: #1c1f25; --panel-2: #23262d; --line: #2a2f38;
+    --ink: #e6e8ec; --dim: #8b929e;
+    --proposed: #6b7280; --agreed: #4ea87b; --rejected: #c4645f; --accent: #5b9dd9;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--ink);
+    font: 13px/1.55 ui-sans-serif, system-ui, -apple-system, sans-serif;
+    overflow-x: hidden; }
+  [hidden] { display: none !important; }
+
+  header#topbar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center;
+    gap: 12px; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  header#topbar a.back { color: var(--dim); text-decoration: none; font-size: 12px; flex-shrink: 0; }
+  header#topbar a.back:hover { color: var(--ink); }
+  header#topbar h1 { margin: 0; font-size: 14px; font-weight: 600; flex: 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  #layout { display: flex; align-items: flex-start; max-width: 1100px; margin: 0 auto;
+    padding: 16px; gap: 22px; }
+  @media (max-width: 700px) {
+    #layout { flex-direction: column; }
+    nav#files { position: static; flex: none; width: 100%; }
+  }
+
+  nav#files { flex: 0 0 200px; min-width: 0; position: sticky; top: 54px; }
+  nav#files ul { list-style: none; margin: 0; padding: 0; }
+  nav#files li { margin-bottom: 2px; }
+  nav#files a { display: block; padding: 5px 8px; border-radius: 4px; color: var(--dim);
+    text-decoration: none; font-size: 12.5px; overflow-wrap: anywhere; }
+  nav#files a:hover { background: var(--panel-2); color: var(--ink); }
+  nav#files a.current { background: var(--panel-2); color: var(--ink); font-weight: 600; }
+
+  main#doc { flex: 1; min-width: 0; width: 100%; }
+
+  #error-banner { margin-bottom: 14px; padding: 8px 12px; border-radius: 6px; font-size: 12px;
+    background: #3a1f1f; border: 1px solid var(--rejected); color: #f2d4d1; }
+
+  #frontmatter { background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+    padding: 10px 14px; margin-bottom: 18px; font-size: 12px; }
+  #frontmatter .row { display: flex; gap: 8px; padding: 2px 0; overflow-wrap: anywhere; }
+  #frontmatter .key { color: var(--dim); min-width: 90px; flex-shrink: 0; }
+
+  #content { overflow-wrap: anywhere; }
+  #content h1, #content h2, #content h3, #content h4, #content h5, #content h6 {
+    margin: 1.2em 0 .5em; line-height: 1.3; }
+  #content h1:first-child, #content h2:first-child { margin-top: 0; }
+  #content p { margin: .6em 0; }
+  #content ul, #content ol { padding-left: 1.4em; margin: .5em 0; }
+  #content li { margin: .25em 0; }
+  #content li > ul, #content li > ol { margin: .25em 0; }
+  #content code { background: var(--panel-2); border-radius: 3px; padding: 1px 4px;
+    font-size: .92em; overflow-wrap: anywhere; }
+  #content pre { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+    padding: 10px 12px; overflow-x: auto; }
+  #content pre code { background: none; padding: 0; }
+  #content a { color: var(--accent); }
+  #content .table-wrap { overflow-x: auto; margin: .8em 0; border: 1px solid var(--line);
+    border-radius: 6px; }
+  #content table { border-collapse: collapse; font-size: 12.5px; width: max-content; }
+  #content th, #content td { border-top: 1px solid var(--line); border-left: 1px solid var(--line);
+    padding: 6px 10px; text-align: left; white-space: nowrap; }
+  #content th:first-child, #content td:first-child { border-left: none; }
+  #content thead th { background: var(--panel-2); border-top: none; }
+
+  #empty-doc { color: var(--dim); }
+</style>
+
+<header id="topbar">
+  <a class="back" id="back-link" href="#">&larr; list</a>
+  <h1 id="doc-title">plan documents</h1>
+</header>
+<div id="layout">
+  <nav id="files"><ul id="file-list"></ul></nav>
+  <main id="doc">
+    <div id="error-banner" hidden></div>
+    <div id="frontmatter" hidden></div>
+    <div id="content"></div>
+  </main>
+</div>
+<script src="/wheelchair/assets/doc.js"></script>

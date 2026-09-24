@@ -1024,7 +1024,9 @@ test('a page write through the browser carries an Origin the server accepts', as
     // from allHeaders() (the real network request Chromium sent), which is exactly the fact this
     // test exists to pin down: the page cannot set Origin itself.
     const sentHeaders = await accepted.request().allHeaders();
-    assert.equal(sentHeaders.origin, ctx.url, 'Chromium attached the same-origin Origin header');
+    // ctx.url carries the /wheelchair path (helpers/server.js); an Origin has no path, so the
+    // real wire value to compare against is the origin alone.
+    assert.equal(sentHeaders.origin, new URL(ctx.url).origin, 'Chromium attached the same-origin Origin header');
     collector.stop();
 
     const onDisk = await diskGraph(ctx);

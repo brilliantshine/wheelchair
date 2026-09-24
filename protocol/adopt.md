@@ -22,6 +22,20 @@ collision the user has to resolve.
 **3. Copy the source in.** Never move or modify the original; record its path in PLAN.md
 frontmatter as `adopted-from:`.
 
+**Register the plan directory with the viewer right after creating it** — this is the
+first step that does, so it belongs here rather than at the top. You are reading this
+document at `<root>/protocol/adopt.md`, so `WHEELCHAIR` is that path with
+`/protocol/adopt.md` dropped, the same rule `graphs.md` uses:
+
+```bash
+node "$WHEELCHAIR/viewer/server.js" --register-plan <repo>/docs/plans/<slug>
+```
+
+It returns at once, never starts a server, and never fails the stage: it registers
+through a running viewer if one answers, and otherwise does nothing. On any error it
+prints one warning line — pass it on to Collin in your turn, including "a viewer from an
+older version is running; run ./install.sh", and carry on.
+
 **4. Synthesize `IDEA.md`** from `templates/IDEA.md`. External docs are written as design,
 not intent, so most of this is inference: pull out what is being built, why, what good
 looks like, and the non-goals. **Mark every inferred line** — the user is confirming your

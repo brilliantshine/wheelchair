@@ -1,0 +1,124 @@
+'use strict';
+
+// Deliberately tiny fault seams for lifecycle races.  They are selected only by tests through
+// GRAPH_TEST_HOOK, so production's listener and filesystem calls stay untouched.
+const fs = require('node:fs/promises');
+const fssync = require('node:fs');
+const net = require('node:net');
+const http = require('node:http');
+const { EventEmitter } = require('node:events');
+const path = require('node:path');
+
+const mode = process.env.GRAPH_TEST_HOOK;
+if (mode === 'delay-listen-callback') {
+  const listen = net.Server.prototype.listen;
+  net.Server.prototype.listen = function(...args) {
+    const callback = args.at(-1);
+    if (typeof callback !== 'function') return listen.apply(this, args);
+    args[args.length - 1] = function(...callbackArgs) { setTimeout(() => callback.apply(this, callbackArgs), 180); };
+    return listen.apply(this, args);
+  };
+}
+if (mode === 'fail-server-rename') {
+  const rename = fs.rename;
+  fs.rename = async function(from, to) {
+    if (path.basename(to) === '.server') throw new Error('injected .server rename failure');
+    return rename.call(this, from, to);
+  };
+}
+if (mode === 'ignore-sigterm') {
+  // Removing the server's listener alone would restore SIGTERM's default action and kill the
+  // process at once; the no-op listener is what makes the signal ignored.
+  const ignore = () => {};
+  const timer = setInterval(() => {
+    for (const listener of process.listeners('SIGTERM')) {
+      if (listener !== ignore) process.removeListener('SIGTERM', listener);
+    }
+    if (!process.listeners('SIGTERM').includes(ignore)) process.on('SIGTERM', ignore);
+  }, 10);
+  timer.unref();
+}
+if (mode === 'hang-on-sigterm') {
+  const createServer = http.createServer;
+  const servers = new Set();
+  const release = process.env.GRAPH_TEST_RELEASE;
+  if (!release) throw new Error('hang-on-sigterm needs GRAPH_TEST_RELEASE');
+  http.createServer = function(...args) {
+    const server = createServer.apply(this, args);
+    servers.add(server);
+    return server;
+  };
+  let shuttingDown = false;
+  const hang = () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    // HTTP continues accepting connections, but no request receives a response while the old
+    // listener holds the port. That is the silent holder a competing starter must wait out.
+    for (const server of servers) server.removeAllListeners('request');
+    const waitForRelease = setInterval(() => {
+      if (fssync.existsSync(release)) return;
+      clearInterval(waitForRelease);
+      process.exit(0);
+    }, 10);
+    waitForRelease.unref();
+  };
+  // Replace the server's handler after server.js installs it, just as ignore-sigterm does.
+  // Once the server's own SIGTERM listener has been swapped for `hang`, write `<release>.armed`
+  // so the test signals A only after the hang is really in place, not after a guessed delay.
+  let armed = false;
+  const timer = setInterval(() => {
+    for (const listener of process.listeners('SIGTERM')) {
+      if (listener !== hang) { process.removeListener('SIGTERM', listener); if (!armed) armed = 'pending'; }
+    }
+    if (!process.listeners('SIGTERM').includes(hang)) process.on('SIGTERM', hang);
+    if (armed === 'pending') { armed = true; fssync.writeFileSync(`${release}.armed`, 'armed'); }
+  }, 10);
+  timer.unref();
+}
+if (mode === 'delay-listen-retry') {
+  const listen = net.Server.prototype.listen;
+  let attempts = 0;
+  net.Server.prototype.listen = function(...args) {
+    attempts += 1;
+    if (process.env.GRAPH_TEST_MARKER) fssync.appendFileSync(process.env.GRAPH_TEST_MARKER, attempts === 1 ? 'first\n' : 'delayed\n');
+    if (attempts === 1) return listen.apply(this, args);
+    setTimeout(() => listen.apply(this, args), 1500);
+    return this;
+  };
+}
+if (mode === 'pause-before-register') {
+  const request = http.request;
+  http.request = function(options, ...args) {
+    if (options.path === '/wheelchair/register' && process.env.GRAPH_TEST_MARKER) {
+      const outgoing = new EventEmitter();
+      fssync.writeFileSync(process.env.GRAPH_TEST_MARKER, 'ready');
+      outgoing.end = function(...endArgs) {
+        const timer = setInterval(() => {
+          if (fssync.existsSync(process.env.GRAPH_TEST_MARKER)) return;
+          clearInterval(timer);
+          const actual = request.call(this, options, ...args);
+          actual.on('error', (error) => outgoing.emit('error', error));
+          actual.on('timeout', () => outgoing.emit('timeout'));
+          actual.end(...endArgs);
+        }, 10);
+        return outgoing;
+      };
+      outgoing.destroy = (error) => { if (error) outgoing.emit('error', error); };
+      return outgoing;
+    }
+    return request.call(this, options, ...args);
+  };
+}
+if (mode === 'delay-relisten-after-stop') {
+  globalThis.__wheelchairAfterServiceStop = async () => {
+    const marker = process.env.GRAPH_TEST_MARKER;
+    if (!marker) throw new Error('delay-relisten-after-stop needs GRAPH_TEST_MARKER');
+    fssync.writeFileSync(marker, 'paused');
+    await new Promise((resolve) => {
+      const timer = setInterval(() => {
+        if (fssync.existsSync(marker)) return;
+        clearInterval(timer); resolve();
+      }, 10);
+    });
+  };
+}

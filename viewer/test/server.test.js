@@ -989,7 +989,7 @@ test('two starts at the same instant leave one server, and the loser reuses it r
   }
 });
 
-test('discovery reuses matching locks, reclaims dead locks, and rejects foreign live locks', async () => {
+test('listen-first startup reuses the port holder and ignores stale .server information', async () => {
   const first = await startFixture('canonical.json');
   try {
     const second = await startServer({ cacheRoot: first.root, open: first.graphPath, port: first.port });
@@ -1000,47 +1000,26 @@ test('discovery reuses matching locks, reclaims dead locks, and rejects foreign 
     await replacement.stop();
   } finally { await first.stop(); }
   const root = await makeDir(); await fs.mkdir(path.join(root, 'graphs'), { recursive: true });
-  const sleeper = spawn('sleep', ['10']); const foreignPort = await freePort();
-  await fs.writeFile(path.join(root, '.server'), JSON.stringify({ pid: sleeper.pid, port: foreignPort, token: '0'.repeat(64), start_id: '1'.repeat(32) }));
-  const candidate = spawn(process.execPath, ['viewer/server.js', '--port', String(await freePort()), '--cache-root', root], { cwd: path.resolve(__dirname, '../..') });
-  const code = await new Promise((resolve) => candidate.once('exit', resolve)); sleeper.kill('SIGKILL');
-  assert.notEqual(code, 0);
+  const stalePort = await freePort();
+  await fs.writeFile(path.join(root, '.server'), JSON.stringify({ pid: 1, port: stalePort, token: '0'.repeat(64), start_id: '1'.repeat(32) }));
+  const candidate = await startServer({ cacheRoot: root, open: path.join(root, 'graphs', 'fresh.json'), port: stalePort });
+  try {
+    const record = JSON.parse(await fs.readFile(path.join(root, '.server'), 'utf8'));
+    assert.equal(record.pid, candidate.child.pid);
+    assert.equal(record.port, stalePort);
+  } finally { await candidate.stop(); }
 });
 
-test('a second starter sees a complete lock or no lock during an atomic claim', async () => {
+test('the token is published atomically while independent ports can start', async () => {
   const root = await makeDir(); const graphDir = path.join(root, 'graphs'); await fs.mkdir(graphDir, { recursive: true });
-  const graphPath = await stage({ graphDir }, 'canonical.json'); const marker = path.join(root, 'lock-claim-window');
-  const hookPath = await writeFaultHook(root); const firstPort = await freePort(); const secondPort = await freePort();
-  const first = spawnHookedServer({ root, graphPath, port: firstPort, hookPath, marker, mode: 'lock-claim-window' });
-  let second;
+  const graphPath = await stage({ graphDir }, 'canonical.json');
+  const one = await startServer({ cacheRoot: root, open: graphPath, port: await freePort() });
+  const two = await startServer({ cacheRoot: root, open: graphPath, port: await freePort() });
   try {
-    await waitForFile(marker);
-    let observation;
-    try {
-      const lock = JSON.parse(await fs.readFile(path.join(root, '.server'), 'utf8'));
-      observation = { kind: 'complete', lock };
-    } catch (error) { observation = { kind: error.code === 'ENOENT' ? 'absent' : 'corrupt' }; }
-    assert.ok(observation.kind === 'absent' || observation.kind === 'complete',
-      `the claim window exposed ${observation.kind}, not a usable lock or no lock`);
-    if (observation.kind === 'complete') {
-      assert.match(observation.lock.token, /^[0-9a-f]{64}$/);
-      assert.match(observation.lock.start_id, /^[0-9a-f]{32}$/);
-    }
-    second = await startServer({ cacheRoot: root, open: graphPath, port: secondPort });
-    const firstUrl = waitForServerUrl(first);
-    await fs.writeFile(`${marker}.release`, 'continue');
-    const lock = JSON.parse(await fs.readFile(path.join(root, '.server'), 'utf8'));
-    assert.equal(lock.pid, second.child.pid);
-    assert.equal(lock.port, secondPort);
-    assert.match(lock.token, /^[0-9a-f]{64}$/);
-    assert.match(lock.start_id, /^[0-9a-f]{32}$/);
-    assert.match(await firstUrl, new RegExp(`^http://127\\.0\\.0\\.1:${secondPort}/\\?`));
-  } finally {
-    if (second) await second.stop();
-    if (first.exitCode === null) first.kill('SIGKILL');
-    await waitForExit(first);
-    await fs.unlink(path.join(root, '.server')).catch(() => {});
-  }
+    const token = await fs.readFile(path.join(root, '.token'), 'utf8');
+    assert.match(token, /^[0-9a-f]{64}\n$/);
+    assert.equal(one.token, two.token);
+  } finally { await one.stop(); await two.stop(); }
 });
 
 test('GET change detection exposes agent hashes and preserves the page write hash', async () => {
@@ -1068,9 +1047,9 @@ test('a kill before rename leaves the committed graph as either whole version, n
     const hookPath = await writeFaultHook(root); const port = await freePort();
     const child = spawnHookedServer({ root, graphPath, port, hookPath, marker, mode: 'before-rename' });
     try {
-      const parsed = new URL(await waitForServerUrl(child));
-      const ctx = { root, graphDir, graphPath, port, child, url: `http://127.0.0.1:${port}`,
-        token: parsed.searchParams.get('token') };
+      await waitForServerUrl(child);
+      const ctx = { root, graphDir, graphPath, port, child, url: `http://127.0.0.1:${port}/wheelchair`,
+        token: (await fs.readFile(path.join(root, '.token'), 'utf8')).trim() };
       const state = await getGraph(ctx); const graph = copy(state.graph); entry(graph, 'gather').note = 'atomic candidate';
       const write = graphPut(ctx, graph, state.hash).catch((error) => error);
       await waitForFile(marker);
@@ -1102,9 +1081,10 @@ test('a kill before rename leaves the committed graph as either whole version, n
 test('registered paths are pruned by age at startup', async () => {
   const root = await makeDir(); const graphDir = path.join(root, 'graphs'); await fs.mkdir(graphDir, { recursive: true });
   const old = await stage({ graphDir }, 'canonical.json', 'old.json'); const recent = await stage({ graphDir }, 'canonical.json', 'recent.json'); const opened = await stage({ graphDir }, 'canonical.json', 'opened.json');
+  const stale = new Date(Date.now() - 31 * 86400000); await fs.utimes(old, stale, stale);
   await fs.writeFile(path.join(root, '.registered'), JSON.stringify({ [old]: { added: Date.now() - 31 * 86400000, opened: false }, [recent]: { added: Date.now(), opened: false } }));
   const ctx = await startServer({ cacheRoot: root, open: opened });
-  try { const entries = JSON.parse(await fs.readFile(path.join(root, '.registered'))); assert.ok(!entries[old]); assert.ok(entries[recent]); } finally { await ctx.stop(); }
+  try { const entries = JSON.parse(await fs.readFile(path.join(root, '.registered'))); assert.equal(entries[old], undefined); assert.ok(entries[recent]); } finally { await ctx.stop(); }
 });
 
 test('agent reset records are durable and page verdicts clear them only while changing origin', async () => {

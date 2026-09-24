@@ -462,24 +462,40 @@ either way. It is also what makes that path **writable**: a `PUT` to a path no `
 has named is refused with `not-registered`, and the only files that get in without one of
 their own are child graphs, reached through a `graph` field on a node in an
 already-opened file beside them. So this step is not optional once you already hold a
-token — going straight to the `PUT` with a port and token read out of the lockfile is
+token — going straight to the `PUT` with a port and token read out of `.server` is
 exactly the shortcut that earns that refusal.
 
-The line it prints carries the port and the token:
+`--open` can also fail outright. A path outside a plan's `graphs/` directory or the cache
+root refuses with `bad-path` before anything is contacted — the paths named under "Where
+graph files live" below never produce this. If a viewer is already running and refuses
+the registration, `--open` exits 1 with its error. And if the viewer already running is
+older code, `--open` refuses instead with `a viewer from an older version is running; run
+./install.sh` — if you see that, tell Collin and stop drawing; never run `./install.sh`
+yourself, since it writes into harness homes and files outside this repo. None of this
+needs an extra step on your part: whichever process ends up as the server also records
+the tmux session and harness `--open` ran in, on its own.
+
+The line it prints carries no token:
 
 ```
-http://127.0.0.1:7373/?path=%2Fhome%2Fcollin%2F...%2Fcheckout.json&token=9f3a...
+http://127.0.0.1:7373/wheelchair/?path=%2Fhome%2Fcollin%2F...%2Fcheckout.json
 ```
 
-Print that URL to Collin. You still need the token and port again for the `PUT` below;
-either parse them back out of that URL, or read them from the lockfile directly:
+On a machine set up to serve other devices, the line it prints instead looks like
+`https://hearth.taileb4e52.ts.net/wheelchair/?path=...`, with no port in it at all. Either
+way, print that URL to Collin.
+
+You still need the token and port again for the `PUT` below. Always read them from
+`<cache-root>/.server`, never by parsing them back out of the printed URL — neither form
+carries the token, and the served form above carries no port to parse:
 
 ```bash
 node -e "const c = JSON.parse(require('fs').readFileSync(process.env.HOME + '/.cache/agent-graphs/.server')); console.log(c.token, c.port)"
 ```
 
 That file (`<cache-root>/.server`) is JSON with four keys: `pid`, `port`, `token`,
-`start_id`. Only `token` and `port` matter here.
+`start_id`. It records what the current server is running as, not a claim staking who
+gets to become one. Only `token` and `port` matter here.
 
 **2. `PUT` the graph.** `hash` is mandatory on every write. Send `""` when you believe
 the file doesn't exist yet — the server accepts an empty hash only when the file is
@@ -491,7 +507,7 @@ TOKEN=9f3a...   # from step 1
 GRAPH_PATH="$PWD/docs/plans/some-plan/graphs/checkout.json"   # the plan lives in the repo you are working in
 PATH_ENC=$(node -e "console.log(encodeURIComponent(process.argv[1]))" "$GRAPH_PATH")
 
-curl -sS -X PUT "http://127.0.0.1:${PORT}/graph?path=${PATH_ENC}" \
+curl -sS -X PUT "http://127.0.0.1:${PORT}/wheelchair/graph?path=${PATH_ENC}" \
   -H "X-Graph-Token: ${TOKEN}" \
   -H "Origin: http://127.0.0.1:${PORT}" \
   -H "Content-Type: application/json" \
@@ -564,7 +580,7 @@ requested file's name. `PUT` straight to `<the parent's directory>/<name>.json`,
 ## Reading a graph back
 
 ```bash
-curl -sS "http://127.0.0.1:${PORT}/graph?path=${PATH_ENC}&token=${TOKEN}"
+curl -sS "http://127.0.0.1:${PORT}/wheelchair/graph?path=${PATH_ENC}&token=${TOKEN}"
 ```
 
 returns `{"hash": "...", "graph": {...}, "children": {"timeline": true}}`. `children`
@@ -665,8 +681,15 @@ accepted; a write that would close a loop is not, regardless of depth.
 ## What the server refuses
 
 Every non-2xx response is `{"error": "<code>", "detail": "<one sentence>"}`, plus `ids`
-when the refusal names particular entries. These are the codes a `PUT /graph` can
-actually hit, in the rough order the server checks them:
+when the refusal names particular entries. One response sits outside that shape: a
+request to any path outside `/wheelchair` — including an old, unprefixed `/graph` —
+answers `308` with `Location` set to `/wheelchair` plus the original path and query, and a
+body `{"error": "moved", "detail": "The viewer moved under /wheelchair.", "location": "<that
+same location>"}`. `location` is the one field this response adds beyond `detail`, there so
+a client that lands here anyway is told where to go rather than redirected silently.
+
+These are the codes a `PUT /graph` can actually hit, in the rough order the server checks
+them:
 
 | Status | Code | When |
 |---|---|---|
