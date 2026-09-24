@@ -216,3 +216,40 @@ $ bash install/test/run.sh      -> RESULT 41 passed, 0 failed
 $ bash sensitivity/test/run.sh  -> RESULT 62 passed, 0 failed
 $ bash spine/test/run.sh        -> RESULT 80 passed, 0 failed
 ```
+
+### Remediation 2 — 2026-09-23
+
+Round 2 gate (closure review of remediation 1): gpt-5.6-sol, checking the Claude-built work,
+returned PASS. The Claude default reviewer, checking the GPT-built work, returned FAIL on one
+gap: the test for "a starter that loses the freed port to another starter after a stop
+registers through it" did not force that race (verbatim in `REMEDIATION-2.md`).
+
+What changed: the gap went to a fresh gpt-5.6-terra lane at `xhigh` (thread
+`01a0d0d2-bbd1-7542-8cb8-6e6de29ca5e3`). Its first version relied on a fixed 800 ms window
+and failed under full-suite load. The lead diagnosed the timing dependence and resumed the
+lane with a release-file design. The test now:
+
+1. holds old viewer A silent after `SIGTERM` until a release file is removed
+   (`hang-on-sigterm`);
+2. waits until the command C has made its first listen attempt and is retrying `/whoami`
+   against the silent A;
+3. releases A, so C sees the holder go away and retries its listen, with the retry delayed
+   by `delay-listen-retry`;
+4. starts a plain server B, which takes the port first;
+5. asserts that C registered through B, that B holds `.server`, and that C recorded the
+   `delayed` retry.
+
+Test-only; `viewer/server.js` unchanged.
+
+Validation, run by the lead:
+
+```text
+$ node --test viewer/test/*.test.js    # three consecutive runs
+# pass 109 # fail 0
+# pass 109 # fail 0
+# pass 109 # fail 0
+
+$ npm --prefix viewer run test:browser
+  192 passed (1.0m)
+```
+
