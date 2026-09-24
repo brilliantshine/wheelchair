@@ -338,11 +338,31 @@ test('--stop leaves .server removal to the exiting server', async () => {
 });
 
 test('a starter that loses the freed port registers through the new holder', async () => {
-  const root = await makeDir(); const port = await freePort(); const old = await startServer({ cacheRoot: root, port }); const graph = path.join(root, 'graphs', 'loser.json');
-  old.child.kill('SIGTERM'); await exit(old.child);
-  const winner = await startServer({ cacheRoot: root, port });
+  const root = await makeDir(); const port = await freePort(); const graph = path.join(root, 'graphs', 'loser.json'); const marker = path.join(root, 'delayed-retries'); const release = path.join(root, 'release-old');
+  await fs.writeFile(release, 'hold');
+  const old = launch(['--cache-root', root, '--port', String(port)], 'hang-on-sigterm', { GRAPH_TEST_RELEASE: release }); let winner; let loser;
   try {
-    const loser = await run(['--cache-root', root, '--port', String(port), '--open', graph]); assert.equal(loser.code, 0, loser.stderr);
+    await old.ready;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    old.child.kill('SIGTERM');
+    loser = launch(['--cache-root', root, '--port', String(port), '--open', graph], 'delay-listen-retry', { GRAPH_TEST_MARKER: marker });
+    const deadline = Date.now() + 5000;
+    let observed = '';
+    while (Date.now() < deadline) {
+      observed = await fs.readFile(marker, 'utf8').catch(() => '');
+      if (observed.includes('first')) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.match(observed, /first/, 'C attempted its first listen while A held the port');
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    await fs.unlink(release);
+    await exit(old.child);
+    winner = await startServer({ cacheRoot: root, port });
+    const code = await exit(loser.child); const output = loser.output();
+    assert.equal(code, 0, output.stderr);
+    assert.doesNotMatch(`${output.stdout}\n${output.stderr}`, /refused/i);
+    assert.match(await fs.readFile(marker, 'utf8'), /delayed/, 'C retried after the silent holder');
+    assert.equal(JSON.parse(await fs.readFile(path.join(root, '.server'))).pid, winner.child.pid);
     assert.equal(JSON.parse(await fs.readFile(path.join(root, '.registered')))[graph].opened, true);
-  } finally { await winner.stop(); }
+  } finally { await fs.unlink(release).catch(() => {}); await stop(loser?.child); await winner?.stop(); await stop(old.child); }
 });

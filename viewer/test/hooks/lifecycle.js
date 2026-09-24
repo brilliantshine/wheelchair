@@ -38,6 +38,50 @@ if (mode === 'ignore-sigterm') {
   }, 10);
   timer.unref();
 }
+if (mode === 'hang-on-sigterm') {
+  const createServer = http.createServer;
+  const servers = new Set();
+  const release = process.env.GRAPH_TEST_RELEASE;
+  if (!release) throw new Error('hang-on-sigterm needs GRAPH_TEST_RELEASE');
+  http.createServer = function(...args) {
+    const server = createServer.apply(this, args);
+    servers.add(server);
+    return server;
+  };
+  let shuttingDown = false;
+  const hang = () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    // HTTP continues accepting connections, but no request receives a response while the old
+    // listener holds the port. That is the silent holder a competing starter must wait out.
+    for (const server of servers) server.removeAllListeners('request');
+    const waitForRelease = setInterval(() => {
+      if (fssync.existsSync(release)) return;
+      clearInterval(waitForRelease);
+      process.exit(0);
+    }, 10);
+    waitForRelease.unref();
+  };
+  // Replace the server's handler after server.js installs it, just as ignore-sigterm does.
+  const timer = setInterval(() => {
+    for (const listener of process.listeners('SIGTERM')) {
+      if (listener !== hang) process.removeListener('SIGTERM', listener);
+    }
+    if (!process.listeners('SIGTERM').includes(hang)) process.on('SIGTERM', hang);
+  }, 10);
+  timer.unref();
+}
+if (mode === 'delay-listen-retry') {
+  const listen = net.Server.prototype.listen;
+  let attempts = 0;
+  net.Server.prototype.listen = function(...args) {
+    attempts += 1;
+    if (process.env.GRAPH_TEST_MARKER) fssync.appendFileSync(process.env.GRAPH_TEST_MARKER, attempts === 1 ? 'first\n' : 'delayed\n');
+    if (attempts === 1) return listen.apply(this, args);
+    setTimeout(() => listen.apply(this, args), 1500);
+    return this;
+  };
+}
 if (mode === 'pause-before-register') {
   const request = http.request;
   http.request = function(options, ...args) {
