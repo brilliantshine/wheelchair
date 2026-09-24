@@ -122,9 +122,13 @@ is_serving() {
     grep -Eq '"origin"[[:space:]]*:[[:space:]]*"[^"[:space:]]+"' "$serving_file"
 }
 
-write_not_serving() {
+write_not_serving() {  # write_not_serving [origin]
   mkdir -p "$cache_root"
-  printf '{"serve": false}\n' > "$serving_file"
+  if [[ -n ${1:-} ]]; then
+    printf '{"serve": false, "origin": "%s"}\n' "$1" > "$serving_file"
+  else
+    printf '{"serve": false}\n' > "$serving_file"
+  fi
 }
 
 ask_yes() {  # ask_yes <prompt>; answers yes only for y or yes
@@ -157,16 +161,69 @@ platform_supports_serving() {
   [[ $(uname -s) == Linux && -d /run/systemd/system ]] && command -v systemctl >/dev/null 2>&1
 }
 
-configure_tailscale_serve() {
-  local command_text="sudo tailscale serve --bg $port"
-  if tailscale serve status 2>/dev/null | grep -Fq "$port"; then
-    return
+# Prints the state of the two mappings, one per line: missing, viewer, or other.
+# Tailscale's text status is deliberately not used: its shape is presentation, not an API.
+tailscale_mapping_states() {  # tailscale_mapping_states <origin>
+  local status host states
+  host=${1#https://}
+  host=${host%%/*}
+
+  if ! command -v tailscale >/dev/null 2>&1; then
+    echo 'viewer: tailscale is not installed; Tailscale Serve was not changed' >&2
+    return 1
   fi
+  if ! status=$(tailscale serve status --json); then
+    echo 'viewer: could not read tailscale serve status; Tailscale Serve was not changed' >&2
+    return 1
+  fi
+  if ! states=$(node -e '
+    const [text, host, port] = process.argv.slice(1);
+    const status = JSON.parse(text);
+    if (status === null || typeof status !== "object" || Array.isArray(status)) throw new Error("invalid status");
+    if (status.Web !== undefined && (status.Web === null || typeof status.Web !== "object" || Array.isArray(status.Web))) throw new Error("invalid Web");
+    const handlers = status.Web?.[`${host}:443`]?.Handlers;
+    if (handlers !== undefined && (handlers === null || typeof handlers !== "object" || Array.isArray(handlers))) throw new Error("invalid Handlers");
+    const has = (path) => Object.prototype.hasOwnProperty.call(handlers || {}, path);
+    const pointsAtViewer = (handler) => typeof handler?.Proxy === "string" &&
+      (handler.Proxy === `http://127.0.0.1:${port}` || handler.Proxy.startsWith(`http://127.0.0.1:${port}/`));
+    const prefix = ["/wheelchair", "/wheelchair/"];
+    const prefixState = prefix.some((path) => pointsAtViewer(handlers?.[path])) ? "viewer" :
+      prefix.some(has) ? "other" : "missing";
+    const rootState = !has("/") ? "missing" : pointsAtViewer(handlers["/"]) ? "viewer" : "other";
+    process.stdout.write(`${prefixState}\n${rootState}\n`);
+  ' "$status" "$host" "$port" 2>/dev/null); then
+    echo 'viewer: tailscale serve status returned malformed JSON; Tailscale Serve was not changed' >&2
+    return 1
+  fi
+  printf '%s\n' "$states"
+}
+
+offer_tailscale_serve() {  # offer_tailscale_serve <display command> <tailscale arguments...>
+  local command_text=$1
+  shift
   printf 'viewer: %s\n' "$command_text"
   if has_terminal && ask_yes 'viewer: run that command now?'; then
-    sudo tailscale serve --bg "$port"
+    sudo tailscale "$@"
   else
     printf 'viewer: run later: %s\n' "$command_text"
+  fi
+}
+
+configure_tailscale_serve() {  # configure_tailscale_serve <origin>
+  local states wheelchair_state root_state
+  if ! states=$(tailscale_mapping_states "$1"); then
+    return
+  fi
+  wheelchair_state=${states%%$'\n'*}
+  root_state=${states##*$'\n'}
+
+  if [[ $wheelchair_state == missing ]]; then
+    offer_tailscale_serve \
+      "sudo tailscale serve --bg --set-path /wheelchair http://127.0.0.1:$port/wheelchair" \
+      serve --bg --set-path /wheelchair "http://127.0.0.1:$port/wheelchair"
+  fi
+  if [[ $root_state == missing ]]; then
+    offer_tailscale_serve "sudo tailscale serve --bg $port" serve --bg "$port"
   fi
 }
 
@@ -202,18 +259,42 @@ EOF
     printf 'viewer: run later: sudo loginctl enable-linger %s\n' "$USER" >&2
     echo 'viewer: warning — the viewer service will stop at logout until lingering is enabled' >&2
   fi
-  configure_tailscale_serve
+  configure_tailscale_serve "$origin"
   node "$ROOT/viewer/server.js" --url
 }
 
+recorded_origin() {
+  local origin
+  [[ -f $serving_file ]] || return 1
+  origin=$(sed -n 's/.*"origin"[[:space:]]*:[[:space:]]*"\([^"[:space:]]*\)".*/\1/p' "$serving_file" | head -n 1)
+  [[ -n $origin ]] || return 1
+  printf '%s\n' "$origin"
+}
+
 disable_service() {
+  local origin states wheelchair_state root_state
+  origin=$(recorded_origin || true)
   if platform_supports_serving; then
     systemctl --user disable --now wheelchair-viewer.service || true
     rm -f "$unit_file"
     systemctl --user daemon-reload
   fi
-  write_not_serving
-  echo "viewer: run later: sudo tailscale serve --https=443 off"
+  write_not_serving "$origin"
+  if [[ -z $origin ]]; then
+    echo "viewer: this machine isn't set up to serve the viewer; there is nothing to remove" >&2
+    return
+  fi
+  if ! states=$(tailscale_mapping_states "$origin"); then
+    return
+  fi
+  wheelchair_state=${states%%$'\n'*}
+  root_state=${states##*$'\n'}
+  if [[ $wheelchair_state == viewer ]]; then
+    echo 'viewer: run later: sudo tailscale serve --https=443 --set-path /wheelchair off'
+  fi
+  if [[ $root_state == viewer ]]; then
+    echo 'viewer: run later: sudo tailscale serve --https=443 --set-path / off'
+  fi
 }
 
 case $serve_flag in
