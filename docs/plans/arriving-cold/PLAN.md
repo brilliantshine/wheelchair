@@ -93,6 +93,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D50 | A stage appends its `turn` line as the **last** action before the turn's text, not the first, and both the gap and the working stretch are measured on `turn` lines alone: the gap is now minus the latest `turn` line; the stretch is the entries shown after the earliest `turn` line in the unbroken run counted back from the latest, a break being four hours or more between consecutive `turn` lines | Round 6, both lanes: timing from the start of a turn made a four-hour implementation run look like you were away, and delimiting the stretch on `shown` lines mixed two clocks, so a long worker run could invent a boundary or hide a real one. Only the end of a turn marks when you could next have read | review-round-6 |
 | D51 | The hook also ignores Claude Code subagents: it exits silently when its input carries `agent_id` | Round 6: D47's environment marker covers `codex exec` and `claude -p`, but Claude Code's own lanes are the in-process Agent tool, which never passes through a shell the stage controls | review-round-6 |
 | D52 | A malformed session clock file is overwritten with the current time and reports no gap; D14's match is on the script path alone, ignoring the arguments D49 adds; the hook's gap line reads "this session's last message was …", and `protocol/seen.md` tells a stage to use its plan clock and not that line | Round 6 minors and one major: "treated as empty rather than repaired" would have disabled the clock for good; matching the whole command would duplicate the group when a D49 constant changed; and the stage would otherwise see two disagreeing clocks | review-round-6 |
+| D53 | **Supersedes D32 and the stretch half of D50.** After a gap, the stage is given only the fact — how long since the plan's last turn — and re-grounds from the plan itself, the way the resume summary in `protocol/planning.md` Step 1 already does: what the work is for, where it stands, and what this turn is about to lean on. No set of past entries is computed or replayed. The plan clock (`turn` lines, written last, D50) stays, because it is what detects the gap | Round 6 escalation. The precise re-grounding rule broke in a new way in each of Rounds 4, 5 and 6. Coming back to a plan already begins with a resume summary, so the precise version added little beyond the timing logic that kept failing | user |
 
 ## Spec
 
@@ -190,11 +191,10 @@ plan, whatever happened in other sessions or plans meanwhile. As its last action
 turn's text, after any `shown` lines, it appends a new `turn` line. A stage ignores the hook's
 session gap line (D52).
 
-**After a gap (D32, D50).** On a turn that found a gap, the stage also re-grounds the entries
-from the plan's last working stretch that the turn leans on: the entries shown after the
-earliest `turn` line in the unbroken run of `turn` lines counted back from the latest, where a
-break is four hours or more between two consecutive `turn` lines. It appends nothing for them;
-they were already shown.
+**After a gap (D53).** On a turn that found a gap, the stage re-grounds from the plan itself,
+as the resume summary does: what the work is for, where it stands, and what this turn is about
+to lean on — never a recital of your own decisions. No past entries are replayed and nothing
+is appended for the re-grounding.
 
 No lane, no model call and no firing condition exist for this feature (D20). It never runs on
 a subagent's own turns (D4) — a worker lane does not write the record; the lead that accepts
@@ -412,12 +412,21 @@ re-raise them.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
-| A turn interrupted after its `shown` lines are written loses those entries | A stage has no point after its text is delivered at which it can still write. The loss is the too-quiet direction, which D3 ranks survivable, and the next stage turn after a gap re-grounds the last working stretch anyway (D50) | round-3 |
+| A turn interrupted after its `shown` lines are written loses those entries | A stage has no point after its text is delivered at which it can still write. The loss is the too-quiet direction, which D3 ranks survivable, and a stage turn after a gap re-grounds from the plan anyway (D53) | round-3 |
 | The stage half — writing, grounding, closing — is verified by no suite | It is protocol prose executed by the stage agent. The first real review round after merge is its first observation; the lead reads that plan's `SEEN.md` then | round-3 |
 | On Codex, a project config, profile or `-c` override that sets its own `sandbox_workspace_write.writable_roots` replaces the user-level list, so saving a "yes" there prompts | Codex layers replace arrays rather than merging them (Round 5, citing Codex's config loader). The failure is a prompt, the tedium D38 avoids elsewhere, not a wrong outcome. None of the project tables in `~/.codex/config.toml` sets it today | round-5 |
 | The effect of injected context on prompt caching is unmeasured (W2) | Rationale restated in Round 2, since D20 removed the lane the original one leaned on. The injected text is now the whole cost: at most 2,000 characters (D34), nothing at all when there is no confirmed entry and no gap, and it arrives with the new message rather than inside the earlier conversation a cache would hold. Measuring it needs instrumentation this plan has no other reason to build | planning, round-2 |
 
 ## Review Rounds
+
+### Round 7 — 2026-09-24
+
+**Lanes:** GPT / gpt-5.6-sol (mechanics); Claude / default reviewer model (intent); cross-family: yes.
+
+**Changed since Round 6:** the `turn` line written last and the gap measured on it (D50); the
+hook ignoring Claude Code subagents (D51); the malformed clock, D14's match and the session gap
+line's wording (D52); after a gap, the stage re-grounds from the plan rather than replaying a
+computed stretch (D53). The cap reset after D53.
 
 ### Round 6 — 2026-09-24
 
@@ -624,6 +633,7 @@ Filled by Stage 3. One row per worker brief.
 
 ## Log
 
+- 2026-09-24 — Escalation settled as D53 (simplified after-gap re-grounding). Round 7 next.
 - 2026-09-24 — Round 6 triaged: D50–D52. Cap reached with the gap rule recurring; brought to
   Collin rather than a Round 7.
 - 2026-09-24 — Round 5 triaged: D47–D49 and one accepted risk. Round 6 next, the last before
