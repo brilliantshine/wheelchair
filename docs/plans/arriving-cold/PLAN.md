@@ -770,12 +770,15 @@ Filled by Stage 3. One row per worker brief.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | The hook and the wording script: `seen/hook.sh` (Spec "The hook", D30, D34, D43, D45, D47–D49, D51, D52) and `seen/wording.sh` (D35, D39, D29), with their fixture tests | `seen/hook.sh`, `seen/wording.sh`, `seen/test/hook_test.sh`, `seen/test/wording_test.sh` | GPT / gpt-5.6-terra (worktree `arriving-cold-t1`) | | `bash seen/test/hook_test.sh && bash seen/test/wording_test.sh` | dispatched |
-| T2 | The installer writer: `seen/set.sh` (Spec "The installer", D14, D26, D36, D38, D42, D52) called from `install.sh` before the sensitivity writer, honouring the existing home seams, with fixture tests | `seen/set.sh`, `seen/test/set_test.sh`, `install.sh`, `install/test/run.sh` | GPT / gpt-5.6-terra (worktree `arriving-cold-t2`) | | `bash seen/test/set_test.sh && bash install/test/run.sh` | dispatched |
-| T3 | The prose: `protocol/seen.md` (canonical rules, `gap-threshold: 4h`), `protocol/templates/SEEN.md`, one pointer in each of the four stage documents, `WHEELCHAIR_LANE=1` in `protocol/lanes.md`, `seen/AGENTS.md`, and the root, `protocol/` and README router rows | `protocol/seen.md`, `protocol/templates/SEEN.md`, `protocol/{planning,plan-review,implementation,verification,lanes}.md`, `protocol/AGENTS.md`, `seen/AGENTS.md`, `AGENTS.md`, `README.md` | Claude / sonnet (worktree `arriving-cold-t3`) | | `grep` checks in the brief | dispatched |
+| T1 | The hook and the wording script: `seen/hook.sh` (Spec "The hook", D30, D34, D43, D45, D47–D49, D51, D52) and `seen/wording.sh` (D35, D39, D29), with their fixture tests | `seen/hook.sh`, `seen/wording.sh`, `seen/test/hook_test.sh`, `seen/test/wording_test.sh` | GPT / gpt-5.6-terra (worktree `arriving-cold-t1`) | `01a0d544-2786-7e91-91cf-0fa28d832205` | `bash seen/test/hook_test.sh && bash seen/test/wording_test.sh` | done — lane stopped on 3 failing tests (tests wrong); lead fixed tests, the edit-hint path, wording spacing |
+| T2 | The installer writer: `seen/set.sh` (Spec "The installer", D14, D26, D36, D38, D42, D52) called from `install.sh` before the sensitivity writer, honouring the existing home seams, with fixture tests | `seen/set.sh`, `seen/test/set_test.sh`, `install.sh`, `install/test/run.sh` | GPT / gpt-5.6-terra (worktree `arriving-cold-t2`) | `01a0d544-3112-7d50-85ce-ae92e51e49dd` | `bash seen/test/set_test.sh && bash install/test/run.sh` | done — lead fixed dir recreation, file mode, duplicate output line |
+| T3 | The prose: `protocol/seen.md` (canonical rules, `gap-threshold: 4h`), `protocol/templates/SEEN.md`, one pointer in each of the four stage documents, `WHEELCHAIR_LANE=1` in `protocol/lanes.md`, `seen/AGENTS.md`, and the root, `protocol/` and README router rows | `protocol/seen.md`, `protocol/templates/SEEN.md`, `protocol/{planning,plan-review,implementation,verification,lanes}.md`, `protocol/AGENTS.md`, `seen/AGENTS.md`, `AGENTS.md`, `README.md` | Claude / sonnet (worktree `arriving-cold-t3`) | Agent tool | `grep` checks in the brief | done |
 
 ## Log
 
+- 2026-09-24 — T1–T3 merged; `seen/test/run.sh` added with the cross-file checks. All suites
+  green; live checks passed on both harnesses. Waiting on Collin for the two checks that touch
+  his real setup: the interactive notice check and `./install.sh` on the real homes.
 - 2026-09-24 — Stage 3 started. Three disjoint tasks in three worktrees. The scripts are bash
   shims running Python (as `codex/preflight.sh` does) for JSON, TOML and `fcntl` locking, since
   `flock(1)` is absent on macOS.
