@@ -93,7 +93,8 @@ codex/prompts/   Codex CLI wrappers → rendered into ~/.codex/prompts/ when cod
 docs/plans/      one directory per feature; the only mutable state
 viewer/          the graph viewer, the list and document pages and their scripts, the
                  server, and its Playwright config
-install.sh       renders the wrappers, installs viewer/'s dependencies, and writes the
+install.sh       renders the wrappers, installs viewer/'s dependencies, adds the seen/ hook
+                 and wording grants to each present harness's settings, and writes the
                  dial's region into each present harness's always-on file (idempotent)
 AGENTS.md        this repo's own routers, one per directory that owns a rule —
                  also protocol/, skills/, spine/, sensitivity/ and seen/

@@ -13,3 +13,4 @@
 2026-09-24T21:50:44Z shown 8fc6
 2026-09-24T21:50:44Z shown 8657
 2026-09-24T21:50:44Z turn
+2026-09-24T21:57:55Z new c4cd a wording file with a valid rule plus one garbled line still has the rule passed along, where any garbled line should make the whole file count as empty

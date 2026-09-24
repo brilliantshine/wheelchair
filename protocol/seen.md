@@ -194,8 +194,9 @@ never before — Codex's sandbox drops a writable root that doesn't exist yet.
 
 It refuses — exit 1, nothing written, no directory created — on invalid JSON, a JSON root
 that is not an object, a wrongly shaped `hooks`, event list, group, `permissions`, `allow`,
-`sandbox`, `filesystem`, or `allowWrite`, TOML that does not parse, or a `writable_roots`
-that is not a one-line array; it needs Python 3.11 or newer. When it creates or changes the
+`sandbox`, `filesystem`, or `allowWrite`, TOML that does not parse, a `sandbox_workspace_write` that is not a plain
+`[sandbox_workspace_write]` table (including the dotted `sandbox_workspace_write.writable_roots`
+form), or a `writable_roots` that is not a one-line array; it needs Python 3.11 or newer. When it creates or changes the
 Codex hook entry it prints `run /hooks in Codex once to approve the wheelchair hook` (D36);
 a rerun with nothing left to change writes byte-identical output and prints nothing.
 `install.sh` warns rather than failing the install if it refuses, the same contract
