@@ -64,7 +64,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D21 | **A hook also covers ordinary chat**, on both harnesses: a `UserPromptSubmit` hook that reads files and calls no model. It carries three things into a turn: the confirmed wording list, a note when four hours or more have passed since your last message, and any stage-written entry you have not been shown | Q7. The wording list is your own, confirmed, visible and editable, so handing it to a turn is evidence of your rulings rather than a standing instruction — the "standing instruction by another route" objection raised against this was overstated and is withdrawn. Accepted limit: nothing records hidden work done in ordinary chat itself (W8) | user |
 | D22 | No `Stop` hook. The one hook is `UserPromptSubmit`, installed at user scope on both harnesses | D19 left nothing to do after a turn lands. User scope is the one scope verified on Codex (`MAP.md` item 3) | defaulted |
 | D23 | **Supersedes the session-record half of D9, and D11.** There is no session record. The hook reads every `docs/plans/*/SEEN.md` under the git top level of the hook's `cwd`; the only per-session file is the time of your last message, under `~/.cache/wheelchair/<repo-key>/<session-id>`, keyed per D12 | Nothing in ordinary chat writes entries (D21's accepted limit), so a session record would stay empty. Reading every plan record in the repo settles Round 1's finding that a hook cannot tell which plan a turn belongs to: it does not need to. One reader, so an entry surfaced in the "wrong" session was still surfaced to the right person | defaulted |
-| D24 | `SEEN.md` is an append-only log of one-line events, committed with the plan, with no frontmatter state. An entry is added as `new`; showing it is a later `shown` line naming its id; state is the latest line per id. There is no turn counter | Settles three Round 1 findings: no ordered turn id exists on either harness, so none is used; a single short line appended with `>>` does not interleave with another writer's, so there is no lost update; and with no volatile frontmatter the file changes only when hidden work happens, so it belongs in the plan's commits | defaulted |
+| D24 | `SEEN.md` is an append-only log of one-line events, committed with the plan, with no frontmatter state. An entry is added as `new`; showing it is a later `shown` line naming its id; state is the latest line per id. There is no turn counter | Settles three Round 1 findings: no ordered turn id exists on either harness, so none is used; a single short line appended with `>>` does not interleave with another writer's, so there is no lost update; and with no volatile frontmatter the file changes only when a stage works on the plan, so it belongs in the plan's commits (D48 adds one `turn` line per stage turn) | defaulted |
 | D25 | After a gap of four hours or more (D17), the hook injects the gap and the entries shown since the previous gap, **once** — the next message is inside four hours, so it does not repeat. There is no `cold` state | Settles Round 1's finding that `cold` entries never retire and pad every later turn. A one-shot injection cannot accumulate | defaulted |
 | D26 | **Supersedes D13's refusal rule.** The installer adds its own hook group beside any hooks already there, recognised by command path (D14), and refuses only when the file is not valid JSON or not an object. It writes `~/.claude/settings.json` and `~/.codex/hooks.json`, each only when its harness is present | Settles Round 1's upheld finding that refusing on any other hook silently denies the feature to anyone who has one. The hooks config is an array of groups, so coexisting is an append; the delimited-region precedent exists because Markdown has nothing to append into | defaulted |
 | D27 | Two home roots, one rule: `~/.cache/…` holds only what is safe to delete (graph cache, last-message times); `~/.wheelchair/` holds what is yours and hand-edited (the wording list) | Settles Round 1's three-roots finding by giving each root a reason rather than merging them | defaulted |
@@ -78,7 +78,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D35 | Every write to the wording list goes through `seen/wording.sh` (`suggest`, `confirm`, `strike`, `remove`). It creates the file with its three headers if absent, serialises writers with `flock`, replaces the file by temp-file-and-rename, and applies D29's struck match inside `suggest` | Round 2: nothing defined creating the file or two stages writing it at once, and the struck match was a model judgment the fixture suite could not test. A script makes all three testable | review-round-2 |
 | D36 | On Codex the hook runs only after you approve it once in `/hooks`, and a changed definition must be approved again. The installer writes a byte-identical entry on every run so the approval survives reinstalls, and prints one line naming `/hooks` whenever it creates or changes the Codex entry | Round 2 finding, verified against `https://learn.chatgpt.com/docs/hooks` ("new or changed hooks are marked for review and skipped until trusted") and the `hooks need review` string in Codex 0.156.0. The approval is a security gate this repository does not bypass | review-round-2 |
 | D37 | **Supersedes D12 and the repo key in D27 for the last-message file.** It is `~/.cache/wheelchair/sessions/<session-id>`, keyed by session alone | The gap is a fact about a session, not a repository, and a session id is already unique. Settles the contradiction outside a git repository, where no repo key exists | review-round-2 |
-| D38 | **The installer grants the wording script write access once**, so saving your answer never prompts. On Codex it adds `~/.wheelchair` to `sandbox_workspace_write.writable_roots` in `~/.codex/config.toml`; on Claude Code it adds an allow rule for `seen/wording.sh` to `permissions.allow` in `~/.claude/settings.json`. Same own-entries-only rules as the hook | Q9. Asking each time is the tedium you ruled out, and a per-project list drops `IDEA.md`'s cross-project promise | user |
+| D38 | **The installer grants the wording script write access once**, so saving your answer never prompts. On Codex it adds `~/.wheelchair` to `sandbox_workspace_write.writable_roots` in `~/.codex/config.toml`; on Claude Code it adds an allow rule for `seen/wording.sh` to `permissions.allow` in `~/.claude/settings.json`. Same own-entries-only rules as the hook | Q9. "Never prompts" holds except where a higher Codex config layer replaces the list (Accepted Risks). Asking each time is the tedium you ruled out, and a per-project list drops `IDEA.md`'s cross-project promise | user |
 | D39 | `seen/wording.sh` verbs, all taking the phrase as their first operand: `suggest "<phrase>" "<instead>"` adds to `## Proposed` and refuses when the phrase already appears in **any** section; `confirm "<phrase>"` and `strike "<phrase>"` move that phrase's `## Proposed` row; `remove "<phrase>"` moves a `## Confirmed` row to `## Struck`. Phrases compare ignoring case and surrounding whitespace, so each phrase appears at most once in the file. Writers take `flock` on `~/.wheelchair/.lock`, never on the file being replaced | Round 3: `remove` deleting would let a removed rule be suggested again; `suggest` refusing only struck phrases would re-ask an ignored one; operands were undefined; and locking the file itself is defeated by the rename replacing its inode | review-round-3 |
 | D40 | **Supersedes D32's trigger.** A stage measures the gap itself, from the timestamp of the latest line in the plan's `SEEN.md`; the hook's gap line serves ordinary chat only | Round 3: the usual way back to a plan is a new session, which has no last-message file, so a hook-only gap never fired there. The record is shared across sessions and harnesses | review-round-3 |
 | D41 | Map-build findings do not produce entries. **Supersedes the `cold` state in D17**; the four-hour threshold stands | The map is shown to the reader before the idea is written (`protocol/planning.md` Step 1), so there is nothing unseen to record, and the phrase needed judgment no other entry kind does. D25 removed `cold` but D17 was never marked | review-round-3 |
@@ -87,6 +87,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D44 | **Supersedes D37 and D40.** The last-message time is kept per repository, shared by every session and both harnesses: `~/.cache/wheelchair/last/<key>`, where `<key>` is the first 16 hex characters of a SHA-256 of the repository root's absolute path. The root is found by walking up from `cwd` to the first directory holding a `.git` entry, **without running git**; outside any repository, `cwd` itself. The stage acts on the hook's gap line, and computes only the stretch (D32) from `SEEN.md` | Round 4, both lanes: `SEEN.md` times stage events, not your messages, so a quiet planning discussion past four hours re-grounded on every turn. Your own message times are the only honest clock, and keying them by repository rather than session makes the next-day new session see the gap. Not running git keeps a hostile repository's config out of the hook | review-round-4 |
 | D45 | The hook is told which harness it runs on by its command line (`hook.sh claude` or `hook.sh codex`), and advances `confirmed.last` only on a harness whose `systemMessage` is displayed (D43). The compare-and-save runs under `flock` on `~/.cache/wheelchair/.lock` | Round 4: a harness that cannot show the notice would otherwise use it up unseen, and two sessions could both announce one change | review-round-4 |
 | D46 | Two test seams, set only by the suites: `WHEELCHAIR_WORDING` replaces the wording file's path and `WHEELCHAIR_STATE` replaces `~/.cache/wheelchair`. Production never sets them, as with `WHEELCHAIR_PRESENT` in `protocol/lanes.md` | Round 4: the live check had no way to point the hook at a temporary file without touching real paths | review-round-4 |
+| D47 | **Every lane is marked, and the hook ignores marked lanes.** Each lane invocation in `protocol/lanes.md` runs with `WHEELCHAIR_LANE=1` in its environment (`codex exec`, `claude -p`), and `hook.sh` exits 0 with no output and no file touched when it sees it | Round 5: GPT lanes are headless `codex exec` runs on your own Codex setup, so a user-level hook fires in them (`MAP.md` item 3). Unmarked, a lane would reset the gap clock, use up the change notice where nobody reads it, and carry the wording list into a worker, against D4 | review-round-5 |
+| D48 | **Supersedes D44.** Two clocks, one per reader of the gap. The hook keeps one per session, `~/.cache/wheelchair/sessions/<session-id>`, for ordinary chat. A stage keeps one per plan: at the start of each turn to you it reads the time of the latest `turn` line in the plan's `SEEN.md`, then appends a new `turn` line; four hours or more between the two is a gap for that plan. The hook's gap line never drives a stage | Round 5, both lanes: a repository-wide clock let activity anywhere in the repository hide a gap on the plan you were actually cold on. A session is the thread in ordinary chat; a plan is the thread in a stage, and its record is already shared across sessions and harnesses. Also drops the repository-root walk, and with it the unlocked shared timestamp Round 5 found | review-round-5 |
+| D49 | Whether a harness displays the notice is passed to the hook on its command line by the installer — `hook.sh claude notice` or `hook.sh codex no-notice` — from one constant per harness in `seen/set.sh`, set from the implementer's check (D43) | Round 5: nothing said where the hook learns it, and `protocol/seen.md` is prose inside a repository the hook never reads. A command-line argument also lets the suite fake either case without a third seam | review-round-5 |
 
 ## Spec
 
@@ -110,19 +113,21 @@ it, and committed with the plan (D24). No frontmatter state. The body is an appe
 per line:
 
 ```
+2026-09-24T09:40Z turn
 2026-09-24T10:02Z new 7c1e round 2 found the spec never said what happens when the settings file is malformed
 2026-09-24T10:02Z new a40b round 2 found the installer refuses whenever any other hook exists
 2026-09-24T10:05Z shown 7c1e
 2026-09-26T09:00Z closed a40b
 ```
 
-An entry is unshown until a `shown` or `closed` line names its id (D31). An id is four random hex characters,
+An entry is unshown until a `shown` or `closed` line names its id (D31). A `turn` line carries
+no id and marks a stage turn to the reader (D48). An id is four random hex characters,
 redrawn if it already appears in the file, so two writers never need to agree on a counter. Every write is one short line appended with `>>`, so two writers cannot
 lose each other's lines. Nothing ever edits or deletes a line. Only stages write this file (D30).
 
-**The last-message time — `~/.cache/wheelchair/last/<key>`.** One ISO 8601 timestamp per
-repository, overwritten by the hook each time you send a message from any session on either
-harness (D44). Safe to delete; losing
+**The last-message time — `~/.cache/wheelchair/sessions/<session-id>`.** One ISO 8601
+timestamp per session, overwritten by the hook on each of your messages. It serves ordinary chat
+only (D48). Safe to delete; losing
 it only means the next gap goes unnoticed (D27).
 
 **The register — `~/.wheelchair/wording.md`.** One file, outside any repository, shared by
@@ -176,9 +181,11 @@ reads exactly as it does today.
 **Closing (D31).** Whichever stage changes the plan's `status` appends `closed` for every entry
 still unshown. Closed entries are never surfaced.
 
-**After a gap (D32, D44).** When the hook's text carries the gap line — which it does only on
-the first message after four hours or more of silence in this repository — the stage also
-re-grounds the entries from the plan's last working stretch that the turn leans on — the run of
+**The plan's clock (D48).** At the start of each turn to the reader, the stage reads the time
+of the latest `turn` line in `SEEN.md` and appends a new one. Four hours or more between them
+is a gap for this plan, whatever happened in other sessions or plans meanwhile.
+
+**After a gap (D32, D48).** On a turn that found a gap, the stage also re-grounds the entries from the plan's last working stretch that the turn leans on — the run of
 `shown` lines counted back from the latest one, stopping at the first silence of four hours or
 more between two lines. It appends nothing for them; they were already shown.
 
@@ -189,17 +196,17 @@ its result does.
 ### The hook (D21, D22, D30)
 
 One `UserPromptSubmit` hook, the same script on both harnesses, installed at user scope and
-invoked as `hook.sh claude` or `hook.sh codex` (D45). It reads a few small files, runs no model
-and no git, and never reads a file inside a repository — it only checks whether a `.git`
-entry exists while walking up from `cwd` (D30, D44). On each of your messages it:
+invoked as `hook.sh <harness> notice|no-notice` (D45, D49). It reads a few small files, runs no
+model and no git, and never reads anything inside a repository (D30). With `WHEELCHAIR_LANE`
+set it exits 0 at once, with no output and no file touched (D47). On each of your messages it:
 
 1. Reads `## Confirmed` from `~/.wheelchair/wording.md` and compares it with the copy saved at
    `~/.cache/wheelchair/confirmed.last`, under `flock` on `~/.cache/wheelchair/.lock`. If they
    differ and this harness displays `systemMessage`, it prepares the visible notice below and
    saves the new copy; on a harness that does not, it leaves the copy for the next message on
    one that does. If no copy exists yet, it saves one silently (D43, D45).
-2. Finds the repository root (D44), reads `~/.cache/wheelchair/last/<key>`, then overwrites it
-   with the current time. If the old time is four hours or more ago (D17), it notes the gap in
+2. Reads `~/.cache/wheelchair/sessions/<session-id>`, then overwrites it with the current time
+   (D48). If the old time is four hours or more ago (D17), it notes the gap in
    whole hours.
 3. Returns the text below as `hookSpecificOutput.additionalContext`, and the notice, if any, as
    `systemMessage`. It returns nothing at all when there is no confirmed entry, no gap and no
@@ -248,7 +255,8 @@ so the existing warning-not-failing step stays last. `seen/set.sh`, per harness 
   `Bash(<root>/seen/wording.sh:*)` to `permissions.allow` and `~/.wheelchair` to
   `sandbox.filesystem.allowWrite`, each if absent, refusing when either parent has the wrong
   shape. The sandbox entry opens the directory to every sandboxed command, not only the
-  script; D43's notice is what catches a change made around it. Codex: adds `"~/.wheelchair"` to `writable_roots` under
+  script. D43's notice catches a change made around the script unless the same command also
+  rewrites `~/.cache/wheelchair/confirmed.last`, which nothing but the hook has reason to touch. Codex: adds `"~/.wheelchair"` to `writable_roots` under
   `[sandbox_workspace_write]` in `~/.codex/config.toml` if absent, appending the table when it
   does not exist. It edits only that one line or table and leaves the rest of the file byte for
   byte, and refuses when the file does not parse as TOML or `writable_roots` is not a one-line
@@ -263,8 +271,9 @@ would abort it mid-run and break its own idempotence check for an unrelated reas
 Every path here fails open, without exception. A hook that exits non-zero, times out, or
 returns unparseable output lets the turn proceed with nothing injected. The harness may print
 its own one-line notice when that happens (Claude Code does, on a non-zero exit); the hook
-therefore exits 0 on every path it controls, and only a timeout reaches that notice. A missing or malformed record
-or wording list is treated as empty rather than repaired. The hook entry carries a 2-second
+therefore exits 0 on every path it controls, and only a timeout reaches that notice. A missing or malformed wording list
+or state file is treated as empty rather than repaired, and so is a malformed `SEEN.md` when a
+stage reads it. The hook entry carries a 2-second
 timeout and in practice reads two small files; the fixture suite holds it under 200 ms.
 
 This is the most important property in the Spec, and the reason is the asymmetry of cost: a
@@ -286,6 +295,7 @@ improve is only today's behaviour.
 - **Edited: `protocol/planning.md`, `plan-review.md`, `implementation.md`,
   `verification.md`** — each gains the write-and-read step from D19, stated once and pointing
   at `protocol/seen.md`, never restating its rules.
+- **Edited: `protocol/lanes.md`** — `WHEELCHAIR_LANE=1` on every lane invocation (D47).
 - **Edited: `protocol/templates/`** — `SEEN.md` joins the template set.
 - **Edited: `install.sh`, `AGENTS.md`, `README.md`** — the new call, the new directory in the
   router table and the layout block.
@@ -301,11 +311,12 @@ this feature supplies the fact they were always missing.
   chose to run there, never by the hook (D30).
 - **Two sessions on one plan.** Both stages may append; single-line appends do not interleave
   (D24). Two turns may both explain one entry. Harmless, and rare enough not to lock.
-- **Two worktrees of one repository.** Each has its own `SEEN.md` and, having its own root
-  path, its own last-message file (D44).
-- **Coming back in a new session, or on the other harness.** The last-message file is per
-  repository, so the first message still carries the gap (D44). With the hook absent or not
-  yet approved on Codex, no gap is reported: the too-quiet direction.
+- **Two worktrees of one repository.** Each has its own `SEEN.md` in its own checkout, so its
+  own plan clock (D48).
+- **Coming back to a plan in a new session, or on the other harness.** The plan's clock is in
+  its `SEEN.md`, so the stage sees the gap regardless of session or harness, hook or no hook
+  (D48). In ordinary chat a new session has no clock and reports no gap.
+- **A lane's own turns.** Marked with `WHEELCHAIR_LANE`; the hook ignores them (D47).
 - **A struck wording entry suggested again.** `seen/wording.sh suggest` refuses it (D29, D35).
 - **Settings already hold other hooks.** Ours is added beside them (D26).
 - **Codex hook not yet approved.** It is skipped, and turns read as they do today until you
@@ -340,9 +351,8 @@ entries were left out; it reads no file inside the fixture repository; it finish
 with its headers, refuses a `suggest` matching a struck phrase in any case, and loses nothing
 under two concurrent writers. The hook also: returns a `systemMessage` naming an added and a removed phrase after the
 confirmed list changes, and none on the following message; stays silent when
-`confirmed.last` is missing; invoked as a harness recorded as not displaying the notice, leaves
-`confirmed.last` untouched; reports a gap to the first of two sessions in one repository and not
-the second; finds the root without executing anything from a fixture `.git/config`. `seen/wording.sh` also: `confirm` and `strike` each move exactly the named `## Proposed` row and
+`confirmed.last` is missing; invoked with `no-notice`, leaves `confirmed.last` untouched; keeps a separate clock per session; exits 0 with no output and no state change when `WHEELCHAIR_LANE=1`. `grep` confirms every
+lane invocation in `protocol/lanes.md` carries `WHEELCHAIR_LANE=1`. `seen/wording.sh` also: `confirm` and `strike` each move exactly the named `## Proposed` row and
 refuse a phrase not there; `suggest` refuses a phrase present in any section; `remove` moves a
 confirmed row to `## Struck`; a phrase differing only in case names the same row. The
 installer: adds its group beside an existing foreign hook,
@@ -364,7 +374,9 @@ assertion is on wheelchair's own text, not on "nothing injected", because your s
 carry another tool's `UserPromptSubmit` hook and `--settings` adds to them rather than replacing
 them. Before any of that, fire one turn on each harness whose hook returns a `systemMessage` and
 record whether the user sees it: in Claude Code's interactive UI and Codex's TUI, not headless
-output. That result decides D43's per-harness grant.
+output. That result sets D49's constants and decides D43's per-harness grant. Finally, fire one
+`codex exec` with `WHEELCHAIR_LANE=1` and the override hook, and assert the canary is absent —
+proof that the marker reaches the hook through Codex's environment.
 
 The stage half lives in protocol prose, so no suite can exercise it. Checked mechanically:
 each of `protocol/planning.md`, `plan-review.md`, `implementation.md` and `verification.md`
@@ -391,9 +403,20 @@ re-raise them.
 |------|--------------|-------|
 | A turn interrupted after its `shown` lines are written loses those entries | A stage has no point after its text is delivered at which it can still write. The loss is the too-quiet direction, which D3 ranks survivable, and the next stage turn after a gap re-grounds the last working stretch anyway (D40) | round-3 |
 | The stage half — writing, grounding, closing — is verified by no suite | It is protocol prose executed by the stage agent. The first real review round after merge is its first observation; the lead reads that plan's `SEEN.md` then | round-3 |
+| On Codex, a project config, profile or `-c` override that sets its own `sandbox_workspace_write.writable_roots` replaces the user-level list, so saving a "yes" there prompts | Codex layers replace arrays rather than merging them (Round 5, citing Codex's config loader). The failure is a prompt, the tedium D38 avoids elsewhere, not a wrong outcome. None of the project tables in `~/.codex/config.toml` sets it today | round-5 |
 | The effect of injected context on prompt caching is unmeasured (W2) | Rationale restated in Round 2, since D20 removed the lane the original one leaned on. The injected text is now the whole cost: at most 2,000 characters (D34), nothing at all when there is no confirmed entry and no gap, and it arrives with the new message rather than inside the earlier conversation a cache would hold. Measuring it needs instrumentation this plan has no other reason to build | planning, round-2 |
 
 ## Review Rounds
+
+### Round 6 — 2026-09-24
+
+**Lanes:** GPT / gpt-5.6-sol (mechanics); Claude / default reviewer model (intent); cross-family: yes.
+
+**Changed since Round 5:** lanes marked with `WHEELCHAIR_LANE` and ignored by the hook (D47);
+two clocks — per session for the hook, per plan through `turn` lines in `SEEN.md` for stages —
+replacing the repository clock and root walk (D48); the notice capability passed on the hook's
+command line (D49); the Codex `writable_roots` accepted risk; fail-open and installer wording;
+new lane and clock assertions. This is the third round since D43, the last before escalation.
 
 ### Round 5 — 2026-09-24
 
@@ -404,6 +427,18 @@ git, and the stage acts on the hook's gap line (D44); the hook knows its harness
 notice compare-and-save (D45); the test seams (D46); the live check's canary assertion and
 seeded `confirmed.last`; the new `confirm`/`strike`, notice and root-finding assertions; the
 sandbox grant's stated reach.
+
+Eight findings. Not clean: two blocking.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| claude | blocking | GPT lanes are `codex exec` on your own setup, so the user-level hook fires inside them: resets the clock, uses up the notice, injects the wording list into workers | `upheld` | Checked: `protocol/lanes.md:22-39` shares the user's Codex home, and `MAP.md` item 3 shows a user hook firing on `codex exec`. D47 |
+| both | blocking/minor | A repository-wide clock lets activity in another session or plan hide the gap on the thread you are cold on | `upheld` | D48: a session clock for chat, a plan clock for stages |
+| gpt | major | The repository timestamp's read-and-overwrite is unlocked, so two sessions can both report one gap | `upheld` | Dissolved by D48: a session clock has one writer |
+| gpt | major | RE-RAISE: a project, profile or `-c` layer replaces Codex's `writable_roots`, so D38's "never prompts" can fail | `accepted-risk` | The evidence is right, so the re-raise stands; the consequence is a prompt, not a wrong build. Accepted Risks |
+| claude | minor | Nothing says where the hook learns whether its harness shows the notice | `upheld` | D49 |
+| claude | minor | Fail-open still speaks of the hook reading a record | `upheld` | Reworded |
+| claude | minor | The notice can be defeated by a command that also rewrites `confirmed.last` | `upheld` | Reach restated in the installer section |
 
 ### Round 4 — 2026-09-24
 
@@ -557,6 +592,8 @@ Filled by Stage 3. One row per worker brief.
 
 ## Log
 
+- 2026-09-24 — Round 5 triaged: D47–D49 and one accepted risk. Round 6 next, the last before
+  the cap.
 - 2026-09-24 — Round 4 triaged: D44–D46. Round 5 next (second round since D43).
 - 2026-09-24 — Q10 settled as D43. Round 4 next; the cap reset.
 - 2026-09-24 — Round 3 triaged: D39–D42 from upheld findings; Q10 open as a `user-decision`.
