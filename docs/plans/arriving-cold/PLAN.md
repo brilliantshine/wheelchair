@@ -58,6 +58,7 @@ promoted to a Constraint or Accepted Risk, or waved off by the user.
 | W2 | 2026-09-19 | Whether injected context is visible to the user, counted against the context window, or breaks prompt caching. The Claude run proved the model received it and nothing more. | yes | **Accepted risk** — unmeasured; the lane dominates the cost and D6 gates the lane |
 | W3 | 2026-09-19 | `protocol/sensitivity.md:23` holds an inert level line that disagrees with both installed copies (`MAP.md`, Problems found). | yes | **Deferred** (Source: planning) — a real defect, in a neighbouring file, with nothing to do with this feature |
 | W5 | 2026-09-19 | JSON has no comment marker, so "owns only what it wrote" needs a mechanism the sensitivity writer does not have. | yes | settled by D14 — match on the command path, which the schema already requires |
+| W6 | 2026-09-24 | `MAP.md` was written before `remember-me` (PR #14) rewrote parts of the protocol and moved the viewer under `/wheelchair/`. Its `file:line` citations are now off by a few lines in places (`protocol/planning.md:118` is now `:112`). Re-check the citations Q6's answer leans on before the Spec is rewritten | yes | |
 | W4 | 2026-09-19 | Whether the check should fire inside a subagent's own turns. `subagent_start`/`subagent_stop` exist on both harnesses; a worker lane is not the reader this feature serves. Defaulted to no (D4), reopen if a stage turn's summary turns out to need it. | no | settled by D4 |
 
 ## Decision Log
@@ -353,6 +354,7 @@ Filled by Stage 3. One row per worker brief.
 
 ## Log
 
+- 2026-09-24 — Resumed on a rebuilt `arriving-cold` branch, now based on main after `remember-me`; the plan content is unchanged. Drew `graphs/who-writes-what-you-havent-seen.json` for Q6. Added W6.
 - 2026-09-20 — Paused here, on branch `arriving-cold`. Round 1 is triaged and recorded; Q6 is
   the one open question and nothing else proceeds until it lands. The upheld findings in Round
   1 are Spec edits that follow from Q6's answer, so they are deliberately **not** applied yet —

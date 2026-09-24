@@ -1,0 +1,371 @@
+{
+  "schema": 1,
+  "title": "who writes down what you haven't seen, and when",
+  "source": "plan-proposal",
+  "source_detail": "Q6 in docs/plans/arriving-cold/PLAN.md",
+  "explanation": "Three answers to one fork, judged by whether the list exists before the stage writes the turn you read. [Hook only](#option-b) produces it a turn late; [a separate lane](#option-a) and [the stage writing as it goes](#option-c) both make it in time, and the second does it without a lane. Leaves out the wording register, which is a separate question either way.",
+  "groups": [
+    {
+      "id": "option-a",
+      "label": "a separate check lane",
+      "note": "An independent observer, run by each stage before it writes.",
+      "visible": true,
+      "nodes": [
+        "a-cost",
+        "a-lane",
+        "a-time"
+      ]
+    },
+    {
+      "id": "option-b",
+      "label": "hook only",
+      "note": "One mechanism, and the turn that needs grounding is the one it misses.",
+      "visible": true,
+      "nodes": [
+        "b-land",
+        "b-late",
+        "b-stop"
+      ]
+    },
+    {
+      "id": "option-c",
+      "label": "the stage writes as it goes (recommended)",
+      "note": "The record is current by the time the turn is written.",
+      "visible": true,
+      "nodes": [
+        "c-cost",
+        "c-hook",
+        "c-write"
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "a-cost",
+      "label": "the same call in four stage documents, and a lane's quota on every stage turn with new work",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 24,
+      "y": 482
+    },
+    {
+      "id": "a-lane",
+      "label": "a check lane reads what the stage produced and lists what you haven't seen",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 154,
+      "y": 342
+    },
+    {
+      "id": "a-time",
+      "label": "the list exists before the turn is written",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 284,
+      "y": 482
+    },
+    {
+      "id": "b-land",
+      "label": "the stage's summary reaches you exactly as it does today",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 592,
+      "y": 342
+    },
+    {
+      "id": "b-late",
+      "label": "your next message gets the list: one turn after the confusing one",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 592,
+      "y": 622
+    },
+    {
+      "id": "b-stop",
+      "label": "after that turn, a hook runs the check lane",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 592,
+      "y": 482
+    },
+    {
+      "id": "c-cost",
+      "label": "no lane, no quota, no race; but whoever showed you things also decides what you saw",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 900,
+      "y": 482
+    },
+    {
+      "id": "c-hook",
+      "label": "ordinary chat: the hook only reads the record and checks the time since your last message",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 1160,
+      "y": 482
+    },
+    {
+      "id": "c-write",
+      "label": "as each round or task finishes, the stage writes what it found into the record in plain words",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 1030,
+      "y": 342
+    },
+    {
+      "id": "compose",
+      "label": "the stage writes its turn and grounds what the list names",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 438,
+      "y": 786
+    },
+    {
+      "id": "fork",
+      "label": "who writes down what you haven't seen?",
+      "kind": "decision",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": true,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 568,
+      "y": 140
+    },
+    {
+      "id": "work",
+      "label": "a stage does work you never see: review rounds, workers, verifiers",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": "protocol/plan-review.md",
+      "note": null,
+      "graph": null,
+      "x": 568,
+      "y": 0
+    },
+    {
+      "id": "you",
+      "label": "you read the turn",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 438,
+      "y": 926
+    }
+  ],
+  "edges": [
+    {
+      "id": "a-lane->a-cost",
+      "from": "a-lane",
+      "to": "a-cost",
+      "label": "costing",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "a-lane->a-time",
+      "from": "a-lane",
+      "to": "a-time",
+      "label": "so",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "a-lane->compose",
+      "from": "a-lane",
+      "to": "compose",
+      "label": "hands over",
+      "kind": "data",
+      "value": "the list of unseen things",
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "b-land->b-stop",
+      "from": "b-land",
+      "to": "b-stop",
+      "label": "then",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "b-stop->b-late",
+      "from": "b-stop",
+      "to": "b-late",
+      "label": "so",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "c-write->c-cost",
+      "from": "c-write",
+      "to": "c-cost",
+      "label": "costing",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "c-write->c-hook",
+      "from": "c-write",
+      "to": "c-hook",
+      "label": "outside a stage",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "c-write->compose",
+      "from": "c-write",
+      "to": "compose",
+      "label": "read by",
+      "kind": "data",
+      "value": "the record's new entries",
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "compose->you",
+      "from": "compose",
+      "to": "you",
+      "label": "then",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "fork->a-lane",
+      "from": "fork",
+      "to": "a-lane",
+      "label": "a separate lane",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "fork->b-land",
+      "from": "fork",
+      "to": "b-land",
+      "label": "a hook, afterwards",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "fork->c-write",
+      "from": "fork",
+      "to": "c-write",
+      "label": "the stage itself",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "work->fork",
+      "from": "work",
+      "to": "fork",
+      "label": "then",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    }
+  ]
+}
