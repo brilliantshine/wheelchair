@@ -54,7 +54,7 @@ function registrationHeaders(token, bytes, origin, timestamp = String(Date.now()
 async function register(ctx, body, headers = {}) {
   const bytes = JSON.stringify(body);
   const response = await fetch(`${ctx.url}/register`, { method: 'POST', body: bytes,
-    headers: { ...registrationHeaders(ctx.token, bytes, ctx.url), ...headers } });
+    headers: { ...registrationHeaders(ctx.token, bytes, new URL(ctx.url).origin), ...headers } });
   return { status: response.status, body: await response.json() };
 }
 
@@ -83,7 +83,7 @@ test('register rejects unsigned, stale, foreign-origin, and out-of-scope paths',
     assert.equal(unsigned.status, 401);
     const bad = await register(ctx, { kind: 'graph', path: graph, opened: true, session: null, harness: 'other' }, { 'x-graph-signature': '0'.repeat(64) });
     assert.equal(bad.status, 401);
-    const stale = await register(ctx, { kind: 'graph', path: graph, opened: true, session: null, harness: 'other' }, { ...registrationHeaders(ctx.token, JSON.stringify({ kind: 'graph', path: graph, opened: true, session: null, harness: 'other' }), ctx.url, String(Date.now() - 61000)) });
+    const stale = await register(ctx, { kind: 'graph', path: graph, opened: true, session: null, harness: 'other' }, { ...registrationHeaders(ctx.token, JSON.stringify({ kind: 'graph', path: graph, opened: true, session: null, harness: 'other' }), new URL(ctx.url).origin, String(Date.now() - 61000)) });
     assert.equal(stale.status, 401);
     const foreign = await register(ctx, { kind: 'graph', path: graph, opened: true, session: null, harness: 'other' }, { origin: 'https://foreign.invalid' });
     assert.equal(foreign.status, 403);
@@ -197,14 +197,14 @@ test('show signs watching without sending the token', async () => {
   await fs.writeFile(path.join(root, '.token'), `${token}\n`); await fs.writeFile(path.join(root, '.server'), JSON.stringify({ pid: process.pid, port, token, start_id: startId }));
   const requests = []; const holder = await listen(port, (request, response) => {
     requests.push({ url: request.url, headers: request.headers });
-    if (request.url.startsWith('/whoami')) {
+    if (request.url.startsWith('/wheelchair/whoami')) {
       const nonce = new URL(request.url, 'http://localhost').searchParams.get('nonce');
       response.end(JSON.stringify({ start_id: startId, pid: process.pid, proof: crypto.createHmac('sha256', token).update(nonce).digest('hex') }));
     } else { response.end(JSON.stringify({ ok: true, watched: false })); }
   });
   try {
     const result = await run(['--cache-root', root, '--port', String(port), '--show', graph], { ...process.env, WHEELCHAIR_BROWSER: '/definitely/not/a/browser' }); assert.equal(result.code, 0, result.stderr);
-    const watching = requests.find((item) => item.url.startsWith('/watching')); assert.ok(watching); assert.match(watching.headers['x-graph-timestamp'], /^\d+$/); assert.match(watching.headers['x-graph-signature'], /^[0-9a-f]{64}$/);
+    const watching = requests.find((item) => item.url.startsWith('/wheelchair/watching')); assert.ok(watching); assert.match(watching.headers['x-graph-timestamp'], /^\d+$/); assert.match(watching.headers['x-graph-signature'], /^[0-9a-f]{64}$/);
     assert.equal(watching.url.includes(token), false); assert.equal(Object.values(watching.headers).join('\n').includes(token), false);
   } finally { await new Promise((resolve) => holder.close(resolve)); }
 });
@@ -233,6 +233,22 @@ test('show overwrites open session and harness metadata with its own environment
     assert.equal((await run(['--cache-root', root, '--port', String(port), '--open', graph], { ...common, TMUX_LABEL: 'open-session' })).code, 0);
     assert.equal((await run(['--cache-root', root, '--port', String(port), '--show', graph, '--no-browser'], { ...common, TMUX_LABEL: 'show-session' })).code, 0);
     const entry = JSON.parse(await fs.readFile(path.join(root, '.registered')))[graph]; assert.equal(entry.session, 'show-session'); assert.ok(['other', 'claude', 'codex'].includes(entry.harness));
+  } finally { await ctx.stop(); }
+});
+
+test('open and show print token-free prefixed graph URLs, while show opens the token link and url prints the bookmark', async () => {
+  const root = await makeDir(); const port = await freePort(); const graph = path.join(root, 'graphs', 'printed.json'); const opened = path.join(root, 'opened-url');
+  await fs.mkdir(path.dirname(graph), { recursive: true }); const opener = path.join(root, 'opener');
+  await fs.writeFile(opener, `#!/usr/bin/env node\nrequire('node:fs').writeFileSync(${JSON.stringify(opened)}, process.argv[2]);\n`, { mode: 0o755 });
+  const ctx = await startServer({ cacheRoot: root, port });
+  try {
+    const open = await run(['--cache-root', root, '--port', String(port), '--open', graph]);
+    assert.equal(open.code, 0, open.stderr); assert.match(open.stdout, new RegExp(`/wheelchair/\\?path=${encodeURIComponent(graph)}`)); assert.doesNotMatch(open.stdout, /token=/);
+    const show = await run(['--cache-root', root, '--port', String(port), '--show', graph], { ...process.env, WHEELCHAIR_BROWSER: opener });
+    assert.equal(show.code, 0, show.stderr); assert.match(show.stdout, /\/wheelchair\/\?path=/); assert.doesNotMatch(show.stdout, /token=/);
+    const deadline = Date.now() + 1000; while (!(await fs.access(opened).then(() => true, () => false)) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.match(await fs.readFile(opened, 'utf8'), /\/wheelchair\/\?path=.*&token=[0-9a-f]{64}$/);
+    const bookmark = await run(['--cache-root', root, '--port', String(port), '--url']); assert.match(bookmark.stdout, /\/wheelchair\/\?token=[0-9a-f]{64}/);
   } finally { await ctx.stop(); }
 });
 

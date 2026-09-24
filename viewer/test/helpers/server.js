@@ -87,11 +87,10 @@ async function startServer({ open, cacheRoot, port } = {}) {
   const args = ['viewer/server.js', '--port', String(chosenPort), '--cache-root', root, '--open', graphPath];
   const child = spawn(process.execPath, args, { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
   const url = await waitForLine(child);
-  const parsed = new URL(url);
-  const token = parsed.searchParams.get('token');
-  assert.ok(token, 'server launch URL includes a token');
+  const token = (await fs.readFile(path.join(root, '.token'), 'utf8')).trim();
+  assert.ok(token, 'server writes a token');
   return {
-    root, graphDir, graphPath, port: chosenPort, child, url: `http://127.0.0.1:${chosenPort}`,
+    root, graphDir, graphPath, port: chosenPort, child, url: `http://127.0.0.1:${chosenPort}/wheelchair`,
     token,
     async stop({ leaveLock = false } = {}) {
       if (!child.killed) child.kill('SIGTERM');
@@ -105,14 +104,14 @@ async function startServer({ open, cacheRoot, port } = {}) {
 }
 
 async function request(ctx, route, { method = 'GET', graphPath = ctx.graphPath, body, token = ctx.token, origin = true } = {}) {
-  const url = new URL(`${ctx.url}${route}`);
+  const url = new URL(`${ctx.url}${route.startsWith('/wheelchair') ? route.slice('/wheelchair'.length) : route}`);
   if (method === 'GET' && token !== undefined) url.searchParams.set('token', token);
   if (graphPath !== undefined) url.searchParams.set('path', graphPath);
   const headers = {};
   if (method === 'PUT') {
     headers['content-type'] = 'application/json';
     if (token !== undefined) headers['x-graph-token'] = token;
-    if (origin) headers.origin = typeof origin === 'string' ? origin : ctx.url;
+    if (origin) headers.origin = typeof origin === 'string' ? origin : new URL(ctx.url).origin;
   }
   const response = await fetch(url, {
     method, headers, body: body === undefined ? undefined : JSON.stringify(body),

@@ -100,7 +100,7 @@ test('serving origin is accepted for PUT and drives the bookmark URL', async () 
   const ctx = await startServer({ cacheRoot: root, port });
   try {
     const printed = await run(['--cache-root', root, '--port', String(port), '--url']);
-    assert.equal(printed.code, 0); assert.match(printed.stdout, new RegExp(`^${origin.replace(/[.]/g, '\\.')}/\\?token=`));
+    assert.equal(printed.code, 0); assert.match(printed.stdout, new RegExp(`^${origin.replace(/[.]/g, '\\.')}/wheelchair/\\?token=`));
     const acceptedOrigin = await request(ctx, '/view', { method: 'PUT', body: { hash: 'x', graph: {} }, origin });
     assert.notEqual(acceptedOrigin.status, 403, 'the served origin clears origin auth before route handling');
     const rejected = await request(ctx, '/view', { method: 'PUT', body: { hash: 'x', graph: {} }, origin: 'https://other.example' });
@@ -126,8 +126,8 @@ test('simultaneous delayed listeners elect one server and print one token', asyn
     await Promise.all(starts.map(({ ready }) => ready.catch(() => null)));
     await new Promise((resolve) => setTimeout(resolve, 300));
     const token = (await fs.readFile(path.join(root, '.token'), 'utf8')).trim();
-    const printed = starts.flatMap(({ output }) => output().stdout.match(/[0-9a-f]{64}/g) || []);
-    assert.ok(printed.length >= 1); assert.ok(printed.every((value) => value === token));
+    const printed = starts.flatMap(({ output }) => output().stdout.match(/http:\/\/127\.0\.0\.1:\d+\/wheelchair\/\?path=[^\s]+/g) || []);
+    assert.ok(printed.length >= 1);
     assert.equal(starts.filter(({ child }) => child.exitCode === null).length, 1);
   } finally { await Promise.all(starts.map(({ child }) => stop(child))); }
 });
@@ -271,7 +271,7 @@ test('only localhost and served origins write, and serve false prints localhost'
   const root = await makeDir(); const port = await freePort(); await fs.writeFile(path.join(root, '.serving'), JSON.stringify({ serve: false })); const ctx = await startServer({ cacheRoot: root, port });
   try {
     const bad = await request(ctx, '/view', { method: 'PUT', body: { hash: 'x', graph: {} }, origin: 'https://bad.example' }); assert.equal(bad.status, 403); assert.equal(bad.body.error, 'bad-origin');
-    const url = await run(['--cache-root', root, '--port', String(port), '--url']); assert.match(url.stdout, new RegExp(`^http://127\\.0\\.0\\.1:${port}/\\?token=`));
+    const url = await run(['--cache-root', root, '--port', String(port), '--url']); assert.match(url.stdout, new RegExp(`^http://127\\.0\\.0\\.1:${port}/wheelchair/\\?token=`));
   } finally { await ctx.stop(); }
 });
 
@@ -301,12 +301,12 @@ test('--register-plan retries a silent holder until it registers through it', as
   const started = Date.now(); let registered = false;
   const holder = await new Promise((resolve, reject) => {
     const server = require('node:http').createServer((request, response) => {
-      if (request.url.startsWith('/whoami')) {
+      if (request.url.startsWith('/wheelchair/whoami')) {
         const nonce = new URL(request.url, 'http://localhost').searchParams.get('nonce');
         if (Date.now() - started < 650) return;
         response.end(JSON.stringify({ start_id: id, pid: process.pid, code: 'abcdef123456', proof: crypto.createHmac('sha256', token).update(nonce).digest('hex') })); return;
       }
-      if (request.url === '/register') { registered = true; response.end(JSON.stringify({ ok: true })); return; }
+      if (request.url === '/wheelchair/register') { registered = true; response.end(JSON.stringify({ ok: true })); return; }
       response.statusCode = 404; response.end();
     });
     server.once('error', reject); server.listen(port, '127.0.0.1', () => resolve(server));

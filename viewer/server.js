@@ -1,16 +1,13 @@
 /*
 Routes (all responses use Cache-Control: no-store):
-  GET  /?token            token query      -> viewer/list.html
-  GET  /?path&token       token query      -> viewer/index.html
-  GET  /list?token        token query      -> { sessions, plans }
-  GET  /plan?dir&token    token query      -> { dir, slug, files }
-  GET  /docs?plan&token   token query      -> viewer/doc.html
-  GET  /doc?plan&file&token token query    -> raw Markdown
-  GET  /assets/list.js, /assets/doc.js     -> page scripts (no token)
-  GET  /graph?path&token  token query      -> { hash, graph, children }
-  PUT  /graph?path        X-Graph-Token + matching Origin -> { hash }
-  PUT  /view?path         X-Graph-Token + matching Origin -> { hash }
-  GET  /whoami            no authentication -> { start_id }.
+  GET  /wheelchair/?token       remembered list page or viewer
+  GET  /wheelchair/list         -> { sessions, plans }
+  GET  /wheelchair/plan, /doc   -> plan data and raw Markdown
+  GET  /wheelchair/docs         -> viewer/doc.html
+  GET  /wheelchair/assets/*     -> page scripts (no token)
+  GET  /wheelchair/graph        -> { hash, graph, children }
+  PUT  /wheelchair/graph, /view -> { hash }
+  GET  /wheelchair/whoami       no authentication -> { start_id }.
 
 Errors:
   400 bad-path, bad-body
@@ -45,6 +42,10 @@ const REGISTERED_MAX_AGE = 30 * DAY;
 const REGISTRY_PRUNE_INTERVAL_MS = 60 * 60 * 1000;
 const REGISTER_SIGNATURE_WINDOW_MS = 60 * 1000;
 const PAGE_CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+const VIEWER_PREFIX = '/wheelchair';
+const REMEMBER_COOKIE = 'wheelchair_remember';
+const REMEMBER_LABEL = 'wheelchair-remember-v1';
+const REMEMBER_MAX_AGE = 34560000;
 // A page polls every second, so anything read inside this window means a tab is live on that graph.
 const WATCHED_WINDOW_MS = 4000;
 // How long --open waits for the graph to be written before giving up on showing it.
@@ -1205,6 +1206,27 @@ function tokenMatches(candidate, token) {
   return expected.length === supplied.length && crypto.timingSafeEqual(expected, supplied);
 }
 
+function rememberValue(token) {
+  return crypto.createHmac('sha256', token).update(REMEMBER_LABEL).digest('hex');
+}
+
+function cookies(request) {
+  const header = request.headers.cookie;
+  if (typeof header !== 'string') return new Map();
+  return new Map(header.split(';').map((entry) => {
+    const index = entry.indexOf('=');
+    return index < 0 ? [entry.trim(), ''] : [entry.slice(0, index).trim(), entry.slice(index + 1).trim()];
+  }));
+}
+
+function hasRememberCookie(request, state) {
+  return tokenMatches(cookies(request).get(REMEMBER_COOKIE), rememberValue(state.lock.token));
+}
+
+function rememberCookie(state) {
+  return `${REMEMBER_COOKIE}=${rememberValue(state.lock.token)}; Path=${VIEWER_PREFIX}; HttpOnly; Secure; SameSite=Lax; Max-Age=${REMEMBER_MAX_AGE}`;
+}
+
 function sendJson(response, status, body) {
   response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
   response.end(JSON.stringify(body));
@@ -1225,14 +1247,14 @@ function sendError(response, error) {
   }
 }
 
-function requireGetToken(url, state) {
-  if (!tokenMatches(url.searchParams.get('token'), state.lock.token)) {
+function requireReadAuth(request, url, state) {
+  if (!hasRememberCookie(request, state) && !tokenMatches(url.searchParams.get('token'), state.lock.token)) {
     fail(401, 'bad-token', 'The graph token is missing or invalid.');
   }
 }
 
 function requirePutAuth(request, state) {
-  if (!tokenMatches(request.headers['x-graph-token'], state.lock.token)) {
+  if (!hasRememberCookie(request, state) && !tokenMatches(request.headers['x-graph-token'], state.lock.token)) {
     fail(401, 'bad-token', 'The graph token is missing or invalid.');
   }
   if (request.headers.origin !== `http://127.0.0.1:${state.port}` && request.headers.origin !== state.servedOrigin) {
@@ -1418,8 +1440,8 @@ async function handleViewPut(request, response, url, state) {
   sendJson(response, 200, result);
 }
 
-async function handleGetGraph(response, url, state) {
-  requireGetToken(url, state);
+async function handleGetGraph(request, response, url, state) {
+  requireReadAuth(request, url, state);
   const graphPath = await validGraphPath(state.config, url.searchParams.get('path'));
   // The page polls this route once a second, so a recent read means a tab is already showing this
   // graph. That is what stops a redraw from stacking up browser windows: an open tab picks the new
@@ -1573,8 +1595,8 @@ async function planSummaries(config) {
   return plans.sort((left, right) => right.added - left.added || byteCompare(left.dir, right.dir));
 }
 
-async function handleList(response, url, state) {
-  requireGetToken(url, state);
+async function handleList(request, response, url, state) {
+  requireReadAuth(request, url, state);
   const body = await withMutex(async () => {
     await pruneRegistries(state.config, state);
     return { sessions: await graphGroups(state.config), plans: await planSummaries(state.config) };
@@ -1582,14 +1604,14 @@ async function handleList(response, url, state) {
   sendJson(response, 200, body);
 }
 
-async function handlePlan(response, url, state) {
-  requireGetToken(url, state);
+async function handlePlan(request, response, url, state) {
+  requireReadAuth(request, url, state);
   const planPath = await registeredPlanPath(state.config, url.searchParams.get('dir'));
   sendJson(response, 200, { dir: planPath, slug: path.basename(planPath), files: await planFiles(planPath) });
 }
 
-async function handleDoc(response, url, state) {
-  requireGetToken(url, state);
+async function handleDoc(request, response, url, state) {
+  requireReadAuth(request, url, state);
   const planPath = await registeredPlanPath(state.config, url.searchParams.get('plan'));
   const filePath = await documentPath(planPath, url.searchParams.get('file'));
   try { sendFile(response, 200, await fsp.readFile(filePath), 'text/markdown; charset=utf-8'); }
@@ -1601,35 +1623,65 @@ async function servePage(response, name, csp = false) {
   sendFile(response, 200, html, 'text/html; charset=utf-8', csp ? { 'content-security-policy': PAGE_CSP } : {});
 }
 
-async function handleDocs(response, url, state) {
-  requireGetToken(url, state);
-  await registeredPlanPath(state.config, url.searchParams.get('plan'));
-  await servePage(response, 'doc.html', true);
-}
-
 async function handleAsset(response, url) {
-  const name = url.pathname.slice('/assets/'.length);
+  const name = url.pathname.slice(`${VIEWER_PREFIX}/assets/`.length);
   if (!['list.js', 'doc.js'].includes(name)) fail(404, 'no-route', 'The requested route does not exist.');
   const script = await fsp.readFile(path.join(__dirname, name));
   sendFile(response, 200, script, 'text/javascript; charset=utf-8');
 }
 
-async function handleRoot(response, url, state) {
-  requireGetToken(url, state);
+async function serveSignin(response) {
+  const html = await fsp.readFile(path.join(__dirname, 'signin.html'));
+  sendFile(response, 401, html, 'text/html; charset=utf-8', { 'content-security-policy': PAGE_CSP });
+}
+
+function redirectWithoutToken(response, url, state, setCookie) {
+  const target = new URL(url.pathname, 'http://viewer.invalid');
+  for (const [name, value] of url.searchParams) if (name !== 'token') target.searchParams.append(name, value);
+  response.writeHead(303, { location: `${target.pathname}${target.search}`, 'cache-control': 'no-store',
+    ...(setCookie ? { 'set-cookie': rememberCookie(state) } : {}) });
+  response.end();
+}
+
+async function handleDocs(request, response, url, state) {
+  const hasToken = url.searchParams.has('token');
+  const validToken = tokenMatches(url.searchParams.get('token'), state.lock.token);
+  const validCookie = hasRememberCookie(request, state);
+  if (hasToken) {
+    if (validToken || validCookie) { redirectWithoutToken(response, url, state, validToken); return; }
+    await serveSignin(response); return;
+  }
+  if (!validCookie) { await serveSignin(response); return; }
+  await registeredPlanPath(state.config, url.searchParams.get('plan'));
+  const html = await fsp.readFile(path.join(__dirname, 'doc.html'));
+  sendFile(response, 200, html, 'text/html; charset=utf-8', { 'content-security-policy': PAGE_CSP, 'set-cookie': rememberCookie(state) });
+}
+
+async function handleRoot(request, response, url, state) {
+  const hasToken = url.searchParams.has('token');
+  const validToken = tokenMatches(url.searchParams.get('token'), state.lock.token);
+  const validCookie = hasRememberCookie(request, state);
+  if (hasToken) {
+    if (validToken || validCookie) { redirectWithoutToken(response, url, state, validToken); return; }
+    await serveSignin(response); return;
+  }
+  if (!validCookie) { await serveSignin(response); return; }
   if (!url.searchParams.has('path')) {
-    await servePage(response, 'list.html', true);
+    const html = await fsp.readFile(path.join(__dirname, 'list.html'));
+    sendFile(response, 200, html, 'text/html; charset=utf-8', { 'content-security-policy': PAGE_CSP, 'set-cookie': rememberCookie(state) });
     return;
   }
   const graphPath = await validGraphPath(state.config, url.searchParams.get('path'));
   const allowed = await withMutex(() => ensureRegistered(state.config, graphPath));
   if (!allowed) fail(403, 'not-registered', 'This graph path is not registered.');
-  await servePage(response, 'index.html');
+  const html = await fsp.readFile(path.join(__dirname, 'index.html'));
+  sendFile(response, 200, html, 'text/html; charset=utf-8', { 'set-cookie': rememberCookie(state) });
 }
 
-function whoami(port, nonce) {
+function whoami(port, nonce, route = `${VIEWER_PREFIX}/whoami`) {
   return new Promise((resolve, reject) => {
     const suffix = nonce ? `?nonce=${encodeURIComponent(nonce)}` : '';
-    const request = http.get({ host: '127.0.0.1', port, path: `/whoami${suffix}`, timeout: 500 }, (response) => {
+    const request = http.get({ host: '127.0.0.1', port, path: `${route}${suffix}`, timeout: 500 }, (response) => {
       const chunks = [];
       response.on('data', (chunk) => chunks.push(chunk));
       response.on('end', () => {
@@ -1707,9 +1759,12 @@ async function servedOrigin(config) {
   } catch { return null; }
 }
 
-async function viewerUrl(lock, openPath, config) {
+async function viewerUrl(lock, openPath, config, { token = false } = {}) {
   const base = await servedOrigin(config) || `http://127.0.0.1:${lock.port}`;
-  return openPath ? `${base}/?path=${encodeURIComponent(openPath)}&token=${lock.token}` : base;
+  const url = new URL(`${VIEWER_PREFIX}/`, base);
+  if (openPath) url.searchParams.set('path', openPath);
+  if (token) url.searchParams.set('token', lock.token);
+  return url.toString();
 }
 
 async function sessionLabel() {
@@ -1764,14 +1819,19 @@ async function identifyHolder(config, { retrySilent = true, allowOlderStop = fal
   for (;;) {
     const nonce = crypto.randomBytes(16).toString('hex');
     try {
-      const identity = await whoami(config.port, nonce);
+      let identity = await whoami(config.port, nonce);
+      let prePrefix = false;
+      if (!identity || typeof identity.start_id !== 'string') {
+        identity = await whoami(config.port, nonce, '/whoami');
+        prePrefix = true;
+      }
       const lock = await readLock(config); // after /whoami: the holder has had a chance to repair it.
       const diskToken = await readToken(config);
       const candidates = [...new Set([lock && lock.token, diskToken].filter(Boolean))];
       const matchingToken = candidates.find((token) => proofMatches(identity.proof, nonce, token));
       if (matchingToken && lock && lock.start_id === identity.start_id &&
-          Number.isInteger(identity.pid) && lock.pid === identity.pid) {
-        return { kind: 'ours', identity, lock, token: matchingToken };
+          (!Number.isInteger(identity.pid) || lock.pid === identity.pid)) {
+        return { kind: prePrefix ? 'pre-prefix' : 'ours', identity, lock, token: matchingToken };
       }
       if (allowOlderStop && identity && identity.proof === undefined && lock &&
           identity.start_id === lock.start_id && Number.isInteger(lock.pid)) {
@@ -1803,7 +1863,7 @@ async function stopServer(config, { ifStale = false, allowOlderStop = false } = 
   if (holder.kind === 'older-foreign') {
     console.error('a viewer from an older version is running; run ./install.sh'); process.exitCode = 1; return { failed: true };
   }
-  if (holder.kind !== 'ours' && holder.kind !== 'older') {
+  if (holder.kind !== 'ours' && holder.kind !== 'older' && holder.kind !== 'pre-prefix') {
     console.error('Refused to stop a process it cannot identify.'); process.exitCode = 1; return { failed: true };
   }
   if (ifStale && holder.kind === 'ours' && holder.identity.code === await currentCode()) {
@@ -1862,7 +1922,15 @@ async function startServer(config) {
   const server = http.createServer(async (request, response) => {
     try {
       const url = new URL(request.url, `http://127.0.0.1:${state.port}`);
-      if (request.method === 'GET' && url.pathname === '/whoami') {
+      if (url.pathname !== VIEWER_PREFIX && !url.pathname.startsWith(`${VIEWER_PREFIX}/`)) {
+        const location = `${VIEWER_PREFIX}${url.pathname}${url.search}`;
+        response.writeHead(308, { location, 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+        response.end(JSON.stringify({ error: 'moved', detail: 'The viewer moved under /wheelchair.', location })); return;
+      }
+      if (request.method === 'GET' && url.pathname === VIEWER_PREFIX) {
+        response.writeHead(308, { location: `${VIEWER_PREFIX}/${url.search}`, 'cache-control': 'no-store' }); response.end(); return;
+      }
+      if (request.method === 'GET' && url.pathname === `${VIEWER_PREFIX}/whoami`) {
         const recorded = await readLock(config);
         if (!recorded || recorded.start_id !== state.lock.start_id) await writeServerRecord(config, state.lock);
         const body = { start_id: state.lock.start_id, pid: process.pid, code: state.code };
@@ -1870,24 +1938,24 @@ async function startServer(config) {
         if (nonce) body.proof = proofFor(nonce, state.lock.token);
         sendJson(response, 200, body); return;
       }
-      if (request.method === 'GET' && url.pathname.startsWith('/assets/')) { await handleAsset(response, url); return; }
-      if (request.method === 'GET' && url.pathname === '/') { await handleRoot(response, url, state); return; }
-      if (request.method === 'GET' && url.pathname === '/list') { await handleList(response, url, state); return; }
-      if (request.method === 'GET' && url.pathname === '/plan') { await handlePlan(response, url, state); return; }
-      if (request.method === 'GET' && url.pathname === '/docs') { await handleDocs(response, url, state); return; }
-      if (request.method === 'GET' && url.pathname === '/doc') { await handleDoc(response, url, state); return; }
-      if (request.method === 'GET' && url.pathname === '/watching') {
+      if (request.method === 'GET' && url.pathname.startsWith(`${VIEWER_PREFIX}/assets/`)) { await handleAsset(response, url); return; }
+      if (request.method === 'GET' && url.pathname === `${VIEWER_PREFIX}/`) { await handleRoot(request, response, url, state); return; }
+      if (request.method === 'GET' && url.pathname === `${VIEWER_PREFIX}/list`) { await handleList(request, response, url, state); return; }
+      if (request.method === 'GET' && url.pathname === `${VIEWER_PREFIX}/plan`) { await handlePlan(request, response, url, state); return; }
+      if (request.method === 'GET' && url.pathname === `${VIEWER_PREFIX}/docs`) { await handleDocs(request, response, url, state); return; }
+      if (request.method === 'GET' && url.pathname === `${VIEWER_PREFIX}/doc`) { await handleDoc(request, response, url, state); return; }
+      if (request.method === 'GET' && url.pathname === `${VIEWER_PREFIX}/watching`) {
         const timestamp = request.headers['x-graph-timestamp'];
         requireSignedAuth(request, state, `${timestamp}\n${request.url}`);
         const watchedPath = await validGraphPath(state.config, url.searchParams.get('path'));
         const seen = state.watched.get(watchedPath) || 0;
         sendJson(response, 200, { watched: Date.now() - seen < WATCHED_WINDOW_MS }); return;
       }
-      if (request.method === 'POST' && url.pathname === '/register') { await handleRegister(request, response, state); return; }
-      if (request.method === 'GET' && url.pathname === '/graph') { await handleGetGraph(response, url, state); return; }
-      if (request.method === 'PUT' && url.pathname === '/graph') { await handleGraphPut(request, response, url, state); return; }
-      if (request.method === 'PUT' && url.pathname === '/view') { await handleViewPut(request, response, url, state); return; }
-      requireGetToken(url, state);
+      if (request.method === 'POST' && url.pathname === `${VIEWER_PREFIX}/register`) { await handleRegister(request, response, state); return; }
+      if (request.method === 'GET' && url.pathname === `${VIEWER_PREFIX}/graph`) { await handleGetGraph(request, response, url, state); return; }
+      if (request.method === 'PUT' && url.pathname === `${VIEWER_PREFIX}/graph`) { await handleGraphPut(request, response, url, state); return; }
+      if (request.method === 'PUT' && url.pathname === `${VIEWER_PREFIX}/view`) { await handleViewPut(request, response, url, state); return; }
+      requireReadAuth(request, url, state);
       fail(404, 'no-route', 'The requested route does not exist.');
     } catch (error) { sendError(response, error); }
   });
@@ -1934,7 +2002,7 @@ async function signedRegistration(holder, registration) {
   const bytes = Buffer.from(JSON.stringify(registration));
   const headers = { ...signedHeaders(holder.token, bytes), 'content-type': 'application/json', origin: `http://127.0.0.1:${holder.lock.port}` };
   const result = await new Promise((resolve, reject) => {
-    const request = http.request({ host: '127.0.0.1', port: holder.lock.port, path: '/register', method: 'POST', headers, timeout: 1500 },
+    const request = http.request({ host: '127.0.0.1', port: holder.lock.port, path: `${VIEWER_PREFIX}/register`, method: 'POST', headers, timeout: 1500 },
       (response) => { let text = ''; response.on('data', (c) => { text += c; }); response.on('end', () => resolve({ status: response.statusCode, text })); });
     request.on('timeout', () => request.destroy(new Error('registration timeout'))); request.on('error', reject);
     request.end(bytes);
@@ -1944,7 +2012,7 @@ async function signedRegistration(holder, registration) {
 
 async function alreadyWatched(holder, graphPath) {
   try {
-    const requestPath = `/watching?path=${encodeURIComponent(graphPath)}`;
+    const requestPath = `${VIEWER_PREFIX}/watching?path=${encodeURIComponent(graphPath)}`;
     const body = await new Promise((resolve, reject) => {
       const request = http.get(
         { host: '127.0.0.1', port: holder.lock.port, path: requestPath, headers: { ...signedHeaders(holder.token, requestPath), origin: `http://127.0.0.1:${holder.lock.port}` }, timeout: 1500 },
@@ -1974,11 +2042,14 @@ async function main() {
   if (config.stop) { await stopServer(config, { ifStale: config.ifStale, allowOlderStop: true }); return; }
   if (config.rotateToken) {
     await fsp.mkdir(config.cacheRoot, { recursive: true, mode: 0o700 });
+    const holder = await identifyHolder(config, { retrySilent: false });
+    if (holder.kind === 'pre-prefix' || holder.kind === 'older-foreign') {
+      throw new Error('a viewer from an older version is running; run ./install.sh');
+    }
     const token = crypto.randomBytes(32).toString('hex'); const temp = temporaryPath(tokenPath(config));
     await fsp.writeFile(temp, `${token}\n`, { mode: 0o600 }); await fsp.rename(temp, tokenPath(config));
     const result = await stopServer(config);
-    const url = await viewerUrl({ port: config.port, token }, null, config);
-    console.log(`${url}/?token=${token}`);
+    console.log(await viewerUrl({ port: config.port, token }, null, config, { token: true }));
     if (result.failed) console.error('The server must be restarted to use the new token.');
     return;
   }
@@ -1991,8 +2062,8 @@ async function main() {
       const onDisk = await readToken(config);
       if (onDisk && onDisk !== token) console.error('Warning: token rotation is waiting for the server to restart.');
     }
-    const base = await viewerUrl({ port: config.port, token }, null, config);
-    console.log(`${base}/?token=${token}`);
+    if (holder.kind === 'pre-prefix') console.error('a viewer from an older version is running; run ./install.sh');
+    console.log(await viewerUrl({ port: config.port, token }, null, config, { token: true }));
     return;
   }
   if (config.registerPlan) {
@@ -2008,7 +2079,7 @@ async function main() {
       if (holder?.kind === 'ours') {
         await signedRegistration(holder, { kind: 'plan', path: config.registerPlan, ...(await registrationMetadata()) });
       } else if (holder && holder.kind !== 'none') {
-        console.error(holder.kind === 'older-foreign' ? 'Warning: a viewer from an older version is running; run ./install.sh' : 'Warning: viewer registration was refused.');
+        console.error(holder.kind === 'older-foreign' || holder.kind === 'pre-prefix' ? 'Warning: a viewer from an older version is running; run ./install.sh' : 'Warning: viewer registration was refused.');
       }
     } catch (error) {
       console.error(`Warning: ${error.message}`);
@@ -2043,7 +2114,7 @@ async function main() {
         await afterServiceStop();
         continue;
       }
-      if (holder.kind === 'older-foreign') throw new Error('a viewer from an older version is running; run ./install.sh');
+      if (holder.kind === 'older-foreign' || holder.kind === 'pre-prefix') throw new Error('a viewer from an older version is running; run ./install.sh');
       throw new Error('Refused to use a port held by a process it cannot identify.');
     }
   }
@@ -2056,7 +2127,7 @@ async function main() {
   const url = await viewerUrl(result.lock, config.open, config);
   console.log(url);
   if (config.show && config.browser && !(await alreadyWatched({ lock: result.lock, token: result.registrationToken || result.lock.token }, config.open))) {
-    launchBrowser(url);
+    launchBrowser(await viewerUrl(result.lock, config.open, config, { token: true }));
   }
 }
 

@@ -85,7 +85,7 @@ if (mode === 'delay-listen-retry') {
 if (mode === 'pause-before-register') {
   const request = http.request;
   http.request = function(options, ...args) {
-    if (options.path === '/register' && process.env.GRAPH_TEST_MARKER) {
+    if (options.path === '/wheelchair/register' && process.env.GRAPH_TEST_MARKER) {
       const outgoing = new EventEmitter();
       fssync.writeFileSync(process.env.GRAPH_TEST_MARKER, 'ready');
       outgoing.end = function(...endArgs) {
