@@ -9,6 +9,12 @@ verified-by:
   - round: 1
     lane: gpt-5.6-sol
     checks: sonnet
+  - round: 2
+    lane: claude default reviewer
+    checks: terra
+  - round: 2
+    lane: gpt-5.6-sol
+    checks: sonnet
 ---
 
 # Completion Report — See and rule on hearth's graphs from a phone or laptop
