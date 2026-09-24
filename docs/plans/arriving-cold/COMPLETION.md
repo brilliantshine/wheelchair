@@ -33,6 +33,9 @@ verified-by:
   - round: 8
     lane: gpt-5.6-sol
     checks: sonnet
+  - round: 9
+    lane: gpt-5.6-sol
+    checks: sonnet
 ---
 
 # Completion Report — Knowing what you have actually seen
@@ -327,3 +330,9 @@ Verification round 8 (`gpt-5.6-sol`) found one more variant of the degenerate tr
 rounds, so per `protocol/verification.md` it went to Collin, who chose to stop describing it
 precisely: `protocol/seen.md` now says only that in degenerate cases, where the fixed lines
 leave no room, the list is left out, and `PLAN.md` carries it as an Accepted Risk.
+
+### Verification round 9 — 2026-09-24
+
+`gpt-5.6-sol`: the generalized truncation wording matches `seen/hook.sh`; no other Spec
+failures; both test modes green, clean worktree. `VERDICT: PASS`. The Claude verifier passed
+the scripts in round 2. Status `done`.

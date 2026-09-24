@@ -1,6 +1,6 @@
 ---
 slug: arriving-cold
-status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
+status: done   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-09-19
 ---
 
@@ -777,6 +777,9 @@ Filled by Stage 3. One row per worker brief.
 
 ## Log
 
+- 2026-09-24 — Verification passed after nine rounds (scripts passed in round 2; the rest
+  were `protocol/seen.md` matching the code, one security fix, two small code fixes). Status
+  `done`.
 - 2026-09-24 — Real install done (`./install.sh` twice, clean). Collin confirmed the change
   notice shows in both Claude Code and Codex, so both keep `notice` and the write grant; result
   recorded in `protocol/seen.md`. COMPLETION.md written. Status `verifying`.
