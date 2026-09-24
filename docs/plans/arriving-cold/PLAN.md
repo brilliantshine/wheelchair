@@ -1,6 +1,6 @@
 ---
 slug: arriving-cold
-status: approved   # planning | ready-for-review | approved | implementing | verifying | done
+status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-09-19
 ---
 
@@ -770,9 +770,15 @@ Filled by Stage 3. One row per worker brief.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | The hook and the wording script: `seen/hook.sh` (Spec "The hook", D30, D34, D43, D45, D47–D49, D51, D52) and `seen/wording.sh` (D35, D39, D29), with their fixture tests | `seen/hook.sh`, `seen/wording.sh`, `seen/test/hook_test.sh`, `seen/test/wording_test.sh` | GPT / gpt-5.6-terra (worktree `arriving-cold-t1`) | | `bash seen/test/hook_test.sh && bash seen/test/wording_test.sh` | dispatched |
+| T2 | The installer writer: `seen/set.sh` (Spec "The installer", D14, D26, D36, D38, D42, D52) called from `install.sh` before the sensitivity writer, honouring the existing home seams, with fixture tests | `seen/set.sh`, `seen/test/set_test.sh`, `install.sh`, `install/test/run.sh` | GPT / gpt-5.6-terra (worktree `arriving-cold-t2`) | | `bash seen/test/set_test.sh && bash install/test/run.sh` | dispatched |
+| T3 | The prose: `protocol/seen.md` (canonical rules, `gap-threshold: 4h`), `protocol/templates/SEEN.md`, one pointer in each of the four stage documents, `WHEELCHAIR_LANE=1` in `protocol/lanes.md`, `seen/AGENTS.md`, and the root, `protocol/` and README router rows | `protocol/seen.md`, `protocol/templates/SEEN.md`, `protocol/{planning,plan-review,implementation,verification,lanes}.md`, `protocol/AGENTS.md`, `seen/AGENTS.md`, `AGENTS.md`, `README.md` | Claude / sonnet (worktree `arriving-cold-t3`) | | `grep` checks in the brief | dispatched |
 
 ## Log
 
+- 2026-09-24 — Stage 3 started. Three disjoint tasks in three worktrees. The scripts are bash
+  shims running Python (as `codex/preflight.sh` does) for JSON, TOML and `fcntl` locking, since
+  `flock(1)` is absent on macOS.
 - 2026-09-24 — Round 10 clean. D57 from its minors. Spec diagrams drawn fresh — the graphs
   under `graphs/` are decision graphs about superseded arrangements, not the settled flow, and
   hold no `rejected` entries. Status `approved`.
