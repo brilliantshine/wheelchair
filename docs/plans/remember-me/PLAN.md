@@ -1,6 +1,6 @@
 ---
 slug: remember-me
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: planning   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-09-23
 ---
 
@@ -15,7 +15,27 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-None. Every question is settled; see the Decision Log.
+### Q4: Find out now how Tailscale forwards a path, or keep designing around not knowing?
+- **Context:** Plan review rounds 2–4. Whether `tailscale serve --set-path /wheelchair`
+  strips `/wheelchair` before forwarding, and how it joins the target's own path, decides
+  the mapping command (Decision Log #2, #25). It couldn't be checked without `sudo`, so the
+  Spec carries a fallback. Each of the last three rounds found a new hole in that fallback:
+  what counts as the check passing, what happens when neither target works, and how to
+  replace a mapping that already exists.
+- **Options:** (a) Find out now with a harmless probe, in about two minutes of Collin's
+  time. The lead starts a tiny local server that only echoes the path it receives, on a
+  spare port, and holds no secrets. Collin runs
+  `sudo tailscale serve --bg --set-path /wheelchair-probe http://127.0.0.1:<probe port>/wheelchair-probe`.
+  The lead requests `https://hearth.taileb4e52.ts.net/wheelchair-probe/x` and reads which
+  path arrived, and reads the Handlers key from `tailscale serve status --json`. Collin
+  then runs `sudo tailscale serve --https=443 --set-path /wheelchair-probe off`, which also
+  proves the per-path removal (#22) and that `/` survives it. The Spec then names the one
+  right mapping command, and #25's fallback is deleted. (b) Keep the fallback and specify
+  its missing parts: a success test of `200` with a `start_id`, a third outcome when
+  neither target works, and a replace step with its own `sudo` prompt.
+- **Recommendation:** (a). It turns three rounds of guessing into one fact, removes the
+  fallback machinery entirely, and settles two other open points (the removal syntax and
+  the Handlers key spelling) at the same time.
 
 ## Watch List
 
@@ -64,6 +84,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 23 | `--url` never refuses. Against a pre-prefix holder it prints the bookmark `<base>/wheelchair/?token=<.token's value>`, writes `a viewer from an older version is running; run ./install.sh` to stderr, and exits 0 | `--url` never starts or talks to a server beyond identifying it; the bookmark it prints is right once `./install.sh` has run, which the warning says to do | review-round-3 |
 | 24 | The installer reads `tailscale serve status --json` with `node -e` (Node is already required), gets the host from `served_origin`, including in `--no-serve`, and treats a Handlers key of either `/wheelchair` or `/wheelchair/` as the prefix mapping. With no host name, `--no-serve` prints no command and says why | `sed` can't reliably walk nested JSON; Tailscale's key spelling for a set path was checked only for `/`; `--no-serve` needs the host to look anything up | review-round-3 |
 | 25 | The mapping target defaults to `http://127.0.0.1:$port/wheelchair` (#2). If the blocking `curl …/wheelchair/whoami` check shows the request doesn't reach `/wheelchair/whoami` (for example it lands on `/wheelchair/wheelchair/whoami`, or on `/whoami`), the target becomes whichever of `http://127.0.0.1:$port/wheelchair` and `http://127.0.0.1:$port` makes that check pass. That is a one-line change in `install.sh`, and nothing in the viewer changes. The implementer records which form Tailscale needed in COMPLETION.md | Tailscale's joining of mount path and target path couldn't be checked without `sudo`; the viewer's prefix is the same either way | review-round-3 |
+| 26 | `--no-serve` takes the host from the origin recorded in `.serving`, not from `served_origin`. With no recorded origin it prints no command and says the viewer isn't set up to serve, so there is nothing to remove | The origin is already on disk; `served_origin`'s messages describe setup failing, which is the wrong reason here | review-round-4 |
 
 ## Spec
 
@@ -159,7 +180,8 @@ their requests to the server use the prefixed routes. To identify a holder they 
 #15). The live pre-change viewer answers the prefixed route with `401` and the root one with
 a valid `proof`. A root answer with a valid `proof` is our server running pre-prefix code:
 `--stop` and `--stop --if-stale` treat it like any of our servers (its `code` differs, so
-`--if-stale` stops it), and every other command refuses it with the older-version message.
+`--if-stale` stops it), `--url` prints the bookmark with a warning (Decision Log #23), and
+every other command refuses it with the older-version message.
 A root answer with no `proof` falls under remote-viewer Decision Log #85's existing rule.
 
 ### The installer
@@ -249,8 +271,9 @@ lacks it and not when present; it offers the `/` command only when `/` is unmapp
 never when `/` points at another port; `--no-serve` prints the `/wheelchair` removal, and
 the `/` removal only when `/` points at the viewer's port, and never the global
 `--https=443 off`; the commands use `$port`; a Handlers key of `/wheelchair/` counts the same
-as `/wheelchair`; `--no-serve` with `tailscale` missing, or with no host name, prints no
-command and says why; serving setup calls `node … --url` last and prints its output last.
+as `/wheelchair`; `--no-serve` with `tailscale` missing, with no recorded origin, or with
+`tailscale serve status --json` failing or printing malformed JSON, prints no command and
+says why; serving setup calls `node … --url` last and prints its output last.
 
 Blocking, on hearth, after `./install.sh --serve` and the new `sudo tailscale serve` step
 (Decision Log #13):
@@ -378,7 +401,9 @@ Triage: 1 major upheld, so the round is not clean. It is the second round since 
 
 Third and last round of the budget since Collin's last decision (Q3).
 
-**Lanes:** GPT / gpt-5.6-sol (mechanics lens); Claude / default reviewer model (intent lens); cross-family: yes.
+**Lanes:** GPT / gpt-5.6-sol (mechanics lens, thread `01a0d183-7efc-75a3-b7a6-7d61c9bd2fab`); Claude / default reviewer model (intent lens); cross-family: yes.
+
+Triage: 2 major findings, both about the Tailscale mapping target, opened as Q4; the minor ones are fixed. The round is not clean and the budget since Q3 is spent, so review stops and Q4 goes to Collin.
 
 **Changed since Round 3:**
 - Decision Log #23 (`--url` never refuses);
@@ -392,6 +417,12 @@ Third and last round of the budget since Collin's last decision (Q3).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| Claude | major | The hearth check that picks the mapping target passes on any JSON, and the viewer's own `308` body is JSON, so a wrong mapping would be recorded as right | user-decision | Checked: right. Folded into Q4 |
+| GPT | major | #25's fallback can't be done as a one-line `install.sh` change: once the default mapping exists it counts as "pointing at the viewer", so the installer never offers a replacement, and changing it needs an unspecified removal and another `sudo` step | user-decision | Checked: right. Rounds 2, 3 and 4 each found a new hole in designing around Tailscale's unknown prefix handling. Open Question Q4 |
+| Claude | minor | #25 assumes one of its two targets always passes; its own example (a request landing on `/whoami`) fails with both | user-decision | Folded into Q4 |
+| Claude | minor | `served_origin`'s failure messages say "serving was not configured", which is wrong in `--no-serve`; the origin is already recorded in `.serving` | upheld | Decision Log #26 |
+| GPT | minor | The `--url` exception still contradicts "every command other than the two stop forms refuses that holder" | upheld | Spec reworded: every command except the two stop forms and `--url` |
+| GPT | minor | No fixture case for `tailscale serve status --json` failing or returning malformed JSON | upheld | Fixture case added |
 
 ## Prior Work
 
@@ -416,4 +447,6 @@ Filled by Stage 3. One row per worker brief.
 - 2026-09-23: Q3 settled by Collin: printed agent links drop the token, `--show` opens a
   token link locally (Decision Log #20, and IDEA's agent-links line updated to match).
   Status back to ready-for-review; review rounds count again from here.
+- 2026-09-23: Plan review stopped after round 4, the third round since Q3, with Q4 open
+  (Tailscale's path handling, the recurring finding of rounds 2–4). Status back to planning.
 
