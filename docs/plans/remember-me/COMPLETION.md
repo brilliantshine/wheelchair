@@ -53,7 +53,7 @@ flowchart TD
 | Installer reads `tailscale serve status --json` and manages only the viewer's mappings; path-specific `--no-serve`; origin kept (#12, #17, #21, #22, #24, #26, #28) | this run | `install.sh:166` (`tailscale_mapping_states`), `:212` (`configure_tailscale_serve`), `:266` (`recorded_origin`), `:274` (`disable_service`) | `install/test/run.sh` (63 cases; 22 new, among them "--no-serve records false and keeps the origin for a retry", "--no-serve never suggests disabling every HTTPS mapping") |
 | Tailscale forwarding behaviour (#27) | this run (probe) | Decision Log #27 | Probed on hearth 2026-09-23, with Collin running the two `sudo` commands |
 | Documents (`protocol/graphs.md`, `README.md`) | this run | `protocol/graphs.md` step 1 and the refusals section; `README.md` viewer and serving sections | Read against the Spec |
-| Blocking hearth checks (phone and laptop) | not done | — | Need the new `sudo tailscale serve --set-path /wheelchair …` step and Collin's devices; see Known gaps |
+| Blocking hearth checks (phone and laptop) | partly done | — | 2026-09-24. Collin added the `/wheelchair` mapping (`tailscale serve status` shows `/wheelchair proxy http://127.0.0.1:7373/wheelchair`). The served `/wheelchair/whoami` answers `200` with a `start_id`. On the phone in Firefox, a plain link was refused on a browser never remembered, the token link signed it in, and plain links worked afterwards. A rerun of `./install.sh` offered no `tailscale serve` command. Not yet done: the laptop, a link tapped from another website, an edit saved on the phone |
 
 ## Deviations from plan
 
@@ -115,6 +115,12 @@ $ git status --porcelain                       # only the lead's AGENTS.md citat
   - make an edit;
   - rerun `./install.sh`, which should offer no command;
   - repeat on a laptop.
+- **The laptop checks, a link tapped from another website, and an edit saved on the phone
+  are still to do.** The laptop was off on 2026-09-24.
+- **The installer warns about lingering even when it is on.** On hearth, `Linger=yes`, yet a
+  non-interactive `loginctl enable-linger` is refused, so the installer prints the `sudo`
+  form and the warning. The check comes from remote-viewer (its Decision Log #32). It should
+  read `loginctl show-user "$USER" -p Linger` first. That fix is outside this plan.
 - **The token appeared once in this session's output**, in the bookmark the installer
   printed. It stayed on hearth and the tailnet. `node viewer/server.js --rotate-token` issues
   a new one if Collin wants.
