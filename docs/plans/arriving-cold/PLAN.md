@@ -15,6 +15,20 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
+### Q11: Drop the two refinements that keep breaking?
+
+- **Context:** A stage already grounds only what its turn leans on (D31). On top of that sit
+  two refinements: closing leftover entries when a stage finishes, and a separate re-grounding
+  after a break. Each has needed a new fix in every round since Round 7.
+- **Options:**
+  - **Drop both.** No `closed` lines; leftovers stay unshown, which costs nothing because only
+    what a turn leans on is ever grounded. After a break, a stage simply treats everything its
+    turn leans on as unshown, including things you saw before the break. The planning resume
+    summary is left exactly as it is today.
+  - **Keep both and review again.** Four open findings get fixed in the current shape.
+- **Recommendation:** drop both. Every open finding in this round disappears with them, and
+  the rule that remains is the one that has held since Round 2.
+
 ## Watch List
 
 Things noticed that need looking into — not yet decisions for the user. Written down the
@@ -267,12 +281,15 @@ so the existing warning-not-failing step stays last. `seen/set.sh`, per harness 
   D52), and rewrites it in place
   when present, so a second run is a no-op.
 - Leaves every other hook exactly where it is (D26).
-- Writes a byte-identical entry on every run with a 2-second timeout set explicitly, since
-  Codex's default is 600 seconds. When it creates or changes the Codex entry it prints one line:
+- Writes a byte-identical entry on every run with `"timeout": 2` set explicitly — the field
+  name both harnesses' current hook docs use, not the `timeoutSec` string `MAP.md` found in the
+  Codex binary — since Codex's default is 600 seconds. When it creates or changes the Codex entry it prints one line:
   `run /hooks in Codex once to approve the wheelchair hook` (D36).
 - **Refuses and changes nothing** when the file is not valid JSON, is not an object, or has a
   `hooks` value, event list or matcher group of the wrong shape to append into. It reports what
   it found and exits non-zero.
+- Creates `~/.wheelchair/` if absent, before granting anything: Codex's Linux sandbox drops a
+  writable root that does not exist yet.
 - **Grants the wording script write access (D38, D42)** — on each harness where a
   `UserPromptSubmit` `systemMessage` is displayed to the user (D43; the implementer verifies
   this per harness first and records the result in `protocol/seen.md`). Claude Code: adds
@@ -411,7 +428,7 @@ each of `protocol/planning.md`, `plan-review.md`, `implementation.md` and `verif
 references `protocol/seen.md` and restates none of its rules (`grep`). Its behaviour is an
 Accepted Risk until the first real review round after merge.
 
-## Deferred## Deferred
+## Deferred
 
 Work this plan left undone because of the kind of build it states. Not "not worth fixing" —
 that is Accepted Risks. This is what the next plan starts from if this one earns a second life.
@@ -445,6 +462,27 @@ re-raise them.
 purpose and standing, applying to any stage's resumed run, and the planning resume summary's
 limit on settled decisions; "nothing further in `SEEN.md`"; the `gap-threshold: 4h` line (all
 D55). Third round since D53, the last before escalation.
+
+Nine findings. Not clean: one blocking and four major. Third round since D53, so this goes to
+Collin rather than to a Round 10.
+
+**What keeps recurring.** Two mechanisms have drawn a fix in every round since Round 7:
+closing leftover entries (D31, D54, D55, and now a two-session race) and the wording of the
+after-a-gap re-grounding (D53, D54, D55, and now two majors). Both are refinements layered on a
+simpler rule already in the Spec — a stage grounds only what its turn leans on (D31) — and both
+dissolve if that rule is allowed to do the whole job.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| gpt | blocking | One session's exit turn can close an entry another session just added, so it is never shown | `upheld` | Real under D55. Held for Collin's ruling on dropping `closed` |
+| claude | major | The after-gap paragraph contradicts itself, and material shown before the gap is covered by neither rule | `upheld` | Held for the same ruling |
+| claude | major | D55 limits the planning resume summary, but `protocol/planning.md:39-40` would be left saying otherwise, and the Spec forbids restating rules there | `upheld` | Held for the same ruling |
+| gpt | major | `timeoutSec` in `MAP.md` against `timeout` in both vendors' docs | `upheld` | Checked both docs. Spec now names `"timeout"` |
+| gpt | major | Nothing creates `~/.wheelchair/`, and Codex's Linux sandbox drops a writable root that does not exist | `upheld` | Installer creates it first |
+| claude | minor | "Resumed run" versus "a gap" as the trigger is ambiguous | `upheld` | Held for the same ruling |
+| claude | minor | Drop `closed`: leaning-on already bounds grounding, and closing still hides worker results at the `verifying` handoff | `user-decision` | Q11 |
+| claude | minor | The re-grounding restates what the work is for on every post-gap turn | `upheld` | Held for the same ruling |
+| claude | minor | A mangled `## Deferred` heading | `upheld` | Fixed |
 
 ### Round 8 — 2026-09-24
 
@@ -692,6 +730,7 @@ Filled by Stage 3. One row per worker brief.
 
 ## Log
 
+- 2026-09-24 — Round 9 triaged. Cap reached; Q11 raised with Collin.
 - 2026-09-24 — Round 8 triaged: D55. Round 9 next, the last before the cap.
 - 2026-09-24 — Round 7 triaged: D54. Round 8 next.
 - 2026-09-24 — Escalation settled as D53 (simplified after-gap re-grounding). Round 7 next.
