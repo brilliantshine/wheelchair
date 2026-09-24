@@ -15,20 +15,6 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q11: Drop the two refinements that keep breaking?
-
-- **Context:** A stage already grounds only what its turn leans on (D31). On top of that sit
-  two refinements: closing leftover entries when a stage finishes, and a separate re-grounding
-  after a break. Each has needed a new fix in every round since Round 7.
-- **Options:**
-  - **Drop both.** No `closed` lines; leftovers stay unshown, which costs nothing because only
-    what a turn leans on is ever grounded. After a break, a stage simply treats everything its
-    turn leans on as unshown, including things you saw before the break. The planning resume
-    summary is left exactly as it is today.
-  - **Keep both and review again.** Four open findings get fixed in the current shape.
-- **Recommendation:** drop both. Every open finding in this round disappears with them, and
-  the rule that remains is the one that has held since Round 2.
-
 ## Watch List
 
 Things noticed that need looking into — not yet decisions for the user. Written down the
@@ -110,6 +96,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D53 | **Supersedes D32 and the stretch half of D50.** After a gap, the stage is given only the fact — how long since the plan's last turn — and re-grounds from the plan itself, the way the resume summary in `protocol/planning.md` Step 1 already does: what the work is for, where it stands, and what this turn is about to lean on. No set of past entries is computed or replayed. The plan clock (`turn` lines, written last, D50) stays, because it is what detects the gap | Round 6 escalation. The precise re-grounding rule broke in a new way in each of Rounds 4, 5 and 6. Coming back to a plan already begins with a resume summary, so the precise version added little beyond the timing logic that kept failing | user |
 | D54 | **One fixed order for a stage's writes at the end of a turn**, immediately before its text: (1) `shown` for the entries this turn explains; (2) if this turn changes the plan's `status`, `closed` for every entry still unshown; (3) the `turn` line. A record with no `turn` line yet has no gap. On a resume after a gap, the resume summary in `protocol/planning.md` **is** the re-grounding, not an addition to it. The four-hour number is stated once in `protocol/seen.md`; `seen/hook.sh`'s constant names that file in a comment, and the suite checks the two agree | Round 7: three rules each claimed to be the last write, and closing before the final summary would hide the worker results it was about to explain; a first turn had no defined clock; a resume after a gap could stack two re-groundings; the threshold lived in two places | review-round-7 |
 | D55 | **Closing happens only on a stage's exit status**: the turn that sets `ready-for-review`, `approved`, `verifying` or `done`. Setting `planning` or `implementing`, which a stage does on entry, closes nothing. On the first turn after a gap, the entry grounding (D31) covers what the turn leans on, and the re-grounding (D53) adds only what the work is for and where it stands; it applies to a resumed run of any stage, and a planning resume summary names settled decisions only as far as the next question depends on them. "Nothing after the `turn` line" means nothing further in `SEEN.md`. `protocol/seen.md` states the threshold as one line, `gap-threshold: 4h`, which the suite parses | Round 8, both lanes: `/implement` sets `implementing` at its start and can stop mid-run on a dead lane, so closing on any status change hid accepted results from the resumed run. The rest are Round 8 minors: two groundings overlapping on a gap turn, "resume" defined only for planning, the resume summary's "what's settled" against `IDEA.md`'s "without reciting your own decisions", an over-broad "nothing written", and a threshold with no parseable form | review-round-8 |
+| D56 | **Supersedes the closing half of D31, D53, and the closing and resume parts of D54 and D55.** There are no `closed` lines and no separate after-gap re-grounding. One rule remains: before writing to you, a stage explains every entry its turn leans on that you have not been shown — and after a gap, every entry it leans on counts as not shown, including ones you saw before the gap. The planning resume summary is left exactly as `protocol/planning.md` has it today | Q11, after Round 9 reached the cap. Closing and the after-gap re-grounding drew a new fix in every round since Round 7. Leftover unshown entries cost nothing, because only what a turn leans on is ever grounded, so closing only ever hid things; and treating leaned-on entries as unseen after a gap covers `IDEA.md`'s "coming back after hours away" with the rule that has held since Round 2 | user |
 
 ## Spec
 
@@ -137,10 +124,10 @@ per line:
 2026-09-24T10:02Z new 7c1e round 2 found the spec never said what happens when the settings file is malformed
 2026-09-24T10:02Z new a40b round 2 found the installer refuses whenever any other hook exists
 2026-09-24T10:05Z shown 7c1e
-2026-09-26T09:00Z closed a40b
+2026-09-24T10:05Z turn
 ```
 
-An entry is unshown until a `shown` or `closed` line names its id (D31). A `turn` line carries
+An entry is unshown until a `shown` line names its id. A `turn` line carries
 no id and marks a stage turn to the reader (D48). An id is four random hex characters,
 redrawn if it already appears in the file, so two writers never need to agree on a counter. Every write is one short line appended with `>>`, so two writers cannot
 lose each other's lines. Nothing ever edits or deletes a line. Only stages write this file (D30).
@@ -198,14 +185,8 @@ plan's record, grounds each unshown entry **that turn leans on**, and appends `s
 exactly those, in the end-of-turn order below (D54). Entries the turn does not lean on stay unshown. A turn with nothing to ground
 reads exactly as it does today.
 
-**Closing (D31, D55).** A turn that sets an exit status — `ready-for-review`, `approved`,
-`verifying` or `done` — appends `closed` for every entry still unshown, after its `shown` lines.
-Setting `planning` or `implementing` closes nothing, so entries its own summary explains are never closed.
-Closed entries are never surfaced.
-
-**End-of-turn order (D54).** Immediately before a stage turn's text, in this order: `shown`
-lines, then `closed` lines if this turn set an exit status, then the `turn` line. Nothing
-further is written to `SEEN.md` in that turn (D55).
+**End-of-turn order.** Immediately before a stage turn's text: its `shown` lines, then its
+`turn` line. Nothing further is written to `SEEN.md` in that turn (D54).
 
 **The plan's clock (D48, D50).** At the start of each turn to the reader, the stage reads the
 time of the latest `turn` line in `SEEN.md`; four hours or more before now is a gap for this
@@ -215,14 +196,10 @@ under a stage document counts; free chat after a stage has finished writes none 
 Risks). A stage ignores the hook's
 session gap line (D52).
 
-**After a gap (D53).** On a turn that found a gap, the stage re-grounds from the plan itself,
-as the resume summary does: what the work is for, where it stands, and what this turn is about
-to lean on — never a recital of your own decisions. No past entries are replayed and nothing
-is appended for the re-grounding. What the turn leans on is already covered by the entry
-grounding above, so the re-grounding adds only what the work is for and where it stands
-(D55). It applies to a resumed run of any stage. For planning, the resume summary is the
-re-grounding, and it names settled decisions only as far as the next question depends on them
-(D54, D55).
+**After a gap (D56).** On a turn that found a gap, every entry the turn leans on counts as not
+shown, including ones shown before the gap: the stage explains them and appends `shown` for
+them again. Nothing else changes — no summary is added, and the planning resume summary stays
+as `protocol/planning.md` has it.
 
 No lane, no model call and no firing condition exist for this feature (D20). It never runs on
 a subagent's own turns (D4) — a worker lane does not write the record; the lead that accepts
@@ -446,13 +423,22 @@ re-raise them.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
-| A turn interrupted after its `shown` lines are written loses those entries | A stage has no point after its text is delivered at which it can still write. The loss is the too-quiet direction, which D3 ranks survivable, and a stage turn after a gap re-grounds from the plan anyway (D53) | round-3 |
+| A turn interrupted after its `shown` lines are written loses those entries | A stage has no point after its text is delivered at which it can still write. The loss is the too-quiet direction, which D3 ranks survivable, and after a gap any entry a turn leans on is explained again anyway (D56) | round-3 |
 | The stage half — writing, grounding, closing — is verified by no suite | It is protocol prose executed by the stage agent. The first real review round after merge is its first observation; the lead reads that plan's `SEEN.md` then | round-3 |
 | On Codex, a project config, profile or `-c` override that sets its own `sandbox_workspace_write.writable_roots` replaces the user-level list, so saving a "yes" there prompts | Codex layers replace arrays rather than merging them (Round 5, citing Codex's config loader). The failure is a prompt, the tedium D38 avoids elsewhere, not a wrong outcome. None of the project tables in `~/.codex/config.toml` sets it today | round-5 |
-| Free chat in a session after a stage finishes writes no `turn` line, so hours of follow-up questions can make the next stage turn see a gap and re-ground once | Bounded to one turn, and that turn re-grounds from the plan (D53) rather than replaying anything. Making every ordinary turn write the plan's record would bring back the hook-writes-`SEEN.md` design D30 removed | round-7 |
+| Free chat in a session after a stage finishes writes no `turn` line, so hours of follow-up questions can make the next stage turn see a gap and explain again what it leans on | Bounded to one turn and to what that turn leans on (D56). Making every ordinary turn write the plan's record would bring back the hook-writes-`SEEN.md` design D30 removed | round-7 |
 | The effect of injected context on prompt caching is unmeasured (W2) | Rationale restated in Round 2, since D20 removed the lane the original one leaned on. The injected text is now the whole cost: at most 2,000 characters (D34), nothing at all when there is no confirmed entry and no gap, and it arrives with the new message rather than inside the earlier conversation a cache would hold. Measuring it needs instrumentation this plan has no other reason to build | planning, round-2 |
 
 ## Review Rounds
+
+### Round 10 — 2026-09-24
+
+**Lanes:** GPT / gpt-5.6-sol (mechanics); Claude / default reviewer model (intent); cross-family: yes.
+
+**Changed since Round 9:** `closed` lines and the separate after-gap re-grounding removed; after
+a gap, every entry a turn leans on counts as not shown; the planning resume summary untouched
+(D56); the hook's `"timeout"` field name; the installer creating `~/.wheelchair/`. The cap reset
+after D56.
 
 ### Round 9 — 2026-09-24
 
@@ -730,6 +716,7 @@ Filled by Stage 3. One row per worker brief.
 
 ## Log
 
+- 2026-09-24 — Q11 settled as D56. Round 10 next.
 - 2026-09-24 — Round 9 triaged. Cap reached; Q11 raised with Collin.
 - 2026-09-24 — Round 8 triaged: D55. Round 9 next, the last before the cap.
 - 2026-09-24 — Round 7 triaged: D54. Round 8 next.
