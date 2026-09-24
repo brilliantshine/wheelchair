@@ -2,7 +2,13 @@
 slug: arriving-cold
 date: 2026-09-24
 implemented-by: "terra (T1, T2), sonnet (T3); lead: opus"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude default reviewer
+    checks: terra
+  - round: 1
+    lane: gpt-5.6-sol
+    checks: sonnet
 ---
 
 # Completion Report — Knowing what you have actually seen
