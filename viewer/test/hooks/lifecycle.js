@@ -63,11 +63,15 @@ if (mode === 'hang-on-sigterm') {
     waitForRelease.unref();
   };
   // Replace the server's handler after server.js installs it, just as ignore-sigterm does.
+  // Once the server's own SIGTERM listener has been swapped for `hang`, write `<release>.armed`
+  // so the test signals A only after the hang is really in place, not after a guessed delay.
+  let armed = false;
   const timer = setInterval(() => {
     for (const listener of process.listeners('SIGTERM')) {
-      if (listener !== hang) process.removeListener('SIGTERM', listener);
+      if (listener !== hang) { process.removeListener('SIGTERM', listener); if (!armed) armed = 'pending'; }
     }
     if (!process.listeners('SIGTERM').includes(hang)) process.on('SIGTERM', hang);
+    if (armed === 'pending') { armed = true; fssync.writeFileSync(`${release}.armed`, 'armed'); }
   }, 10);
   timer.unref();
 }

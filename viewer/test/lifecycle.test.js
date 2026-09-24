@@ -413,7 +413,12 @@ test('a starter that loses the freed port registers through the new holder', asy
   const old = launch(['--cache-root', root, '--port', String(port)], 'hang-on-sigterm', { GRAPH_TEST_RELEASE: release }); let winner; let loser;
   try {
     await old.ready;
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    // Wait until the hook has really replaced A's SIGTERM handling; a fixed delay was flaky under load.
+    const armedBy = Date.now() + 5000;
+    while (Date.now() < armedBy && !(await fs.stat(`${release}.armed`).catch(() => null))) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.ok(await fs.stat(`${release}.armed`).catch(() => null), 'the hang-on-sigterm hook armed');
     old.child.kill('SIGTERM');
     loser = launch(['--cache-root', root, '--port', String(port), '--open', graph], 'delay-listen-retry', { GRAPH_TEST_MARKER: marker });
     const deadline = Date.now() + 5000;
@@ -424,7 +429,7 @@ test('a starter that loses the freed port registers through the new holder', asy
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
     assert.match(observed, /first/, 'C attempted its first listen while A held the port');
-    await new Promise((resolve) => setTimeout(resolve, 700));
+    await new Promise((resolve) => setTimeout(resolve, 300));
     await fs.unlink(release);
     await exit(old.child);
     winner = await startServer({ cacheRoot: root, port });
