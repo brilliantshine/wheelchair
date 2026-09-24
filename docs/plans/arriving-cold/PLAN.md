@@ -94,6 +94,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D51 | The hook also ignores Claude Code subagents: it exits silently when its input carries `agent_id` | Round 6: D47's environment marker covers `codex exec` and `claude -p`, but Claude Code's own lanes are the in-process Agent tool, which never passes through a shell the stage controls | review-round-6 |
 | D52 | A malformed session clock file is overwritten with the current time and reports no gap; D14's match is on the script path alone, ignoring the arguments D49 adds; the hook's gap line reads "this session's last message was …", and `protocol/seen.md` tells a stage to use its plan clock and not that line | Round 6 minors and one major: "treated as empty rather than repaired" would have disabled the clock for good; matching the whole command would duplicate the group when a D49 constant changed; and the stage would otherwise see two disagreeing clocks | review-round-6 |
 | D53 | **Supersedes D32 and the stretch half of D50.** After a gap, the stage is given only the fact — how long since the plan's last turn — and re-grounds from the plan itself, the way the resume summary in `protocol/planning.md` Step 1 already does: what the work is for, where it stands, and what this turn is about to lean on. No set of past entries is computed or replayed. The plan clock (`turn` lines, written last, D50) stays, because it is what detects the gap | Round 6 escalation. The precise re-grounding rule broke in a new way in each of Rounds 4, 5 and 6. Coming back to a plan already begins with a resume summary, so the precise version added little beyond the timing logic that kept failing | user |
+| D54 | **One fixed order for a stage's writes at the end of a turn**, immediately before its text: (1) `shown` for the entries this turn explains; (2) if this turn changes the plan's `status`, `closed` for every entry still unshown; (3) the `turn` line. A record with no `turn` line yet has no gap. On a resume after a gap, the resume summary in `protocol/planning.md` **is** the re-grounding, not an addition to it. The four-hour number is stated once in `protocol/seen.md`; `seen/hook.sh`'s constant names that file in a comment, and the suite checks the two agree | Round 7: three rules each claimed to be the last write, and closing before the final summary would hide the worker results it was about to explain; a first turn had no defined clock; a resume after a gap could stack two re-groundings; the threshold lived in two places | review-round-7 |
 
 ## Spec
 
@@ -179,22 +180,30 @@ instruction about how to write (D5).
 
 **What a stage reads (D31).** Before composing any turn to the reader, the stage reads the
 plan's record, grounds each unshown entry **that turn leans on**, and appends `shown` for
-exactly those, as its last action before the turn's text. Entries the turn does not lean on stay unshown. A turn with nothing to ground
+exactly those, in the end-of-turn order below (D54). Entries the turn does not lean on stay unshown. A turn with nothing to ground
 reads exactly as it does today.
 
-**Closing (D31).** Whichever stage changes the plan's `status` appends `closed` for every entry
-still unshown. Closed entries are never surfaced.
+**Closing (D31).** A turn that changes the plan's `status` appends `closed` for every entry
+still unshown, after its `shown` lines, so entries its own summary explains are never closed.
+Closed entries are never surfaced.
+
+**End-of-turn order (D54).** Immediately before a stage turn's text, in this order: `shown`
+lines, then `closed` lines if the status changed, then the `turn` line. Nothing is written
+after the `turn` line.
 
 **The plan's clock (D48, D50).** At the start of each turn to the reader, the stage reads the
 time of the latest `turn` line in `SEEN.md`; four hours or more before now is a gap for this
-plan, whatever happened in other sessions or plans meanwhile. As its last action before the
-turn's text, after any `shown` lines, it appends a new `turn` line. A stage ignores the hook's
+plan, whatever happened in other sessions or plans meanwhile, and a record with no `turn` line
+yet has no gap (D54). The turn's own `turn` line is its last write (D54). Only a turn written
+under a stage document counts; free chat after a stage has finished writes none (Accepted
+Risks). A stage ignores the hook's
 session gap line (D52).
 
 **After a gap (D53).** On a turn that found a gap, the stage re-grounds from the plan itself,
 as the resume summary does: what the work is for, where it stands, and what this turn is about
 to lean on — never a recital of your own decisions. No past entries are replayed and nothing
-is appended for the re-grounding.
+is appended for the re-grounding. When the turn is a resume, the resume summary is the
+re-grounding (D54).
 
 No lane, no model call and no firing condition exist for this feature (D20). It never runs on
 a subagent's own turns (D4) — a worker lane does not write the record; the lead that accepts
@@ -237,8 +246,8 @@ wheelchair: wording list — added "hidden work"; removed "ledger"
 
 Past 160 characters it ends with how many more changes there were. The gap line appears only
 when there is a gap. Confirmed entries go newest first; when they do
-not fit, the last line gives how many were left out. The four-hour threshold and the cap are
-named constants in one place.
+not fit, the last line gives how many were left out. The cap is a named constant in `seen/hook.sh`. The four-hour threshold is stated once in
+`protocol/seen.md`, and the hook's constant names that file in a comment (D54).
 
 ### The installer
 
@@ -280,9 +289,10 @@ would abort it mid-run and break its own idempotence check for an unrelated reas
 Every path here fails open, without exception. A hook that exits non-zero, times out, or
 returns unparseable output lets the turn proceed with nothing injected. The harness may print
 its own one-line notice when that happens (Claude Code does, on a non-zero exit); the hook
-therefore exits 0 on every path it controls, and only a timeout reaches that notice. A missing or malformed wording list
-or state file is treated as empty rather than repaired, and so is a malformed `SEEN.md` when a
-stage reads it. The hook entry carries a 2-second
+therefore exits 0 on every path it controls, and only a timeout reaches that notice. A missing or malformed wording list,
+`confirmed.last` or `SEEN.md` is treated as empty rather than repaired. The one exception is
+the session clock file, which the hook overwrites on every message anyway, malformed or not
+(D52). The hook entry carries a 2-second
 timeout and in practice reads two small files; the fixture suite holds it under 200 ms.
 
 This is the most important property in the Spec, and the reason is the asymmetry of cost: a
@@ -362,7 +372,8 @@ under two concurrent writers. The hook also: returns a `systemMessage` naming an
 confirmed list changes, and none on the following message; stays silent when
 `confirmed.last` is missing; invoked with `no-notice`, leaves `confirmed.last` untouched; keeps a separate clock per session; exits 0 with no output and no state change when `WHEELCHAIR_LANE=1` or when its input carries
 `agent_id`; overwrites a malformed session file and reports no gap; rewrites rather than
-duplicates its group when only its arguments change. `grep` confirms every
+duplicates its group when only its arguments change; its four-hour constant equals the number
+stated in `protocol/seen.md`. `grep` confirms every
 lane invocation in `protocol/lanes.md` carries `WHEELCHAIR_LANE=1`. `seen/wording.sh` also: `confirm` and `strike` each move exactly the named `## Proposed` row and
 refuse a phrase not there; `suggest` refuses a phrase present in any section; `remove` moves a
 confirmed row to `## Struck`; a phrase differing only in case names the same row. The
@@ -415,9 +426,18 @@ re-raise them.
 | A turn interrupted after its `shown` lines are written loses those entries | A stage has no point after its text is delivered at which it can still write. The loss is the too-quiet direction, which D3 ranks survivable, and a stage turn after a gap re-grounds from the plan anyway (D53) | round-3 |
 | The stage half — writing, grounding, closing — is verified by no suite | It is protocol prose executed by the stage agent. The first real review round after merge is its first observation; the lead reads that plan's `SEEN.md` then | round-3 |
 | On Codex, a project config, profile or `-c` override that sets its own `sandbox_workspace_write.writable_roots` replaces the user-level list, so saving a "yes" there prompts | Codex layers replace arrays rather than merging them (Round 5, citing Codex's config loader). The failure is a prompt, the tedium D38 avoids elsewhere, not a wrong outcome. None of the project tables in `~/.codex/config.toml` sets it today | round-5 |
+| Free chat in a session after a stage finishes writes no `turn` line, so hours of follow-up questions can make the next stage turn see a gap and re-ground once | Bounded to one turn, and that turn re-grounds from the plan (D53) rather than replaying anything. Making every ordinary turn write the plan's record would bring back the hook-writes-`SEEN.md` design D30 removed | round-7 |
 | The effect of injected context on prompt caching is unmeasured (W2) | Rationale restated in Round 2, since D20 removed the lane the original one leaned on. The injected text is now the whole cost: at most 2,000 characters (D34), nothing at all when there is no confirmed entry and no gap, and it arrives with the new message rather than inside the earlier conversation a cache would hold. Measuring it needs instrumentation this plan has no other reason to build | planning, round-2 |
 
 ## Review Rounds
+
+### Round 8 — 2026-09-24
+
+**Lanes:** GPT / gpt-5.6-sol (mechanics); Claude / default reviewer model (intent); cross-family: yes.
+
+**Changed since Round 7:** the end-of-turn write order, the empty-record clock, the resume
+summary as the re-grounding, and the threshold's single statement (D54); the Failing open
+exception for the session clock; the free-chat accepted risk. Second round since D53.
 
 ### Round 7 — 2026-09-24
 
@@ -427,6 +447,19 @@ re-raise them.
 hook ignoring Claude Code subagents (D51); the malformed clock, D14's match and the session gap
 line's wording (D52); after a gap, the stage re-grounds from the plan rather than replaying a
 computed stretch (D53). The cap reset after D53.
+
+Six findings. Not clean: one blocking and one major, both fixed in the Spec (D54 and a
+Failing-open rewording). Neither concerns the gap rule D53 simplified; the recurring problem
+from Rounds 4–6 did not recur.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| gpt | blocking | `shown`, `turn` and closing each claim to be the last write, and closing first would hide worker results the final summary explains | `upheld` | Checked against `protocol/implementation.md`, whose last step sets the status and writes the summary. D54 |
+| gpt | major | Failing open says a malformed state file is not repaired, while D52 overwrites the session clock | `upheld` | Reworded with the one exception |
+| claude | minor | Free chat after a stage writes no `turn` line, so the next stage may see a false gap | `accepted-risk` | Accepted Risks |
+| claude | minor | A record with no `turn` line has no defined clock | `upheld` | D54: no gap |
+| claude | minor | A resume after a gap may stack the resume summary and a re-grounding | `upheld` | D54: the summary is the re-grounding |
+| claude | minor | The threshold now lives in two places | `upheld` | D54 |
 
 ### Round 6 — 2026-09-24
 
@@ -633,6 +666,7 @@ Filled by Stage 3. One row per worker brief.
 
 ## Log
 
+- 2026-09-24 — Round 7 triaged: D54. Round 8 next.
 - 2026-09-24 — Escalation settled as D53 (simplified after-gap re-grounding). Round 7 next.
 - 2026-09-24 — Round 6 triaged: D50–D52. Cap reached with the gap rule recurring; brought to
   Collin rather than a Round 7.
