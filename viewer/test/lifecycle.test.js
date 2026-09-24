@@ -51,6 +51,29 @@ async function fakeServer(port, response) {
   return server;
 }
 
+async function prePrefixHolder(root, port, token, startId, { proof = true } = {}) {
+  const fixture = path.join(root, `pre-prefix-${proof ? 'proof' : 'no-proof'}.js`);
+  const requests = path.join(root, `pre-prefix-${proof ? 'proof' : 'no-proof'}.jsonl`);
+  await fs.writeFile(fixture, `'use strict';
+const crypto=require('node:crypto'),fs=require('node:fs'),http=require('node:http');
+const [port,file,token,startId,proof]=process.argv.slice(2);
+http.createServer((request,response)=>{
+  fs.appendFileSync(file,JSON.stringify({url:request.url,headers:request.headers})+'\\n');
+  if(request.url.startsWith('/wheelchair/whoami')) { response.writeHead(401,{'content-type':'application/json'}); response.end(JSON.stringify({error:'bad-token'})); return; }
+  if(request.url.startsWith('/whoami')) { const nonce=new URL(request.url,'http://localhost').searchParams.get('nonce'); const body={start_id:startId,pid:process.pid,code:'preprefix000'}; if(proof==='yes') body.proof=crypto.createHmac('sha256',token).update(nonce).digest('hex'); response.end(JSON.stringify(body)); return; }
+  response.writeHead(404,{'content-type':'application/json'}); response.end(JSON.stringify({error:'no-route'}));
+}).listen(Number(port),'127.0.0.1',()=>console.log('ready'));
+`);
+  const child = spawn(process.execPath, [fixture, String(port), requests, token, startId, proof ? 'yes' : 'no'], { stdio: ['ignore', 'pipe', 'pipe'] });
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('pre-prefix holder did not start')), 2000);
+    child.stdout.once('data', () => { clearTimeout(timer); resolve(); }); child.once('exit', (code) => { clearTimeout(timer); reject(new Error(`pre-prefix holder exited ${code}`)); });
+  });
+  await fs.writeFile(path.join(root, '.token'), `${token}\n`);
+  await fs.writeFile(path.join(root, '.server'), JSON.stringify({ pid: child.pid, port, token, start_id: startId }));
+  return { child, requests };
+}
+
 test('the token lasts across a restart, rotates only explicitly, and whoami proves a nonce', async () => {
   const root = await makeDir(); const port = await freePort();
   const first = await startServer({ cacheRoot: root, port });
@@ -226,6 +249,45 @@ test('an older server is stopped only by --stop and every other command gives th
   } finally { await stop(old); }
 });
 
+test('a proof-valid pre-prefix holder is stopped only by stop and every other command reports the upgrade', async () => {
+  const root = await makeDir(); const port = await freePort(); const token = 'a'.repeat(64); const startId = 'b'.repeat(32);
+  const plan = path.join(root, 'repo', 'docs', 'plans', 'pre-prefix'); await fs.mkdir(plan, { recursive: true });
+  const holder = await prePrefixHolder(root, port, token, startId);
+  try {
+    for (const command of [['--open', path.join(root, 'graphs', 'pre-prefix.json')], ['--show', path.join(root, 'graphs', 'pre-prefix.json'), '--no-browser'], ['--service']]) {
+      const result = await run(['--cache-root', root, '--port', String(port), ...command]);
+      assert.equal(result.code, 1); assert.match(result.stderr, /a viewer from an older version is running; run \.\/install\.sh/);
+    }
+    const registered = await run(['--cache-root', root, '--port', String(port), '--register-plan', plan]);
+    assert.equal(registered.code, 0); assert.match(registered.stderr, /a viewer from an older version is running; run \.\/install\.sh/);
+    const beforeRotate = await fs.readFile(path.join(root, '.token'), 'utf8'); const rotated = await run(['--cache-root', root, '--port', String(port), '--rotate-token']);
+    assert.equal(rotated.code, 1); assert.match(rotated.stderr, /a viewer from an older version is running; run \.\/install\.sh/); assert.equal(holder.child.exitCode, null); assert.equal(await fs.readFile(path.join(root, '.token'), 'utf8'), beforeRotate);
+    const url = await run(['--cache-root', root, '--port', String(port), '--url']);
+    assert.equal(url.code, 0); assert.equal(url.stdout, `http://127.0.0.1:${port}/wheelchair/?token=${token}\n`); assert.match(url.stderr, /a viewer from an older version is running; run \.\/install\.sh/);
+    const requests = (await fs.readFile(holder.requests, 'utf8')).trim().split('\n').filter(Boolean).map(JSON.parse);
+    for (const request of requests) {
+      assert.equal(request.url.includes(token), false); assert.equal(Object.hasOwn(request.headers, 'x-graph-token'), false);
+    }
+    const stopped = await run(['--cache-root', root, '--port', String(port), '--stop', '--if-stale']);
+    assert.equal(stopped.code, 0, stopped.stderr); await exit(holder.child);
+    // A process ended by SIGTERM reports no exit code, only the signal.
+    assert.ok(holder.child.exitCode !== null || holder.child.signalCode !== null, 'the pre-prefix holder exited');
+  } finally { await stop(holder.child); }
+});
+
+test('a no-proof pre-prefix holder stops only with its matching server start id and open refuses it', async () => {
+  const root = await makeDir(); const port = await freePort(); const token = 'c'.repeat(64); const startId = 'd'.repeat(32);
+  const holder = await prePrefixHolder(root, port, token, startId, { proof: false });
+  try {
+    const open = await run(['--cache-root', root, '--port', String(port), '--open', path.join(root, 'graphs', 'no-proof.json')]);
+    assert.equal(open.code, 1); assert.match(open.stderr, /a viewer from an older version is running; run \.\/install\.sh/);
+    await fs.writeFile(path.join(root, '.server'), JSON.stringify({ pid: holder.child.pid, port, token, start_id: 'e'.repeat(32) }));
+    const mismatch = await run(['--cache-root', root, '--port', String(port), '--stop']); assert.equal(mismatch.code, 1); assert.equal(holder.child.exitCode, null);
+    await fs.writeFile(path.join(root, '.server'), JSON.stringify({ pid: holder.child.pid, port, token, start_id: startId }));
+    const stopped = await run(['--cache-root', root, '--port', String(port), '--stop']); assert.equal(stopped.code, 0, stopped.stderr); await exit(holder.child);
+  } finally { await stop(holder.child); }
+});
+
 test('--service takes over an open server without changing port or token', async () => {
   const root = await makeDir(); const port = await freePort(); const opened = await startServer({ cacheRoot: root, port }); const token = opened.token;
   const service = launch(['--cache-root', root, '--port', String(port), '--service']);
@@ -320,6 +382,14 @@ test('--rotate-token waits for shutdown and leaves .server removal to the server
   const result = await run(['--cache-root', root, '--port', String(port), '--rotate-token']);
   assert.equal(result.code, 0); assert.notEqual(await fs.readFile(path.join(root, '.token'), 'utf8'), `${ctx.token}\n`);
   await assert.rejects(fs.access(path.join(root, '.server'))); assert.notEqual(record.length, 0);
+});
+
+test('--rotate-token prints the new prefixed bookmark for a current server', async () => {
+  const root = await makeDir(); const port = await freePort(); const ctx = await startServer({ cacheRoot: root, port });
+  try {
+    const rotated = await run(['--cache-root', root, '--port', String(port), '--rotate-token']); const token = (await fs.readFile(path.join(root, '.token'), 'utf8')).trim();
+    assert.equal(rotated.code, 0, rotated.stderr); assert.match(rotated.stdout, new RegExp(`http://127\\.0\\.0\\.1:${port}/wheelchair/\\?token=${token}\\n$`));
+  } finally { await ctx.stop(); }
 });
 
 test('shutdown releases the port before it removes only its own .server record', async () => {
