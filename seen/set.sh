@@ -23,14 +23,18 @@ fi
 present=''
 (( claude_present )) && present+=claude,
 (( codex_present )) && present+=codex,
-exec python3 - "$ROOT" "$claude_home" "$codex_home" "$present" <<'PY'
+exec python3 -I - "$ROOT" "$claude_home" "$codex_home" "$present" <<'PY'
 import json
 import os
 import re
 import shlex
 import sys
 import tempfile
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:
+    print("seen hook: needs Python 3.11 or newer (tomllib); nothing written", file=sys.stderr)
+    sys.exit(1)
 
 # Set each value from the live check in the Spec's Validation section (D43, D49):
 # notice when that harness displays a UserPromptSubmit systemMessage, no-notice otherwise.

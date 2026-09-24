@@ -5,3 +5,11 @@
 2026-09-24T21:49:38Z new b17d the record template holds fake history lines that would look like a real past turn
 2026-09-24T21:49:38Z new 8fc6 the one-line wording question can clash with planning's one-question-per-turn rule, with no ordering stated
 2026-09-24T21:49:38Z new 8657 the README says the hook carries the plan record, which it never reads, and omits the installer's new step
+2026-09-24T21:50:44Z shown c7b6
+2026-09-24T21:50:44Z shown e84c
+2026-09-24T21:50:44Z shown 64b5
+2026-09-24T21:50:44Z shown 2c22
+2026-09-24T21:50:44Z shown b17d
+2026-09-24T21:50:44Z shown 8fc6
+2026-09-24T21:50:44Z shown 8657
+2026-09-24T21:50:44Z turn

@@ -107,6 +107,15 @@ chmod +x "$fixture/no-notice-set.sh"; command[no_codex_notice]=$fixture/no-notic
 run_case no_codex_notice
 assert 'no-notice still installs its hook without grant files' bash -c '[[ $1 == 0 && -f $2 && ! -e $3 && ! -e $4 ]]' _ "${status[no_codex_notice]}" "$(hooks no_codex_notice)" "$(config no_codex_notice)" "${wording[no_codex_notice]%/*}"
 
+set +e; python3 -I -c 'import tomllib'; tomllibrc=$?; set -e
+assert 'isolated Python imports tomllib' bash -c '[[ $1 == 0 ]]' _ "$tomllibrc"
+new_case tomllib_missing
+cp "$writer" "$fixture/tomllib-missing-set.sh"
+sed -i 's/^    import tomllib$/    import tomllib_missing_for_test as tomllib/' "$fixture/tomllib-missing-set.sh"
+chmod +x "$fixture/tomllib-missing-set.sh"; command[tomllib_missing]=$fixture/tomllib-missing-set.sh
+run_case tomllib_missing
+assert 'missing tomllib refuses before writing' bash -c '[[ $1 == 1 && $2 == "seen hook: needs Python 3.11 or newer (tomllib); nothing written" && ! -e $3 && ! -e $4 && ! -e $5 && ! -e $6 ]]' _ "${status[tomllib_missing]}" "${output[tomllib_missing]}" "$(settings tomllib_missing)" "$(hooks tomllib_missing)" "$(config tomllib_missing)" "${wording[tomllib_missing]%/*}"
+
 new_case none
 present[none]=''; run_case none
 assert 'empty present seam succeeds and writes nothing' bash -c '[[ $1 == 0 && $2 == *"nothing written"* && ! -e $3 && ! -e $4 ]]' _ "${status[none]}" "${output[none]}" "${claude[none]}" "${codex[none]}"

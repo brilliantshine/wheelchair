@@ -4,18 +4,11 @@
 # Preserve the harness payload before the heredoc becomes Python's standard input.  Python
 # reads its source from stdin (the requested shim style) and the payload from descriptor 3.
 exec 3<&0
-SEEN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" exec python3 - "$@" <<'PY'
-import datetime as dt
-import fcntl
-import json
-import os
-import re
-import sys
-import tempfile
+SEEN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" exec python3 -I - "$@" <<'PY'
 
 GAP_HOURS = 4  # stated once in protocol/seen.md as "gap-threshold: 4h"
 MAX_CONTEXT_CHARS = 2000
-ENTRY = re.compile(r'^- (\d{4}-\d{2}-\d{2}) — "([^"\n]+)" — (.+)$')
+ENTRY = None
 
 
 def atomic_write(path, text):
@@ -40,14 +33,17 @@ def confirmed(path):
             lines = handle.read().splitlines()
     except (OSError, UnicodeError):
         return []
-    try:
-        start = lines.index("## Confirmed") + 1
-    except ValueError:
+    headers = ("## Confirmed", "## Proposed", "## Struck")
+    positions = []
+    for header in headers:
+        found = [index for index, line in enumerate(lines) if line == header]
+        if len(found) != 1:
+            return []
+        positions.append(found[0])
+    if positions != sorted(positions):
         return []
     section = []
-    for line in lines[start:]:
-        if line.startswith("## "):
-            break
+    for line in lines[positions[0] + 1:positions[1]]:
         if line.startswith("- ") and ENTRY.match(line):
             section.append(line)
     return section
@@ -80,12 +76,19 @@ def notice_for(old, new):
     old_keys = {phrase.strip().casefold() for _, phrase, _, _ in old_entries}
     new_keys = {phrase.strip().casefold() for _, phrase, _, _ in new_entries}
     additions = [phrase for _, phrase, _, _ in new_entries if phrase.strip().casefold() not in old_keys]
+    changes = []
+    old_by_key = {phrase.strip().casefold(): (date, phrase, instead) for date, phrase, instead, _ in old_entries}
+    for date, phrase, instead, _ in new_entries:
+        old_entry = old_by_key.get(phrase.strip().casefold())
+        if old_entry is not None and old_entry != (date, phrase, instead):
+            changes.append(phrase)
     removals = [phrase for _, phrase, _, _ in old_entries if phrase.strip().casefold() not in new_keys]
     items = [f'added "{phrase}"' for phrase in additions]
+    items.extend(f'changed "{phrase}"' for phrase in changes)
     items.extend(f'removed "{phrase}"' for phrase in removals)
     prefix = "wheelchair: wording list"
     if not items:
-        return prefix
+        return None
     chosen = []
     for item in items:
         candidate = prefix + " — " + "; ".join(chosen + [item])
@@ -167,8 +170,8 @@ def main():
         state_of_last, old_lines = stored_lines(last)
         if state_of_last == "absent":
             atomic_write(last, "\n".join(lines) + ("\n" if lines else ""))
-        elif state_of_last == "ok" and old_lines != lines and sys.argv[2] == "notice":
-            notice = notice_for(old_lines, lines)
+        elif state_of_last in ("ok", "bad") and old_lines != lines and sys.argv[2] == "notice":
+            notice = notice_for([] if state_of_last == "bad" else old_lines, lines)
             atomic_write(last, "\n".join(lines) + ("\n" if lines else ""))
     session_id = payload.get("session_id")
     now = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
@@ -185,6 +188,14 @@ def main():
 
 
 try:
+    import datetime as dt
+    import fcntl
+    import json
+    import os
+    import re
+    import sys
+    import tempfile
+    ENTRY = re.compile(r'^- (\d{4}-\d{2}-\d{2}) — "([^"\n]+)" — (.+)$')
     main()
 except BaseException:
     # A hook failure must look exactly like no hook output.

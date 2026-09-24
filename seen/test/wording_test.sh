@@ -11,7 +11,7 @@ pass() { printf 'PASS %s\n' "$1"; passes=$((passes+1)); }
 fail() { printf 'FAIL %s\n' "$1"; failures=$((failures+1)); }
 assert() { local name=$1; shift; if "$@"; then pass "$name"; else fail "$name"; fi; }
 path() { printf '%s/%s/wording.md' "$fixture" "$1"; }
-run() { local name=$1; shift; mkdir -p "$fixture/$name"; set +e; output=$(HOME="$fixture/$name/home" WHEELCHAIR_WORDING="$(path "$name")" "$writer" "$@" 2>&1); status=$?; set -e; }
+run() { local name=$1 workdir; shift; workdir=${WRITER_CWD:-"$PWD"}; mkdir -p "$fixture/$name"; set +e; output=$(cd "$workdir" && HOME="$fixture/$name/home" WHEELCHAIR_WORDING="$(path "$name")" "$writer" "$@" 2>&1); status=$?; set -e; }
 
 run create suggest alpha 'say alpha plainly'
 assert 'file creation has all headers' bash -c '[[ $1 == 0 ]] && grep -qx "## Confirmed" "$2" && grep -qx "## Proposed" "$2" && grep -qx "## Struck" "$2"' _ "$status" "$(path create)"
@@ -31,6 +31,13 @@ run "$name" remove absent
 assert 'remove refuses phrase not in Confirmed' bash -c '[[ $1 == 1 ]]' _ "$status"
 run bad suggest $'bad\nphrase' instead
 assert 'invalid phrase uses exit 2 and usage' bash -c '[[ $1 == 2 && $2 == *usage:* ]]' _ "$status" "$output"
+
+poison_cwd=$fixture/import-poison; mkdir -p "$poison_cwd"
+printf 'open("json.marker", "w").write("pwned")\n' > "$poison_cwd/json.py"
+printf 'open("datetime.marker", "w").write("pwned")\n' > "$poison_cwd/datetime.py"
+printf 'raise RuntimeError("pwned")\n' > "$poison_cwd/re.py"
+WRITER_CWD=$poison_cwd run import-isolation suggest isolated 'use isolation'
+assert 'wording suggest ignores cwd Python modules' bash -c '[[ $1 == 0 && ! -e $2/json.marker && ! -e $2/datetime.marker && $(grep -c "\"isolated\"" "$3") == 1 ]]' _ "$status" "$poison_cwd" "$(path import-isolation)"
 
 name=concurrent; mkdir -p "$fixture/$name"
 for n in $(seq 1 20); do HOME="$fixture/$name/home" WHEELCHAIR_WORDING="$(path "$name")" "$writer" suggest "phrase-$n" "instead $n" >/dev/null 2>&1 & done

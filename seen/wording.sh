@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-exec python3 - "$@" <<'PY'
+exec python3 -I - "$@" <<'PY'
 import datetime as dt
 import fcntl
 import os

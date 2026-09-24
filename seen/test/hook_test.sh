@@ -12,7 +12,7 @@ fail() { printf 'FAIL %s\n' "$1"; failures=$((failures+1)); }
 assert() { local name=$1; shift; if "$@"; then pass "$name"; else fail "$name"; fi; }
 base() { printf '%s/%s' "$fixture" "$1"; }
 put() { mkdir -p "$(base "$1")"; printf '%s' "$2" > "$(base "$1")/wording.md"; }
-run() { local name=$1 mode=$2 json=$3 dir; dir=$(base "$name"); mkdir -p "$dir"; set +e; output=$(HOME="$dir/home" WHEELCHAIR_WORDING="$dir/wording.md" WHEELCHAIR_STATE="$dir/state" "$hook" claude "$mode" <<<"$json" 2>"$dir/err"); status=$?; set -e; }
+run() { local name=$1 mode=$2 json=$3 dir workdir; dir=$(base "$name"); workdir=${HOOK_CWD:-"$PWD"}; mkdir -p "$dir"; set +e; output=$(cd "$workdir" && env -u WHEELCHAIR_LANE HOME="$dir/home" WHEELCHAIR_WORDING="$dir/wording.md" WHEELCHAIR_STATE="$dir/state" "$hook" claude "$mode" <<<"$json" 2>"$dir/err"); status=$?; set -e; }
 ctx() { python3 -c 'import json,sys; print(json.load(sys.stdin).get("hookSpecificOutput",{}).get("additionalContext",""))' <<<"$1"; }
 msg() { python3 -c 'import json,sys; print(json.load(sys.stdin).get("systemMessage",""))' <<<"$1"; }
 
@@ -31,6 +31,9 @@ assert 'separate clocks per session' bash -c '[[ $1 == *hours* && -z $2 ]]' _ "$
 put malformed $'broken register\n- 2026-09-24 — "canary" — nope\n'; run malformed notice '{}'
 assert 'malformed wording file yields no output exit zero' bash -c '[[ $1 == 0 && -z $2 ]]' _ "$status" "$output"
 
+put missing-struck $'## Confirmed\n- 2026-09-24 — "canary" — nope\n\n## Proposed\n'; run missing-struck notice '{}'
+assert 'missing Struck header makes wording list empty' bash -c '[[ $1 == 0 && -z $2 ]]' _ "$status" "$output"
+
 put badclock $'## Confirmed\n\n## Proposed\n\n## Struck\n'; mkdir -p "$(base badclock)/state/sessions"; printf nonsense > "$(base badclock)/state/sessions/one"; run badclock notice '{"session_id":"one"}'
 assert 'malformed session overwritten without a gap' bash -c '[[ -z $1 && $2 == *Z ]]' _ "$output" "$(cat "$(base badclock)/state/sessions/one")"
 
@@ -38,6 +41,14 @@ put notice $'## Confirmed\n- 2026-09-24 — "added" — rule\n\n## Proposed\n\n#
 run notice notice '{}'; changed=$output; run notice notice '{}'; unchanged=$output
 assert 'notice names added and removed, then is absent' bash -c '[[ $1 == *"added \"added\""* && $1 == *"removed \"removed\""* && -z $2 ]]' _ "$(msg "$changed")" "$(msg "$unchanged")"
 assert 'edit hint names the real wording script' bash -c '[[ $1 == *"$2 remove"* && -x $2 ]]' _ "$(ctx "$changed")" "$repo/seen/wording.sh"
+
+put corrupt-last $'## Confirmed\n- 2026-09-24 — "healed" — rule\n\n## Proposed\n\n## Struck\n'; mkdir -p "$(base corrupt-last)/state"; printf '\xff\xfe' > "$(base corrupt-last)/state/confirmed.last"
+run corrupt-last notice '{}'; corrupt_first=$output; run corrupt-last notice '{}'; corrupt_second=$output
+assert 'corrupt confirmed.last announces current entries as added then heals' bash -c '[[ $1 == *"added \"healed\""* && -z $2 && $3 == *"\"healed\""* ]]' _ "$(msg "$corrupt_first")" "$(msg "$corrupt_second")" "$(cat "$(base corrupt-last)/state/confirmed.last")"
+
+put changed-last $'## Confirmed\n- 2026-09-24 — "edited" — new instead\n\n## Proposed\n\n## Struck\n'; mkdir -p "$(base changed-last)/state"; printf '%s\n' '- 2026-09-24 — "edited" — old instead' > "$(base changed-last)/state/confirmed.last"
+run changed-last notice '{}'
+assert 'instead-only edit is named as changed' bash -c '[[ $1 == *"changed \"edited\""* ]]' _ "$(msg "$output")"
 
 put silent $'## Confirmed\n- 2026-09-24 — "silent" — rule\n\n## Proposed\n\n## Struck\n'; run silent notice '{}'
 assert 'missing confirmed.last seeds silently' bash -c '[[ -f $1 && -z $2 ]]' _ "$(base silent)/state/confirmed.last" "$(msg "$output")"
@@ -57,8 +68,16 @@ dir=$(base cap); mkdir -p "$dir"; { printf '## Confirmed\n'; for n in $(seq 1 80
 assert 'context cap reports omitted entries' bash -c '[[ ${#1} -le 2000 && $1 == *"older entries left out"* ]]' _ "$capped"
 
 dir=$(base canary); mkdir -p "$dir/repo/docs/plans/x"; printf '%s\n' '- "canary" — never read' > "$dir/repo/docs/plans/x/SEEN.md"; put canary $'## Confirmed\n\n## Proposed\n\n## Struck\n'
-set +e; canary=$(cd "$dir/repo" && HOME="$dir/home" WHEELCHAIR_WORDING="$dir/wording.md" WHEELCHAIR_STATE="$dir/state" "$hook" claude notice <<< '{}'); canaryrc=$?; set -e
+set +e; canary=$(cd "$dir/repo" && env -u WHEELCHAIR_LANE HOME="$dir/home" WHEELCHAIR_WORDING="$dir/wording.md" WHEELCHAIR_STATE="$dir/state" "$hook" claude notice <<< '{}'); canaryrc=$?; set -e
 assert 'cwd repository canary never appears' bash -c '[[ $1 == 0 && $2 != *canary* ]]' _ "$canaryrc" "$canary"
+
+clean_cwd=$(base import-clean); poison_cwd=$(base import-poison); mkdir -p "$clean_cwd" "$poison_cwd"
+printf 'open("json.marker", "w").write("pwned")\n' > "$poison_cwd/json.py"
+printf 'open("datetime.marker", "w").write("pwned")\n' > "$poison_cwd/datetime.py"
+printf 'raise RuntimeError("pwned")\n' > "$poison_cwd/re.py"
+put import-control $'## Confirmed\n- 2026-09-24 — "isolated" — rule\n\n## Proposed\n\n## Struck\n'; HOOK_CWD=$clean_cwd run import-control notice '{}'; control_output=$output; control_status=$status
+put import-poison $'## Confirmed\n- 2026-09-24 — "isolated" — rule\n\n## Proposed\n\n## Struck\n'; HOOK_CWD=$poison_cwd run import-poison notice '{}'; poison_output=$output; poison_status=$status
+assert 'hook ignores cwd Python modules' bash -c '[[ $1 == 0 && ! -e $2/json.marker && ! -e $2/datetime.marker && $3 == "$4" ]]' _ "$poison_status" "$poison_cwd" "$poison_output" "$control_output"
 
 put speed $'## Confirmed\n\n## Proposed\n\n## Struck\n'; start=$(date +%s%N); run speed notice '{}'; elapsed=$((($(date +%s%N)-start)/1000000))
 assert 'hook finishes under 200 ms' bash -c '[[ $1 -lt 200 ]]' _ "$elapsed"
