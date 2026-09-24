@@ -1,6 +1,6 @@
 ---
 slug: remember-me
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: planning   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-09-23
 ---
 
@@ -15,7 +15,24 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-None. Every question is settled; see the Decision Log.
+### Q3: Should the graph links agents print still carry the token?
+- **Context:** Plan review round 1. Every graph URL a command prints includes `&token=…`
+  (`viewer/server.js:1712`, Decision Log #9), and `--show` opens that URL in a browser.
+  With remember-me, a remembered device following such a link is redirected to the same
+  address without it, but the token has passed through the address bar again, and a browser
+  that records redirect sources may keep it in history. IDEA wants both that "links agents
+  print keep working" and that the token doesn't appear after the first visit.
+- **Options:** (a) Printed graph links drop the token. A remembered device opens them
+  directly; a device that has never been remembered gets a page saying to open the bookmark
+  once first. `--show` still opens a token link in the local browser, so a machine whose own
+  browser isn't remembered yet keeps working; that local browser's history may keep it.
+  (b) Printed links keep the token. They work on any device, even one never remembered, and
+  IDEA's wording changes to allow the token in history when following an agent's link.
+  (c) Drop the token everywhere, `--show` included; a local browser that isn't remembered
+  shows the "open the bookmark once" page.
+- **Recommendation:** (a). Links you copy to your phone or laptop stay token-free, which is
+  where history and sharing matter. The one exception is the browser on the same machine the
+  command runs on, which already holds the token on disk.
 
 ## Watch List
 
@@ -52,6 +69,12 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 11 | The commands identify a holder through `/wheelchair/whoami`. If that answers `308` or `404`, they ask `/whoami` at the root, which is how a viewer running code from before this change answers; such a holder has no `proof` and is handled as today's older-version rule says (remote-viewer #85) | Keeps the install-time upgrade path working across this change | defaulted |
 | 12 | Serving setup maps both `/wheelchair` → `http://127.0.0.1:<port>/wheelchair` and `/` → `http://127.0.0.1:<port>`, so the root redirect reaches old bookmarks. The installer checks `tailscale serve status` for the `/wheelchair` mapping and, if it is missing, prints and offers the one `sudo` command, as today (remote-viewer #9). `--no-serve` prints the commands that remove both. When Collin later puts something else at the root, he replaces the `/` mapping himself and the viewer needs no change | The root mapping is the only thing keeping old links alive, and it is Collin's to reassign | defaulted |
 | 13 | Blocking checks on hearth after setup: `curl -s https://hearth.taileb4e52.ts.net/wheelchair/whoami` returns the viewer's JSON (prefix handling, Watch List #1), and on the phone in Firefox the token link lands on `/wheelchair/` with no token in the address, a reload of `/wheelchair/` works, and an edit saves (cookies through `tailscale serve`, Watch List #3) | These can only be observed through the real `tailscale serve` | defaulted |
+| 14 | Supersedes #3 and the renewal clause of #6 for non-page routes. Only the two HTML page routes, `/wheelchair/` and `/wheelchair/docs`, redirect a `?token=` and set or renew the cookie. The JSON routes (`/wheelchair/list`, `/plan`, `/doc`, `GET /graph`) answer a valid `?token=` directly, as today, accept the cookie too, and never send `Set-Cookie` | Agents read graphs back with `curl` and `?token=` (`protocol/graphs.md:580-584`) and must keep getting JSON; renewing on page loads is enough to keep a device remembered | review-round-1 |
+| 15 | Supersedes #11. To identify a holder, a command calls `/wheelchair/whoami?nonce=…`. If the answer carries no `start_id`, whatever its status (the live pre-change server answers `401`), it calls `/whoami?nonce=…` at the root and applies the normal proof check to that answer. A root answer with a valid `proof` is our server running the pre-prefix code: `--stop` and `--stop --if-stale` handle it like any of our servers (its `code` differs, so `--if-stale` stops it), and every other command refuses it with the older-version message, exactly as remote-viewer #85 treats older code. A root answer with no `proof` is handled by #85's existing rule | The live server answers the prefixed route with `401` and gives a `proof` at the root (`viewer/server.js:1890-1891`, `/whoami` handler); the install-time upgrade depends on recognising it | review-round-1 |
+| 16 | A request to a page route that carries a `token` parameter always redirects to the same address without it: with a valid token, the redirect sets the cookie; with an invalid token but a valid cookie, it redirects without touching the cookie; with neither, `401` | Otherwise a wrong or rotated token in an old link would stay in the address of a remembered device | review-round-1 |
+| 17 | Supersedes the installer part of #12. The installer manages only mappings that point at the viewer's port. From `tailscale serve status` it reads the `/wheelchair` line and the `/` line by path. It offers the `/wheelchair` command, built from `$port`, when that line is missing, and the `/` command only when `/` has no mapping at all. It never offers to replace a `/` mapping that points elsewhere. `--no-serve` prints the removal command for `/wheelchair`, and for `/` only if `/` points at the viewer's port | Collin's future hub at the root must never be overwritten or removed by the viewer's installer | review-round-1 |
+| 18 | Supersedes the `SameSite` value in #4: the cookie is `SameSite=Lax` | A token link opened from another site (a chat or mail page) would otherwise land on a `401`. `Lax` still withholds the cookie from cross-site `PUT`s, and those are also refused by the `Origin` check | review-round-1 |
+| 19 | Supersedes the `X-Graph-Token` clause of #8: the pages never send `X-Graph-Token` and never read `token` from their address; they rely on the cookie alone | The redirect means a page never has a token in its address, so the fallback was dead code | review-round-1 |
 
 ## Spec
 
@@ -85,12 +108,16 @@ path or not (Decision Log #2).
 
 ### The first visit and after
 
-A read request (`GET` on a page or read route) carrying a valid `?token=` is answered with a
-`303` to the same path and query with `token` removed, and that response sets the cookie
-(Decision Log #3). Later requests carry the cookie. The cookie is
-`wheelchair_remember=<value>; Path=/wheelchair; HttpOnly; Secure; SameSite=Strict;
-Max-Age=34560000` (Decision Log #4, #6, #7). It is set again on every page response to a
-request that authenticated, by cookie or by token, so it renews on every visit.
+Only the two HTML page routes, `/wheelchair/` and `/wheelchair/docs`, take part in the
+first-visit redirect (Decision Log #14). A request to one of them that carries a `token`
+parameter is always answered with a `303` to the same path and query with `token` removed:
+with a valid token, that response sets the cookie; with an invalid token but a valid cookie,
+it redirects without touching the cookie; with neither, it is `401` (Decision Log #3, #16).
+Later requests carry the cookie. The cookie is
+`wheelchair_remember=<value>; Path=/wheelchair; HttpOnly; Secure; SameSite=Lax;
+Max-Age=34560000` (Decision Log #4, #6, #7, #18). The two page routes set it again on
+every response to a request that authenticated, so it renews on every visit. The JSON
+routes never send `Set-Cookie`.
 
 The cookie's value is the hex HMAC-SHA256, keyed by the running server's token, of the fixed
 label `wheelchair-remember-v1` (Decision Log #5). The server accepts a cookie only when it
@@ -100,9 +127,12 @@ changes the token and so invalidates every cookie at once. The cookie is never a
 
 ### Authentication per route
 
-- Page and read routes (`/wheelchair/`, `/list`, `/plan`, `/doc`, `/docs`, `GET /graph`, and
-  unknown routes under the prefix): a valid cookie, or a valid `?token=`, which also gets
-  the redirect above. Otherwise `401`, as today.
+- Page routes (`/wheelchair/`, `/wheelchair/docs`): a valid cookie, or a `token`
+  parameter handled by the redirect above. Otherwise `401`.
+- JSON read routes (`/wheelchair/list`, `/plan`, `/doc`, `GET /graph`) and unknown routes
+  under the prefix: a valid cookie or a valid `?token=`, answered directly with no redirect
+  and no `Set-Cookie`, so agents' `curl` read-back keeps working (Decision Log #14).
+  Otherwise `401`, as today.
 - `PUT /wheelchair/graph` and `PUT /wheelchair/view`: a valid cookie or a valid
   `X-Graph-Token`, and in both cases today's `Origin` check (`http://127.0.0.1:<port>` or
   the served origin) (Decision Log #4).
@@ -114,8 +144,8 @@ changes the token and so invalidates every cookie at once. The cookie is never a
 
 `index.html`, `list.js` and `doc.js` build every URL under `/wheelchair/` with no `token`
 parameter, and rely on the cookie (Decision Log #8). Writes are same-origin `fetch` calls,
-which send the cookie. A page sends `X-Graph-Token` only when its own address carries
-`?token=`, which the redirect prevents in normal use. The CSP on `list.html` and
+which send the cookie. The pages never read `token` from their address and never send
+`X-Graph-Token` (Decision Log #19). The CSP on `list.html` and
 `doc.html` is unchanged except for the prefixed script paths.
 
 ### The commands
@@ -124,24 +154,31 @@ Every printed URL is under `/wheelchair/`: `--open`/`--show` print
 `<base>/wheelchair/?path=…&token=…`, and `--url` prints `<base>/wheelchair/?token=…`,
 where `<base>` is the served origin or `http://127.0.0.1:<port>` (Decision Log #9). All
 their requests to the server use the prefixed routes. To identify a holder they call
-`/wheelchair/whoami`; if that answers `308` or `404`, they ask `/whoami` at the root, which
-is how a viewer running code from before this change answers. Such a holder has no `proof`
-and is treated by the older-version rule of remote-viewer Decision Log #85 (Decision Log
-#11).
+`/wheelchair/whoami?nonce=…`. If the answer has no `start_id`, whatever its status, they call
+`/whoami?nonce=…` at the root and apply the normal proof check to that answer (Decision Log
+#15). The live pre-change viewer answers the prefixed route with `401` and the root one with
+a valid `proof`. A root answer with a valid `proof` is our server running pre-prefix code:
+`--stop` and `--stop --if-stale` treat it like any of our servers (its `code` differs, so
+`--if-stale` stops it), and every other command refuses it with the older-version message.
+A root answer with no `proof` falls under remote-viewer Decision Log #85's existing rule.
 
 ### The installer
 
-Serving setup offers the `sudo` command that adds the prefix mapping,
-`sudo tailscale serve --bg --set-path /wheelchair http://127.0.0.1:7373/wheelchair`, when
-`tailscale serve status` doesn't already show it, and keeps offering the root mapping as
-today. It never runs `sudo` silently (remote-viewer Decision Log #9). `--no-serve` prints
-the commands that remove both mappings. The bookmark it prints comes from `--url`, so it is
+The installer manages only mappings that point at the viewer's port (Decision Log #17). It
+reads the `/wheelchair` line and the `/` line of `tailscale serve status` by path. It offers
+`sudo tailscale serve --bg --set-path /wheelchair http://127.0.0.1:$port/wheelchair` when the
+`/wheelchair` line is missing, and `sudo tailscale serve --bg $port` only when `/` has no
+mapping at all. It never offers to replace a `/` mapping that points anywhere else. It never
+runs `sudo` silently (remote-viewer Decision Log #9). `--no-serve` prints the command that
+removes the `/wheelchair` mapping, and the one for `/` only when `/` points at the viewer's
+port. The bookmark it prints comes from `--url`, so it is
 the prefixed one (Decision Log #12).
 
 ### Documents
 
 `protocol/graphs.md`: every URL and `curl` example moves under `/wheelchair/`, including
-the `PUT` to `http://127.0.0.1:${PORT}/wheelchair/graph` and its `Origin`. It also documents
+the `PUT` to `http://127.0.0.1:${PORT}/wheelchair/graph`, whose `Origin` stays
+`http://127.0.0.1:${PORT}` (an origin carries no path). It also documents
 the `308` an old root path now gets. `README.md`: the address is
 `https://hearth.taileb4e52.ts.net/wheelchair/`, the token link is needed once per device, and
 the root is free for other services. `AGENTS.md`'s citations are updated where lines move.
@@ -167,14 +204,20 @@ Every existing suite is updated for the prefix: the test helpers wait for
 
 New unit cases: a `GET /wheelchair/?token=<valid>` answers `303` to the address without
 `token` and sets the cookie with exactly the attributes above; a request with that cookie
-and no token gets the page, the list, a plan, a document and a graph; a cookie from before
+and no token gets the page, the list, a plan, a document and a graph; `GET
+/wheelchair/graph`, `/list`, `/plan` and `/doc` with a valid `?token=` answer JSON or Markdown
+directly with no redirect and no `Set-Cookie`; a page route with a wrong `token` and a valid
+cookie redirects without it and leaves the cookie alone, and with neither is `401`; a cookie from before
 a rotation is refused `401` after it; a cookie for the right value is refused as `?token=`,
 as `X-Graph-Token` and as a registration key; a wrong cookie with no token is `401`; `PUT
 /wheelchair/graph` and `/view` accept the cookie with a good `Origin`, and refuse it with a
 foreign one `403`; every root path, including `/whoami`, `/graph` and `/list`, answers `308`
 with the prefixed `Location` and the JSON body; `/wheelchair` redirects to `/wheelchair/`;
-the page response renews the cookie; the commands print prefixed URLs; a holder answering
-only root `/whoami` without `proof` is treated by the older-version rule.
+a page response renews the cookie and a JSON response never sets it; the cookie is
+`SameSite=Lax`; the commands print prefixed URLs; a holder that answers `/wheelchair/whoami`
+with `401` and root `/whoami` with a valid `proof` is stopped by `--stop --if-stale` and
+refused with the older-version message by `--open`; a holder whose root `/whoami` has no
+`proof` falls under the remote-viewer #85 rule.
 
 New browser cases, in both projects: opening the `?token=` URL lands on `/wheelchair/` with
 no `token` in `page.url()`; reloading `/wheelchair/` in the same context shows the list; a
@@ -183,8 +226,10 @@ document open, and a drag saves, with no `token` in any request URL (checked by 
 requests); an old root bookmark `/?token=…` ends on `/wheelchair/` with the cookie set.
 
 Installer fixture cases: serving setup offers the `/wheelchair` mapping command when status
-lacks it and not when present; `--no-serve` prints both removal commands; the bookmark
-printed is prefixed.
+lacks it and not when present; it offers the `/` command only when `/` is unmapped, and
+never when `/` points at another port; `--no-serve` prints the `/wheelchair` removal, and
+the `/` removal only when `/` points at the viewer's port; the command uses `$port`; the
+bookmark printed is prefixed.
 
 Blocking, on hearth, after `./install.sh --serve` and the new `sudo tailscale serve` step
 (Decision Log #13):
@@ -204,10 +249,31 @@ re-raise them.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
-| The first-visit URL, which carries the token, may be kept in a browser's history as the redirect source | Browsers differ on whether they record a redirect's source, and the token must arrive in some URL once. IDEA only requires it to be gone *after* the first visit | — |
+| The first-visit URL, which carries the token, may be kept in a browser's history as the redirect source | Browsers differ on whether they record a redirect's source, and the token must arrive in some URL once. Whether later agent links also carry it is Open Question Q3 | — |
 | A client following outdated instructions against a root route gets a `308` rather than working | Every route moves; the `308` body names the new path, and `protocol/graphs.md` is updated in the same change | — |
 
 ## Review Rounds
+
+### Round 1 — 2026-09-23
+
+**Lanes:** GPT / gpt-5.6-sol (mechanics lens, thread `01a0d12c-e213-7b20-b647-4eb6e182a1fb`); Claude / default reviewer model (intent lens); cross-family: yes.
+
+Triage: 3 blocking and 2 major upheld, and one `user-decision` opened as Q3. Not clean; the upheld findings are fixed below.
+
+**Changed since Round 0:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| GPT, Claude | blocking | Redirecting every token read breaks agents' graph read-back: `curl …/graph?path=…&token=…` (`protocol/graphs.md:580-584`) would get an empty `303` | upheld | Decision Log #14 |
+| GPT, Claude | blocking | The old-viewer fallback fires only on `308`/`404`, but the live server answers `/wheelchair/whoami` with `401` (an unknown route checks the token first, `viewer/server.js:1890-1891`), so install-time stop can't recognise it. The live code's root `/whoami` also gives a `proof`, so it isn't "without proof" | upheld | Decision Log #15 |
+| GPT | blocking | A valid cookie plus a wrong or rotated `?token=` authenticates without the redirect, leaving the token in the address | upheld | Decision Log #16 |
+| GPT, Claude | blocking / major | RE-RAISE: agent-printed graph URLs keep `&token=`, so every later `--open`/`--show` link puts the token back in the address and possibly history; the accepted risk's "only the first visit" premise is false | user-decision | Checked: right (`viewer/server.js:1712`, Decision Log #9). IDEA's "links agents print keep working" and "no token in history after the first visit" pull against each other here. Open Question Q3 |
+| GPT | major | The installer's behaviour once another service owns `/` is undefined: it would keep offering the viewer's root mapping and `--no-serve` would remove the other service's route | upheld | Decision Log #17 |
+| GPT | major | "the `PUT` … and its `Origin`" move under `/wheelchair` contradicts the auth contract: an `Origin` has no path | upheld | Spec: the `Origin` stays `http://127.0.0.1:${PORT}` |
+| Claude | minor | `SameSite=Strict` set on a `303`: a token link clicked from another site (chat, mail) is cross-site through the redirect, so the cookie isn't sent on the next hop and the first open shows `401` | upheld | Decision Log #18 |
+| Claude | minor | Pages sending `X-Graph-Token` "when the address carries `?token=`" covers a case that can't occur | upheld | Decision Log #19 |
+| Claude | minor | The installer's "already served" check greps the port, which the new mapping always contains; the new command hardcodes `7373` | upheld | Decision Log #17 |
+| Claude | minor | Whether JSON read responses renew the cookie is unstated | upheld | Decision Log #14: only page responses set it |
 
 ## Prior Work
 
@@ -226,4 +292,7 @@ Filled by Stage 3. One row per worker brief.
 - 2026-09-23: IDEA confirmed with the `/wheelchair/` layout (Decision Log #1).
 - 2026-09-23: Planning finished. No graphs were drawn for this plan, so there are no
   `rejected` entries to account for. Status set to ready-for-review.
+- 2026-09-23: Plan review round 1 upheld 3 blocking and 2 major findings (fixed) and opened
+  Q3 (whether printed agent links carry the token). Status back to planning until Collin
+  answers.
 
