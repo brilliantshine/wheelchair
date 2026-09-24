@@ -30,6 +30,9 @@ verified-by:
   - round: 7
     lane: gpt-5.6-sol
     checks: sonnet
+  - round: 8
+    lane: gpt-5.6-sol
+    checks: sonnet
 ---
 
 # Completion Report — Knowing what you have actually seen
@@ -316,3 +319,11 @@ GAP: Context truncation (D34) — `protocol/seen.md:158-160` says the wording li
 
 `protocol/seen.md` now states the condition as the code implements it: the list is left out
 only when the header plus the count line cannot fit. Fixed by the lead.
+
+### Remediation 8 — 2026-09-24
+
+Verification round 8 (`gpt-5.6-sol`) found one more variant of the degenerate truncation case
+(the session-gap line also counts against the cap). This gap had now survived two remediation
+rounds, so per `protocol/verification.md` it went to Collin, who chose to stop describing it
+precisely: `protocol/seen.md` now says only that in degenerate cases, where the fixed lines
+leave no room, the list is left out, and `PLAN.md` carries it as an Accepted Risk.
