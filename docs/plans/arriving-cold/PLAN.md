@@ -84,6 +84,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D41 | Map-build findings do not produce entries. **Supersedes the `cold` state in D17**; the four-hour threshold stands | The map is shown to the reader before the idea is written (`protocol/planning.md` Step 1), so there is nothing unseen to record, and the phrase needed judgment no other entry kind does. D25 removed `cold` but D17 was never marked | review-round-3 |
 | D42 | The installer also adds `~/.wheelchair` to `sandbox.filesystem.allowWrite` in `~/.claude/settings.json` | Round 3, verified against `https://code.claude.com/docs/en/sandboxing`: with Claude Code's Bash sandbox on, an allow rule approves the command but the OS still refuses the write outside the listed directories. Inert when the sandbox is off, its default | review-round-3 |
 | D43 | **Every change to your confirmed list is shown to you**, once, on your next message, as one visible line through the hook's `systemMessage`. D38's standing permission stays. Where a harness turns out not to display a `UserPromptSubmit` `systemMessage`, the installer does not grant D38's permission on that harness, so saving a "yes" there asks | Q10. Keeps the no-prompt promise while making nothing about your preferences change without you seeing it, which is what `IDEA.md` requires. Whether each harness displays the line is unverified (vendor docs are silent for this event), so the implementer checks it first | user |
+| D44 | **Supersedes D37 and D40.** The last-message time is kept per repository, shared by every session and both harnesses: `~/.cache/wheelchair/last/<key>`, where `<key>` is the first 16 hex characters of a SHA-256 of the repository root's absolute path. The root is found by walking up from `cwd` to the first directory holding a `.git` entry, **without running git**; outside any repository, `cwd` itself. The stage acts on the hook's gap line, and computes only the stretch (D32) from `SEEN.md` | Round 4, both lanes: `SEEN.md` times stage events, not your messages, so a quiet planning discussion past four hours re-grounded on every turn. Your own message times are the only honest clock, and keying them by repository rather than session makes the next-day new session see the gap. Not running git keeps a hostile repository's config out of the hook | review-round-4 |
+| D45 | The hook is told which harness it runs on by its command line (`hook.sh claude` or `hook.sh codex`), and advances `confirmed.last` only on a harness whose `systemMessage` is displayed (D43). The compare-and-save runs under `flock` on `~/.cache/wheelchair/.lock` | Round 4: a harness that cannot show the notice would otherwise use it up unseen, and two sessions could both announce one change | review-round-4 |
+| D46 | Two test seams, set only by the suites: `WHEELCHAIR_WORDING` replaces the wording file's path and `WHEELCHAIR_STATE` replaces `~/.cache/wheelchair`. Production never sets them, as with `WHEELCHAIR_PRESENT` in `protocol/lanes.md` | Round 4: the live check had no way to point the hook at a temporary file without touching real paths | review-round-4 |
 
 ## Spec
 
@@ -117,8 +120,9 @@ An entry is unshown until a `shown` or `closed` line names its id (D31). An id i
 redrawn if it already appears in the file, so two writers never need to agree on a counter. Every write is one short line appended with `>>`, so two writers cannot
 lose each other's lines. Nothing ever edits or deletes a line. Only stages write this file (D30).
 
-**The last-message time — `~/.cache/wheelchair/sessions/<session-id>`.** One ISO 8601
-timestamp, overwritten by the hook each time you send a message (D37). Safe to delete; losing
+**The last-message time — `~/.cache/wheelchair/last/<key>`.** One ISO 8601 timestamp per
+repository, overwritten by the hook each time you send a message from any session on either
+harness (D44). Safe to delete; losing
 it only means the next gap goes unnoticed (D27).
 
 **The register — `~/.wheelchair/wording.md`.** One file, outside any repository, shared by
@@ -172,8 +176,9 @@ reads exactly as it does today.
 **Closing (D31).** Whichever stage changes the plan's `status` appends `closed` for every entry
 still unshown. Closed entries are never surfaced.
 
-**After a gap (D32, D40).** When the latest line in the plan's `SEEN.md` is four hours or more
-old, the stage also re-grounds the entries from the plan's last working stretch that the turn leans on — the run of
+**After a gap (D32, D44).** When the hook's text carries the gap line — which it does only on
+the first message after four hours or more of silence in this repository — the stage also
+re-grounds the entries from the plan's last working stretch that the turn leans on — the run of
 `shown` lines counted back from the latest one, stopping at the first silence of four hours or
 more between two lines. It appends nothing for them; they were already shown.
 
@@ -183,15 +188,19 @@ its result does.
 
 ### The hook (D21, D22, D30)
 
-One `UserPromptSubmit` hook, the same script on both harnesses, installed at user scope. It
-reads two small files, writes one, and runs no model. It never reads anything inside a
-repository, so a repository's contents cannot reach it (D30). On each of your messages it:
+One `UserPromptSubmit` hook, the same script on both harnesses, installed at user scope and
+invoked as `hook.sh claude` or `hook.sh codex` (D45). It reads a few small files, runs no model
+and no git, and never reads a file inside a repository — it only checks whether a `.git`
+entry exists while walking up from `cwd` (D30, D44). On each of your messages it:
 
 1. Reads `## Confirmed` from `~/.wheelchair/wording.md` and compares it with the copy saved at
-   `~/.cache/wheelchair/confirmed.last`. If they differ, it prepares the visible notice below
-   and saves the new copy. If no copy exists yet, it saves one silently (D43).
-2. Reads `~/.cache/wheelchair/sessions/<session-id>`, then overwrites it with the current time.
-   If the old time is four hours or more ago (D17), it notes the gap in whole hours.
+   `~/.cache/wheelchair/confirmed.last`, under `flock` on `~/.cache/wheelchair/.lock`. If they
+   differ and this harness displays `systemMessage`, it prepares the visible notice below and
+   saves the new copy; on a harness that does not, it leaves the copy for the next message on
+   one that does. If no copy exists yet, it saves one silently (D43, D45).
+2. Finds the repository root (D44), reads `~/.cache/wheelchair/last/<key>`, then overwrites it
+   with the current time. If the old time is four hours or more ago (D17), it notes the gap in
+   whole hours.
 3. Returns the text below as `hookSpecificOutput.additionalContext`, and the notice, if any, as
    `systemMessage`. It returns nothing at all when there is no confirmed entry, no gap and no
    change.
@@ -238,7 +247,8 @@ so the existing warning-not-failing step stays last. `seen/set.sh`, per harness 
   this per harness first and records the result in `protocol/seen.md`). Claude Code: adds
   `Bash(<root>/seen/wording.sh:*)` to `permissions.allow` and `~/.wheelchair` to
   `sandbox.filesystem.allowWrite`, each if absent, refusing when either parent has the wrong
-  shape. Codex: adds `"~/.wheelchair"` to `writable_roots` under
+  shape. The sandbox entry opens the directory to every sandboxed command, not only the
+  script; D43's notice is what catches a change made around it. Codex: adds `"~/.wheelchair"` to `writable_roots` under
   `[sandbox_workspace_write]` in `~/.codex/config.toml` if absent, appending the table when it
   does not exist. It edits only that one line or table and leaves the rest of the file byte for
   byte, and refuses when the file does not parse as TOML or `writable_roots` is not a one-line
@@ -270,6 +280,8 @@ improve is only today's behaviour.
   suite never touches a real `~/.claude`.
 - **New: `seen/hook.sh`** — the one script both harnesses' hook entries point at.
 - **New: `seen/wording.sh`** — the only writer of the wording list (D35).
+- Both scripts honour the test seams in D46; `protocol/seen.md` documents them beside
+  `WHEELCHAIR_PRESENT`.
 - **New: `seen/AGENTS.md`** — the directory router, per `protocol/routers.md`.
 - **Edited: `protocol/planning.md`, `plan-review.md`, `implementation.md`,
   `verification.md`** — each gains the write-and-read step from D19, stated once and pointing
@@ -289,8 +301,11 @@ this feature supplies the fact they were always missing.
   chose to run there, never by the hook (D30).
 - **Two sessions on one plan.** Both stages may append; single-line appends do not interleave
   (D24). Two turns may both explain one entry. Harmless, and rare enough not to lock.
-- **Two worktrees of one repository.** Each has its own `SEEN.md` in its own checkout; the
-  last-message file is per session (D37).
+- **Two worktrees of one repository.** Each has its own `SEEN.md` and, having its own root
+  path, its own last-message file (D44).
+- **Coming back in a new session, or on the other harness.** The last-message file is per
+  repository, so the first message still carries the gap (D44). With the hook absent or not
+  yet approved on Codex, no gap is reported: the too-quiet direction.
 - **A struck wording entry suggested again.** `seen/wording.sh suggest` refuses it (D29, D35).
 - **Settings already hold other hooks.** Ours is added beside them (D26).
 - **Codex hook not yet approved.** It is skipped, and turns read as they do today until you
@@ -325,7 +340,10 @@ entries were left out; it reads no file inside the fixture repository; it finish
 with its headers, refuses a `suggest` matching a struck phrase in any case, and loses nothing
 under two concurrent writers. The hook also: returns a `systemMessage` naming an added and a removed phrase after the
 confirmed list changes, and none on the following message; stays silent when
-`confirmed.last` is missing. `seen/wording.sh` also: `suggest` refuses a phrase present in any section; `remove` moves a
+`confirmed.last` is missing; invoked as a harness recorded as not displaying the notice, leaves
+`confirmed.last` untouched; reports a gap to the first of two sessions in one repository and not
+the second; finds the root without executing anything from a fixture `.git/config`. `seen/wording.sh` also: `confirm` and `strike` each move exactly the named `## Proposed` row and
+refuse a phrase not there; `suggest` refuses a phrase present in any section; `remove` moves a
 confirmed row to `## Struck`; a phrase differing only in case names the same row. The
 installer: adds its group beside an existing foreign hook,
 writes byte-identical output on a second run, refuses a non-JSON file and a wrongly shaped
@@ -334,13 +352,17 @@ root once each, leaves an existing `config.toml` otherwise byte-identical, and r
 unparseable one.
 
 Plus one live check per harness using your **real** login, since a throwaway `HOME` has no
-credentials on either harness, and writing **no** real config file: pass the hook with
+credentials on either harness, and writing **no** real config or state file: pass the hook with
 `claude -p --settings <temp file>` and with `codex exec --dangerously-bypass-hook-trust -c
 'hooks.UserPromptSubmit=[…]'` (verified 2026-09-24: an override-supplied hook's
-`additionalContext` reached the model on Codex 0.156.0), pointed at a temporary wording file.
-Seed a confirmed entry and assert the model received it; then empty the file, fire a second
-turn, and assert **nothing** was injected — the too-eager failure D3 calls the dangerous one.
-Before any of that, fire one turn on each harness whose hook returns a `systemMessage` and
+`additionalContext` reached the model on Codex 0.156.0), with `WHEELCHAIR_WORDING` and
+`WHEELCHAIR_STATE` pointed at temporary paths (D46). Seed a confirmed entry carrying a unique
+canary phrase and assert the model received it. Then empty the wording file, save a matching
+`confirmed.last` so no notice is due, fire a second turn, and assert the canary and the
+`wheelchair —` prefix are **absent** — the too-eager failure D3 calls the dangerous one. The
+assertion is on wheelchair's own text, not on "nothing injected", because your settings already
+carry another tool's `UserPromptSubmit` hook and `--settings` adds to them rather than replacing
+them. Before any of that, fire one turn on each harness whose hook returns a `systemMessage` and
 record whether the user sees it: in Claude Code's interactive UI and Codex's TUI, not headless
 output. That result decides D43's per-harness grant.
 
@@ -373,6 +395,16 @@ re-raise them.
 
 ## Review Rounds
 
+### Round 5 — 2026-09-24
+
+**Lanes:** GPT / gpt-5.6-sol (mechanics); Claude / default reviewer model (intent); cross-family: yes.
+
+**Changed since Round 4:** the last-message time is per repository and found without running
+git, and the stage acts on the hook's gap line (D44); the hook knows its harness and locks the
+notice compare-and-save (D45); the test seams (D46); the live check's canary assertion and
+seeded `confirmed.last`; the new `confirm`/`strike`, notice and root-finding assertions; the
+sandbox grant's stated reach.
+
 ### Round 4 — 2026-09-24
 
 **Lanes:** GPT / gpt-5.6-sol (mechanics); Claude / default reviewer model (intent); cross-family: yes.
@@ -382,6 +414,18 @@ gap from `SEEN.md` (D40); map-build entries dropped and `cold` retired (D41); th
 write grant (D42); the visible change notice and the per-harness condition on D38's grant (D43);
 the fail-open wording; the live checks using the real login through `--settings` and `-c`; the
 stage-half `grep` check and two new Accepted Risks. The cap reset after D43.
+
+Nine findings. Not clean: one blocking finding, raised by both lanes independently.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| both | blocking | D40 measures the gap from `SEEN.md`, which records stage events, not your messages, so a quiet discussion past four hours re-grounds on every turn | `upheld` | Checked: planning writes no entries (D33, D41) and re-grounding appends nothing, so the condition never clears. D44 |
+| both | major | The change notice can be used up on a harness that does not display it, and two sessions can both announce it | `upheld` | D45 |
+| claude | minor | The live check has no way to point the hook at temporary files | `upheld` | D46 |
+| claude | minor | Emptying the list in the live check itself triggers a notice, muddying the "nothing injected" assertion | `upheld` | Seed a matching `confirmed.last` first |
+| gpt | minor | Claude's `--settings` adds to your settings, which already carry another tool's `UserPromptSubmit` hook, so "nothing injected" is unprovable | `upheld` | Checked against `MAP.md` item 3 and `~/.claude/settings.json`. Assert on a wheelchair canary instead |
+| gpt | minor | No test for `confirm` or `strike` | `upheld` | Added |
+| claude | minor | The sandbox grant opens `~/.wheelchair` to every sandboxed command, not just the script | `upheld` | Stated in the installer section; D43's notice covers it |
 
 ### Round 3 — 2026-09-24
 
@@ -513,6 +557,7 @@ Filled by Stage 3. One row per worker brief.
 
 ## Log
 
+- 2026-09-24 — Round 4 triaged: D44–D46. Round 5 next (second round since D43).
 - 2026-09-24 — Q10 settled as D43. Round 4 next; the cap reset.
 - 2026-09-24 — Round 3 triaged: D39–D42 from upheld findings; Q10 open as a `user-decision`.
   Also noted: `~/.claude/settings.json` now carries another tool's hooks on eight events,
