@@ -1,6 +1,6 @@
 ---
 slug: arriving-cold
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-09-19
 ---
 
@@ -776,6 +776,9 @@ Filled by Stage 3. One row per worker brief.
 
 ## Log
 
+- 2026-09-24 — Real install done (`./install.sh` twice, clean). Collin confirmed the change
+  notice shows in both Claude Code and Codex, so both keep `notice` and the write grant; result
+  recorded in `protocol/seen.md`. COMPLETION.md written. Status `verifying`.
 - 2026-09-24 — T1–T3 merged; `seen/test/run.sh` added with the cross-file checks. All suites
   green; live checks passed on both harnesses. Waiting on Collin for the two checks that touch
   his real setup: the interactive notice check and `./install.sh` on the real homes.

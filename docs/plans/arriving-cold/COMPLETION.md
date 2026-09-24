@@ -54,7 +54,7 @@ after a four-hour gap on the plan — and marks it shown.
 
 | Spec item | Origin | Implemented at (file:line) | Validated by |
 |-----------|--------|----------------------------|--------------|
-| Plan record `SEEN.md`: format, append-only, random ids, only stages write (D24, D30) | this run | `protocol/seen.md:12-27`; template `protocol/templates/SEEN.md` | prose; Accepted Risk (stage half verified by no suite) |
+| Plan record `SEEN.md`: format, append-only, random ids, only stages write (D24, D30) | this run | `protocol/seen.md:10-27`; template `protocol/templates/SEEN.md` | prose; Accepted Risk (stage half verified by no suite) |
 | What a stage writes (D19, D33, D41, D5) | this run | `protocol/seen.md:29-40` | prose |
 | What a stage reads — only what the turn leans on (D31) | this run | `protocol/seen.md:42-46` | prose |
 | End-of-turn order: `shown`, then `turn` (D54) | this run | `protocol/seen.md:48-52` | prose |
@@ -62,24 +62,24 @@ after a four-hour gap on the plan — and marks it shown.
 | After a gap: leaned-on entries count as unseen; rulings named by outcome; resume summary unchanged (D56, D57) | this run | `protocol/seen.md:66-76` | prose |
 | Threshold stated once as `gap-threshold: 4h` (D54, D55) | this run | `protocol/seen.md:78`; `seen/hook.sh:16` | `seen/test/run.sh` cross-file check |
 | Stage documents point at `seen.md`, restating nothing | this run | `protocol/planning.md:117`, `protocol/plan-review.md:134`, `protocol/implementation.md:38`, `protocol/verification.md:120` | `seen/test/run.sh` cross-file check |
-| Wording list format and three sections (D10, D15, D29) | this run | `protocol/seen.md:80-100`; `seen/wording.sh:9-11` | `wording_test.sh` "file creation has all headers" |
-| `seen/wording.sh` verbs, refusals, case-insensitive single identity (D35, D39) | this run | `seen/wording.sh:84-131` | `wording_test.sh` (11 assertions) |
-| Wording writers serialised on a separate lock file, atomic replace (D35, D39) | this run | `seen/wording.sh:99-100`, `:28-40` | `wording_test.sh` "twenty concurrent suggestions lose nothing" |
-| Suggest-and-answer flow, one short line, ignored never re-asked (D28) | this run | `protocol/seen.md:102-115` | prose |
+| Wording list format and three sections (D10, D15, D29) | this run | `protocol/seen.md:80-104`; `seen/wording.sh:9-11` | `wording_test.sh` "file creation has all headers" |
+| `seen/wording.sh` verbs, refusals, case-insensitive single identity (D35, D39) | this run | `seen/wording.sh:84-138` | `wording_test.sh` (11 assertions) |
+| Wording writers serialised on a separate lock file, atomic replace (D35, D39) | this run | `seen/wording.sh:99-100`, `:29-42` | `wording_test.sh` "twenty concurrent suggestions lose nothing" |
+| Suggest-and-answer flow, one short line, ignored never re-asked (D28) | this run | `protocol/seen.md:117-128` | prose |
 | Hook ignores lanes (`WHEELCHAIR_LANE`) and subagents (`agent_id`) (D47, D51) | this run | `seen/hook.sh:149`, `:156` | `hook_test.sh`; live Codex run with `WHEELCHAIR_LANE=1` (below) |
 | Lane invocations carry `WHEELCHAIR_LANE=1` (D47) | this run | `protocol/lanes.md:12-21`, `:42`, `:104`, `:141-142` | `seen/test/run.sh` cross-file check |
 | Hook reads nothing inside a repository (D30) | this run | `seen/hook.sh:146-190` (paths only from env/home) | `hook_test.sh` "cwd repository canary never appears" |
 | Change notice via `systemMessage`, once, locked compare-and-save, not advanced on `no-notice` (D43, D45, D49) | this run | `seen/hook.sh:77-102`, `:162-175`, `:183` | `hook_test.sh` (notice, silent seed, no-notice); live interactive check on both harnesses (below) |
 | Session clock per session; malformed file overwritten (D48, D52) | this run | `seen/hook.sh:104-120` | `hook_test.sh` "gap reports once", "separate clocks", "malformed session overwritten" |
 | Fixed context text, newest first, 2,000-character cap with left-out count (D34) | this run | `seen/hook.sh:122-144` | `hook_test.sh` "context cap reports omitted entries"; live runs |
-| Fail open: exit 0 on every controlled path (Failing open, D52) | this run | `seen/hook.sh` main wrapper; `protocol/seen.md` "Failing open" | `hook_test.sh` malformed-input cases |
+| Fail open: exit 0 on every controlled path (Failing open, D52) | this run | `seen/hook.sh:146-192`; `protocol/seen.md` "Failing open" | `hook_test.sh` malformed-input cases |
 | Hook under 200 ms | this run | — | `hook_test.sh` "hook finishes under 200 ms" |
 | Installer adds our group beside foreign hooks, matched on script path (D14, D26, D52) | this run | `seen/set.sh:78-120` | `set_test.sh` "foreign group stays beside ours", "changed hook arguments rewrite rather than duplicate"; real install kept moshi hooks |
 | `"timeout": 2`, byte-stable entry, `/hooks` line on create or change (D36) | this run | `seen/set.sh:74-76`, `:298` | `set_test.sh` canonical fields, second run byte-identical, approval line once |
-| Write grants: Claude allow rule and sandbox `allowWrite`; Codex `writable_roots` (D38, D42) | this run | `seen/set.sh:122-179`, `:181-247` | `set_test.sh` fresh homes, one-line extension, byte preservation |
+| Write grants: Claude allow rule and sandbox `allowWrite`; Codex `writable_roots` (D38, D42) | this run | `seen/set.sh:122-172`, `:181-241` | `set_test.sh` fresh homes, one-line extension, byte preservation |
 | Grants only where the harness shows the notice (D43, D49) | this run | `seen/set.sh:37` (`notice` for both, set from the live check); recorded at `protocol/seen.md` "The hook" | `set_test.sh` "no-notice still installs its hook without grant files" |
 | `~/.wheelchair/` created after refusal checks, not on refusal | this run | `seen/set.sh:272-273` | `set_test.sh` refusal cases assert no wording dir |
-| Refusals: bad JSON, non-object, wrong-shape subtrees, bad TOML, multi-line `writable_roots` | this run | `seen/set.sh:44-64`, `:90-111`, `:181-247`, `:251-254` | `set_test.sh` six refusal cases |
+| Refusals: bad JSON, non-object, wrong-shape subtrees, bad TOML, multi-line `writable_roots` | this run | `seen/set.sh:60-72`, `:90-120`, `:181-241`, `:266-269` | `set_test.sh` six refusal cases |
 | `install.sh` calls `seen/set.sh` before the sensitivity writer, warning on refusal | this run | `install.sh:100-104` | `install/test/run.sh` (70 pass); real `./install.sh` twice |
 | Test seams `WHEELCHAIR_WORDING`, `WHEELCHAIR_STATE` (D46) | this run | `seen/hook.sh`, `seen/wording.sh`, `seen/set.sh`; `install/test/run.sh:157` | every fixture suite; real homes asserted unchanged |
 | Routers and docs | this run | `seen/AGENTS.md`; `AGENTS.md:24-29`, `:36`, `:55`, `:67`, `:106`; `protocol/AGENTS.md:34`; `README.md:65`, `:83` | read by lead |
