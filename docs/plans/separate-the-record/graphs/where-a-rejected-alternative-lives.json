@@ -1,0 +1,341 @@
+{
+  "schema": 1,
+  "title": "where a rejected alternative could live, and who ends up reading it",
+  "source": "plan-proposal",
+  "source_detail": "Q1 of docs/plans/separate-the-record/PLAN.md — where a rejected alternative lives, and who is told to read it",
+  "explanation": "The lead drops an alternative before any reviewer sees it, and today the only place that survives is the specification — so [the reader who must not re-propose it](#reviewer-side) and [the reader who should never see it](#worker-side) get the same words. Follow what reaches the worker under each of [the three answers](#answers): only giving it a home in the record keeps the specification clean without losing the reason. Leaves out review findings, which already have a home and a no-re-raise rule.",
+  "groups": [
+    {
+      "id": "answers",
+      "label": null,
+      "note": null,
+      "visible": false,
+      "nodes": [
+        "opt-confine",
+        "opt-drop",
+        "opt-record"
+      ]
+    },
+    {
+      "id": "reviewer-side",
+      "label": "must not re-propose it",
+      "note": "A fresh reviewer with no memory of the argument will suggest the dropped alternative again unless something tells it not to.",
+      "visible": true,
+      "nodes": [
+        "reviewer"
+      ]
+    },
+    {
+      "id": "worker-side",
+      "label": "should never see it",
+      "note": "An implementer builds the settled design; a paragraph about a design that was cut is noise they cannot skip.",
+      "visible": true,
+      "nodes": [
+        "worker"
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "brief",
+      "label": "the reviewer brief points at it, the way it already points at settled findings",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": "protocol/plan-review.md",
+      "note": "Do not re-raise it unless you have concrete evidence that rationale is factually wrong.",
+      "graph": null,
+      "x": 325,
+      "y": 716
+    },
+    {
+      "id": "drop",
+      "label": "the lead considers an alternative and drops it, before any reviewer sees it",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 390,
+      "y": 0
+    },
+    {
+      "id": "nowhere",
+      "label": "nothing in the workflow has a place for it",
+      "kind": "decision",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": true,
+      "ref": null,
+      "note": "The record covers findings a reviewer raised. This is not one.",
+      "graph": null,
+      "x": 390,
+      "y": 140
+    },
+    {
+      "id": "opt-confine",
+      "label": "keep it in the specification, but in one designated place per item",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 520,
+      "y": 280
+    },
+    {
+      "id": "opt-drop",
+      "label": "record nothing, and let review re-propose it",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 0,
+      "y": 280
+    },
+    {
+      "id": "opt-record",
+      "label": "write it to a rejected-alternatives list in the record",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 260,
+      "y": 280
+    },
+    {
+      "id": "relitigate",
+      "label": "the alternative comes back as a finding, and a round is spent declining it",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 20,
+      "y": 420
+    },
+    {
+      "id": "reviewer",
+      "label": "a fresh reviewer, attacking the design with no memory of it",
+      "kind": "external",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": "protocol/plan-review.md",
+      "note": null,
+      "graph": null,
+      "x": 260,
+      "y": 560
+    },
+    {
+      "id": "spec",
+      "label": "the specification, which every stage downstream reads",
+      "kind": "module",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 585,
+      "y": 716
+    },
+    {
+      "id": "today",
+      "label": "today: it lands in the specification because that is what the reviewer definitely reads",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": "docs/plans/diagram-sensitivity/PLAN.md",
+      "note": "It was cut, and the reasoning is recorded because it is the kind of thing a later round would re-propose.",
+      "graph": null,
+      "x": 780,
+      "y": 280
+    },
+    {
+      "id": "worker",
+      "label": "an implementer building only what the specification says",
+      "kind": "external",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": "protocol/implementation.md",
+      "note": null,
+      "graph": null,
+      "x": 650,
+      "y": 560
+    }
+  ],
+  "edges": [
+    {
+      "id": "brief->reviewer",
+      "from": "brief",
+      "to": "reviewer",
+      "label": "reaches it, and only it",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "drop->nowhere",
+      "from": "drop",
+      "to": "nowhere",
+      "label": "where does the reason go",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "nowhere->opt-confine",
+      "from": "nowhere",
+      "to": "opt-confine",
+      "label": "give it a fixed slot in the spec",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "nowhere->opt-drop",
+      "from": "nowhere",
+      "to": "opt-drop",
+      "label": "give it no home at all",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "nowhere->opt-record",
+      "from": "nowhere",
+      "to": "opt-record",
+      "label": "give it a home in the record",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "nowhere->today",
+      "from": "nowhere",
+      "to": "today",
+      "label": "what happens now",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "opt-confine->spec",
+      "from": "opt-confine",
+      "to": "spec",
+      "label": "one slot per item",
+      "kind": "data",
+      "value": "the reason it was cut",
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "opt-drop->relitigate",
+      "from": "opt-drop",
+      "to": "relitigate",
+      "label": "",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "opt-record->brief",
+      "from": "opt-record",
+      "to": "brief",
+      "label": "",
+      "kind": "data",
+      "value": "the rejected alternative and why",
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "relitigate->reviewer",
+      "from": "relitigate",
+      "to": "reviewer",
+      "label": "costs a round",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "spec->reviewer",
+      "from": "spec",
+      "to": "reviewer",
+      "label": "reaches it",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "spec->worker",
+      "from": "spec",
+      "to": "worker",
+      "label": "reaches it too, and this is the leak",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "today->spec",
+      "from": "today",
+      "to": "spec",
+      "label": "woven into the prose",
+      "kind": "data",
+      "value": "the reason it was cut",
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    }
+  ]
+}

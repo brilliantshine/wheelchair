@@ -1,0 +1,330 @@
+{
+  "schema": 1,
+  "title": "how much of the round-by-round record a reviewer has to read",
+  "source": "plan-proposal",
+  "source_detail": "Q2 of docs/plans/separate-the-record/PLAN.md — how much of the round-by-round record a Stage 2 reviewer reads",
+  "explanation": "Of 932 findings across eight plans, 909 were upheld and fixed — their outcome is already in the specification, so nothing about them can be re-raised. Only [the twenty-three the reviewer actually needs](#the-twenty-three) carry a rationale a fresh reviewer could contradict. Compare the two paths out of the triage step: today's hands over everything to reach those, the proposal promotes them once and hands over the list. Leaves out rejected alternatives, which decision 7 already placed on that list.",
+  "groups": [
+    {
+      "id": "already-in-the-spec",
+      "label": "nothing left to re-raise",
+      "note": "An upheld finding was fixed, so what a reviewer would attack is the fix itself, which is in the specification.",
+      "visible": true,
+      "nodes": [
+        "upheld"
+      ]
+    },
+    {
+      "id": "the-twenty-three",
+      "label": "what a reviewer must not re-raise",
+      "note": "The two verdicts that close a finding with a rationale instead of a fix — 23 rows across every plan this workflow has produced.",
+      "visible": true,
+      "nodes": [
+        "accepted",
+        "declined"
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "accepted",
+      "label": "real, not worth fixing — closed with a written reason",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 130,
+      "y": -156
+    },
+    {
+      "id": "declined",
+      "label": "not a defect — closed with a written reason",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": "Record why; future rounds must honor it.",
+      "graph": null,
+      "x": 390,
+      "y": -156
+    },
+    {
+      "id": "finding",
+      "label": "a reviewer reports something, and the lead rules on it",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": "protocol/plan-review.md",
+      "note": "The reviewers report; the lead adjudicates.",
+      "graph": null,
+      "x": 390,
+      "y": 0
+    },
+    {
+      "id": "forgotten",
+      "label": "a promotion the lead forgets silently re-opens a closed finding",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": -102,
+      "y": 519
+    },
+    {
+      "id": "reviewer-proposed",
+      "label": "proposed: the next reviewer is handed the specification and the list",
+      "kind": "external",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 164,
+      "y": 533
+    },
+    {
+      "id": "reviewer-today",
+      "label": "today: the next reviewer is handed all of it, and finds the 23 itself",
+      "kind": "external",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": "protocol/plan-review.md",
+      "note": "Read IDEA.md first, then PLAN.md.",
+      "graph": null,
+      "x": 383,
+      "y": 423
+    },
+    {
+      "id": "settled-list",
+      "label": "one settled list: rejected alternatives, plus these two verdicts promoted onto it as they are ruled",
+      "kind": "module",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 87,
+      "y": 280
+    },
+    {
+      "id": "spec",
+      "label": "the specification, carrying every fix",
+      "kind": "module",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 347,
+      "y": 280
+    },
+    {
+      "id": "tables",
+      "label": "the round-by-round tables, about 3100 lines and growing forty a round",
+      "kind": "module",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 700,
+      "y": 555
+    },
+    {
+      "id": "upheld",
+      "label": "real — the specification is rewritten to fix it (909 of 932)",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 764,
+      "y": 90
+    }
+  ],
+  "edges": [
+    {
+      "id": "accepted->settled-list",
+      "from": "accepted",
+      "to": "settled-list",
+      "label": "promoted at the moment it is ruled",
+      "kind": "data",
+      "value": "one line, and the reason",
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "accepted->tables",
+      "from": "accepted",
+      "to": "tables",
+      "label": "a row recording it",
+      "kind": "data",
+      "value": "the finding and why it was closed",
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "declined->settled-list",
+      "from": "declined",
+      "to": "settled-list",
+      "label": "promoted at the moment it is ruled",
+      "kind": "data",
+      "value": "one line, and the reason",
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "declined->tables",
+      "from": "declined",
+      "to": "tables",
+      "label": "a row recording it",
+      "kind": "data",
+      "value": "the finding and why it was closed",
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "finding->accepted",
+      "from": "finding",
+      "to": "accepted",
+      "label": "accepted as a risk",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "finding->declined",
+      "from": "finding",
+      "to": "declined",
+      "label": "declined",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "finding->upheld",
+      "from": "finding",
+      "to": "upheld",
+      "label": "upheld",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "settled-list->forgotten",
+      "from": "settled-list",
+      "to": "forgotten",
+      "label": "the cost of the promotion step",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "settled-list->reviewer-proposed",
+      "from": "settled-list",
+      "to": "reviewer-proposed",
+      "label": "",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "spec->reviewer-proposed",
+      "from": "spec",
+      "to": "reviewer-proposed",
+      "label": "",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "spec->reviewer-today",
+      "from": "spec",
+      "to": "reviewer-today",
+      "label": "",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "tables->reviewer-today",
+      "from": "tables",
+      "to": "reviewer-today",
+      "label": "all of it",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "upheld->spec",
+      "from": "upheld",
+      "to": "spec",
+      "label": "the fix lands here",
+      "kind": "data",
+      "value": "a rewritten spec item",
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "upheld->tables",
+      "from": "upheld",
+      "to": "tables",
+      "label": "a row recording it",
+      "kind": "data",
+      "value": "the finding, the verdict, the resolution",
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    }
+  ]
+}

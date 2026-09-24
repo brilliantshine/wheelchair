@@ -1,0 +1,333 @@
+{
+  "schema": 1,
+  "title": "who reads which part of a plan document, and who is handed all of it",
+  "source": "code-read",
+  "source_detail": "protocol/planning.md, protocol/plan-review.md, protocol/implementation.md, protocol/verification.md, protocol/templates/PLAN.md",
+  "explanation": "Every stage is handed the same whole file, but only planning and review have any use for [the record](#record) — implementation and verification act on [what a worker builds from](#product) alone. The arrows out of each stage are what its protocol file actually tells it to act on, not what it is given. Leaves out the graphs directory, MAP.md and IDEA.md, which no stage disputes.",
+  "groups": [
+    {
+      "id": "product",
+      "label": "what a worker builds from",
+      "note": "The settled design plus the two lists that qualify it — this is the whole of what stages 3 and 4 act on.",
+      "visible": true,
+      "nodes": [
+        "accepted-risks",
+        "prior-work",
+        "spec"
+      ]
+    },
+    {
+      "id": "record",
+      "label": "the record",
+      "note": "How the spec was argued into shape, kept because a resumed session needs to tell a rejected idea from an unconsidered one.",
+      "visible": true,
+      "nodes": [
+        "decision-log",
+        "review-rounds"
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "accepted-risks",
+      "label": "real problems nobody is going to fix, and why",
+      "kind": "module",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": "Part of the spec, not review scaffolding.",
+      "graph": null,
+      "x": 823,
+      "y": 210
+    },
+    {
+      "id": "decision-log",
+      "label": "every decision and its reason, never edited, only superseded",
+      "kind": "module",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": "Append-only: a reversal is a new entry superseding the old.",
+      "graph": null,
+      "x": 262,
+      "y": 304
+    },
+    {
+      "id": "plan-file",
+      "label": "one document holds every section",
+      "kind": "file",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": "protocol/templates/PLAN.md",
+      "note": "Spec at line 44, Review Rounds at 62 — the record always sits after the spec.",
+      "graph": null,
+      "x": 813,
+      "y": -408
+    },
+    {
+      "id": "prior-work",
+      "label": "parts already built before this plan reached implementation",
+      "kind": "module",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 1083,
+      "y": 210
+    },
+    {
+      "id": "questions",
+      "label": "what is still undecided, and what needs looking into",
+      "kind": "module",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 260,
+      "y": 436
+    },
+    {
+      "id": "review-rounds",
+      "label": "every finding, verdict and fix, one table per round",
+      "kind": "module",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 520,
+      "y": 280
+    },
+    {
+      "id": "spec",
+      "label": "the settled design, and the only thing anyone implements",
+      "kind": "module",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 823,
+      "y": 350
+    },
+    {
+      "id": "stage1",
+      "label": "planning, resuming cold",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": "protocol/planning.md",
+      "note": "Resume: read MAP.md, IDEA.md, then PLAN.md.",
+      "graph": null,
+      "x": 260,
+      "y": 86
+    },
+    {
+      "id": "stage2",
+      "label": "a fresh reviewer attacking the spec",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": "protocol/plan-review.md",
+      "note": "Never sees the conversation that produced the plan.",
+      "graph": null,
+      "x": 705,
+      "y": -36
+    },
+    {
+      "id": "stage3",
+      "label": "the lead breaking work into briefs",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": "protocol/implementation.md",
+      "note": "Read Prior Work before decomposing.",
+      "graph": null,
+      "x": 946,
+      "y": -49
+    },
+    {
+      "id": "stage4",
+      "label": "a blind verifier checking what got built",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": "protocol/verification.md",
+      "note": "Treat every claim as something to falsify, not to trust.",
+      "graph": null,
+      "x": 1323,
+      "y": 140
+    }
+  ],
+  "edges": [
+    {
+      "id": "plan-file->stage1",
+      "from": "plan-file",
+      "to": "stage1",
+      "label": "all of it",
+      "kind": "data",
+      "value": "the whole document",
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "plan-file->stage2",
+      "from": "plan-file",
+      "to": "stage2",
+      "label": "all of it, no section named",
+      "kind": "data",
+      "value": "the whole document",
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "plan-file->stage3",
+      "from": "plan-file",
+      "to": "stage3",
+      "label": "all of it",
+      "kind": "data",
+      "value": "the whole document",
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "plan-file->stage4",
+      "from": "plan-file",
+      "to": "stage4",
+      "label": "all of it",
+      "kind": "data",
+      "value": "the whole document",
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "stage1->decision-log",
+      "from": "stage1",
+      "to": "decision-log",
+      "label": "appends every answer",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "stage1->questions",
+      "from": "stage1",
+      "to": "questions",
+      "label": "drains one at a time",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "stage1->spec",
+      "from": "stage1",
+      "to": "spec",
+      "label": "folds each answer in",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "stage2->accepted-risks",
+      "from": "stage2",
+      "to": "accepted-risks",
+      "label": "must not re-raise these either",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "stage2->review-rounds",
+      "from": "stage2",
+      "to": "review-rounds",
+      "label": "must not re-raise what is settled here",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "stage2->spec",
+      "from": "stage2",
+      "to": "spec",
+      "label": "attacks it",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "stage3->prior-work",
+      "from": "stage3",
+      "to": "prior-work",
+      "label": "skips what is already built",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "stage3->spec",
+      "from": "stage3",
+      "to": "spec",
+      "label": "decomposes into briefs",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "stage4->spec",
+      "from": "stage4",
+      "to": "spec",
+      "label": "checks the build against it",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    }
+  ]
+}
