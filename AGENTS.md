@@ -21,12 +21,19 @@ every project. That region is the one stage input resident in a context window, 
 one source, one writer, nothing hand-maintained. Read it as the exception it is — anything
 else that wants to live in a context window belongs in `protocol/`.
 
+**A second, deliberate reach outside the clone: the `seen/` hook.** A `UserPromptSubmit`
+hook installed at user scope runs on every turn in every project, the same way the dial's
+region does — but unlike the dial, it puts nothing into any agent's standing instructions.
+It carries per-turn facts only: a confirmed wording list and, after a long quiet spell, how
+long it has been. Both are defined in `protocol/seen.md`, the canonical rules, and read
+fresh off disk on each turn rather than rendered into a file an agent's instructions load.
+
 | Kind | Directory | Read by |
 |---|---|---|
 | Canonical rules | `protocol/` | an agent executing a stage |
 | Per-feature state | `docs/plans/<slug>/` | every stage, to find out where the work stands |
 | Harness adapter | `skills/`, `codex/prompts/` | Claude Code and the Codex CLI, at registration |
-| Executable | `spine/`, `sensitivity/`, `install/`, `viewer/`, `install.sh` | run by a command, not read as guidance |
+| Executable | `spine/`, `sensitivity/`, `seen/`, `install/`, `viewer/`, `install.sh` | run by a command, not read as guidance |
 
 Two rules follow, and between them they cover most of what can go wrong here:
 
@@ -45,6 +52,7 @@ Two rules follow, and between them they cover most of what can go wrong here:
 | `skills/` | [AGENTS.md](skills/AGENTS.md) | the Claude Code wrappers and the convention every wrapper follows |
 | `spine/` | [AGENTS.md](spine/AGENTS.md) | `scan.sh`, the read-only scanner behind `/spine` |
 | `sensitivity/` | [AGENTS.md](sensitivity/AGENTS.md) | `set.sh`, the only writer of each present harness's global instruction file |
+| `seen/` | [AGENTS.md](seen/AGENTS.md) | `hook.sh`, the per-turn hook both harnesses call; `wording.sh`, the only writer of the wording list; `set.sh`, the installer's writer of both harnesses' hook entry |
 | `install/` | — | `test/run.sh`, the installer fixture suite. Temp harness homes only; real global files stay untouched |
 | `codex/` | — | `prompts/`, the Codex CLI wrappers. Same convention as `skills/`, one line each |
 | `docs/` | — | `plans/<slug>/` per feature. State, not rules — nothing here is a contract |
@@ -56,7 +64,7 @@ Two rules follow, and between them they cover most of what can go wrong here:
 |---|---|
 | `README.md` | What this workflow is and how to drive it, for a person arriving cold |
 | `CONTRIBUTING.md` | The conventions, source-of-truth boundaries, and validation commands for someone changing this repository |
-| `install.sh` | Renders each present harness's wrappers, substituting this clone's path for `{{WHEELCHAIR_ROOT}}`, installs the viewer's dependencies, stops any running viewer that isn't running the code just pulled, decides once whether this machine serves the viewer to other tailnet devices (asking only on a headless machine that hasn't decided yet), and — last, and warning rather than failing if it refuses — calls `sensitivity/set.sh` to render the dial's region into each present global instruction file. Those files are **outside this tree**, and the region between the markers is overwritten. Idempotent, and it **globs** `skills/*/` and `codex/prompts/*.md`, so adding a command needs no edit here |
+| `install.sh` | Renders each present harness's wrappers, substituting this clone's path for `{{WHEELCHAIR_ROOT}}`, installs the viewer's dependencies, stops any running viewer that isn't running the code just pulled, decides once whether this machine serves the viewer to other tailnet devices (asking only on a headless machine that hasn't decided yet), calls `seen/set.sh` to write each present harness's own hook entry and the wording script's write grant — into each harness's own settings files, **outside this tree** — and, last, warning rather than failing if it refuses, calls `sensitivity/set.sh` to render the dial's region into each present global instruction file. Idempotent, and it **globs** `skills/*/` and `codex/prompts/*.md`, so adding a command needs no edit here |
 | `.gitignore` | `node_modules/`, `graphify-out/`, and the two scratch paths the viewer's suites write, `viewer/test/.tmp/` and `test-results/`. `graphify-out/` is what lets a root router claim a graph cannot carry a contract |
 
 ## How to navigate (in order)
@@ -95,6 +103,7 @@ Rules:
 ```bash
 bash spine/test/run.sh                # the scanner's assertions, exit-code gated
 bash sensitivity/test/run.sh          # the dial's block writer, exit-code gated
+bash seen/test/run.sh                 # the hook and wording-list writer, exit-code gated
 bash install/test/run.sh              # presence-aware installer assertions, exit-code gated
 ./install.sh && ./install.sh          # idempotent; git status --porcelain stays empty
 node --test viewer/test/*.test.js     # unquoted glob; works on Node 20 and 26

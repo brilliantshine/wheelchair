@@ -31,9 +31,10 @@ lands at one of the statuses the machine already has.
 | `diagrams.md` | Which diagram a document gets, and what keeps it from lying |
 | `graphs.md` | The graph format read by both harnesses — schema, verdicts, preservation, how the viewer starts |
 | `sensitivity.md` | The diagram-sensitivity dial: the region rendered into present harnesses' always-on files, and what each level draws |
+| `seen.md` | What the reader has seen: the plan record `docs/plans/<slug>/SEEN.md`, the wording list, and the hook that carries the wording list and a gap notice into every turn |
 | `routers.md` | The router format — what `/spine` creates and the Stage 3 upkeep rule maintains |
 | `spine.md` | The `/spine` run sequence. Takes a path, not a slug, and sits outside the state machine |
-| `templates/` | The skeletons a stage writes from: `MAP.md`, `IDEA.md`, `PLAN.md`, `COMPLETION.md` |
+| `templates/` | The skeletons a stage writes from: `MAP.md`, `IDEA.md`, `PLAN.md`, `COMPLETION.md`, `SEEN.md` |
 
 ## Boundaries
 

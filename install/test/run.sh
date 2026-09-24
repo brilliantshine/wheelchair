@@ -154,6 +154,7 @@ run_case() {
     "WHEELCHAIR_SHIM_LOG=${home[$name]}/commands.log"
     "WHEELCHAIR_PRESENT=${present[$name]}" WHEELCHAIR_SKIP_DEPS=1
     "WHEELCHAIR_CLAUDE_HOME=${claude[$name]}" "WHEELCHAIR_CODEX_HOME=${codex[$name]}"
+    "WHEELCHAIR_WORDING=${home[$name]}/wheelchair/wording.md"
     "WHEELCHAIR_TTY=${tty[$name]}" "WHEELCHAIR_TAILSCALE_DNS=${dns[$name]}"
     "WHEELCHAIR_REAL_NODE=$real_node"
     "WHEELCHAIR_TAILSCALE_SERVE_STATUS=${serve_status[$name]}"
@@ -179,6 +180,10 @@ seed_serving() {
 
 real_claude_before=$(file_state "$HOME/.claude/CLAUDE.md")
 real_codex_before=$(file_state "$HOME/.codex/AGENTS.md")
+real_seen_settings_before=$(file_state "$HOME/.claude/settings.json")
+real_seen_hooks_before=$(file_state "$HOME/.codex/hooks.json")
+real_seen_config_before=$(file_state "$HOME/.codex/config.toml")
+real_wheelchair_before=$(tree_state "$HOME/.wheelchair")
 
 new_case claude_only
 present[claude_only]=claude
@@ -208,6 +213,11 @@ first_codex=$(tree_state "${codex[both_idempotent]}")
 run_case both_idempotent
 assert 'both harnesses render every substituted wrapper' both_wrappers_landed "${claude[both_idempotent]}" "${codex[both_idempotent]}"
 assert 'a second install is idempotent' bash -c '[[ $1 == 0 && $2 == "$3" && $4 == "$5" ]]' _ "${status[both_idempotent]}" "$(tree_state "${claude[both_idempotent]}")" "$first_claude" "$(tree_state "${codex[both_idempotent]}")" "$first_codex"
+assert 'fixture install writes the Claude UserPromptSubmit hook' python3 - "${claude[both_idempotent]}/settings.json" "$repo" <<'PY'
+import json, shlex, sys
+d=json.load(open(sys.argv[1])); target=sys.argv[2] + '/seen/hook.sh'
+assert any(shlex.split(h['command'])[0] == target for g in d['hooks']['UserPromptSubmit'] for h in g['hooks'])
+PY
 
 new_case headless_yes
 tty[headless_yes]=1
@@ -410,6 +420,10 @@ assert 'dependency installation requests both browser engines' grep -Fq 'playwri
 
 assert 'real CLAUDE.md is byte-identical after suite' bash -c '[[ $1 == "$2" ]]' _ "$real_claude_before" "$(file_state "$HOME/.claude/CLAUDE.md")"
 assert 'real AGENTS.md is byte-identical after suite' bash -c '[[ $1 == "$2" ]]' _ "$real_codex_before" "$(file_state "$HOME/.codex/AGENTS.md")"
+assert 'real Claude settings are byte-identical after suite' bash -c '[[ $1 == "$2" ]]' _ "$real_seen_settings_before" "$(file_state "$HOME/.claude/settings.json")"
+assert 'real Codex hooks are byte-identical after suite' bash -c '[[ $1 == "$2" ]]' _ "$real_seen_hooks_before" "$(file_state "$HOME/.codex/hooks.json")"
+assert 'real Codex config is byte-identical after suite' bash -c '[[ $1 == "$2" ]]' _ "$real_seen_config_before" "$(file_state "$HOME/.codex/config.toml")"
+assert 'real wheelchair directory is byte-identical after suite' bash -c '[[ $1 == "$2" ]]' _ "$real_wheelchair_before" "$(tree_state "$HOME/.wheelchair")"
 
 printf 'RESULT %d passed, %d failed\n' "$passes" "$failures"
 (( failures == 0 ))

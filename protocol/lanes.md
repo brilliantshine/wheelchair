@@ -9,6 +9,17 @@ workflow is deliberately built on `codex exec` so both harnesses drive the same 
 and lanes are inspectable with plain shell. That is an intentional override; don't
 "correct" it back to the pi runtime.
 
+## `WHEELCHAIR_LANE=1` on every lane
+
+Every invocation below runs with `WHEELCHAIR_LANE=1` set in its environment. A headless
+`codex exec` or `claude -p` call runs on the user's own login, so the user-level wheelchair
+hook (`seen/hook.sh`, `protocol/seen.md`) fires inside it exactly as it would on an
+ordinary message — unmarked, a lane's own turns would reset the reader's gap clock, spend a
+one-time wording-change notice where nobody reads it, and carry the wording list into a
+worker. Claude Code's own lanes — the in-process Agent tool — need no marker: they never
+pass through a shell the hook could see, and the hook ignores them by their `agent_id`
+instead.
+
 ## What "present" means
 
 A family is present when its command resolves on `PATH`: `claude` or `codex`. Presence is
@@ -28,7 +39,7 @@ resumed later:
 ```bash
 BRIEF=$(mktemp) OUT=$(mktemp) LOG=$(mktemp)
 # ... write the brief to $BRIEF ...
-codex exec -m gpt-5.6-sol -c model_reasoning_effort=high \
+WHEELCHAIR_LANE=1 codex exec -m gpt-5.6-sol -c model_reasoning_effort=high \
   -s read-only -C "$PWD" --json -o "$OUT" - < "$BRIEF" > "$LOG" 2>&1
 RC=$?
 TID=$(grep -m1 -o '"thread_id":"[^"]*"' "$LOG" | cut -d'"' -f4)
@@ -90,7 +101,7 @@ Run lanes in a **background** Bash call so a foreground timeout can't kill them.
 **Continuation** — the remediation and closure-review path:
 
 ```bash
-codex exec resume "$TID" -m "$MODEL" -c model_reasoning_effort=high \
+WHEELCHAIR_LANE=1 codex exec resume "$TID" -m "$MODEL" -c model_reasoning_effort=high \
   -c sandbox_workspace_write.network_access=true \
   -o "$OUT2" "<follow-up>"
 ```
@@ -127,7 +138,8 @@ changed.
 ## Claude lane
 
 From Claude Code: the Agent tool (`model: sonnet` for workers, default for reviewers).
-From Codex: `claude --model sonnet -p "<brief>"`, or plain `claude -p` for review lanes.
+From Codex: `WHEELCHAIR_LANE=1 claude --model sonnet -p "<brief>"`, or plain
+`WHEELCHAIR_LANE=1 claude -p` for review lanes.
 
 For UI/frontend implementation and taste-sensitive surfaces, see
 `protocol/implementation.md`; it owns the placement rule.

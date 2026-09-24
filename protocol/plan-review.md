@@ -130,7 +130,8 @@ Stage 1 loop rules.
 Round summaries and `user-decision` questions shown to the user follow
 `writing.md`, beside this file — finding
 IDs and round numbers get re-grounded on first use, and the summary reports what would
-break, not which reviewer said what.
+break, not which reviewer said what. This stage also keeps the plan's record of what the
+user has seen — write and read it per `seen.md`, beside this file, before composing a turn.
 
 ## Exit
 

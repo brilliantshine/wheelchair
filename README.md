@@ -62,6 +62,9 @@ protocol/        canonical stage definitions — the single source of truth
                        preservation, how the viewer starts
   sensitivity.md       the diagram-sensitivity dial: the region rendered into present
                        harnesses' always-on files, and what each level draws
+  seen.md              what the reader has seen: the plan record SEEN.md, the wording
+                       list, and the per-turn hook that carries them — nothing added to
+                       any agent's standing instructions
   routers.md           the router document format: what a directory owns, what must never
                        happen there, where to go next — guidance for creation, not a test
   spine.md             /spine: propose routers for a repo that has none, list every write
@@ -71,12 +74,16 @@ protocol/        canonical stage definitions — the single source of truth
   implementation.md    Stage 3: lead + cheap worker lanes from whichever family is present
                        (escalation only on evidence)
   verification.md      Stage 4: blind verify, cross-family when available, + remediation loop
-  templates/           MAP.md, IDEA.md, PLAN.md, COMPLETION.md skeletons
+  templates/           MAP.md, IDEA.md, PLAN.md, COMPLETION.md, SEEN.md skeletons
 spine/           scan.sh: resolves routing documents through symlinks, read-only, JSON out
   test/run.sh          fixture assertions; builds its tree under the system temp directory
 sensitivity/     set.sh: the only writer of whichever harness files are present,
                  all-or-nothing across them
   test/run.sh          fixture assertions; never touches the real ~/.claude or ~/.codex
+seen/            hook.sh: the per-turn UserPromptSubmit hook both harnesses call;
+                 wording.sh: the only writer of the wording list; set.sh: the installer's
+                 writer of both harnesses' hook entry
+  test/run.sh          fixture assertions; never touches a real home
 install/         test/run.sh: fixture assertions for install.sh — never writes the real
                  ~/.claude or ~/.codex
 skills/          Claude Code wrappers → rendered into ~/.claude/skills/ when claude is present

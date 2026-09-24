@@ -34,7 +34,8 @@ Everything the lead writes for the user — status updates, the end-of-run summa
 follows `writing.md`, beside this file:
 sized by what the user needs to decide, every task ID and decision codename re-grounded
 on first use (they mean nothing after a day away), and above the code — behavior and
-areas, not function names.
+areas, not function names. The lead also keeps the plan's record of what the user has
+seen — write and read it per `seen.md`, beside this file, before composing a turn.
 
 **Read Prior Work before decomposing.** Items marked `pre-existing` do not become briefs
 and their code is not touched — re-implementing working code is wasted lane time at best,
