@@ -3,14 +3,14 @@
 Owned by [the repo root](../AGENTS.md). Rules live in `protocol/seen.md`; nothing here
 carries its own copy of them.
 
-The organizing idea: **the hook never reads inside a repository, and only one script ever
-writes the wording list.**
+The organizing idea: **the hook never reads anything inside a repository, and only one
+script ever writes the wording list.**
 
 | File | Role |
 |---|---|
 | `hook.sh` | The one `UserPromptSubmit` hook both harnesses call. Reads a few small files, runs no model and no git, never reads anything inside a repository |
 | `wording.sh` | The only writer of `~/.wheelchair/wording.md` — `suggest`, `confirm`, `strike`, `remove` |
-| `set.sh` | The installer's writer of both harnesses' hook entry and write grants for `wording.sh`. Never touches any other hook |
+| `set.sh` | The installer's writer of both harnesses' hook entry and write grants for `wording.sh`. Never touches any other hook. The exact files, shapes and refusals are `protocol/seen.md`'s ["The installer's reach"](../protocol/seen.md#the-installers-reach) — nothing here restates them |
 | `test/run.sh` | Runs the suites below; exit-code gated |
 | `test/hook_test.sh` | Fixture assertions for `hook.sh` |
 | `test/wording_test.sh` | Fixture assertions for `wording.sh` |
@@ -18,9 +18,10 @@ writes the wording list.**
 
 ## Boundaries
 
-- **The hook never reads inside a repository.** A user-level hook fires in every repository
-  it is pointed at, trusted or not — reading anything there would let a hostile clone
-  inject text into every turn.
+- **The hook never reads anything inside a repository.** It reads no file there, and its
+  Python runs isolated (`python3 -I`), so nothing in the working directory — no `json.py` a
+  hostile clone might plant — is ever imported. A user-level hook fires in every repository
+  it is pointed at, trusted or not, so this holds regardless of what a clone contains.
 - **`set.sh` edits files the user owns and refuses rather than repairs them.** A malformed
   target is reported and left untouched, the same contract `sensitivity/set.sh` uses for
   the diagram-sensitivity dial.
