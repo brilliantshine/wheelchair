@@ -51,20 +51,20 @@ async function fakeServer(port, response) {
   return server;
 }
 
-async function prePrefixHolder(root, port, token, startId, { proof = true } = {}) {
-  const fixture = path.join(root, `pre-prefix-${proof ? 'proof' : 'no-proof'}.js`);
-  const requests = path.join(root, `pre-prefix-${proof ? 'proof' : 'no-proof'}.jsonl`);
+async function prePrefixHolder(root, port, token, startId, { proof = true, pid = true } = {}) {
+  const fixture = path.join(root, `pre-prefix-${proof ? 'proof' : 'no-proof'}-${pid ? 'pid' : 'no-pid'}.js`);
+  const requests = path.join(root, `pre-prefix-${proof ? 'proof' : 'no-proof'}-${pid ? 'pid' : 'no-pid'}.jsonl`);
   await fs.writeFile(fixture, `'use strict';
 const crypto=require('node:crypto'),fs=require('node:fs'),http=require('node:http');
-const [port,file,token,startId,proof]=process.argv.slice(2);
+const [port,file,token,startId,proof,pid]=process.argv.slice(2);
 http.createServer((request,response)=>{
   fs.appendFileSync(file,JSON.stringify({url:request.url,headers:request.headers})+'\\n');
   if(request.url.startsWith('/wheelchair/whoami')) { response.writeHead(401,{'content-type':'application/json'}); response.end(JSON.stringify({error:'bad-token'})); return; }
-  if(request.url.startsWith('/whoami')) { const nonce=new URL(request.url,'http://localhost').searchParams.get('nonce'); const body={start_id:startId,pid:process.pid,code:'preprefix000'}; if(proof==='yes') body.proof=crypto.createHmac('sha256',token).update(nonce).digest('hex'); response.end(JSON.stringify(body)); return; }
+  if(request.url.startsWith('/whoami')) { const nonce=new URL(request.url,'http://localhost').searchParams.get('nonce'); const body={start_id:startId,code:'preprefix000'}; if(pid==='yes') body.pid=process.pid; if(proof==='yes') body.proof=crypto.createHmac('sha256',token).update(nonce).digest('hex'); response.end(JSON.stringify(body)); return; }
   response.writeHead(404,{'content-type':'application/json'}); response.end(JSON.stringify({error:'no-route'}));
 }).listen(Number(port),'127.0.0.1',()=>console.log('ready'));
 `);
-  const child = spawn(process.execPath, [fixture, String(port), requests, token, startId, proof ? 'yes' : 'no'], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(process.execPath, [fixture, String(port), requests, token, startId, proof ? 'yes' : 'no', pid ? 'yes' : 'no'], { stdio: ['ignore', 'pipe', 'pipe'] });
   await new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('pre-prefix holder did not start')), 2000);
     child.stdout.once('data', () => { clearTimeout(timer); resolve(); }); child.once('exit', (code) => { clearTimeout(timer); reject(new Error(`pre-prefix holder exited ${code}`)); });
@@ -285,6 +285,16 @@ test('a no-proof pre-prefix holder stops only with its matching server start id 
     const mismatch = await run(['--cache-root', root, '--port', String(port), '--stop']); assert.equal(mismatch.code, 1); assert.equal(holder.child.exitCode, null);
     await fs.writeFile(path.join(root, '.server'), JSON.stringify({ pid: holder.child.pid, port, token, start_id: startId }));
     const stopped = await run(['--cache-root', root, '--port', String(port), '--stop']); assert.equal(stopped.code, 0, stopped.stderr); await exit(holder.child);
+  } finally { await stop(holder.child); }
+});
+
+test('a proof-valid pre-prefix holder without a pid is not ours and open does not signal it', async () => {
+  const root = await makeDir(); const port = await freePort(); const token = 'f'.repeat(64); const startId = '0'.repeat(32);
+  const holder = await prePrefixHolder(root, port, token, startId, { pid: false });
+  try {
+    const result = await run(['--cache-root', root, '--port', String(port), '--open', path.join(root, 'graphs', 'missing-pid.json')]);
+    assert.equal(result.code, 1); assert.match(result.stderr, /Refused to use a port held by a process it cannot identify\./);
+    assert.equal(holder.child.exitCode, null); assert.equal(holder.child.signalCode, null);
   } finally { await stop(holder.child); }
 });
 

@@ -1830,7 +1830,7 @@ async function identifyHolder(config, { retrySilent = true, allowOlderStop = fal
       const candidates = [...new Set([lock && lock.token, diskToken].filter(Boolean))];
       const matchingToken = candidates.find((token) => proofMatches(identity.proof, nonce, token));
       if (matchingToken && lock && lock.start_id === identity.start_id &&
-          (!Number.isInteger(identity.pid) || lock.pid === identity.pid)) {
+          Number.isInteger(identity.pid) && lock.pid === identity.pid) {
         return { kind: prePrefix ? 'pre-prefix' : 'ours', identity, lock, token: matchingToken };
       }
       if (allowOlderStop && identity && identity.proof === undefined && lock &&

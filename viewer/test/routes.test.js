@@ -289,6 +289,18 @@ test('PUT graph and view accept a remember cookie only from a permitted origin',
   } finally { await ctx.stop(); }
 });
 
+test('PUT /wheelchair/graph accepts a remember cookie only from a permitted origin', async () => {
+  const root = await makeDir(); const graph = path.join(root, 'graphs', 'main.json');
+  await fs.mkdir(path.dirname(graph), { recursive: true }); await fs.writeFile(graph, await fs.readFile(path.join(FIXTURES, 'canonical.json')));
+  const ctx = await startServer({ cacheRoot: root, port: await freePort(), open: graph });
+  try {
+    const cookie = await remember(ctx); const current = await raw(ctx, `/graph?path=${encodeURIComponent(graph)}&token=${ctx.token}`);
+    const body = JSON.stringify({ hash: current.body.hash, graph: current.body.graph }); const headers = { cookie, origin: new URL(ctx.url).origin, 'content-type': 'application/json' };
+    assert.equal((await raw(ctx, `/graph?path=${encodeURIComponent(graph)}`, { method: 'PUT', headers, body })).status, 200);
+    assert.equal((await raw(ctx, `/graph?path=${encodeURIComponent(graph)}`, { method: 'PUT', headers: { ...headers, origin: 'https://foreign.invalid' }, body })).status, 403);
+  } finally { await ctx.stop(); }
+});
+
 test('root routes move to /wheelchair and /wheelchair gains its trailing slash', async () => {
   const ctx = await startServer({ cacheRoot: await makeDir(), port: await freePort() });
   try {
@@ -308,5 +320,13 @@ test('page responses renew the Lax cookie while JSON responses do not, and anony
     assert.match(page.headers.get('set-cookie'), /SameSite=Lax/); const list = await raw(ctx, `/list?token=${ctx.token}`); assert.equal(list.headers.get('set-cookie'), null);
     const anonymous = await raw(ctx, '/'); assert.equal(anonymous.status, 401); assert.match(anonymous.body, /Open your bookmark link once/); assert.match(anonymous.body, /<code>node viewer\/server\.js --url<\/code>/); assert.equal(anonymous.headers.get('content-security-policy'), "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
     assert.equal((await raw(ctx, '/list')).status, 401);
+  } finally { await ctx.stop(); }
+});
+
+test('an anonymous JSON route returns a JSON 401 error', async () => {
+  const ctx = await startServer({ cacheRoot: await makeDir(), port: await freePort() });
+  try {
+    const response = await raw(ctx, '/list');
+    assert.equal(response.status, 401); assert.match(response.headers.get('content-type'), /^application\/json(?:;|$)/); assert.equal(typeof response.body.error, 'string');
   } finally { await ctx.stop(); }
 });
