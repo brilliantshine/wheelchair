@@ -2,7 +2,13 @@
 slug: remember-me
 date: 2026-09-23
 implemented-by: "terra (tasks 1, 3), sonnet (tasks 2, 4) (lead: opus 5.5)"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude default reviewer
+    checks: terra
+  - round: 1
+    lane: gpt-5.6-sol
+    checks: sonnet
 ---
 
 # Completion Report — The viewer remembers a device after its first visit
@@ -125,4 +131,25 @@ $ git status --porcelain                       # only the lead's AGENTS.md citat
 
 ## Remediation rounds
 
-(none yet)
+### Remediation 1 — 2026-09-24
+
+Round 1 gate: the Claude default reviewer checked the GPT-built tasks (1, 3), and
+gpt-5.6-sol checked the Claude-built tasks (2, 4). Both checks crossed families, and both
+returned FAIL; the gaps are verbatim in `REMEDIATION-1.md`.
+
+What changed:
+
+- `identifyHolder` again requires `/whoami` to report an integer `pid` equal to `.server`'s
+  before a proof-valid holder counts as ours.
+- New tests: `PUT /wheelchair/graph` with the cookie, from a permitted and from a foreign
+  `Origin`; the JSON body and content type of an anonymous `401`; a proof-valid holder with
+  no `pid` is refused and never signalled.
+- `AGENTS.md` names `signin.html` in the `viewer/` row and counts eight files.
+- This report's Routers section and Known gaps were corrected to match what is true.
+
+Validation, run by the lead:
+
+```text
+$ node --test viewer/test/*.test.js     -> # pass 125 # fail 0
+$ npm --prefix viewer run test:browser  -> 202 passed (1.0m)
+```
