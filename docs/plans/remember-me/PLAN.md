@@ -1,6 +1,6 @@
 ---
 slug: remember-me
-status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
+status: done   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-09-23
 ---
 
@@ -491,4 +491,8 @@ Filled by Stage 3. One row per worker brief.
   restarted hearth's service on this code, and the live viewer works under `/wheelchair/`
   through the existing root mapping. The `/wheelchair` mapping command and the phone and
   laptop checks remain for Collin. Status set to verifying.
+- 2026-09-24: Stage 4 done. Round 1 FAIL from both cross-family verifiers (REMEDIATION-1.md);
+  round 2 PASS from both. Docs swept; hearth's service restarted on the verified code.
+  Status set to done. Still open for Collin: the laptop checks, a link tapped from another
+  website, and an edit saved on the phone.
 

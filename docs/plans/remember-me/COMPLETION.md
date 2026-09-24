@@ -9,6 +9,12 @@ verified-by:
   - round: 1
     lane: gpt-5.6-sol
     checks: sonnet
+  - round: 2
+    lane: claude default reviewer
+    checks: terra
+  - round: 2
+    lane: gpt-5.6-sol
+    checks: sonnet
 ---
 
 # Completion Report — The viewer remembers a device after its first visit
@@ -153,3 +159,12 @@ Validation, run by the lead:
 $ node --test viewer/test/*.test.js     -> # pass 125 # fail 0
 $ npm --prefix viewer run test:browser  -> 202 passed (1.0m)
 ```
+
+### Verification round 2 — 2026-09-24
+
+Closure review by the same two verifiers, resumed. Both returned PASS, and both checks
+crossed families. The lead then swept the documents: the `AGENTS.md` citations
+(`viewer/server.js:2108-2109`, `:148`, `viewer/test/helpers/server.js:87`) still point at the
+lines they describe. The lead also restarted hearth's viewer service so it runs the verified
+code: `/wheelchair/whoami` answers `200` with a `start_id`, and `/` answers `308`.
+
