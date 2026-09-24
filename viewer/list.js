@@ -3,9 +3,6 @@
 
   const POLL_MS = 5000;
 
-  const params = new URLSearchParams(location.search);
-  const token = params.get('token') || '';
-
   const errorBanner = document.getElementById('error-banner');
   const emptyEl = document.getElementById('empty');
   const sessionsSection = document.getElementById('sessions-section');
@@ -15,16 +12,14 @@
 
   const HARNESS_LABEL = { claude: 'Claude', codex: 'Codex', other: 'other' };
 
-  function tokenParam() {
-    return 'token=' + encodeURIComponent(token);
-  }
-
+  // Every URL below lives under /wheelchair and carries no token — the cookie set on the
+  // first-visit redirect authenticates every request from here on.
   function graphUrl(path) {
-    return '/?path=' + encodeURIComponent(path) + '&' + tokenParam();
+    return '/wheelchair/?path=' + encodeURIComponent(path);
   }
 
   function planUrl(dir) {
-    return '/docs?plan=' + encodeURIComponent(dir) + '&' + tokenParam();
+    return '/wheelchair/docs?plan=' + encodeURIComponent(dir);
   }
 
   function el(tag, attrs) {
@@ -131,7 +126,7 @@
 
   async function poll() {
     try {
-      const res = await fetch('/list?' + tokenParam());
+      const res = await fetch('/wheelchair/list');
       if (!res.ok) throw new Error('http ' + res.status);
       const data = await res.json();
       lastGood = data;

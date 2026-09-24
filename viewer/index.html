@@ -283,7 +283,6 @@
   const GROUP_HEADER = 38; // extra clearance above, holding the name and the note line
 
   const params = new URLSearchParams(location.search);
-  const token = params.get('token') || '';
   let currentPath = params.get('path') || '';
 
   const svg = document.getElementById('canvas');
@@ -378,14 +377,14 @@
   }
 
   // ---- wire ------------------------------------------------------------------
+  // Every URL below lives under /wheelchair and carries no token — the cookie set on the
+  // first-visit redirect (server.js's redirectWithoutToken) authenticates every request the page
+  // makes from here on, same-origin fetches included.
   function graphUrl(path) {
-    return '/graph?path=' + encodeURIComponent(path) + '&token=' + encodeURIComponent(token);
+    return '/wheelchair/graph?path=' + encodeURIComponent(path);
   }
   function viewUrl(path) {
-    return '/view?path=' + encodeURIComponent(path);
-  }
-  function rootUrl(path) {
-    return '/?path=' + encodeURIComponent(path) + '&token=' + encodeURIComponent(token);
+    return '/wheelchair/view?path=' + encodeURIComponent(path);
   }
 
   async function getGraph(path) {
@@ -445,7 +444,7 @@
         res = await fetch(viewUrl(currentPath), {
           method: 'PUT',
           cache: 'no-store',
-          headers: { 'content-type': 'application/json', 'X-Graph-Token': token },
+          headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ hash: lastHash, graph: base }),
         });
       } catch (err) {
@@ -852,10 +851,11 @@
   // Splits the explanation on GROUP_REFERENCE_RE and rebuilds `explainBody` from scratch: plain
   // text between matches as text nodes, each match as a <span> carrying only the phrase and the
   // group id. Built with createElement/textContent, never innerHTML — the explanation is
-  // agent-written and this page holds a token that can write verdicts, so turning that string into
-  // HTML would let an agent's prose execute script inside the one surface enforcing "an agent
-  // proposes, only a person rules." `explainBody.textContent = text` was that barrier before groups
-  // existed; this keeps it, just per-segment instead of for the whole string.
+  // agent-written and this page can write verdicts (the browser's own cookie authenticates that
+  // write), so turning that string into HTML would let an agent's prose execute script inside the
+  // one surface enforcing "an agent proposes, only a person rules." `explainBody.textContent = text`
+  // was that barrier before groups existed; this keeps it, just per-segment instead of for the
+  // whole string.
   function buildExplainBody(text) {
     while (explainBody.firstChild) explainBody.removeChild(explainBody.firstChild);
     let last = 0;

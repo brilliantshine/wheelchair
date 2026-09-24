@@ -9,7 +9,6 @@ const fs = require('fs');
 const path = require('path');
 
 const ORIGIN = 'http://viewer.test';
-const TOKEN = 'tok-12345';
 
 function readFile(name) {
   return fs.readFileSync(path.join(__dirname, '..', name), 'utf8');
@@ -32,14 +31,14 @@ async function mockRoutes(page, handlers) {
     const u = new URL(req.url());
     const p = u.pathname;
 
-    if (p === '/') return route.fulfill({ status: 200, contentType: 'text/html', body: LIST_HTML });
-    if (p === '/docs') return route.fulfill({ status: 200, contentType: 'text/html', body: DOC_HTML });
-    if (p === '/assets/list.js') return route.fulfill({ status: 200, contentType: 'text/javascript', body: LIST_JS });
-    if (p === '/assets/doc.js') return route.fulfill({ status: 200, contentType: 'text/javascript', body: DOC_JS });
+    if (p === '/wheelchair/') return route.fulfill({ status: 200, contentType: 'text/html', body: LIST_HTML });
+    if (p === '/wheelchair/docs') return route.fulfill({ status: 200, contentType: 'text/html', body: DOC_HTML });
+    if (p === '/wheelchair/assets/list.js') return route.fulfill({ status: 200, contentType: 'text/javascript', body: LIST_JS });
+    if (p === '/wheelchair/assets/doc.js') return route.fulfill({ status: 200, contentType: 'text/javascript', body: DOC_JS });
 
-    if (p === '/list' && handlers.list) return handlers.list(route, u);
-    if (p === '/plan' && handlers.plan) return handlers.plan(route, u);
-    if (p === '/doc' && handlers.doc) return handlers.doc(route, u);
+    if (p === '/wheelchair/list' && handlers.list) return handlers.list(route, u);
+    if (p === '/wheelchair/plan' && handlers.plan) return handlers.plan(route, u);
+    if (p === '/wheelchair/doc' && handlers.doc) return handlers.doc(route, u);
 
     return route.fulfill({ status: 404, contentType: 'text/plain', body: 'not found' });
   });
@@ -75,9 +74,9 @@ test.describe('list page', function () {
     };
   }
 
-  test('groups sessions and plans in the given order, with labels, ended marking and token-carrying links', async function ({ page }) {
+  test('groups sessions and plans in the given order, with labels, ended marking and token-free links', async function ({ page }) {
     await mockRoutes(page, { list: function (route) { return route.fulfill(jsonBody(baseFixture())); } });
-    await page.goto(ORIGIN + '/?token=' + TOKEN);
+    await page.goto(ORIGIN + '/wheelchair/');
 
     const groups = page.locator('section.group');
     await expect(groups).toHaveCount(2);
@@ -98,11 +97,11 @@ test.describe('list page', function () {
     await expect(groups.nth(0).locator('.harness')).toHaveText('Claude');
     await expect(groups.nth(1).locator('.harness')).toHaveText('Codex');
 
-    // Graph link carries path and token.
+    // Graph link carries the path alone — no token (the cookie authenticates it).
     const graphHref = await groups.nth(0).locator('ul.graph-list a').first().getAttribute('href');
-    expect(graphHref).toBe('/?path=' + encodeURIComponent('/abs/repo/docs/plans/remote-viewer/graphs/main.json') + '&token=' + TOKEN);
+    expect(graphHref).toBe('/wheelchair/?path=' + encodeURIComponent('/abs/repo/docs/plans/remote-viewer/graphs/main.json'));
 
-    // Plans: order given, status null -> "no PLAN.md", link carries dir and token.
+    // Plans: order given, status null -> "no PLAN.md", link carries dir alone.
     const planRows = page.locator('table.plans tbody tr');
     await expect(planRows).toHaveCount(2);
     await expect(planRows.nth(0).locator('td').nth(0)).toHaveText('remote-viewer');
@@ -110,14 +109,14 @@ test.describe('list page', function () {
     await expect(planRows.nth(1).locator('td').nth(2)).toHaveText('no PLAN.md');
 
     const planHref = await planRows.nth(0).locator('a').getAttribute('href');
-    expect(planHref).toBe('/docs?plan=' + encodeURIComponent('/abs/repo/docs/plans/remote-viewer') + '&token=' + TOKEN);
+    expect(planHref).toBe('/wheelchair/docs?plan=' + encodeURIComponent('/abs/repo/docs/plans/remote-viewer'));
 
     await expect(page.locator('#empty')).toBeHidden();
   });
 
   test('empty state when nothing is registered', async function ({ page }) {
     await mockRoutes(page, { list: function (route) { return route.fulfill(jsonBody({ sessions: [], plans: [] })); } });
-    await page.goto(ORIGIN + '/?token=' + TOKEN);
+    await page.goto(ORIGIN + '/wheelchair/');
 
     await expect(page.locator('#empty')).toBeVisible();
     await expect(page.locator('#empty')).toHaveText('No graphs or plans are registered yet.');
@@ -135,7 +134,7 @@ test.describe('list page', function () {
       }
     });
     await page.clock.install({ time: BASE_TIME });
-    await page.goto(ORIGIN + '/?token=' + TOKEN);
+    await page.goto(ORIGIN + '/wheelchair/');
 
     await expect(page.locator('section.group')).toHaveCount(2);
     await expect(page.locator('#error-banner')).toBeHidden();
@@ -163,7 +162,7 @@ test.describe('list page', function () {
       }
     });
     await page.clock.install({ time: BASE_TIME });
-    await page.goto(ORIGIN + '/?token=' + TOKEN);
+    await page.goto(ORIGIN + '/wheelchair/');
 
     await expect(page.locator('section.group').nth(0).locator('ul.graph-list li')).toHaveCount(1);
     await page.clock.fastForward(5100);
@@ -177,7 +176,7 @@ test.describe('list page', function () {
     fixture.sessions[0].attach = "tmux attach -t 'a-very-long-session-name-that-could-wrap-oddly-on-a-narrow-phone-screen'";
     fixture.sessions[0].graphs[0].title = 'A title long enough that it might otherwise force the row to overflow sideways on a narrow phone';
     await mockRoutes(page, { list: function (route) { return route.fulfill(jsonBody(fixture)); } });
-    await page.goto(ORIGIN + '/?token=' + TOKEN);
+    await page.goto(ORIGIN + '/wheelchair/');
     await expect(page.locator('section.group')).toHaveCount(2);
 
     const overflow = await page.evaluate(function () {
@@ -206,7 +205,7 @@ test.describe('document page', function () {
         return route.fulfill({ status: 200, contentType: 'text/markdown', body: '# ' + file });
       }
     });
-    await page.goto(ORIGIN + '/docs?plan=' + encodeURIComponent(PLAN_DIR) + '&token=' + TOKEN);
+    await page.goto(ORIGIN + '/wheelchair/docs?plan=' + encodeURIComponent(PLAN_DIR));
     await expect(page.locator('#content h1')).toHaveText('PLAN.md');
     await expect(page.locator('nav#files a.current')).toHaveText('PLAN.md');
   });
@@ -219,7 +218,7 @@ test.describe('document page', function () {
         return route.fulfill({ status: 200, contentType: 'text/markdown', body: '# ' + file });
       }
     });
-    await page.goto(ORIGIN + '/docs?plan=' + encodeURIComponent(PLAN_DIR) + '&token=' + TOKEN);
+    await page.goto(ORIGIN + '/wheelchair/docs?plan=' + encodeURIComponent(PLAN_DIR));
     await expect(page.locator('#content h1')).toHaveText('IDEA.md');
   });
 
@@ -231,7 +230,7 @@ test.describe('document page', function () {
         return route.fulfill({ status: 200, contentType: 'text/markdown', body: '# ' + file });
       }
     });
-    await page.goto(ORIGIN + '/docs?plan=' + encodeURIComponent(PLAN_DIR) + '&token=' + TOKEN);
+    await page.goto(ORIGIN + '/wheelchair/docs?plan=' + encodeURIComponent(PLAN_DIR));
     await expect(page.locator('#content h1')).toHaveText('MAP.md');
   });
 
@@ -239,7 +238,7 @@ test.describe('document page', function () {
     await mockRoutes(page, {
       plan: function (route) { return route.fulfill(jsonBody(planFixture([]))); }
     });
-    await page.goto(ORIGIN + '/docs?plan=' + encodeURIComponent(PLAN_DIR) + '&token=' + TOKEN);
+    await page.goto(ORIGIN + '/wheelchair/docs?plan=' + encodeURIComponent(PLAN_DIR));
     await expect(page.locator('#content')).toHaveText('no documents');
   });
 
@@ -248,7 +247,7 @@ test.describe('document page', function () {
       plan: function (route) { return route.fulfill(jsonBody(planFixture(['PLAN.md']))); },
       doc: function (route) { return route.fulfill({ status: 404, contentType: 'text/plain', body: 'not found' }); }
     });
-    await page.goto(ORIGIN + '/docs?plan=' + encodeURIComponent(PLAN_DIR) + '&file=GONE.md&token=' + TOKEN);
+    await page.goto(ORIGIN + '/wheelchair/docs?plan=' + encodeURIComponent(PLAN_DIR) + '&file=GONE.md');
     await expect(page.locator('#content')).toHaveText('not found');
   });
 
@@ -264,7 +263,7 @@ test.describe('document page', function () {
       plan: function (route) { return route.fulfill(jsonBody(planFixture(['PLAN.md']))); },
       doc: function (route) { return route.fulfill({ status: 200, contentType: 'text/markdown', body: md }); }
     });
-    await page.goto(ORIGIN + '/docs?plan=' + encodeURIComponent(PLAN_DIR) + '&token=' + TOKEN);
+    await page.goto(ORIGIN + '/wheelchair/docs?plan=' + encodeURIComponent(PLAN_DIR));
 
     const rows = page.locator('#frontmatter .row');
     await expect(rows).toHaveCount(2);
@@ -311,7 +310,7 @@ test.describe('document page', function () {
       plan: function (route) { return route.fulfill(jsonBody(planFixture(['PLAN.md']))); },
       doc: function (route) { return route.fulfill({ status: 200, contentType: 'text/markdown', body: md }); }
     });
-    await page.goto(ORIGIN + '/docs?plan=' + encodeURIComponent(PLAN_DIR) + '&token=' + TOKEN);
+    await page.goto(ORIGIN + '/wheelchair/docs?plan=' + encodeURIComponent(PLAN_DIR));
 
     await expect(page.locator('#content h1')).toHaveText('Heading one');
     await expect(page.locator('#content h2')).toHaveText('Heading two');
@@ -353,12 +352,12 @@ test.describe('document page', function () {
         return route.fulfill({ status: 404, contentType: 'text/plain', body: 'not found' });
       }
     });
-    await page.goto(ORIGIN + '/docs?plan=' + encodeURIComponent(PLAN_DIR) + '&file=' + encodeURIComponent('notes/a.md') + '&token=' + TOKEN);
+    await page.goto(ORIGIN + '/wheelchair/docs?plan=' + encodeURIComponent(PLAN_DIR) + '&file=' + encodeURIComponent('notes/a.md'));
 
     const link = page.locator('#content a');
     await expect(link).toHaveText('go');
     const href = await link.getAttribute('href');
-    expect(href).toBe('/docs?plan=' + encodeURIComponent(PLAN_DIR) + '&file=' + encodeURIComponent('notes/b.md') + '&token=' + TOKEN);
+    expect(href).toBe('/wheelchair/docs?plan=' + encodeURIComponent(PLAN_DIR) + '&file=' + encodeURIComponent('notes/b.md'));
 
     await link.click();
     await expect(page.locator('#content h1')).toHaveText('arrived at b');
@@ -379,7 +378,7 @@ test.describe('document page', function () {
       plan: function (route) { return route.fulfill(jsonBody(planFixture(['PLAN.md']))); },
       doc: function (route) { return route.fulfill({ status: 200, contentType: 'text/markdown', body: md }); }
     });
-    await page.goto(ORIGIN + '/docs?plan=' + encodeURIComponent(PLAN_DIR) + '&token=' + TOKEN);
+    await page.goto(ORIGIN + '/wheelchair/docs?plan=' + encodeURIComponent(PLAN_DIR));
 
     // Neither dangerous "link" produced an anchor.
     await expect(page.locator('#content a')).toHaveCount(0);
@@ -407,7 +406,7 @@ test.describe('document page', function () {
       plan: function (route) { return route.fulfill(jsonBody(planFixture(['PLAN.md']))); },
       doc: function (route) { return route.fulfill({ status: 200, contentType: 'text/markdown', body: md }); }
     });
-    await page.goto(ORIGIN + '/docs?plan=' + encodeURIComponent(PLAN_DIR) + '&token=' + TOKEN);
+    await page.goto(ORIGIN + '/wheelchair/docs?plan=' + encodeURIComponent(PLAN_DIR));
 
     const wrap = page.locator('#content .table-wrap');
     await expect(wrap).toHaveCount(1);
@@ -426,7 +425,7 @@ test.describe('document page', function () {
       plan: function (route) { return route.fulfill(jsonBody(planFixture(['PLAN.md', 'notes/a-fairly-long-file-name-that-could-wrap.md']))); },
       doc: function (route) { return route.fulfill({ status: 200, contentType: 'text/markdown', body: '# A heading\n\nSome ordinary paragraph text.' }); }
     });
-    await page.goto(ORIGIN + '/docs?plan=' + encodeURIComponent(PLAN_DIR) + '&token=' + TOKEN);
+    await page.goto(ORIGIN + '/wheelchair/docs?plan=' + encodeURIComponent(PLAN_DIR));
     await expect(page.locator('#content h1')).toHaveText('A heading');
 
     const overflow = await page.evaluate(function () {

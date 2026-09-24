@@ -4,28 +4,25 @@
   // ---- URL / params ---------------------------------------------------------
 
   const params = new URLSearchParams(location.search);
-  const token = params.get('token') || '';
   const planDir = params.get('plan') || '';
   const requestedFile = params.get('file') || '';
 
-  function tokenParam() {
-    return 'token=' + encodeURIComponent(token);
-  }
-
+  // Every URL below lives under /wheelchair and carries no token — the cookie set on the
+  // first-visit redirect authenticates every request from here on.
   function listUrl() {
-    return '/?' + tokenParam();
+    return '/wheelchair/';
   }
 
   function docHref(file) {
-    return '/docs?plan=' + encodeURIComponent(planDir) + '&file=' + encodeURIComponent(file) + '&' + tokenParam();
+    return '/wheelchair/docs?plan=' + encodeURIComponent(planDir) + '&file=' + encodeURIComponent(file);
   }
 
   function docFetchUrl(file) {
-    return '/doc?plan=' + encodeURIComponent(planDir) + '&file=' + encodeURIComponent(file) + '&' + tokenParam();
+    return '/wheelchair/doc?plan=' + encodeURIComponent(planDir) + '&file=' + encodeURIComponent(file);
   }
 
   function planFetchUrl() {
-    return '/plan?dir=' + encodeURIComponent(planDir) + '&' + tokenParam();
+    return '/wheelchair/plan?dir=' + encodeURIComponent(planDir);
   }
 
   // ---- DOM handles ------------------------------------------------------------
@@ -407,7 +404,7 @@
 
   function renderMarkdown(raw, file) {
     const parsed = parseMarkdown(raw);
-    const ctx = { planDir: planDir, currentFile: file, token: token };
+    const ctx = { planDir: planDir, currentFile: file };
 
     frontmatterEl.textContent = '';
     if (parsed.frontmatter && parsed.frontmatter.length) {

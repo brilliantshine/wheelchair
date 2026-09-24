@@ -88,7 +88,7 @@ async function startServerEnv({ root, port, env }) {
   const token = (await fs.readFile(path.join(root, '.token'), 'utf8')).trim();
   assert.ok(token, 'server wrote a token file');
   return {
-    root, port, token, url: `http://127.0.0.1:${port}`, child,
+    root, port, token, url: `http://127.0.0.1:${port}/wheelchair`, child,
     async stop() {
       if (!child.killed) child.kill('SIGTERM');
       await new Promise((resolve) => {
@@ -234,7 +234,8 @@ test.describe('list and document pages against a real server', () => {
     await expect(item.locator('.harness')).toHaveText('Claude');
 
     const link = item.locator('a');
-    const expectedHref = '/?path=' + encodeURIComponent(world.runningGraph) + '&token=' + encodeURIComponent(world.token);
+    // No token: the page relies on the cookie the earlier `?token=` navigation already set.
+    const expectedHref = '/wheelchair/?path=' + encodeURIComponent(world.runningGraph);
     await expect(link).toHaveAttribute('href', expectedHref);
 
     await link.click();
@@ -365,5 +366,142 @@ test.describe('narrow touch viewport', () => {
     } finally {
       await world.stop();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// docs/plans/remember-me/PLAN.md — the first-visit cookie flow. One dedicated world: a graph with
+// real, positioned nodes (so a drag has something to move) and a registered plan (so a document
+// can open), opened against a running server exactly the way buildWorld's own graphs are.
+// ---------------------------------------------------------------------------
+
+async function buildRememberWorld() {
+  const root = await makeDir('remember-');
+  const graphDir = path.join(root, 'graphs');
+  await fs.mkdir(graphDir, { recursive: true });
+  const graphPath = path.join(graphDir, 'draggable.json');
+  await fs.copyFile(path.join(ROOT, 'viewer', 'test', 'fixtures', 'interactive.json'), graphPath);
+
+  const planDir = path.join(root, 'repo', 'docs', 'plans', 'demo');
+  await fs.mkdir(planDir, { recursive: true });
+  await fs.writeFile(path.join(planDir, 'PLAN.md'), [
+    '---',
+    'slug: demo',
+    'status: approved',
+    '---',
+    '',
+    '# Demo plan',
+    '',
+    'Body text.',
+    '',
+  ].join('\n'));
+
+  const port = await freePort();
+  const env = { ...process.env };
+  delete env.TMUX;
+  delete env.TMUX_PANE;
+  const server = await startServerEnv({ root, port, env });
+
+  const opened = await run(['--cache-root', root, '--port', String(port), '--open', graphPath], env);
+  assert.equal(opened.code, 0, opened.stderr);
+  const registered = await run(['--cache-root', root, '--port', String(port), '--register-plan', planDir], env);
+  assert.equal(registered.code, 0, registered.stderr);
+
+  return {
+    root, port, url: server.url, token: server.token, graphPath, planDir,
+    async stop() { await server.stop(); },
+  };
+}
+
+test.describe('remember-me: the first visit and after', () => {
+  let world;
+
+  test.beforeAll(async () => { world = await buildRememberWorld(); });
+  test.afterAll(async () => { await world.stop(); });
+
+  test('opening the ?token= URL lands on /wheelchair/ with no token in page.url()', async ({ page }) => {
+    await page.goto(`${world.url}/?token=${world.token}`);
+    const landed = new URL(page.url());
+    expect(landed.pathname).toBe('/wheelchair/');
+    expect(landed.searchParams.has('token')).toBe(false);
+  });
+
+  test('reloading /wheelchair/ in the same context shows the list', async ({ page }) => {
+    await page.goto(`${world.url}/?token=${world.token}`);
+    const response = await page.reload();
+    expect(response.status()).toBe(200);
+    await expect(page.locator('#topbar h1')).toHaveText('graphs & plans');
+    await expect(page.locator('table.plans tbody tr')).toHaveCount(1);
+  });
+
+  test('a fresh context opening /wheelchair/ gets the sign-in page (both sentences visible)', async ({ page }) => {
+    const response = await page.goto(`${world.url}/`);
+    expect(response.status()).toBe(401);
+    await expect(page.locator('body')).toContainText("This browser isn't signed in to the viewer.");
+    await expect(page.locator('body')).toContainText(
+      'Open your bookmark link once; if the token was rotated, get the new link with'
+    );
+  });
+
+  test('from the list, a graph and a plan document open, and a drag saves, with no token in any request URL', async ({ page }) => {
+    // The first visit legitimately carries the token; only requests issued after the page is
+    // already signed in are checked below.
+    await page.goto(`${world.url}/?token=${world.token}`);
+    await expect(page.locator('#topbar h1')).toHaveText('graphs & plans');
+
+    const seenUrls = [];
+    page.on('request', (req) => seenUrls.push(req.url()));
+
+    const graphLink = page.locator('ul.graph-list a').first();
+    await graphLink.click();
+    await page.waitForFunction(() => window.__viewer && !!window.__viewer.graph());
+    await expect(page).toHaveTitle('Browser interaction fixture');
+
+    const before = JSON.parse(await fs.readFile(world.graphPath, 'utf8'));
+    const beforeNode = before.nodes.find((n) => n.id === 'a');
+    const nodeBox = page.locator('svg#canvas g.node[data-id="a"] rect.node-box');
+    const box = await nodeBox.boundingBox();
+    assert.ok(box, 'the dragged node has a layout box');
+    const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
+
+    const savedResponses = [];
+    const onResponse = (resp) => {
+      if (resp.request().method() === 'PUT' && resp.url().includes('/view')) savedResponses.push(resp);
+    };
+    page.on('response', onResponse);
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    await page.mouse.move(cx + 40, cy + 20, { steps: 4 });
+    await page.mouse.up();
+    await expect.poll(() => savedResponses.some((r) => r.status() === 200)).toBe(true);
+    page.off('response', onResponse);
+
+    const after = JSON.parse(await fs.readFile(world.graphPath, 'utf8'));
+    const afterNode = after.nodes.find((n) => n.id === 'a');
+    assert.equal(afterNode.x, beforeNode.x + 40);
+    assert.equal(afterNode.y, beforeNode.y + 20);
+
+    // Back to the list — a fresh navigation, not the SPA — then open the registered plan document.
+    await page.goto(`${world.url}/`);
+    await expect(page.locator('#topbar h1')).toHaveText('graphs & plans');
+    const planLink = page.locator('table.plans tbody tr a').first();
+    await planLink.click();
+    await expect(page.locator('#content h1')).toHaveText('Demo plan');
+
+    for (const url of seenUrls) {
+      assert.ok(!/[?&]token=/.test(url), `a request after sign-in carried a token: ${url}`);
+    }
+  });
+
+  test('an old root bookmark /?token=… ends on /wheelchair/ with the cookie set', async ({ page, context }) => {
+    const origin = new URL(world.url).origin;
+    await page.goto(`${origin}/?token=${world.token}`);
+    const landed = new URL(page.url());
+    expect(landed.pathname).toBe('/wheelchair/');
+    expect(landed.searchParams.has('token')).toBe(false);
+
+    const cookies = await context.cookies();
+    const remember = cookies.find((c) => c.name === 'wheelchair_remember');
+    assert.ok(remember, 'the remember cookie should be set');
   });
 });
