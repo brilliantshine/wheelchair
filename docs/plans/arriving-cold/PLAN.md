@@ -15,6 +15,24 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
+### Q10: Should changes to your wording list always be visible to you?
+
+- **Context:** D38 (you chose it in Q9) lets the wording script write your list without asking,
+  so saving your "yes" never prompts. Round 3 found the other side of that: the permission
+  applies in every project, so an agent misreading your answer, or text planted in a repository
+  it is reading, could add a confirmed rule without you seeing it. That rule would then shape
+  every turn in every project, which `IDEA.md` names as the failure to avoid.
+- **Options:**
+  - **Keep the standing permission and show every change.** Whenever your confirmed list
+    changes, your next message shows you one line: `wheelchair: added "hidden work" to your
+    wording list`. Nothing changes silently, and there are still no prompts. On a harness
+    where the hook cannot show that line, confirming falls back to asking permission.
+  - **Suggest freely, but ask before confirming.** No confirmed rule without an approval step
+    you see — one prompt per "yes", the tedium you ruled out, now for confirmations only.
+  - **Leave it as it is.** No prompts, no notices; relies on the agent not misreading you.
+- **Recommendation:** keep the permission and show every change. It closes the gap without
+  bringing back the tedium, and a one-line notice appears only when your list actually changed.
+
 ## Watch List
 
 Things noticed that need looking into — not yet decisions for the user. Written down the
@@ -79,6 +97,10 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D36 | On Codex the hook runs only after you approve it once in `/hooks`, and a changed definition must be approved again. The installer writes a byte-identical entry on every run so the approval survives reinstalls, and prints one line naming `/hooks` whenever it creates or changes the Codex entry | Round 2 finding, verified against `https://learn.chatgpt.com/docs/hooks` ("new or changed hooks are marked for review and skipped until trusted") and the `hooks need review` string in Codex 0.156.0. The approval is a security gate this repository does not bypass | review-round-2 |
 | D37 | **Supersedes D12 and the repo key in D27 for the last-message file.** It is `~/.cache/wheelchair/sessions/<session-id>`, keyed by session alone | The gap is a fact about a session, not a repository, and a session id is already unique. Settles the contradiction outside a git repository, where no repo key exists | review-round-2 |
 | D38 | **The installer grants the wording script write access once**, so saving your answer never prompts. On Codex it adds `~/.wheelchair` to `sandbox_workspace_write.writable_roots` in `~/.codex/config.toml`; on Claude Code it adds an allow rule for `seen/wording.sh` to `permissions.allow` in `~/.claude/settings.json`. Same own-entries-only rules as the hook | Q9. Asking each time is the tedium you ruled out, and a per-project list drops `IDEA.md`'s cross-project promise | user |
+| D39 | `seen/wording.sh` verbs, all taking the phrase as their first operand: `suggest "<phrase>" "<instead>"` adds to `## Proposed` and refuses when the phrase already appears in **any** section; `confirm "<phrase>"` and `strike "<phrase>"` move that phrase's `## Proposed` row; `remove "<phrase>"` moves a `## Confirmed` row to `## Struck`. Phrases compare ignoring case and surrounding whitespace, so each phrase appears at most once in the file. Writers take `flock` on `~/.wheelchair/.lock`, never on the file being replaced | Round 3: `remove` deleting would let a removed rule be suggested again; `suggest` refusing only struck phrases would re-ask an ignored one; operands were undefined; and locking the file itself is defeated by the rename replacing its inode | review-round-3 |
+| D40 | **Supersedes D32's trigger.** A stage measures the gap itself, from the timestamp of the latest line in the plan's `SEEN.md`; the hook's gap line serves ordinary chat only | Round 3: the usual way back to a plan is a new session, which has no last-message file, so a hook-only gap never fired there. The record is shared across sessions and harnesses | review-round-3 |
+| D41 | Map-build findings do not produce entries. **Supersedes the `cold` state in D17**; the four-hour threshold stands | The map is shown to the reader before the idea is written (`protocol/planning.md` Step 1), so there is nothing unseen to record, and the phrase needed judgment no other entry kind does. D25 removed `cold` but D17 was never marked | review-round-3 |
+| D42 | The installer also adds `~/.wheelchair` to `sandbox.filesystem.allowWrite` in `~/.claude/settings.json` | Round 3, verified against `https://code.claude.com/docs/en/sandboxing`: with Claude Code's Bash sandbox on, an allow rule approves the command but the OS still refuses the write outside the listed directories. Inert when the sandbox is off, its default | review-round-3 |
 
 ## Spec
 
@@ -133,7 +155,8 @@ and what to do instead:
 - 2026-09-18 — "ledger" — not a dislike; that was a question about the design
 ```
 
-Every write goes through `seen/wording.sh` (D35).
+Every write goes through `seen/wording.sh` (D35), whose verbs are fixed by D39. Each phrase
+appears at most once in the whole file, so a verb always names exactly one row.
 
 Only `## Confirmed` is carried into turns, by the hook (D21), together with the path of
 `seen/wording.sh` so any agent asked to remove an entry can run `remove`. A `suggest` whose
@@ -153,22 +176,21 @@ confirmed list (D21).
 
 **What a stage writes (D19, D33).** One `new` line per thing its summary could lean on,
 appended the moment the unit of work that produced it finishes: each upheld or `user-decision`
-review finding once a round is triaged, each accepted worker result, each verification gap,
-and each finding from a map build that the map shown to the reader does not contain. A
-declined finding or a clean round adds nothing. The line names the thing in words the reader
+review finding once a round is triaged, each accepted worker result, and each verification gap
+(D41). A declined finding or a clean round adds nothing. The line names the thing in words the reader
 would recognise, with no coined labels. It is evidence only — never drafted prose, never an
 instruction about how to write (D5).
 
 **What a stage reads (D31).** Before composing any turn to the reader, the stage reads the
 plan's record, grounds each unshown entry **that turn leans on**, and appends `shown` for
-exactly those. Entries the turn does not lean on stay unshown. A turn with nothing to ground
+exactly those, as its last action before the turn's text. Entries the turn does not lean on stay unshown. A turn with nothing to ground
 reads exactly as it does today.
 
 **Closing (D31).** Whichever stage changes the plan's `status` appends `closed` for every entry
 still unshown. Closed entries are never surfaced.
 
-**After a gap (D32).** When the hook's text says four hours or more have passed, the stage also
-re-grounds the entries from the plan's last working stretch that the turn leans on — the run of
+**After a gap (D32, D40).** When the latest line in the plan's `SEEN.md` is four hours or more
+old, the stage also re-grounds the entries from the plan's last working stretch that the turn leans on — the run of
 `shown` lines counted back from the latest one, stopping at the first silence of four hours or
 more between two lines. It appends nothing for them; they were already shown.
 
@@ -218,9 +240,10 @@ so the existing warning-not-failing step stays last. `seen/set.sh`, per harness 
 - **Refuses and changes nothing** when the file is not valid JSON, is not an object, or has a
   `hooks` value, event list or matcher group of the wrong shape to append into. It reports what
   it found and exits non-zero.
-- **Grants the wording script write access (D38).** Claude Code: adds
-  `Bash(<root>/seen/wording.sh:*)` to `permissions.allow` if absent, refusing when `permissions`
-  or `allow` has the wrong shape. Codex: adds `"~/.wheelchair"` to `writable_roots` under
+- **Grants the wording script write access (D38, D42).** Claude Code: adds
+  `Bash(<root>/seen/wording.sh:*)` to `permissions.allow` and `~/.wheelchair` to
+  `sandbox.filesystem.allowWrite`, each if absent, refusing when either parent has the wrong
+  shape. Codex: adds `"~/.wheelchair"` to `writable_roots` under
   `[sandbox_workspace_write]` in `~/.codex/config.toml` if absent, appending the table when it
   does not exist. It edits only that one line or table and leaves the rest of the file byte for
   byte, and refuses when the file does not parse as TOML or `writable_roots` is not a one-line
@@ -233,7 +256,9 @@ would abort it mid-run and break its own idempotence check for an unrelated reas
 ### Failing open
 
 Every path here fails open, without exception. A hook that exits non-zero, times out, or
-returns unparseable output must let the turn proceed unchanged. A missing or malformed record
+returns unparseable output lets the turn proceed with nothing injected. The harness may print
+its own one-line notice when that happens (Claude Code does, on a non-zero exit); the hook
+therefore exits 0 on every path it controls, and only a timeout reaches that notice. A missing or malformed record
 or wording list is treated as empty rather than repaired. The hook entry carries a 2-second
 timeout and in practice reads two small files; the fixture suite holds it under 200 ms.
 
@@ -301,21 +326,26 @@ and not on the next message; its output never exceeds 2,000 characters and repor
 entries were left out; it reads no file inside the fixture repository; it finishes in under
 200 ms; a malformed wording file yields nothing and exit 0. `seen/wording.sh`: creates the file
 with its headers, refuses a `suggest` matching a struck phrase in any case, and loses nothing
-under two concurrent writers. The installer: adds its group beside an existing foreign hook,
+under two concurrent writers. `seen/wording.sh` also: `suggest` refuses a phrase present in any section; `remove` moves a
+confirmed row to `## Struck`; a phrase differing only in case names the same row. The
+installer: adds its group beside an existing foreign hook,
 writes byte-identical output on a second run, refuses a non-JSON file and a wrongly shaped
 `hooks` subtree with a warning and no change; adds the Claude allow rule and the Codex writable
 root once each, leaves an existing `config.toml` otherwise byte-identical, and refuses an
 unparseable one.
 
-Plus one live check per harness with the hook installed at **user** scope inside a throwaway
-`HOME`, the scope the installer writes: seed a confirmed wording entry, fire a real `claude -p`
-and a real `codex exec --dangerously-bypass-hook-trust` turn (the flag stands in for the
-one-time `/hooks` approval, D36), and assert the model received the entry. Then empty the
-wording list, fire a second turn, and assert **nothing** was injected — the too-eager failure
-D3 calls the dangerous one.
+Plus one live check per harness using your **real** login, since a throwaway `HOME` has no
+credentials on either harness, and writing **no** real config file: pass the hook with
+`claude -p --settings <temp file>` and with `codex exec --dangerously-bypass-hook-trust -c
+'hooks.UserPromptSubmit=[…]'` (verified 2026-09-24: an override-supplied hook's
+`additionalContext` reached the model on Codex 0.156.0), pointed at a temporary wording file.
+Seed a confirmed entry and assert the model received it; then empty the file, fire a second
+turn, and assert **nothing** was injected — the too-eager failure D3 calls the dangerous one.
 
-The stage half — writing, grounding, closing — lives in protocol prose, so no suite covers it;
-Stage 4 verifies it by reading one real plan's `SEEN.md` after a review round.
+The stage half lives in protocol prose, so no suite can exercise it. Checked mechanically:
+each of `protocol/planning.md`, `plan-review.md`, `implementation.md` and `verification.md`
+references `protocol/seen.md` and restates none of its rules (`grep`). Its behaviour is an
+Accepted Risk until the first real review round after merge.
 
 ## Deferred## Deferred
 
@@ -335,9 +365,44 @@ re-raise them.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A turn interrupted after its `shown` lines are written loses those entries | A stage has no point after its text is delivered at which it can still write. The loss is the too-quiet direction, which D3 ranks survivable, and the next stage turn after a gap re-grounds the last working stretch anyway (D40) | round-3 |
+| The stage half — writing, grounding, closing — is verified by no suite | It is protocol prose executed by the stage agent. The first real review round after merge is its first observation; the lead reads that plan's `SEEN.md` then | round-3 |
 | The effect of injected context on prompt caching is unmeasured (W2) | Rationale restated in Round 2, since D20 removed the lane the original one leaned on. The injected text is now the whole cost: at most 2,000 characters (D34), nothing at all when there is no confirmed entry and no gap, and it arrives with the new message rather than inside the earlier conversation a cache would hold. Measuring it needs instrumentation this plan has no other reason to build | planning, round-2 |
 
 ## Review Rounds
+
+### Round 3 — 2026-09-24
+
+**Lanes:** GPT / gpt-5.6-sol (mechanics); Claude / default reviewer model (intent); cross-family: yes.
+
+**Changed since Round 2:** the hook reads nothing inside a repository and carries only the
+wording list and the gap (D30); stages ground only what a turn leans on, and `closed` at status
+change (D31); the after-gap stretch (D32); entry granularity (D33); the hook's fixed text and
+cap (D34); `seen/wording.sh` as the only writer of the wording list (D35); Codex's `/hooks`
+approval and the byte-stable entry (D36); the session-keyed last-message file (D37); the
+installer granting write access in both harnesses' config (D38); the installer's wider refusal
+rule and 2-second timeout; the rewritten edge cases, validation and caching rationale.
+
+Fourteen findings. This is the third triaged round, and it is not clean: one finding is a
+genuine fork (Q10). The recurring shape across all three rounds is the same — every time this
+plan reaches into a file outside the repository (hooks in Round 1, the hook reading plan records
+in Round 2, the write permission in Round 3) review finds a new way it can go wrong. Q10 is that
+pattern's latest instance, and the cap resets once it is settled.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| claude | major | D38's standing permission lets an agent in any repository add a confirmed rule without you seeing it, reopening what D30 closed | `user-decision` | Real: the grant applies everywhere, and D38's rationale weighed only tedium. Q10 |
+| both | major | `seen/wording.sh` verbs undefined: `remove` could delete (a removed rule comes back), `suggest` re-asks an ignored phrase, operands unspecified | `upheld` | D39 |
+| gpt | blocking | Locking the wording file while replacing it by rename does not serialise writers | `upheld` (major) | Correct per `flock(2)`/`rename(2)`. A worker would build a subtly racy lock, not the wrong feature. D39 locks a separate file |
+| claude | major | After-gap re-grounding never fires on a new session, the normal way back to a plan | `upheld` | D40 |
+| gpt | blocking | With Claude Code's Bash sandbox on, an allow rule does not grant the write | `upheld` (major) | Verified in the sandboxing docs. D42 |
+| gpt | blocking | Claude Code shows a notice when a hook fails, so "the turn proceeds unchanged" is impossible | `downgraded` (minor) | Verified in the hooks docs: a non-zero exit prints a notice, a timeout discards output. Wording fixed; the hook exits 0 on every path it controls |
+| gpt | blocking | `shown` is written before the turn is delivered, so an interrupted turn loses entries | `accepted-risk` | No point after delivery exists for a stage to write. Too-quiet direction; see Accepted Risks |
+| gpt | major | Live checks cannot run under a throwaway `HOME`: neither harness is logged in there | `upheld` | Verified: Codex accepts a hook through `-c`, and it reached the model with the real login. Validation rewritten |
+| both | major/minor | Nothing can check the stage half: Stage 4 cannot run a review round on this plan, and too-eager grounding is untested | `upheld` | A `grep` check on the four stage documents, plus an Accepted Risk until the first real review round |
+| claude | minor | The gap line in ordinary chat could invite a "welcome back" recap | `declined` | `IDEA.md` names coming back to a thread hours later as a case to cover. What the turn does with the fact is `protocol/writing.md`'s job, unchanged here |
+| claude | minor | Map-build entries are in the Spec but not in D33, and need judgment | `upheld` | D41 drops them |
+| claude | minor | D17's `cold` state is never marked superseded | `upheld` | D41 |
 
 ### Round 2 — 2026-09-24
 
@@ -436,6 +501,10 @@ Filled by Stage 3. One row per worker brief.
 
 ## Log
 
+- 2026-09-24 — Round 3 triaged: D39–D42 from upheld findings; Q10 open as a `user-decision`.
+  Also noted: `~/.claude/settings.json` now carries another tool's hooks on eight events,
+  including `UserPromptSubmit` — `MAP.md` item 3 predates them, and D26's coexistence rule is
+  what makes that safe.
 - 2026-09-24 — Round 2 triaged: D30–D37 from upheld findings, Q9 settled as D38. Round 3 next,
   scoped to the Round 2 changes; the cap resets after D38 per `protocol/plan-review.md`.
 - 2026-09-24 — Q8 settled as D28 (stages suggest wording entries; you answer yes or no in

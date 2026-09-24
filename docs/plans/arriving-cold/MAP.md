@@ -64,7 +64,9 @@ nothing on either path records what you were shown
    `~/.codex/hooks.json` for the user, `.codex/hooks` for a project, plus a plugin path.
    Claude Code's hook system uses the same event names and the same
    `hookSpecificOutput.additionalContext` channel. **Neither is configured on this machine:**
-   `~/.codex/hooks.json` does not exist, and `~/.claude/settings.json` holds no `hooks` key.
+   `~/.codex/hooks.json` does not exist. `~/.claude/settings.json` held no `hooks` key when this
+   map was written; by 2026-09-24 it carries another tool's (`moshi-hook`) entries on eight events,
+   `UserPromptSubmit` among them.
 
    **Claude Code's side is verified end to end.** A project-scoped
    `.claude/settings.json` declaring a `UserPromptSubmit` command hook fired on a
