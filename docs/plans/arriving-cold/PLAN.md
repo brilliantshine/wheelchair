@@ -89,7 +89,10 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D46 | Two test seams, set only by the suites: `WHEELCHAIR_WORDING` replaces the wording file's path and `WHEELCHAIR_STATE` replaces `~/.cache/wheelchair`. Production never sets them, as with `WHEELCHAIR_PRESENT` in `protocol/lanes.md` | Round 4: the live check had no way to point the hook at a temporary file without touching real paths | review-round-4 |
 | D47 | **Every lane is marked, and the hook ignores marked lanes.** Each lane invocation in `protocol/lanes.md` runs with `WHEELCHAIR_LANE=1` in its environment (`codex exec`, `claude -p`), and `hook.sh` exits 0 with no output and no file touched when it sees it | Round 5: GPT lanes are headless `codex exec` runs on your own Codex setup, so a user-level hook fires in them (`MAP.md` item 3). Unmarked, a lane would reset the gap clock, use up the change notice where nobody reads it, and carry the wording list into a worker, against D4 | review-round-5 |
 | D48 | **Supersedes D44.** Two clocks, one per reader of the gap. The hook keeps one per session, `~/.cache/wheelchair/sessions/<session-id>`, for ordinary chat. A stage keeps one per plan: at the start of each turn to you it reads the time of the latest `turn` line in the plan's `SEEN.md`, then appends a new `turn` line; four hours or more between the two is a gap for that plan. The hook's gap line never drives a stage | Round 5, both lanes: a repository-wide clock let activity anywhere in the repository hide a gap on the plan you were actually cold on. A session is the thread in ordinary chat; a plan is the thread in a stage, and its record is already shared across sessions and harnesses. Also drops the repository-root walk, and with it the unlocked shared timestamp Round 5 found | review-round-5 |
-| D49 | Whether a harness displays the notice is passed to the hook on its command line by the installer — `hook.sh claude notice` or `hook.sh codex no-notice` — from one constant per harness in `seen/set.sh`, set from the implementer's check (D43) | Round 5: nothing said where the hook learns it, and `protocol/seen.md` is prose inside a repository the hook never reads. A command-line argument also lets the suite fake either case without a third seam | review-round-5 |
+| D49 | Whether a harness displays the notice is passed to the hook on its command line by the installer — `hook.sh <harness> notice` or `hook.sh <harness> no-notice` — both vendors' current docs describe `systemMessage` as shown to the user, but the live check decides — from one constant per harness in `seen/set.sh`, set from the implementer's check (D43) | Round 5: nothing said where the hook learns it, and `protocol/seen.md` is prose inside a repository the hook never reads. A command-line argument also lets the suite fake either case without a third seam | review-round-5 |
+| D50 | A stage appends its `turn` line as the **last** action before the turn's text, not the first, and both the gap and the working stretch are measured on `turn` lines alone: the gap is now minus the latest `turn` line; the stretch is the entries shown after the earliest `turn` line in the unbroken run counted back from the latest, a break being four hours or more between consecutive `turn` lines | Round 6, both lanes: timing from the start of a turn made a four-hour implementation run look like you were away, and delimiting the stretch on `shown` lines mixed two clocks, so a long worker run could invent a boundary or hide a real one. Only the end of a turn marks when you could next have read | review-round-6 |
+| D51 | The hook also ignores Claude Code subagents: it exits silently when its input carries `agent_id` | Round 6: D47's environment marker covers `codex exec` and `claude -p`, but Claude Code's own lanes are the in-process Agent tool, which never passes through a shell the stage controls | review-round-6 |
+| D52 | A malformed session clock file is overwritten with the current time and reports no gap; D14's match is on the script path alone, ignoring the arguments D49 adds; the hook's gap line reads "this session's last message was …", and `protocol/seen.md` tells a stage to use its plan clock and not that line | Round 6 minors and one major: "treated as empty rather than repaired" would have disabled the clock for good; matching the whole command would duplicate the group when a D49 constant changed; and the stage would otherwise see two disagreeing clocks | review-round-6 |
 
 ## Spec
 
@@ -181,13 +184,17 @@ reads exactly as it does today.
 **Closing (D31).** Whichever stage changes the plan's `status` appends `closed` for every entry
 still unshown. Closed entries are never surfaced.
 
-**The plan's clock (D48).** At the start of each turn to the reader, the stage reads the time
-of the latest `turn` line in `SEEN.md` and appends a new one. Four hours or more between them
-is a gap for this plan, whatever happened in other sessions or plans meanwhile.
+**The plan's clock (D48, D50).** At the start of each turn to the reader, the stage reads the
+time of the latest `turn` line in `SEEN.md`; four hours or more before now is a gap for this
+plan, whatever happened in other sessions or plans meanwhile. As its last action before the
+turn's text, after any `shown` lines, it appends a new `turn` line. A stage ignores the hook's
+session gap line (D52).
 
-**After a gap (D32, D48).** On a turn that found a gap, the stage also re-grounds the entries from the plan's last working stretch that the turn leans on — the run of
-`shown` lines counted back from the latest one, stopping at the first silence of four hours or
-more between two lines. It appends nothing for them; they were already shown.
+**After a gap (D32, D50).** On a turn that found a gap, the stage also re-grounds the entries
+from the plan's last working stretch that the turn leans on: the entries shown after the
+earliest `turn` line in the unbroken run of `turn` lines counted back from the latest, where a
+break is four hours or more between two consecutive `turn` lines. It appends nothing for them;
+they were already shown.
 
 No lane, no model call and no firing condition exist for this feature (D20). It never runs on
 a subagent's own turns (D4) — a worker lane does not write the record; the lead that accepts
@@ -198,7 +205,8 @@ its result does.
 One `UserPromptSubmit` hook, the same script on both harnesses, installed at user scope and
 invoked as `hook.sh <harness> notice|no-notice` (D45, D49). It reads a few small files, runs no
 model and no git, and never reads anything inside a repository (D30). With `WHEELCHAIR_LANE`
-set it exits 0 at once, with no output and no file touched (D47). On each of your messages it:
+set, or an `agent_id` in its input, it exits 0 at once, with no output and no file touched (D47,
+D51). On each of your messages it:
 
 1. Reads `## Confirmed` from `~/.wheelchair/wording.md` and compares it with the copy saved at
    `~/.cache/wheelchair/confirmed.last`, under `flock` on `~/.cache/wheelchair/.lock`. If they
@@ -206,7 +214,7 @@ set it exits 0 at once, with no output and no file touched (D47). On each of you
    saves the new copy; on a harness that does not, it leaves the copy for the next message on
    one that does. If no copy exists yet, it saves one silently (D43, D45).
 2. Reads `~/.cache/wheelchair/sessions/<session-id>`, then overwrites it with the current time
-   (D48). If the old time is four hours or more ago (D17), it notes the gap in
+   (D48); a malformed file is simply overwritten and reports no gap (D52). If the old time is four hours or more ago (D17), it notes the gap in
    whole hours.
 3. Returns the text below as `hookSpecificOutput.additionalContext`, and the notice, if any, as
    `systemMessage`. It returns nothing at all when there is no confirmed entry, no gap and no
@@ -215,7 +223,7 @@ set it exits 0 at once, with no output and no file touched (D47). On each of you
 The text is fixed, factual, and capped at 2,000 characters (D34):
 
 ```
-wheelchair — the reader's last message was 9 hours ago.
+wheelchair — this session's last message from the reader was 9 hours ago.
 wheelchair — wording the reader has asked for (edit with <path>/seen/wording.sh remove "<phrase>"):
 - "north star" — say what the goal is, plainly
 - … 3 older entries left out
@@ -240,7 +248,8 @@ so the existing warning-not-failing step stays last. `seen/set.sh`, per harness 
 
 - Adds its hook group to `~/.claude/settings.json` or `~/.codex/hooks.json`, creating the file
   holding only that group if it is absent.
-- Recognises its own group by the command path it points at (D14), and rewrites it in place
+- Recognises its own group by the script path its command starts with, ignoring arguments (D14,
+  D52), and rewrites it in place
   when present, so a second run is a no-op.
 - Leaves every other hook exactly where it is (D26).
 - Writes a byte-identical entry on every run with a 2-second timeout set explicitly, since
@@ -351,7 +360,9 @@ entries were left out; it reads no file inside the fixture repository; it finish
 with its headers, refuses a `suggest` matching a struck phrase in any case, and loses nothing
 under two concurrent writers. The hook also: returns a `systemMessage` naming an added and a removed phrase after the
 confirmed list changes, and none on the following message; stays silent when
-`confirmed.last` is missing; invoked with `no-notice`, leaves `confirmed.last` untouched; keeps a separate clock per session; exits 0 with no output and no state change when `WHEELCHAIR_LANE=1`. `grep` confirms every
+`confirmed.last` is missing; invoked with `no-notice`, leaves `confirmed.last` untouched; keeps a separate clock per session; exits 0 with no output and no state change when `WHEELCHAIR_LANE=1` or when its input carries
+`agent_id`; overwrites a malformed session file and reports no gap; rewrites rather than
+duplicates its group when only its arguments change. `grep` confirms every
 lane invocation in `protocol/lanes.md` carries `WHEELCHAIR_LANE=1`. `seen/wording.sh` also: `confirm` and `strike` each move exactly the named `## Proposed` row and
 refuse a phrase not there; `suggest` refuses a phrase present in any section; `remove` moves a
 confirmed row to `## Struck`; a phrase differing only in case names the same row. The
@@ -401,7 +412,7 @@ re-raise them.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
-| A turn interrupted after its `shown` lines are written loses those entries | A stage has no point after its text is delivered at which it can still write. The loss is the too-quiet direction, which D3 ranks survivable, and the next stage turn after a gap re-grounds the last working stretch anyway (D40) | round-3 |
+| A turn interrupted after its `shown` lines are written loses those entries | A stage has no point after its text is delivered at which it can still write. The loss is the too-quiet direction, which D3 ranks survivable, and the next stage turn after a gap re-grounds the last working stretch anyway (D50) | round-3 |
 | The stage half — writing, grounding, closing — is verified by no suite | It is protocol prose executed by the stage agent. The first real review round after merge is its first observation; the lead reads that plan's `SEEN.md` then | round-3 |
 | On Codex, a project config, profile or `-c` override that sets its own `sandbox_workspace_write.writable_roots` replaces the user-level list, so saving a "yes" there prompts | Codex layers replace arrays rather than merging them (Round 5, citing Codex's config loader). The failure is a prompt, the tedium D38 avoids elsewhere, not a wrong outcome. None of the project tables in `~/.codex/config.toml` sets it today | round-5 |
 | The effect of injected context on prompt caching is unmeasured (W2) | Rationale restated in Round 2, since D20 removed the lane the original one leaned on. The injected text is now the whole cost: at most 2,000 characters (D34), nothing at all when there is no confirmed entry and no gap, and it arrives with the new message rather than inside the earlier conversation a cache would hold. Measuring it needs instrumentation this plan has no other reason to build | planning, round-2 |
@@ -417,6 +428,27 @@ two clocks — per session for the hook, per plan through `turn` lines in `SEEN.
 replacing the repository clock and root walk (D48); the notice capability passed on the hook's
 command line (D49); the Codex `writable_roots` accepted risk; fail-open and installer wording;
 new lane and clock assertions. This is the third round since D43, the last before escalation.
+
+Eight findings. Not clean: one blocking and two major, all upheld and fixed in the Spec. This
+is the third triaged round since D43, so per `protocol/plan-review.md` the plan goes to Collin
+rather than to a Round 7.
+
+**What keeps recurring.** Rounds 4, 5 and 6 each found the rule for noticing that you were away
+broken in a new way: timed on the wrong events (Round 4), shared across the wrong scope (Round
+5), started at the wrong moment and delimited on a second clock (Round 6). Each fix was right
+and each exposed the next edge. That is the signal the cap exists to surface: the precise
+after-a-gap re-grounding is the part of this plan that does not converge.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| gpt | blocking | The stretch is delimited on `shown` lines while the gap is timed on `turn` lines, so a long worker run can invent or hide a boundary | `upheld` | D50 |
+| claude | major | Timing from the start of a turn makes a four-hour implementation run look like an absence | `upheld` | Checked: `protocol/implementation.md` runs lanes inside one long lead turn. D50 |
+| gpt | major | Claude Code's lanes are the Agent tool, which the environment marker never reaches | `upheld` | D51 |
+| gpt | major | A malformed session clock is "not repaired" yet must be overwritten every message | `upheld` | D52 |
+| claude | minor | The hook's session gap line reaches stage turns and can disagree with the plan clock | `upheld` | D52 |
+| claude | minor | An Accepted Risk cites D40, twice superseded | `upheld` | Now cites D50 |
+| claude | minor | D14's match is ambiguous once D49 adds arguments | `upheld` | D52 |
+| gpt | minor | D43 and D49 call the docs silent and use Codex as the `no-notice` example, but both vendors' docs now say `systemMessage` is shown | `upheld` | Example made neutral; the live check still decides |
 
 ### Round 5 — 2026-09-24
 
@@ -592,6 +624,8 @@ Filled by Stage 3. One row per worker brief.
 
 ## Log
 
+- 2026-09-24 — Round 6 triaged: D50–D52. Cap reached with the gap rule recurring; brought to
+  Collin rather than a Round 7.
 - 2026-09-24 — Round 5 triaged: D47–D49 and one accepted risk. Round 6 next, the last before
   the cap.
 - 2026-09-24 — Round 4 triaged: D44–D46. Round 5 next (second round since D43).
