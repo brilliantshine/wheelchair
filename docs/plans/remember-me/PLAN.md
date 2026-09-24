@@ -1,6 +1,6 @@
 ---
 slug: remember-me
-status: approved   # planning | ready-for-review | approved | implementing | verifying | done
+status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-09-23
 ---
 
@@ -465,6 +465,10 @@ Filled by Stage 3. One row per worker brief.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| 1 | Server: `/wheelchair` prefix, root `308`s, cookie auth and first-visit redirect, `401` sign-in page, prefixed and token-free printed URLs, `--show`'s local token URL, `/whoami` fallback | `viewer/server.js`, new `viewer/signin.html`, `viewer/test/*.test.js`, `viewer/test/helpers/`, `viewer/test/hooks/`, `viewer/test/fixtures/` | GPT / gpt-5.6-terra, worktree `rm-server` | | `node --test viewer/test/*.test.js` | pending |
+| 2 | Pages: prefix everywhere, no token in pages; browser suites updated and the new browser cases | `viewer/index.html`, `viewer/list.html`, `viewer/list.js`, `viewer/doc.html`, `viewer/doc.js`, `viewer/test/*.spec.js` | Claude / sonnet, after 1 | | `npm --prefix viewer run test:browser` | pending |
+| 3 | Installer: JSON status reading, `/wheelchair` mapping offer, root only when unmapped, path-specific `--no-serve`, origin kept | `install.sh`, `install/test/run.sh` | GPT / gpt-5.6-terra, worktree `rm-installer` | | `bash install/test/run.sh`; `bash sensitivity/test/run.sh` | pending |
+| 4 | Documents: `protocol/graphs.md`, README, AGENTS.md | `protocol/graphs.md`, `README.md`, `AGENTS.md`, `CONTRIBUTING.md` | Claude / sonnet, worktree | | `bash spine/test/run.sh` | pending |
 
 ## Log
 
