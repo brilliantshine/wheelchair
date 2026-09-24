@@ -1,6 +1,6 @@
 ---
 slug: remote-viewer
-status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
+status: done   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-09-23
 ---
 
@@ -1084,3 +1084,9 @@ Filled by Stage 3. One row per worker brief.
   verifying.
 - 2026-09-23: A lead script had overwritten the outcome cells of Watch List #2 and #3 and
   of Decision Log #8 with task statuses (commit `c245f40`); restored from `c245f40~1`.
+- 2026-09-23: Stage 4 done. Round 1 FAIL from both cross-family verifiers (REMEDIATION-1.md);
+  round 2 PASS from gpt-5.6-sol and one remaining gap from the Claude verifier
+  (REMEDIATION-2.md); round 3 PASS. Docs swept (`AGENTS.md` citation and env-variable list).
+  Status set to done. The blocking hearth checks (phone and laptop in Firefox, `Origin`
+  through `tailscale serve`, Funnel off, reboot survival) remain for Collin to run.
+

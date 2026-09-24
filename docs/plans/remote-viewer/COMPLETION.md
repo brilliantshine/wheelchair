@@ -15,6 +15,9 @@ verified-by:
   - round: 2
     lane: gpt-5.6-sol
     checks: sonnet
+  - round: 3
+    lane: claude default reviewer
+    checks: terra
 ---
 
 # Completion Report — See and rule on hearth's graphs from a phone or laptop
@@ -252,4 +255,13 @@ $ node --test viewer/test/*.test.js    # three consecutive runs
 $ npm --prefix viewer run test:browser
   192 passed (1.0m)
 ```
+
+### Verification round 3 — 2026-09-23
+
+The Claude default reviewer (resumed), checking the GPT-built work, returned PASS on the
+remaining gap. It reran the unit suite at least twice and the browser suite once. gpt-5.6-sol
+had already passed the Claude-built work in round 2. Both checks crossed families. After the
+PASS, the lead's doc sweep corrected `AGENTS.md`: the `viewer/server.js` citation moved to
+`:2037-2038`, and the list of environment variables `server.js` reads now includes `TMUX`,
+`TMUX_PANE` and `CLAUDECODE`.
 
