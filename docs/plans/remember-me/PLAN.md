@@ -1,6 +1,6 @@
 ---
 slug: remember-me
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-09-23
 ---
 
@@ -64,8 +64,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 23 | `--url` never refuses. Against a pre-prefix holder it prints the bookmark `<base>/wheelchair/?token=<.token's value>`, writes `a viewer from an older version is running; run ./install.sh` to stderr, and exits 0 | `--url` never starts or talks to a server beyond identifying it; the bookmark it prints is right once `./install.sh` has run, which the warning says to do | review-round-3 |
 | 24 | The installer reads `tailscale serve status --json` with `node -e` (Node is already required), gets the host from `served_origin`, including in `--no-serve`, and treats a Handlers key of either `/wheelchair` or `/wheelchair/` as the prefix mapping. With no host name, `--no-serve` prints no command and says why | `sed` can't reliably walk nested JSON; Tailscale's key spelling for a set path was checked only for `/`; `--no-serve` needs the host to look anything up | review-round-3 |
 | 25 | The mapping target defaults to `http://127.0.0.1:$port/wheelchair` (#2). If the blocking `curl …/wheelchair/whoami` check shows the request doesn't reach `/wheelchair/whoami` (for example it lands on `/wheelchair/wheelchair/whoami`, or on `/whoami`), the target becomes whichever of `http://127.0.0.1:$port/wheelchair` and `http://127.0.0.1:$port` makes that check pass. That is a one-line change in `install.sh`, and nothing in the viewer changes. The implementer records which form Tailscale needed in COMPLETION.md | Tailscale's joining of mount path and target path couldn't be checked without `sudo`; the viewer's prefix is the same either way | review-round-3 |
-| 26 | `--no-serve` takes the host from the origin recorded in `.serving`, not from `served_origin`. With no recorded origin it prints no command and says the viewer isn't set up to serve, so there is nothing to remove | The origin is already on disk; `served_origin`'s messages describe setup failing, which is the wrong reason here | review-round-4 |
+| 26 | Supersedes #24's `served_origin` clause for `--no-serve`: it takes the host from the origin recorded in `.serving`, read before `.serving` is overwritten, not from `served_origin`. With no recorded origin it prints no command and says the viewer isn't set up to serve, so there is nothing to remove | The origin is already on disk; `served_origin`'s messages describe setup failing, which is the wrong reason here | review-round-4 |
 | 27 | Probed on hearth with a throwaway path-echo server (Collin ran the two `sudo` commands). `tailscale serve --set-path /wheelchair-probe http://127.0.0.1:<p>/wheelchair-probe` delivered `/wheelchair-probe/x` as `/wheelchair-probe/x`, `/wheelchair-probe` as `/wheelchair-probe`, and `/wheelchair-probe/a/b?q=1` intact: the mount path is stripped and the rest appended to the target's path. `Set-Cookie` and `Cookie` passed through unchanged. `tailscale serve status --json` recorded the mapping under the key `"/wheelchair-probe"`, with no trailing slash. `sudo tailscale serve --https=443 --set-path /wheelchair-probe off` removed only that mapping, leaving `/`. So the mapping is exactly `/wheelchair` → `http://127.0.0.1:$port/wheelchair`. Supersedes #25 (no fallback) and confirms #2, #22 and #24's key spelling | Collin chose to find out rather than design around the unknown (Q4) | user |
+| 28 | `--no-serve` writes `{"serve": false, "origin": "<the recorded origin>"}`, keeping the origin when one was recorded. It reads the origin from `.serving` whether `serve` is `true` or `false`, so a rerun can print the removal commands again | A failed or skipped removal can be retried from the same record; anything but `serve: true` still means not serving (remote-viewer #44) | review-round-5 |
 
 ## Spec
 
@@ -75,6 +76,29 @@ non-goals, and concrete validation commands.
 
 A Mermaid diagram of the flow belongs here, added by Stage 2 at approval — not while the
 Spec is still churning. See `protocol/diagrams.md`.
+
+A browser opening the viewer takes one of three paths. With a valid cookie, it gets the page
+and the cookie is renewed. With a `token` in the address, it is redirected to the same
+address without it; a valid token sets the cookie on that redirect. With neither, it gets
+the "open your bookmark link once" page. Anything outside `/wheelchair` is redirected into
+it. Tailscale forwards `/wheelchair/…` unchanged, and agents' data requests keep using the
+token or a signature and never get a redirect.
+
+```mermaid
+flowchart TD
+  A[browser opens a viewer address] --> R{under /wheelchair?}
+  R -- no --> M[308 to the same place under /wheelchair]
+  R -- yes --> T{token in the address?}
+  T -- yes, valid --> S[303 without the token, cookie set]
+  T -- yes, wrong --> W{valid cookie?}
+  W -- yes --> X[303 without the token]
+  W -- no --> U[401: open your bookmark link once]
+  T -- no --> C{valid cookie?}
+  C -- yes --> P[page served, cookie renewed]
+  C -- no --> U
+  S --> P
+  X --> P
+```
 
 ### Where the viewer lives
 
@@ -177,7 +201,12 @@ runs `sudo` silently (remote-viewer Decision Log #9). `--no-serve` never prints 
 `sudo tailscale serve --https=443 --set-path /wheelchair off` when the `/wheelchair` mapping
 points at the viewer's port, and `sudo tailscale serve --https=443 --set-path / off` only
 when `/` does. When `tailscale` is missing or its status can't be read, it prints no command
-and says why (Decision Log #22). The bookmark it prints comes from `--url`, so it is
+and says why (Decision Log #22). `--no-serve` reads the origin recorded in `.serving` to
+find the host for that lookup, and does so before it writes `{"serve": false, "origin":
+"<that origin>"}`, which keeps the origin so a rerun can print the commands again (Decision
+Log #28). With no
+recorded origin it prints no command and says the viewer isn't set up to serve, so there is
+nothing to remove (Decision Log #26, which supersedes #24's use of `served_origin` there). The bookmark it prints comes from `--url`, so it is
 the prefixed one (Decision Log #12).
 
 ### Documents
@@ -193,7 +222,7 @@ step 1 already says. `README.md`: the address is
 the root is free for other services. Its sentence that every route needs the token
 (`README.md:216`) becomes "the pages need the bookmark link once per browser; agents'
 requests use the token or a signature". Its `sudo tailscale serve --bg 7373` instruction
-(`:236`) becomes the two mapping commands the installer offers. `AGENTS.md`'s citations are updated where lines move.
+(`:233`) becomes the two mapping commands the installer offers. `AGENTS.md`'s citations are updated where lines move.
 
 ### Not in this change
 
@@ -270,9 +299,6 @@ Blocking, on hearth, after `./install.sh --serve` and the new `sudo tailscale se
   (`Lax`, Decision Log #18);
 - in a private window that was never remembered, the same link shows the "open the bookmark
   link once" page;
-- `sudo tailscale serve --https=443 --set-path /wheelchair off` removes only the
-  `/wheelchair` mapping (the `/` mapping stays in `tailscale serve status`), and the installer
-  then offers the add command again, which restores it. Collin runs this check;
 - after the `sudo` step, a second `./install.sh` run offers no `tailscale serve` command
   (Decision Log #24);
 - repeat the phone checks on a laptop.
@@ -408,7 +434,9 @@ Triage: 2 major findings, both about the Tailscale mapping target, opened as Q4;
 
 Review count reset: Collin settled Q4 by probing Tailscale on hearth.
 
-**Lanes:** GPT / gpt-5.6-sol (mechanics lens); Claude / default reviewer model (intent lens); cross-family: yes.
+**Lanes:** GPT / gpt-5.6-sol (mechanics lens, thread `01a0d1ad-c837-7153-b576-4af4898d636d`); Claude / default reviewer model (intent lens); cross-family: yes.
+
+Triage: zero blocking and zero major upheld (one blocking downgraded to minor, with evidence, and fixed anyway). No `user-decision` open. The round is clean and the plan is approved.
 
 **Changed since Round 4:**
 - Decision Log #26 (`--no-serve` takes the host from `.serving`);
@@ -421,6 +449,10 @@ Review count reset: Collin settled Q4 by probing Tailscale on hearth.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| GPT | blocking | `--no-serve` overwrites `.serving` with `{"serve": false}`, dropping the only recorded host, so a rerun after a failed removal can't print the removal commands again | downgraded to minor | Checked: real, but nothing is built wrong. The server and installer still treat the machine as not serving (remote-viewer #44), and `tailscale serve status` shows any leftover mapping for removal by hand. The only loss is reprinting a command. Fixed anyway: Decision Log #28 |
+| Claude | minor | `--no-serve`'s host source and ordering aren't in the Spec's installer section; #26 doesn't say it supersedes #24 | upheld | Spec installer section and #26 reworded |
+| Claude | minor | `README.md:236` should be `:233` | upheld | Fixed |
+| Claude | minor | The remove-and-re-add hearth check repeats what the probe (#27) proved, at the cost of two `sudo` steps | upheld | Check removed |
 
 ## Prior Work
 
@@ -449,4 +481,5 @@ Filled by Stage 3. One row per worker brief.
   (Tailscale's path handling, the recurring finding of rounds 2–4). Status back to planning.
 - 2026-09-23: Q4 settled by probing Tailscale on hearth (Decision Log #27). Status back to
   ready-for-review; review rounds count again from here.
+- 2026-09-23: Round 5 clean. Spec diagram drawn. Status set to approved.
 
