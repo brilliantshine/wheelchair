@@ -99,6 +99,13 @@ Struck entries are kept, never deleted, so a rejection sticks (D15). Each phrase
 most once in the whole file, compared ignoring case and surrounding whitespace, so a verb
 always names exactly one row (D29, D39).
 
+**Well-formed means exactly this.** The three headers each appear once, in the order above,
+and every line after `## Confirmed` — in any of the three sections — is either blank or an
+entry in the format above. Free text above `## Confirmed` is allowed and ignored. Any other
+line inside a section makes the whole file malformed: the hook then treats the list as
+empty, and `seen/wording.sh` refuses every verb with exit 1, leaving the file unchanged
+(Remediation 2).
+
 Every write goes through `seen/wording.sh`, the only writer (D35). Its verbs, each taking
 the phrase as the first operand:
 

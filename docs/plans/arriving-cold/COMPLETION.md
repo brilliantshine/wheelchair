@@ -15,6 +15,9 @@ verified-by:
   - round: 2
     lane: gpt-5.6-sol
     checks: sonnet
+  - round: 3
+    lane: gpt-5.6-sol
+    checks: sonnet
 ---
 
 # Completion Report — Knowing what you have actually seen
@@ -231,3 +234,16 @@ $ env -u WHEELCHAIR_LANE bash seen/test/run.sh → exit 0
 $ bash install/test/run.sh, sensitivity/test/run.sh, spine/test/run.sh → exit 0
 lead probe: valid row + "garbage" inside ## Confirmed → hook prints nothing; wording.sh suggest → "wording: malformed wording list", exit 1, file byte-identical
 ```
+
+### Remediation 3 — 2026-09-24
+
+Verification round 3 (`gpt-5.6-sol`): the executable fix passed, one prose gap remained —
+
+```
+GAP: Canonical malformed-file contract — executable behavior is fixed, but the newly decided rule remains only in per-feature remediation state; `protocol/seen.md` does not state that preambles are allowed, any other nonblank section line malforms the whole file, or `wording.sh` then exits 1 without changing it — `REMEDIATION-2.md:18-21`; `protocol/seen.md:80-115,215-224`; `AGENTS.md:33-36,58` says rules belong in `protocol/` and plan documents are not contracts
+```
+
+Fixed by the lead (Claude family, which wrote the prose): `protocol/seen.md`, "The wording
+list", now carries a "Well-formed means exactly this" paragraph stating the rule, the allowed
+preamble, and both scripts' behaviour. Small enough that a separate remediation file would only
+repeat this paragraph.
