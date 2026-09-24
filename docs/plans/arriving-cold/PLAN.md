@@ -1,6 +1,6 @@
 ---
 slug: arriving-cold
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-09-19
 ---
 
@@ -97,6 +97,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D54 | **One fixed order for a stage's writes at the end of a turn**, immediately before its text: (1) `shown` for the entries this turn explains; (2) if this turn changes the plan's `status`, `closed` for every entry still unshown; (3) the `turn` line. A record with no `turn` line yet has no gap. On a resume after a gap, the resume summary in `protocol/planning.md` **is** the re-grounding, not an addition to it. The four-hour number is stated once in `protocol/seen.md`; `seen/hook.sh`'s constant names that file in a comment, and the suite checks the two agree | Round 7: three rules each claimed to be the last write, and closing before the final summary would hide the worker results it was about to explain; a first turn had no defined clock; a resume after a gap could stack two re-groundings; the threshold lived in two places | review-round-7 |
 | D55 | **Closing happens only on a stage's exit status**: the turn that sets `ready-for-review`, `approved`, `verifying` or `done`. Setting `planning` or `implementing`, which a stage does on entry, closes nothing. On the first turn after a gap, the entry grounding (D31) covers what the turn leans on, and the re-grounding (D53) adds only what the work is for and where it stands; it applies to a resumed run of any stage, and a planning resume summary names settled decisions only as far as the next question depends on them. "Nothing after the `turn` line" means nothing further in `SEEN.md`. `protocol/seen.md` states the threshold as one line, `gap-threshold: 4h`, which the suite parses | Round 8, both lanes: `/implement` sets `implementing` at its start and can stop mid-run on a dead lane, so closing on any status change hid accepted results from the resumed run. The rest are Round 8 minors: two groundings overlapping on a gap turn, "resume" defined only for planning, the resume summary's "what's settled" against `IDEA.md`'s "without reciting your own decisions", an over-broad "nothing written", and a threshold with no parseable form | review-round-8 |
 | D56 | **Supersedes the closing half of D31, D53, and the closing and resume parts of D54 and D55.** There are no `closed` lines and no separate after-gap re-grounding. One rule remains: before writing to you, a stage explains every entry its turn leans on that you have not been shown — and after a gap, every entry it leans on counts as not shown, including ones you saw before the gap. The planning resume summary is left exactly as `protocol/planning.md` has it today | Q11, after Round 9 reached the cap. Closing and the after-gap re-grounding drew a new fix in every round since Round 7. Leftover unshown entries cost nothing, because only what a turn leans on is ever grounded, so closing only ever hid things; and treating leaned-on entries as unseen after a gap covers `IDEA.md`'s "coming back after hours away" with the rule that has held since Round 2 | user |
+| D57 | After a gap, an entry you ruled on — a `user-decision` finding — is referred to by its outcome and not explained again. The gap reset covers only the first turn after the gap | Round 10 minors. `IDEA.md` asks for re-grounding "without reciting your own decisions back to you", the exemption D17 once gave decided entries. A reset lasting past one turn would need to know where the break was, which is the stretch calculation D56 removed | review-round-10 |
 
 ## Spec
 
@@ -112,6 +113,46 @@ finishes, and reads it before writing a turn, so a turn that leans on something 
 never saw explains it first (D19). A file-reading hook carries the wording list and, after
 a long break, how long it has been, into every turn, ordinary chat included (D21, D30). No model
 is called for any of this (D20), and nothing is added to any agent's standing instructions.
+
+### The two flows
+
+A stage turn, from your message to its reply:
+
+```mermaid
+flowchart TD
+  A[you send a message] --> B[stage reads the plan's record]
+  B --> C{four hours or more since the plan's last turn?}
+  C -- no --> D[entries this answer leans on that you have not seen]
+  C -- yes --> E[every entry this answer leans on counts as unseen; ones you ruled on are named by outcome]
+  D --> F[stage does its work; each finding, worker result or gap adds a line]
+  E --> F
+  F --> G[explain what the answer leans on that you have not seen]
+  G --> H[mark those shown, then stamp the turn]
+  H --> I[reply]
+```
+
+Every message, ordinary chat included, first passes through the hook:
+
+```mermaid
+flowchart TD
+  A[you send a message] --> B{inside an agent lane?}
+  B -- yes --> Z[do nothing]
+  B -- no --> C[read your confirmed wording list]
+  C --> D{list changed since last seen, on a harness that shows notices?}
+  D -- yes --> E[show you one line naming the change]
+  D -- no --> F
+  E --> F{four hours or more since this session's last message?}
+  F -- yes --> G[add one line: how long it has been]
+  F -- no --> H
+  G --> H[hand the list and any gap line to the turn, at most 2,000 characters]
+```
+
+In words: a stage reads its plan's record, works out whether you have been away four hours or
+more, does its work while logging what it finds, then explains whatever its answer relies on that
+you have not seen — everything it relies on, after a break — before marking it shown. Separately,
+on every message, the hook skips agent lanes, shows you any change to your wording list, and
+hands the turn your confirmed list and, after a long quiet spell in that session, how long it has
+been.
 
 ### The files
 
@@ -196,9 +237,10 @@ under a stage document counts; free chat after a stage has finished writes none 
 Risks). A stage ignores the hook's
 session gap line (D52).
 
-**After a gap (D56).** On a turn that found a gap, every entry the turn leans on counts as not
-shown, including ones shown before the gap: the stage explains them and appends `shown` for
-them again. Nothing else changes — no summary is added, and the planning resume summary stays
+**After a gap (D56, D57).** On a turn that found a gap, every entry the turn leans on counts as
+not shown, including ones shown before the gap: the stage explains them and appends `shown` for
+them again. An entry you ruled on is referred to by its outcome instead of being explained
+again. Nothing else changes — no summary is added, and the planning resume summary stays
 as `protocol/planning.md` has it.
 
 No lane, no model call and no firing condition exist for this feature (D20). It never runs on
@@ -265,8 +307,9 @@ so the existing warning-not-failing step stays last. `seen/set.sh`, per harness 
 - **Refuses and changes nothing** when the file is not valid JSON, is not an object, or has a
   `hooks` value, event list or matcher group of the wrong shape to append into. It reports what
   it found and exits non-zero.
-- Creates `~/.wheelchair/` if absent, before granting anything: Codex's Linux sandbox drops a
-  writable root that does not exist yet.
+- Creates `~/.wheelchair/` if absent, after every refusal check has passed and before granting
+  anything — Codex's Linux sandbox drops a writable root that does not exist yet. A refusal
+  leaves it uncreated.
 - **Grants the wording script write access (D38, D42)** — on each harness where a
   `UserPromptSubmit` `systemMessage` is displayed to the user (D43; the implementer verifies
   this per harness first and records the result in `protocol/seen.md`). Claude Code: adds
@@ -373,7 +416,9 @@ confirmed list changes, and none on the following message; stays silent when
 `confirmed.last` is missing; invoked with `no-notice`, leaves `confirmed.last` untouched; keeps a separate clock per session; exits 0 with no output and no state change when `WHEELCHAIR_LANE=1` or when its input carries
 `agent_id`; overwrites a malformed session file and reports no gap; rewrites rather than
 duplicates its group when only its arguments change; its four-hour constant equals the
-`gap-threshold:` line in `protocol/seen.md`. `grep` confirms every
+`gap-threshold:` line in `protocol/seen.md`. The installer's written entry carries `"timeout": 2`
+and no `timeoutSec`; it creates `~/.wheelchair/` on a clean run and leaves it absent after a
+refusal. `grep` confirms every
 lane invocation in `protocol/lanes.md` carries `WHEELCHAIR_LANE=1`. `seen/wording.sh` also: `confirm` and `strike` each move exactly the named `## Proposed` row and
 refuse a phrase not there; `suggest` refuses a phrase present in any section; `remove` moves a
 confirmed row to `## Struck`; a phrase differing only in case names the same row. The
@@ -424,9 +469,10 @@ re-raise them.
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | A turn interrupted after its `shown` lines are written loses those entries | A stage has no point after its text is delivered at which it can still write. The loss is the too-quiet direction, which D3 ranks survivable, and after a gap any entry a turn leans on is explained again anyway (D56) | round-3 |
-| The stage half — writing, grounding, closing — is verified by no suite | It is protocol prose executed by the stage agent. The first real review round after merge is its first observation; the lead reads that plan's `SEEN.md` then | round-3 |
+| The stage half — writing and grounding — is verified by no suite | It is protocol prose executed by the stage agent. The first real review round after merge is its first observation; the lead reads that plan's `SEEN.md` then | round-3 |
 | On Codex, a project config, profile or `-c` override that sets its own `sandbox_workspace_write.writable_roots` replaces the user-level list, so saving a "yes" there prompts | Codex layers replace arrays rather than merging them (Round 5, citing Codex's config loader). The failure is a prompt, the tedium D38 avoids elsewhere, not a wrong outcome. None of the project tables in `~/.codex/config.toml` sets it today | round-5 |
 | Free chat in a session after a stage finishes writes no `turn` line, so hours of follow-up questions can make the next stage turn see a gap and explain again what it leans on | Bounded to one turn and to what that turn leans on (D56). Making every ordinary turn write the plan's record would bring back the hook-writes-`SEEN.md` design D30 removed | round-7 |
+| After a gap, only the first turn treats earlier entries as unseen; an entry that turn does not lean on counts as seen on the next | Too-quiet direction, which D3 ranks survivable. Extending the reset would bring back the break-finding calculation D56 removed (D57) | round-10 |
 | The effect of injected context on prompt caching is unmeasured (W2) | Rationale restated in Round 2, since D20 removed the lane the original one leaned on. The injected text is now the whole cost: at most 2,000 characters (D34), nothing at all when there is no confirmed entry and no gap, and it arrives with the new message rather than inside the earlier conversation a cache would hold. Measuring it needs instrumentation this plan has no other reason to build | planning, round-2 |
 
 ## Review Rounds
@@ -439,6 +485,17 @@ re-raise them.
 a gap, every entry a turn leans on counts as not shown; the planning resume summary untouched
 (D56); the hook's `"timeout"` field name; the installer creating `~/.wheelchair/`. The cap reset
 after D56.
+
+Six findings, all minor. **Clean**: zero blocking, zero major, no open `user-decision`. The
+minors were cheap and are fixed.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| claude | minor | After a gap, your own rulings would be explained again | `upheld` | D57 |
+| claude | minor | The gap reset covers only the first turn after it | `accepted-risk` | Accepted Risks; D57 |
+| both | minor | An Accepted Risk still names "closing" | `upheld` | Fixed |
+| gpt | minor | No test for `"timeout": 2` | `upheld` | Added |
+| gpt | minor | `~/.wheelchair/` creation is untested and could precede a refusal | `upheld` | Ordered after refusal checks; tested both ways |
 
 ### Round 9 — 2026-09-24
 
@@ -716,6 +773,9 @@ Filled by Stage 3. One row per worker brief.
 
 ## Log
 
+- 2026-09-24 — Round 10 clean. D57 from its minors. Spec diagrams drawn fresh — the graphs
+  under `graphs/` are decision graphs about superseded arrangements, not the settled flow, and
+  hold no `rejected` entries. Status `approved`.
 - 2026-09-24 — Q11 settled as D56. Round 10 next.
 - 2026-09-24 — Round 9 triaged. Cap reached; Q11 raised with Collin.
 - 2026-09-24 — Round 8 triaged: D55. Round 9 next, the last before the cap.
