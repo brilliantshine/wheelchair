@@ -34,7 +34,9 @@ make that harder.
 - A device that has never opened the token link still gets nothing.
 - `--rotate-token` still locks everyone out until they open the new link, including devices
   that were remembered.
-- Links agents print, and the old bookmark with the token, keep working. While nothing else
+- Links agents print open directly on any device that has been remembered, without a token
+  in them; on a device that hasn't, the page says to open the bookmark once. The old bookmark
+  with the token keeps working. While nothing else
   is at the root, an old root link is sent on to the same place under `/wheelchair/`.
 - The root of `https://hearth.taileb4e52.ts.net/` stays free: the viewer answers only under
   `/wheelchair/` apart from that redirect, and nothing it sets reaches other paths.

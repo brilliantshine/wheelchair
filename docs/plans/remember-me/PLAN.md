@@ -1,6 +1,6 @@
 ---
 slug: remember-me
-status: planning   # planning | ready-for-review | approved | implementing | verifying | done
+status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-09-23
 ---
 
@@ -15,24 +15,7 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q3: Should the graph links agents print still carry the token?
-- **Context:** Plan review round 1. Every graph URL a command prints includes `&token=…`
-  (`viewer/server.js:1712`, Decision Log #9), and `--show` opens that URL in a browser.
-  With remember-me, a remembered device following such a link is redirected to the same
-  address without it, but the token has passed through the address bar again, and a browser
-  that records redirect sources may keep it in history. IDEA wants both that "links agents
-  print keep working" and that the token doesn't appear after the first visit.
-- **Options:** (a) Printed graph links drop the token. A remembered device opens them
-  directly; a device that has never been remembered gets a page saying to open the bookmark
-  once first. `--show` still opens a token link in the local browser, so a machine whose own
-  browser isn't remembered yet keeps working; that local browser's history may keep it.
-  (b) Printed links keep the token. They work on any device, even one never remembered, and
-  IDEA's wording changes to allow the token in history when following an agent's link.
-  (c) Drop the token everywhere, `--show` included; a local browser that isn't remembered
-  shows the "open the bookmark once" page.
-- **Recommendation:** (a). Links you copy to your phone or laptop stay token-free, which is
-  where history and sharing matter. The one exception is the browser on the same machine the
-  command runs on, which already holds the token on disk.
+None. Every question is settled; see the Decision Log.
 
 ## Watch List
 
@@ -75,6 +58,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 17 | Supersedes the installer part of #12. The installer manages only mappings that point at the viewer's port. From `tailscale serve status` it reads the `/wheelchair` line and the `/` line by path. It offers the `/wheelchair` command, built from `$port`, when that line is missing, and the `/` command only when `/` has no mapping at all. It never offers to replace a `/` mapping that points elsewhere. `--no-serve` prints the removal command for `/wheelchair`, and for `/` only if `/` points at the viewer's port | Collin's future hub at the root must never be overwritten or removed by the viewer's installer | review-round-1 |
 | 18 | Supersedes the `SameSite` value in #4: the cookie is `SameSite=Lax` | A token link opened from another site (a chat or mail page) would otherwise land on a `401`. `Lax` still withholds the cookie from cross-site `PUT`s, and those are also refused by the `Origin` check | review-round-1 |
 | 19 | Supersedes the `X-Graph-Token` clause of #8: the pages never send `X-Graph-Token` and never read `token` from their address; they rely on the cookie alone | The redirect means a page never has a token in its address, so the fallback was dead code | review-round-1 |
+| 20 | Supersedes the graph-URL part of #9. The graph URLs `--open` and `--show` print carry no token: `<base>/wheelchair/?path=…`. `--show` alone passes a token-bearing URL (`…&token=…`) to the local browser it launches, and never prints that URL. `--url` still prints the bookmark with the token. A page route reached with no valid cookie and no token answers `401` with a small HTML page (same CSP as `list.html`) saying this device isn't remembered yet and to open the bookmark once; JSON routes keep answering `401` JSON | Links carried to other devices stay token-free; the local browser on the machine running the command, which already holds the token on disk, keeps working even if never remembered | user |
 
 ## Spec
 
@@ -150,9 +134,14 @@ which send the cookie. The pages never read `token` from their address and never
 
 ### The commands
 
-Every printed URL is under `/wheelchair/`: `--open`/`--show` print
-`<base>/wheelchair/?path=…&token=…`, and `--url` prints `<base>/wheelchair/?token=…`,
-where `<base>` is the served origin or `http://127.0.0.1:<port>` (Decision Log #9). All
+Every printed URL is under `/wheelchair/`. `--open` and `--show` print
+`<base>/wheelchair/?path=…` with no token, and `--url` prints the bookmark
+`<base>/wheelchair/?token=…`, where `<base>` is the served origin or
+`http://127.0.0.1:<port>` (Decision Log #9, #20). `--show` passes the same graph URL with
+`&token=…` added to the local browser it launches, and never prints that form. A page route
+reached with no valid cookie and no token answers `401` with a small HTML page, under the
+same CSP as `list.html`, saying the device isn't remembered yet and to open the bookmark
+once. JSON routes keep answering `401` JSON. All
 their requests to the server use the prefixed routes. To identify a holder they call
 `/wheelchair/whoami?nonce=…`. If the answer has no `start_id`, whatever its status, they call
 `/whoami?nonce=…` at the root and apply the normal proof check to that answer (Decision Log
@@ -214,7 +203,11 @@ as `X-Graph-Token` and as a registration key; a wrong cookie with no token is `4
 foreign one `403`; every root path, including `/whoami`, `/graph` and `/list`, answers `308`
 with the prefixed `Location` and the JSON body; `/wheelchair` redirects to `/wheelchair/`;
 a page response renews the cookie and a JSON response never sets it; the cookie is
-`SameSite=Lax`; the commands print prefixed URLs; a holder that answers `/wheelchair/whoami`
+`SameSite=Lax`; `--open` and `--show` print `/wheelchair/?path=…` with no token and
+`--url` prints the bookmark with it; `--show` hands the browser opener (faked through
+`WHEELCHAIR_BROWSER`) a URL with the token; a page route with no cookie and no token answers
+`401` HTML carrying the "open the bookmark once" text and the CSP header, while a JSON route
+answers `401` JSON; a holder that answers `/wheelchair/whoami`
 with `401` and root `/whoami` with a valid `proof` is stopped by `--stop --if-stale` and
 refused with the older-version message by `--open`; a holder whose root `/whoami` has no
 `proof` falls under the remote-viewer #85 rule.
@@ -249,7 +242,7 @@ re-raise them.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
-| The first-visit URL, which carries the token, may be kept in a browser's history as the redirect source | Browsers differ on whether they record a redirect's source, and the token must arrive in some URL once. Whether later agent links also carry it is Open Question Q3 | — |
+| The first-visit URL, which carries the token, may be kept in a browser's history as the redirect source, and so may the URL `--show` opens in the local browser | Browsers differ on whether they record a redirect's source, and the token must arrive in some URL once. The `--show` case is on the machine that already holds the token on disk (Decision Log #20); links carried to other devices never carry it | 1 |
 | A client following outdated instructions against a root route gets a `308` rather than working | Every route moves; the `308` body names the new path, and `protocol/graphs.md` is updated in the same change | — |
 
 ## Review Rounds
@@ -275,6 +268,28 @@ Triage: 3 blocking and 2 major upheld, and one `user-decision` opened as Q3. Not
 | Claude | minor | The installer's "already served" check greps the port, which the new mapping always contains; the new command hardcodes `7373` | upheld | Decision Log #17 |
 | Claude | minor | Whether JSON read responses renew the cookie is unstated | upheld | Decision Log #14: only page responses set it |
 
+### Round 2 — 2026-09-23
+
+Review count reset: Collin settled Q3 (printed agent links drop the token).
+
+**Lanes:** GPT / gpt-5.6-sol (mechanics lens); Claude / default reviewer model (intent lens); cross-family: yes.
+
+**Changed since Round 1:**
+- Decision Log #14–#20 and the Spec text they changed;
+- only the page routes redirect and set the cookie;
+- the JSON routes answer `?token=` directly;
+- the old-viewer fallback on any answer without a `start_id`;
+- page links with a wrong token redirect too;
+- the installer manages only the viewer's own mappings;
+- `SameSite=Lax`;
+- the pages never handle the token;
+- printed links carry no token, while `--show` opens a token link locally;
+- the "open the bookmark once" `401` page;
+- the updated IDEA line on agent links, the reworded accepted risk, and the new validation cases.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
@@ -295,4 +310,7 @@ Filled by Stage 3. One row per worker brief.
 - 2026-09-23: Plan review round 1 upheld 3 blocking and 2 major findings (fixed) and opened
   Q3 (whether printed agent links carry the token). Status back to planning until Collin
   answers.
+- 2026-09-23: Q3 settled by Collin: printed agent links drop the token, `--show` opens a
+  token link locally (Decision Log #20, and IDEA's agent-links line updated to match).
+  Status back to ready-for-review; review rounds count again from here.
 
