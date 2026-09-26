@@ -1007,3 +1007,7 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
   written.
 - 2026-09-26 — Remediation 2 done: R4 (restored test) and R5 (full needs text in the detail panel)
   merged. All suites green except the pre-existing lifecycle test. Verification round 3 next.
+- 2026-09-26 — Verification round 3: Claude verifier PASS (server side). GPT verifier FAIL, with two
+  COMPLETION.md gaps (fixed by the lead) and one surviving gap: the detail panel still cuts a needs
+  text that is a single word longer than 32 characters. The needs-text gap has now survived two
+  remediation rounds, so it goes to Collin per `protocol/verification.md`.
