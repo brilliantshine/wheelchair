@@ -82,7 +82,7 @@
     const table = el('table', { class: 'plans' });
     const thead = el('thead');
     const headRow = el('tr');
-    const headings = ['Slug', 'Repo', 'Status', 'Session'];
+    const headings = ['Slug', 'Repo', 'Status', 'Session', 'Run'];
     for (let i = 0; i < headings.length; i++) headRow.appendChild(el('th', { text: headings[i] }));
     thead.appendChild(headRow);
     table.appendChild(thead);
@@ -97,6 +97,12 @@
       tr.appendChild(el('td', { text: p.repo }));
       tr.appendChild(el('td', { text: p.status === null || p.status === undefined ? 'no PLAN.md' : p.status }));
       tr.appendChild(el('td', { text: p.session === null || p.session === undefined ? 'not in tmux' : p.session }));
+      // `run` (server.js's planSummaries) is the absolute path of a `graphs/run.json` that parses
+      // with `run: true`, or null otherwise — the same URL shape as any other graph link
+      // (Spec, "The list page").
+      const runTd = el('td');
+      if (p.run) runTd.appendChild(el('a', { href: graphUrl(p.run), text: 'run picture' }));
+      tr.appendChild(runTd);
       tbody.appendChild(tr);
     }
     table.appendChild(tbody);
