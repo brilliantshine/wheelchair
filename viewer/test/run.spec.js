@@ -366,6 +366,50 @@ test('the detail panel shows a needs text of more than 700 characters in full, d
 });
 
 // ============================================================================================
+// A needs text that is one word longer than the panel's 32-character wrap is broken across lines
+// rather than replaced with `…` — direct and in a container (D59).
+// ============================================================================================
+const ONE_WORD_NEEDS = Array.from({ length: 739 }, (_, i) => 'abcdefghijklmnopqrstuvwxyz'[i % 26]).join('');
+
+test('the detail panel shows a needs text that is a single 739-character word in full, direct and in a container', async ({ page }) => {
+  assert.equal(ONE_WORD_NEEDS.length, 739);
+  const ctx = await launchRun({
+    schema: 1, title: 'one word needs', source: 'plan-proposal', source_detail: null,
+    explanation: null, run: true, groups: [],
+    nodes: [
+      { id: 'stuck', label: 'waiting on a person', kind: 'step', task: 'T1', status: 'needs-you', needs: ONE_WORD_NEEDS, graph: null, x: 0, y: 0 },
+      { id: 'box', label: 'the piece needing you', kind: 'step', task: null, status: null, needs: null, graph: 'run-child-word', x: 600, y: 0 },
+    ],
+    edges: [],
+  });
+  try {
+    await fs.writeFile(path.join(ctx.graphDir, 'run-child-word.json'), JSON.stringify({
+      schema: 1, title: 'child word', source: 'plan-proposal', source_detail: null, explanation: null,
+      run: true, groups: [],
+      nodes: [{ id: 'n1', label: 'first thing', kind: 'step', task: 'T1', status: 'needs-you', needs: ONE_WORD_NEEDS, graph: null, x: 0, y: 0 }],
+      edges: [],
+    }));
+
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    await nodeGroup(page, 'stuck').locator('.node-box').click();
+    const directText = (await page.locator('g.detail[data-for="stuck"] tspan').allTextContents()).join('').replace(/\s+/g, '');
+    assert.ok(directText.includes(ONE_WORD_NEEDS), directText);
+    assert.ok(!directText.includes('…'), directText);
+
+    const box = nodeGroup(page, 'box');
+    await expect(box.locator('.status-tag')).toHaveText('needs you');
+    await box.locator('.node-box').click();
+    const containerText = (await page.locator('g.detail[data-for="box"] tspan').allTextContents()).join('').replace(/\s+/g, '');
+    assert.ok(containerText.includes('firstthing:' + ONE_WORD_NEEDS), containerText);
+    assert.ok(!containerText.includes('…'), containerText);
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
 // The tab title carries `needs you · ` while any needs-you exists in the shown picture, and it
 // clears once none remain — updated on the poll, not only on load (Spec, "Tab signal").
 // ============================================================================================

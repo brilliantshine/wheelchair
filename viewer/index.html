@@ -426,6 +426,20 @@
     return Math.max(1, String(raw == null ? '' : raw).split(/\s+/).filter(Boolean).length);
   }
 
+  // A needs detail field, ready for wrapText with nothing cut: every word longer than the
+  // panel's 32-character wrap is first broken into pieces of at most 32 characters (wrapText
+  // would otherwise replace such a word with `…`), and the line count is the piece count, which
+  // bounds the wrapped line count because every piece fits a line alone. Returns [text, lines];
+  // both the panel's measured height and its drawn text read this same pair.
+  function needsField(raw) {
+    const pieces = [];
+    for (const w of String(raw == null ? '' : raw).split(/\s+/).filter(Boolean)) {
+      for (let i = 0; i < w.length; i += 32) pieces.push(w.slice(i, i + 32));
+    }
+    const text = pieces.join(' ');
+    return [text, linesForAll(text)];
+  }
+
   function textWithWrap(cls, x, raw, wrapChars, maxLines) {
     const t = el('text', { class: cls, x });
     const lines = wrapText(raw, wrapChars, maxLines);
@@ -1838,12 +1852,11 @@
           fields.push(['detail-note', 'The picture inside this box is missing, unreadable, or not a run picture.']);
         } else if (r && r.status === 'needs-you') {
           for (const need of r.needs) {
-            const text = need.label + ': ' + need.needs;
-            fields.push(['detail-note', text, linesForAll(text)]);
+            fields.push(['detail-note', ...needsField(need.label + ': ' + need.needs)]);
           }
         }
       } else if (node.status === 'needs-you' && node.needs) {
-        fields.push(['detail-note', node.needs, linesForAll(node.needs)]);
+        fields.push(['detail-note', ...needsField(node.needs)]);
       }
       const rl = runLayout(node, graph.edges);
       const inNames = rl.inSockets.filter((k) => k !== null);
