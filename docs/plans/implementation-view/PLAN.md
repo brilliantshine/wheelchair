@@ -1,6 +1,6 @@
 ---
 slug: implementation-view
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-09-25
 ---
 
@@ -917,7 +917,7 @@ Filled by Stage 3. One row per worker brief.
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Server side of run pictures: format fields, kinds and refusals, canonical omission, preservation and `/view` rules, `rollups`/`updated`, left-to-right layout with box reservation and the keep-positions rule, list `run` field, with server tests (Spec "Format additions", "The list page") | `viewer/server.js`, `viewer/test/run.test.js` (new), `viewer/test/fixtures/run-*.json` (new) | GPT / gpt-5.6-terra (worktree `iv-t1`) | `01a0dc3c-eb22-75b2-941e-1ef159e76374` | `node --test viewer/test/*.test.js` | done — lead re-ran: 130/131, the one failure pre-existing; diff read against the Spec; merged `c0ad3d2` |
-| T2 | Page side of run pictures: sockets and curved wires, box contents, statuses, choice boxes, rollup polling, reserved-name fatal and recovery, age text, tab title and notifications, list link, with browser tests (Spec "Sockets and wires", "Statuses and needs-you on the page", "The list page") | `viewer/index.html`, `viewer/list.js`, `viewer/test/run.spec.js` (new) | Claude / sonnet (worktree `iv-t2`, after T1 merged) | | `npm --prefix viewer run test:browser` | dispatched |
+| T2 | Page side of run pictures: sockets and curved wires, box contents, statuses, choice boxes, rollup polling, reserved-name fatal and recovery, age text, tab title and notifications, list link, with browser tests (Spec "Sockets and wires", "Statuses and needs-you on the page", "The list page") | `viewer/index.html`, `viewer/list.js`, `viewer/test/run.spec.js` (new) | Claude / sonnet (worktree `iv-t2`, after T1 merged) | | `npm --prefix viewer run test:browser` | done — lead re-ran: 220 passed on Chromium and Firefox; diff read against the Spec; merged `b702612` |
 | T3 | The prose: `protocol/graphs.md` "Run pictures" section, key order and refusal table; `protocol/implementation.md` steps and start-of-run paragraph; `protocol/lanes.md` login section and exit-2 wording; routers | `protocol/graphs.md`, `protocol/implementation.md`, `protocol/lanes.md`, `AGENTS.md`, `protocol/AGENTS.md` | Claude / sonnet (worktree `iv-t3`) | | read against the Spec; `git diff --stat` | done — lead read the full diff against the Spec's lead steps, lanes section and refusal table; merged |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
@@ -982,3 +982,9 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
   the existing Lead role and Integration and exit sections, not a new section (T3,
   implementation.md). Choice: root `AGENTS.md` and lanes.md's router row are unchanged, since
   neither became false (T3, routers). Choice: every new refusal code is listed as 422 (T3, graphs.md).
+- 2026-09-25 — T2 accepted and merged. Choices: run boxes show no kind or fork tag; loop-back wire
+  ends only nearly horizontal; status borders by dash and width; age rounds to the minute; a
+  failing storage read counts as already asked; the list page gains a fifth Run column (all T2,
+  viewer page). Full validation green except the pre-existing lifecycle test. `./install.sh` not
+  run: it restarts the always-on viewer and writes harness homes, so that's left to Collin.
+  COMPLETION.md written. Status `verifying`.
