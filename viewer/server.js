@@ -213,8 +213,10 @@ function validateGraph(input, { checkOrigin = true } = {}) {
     if (!run && (node.task !== null || node.status !== null || node.needs !== null || node.kind === 'choice')) {
       fail(422, 'run-field', 'Run-only node fields require a run picture.', { ids: [node.id] });
     }
-    if ((node.task !== null && (typeof node.task !== 'string' || node.task.length === 0)) ||
-        (node.needs !== null && (typeof node.needs !== 'string' || node.needs.length === 0))) {
+    if (node.task !== null && (typeof node.task !== 'string' || node.task.length === 0)) {
+      fail(422, 'run-field-shape', 'A task and needs value must be a non-empty string or null.', { ids: [node.id] });
+    }
+    if (node.needs !== null && typeof node.needs !== 'string') {
       fail(422, 'run-field-shape', 'A task and needs value must be a non-empty string or null.', { ids: [node.id] });
     }
     if (node.status !== null && !RUN_STATUSES.has(node.status)) {
@@ -226,7 +228,7 @@ function validateGraph(input, { checkOrigin = true } = {}) {
     if (node.kind !== 'choice' && node.graph === null && ((node.status === null) !== (node.task === null))) {
       fail(422, 'status-without-task', 'A status and task must be present together on a work node.', { ids: [node.id] });
     }
-    if (node.status === 'needs-you' && node.needs === null) {
+    if (node.status === 'needs-you' && (node.needs === null || node.needs.length === 0)) {
       fail(422, 'needs-missing', 'A needs-you node must say what is needed.', { ids: [node.id] });
     }
     if (node.status !== 'needs-you' && node.needs !== null) {
@@ -659,8 +661,10 @@ const BEND_PITCH = 160;
 const COMPONENT_GAP = 200;
 const UNIT_GUTTER = NODE_PITCH - GROUP_NODE_W;
 const ROW_CLEARANCE = LAYER_GAP - GROUP_NODE_H;
+const RUN_COLUMN_CLEARANCE = 120;
 
-function layout(graph, sizeOf = () => ({ w: GROUP_NODE_W, h: GROUP_NODE_H }), separateComponents = true) {
+function layout(graph, sizeOf = () => ({ w: GROUP_NODE_W, h: GROUP_NODE_H }), separateComponents = true,
+  layerClearance = ROW_CLEARANCE) {
   const ids = graph.nodes.map((node) => node.id).sort();
   if (!ids.length) return { positions: new Map(), order: [], links: new Map() };
   // Sorted and deduplicated so the same graph lays out the same way however its arrays happen to
@@ -680,7 +684,7 @@ function layout(graph, sizeOf = () => ({ w: GROUP_NODE_W, h: GROUP_NODE_H }), se
     heights[row] = Math.max(heights[row] || 0, sizeOf(id).h);
   }
   const origins = [0];
-  for (let row = 1; row < heights.length; row += 1) origins[row] = origins[row - 1] + heights[row - 1] + ROW_CLEARANCE;
+  for (let row = 1; row < heights.length; row += 1) origins[row] = origins[row - 1] + heights[row - 1] + layerClearance;
   const positions = new Map();
   const order = Array.from({ length: origins.length }, () => []);
   const links = new Map();
@@ -937,7 +941,7 @@ function runLayout(graph, sizeOf, separateComponents = true) {
   const placed = layout(graph, (id) => {
     const size = sizeOf(id);
     return { w: size.h, h: size.w };
-  }, separateComponents);
+  }, separateComponents, RUN_COLUMN_CLEARANCE);
   return {
     ...placed,
     positions: new Map([...placed.positions].map(([id, point]) => [id, { x: point.y, y: point.x }])),
@@ -1534,7 +1538,7 @@ function checkViewChanges(current, incoming) {
 
 function checkRunName(graphPath, graph) {
   const name = path.basename(graphPath);
-  const reserved = path.basename(path.dirname(graphPath)) === 'graphs' && /^run(?:-[a-z0-9_-]+)?\.json$/.test(name);
+  const reserved = path.basename(path.dirname(graphPath)) === 'graphs' && (name === 'run.json' || /^run-.*\.json$/.test(name));
   if (reserved && !graph.run) fail(422, 'run-name', 'A reserved run-picture name must contain a run picture.');
   if (!graph.run) return;
   if (name !== 'run.json' && graph.nodes.some((node) => node.graph !== null)) {
