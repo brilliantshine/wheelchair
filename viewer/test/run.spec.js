@@ -320,6 +320,52 @@ test('a container shows its rollup status and needs, and a cut child explains it
 });
 
 // ============================================================================================
+// The detail panel shows a `needs` text in full at any length — a direct needs-you node's own and
+// each container rollup entry's — never the default four-line cut every other field gets (Spec,
+// "Box contents and height", D34).
+// ============================================================================================
+const VERY_LONG_NEEDS = Array.from({ length: 16 }, (_, i) =>
+  `step ${i + 1}: check the ingest worker logs and confirm the retry queue is empty`).join(' then ');
+
+test('the detail panel shows a needs text of more than 700 characters in full, direct and in a container', async ({ page }) => {
+  assert.ok(VERY_LONG_NEEDS.length > 700, String(VERY_LONG_NEEDS.length));
+  const ctx = await launchRun({
+    schema: 1, title: 'very long needs', source: 'plan-proposal', source_detail: null,
+    explanation: null, run: true, groups: [],
+    nodes: [
+      { id: 'stuck', label: 'waiting on a person', kind: 'step', task: 'T1', status: 'needs-you', needs: VERY_LONG_NEEDS, graph: null, x: 0, y: 0 },
+      { id: 'box', label: 'the piece needing you', kind: 'step', task: null, status: null, needs: null, graph: 'run-child-long', x: 600, y: 0 },
+    ],
+    edges: [],
+  });
+  try {
+    await fs.writeFile(path.join(ctx.graphDir, 'run-child-long.json'), JSON.stringify({
+      schema: 1, title: 'child long', source: 'plan-proposal', source_detail: null, explanation: null,
+      run: true, groups: [],
+      nodes: [{ id: 'n1', label: 'first thing', kind: 'step', task: 'T1', status: 'needs-you', needs: VERY_LONG_NEEDS, graph: null, x: 0, y: 0 }],
+      edges: [],
+    }));
+
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    await nodeGroup(page, 'stuck').locator('.node-box').click();
+    const directText = (await page.locator('g.detail[data-for="stuck"] tspan').allTextContents()).join(' ');
+    assert.ok(directText.includes(VERY_LONG_NEEDS), directText);
+    assert.ok(!directText.includes('…'), directText);
+
+    const box = nodeGroup(page, 'box');
+    await expect(box.locator('.status-tag')).toHaveText('needs you');
+    await box.locator('.node-box').click();
+    const containerText = (await page.locator('g.detail[data-for="box"] tspan').allTextContents()).join(' ');
+    assert.ok(containerText.includes('first thing: ' + VERY_LONG_NEEDS), containerText);
+    assert.ok(!containerText.includes('…'), containerText);
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
 // The tab title carries `needs you · ` while any needs-you exists in the shown picture, and it
 // clears once none remain — updated on the poll, not only on load (Spec, "Tab signal").
 // ============================================================================================
