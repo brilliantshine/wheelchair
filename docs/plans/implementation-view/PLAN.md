@@ -95,6 +95,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D56 | Run pictures leave 120px between adjacent columns | Verification round 1 found 24px channels where wires and labels overlapped, because swapping the row clearance onto columns gave the narrow row gap to the wires. The idea asks Collin to see what feeds what | verification-round-1 |
 | D57 | A run box's top line is always present and carries the kind tag on the right, next to the status tag | Verification round 1: without it a store, a file and an outside system look the same, and seeing which stores are touched is in the idea. The server's height reservation already includes the line | verification-round-1 |
 | D58 | A loop-back wire is two cubic segments, horizontal at both sockets | One cubic can't be horizontal at both ends and bow below both boxes. Two segments can, and meet the Spec as written | verification-round-1 |
+| D59 | In the run picture's detail panel, a needs text breaks any word longer than the panel's 32-character wrap across lines, so the whole text always shows. Other fields and plain graphs are unchanged | The needs-text gap survived two remediation rounds. Collin chose to fix it rather than accept it | user |
 
 ## Spec
 
@@ -1011,3 +1012,4 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
   COMPLETION.md gaps (fixed by the lead) and one surviving gap: the detail panel still cuts a needs
   text that is a single word longer than 32 characters. The needs-text gap has now survived two
   remediation rounds, so it goes to Collin per `protocol/verification.md`.
+- 2026-09-26 — Collin chose to fix the needs-text gap (D59). Remediation 3.

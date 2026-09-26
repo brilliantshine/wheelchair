@@ -111,3 +111,6 @@
 2026-09-26T09:04:44Z shown 4a32
 2026-09-26T09:04:44Z shown 5028
 2026-09-26T09:04:44Z turn
+2026-09-26T10:05:53Z new 0cc6 verification 3: the detail panel still cuts a needs text that is one very long word (question for Collin)
+2026-09-26T10:05:53Z shown 0cc6
+2026-09-26T10:05:53Z turn
