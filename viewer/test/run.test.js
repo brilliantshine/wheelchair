@@ -117,6 +117,22 @@ test('a task-only run update keeps every position, including a drag', async () =
   });
 });
 
+test('a progress-only write keeps a dragged position, and an added edge lays the picture out again', async () => {
+  await withRun(async (ctx) => {
+    const initialBody = JSON.parse((await fixture('run-basic.json')).toString()); await fs.unlink(ctx.graphPath);
+    assert.equal((await graphPut(ctx, initialBody, '')).status, 200);
+    let state = await getGraph(ctx); const initial = state.graph;
+    const page = copy(initial); node(page, 'a').x = 901; node(page, 'a').y = 337;
+    assert.equal((await viewPut(ctx, page, state.hash)).status, 200);
+    state = await getGraph(ctx); const progress = copy(state.graph); Object.assign(node(progress, 'a'), { label: 'start after login', status: 'needs-you', needs: 'log in again' });
+    assert.equal((await graphPut(ctx, progress, state.hash)).status, 200);
+    state = await getGraph(ctx); assert.deepEqual({ x: node(state.graph, 'a').x, y: node(state.graph, 'a').y }, { x: 901, y: 337 });
+    const relayout = copy(state.graph); relayout.edges.push({ id: 'b-a', from: 'b', to: 'a', label: '', kind: 'sequence', value: null, inferred: false, origin: 'proposed', was: null, note: null });
+    assert.equal((await graphPut(ctx, relayout, state.hash)).status, 200);
+    state = await getGraph(ctx); assert.notDeepEqual({ x: node(state.graph, 'a').x, y: node(state.graph, 'a').y }, { x: 901, y: 337 });
+  });
+});
+
 test('rollups, nesting, updated, and the list run path follow run-picture rules', async () => {
   await withRun(async (ctx) => {
     let state = await getGraph(ctx); const root = copy(state.graph);
