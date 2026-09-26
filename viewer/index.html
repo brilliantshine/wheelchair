@@ -129,6 +129,34 @@
   .open-child.disabled .open-child-bg { stroke: var(--dim); stroke-dasharray: 2 2; }
   .open-child.disabled .open-child-label { fill: var(--dim); }
 
+  /* Run-picture box content: a status tag line, the label (existing wrap rule above), an
+     optional needs line, and one row per socket — see runLayout()/renderRunNode() below. Border
+     treatment differs per status by shape (dash pattern and stroke width), not colour alone
+     (Spec, "Statuses and needs-you on the page"). Declared after .node.agreed/.node.rejected, so
+     these rules win the border on equal specificity: a run box Collin has ruled on keeps its
+     opacity and (for a strike) its label's line-through from those rules untouched, but its
+     border reads its progress status rather than its verdict. Collin's own ruling on an ordinary
+     run box is visible but has no effect on the run (Spec, Edge cases) — only a struck `choice`
+     is ever collected — so this is a deliberate trade, not an oversight. */
+  .status-tag { font-size: 10.5px; letter-spacing: .02em; pointer-events: none; }
+  .status-tag.status-not-started { fill: var(--dim); }
+  .status-tag.status-in-progress { fill: var(--accent); }
+  .status-tag.status-done { fill: var(--agreed); }
+  .status-tag.status-needs-you { fill: var(--rejected); font-weight: 600; }
+  .needs-text { fill: var(--rejected); font-size: 11px; pointer-events: none; }
+  .socket-name { fill: var(--dim); font-size: 10px; pointer-events: none; }
+  .socket-dot { fill: var(--dim); }
+  .node.run-status-in-progress .node-box { stroke: var(--accent); stroke-dasharray: 6 3; }
+  .node.run-status-done .node-box { stroke: var(--agreed); stroke-width: 2; }
+  .node.run-status-needs-you .node-box { stroke: var(--rejected); stroke-width: 2.5; stroke-dasharray: 2 2; }
+
+  #notify-banner { position: fixed; right: 14px; left: auto; top: 56px; z-index: 6; max-width: 360px;
+    padding: 8px 12px; border-radius: 6px; font-size: 12px; background: var(--panel-2);
+    border: 1px solid var(--line); color: var(--ink); display: flex; gap: 8px; align-items: center;
+    flex-wrap: wrap; }
+  #notify-banner button { background: var(--panel); border: 1px solid var(--line); color: var(--ink);
+    border-radius: 4px; padding: 3px 8px; font: inherit; font-size: 12px; cursor: pointer; }
+
   .edge .edge-line { fill: none; stroke: var(--proposed); stroke-width: 1.5; }
   .edge[data-kind="sequence"] .edge-line { stroke-dasharray: 3 3; opacity: .85; }
   .edge .edge-band { stroke: transparent; fill: none; cursor: pointer; }
@@ -225,6 +253,7 @@
 <header id="topbar">
   <nav id="breadcrumb"></nav>
   <span id="source"></span>
+  <span id="run-age" hidden></span>
   <span id="legend">
     <i style="background:var(--agreed)"></i>agreed
     <i style="background:var(--rejected)"></i>rejected
@@ -241,6 +270,11 @@
 </header>
 <div id="error-banner" hidden></div>
 <div id="poll-status" hidden></div>
+<div id="notify-banner" hidden>
+  <span>Notify this tab when a part needs you?</span>
+  <button id="notify-yes" type="button">Enable</button>
+  <button id="notify-no" type="button">No thanks</button>
+</div>
 <div id="fatal" hidden></div>
 <svg id="canvas"></svg>
 
@@ -291,6 +325,10 @@
   const sourceEl = document.getElementById('source');
   const errorBanner = document.getElementById('error-banner');
   const pollStatus = document.getElementById('poll-status');
+  const runAgeEl = document.getElementById('run-age');
+  const notifyBanner = document.getElementById('notify-banner');
+  const notifyYesBtn = document.getElementById('notify-yes');
+  const notifyNoBtn = document.getElementById('notify-no');
   const fatalEl = document.getElementById('fatal');
   const approveBtn = document.getElementById('approve');
   const rejectBtn = document.getElementById('reject');
@@ -301,6 +339,23 @@
   let graph = null;          // last known-good canonical graph, as read or written
   let lastHash = '';         // hash matching `graph`
   let childrenMap = {};      // { name: exists }
+  // Run-picture-only state (Spec, "Statuses and needs-you on the page"). `rollups` and `updated`
+  // are the two GET /graph keys server.js computes fresh on every read and never writes; `graph`
+  // carries no other trace of them. `rollupsJson` is the canonical-JSON snapshot pollOnce compares
+  // against on the *next* poll (D39: redraw on a rollups change even with no hash change).
+  // `needsYouKeys` is the set of "`file`#`id`" identities (D40) that were needs-you as of the last
+  // poll or load — the baseline a later poll diffs against to fire at most one notification per
+  // node per transition, never on the load that first shows an already-needs-you picture.
+  let rollups = {};
+  let updatedMs = null;
+  let rollupsJson = null;
+  let needsYouKeys = new Set();
+  // Whether Collin has answered the one-time notification offer, persisted so it is asked once
+  // ever, not once per tab (Spec, "Tab signal"). Read at module load, wrapped in try/catch since a
+  // private window or blocked site data can make localStorage throw on either access.
+  const NOTIFY_ASKED_KEY = 'wheelchair-run-notify-asked';
+  let notifyAsked = true;
+  try { notifyAsked = localStorage.getItem(NOTIFY_ASKED_KEY) === '1'; } catch { notifyAsked = true; }
   let trail = [];            // [{path, title}] ancestors, root first
   let view = { x: 0, y: 0, k: 1 };
   let selectedIds = new Set();     // explicitly clicked/boxed/select-all ids
@@ -396,7 +451,10 @@
     }
     const body = await safeJson(res);
     if (!res.ok) return { ok: false, status: res.status, error: body.error, detail: body.detail };
-    return { ok: true, hash: body.hash, graph: body.graph, children: body.children || {} };
+    return {
+      ok: true, hash: body.hash, graph: body.graph, children: body.children || {},
+      rollups: body.rollups || {}, updated: body.updated,
+    };
   }
 
   // `mutateFn` expresses the *intent* of a write (a bulk verdict, or a set of
@@ -508,6 +566,81 @@
     svg.style.display = 'none';
   }
   function clearFatal() { fatalEl.hidden = true; svg.style.display = ''; }
+
+  // ---- run-picture polling state (Spec, "Statuses and needs-you on the page") ------------------
+  function childFilePath(name) { return dirnameOf(currentPath) + name + '.json'; }
+
+  // Every needs-you identity currently in view: this file's own needs-you nodes, keyed by this
+  // file, and every rollup's needs-you entries, keyed by the child file each rollup describes
+  // (D40 — an id is unique only within its own file, so the key has to carry both).
+  function collectNeedsYou() {
+    const entries = [];
+    if (!graph) return entries;
+    for (const n of graph.nodes) {
+      if (n.status === 'needs-you') entries.push({ key: currentPath + '#' + n.id, label: n.label, needs: n.needs });
+    }
+    for (const [name, r] of Object.entries(rollups)) {
+      for (const need of (r.needs || [])) {
+        entries.push({ key: childFilePath(name) + '#' + need.id, label: need.label, needs: need.needs });
+      }
+    }
+    return entries;
+  }
+
+  // Wrapped in try/catch throughout: an unsupported or blocked Notification API must never break
+  // the page, only leave the title prefix as the sole signal (Spec, "Tab signal", Edge cases).
+  function notificationsGranted() {
+    try { return typeof Notification !== 'undefined' && Notification.permission === 'granted'; }
+    catch { return false; }
+  }
+  function fireNotification(entry) {
+    try { new Notification(entry.label, { body: entry.needs }); } catch { /* unsupported or blocked */ }
+  }
+
+  function updateTabTitle(hasNeedsYou) {
+    const base = (graph && graph.title) || 'graph viewer';
+    document.title = (hasNeedsYou ? 'needs you · ' : '') + base;
+  }
+
+  function updateNotifyBanner() {
+    notifyBanner.hidden = !(graph && graph.run) || notifyAsked;
+  }
+
+  function markNotifyAnswered() {
+    notifyAsked = true;
+    try { localStorage.setItem(NOTIFY_ASKED_KEY, '1'); } catch { /* private window or blocked storage */ }
+    updateNotifyBanner();
+  }
+
+  notifyYesBtn.addEventListener('click', () => {
+    markNotifyAnswered();
+    try { if (typeof Notification !== 'undefined') Notification.requestPermission(); } catch { /* unsupported */ }
+  });
+  notifyNoBtn.addEventListener('click', markNotifyAnswered);
+
+  // Refreshes every run-picture-only piece of UI from whatever `rollups`/`updated` the page most
+  // recently fetched — called after every load and every poll, whether or not that poll's hash or
+  // rollups actually changed, since the age text updates on every poll regardless (Spec, "Polling
+  // on a run picture"). `notify` is false on the load that first shows a picture — there is no
+  // earlier poll for anything to have "newly turned" needs-you against — and true on every poll
+  // after that.
+  function refreshRunState(notify) {
+    const isRun = !!(graph && graph.run);
+    runAgeEl.hidden = !isRun;
+    if (!isRun) { updateTabTitle(false); updateNotifyBanner(); return; }
+    if (typeof updatedMs === 'number') {
+      const mins = Math.max(0, Math.round((Date.now() - updatedMs) / 60000));
+      runAgeEl.textContent = 'updated ' + mins + ' min ago';
+    }
+    const entries = collectNeedsYou();
+    const keys = new Set(entries.map((e) => e.key));
+    if (notify && notificationsGranted()) {
+      for (const e of entries) if (!needsYouKeys.has(e.key)) fireNotification(e);
+    }
+    needsYouKeys = keys;
+    updateTabTitle(keys.size > 0);
+    updateNotifyBanner();
+  }
 
   // ---- selection ---------------------------------------------------------------
   // Selecting both endpoints of an edge selects the edge (decision 63) so a
@@ -737,14 +870,20 @@
     graph = result.graph;
     lastHash = result.hash;
     childrenMap = result.children;
+    rollups = result.rollups || {};
+    updatedMs = result.updated;
+    rollupsJson = graph.run ? JSON.stringify(result.rollups) : null;
     selectedIds = new Set();
     impliedRemoved = new Set();
     clearFatal(); clearErrorBanner();
-    document.title = graph.title || 'graph viewer';
     syncExplainPanel();
     resizeCanvas();
     fitToView();
     render();
+    // Establishes this load's needs-you baseline with no notification — there is no earlier poll
+    // for anything on a freshly opened picture to have "newly turned" needs-you against — and sets
+    // the tab title and age text either way.
+    refreshRunState(false);
     return true;
   }
 
@@ -888,9 +1027,100 @@
   // hit testing, fit-to-view) is computed from *this*, not from a constant.
   const FIRST_LINE_CHARS_WITH_BADGE = 16;
   function firstLineCap(n) { return n.graph !== null ? FIRST_LINE_CHARS_WITH_BADGE : 24; }
+
+  // ---- run-picture geometry (Spec, "Box contents and height (D34)") ------------------------
+  // Every one of these constants and the height arithmetic below is the page's copy of
+  // viewer/server.js's RUN_NODE_H / runNodeHeight, which reserves the *most* a box could ever be —
+  // status present, a five-line label, a three-line needs block, one row per socket — so a
+  // status-only rewrite never changes layout. The page measures the *real* height from the parts a
+  // given box actually has, which is always <= that reservation because each real part is bounded
+  // by the same maximum the server assumed (5 label lines, 3 needs lines, the same sockets, since
+  // both sides derive sockets from the same edges the same way).
+  const RUN_TOP_PAD = 22, RUN_BOTTOM_PAD = 14;
+  const RUN_STATUS_H = 20, RUN_LABEL_LINE_H = 16, RUN_NEEDS_LINE_H = 16, RUN_SOCKET_ROW_H = 20;
+  const RUN_NEEDS_MAX_LINES = 3;
+  const STATUS_LABEL = {
+    'not-started': 'not started', 'in-progress': 'in progress', done: 'done', 'needs-you': 'needs you',
+  };
+
+  // An edge whose kind isn't `data`, or whose `value` is null, joins the one shared unnamed socket
+  // on that side — the identical rule viewer/server.js's runNodeHeight uses to size a box, kept as
+  // its own function because both the height (nodeHeight) and the wiring (runEdgeAnchors) need the
+  // same partition of a node's edges into named/unnamed sockets.
+  function runSocketKey(e) { return (e.kind !== 'data' || e.value === null) ? null : e.value; }
+
+  function runSockets(nodeId, edges) {
+    let inUnnamed = false, outUnnamed = false;
+    const inNamed = new Set(), outNamed = new Set();
+    for (const e of edges) {
+      const key = runSocketKey(e);
+      if (e.to === nodeId) { if (key === null) inUnnamed = true; else inNamed.add(key); }
+      if (e.from === nodeId) { if (key === null) outUnnamed = true; else outNamed.add(key); }
+    }
+    return {
+      inSockets: (inUnnamed ? [null] : []).concat([...inNamed].sort()),
+      outSockets: (outUnnamed ? [null] : []).concat([...outNamed].sort()),
+    };
+  }
+
+  // A container's own `status` is always null (the server's `container-status` refusal); its tag
+  // and needs text come from `rollups[n.graph]` instead, one file's worth, never walked further
+  // (a run picture nests one level deep). Anything else — a step, store or a `choice` — reads its
+  // own two fields straight off the node.
+  function runEffectiveStatus(n) {
+    if (n.graph !== null) { const r = rollups[n.graph]; return r ? r.status : null; }
+    return n.status;
+  }
+  function runEffectiveNeedsText(n) {
+    if (n.graph !== null) {
+      const r = rollups[n.graph];
+      if (!r || r.status !== 'needs-you' || !r.needs.length) return null;
+      const extra = r.needs.length - 1;
+      return r.needs[0].needs + (extra > 0 ? ' +' + extra + ' more' : '');
+    }
+    return n.status === 'needs-you' ? n.needs : null;
+  }
+
+  // Everything a run box's face draws, computed once and shared by nodeHeight (below), the
+  // drawing pass (renderRunNodeContent) and the wiring pass (runEdgeAnchors) — so a measurement
+  // and its matching draw can never disagree about how many lines or rows a box actually has.
+  function runLayout(n, edges) {
+    const status = runEffectiveStatus(n);
+    const needsRaw = runEffectiveNeedsText(n);
+    const labelLines = wrapText(n.label, 24, NODE_LABEL_MAX_LINES, firstLineCap(n));
+    const needsLines = needsRaw == null ? [] : wrapText(needsRaw, 24, RUN_NEEDS_MAX_LINES);
+    const { inSockets, outSockets } = runSockets(n.id, edges);
+    const socketRows = Math.max(1, inSockets.length, outSockets.length);
+    const statusH = status !== null ? RUN_STATUS_H : 0;
+    // The baseline at which the socket rows begin — also the y a plain content pass (no sockets)
+    // would have used for the *next* line, so it doubles as "content height before the bottom pad".
+    const socketsTop = RUN_TOP_PAD + statusH + labelLines.length * RUN_LABEL_LINE_H
+      + needsLines.length * RUN_NEEDS_LINE_H;
+    const height = socketsTop + socketRows * RUN_SOCKET_ROW_H + RUN_BOTTOM_PAD;
+    return { status, needsRaw, labelLines, needsLines, inSockets, outSockets, socketRows, socketsTop, height };
+  }
+
   function nodeHeight(n) {
+    if (graph && graph.run) return runLayout(n, graph.edges).height;
     const lines = wrapText(n.label, 24, NODE_LABEL_MAX_LINES, firstLineCap(n)).length;
     return Math.max(NODE_H, 22 + (lines - 1) * 16 + 30);
+  }
+
+  // Character-count cut for a socket name (Spec: "cut at 22 chars"), unlike cutToWidth further
+  // down which measures real glyph pixel widths for a group header — a socket row has no
+  // per-glyph budget to measure against, just the fixed character count the Spec gives.
+  function cutChars(text, max) {
+    const raw = String(text == null ? '' : text);
+    if (raw.length <= max) return raw;
+    return raw.slice(0, Math.max(0, max - 1)) + '…';
+  }
+
+  // The reserved names (Spec, D43): `run.json` or `run-*.json` directly under a plan's `graphs/`
+  // directory. Checked against the basename alone — the one thing a poll's own currentPath always
+  // carries regardless of which plan or OS path separator it was opened with.
+  function isReservedRunName(p) {
+    const base = String(p || '').replace(/^.*[\\/]/, '');
+    return base === 'run.json' || /^run-.+\.json$/.test(base);
   }
 
   // NODE_LABEL_MAX_LINES lines is as tall as a box gets, so a longer label loses its tail to
@@ -1157,12 +1387,85 @@
     headerLayer.appendChild(g);
   }
 
+  // A run box's content, top to bottom (Spec D34): the status tag line, the label, an optional
+  // needs line, then one 20px row per socket — an exhaustive list, so a run box carries no kind
+  // tag and no fork tag (see the "Choices I made" note in the T2 report on this reading). `rl` is
+  // this node's runLayout(), already measured by the caller so drawing can never disagree with
+  // the height it was given.
+  function renderRunNodeContent(g, n, rl) {
+    let y = RUN_TOP_PAD;
+    if (rl.status !== null) {
+      const tag = el('text', { class: 'status-tag status-' + rl.status, x: 12, y });
+      tag.textContent = STATUS_LABEL[rl.status];
+      g.appendChild(tag);
+      y += RUN_STATUS_H;
+    }
+    rl.labelLines.forEach((line, i) => {
+      const t = el('text', { class: 'node-label', x: 12, y: y + i * RUN_LABEL_LINE_H });
+      t.textContent = line;
+      g.appendChild(t);
+    });
+    y += rl.labelLines.length * RUN_LABEL_LINE_H;
+    if (rl.needsLines.length) {
+      rl.needsLines.forEach((line, i) => {
+        const t = el('text', { class: 'needs-text', x: 12, y: y + i * RUN_NEEDS_LINE_H });
+        t.textContent = line;
+        g.appendChild(t);
+      });
+      // Same "cut vs full" check labelTruncated uses for the label: if wrapping actually dropped
+      // words, the untruncated needs text goes in a native tooltip on the box — the detail panel
+      // carries it too (renderDetail).
+      if (rl.needsLines.join(' ') !== rl.needsRaw) {
+        const tip = el('title');
+        tip.textContent = rl.needsRaw;
+        g.appendChild(tip);
+      }
+      y += rl.needsLines.length * RUN_NEEDS_LINE_H;
+    }
+    for (let i = 0; i < rl.socketRows; i += 1) {
+      const rowY = y + i * RUN_SOCKET_ROW_H + 14;
+      if (i < rl.inSockets.length) {
+        const key = rl.inSockets[i];
+        g.appendChild(el('circle', {
+          class: 'socket-dot socket-in', cx: 0, cy: rowY - 5, r: 3,
+          'data-socket': key === null ? 'unnamed' : 'named', 'data-value': key,
+        }));
+        if (key !== null) {
+          const cut = cutChars(key, 22);
+          const t = el('text', { class: 'socket-name socket-in-name', x: 8, y: rowY, 'data-value': key });
+          t.textContent = cut;
+          if (cut !== key) { const tip = el('title'); tip.textContent = key; t.appendChild(tip); }
+          g.appendChild(t);
+        }
+      }
+      if (i < rl.outSockets.length) {
+        const key = rl.outSockets[i];
+        g.appendChild(el('circle', {
+          class: 'socket-dot socket-out', cx: NODE_W, cy: rowY - 5, r: 3,
+          'data-socket': key === null ? 'unnamed' : 'named', 'data-value': key,
+        }));
+        if (key !== null) {
+          const cut = cutChars(key, 22);
+          const t = el('text', {
+            class: 'socket-name socket-out-name', x: NODE_W - 8, y: rowY, 'text-anchor': 'end', 'data-value': key,
+          });
+          t.textContent = cut;
+          if (cut !== key) { const tip = el('title'); tip.textContent = key; t.appendChild(tip); }
+          g.appendChild(t);
+        }
+      }
+    }
+  }
+
   function renderNodeGroup(root, n, effSel, hoverLit) {
+    const isRun = !!(graph && graph.run);
+    const rl = isRun ? runLayout(n, graph.edges) : null;
     const selected = effSel.has(n.id);
     const cls = ['node'];
     if (selected) cls.push('selected');
     if (n.origin === 'rejected') cls.push('rejected');
     if (n.origin === 'agreed') cls.push('agreed');
+    if (isRun && rl.status !== null) cls.push('run-status-' + rl.status);
     // Never `.selected` for this: that class is an accent stroke and fill meaning "this is the
     // selection," and a hover that looked identical while the approve button stayed disabled would
     // be a worse lie than no highlight at all. `group-dim` is the hover treatment's own class,
@@ -1173,13 +1476,14 @@
       class: cls.join(' '), 'data-id': n.id, 'data-origin': n.origin, 'data-kind': n.kind,
       transform: 'translate(' + n.x + ',' + n.y + ')',
     };
+    if (isRun) attrs['data-run-status'] = rl.status === null ? '' : rl.status;
     if (n.exclusive) attrs['data-exclusive'] = 'true';
     const missing = n.graph !== null && childrenMap[n.graph] === false;
     if (missing) attrs['data-child-missing'] = 'true';
     if (n.was) attrs['data-was'] = n.was;
     const g = el('g', attrs);
 
-    const h = nodeHeight(n);
+    const h = isRun ? rl.height : nodeHeight(n);
 
     // Reading the whole label shouldn't cost a click. A native tooltip on the
     // box carries the untruncated text at any zoom, and is added only where the
@@ -1207,26 +1511,30 @@
       g.appendChild(mark);
     }
 
-    // A container's open/missing badge sits in the top-right corner. Left at
-    // the default wrap width, the first line of a long label runs under it —
-    // the badge painted over the text rather than beside it. Reserving fewer
-    // characters on the first line alone (subsequent lines still use the full
-    // width) keeps the label clear of the badge without touching its position.
-    const lines = wrapText(n.label, 24, NODE_LABEL_MAX_LINES, firstLineCap(n));
-    lines.forEach((line, i) => {
-      const t = el('text', { class: 'node-label', x: 12, y: 22 + i * 16 });
-      t.textContent = line;
-      g.appendChild(t);
-    });
+    if (isRun) {
+      renderRunNodeContent(g, n, rl);
+    } else {
+      // A container's open/missing badge sits in the top-right corner. Left at
+      // the default wrap width, the first line of a long label runs under it —
+      // the badge painted over the text rather than beside it. Reserving fewer
+      // characters on the first line alone (subsequent lines still use the full
+      // width) keeps the label clear of the badge without touching its position.
+      const lines = wrapText(n.label, 24, NODE_LABEL_MAX_LINES, firstLineCap(n));
+      lines.forEach((line, i) => {
+        const t = el('text', { class: 'node-label', x: 12, y: 22 + i * 16 });
+        t.textContent = line;
+        g.appendChild(t);
+      });
 
-    const kindTag = el('text', { class: 'node-kind', x: 12, y: h - 8 });
-    kindTag.textContent = n.kind;
-    g.appendChild(kindTag);
+      const kindTag = el('text', { class: 'node-kind', x: 12, y: h - 8 });
+      kindTag.textContent = n.kind;
+      g.appendChild(kindTag);
 
-    if (n.exclusive) {
-      const fork = el('text', { class: 'node-fork', x: NODE_W - 12, y: h - 8, 'text-anchor': 'end' });
-      fork.textContent = 'fork';
-      g.appendChild(fork);
+      if (n.exclusive) {
+        const fork = el('text', { class: 'node-fork', x: NODE_W - 12, y: h - 8, 'text-anchor': 'end' });
+        fork.textContent = 'fork';
+        g.appendChild(fork);
+      }
     }
 
     if (n.graph !== null) {
@@ -1251,6 +1559,26 @@
 
     g.addEventListener('pointerdown', (ev) => startNodeDrag(ev, n));
     root.appendChild(g);
+  }
+
+  // Sockets and wires (Spec, D12/D13/D27): a cubic curve with horizontal tangents at both ends —
+  // control points offset purely along x from their own endpoint, the ordinary node-editor wire.
+  // A loop-back (the `to` socket not right of the `from` socket) cannot bow below both boxes while
+  // holding an exactly flat tangent at both ends: a cubic's points never leave the y-range spanned
+  // by its own four control points, and here two of those sit at ay and two at by, so no choice of
+  // x-only offsets can ever push the curve past max(ay, by). So a loop-back's control points also
+  // carry a shared downward offset — the tangent there is shallow (the x offset dominates) rather
+  // than exactly flat, the trade this file makes to actually show the bow the Spec asks for
+  // instead of a curve that reads as perfectly flat and straight through whatever sits between the
+  // two sockets.
+  function wirePath(ax, ay, bx, by) {
+    if (bx > ax) {
+      const dx = Math.max(40, (bx - ax) / 2);
+      return 'M' + ax + ',' + ay + ' C' + (ax + dx) + ',' + ay + ' ' + (bx - dx) + ',' + by + ' ' + bx + ',' + by;
+    }
+    const dx = 60;
+    const bow = Math.max(80, Math.abs(bx - ax) / 2, Math.abs(by - ay) + 60);
+    return 'M' + ax + ',' + ay + ' C' + (ax + dx) + ',' + (ay + bow) + ' ' + (bx - dx) + ',' + (by + bow) + ' ' + bx + ',' + by;
   }
 
   function renderEdgeGroup(root, labelLayer, e, a, b, anchors, effSel, nodeBoxRects, labelRects, hoverLit) {
@@ -1290,7 +1618,10 @@
       [bx, by] = rectExit(x2, y2, NODE_W / 2, hb / 2, -cdx, -cdy);
     }
 
-    const d = 'M' + ax + ',' + ay + ' L' + bx + ',' + by;
+    // A run picture's arrows leave and arrive at sockets on a box's left/right faces — a straight
+    // line between them would cut across whatever else sits on that same row, which is exactly
+    // what the curve is for (Spec, "Sockets and wires"). A plain graph keeps the straight segment.
+    const d = (graph && graph.run) ? wirePath(ax, ay, bx, by) : ('M' + ax + ',' + ay + ' L' + bx + ',' + by);
     g.appendChild(el('path', { class: 'edge-line', d, 'marker-end': 'url(#arrow-' + e.origin + ')' }));
 
     // The label ladder below derives its perpendicular from this — the anchor-to-anchor line,
@@ -1472,6 +1803,26 @@
       fields.push(['detail-value', item.value]);
       fields.push(['detail-inferred', item.inferred ? 'inferred — not stated by the source' : 'stated by the source']);
     }
+    // Run-picture-only fields (Spec, "Statuses and needs-you on the page" and "Box contents and
+    // height"): the task id never appears on the box face, only here; a cut container says why its
+    // rollup carries no status; a needs-you container's every rollup entry, not just the first one
+    // the box itself shows; and every socket's full name, whether or not its face cut it.
+    if (node && graph && graph.run) {
+      if (node.task != null) fields.push(['detail-ref', 'task: ' + node.task]);
+      if (node.graph !== null) {
+        const r = rollups[node.graph];
+        if (r && r.cut) {
+          fields.push(['detail-note', 'The picture inside this box is missing, unreadable, or not a run picture.']);
+        } else if (r && r.status === 'needs-you') {
+          for (const need of r.needs) fields.push(['detail-note', need.label + ': ' + need.needs]);
+        }
+      }
+      const rl = runLayout(node, graph.edges);
+      const inNames = rl.inSockets.filter((k) => k !== null);
+      const outNames = rl.outSockets.filter((k) => k !== null);
+      if (inNames.length) fields.push(['detail-ref', 'in: ' + inNames.join(', ')]);
+      if (outNames.length) fields.push(['detail-ref', 'out: ' + outNames.join(', ')]);
+    }
     // The group itself exists whenever exactly one item is selected, even with
     // nothing to expand — only the per-field elements are conditionally
     // omitted, never left present-but-empty.
@@ -1639,96 +1990,119 @@
 
     const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
 
-    // Every edge's two anchors, computed here in two phases because phase 2 needs every edge's
-    // faces already chosen — a bundle can only be spread once its whole membership is known.
-    //
-    // Phase 1: which faces. A reciprocal pair — some other edge running this one's `to` back to
-    // its `from` — tries the same flank before the facing sides (see faceCandidates); two edges
-    // sharing the same `from` and `to` are duplicates, not a reciprocal pair, and are told apart
-    // by phase 2's slotting below instead. JSON.stringify of the ordered pair, not a joined
-    // string: ids are only guaranteed unique within their own collection, not free of whatever
-    // separator a plain join would pick.
-    const dirSeen = new Set(graph.edges.map((e) => JSON.stringify([e.from, e.to])));
-    const faceChoice = new Map(); // edge.id -> [fromFace, toFace], or null for the rectExit fallback
-    for (const e of graph.edges) {
-      const a = nodeById.get(e.from), b = nodeById.get(e.to);
-      if (!a || !b) continue;
-      const recip = dirSeen.has(JSON.stringify([e.to, e.from]));
-      faceChoice.set(e.id, chooseFaces(a, b, recip));
-    }
-
-    // Phase 2: where on the face. Every arrow *end* that landed on a face — a departure from its
-    // source, an arrival at its target — is bundled by (node, face); an edge that fell back to
-    // rectExit (faceChoice is null) chose no face pair, so there is no bundle for it to join.
-    const bundles = new Map();
-    const bundleEnd = (nodeId, face, edgeId, otherId, isArrival) => {
-      const key = JSON.stringify([nodeId, face]);
-      if (!bundles.has(key)) bundles.set(key, []);
-      bundles.get(key).push({ edgeId, otherId, isArrival });
-    };
-    for (const e of graph.edges) {
-      const choice = faceChoice.get(e.id);
-      if (!choice) continue;
-      bundleEnd(e.from, choice[0], e.id, e.to, false);
-      bundleEnd(e.to, choice[1], e.id, e.from, true);
-    }
-
     const edgeAnchors = new Map(); // edge.id -> { from: [x,y], to: [x,y] }
-    for (const [key, items] of bundles) {
-      const [nodeId, face] = JSON.parse(key);
-      const n = nodeById.get(nodeId);
-      const h = nodeHeight(n);
-      // x for a top or bottom face, y for a left or right one — the axis a bundle spreads along.
-      const axis = (face === 'top' || face === 'bottom') ? 'x' : 'y';
-      // Ordered by the other endpoint's centre along that axis, then by edge id, so two arrows
-      // between the same pair of boxes — same axis position on both counts but one — still land
-      // in a stable, distinct order.
-      items.sort((p, q) => {
-        const op = nodeById.get(p.otherId), oq = nodeById.get(q.otherId);
-        const vp = axis === 'x' ? op.x + NODE_W / 2 : op.y + nodeHeight(op) / 2;
-        const vq = axis === 'x' ? oq.x + NODE_W / 2 : oq.y + nodeHeight(oq) / 2;
-        if (vp !== vq) return vp - vq;
-        return p.edgeId < q.edgeId ? -1 : p.edgeId > q.edgeId ? 1 : 0;
-      });
-      // An arrowhead is the thing that needs room, so a bundle carrying any arrival gets the
-      // wider pitch even where most of its members are departures.
-      let pitch = items.some((it) => it.isArrival) ? EDGE_FAN_IN : EDGE_FAN_OUT;
-      const usable = (axis === 'x' ? NODE_W : h) - 2 * FACE_MARGIN;
-      const count = items.length;
-      if (count > 1 && (count - 1) * pitch > usable) pitch = usable / (count - 1);
-      const [cx, cy] = faceAnchor(n, face);
-      items.forEach((it, i) => {
-        const off = (i - (count - 1) / 2) * pitch;
-        const point = axis === 'x' ? [cx + off, cy] : [cx, cy + off];
-        const rec = edgeAnchors.get(it.edgeId) || {};
-        rec[it.isArrival ? 'to' : 'from'] = point;
-        edgeAnchors.set(it.edgeId, rec);
-      });
-    }
+    if (graph.run) {
+      // Sockets replace face slotting on a run picture (Spec, "Sockets and wires"): every edge's
+      // anchor is read straight off its `from`/`to` node's own socket list, which renderRunNode
+      // already computed the same way (runSockets) to lay the box out. Named inputs sit on the
+      // left in value order, named outputs on the right; a sequence arrow or a null-value data
+      // arrow shares the one unnamed socket on its side, placed first — so `runSocketKey` and
+      // `findIndex` below always find the row runLayout already reserved for it.
+      const runLayouts = new Map(graph.nodes.map((n) => [n.id, runLayout(n, graph.edges)]));
+      for (const e of graph.edges) {
+        const a = nodeById.get(e.from), b = nodeById.get(e.to);
+        if (!a || !b) continue;
+        const rlA = runLayouts.get(a.id), rlB = runLayouts.get(b.id);
+        const key = runSocketKey(e);
+        const outIdx = rlA.outSockets.findIndex((k) => k === key);
+        const inIdx = rlB.inSockets.findIndex((k) => k === key);
+        if (outIdx === -1 || inIdx === -1) continue; // sockets derive from these very edges
+        edgeAnchors.set(e.id, {
+          from: [a.x + NODE_W, a.y + rlA.socketsTop + outIdx * RUN_SOCKET_ROW_H + 14],
+          to: [b.x, b.y + rlB.socketsTop + inIdx * RUN_SOCKET_ROW_H + 14],
+        });
+      }
+    } else {
+      // Every edge's two anchors, computed here in two phases because phase 2 needs every edge's
+      // faces already chosen — a bundle can only be spread once its whole membership is known.
+      //
+      // Phase 1: which faces. A reciprocal pair — some other edge running this one's `to` back to
+      // its `from` — tries the same flank before the facing sides (see faceCandidates); two edges
+      // sharing the same `from` and `to` are duplicates, not a reciprocal pair, and are told apart
+      // by phase 2's slotting below instead. JSON.stringify of the ordered pair, not a joined
+      // string: ids are only guaranteed unique within their own collection, not free of whatever
+      // separator a plain join would pick.
+      const dirSeen = new Set(graph.edges.map((e) => JSON.stringify([e.from, e.to])));
+      const faceChoice = new Map(); // edge.id -> [fromFace, toFace], or null for the rectExit fallback
+      for (const e of graph.edges) {
+        const a = nodeById.get(e.from), b = nodeById.get(e.to);
+        if (!a || !b) continue;
+        const recip = dirSeen.has(JSON.stringify([e.to, e.from]));
+        faceChoice.set(e.id, chooseFaces(a, b, recip));
+      }
 
-    // Phase 2 slots each anchor by its bundle position alone, with no view of the box it sits
-    // beside — chooseFaces already cleared this edge against both boxes, but only for the face
-    // pair's *centres*, and a slot offset moves the anchor off that centre. When a face carries
-    // more than one arrow (common enough: see the count in PLAN.md §3) the offset can push the
-    // moved anchor back into one of the two boxes the face check just cleared it against. Recheck
-    // every edge's *final* anchors here, once every bundle has assigned them and before anything
-    // is drawn, and drop the entry for any edge whose slotted line crosses either box — dropping
-    // it makes renderEdgeGroup take its `anchors === null` branch below, the same fallback an edge
-    // already takes when no candidate face pair passes, trimming the real centre-to-centre line
-    // with rectExit instead. One pass: this does not re-bundle or re-choose faces, and a dropped
-    // edge simply leaves a gap in its former bundles' slot numbering, which is harmless. rectExit
-    // cannot cross a box for two disjoint boxes by construction, so it is always a safe landing
-    // spot rather than a case that needs its own reasoning here.
-    for (const e of graph.edges) {
-      const rec = edgeAnchors.get(e.id);
-      if (!rec) continue;
-      const a = nodeById.get(e.from), b = nodeById.get(e.to);
-      if (!a || !b) continue;
-      const ra = { x: a.x, y: a.y, w: NODE_W, h: nodeHeight(a) };
-      const rb = { x: b.x, y: b.y, w: NODE_W, h: nodeHeight(b) };
-      const [x1, y1] = rec.from, [x2, y2] = rec.to;
-      if (rectIntersectsSegment(ra, x1, y1, x2, y2) || rectIntersectsSegment(rb, x1, y1, x2, y2)) {
-        edgeAnchors.delete(e.id);
+      // Phase 2: where on the face. Every arrow *end* that landed on a face — a departure from its
+      // source, an arrival at its target — is bundled by (node, face); an edge that fell back to
+      // rectExit (faceChoice is null) chose no face pair, so there is no bundle for it to join.
+      const bundles = new Map();
+      const bundleEnd = (nodeId, face, edgeId, otherId, isArrival) => {
+        const key = JSON.stringify([nodeId, face]);
+        if (!bundles.has(key)) bundles.set(key, []);
+        bundles.get(key).push({ edgeId, otherId, isArrival });
+      };
+      for (const e of graph.edges) {
+        const choice = faceChoice.get(e.id);
+        if (!choice) continue;
+        bundleEnd(e.from, choice[0], e.id, e.to, false);
+        bundleEnd(e.to, choice[1], e.id, e.from, true);
+      }
+
+      for (const [key, items] of bundles) {
+        const [nodeId, face] = JSON.parse(key);
+        const n = nodeById.get(nodeId);
+        const h = nodeHeight(n);
+        // x for a top or bottom face, y for a left or right one — the axis a bundle spreads along.
+        const axis = (face === 'top' || face === 'bottom') ? 'x' : 'y';
+        // Ordered by the other endpoint's centre along that axis, then by edge id, so two arrows
+        // between the same pair of boxes — same axis position on both counts but one — still land
+        // in a stable, distinct order.
+        items.sort((p, q) => {
+          const op = nodeById.get(p.otherId), oq = nodeById.get(q.otherId);
+          const vp = axis === 'x' ? op.x + NODE_W / 2 : op.y + nodeHeight(op) / 2;
+          const vq = axis === 'x' ? oq.x + NODE_W / 2 : oq.y + nodeHeight(oq) / 2;
+          if (vp !== vq) return vp - vq;
+          return p.edgeId < q.edgeId ? -1 : p.edgeId > q.edgeId ? 1 : 0;
+        });
+        // An arrowhead is the thing that needs room, so a bundle carrying any arrival gets the
+        // wider pitch even where most of its members are departures.
+        let pitch = items.some((it) => it.isArrival) ? EDGE_FAN_IN : EDGE_FAN_OUT;
+        const usable = (axis === 'x' ? NODE_W : h) - 2 * FACE_MARGIN;
+        const count = items.length;
+        if (count > 1 && (count - 1) * pitch > usable) pitch = usable / (count - 1);
+        const [cx, cy] = faceAnchor(n, face);
+        items.forEach((it, i) => {
+          const off = (i - (count - 1) / 2) * pitch;
+          const point = axis === 'x' ? [cx + off, cy] : [cx, cy + off];
+          const rec = edgeAnchors.get(it.edgeId) || {};
+          rec[it.isArrival ? 'to' : 'from'] = point;
+          edgeAnchors.set(it.edgeId, rec);
+        });
+      }
+
+      // Phase 2 slots each anchor by its bundle position alone, with no view of the box it sits
+      // beside — chooseFaces already cleared this edge against both boxes, but only for the face
+      // pair's *centres*, and a slot offset moves the anchor off that centre. When a face carries
+      // more than one arrow (common enough: see the count in PLAN.md §3) the offset can push the
+      // moved anchor back into one of the two boxes the face check just cleared it against. Recheck
+      // every edge's *final* anchors here, once every bundle has assigned them and before anything
+      // is drawn, and drop the entry for any edge whose slotted line crosses either box — dropping
+      // it makes renderEdgeGroup take its `anchors === null` branch below, the same fallback an edge
+      // already takes when no candidate face pair passes, trimming the real centre-to-centre line
+      // with rectExit instead. One pass: this does not re-bundle or re-choose faces, and a dropped
+      // edge simply leaves a gap in its former bundles' slot numbering, which is harmless. rectExit
+      // cannot cross a box for two disjoint boxes by construction, so it is always a safe landing
+      // spot rather than a case that needs its own reasoning here.
+      for (const e of graph.edges) {
+        const rec = edgeAnchors.get(e.id);
+        if (!rec) continue;
+        const a = nodeById.get(e.from), b = nodeById.get(e.to);
+        if (!a || !b) continue;
+        const ra = { x: a.x, y: a.y, w: NODE_W, h: nodeHeight(a) };
+        const rb = { x: b.x, y: b.y, w: NODE_W, h: nodeHeight(b) };
+        const [x1, y1] = rec.from, [x2, y2] = rec.to;
+        if (rectIntersectsSegment(ra, x1, y1, x2, y2) || rectIntersectsSegment(rb, x1, y1, x2, y2)) {
+          edgeAnchors.delete(e.id);
+        }
       }
     }
 
@@ -2092,17 +2466,36 @@
   // wrote; never on the page's own write, since that write already updated
   // `lastHash` to match. A drag in flight when an agent writes mid-poll is
   // lost — an accepted risk, not a bug to route around.
+  //
+  // A run picture adds two things (Spec, "Polling on a run picture"): a redraw also fires when
+  // `rollups` differs from the previous poll, compared as canonical JSON, even with the file's own
+  // hash unchanged — that is how a child file's progress reaches the open root. And on a reserved
+  // name (D43), a 422 shows the fatal screen exactly like a 404 does, rather than the ordinary
+  // "lost contact" notice, so a picture that stops validating mid-run is visibly broken rather than
+  // silently stale; a later poll that succeeds clears it, so a tab left open recovers once a fresh
+  // Stage 3 start writes a new picture over the old, now-valid name.
   async function pollOnce() {
     if (!currentPath) return;
     const result = await getGraph(currentPath);
     if (!result.ok) {
       if (result.status === 404) { showFatal(result); return; }
+      if (result.status === 422 && isReservedRunName(currentPath)) { showFatal(result); return; }
       pollStatus.hidden = false;
       pollStatus.textContent = 'lost contact with the viewer server — retrying…';
       return;
     }
     pollStatus.hidden = true;
-    if (result.hash !== lastHash) {
+    // Recovery is scoped to the reserved names (D43/D47) — the one case the Spec asks the page to
+    // resume from on its own; a plain graph's fatal screen is untouched here, same as today.
+    if (isReservedRunName(currentPath) && !fatalEl.hidden) clearFatal();
+    const isRunPic = !!(result.graph && result.graph.run);
+    const newRollupsJson = isRunPic ? JSON.stringify(result.rollups) : null;
+    const rollupsChanged = isRunPic && newRollupsJson !== rollupsJson;
+    const hashChanged = result.hash !== lastHash;
+    rollups = result.rollups || {};
+    updatedMs = result.updated;
+    rollupsJson = newRollupsJson;
+    if (hashChanged || rollupsChanged) {
       graph = result.graph;
       lastHash = result.hash;
       childrenMap = result.children;
@@ -2110,6 +2503,7 @@
       impliedRemoved = pruneToExisting(impliedRemoved);
       render();
     }
+    refreshRunState(true);
   }
 
   // ---- boot ------------------------------------------------------------------
