@@ -9,6 +9,12 @@ verified-by:
   - round: 1
     lane: gpt-5.6-sol
     checks: sonnet
+  - round: 2
+    lane: claude default reviewer
+    checks: gpt-5.6-terra
+  - round: 2
+    lane: gpt-5.6-sol
+    checks: sonnet
 ---
 
 # Completion Report — A live picture of an implementation run
@@ -74,16 +80,16 @@ picture changes, and it flags a part that needs Collin in the tab title and with
 | Tab title prefix | this run | `viewer/index.html:600-603`, `:627-643` | `run.spec.js` "the title prefix appears and clears across polls" |
 | One-time notification offer, remembered; one notification per node (file + id) newly needs-you | this run | `viewer/index.html:273-277`, `:356-358`, `:576-622` | `run.spec.js` "exactly one notification per node newly needs-you, including two nodes sharing an id in different files" |
 | List page "run picture" link | this run | `viewer/list.js:85`, `:100-105` | `run.spec.js` "the list page shows a run picture link…" |
-| `graphs.md` "Run pictures" section, key order, kinds, refusal table | this run | `protocol/graphs.md:713-863`, `:327-345`, `:247`, `:917-918` | read by the lead against the Spec |
+| `graphs.md` "Run pictures" section, key order, kinds, refusal table | this run | `protocol/graphs.md:713-872`, `:327-345`, `:247`, `:917-918` | read by the lead against the Spec |
 | Stage 3: precondition accepts `implementing`; small-patch bypass | this run | `protocol/implementation.md:20-23`, `:25-29` | read against Spec |
-| Stage 3: move aside at every start, one-sentence pointer | this run | `protocol/implementation.md:55-70` | read against Spec |
-| Stage 3: brief closing section for choices | this run | `protocol/implementation.md:76-79` | read against Spec |
-| Stage 3 step 1: ask once, start message, `Stage 3 started` line | this run | `protocol/implementation.md:89-103` | read against Spec |
-| Stage 3 step 2: draw, `prior`, `--register-plan` again | this run | `protocol/implementation.md:105-122` | read against Spec |
-| Stage 3 step 3: four states and when each is set; tell Collin | this run | `protocol/implementation.md:124-136` | read against Spec |
-| Stage 3 step 4: `Choice:` Log line before the box; lead lists choices from the diff when missing | this run | `protocol/implementation.md:183-195` | read against Spec |
-| Stage 3 step 5: collect struck choices from plain file reads, follow-ups, end-of-run list | this run | `protocol/implementation.md:204-216` | read against Spec |
-| Stage 3 step 6: never block, 409 cap, end the picture on any other failure | this run | `protocol/implementation.md:138-146` | read against Spec |
+| Stage 3: move aside at every start, one-sentence pointer | this run | `protocol/implementation.md:55-72` | read against Spec |
+| Stage 3: brief closing section for choices | this run | `protocol/implementation.md:78-82` | read against Spec |
+| Stage 3 step 1: ask once, start message, `Stage 3 started` line | this run | `protocol/implementation.md:92-106` | read against Spec |
+| Stage 3 step 2: draw, `prior`, `--register-plan` again | this run | `protocol/implementation.md:108-128` | read against Spec |
+| Stage 3 step 3: four states and when each is set; tell Collin | this run | `protocol/implementation.md:130-145` | read against Spec |
+| Stage 3 step 4: `Choice:` Log line before the box; lead lists choices from the diff when missing | this run | `protocol/implementation.md:192-209` | read against Spec |
+| Stage 3 step 5: collect struck choices from plain file reads, follow-ups, end-of-run list | this run | `protocol/implementation.md:218-230` | read against Spec |
+| Stage 3 step 6: never block, 409 cap, end the picture on any other failure | this run | `protocol/implementation.md:147-155` | read against Spec |
 | lanes.md "Checking a lane can log in"; exit-2 wording | this run | `protocol/lanes.md:240-252`, `:228-229` | read against Spec |
 
 ## Deviations from plan
@@ -111,8 +117,11 @@ picture of itself.
 ## Routers
 
 `protocol/AGENTS.md`: the rows for `implementation.md` and `graphs.md` now mention the run
-picture. The root `AGENTS.md` is unchanged. Its viewer row lists files, and this change adds
-tests but no page files. The `lanes.md` router row is unchanged, since what it says stays true.
+picture. The root `AGENTS.md`'s own rows are unchanged, since its viewer row lists files and
+this change adds tests but no page files. Its "never check the viewer by starting a server by
+hand" paragraph had line citations into `viewer/server.js` that the server changes moved. Those
+were corrected in remediation 1 (`AGENTS.md:121-124`). The `lanes.md` router row is unchanged,
+since what it says stays true.
 
 ## Validation evidence
 

@@ -298,8 +298,8 @@ For each box, computed on the page from the arrows. Nothing on disk:
 - A `choice` box sits wired to the part it affected (D14), by a `sequence` arrow from the
   choice to the part, labelled "chosen while building this", so it joins the part's
   unnamed input socket (D38). It shows no status and carries
-  the same agree and strike controls as any box. Its face carries only its plain-language
-  label.
+  the same agree and strike controls as any box. Its face carries its plain-language label
+  and, like every run box, the kind tag on its top line (D57).
 - No task id appears on any box face. The detail panel for a box shows its task id. The
   run picture's explanation panel names what each task id means, so a coined id is never
   bare on screen (`protocol/writing.md`, "Re-ground every label").
@@ -1001,3 +1001,7 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
   written.
 - 2026-09-26 — Remediation 1 done: R1 (server), R2 (page) and R3 (prose, citations) merged. All
   suites green except the pre-existing lifecycle test. Verification round 2 next.
+- 2026-09-26 — Verification round 2: FAIL, 4 gaps (detail panel truncates long needs text; R1
+  dropped two required server tests; the Spec's choice-face sentence contradicted D57, fixed by
+  the lead; COMPLETION.md citations and Routers text stale, fixed by the lead). REMEDIATION-2.md
+  written.
