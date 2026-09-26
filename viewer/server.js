@@ -19,7 +19,9 @@ Errors:
       edge-missing-node, self-edge (ids), group-bad-name, group-missing-node, group-bad-shape (ids),
       group-missing-label (ids), group-missing-note (ids), group-hidden-text (ids),
       group-overlap (ids), explanation-missing-group, group-unreferenced, bad-origin-value,
-      bad-was, container-bad-name, positional-claim,
+      bad-was, container-bad-name, positional-claim, run-field, run-field-shape, bad-status,
+      status-without-task, needs-missing, needs-hidden, choice-shape, container-status,
+      run-name, run-nesting,
       container-cycle, container-orphan, container-unreadable-child, preservation-rejected,
       preservation-agreed, agent-verdict, structural-difference (ids),
       bulk-not-additive
@@ -55,8 +57,9 @@ const STARTUP_GRACE_INTERVAL_MS = 100;
 const STOP_WAIT_MS = 5000;
 const ORIGINS = new Set(['proposed', 'agreed', 'rejected']);
 const SOURCES = new Set(['router', 'code-read', 'plan-proposal']);
-const NODE_KINDS = new Set(['file', 'module', 'step', 'decision', 'external', 'note']);
+const NODE_KINDS = new Set(['file', 'module', 'step', 'decision', 'external', 'note', 'store', 'choice']);
 const EDGE_KINDS = new Set(['data', 'sequence']);
+const RUN_STATUSES = new Set(['not-started', 'in-progress', 'done', 'needs-you']);
 // Child graph names and group ids share one shape, and for the same reason both times:
 // the name has to survive being written into a path or into a `[phrase](#id)` reference.
 const BARE_NAME = /^[a-z0-9_-]+$/;
@@ -99,12 +102,17 @@ function hashBytes(bytes) {
   return crypto.createHash('sha256').update(bytes).digest('hex');
 }
 
-function orderedNode(node) {
-  return {
+function orderedNode(node, includeRunFields = false) {
+  const result = {
     id: node.id, label: node.label, kind: node.kind, origin: node.origin,
     was: node.was, exclusive: node.exclusive, ref: node.ref, note: node.note,
-    graph: node.graph, x: node.x, y: node.y,
+    graph: node.graph,
   };
+  if (includeRunFields || node.task !== null || node.status !== null || node.needs !== null) {
+    result.task = node.task; result.status = node.status; result.needs = node.needs;
+  }
+  result.x = node.x; result.y = node.y;
+  return result;
 }
 
 function orderedEdge(edge) {
@@ -129,8 +137,9 @@ function canonicalBytes(graph) {
     source: graph.source,
     source_detail: graph.source_detail,
     explanation: graph.explanation,
+    ...(graph.run ? { run: true } : {}),
     groups: [...graph.groups].sort(compareId).map(orderedGroup),
-    nodes: [...graph.nodes].sort(compareId).map(orderedNode),
+    nodes: [...graph.nodes].sort(compareId).map((node) => orderedNode(node, graph.run)),
     edges: [...graph.edges].sort(compareId).map(orderedEdge),
   };
   return Buffer.from(`${JSON.stringify(result, null, 2)}\n`);
@@ -156,6 +165,7 @@ function validateGraph(input, { checkOrigin = true } = {}) {
   }
   if (typeof input.title !== 'string' || typeof input.source !== 'string' ||
       !SOURCES.has(input.source) ||
+      !(input.run === undefined || typeof input.run === 'boolean') ||
       !(input.source_detail === null || typeof input.source_detail === 'string') ||
       !(input.explanation === undefined || input.explanation === null || typeof input.explanation === 'string') ||
       !(input.groups === undefined || Array.isArray(input.groups)) ||
@@ -163,6 +173,7 @@ function validateGraph(input, { checkOrigin = true } = {}) {
     fail(422, 'unknown-schema', 'The graph does not have the schema 1 shape.', { schema: input.schema });
   }
 
+  const run = input.run ?? false;
   const nodeIds = new Set();
   const edgeIds = new Set();
   const nodes = input.nodes.map((raw) => {
@@ -184,6 +195,9 @@ function validateGraph(input, { checkOrigin = true } = {}) {
       ref: raw.ref ?? null,
       note: raw.note ?? null,
       graph: raw.graph ?? null,
+      task: raw.task ?? null,
+      status: raw.status ?? null,
+      needs: raw.needs ?? null,
       x: rounded(raw.x),
       y: rounded(raw.y),
     };
@@ -195,6 +209,28 @@ function validateGraph(input, { checkOrigin = true } = {}) {
     }
     if (node.graph !== null && (typeof node.graph !== 'string' || !BARE_NAME.test(node.graph))) {
       fail(422, 'container-bad-name', 'A container graph name is not a bare valid name.');
+    }
+    if (!run && (node.task !== null || node.status !== null || node.needs !== null || node.kind === 'choice')) {
+      fail(422, 'run-field', 'Run-only node fields require a run picture.', { ids: [node.id] });
+    }
+    if ((node.task !== null && (typeof node.task !== 'string' || node.task.length === 0)) ||
+        (node.needs !== null && (typeof node.needs !== 'string' || node.needs.length === 0))) {
+      fail(422, 'run-field-shape', 'A task and needs value must be a non-empty string or null.', { ids: [node.id] });
+    }
+    if (node.status !== null && !RUN_STATUSES.has(node.status)) {
+      fail(422, 'bad-status', 'A node status is outside the allowed set.', { ids: [node.id] });
+    }
+    if (node.graph !== null && run && node.status !== null) {
+      fail(422, 'container-status', 'A run-picture container receives its status from its child.', { ids: [node.id] });
+    }
+    if (node.kind !== 'choice' && node.graph === null && ((node.status === null) !== (node.task === null))) {
+      fail(422, 'status-without-task', 'A status and task must be present together on a work node.', { ids: [node.id] });
+    }
+    if (node.status === 'needs-you' && node.needs === null) {
+      fail(422, 'needs-missing', 'A needs-you node must say what is needed.', { ids: [node.id] });
+    }
+    if (node.status !== 'needs-you' && node.needs !== null) {
+      fail(422, 'needs-hidden', 'Only a needs-you node may carry needs text.', { ids: [node.id] });
     }
     return node;
   });
@@ -289,6 +325,12 @@ function validateGraph(input, { checkOrigin = true } = {}) {
       fail(422, 'self-edge', 'An edge may not connect a node back to itself.', { ids: [edge.id] });
     }
   }
+  for (const node of nodes) {
+    if (node.kind === 'choice' && (node.task === null || node.status !== null ||
+        !edges.some((edge) => edge.from === node.id && nodes.find((other) => other.id === edge.to).kind !== 'choice'))) {
+      fail(422, 'choice-shape', 'A choice needs a task, no status, and an outgoing edge to a non-choice node.', { ids: [node.id] });
+    }
+  }
   // A group exists only to make a specific passage of the account point at graph boxes. Check
   // dangling links, and require invisible groups to be referenced because they have no other way
   // to be seen.
@@ -307,7 +349,7 @@ function validateGraph(input, { checkOrigin = true } = {}) {
   }
   return {
     schema: 1, title: input.title, source: input.source,
-    source_detail: input.source_detail, explanation: input.explanation ?? null, groups, nodes, edges,
+    source_detail: input.source_detail, explanation: input.explanation ?? null, run, groups, nodes, edges,
   };
 }
 
@@ -326,6 +368,8 @@ function sameExceptPosition(left, right, isNode) {
   if (isNode) {
     const a = { ...left }; const b = { ...right };
     delete a.x; delete a.y; delete b.x; delete b.y;
+    delete a.task; delete a.status; delete a.needs;
+    delete b.task; delete b.status; delete b.needs;
     return JSON.stringify(orderedNode({ ...a, x: 0, y: 0 })) ===
       JSON.stringify(orderedNode({ ...b, x: 0, y: 0 }));
   }
@@ -364,6 +408,41 @@ async function graphFromFile(graphPath) {
   const raw = await readRaw(graphPath);
   if (!raw.exists) return null;
   return parseDisk(raw);
+}
+
+function rollupForChild(graph) {
+  const statused = graph.nodes.filter((node) => node.status !== null);
+  const needs = graph.nodes.filter((node) => node.status === 'needs-you')
+    .map((node) => ({ id: node.id, label: node.label, needs: node.needs })).sort(compareId);
+  if (!statused.length) return { status: null, needs, cut: false };
+  if (needs.length) return { status: 'needs-you', needs, cut: false };
+  if (statused.every((node) => node.status === 'done')) return { status: 'done', needs, cut: false };
+  if (statused.every((node) => node.status === 'not-started')) return { status: 'not-started', needs, cut: false };
+  return { status: 'in-progress', needs, cut: false };
+}
+
+async function graphRollups(graphPath, graph) {
+  if (!graph.run) return {};
+  const rollups = {};
+  for (const name of new Set(graph.nodes.map((node) => node.graph).filter(Boolean))) {
+    try {
+      const child = await graphFromFile(childPath(graphPath, name));
+      rollups[name] = child?.run ? rollupForChild(child) : { status: null, needs: [], cut: true };
+    } catch {
+      rollups[name] = { status: null, needs: [], cut: true };
+    }
+  }
+  return rollups;
+}
+
+async function graphUpdated(graphPath, graph) {
+  let newest = (await fsp.stat(graphPath)).mtimeMs;
+  if (!graph.run) return newest;
+  for (const name of new Set(graph.nodes.map((node) => node.graph).filter(Boolean))) {
+    try { newest = Math.max(newest, (await fsp.stat(childPath(graphPath, name))).mtimeMs); }
+    catch { /* A missing child has no timestamp to contribute. */ }
+  }
+  return newest;
 }
 
 function mapById(entries) {
@@ -558,6 +637,22 @@ const GROUP_PAD = 24;      // clearance on the left, right and bottom
 const GROUP_HEADER = 38;   // extra clearance above, holding the name and the note line
 const GROUP_NODE_W = 200;
 const GROUP_NODE_H = 116;
+// The server reserves the largest face a run box can grow to.  It intentionally does not depend
+// on a current status or needs string, so a progress-only update never changes the layout.
+const RUN_NODE_H = 22 + 20 + 5 * 16 + 3 * 16 + 20 * 1 + 14;
+
+function runNodeHeight(node, edges) {
+  const sockets = (side) => {
+    const values = new Set(); let unnamed = false;
+    for (const edge of edges) {
+      if ((side === 'in' ? edge.to : edge.from) !== node.id) continue;
+      if (edge.kind !== 'data' || edge.value === null) unnamed = true;
+      else values.add(edge.value);
+    }
+    return values.size + (unnamed ? 1 : 0);
+  };
+  return RUN_NODE_H + 20 * (Math.max(1, sockets('in'), sockets('out')) - 1);
+}
 // A bend point is not drawn — the viewer draws every edge as one straight line — but reserving it
 // a slot keeps a row from closing over the diagonal that has to pass through it.
 const BEND_PITCH = 160;
@@ -821,7 +916,70 @@ function groupRect(group, nodes) {
   };
 }
 
+function runGroupRect(group, nodes, heights) {
+  const members = canonicalGroupNodes(group).map((id) => nodes.get(id));
+  const minX = Math.min(...members.map((node) => node.x));
+  const maxX = Math.max(...members.map((node) => node.x + GROUP_NODE_W));
+  const minY = Math.min(...members.map((node) => node.y));
+  const maxY = Math.max(...members.map((node) => node.y + heights.get(node.id)));
+  return {
+    x: minX - GROUP_PAD,
+    y: minY - GROUP_PAD - GROUP_HEADER,
+    w: maxX - minX + 2 * GROUP_PAD,
+    h: maxY - minY + 2 * GROUP_PAD + GROUP_HEADER,
+  };
+}
+
+// The existing layered pass remains the one ordering algorithm.  Giving it a rotated box and
+// then rotating its result makes layers columns and components vertical bands without changing
+// any of the plain-picture arithmetic.
+function runLayout(graph, sizeOf, separateComponents = true) {
+  const placed = layout(graph, (id) => {
+    const size = sizeOf(id);
+    return { w: size.h, h: size.w };
+  }, separateComponents);
+  return {
+    ...placed,
+    positions: new Map([...placed.positions].map(([id, point]) => [id, { x: point.y, y: point.x }])),
+  };
+}
+
+function positionRunGraph(incoming) {
+  const nodes = mapById(incoming.nodes);
+  const heights = new Map(incoming.nodes.map((node) => [node.id, runNodeHeight(node, incoming.edges)]));
+  const visible = incoming.groups.filter((group) => group.visible).sort(compareId);
+  const grouped = new Set(visible.flatMap(canonicalGroupNodes));
+  const inner = new Map();
+  for (const group of visible) {
+    const members = canonicalGroupNodes(group); const memberSet = new Set(members);
+    const placed = runLayout({ nodes: members.map((id) => ({ id })),
+      edges: incoming.edges.filter((edge) => memberSet.has(edge.from) && memberSet.has(edge.to)) },
+    (id) => ({ w: GROUP_NODE_W, h: heights.get(id) }), false);
+    const relative = new Map(members.map((id) => [id, { id, ...placed.positions.get(id) }]));
+    inner.set(group.id, { ...placed, rect: runGroupRect(group, relative, heights) });
+  }
+  const unitOf = new Map();
+  for (const group of visible) for (const id of canonicalGroupNodes(group)) unitOf.set(id, `group:${group.id}`);
+  for (const node of incoming.nodes) if (!unitOf.has(node.id)) unitOf.set(node.id, `node:${node.id}`);
+  const sizes = new Map();
+  for (const group of visible) sizes.set(`group:${group.id}`, inner.get(group.id).rect);
+  for (const node of incoming.nodes) if (!grouped.has(node.id)) sizes.set(`node:${node.id}`, { w: GROUP_NODE_W, h: heights.get(node.id) });
+  const pairs = [...new Set(incoming.edges.map((edge) => JSON.stringify([unitOf.get(edge.from), unitOf.get(edge.to)])))].map((key) => JSON.parse(key))
+    .filter(([from, to]) => from !== to).sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+  const outer = runLayout({ nodes: [...sizes.keys()].sort().map((id) => ({ id })),
+    edges: pairs.map(([from, to]) => ({ from, to })) }, (id) => sizes.get(id), true);
+  for (const group of visible) {
+    const data = inner.get(group.id); const at = outer.positions.get(`group:${group.id}`);
+    for (const id of canonicalGroupNodes(group)) {
+      const point = data.positions.get(id);
+      Object.assign(nodes.get(id), { x: Math.round(at.x + point.x - data.rect.x), y: Math.round(at.y + point.y - data.rect.y) });
+    }
+  }
+  for (const node of incoming.nodes) if (!grouped.has(node.id)) Object.assign(node, outer.positions.get(`node:${node.id}`));
+}
+
 function positionGraph(incoming) {
+  if (incoming.run) { positionRunGraph(incoming); return; }
   const nodes = mapById(incoming.nodes);
   const visible = incoming.groups.filter((group) => group.visible).sort(compareId);
   const grouped = new Set(visible.flatMap(canonicalGroupNodes));
@@ -1334,7 +1492,7 @@ async function requestBody(request) {
 function structuralDifference(current, incoming) {
   const ids = [];
   for (const [oldEntries, newEntries, fields] of [
-    [current.nodes, incoming.nodes, ['label', 'kind', 'exclusive', 'ref', 'note', 'graph']],
+    [current.nodes, incoming.nodes, ['label', 'kind', 'exclusive', 'ref', 'note', 'graph', 'task', 'status', 'needs']],
     [current.edges, incoming.edges, ['from', 'to', 'label', 'kind', 'value', 'inferred', 'note']],
   ]) {
     const oldById = mapById(oldEntries); const newById = mapById(newEntries);
@@ -1352,7 +1510,7 @@ function checkViewChanges(current, incoming) {
   // drag. Compare the canonical representation instead, which also ignores harmless member repeats.
   const sameGroups = JSON.stringify([...current.groups].sort(compareId).map(orderedGroup)) ===
     JSON.stringify([...incoming.groups].sort(compareId).map(orderedGroup));
-  if (bad.length || current.schema !== incoming.schema || current.title !== incoming.title ||
+  if (bad.length || current.schema !== incoming.schema || current.title !== incoming.title || current.run !== incoming.run ||
       current.source !== incoming.source || current.source_detail !== incoming.source_detail ||
       current.explanation !== incoming.explanation || !sameGroups) {
     fail(422, 'structural-difference', 'The page changed graph structure.', { ids: bad });
@@ -1374,6 +1532,33 @@ function checkViewChanges(current, incoming) {
   if (reversals > 1) fail(422, 'bulk-not-additive', 'A bulk verdict may reverse at most one existing verdict.');
 }
 
+function checkRunName(graphPath, graph) {
+  const name = path.basename(graphPath);
+  const reserved = path.basename(path.dirname(graphPath)) === 'graphs' && /^run(?:-[a-z0-9_-]+)?\.json$/.test(name);
+  if (reserved && !graph.run) fail(422, 'run-name', 'A reserved run-picture name must contain a run picture.');
+  if (!graph.run) return;
+  if (name !== 'run.json' && graph.nodes.some((node) => node.graph !== null)) {
+    fail(422, 'run-nesting', 'Only run.json may contain run-picture containers.');
+  }
+  if (name === 'run.json' && graph.nodes.some((node) => node.graph !== null && !/^run-[a-z0-9_-]+$/.test(node.graph))) {
+    fail(422, 'run-nesting', 'A root run-picture container must name a run child.');
+  }
+}
+
+function sameRunLayoutInputs(current, incoming) {
+  const nodes = (graph) => graph.nodes.map((node) => [node.id, node.graph]).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+  const edges = (graph) => graph.edges.map((edge) => [edge.id, edge.from, edge.to, edge.value]).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+  const groups = (graph) => graph.groups.map((group) => [group.id, group.visible, canonicalGroupNodes(group)]).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+  return JSON.stringify(nodes(current)) === JSON.stringify(nodes(incoming)) &&
+    JSON.stringify(edges(current)) === JSON.stringify(edges(incoming)) &&
+    JSON.stringify(groups(current)) === JSON.stringify(groups(incoming));
+}
+
+function preserveRunPositions(current, incoming) {
+  const positions = mapById(current.nodes);
+  for (const node of incoming.nodes) Object.assign(node, { x: positions.get(node.id).x, y: positions.get(node.id).y });
+}
+
 async function handleGraphPut(request, response, url, state) {
   requirePutAuth(request, state);
   const graphPath = await validGraphPath(state.config, url.searchParams.get('path'));
@@ -1383,6 +1568,7 @@ async function handleGraphPut(request, response, url, state) {
     const raw = await readRaw(graphPath);
     if (body.hash !== raw.hash) fail(409, 'stale', 'The graph changed since it was read.', { hash: raw.hash });
     const incoming = validateGraph(body.graph);
+    checkRunName(graphPath, incoming);
     const current = raw.exists ? parseDisk(raw) : null;
     checkAgentWrite(current || { nodes: [], edges: [] }, incoming);
     if (current) {
@@ -1395,7 +1581,8 @@ async function handleGraphPut(request, response, url, state) {
         fail(422, 'container-cycle', 'The write would create a containment cycle.');
       }
     }
-    positionGraph(incoming);
+    if (current?.run && incoming.run && sameRunLayoutInputs(current, incoming)) preserveRunPositions(current, incoming);
+    else positionGraph(incoming);
     const bytes = canonicalBytes(incoming);
     // Swept here and not inside atomicWrite: this is the only write path the global mutex
     // serializes, so a matching sibling can only be an interrupted earlier write. `.registered`
@@ -1455,9 +1642,11 @@ async function handleGetGraph(request, response, url, state) {
   const children = {};
   for (const name of new Set(graph.nodes.map((node) => node.graph).filter(Boolean))) {
     const child = await validGraphPath(state.config, childPath(graphPath, name));
-    children[name] = (await readRaw(child)).exists;
+    try { children[name] = (await readRaw(child)).exists; }
+    catch { children[name] = false; }
   }
-  sendJson(response, 200, { hash: raw.hash, graph, children });
+  sendJson(response, 200, { hash: raw.hash, graph, children,
+    rollups: await graphRollups(graphPath, graph), updated: await graphUpdated(graphPath, graph) });
 }
 
 async function registeredPlanPath(config, value) {
@@ -1586,11 +1775,16 @@ async function planSummaries(config) {
       const line = frontmatter?.[1].match(/^status:\s*(.*)$/m);
       if (line) status = line[1].replace(/\s*#.*$/, '').trim();
     } catch { /* A plan without PLAN.md reports null status. */ }
+    const runPath = path.join(planPath, 'graphs', 'run.json');
+    let run = null;
+    try {
+      if (JSON.parse(await fsp.readFile(runPath, 'utf8')).run === true) run = runPath;
+    } catch { /* A malformed or absent run picture is not a list link. */ }
     plans.push({ dir: planPath, slug: path.basename(planPath),
       repo: path.basename(path.dirname(path.dirname(path.dirname(planPath)))), status,
       session: typeof entry?.session === 'string' ? entry.session : null,
       harness: ['claude', 'codex', 'other'].includes(entry?.harness) ? entry.harness : 'other',
-      added: Number(entry?.added) || 0 });
+      added: Number(entry?.added) || 0, run });
   }
   return plans.sort((left, right) => right.added - left.added || byteCompare(left.dir, right.dir));
 }

@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "title": "a child run picture",
+  "source": "plan-proposal",
+  "source_detail": "the plan",
+  "explanation": null,
+  "run": true,
+  "groups": [],
+  "nodes": [
+    { "id": "child", "label": "child work", "kind": "step", "origin": "proposed", "was": null, "exclusive": false, "ref": null, "note": null, "graph": null, "task": "T1", "status": "done", "needs": null, "x": 0, "y": 0 }
+  ],
+  "edges": []
+}
