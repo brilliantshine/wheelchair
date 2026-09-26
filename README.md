@@ -59,7 +59,7 @@ protocol/        canonical stage definitions — the single source of truth
   diagrams.md          where a diagram goes and what keeps it true: Mermaid on rendered
                        surfaces, arrow chains in terminals, redundant with its prose
   graphs.md            the graph format read by both harnesses: schema, verdicts,
-                       preservation, how the viewer starts
+                       preservation, how the viewer starts, run pictures
   sensitivity.md       the diagram-sensitivity dial: the region rendered into present
                        harnesses' always-on files, and what each level draws
   seen.md              what the reader has seen: the plan record SEEN.md, read and written
@@ -142,7 +142,7 @@ From either harness, in the target project:
 ```
 /plan <slug or description>   # build/resume the plan, one question at a time
 /plan-review <slug>           # review rounds, cross-family when available, until approved
-/implement <slug>             # lead + workers; ends with COMPLETION.md
+/implement <slug>             # lead + workers, with a live run picture; ends with COMPLETION.md
 /verify <slug>                # blind verify, cross-family when available; remediate until PASS
 /graph <question>             # answer a question with a picture instead of just prose
 /diagram-sensitivity [level]  # report the dial, or set it: ask, default, high
@@ -202,7 +202,8 @@ Artifacts live in the target repo at `docs/plans/<slug>/`:
 - **PLAN.md** — the mutating work: question queue, watch list, decision log, spec,
   accepted risks, review rounds, prior work, implementation tasks.
 - **`graphs/`** — one JSON file per flow discussed in Stage 1, opened in the browser
-  viewer; disposable, never a contract once the plan is done.
+  viewer; disposable, never a contract once the plan is done. Stage 3 adds `run.json`,
+  the run picture: each part of the change, what it's wired to, and how far along it is.
 - **COMPLETION.md**, **REMEDIATION-N.md** — implementation output and verification loops.
 
 The `status:` field in PLAN.md frontmatter is the state machine (`planning →

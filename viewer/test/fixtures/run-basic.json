@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "title": "a run picture",
+  "source": "plan-proposal",
+  "source_detail": "the plan",
+  "explanation": null,
+  "run": true,
+  "groups": [],
+  "nodes": [
+    { "id": "a", "label": "start", "kind": "step", "origin": "proposed", "was": null, "exclusive": false, "ref": null, "note": null, "graph": null, "task": "T1", "status": "not-started", "needs": null, "x": 0, "y": 0 },
+    { "id": "b", "label": "finish", "kind": "store", "origin": "proposed", "was": null, "exclusive": false, "ref": null, "note": null, "graph": null, "task": "T2", "status": "not-started", "needs": null, "x": 0, "y": 0 }
+  ],
+  "edges": [
+    { "id": "a-b", "from": "a", "to": "b", "label": "", "kind": "sequence", "value": null, "inferred": false, "origin": "proposed", "was": null, "note": null }
+  ]
+}

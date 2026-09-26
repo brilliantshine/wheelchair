@@ -22,14 +22,14 @@ lands at one of the statuses the machine already has.
 |---|---|
 | `planning.md` | Stage 1. Map the code before the idea; one question at a time, the queue lives in the doc |
 | `plan-review.md` | Stage 2. Two independent adversarial reviewers; the lead adjudicates every finding |
-| `implementation.md` | Stage 3. The lead briefs and integrates, cheap lanes implement |
+| `implementation.md` | Stage 3. The lead briefs and integrates, draws and keeps current the run picture, cheap lanes implement |
 | `verification.md` | Stage 4. A fresh verifier tries to falsify the completion claims |
 | `adopt.md` | The on-ramp for a plan document written elsewhere |
 | `lanes.md` | How every stage spawns a subagent. **The only place invocations live** |
 | `writing.md` | How anything a person reads is written. Governs messages, not documents |
 | `map.md` | How to explain existing code: flow first, grounded in `file:line`, no filler |
 | `diagrams.md` | Which diagram a document gets, and what keeps it from lying |
-| `graphs.md` | The graph format read by both harnesses — schema, verdicts, preservation, how the viewer starts |
+| `graphs.md` | The graph format read by both harnesses — schema, verdicts, preservation, how the viewer starts, the run-picture switch |
 | `sensitivity.md` | The diagram-sensitivity dial: the region rendered into present harnesses' always-on files, and what each level draws |
 | `seen.md` | What the reader has seen: the plan record `docs/plans/<slug>/SEEN.md`, the wording list, and the hook that carries the wording list and a gap notice into every turn |
 | `routers.md` | The router format — what `/spine` creates and the Stage 3 upkeep rule maintains |
