@@ -1,0 +1,239 @@
+{
+  "schema": 1,
+  "title": "what one box on the run picture should stand for",
+  "source": "plan-proposal",
+  "source_detail": "implementation-view Q1, drawn with the arriving-cold run (tasks T1–T3) as the example",
+  "explanation": "The same run drawn two ways. [One box per piece of the design](#by-part) shows what feeds what and which files get written, with each box saying which task builds it. [One box per task](#by-task) is the task table as a picture: easier to draw, but the wording list, the settings files and the hook disappear inside three boxes. Leaves out statuses and sockets, which come later.",
+  "groups": [
+    {
+      "id": "by-part",
+      "label": "(a) one box per piece of the design",
+      "note": "Status comes from the task that builds each piece.",
+      "visible": true,
+      "nodes": [
+        "p-hook",
+        "p-install",
+        "p-list",
+        "p-rules",
+        "p-settings",
+        "p-wording"
+      ]
+    },
+    {
+      "id": "by-task",
+      "label": "(b) one box per worker task",
+      "note": "Arrows mean this task needed that one first.",
+      "visible": true,
+      "nodes": [
+        "t1",
+        "t2",
+        "t3"
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "p-hook",
+      "label": "each turn, hand the confirmed wording to the agent — built by T1",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": "seen/hook.sh",
+      "note": null,
+      "graph": null,
+      "x": 198,
+      "y": 482
+    },
+    {
+      "id": "p-install",
+      "label": "write the hook into each harness's settings — built by T2",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": "seen/set.sh",
+      "note": null,
+      "graph": null,
+      "x": 24,
+      "y": 62
+    },
+    {
+      "id": "p-list",
+      "label": "the wording list",
+      "kind": "file",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": "~/.wheelchair/wording.md",
+      "graph": null,
+      "x": 234,
+      "y": 342
+    },
+    {
+      "id": "p-rules",
+      "label": "the rules every stage follows — built by T3",
+      "kind": "file",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": "protocol/seen.md",
+      "note": null,
+      "graph": null,
+      "x": 284,
+      "y": 62
+    },
+    {
+      "id": "p-settings",
+      "label": "Claude Code and Codex settings files",
+      "kind": "external",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 24,
+      "y": 202
+    },
+    {
+      "id": "p-wording",
+      "label": "add, confirm or strike a phrase — built by T1",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": "seen/wording.sh",
+      "note": null,
+      "graph": null,
+      "x": 284,
+      "y": 202
+    },
+    {
+      "id": "t1",
+      "label": "T1: the hook and the wording script",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 922,
+      "y": 62
+    },
+    {
+      "id": "t2",
+      "label": "T2: the installer",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 792,
+      "y": 202
+    },
+    {
+      "id": "t3",
+      "label": "T3: the rules documents",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 1052,
+      "y": 202
+    }
+  ],
+  "edges": [
+    {
+      "id": "install->settings",
+      "from": "p-install",
+      "to": "p-settings",
+      "label": "writes",
+      "kind": "data",
+      "value": "the hook entry",
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "list->hook",
+      "from": "p-list",
+      "to": "p-hook",
+      "label": "read each turn",
+      "kind": "data",
+      "value": "confirmed phrases",
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "rules->wording",
+      "from": "p-rules",
+      "to": "p-wording",
+      "label": "says when to suggest",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "settings->hook",
+      "from": "p-settings",
+      "to": "p-hook",
+      "label": "runs",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "t1->t2",
+      "from": "t1",
+      "to": "t2",
+      "label": "needs the hook's path",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "t1->t3",
+      "from": "t1",
+      "to": "t3",
+      "label": "needs the scripts to describe",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "wording->list",
+      "from": "p-wording",
+      "to": "p-list",
+      "label": "writes",
+      "kind": "data",
+      "value": "a phrase and what to say instead",
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    }
+  ]
+}

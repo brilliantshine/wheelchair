@@ -1,0 +1,220 @@
+{
+  "schema": 1,
+  "title": "what happens to a choice a worker made on its own, under the recommended option",
+  "source": "plan-proposal",
+  "source_detail": "implementation-view Q3, option (b)",
+  "explanation": "Under option (b), a worker's choice becomes its own small box wired to the part it affected, and [your ruling](#ruling) is the only step that involves you. Nothing waits on you: a choice you never rule on counts as fine. A struck one comes back as a follow-up task before [the end of the run](#end). Options (a) and (c) aren't drawn. (a) stops at the new box, and (c) stops the whole run at a strike.",
+  "groups": [
+    {
+      "id": "end",
+      "label": null,
+      "note": null,
+      "visible": false,
+      "nodes": [
+        "completion",
+        "sweep"
+      ]
+    },
+    {
+      "id": "ruling",
+      "label": null,
+      "note": null,
+      "visible": false,
+      "nodes": [
+        "rule"
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "accept",
+      "label": "lead re-runs the checks and accepts the work",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": "protocol/implementation.md",
+      "note": null,
+      "graph": null,
+      "x": 130,
+      "y": 140
+    },
+    {
+      "id": "completion",
+      "label": "COMPLETION.md written, then verification",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": "protocol/templates/COMPLETION.md",
+      "note": null,
+      "graph": null,
+      "x": 260,
+      "y": 840
+    },
+    {
+      "id": "draw",
+      "label": "each choice becomes a small box wired to the part it affected",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 130,
+      "y": 280
+    },
+    {
+      "id": "fine",
+      "label": "counts as fine; nothing happens",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 0,
+      "y": 560
+    },
+    {
+      "id": "followup",
+      "label": "each becomes a follow-up task; its part goes back to in progress",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 260,
+      "y": 700
+    },
+    {
+      "id": "report",
+      "label": "worker finishes, listing choices its brief didn't settle",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 130,
+      "y": 0
+    },
+    {
+      "id": "rule",
+      "label": "you agree, strike, or leave it",
+      "kind": "decision",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": true,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 130,
+      "y": 420
+    },
+    {
+      "id": "sweep",
+      "label": "before the write-up, lead collects every struck choice",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 260,
+      "y": 560
+    }
+  ],
+  "edges": [
+    {
+      "id": "accept->draw",
+      "from": "accept",
+      "to": "draw",
+      "label": "then",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "draw->rule",
+      "from": "draw",
+      "to": "rule",
+      "label": "shown on the picture",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "followup->completion",
+      "from": "followup",
+      "to": "completion",
+      "label": "once they pass",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "report->accept",
+      "from": "report",
+      "to": "accept",
+      "label": "hands back",
+      "kind": "data",
+      "value": "the work and its list of choices",
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "rule->fine",
+      "from": "rule",
+      "to": "fine",
+      "label": "agreed or left alone",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "rule->sweep",
+      "from": "rule",
+      "to": "sweep",
+      "label": "struck",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "sweep->followup",
+      "from": "sweep",
+      "to": "followup",
+      "label": "one per struck choice",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    }
+  ]
+}

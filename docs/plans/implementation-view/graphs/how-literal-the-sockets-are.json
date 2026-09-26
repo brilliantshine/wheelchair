@@ -1,0 +1,183 @@
+{
+  "schema": 1,
+  "title": "how literal a box's inputs and outputs should be",
+  "source": "plan-proposal",
+  "source_detail": "implementation-view Q2, drawn with the arriving-cold hook as the example",
+  "explanation": "The same two pieces of the design under each option. [Declared sockets](#declared) can list an input nothing feeds, which is the failure to look for. [Sockets made from the wires](#derived) look the same on screen but can't disagree with the wires. [No sockets](#none) is today's arrows laid out sideways. Doesn't show what any of this costs in the viewer.",
+  "groups": [
+    {
+      "id": "declared",
+      "label": "(a) sockets declared on each box",
+      "note": "The author lists inputs and outputs, then wires them.",
+      "visible": true,
+      "nodes": [
+        "a-gap",
+        "a-hook",
+        "a-list"
+      ]
+    },
+    {
+      "id": "derived",
+      "label": "(b) sockets made from the wires",
+      "note": "Each named thing arriving or leaving becomes a socket.",
+      "visible": true,
+      "nodes": [
+        "b-hook",
+        "b-list"
+      ]
+    },
+    {
+      "id": "none",
+      "label": "(c) no sockets",
+      "note": "Named arrows run box to box, left to right.",
+      "visible": true,
+      "nodes": [
+        "c-hook",
+        "c-list"
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "a-gap",
+      "label": "'session clock' is listed as an input, but no wire feeds it",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 24,
+      "y": 342
+    },
+    {
+      "id": "a-hook",
+      "label": "each turn, hand wording to the agent — in: confirmed phrases, session clock",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 24,
+      "y": 202
+    },
+    {
+      "id": "a-list",
+      "label": "the wording list — out: confirmed phrases",
+      "kind": "file",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 24,
+      "y": 62
+    },
+    {
+      "id": "b-hook",
+      "label": "each turn, hand wording to the agent — in: confirmed phrases",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 532,
+      "y": 202
+    },
+    {
+      "id": "b-list",
+      "label": "the wording list — out: confirmed phrases",
+      "kind": "file",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 532,
+      "y": 62
+    },
+    {
+      "id": "c-hook",
+      "label": "each turn, hand wording to the agent",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 1040,
+      "y": 202
+    },
+    {
+      "id": "c-list",
+      "label": "the wording list",
+      "kind": "file",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 1040,
+      "y": 62
+    }
+  ],
+  "edges": [
+    {
+      "id": "a-hook->a-gap",
+      "from": "a-hook",
+      "to": "a-gap",
+      "label": "can happen",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "a-list->a-hook",
+      "from": "a-list",
+      "to": "a-hook",
+      "label": "wire",
+      "kind": "data",
+      "value": "confirmed phrases",
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "b-list->b-hook",
+      "from": "b-list",
+      "to": "b-hook",
+      "label": "wire",
+      "kind": "data",
+      "value": "confirmed phrases",
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "c-list->c-hook",
+      "from": "c-list",
+      "to": "c-hook",
+      "label": "arrow",
+      "kind": "data",
+      "value": "confirmed phrases",
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    }
+  ]
+}
