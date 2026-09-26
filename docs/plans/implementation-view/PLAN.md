@@ -916,8 +916,8 @@ Filled by Stage 3. One row per worker brief.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | Server side of run pictures: format fields, kinds and refusals, canonical omission, preservation and `/view` rules, `rollups`/`updated`, left-to-right layout with box reservation and the keep-positions rule, list `run` field, with server tests (Spec "Format additions", "The list page") | `viewer/server.js`, `viewer/test/run.test.js` (new), `viewer/test/fixtures/run-*.json` (new) | GPT / gpt-5.6-terra (worktree `iv-t1`) | | `node --test viewer/test/*.test.js` | dispatched |
-| T2 | Page side of run pictures: sockets and curved wires, box contents, statuses, choice boxes, rollup polling, reserved-name fatal and recovery, age text, tab title and notifications, list link, with browser tests (Spec "Sockets and wires", "Statuses and needs-you on the page", "The list page") | `viewer/index.html`, `viewer/list.js`, `viewer/test/run.spec.js` (new) | Claude / sonnet (after T1 merges) | | `npm --prefix viewer run test:browser` | not started |
+| T1 | Server side of run pictures: format fields, kinds and refusals, canonical omission, preservation and `/view` rules, `rollups`/`updated`, left-to-right layout with box reservation and the keep-positions rule, list `run` field, with server tests (Spec "Format additions", "The list page") | `viewer/server.js`, `viewer/test/run.test.js` (new), `viewer/test/fixtures/run-*.json` (new) | GPT / gpt-5.6-terra (worktree `iv-t1`) | `01a0dc3c-eb22-75b2-941e-1ef159e76374` | `node --test viewer/test/*.test.js` | done — lead re-ran: 130/131, the one failure pre-existing; diff read against the Spec; merged `c0ad3d2` |
+| T2 | Page side of run pictures: sockets and curved wires, box contents, statuses, choice boxes, rollup polling, reserved-name fatal and recovery, age text, tab title and notifications, list link, with browser tests (Spec "Sockets and wires", "Statuses and needs-you on the page", "The list page") | `viewer/index.html`, `viewer/list.js`, `viewer/test/run.spec.js` (new) | Claude / sonnet (worktree `iv-t2`, after T1 merged) | | `npm --prefix viewer run test:browser` | dispatched |
 | T3 | The prose: `protocol/graphs.md` "Run pictures" section, key order and refusal table; `protocol/implementation.md` steps and start-of-run paragraph; `protocol/lanes.md` login section and exit-2 wording; routers | `protocol/graphs.md`, `protocol/implementation.md`, `protocol/lanes.md`, `AGENTS.md`, `protocol/AGENTS.md` | Claude / sonnet (worktree `iv-t3`) | | read against the Spec; `git diff --stat` | dispatched |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
@@ -973,3 +973,7 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
   passed; server suite 124 of 125, with `lifecycle.test.js` "a starter that loses the freed port
   registers through the new holder" failing three times out of three on the untouched branch.
   That failure is pre-existing and out of scope.
+- 2026-09-25 — T1 accepted and merged. Choice: the reserved-name check applies to files directly
+  inside a directory named `graphs` (T1, run-name check). Choice: an unreadable child reports
+  `children[name]: false` alongside rollup `cut: true` (T1, GET). Residual: the rollup test has no
+  case with `needs-you` next to `done` nodes in one child; the code's precedence was read and is correct.
