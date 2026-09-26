@@ -225,10 +225,10 @@ dispatch rule:
 - `1` — transient refresh failure (network, 5xx). **Sequence GPT lanes this session**; the
   token may expire mid-session and sequencing is the only thing that makes a mid-run refresh
   single-spender.
-- `2` — the refresh token itself was rejected. No lane will authenticate; stop and report.
-  Recovery is `codex login --device-auth` headlessly, or the browser flow at a desk. (The
-  browser flow runs `codex logout` first and cannot complete over SSH, so a failed attempt
-  leaves things strictly worse off.)
+- `2` — the refresh token itself was rejected. No GPT lane will authenticate: dispatch
+  none, and report. Recovery is `codex login --device-auth` headlessly, or the browser
+  flow at a desk. (The browser flow runs `codex logout` first and cannot complete over
+  SSH, so a failed attempt leaves things strictly worse off.)
 
 Never copy `auth.json` or an auth directory to give a lane "its own" credential, and never run
 `codex login` while lanes are in flight — both are second claims on the one-shot ticket.
@@ -236,3 +236,17 @@ Never copy `auth.json` or an auth directory to give a lane "its own" credential,
 The preflight's own refresh exchange (near-expiry branch) is ported from the retired
 balancer's `codex-oauth.ts` but has not yet been exercised against a live near-expiry token;
 its fresh-token, missing-auth, and rejected-token branches are verified.
+
+## Checking a lane can log in
+
+Used by the implementation lead's ask-at-start step (`protocol/implementation.md`),
+which checks every lane a run's briefs use before dispatching anyone:
+
+- **GPT lane:** `codex/preflight.sh`, as today. Exit `2` means it can't log in. Exit `0`
+  or `1` means no login problem was found. That isn't proof, since a login revoked on
+  the server still passes, and a failure found later is handled as a mid-run failure.
+- **Claude lane from Claude Code:** the Agent tool runs on the lead's own session, so it
+  counts as logged in and needs no check.
+- **Claude lane from Codex:** run `WHEELCHAIR_LANE=1 claude -p "Reply with the single
+  word ok."`. Output of `ok`, ignoring case and surrounding whitespace, means logged in.
+  Anything else, or a non-zero exit, is a login failure, reported with what it printed.

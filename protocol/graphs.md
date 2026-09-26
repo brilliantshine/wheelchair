@@ -223,11 +223,32 @@ Field by field:
            h: (maxY - minY) + 2 * GROUP_PAD + GROUP_HEADER }
   ```
 
-  The page measures each node's real height; the server holds every node to a fixed
-  200-by-116 box regardless, and that fixed height now sets how tall a row of boxes is
-  laid out as well as a group's rectangle. Either way the server's box is never smaller
-  than the page's, only ever taller — the disagreement can only add clearance somewhere,
-  never leave a box crowded or inside a boundary that should clear it.
+  The page measures each node's real height; the server holds every non-run-picture node
+  to a fixed 200-by-116 box regardless, and that fixed height now sets how tall a row of
+  boxes is laid out as well as a group's rectangle. Either way the server's box is never
+  smaller than the page's, only ever taller — the disagreement can only add clearance
+  somewhere, never leave a box crowded or inside a boundary that should clear it.
+
+  A run-picture box reserves its height differently, since what it holds varies with its
+  status and its socket count. Top to bottom: the status tag line (20px, absent when
+  `status` and any rollup are null); the label, wrapped exactly as any label (at most
+  five lines of 24 characters, 16px each, with a container's shorter first line so it
+  clears the child badge, `viewer/index.html:885-894`); on a `needs-you` box, or a
+  container rolled up to `needs-you`, the `needs` text (a container shows its rollup's
+  first entry, followed by "+N more" when there are others), wrapped to at most three
+  lines of 24 characters with an ellipsis; then one 20px row per socket, taking the
+  larger of the input and output counts. A socket name longer than 22 characters is cut
+  with an ellipsis; the full text of anything cut is in the detail panel and the
+  element's hover title. The server reserves the most a box could ever need, so a
+  status-only write never changes its reserved size — the numbers are stated once here,
+  beside `GROUP_PAD`, and copied into both `viewer/server.js` and `viewer/index.html`:
+
+  ```
+  reservedHeight = 22 + 20 + 5 * 16 + 3 * 16 + 20 * max(1, inputs, outputs) + 14
+  ```
+
+  See "Run pictures" below for everything else that's specific to that one kind of
+  graph.
 
   See "What the server refuses" below for what an entry that's missing, malformed,
   unreferenced, or drawn wrong draws.
@@ -242,11 +263,13 @@ Field by field:
   characters** — five full lines plus the four spaces at the breaks. Treat that as a
   ceiling, not a budget: wrapping breaks on whole words, so a label whose words fall badly
   truncates well short of it.
-- **`kind`** (node) — one of `file`, `module`, `step`, `decision`, `external`, `note`.
-  It is metadata, rendered as a text tag on the box, and it drives no shape. The server
-  checks every entry against that list and refuses anything else with `bad-kind`, naming
-  the offending id — a typo here is a write-time failure, not just a worse tag. Omitting
-  `kind` is not a typo: it still defaults to `note`, same as before.
+- **`kind`** (node) — one of `file`, `module`, `step`, `decision`, `external`, `note`,
+  `store` (a database, cache, or state file the change reads or writes; legal on every
+  graph). It is metadata, rendered as a text tag on the box, and it drives no shape. The
+  server checks every entry against that list and refuses anything else with `bad-kind`,
+  naming the offending id — a typo here is a write-time failure, not just a worse tag.
+  Omitting `kind` is not a typo: it still defaults to `note`, same as before. `choice` is
+  also a legal kind, but only on a run picture (`run: true`) — see "Run pictures" below.
 - **`origin`** — one of `proposed`, `agreed`, `rejected`, checked against exactly that
   set (`bad-origin-value` otherwise). See Verdicts below; an agent never sends anything
   but `proposed` for content it is introducing.
@@ -304,15 +327,23 @@ crowding one graph past the point Collin can read it.
 ## Key order and canonical form
 
 The file on disk is byte-canonical, always. Top-level keys, in this exact order:
-`schema`, `title`, `source`, `source_detail`, `explanation`, `groups`, `nodes`, `edges`.
-Group keys: `id`, `label`, `note`, `visible`, `nodes`. Node keys: `id`,
-`label`, `kind`, `origin`, `was`, `exclusive`, `ref`, `note`, `graph`, `x`, `y`. Edge
-keys: `id`, `from`, `to`, `label`, `kind`, `value`, `inferred`, `origin`, `was`, `note`.
+`schema`, `title`, `source`, `source_detail`, `explanation`, `run`, `groups`, `nodes`,
+`edges`. Group keys: `id`, `label`, `note`, `visible`, `nodes`. Node keys: `id`,
+`label`, `kind`, `origin`, `was`, `exclusive`, `ref`, `note`, `graph`, `task`, `status`,
+`needs`, `x`, `y`. Edge keys: `id`, `from`, `to`, `label`, `kind`, `value`, `inferred`,
+`origin`, `was`, `note`.
 
 **Every key is present on every entry**, `null` or `false` where it doesn't apply. An
 omitted key and a null one would serialize identically otherwise, and byte-identity —
 re-serializing an already-canonical file must produce the same bytes — needs one
 answer, not two that happen to look alike.
+
+Two keys are the deliberate exception, both there so every graph already on disk stays
+byte-identical now that this section exists. Top-level **`run`** is omitted from
+canonical bytes when it's `false` — the only top-level key ever absent. And on a node
+where the graph's own `run` is `false`, **`task`, `status` and `needs`** are omitted
+together, but only when all three are `null` — which they always are on such a graph,
+since setting any of them there is refused (see "Run pictures" below).
 
 Two-space indent, `nodes`, `edges`, and `groups` each sorted by `id`, one trailing
 newline, `x`/`y` always integers (rounded half-up). A group's own `nodes` list is
@@ -323,12 +354,13 @@ canonicalizes: your `PUT` body can have keys in any order, can omit anything tha
 default, and never needs sorting or reindenting. What you're required to get right is
 the *shape* — the fields the server actually checks — not the formatting.
 
-Defaults applied when canonicalizing a body that omits a key: top-level `explanation` →
-`null`, `groups` → `[]`. Group `visible` → `false` when the key is **absent** — an explicit
+Defaults applied when canonicalizing a body that omits a key: top-level `run` → `false`,
+`explanation` → `null`, `groups` → `[]`. Group `visible` → `false` when the key is **absent** — an explicit
 `visible: null` is a non-boolean and draws `group-bad-shape`, the one key here where a null and a
 missing key differ. Group `label`/`note` → `null`. Node `kind` → `"note"`,
 `origin` → `"proposed"`, `was` → `null`, `exclusive` → `false`, `ref`/`note`/`graph` →
-`null`. Edge `kind` → `"sequence"`, `value` → `null`, `inferred` → `false`, `origin` →
+`null`, `task`/`status`/`needs` → `null`. Edge `kind` → `"sequence"`, `value` → `null`,
+`inferred` → `false`, `origin` →
 `"proposed"`, `was` → `null`, `note` → `null`. **`label` has no default** — omit it and
 the write is refused, not repaired.
 
@@ -678,6 +710,159 @@ can, however, detect that accepting this write would make itself reachable from 
 and that it refuses unconditionally. A write that legitimately nests seven files deep is
 accepted; a write that would close a loop is not, regardless of depth.
 
+## Run pictures
+
+A **run picture** is a plan graph with one new top-level switch turned on: `run: true`.
+The implementation lead draws it at the start of Stage 3 and keeps it current through
+the run — `protocol/implementation.md` says when and how. This section is the format
+those writes and reads obey. Only a graph with `run: true` uses any of what follows;
+every other graph, including every graph already on disk, renders and canonicalizes
+byte-identically to before this section existed.
+
+### The `run` switch
+
+Top-level **`run`**, boolean, default `false`. Its canonical position is directly after
+`explanation` (see "Key order and canonical form" above). Canonical bytes omit it when
+it's `false` — the one top-level key allowed to be absent on disk, so every existing
+file stays byte-identical. Any non-boolean value is `unknown-schema`.
+
+### `task`, `status`, `needs`
+
+Three new node keys, canonical position directly after `graph` and before `x`:
+
+- **`task`** — string or `null`. The Implementation Tasks row id (`T1`, `T4`…) of the
+  task building this piece, or of the task whose worker made this choice. The one other
+  value is `prior`, meaning built before this run — that covers both work carried over
+  from an earlier, restarted run and work that came in already built with an adopted
+  plan. The server checks only that it's a non-empty string.
+- **`status`** — one of `not-started`, `in-progress`, `done`, `needs-you`, or `null`.
+- **`needs`** — string or `null`. What Collin has to do, in plain words with no commands
+  or code terms ("log in to Codex again") — the exact command belongs in the lead's turn
+  message, never on the picture. Non-empty exactly when `status` is `needs-you`, `null`
+  otherwise.
+
+Outside a container or a `choice`, `task` and `status` travel together: both `null`, or
+both set — one set without the other is refused (`status-without-task`). A node with
+both `null` is legal: that's a store, outside system, or file the change touches but no
+task builds, and it renders with no status of its own. A container node (non-null
+`graph`) never carries its own `status` — its status is always rolled up from its child
+(see "`rollups` and `updated`" below), and a non-null `status` on one is refused
+(`container-status`). A `choice` node is the other exception: it always carries a
+non-null `task` and a `null` `status` (see "`store` and `choice`" below).
+
+On a graph with `run: false`, the three keys are omitted from canonical bytes when all
+three are `null`, for the same byte-identity reason as `run` itself.
+
+### `store` and `choice`
+
+Two new node kinds. **`store`** — a database, cache, or state file the change reads or
+writes — is legal on every graph, run picture or not. **`choice`** — a worker's own
+decision, reported in its brief and drawn by the lead next to the part it affected — is
+legal only on a run picture; on any other graph it's refused the same way a non-null
+`task`, `status`, or `needs` is (`run-field`, below). A `choice` node carries a non-null
+`task` (the task whose worker made the choice), a `null` `status` — a choice is never
+itself in progress or done — and at least one outgoing edge to a node that isn't
+another `choice`, wired to the part it affected. All three shape checks together draw
+`choice-shape`.
+
+### Reserved names and one-level nesting
+
+`run.json` and `run-*.json`, anywhere in a plan's `graphs/` directory, are reserved for
+run pictures: writing either name with `run: false` is refused (`run-name`). A run
+picture nests one level only: `run.json` may hold container nodes naming `run-<id>`
+children, and those children hold none. A container inside a file that isn't named
+`run.json`, or one on `run.json` naming a child whose name doesn't match
+`run-[a-z0-9_-]+`, is refused (`run-nesting`). This narrows the general depth-5
+traversal bound above to exactly one level for a run picture, so a rollup never has to
+walk further than a single child file.
+
+### `rollups` and `updated`
+
+`GET /wheelchair/graph` gains two keys on a run picture, computed on each read and never
+written to disk:
+
+- **`rollups`** maps each container node's `graph` name to `{status, needs, cut}` for
+  that one child file:
+  - `status` is `needs-you` if any node in the child has it, else `done` if every node
+    carrying a status is `done`, else `not-started` if every one is `not-started`,
+    otherwise `in-progress`. It's `null` when the child has no statused node, or is
+    missing, unreadable, or not itself a run picture.
+  - `needs` lists every `needs-you` node in the child, as `{id, label, needs}` sorted by
+    `id` — `[]` when there are none.
+  - `cut` is `true` exactly when the child is missing, unreadable, or not a run picture
+    (the same condition that gives `status: null` for a reason other than "nothing
+    started or statused"); otherwise `false`.
+
+  `{}` on a graph that isn't a run picture.
+- **`updated`** is the newest modification time, in milliseconds, among this file and its
+  direct children — so a child's progress refreshes the root's age too. On a graph that
+  isn't a run picture, it's just this file's own modification time.
+
+### Left-to-right layout
+
+A run picture lays out left to right instead of top to bottom: the same layered
+algorithm as any graph, groups first, with the axes swapped. A layer is a column, every
+arrow points right after cycle-breaking, and crossing reduction orders boxes within a
+column. Box width and height swap roles in every spacing constant (`LAYER_GAP`,
+`NODE_PITCH`, `COMPONENT_GAP`, the group padding stated above). Pieces that share no
+arrow sit in separate bands stacked down the page, not side by side — the same rule as
+any graph, just turned on its side.
+
+A run-picture box's contents and reserved height are not the fixed 200-by-116 box every
+other node gets; they're stated once, beside `GROUP_PAD` in "The schema" above, and
+copied into both `viewer/server.js` and `viewer/index.html`. Because the reservation
+doesn't depend on `status` or `needs`, a status-only write never changes a box's
+reserved size.
+
+### A write keeps positions when nothing but status changed
+
+The inputs to a run picture's layout are the set of node ids, each node's `graph` value,
+the set of edges as `(id, from, to, value)`, and each group's `id`, `visible`, and
+members. If all of these equal what's already on disk, every `x`/`y` is copied from
+disk, dragged positions included, and nothing is laid out again. Otherwise the whole
+picture is laid out fresh, as any graph always is. This is the one narrowing of "every
+write lays the whole graph out fresh" above, and it applies only to a run picture: a
+plain graph still relays out on every write. A write that adds a `choice` box changes
+the node set, so it lays the picture out again and drops any drags — accepted as a known
+cost of showing a new choice.
+
+### Sockets made from wires (`viewer/index.html`)
+
+A box's sockets are never declared; the page computes them from its edges. Each distinct
+non-null `value` among a box's incoming `data` edges is one named input socket, down its
+left edge, sorted by value; each distinct `value` among its outgoing `data` edges is one
+named output socket, down its right edge. Incoming `sequence` edges, and `data` edges
+with a null `value`, share one unnamed input socket, placed first — the same holds for
+outgoing edges on the right — and that unnamed socket exists only when such an edge
+does. An edge is drawn from its output socket on the `from` box to its input socket on
+the `to` box, as a cubic curve with horizontal tangents at both ends; one whose `to`
+isn't right of its `from` (a loop back) bows out below the two boxes rather than
+reversing direction. A socket's name is printed inside the box beside its dot; the
+edge's own `label` is printed along the curve, as on any graph, and an `exclusive` box
+keeps its `if <label>` wording. The face-slotting a plain graph uses for its arrows
+(`viewer/index.html:253-263`) doesn't apply here — sockets replace it entirely. A
+`choice` box is wired to the part it affected by a `sequence` edge labelled "chosen
+while building this", so it lands on that part's unnamed input socket rather than
+adding a named one of its own.
+
+### The preservation exemption
+
+**`task`, `status`, and `needs` join `x`/`y`** as fields `sameExceptPosition`
+(`viewer/server.js:325`) ignores — see "Verdicts and the preservation contract" above.
+An agent may change any of the three on an `agreed` or `rejected` entry without
+resetting it; that's what lets the lead mark an accepted task's boxes `done` without
+wiping Collin's ruling. The page's `PUT /view` may never change any of the three,
+though, so a difference in any of them there is a `structural-difference`
+(`checkViewChanges`, `viewer/server.js:1349`) exactly as an unexpected content change is
+today. `run` itself is compared like `title`: the page never changes it either.
+
+### The list page
+
+`GET /wheelchair/list` adds `run` to each plan entry: the absolute path of
+`graphs/run.json` when that file exists and parses with `run: true`, and `null`
+otherwise. `viewer/list.js` shows a "run picture" link on a plan's entry when `run` is
+non-null.
+
 ## What the server refuses
 
 Every non-2xx response is `{"error": "<code>", "detail": "<one sentence>"}`, plus `ids`
@@ -701,7 +886,7 @@ them:
 | 409 | `stale` | the hash you sent doesn't match what's on disk; the body carries the current one |
 | 422 | `unknown-schema` | `schema` isn't `1`, or a top-level field is the wrong type — `title` or `source` not a string, `source` outside the closed set, `source_detail` or `explanation` neither a string nor `null`, `nodes`, `edges`, or `groups` not an array |
 | 422 | `missing-label` | a node or edge has no `label` |
-| 422 | `bad-kind` | a node's `kind` is outside `file`/`module`/`step`/`decision`/`external`/`note`, or an edge's is outside `data`/`sequence`. A missing `kind` is not this — it defaults instead |
+| 422 | `bad-kind` | a node's `kind` is outside `file`/`module`/`step`/`decision`/`external`/`note`/`store`/`choice`, or an edge's is outside `data`/`sequence`. A missing `kind` is not this — it defaults instead |
 | 422 | `bad-id` | an id is missing, empty, or duplicated — nodes, edges, and groups are each their own namespace, and a group entry that isn't even an object counts as a bad id too |
 | 422 | `group-bad-name` | a group id outside `^[a-z0-9_-]+$` |
 | 422 | `group-missing-node` | a group's `nodes` is missing, not an array of strings, empty, or names an id that isn't a node in this file |
@@ -721,6 +906,16 @@ them:
 | 422 | `preservation-rejected` | a `rejected` entry was dropped, altered, or its id reused |
 | 422 | `preservation-agreed` | an `agreed` entry was dropped without a landed reset, or altered without resetting |
 | 422 | `bad-was` | `was` carries a value this write isn't allowed to set |
+| 422 | `run-field` | `run` is `false` and some node has non-null `task`, `status` or `needs`, or has kind `choice` |
+| 422 | `run-field-shape` | `task` or `needs` is neither a non-empty string nor `null` |
+| 422 | `bad-status` | `status` outside the four values and `null` |
+| 422 | `status-without-task` | `status` non-null with `task` null, or the reverse, on a node that isn't a container or a `choice` |
+| 422 | `needs-missing` | `status` is `needs-you` and `needs` is null or empty |
+| 422 | `needs-hidden` | `needs` non-null while `status` isn't `needs-you` |
+| 422 | `choice-shape` | a `choice` node with a null `task`, a non-null `status`, or no outgoing edge to a non-`choice` node |
+| 422 | `container-status` | a container node (non-null `graph`) on a run picture with non-null `status`. Its status is always rolled up, never set |
+| 422 | `run-name` | a file named `run.json` or `run-*.json` in a plan's `graphs/` directory is written with `run: false`. The names are reserved for run pictures |
+| 422 | `run-nesting` | a run picture whose file isn't named `run.json` contains a container node, or a container on `run.json` names a child that doesn't match `run-[a-z0-9_-]+` |
 | 422 | `container-cycle` | this write would make some file reachable from itself through `graph` fields |
 | 422 | `container-orphan` | removing or retargeting a container would strand a subtree holding a verdict |
 | 422 | `container-unreadable-child` | that subtree walk hit a child file that doesn't parse, so it can't be shown to hold no verdicts. Repair the child by hand; the server never repairs one |
