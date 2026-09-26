@@ -147,6 +147,114 @@ test('status tags and needs text render, and a choice box carries no status', as
 });
 
 // ============================================================================================
+// Every run box's top line is always present and carries the kind tag (D57), whether or not the
+// box also has a status: `db` (kind `store`) has no status at all, and `worker` (kind `step`,
+// status `in-progress`) carries both tags on the same line.
+// ============================================================================================
+test('a run box always shows its kind tag, with or without a status', async ({ page }) => {
+  const ctx = await launchRun(socketsGraph());
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const db = nodeGroup(page, 'db');
+    await expect(db.locator('.status-tag')).toHaveCount(0);
+    await expect(db.locator('.node-kind')).toHaveText('store');
+
+    const worker = nodeGroup(page, 'worker');
+    await expect(worker.locator('.status-tag')).toHaveText('in progress');
+    await expect(worker.locator('.node-kind')).toHaveText('step');
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// A loop-back wire (D58): two cubic segments, an exactly horizontal tangent at each real
+// endpoint (the first control point's y equals the start y; the last control point's y equals
+// the end y), and a low point strictly below both boxes' bottoms in between.
+// ============================================================================================
+function loopBackGraph() {
+  return {
+    schema: 1, title: 'loop back', source: 'plan-proposal', source_detail: null,
+    explanation: null, run: true, groups: [],
+    nodes: [
+      { id: 'a', label: 'receive it back', kind: 'step', task: 'T1', status: 'not-started', needs: null, graph: null, x: 0, y: 0 },
+      { id: 'b', label: 'kick off the very first pass through this entire run', kind: 'step', task: 'T2', status: 'in-progress', needs: null, graph: null, x: 500, y: 0 },
+    ],
+    edges: [
+      { id: 'e-back', from: 'b', to: 'a', kind: 'data', value: 'retry-signal', label: 'try again' },
+    ],
+  };
+}
+
+test("a loop-back wire is horizontal at both sockets and bows below both boxes' bottoms", async ({ page }) => {
+  const ctx = await launchRun(loopBackGraph());
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    // `b`'s label wraps to more lines than `a`'s, so the two boxes have different heights — the
+    // low point has to clear the taller of the two, not just a shared constant.
+    const heightA = Number(await nodeGroup(page, 'a').locator('.node-box').getAttribute('height'));
+    const heightB = Number(await nodeGroup(page, 'b').locator('.node-box').getAttribute('height'));
+    assert.notEqual(heightA, heightB, 'expected the two boxes to differ in height for this probe to be meaningful');
+    const bottomA = 0 + heightA, bottomB = 0 + heightB;
+
+    const d = await page.locator('svg#canvas g.edge[data-id="e-back"] path.edge-line').getAttribute('d');
+    const nums = (d.match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+    assert.equal(nums.length, 14, `expected 7 (x,y) points — M plus two C's — got ${JSON.stringify(nums)}`);
+    const points = [];
+    for (let i = 0; i < nums.length; i += 2) points.push({ x: nums[i], y: nums[i + 1] });
+    const [start, cp1, , join, , cp4, end] = points;
+
+    assert.equal(cp1.y, start.y,
+      "the first control point's y must equal the start y — a horizontal tangent leaving the output socket");
+    assert.equal(cp4.y, end.y,
+      "the last control point's y must equal the end y — a horizontal tangent arriving at the input socket");
+    assert.ok(join.y > bottomA && join.y > bottomB,
+      `expected the path's low point (y=${join.y}) below both boxes' bottoms (${bottomA}, ${bottomB})`);
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
+// A direct (non-container) needs-you node's full `needs` text goes in the detail panel, even
+// where it is long enough that the box face cuts it with an ellipsis (Spec, "Box contents and
+// height").
+// ============================================================================================
+const LONG_NEEDS = 'confirm the retry queue is empty then restart the ingest worker and check the dashboard for errors';
+
+test("clicking a needs-you node shows its full needs text in the detail panel, including one cut on the face", async ({ page }) => {
+  const ctx = await launchRun({
+    schema: 1, title: 'direct needs', source: 'plan-proposal', source_detail: null,
+    explanation: null, run: true, groups: [],
+    nodes: [
+      { id: 'stuck', label: 'waiting on a person', kind: 'step', task: 'T1', status: 'needs-you', needs: LONG_NEEDS, graph: null, x: 0, y: 0 },
+    ],
+    edges: [],
+  });
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+
+    const stuck = nodeGroup(page, 'stuck');
+    // Cut on the face: at most three lines, ending in an ellipsis — shorter than the full text.
+    const faceLines = await stuck.locator('.needs-text').allTextContents();
+    assert.ok(faceLines.length <= 3, JSON.stringify(faceLines));
+    assert.ok(faceLines.join(' ').endsWith('…'), JSON.stringify(faceLines));
+    assert.notEqual(faceLines.join(' '), LONG_NEEDS);
+
+    await stuck.locator('.node-box').click();
+    const noteLines = await page.locator('g.detail[data-for="stuck"] .detail-note tspan').allTextContents();
+    assert.equal(noteLines.join(' '), LONG_NEEDS);
+  } finally {
+    await ctx.stop();
+  }
+});
+
+// ============================================================================================
 // A container shows its rollup as its own status tag and needs text ("+N more" past the first
 // entry), never its own `status` (always null and unrendered), and a cut child says so in the
 // detail panel (Spec, "Statuses and needs-you on the page", D19/D33/D37).

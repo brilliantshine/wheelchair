@@ -129,8 +129,8 @@
   .open-child.disabled .open-child-bg { stroke: var(--dim); stroke-dasharray: 2 2; }
   .open-child.disabled .open-child-label { fill: var(--dim); }
 
-  /* Run-picture box content: a status tag line, the label (existing wrap rule above), an
-     optional needs line, and one row per socket — see runLayout()/renderRunNode() below. Border
+  /* Run-picture box content: a top line (status tag, kind tag), the label (existing wrap rule
+     above), an optional needs line, and one row per socket — see runLayout()/renderRunNode() below. Border
      treatment differs per status by shape (dash pattern and stroke width), not colour alone
      (Spec, "Statuses and needs-you on the page"). Declared after .node.agreed/.node.rejected, so
      these rules win the border on equal specificity: a run box Collin has ruled on keeps its
@@ -1091,7 +1091,11 @@
     const needsLines = needsRaw == null ? [] : wrapText(needsRaw, 24, RUN_NEEDS_MAX_LINES);
     const { inSockets, outSockets } = runSockets(n.id, edges);
     const socketRows = Math.max(1, inSockets.length, outSockets.length);
-    const statusH = status !== null ? RUN_STATUS_H : 0;
+    // Always present (D57): the top line carries the status tag on the left when there is one, and
+    // the box's `kind` as a text tag on the right, the same as every other graph shows it. The
+    // server's reservation (RUN_NODE_H) already counts this line unconditionally, so a status-only
+    // write never changes a box's reserved size regardless of whether `status` is null.
+    const statusH = RUN_STATUS_H;
     // The baseline at which the socket rows begin — also the y a plain content pass (no sockets)
     // would have used for the *next* line, so it doubles as "content height before the bottom pad".
     const socketsTop = RUN_TOP_PAD + statusH + labelLines.length * RUN_LABEL_LINE_H
@@ -1387,10 +1391,11 @@
     headerLayer.appendChild(g);
   }
 
-  // A run box's content, top to bottom (Spec D34): the status tag line, the label, an optional
-  // needs line, then one 20px row per socket — an exhaustive list, so a run box carries no kind
-  // tag and no fork tag (see the "Choices I made" note in the T2 report on this reading). `rl` is
-  // this node's runLayout(), already measured by the caller so drawing can never disagree with
+  // A run box's content, top to bottom (Spec D34): the top line (always present, D57) — the
+  // status tag on the left when there is one, the `kind` text tag on the right, `.node-kind`, the
+  // same class and right-aligned position a plain box uses — then the label, an optional needs
+  // line, then one 20px row per socket. No fork tag: a run box's contents are this list (D34, D57); an `exclusive` box still words its arrows `if <label>`. `rl`
+  // is this node's runLayout(), already measured by the caller so drawing can never disagree with
   // the height it was given.
   function renderRunNodeContent(g, n, rl) {
     let y = RUN_TOP_PAD;
@@ -1398,8 +1403,11 @@
       const tag = el('text', { class: 'status-tag status-' + rl.status, x: 12, y });
       tag.textContent = STATUS_LABEL[rl.status];
       g.appendChild(tag);
-      y += RUN_STATUS_H;
     }
+    const kindTag = el('text', { class: 'node-kind', x: NODE_W - 12, y, 'text-anchor': 'end' });
+    kindTag.textContent = n.kind;
+    g.appendChild(kindTag);
+    y += RUN_STATUS_H;
     rl.labelLines.forEach((line, i) => {
       const t = el('text', { class: 'node-label', x: 12, y: y + i * RUN_LABEL_LINE_H });
       t.textContent = line;
@@ -1564,21 +1572,25 @@
   // Sockets and wires (Spec, D12/D13/D27): a cubic curve with horizontal tangents at both ends —
   // control points offset purely along x from their own endpoint, the ordinary node-editor wire.
   // A loop-back (the `to` socket not right of the `from` socket) cannot bow below both boxes while
-  // holding an exactly flat tangent at both ends: a cubic's points never leave the y-range spanned
-  // by its own four control points, and here two of those sit at ay and two at by, so no choice of
-  // x-only offsets can ever push the curve past max(ay, by). So a loop-back's control points also
-  // carry a shared downward offset — the tangent there is shallow (the x offset dominates) rather
-  // than exactly flat, the trade this file makes to actually show the bow the Spec asks for
-  // instead of a curve that reads as perfectly flat and straight through whatever sits between the
-  // two sockets.
-  function wirePath(ax, ay, bx, by) {
+  // holding an exactly flat tangent at both ends with a *single* cubic: a cubic's points never
+  // leave the y-range spanned by its own four control points, and a flat-tangent loop-back needs
+  // two of those at ay and two at by, so no choice of x-only offsets can ever push the curve past
+  // max(ay, by). Two cubic segments meeting at a low point below both boxes solve this exactly
+  // (D58): the first leaves the output socket heading right and dives to the low point, the second
+  // rises from the low point and arrives at the input socket heading right — each segment's own
+  // real endpoint (not the shared join) keeps an exactly horizontal tangent, and the join itself
+  // sits at the low point, so the curve's lowest point is below both boxes' bottoms by construction.
+  function wirePath(ax, ay, bx, by, bottomA, bottomB) {
     if (bx > ax) {
       const dx = Math.max(40, (bx - ax) / 2);
       return 'M' + ax + ',' + ay + ' C' + (ax + dx) + ',' + ay + ' ' + (bx - dx) + ',' + by + ' ' + bx + ',' + by;
     }
     const dx = 60;
-    const bow = Math.max(80, Math.abs(bx - ax) / 2, Math.abs(by - ay) + 60);
-    return 'M' + ax + ',' + ay + ' C' + (ax + dx) + ',' + (ay + bow) + ' ' + (bx - dx) + ',' + (by + bow) + ' ' + bx + ',' + by;
+    const lowY = Math.max(bottomA, bottomB) + 40;
+    const mx = (ax + bx) / 2;
+    return 'M' + ax + ',' + ay
+      + ' C' + (ax + dx) + ',' + ay + ' ' + (ax + dx) + ',' + lowY + ' ' + mx + ',' + lowY
+      + ' C' + (bx - dx) + ',' + lowY + ' ' + (bx - dx) + ',' + by + ' ' + bx + ',' + by;
   }
 
   function renderEdgeGroup(root, labelLayer, e, a, b, anchors, effSel, nodeBoxRects, labelRects, hoverLit) {
@@ -1621,7 +1633,10 @@
     // A run picture's arrows leave and arrive at sockets on a box's left/right faces — a straight
     // line between them would cut across whatever else sits on that same row, which is exactly
     // what the curve is for (Spec, "Sockets and wires"). A plain graph keeps the straight segment.
-    const d = (graph && graph.run) ? wirePath(ax, ay, bx, by) : ('M' + ax + ',' + ay + ' L' + bx + ',' + by);
+    // The two boxes' real bottoms (not a shared constant) are what a loop-back bows below.
+    const d = (graph && graph.run)
+      ? wirePath(ax, ay, bx, by, a.y + nodeHeight(a), b.y + nodeHeight(b))
+      : ('M' + ax + ',' + ay + ' L' + bx + ',' + by);
     g.appendChild(el('path', { class: 'edge-line', d, 'marker-end': 'url(#arrow-' + e.origin + ')' }));
 
     // The label ladder below derives its perpendicular from this — the anchor-to-anchor line,
@@ -1806,7 +1821,8 @@
     // Run-picture-only fields (Spec, "Statuses and needs-you on the page" and "Box contents and
     // height"): the task id never appears on the box face, only here; a cut container says why its
     // rollup carries no status; a needs-you container's every rollup entry, not just the first one
-    // the box itself shows; and every socket's full name, whether or not its face cut it.
+    // the box itself shows; a direct needs-you node's own full `needs` text, which the face may
+    // have cut to three lines; and every socket's full name, whether or not its face cut it.
     if (node && graph && graph.run) {
       if (node.task != null) fields.push(['detail-ref', 'task: ' + node.task]);
       if (node.graph !== null) {
@@ -1816,6 +1832,8 @@
         } else if (r && r.status === 'needs-you') {
           for (const need of r.needs) fields.push(['detail-note', need.label + ': ' + need.needs]);
         }
+      } else if (node.status === 'needs-you' && node.needs) {
+        fields.push(['detail-note', node.needs]);
       }
       const rl = runLayout(node, graph.edges);
       const inNames = rl.inSockets.filter((k) => k !== null);
