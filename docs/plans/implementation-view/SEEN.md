@@ -95,3 +95,14 @@
 2026-09-26T05:56:09Z turn
 2026-09-26T06:37:52Z turn
 2026-09-26T08:29:43Z turn
+2026-09-26T08:39:51Z new b10c verification 1: columns on the run picture were only 24px apart, so wires overlapped; now 120px
+2026-09-26T08:39:51Z new 49e7 verification 1: run boxes showed no kind tag, so a database looked like a file; the kind tag is back
+2026-09-26T08:39:51Z new f26f verification 1: an empty needs text and a mixed-case reserved name were accepted by the wrong rules
+2026-09-26T08:39:51Z new 5e1c verification 1: some required server tests were missing
+2026-09-26T08:39:51Z new 4f61 verification 1: several rules from the plan never made it into the written Stage 3 rules, and some line references went stale
+2026-09-26T08:39:51Z shown b10c
+2026-09-26T08:39:51Z shown 49e7
+2026-09-26T08:39:51Z shown f26f
+2026-09-26T08:39:51Z shown 5e1c
+2026-09-26T08:39:51Z shown 4f61
+2026-09-26T08:39:51Z turn

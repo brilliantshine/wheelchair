@@ -999,3 +999,5 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 - 2026-09-26 — Verification round 1: FAIL from both verifiers, 14 gaps. Three settled by the lead
   as Spec amendments (D56 column spacing, D57 kind tag, D58 loop-back wire). REMEDIATION-1.md
   written.
+- 2026-09-26 — Remediation 1 done: R1 (server), R2 (page) and R3 (prose, citations) merged. All
+  suites green except the pre-existing lifecycle test. Verification round 2 next.
