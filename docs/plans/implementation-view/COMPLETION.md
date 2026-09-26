@@ -21,6 +21,9 @@ verified-by:
   - round: 3
     lane: gpt-5.6-sol
     checks: sonnet
+  - round: 4
+    lane: gpt-5.6-sol
+    checks: sonnet
 ---
 
 # Completion Report — A live picture of an implementation run
@@ -71,20 +74,20 @@ picture changes, and it flags a part that needs Collin in the tab title and with
 | `rollups` `{status, needs, cut}` for one-level children | this run | `viewer/server.js:415-437` | `run.test.js` "rollups, nesting, updated…" (all four statuses, needs list, run:false / missing / unreadable child) |
 | `updated`, newest across the file and its children | this run | `viewer/server.js:440-448`, `:1653` | `run.test.js` "rollups, nesting, updated…" (touching the child moves `updated`) |
 | Left-to-right layout, plain graphs unchanged | this run | `viewer/server.js:940-983`, `:664`, `:985-986` | `run.test.js` "run and plain chain layouts keep their respective axes and spacing"; every existing layout test in `server.test.js` and `render.spec.js` passes |
-| Box height reservation | this run | `viewer/server.js:644-657`; `protocol/graphs.md:247` | read against the Spec formula; page copy in `viewer/index.html:1094-1121` |
+| Box height reservation | this run | `viewer/server.js:644-657`; `protocol/graphs.md:247` | read against the Spec formula; page copy in `viewer/index.html:1108-1135` |
 | Keep positions when layout inputs unchanged | this run | `viewer/server.js:1552-1564`, `:1588` | `run.test.js` "a progress-only write keeps a dragged position, and an added edge lays the picture out again", "a task-only run update keeps every position, including a drag" |
 | List `run` field | this run | `viewer/server.js:1782-1786` | `run.test.js` "rollups, nesting, updated, and the list run path…" (valid, malformed, run:false) |
-| Sockets made from wires, curved wires, no face slotting | this run | `viewer/index.html:1059-1075`, `:1590-1607`, `:2022-2044` | `run.spec.js` "sockets render named, unnamed and shared…" |
-| Box contents: status line, label, needs (container first entry + "+N more"), socket rows, cut names with hover title | this run | `viewer/index.html:1094-1121`, `:1407-1473` | `run.spec.js` "sockets render…", "status tags and needs text render…", "a container shows its rollup…" |
-| Status tags and borders, colour not the only signal | this run | `viewer/index.html:141-151`, `:1407-1419`, `:1483` | `run.spec.js` "status tags and needs text render…" |
-| Container rollup status, `cut` message in detail panel | this run | `viewer/index.html:1077-1091`, `:1833-1855` | `run.spec.js` "a container shows its rollup status and needs, and a cut child explains itself…" |
-| `choice` box: no status, normal controls, label and kind tag (D57) | this run | `viewer/index.html:1407-1473` | `run.spec.js` "status tags… and a choice box carries no status" |
-| No task id on faces; task id in detail panel | this run | `viewer/index.html:1834` | `run.spec.js` "status tags and needs text render…" |
-| "updated N min ago" | this run | `viewer/index.html:256`, `:634-641` | `run.spec.js` "a child file's status change redraws…" |
-| Redraw when `rollups` changes | this run | `viewer/index.html:2516-2533` | `run.spec.js` "a child file's status change redraws the open root without the root file changing" |
-| Reserved-name 422 shows fatal; later success clears it | this run | `viewer/index.html:1132-1135`, `:2510`, `:2518` | `run.spec.js` "on a reserved-name path a removed file shows the fatal screen…", "a reserved-name file that no longer validates…" |
-| Tab title prefix | this run | `viewer/index.html:607-610`, `:634-650` | `run.spec.js` "the title prefix appears and clears across polls" |
-| One-time notification offer, remembered; one notification per node (file + id) newly needs-you | this run | `viewer/index.html:273-277`, `:356-358`, `:583-629` | `run.spec.js` "exactly one notification per node newly needs-you, including two nodes sharing an id in different files" |
+| Sockets made from wires, curved wires, no face slotting | this run | `viewer/index.html:1073-1089`, `:1604-1621`, `:2035-2057` | `run.spec.js` "sockets render named, unnamed and shared…" |
+| Box contents: status line, label, needs (container first entry + "+N more"), socket rows, cut names with hover title | this run | `viewer/index.html:1108-1135`, `:1421-1487` | `run.spec.js` "sockets render…", "status tags and needs text render…", "a container shows its rollup…" |
+| Status tags and borders, colour not the only signal | this run | `viewer/index.html:141-151`, `:1421-1433`, `:1497` | `run.spec.js` "status tags and needs text render…" |
+| Container rollup status, `cut` message in detail panel | this run | `viewer/index.html:1091-1105`, `:1847-1868` | `run.spec.js` "a container shows its rollup status and needs, and a cut child explains itself…" |
+| `choice` box: no status, normal controls, label and kind tag (D57) | this run | `viewer/index.html:1421-1487` | `run.spec.js` "status tags… and a choice box carries no status" |
+| No task id on faces; task id in detail panel | this run | `viewer/index.html:1848` | `run.spec.js` "status tags and needs text render…" |
+| "updated N min ago" | this run | `viewer/index.html:256`, `:648-655` | `run.spec.js` "a child file's status change redraws…" |
+| Redraw when `rollups` changes | this run | `viewer/index.html:2529-2546` | `run.spec.js` "a child file's status change redraws the open root without the root file changing" |
+| Reserved-name 422 shows fatal; later success clears it | this run | `viewer/index.html:1146-1149`, `:2523`, `:2531` | `run.spec.js` "on a reserved-name path a removed file shows the fatal screen…", "a reserved-name file that no longer validates…" |
+| Tab title prefix | this run | `viewer/index.html:621-624`, `:648-664` | `run.spec.js` "the title prefix appears and clears across polls" |
+| One-time notification offer, remembered; one notification per node (file + id) newly needs-you | this run | `viewer/index.html:273-277`, `:356-358`, `:597-643` | `run.spec.js` "exactly one notification per node newly needs-you, including two nodes sharing an id in different files" |
 | List page "run picture" link | this run | `viewer/list.js:85`, `:100-105` | `run.spec.js` "the list page shows a run picture link…" |
 | `graphs.md` "Run pictures" section, key order, kinds, refusal table | this run | `protocol/graphs.md:713-872`, `:327-345`, `:247`, `:917-918` | read by the lead against the Spec |
 | Stage 3: precondition accepts `implementing`; small-patch bypass | this run | `protocol/implementation.md:20-23`, `:25-29` | read against Spec |
@@ -176,9 +179,9 @@ code after remediation.
   now 120px apart (`:664`, `:940-947`). New server tests cover the A→B→C chain at 320px against
   a plain chain at 140px rows, a task-only update keeping positions, a null-status child, a child
   with `needs-you` next to `done`, and a valid `run: false` child.
-- R2 (sonnet): the top line now always carries the kind tag (`viewer/index.html:1094-1121`,
-  `:1400-1412`). The loop-back wire is two segments (`:1583-1600`). A direct needs-you node's
-  full text is in the detail panel (`:1845-1846`). Three browser tests added. The lead corrected
+- R2 (sonnet): the top line now always carries the kind tag (`viewer/index.html:1108-1135`,
+  `:1421-1433`). The loop-back wire is two segments (`:1604-1621`). A direct needs-you node's
+  full text is in the detail panel (`:1858-1859`). Three browser tests added. The lead corrected
   one wrong code comment about fork tags.
 - R3 (sonnet): `protocol/implementation.md` now carries the restart pointer only when files
   moved, the rule that a box carries the currently active task's id, one box for a choice
@@ -234,4 +237,33 @@ exit 0 each
 
 $ npm --prefix viewer run test:browser
   228 passed (54.9s)
+```
+
+### Remediation 3 — 2026-09-26
+
+Verification round 3 found 3 gaps, listed verbatim in `REMEDIATION-3.md`. The lead fixed the
+two COMPLETION.md gaps: the choice row now reads "label and kind tag", and the `viewer/index.html`
+citations were re-shifted. The needs-text gap had survived two remediation rounds, so it went to
+Collin, who chose to fix it (D59).
+
+- R6 (opus): `needsField` (`viewer/index.html:434-440`) breaks any word longer than 32
+  characters into pieces before wrapping. Only the two needs detail fields use it
+  (`:1855`, `:1859`), and `wrapText` is unchanged. A new browser test uses one 739-character
+  word, as a direct node and inside a container. The worker confirmed it fails without the fix.
+  Every `viewer/index.html` citation above was re-shifted for R6's added lines.
+
+Validation after remediation 3, on the merged branch:
+
+```
+$ node --test viewer/test/*.test.js
+not ok 31 - a starter that loses the freed port registers through the new holder
+# tests 133
+# pass 132
+# fail 1          (the pre-existing lifecycle test, unchanged)
+
+$ bash spine/test/run.sh; bash sensitivity/test/run.sh; bash seen/test/run.sh; bash install/test/run.sh
+exit 0 each
+
+$ npm --prefix viewer run test:browser
+  230 passed (54.8s)
 ```
