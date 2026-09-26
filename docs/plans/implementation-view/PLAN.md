@@ -1005,3 +1005,5 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
   dropped two required server tests; the Spec's choice-face sentence contradicted D57, fixed by
   the lead; COMPLETION.md citations and Routers text stale, fixed by the lead). REMEDIATION-2.md
   written.
+- 2026-09-26 — Remediation 2 done: R4 (restored test) and R5 (full needs text in the detail panel)
+  merged. All suites green except the pre-existing lifecycle test. Verification round 3 next.

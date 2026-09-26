@@ -106,3 +106,8 @@
 2026-09-26T08:39:51Z shown 5e1c
 2026-09-26T08:39:51Z shown 4f61
 2026-09-26T08:39:51Z turn
+2026-09-26T09:04:44Z new 4a32 verification 2: long needs text was still cut off in the detail panel
+2026-09-26T09:04:44Z new 5028 verification 2: the first server fix deleted two required tests
+2026-09-26T09:04:44Z shown 4a32
+2026-09-26T09:04:44Z shown 5028
+2026-09-26T09:04:44Z turn

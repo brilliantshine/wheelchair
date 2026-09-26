@@ -64,9 +64,9 @@ picture changes, and it flags a part that needs Collin in the tab title and with
 | Preservation exemption for the three keys; `/view` may not change them or `run` | this run | `viewer/server.js:373-374`, `:1499`, `:1517` | `run.test.js` "agent progress preserves ruled entries…" |
 | `rollups` `{status, needs, cut}` for one-level children | this run | `viewer/server.js:415-437` | `run.test.js` "rollups, nesting, updated…" (all four statuses, needs list, run:false / missing / unreadable child) |
 | `updated`, newest across the file and its children | this run | `viewer/server.js:440-448`, `:1653` | `run.test.js` "rollups, nesting, updated…" (touching the child moves `updated`) |
-| Left-to-right layout, plain graphs unchanged | this run | `viewer/server.js:940-983`, `:664`, `:985-986` | `run.test.js` "run layouts are left-to-right…"; every existing layout test in `server.test.js` and `render.spec.js` passes |
+| Left-to-right layout, plain graphs unchanged | this run | `viewer/server.js:940-983`, `:664`, `:985-986` | `run.test.js` "run and plain chain layouts keep their respective axes and spacing"; every existing layout test in `server.test.js` and `render.spec.js` passes |
 | Box height reservation | this run | `viewer/server.js:644-657`; `protocol/graphs.md:247` | read against the Spec formula; page copy in `viewer/index.html:1087-1114` |
-| Keep positions when layout inputs unchanged | this run | `viewer/server.js:1552-1564`, `:1588` | `run.test.js` "run layouts…preserve drags for progress-only writes" (dragged box kept; added edge relays out) |
+| Keep positions when layout inputs unchanged | this run | `viewer/server.js:1552-1564`, `:1588` | `run.test.js` "a progress-only write keeps a dragged position, and an added edge lays the picture out again", "a task-only run update keeps every position, including a drag" |
 | List `run` field | this run | `viewer/server.js:1782-1786` | `run.test.js` "rollups, nesting, updated, and the list run path…" (valid, malformed, run:false) |
 | Sockets made from wires, curved wires, no face slotting | this run | `viewer/index.html:1052-1068`, `:1583-1600`, `:2012-2034` | `run.spec.js` "sockets render named, unnamed and shared…" |
 | Box contents: status line, label, needs (container first entry + "+N more"), socket rows, cut names with hover title | this run | `viewer/index.html:1087-1114`, `:1400-1466` | `run.spec.js` "sockets render…", "status tags and needs text render…", "a container shows its rollup…" |
@@ -197,4 +197,35 @@ exit 0 each
 
 $ npm --prefix viewer run test:browser
   226 passed (55.7s)
+```
+
+### Remediation 2 — 2026-09-26
+
+Verification round 2 found 4 gaps, listed verbatim in `REMEDIATION-2.md`. Two were in
+documents and fixed by the lead: the Spec's choice-face sentence now matches D57, and
+COMPLETION.md's `implementation.md` citations and Routers text were re-checked and corrected.
+The coverage table's two layout rows now cite the tests that exist.
+
+- R4 (fresh gpt-5.6-terra lane at `xhigh`, one rung up): restored the test "a progress-only
+  write keeps a dragged position, and an added edge lays the picture out again"
+  (`viewer/test/run.test.js`). No server change.
+- R5 (opus, the next Claude rung): the detail panel's needs text for a direct needs-you node,
+  and for each container entry, is given a line count that never cuts it
+  (`linesForAll`, `viewer/index.html`). A new browser test uses text of more than 700
+  characters. The worker confirmed the test fails against the old code.
+
+Validation after remediation 2, on the merged branch:
+
+```
+$ node --test viewer/test/*.test.js
+not ok 31 - a starter that loses the freed port registers through the new holder
+# tests 133
+# pass 132
+# fail 1          (the pre-existing lifecycle test, unchanged)
+
+$ bash spine/test/run.sh; bash sensitivity/test/run.sh; bash seen/test/run.sh; bash install/test/run.sh
+exit 0 each
+
+$ npm --prefix viewer run test:browser
+  228 passed (54.9s)
 ```
