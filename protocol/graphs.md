@@ -230,10 +230,12 @@ Field by field:
   somewhere, never leave a box crowded or inside a boundary that should clear it.
 
   A run-picture box reserves its height differently, since what it holds varies with its
-  status and its socket count. Top to bottom: the status tag line (20px, absent when
-  `status` and any rollup are null); the label, wrapped exactly as any label (at most
+  status and its socket count. Top to bottom: the top line (20px, always present on a
+  run picture, D57), with the status tag on the left when the box has one, and the box's
+  `kind` as a text tag on the right, the same as every other graph shows it; the label,
+  wrapped exactly as any label (at most
   five lines of 24 characters, 16px each, with a container's shorter first line so it
-  clears the child badge, `viewer/index.html:885-894`); on a `needs-you` box, or a
+  clears the child badge, `viewer/index.html:1028-1029`); on a `needs-you` box, or a
   container rolled up to `needs-you`, the `needs` text (a container shows its rollup's
   first entry, followed by "+N more" when there are others), wrapped to at most three
   lines of 24 characters with an ellipsis; then one 20px row per socket, taking the
@@ -804,7 +806,11 @@ A run picture lays out left to right instead of top to bottom: the same layered
 algorithm as any graph, groups first, with the axes swapped. A layer is a column, every
 arrow points right after cycle-breaking, and crossing reduction orders boxes within a
 column. Box width and height swap roles in every spacing constant (`LAYER_GAP`,
-`NODE_PITCH`, `COMPONENT_GAP`, the group padding stated above). Pieces that share no
+`NODE_PITCH`, `COMPONENT_GAP`, the group padding stated above), with one exception
+(D56): the clear space between adjacent columns is 120px, not the 24px a plain graph
+leaves between rows, so a wire and its label have room to run between boxes. Vertical
+spacing within a column, and a plain graph's own row-to-row layout, are unchanged.
+Pieces that share no
 arrow sit in separate bands stacked down the page, not side by side — the same rule as
 any graph, just turned on its side.
 
@@ -836,11 +842,14 @@ with a null `value`, share one unnamed input socket, placed first — the same h
 outgoing edges on the right — and that unnamed socket exists only when such an edge
 does. An edge is drawn from its output socket on the `from` box to its input socket on
 the `to` box, as a cubic curve with horizontal tangents at both ends; one whose `to`
-isn't right of its `from` (a loop back) bows out below the two boxes rather than
-reversing direction. A socket's name is printed inside the box beside its dot; the
+isn't right of its `from` (a loop back) is drawn as two cubic segments instead of one
+(D58) — a single cubic can't hold a flat tangent at both sockets while bowing below both
+boxes, so the wire leaves its output socket heading right, dips to a low point below
+both boxes, then rises into its input socket heading right, staying horizontal at both
+sockets throughout. A socket's name is printed inside the box beside its dot; the
 edge's own `label` is printed along the curve, as on any graph, and an `exclusive` box
 keeps its `if <label>` wording. The face-slotting a plain graph uses for its arrows
-(`viewer/index.html:253-263`) doesn't apply here — sockets replace it entirely. A
+(`viewer/index.html:287-299`) doesn't apply here — sockets replace it entirely. A
 `choice` box is wired to the part it affected by a `sequence` edge labelled "chosen
 while building this", so it lands on that part's unnamed input socket rather than
 adding a named one of its own.
@@ -848,12 +857,12 @@ adding a named one of its own.
 ### The preservation exemption
 
 **`task`, `status`, and `needs` join `x`/`y`** as fields `sameExceptPosition`
-(`viewer/server.js:325`) ignores — see "Verdicts and the preservation contract" above.
+(`viewer/server.js:369`) ignores — see "Verdicts and the preservation contract" above.
 An agent may change any of the three on an `agreed` or `rejected` entry without
 resetting it; that's what lets the lead mark an accepted task's boxes `done` without
 wiping Collin's ruling. The page's `PUT /view` may never change any of the three,
 though, so a difference in any of them there is a `structural-difference`
-(`checkViewChanges`, `viewer/server.js:1349`) exactly as an unexpected content change is
+(`checkViewChanges`, `viewer/server.js:1511`) exactly as an unexpected content change is
 today. `run` itself is compared like `title`: the page never changes it either.
 
 ### The list page

@@ -61,8 +61,11 @@ fresh start still needs this check — a plan verification sent back to planning
 approved again can leave an old picture behind. When this moved anything, or the Log
 already holds a `Stage 3 started` line from an earlier attempt (even one whose picture
 never got drawn), the ask-at-start message below says in one sentence where the earlier
-run's records are — the picture in `graphs/before-run-<N>/`, and its choices in the
-Log's `Choice:` lines — and that nothing struck there is acted on unless Collin asks. If
+run's records are: its choices are always in the Log's `Choice:` lines, and the picture
+is in `graphs/before-run-<N>/` only when the move-aside step actually moved something —
+when it moved nothing, the sentence points only at the Log's `Choice:` lines, since
+there is no picture there to name. It adds that nothing struck there is acted on unless
+Collin asks. If
 the earlier run left unfinished follow-up rows in the Implementation Tasks table, that
 same sentence names them, since reconciling drops rows that aren't part of the Spec. You
 read nothing else back for this: if Collin asks for an old choice to be undone, that is
@@ -111,7 +114,10 @@ held back above. A piece whose work moved to Prior Work as `pre-existing` gets t
 an earlier attempt and one that came in already built with an adopted plan. Stores,
 outside systems, and touched files that no task builds get boxes with no task. Related
 pieces sit in visible groups; past 25 boxes, one container box per group opens into
-`run-<group id>.json`, the same as any oversized graph. Labels follow `graphs.md`'s
+`run-<group id>.json`, the same as any oversized graph — counting only the design's own
+pieces, since a `choice` box never counts toward that 25-box line. Whether the picture
+splits is decided once, here at the first drawing, and is never revisited later as
+choices get added. Labels follow `graphs.md`'s
 plain-language rule, and the explanation names each task id's objective in a few words,
 including what `prior` means ("built before this run") so it's never a bare coined id on
 screen. Write it with the producer sequence in `graphs.md` ("Writing a graph"), show it with
@@ -125,6 +131,9 @@ Skipped, along with every update below, in the small-patch bypass.
 `in-progress`) and when you accept the task after your own re-run of its checks passes
 (its boxes go `done` — a worker's claim alone never sets `done`). `in-progress` covers
 everything in between: the worker running, your check, and any retry or escalation. A
+piece built by two tasks in sequence carries whichever task is currently active on it —
+its box's `task` moves to the later task's id when that task takes it over, and its
+build history lives in the Implementation Tasks table, not on the box. A
 box goes `needs-you` in exactly three cases: its task is blocked on something only
 Collin can supply; the escalation ladder in `lanes.md` has run out; or a lane returned
 nothing, so this stage stops under its own Lanes rule below and Collin has to step
@@ -182,8 +191,13 @@ After each lane finishes: re-run its validation yourself and read the diff —
 
 When you accept a task's result, also handle its brief's choices section. For each
 decision it lists, add one `choice` box to the run picture, wired to the part it
-affected, with `task` set to that task, a plain-language label, and the worker's own
-words in `note`. Before drawing them, write each one to the plan's Log first, one line
+affected — two edges when the choice affected two pieces — with `task` set to that
+task, a plain-language label, and the worker's own words in `note`. A choice goes in
+the same file as the part it affects, since edges join siblings only (`graphs.md`'s
+`from`/`to` rule, "Edges connect siblings only"). One that affects parts in two files is drawn once, in the
+file of the first part the worker named, wired to the affected parts there, with `note`
+also naming the others — so one choice always has exactly one box and one ruling, never
+two. Before drawing them, write each one to the plan's Log first, one line
 per choice in the Log's usual `- <date> — ` form, the text after the dash starting
 `Choice:`, naming the task, the part, and the choice — the Log is written first so a
 crash between the two writes never leaves a choice on the picture with no record. A
