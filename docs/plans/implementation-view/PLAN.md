@@ -1,6 +1,6 @@
 ---
 slug: implementation-view
-status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
+status: done   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-09-25
 ---
 
@@ -1015,3 +1015,6 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 - 2026-09-26 — Collin chose to fix the needs-text gap (D59). Remediation 3.
 - 2026-09-26 — Remediation 3 done: R6 merged. Suites green except the pre-existing lifecycle test.
   Round 4 is a closure review by the GPT verifier only. The Claude verifier passed its side in round 3.
+- 2026-09-26 — Verification round 4: GPT verifier PASS. Both families have passed (Claude in round
+  3, GPT in round 4). README swept for the run picture. Status `done`. `./install.sh` is still
+  Collin's to run.
