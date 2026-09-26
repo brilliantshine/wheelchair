@@ -92,6 +92,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D53 | Choice lines in the Log start with `Choice:`. The `Stage 3 started` line is written only after the start message is sent. The start message carries both restart lists, which read the `Choice:` lines from the latest `Stage 3 started` line to the end. The pointer to earlier follow-ups goes to the Log and COMPLETION.md | Round 12: step 1 and step 4 contradicted D52, the marker order could hide a crashed run's choices, the choice lines had no fixed form, and the old task rows the pointer named may be gone | review-round-12 |
 | D54 | After a restart, the start message carries one sentence pointing to `graphs/before-run-<N>/` and the Log's `Choice:` lines, and nothing struck there is acted on unless Collin asks. The restart lists are removed. The `Stage 3 started` marker and `Choice:` lines remain for the end-of-run list | Restart reporting kept failing review. Collin chose to cut it (Q10) | user |
 | D55 | The restart sentence also fires when an earlier `Stage 3 started` line exists with no files to move, and it names unfinished follow-up rows the earlier run left. `Choice:` and `Stage 3 started` sit after the Log's usual date dash | Round 13: a run whose picture never got written left logged choices with no pointer, and an unfinished follow-up would drop silently at reconcile | review-round-13 |
+| D56 | Run pictures leave 120px between adjacent columns | Verification round 1 found 24px channels where wires and labels overlapped, because swapping the row clearance onto columns gave the narrow row gap to the wires. The idea asks Collin to see what feeds what | verification-round-1 |
+| D57 | A run box's top line is always present and carries the kind tag on the right, next to the status tag | Verification round 1: without it a store, a file and an outside system look the same, and seeing which stores are touched is in the idea. The server's height reservation already includes the line | verification-round-1 |
+| D58 | A loop-back wire is two cubic segments, horizontal at both sockets | One cubic can't be horizontal at both ends and bow below both boxes. Two segments can, and meet the Spec as written | verification-round-1 |
 
 ## Spec
 
@@ -233,11 +236,14 @@ Layout for a run picture (`positionGraph`, `layout` at `viewer/server.js:568`):
 - **Left to right.** The same layered algorithm, groups first, with axes swapped. A layer
   is a column, every arrow points right after cycle-breaking, and crossing reduction orders
   boxes within a column. Box width and height swap roles in every spacing constant
-  (`LAYER_GAP`, `NODE_PITCH`, `COMPONENT_GAP`, the group padding). Unconnected pieces sit
-  in separate bands stacked down the page, not side by side.
+  (`LAYER_GAP`, `NODE_PITCH`, `COMPONENT_GAP`, the group padding), with one exception
+  (D56): the clear space between adjacent columns is 120px, not the 24px a plain graph
+  leaves between rows, so wires and their labels have room to run between boxes.
+  Unconnected pieces sit in separate bands stacked down the page, not side by side.
 - **Box contents and height (D34).** A run-picture box is `GROUP_NODE_W` wide. Top to
-  bottom it holds: the status tag line (20px, absent when `status` and any rollup are
-  null); the label, wrapped exactly as today (at most five lines of 24 characters, 16px
+  bottom it holds: the top line (20px, always present on a run picture, D57), with the
+  status tag on the left when there is one and the box's `kind` as a text tag on the right,
+  as every other graph shows it; the label, wrapped exactly as today (at most five lines of 24 characters, 16px
   each, with a container's shorter first line so it clears the child badge,
   `viewer/index.html:885-894`); on a `needs-you` box or a container rolled up to `needs-you`, the `needs` text
   (for a container, the first entry's `needs`, followed by "+N more" when there are
@@ -270,7 +276,9 @@ For each box, computed on the page from the arrows. Nothing on disk:
   exists only when such an arrow does.
 - An arrow is drawn from its output socket on the `from` box to its input socket on the
   `to` box, as a cubic curve with horizontal tangents at both ends. An arrow whose `to` is
-  not right of its `from` (a loop back) uses the same curve, bowed out below the two boxes.
+  not right of its `from` (a loop back) is drawn as two cubic segments. It leaves its socket
+  heading right, swings down and back below both boxes, and arrives heading right into its
+  input socket, so it is horizontal at both sockets and bowed below the boxes (D58).
 - The socket's name is printed inside the box beside its dot. The arrow's own `label` is
   printed along the curve, as today. An `exclusive` box keeps its `if <label>` wording.
 - Arrow slotting on a face (`viewer/index.html:253-263`) doesn't apply on a run picture:
@@ -988,3 +996,6 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
   viewer page). Full validation green except the pre-existing lifecycle test. `./install.sh` not
   run: it restarts the always-on viewer and writes harness homes, so that's left to Collin.
   COMPLETION.md written. Status `verifying`.
+- 2026-09-26 — Verification round 1: FAIL from both verifiers, 14 gaps. Three settled by the lead
+  as Spec amendments (D56 column spacing, D57 kind tag, D58 loop-back wire). REMEDIATION-1.md
+  written.

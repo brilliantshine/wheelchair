@@ -2,7 +2,13 @@
 slug: implementation-view
 date: 2026-09-25
 implemented-by: "gpt-5.6-terra (T1), sonnet (T2, T3) (lead: opus)"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude default reviewer
+    checks: gpt-5.6-terra
+  - round: 1
+    lane: gpt-5.6-sol
+    checks: sonnet
 ---
 
 # Completion Report — A live picture of an implementation run
