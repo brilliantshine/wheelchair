@@ -419,6 +419,13 @@
     return lines;
   }
 
+  // A `maxLines` for wrapText that never cuts `raw`: every wrapped line holds at least one
+  // whole word, so the word count bounds the line count at any wrap width. Used for the run
+  // picture's `needs` detail fields, which exist to show the text the box face cut.
+  function linesForAll(raw) {
+    return Math.max(1, String(raw == null ? '' : raw).split(/\s+/).filter(Boolean).length);
+  }
+
   function textWithWrap(cls, x, raw, wrapChars, maxLines) {
     const t = el('text', { class: cls, x });
     const lines = wrapText(raw, wrapChars, maxLines);
@@ -1830,10 +1837,13 @@
         if (r && r.cut) {
           fields.push(['detail-note', 'The picture inside this box is missing, unreadable, or not a run picture.']);
         } else if (r && r.status === 'needs-you') {
-          for (const need of r.needs) fields.push(['detail-note', need.label + ': ' + need.needs]);
+          for (const need of r.needs) {
+            const text = need.label + ': ' + need.needs;
+            fields.push(['detail-note', text, linesForAll(text)]);
+          }
         }
       } else if (node.status === 'needs-you' && node.needs) {
-        fields.push(['detail-note', node.needs]);
+        fields.push(['detail-note', node.needs, linesForAll(node.needs)]);
       }
       const rl = runLayout(node, graph.edges);
       const inNames = rl.inSockets.filter((k) => k !== null);
