@@ -7,7 +7,7 @@ and changes only on `--rotate-token` (remote-viewer Decision Log #14, #15). Ever
 a check against it.
 
 A person gets in by opening a URL that carries it: the bookmark from `--url`
-(`https://hearth.taileb4e52.ts.net/?token=…`), or the graph URL an agent prints
+(`https://<machine>.<tailnet>.ts.net/?token=…`), or the graph URL an agent prints
 (`viewerUrl`, `viewer/server.js:1710-1713`, which puts `&token=…` in every URL it builds).
 
 On the server, every page and read route calls `requireGetToken`, which compares the
@@ -51,15 +51,15 @@ every link and fetch carries ?token=…      writes carry X-Graph-Token + Origin
 
 ## How the address reaches the viewer
 
-`tailscale serve` on hearth answers `https://hearth.taileb4e52.ts.net` on the standard HTTPS
+`tailscale serve` on the server answers `https://<machine>.<tailnet>.ts.net` on the standard HTTPS
 port and forwards `/` to `http://127.0.0.1:7373` (checked: `tailscale serve status` prints
 `|-- / proxy http://127.0.0.1:7373`). The viewer itself still listens on `127.0.0.1` only.
 So every request the viewer sees comes from `127.0.0.1`, whether it came from a phone on the
-tailnet or a command on hearth. The viewer can't tell those apart by address, which is why
+tailnet or a command on the server. The viewer can't tell those apart by address, which is why
 the token exists at all (remote-viewer Decision Log #14).
 
 A browser keeps cookies per host name. It sends a cookie set by
-`hearth.taileb4e52.ts.net` to every port and every path on that name. That is the fact
+`<machine>.<tailnet>.ts.net` to every port and every path on that name. That is the fact
 behind the first question: anything else later served on that name would receive the
 viewer's cookie too.
 

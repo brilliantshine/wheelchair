@@ -53,4 +53,4 @@ row and its Known gaps disagree.
 - `AGENTS.md:51` names `signin.html` in the `viewer/` row, and `:69-70` counts eight files,
   including the sign-in page.
 - COMPLETION.md's Routers section says what changed. Its deviations and Known gaps agree with
-  the coverage row about which hearth checks are done.
+  the coverage row about which on-server checks are done.

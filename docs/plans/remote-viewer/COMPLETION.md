@@ -20,7 +20,7 @@ verified-by:
     checks: terra
 ---
 
-# Completion Report — See and rule on hearth's graphs from a phone or laptop
+# Completion Report — See and rule on the server's graphs from a phone or laptop
 
 Written for a hostile reviewer: every claim checkable, no claim without evidence.
 
@@ -86,7 +86,7 @@ flowchart TD
 | Agent-facing contract in `protocol/graphs.md` (#36, #89) | this run | `protocol/graphs.md` step 1 (the `bad-path`, refusal and older-version paragraph; lockfile-only port and token) | read against the Spec; no test suite covers protocol documents (`AGENTS.md`, verification section) |
 | `--register-plan` step in the five stage documents (#21, #71, #87) | this run | `protocol/planning.md:31`, `protocol/plan-review.md:13`, `protocol/implementation.md:12`, `protocol/verification.md:14`, `protocol/adopt.md:31` | read against the Spec |
 | README, CONTRIBUTING, AGENTS.md (#33, #86, #94) | this run | `README.md` ("Reaching it from a phone or another laptop"), `CONTRIBUTING.md:64`, `AGENTS.md` viewer row and verification block | read against the Spec |
-| Blocking checks on hearth: phone and laptop in Firefox, `Origin` through `tailscale serve`, Funnel off, reboot survival | not done | — | Not run in Stage 3. It needs `./install.sh --serve`, the one-time `sudo tailscale serve --bg 7373`, and Collin on the phone and a laptop. See Known gaps |
+| Blocking checks on the server: phone and laptop in Firefox, `Origin` through `tailscale serve`, Funnel off, reboot survival | not done | — | Not run in Stage 3. It needs `./install.sh --serve`, the one-time `sudo tailscale serve --bg 7373`, and Collin on the phone and a laptop. See Known gaps |
 
 ## Deviations from plan
 
@@ -117,7 +117,7 @@ flowchart TD
 
 ## Validation evidence
 
-All run by the lead on `remote-viewer` after the last merge, Node v20.19.2 on hearth.
+All run by the lead on `remote-viewer` after the last merge, Node v20.19.2 on the server.
 
 ```text
 $ npm --prefix viewer run test:browser
@@ -155,8 +155,8 @@ Firefox, 55/55 unit tests.
 
 ## Known gaps / residual risks
 
-- **Not yet run: the blocking hearth checks.** These are the Spec's Validation paragraph
-  starting "Blocking, on hearth": opening the list and ruling on a graph from `firefly` and a
+- **Not yet run: the blocking on-server checks.** These are the Spec's Validation paragraph
+  starting "Blocking, on the server": opening the list and ruling on a graph from `firefly` and a
   laptop in Firefox, `tailscale serve` passing `Origin` through, Funnel off, the address
   unreachable off the tailnet, and the bookmark surviving a reboot. They need the one-time
   `sudo` step and Collin on the devices. Until they pass, `Origin` pass-through in particular
@@ -169,7 +169,7 @@ Firefox, 55/55 unit tests.
   worker's earlier attempts, six test servers were found still running under
   `viewer/test/.tmp/pages-*`. The lead stopped them. Two later full runs left none. A failure
   inside `buildWorld` after its server starts has no cleanup.
-- **`~/.cache/agent-graphs/.registered` on hearth was written by older code** (another
+- **`~/.cache/agent-graphs/.registered` on the server was written by older code** (another
   session drew a graph at 14:06 today). Its entries lack `session` and `harness`, so they
   would list under "not in tmux", labelled `other`, until opened again.
 - The accepted risks in PLAN.md stand unchanged.

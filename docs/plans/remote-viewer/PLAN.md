@@ -4,7 +4,7 @@ status: done   # planning | ready-for-review | approved | implementing | verifyi
 created: 2026-09-23
 ---
 
-# See and rule on hearth's graphs from a phone or laptop
+# See and rule on the server's graphs from a phone or laptop
 
 **Idea:** `IDEA.md` — what this is for and why, in plain language. Read it first; it is
 the north star this plan serves. Goal and Constraints live there, not here, so they don't
@@ -28,10 +28,10 @@ promoted to a Constraint or Accepted Risk, or waved off by the user.
 
 | # | Noticed | What needs looking into | Raised to user? | Outcome |
 |---|---------|-------------------------|-----------------|---------|
-| 1 | mapping | Hearth has Node v20.19.2, and the repo was developed against Node 26 (`README.md:234`). Run the viewer suites on hearth to find out whether anything depends on a newer Node. | yes | settled — Decision Log #33, #34: `server.test.js` passes 55/55 on Node 20 when named explicitly; the quoted glob fails there; browser suite blocked by missing system libraries |
+| 1 | mapping | The server has Node v20.19.2, and the repo was developed against Node 26 (`README.md:234`). Run the viewer suites on the server to find out whether anything depends on a newer Node. | yes | settled — Decision Log #33, #34: `server.test.js` passes 55/55 on Node 20 when named explicitly; the quoted glob fails there; browser suite blocked by missing system libraries |
 | 2 | mapping | What environment a Codex CLI session sets, so `--open` can label a graph Claude or Codex. Claude sets `CLAUDECODE=1`. | yes | settled — Decision Log #31 |
 | 3 | mapping | Lingering is off for `collin` (`Linger=no`), so a systemd user service stops at logout. Turning it on (`loginctl enable-linger`) may need `sudo`. | yes | settled — Decision Log #32 |
-| 4 | mapping | Whether `tailscale serve` passes the browser's `Origin` header through unchanged. The write check depends on it. | yes | settled — blocking validation on hearth, Spec "Validation" |
+| 4 | mapping | Whether `tailscale serve` passes the browser's `Origin` header through unchanged. The write check depends on it. | yes | settled — blocking validation on the server, Spec "Validation" |
 | 5 | queue | If the always-on service is down, an agent's `--open` starts its own server with a random token, and the service's later start "reuses" it and exits (`server.js:1376-1378`). Under systemd that's a restart loop, and the token breaks bookmarks. The lasting token and the service's startup both have to cover it. | yes | settled — Decision Log #14, #17 |
 | 6 | queue | `/whoami` is unauthenticated (`server.js:1388`) and would be reachable over the tailnet. It returns only a random start id; check nothing else relies on it staying local. | yes | settled — only `existingServer` and `stopServer` call it (`server.js:1314`, `:1334`, `:1356`), always over `127.0.0.1`; the start id grants nothing without the token. No change |
 | 7 | queue | How the viewer's top bar and side panel lay out at phone width. Only the input handling was read (`viewer/index.html:1789-1800`), not the layout. | yes | settled — Decision Log #35 |
@@ -42,9 +42,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 
 | # | Decision | Rationale | Source |
 |---|----------|-----------|--------|
-| 1 | No graphs are drawn during this plan's planning turns on hearth; flows are described in text | Nothing drawn on hearth can be seen until this feature exists | user |
+| 1 | No graphs are drawn during this plan's planning turns on the server; flows are described in text | Nothing drawn on the server can be seen until this feature exists | user |
 | 2 | The page also shows the workflow's plan documents, read-only | Reading IDEA/PLAN in a phone terminal is impractical; editing stays with agents and the terminal | idea-change |
-| 3 | The feature isn't hearth-specific. Every machine runs the same code; becoming reachable is opt-in per machine. A laptop with a screen keeps today's behavior unless it opts in | Collin asked whether it would work the same on a laptop; hearth-only code would fork the viewer | idea-change |
+| 3 | The feature isn't server-specific. Every machine runs the same code; becoming reachable is opt-in per machine. A laptop with a screen keeps today's behavior unless it opts in | Collin asked whether it would work the same on a laptop; server-only code would fork the viewer | idea-change |
 | 4 | There is one server per machine. The always-on service is the existing `server.js` with the same cache root and port, and agents' `--open`/`--show` find it through the existing lockfile and reuse it. No second server | Collin asked that existing routes reuse the new serving path rather than a parallel system; the lockfile reuse at `server.js:1376-1378` already does this | user |
 | 5 | Session and harness are recorded when `--open` registers a graph, in that graph's entry in `.registered`, not in the graph file | `--open` runs in the agent's shell, where the tmux and harness environment is visible. The graph file drops unknown fields, and the entry already exists per graph | defaulted |
 | 6 | Whether a session is still running is checked against tmux each time the list is built | The list is only accurate if it asks tmux at the moment of viewing; a stored flag goes stale | defaulted |
@@ -52,7 +52,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 8 | Other devices reach the viewer through `tailscale serve` (HTTPS on the machine's tailnet name, forwarding to `127.0.0.1:<port>`). The server keeps listening on `127.0.0.1` only, and its write check accepts the served `https://<tailnet name>` origin alongside `http://127.0.0.1:<port>` | HTTPS and reboot survival with no certificate work, and no new network exposure in the server itself. Binding the tailnet address gives plain HTTP and boot ordering; SSH forwarding is impractical on a phone | user |
 | 9 | Setup never runs `sudo` silently. The one-time `tailscale serve` command is run by the person, or by the installer only after it says so and asks | `sudo` changes the machine's network setup outside this repo's tree; the person should see it happen | defaulted |
 | 10 | Whether a machine serves is decided once, at install. `./install.sh` checks for a display and, when there is none, asks whether to set the machine up as an always-on viewer. `--serve` opts in without asking and `--no-serve` declines without asking. After that, whether the machine serves is read from what setup wrote, never guessed at runtime | A per-call guess misfires (an SSH session into a laptop looks headless); asking once lets a person confirm it | user |
-| 11 | The choice is recorded as `<cache-root>/.serving`, JSON holding the served origin (for example `{"origin": "https://hearth.taileb4e52.ts.net"}`), written by the installer. The server reads it at start | The server already keeps its state in the cache root, and the suites isolate by `--cache-root` (`viewer/test/helpers/server.js:87`), so this needs no new configuration location or test seam | defaulted |
+| 11 | The choice is recorded as `<cache-root>/.serving`, JSON holding the served origin (for example `{"origin": "https://<machine>.<tailnet>.ts.net"}`), written by the installer. The server reads it at start | The server already keeps its state in the cache root, and the suites isolate by `--cache-root` (`viewer/test/helpers/server.js:87`), so this needs no new configuration location or test seam | defaulted |
 | 12 | Re-running `./install.sh` on a machine already serving keeps serving and asks nothing. With no terminal to ask on, the installer never opts in and says why | The installer is documented as idempotent (`install.sh:1`); a repeat run must not re-ask or silently change mode | defaulted |
 | 13 | Opening a browser stays best-effort and unchanged. On a serving machine the URL it opens is the served one | It already fails quietly on a machine with no screen (`server.js:1438-1449`), and on a laptop that serves, the served address opens fine locally | defaulted |
 | 14 | The token lasts across restarts. It is generated once into `<cache-root>/.token` (mode 0600) by whichever server start finds it missing, and every later start uses it instead of a fresh random one. It changes only through an explicit rotate | A bookmark must survive reboots; any process on the machine can reach `127.0.0.1`, so dropping the token would drop today's protection too | user |
@@ -75,7 +75,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 31 | The harness is `claude` when `CLAUDECODE=1`; otherwise `--open` walks its ancestor processes (`/proc/<pid>/stat` for the parent, `/proc/<pid>/comm` for the name) and answers `codex` if one is named `codex`, else `other`. Where `/proc` is absent (macOS), `claude` or `other` | No Codex environment variable was verified. The ancestor walk needs nothing from Codex and works for both harnesses | defaulted |
 | 32 | Serving setup runs `loginctl enable-linger "$USER"`. If that is refused, it prints the `sudo` command, warns that the service will stop at logout until it is run, and carries on | Decision Log #9: no silent `sudo`; the viewer still works while logged in | defaulted |
 | 33 | The viewer's unit-suite command becomes `node --test viewer/test/*.test.js` (unquoted, expanded by the shell), in `viewer/package.json`, `AGENTS.md` and `CONTRIBUTING.md` | The quoted glob fails on Node 20 ("Could not find"), while the shell-expanded list works on 20 and 26. The always-on machine runs 20 | defaulted |
-| 34 | The browser suite needs Chromium's system libraries. On hearth they are missing (`libnspr4.so`), and installing them (`sudo npx --prefix viewer playwright install-deps chromium`) is Collin's one-time step before Stage 3 | The phone work is only checkable in the browser suite; the install needs `sudo`, so per Decision Log #9 the person runs it | defaulted |
+| 34 | The browser suite needs Chromium's system libraries. On the server they are missing (`libnspr4.so`), and installing them (`sudo npx --prefix viewer playwright install-deps chromium`) is Collin's one-time step before Stage 3 | The phone work is only checkable in the browser suite; the install needs `sudo`, so per Decision Log #9 the person runs it | defaulted |
 | 35 | Below 600px of width, the top bar hides the legend and source text, and the controls scroll sideways inside the bar rather than being clipped. The explanation panel stays full width | The bar is a fixed 48px with `overflow: hidden` holding six buttons (`viewer/index.html:14-16`, `:211-218`), so on a phone the controls would be cut off and unreachable | defaulted |
 | 36 | On every machine, agents read the port and token from the lockfile (`<cache-root>/.server`), never by parsing them out of the printed URL. `protocol/graphs.md` step 1 says so, and its `PUT` examples keep sending to `http://127.0.0.1:<port>` with that `Origin` | On a serving machine the printed URL is `https://<name>.ts.net/?…` and carries no port; `graphs.md:474-478` currently offers parsing the URL as one of two ways | defaulted |
 | 37 | Serving setup is Linux-with-systemd only. Elsewhere `--serve` prints that serving isn't supported on this platform and installs everything else | Every machine that needs it today is Linux; a launchd or Windows service is a separate piece of work | defaulted |
@@ -95,7 +95,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 51 | `--register-plan`, `--url` and `--rotate-token` never start a server; `main()` handles them before `startServer` and they exit | Starting a server from a stage step would hang the stage in the foreground | review-round-1 |
 | 52 | Supersedes #31: the harness is the nearest ancestor process named exactly `claude` or `codex` (`/proc/<pid>/comm`), checked up the parent chain; `other` if none. `CLAUDECODE=1` decides only where `/proc` is absent | A Codex lane started by a Claude lead inherits `CLAUDECODE=1`; the nearest ancestor is the one actually running | review-round-1 |
 | 53 | Supersedes the file handling in #40: `--no-serve` on a serving machine writes `{"serve": false}` instead of deleting `.serving`. The rest of #40 stands | A deleted file means "never asked", which brings the question back | review-round-2 |
-| 54 | `.serving` is written whenever a choice is made: an answer at the prompt, `--serve` or `--no-serve`, or a first run with a display present, which records `{"serve": false}` without asking. A run with no display and no terminal makes no choice and writes nothing, so the question stays open for a run where a person can answer | "Decide once" needs every decision recorded, and must never record a decision nobody made, such as an agent running the installer on hearth for validation | review-round-2 |
+| 54 | `.serving` is written whenever a choice is made: an answer at the prompt, `--serve` or `--no-serve`, or a first run with a display present, which records `{"serve": false}` without asking. A run with no display and no terminal makes no choice and writes nothing, so the question stays open for a run where a person can answer | "Decide once" needs every decision recorded, and must never record a decision nobody made, such as an agent running the installer on the server for validation | review-round-2 |
 | 55 | Supersedes the stale rule in #46: the registry lock file holds its owner's pid, and is removed as stale only when that pid is gone (`process.kill(pid, 0)` gives `ESRCH`). There is no age limit. Waiting stays capped at 3 s | A live owner is never robbed, however long its operation; a crashed owner's lock is cleared at once | review-round-2 |
 | 56 | The document page is `/docs?plan=<dir>&file=<path relative to the plan>&token=<t>`. With no `file`, it shows `PLAN.md`, then `IDEA.md`, then the first `.md` in path order, whichever exists first. A relative link resolves against the directory of the document it appears in. If the result is a `.md` file inside the plan, it becomes a `/docs` link for that file; anything else is plain text | Documents can sit at any depth, so the base has to be the current document, the same as a browser or a Markdown viewer | review-round-2 |
 | 57 | `--rotate-token` stops the running server the way service takeover does (#47): `SIGTERM`, wait up to 5 s for the pid to exit, never unlink `.server` while it lives. If the pid outlives the wait, the new token file stays in place and the command says the server must be restarted | Today's stop path unlinks the lock right after `SIGTERM` (`server.js:1358-1359`), which a concurrent `--open` can race | review-round-2 |
@@ -135,7 +135,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 91 | `/whoami` also returns `code`, the first 12 hex characters of the SHA-256 of `server.js` as that process loaded it. `--stop --if-stale` stops the holder only if it gives no `proof` (older code) or its `code` differs from the current `server.js`'s; otherwise it prints "Viewer is current." and exits 0. The installer uses `--if-stale`; the service restart on a serving machine is unchanged | Stopping a current viewer on every install run breaks open pages on a laptop for nothing; only a viewer running different code needs stopping | review-round-10 |
 | 92 | Supersedes #85's "stops any running viewer server" with #91: the installer stops a running viewer only if it runs different code. The rest of #85 stands | #91 narrowed it; the log records the reversal explicitly | review-round-11 |
 | 93 | `GET /watching`, which only `--show` calls, takes the same signed form as `POST /register` (#88): `X-Graph-Timestamp` and `X-Graph-Signature` over the timestamp, a newline, and the request's path and query. It no longer takes `token` in the query | `--show` would otherwise send the token in plain text to whatever holds the port | review-round-12 |
-| 94 | The browser suite runs in both Chromium and Firefox. A new `viewer/playwright.config.js` defines two projects, `chromium` and `firefox`, and `npm --prefix viewer run test:browser` runs both. `install.sh` installs both browsers (`playwright install chromium firefox`). The blocking checks on hearth are done in Firefox on the phone `firefly` and in Firefox on a laptop | Collin uses Firefox on the laptops and the phone. Checked on hearth before this entry: the existing 64 browser tests pass in Firefox unchanged, and Playwright's Firefox gives touch pointers and matches `(pointer: coarse)` under `hasTouch` | user |
+| 94 | The browser suite runs in both Chromium and Firefox. A new `viewer/playwright.config.js` defines two projects, `chromium` and `firefox`, and `npm --prefix viewer run test:browser` runs both. `install.sh` installs both browsers (`playwright install chromium firefox`). The blocking checks on the server are done in Firefox on the phone `firefly` and in Firefox on a laptop | Collin uses Firefox on the laptops and the phone. Checked on the server before this entry: the existing 64 browser tests pass in Firefox unchanged, and Playwright's Firefox gives touch pointers and matches `(pointer: coarse)` under `hasTouch` | user |
 | 95 | Multi-finger cases (pinch, a second finger during a drag) are driven by dispatching `PointerEvent`s with `pointerType: 'touch'` and distinct `pointerId`s on the canvas from inside the page, the same way in both browsers. Single taps use `page.touchscreen` | Playwright's touchscreen only taps; dispatched pointer events are the one method that behaves the same in Chromium and Firefox | defaulted |
 
 ## Spec
@@ -164,15 +164,15 @@ flowchart TD
   E --> G
 ```
 
-Second, Collin on a phone or laptop: the bookmark goes to Tailscale on hearth, which only
-answers devices on the tailnet and passes the request to the viewer on hearth itself. The
+Second, Collin on a phone or laptop: the bookmark goes to Tailscale on the server, which only
+answers devices on the tailnet and passes the request to the viewer on the server itself. The
 list page shows graphs by tmux session and the registered plans; from there a graph opens
 in the viewer, and a plan's documents open read-only.
 
 ```mermaid
 flowchart TD
-  P[phone or laptop opens the bookmark] --> T[Tailscale on hearth, tailnet only]
-  T --> V[viewer on hearth, localhost only]
+  P[phone or laptop opens the bookmark] --> T[Tailscale on the server, tailnet only]
+  T --> V[viewer on the server, localhost only]
   V --> L[list: graphs by tmux session, plans with their status]
   L --> G[a graph: pan, pinch, drag, agree or reject]
   L --> D[a plan's documents, read-only]
@@ -189,7 +189,7 @@ The always-on service runs `viewer/server.js` against the default cache root
 ### Reaching the server from other devices
 
 A machine that has opted in runs `tailscale serve --bg <port>`, so Tailscale answers
-`https://<machine>.<tailnet>.ts.net` (on hearth, `https://hearth.taileb4e52.ts.net`) and
+`https://<machine>.<tailnet>.ts.net` (on the server, `https://<machine>.<tailnet>.ts.net`) and
 forwards each request to `http://127.0.0.1:<port>`. The server's listen address is unchanged
 (`server.js:1417`). `requirePutAuth` (`server.js:1092-1098`) accepts either
 `http://127.0.0.1:<port>` or the machine's served origin, and nothing else (Decision Log #8).
@@ -635,17 +635,17 @@ scroll. Every browser case runs in both the `chromium` and `firefox` projects (D
 #94). Multi-finger cases dispatch touch `PointerEvent`s with distinct `pointerId`s inside the
 page, and single taps use `page.touchscreen` (Decision Log #95).
 
-Blocking, on hearth, after `./install.sh --serve`, done in Firefox on the phone `firefly` and
+Blocking, on the server, after `./install.sh --serve`, done in Firefox on the phone `firefly` and
 repeated in Firefox on a laptop (Decision Log #94): from the phone, open
-`https://hearth.taileb4e52.ts.net/?token=…` and see the list; open a graph and mark one entry
+`https://<machine>.<tailnet>.ts.net/?token=…` and see the list; open a graph and mark one entry
 agreed, confirming the write isn't refused as `bad-origin` (this is what checks that
 `tailscale serve` passes `Origin` through); run
 `node viewer/server.js --register-plan "$PWD/docs/plans/remote-viewer"` from the repo root,
 since this plan predates the stage step, then open its documents from the list and read
 PLAN.md;
-confirm `tailscale funnel status` lists `hearth.taileb4e52.ts.net` as `(tailnet only)` with
+confirm `tailscale funnel status` lists `<machine>.<tailnet>.ts.net` as `(tailnet only)` with
 no entry saying `Funnel on`, and that the address does not load from the phone with
-Tailscale switched off; reboot hearth and confirm the same bookmark still
+Tailscale switched off; reboot the server and confirm the same bookmark still
 opens.
 
 ## Accepted Risks
@@ -745,7 +745,7 @@ Triage: 2 blocking and 5 major upheld (one blocking downgraded to major), so the
 | Claude | minor | The origin sentence lost its subject, and nothing says what `--serve` does when `tailscale` is missing or `Self.DNSName` is empty | upheld | Spec and fixture case: `--serve` then stops serving setup with a message, writes nothing, installs the rest |
 | Claude | minor | `status:` carries a trailing `# …` comment (`protocol/templates/PLAN.md:3`) | upheld | Spec: the comment is stripped |
 | Claude | minor | Pruning on every 5 s list build rewrites both files and, going by `added`, can drop a graph under active review | upheld | Decision Log #59 |
-| Claude | minor | The hearth check reads this plan's documents, but this plan isn't registered before the stage documents change | upheld | Validation: run `--register-plan` for this plan first |
+| Claude | minor | The on-server check reads this plan's documents, but this plan isn't registered before the stage documents change | upheld | Validation: run `--register-plan` for this plan first |
 
 ### Round 3 — 2026-09-23
 
@@ -766,7 +766,7 @@ Triage: 1 blocking and 1 major upheld (both fixed below), and one `user-decision
 - `--serve` when `tailscale` is missing;
 - the list-polling wording;
 - the child-registration cite;
-- the new unit, fixture and hearth validation cases.
+- the new unit, fixture and the server validation cases.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
@@ -807,7 +807,7 @@ Triage: 2 major upheld (one reported blocking, downgraded), so the round is not 
 | Claude | minor | `existingServer` can return `foreign` (a live process that isn't ours holds the lock, `server.js:1379`), and "no server answers" didn't say how commands treat it | upheld | Spec: `foreign` is refused as today, and nothing writes the file |
 | Claude | minor | `POST /register` accepts any absolute path. With the bookmark token, a tailnet visitor could register `/` as a plan and read every `.md` on the machine, or make any `.json` path writable | upheld | Decision Log #66 |
 | Claude | minor | `--stop` still unlinks `.server` right after `SIGTERM` (`server.js:1358-1359`), the race #57 and #60 fix elsewhere | upheld | Spec: `--stop` uses the same wait-for-exit lifecycle |
-| Claude | minor | Nothing validates "nothing is reachable from outside the tailnet"; a Funnel setup would pass | upheld | Hearth check: `tailscale funnel status` shows nothing, and the address doesn't load from the phone with Tailscale off |
+| Claude | minor | Nothing validates "nothing is reachable from outside the tailnet"; a Funnel setup would pass | upheld | The server check: `tailscale funnel status` shows nothing, and the address doesn't load from the phone with Tailscale off |
 
 ### Round 5 — 2026-09-23
 
@@ -823,7 +823,7 @@ Triage: 2 blocking and 2 major upheld, so the round is not clean. Every upheld f
 - `--stop`'s wait-for-exit;
 - the reworded no-server accepted risk;
 - the new unit cases;
-- the Funnel and off-tailnet hearth checks.
+- the Funnel and off-tailnet on-server checks.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
@@ -831,7 +831,7 @@ Triage: 2 blocking and 2 major upheld, so the round is not clean. Every upheld f
 | GPT | blocking | On a laptop, `--register-plan` stopping an old server (#65) and then exiting leaves no viewer running until the next `--open`, against IDEA's unchanged local viewer | upheld | Decision Log #67: `--register-plan` with no server starts one in the background |
 | GPT | major | #66 resolves only a graph's parent directory, so a `graphs/x.json` that is itself a symlink could point outside the allowed places; `readRaw` follows it (`server.js:336-343`) | upheld | Decision Log #68 |
 | GPT | minor | The path limits were only tested through `POST /register`, not on the direct-write path | upheld | Moot after #67 (there is no direct write); cases added for the limits on a server's own start-up registration |
-| Claude | major | `tailscale funnel status` never "shows nothing" on a correctly served machine: it prints the serve config with each host marked `(tailnet only)` or `(Funnel on)`. Today it prints `No serve config` | upheld | Hearth check: the host is listed as `(tailnet only)` and no entry says `Funnel on` |
+| Claude | major | `tailscale funnel status` never "shows nothing" on a correctly served machine: it prints the serve config with each host marked `(tailnet only)` or `(Funnel on)`. Today it prints `No serve config` | upheld | The server check: the host is listed as `(tailnet only)` and no entry says `Funnel on` |
 | Claude | minor | #62 names only the `127.0.0.1` origin for `POST /register`, while the Spec says "the way `requirePutAuth` does", which also accepts the served origin | upheld | Spec: `requirePutAuth`'s rule, both origins |
 | Claude | minor | The agent-facing contract doesn't mention `bad-path` refusals, exit 1 on a refused registration, or the old-server notice | upheld | Agent-facing contract extended |
 | Claude | minor | `--stop` doesn't say what happens when the pid outlives the wait | upheld | Spec: it says so and exits 1 |
@@ -1070,7 +1070,7 @@ Filled by Stage 3. One row per worker brief.
   Status back to ready-for-review. Review rounds count again from here.
 - 2026-09-23: Round 12 clean (zero blocking, zero major). Spec diagrams drawn. Status set to
   approved. Before Stage 3, Collin needs to run
-  `sudo npx --prefix viewer playwright install-deps chromium` on hearth (Decision Log #34).
+  `sudo npx --prefix viewer playwright install-deps chromium` on the server (Decision Log #34).
 - 2026-09-23: Collin ran `install-deps chromium firefox`. Baseline before implementation:
   64/64 browser tests in Chromium and 64/64 in Firefox, 55/55 server tests on Node 20, and
   the install, sensitivity and spine suites pass. Collin then asked for Firefox coverage on
@@ -1079,7 +1079,7 @@ Filled by Stage 3. One row per worker brief.
   round was run; Stage 4 verifies them like everything else.
 - 2026-09-23: Stage 3 done. All eight tasks merged into `remote-viewer`; 192/192 browser
   tests (Chromium and Firefox), 102/102 unit tests, installer 41/41, sensitivity 62/62,
-  spine 80/80, `./install.sh` twice idempotent. The blocking hearth checks are not yet run;
+  spine 80/80, `./install.sh` twice idempotent. The blocking on-server checks are not yet run;
   they need Collin's `sudo` step and devices (COMPLETION.md, Known gaps). Status set to
   verifying.
 - 2026-09-23: A lead script had overwritten the outcome cells of Watch List #2 and #3 and
@@ -1087,6 +1087,6 @@ Filled by Stage 3. One row per worker brief.
 - 2026-09-23: Stage 4 done. Round 1 FAIL from both cross-family verifiers (REMEDIATION-1.md);
   round 2 PASS from gpt-5.6-sol and one remaining gap from the Claude verifier
   (REMEDIATION-2.md); round 3 PASS. Docs swept (`AGENTS.md` citation and env-variable list).
-  Status set to done. The blocking hearth checks (phone and laptop in Firefox, `Origin`
+  Status set to done. The blocking on-server checks (phone and laptop in Firefox, `Origin`
   through `tailscale serve`, Funnel off, reboot survival) remain for Collin to run.
 
