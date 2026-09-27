@@ -516,7 +516,7 @@ http://127.0.0.1:7373/wheelchair/?path=%2Fhome%2Fcollin%2F...%2Fcheckout.json
 ```
 
 On a machine set up to serve other devices, the line it prints instead looks like
-`https://hearth.taileb4e52.ts.net/wheelchair/?path=...`, with no port in it at all. Either
+`https://<machine>.<tailnet>.ts.net/wheelchair/?path=...`, with no port in it at all. Either
 way, print that URL to Collin.
 
 You still need the token and port again for the `PUT` below. Always read them from
