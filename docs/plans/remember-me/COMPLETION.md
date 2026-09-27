@@ -63,18 +63,18 @@ flowchart TD
 | Printed URLs: graph URLs tokenless, `--show` opens a token link locally, `--url` and `--rotate-token` print the prefixed bookmark (#9, #20, #23) | this run | `viewer/server.js:1762` (`viewerUrl`) and the `main` branches | `registration.test.js` "open and show print token-free prefixed graph URLs, while show opens the token link and url prints the bookmark"; `lifecycle.test.js` "--rotate-token prints the new prefixed bookmark for a current server" |
 | Holder identification with the root `/whoami` fallback; pre-prefix holder handling (#15, #23, remote-viewer #85) | this run | `viewer/server.js:1816` (`identifyHolder`), `:1825` | `lifecycle.test.js` "a proof-valid pre-prefix holder is stopped only by stop and every other command reports the upgrade", "a no-proof pre-prefix holder stops only with its matching server start id and open refuses it" |
 | Installer reads `tailscale serve status --json` and manages only the viewer's mappings; path-specific `--no-serve`; origin kept (#12, #17, #21, #22, #24, #26, #28) | this run | `install.sh:166` (`tailscale_mapping_states`), `:212` (`configure_tailscale_serve`), `:266` (`recorded_origin`), `:274` (`disable_service`) | `install/test/run.sh` (63 cases; 22 new, among them "--no-serve records false and keeps the origin for a retry", "--no-serve never suggests disabling every HTTPS mapping") |
-| Tailscale forwarding behaviour (#27) | this run (probe) | Decision Log #27 | Probed on hearth 2026-09-23, with Collin running the two `sudo` commands |
+| Tailscale forwarding behaviour (#27) | this run (probe) | Decision Log #27 | Probed on the server 2026-09-23, with Collin running the two `sudo` commands |
 | Documents (`protocol/graphs.md`, `README.md`) | this run | `protocol/graphs.md` step 1 and the refusals section; `README.md` viewer and serving sections | Read against the Spec |
-| Blocking hearth checks (phone and laptop) | partly done | — | 2026-09-24. Collin added the `/wheelchair` mapping (`tailscale serve status` shows `/wheelchair proxy http://127.0.0.1:7373/wheelchair`). The served `/wheelchair/whoami` answers `200` with a `start_id`. On the phone in Firefox, a plain link was refused on a browser never remembered, the token link signed it in, and plain links worked afterwards. A rerun of `./install.sh` offered no `tailscale serve` command. Not yet done: the laptop, a link tapped from another website, an edit saved on the phone |
+| Blocking on-server checks (phone and laptop) | partly done | — | 2026-09-24. Collin added the `/wheelchair` mapping (`tailscale serve status` shows `/wheelchair proxy http://127.0.0.1:7373/wheelchair`). The served `/wheelchair/whoami` answers `200` with a `start_id`. On the phone in Firefox, a plain link was refused on a browser never remembered, the token link signed it in, and plain links worked afterwards. A rerun of `./install.sh` offered no `tailscale serve` command. Not yet done: the laptop, a link tapped from another website, an edit saved on the phone |
 
 ## Deviations from plan
 
 - **The live viewer ran this code before verification, and before the `/wheelchair`
-  Tailscale mapping existed.** Running the validation step `./install.sh && ./install.sh` on hearth, which is
+  Tailscale mapping existed.** Running the validation step `./install.sh && ./install.sh` on the server, which is
   a serving machine, restarted the always-on service on the `remember-me` code. The installer
   had no terminal to ask on, so it printed the `/wheelchair` mapping command for later instead
   of running it. The existing `/` mapping forwards every path, so
-  `https://hearth.taileb4e52.ts.net/wheelchair/…` already works through it. Checked:
+  `https://<machine>.<tailnet>.ts.net/wheelchair/…` already works through it. Checked:
   `/` answers `308` to `/wheelchair/`, `/wheelchair/whoami` answers `200` with a `start_id`,
   and `/wheelchair/` without a cookie answers `401`. Collin added the `/wheelchair` mapping
   on 2026-09-24 (see the coverage row for the checks done since).
@@ -98,7 +98,7 @@ No other router names a changed file or lost ownership.
 
 ## Validation evidence
 
-Run by the lead on `remember-me` after the last merge, Node v20.19.2 on hearth.
+Run by the lead on `remember-me` after the last merge, Node v20.19.2 on the server.
 
 ```text
 $ node --test viewer/test/*.test.js           # three runs, the last under browser-suite load
@@ -116,7 +116,7 @@ $ bash spine/test/run.sh        -> RESULT 80 passed, 0 failed
 $ ./install.sh && ./install.sh                 # tail of the second run
 viewer: sudo tailscale serve --bg --set-path /wheelchair http://127.0.0.1:7373/wheelchair
 viewer: run later: sudo tailscale serve --bg --set-path /wheelchair http://127.0.0.1:7373/wheelchair
-https://hearth.taileb4e52.ts.net/wheelchair/?token=<redacted>
+https://<machine>.<tailnet>.ts.net/wheelchair/?token=<redacted>
 $ git status --porcelain                       # only the lead's AGENTS.md citation edit
  M AGENTS.md
 ```
@@ -125,12 +125,12 @@ $ git status --porcelain                       # only the lead's AGENTS.md citat
 
 - **The laptop checks, a link tapped from another website, and an edit saved on the phone
   are still to do.** The laptop was off on 2026-09-24.
-- **The installer warns about lingering even when it is on.** On hearth, `Linger=yes`, yet a
+- **The installer warns about lingering even when it is on.** On the server, `Linger=yes`, yet a
   non-interactive `loginctl enable-linger` is refused, so the installer prints the `sudo`
   form and the warning. The check comes from remote-viewer (its Decision Log #32). It should
   read `loginctl show-user "$USER" -p Linger` first. That fix is outside this plan.
 - **The token appeared once in this session's output**, in the bookmark the installer
-  printed. It stayed on hearth and the tailnet. `node viewer/server.js --rotate-token` issues
+  printed. It stayed on the server and the tailnet. `node viewer/server.js --rotate-token` issues
   a new one if Collin wants.
 - The plan's accepted risks stand: the first-visit URL may stay in history; two local viewers
   share one cookie; a future same-origin service could use the cookie.
@@ -165,6 +165,6 @@ $ npm --prefix viewer run test:browser  -> 202 passed (1.0m)
 Closure review by the same two verifiers, resumed. Both returned PASS, and both checks
 crossed families. The lead then swept the documents: the `AGENTS.md` citations
 (`viewer/server.js:2108-2109`, `:148`, `viewer/test/helpers/server.js:87`) still point at the
-lines they describe. The lead also restarted hearth's viewer service so it runs the verified
+lines they describe. The lead also restarted the server's viewer service so it runs the verified
 code: `/wheelchair/whoami` answers `200` with a `start_id`, and `/` answers `308`.
 

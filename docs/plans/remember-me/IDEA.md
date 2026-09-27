@@ -9,7 +9,7 @@ created: 2026-09-23
 ## What we're building
 
 Opening the viewer's long token link once on a phone or laptop is enough. After that, the
-plain address, `https://hearth.taileb4e52.ts.net/wheelchair/`, opens the list on that
+plain address, `https://<machine>.<tailnet>.ts.net/wheelchair/`, opens the list on that
 device, and every page works without the token in its address. The token stops showing up
 in URLs and in browser history. The viewer moves under `/wheelchair/`, so the root of the
 address stays free for a hub or another service later.
@@ -21,13 +21,13 @@ device needs a bookmark that carries a 64-character secret. Typing the plain add
 an error. The token also lands in the history of every page visited, and in anything copied
 from the address bar.
 
-Collin also expects to serve other things from hearth later, and doesn't want this change to
+Collin also expects to serve other things from the server later, and doesn't want this change to
 make that harder.
 
 ## What good looks like
 
 - On a device that has opened the token link once, typing or bookmarking
-  `https://hearth.taileb4e52.ts.net/wheelchair/` opens the list, and graphs and plan documents open
+  `https://<machine>.<tailnet>.ts.net/wheelchair/` opens the list, and graphs and plan documents open
   from it. Nothing asks for the token again until it is rotated.
 - After that first visit, the token no longer appears in the address bar or in the history
   of any viewer page.
@@ -38,9 +38,9 @@ make that harder.
   in them; on a device that hasn't, the page says to open the bookmark once. The old bookmark
   with the token keeps working. While nothing else
   is at the root, an old root link is sent on to the same place under `/wheelchair/`.
-- The root of `https://hearth.taileb4e52.ts.net/` stays free: the viewer answers only under
+- The root of `https://<machine>.<tailnet>.ts.net/` stays free: the viewer answers only under
   `/wheelchair/` apart from that redirect, and nothing it sets reaches other paths.
-- Adding another service on hearth later needs no change to the viewer and no change to how
+- Adding another service on the server later needs no change to the viewer and no change to how
   Collin reaches it.
 
 ## Not doing

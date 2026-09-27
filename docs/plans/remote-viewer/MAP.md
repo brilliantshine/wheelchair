@@ -82,9 +82,9 @@ Dragging a box works, because the page uses pointer events throughout and sets
 
 ## The machine
 
-Checked on hearth on 2026-09-23. These are facts about this box, not about the code:
+Checked on the server on 2026-09-23. These are facts about this box, not about the code:
 
-- Tailscale 1.102.4 is running. The machine's tailnet name is `hearth.taileb4e52.ts.net`,
+- Tailscale 1.102.4 is running. The machine's tailnet name is `<machine>.<tailnet>.ts.net`,
   MagicDNS is on, and HTTPS certificates are available for that name. The phone `firefly`
   and the laptops are on the same tailnet.
 - `tailscale serve` has no configuration yet. No tailscale operator is set, so configuring
