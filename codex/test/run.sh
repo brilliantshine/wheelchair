@@ -152,6 +152,12 @@ assert 'a missing cache prints no model lines' equals "$output" ''
 write_cache 'not json'
 run_model check
 assert 'a malformed cache prints no model lines' equals "$output" ''
+printf -v huge_number '%*s' 5000 ''
+huge_number=${huge_number// /9}
+printf '{"models": [{"slug": "gpt-6.2-sol", "visibility": "list", "n": %s}]}' "$huge_number" > "$cache"
+run_model check
+assert 'a cache with an oversized integer prints no model lines' equals "$output" ''
+assert 'a cache with an oversized integer keeps check successful' test "$status" -eq 0
 write_cache '{"models":[{"slug":"gpt-9-sol","visibility":"hide"}]}'
 run_model check
 assert 'a hidden-only cache prints no model lines' equals "$output" ''

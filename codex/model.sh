@@ -131,7 +131,7 @@ def visible_models(cache_path):
     try:
         with open(cache_path, encoding="utf-8") as handle:
             cache = json.load(handle)
-    except (OSError, UnicodeError, json.JSONDecodeError):
+    except (OSError, UnicodeError, ValueError, RecursionError):
         return []
     if not isinstance(cache, dict) or not isinstance(cache.get("models"), list):
         return []
@@ -238,7 +238,10 @@ def main(root, argv):
             raise SystemExit(1)
         return
     if len(argv) == 1 and argv[0] == "check":
-        heads_up(root, pin_path, cache_path)
+        try:
+            heads_up(root, pin_path, cache_path)
+        except Exception:
+            pass
         return
     if len(argv) == 3 and argv[0] == "set" and argv[1] in TIERS and VALUE.match(argv[2]):
         tier, model = argv[1], argv[2]
