@@ -32,7 +32,8 @@ flock 9
 # Everything below holds the lock: the re-read, the exchange, and the atomic write-back all
 # happen before another preflight can start, so a concurrent caller adopts this rotation
 # instead of making its own.
-exec python3 - "$codex_home/auth.json" "${WHEELCHAIR_TOKEN_MARGIN_HOURS:-24}" <<'PY'
+rc=0
+python3 - "$codex_home/auth.json" "${WHEELCHAIR_TOKEN_MARGIN_HOURS:-24}" <<'PY' || rc=$?
 import base64, datetime, json, os, sys, tempfile, urllib.error, urllib.parse, urllib.request
 
 TOKEN_URL = "https://auth.openai.com/oauth/token"
@@ -118,3 +119,6 @@ except BaseException:
 
 print(f"preflight: refreshed ({jwt_exp(tokens['access_token']) - now:.0f}s of life)")
 PY
+
+"$(dirname "$0")/model.sh" check 2>/dev/null || :
+exit "$rc"
