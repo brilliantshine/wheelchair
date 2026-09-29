@@ -54,7 +54,12 @@ setting remains theirs. Before the first GPT dispatch of a session, run the pref
 
 `RC` and `TID` both matter: a non-zero `RC` means the lane died and `$OUT` may be empty
 or truncated, and `TID` is the only handle for resuming it. Record the thread id in the
-plan doc next to the task it ran.
+plan doc next to the task it ran. Record the lane's tier and the `MODEL` value resolved
+just before that call alongside it — that value is what the lane actually ran, so the
+record never resolves the model again later. This holds for every stage's lanes:
+implementation tasks use the Lane-column form in `protocol/implementation.md`; review
+rounds and verification rounds record it as `protocol/plan-review.md` and
+`protocol/verification.md` say.
 
 - `-m` — three implementation tiers, plus one rung reserved for escalation. Pick by **how
   much the lane has to decide**, not by how big the task looks. A tier's model comes from
