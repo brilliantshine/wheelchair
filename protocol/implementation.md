@@ -89,6 +89,13 @@ or leaves a case unnamed, it is workhorse-tier. Writing the missing decision *in
 brief to keep a task on the cheap lane is legitimate and good — that decision belonged in
 the plan anyway. Assuming the lane will work it out is not.
 
+Record a GPT lane's tier and its resolved model — the one `lanes.md` resolves into a
+variable at dispatch, never a tier name alone — as `<Tier> (<model>)`. A resume that
+resolves a different model appends it: `<Tier> (<first model>, resumed on <second
+model>)`, and each further resume on yet another model appends `, resumed on <model>`
+again. A Claude lane's entry needs no model, since Sonnet and Opus already move to each
+new model on their own.
+
 **Ask once for everything the run needs, before dispatching anyone.** List what the run
 depends on that only Collin can supply: every command named in the briefs' validation
 lines that isn't on `PATH`, each lane the briefs use and whether it can log in

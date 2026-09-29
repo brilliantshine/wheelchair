@@ -54,7 +54,7 @@ Two rules follow, and between them they cover most of what can go wrong here:
 | `sensitivity/` | [AGENTS.md](sensitivity/AGENTS.md) | `set.sh`, the only writer of each present harness's global instruction file |
 | `seen/` | [AGENTS.md](seen/AGENTS.md) | `hook.sh`, the per-turn hook both harnesses call; `wording.sh`, the only writer of the wording list; `set.sh`, the installer's writer of both harnesses' hook entry |
 | `install/` | — | `test/run.sh`, the installer fixture suite. Temp harness homes only; real global files stay untouched |
-| `codex/` | — | `prompts/`, the Codex CLI wrappers. Same convention as `skills/`, one line each |
+| `codex/` | — | `prompts/`, the Codex CLI wrappers, same convention as `skills/`, one line each; `preflight.sh`, the login check that also prints the model heads-up; `model.sh`, the GPT model pins' reader and writer; and `test/`, its fixture suite |
 | `docs/` | — | `plans/<slug>/` per feature. State, not rules — nothing here is a contract |
 | `viewer/` | — | the browser graph viewer, its list and document pages, the sign-in page a browser gets before it is remembered, and the server behind them — `index.html`, `list.html`, `list.js`, `doc.html`, `doc.js`, `signin.html`, `server.js`, `playwright.config.js`. Started by an agent turn, never read as guidance |
 
@@ -104,6 +104,7 @@ Rules:
 bash spine/test/run.sh                # the scanner's assertions, exit-code gated
 bash sensitivity/test/run.sh          # the dial's block writer, exit-code gated
 bash seen/test/run.sh                 # the hook and wording-list writer, exit-code gated
+bash codex/test/run.sh                # the GPT model pins and heads-up, exit-code gated
 bash install/test/run.sh              # presence-aware installer assertions, exit-code gated
 ./install.sh && ./install.sh          # idempotent; git status --porcelain stays empty
 node --test viewer/test/*.test.js     # unquoted glob; works on Node 20 and 26
