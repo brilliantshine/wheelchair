@@ -1,6 +1,6 @@
 ---
 slug: model-pins
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-09-29
 ---
 
@@ -304,8 +304,8 @@ wording for a hand-set pin, and implementation.md added to What gets built. This
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | The code: `codex/model.sh` (pins file, reader, set, skip, init, check with the heads-up rules), the preflight change, the installer's `init` step, and the fixture suite (Spec: pins file, model.sh, heads-up, login check, What gets built 1–3 and 5) | `codex/model.sh`, `codex/test/run.sh`, `codex/preflight.sh`, `install.sh`, `install/test/run.sh` | Terra (gpt-5.6-terra), worktree `mp-t1` | | `bash codex/test/run.sh && bash install/test/run.sh && bash seen/test/run.sh` | not started |
-| T2 | The prose: tiers, not model ids, in the rule documents, with the reader in every GPT invocation, the heads-up relay rule, resume and record rules, placeholders; routers, README and CONTRIBUTING (Spec: The rules, What gets built 4 and 6) | `protocol/lanes.md`, `protocol/implementation.md`, `protocol/plan-review.md`, `protocol/verification.md`, `AGENTS.md`, `CONTRIBUTING.md`, `README.md` | Claude / sonnet, worktree `mp-t2` | | `grep -rniE "gpt-[0-9]" protocol/` shows only the labelled 5.6 measurements | not started |
+| T1 | The code: `codex/model.sh` (pins file, reader, set, skip, init, check with the heads-up rules), the preflight change, the installer's `init` step, and the fixture suite (Spec: pins file, model.sh, heads-up, login check, What gets built 1–3 and 5) | `codex/model.sh`, `codex/test/run.sh`, `codex/preflight.sh`, `install.sh`, `install/test/run.sh` | Terra (gpt-5.6-terra), worktree `mp-t1` | `01a0ef62-0735-7ee3-a93e-88e418fac54e` | `bash codex/test/run.sh && bash install/test/run.sh && bash seen/test/run.sh` | done — lead re-ran all four suites (43, 72, 18, 80 passed) and read the code; merged |
+| T2 | The prose: tiers, not model ids, in the rule documents, with the reader in every GPT invocation, the heads-up relay rule, resume and record rules, placeholders; routers, README and CONTRIBUTING (Spec: The rules, What gets built 4 and 6) | `protocol/lanes.md`, `protocol/implementation.md`, `protocol/plan-review.md`, `protocol/verification.md`, `AGENTS.md`, `CONTRIBUTING.md`, `README.md` | Claude / sonnet, worktree `mp-t2` | | `grep -rniE "gpt-[0-9]" protocol/` shows only the labelled 5.6 measurements | done — lead re-ran the grep and read the diff; merged |
 
 ## Log
 
@@ -325,3 +325,16 @@ wording for a hand-set pin, and implementation.md added to What gets built. This
 - 2026-09-29 — Stage 3 started. Nothing needed from Collin: every validation command is on
   PATH, the GPT preflight exit is 0, and the Claude lane runs from Claude Code. No earlier run
   picture existed to move aside.
+- 2026-09-29 — Choice: T2 — lane rules — the heads-up paragraph states it prints whatever exit code the token check gave
+- 2026-09-29 — Choice: T2 — lane rules — dropped the tier-specific clause from the resume sentence, since the new wording covers it
+- 2026-09-29 — Choice: T2 — lane rules — reworded "GPT-6 or the other tiers" to "a later model or the other tiers"
+- 2026-09-29 — Choice: T2 — stage rules — a Claude lane's Lane entry needs no model, since its aliases move on their own
+- 2026-09-29 — Choice: T2 — stage rules — expanded plan-review.md's lead-in sentence so it matches the new Lanes example
+- 2026-09-29 — Choice: T2 — routers and README — put the pins mention as a bullet in the README's existing outside-the-repo list
+- 2026-09-29 — Choice: T1 — switch a tier, or skip a model — set and skip rewrite the pins file in a fixed order, dropping any hand-added comments
+- 2026-09-29 — Choice: T1 — switch a tier, or skip a model — skip on a missing pins file first creates it from the defaults
+- 2026-09-29 — Choice: T1 — fixture tests — the login-check exit 1 and 2 cases use a copied script pointed at a local stub, never the real token endpoint
+- 2026-09-29 — T1 and T2 merged. No struck choices on the run picture. Validation green except
+  the pre-existing lifecycle test. COMPLETION.md written. Status `verifying`. End-of-run choices:
+  the nine `Choice:` lines above. A strike made on the picture from now on isn't picked up
+  automatically.
