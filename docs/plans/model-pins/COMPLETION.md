@@ -46,7 +46,7 @@ check's. Collin's `set` and `skip` are the only things that change the pins.
 | implementation.md Lane record (D18, D21) | this run | `protocol/implementation.md:92-97` | read against Spec |
 | plan-review.md and verification.md name Sol, with placeholders (D5, D20) | this run | `protocol/plan-review.md:33-36`, `protocol/verification.md:29`, `:35`, `:62` | read against Spec |
 | Claude lanes unchanged (D7) | this run | no Claude invocation changed in `protocol/lanes.md` | `git diff` of `protocol/lanes.md` touches only GPT lines |
-| Routers, README, CONTRIBUTING | this run | `AGENTS.md:57`, `:107`; `CONTRIBUTING.md:84`; `README.md:81`, `:90-91` | read |
+| Routers, README, CONTRIBUTING | this run | `AGENTS.md:57`, `:107`; `CONTRIBUTING.md:84`; `README.md:84`, `:90-91` | read |
 | No allow-list grant (D19) | this run | `seen/set.sh` unchanged | `bash seen/test/run.sh` passes unchanged |
 
 ## Deviations from plan
