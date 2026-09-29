@@ -39,7 +39,7 @@ resumed later:
 ```bash
 BRIEF=$(mktemp) OUT=$(mktemp) LOG=$(mktemp)
 # ... write the brief to $BRIEF ...
-WHEELCHAIR_LANE=1 codex exec -m gpt-5.6-sol -c model_reasoning_effort=high \
+WHEELCHAIR_LANE=1 codex exec -m gpt-6.1-sol -c model_reasoning_effort=high \
   -s read-only -C "$PWD" --json -o "$OUT" - < "$BRIEF" > "$LOG" 2>&1
 RC=$?
 TID=$(grep -m1 -o '"thread_id":"[^"]*"' "$LOG" | cut -d'"' -f4)
@@ -55,20 +55,26 @@ setting remains theirs. Before the first GPT dispatch of a session, run the pref
 or truncated, and `TID` is the only handle for resuming it. Record the thread id in the
 plan doc next to the task it ran.
 
-- `-m` — three implementation tiers. Pick by **how much the lane has to decide**, not by
-  how big the task looks:
-  - `gpt-5.6-luna` — *transcription*. The brief names the files, the change, and the
+- `-m` — three implementation tiers, plus one rung reserved for escalation. Pick by **how
+  much the lane has to decide**, not by how big the task looks. The tiers keep their names
+  across model generations. Luna, Terra, Sol and Astra below mean the models named here:
+  - `gpt-6-luna` — *transcription*. The brief names the files, the change, and the
     pattern to copy; the lane invents nothing. "Change these six call sites to the new
     signature." "Write tests for this function covering the cases listed." The test:
     could you have written the diff yourself and simply didn't want to type it?
-    Second gate — **narrow context**. Luna's long-context recall collapses (41.3% MRCR
-    against Sol's 91.5%), so a forty-file sweep is a Terra brief no matter how mechanical
-    each individual edit is. Mechanical *and* small, or it moves up.
+    Second gate — **narrow context**. Luna's long-context recall collapsed on 5.6 (41.3% MRCR
+    against Sol's 91.5%). That was measured on `gpt-5.6-luna` and hasn't been re-measured
+    for GPT-6, so keep treating it as true: a forty-file sweep is a Terra brief no matter
+    how mechanical each individual edit is. Mechanical *and* small, or it moves up.
   - `gpt-5.6-terra` — *everything else*, and the default when the tier is arguable. Any
     brief where the lane picks the shape: where a thing lives, what an interface looks
-    like, how to handle a case the plan didn't name.
-  - `gpt-5.6-sol` — judgment lanes (planning, plan review, verification). It reaches
+    like, how to handle a case the plan didn't name. It stays on 5.6 because GPT-6 has no
+    Terra.
+  - `gpt-6.1-sol` — judgment lanes (planning, plan review, verification). It reaches
     implementation only as an escalation ("Escalate the model only on evidence" below).
+  - `gpt-6-astra` — the last escalation rung, above Sol, and never a first dispatch. It
+    spends the single account's quota far faster than any other tier, so a lane reaches it
+    only after Sol has already come back wrong on the same task.
 
   Reasoning effort **does** need a flag at dispatch. `~/.codex/config.toml` may set
   `model_reasoning_effort = "high"`, but a lane must not depend on that being true on a given
@@ -76,8 +82,9 @@ plan doc next to the task it ran.
   Passing the flag where the config already agrees costs nothing.
   Pass `-c model_reasoning_effort=high` on every lane. High is the floor, not
   the ceiling —
-  `-c model_reasoning_effort=xhigh` is the escalation rung below a tier change, and 5.6
-  `xhigh` is genuine wire-level xhigh (verified). Anything *below* high is a downgrade;
+  `-c model_reasoning_effort=xhigh` is the escalation rung below a tier change. On 5.6,
+  `xhigh` was verified to be genuine wire-level xhigh. That hasn't been re-checked for the
+  GPT-6 models. Anything *below* high is a downgrade;
   don't pass one unless you mean it.
 - `-s` — `read-only` for plan reviewers, `workspace-write` for implementers and for
   verifiers that must run a test suite.
@@ -168,7 +175,7 @@ documents, not this one, say what follows from an authentication report.
 - **Never two write-lanes in one checkout.** Concurrent writers sweep each other's
   in-progress files even with disjoint scopes. Parallelize only across separate git
   worktrees; otherwise sequence.
-- **Escalate the model only on evidence.** The ladder is `luna → terra → sol` on the GPT
+- **Escalate the model only on evidence.** The ladder is `luna → terra → sol → astra` on the GPT
   side and `sonnet → opus` on the Claude side, one rung at a time, and a rung is bought
   only by a lane that **already came back wrong** — it ignored the brief's ownership
   boundary or validation commands, claimed a completion the diff contradicts, or hit the
@@ -184,8 +191,8 @@ documents, not this one, say what follows from an authentication report.
   than resuming — a resume hands the next rung a context full of the last one's dead ends.
   Record the rung and the reason next to the task in the plan doc.
 - **A finished lane is a claim, not a fact.** Re-run its validation and read the diff
-  yourself. Sol fabricates completions at a documented rate and nothing establishes Terra
-  or Luna is better — demand pasted command output in every deliverable and check the
+  yourself. Sol fabricated completions at a documented rate on 5.6, nothing establishes that
+  GPT-6 or the other tiers are better — demand pasted command output in every deliverable and check the
   claimed file state. The cheaper the tier, the more literally this applies: a Luna brief
   that turned out to need a decision is exactly where you get confident, wrong work.
 - **Tighten the brief before anything else.** Sol games vague success bars, and reasoning

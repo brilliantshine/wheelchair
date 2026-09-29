@@ -172,7 +172,7 @@ task recorded **unstarted**, not attempted; do not reroute its brief to the othe
 Its escalation ladder is untouched: it is for a lane that came back wrong, and a lane that
 never ran has nothing to escalate.
 
-Sol and Opus are not implementation lanes. A brief reaches one only after a cheaper lane
+Sol, Astra and Opus are not implementation lanes. A brief reaches one only after a cheaper lane
 came back wrong, by lanes.md's "Escalate the model only on evidence" — a task that merely
 looks hard is not grounds, it is just a task that starts at Terra. Escalating before a
 lane has failed is the expensive mistake this stage exists to avoid; the lead's review
