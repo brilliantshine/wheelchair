@@ -2,7 +2,13 @@
 slug: model-pins
 date: 2026-09-29
 implemented-by: "Terra (gpt-5.6-terra) for T1, sonnet for T2 (lead: opus)"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude default reviewer
+    checks: gpt-5.6-terra
+  - round: 1
+    lane: gpt-6.1-sol
+    checks: sonnet
 ---
 
 # Completion Report — Switch GPT models without editing wheelchair
