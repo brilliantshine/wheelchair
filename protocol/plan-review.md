@@ -32,7 +32,7 @@ N = 1 + the number of existing "Round" headings under Review Rounds.
 
 Directly under this round heading, write `**Lanes:**` and name each reviewer's family and
 model, followed by whether the round was cross-family. For example:
-`**Lanes:** GPT / gpt-5.6-sol; Claude / default reviewer model; cross-family: yes.`
+`**Lanes:** GPT / gpt-6.1-sol; Claude / default reviewer model; cross-family: yes.`
 This records the gate even when both lenses return no findings.
 
 **Scope of the round:**
