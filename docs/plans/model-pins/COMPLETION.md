@@ -40,7 +40,7 @@ check's. Collin's `set` and `skip` are the only things that change the pins.
 |-----------|--------|----------------------------|--------------|
 | Pins file format, defaults table, seams | this run | `codex/model.sh:15-20`, `:30-33`, `:37-55`, `:71-76` | `codex/test/run.sh` "init writes shipped defaults", "reader defaults a missing tier" |
 | `model.sh <tier>`, including malformed and missing files | this run | `codex/model.sh:220-228` | `codex/test/run.sh` "missing pins use Luna default", "malformed pins reader returns shipped default", "unknown tier exits 2" |
-| `set`, `skip`, `init`, with lock and atomic write | this run | `codex/model.sh:79-101`, `:228-282` | `codex/test/run.sh` set, skip and init rows, including malformed-file refusal |
+| `set`, `skip`, `init`, with lock and atomic write | this run | `codex/model.sh:79-101`, `:229-285` | `codex/test/run.sh` set, skip and init rows, including malformed-file refusal |
 | Numeric version comparison (D4) | this run | `codex/model.sh:103-128` | `codex/test/run.sh` "6 equals 6.0", "6.1 beats 6", "6.10 beats 6.9" |
 | Newer-model line, family word (D21), pinned models quiet (D14), skip (D10) | this run | `codex/model.sh:151-201` | `codex/test/run.sh` "normal heads-up uses the exact switch and skip form", "a pinned no-tier model stays quiet", "a later pinned-family model is offered for that tier", "skip offers the next newest model" |
 | Unparseable pin (D20, D21) | this run | `codex/model.sh:173-190` | `codex/test/run.sh` "an unparseable pin uses its available-for line", "skipping the newest unparseable-pin candidate is quiet" |
