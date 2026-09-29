@@ -339,3 +339,4 @@ wording for a hand-set pin, and implementation.md added to What gets built. This
   the nine `Choice:` lines above. A strike made on the picture from now on isn't picked up
   automatically.
 - 2026-09-29 — Verification round 1: FAIL from both, 2 gaps. REMEDIATION-1.md written.
+- 2026-09-29 — Remediation 1 done: R1 (Luna) and R2 (sonnet) merged. Suites green. Round 2 next.

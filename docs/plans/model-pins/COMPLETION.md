@@ -39,7 +39,7 @@ check's. Collin's `set` and `skip` are the only things that change the pins.
 | Spec item | Origin | Implemented at (file:line) | Validated by |
 |-----------|--------|----------------------------|--------------|
 | Pins file format, defaults table, seams | this run | `codex/model.sh:15-20`, `:30-33`, `:37-55`, `:71-76` | `codex/test/run.sh` "init writes shipped defaults", "reader defaults a missing tier" |
-| `model.sh <tier>`, including malformed and missing files | this run | `codex/model.sh:220-227` | `codex/test/run.sh` "missing pins use Luna default", "malformed pins reader returns shipped default", "unknown tier exits 2" |
+| `model.sh <tier>`, including malformed and missing files | this run | `codex/model.sh:220-228` | `codex/test/run.sh` "missing pins use Luna default", "malformed pins reader returns shipped default", "unknown tier exits 2" |
 | `set`, `skip`, `init`, with lock and atomic write | this run | `codex/model.sh:79-101`, `:228-282` | `codex/test/run.sh` set, skip and init rows, including malformed-file refusal |
 | Numeric version comparison (D4) | this run | `codex/model.sh:103-128` | `codex/test/run.sh` "6 equals 6.0", "6.1 beats 6", "6.10 beats 6.9" |
 | Newer-model line, family word (D21), pinned models quiet (D14), skip (D10) | this run | `codex/model.sh:151-201` | `codex/test/run.sh` "normal heads-up uses the exact switch and skip form", "a pinned no-tier model stays quiet", "a later pinned-family model is offered for that tier", "skip offers the next newest model" |
@@ -48,7 +48,7 @@ check's. Collin's `set` and `skip` are the only things that change the pins.
 | Malformed-pins line, and missing, malformed and hidden-only caches (D3, D15, D20) | this run | `codex/model.sh:130-149`, `:152-155` | `codex/test/run.sh` cache cases and "malformed pins line prints even without a useful cache" |
 | Preflight runs the heads-up, exit code unchanged (D3, D16) | this run | `codex/preflight.sh:35-36`, `:123-124` | `codex/test/run.sh` "preflight keeps exit 0 / 1 / 2 with a heads-up" (loopback stub, no network) |
 | Installer creates the pins once (D1) | this run | `install.sh:86-90` | `install/test/run.sh` "codex-only install creates the default model pins", `codex_pins_preserved` case |
-| lanes.md: tiers only, reader in every invocation, resume rule, heads-up relay (D5, D11, D12, D17, D18, D20, D21) | this run | `protocol/lanes.md:42`, `:59-62`, `:112-116`, `:241-245` | read against the Spec. `grep -rniE "gpt-[0-9]" protocol/` shows only `lanes.md:68`, the labelled 5.6 measurement |
+| lanes.md: tiers only, reader in every invocation, resume rule, heads-up relay (D5, D11, D12, D17, D18, D20, D21) | this run | `protocol/lanes.md:42`, `:56-62`, `:64-67`, `:117-121`, `:246-250` | read against the Spec. `grep -rniE "gpt-[0-9]" protocol/` shows only `lanes.md:68`, the labelled 5.6 measurement |
 | implementation.md Lane record (D18, D21) | this run | `protocol/implementation.md:92-97` | read against Spec |
 | plan-review.md and verification.md name Sol, with placeholders (D5, D20) | this run | `protocol/plan-review.md:33-36`, `protocol/verification.md:29`, `:35`, `:62` | read against Spec |
 | Claude lanes unchanged (D7) | this run | no Claude invocation changed in `protocol/lanes.md` | `git diff` of `protocol/lanes.md` touches only GPT lines |
@@ -107,3 +107,20 @@ are the same four models.
   dispatch.
 
 ## Remediation rounds
+
+### Remediation 1 — 2026-09-29
+
+Verification round 1 found 2 gaps, listed verbatim in `REMEDIATION-1.md`.
+
+- R1 (Luna, gpt-6-luna, the first lane dispatched through the pins): `visible_models` now also
+  catches `ValueError` and `RecursionError` (`codex/model.sh:134`), and `check` wraps the heads-up
+  so any unexpected error prints nothing and exits 0 (`:240-245`). A new test uses a 5,000-digit
+  integer in the cache.
+- R2 (sonnet): `protocol/lanes.md:56-62` says every lane's record, in any stage, names the tier
+  and the `MODEL` value resolved before that call, and points to where implementation, review and
+  verification record it.
+
+Validation after remediation 1: `codex/test/run.sh` 45 passed, `install/test/run.sh` 72,
+`seen/test/run.sh` 18, `spine/test/run.sh` 80, and `sensitivity/test/run.sh` 62, all 0 failed.
+`grep -rniE "gpt-[0-9]" protocol/` shows only `protocol/lanes.md:73`, the labelled 5.6
+measurement.
