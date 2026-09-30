@@ -83,6 +83,11 @@ if (( codex_present )); then
     render "$p" "$codex_home/prompts/$name"
     echo "codex prompt: /$(basename "$name" .md)"
   done
+  if "$ROOT/codex/model.sh" init; then
+    echo "codex models: initialized"
+  else
+    echo "codex models: warning — not initialized" >&2
+  fi
 fi
 
 # Testing seam: setting this to 1 skips the viewer dependency installs.

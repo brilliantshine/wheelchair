@@ -1,0 +1,187 @@
+{
+  "schema": 1,
+  "title": "where a tier's model is kept, and how a lane reads it",
+  "source": "plan-proposal",
+  "source_detail": "model-pins Q1",
+  "explanation": "Both options start from the same agent composing a codex command. [Profile files](#profiles) need two ways of reading the pin, because a resume can't take a profile. [One wheelchair file](#one-file) has a single reader for both calls. Leaves out the heads-up, which reads the pin the same way in either option.",
+  "groups": [
+    {
+      "id": "one-file",
+      "label": "(b) one wheelchair file and a reader",
+      "note": "Every call asks the reader for the model.",
+      "visible": true,
+      "nodes": [
+        "b-file",
+        "b-fresh",
+        "b-reader",
+        "b-resume"
+      ]
+    },
+    {
+      "id": "profiles",
+      "label": "(a) one Codex profile per tier",
+      "note": "A fresh lane passes -p. A resume has to read the model out of the file.",
+      "visible": true,
+      "nodes": [
+        "a-files",
+        "a-fresh",
+        "a-resume"
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "a-files",
+      "label": "four profile files in Codex's own config folder",
+      "kind": "store",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 922,
+      "y": 62
+    },
+    {
+      "id": "a-fresh",
+      "label": "fresh lane: codex exec -p wheelchair-sol",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 792,
+      "y": 202
+    },
+    {
+      "id": "a-resume",
+      "label": "resume: dig the model out of the file, pass it as -m",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 1052,
+      "y": 202
+    },
+    {
+      "id": "b-file",
+      "label": "~/.wheelchair/models, four lines",
+      "kind": "store",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 154,
+      "y": 62
+    },
+    {
+      "id": "b-fresh",
+      "label": "fresh lane: -m from the reader",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 24,
+      "y": 342
+    },
+    {
+      "id": "b-reader",
+      "label": "codex/model.sh sol prints the model",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": "codex/model.sh",
+      "note": null,
+      "graph": null,
+      "x": 154,
+      "y": 202
+    },
+    {
+      "id": "b-resume",
+      "label": "resume: -m from the same reader",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 284,
+      "y": 342
+    }
+  ],
+  "edges": [
+    {
+      "id": "a-files->a-fresh",
+      "from": "a-files",
+      "to": "a-fresh",
+      "label": "Codex reads it",
+      "kind": "data",
+      "value": "the model",
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "a-files->a-resume",
+      "from": "a-files",
+      "to": "a-resume",
+      "label": "wheelchair parses it",
+      "kind": "data",
+      "value": "the model",
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "b-file->b-reader",
+      "from": "b-file",
+      "to": "b-reader",
+      "label": "reads",
+      "kind": "data",
+      "value": "the pins",
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "b-reader->b-fresh",
+      "from": "b-reader",
+      "to": "b-fresh",
+      "label": "prints",
+      "kind": "data",
+      "value": "the model",
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "b-reader->b-resume",
+      "from": "b-reader",
+      "to": "b-resume",
+      "label": "prints",
+      "kind": "data",
+      "value": "the model",
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    }
+  ]
+}

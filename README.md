@@ -81,10 +81,14 @@ It also writes a few things outside this repo:
 - a delimited block in `~/.claude/CLAUDE.md` and/or `~/.codex/AGENTS.md`, which holds the
   diagram-sensitivity setting
 - a per-turn hook and its write grant, in each harness's settings
+- `~/.wheelchair/models`, if Codex is present: the GPT model pinned per tier
 
 The hook carries your wording list, which holds phrases you've asked agents to stop using. After a
 long break, it also tells the agent how long you've been away. Only the delimited block and the
 hook's own entry are this repo's, so nothing else in those files is touched.
+
+A heads-up line appears before a GPT lane runs when Codex knows a newer model than a tier's
+pin. `codex/model.sh set <tier> <model>` switches; nothing switches on its own.
 
 ## The viewer
 

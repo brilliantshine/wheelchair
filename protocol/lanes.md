@@ -39,7 +39,8 @@ resumed later:
 ```bash
 BRIEF=$(mktemp) OUT=$(mktemp) LOG=$(mktemp)
 # ... write the brief to $BRIEF ...
-WHEELCHAIR_LANE=1 codex exec -m gpt-6.1-sol -c model_reasoning_effort=high \
+MODEL=$(<wheelchair-root>/codex/model.sh sol)
+WHEELCHAIR_LANE=1 codex exec -m "$MODEL" -c model_reasoning_effort=high \
   -s read-only -C "$PWD" --json -o "$OUT" - < "$BRIEF" > "$LOG" 2>&1
 RC=$?
 TID=$(grep -m1 -o '"thread_id":"[^"]*"' "$LOG" | cut -d'"' -f4)
@@ -53,26 +54,31 @@ setting remains theirs. Before the first GPT dispatch of a session, run the pref
 
 `RC` and `TID` both matter: a non-zero `RC` means the lane died and `$OUT` may be empty
 or truncated, and `TID` is the only handle for resuming it. Record the thread id in the
-plan doc next to the task it ran.
+plan doc next to the task it ran. Record the lane's tier and the `MODEL` value resolved
+just before that call alongside it — that value is what the lane actually ran, so the
+record never resolves the model again later. This holds for every stage's lanes:
+implementation tasks use the Lane-column form in `protocol/implementation.md`; review
+rounds and verification rounds record it as `protocol/plan-review.md` and
+`protocol/verification.md` say.
 
 - `-m` — three implementation tiers, plus one rung reserved for escalation. Pick by **how
-  much the lane has to decide**, not by how big the task looks. The tiers keep their names
-  across model generations. Luna, Terra, Sol and Astra below mean the models named here:
-  - `gpt-6-luna` — *transcription*. The brief names the files, the change, and the
+  much the lane has to decide**, not by how big the task looks. A tier's model comes from
+  `<wheelchair-root>/codex/model.sh <tier>`; the pins live in `~/.wheelchair/models`, and the
+  shipped defaults are in `codex/model.sh`.
+  - Luna — *transcription*. The brief names the files, the change, and the
     pattern to copy; the lane invents nothing. "Change these six call sites to the new
     signature." "Write tests for this function covering the cases listed." The test:
     could you have written the diff yourself and simply didn't want to type it?
     Second gate — **narrow context**. Luna's long-context recall collapsed on 5.6 (41.3% MRCR
     against Sol's 91.5%). That was measured on `gpt-5.6-luna` and hasn't been re-measured
-    for GPT-6, so keep treating it as true: a forty-file sweep is a Terra brief no matter
+    on any later model, so keep treating it as true: a forty-file sweep is a Terra brief no matter
     how mechanical each individual edit is. Mechanical *and* small, or it moves up.
-  - `gpt-5.6-terra` — *everything else*, and the default when the tier is arguable. Any
+  - Terra — *everything else*, and the default when the tier is arguable. Any
     brief where the lane picks the shape: where a thing lives, what an interface looks
-    like, how to handle a case the plan didn't name. It stays on 5.6 because GPT-6 has no
-    Terra.
-  - `gpt-6.1-sol` — judgment lanes (planning, plan review, verification). It reaches
+    like, how to handle a case the plan didn't name.
+  - Sol — judgment lanes (planning, plan review, verification). It reaches
     implementation only as an escalation ("Escalate the model only on evidence" below).
-  - `gpt-6-astra` — the last escalation rung, above Sol, and never a first dispatch. It
+  - Astra — the last escalation rung, above Sol, and never a first dispatch. It
     spends the single account's quota far faster than any other tier, so a lane reaches it
     only after Sol has already come back wrong on the same task.
 
@@ -83,8 +89,8 @@ plan doc next to the task it ran.
   Pass `-c model_reasoning_effort=high` on every lane. High is the floor, not
   the ceiling —
   `-c model_reasoning_effort=xhigh` is the escalation rung below a tier change. On 5.6,
-  `xhigh` was verified to be genuine wire-level xhigh. That hasn't been re-checked for the
-  GPT-6 models. Anything *below* high is a downgrade;
+  `xhigh` was verified to be genuine wire-level xhigh. That hasn't been re-checked on any
+  later model. Anything *below* high is a downgrade;
   don't pass one unless you mean it.
 - `-s` — `read-only` for plan reviewers, `workspace-write` for implementers and for
   verifiers that must run a test suite.
@@ -108,6 +114,7 @@ Run lanes in a **background** Bash call so a foreground timeout can't kill them.
 **Continuation** — the remediation and closure-review path:
 
 ```bash
+MODEL=$(<wheelchair-root>/codex/model.sh <tier>)   # the tier this lane was dispatched at
 WHEELCHAIR_LANE=1 codex exec resume "$TID" -m "$MODEL" -c model_reasoning_effort=high \
   -c sandbox_workspace_write.network_access=true \
   -o "$OUT2" "<follow-up>"
@@ -116,10 +123,9 @@ WHEELCHAIR_LANE=1 codex exec resume "$TID" -m "$MODEL" -c model_reasoning_effort
 The network flag is in that line because a resume drops it (below) and because remediation and
 closure review are the resumes that run suites. It is inert on a lane that isn't writing.
 
-`-m` repeats the model the lane already ran — Terra for an implementation lane, Sol for a
-reviewer or verifier. A resume is not the moment to change tier: escalating mid-thread
-hands the bigger model a context full of the smaller one's dead ends. Escalate by starting
-a fresh lane on a rewritten brief.
+A resume passes `-m` for the tier the lane was dispatched at, resolved again. A resume is
+not the moment to change tier: escalating mid-thread hands the bigger model a context full
+of the smaller one's dead ends. Escalate by starting a fresh lane on a rewritten brief.
 
 `resume` takes **no `-s` and no `-C`** — passing them is a usage error that exits 2. It
 inherits the sandbox mode and working directory from the recorded session (verified: a
@@ -192,7 +198,7 @@ documents, not this one, say what follows from an authentication report.
   Record the rung and the reason next to the task in the plan doc.
 - **A finished lane is a claim, not a fact.** Re-run its validation and read the diff
   yourself. Sol fabricated completions at a documented rate on 5.6, nothing establishes that
-  GPT-6 or the other tiers are better — demand pasted command output in every deliverable and check the
+  a later model or the other tiers are better — demand pasted command output in every deliverable and check the
   claimed file state. The cheaper the tier, the more literally this applies: a Luna brief
   that turned out to need a decision is exactly where you get confident, wrong work.
 - **Tighten the brief before anything else.** Sol games vague success bars, and reasoning
@@ -236,6 +242,12 @@ dispatch rule:
   none, and report. Recovery is `codex login --device-auth` headlessly, or the browser
   flow at a desk. (The browser flow runs `codex logout` first and cannot complete over
   SSH, so a failed attempt leaves things strictly worse off.)
+
+The preflight also prints any `heads-up:` line — a newer model available for a tier, or a
+model that matches no tier — after its token check, regardless of which exit code the
+token check produced. The lead passes each `heads-up:` line on to Collin in its own turn,
+the first time it appears in the session, and not again that session. A heads-up never
+changes the dispatch rule above.
 
 Never copy `auth.json` or an auth directory to give a lane "its own" credential, and never run
 `codex login` while lanes are in flight — both are second claims on the one-shot ticket.

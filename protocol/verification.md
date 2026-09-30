@@ -26,13 +26,13 @@ example, `terra (lead: fable)` — the family is the one that implemented the wo
 one that led it.
 
 With both families available, retain the existing selection: GPT work is checked by the
-Claude family's default reviewer, Claude work by `gpt-6.1-sol`, and mixed implementation
+Claude family's default reviewer, Claude work by Sol, and mixed implementation
 gets both checks. Read `lanes.md`, in this same directory, for the exact lane invocations
 and cautions.
 
 With one family, the verifier comes from that family regardless of what built the work:
 
-- GPT family — `gpt-6.1-sol`, including for Luna-built work.
+- GPT family — Sol, including for Luna-built work.
 - Claude family — Opus. Where Opus built the work, use a fresh Opus with no shared context.
 
 Implementation spanning both families is not a one-account run: dispatch one verifier per
@@ -59,7 +59,7 @@ verifier in COMPLETION.md:
 ```yaml
 verified-by:
   - round: 1
-    lane: gpt-6.1-sol
+    lane: <model>
     checks: sonnet
 ```
 

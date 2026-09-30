@@ -81,6 +81,7 @@ cross-cutting change:
 ```bash
 bash spine/test/run.sh
 bash sensitivity/test/run.sh
+bash codex/test/run.sh
 bash install/test/run.sh
 ./install.sh && ./install.sh
 node --test viewer/test/*.test.js
