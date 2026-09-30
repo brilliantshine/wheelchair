@@ -1,6 +1,6 @@
 ---
 slug: model-pins
-status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
+status: done   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-09-29
 ---
 
@@ -340,3 +340,7 @@ wording for a hand-set pin, and implementation.md added to What gets built. This
   automatically.
 - 2026-09-29 — Verification round 1: FAIL from both, 2 gaps. REMEDIATION-1.md written.
 - 2026-09-29 — Remediation 1 done: R1 (Luna) and R2 (sonnet) merged. Suites green. Round 2 next.
+- 2026-09-30 — Verification round 2: PASS from both (Claude checking Terra's code, Sol
+  gpt-6.1-sol checking the prose). The GPT closure review first failed to launch and sat idle for
+  about seven hours before it was relaunched. Docs were swept in T2. Status `done`. `./install.sh`
+  is still Collin's to run, and it creates `~/.wheelchair/models`.

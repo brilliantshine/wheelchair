@@ -9,6 +9,12 @@ verified-by:
   - round: 1
     lane: gpt-6.1-sol
     checks: sonnet
+  - round: 2
+    lane: claude default reviewer
+    checks: gpt-5.6-terra
+  - round: 2
+    lane: gpt-6.1-sol
+    checks: sonnet
 ---
 
 # Completion Report — Switch GPT models without editing wheelchair
