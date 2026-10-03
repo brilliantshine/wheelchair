@@ -63,7 +63,16 @@ render() {  # render <source> <destination>
   sed "s|{{WHEELCHAIR_ROOT}}|$ROOT|g" "$1" > "$2"
 }
 
+# The spine command moved to highways. The globs below only add, so a wrapper this script rendered
+# for it in an earlier version would stay installed; remove it. Only a copy that names the removed
+# protocol file is ours to remove, so a same-named skill someone else installed is left alone.
+retired=spine
+remove_rendered_retired() {  # remove_rendered_retired <rendered wrapper file> <path to remove>
+  if [[ -f $1 ]] && grep -q "$retired\\.md" "$1"; then rm -rf "$2"; echo "removed old wrapper: $2"; fi
+}
+
 if (( claude_present )); then
+  remove_rendered_retired "$claude_home/skills/$retired/SKILL.md" "$claude_home/skills/$retired"
   mkdir -p "$claude_home/skills"
   for s in "$ROOT"/skills/*/; do
     name="$(basename "$s")"
@@ -76,6 +85,7 @@ if (( claude_present )); then
 fi
 
 if (( codex_present )); then
+  remove_rendered_retired "$codex_home/prompts/$retired.md" "$codex_home/prompts/$retired.md"
   mkdir -p "$codex_home/prompts"
   for p in "$ROOT"/codex/prompts/*.md; do
     name="$(basename "$p")"

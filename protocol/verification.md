@@ -82,14 +82,18 @@ Check that the idea's non-goals weren't violated, that what the idea calls 'what
 looks like' is actually true, and that no spec item was satisfied by letter but not
 intent. Check that the Routers section in COMPLETION.md is true: that the routers it claims
 were updated say what the change actually made true, and that a change which moved ownership
-between directories did not leave one side's router stale. Verdict format: `VERDICT: PASS`, or
+between directories did not leave one side's router stale. This check follows highways'
+`protocol/sweep.md` and applies when `command -v highways` finds it. When it doesn't, skip
+the check and say so in one line; a Routers section reading "highways not installed; routers
+not maintained" is accepted. Verdict format: `VERDICT: PASS`, or
 `VERDICT: FAIL` followed by one line per gap:
 `GAP: <spec item> — <what is missing or wrong> — <evidence>`."*
 
 ## Remediation loop
 
-- **PASS** → set `status: done`. Sweep docs the change made stale (CLAUDE.md/AGENTS.md,
-  repo skills, touched docs) before any PR opens.
+- **PASS** → set `status: done`. Sweep docs the change made stale (repo skills, touched docs, and, when
+  `command -v highways` finds it, routers following highways' `protocol/sweep.md`) before any
+  PR opens. Without highways, skip the router part and say so in one line.
 - **FAIL** → write `docs/plans/<slug>/REMEDIATION-N.md` (N = verification round): the
   gap list verbatim, then one task per gap in the Stage 3 brief format. Route tasks to
   the **same** implementer family that built the work, following `lanes.md`'s continuation

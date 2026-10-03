@@ -207,6 +207,26 @@ printf 'sol = local-model\n' > "${home[codex_pins_preserved]}/.wheelchair/models
 run_case codex_pins_preserved
 assert 'codex install never overwrites existing model pins' cmp -s <(printf 'sol = local-model\n') "${home[codex_pins_preserved]}/.wheelchair/models"
 
+old=spine  # the retired wrapper name, rendered by an earlier version
+new_case spine_removed
+for old_wrapper in "${claude[spine_removed]}/skills/$old/SKILL.md" "${codex[spine_removed]}/prompts/$old.md"; do
+  mkdir -p "${old_wrapper%/*}"
+  printf 'Read /old/root/%s.md and follow it exactly\n' "$old" > "$old_wrapper"
+done
+mkdir -p "${claude[spine_removed]}/skills/foreign-spine" "${claude[spine_removed]}/skills/other"
+printf 'unrelated\n' > "${claude[spine_removed]}/skills/foreign-spine/SKILL.md"
+run_case spine_removed
+assert 'an install removes a previously rendered spine skill' test ! -e "${claude[spine_removed]}/skills/$old"
+assert 'an install removes a previously rendered spine Codex prompt' test ! -e "${codex[spine_removed]}/prompts/$old.md"
+assert 'an install leaves other installed skills alone' test -f "${claude[spine_removed]}/skills/foreign-spine/SKILL.md"
+assert 'an install with the removal still renders the other wrappers' both_wrappers_landed "${claude[spine_removed]}" "${codex[spine_removed]}"
+
+new_case spine_foreign
+mkdir -p "${claude[spine_foreign]}/skills/$old"
+printf 'someone else owns this\n' > "${claude[spine_foreign]}/skills/$old/SKILL.md"
+run_case spine_foreign
+assert 'an install leaves a spine skill it did not render' test -f "${claude[spine_foreign]}/skills/$old/SKILL.md"
+
 new_case neither
 present[neither]=''
 run_case neither

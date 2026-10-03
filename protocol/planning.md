@@ -42,7 +42,10 @@ idea, what's settled, what's open) and continue the loop at the first open quest
 **Adopted:** adoption already wrote IDEA.md and PLAN.md. Build the map, then go to Step 3
 and finish the question queue.
 
-**New:** derive a short kebab-case slug. Read the code the change will touch, then write
+**New:** derive a short kebab-case slug. If `command -v highways` finds it, first run
+`highways search "<the change's description>"`, read the routers it returns, then read the
+code; if it doesn't, say in one line that the router search was skipped because highways is
+not installed. Read the code the change will touch, then write
 MAP.md following
 `map.md`, beside this file: end-to-end flow
 first, plain-text diagram, every specific claim carrying `file:line`, and an explicit list

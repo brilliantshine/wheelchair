@@ -19,7 +19,6 @@ says when to use the command and what its argument is. The body is the pointer.
 | `implement/` | `protocol/implementation.md` | a slug |
 | `verify/` | `protocol/verification.md` | a slug |
 | `adopt/` | `protocol/adopt.md` | a path to a plan document |
-| `spine/` | `protocol/spine.md` | a path to a working tree |
 | `graph/` | `protocol/graphs.md` | a question |
 | `diagram-sensitivity/` | `protocol/sensitivity.md` | a level, or nothing to report the current one |
 
