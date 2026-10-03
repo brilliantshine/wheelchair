@@ -54,7 +54,7 @@ Two rules follow, and between them they cover most of what can go wrong here:
 | `seen/` | [AGENTS.md](seen/AGENTS.md) | `hook.sh`, the per-turn hook both harnesses call; `wording.sh`, the only writer of the wording list; `set.sh`, the installer's writer of both harnesses' hook entry |
 | `install/` | — | `test/run.sh`, the installer fixture suite. Temp harness homes only; real global files stay untouched |
 | `codex/` | [AGENTS.md](codex/AGENTS.md) | `prompts/`, the Codex CLI wrappers, same convention as `skills/`, one line each; `preflight.sh`, the login check that also prints the model heads-up; `model.sh`, the GPT model pins' reader and writer; and `test/`, its fixture suite |
-| `docs/` | — | `plans/<slug>/` per feature. State, not rules — nothing here is a contract |
+| `docs/` | — | `plans/<slug>/` per feature; `known-issues.md`, failures recorded but not yet fixed. State, not rules — nothing here is a contract |
 | `viewer/` | [AGENTS.md](viewer/AGENTS.md) | the browser graph viewer, its list and document pages, the sign-in page a browser gets before it is remembered, and the server behind them — `index.html`, `list.html`, `list.js`, `doc.html`, `doc.js`, `signin.html`, `server.js`, `playwright.config.js`. Started by an agent turn, never read as guidance |
 
 ## Files at the root
