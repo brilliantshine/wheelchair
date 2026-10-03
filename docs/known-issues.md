@@ -40,9 +40,12 @@ other way, or the `delay-listen-retry` hook no longer writes `delayed` on the pa
 
 **Where to look**
 
-- The `delay-listen-retry` and `hang-on-sigterm` hooks under `viewer/test/hooks/`, and where
-  `viewer/server.js` calls them.
+- The fault hooks in `viewer/test/hooks/lifecycle.js`. The test loads that file into the server
+  with `node --require` and picks a mode through `GRAPH_TEST_HOOK`; `delay-listen-retry` is the
+  mode that appends `first` on the first listen attempt and `delayed` on later ones, and
+  `hang-on-sigterm` is the one that keeps A holding the port.
 - The listen-retry and "someone else holds the port" logic in `viewer/server.js` (the `--open`
   path that registers through a running server).
-- `git log -- viewer/server.js viewer/test/lifecycle.test.js` for the change that last touched
-  either.
+- `git log -- viewer/server.js viewer/test/lifecycle.test.js viewer/test/hooks/lifecycle.js`.
+  The test was last changed in `aa84b57` ("make the lost-freed-port race test wait for its hook
+  to arm") and made deterministic in `dc7217c`.
