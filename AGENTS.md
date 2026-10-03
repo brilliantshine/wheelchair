@@ -139,4 +139,5 @@ stage refuses to run out of order and every stage's output is the next stage's i
 A router that lies is worse than no router. Routers are created and kept true by
 highways, a separate tool (`/highways create`, `/highways sweep`). Moving ownership between
 directories updates the routers on both sides as part of that change, not afterwards —
-Stage 3 states that rule where an implementer will meet it.
+the rule lives in highways' `protocol/sweep.md`, which Stage 3's after-lane sweep applies when
+highways is installed.

@@ -211,7 +211,7 @@ old=spine  # the retired wrapper name, rendered by an earlier version
 new_case spine_removed
 for old_wrapper in "${claude[spine_removed]}/skills/$old/SKILL.md" "${codex[spine_removed]}/prompts/$old.md"; do
   mkdir -p "${old_wrapper%/*}"
-  printf 'Read /old/root/%s.md and follow it exactly\n' "$old" > "$old_wrapper"
+  printf 'Read %s/protocol/%s.md and follow it exactly\n' "$repo" "$old" > "$old_wrapper"
 done
 mkdir -p "${claude[spine_removed]}/skills/foreign-spine" "${claude[spine_removed]}/skills/other"
 printf 'unrelated\n' > "${claude[spine_removed]}/skills/foreign-spine/SKILL.md"
@@ -226,6 +226,12 @@ mkdir -p "${claude[spine_foreign]}/skills/$old"
 printf 'someone else owns this\n' > "${claude[spine_foreign]}/skills/$old/SKILL.md"
 run_case spine_foreign
 assert 'an install leaves a spine skill it did not render' test -f "${claude[spine_foreign]}/skills/$old/SKILL.md"
+
+new_case spine_foreign_mention
+mkdir -p "${claude[spine_foreign_mention]}/skills/$old"
+printf 'Read /elsewhere/protocol/%s.md first\n' "$old" > "${claude[spine_foreign_mention]}/skills/$old/SKILL.md"
+run_case spine_foreign_mention
+assert 'an install leaves a spine skill that mentions another checkout'"'"'s spine file' test -f "${claude[spine_foreign_mention]}/skills/$old/SKILL.md"
 
 new_case neither
 present[neither]=''

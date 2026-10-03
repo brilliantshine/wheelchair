@@ -64,11 +64,11 @@ render() {  # render <source> <destination>
 }
 
 # The spine command moved to highways. The globs below only add, so a wrapper this script rendered
-# for it in an earlier version would stay installed; remove it. Only a copy that names the removed
-# protocol file is ours to remove, so a same-named skill someone else installed is left alone.
+# for it in an earlier version would stay installed; remove it. Only a copy that names this checkout's
+# own removed protocol file is ours to remove, so a same-named skill someone else installed is left alone.
 retired=spine
 remove_rendered_retired() {  # remove_rendered_retired <rendered wrapper file> <path to remove>
-  if [[ -f $1 ]] && grep -q "$retired\\.md" "$1"; then rm -rf "$2"; echo "removed old wrapper: $2"; fi
+  if [[ -f $1 ]] && grep -qF "$ROOT/protocol/$retired.md" "$1"; then rm -rf "$2"; echo "removed old wrapper: $2"; fi
 }
 
 if (( claude_present )); then
