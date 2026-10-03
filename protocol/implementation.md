@@ -73,7 +73,10 @@ an ordinary request, not a step here.
 
 Set `status: implementing`. Decompose the remaining Spec into worker tasks in the
 Implementation Tasks table. Every brief carries: a concrete objective, an ownership boundary (the
-files/dirs the worker owns), the deliverable, and exact validation commands. GPT-lane
+files/dirs the worker owns), the deliverable, and exact validation commands. When
+`command -v highways` finds it, every brief also carries the line *"Before reading code to
+find where something lives, run `highways search "<what you need>"`"*; when it doesn't, the
+briefs omit the line and the lead says so in one line. GPT-lane
 briefs additionally carry a fails-twice guardrail: *"if the same gate fails twice, stop
 and report rather than iterating."* Every brief also gains a required closing section
 reporting the worker's own choices: *"List each decision you made that this brief did
@@ -215,12 +218,10 @@ since no new invocation is needed. Either way, log it: "worker didn't report its
 choices; the lead listed N" (including when N is 0), so a missing report is never
 mistaken for "none".
 
-Then sweep the routers. A change that moves ownership between directories updates the
-routers on both sides as part of this change. A change that adds or removes a file updates
-that directory's router only if it changes what the directory owns, or if the router named
-that file. A router that is now false is fixed here. `protocol/routers.md` is the format —
-read it before writing one, and note that it describes a router being *created* and is never
-a conformance test for one that already exists.
+Then sweep the routers. When `command -v highways` finds it, run
+`highways sweep --base <the lane's base commit>` and apply highways' `protocol/sweep.md` to
+each router it lists; lanes run with `WHEELCHAIR_LANE` set, so highways' end-of-turn hook
+stays out of them. When it doesn't, skip the sweep and say so in one line.
 
 **Immediately before writing COMPLETION.md**, read the run picture and every child you
 can read — plain file reads of `run.json` and its children, not the viewer, so this

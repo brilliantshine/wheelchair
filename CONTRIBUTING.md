@@ -51,8 +51,8 @@ workflow.
   `~/.codex/AGENTS.md`. `sensitivity/set.sh` is its only writer, and the next run
   overwrites that block.
 - When ownership moves between directories, update the routers on both sides in the
-  same change. Do not reformat an existing router to match `protocol/routers.md`; that
-  file guides creation, not conformance.
+  same change. Routers are made and kept true by highways (`/highways create`,
+  `/highways sweep`); never reformat an existing one.
 - Keep human-facing prose direct and grounded. Specific claims carry `file:line`, and
   anything not checked is named as unchecked rather than inferred. The full rules are
   in [protocol/writing.md](protocol/writing.md).
@@ -79,7 +79,6 @@ Run the checks for the area you changed, then run the full set before handing of
 cross-cutting change:
 
 ```bash
-bash spine/test/run.sh
 bash sensitivity/test/run.sh
 bash codex/test/run.sh
 bash install/test/run.sh

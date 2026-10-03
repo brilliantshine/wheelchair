@@ -26,8 +26,8 @@ on — it is discarded and redrawn from nothing, never patched back into truth. 
 a graph as documentation is the mistake this rule heads off: a router is documentation;
 a graph is a rearrangeable snapshot of one conversation.
 
-A router — the durable per-directory `AGENTS.md`/`CLAUDE.md` that `protocol/routers.md`
-defines — is a graph's preferred **input**, and never its output. Nothing in this
+A router — a durable per-directory `AGENTS.md`/`CLAUDE.md` saying what the directory owns
+— is a graph's preferred **input**, and never its output. Nothing in this
 system generates a router from a graph. Drawing a graph from a router is a
 **translation**, not an extraction, and translation is the expensive part of producing
 one: a router is written for someone already standing inside that module, so its
@@ -133,7 +133,7 @@ Field by field:
 
   A reference is written `[the retry path](#retry-path)`: the bracketed phrase is what
   the reader sees and can point at, the target is `#` followed by a group's `id`. Only a
-  `#`-prefixed target is a reference — `[the router](protocol/routers.md)` and
+  `#`-prefixed target is a reference — `[the lanes rules](protocol/lanes.md)` and
   `[here](https://example.com)` are ordinary text, which is what keeps everyday prose from
   turning into a write refusal. The grammar is exactly one regular expression, stated here
   once and used verbatim by the server and the page, since the two files share no code:
@@ -462,7 +462,7 @@ know where this workflow is checked out. The commands below use `$WHEELCHAIR` fo
 from the path you read this file at, dropping the trailing `/protocol/graphs.md`:
 
 ```bash
-WHEELCHAIR=<the root you resolved>       # the directory holding protocol/, viewer/ and spine/
+WHEELCHAIR=<the root you resolved>       # the directory holding protocol/ and viewer/
 ```
 
 Everything below assumes you are writing a fresh graph.

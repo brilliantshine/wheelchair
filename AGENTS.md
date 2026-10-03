@@ -33,7 +33,7 @@ fresh off disk on each turn rather than rendered into a file an agent's instruct
 | Canonical rules | `protocol/` | an agent executing a stage |
 | Per-feature state | `docs/plans/<slug>/` | every stage, to find out where the work stands |
 | Harness adapter | `skills/`, `codex/prompts/` | Claude Code and the Codex CLI, at registration |
-| Executable | `spine/`, `sensitivity/`, `seen/`, `install/`, `viewer/`, `install.sh` | run by a command, not read as guidance |
+| Executable | `sensitivity/`, `seen/`, `install/`, `viewer/`, `install.sh` | run by a command, not read as guidance |
 
 Two rules follow, and between them they cover most of what can go wrong here:
 
@@ -48,15 +48,14 @@ Two rules follow, and between them they cover most of what can go wrong here:
 
 | Directory | Router | Go here for |
 |---|---|---|
-| `protocol/` | [AGENTS.md](protocol/AGENTS.md) | the stage definitions, the writing and diagram rules, the router format, the document templates |
+| `protocol/` | [AGENTS.md](protocol/AGENTS.md) | the stage definitions, the writing and diagram rules, the document templates |
 | `skills/` | [AGENTS.md](skills/AGENTS.md) | the Claude Code wrappers and the convention every wrapper follows |
-| `spine/` | [AGENTS.md](spine/AGENTS.md) | `scan.sh`, the read-only scanner behind `/spine` |
 | `sensitivity/` | [AGENTS.md](sensitivity/AGENTS.md) | `set.sh`, the only writer of each present harness's global instruction file |
 | `seen/` | [AGENTS.md](seen/AGENTS.md) | `hook.sh`, the per-turn hook both harnesses call; `wording.sh`, the only writer of the wording list; `set.sh`, the installer's writer of both harnesses' hook entry |
 | `install/` | — | `test/run.sh`, the installer fixture suite. Temp harness homes only; real global files stay untouched |
-| `codex/` | — | `prompts/`, the Codex CLI wrappers, same convention as `skills/`, one line each; `preflight.sh`, the login check that also prints the model heads-up; `model.sh`, the GPT model pins' reader and writer; and `test/`, its fixture suite |
-| `docs/` | — | `plans/<slug>/` per feature. State, not rules — nothing here is a contract |
-| `viewer/` | — | the browser graph viewer, its list and document pages, the sign-in page a browser gets before it is remembered, and the server behind them — `index.html`, `list.html`, `list.js`, `doc.html`, `doc.js`, `signin.html`, `server.js`, `playwright.config.js`. Started by an agent turn, never read as guidance |
+| `codex/` | [AGENTS.md](codex/AGENTS.md) | `prompts/`, the Codex CLI wrappers, same convention as `skills/`, one line each; `preflight.sh`, the login check that also prints the model heads-up; `model.sh`, the GPT model pins' reader and writer; and `test/`, its fixture suite |
+| `docs/` | — | `plans/<slug>/` per feature; `known-issues.md`, failures recorded but not yet fixed. State, not rules — nothing here is a contract |
+| `viewer/` | [AGENTS.md](viewer/AGENTS.md) | the browser graph viewer, its list and document pages, the sign-in page a browser gets before it is remembered, and the server behind them — `index.html`, `list.html`, `list.js`, `doc.html`, `doc.js`, `signin.html`, `server.js`, `playwright.config.js`. Started by an agent turn, never read as guidance |
 
 ## Files at the root
 
@@ -64,10 +63,12 @@ Two rules follow, and between them they cover most of what can go wrong here:
 |---|---|
 | `README.md` | What this workflow is and how to drive it, for a person arriving cold |
 | `CONTRIBUTING.md` | The conventions, source-of-truth boundaries, and validation commands for someone changing this repository |
-| `install.sh` | Renders each present harness's wrappers, substituting this clone's path for `{{WHEELCHAIR_ROOT}}`, installs the viewer's dependencies, stops any running viewer that isn't running the code just pulled, decides once whether this machine serves the viewer to other tailnet devices (asking only on a headless machine that hasn't decided yet), calls `seen/set.sh` to write each present harness's own hook entry and the wording script's write grant — into each harness's own settings files, **outside this tree** — and, last, warning rather than failing if it refuses, calls `sensitivity/set.sh` to render the dial's region into each present global instruction file. Idempotent, and it **globs** `skills/*/` and `codex/prompts/*.md`, so adding a command needs no edit here |
+| `install.sh` | Renders each present harness's wrappers, substituting this clone's path for `{{WHEELCHAIR_ROOT}}`, installs the viewer's dependencies, stops any running viewer that isn't running the code just pulled, decides once whether this machine serves the viewer to other tailnet devices (asking only on a headless machine that hasn't decided yet), calls `seen/set.sh` to write each present harness's own hook entry and the wording script's write grant — into each harness's own settings files, **outside this tree** — and, last, warning rather than failing if it refuses, calls `sensitivity/set.sh` to render the dial's region into each present global instruction file. Idempotent, removes the `spine` skill and Codex prompt an earlier version rendered (the command moved to highways), and it **globs** `skills/*/` and `codex/prompts/*.md`, so adding a command needs no edit here |
 | `.gitignore` | `node_modules/`, `graphify-out/`, and the two scratch paths the viewer's suites write, `viewer/test/.tmp/` and `test-results/`. `graphify-out/` is what lets a root router claim a graph cannot carry a contract |
 
 ## How to navigate (in order)
+
+If `highways` is installed, run `highways search "<what you're looking for>"` before reading code to find where something lives.
 
 1. **Read the router** for the directory you are touching.
 2. **Grep** for the phrase. Every rule here is prose in a markdown file, so the words a
@@ -101,7 +102,6 @@ Rules:
 ## Verification
 
 ```bash
-bash spine/test/run.sh                # the scanner's assertions, exit-code gated
 bash sensitivity/test/run.sh          # the dial's block writer, exit-code gated
 bash seen/test/run.sh                 # the hook and wording-list writer, exit-code gated
 bash codex/test/run.sh                # the GPT model pins and heads-up, exit-code gated
@@ -136,7 +136,8 @@ stage refuses to run out of order and every stage's output is the next stage's i
 
 ## Maintaining these routers
 
-A router that lies is worse than no router. `protocol/routers.md` is the format and
-`protocol/spine.md` is the command that creates them. Moving ownership between
+A router that lies is worse than no router. Routers are created and kept true by
+highways, a separate tool (`/highways create`, `/highways sweep`). Moving ownership between
 directories updates the routers on both sides as part of that change, not afterwards —
-Stage 3 states that rule where an implementer will meet it.
+the rule lives in highways' `protocol/sweep.md`, which Stage 3's after-lane sweep applies when
+highways is installed.

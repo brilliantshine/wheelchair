@@ -5,6 +5,10 @@ asking someone to choose, show them what they're choosing about.
 
 Output goes in `docs/plans/<slug>/MAP.md` and gets extended as planning uncovers more.
 
+Before reading code, when `command -v highways` finds it, run `highways search` on the
+change's description and read the routers it returns; when it doesn't, say in one line that
+the router search was skipped because highways is not installed.
+
 ## Flow first, parts later
 
 Start with **what happens, in order, end to end**. Things happening, not things existing.

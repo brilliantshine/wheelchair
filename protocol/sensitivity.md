@@ -67,7 +67,7 @@ never repaired and never defaulted over.
 `sensitivity/set.sh` is the only thing that writes a present harness's global file. It is an
 executable
 rather than a paragraph telling an agent what to write, because a guard written as prose is
-a guard an agent can skip — `spine/scan.sh` is the same call.
+a guard an agent can skip.
 
 The level is resolved **once, across the present files, before any is written**:
 

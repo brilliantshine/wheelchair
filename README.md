@@ -24,7 +24,6 @@ From either harness, in the target project:
 /verify <slug>                # blind verification; remediate until PASS
 /adopt path/to/plan.md        # bring in a plan written elsewhere
 /graph <question>             # answer a question with a picture
-/spine path/to/tree           # propose router docs for a repo that has none
 /diagram-sensitivity [level]  # how eagerly pictures appear: ask, default, high
 ```
 
@@ -116,7 +115,7 @@ dragging boxes and rulings, works on a phone.
 | `protocol/` | The rules every stage follows. The single source of truth |
 | `skills/`, `codex/prompts/` | One-line wrappers for each harness, pointing into `protocol/` |
 | `viewer/` | The graph viewer: server, pages, tests |
-| `spine/`, `sensitivity/`, `seen/`, `install/` | The router scanner, the dial writer, the per-turn hook, and their test suites |
+| `sensitivity/`, `seen/`, `install/` | The dial writer, the per-turn hook, and their test suites |
 | `docs/plans/` | One directory per feature. The only mutable state |
 
 Every directory that owns a rule has an `AGENTS.md` router saying what it owns and where to go
