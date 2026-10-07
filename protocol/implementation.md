@@ -96,8 +96,8 @@ Record a GPT lane's tier and its resolved model — the one `lanes.md` resolves 
 variable at dispatch, never a tier name alone — as `<Tier> (<model>)`. A resume that
 resolves a different model appends it: `<Tier> (<first model>, resumed on <second
 model>)`, and each further resume on yet another model appends `, resumed on <model>`
-again. A Claude lane's entry needs no model, since Sonnet and Opus already move to each
-new model on their own.
+again. A Claude lane's entry needs no model, since Haiku, Sonnet and Opus already move to
+each new model on their own.
 
 **Ask once for everything the run needs, before dispatching anyone.** List what the run
 depends on that only Collin can supply: every command named in the briefs' validation
@@ -170,8 +170,8 @@ Read `lanes.md`, in this same directory, for the
 exact invocations and cautions before launching any lane.
 
 `lanes.md` owns tier selection and every lane invocation. On a Claude-only machine,
-transcription briefs that would have gone to Luna stay on Sonnet: the Claude side has two
-tiers, so nothing drops to Haiku. On a ChatGPT-only machine, interface, frontend, and
+transcription briefs that would have gone to Luna go to Haiku, the Claude side's
+transcription tier. On a ChatGPT-only machine, interface, frontend, and
 other taste-sensitive work goes to a GPT lane because no Claude lane exists; state that
 cost at dispatch rather than refusing the task. Where a Claude lane is available, those
 surfaces remain Claude work — the one-account exception does not permit rerouting one
