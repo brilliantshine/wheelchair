@@ -150,17 +150,21 @@ changed.
 
 ## Claude lane
 
-From Claude Code: the Agent tool (`model: sonnet` for workers, default for reviewers).
-From Codex: `WHEELCHAIR_LANE=1 claude --model sonnet -p "<brief>"`, or plain
+From Claude Code: the Agent tool, with `model: haiku` for transcription workers,
+`model: sonnet` for every other worker, and the default model for reviewers.
+From Codex: `WHEELCHAIR_LANE=1 claude --model haiku -p "<brief>"` or
+`WHEELCHAIR_LANE=1 claude --model sonnet -p "<brief>"` by the same split, or plain
 `WHEELCHAIR_LANE=1 claude -p` for review lanes.
 
 For UI/frontend implementation and taste-sensitive surfaces, see
 `protocol/implementation.md`; it owns the placement rule.
 
-Sonnet runs every Claude implementation lane, transcription work included; Opus reaches
-one only as an escalation, by the same rule as Sol. The Claude side is two tiers, not
-three — work that would go to Luna on a GPT lane stays on Sonnet here rather than dropping
-to Haiku. The Luna tier is a codex-lane thing.
+The Claude side has the same three implementation tiers as the GPT side. Haiku is its Luna:
+a transcription brief, by the same two gates as Luna above (the brief names every file, the
+exact change and a pattern to copy, and the context is narrow), goes to Haiku. Sonnet is its
+Terra and runs every other Claude implementation lane. Opus reaches one only as an
+escalation, by the same rule as Sol. Haiku's recall over long context hasn't been measured,
+so the narrow-context gate applies to it exactly as it does to Luna.
 
 ## When a lane returns nothing
 
@@ -182,7 +186,7 @@ documents, not this one, say what follows from an authentication report.
   in-progress files even with disjoint scopes. Parallelize only across separate git
   worktrees; otherwise sequence.
 - **Escalate the model only on evidence.** The ladder is `luna → terra → sol → astra` on the GPT
-  side and `sonnet → opus` on the Claude side, one rung at a time, and a rung is bought
+  side and `haiku → sonnet → opus` on the Claude side, one rung at a time, and a rung is bought
   only by a lane that **already came back wrong** — it ignored the brief's ownership
   boundary or validation commands, claimed a completion the diff contradicts, or hit the
   fails-twice guardrail. "This task looks hard" is not evidence. A task you *expect* to be
