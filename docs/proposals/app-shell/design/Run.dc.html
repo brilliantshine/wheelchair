@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wheelchair · session-control, implementing</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#14161a}
+a{color:#7fb4e6}a:hover{color:#a9cdf0}
+</style>
+</helmet>
+<div style="min-height: 1040px; background: #14161a; color: #e6e8ec; font-family: Inter, system-ui, sans-serif; font-size: 14px; display: flex; flex-direction: column;">
+
+  <header style="display: flex; flex-direction: column; gap: 14px; padding: 16px 24px; border-bottom: 1px solid #2a2f38; background: #1c1f25;">
+    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 13px;">
+      <a href="Main.dc.html" style="color: #8b929e; text-decoration: none;">wheelchair</a>
+      <span style="color: #4a505b;">/</span>
+      <span style="font-family: 'JetBrains Mono', monospace; color: #c5cad3;">session-control</span>
+      <div style="flex: 1 1 40px;"></div>
+      <a href="#" style="font-size: 13px; text-decoration: none;">IDEA.md</a>
+      <a href="#" style="font-size: 13px; text-decoration: none;">PLAN.md</a>
+      <a href="#" style="font-size: 13px; text-decoration: none;">MAP.md</a>
+    </div>
+    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px;">
+      <h1 style="margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; flex: 1 1 400px;">Start, watch and stop agent sessions from the browser</h1>
+      <button type="button" style="padding: 8px 14px; border-radius: 8px; border: 1px solid #2a2f38; background: transparent; color: #e6e8ec; font: inherit; font-size: 13px;">Pause the run</button>
+    </div>
+    <ol aria-label="Stages" style="list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px;">
+      <li style="display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; background: #1d2a23; color: #8fd0ad; font-size: 12px;">✓ Map</li>
+      <li style="display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; background: #1d2a23; color: #8fd0ad; font-size: 12px;">✓ Idea</li>
+      <li style="display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; background: #1d2a23; color: #8fd0ad; font-size: 12px;">✓ Plan · 9 questions</li>
+      <li style="display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; background: #1d2a23; color: #8fd0ad; font-size: 12px;">✓ Review · approved round 3</li>
+      <li style="display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; background: #1f2b3a; color: #a9cdf0; font-size: 12px; font-weight: 600; border: 1px solid #5b9dd9;">Implement · 4 of 8</li>
+      <li style="display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; background: #23262d; color: #8b929e; font-size: 12px;">Verify</li>
+    </ol>
+  </header>
+
+  <div style="display: flex; flex-wrap: wrap; flex: 1;">
+
+    <section aria-labelledby="pic" style="flex: 999 1 640px; min-width: 0; padding: 20px 24px; display: flex; flex-direction: column; gap: 14px; box-sizing: border-box;">
+      <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px;">
+        <h2 id="pic" style="margin: 0; font-size: 16px; font-weight: 600;">The run picture</h2>
+        <span style="font-size: 13px; color: #8b929e;">Each box is one part of the design. Left to right is the order data flows.</span>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: #c5cad3;">
+        <span style="display: flex; align-items: center; gap: 6px;"><span style="width: 10px; height: 10px; border-radius: 3px; background: #4ea87b;"></span>Done</span>
+        <span style="display: flex; align-items: center; gap: 6px;"><span style="width: 10px; height: 10px; border-radius: 3px; background: #5b9dd9;"></span>In progress</span>
+        <span style="display: flex; align-items: center; gap: 6px;"><span style="width: 10px; height: 10px; border-radius: 3px; background: #d9a441;"></span>Needs you</span>
+        <span style="display: flex; align-items: center; gap: 6px;"><span style="width: 10px; height: 10px; border-radius: 3px; border: 1px solid #6b7280;"></span>Not started</span>
+      </div>
+
+      <div style="overflow-x: auto; border-radius: 12px; border: 1px solid #2a2f38; background: #111316;">
+        <div style="display: grid; grid-template-columns: minmax(200px, 1fr) 40px minmax(200px, 1fr) 40px minmax(200px, 1fr); align-items: start; gap: 0; padding: 24px; min-width: 760px;">
+
+          <div style="display: flex; flex-direction: column; gap: 14px;">
+            <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #8b929e;">On the server</span>
+            <div style="padding: 12px; border-radius: 8px; border: 1.5px solid #4ea87b; background: #1c1f25;">
+              <div style="font-size: 13px; line-height: 1.4;">1 · Start a session in its own tmux window</div>
+              <div style="font-size: 11px; color: #8b929e; margin-top: 6px;">Luna · done</div>
+            </div>
+            <div style="padding: 12px; border-radius: 8px; border: 1.5px solid #4ea87b; background: #1c1f25;">
+              <div style="font-size: 13px; line-height: 1.4;">2 · Keep a list of sessions that survives a restart</div>
+              <div style="font-size: 11px; color: #8b929e; margin-top: 6px;">Terra · done</div>
+            </div>
+            <div style="padding: 12px; border-radius: 8px; border: 2px solid #d9a441; background: #241f15;">
+              <div style="font-size: 13px; line-height: 1.4;">3 · Notice when a session dies</div>
+              <div style="font-size: 11px; color: #d9a441; margin-top: 6px; font-weight: 600;">Terra · made a choice</div>
+            </div>
+            <div style="padding: 10px 12px; border-radius: 8px; border: 1.5px dashed #6b7280; background: #1a1c20; margin-left: 16px;">
+              <div style="font-size: 11px; color: #8b929e; margin-bottom: 4px;">CHOICE</div>
+              <div style="font-size: 13px; line-height: 1.4;">Restart it once, then stop and flag it</div>
+            </div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; align-items: center; padding-top: 64px; gap: 82px; color: #4a505b;" aria-hidden="true">
+            <span style="font-size: 18px;">→</span>
+            <span style="font-size: 18px;">→</span>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 14px;">
+            <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #8b929e;">In the viewer server</span>
+            <div style="padding: 12px; border-radius: 8px; border: 1.5px solid #4ea87b; background: #1c1f25;">
+              <div style="font-size: 13px; line-height: 1.4;">4 · Routes to start, stop and list sessions</div>
+              <div style="font-size: 11px; color: #8b929e; margin-top: 6px;">Terra · done</div>
+            </div>
+            <div style="padding: 12px; border-radius: 8px; border: 1.5px solid #5b9dd9; background: #1c1f25;">
+              <div style="font-size: 13px; line-height: 1.4;">6 · Stream a session's screen, send keys back</div>
+              <div style="font-size: 11px; color: #a9cdf0; margin-top: 6px;">Terra · running 2m</div>
+            </div>
+            <div style="padding: 12px; border-radius: 8px; border: 1.5px solid #4ea87b; background: #1c1f25;">
+              <div style="font-size: 13px; line-height: 1.4;">8 · Notify when a part needs you</div>
+              <div style="font-size: 11px; color: #8b929e; margin-top: 6px;">existing · reused</div>
+            </div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; align-items: center; padding-top: 64px; gap: 82px; color: #4a505b;" aria-hidden="true">
+            <span style="font-size: 18px;">→</span>
+            <span style="font-size: 18px;">→</span>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 14px;">
+            <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #8b929e;">In the browser</span>
+            <div style="padding: 12px; border-radius: 8px; border: 1.5px solid #5b9dd9; background: #1c1f25;">
+              <div style="font-size: 13px; line-height: 1.4;">5 · A page listing every session</div>
+              <div style="font-size: 11px; color: #a9cdf0; margin-top: 6px;">Luna · running 12m</div>
+            </div>
+            <div style="padding: 12px; border-radius: 8px; border: 1.5px solid #6b7280; background: #1a1c20;">
+              <div style="font-size: 13px; line-height: 1.4; color: #c5cad3;">7 · A live terminal pane you can type into</div>
+              <div style="font-size: 11px; color: #8b929e; margin-top: 6px;">waits on 6</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <div style="display: flex; flex-wrap: wrap; gap: 14px; align-items: center; padding: 16px; border-radius: 10px; border: 1px solid #5c4a24; background: #1f1b13;">
+        <div style="flex: 1 1 360px; display: flex; flex-direction: column; gap: 6px;">
+          <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #d9a441;">A worker made a choice the plan didn't settle</span>
+          <span style="font-size: 14px; line-height: 1.5;">When a session's process exits with an error, part 3 restarts it once. If it dies again, the part is marked <em>needs you</em> and nothing restarts it. Strike it and the lead turns your strike into a follow-up task before the write-up.</span>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button type="button" style="padding: 10px 18px; border-radius: 8px; border: 0; background: #4ea87b; color: #0c1410; font: inherit; font-weight: 600; font-size: 13px;">Keep it</button>
+          <button type="button" style="padding: 10px 18px; border-radius: 8px; border: 1.5px dashed #c4645f; background: transparent; color: #e09a96; font: inherit; font-weight: 600; font-size: 13px;">Strike it</button>
+        </div>
+      </div>
+    </section>
+
+    <aside aria-labelledby="lanes" style="flex: 1 1 400px; max-width: 520px; border-left: 1px solid #2a2f38; display: flex; flex-direction: column; box-sizing: border-box; background: #181a1e;">
+      <div style="padding: 20px 20px 12px; display: flex; flex-direction: column; gap: 10px;">
+        <h2 id="lanes" style="margin: 0; font-size: 16px; font-weight: 600;">Lanes</h2>
+        <div role="list" style="display: flex; flex-direction: column; gap: 4px;">
+          <button type="button" role="listitem" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; border: 1px solid #5b9dd9; background: #1f2b3a; color: #e6e8ec; font: inherit; text-align: left;">
+            <span style="width: 8px; height: 8px; border-radius: 50%; background: #5b9dd9;"></span>
+            <span style="flex: 1; font-size: 13px;">Part 6 · stream and send keys</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #a9cdf0;">codex · Terra · node-3</span>
+          </button>
+          <button type="button" role="listitem" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; border: 1px solid transparent; background: transparent; color: #e6e8ec; font: inherit; text-align: left;">
+            <span style="width: 8px; height: 8px; border-radius: 50%; background: #5b9dd9;"></span>
+            <span style="flex: 1; font-size: 13px;">Part 5 · session list page</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b929e;">codex · Luna · node-2</span>
+          </button>
+          <button type="button" role="listitem" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; border: 1px solid transparent; background: transparent; color: #e6e8ec; font: inherit; text-align: left;">
+            <span style="width: 8px; height: 8px; border-radius: 50%; background: #d9a441;"></span>
+            <span style="flex: 1; font-size: 13px;">Part 3 · notice a dead session</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b929e;">codex · Terra · node-2</span>
+          </button>
+          <button type="button" role="listitem" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; border: 1px solid transparent; background: transparent; color: #e6e8ec; font: inherit; text-align: left;">
+            <span style="width: 8px; height: 8px; border-radius: 50%; background: #8b929e;"></span>
+            <span style="flex: 1; font-size: 13px;">Sub-lead · running the build</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b929e;">claude · Opus · node-2</span>
+          </button>
+        </div>
+      </div>
+
+      <div style="flex: 1; display: flex; flex-direction: column; margin: 0 20px; border-radius: 10px; border: 1px solid #2a2f38; overflow: hidden; min-height: 380px;">
+        <div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #1c1f25; border-bottom: 1px solid #2a2f38;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b929e; flex: 1;">node-3 · tmux attach -t wc-session-control:6</span>
+          <button type="button" style="padding: 4px 8px; border-radius: 6px; border: 1px solid #2a2f38; background: transparent; color: #c5cad3; font: inherit; font-size: 11px;">Copy</button>
+          <button type="button" aria-label="Open full terminal" style="padding: 4px 8px; border-radius: 6px; border: 1px solid #2a2f38; background: transparent; color: #c5cad3; font: inherit; font-size: 11px;">Full screen</button>
+        </div>
+        <pre style="flex: 1; margin: 0; padding: 14px; background: #0c0e10; font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.6; color: #b4bac4; white-space: pre-wrap; overflow: hidden;"><span style="color: #8b929e;">codex · gpt-5.6-terra · high · ~/wheelchair</span>
+
+<span style="color: #a9cdf0;">› </span>Brief: part 6 of 8 · stream a session's screen
+  and send keys back. Owns viewer/server.js
+  (upgrade path) and viewer/test/attach.test.js.
+
+• Searched "where the server upgrades a request"
+  └ viewer/server.js:1840 handleUpgrade
+• Edited viewer/server.js (+48 -2)
+• Ran node --test viewer/test/attach.test.js
+  └ <span style="color: #4ea87b;">✔ 6 passed</span>
+
+Streaming works. Should keys typed in the browser
+go to the pane even while I'm mid-step?
+
+<span style="color: #a9cdf0;">› </span><span style="color: #5b9dd9;">▍</span></pre>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 8px; padding: 14px 20px 20px;">
+        <label for="lanemsg" style="font-size: 12px; color: #8b929e;">Type straight into this session, same as attaching to it.</label>
+        <div style="display: flex; gap: 8px;">
+          <input id="lanemsg" type="text" placeholder="e.g. keep the fifo under the cache root" style="flex: 1; min-width: 0; padding: 10px 12px; border-radius: 8px; border: 1px solid #2a2f38; background: #14161a; color: #e6e8ec; font: inherit; font-size: 13px;">
+          <button type="button" style="padding: 10px 16px; border-radius: 8px; border: 0; background: #5b9dd9; color: #0e1114; font: inherit; font-weight: 600; font-size: 13px;">Send</button>
+        </div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button type="button" style="padding: 7px 12px; border-radius: 6px; border: 1px solid #2a2f38; background: transparent; color: #c5cad3; font: inherit; font-size: 12px;">Pause lane</button>
+          <button type="button" style="padding: 7px 12px; border-radius: 6px; border: 1px solid #2a2f38; background: transparent; color: #c5cad3; font: inherit; font-size: 12px;">Move up to Sol</button>
+          <button type="button" style="padding: 7px 12px; border-radius: 6px; border: 1px solid #4a2a28; background: transparent; color: #e09a96; font: inherit; font-size: 12px;">Stop lane</button>
+        </div>
+      </div>
+    </aside>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1040}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

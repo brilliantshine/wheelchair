@@ -1,0 +1,158 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "IdeaLong.dc.html": {
+      "h": 860,
+      "title": "Pinned idea · 6 things",
+      "w": 900,
+      "x": 4560,
+      "y": 1120
+    },
+    "Main.dc.html": {
+      "expand": "fill",
+      "h": 1000,
+      "title": "A · Pipeline home",
+      "w": 1440,
+      "x": 0,
+      "y": 0
+    },
+    "PhoneInbox.dc.html": {
+      "h": 844,
+      "title": "Phone · needs you",
+      "w": 390,
+      "x": 0,
+      "y": 3080
+    },
+    "PhoneLane.dc.html": {
+      "h": 844,
+      "title": "Phone · one lane",
+      "w": 390,
+      "x": 470,
+      "y": 3080
+    },
+    "Planning.dc.html": {
+      "expand": "fill",
+      "h": 1000,
+      "title": "Feature · one question at a time",
+      "w": 1440,
+      "x": 1520,
+      "y": 1520
+    },
+    "Run.dc.html": {
+      "expand": "fill",
+      "h": 1040,
+      "title": "Feature · implementing",
+      "w": 1440,
+      "x": 0,
+      "y": 1520
+    },
+    "SessionWall.dc.html": {
+      "expand": "fill",
+      "h": 1000,
+      "title": "B · Session wall home",
+      "w": 1440,
+      "x": 1520,
+      "y": 0
+    },
+    "Thread.dc.html": {
+      "expand": "fill",
+      "h": 1000,
+      "title": "Threads · chat with a lead",
+      "w": 1440,
+      "x": 3040,
+      "y": 0
+    },
+    "ThreadPinned.dc.html": {
+      "expand": "fill",
+      "h": 1000,
+      "title": "Threads · feature offer pinned",
+      "w": 1440,
+      "x": 3040,
+      "y": 1120
+    },
+    "PlanApproved.dc.html": {
+      "expand": "fill",
+      "h": 1000,
+      "title": "Threads · plan approved",
+      "w": 1440,
+      "x": 4560,
+      "y": 0
+    },
+    "ThreadBuilding.dc.html": {
+      "expand": "fill",
+      "h": 1000,
+      "title": "Threads · while building",
+      "w": 1440,
+      "x": 5540,
+      "y": 1120
+    },
+    "ThreadDiagram.dc.html": {
+      "expand": "fill",
+      "h": 1000,
+      "title": "Threads · answer with a custom diagram",
+      "w": 1440,
+      "x": 7060,
+      "y": 1120
+    },
+    "Done.dc.html": {
+      "expand": "fill",
+      "h": 1000,
+      "title": "Threads · built and checked",
+      "w": 1440,
+      "x": 6080,
+      "y": 0
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-11-09T08:58:00Z",
+    "v": 1
+  },
+  "designSystems": [],
+  "launch": {
+    "view": "canvas"
+  },
+  "notes": {
+    "row1": {
+      "kind": "title1",
+      "maxW": 7520,
+      "text": "Home screen: Features, Sessions, Threads",
+      "w": 240,
+      "x": 0,
+      "y": -260
+    },
+    "row2": {
+      "kind": "title1",
+      "maxW": 2960,
+      "text": "Inside one feature",
+      "w": 240,
+      "x": 0,
+      "y": 1260
+    },
+    "row3": {
+      "kind": "title1",
+      "maxW": 2960,
+      "text": "On a phone, over Tailscale",
+      "w": 240,
+      "x": 0,
+      "y": 2820
+    }
+  },
+  "order": [
+    "Main.dc.html",
+    "SessionWall.dc.html",
+    "Thread.dc.html",
+    "PlanApproved.dc.html",
+    "Done.dc.html",
+    "ThreadPinned.dc.html",
+    "ThreadBuilding.dc.html",
+    "ThreadDiagram.dc.html",
+    "IdeaLong.dc.html",
+    "Run.dc.html",
+    "Planning.dc.html",
+    "PhoneInbox.dc.html",
+    "PhoneLane.dc.html"
+  ],
+  "pages": [],
+  "title": "Wheelchair App"
+}

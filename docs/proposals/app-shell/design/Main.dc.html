@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wheelchair · Pipeline home</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#14161a}
+a{color:#7fb4e6}a:hover{color:#a9cdf0}
+</style>
+</helmet>
+<div style="min-height: 1000px; background: #14161a; color: #e6e8ec; font-family: Inter, system-ui, sans-serif; font-size: 14px; display: flex; flex-direction: column;">
+
+  <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 14px 24px; border-bottom: 1px solid #2a2f38; background: #1c1f25;">
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <div style="width: 26px; height: 26px; border-radius: 7px; background: #5b9dd9; display: flex; align-items: center; justify-content: center;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#14161a" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="9" cy="16" r="5"></circle><path d="M9 3v8h7l3 8"></path></svg>
+      </div>
+      <span style="font-weight: 700; font-size: 16px; letter-spacing: -0.01em;">wheelchair</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px; padding: 6px 12px; border: 1px solid #2a2f38; border-radius: 999px; background: #14161a;">
+      <span style="width: 8px; height: 8px; border-radius: 50%; background: #4ea87b;"></span>
+      <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #c5cad3;">beelink</span>
+      <span style="font-size: 12px; color: #8b929e;">hub · 2 workers online</span>
+    </div>
+    <nav aria-label="Views" style="display: flex; gap: 2px; padding: 3px; border-radius: 9px; background: #14161a; border: 1px solid #2a2f38;">
+      <a href="Main.dc.html" aria-current="page" style="padding: 6px 14px; border-radius: 6px; background: #2a2f38; color: #e6e8ec; font-size: 13px; font-weight: 600; text-decoration: none;">Features</a>
+      <a href="Thread.dc.html" style="padding: 6px 14px; border-radius: 6px; color: #c5cad3; font-size: 13px; text-decoration: none;">Threads</a>
+      <a href="SessionWall.dc.html" style="padding: 6px 14px; border-radius: 6px; color: #c5cad3; font-size: 13px; text-decoration: none;">Sessions <span style="color: #8b929e;">6</span></a>
+    </nav>
+    <div style="flex: 1 1 200px;"></div>
+    <label style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid #2a2f38; border-radius: 8px; background: #14161a; min-width: 240px;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b929e" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-4-4"></path></svg>
+      <input type="search" placeholder="Find a feature, session or file" aria-label="Search" style="flex: 1; background: transparent; border: 0; outline: 0; color: #e6e8ec; font: inherit; font-size: 13px;">
+    </label>
+    <a href="Thread.dc.html" style="padding: 9px 16px; border-radius: 8px; background: #5b9dd9; color: #0e1114; font-weight: 600; font-size: 13px; text-decoration: none;">New thread</a>
+  </header>
+
+  <div style="display: flex; flex-wrap: wrap; flex: 1;">
+
+    <nav aria-label="Projects" style="flex: 1 1 220px; max-width: 260px; padding: 20px 16px; border-right: 1px solid #2a2f38; display: flex; flex-direction: column; gap: 4px; box-sizing: border-box;">
+      <div style="font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #8b929e; padding: 0 10px 8px;">Projects on beelink</div>
+      <a href="#" style="display: flex; justify-content: space-between; align-items: center; padding: 9px 10px; border-radius: 8px; background: #23262d; color: #e6e8ec; text-decoration: none;"><span style="font-weight: 600;">All projects</span><span style="font-size: 12px; color: #8b929e;">5 active</span></a>
+      <a href="#" style="display: flex; justify-content: space-between; align-items: center; padding: 9px 10px; border-radius: 8px; color: #c5cad3; text-decoration: none;"><span>wheelchair</span><span style="font-size: 12px; color: #d9a441;">2 · 1 needs you</span></a>
+      <a href="#" style="display: flex; justify-content: space-between; align-items: center; padding: 9px 10px; border-radius: 8px; color: #c5cad3; text-decoration: none;"><span>tetris-ai</span><span style="font-size: 12px; color: #8b929e;">1</span></a>
+      <a href="#" style="display: flex; justify-content: space-between; align-items: center; padding: 9px 10px; border-radius: 8px; color: #c5cad3; text-decoration: none;"><span>spoiler-shield</span><span style="font-size: 12px; color: #8b929e;">1</span></a>
+      <a href="#" style="display: flex; justify-content: space-between; align-items: center; padding: 9px 10px; border-radius: 8px; color: #c5cad3; text-decoration: none;"><span>beat-edit</span><span style="font-size: 12px; color: #8b929e;">1</span></a>
+      <a href="#" style="display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: 8px; color: #8b929e; text-decoration: none; font-size: 13px;">+ Add a repo</a>
+
+      <div style="height: 1px; background: #2a2f38; margin: 14px 0;"></div>
+      <div style="font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #8b929e; padding: 0 10px 8px;">Nodes</div>
+      <a href="#" style="display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: 8px; color: #c5cad3; text-decoration: none;"><span style="width: 7px; height: 7px; border-radius: 50%; background: #4ea87b;"></span><span style="flex: 1;">beelink</span><span style="font-size: 11px; padding: 2px 7px; border-radius: 999px; background: #1f2b3a; color: #a9cdf0;">hub</span></a>
+      <a href="#" style="display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: 8px; color: #c5cad3; text-decoration: none;"><span style="width: 7px; height: 7px; border-radius: 50%; background: #4ea87b;"></span><span style="flex: 1;">node-2</span><span style="font-size: 12px; color: #8b929e;">3 sessions</span></a>
+      <a href="#" style="display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: 8px; color: #c5cad3; text-decoration: none;"><span style="width: 7px; height: 7px; border-radius: 50%; background: #4ea87b;"></span><span style="flex: 1;">node-3</span><span style="font-size: 12px; color: #8b929e;">2 sessions</span></a>
+      <a href="#" style="display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: 8px; color: #8b929e; text-decoration: none; font-size: 13px;">+ Add a worker</a>
+      <div style="height: 1px; background: #2a2f38; margin: 14px 0;"></div>
+      <a href="#" style="display: flex; justify-content: space-between; padding: 9px 10px; border-radius: 8px; color: #c5cad3; text-decoration: none;"><span>Code maps</span><span style="font-size: 12px; color: #8b929e;">9 areas · 2 out of date</span></a>
+      <a href="#" style="display: flex; justify-content: space-between; padding: 9px 10px; border-radius: 8px; color: #c5cad3; text-decoration: none;"><span>Model tiers</span><span style="font-size: 12px; color: #8b929e;">4 pinned</span></a>
+      <a href="#" style="display: flex; justify-content: space-between; padding: 9px 10px; border-radius: 8px; color: #c5cad3; text-decoration: none;"><span>Wording list</span><span style="font-size: 12px; color: #8b929e;"></span></a>
+      <a href="#" style="display: flex; justify-content: space-between; padding: 9px 10px; border-radius: 8px; color: #c5cad3; text-decoration: none;"><span>Settings</span><span></span></a>
+    </nav>
+
+    <main style="flex: 999 1 560px; min-width: 0; padding: 24px 28px; display: flex; flex-direction: column; gap: 28px; box-sizing: border-box;">
+
+      <section aria-labelledby="needs" style="display: flex; flex-direction: column; gap: 12px;">
+        <div style="display: flex; align-items: baseline; gap: 10px;">
+          <h2 id="needs" style="margin: 0; font-size: 18px; font-weight: 600;">Needs you</h2>
+          <span style="font-size: 13px; color: #8b929e;">3 things are waiting. Nothing else moves until these are answered.</span>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px;">
+          <a href="Thread.dc.html" style="display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 10px; background: #1c1f25; border: 1px solid #5c4a24; color: #e6e8ec; text-decoration: none;">
+            <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #d9a441;">Question · planning</span>
+            <span style="font-size: 15px; font-weight: 600; line-height: 1.35;">When a worker gets stuck, who does it ask?</span>
+            <span style="font-size: 12px; color: #8b929e;">wheelchair / app-shell · question 6 of about 8</span>
+          </a>
+          <a href="Run.dc.html" style="display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 10px; background: #1c1f25; border: 1px solid #5c4a24; color: #e6e8ec; text-decoration: none;">
+            <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #d9a441;">Choice to rule on · implementing</span>
+            <span style="font-size: 15px; font-weight: 600; line-height: 1.35;">A worker decided a crashed session restarts once, then stops. Keep or strike?</span>
+            <span style="font-size: 12px; color: #8b929e;">wheelchair / session-control · part 3, Terra lane</span>
+          </a>
+          <a href="#" style="display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 10px; background: #1c1f25; border: 1px solid #5c4a24; color: #e6e8ec; text-decoration: none;">
+            <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #d9a441;">Sign-in · before a run</span>
+            <span style="font-size: 15px; font-weight: 600; line-height: 1.35;">Codex is signed out on beelink. Plan review is paused until it's back.</span>
+            <span style="font-size: 12px; color: #8b929e;">tetris-ai / replay-parser · plan review</span>
+          </a>
+        </div>
+      </section>
+
+      <section aria-labelledby="pipe" style="display: flex; flex-direction: column; gap: 12px; min-width: 0;">
+        <div style="display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;">
+          <h2 id="pipe" style="margin: 0; font-size: 18px; font-weight: 600;">Features</h2>
+          <span style="font-size: 13px; color: #8b929e;">Each column is a stage. A feature only moves right when its stage passes.</span>
+        </div>
+        <div style="overflow-x: auto; padding-bottom: 6px;">
+          <div style="display: grid; grid-template-columns: repeat(5, minmax(220px, 1fr)); gap: 14px; min-width: 1120px;">
+
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+              <div style="display: flex; justify-content: space-between; padding: 0 2px; font-size: 12px; font-weight: 600; color: #c5cad3;"><span>Planning</span><span style="color: #8b929e;">1</span></div>
+              <a href="Planning.dc.html" style="display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 10px; background: #1c1f25; border: 1px solid #2a2f38; color: #e6e8ec; text-decoration: none;">
+                <span style="font-size: 14px; font-weight: 600; line-height: 1.35;">Run wheelchair as an app on a server, not from a terminal</span>
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b929e;">wheelchair / app-shell</span>
+                <div style="height: 4px; border-radius: 2px; background: #2a2f38;"><div style="width: 45%; height: 4px; border-radius: 2px; background: #5b9dd9;"></div></div>
+                <span style="font-size: 12px; color: #d9a441;">Waiting on your answer to Q6</span>
+              </a>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+              <div style="display: flex; justify-content: space-between; padding: 0 2px; font-size: 12px; font-weight: 600; color: #c5cad3;"><span>Plan review</span><span style="color: #8b929e;">1</span></div>
+              <a href="#" style="display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 10px; background: #1c1f25; border: 1px solid #2a2f38; color: #e6e8ec; text-decoration: none;">
+                <span style="font-size: 14px; font-weight: 600; line-height: 1.35;">Turn ranked TETR.IO replays into board-and-move training pairs</span>
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b929e;">tetris-ai / replay-parser</span>
+                <span style="font-size: 12px; color: #c5cad3;">Reviewers are checking the plan</span>
+                <span style="font-size: 12px; color: #d9a441;">Paused · Codex signed out</span>
+              </a>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+              <div style="display: flex; justify-content: space-between; padding: 0 2px; font-size: 12px; font-weight: 600; color: #c5cad3;"><span>Implementing</span><span style="color: #8b929e;">2</span></div>
+              <a href="Run.dc.html" style="display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 10px; background: #1c1f25; border: 1px solid #2a2f38; color: #e6e8ec; text-decoration: none;">
+                <span style="font-size: 14px; font-weight: 600; line-height: 1.35;">Start, watch and stop agent sessions from the browser</span>
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b929e;">wheelchair / session-control</span>
+                <div style="display: flex; gap: 4px;" aria-label="8 parts: 4 done, 2 in progress, 1 needs you, 1 not started">
+                  <span style="flex: 1; height: 6px; border-radius: 2px; background: #4ea87b;"></span>
+                  <span style="flex: 1; height: 6px; border-radius: 2px; background: #4ea87b;"></span>
+                  <span style="flex: 1; height: 6px; border-radius: 2px; background: #4ea87b;"></span>
+                  <span style="flex: 1; height: 6px; border-radius: 2px; background: #4ea87b;"></span>
+                  <span style="flex: 1; height: 6px; border-radius: 2px; background: #5b9dd9;"></span>
+                  <span style="flex: 1; height: 6px; border-radius: 2px; background: #5b9dd9;"></span>
+                  <span style="flex: 1; height: 6px; border-radius: 2px; background: #d9a441;"></span>
+                  <span style="flex: 1; height: 6px; border-radius: 2px; background: #3a3f48;"></span>
+                </div>
+                <span style="font-size: 12px; color: #8b929e;">3 lanes running · 1 choice to rule on</span>
+              </a>
+              <a href="#" style="display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 10px; background: #1c1f25; border: 1px solid #2a2f38; color: #e6e8ec; text-decoration: none;">
+                <span style="font-size: 14px; font-weight: 600; line-height: 1.35;">Snap edits to the beat the user taps in</span>
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b929e;">beat-edit / tap-tempo</span>
+                <div style="display: flex; gap: 4px;" aria-label="4 parts: 1 done, 1 in progress, 2 not started">
+                  <span style="flex: 1; height: 6px; border-radius: 2px; background: #4ea87b;"></span>
+                  <span style="flex: 1; height: 6px; border-radius: 2px; background: #5b9dd9;"></span>
+                  <span style="flex: 1; height: 6px; border-radius: 2px; background: #3a3f48;"></span>
+                  <span style="flex: 1; height: 6px; border-radius: 2px; background: #3a3f48;"></span>
+                </div>
+                <span style="font-size: 12px; color: #8b929e;">1 lane running</span>
+              </a>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+              <div style="display: flex; justify-content: space-between; padding: 0 2px; font-size: 12px; font-weight: 600; color: #c5cad3;"><span>Verifying</span><span style="color: #8b929e;">1</span></div>
+              <a href="#" style="display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 10px; background: #1c1f25; border: 1px solid #2a2f38; color: #e6e8ec; text-decoration: none;">
+                <span style="font-size: 14px; font-weight: 600; line-height: 1.35;">Let each show carry its own spoiler rules</span>
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b929e;">spoiler-shield / per-show-rules</span>
+                <span style="font-size: 12px; color: #c5cad3;">Blind verifier is trying to prove it wrong</span>
+                <span style="font-size: 12px; color: #8b929e;">Pass 2 · after 1 fix round</span>
+              </a>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+              <div style="display: flex; justify-content: space-between; padding: 0 2px; font-size: 12px; font-weight: 600; color: #c5cad3;"><span>Done</span><span style="color: #8b929e;">13</span></div>
+              <a href="#" style="display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 10px; border: 1px solid #2a2f38; color: #c5cad3; text-decoration: none;">
+                <span style="font-size: 13px; font-weight: 500;">See and rule on graphs from a phone</span>
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b929e;">wheelchair / remote-viewer</span>
+              </a>
+              <a href="#" style="display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 10px; border: 1px solid #2a2f38; color: #c5cad3; text-decoration: none;">
+                <span style="font-size: 13px; font-weight: 500;">Pin a GPT model per tier</span>
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b929e;">wheelchair / model-pins</span>
+              </a>
+              <a href="#" style="display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 10px; border: 1px solid #2a2f38; color: #c5cad3; text-decoration: none;">
+                <span style="font-size: 13px; font-weight: 500;">Run on someone else's machine with one account</span>
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b929e;">wheelchair / one-account-setups</span>
+              </a>
+              <a href="#" style="padding: 4px 14px; font-size: 12px;">Show all 13</a>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
