@@ -4,7 +4,8 @@ Routes (all responses use Cache-Control: no-store):
   GET  /wheelchair/list         -> { sessions, plans }
   GET  /wheelchair/plan, /doc   -> plan data and raw Markdown
   GET  /wheelchair/docs         -> viewer/doc.html
-  GET  /wheelchair/assets/*     -> page scripts (no token)
+  GET  /wheelchair/assets/*     -> page scripts (no token): list.js, doc.js, pages/*, vendor/*
+  GET  /wheelchair/app/<page>   -> viewer/pages/<page>.html (threads, thread, features, sessions, terminal)
   GET  /wheelchair/graph        -> { hash, graph, children }
   PUT  /wheelchair/graph, /view -> { hash }
   GET  /wheelchair/whoami       no authentication -> { start_id }.
@@ -1824,11 +1825,32 @@ async function servePage(response, name, csp = false) {
   sendFile(response, 200, html, 'text/html; charset=utf-8', csp ? { 'content-security-policy': PAGE_CSP } : {});
 }
 
+// The app's pages (docs/plans/app-shell, "Views") live in viewer/pages/ and their vendored
+// libraries in viewer/vendor/; both are public assets like list.js, matched by a narrow name.
+const APP_PAGES = new Set(['threads', 'thread', 'features', 'sessions', 'terminal']);
+const APP_ASSET = /^(pages|vendor)\/[a-z0-9_-]+(\/[a-z0-9_.-]+)*\.(js|css)$/;
+
 async function handleAsset(response, url) {
   const name = url.pathname.slice(`${VIEWER_PREFIX}/assets/`.length);
-  if (!['list.js', 'doc.js'].includes(name)) fail(404, 'no-route', 'The requested route does not exist.');
-  const script = await fsp.readFile(path.join(__dirname, name));
-  sendFile(response, 200, script, 'text/javascript; charset=utf-8');
+  if (['list.js', 'doc.js'].includes(name)) {
+    const script = await fsp.readFile(path.join(__dirname, name));
+    sendFile(response, 200, script, 'text/javascript; charset=utf-8');
+    return;
+  }
+  if (!APP_ASSET.test(name) || name.split('/').includes('..')) fail(404, 'no-route', 'The requested route does not exist.');
+  let bytes;
+  try { bytes = await fsp.readFile(path.join(__dirname, name)); }
+  catch { fail(404, 'no-route', 'The requested route does not exist.'); }
+  sendFile(response, 200, bytes, name.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8');
+}
+
+async function handleAppPage(request, response, url, state) {
+  const name = url.pathname.slice(`${VIEWER_PREFIX}/app/`.length);
+  if (!APP_PAGES.has(name)) fail(404, 'no-route', 'The requested route does not exist.');
+  if (!hasRememberCookie(request, state)) { await serveSignin(response); return; }
+  const html = await fsp.readFile(path.join(__dirname, 'pages', `${name}.html`));
+  sendFile(response, 200, html, 'text/html; charset=utf-8',
+    { 'content-security-policy': PAGE_CSP, 'set-cookie': rememberCookie(state) });
 }
 
 async function serveSignin(response) {
@@ -2155,6 +2177,7 @@ async function startServer(config) {
         return;
       }
       if (request.method === 'GET' && url.pathname.startsWith(`${VIEWER_PREFIX}/assets/`)) { await handleAsset(response, url); return; }
+      if (request.method === 'GET' && url.pathname.startsWith(`${VIEWER_PREFIX}/app/`)) { await handleAppPage(request, response, url, state); return; }
       if (request.method === 'GET' && url.pathname === `${VIEWER_PREFIX}/`) { await handleRoot(request, response, url, state); return; }
       if (request.method === 'GET' && url.pathname === `${VIEWER_PREFIX}/list`) { await handleList(request, response, url, state); return; }
       if (request.method === 'GET' && url.pathname === `${VIEWER_PREFIX}/plan`) { await handlePlan(request, response, url, state); return; }

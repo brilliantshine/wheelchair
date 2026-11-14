@@ -21,6 +21,8 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 | `index.html` | The graph page. Holds the second copy of the box and group size constants the server's layout reserves room for |
 | `list.html`, `list.js` | The list of open graphs and registered plans |
 | `doc.html`, `doc.js` | The plan document page, read from a plan's `docs/plans/<slug>/` |
+| `pages/` | The app's pages (threads, thread, features, sessions, terminal), served at `/wheelchair/app/<page>` behind the remember cookie; their scripts and styles are public assets under `/wheelchair/assets/pages/` |
+| `vendor/` | Vendored browser libraries for the app pages (xterm.js), public assets under `/wheelchair/assets/vendor/` |
 | `signin.html` | What a browser with no remember cookie gets before it is signed in |
 | `playwright.config.js` | The browser suite's two projects, Chromium and Firefox |
 | `test/` | The suites. See below |
