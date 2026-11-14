@@ -1,0 +1,29 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Terminal</title>
+<link rel="stylesheet" href="/wheelchair/assets/pages/app.css">
+<link rel="stylesheet" href="/wheelchair/assets/vendor/xterm/xterm.css">
+<link rel="stylesheet" href="/wheelchair/assets/pages/views.css">
+<script src="/wheelchair/assets/pages/nav.js" defer></script>
+<script src="/wheelchair/assets/vendor/xterm/xterm.js" defer></script>
+<script src="/wheelchair/assets/pages/terminal.js" defer></script>
+<header id="app-nav" data-current="sessions"></header>
+<main class="view term-view">
+  <div class="term-bar">
+    <a href="/wheelchair/app/sessions" class="v-link">&larr; Sessions</a>
+    <strong id="term-name"></strong>
+    <span id="term-status" class="v-badge">connecting</span>
+  </div>
+  <div id="term-wrap"><div id="term"></div></div>
+  <div id="term-keys" class="term-keys" aria-label="Keys">
+    <button type="button" data-key="Escape">Esc</button>
+    <button type="button" data-key="Tab">Tab</button>
+    <button type="button" data-key="C-c">Ctrl-C</button>
+    <button type="button" data-key="Left" aria-label="Left">&larr;</button>
+    <button type="button" data-key="Up" aria-label="Up">&uarr;</button>
+    <button type="button" data-key="Down" aria-label="Down">&darr;</button>
+    <button type="button" data-key="Right" aria-label="Right">&rarr;</button>
+    <button type="button" data-key="Enter">Enter</button>
+  </div>
+</main>
