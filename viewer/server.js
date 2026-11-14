@@ -2165,7 +2165,8 @@ async function startServer(config) {
         sendJson(response, 200, body); return;
       }
       if (url.pathname.startsWith(`${VIEWER_PREFIX}/api/`)) {
-        if (!state.app) { const { Hub } = require('./app/hub.js'); state.app = new Hub({ stateDir: config.stateDir || path.join(os.homedir(), '.local', 'state', 'wheelchair'), root: path.resolve(__dirname, '..') }); }
+        if (!state.app) { const { Hub } = require('./app/hub.js'); state.app = new Hub({ stateDir: config.stateDir || path.join(os.homedir(), '.local', 'state', 'wheelchair'), root: path.resolve(__dirname, '..'),
+          registerPlan: (planPath) => withMutex(() => registerPlanPath(config, planPath, null, 'other')) }); }
         if (!state.appInit) state.appInit = state.app.init();
         await state.appInit;
         const machineRoute = url.pathname.startsWith(`${VIEWER_PREFIX}/api/machine/`);

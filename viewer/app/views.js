@@ -3,6 +3,10 @@
 // Spec "Feature status" and "Views": Features and Sessions response data.
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { execFile } = require('node:child_process');
+const { promisify } = require('node:util');
+
+const execFileAsync = promisify(execFile);
 
 const STATUS_GROUP = {
   planning: 'planning',
@@ -40,14 +44,37 @@ async function features(hub) {
   return output;
 }
 
+// A thread's worktree is a full checkout, so docs/plans/ already holds every earlier plan. The
+// thread's own plan is the one directory under docs/plans/ that this branch added or that is
+// still untracked there (Spec "Branches and checkouts": the plan is written on the thread's branch).
+async function newPlanDirectories(worktree) {
+  const names = new Set();
+  const take = (output) => {
+    for (const line of output.split('\n')) {
+      const match = line.match(/docs\/plans\/([^/]+)\//);
+      if (match) names.add(match[1]);
+    }
+  };
+  const base = await execFileAsync('git', ['-C', worktree, 'merge-base', 'HEAD', '@{upstream}'])
+    .then((result) => result.stdout.trim())
+    .catch(() => execFileAsync('git', ['-C', worktree, 'rev-parse', 'HEAD']).then((result) => result.stdout.trim()))
+    .catch(() => null);
+  if (base) {
+    await execFileAsync('git', ['-C', worktree, 'diff', '--name-only', '--diff-filter=A', base, '--', 'docs/plans'])
+      .then((result) => take(result.stdout)).catch(() => {});
+  }
+  await execFileAsync('git', ['-C', worktree, 'status', '--porcelain', '--untracked-files=all', '--', 'docs/plans'])
+    .then((result) => take(result.stdout)).catch(() => {});
+  return [...names];
+}
+
 async function findSlug(hub, thread) {
   if (thread.slug || !thread.worktree) return;
-  const plansPath = path.join(thread.worktree, 'docs', 'plans');
-  const plans = await fs.readdir(plansPath, { withFileTypes: true }).catch(() => []);
-  const plan = plans.find((item) => item.isDirectory());
-  if (!plan) return;
-  thread.slug = plan.name;
+  const names = await newPlanDirectories(thread.worktree);
+  if (names.length !== 1) return;
+  thread.slug = names[0];
   await hub.save(thread);
+  if (hub.registerPlan) await hub.registerPlan(path.join(thread.worktree, 'docs', 'plans', thread.slug));
 }
 
 async function currentStatus(hub, thread) {
@@ -99,4 +126,4 @@ async function findSessionMachine(hub, name) {
   return group?.machine || null;
 }
 
-module.exports = { features, findSessionMachine, findSlug, sessions };
+module.exports = { features, findSessionMachine, findSlug, newPlanDirectories, sessions };

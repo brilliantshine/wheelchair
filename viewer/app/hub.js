@@ -11,8 +11,11 @@ const views = require('./views.js');
 const { handle } = require('./routes.js');
 
 class Hub {
-  constructor({ stateDir = DEFAULT_STATE, root } = {}) {
+  constructor({ stateDir = DEFAULT_STATE, root, registerPlan = null } = {}) {
     this.root = root;
+    // Given by viewer/server.js so a thread's plan joins the viewer's plan registry and its
+    // MAP/IDEA/PLAN links open in the existing document page.
+    this.registerPlan = registerPlan;
     this.state = new State(stateDir);
     this.client = new MachineClient(this.state);
     this.stateDir = this.state.dir;

@@ -493,6 +493,9 @@ test('finds a worktree plan slug on thread and chat routes', async () => {
     const made = await thread(context);
     const worktree = context.machine.sessions.get(made.sessions[0].name).worktree;
     await fs.mkdir(path.join(worktree, 'docs', 'plans', 'registered-feature'), { recursive: true });
+    // A worktree is a git checkout; the thread's plan is the one its branch adds (untracked here).
+    require('node:child_process').execFileSync('git', ['init', '-q', worktree]);
+    await fs.writeFile(path.join(worktree, 'docs', 'plans', 'registered-feature', 'IDEA.md'), 'idea\n');
     const listed = await api(context, '/threads');
     assert.equal(listed.body.threads.find((item) => item.id === made.id).slug, 'registered-feature');
     const chat = await api(context, `/threads/${made.id}/chat`);
