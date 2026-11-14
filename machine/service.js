@@ -194,7 +194,8 @@ class MachineService {
     if (input.cli === 'claude') {
       const settingsPath = path.join(this.stateDir, 'settings', `${session.name}.json`);
       const hook = path.join(ROOT, 'machine', 'hook.sh');
-      const settings = { cleanupPeriodDays: 30, hooks: {
+      // No suggested next prompt: one Enter in a terminal would send it as if Collin typed it.
+      const settings = { cleanupPeriodDays: 30, promptSuggestionEnabled: false, hooks: {
         Stop: [{ hooks: [{ type: 'command', command: `${shellQuote(hook)} claude ${shellQuote(session.name)}` }] }],
         Notification: [{ hooks: [{ type: 'command', command: `${shellQuote(hook)} claude ${shellQuote(session.name)}` }] }],
       } };
