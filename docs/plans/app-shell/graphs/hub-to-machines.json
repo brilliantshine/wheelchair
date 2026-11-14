@@ -1,0 +1,265 @@
+{
+  "schema": 1,
+  "title": "how the hub could start and hear back from workers on other machines",
+  "source": "plan-proposal",
+  "source_detail": "docs/plans/app-shell/PLAN.md, Open Question Q1 (slice 2)",
+  "explanation": "Two ways for the hub to run workers elsewhere: [reach in over SSH](#over-ssh) or [ask a service on each machine](#machine-service). The difference to look at is what has to be running on a worker machine before any work starts. Leaves out the Ready check and what happens when a machine is offline, which work the same either way.",
+  "groups": [
+    {
+      "id": "machine-service",
+      "label": "(b) a wheelchair service on each machine",
+      "note": "Every worker machine runs its own always-on process that the hub talks to.",
+      "visible": true,
+      "nodes": [
+        "b_hook",
+        "b_hub",
+        "b_push",
+        "b_svc",
+        "b_tmux"
+      ]
+    },
+    {
+      "id": "over-ssh",
+      "label": "(a) the hub reaches in over SSH",
+      "note": "Nothing new runs on a worker machine; the hub logs in and runs tmux there.",
+      "visible": true,
+      "nodes": [
+        "a_hook",
+        "a_hub",
+        "a_read",
+        "a_setup",
+        "a_tmux"
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "a_hook",
+      "label": "worker's end-of-turn hook calls the hub's address on the tailnet",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": "Claude Code Stop hook / Codex notify (D14)",
+      "graph": null,
+      "x": 532,
+      "y": 482
+    },
+    {
+      "id": "a_hub",
+      "label": "hub app runs \"ssh machine tmux new-session ...\" over the tailnet",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 532,
+      "y": 202
+    },
+    {
+      "id": "a_read",
+      "label": "hub reads the worker's report file over SSH",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 532,
+      "y": 622
+    },
+    {
+      "id": "a_setup",
+      "label": "one-time setup per machine: Tailscale SSH or an SSH key, plus a wheelchair clone",
+      "kind": "note",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 532,
+      "y": 62
+    },
+    {
+      "id": "a_tmux",
+      "label": "worker session lives in tmux on that machine and keeps running after SSH disconnects",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 532,
+      "y": 342
+    },
+    {
+      "id": "b_hook",
+      "label": "worker's end-of-turn hook tells its local service",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": "Claude Code Stop hook / Codex notify (D14)",
+      "graph": null,
+      "x": 24,
+      "y": 482
+    },
+    {
+      "id": "b_hub",
+      "label": "hub app sends \"start a worker\" to that machine's service",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 24,
+      "y": 202
+    },
+    {
+      "id": "b_push",
+      "label": "service passes the done signal and report to the hub",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 24,
+      "y": 622
+    },
+    {
+      "id": "b_svc",
+      "label": "always-on service on every worker machine, installed and kept up to date",
+      "kind": "store",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": "systemd user service, like the viewer today",
+      "graph": null,
+      "x": 24,
+      "y": 62
+    },
+    {
+      "id": "b_tmux",
+      "label": "service starts the worker in tmux locally",
+      "kind": "step",
+      "origin": "proposed",
+      "was": null,
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 24,
+      "y": 342
+    }
+  ],
+  "edges": [
+    {
+      "id": "a_hook->a_read",
+      "from": "a_hook",
+      "to": "a_read",
+      "label": "then",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "a_hub->a_tmux",
+      "from": "a_hub",
+      "to": "a_tmux",
+      "label": "starts",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "a_setup->a_hub",
+      "from": "a_setup",
+      "to": "a_hub",
+      "label": "enables",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "a_tmux->a_hook",
+      "from": "a_tmux",
+      "to": "a_hook",
+      "label": "turn ends",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "b_hook->b_push",
+      "from": "b_hook",
+      "to": "b_push",
+      "label": "then",
+      "kind": "data",
+      "value": "done signal and report",
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "b_hub->b_tmux",
+      "from": "b_hub",
+      "to": "b_tmux",
+      "label": "asks",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "b_svc->b_hub",
+      "from": "b_svc",
+      "to": "b_hub",
+      "label": "must be running",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    },
+    {
+      "id": "b_tmux->b_hook",
+      "from": "b_tmux",
+      "to": "b_hook",
+      "label": "turn ends",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "origin": "proposed",
+      "was": null,
+      "note": null
+    }
+  ]
+}
