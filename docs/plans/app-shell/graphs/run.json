@@ -315,7 +315,7 @@
       "note": null,
       "graph": null,
       "task": "T6",
-      "status": "in-progress",
+      "status": "done",
       "needs": null,
       "x": 984,
       "y": 3352
@@ -427,7 +427,7 @@
       "note": null,
       "graph": null,
       "task": "T3",
-      "status": "done",
+      "status": "in-progress",
       "needs": null,
       "x": 664,
       "y": 3616
@@ -459,7 +459,7 @@
       "note": null,
       "graph": null,
       "task": "T6",
-      "status": "in-progress",
+      "status": "done",
       "needs": null,
       "x": 984,
       "y": 3616
@@ -507,7 +507,7 @@
       "note": null,
       "graph": null,
       "task": "T5",
-      "status": "in-progress",
+      "status": "done",
       "needs": null,
       "x": 984,
       "y": 3880
