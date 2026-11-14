@@ -20,8 +20,9 @@ that makes it checkable: `viewer/app/card.js` validates against it.
 
 ## Boundaries
 
-- **These files never reference the old communication rules** (`writing.md`, `seen.md`,
-  SEEN.md, the wording list). App sessions run with the user-level wording hook off.
+- **These files never reference the old stage-file communication rules or their record
+  files.** App sessions run with the user-level wording hook off, and the plan
+  (`docs/plans/app-shell/PLAN.md`, "Where the code lives") says why.
 - **A rule lives in one file.** The card fields live only in `cards.md`; a role file
   names a card kind and says when to post it.
 - **No Mermaid here.** These are read by an agent mid-task, not rendered.
