@@ -1849,7 +1849,15 @@ async function handleAsset(response, url) {
 async function handleAppPage(request, response, url, state) {
   const name = url.pathname.slice(`${VIEWER_PREFIX}/app/`.length);
   if (!APP_PAGES.has(name)) fail(404, 'no-route', 'The requested route does not exist.');
-  if (!hasRememberCookie(request, state)) { await serveSignin(response); return; }
+  // A phone's first visit arrives on the bookmark link, so a page accepts the token the way
+  // the root and docs pages do: remember the browser, then drop the token from the address.
+  const validToken = tokenMatches(url.searchParams.get('token'), state.lock.token);
+  const validCookie = hasRememberCookie(request, state);
+  if (url.searchParams.has('token')) {
+    if (validToken || validCookie) { redirectWithoutToken(response, url, state, validToken); return; }
+    await serveSignin(response); return;
+  }
+  if (!validCookie) { await serveSignin(response); return; }
   const html = await fsp.readFile(path.join(__dirname, 'pages', `${name}.html`));
   sendFile(response, 200, html, 'text/html; charset=utf-8',
     { 'content-security-policy': APP_PAGE_CSP, 'set-cookie': rememberCookie(state) });
