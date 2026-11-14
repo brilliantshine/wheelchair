@@ -40,3 +40,12 @@
 2026-11-14T11:30:01Z turn
 2026-11-14T11:44:14Z turn
 2026-11-14T11:47:49Z turn
+2026-11-14T11:56:56Z turn
+2026-11-14T12:13:09Z turn
+2026-11-14T12:25:07Z new 9d6e round 16 fixed how chat bubbles are told apart from internal messages, not yet re-reviewed
+2026-11-14T12:25:07Z shown 9d6e
+2026-11-14T12:25:07Z turn
+2026-11-14T12:44:11Z turn
+2026-11-14T12:54:38Z new 837a round 19 found Codex could bind to its internal title turn; fixed and added to the live check
+2026-11-14T12:54:38Z shown 837a
+2026-11-14T12:54:38Z turn

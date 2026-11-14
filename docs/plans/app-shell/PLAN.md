@@ -1,6 +1,6 @@
 ---
 slug: app-shell
-status: approved   # planning | ready-for-review | approved | implementing | verifying | done
+status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-14
 adopted-from: docs/proposals/app-shell/proposal.md
 ---
@@ -102,6 +102,16 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D59 | Supersedes D57's small-fix cap with D58's rule: while the PR is open the lead fixes any size itself, and only a fix needing parallel workers becomes a stub. Review-round-12 fixes: `wc.js git fetch` and `cherry-pick`; the app asks about an unmerged parent before a stub opens, and "wait" keeps it unopened until the parent merges; closed-PR rules aligned; the hub enforces one sub-lead per thread; review-fix verifiers briefed with the problem and Spec, and dropped fixes reverted. | Nine upheld round-12 findings; both lanes agreed on the two majors | review-round-12 |
 | D60 | After round 12 hit the cap with only mechanical findings (all fixed), run one more round scoped to the round-12 fixes; approve if it upholds nothing blocking or major. Resets the review cap. | Collin picked (a): the waiting-stub behaviour is new and unreviewed | user |
 | D61 | Round 13 was clean (no blocking or major findings upheld). Its minor findings were fixed: the parent-dependence flag on stubs, the hub's waiting-stub check, `wc.js git revert`, the push-as-is path, and acceptance checks 7 and 12. | `protocol/plan-review.md` Exit; D60 | review-round-13 |
+| D62 | The transcript spike passed every check but Claude's trust prompt, so per D39 the plan returns to `planning` with that as Open Question Q1. Spike facts folded into the Spec as defaults: Codex trust uses the inline-table `-c projects={...}` form; Codex `notify` also fires for an internal title turn under another thread id, so the service matches `thread-id`; Codex rollout files are found by thread id after the first turn; Codex transcripts begin with injected user and developer entries to skip; tool calls appear as `custom_tool_call` or `function_call`; Claude tool results are `type:"user"` entries with list content. | `docs/plans/app-shell/spike-transcripts.md` | defaulted |
+| D63 | A new Claude session gets past the trust prompt by the machine service watching its pane for the dialog and pressing the confirm key once; Claude records the trust itself. Codex uses the inline-table `-c projects=` override. Nothing edits `~/.claude.json`. | Collin picked (a): it uses Claude's own trust mechanism, avoids racing Claude Code's writes to `~/.claude.json`, and keeps each session's working directory its own worktree (D46) | user |
+| D64 | Review-round-14 fixes: Claude's trust dialog is answered with `Down`, `Enter`, checked live first (T1b); ready and stuck defined from the pane; `Notification` hook registered with `idle_prompt` ignored; Codex sessions bound to their rollout by thread id plus matching `task_complete` turn id; Collin's bubbles come from the thread file and the lead's replies from the transcript; Claude transcript path taken from the hook payload. | Eight upheld round-14 findings | review-round-14 |
+| D65 | Review-round-15 fixes: chat turns come from the transcript, including terminal-typed messages, with the thread file hiding only exact matches; stuck and permission-prompt `needs` cards posted by the hub and closed when the session is ready, with the queue held meanwhile; a Codex ready rule; `hook.sh` sends separate turn-end and prompt events; Codex binding by `input-messages`; acceptance 13. | Eight upheld round-15 findings | review-round-15 |
+| D66 | Supersedes D64's "Collin's bubbles come from the thread file" (D65 moved them to the transcript). Review-round-16 fixes: Codex human turns only after the turn's `turn_context`; `pasted_content` unwrapped; hiding by marker prefix (`[wc:from`, `[wc:role]`, `[wc:context]`); T1b also records Codex's ready screen; a test-only prompt session for acceptance 13. | Eight upheld round-16 findings | review-round-16 |
+| D67 | After round 16 hit the cap with every finding fixed, run one more round scoped to the round-16 fixes; approve if it upholds nothing blocking or major. Resets the review cap. | Collin picked (a): chat building found real problems three rounds running | user |
+| D68 | Review-round-17 fixes: `[wc:context]` turns hidden with the lead's reply shown and a "Started from" line in their place; paste tags removed and whitespace trimmed before prefix checks; Codex ready = input box present at startup; `--test-prompt-session` goes through the running hub. | Five upheld round-17 findings | review-round-17 |
+| D69 | Review-round-18 fixes: a stub's or restart's context is a separate `[wc:context stub]` / `[wc:context restart]` message, typed after Codex's `[wc:role]` turn; lead transcripts joined in order after a restart; `--test-prompt-session` dropped in favour of fixture cases in `machine/test/run.sh`; T1b confirms Codex menus hide the input box. The GPT lane reported no findings. | Seven upheld round-18 findings | review-round-18 |
+| D70 | Review-round-19 fixes: Codex binding requires a role-marked `input-messages[0]` and an existing rollout file, checked live in T1b; restart context goes ahead of the queue; service and hub halves of stuck and prompt handling tested in their own suites. The GPT lane reported no findings in rounds 18 and 19. | Five upheld round-19 findings | review-round-19 |
+| D71 | Plan approved after round 19, with its findings fixed and no further round. The remaining risk (trust prompt, ready screens, Codex binding) is checked live by T1b on real sessions before any other building, which returns the plan to planning if it fails. | Collin: "let's approve" | user |
 
 ## Spec
 
@@ -152,6 +162,20 @@ Build order:
    freshly trusted worktree shows no trust prompt. Write the findings to
    `docs/plans/app-shell/spike-transcripts.md`. If either CLI fails any check, stop
    and set the plan back to `planning` with the finding as an Open Question.
+   **Done 2026-11-14:** see `spike-transcripts.md`. The facts it established are
+   written into "Machine service on the hub" and "How the app reads and drives a
+   session" below; where this list and those sections differ, those sections win.
+1b. **Trust live check (T1b, D63).** In a fresh `/tmp` git repo, start Claude in tmux
+   and run the service's watch-and-confirm by hand (`Down`, `Enter` on seeing "Yes, I
+   trust this folder"); confirm the session reaches its input screen and answers one
+   message, and record the exact keys and the ready-screen text in
+   `spike-transcripts.md`. Do the same for a Codex session started as the Spec says:
+   record its ready-screen text (the input box line) and what any startup menu looks
+   like; start one Codex session in an untrusted directory without the trust override
+   and confirm its trust menu hides the input box. If any of this fails, stop and
+   return to planning. Also confirm the Codex binding rule live: the session's notifies
+   include one whose `input-messages[0]` starts with `[wc:role]` and whose thread id has
+   a rollout file, and the title turn's notify has neither.
 2. Machine service on the hub, app server routes, state directory.
 3. Threads view and thread page, with chat rendered from the transcript.
 4. The app protocol (`protocol/app/`) and the full lifecycle in chat.
@@ -272,27 +296,99 @@ Build order:
   on it while the session it started is alive, so a retry never starts a session twice
   and a restart always starts a new one (round-9); the
   role files tell agents to wait a minute and try again, never to work around it.
-- **Worktrees and trust (round-2).** The service creates every worktree under
-  `~/.local/state/wheelchair/worktrees/<project>/<branch>/` and, when it creates one,
-  marks that path trusted for both CLIs before any session starts there. The project's
-  own clone on the hub is marked trusted when the project is added. If a session still ends up
-  waiting on a prompt (Claude Code's `Notification` hook fires), the service reports it and
-  the app raises a `needs` item linking to that session's terminal.
+- **Worktrees and trust (round-2, D63).** The service creates every worktree under
+  `~/.local/state/wheelchair/worktrees/<project>/<branch>/`. Codex sessions start with
+  `-c 'projects={"<worktree>"={trust_level="trusted"}}'`, so they never see a trust
+  prompt and `~/.codex/config.toml` is untouched. Claude has no way to pre-trust a path
+  (spike, D62), so for each new Claude session the service watches the pane
+  (`tmux capture-pane`, every half second, for up to 30 seconds) for the trust dialog's
+  text. The dialog's default choice is "No, exit", so pressing Enter alone would quit:
+  when the pane contains "Yes, I trust this folder", the service sends `Down` then
+  `Enter`, which selects "Yes" (round-14; the exact keys are confirmed by the T1b live
+  check before any other building). Claude then records the trust itself, the normal
+  way. Nothing writes `~/.claude.json`. (T1b: ready text is `auto mode on` plus a `❯`
+  line, whose placeholder rotates; Codex's is `› Ask Codex to do anything`, and its menus
+  also start with `›`, so match text, not glyphs; `notify`'s JSON is its second argument,
+  after `codex`.) **Ready** means the pane no longer contains
+  "Yes, I trust this folder" or "No, exit" and Claude's idle input screen
+  shows (the input box with its prompt line); a session that never showed the dialog
+  (an already-trusted worktree, as after a restart) is ready as soon as that screen shows.
+  **Codex** is ready at startup when its pane shows its input box (the line T1b
+  records); Codex's menus replace the input box while they wait, so its presence is
+  enough, and a banner that waits for nothing doesn't block (round-15, round-16,
+  round-17). This rule is used only at startup. For either CLI, not ready within 30
+  seconds means stuck: the service reports it, the hub posts a `needs` card on the
+  thread itself (linking the session's terminal), and the service keeps checking the
+  pane every two seconds. When the session becomes ready (Collin cleared the screen in
+  the terminal), the hub marks that card answered and the service types the queued
+  first message. The service types nothing into a session until it is ready.
+- **Prompts mid-run (round-14, round-15).** Claude sessions also register a
+  `Notification` hook. Only a `notification_type` of `permission_prompt` raises
+  anything: the hub posts a `needs` card on the thread linking the session's terminal,
+  and holds that session's queue so nothing is typed into the prompt. Other types
+  (`idle_prompt`, sent once after 60 seconds idle, and any unknown type) are only
+  logged. While a prompt is open the service checks the pane every two seconds; the card
+  is marked answered, and the queue resumes, at the session's next turn-end event or
+  when the pane shows the input box again.
 - Starting a Claude session: `claude --session-id <uuid> --settings <json>
-  --append-system-prompt <...>`. The settings carry a `Stop` hook running
-  `machine/hook.sh claude <session-name>`, and the appended prompt tells it to read its
-  role file in `protocol/app/`. Codex: `codex -c 'notify=["<root>/machine/hook.sh",
-  "codex","<session-name>"]'` with the role instruction as its first message. Exact
-  flags are confirmed by the spike.
-- `hook.sh` posts "turn ended" for that session to the local service. If the post fails
+  --append-system-prompt <...>`. The settings carry a `Stop` hook and a `Notification`
+  hook, both running `machine/hook.sh claude <session-name>`, and `cleanupPeriodDays`;
+  the appended prompt tells it to read its role file in `protocol/app/`. Its transcript
+  path is taken from the `Stop` payload's `transcript_path` (or found as
+  `~/.claude/projects/*/<session-id>.jsonl` before the first turn ends), never computed
+  from the working directory. Codex: `codex -s ... -a never -c 'notify=["<root>/machine/hook.sh",
+  "codex","<session-name>"]' -c 'projects={...}'` with the role instruction as its first
+  message, typed in by the service with the `[wc:role]` marker and recorded in the thread
+  file. A stub's or restart's context is never merged into it: for Codex it is typed as
+  a separate `[wc:context …]` message once the bound `[wc:role]` turn has ended
+  (round-18), ahead of anything already queued for that session (round-19).
+  (Flags verified by the T1 spike, `spike-transcripts.md`.)
+- **Binding a Codex session to its rollout (round-14).** Codex's `notify` carries a
+  `thread-id`, `turn-id` and `input-messages` but no transcript path, and also fires once
+  per session for an internal title turn under a different thread id, whose
+  `input-messages` is a title-generation prompt that quotes the first message in full
+  (round-15, round-19). The service binds a session to the thread id of the first notify
+  whose `input-messages[0]` itself starts with `[wc:role]` (the title prompt starts
+  "Generate a concise…") and for which a file
+  `~/.codex/sessions/*/*/*/rollout-*-<thread-id>.jsonl` exists; the title turn has no
+  rollout file. Notifies for any other thread id are ignored. Once bound, the session keeps that thread id and file.
+- `hook.sh` reads the hook's event (Claude's `hook_event_name` and `notification_type`;
+  Codex's notify type) and posts one of two events for that session to the local
+  service: "turn ended" (Claude `Stop`, Codex turn-complete notify) or "prompt" (Claude
+  `Notification`, filtered as above). If the post fails
   (service down), it appends the event to `~/.local/state/wheelchair/spool/` instead,
   and the service drains that spool when it starts. The service tells the hub, which
   delivers the next queued message, if any. "Turn ended" only drives message delivery: it
   never means a task is finished (see Cards).
 ### How the app reads and drives a session (D24)
 
-- A thread's messages are the lead's transcript, read incrementally through the machine
-  service and turned into chat bubbles. Tool calls collapse to one line each, expandable.
+- A thread's chat is built from the transcript copy (round-14, round-15, round-16).
+  **Human turns:** Claude entries with `origin.kind:"human"`; Codex `message` items with
+  role `user` that come after a `turn_context` entry in the same turn (Codex writes its
+  injected AGENTS.md, developer and environment entries before that turn's
+  `turn_context`, verified on every rollout on the hub), and whose text doesn't start
+  with `# AGENTS.md` or `<environment_context>`. Before matching or rendering, a turn's
+  text is unwrapped: Claude saves a long bracketed paste wrapped in
+  `<pasted_content id="…">…</pasted_content id="…">` tags, sometimes with newlines before
+  and inside them; the tags are removed and leading and trailing whitespace trimmed
+  before any prefix is checked (round-17).
+  **Hidden turns:** everything the app types in that isn't Collin's own words starts
+  with a marker. A turn whose unwrapped text starts `[wc:from <session>]` (another
+  session's message) or `[wc:role]` (the role instruction) is hidden together with the
+  lead's reply to it. A turn starting `[wc:context stub]` or `[wc:context restart]` (a
+  stub's or a restarted lead's context) is hidden but the lead's reply is **shown**
+  (round-17): in its place the thread shows "Started from <parent thread>" with the
+  stub's title and summary, or "Lead restarted". After a restart the thread's lead
+  transcripts are joined in the order the thread file records the lead sessions
+  (round-18). A turn starting `[card <id>]` shows as
+  Collin's short card bubble. Every other human turn, whether typed in the app, the browser terminal or
+  over `tmux attach`, shows as Collin's bubble. The thread file still records every
+  message the app types in, for the queue and for restarts. **The lead's replies
+  and tool calls** are the entries between one human turn and the next: Claude `assistant` entries, and Codex `message` items with role
+  `assistant`; tool calls (`tool_use` entries for Claude, `custom_tool_call` or
+  `function_call` items for Codex) collapse to one line each, expandable; tool results
+  (Claude `type:"user"` entries with list content, Codex `*_output` items) are folded
+  into their call.
 - Collin's message is typed into the lead's pane only when its last turn has ended. Until
   then it waits in the thread's queue and shows as "queued".
 - **Cards:** a role emits a card by running `node <root>/viewer/app/card.js <kind>
@@ -515,7 +611,8 @@ pull request (D55). The card also says whether the stub **depends on the parent'
 
 No session starts for a stub. Its worktree and lead are created only when Collin opens it
 (from the button or the Threads list) and it starts. The new lead's first message is the
-stub's context summary. A stub never started just stays in the list until Collin archives
+stub's context summary, typed in with the `[wc:context stub]` marker (for Codex, right
+after its `[wc:role]` message, D69). A stub never started just stays in the list until Collin archives
 it. Archiving an unstarted stub has nothing to stop or remove.
 
 **Waiting for the parent (round-12, round-13).** When Collin opens a stub that depends on
@@ -586,7 +683,8 @@ the app; access from outside the tailnet.
 
 - **Message while the lead is mid-turn:** queued, shown as queued, delivered at turn end.
 - **Lead session dies** (its tmux session is gone): the thread shows "session ended" with
-  a Restart button that starts a new lead with the thread's plan and cards as context,
+  a Restart button that starts a new lead with the thread's plan and cards as context
+  (typed in with the `[wc:context restart]` marker),
   and, since nothing else will restart it, raises a "Sessions ended" `needs` item so it
   shows in the Needs you strip (round-9). Messages queued for the dead lead are delivered
   to the new one.
@@ -630,11 +728,8 @@ This plan is done when all of these pass on the hub, checked from a phone:
 6. Run `tmux attach` to the lead from a terminal and see the same session.
 7. During the build, raise an unrelated new idea. A `stub` card appears and a stub is
    listed in Threads, and `tmux ls` shows no new session. Open it with "Go to it": with
-   no wait question, a lead starts and its first message is the stub's context.
-12. After a feature's `done` card, report a problem that needs parallel workers. Its stub
-    depends on the parent, so opening it asks wait-or-start. Choose wait: no session or
-    worktree appears. Merge the parent's PR; within ten minutes the stub shows "ready".
-    Open it: a lead starts in a worktree whose history contains the parent's merge.
+   no wait question, a lead starts; the thread shows "Started from" with the stub's
+   title and summary, then the lead's first reply.
 8. After the `done` card, ask the lead a question about the work. It answers, and
    `git status` in the thread's worktree shows no change and `git rev-parse HEAD` is the
    same as before the question.
@@ -649,6 +744,12 @@ This plan is done when all of these pass on the hub, checked from a phone:
     request targets the default branch.
 11. Kill a worker's tmux session mid-build. The sub-lead restarts it and the build
     finishes.
+12. After a feature's `done` card, report a problem that needs parallel workers. Its stub
+    depends on the parent, so opening it asks wait-or-start. Choose wait: no session or
+    worktree appears. Merge the parent's PR; within ten minutes the stub shows "ready".
+    Open it: a lead starts in a worktree whose history contains the parent's merge.
+13. Type a message into a lead
+    over `tmux attach`: it shows in the thread as Collin's bubble with the reply after it.
 
 ### Validation commands
 
@@ -657,9 +758,14 @@ bash sensitivity/test/run.sh
 bash codex/test/run.sh
 bash seen/test/run.sh
 bash install/test/run.sh                 # gains machine-service install cases
-bash machine/test/run.sh                 # new: service API against a fake tmux on PATH
+bash machine/test/run.sh                 # new: service API against a fake tmux on PATH, including
+                                         # a session stuck at startup (service reports stuck, then ready)
+                                         # and a permission_prompt hook payload (service reports the prompt,
+                                         # then its clearing)
 ./install.sh && ./install.sh             # git status --porcelain stays empty
-node --test viewer/test/*.test.js        # gains app routes, state files, card validation
+node --test viewer/test/*.test.js        # gains app routes, state files, card validation, and the hub's
+                                         # half of stuck and prompt events: needs card posted, the
+                                         # session's queue held, card answered and queue resumed
 npm --prefix viewer run test:browser     # gains the three views at 390x844 and desktop
 ```
 
@@ -965,6 +1071,121 @@ running service, per the root router.
 | Claude | minor | Cherry-picking a missed fix can hit a merge commit | upheld | The stub names only the fix's own commits |
 | GPT | minor | Dropping a fix needs `revert`, which isn't a `wc.js git` op | upheld | `revert` added |
 
+### Round 14 — 2026-11-14
+
+**Lanes:** GPT / Sol (gpt-6.1-sol), mechanics lens; Claude / default reviewer model, intent lens; cross-family: yes.
+
+**Changed since Round 13:**
+- Transcript spike results folded into the Spec (D62): Codex inline-table trust override; Codex `notify` thread-id matching; rollout file discovery; skipping Codex's injected entries; both tool-call shapes; Claude transcript path and tool-result entries. See `spike-transcripts.md`.
+- D63: "Worktrees and trust" now has the machine service answer Claude's trust dialog by watching the pane and pressing confirm once; nothing edits `~/.claude.json`; a dialog that won't clear becomes a `needs` item.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| Claude, GPT | blocking | "Press the confirm key once" picks the dialog's default, "No, exit" | upheld | `Down` then `Enter` on seeing "Yes, I trust this folder"; confirmed live by T1b before building |
+| Claude | major | No rule for when a Claude session is ready, or for a session that never shows the dialog | upheld | Ready = dialog text gone and the input screen showing; no dialog plus input screen is also ready; neither in 30 s is stuck |
+| Claude | major | Binding a Codex session to its thread id and rollout is circular, and the title-turn notify can bind the wrong id | upheld | Bind only when a rollout with that `session_meta` id contains a `task_complete` for the notify's `turn-id` |
+| Claude | major | The `Notification` hook isn't registered, and unfiltered it fires `idle_prompt` after every turn | upheld | Registered; `idle_prompt` ignored, other types raise a `needs` item |
+| GPT | major | The Codex skip rule (after `task_started`) doesn't separate injected entries from real messages | upheld | Collin's bubbles come from the thread file's record of typed messages, not the transcript |
+| Claude | minor | Nothing proves D63 before building | upheld | T1b live check added |
+| Claude | minor | Codex's role instruction would show as a chat bubble | upheld | Recorded as a hidden typed message; covered by the thread-file rule |
+| Claude | minor | Spike facts sit only in the build-order note; the Claude path rule may be wrong for other characters | upheld | Facts moved into the service and rendering sections; path taken from `transcript_path` or found by session id |
+
+### Round 15 — 2026-11-14
+
+**Lanes:** GPT / Sol (gpt-6.1-sol), mechanics lens; Claude / default reviewer model, intent lens; cross-family: yes.
+
+**Changed since Round 14:**
+- Worktrees and trust: `Down`, `Enter`; ready and stuck rules; new "Prompts mid-run" bullet (`Notification` hook, `idle_prompt` ignored).
+- Starting sessions: both hooks, transcript path from the payload, Codex flags; new "Binding a Codex session to its rollout".
+- How the app reads: chat built from the thread file (Collin's bubbles) and the transcript (replies and tool calls).
+- Build order: T1b trust live check.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| Claude, GPT | major | Messages Collin types in the terminal never reach the thread file, so his bubble vanishes and reply matching shifts | upheld | Turns come from the transcript; the thread file only hides or relabels exact matches of recorded hidden messages and card presses |
+| Claude | major | The "stuck" and mid-run prompt `needs` items have no origin, close rule or resume | upheld | The hub posts them as `needs` cards and marks them answered when the session is ready again; the queue is held meanwhile |
+| Claude | major | "Ready" is defined only for Claude, but the service types Codex's first message too | upheld | Codex ready rule added; the stuck rule covers both |
+| Claude | minor | `hook.sh` would report a permission prompt as a turn end | upheld | It posts separate "turn ended" and "prompt" events |
+| Claude | minor | Codex binding relies on the title turn having no rollout, which the spike didn't check | upheld | Bind by `input-messages` containing the role instruction the service typed |
+| Claude | minor | Excluding only `idle_prompt` risks spurious items; "after every turn" is wrong | upheld | Only `permission_prompt` raises an item; wording corrected |
+| Claude | minor | The build-order spike note contradicts the newer rules | upheld | Replaced with a pointer to the service and rendering sections |
+| Claude | minor | No acceptance check covers stuck sessions or mid-run prompts | upheld | Acceptance 13 added |
+
+### Round 16 — 2026-11-14
+
+**Lanes:** GPT / Sol (gpt-6.1-sol), mechanics lens; Claude / default reviewer model, intent lens; cross-family: yes.
+
+**Changed since Round 15:**
+- How the app reads: chat turns from the transcript (terminal-typed included); thread file hides exact matches of hidden messages; card presses relabelled.
+- Machine service: Codex ready rule; stuck handling keeps polling and closes its `needs` card; mid-run prompts only for `permission_prompt`, queue held; `hook.sh` sends two event kinds; Codex binding by `input-messages`.
+- Build order spike note replaced by a pointer. Acceptance 13 added.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| GPT, Claude | blocking | Codex's injected AGENTS.md and environment entries come after `task_started`, so they'd show as Collin's bubbles | upheld | Codex user messages count only after the turn's `turn_context`, and never if they start with `# AGENTS.md` or `<environment_context>`; checked against the spike rollout |
+| Claude | blocking | Long pastes are saved wrapped in `pasted_content` tags, so exact-match hiding fails | upheld | Unwrap before matching; hide by marker prefix (`[wc:from`, `[wc:role]`, `[wc:context]`) |
+| Claude, GPT | major | Acceptance 13 can't provoke a permission prompt; Collin's default is already auto | upheld | A test-only `--test-prompt-session` command with `--permission-mode manual` |
+| Claude | minor | T8 still says checks 1–12 | upheld | Now 1–13 |
+| Claude | minor | The Codex ready rule has no strings to match; banners could block forever | upheld | T1b records Codex's ready screen and menus; only a waiting menu blocks |
+| Claude | minor | Nothing polls the pane while a permission prompt is open | upheld | Every two seconds while open |
+| Claude | minor | D65 reverses D64's bubble source without saying so | upheld | D66 records the supersession |
+| Claude | minor | Stub and restart context would show as Collin's bubble | upheld | Typed with `[wc:context]` and hidden; a "Started from" line instead |
+
+### Round 17 — 2026-11-14
+
+**Lanes:** GPT / Sol (gpt-6.1-sol), mechanics lens; Claude / default reviewer model, intent lens; cross-family: yes.
+
+**Changed since Round 16:**
+- How the app reads: human turns (Codex only after the turn's `turn_context`, never AGENTS.md or environment text); `pasted_content` unwrapping; hiding by marker prefix (`[wc:from`, `[wc:role]`, `[wc:context]`); "Started from" line for stub threads.
+- Codex role instruction and stub/restart context typed with markers.
+- Codex ready rule tied to T1b's recorded screen; only a waiting menu blocks. Prompt polling every two seconds.
+- Acceptance 13 uses a test-only `--test-prompt-session`; T8 covers 1–13; T1b records Codex's ready screen.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| Claude | major | Hiding a `[wc:context]` turn with its reply hides the new lead's whole first turn | upheld | The context turn is hidden but the reply shown, with "Started from" and the stub's title and summary in its place |
+| Claude, GPT | major | Removing only the paste tags leaves leading newlines, so marker prefixes still miss | upheld | Tags removed and whitespace trimmed before any prefix check |
+| Claude | minor | Acceptance 7 expects the hidden context to be visible | upheld | Now checks the "Started from" line and the first reply |
+| Claude | minor | The Codex menu-detection part of the ready rule can't be built from T1b | upheld | The input box's presence is enough at startup |
+| Claude | minor | `--test-prompt-session` runs as a second process with no naming, owner or stop rule | upheld | Hands off to the running hub; named `wc-<thread-id>-test`; recorded and stoppable; noted as a convenience, not a boundary |
+
+### Round 18 — 2026-11-14
+
+**Lanes:** GPT / Sol (gpt-6.1-sol), mechanics lens; Claude / default reviewer model, intent lens; cross-family: yes.
+
+**Changed since Round 17:**
+- How the app reads: whitespace trimmed after removing paste tags; `[wc:context]` turns hidden but their reply shown, with a "Started from" or "Lead restarted" line.
+- Codex ready rule: input box present at startup.
+- Acceptance 7 and 13 reworded (`--test-prompt-session` goes through the running hub).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| Claude | major | Codex's role instruction and a stub's context are both called the "first message", so they could be merged and the first reply hidden | upheld | Context is always a separate `[wc:context …]` message typed after the `[wc:role]` turn ends |
+| Claude | major | `--test-prompt-session` needs a role, permission mode, name and owner the service doesn't have, and no task owns it | upheld | Removed; the stuck and permission-prompt paths are fixture cases in `machine/test/run.sh` |
+| Claude | minor | One `[wc:context]` marker for stubs and restarts; the chat must join several lead transcripts | upheld | `[wc:context stub]` and `[wc:context restart]`; lead transcripts joined in recorded order |
+| Claude | minor | "`session stop` from the hub" isn't defined | upheld | Went with the test command |
+| Claude | minor | Nothing verifies that Codex menus hide the input box | upheld | T1b checks it with an untrusted directory |
+| Claude | minor | Acceptance 13 stopped testing a stuck session and added test-only production code | upheld | Fixture cases cover both paths; acceptance 13 keeps the `tmux attach` check |
+| Claude | minor | "No browser route" contradicts the `--open` handoff | upheld | Went with the test command |
+
+### Round 19 — 2026-11-14
+
+**Lanes:** GPT / Sol (gpt-6.1-sol), mechanics lens; Claude / default reviewer model, intent lens; cross-family: yes.
+
+**Changed since Round 18:**
+- Codex start: context is a separate message after the `[wc:role]` turn.
+- How the app reads: `[wc:context stub]` / `[wc:context restart]`; lead transcripts joined in recorded order.
+- Acceptance 13 reduced to the `tmux attach` check; the stuck and permission-prompt paths move to `machine/test/run.sh` fixture cases.
+- T1b also confirms a Codex startup menu hides the input box.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| Claude | blocking | Codex's title-turn notify quotes the role instruction, so the binding rule can bind to the title thread, which has no rollout | upheld | Bind only when `input-messages[0]` starts with `[wc:role]` and a rollout file exists; T1b confirms it live |
+| Claude | major | The fixture comment asks `machine/` tests to check the hub's needs cards and queue hold | upheld | Service fixtures check the service's events; viewer tests check the hub's card and queue handling |
+| Claude | minor | Where the restart context goes relative to already-queued messages | upheld | Ahead of the queue |
+| Claude | minor | The stub section still implies the context is Codex's first message | upheld | Reworded |
+| Claude | minor | The T1b row lacks round 18's menu check | upheld | Row updated, plus the binding check |
+
 ## Prior Work
 
 Mostly unbuilt. These are the pieces of today's tree the Spec builds on. None of them is a
@@ -972,6 +1193,7 @@ Spec item done as described, so every row is `partial` and nothing is marked `pr
 
 | Spec item | State | Evidence (file:line) | Confidence |
 |-----------|-------|----------------------|------------|
+| Transcript spike (build order step 1, D39) | pre-existing | `docs/plans/app-shell/spike-transcripts.md` (T1, accepted 2026-11-14) | high |
 | Reachable over Tailscale from any device | partial: the viewer is served to tailnet devices through Tailscale Serve with a remember-cookie sign-in. The app's views don't exist yet. | `install.sh:162-200`, `viewer/server.js:2096-2099` (binds 127.0.0.1), `viewer/signin.html` | high |
 | Restarting the app doesn't stop agents | partial: the viewer already runs as an always-on systemd user service, but there are no agent sessions for it to manage | `install.sh:22` | high |
 | Features view | partial: the list page shows registered plans with their `status`. No stages-as-columns, no Needs you strip. | `viewer/server.js:1796` (`handleList`), `viewer/list.js:98` | high |
@@ -987,6 +1209,15 @@ Spec item done as described, so every row is `partial` and nothing is marked `pr
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Transcript spike: prove both CLIs' transcripts carry chat, turn-end hooks fire, bracketed paste keeps multi-line messages whole, and pre-trusted worktrees show no trust prompt | `docs/plans/app-shell/spike-transcripts.md` only (scratch under `/tmp`) | Claude / Sonnet | n/a | the findings file exists and answers every check with evidence | done (lead read the findings; Claude trust check failed, see Q1) |
+| T1b | Live checks: answer Claude's trust dialog with `Down`, `Enter` in a fresh repo and record the keys and ready screen; record Codex's ready screen; confirm a Codex trust menu hides its input box; confirm the Codex binding rule (role-marked `input-messages[0]` plus rollout file) | `docs/plans/app-shell/spike-transcripts.md` (append) | Claude / Sonnet | n/a | the appended section shows the session reaching its input screen and answering | done |
+| T2 | Machine service: `machine/service.js`, `machine/hook.sh`, session start/stop/list, pane read, submit and raw keys, transcript copies, spool, git ops, worktrees and trust, two credentials | `machine/` | GPT / Terra | | `bash machine/test/run.sh` | not-started |
+| T3 | App server: state directory, thread files, hub–service channel, agent card intake, `card.js`, `wc.js`, session rules, browser routes for threads and typing | `viewer/app/`, routes added to `viewer/server.js` | GPT / Terra | | `node --test viewer/test/*.test.js` | not-started |
+| T4 | App protocol: `protocol/app/` role files and `cards.md` | `protocol/app/` | Claude / Sonnet | n/a | review against the Spec by the lead | not-started |
+| T5 | Threads view and thread page: chat from transcript copies, pinned items, cards, queue, stubs, archive | `viewer/` pages for threads | Claude / Sonnet | n/a | `npm --prefix viewer run test:browser` | not-started |
+| T6 | Features and Sessions views and the browser terminal (vendored xterm.js) | `viewer/` pages for features, sessions, terminal | Claude / Sonnet | n/a | `npm --prefix viewer run test:browser` | not-started |
+| T7 | Installer: machine service unit (`KillMode=process`), state directory, install tests | `install.sh`, `install/test/` | GPT / Terra | | `bash install/test/run.sh`; `./install.sh && ./install.sh` | not-started |
+| T8 | Acceptance checks 1–13 on the hub, from a phone | none (lead and Collin) | lead | n/a | the Acceptance list | not-started |
 
 ## Log
 
@@ -994,3 +1225,14 @@ Spec item done as described, so every row is `partial` and nothing is marked `pr
   `app-shell-proposal`. Landed at `planning` (D21).
 - 2026-11-14: planning finished. Open Questions and the Watch List are empty, the final Spec pass is written, and status is now `ready-for-review`. The one graph (`graphs/hub-to-machines.json`) has no rejected entries.
 - 2026-11-14: plan review finished after 13 rounds (cross-family each round). Round 13 upheld no blocking or major findings, the Spec diagram is drawn, and status is now `approved`.
+- 2026-11-14: Stage 3 started. Order: T1 alone (D39 gate); then T2 and T4 in parallel worktrees; T3 after T2's interface; T5, T6 and T7 after T3; T8 last. The router search line is left out of briefs because highways isn't installed.
+- 2026-11-14 — Choice: T1, spike scope: ran Claude checks 3–7 with cwd in the already-trusted wheelchair clone instead of a /tmp repo, to avoid writing `~/.claude.json`.
+- 2026-11-14 — Choice: T1, spike scratch: created `~/projects/personal/wc-spike-scratch/` (outside /tmp) to test trust inheritance; left in place.
+- 2026-11-14 — Choice: T1, permission check: used `--add-dir /tmp/wc-spike/repo-auto` for the Claude auto-mode file-create test.
+- 2026-11-14: T1 accepted. Claude's trust prompt can't be pre-set without editing `~/.claude.json`, so per D39 status returns to `planning` (D62, Open Question Q1). The run picture's other tasks stay not-started until the plan is approved again.
+- 2026-11-14: Open Question Q1 settled (D63); planning exits again to `ready-for-review` for a review round scoped to the spike facts and D63.
+- 2026-11-14: approved (D71). Stage 3 started again: the earlier run's picture moved to `graphs/before-run-1/`; its one choice record is the three `Choice:` lines for T1 above. T1 moved to Prior Work. Next: T1b alone, then T2 and T4.
+- 2026-11-14 — Choice: T1b, `spike-transcripts.md`: reran check 4 after its first notify script logged the wrong argument; the bad log is kept in /tmp.
+- 2026-11-14 — Choice: T1b, ready detection: timed the already-trusted Claude start by polling for `auto mode on`.
+- 2026-11-14 — Choice: T1b, check 5: started Codex with no `-c` flags at all.
+- 2026-11-14: T1b accepted (all five live checks pass; ready strings folded into "Worktrees and trust"). Next: T2 and T4 in parallel worktrees.
