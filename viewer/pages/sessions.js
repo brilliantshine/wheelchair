@@ -1,0 +1,102 @@
+'use strict';
+
+// Sessions view (Spec "Views"): every session on every machine, grouped by machine.
+(() => {
+  const lastSeen = new Map();
+
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  function attachCommand(machine, name) {
+    return machine === 'hub' ? `tmux attach -t ${name}` : `ssh ${machine} -t tmux attach -t ${name}`;
+  }
+
+  async function copy(text, button) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const area = el('textarea');
+      area.value = text;
+      document.body.append(area);
+      area.select();
+      try { document.execCommand('copy'); } catch { /* the command stays visible to copy by hand */ }
+      area.remove();
+    }
+    button.textContent = 'Copied';
+    setTimeout(() => { button.textContent = 'Copy'; }, 1500);
+  }
+
+  function sessionRow(machine, session) {
+    const running = session.running !== false && session.status !== 'stopped';
+    const row = el('li', 'v-card session');
+    row.dataset.session = session.name;
+    const terminal = el('a', 'v-link', session.name);
+    terminal.href = `/wheelchair/app/terminal?name=${encodeURIComponent(session.name)}`;
+    row.append(terminal);
+    row.append(el('span', 'v-badge role', session.role || 'session'));
+    row.append(el('span', `v-badge ${running ? 'ok' : 'bad'}`, running ? 'running' : 'stopped'));
+    if (session.thread_id) {
+      const thread = el('a', 'v-link', `thread ${session.thread_id}`);
+      thread.href = `/wheelchair/app/thread?id=${encodeURIComponent(session.thread_id)}`;
+      row.append(thread);
+    }
+    const attach = el('div', 'v-attach');
+    const command = attachCommand(machine, session.name);
+    attach.append(el('code', 'attach', command));
+    const button = el('button', '', 'Copy');
+    button.type = 'button';
+    button.addEventListener('click', () => copy(command, button));
+    attach.append(button);
+    row.append(attach);
+    return row;
+  }
+
+  function seenText(machine) {
+    const when = lastSeen.get(machine);
+    return when ? `last seen ${when.toLocaleTimeString()}` : 'last seen: not since this page opened';
+  }
+
+  function render(groups) {
+    const root = document.getElementById('machines');
+    root.replaceChildren();
+    for (const group of groups) {
+      if (group.reachable) lastSeen.set(group.machine, new Date());
+      const section = el('section', `v-machine${group.reachable ? '' : ' unreachable'}`);
+      section.dataset.machine = group.machine;
+      const header = el('header');
+      header.append(el('span', '', group.machine));
+      header.append(el('span', `v-badge ${group.reachable ? 'ok' : 'bad'}`,
+        group.reachable ? 'reachable' : 'unreachable'));
+      if (!group.reachable) header.append(el('span', 'v-badge seen', seenText(group.machine)));
+      section.append(header);
+      const list = el('ul', 'v-list');
+      for (const session of group.sessions || []) list.append(sessionRow(group.machine, session));
+      if (group.reachable && !(group.sessions || []).length) {
+        list.append(el('li', 'v-empty', 'No sessions.'));
+      }
+      section.append(list);
+      root.append(section);
+    }
+    document.getElementById('empty').hidden = groups.length > 0;
+  }
+
+  async function refresh() {
+    const error = document.getElementById('error');
+    try {
+      const response = await fetch('/wheelchair/api/sessions');
+      if (!response.ok) throw new Error(`sessions ${response.status}`);
+      render(await response.json());
+      error.hidden = true;
+    } catch (failure) {
+      error.textContent = `Could not load sessions: ${failure.message}`;
+      error.hidden = false;
+    }
+  }
+
+  refresh();
+  setInterval(refresh, 5000);
+})();
