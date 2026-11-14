@@ -5,7 +5,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
-const { spawnSync } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const { MachineService } = require('../service.js');
 
 const hubHeader = { 'x-wheelchair-machine-secret': 'correct-secret' };
@@ -240,4 +240,15 @@ test('a hub 500 reaches the agent at once; a 502 is retried', async () => {
 });
 test('a refused start is a 400 with the reason', async () => {
   const env = await service(await temp()); try { const result = await api(env, 'POST', '/v1/sessions', { role: 'lead', cli: 'claude', thread_id: 't', token: 'alpha' }, hubHeader); assert.equal(result.status, 400); assert.match(result.body.error, /worktree or project_dir required/); } finally { await env.close(); }
+});
+test('a Codex notify payload is posted as turn-ended, keeping its last message', async () => {
+  const root = await temp(); const state = path.join(root, 'state'); const bodies = [];
+  const server = http.createServer((request, response) => { let body = ''; request.on('data', c => { body += c; }); request.on('end', () => { bodies.push(JSON.parse(body)); response.writeHead(202); response.end('{}'); }); });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    await write(path.join(state, 'machine.json'), JSON.stringify({ host: '127.0.0.1', port: server.address().port }));
+    const notify = JSON.stringify({ type: 'agent-turn-complete', 'thread-id': 'x', 'last-assistant-message': 'No findings.' });
+    await new Promise((resolve, reject) => { const child = spawn(process.execPath, [path.join(process.cwd(), 'machine', 'lib', 'hook-post.js'), state, 'tok', 'codex', 'wc-t-reviewer'], { stdio: ['pipe', 'ignore', 'inherit'] }); child.on('exit', resolve); child.on('error', reject); child.stdin.end(notify); });
+    assert.equal(bodies[0].type, 'turn-ended'); assert.equal(bodies[0]['last-assistant-message'], 'No findings.');
+  } finally { await new Promise(resolve => server.close(resolve)); }
 });

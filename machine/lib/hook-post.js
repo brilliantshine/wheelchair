@@ -19,7 +19,8 @@ async function main() {
     else return;
   } else {
     if (raw.type !== 'agent-turn-complete') return;
-    event = { type: 'turn-ended', ...raw };
+    // Codex's own payload carries type: 'agent-turn-complete'; ours must win.
+    event = { ...raw, type: 'turn-ended' };
   }
   const config = JSON.parse(await fs.readFile(path.join(state, 'machine.json'), 'utf8'));
   const body = JSON.stringify(event);
