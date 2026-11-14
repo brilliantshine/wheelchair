@@ -16,7 +16,7 @@ const readyCodex = '› Ask Codex to do anything\n';
 async function temp() { return fs.mkdtemp(path.join(os.tmpdir(), 'wheelchair-machine-test-')); }
 async function write(file, data, mode) { await fs.mkdir(path.dirname(file), { recursive: true }); await fs.writeFile(file, data, { mode }); }
 async function port() { const server = http.createServer(); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); const value = server.address().port; await new Promise(resolve => server.close(resolve)); return value; }
-async function fakeBin(root, paneText) {
+async function fakeBin(root, paneText, realGit = false) {
   const bin = path.join(root, 'bin'); const log = path.join(root, 'commands.log'); const pane = path.join(root, 'pane');
   const script = `#!/usr/bin/env bash
 set -eu
@@ -31,7 +31,7 @@ case "$(basename \"$0\"):$1" in
   codex:--version) echo codex-test ;;
 esac
 `;
-  for (const name of ['tmux', 'systemd-run', 'git', 'gh', 'claude', 'codex', 'tailscale', 'sh']) await write(path.join(bin, name), script, 0o755);
+  for (const name of ['tmux', 'systemd-run', ...(realGit ? [] : ['git']), 'gh', 'claude', 'codex', 'tailscale', 'sh']) await write(path.join(bin, name), script, 0o755);
   await write(pane, paneText);
   return { bin, log, pane };
 }
@@ -42,7 +42,7 @@ async function hubServer(status = 200) {
   return { url: `http://127.0.0.1:${server.address().port}`, calls, setStatus: value => { current = value; }, close: () => new Promise(resolve => server.close(resolve)) };
 }
 async function service(root, options = {}) {
-  const fake = await fakeBin(root, options.pane || readyClaude); const state = path.join(root, 'state'); const secret = path.join(root, 'secret'); const listen = await port();
+  const fake = await fakeBin(root, options.pane || readyClaude, options.realGit); const state = path.join(root, 'state'); const secret = path.join(root, 'secret'); const listen = await port();
   await write(secret, 'correct-secret\n', 0o600);
   await write(path.join(state, 'machine.json'), JSON.stringify({ secret_file: secret, host: '127.0.0.1', port: listen, ...(options.config || {}) }));
   const prior = { PATH: process.env.PATH, FAKE_LOG: process.env.FAKE_LOG, FAKE_PANE: process.env.FAKE_PANE };
@@ -55,14 +55,93 @@ async function api(env, method, endpoint, body, headers = {}) {
   return { status: response.status, body: await response.json() };
 }
 async function start(env, input = {}) {
-  const worktree = input.worktree || path.join(path.dirname(env.state), `work-${input.thread_id || 't'}-${input.role || 'lead'}`); await fs.mkdir(worktree, { recursive: true });
-  const body = { role: 'lead', cli: 'claude', thread_id: 't', token: 'alpha', worktree, ...input };
+  const { serviceWorktree, ...requested } = input;
+  const worktree = serviceWorktree ? undefined : (requested.worktree || path.join(path.dirname(env.state), `work-${requested.thread_id || 't'}-${requested.role || 'lead'}`));
+  if (worktree) await fs.mkdir(worktree, { recursive: true });
+  const body = { role: 'lead', cli: 'claude', thread_id: 't', token: 'alpha', ...(worktree ? { worktree } : {}), ...requested };
   const result = await api(env, 'POST', '/v1/sessions', body, hubHeader); assert.equal(result.status, 201, JSON.stringify(result.body)); return result.body;
 }
 async function log(env) { return fs.readFile(env.fake.log, 'utf8'); }
+function git(args, options = {}) {
+  const result = spawnSync('git', args, { encoding: 'utf8', ...options });
+  if (!options.allowFailure) assert.equal(result.status, 0, result.stderr);
+  return result;
+}
+async function project(root) {
+  const origin = path.join(root, 'origin.git'); const repo = path.join(root, 'project');
+  git(['init', '--bare', '--initial-branch=main', origin]);
+  git(['clone', origin, repo]);
+  git(['-C', repo, 'config', 'user.name', 'Machine test']);
+  git(['-C', repo, 'config', 'user.email', 'machine-test@example.test']);
+  await write(path.join(repo, 'README.md'), 'base\n');
+  git(['-C', repo, 'add', 'README.md']); git(['-C', repo, 'commit', '-m', 'base']); git(['-C', repo, 'push', '-u', 'origin', 'main']);
+  return repo;
+}
+async function startedWorktree(env, root, threadId) {
+  const repo = await project(root);
+  const session = await start(env, { thread_id: threadId, token: `${threadId}-token`, project_dir: repo, project: 'project', default_branch: 'main', serviceWorktree: true });
+  return { repo, session, worktree: session.worktree };
+}
 
 test('hub route refuses a session token', async () => {
   const env = await service(await temp()); try { assert.equal((await api(env, 'GET', '/v1/sessions', undefined, { 'x-wheelchair-session-token': 'alpha' })).status, 401); } finally { await env.close(); }
+});
+test('archive stops the thread sessions and not another thread', async () => {
+  const env = await service(await temp()); try {
+    await start(env, { role: 'lead', thread_id: 'archive', token: 'archive-token' });
+    await start(env, { role: 'worker', thread_id: 'archive', token: 'archive-worker-token' });
+    await start(env, { role: 'lead', thread_id: 'other', token: 'other-token' });
+    const result = await api(env, 'POST', '/v1/archive', { thread_id: 'archive' }, hubHeader);
+    assert.equal(result.status, 200); assert.deepEqual(result.body.stopped.sort(), ['wc-archive-lead', 'wc-archive-worker']);
+    assert.equal(env.instance.sessions['wc-archive-lead'], undefined);
+    assert.equal(env.instance.sessions['wc-other-lead'].thread_id, 'other');
+    assert.match(await log(env), /kill-session -t wc-archive-lead/);
+    assert.match(await log(env), /kill-session -t wc-archive-worker/);
+    assert.doesNotMatch(await log(env), /kill-session -t wc-other-lead/);
+  } finally { await env.close(); }
+});
+test('archive commits a dirty worktree and removes it while retaining its branch', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true }); try {
+    const { repo, worktree } = await startedWorktree(env, root, 'archive-dirty');
+    await write(path.join(worktree, 'dirty.txt'), 'unfinished\n');
+    const result = await api(env, 'POST', '/v1/archive', { thread_id: 'archive-dirty' }, hubHeader);
+    assert.equal(result.status, 200); assert.deepEqual(result.body.removed, [worktree]);
+    assert.equal(result.body.committed[0].worktree, worktree);
+    assert.match(git(['-C', repo, 'log', '-1', '--format=%s', 'wc/archive-dirty']).stdout, /^WIP: archived\n$/);
+    assert.equal(git(['-C', repo, 'branch', '--list', 'wc/archive-dirty']).stdout.trim(), 'wc/archive-dirty');
+    await assert.rejects(fs.access(worktree));
+  } finally { await env.close(); }
+});
+test('archive commits a worktree mid-merge as it stands', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true }); try {
+    const { repo, worktree } = await startedWorktree(env, root, 'archive-merge');
+    await write(path.join(worktree, 'conflict.txt'), 'worktree\n');
+    git(['-C', worktree, 'add', 'conflict.txt']); git(['-C', worktree, 'commit', '-m', 'worktree change']);
+    git(['-C', repo, 'checkout', '-b', 'archive-merge-conflict']);
+    await write(path.join(repo, 'conflict.txt'), 'other\n');
+    git(['-C', repo, 'add', 'conflict.txt']); git(['-C', repo, 'commit', '-m', 'other change']);
+    assert.equal(git(['-C', worktree, 'merge', 'archive-merge-conflict'], { allowFailure: true }).status, 1);
+    const result = await api(env, 'POST', '/v1/archive', { thread_id: 'archive-merge' }, hubHeader);
+    assert.equal(result.status, 200); assert.deepEqual(result.body.removed, [worktree]);
+    assert.match(git(['-C', repo, 'log', '-1', '--format=%s', 'wc/archive-merge']).stdout, /^WIP: archived \(mid-merge\)\n$/);
+  } finally { await env.close(); }
+});
+test('archive keeps and reports a worktree mid-rebase', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true }); try {
+    const { repo, worktree } = await startedWorktree(env, root, 'archive-rebase');
+    await write(path.join(worktree, 'rebase.txt'), 'worktree\n');
+    git(['-C', worktree, 'add', 'rebase.txt']); git(['-C', worktree, 'commit', '-m', 'worktree change']);
+    await write(path.join(repo, 'rebase.txt'), 'main\n');
+    git(['-C', repo, 'add', 'rebase.txt']); git(['-C', repo, 'commit', '-m', 'main change']);
+    assert.equal(git(['-C', worktree, 'rebase', 'main'], { allowFailure: true }).status, 1);
+    const result = await api(env, 'POST', '/v1/archive', { thread_id: 'archive-rebase' }, hubHeader);
+    assert.equal(result.status, 200); assert.deepEqual(result.body.removed, []);
+    assert.deepEqual(result.body.kept, [{ worktree, reason: 'rebase in progress' }]);
+    await fs.access(worktree);
+  } finally { await env.close(); }
+});
+test('archive route refuses a session token', async () => {
+  const env = await service(await temp()); try { await start(env); assert.equal((await api(env, 'POST', '/v1/archive', { thread_id: 't' }, { 'x-wheelchair-session-token': 'alpha' })).status, 401); } finally { await env.close(); }
 });
 test('agent route refuses the machine secret', async () => {
   const env = await service(await temp()); try { await start(env); assert.equal((await api(env, 'POST', '/v1/agent/cards', { kind: 'idea' }, hubHeader)).status, 401); } finally { await env.close(); }
