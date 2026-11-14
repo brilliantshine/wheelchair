@@ -43,8 +43,8 @@
       "note": null,
       "graph": null,
       "task": "T8",
-      "status": "not-started",
-      "needs": null,
+      "status": "needs-you",
+      "needs": "run the installer on the hub, then go through the acceptance checks from your phone",
       "x": 1328,
       "y": 4185
     },
@@ -587,7 +587,7 @@
       "note": null,
       "graph": null,
       "task": "T5",
-      "status": "in-progress",
+      "status": "done",
       "needs": null,
       "x": 984,
       "y": 5039
