@@ -626,3 +626,57 @@ test('a verifier the lead starts is pointed at the thread branch', async () => {
     assert.equal(context.machine.sessions.get(result.body.session.name).verify_ref, `wc/${made.id}`);
   });
 });
+
+test('the chat reads the lead transcript through the machine service', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context, { cli: 'claude' });
+    context.machine.sessions.get(made.sessions[0].name).transcript = [
+      { type: 'user', origin: { kind: 'human' }, message: { role: 'user', content: 'Make it say All done!' } },
+      { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'Done.' }] } },
+    ].map((row) => JSON.stringify(row)).join('\n');
+    const result = await api(context, `/threads/${made.id}/chat`);
+    assert.deepEqual(result.body.items.map((item) => item.text), ['Make it say All done!', 'Done.']);
+  });
+});
+
+async function startVerifier(context, made) {
+  const result = await machinePost(context, '/machine/session', {
+    calling_session: made.sessions[0].name, action: 'start', role: 'verifier', cli: 'codex', attempt_id: 'v-1',
+  });
+  return result.body.session;
+}
+
+test('a verifier report from its transcript reaches the lead as its result', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const lead = made.sessions[0];
+    await event(context, made.id, lead.name, 'turn-ended');
+    const verifier = await startVerifier(context, made);
+    context.machine.sessions.get(verifier.name).transcript = [
+      { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Looking.' }] } },
+      { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'COMMIT: cbd916f\nVERDICT: PASS' }] } },
+    ].map((row) => JSON.stringify(row)).join('\n');
+    await event(context, made.id, verifier.name, 'turn-ended');
+    const hub = new Hub({ stateDir: context.state });
+    await hub.init();
+    const after = await hub.thread(made.id);
+    const result = after.cards.find((item) => item.kind === 'result');
+    assert.equal(result.commit, 'cbd916f');
+    assert.equal(result.session, verifier.name);
+    assert.deepEqual(context.machine.sessions.get(lead.name).submits.at(-1), `[wc:from ${verifier.name}] result: COMMIT: cbd916f\nVERDICT: PASS`);
+  });
+});
+
+test('a Codex verifier report comes from the notify payload when present, once', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const verifier = await startVerifier(context, made);
+    await event(context, made.id, verifier.name, 'turn-ended', { 'last-assistant-message': 'COMMIT: abc1234\nVERDICT: FAIL\nGAP: x' });
+    await event(context, made.id, verifier.name, 'turn-ended', { 'last-assistant-message': 'later chatter' });
+    const hub = new Hub({ stateDir: context.state });
+    await hub.init();
+    const results = (await hub.thread(made.id)).cards.filter((item) => item.kind === 'result');
+    assert.equal(results.length, 1);
+    assert.match(results[0].summary, /VERDICT: FAIL/);
+  });
+});

@@ -115,13 +115,40 @@ function transcriptItems(cli, raw, thread) {
   return turns.flatMap((turn) => renderTurn(turn, thread));
 }
 
+// The machine service keeps each session's transcript copy (a Claude Stop hook or a bound
+// Codex rollout tells it where the source is), so the hub reads it from there; the hub's own
+// record never learns the path.
+async function sessionTranscript(hub, thread, session) {
+  try {
+    const result = await hub.call(thread.machine, `/v1/sessions/${encodeURIComponent(session.name)}/transcript`, 'GET');
+    if (result?.data) return result.data;
+  } catch { /* the service may be down or the session unknown to it: fall back below */ }
+  if (!session.transcript_path) return '';
+  return fs.readFile(session.transcript_path, 'utf8').catch(() => '');
+}
+
+// A reviewer's or verifier's report is the last assistant message of its turn.
+function lastAssistantText(cli, raw) {
+  let last = '';
+  for (const row of transcriptRows(raw)) {
+    const payload = row.payload || row;
+    const assistant = cli === 'claude'
+      ? row.type === 'assistant' && row.message?.role === 'assistant'
+      : row.type === 'response_item' && payload.type === 'message' && payload.role === 'assistant';
+    if (!assistant) continue;
+    const text = unwrap(textOf(cli === 'claude' ? row.message.content : payload.content));
+    if (text) last = text;
+  }
+  return last;
+}
+
 async function chat(hub, id) {
   const thread = await hub.thread(id);
   await require('./views.js').findSlug(hub, thread);
   const items = [];
   for (const session of thread.sessions.filter((item) => item.role === 'lead')) {
-    if (!session.transcript_path) continue;
-    const raw = await fs.readFile(session.transcript_path, 'utf8').catch(() => '');
+    const raw = await sessionTranscript(hub, thread, session);
+    if (!raw) continue;
     items.push(...transcriptItems(session.cli, raw, thread));
   }
   const publicThread = { ...thread, sessions: thread.sessions.map(publicSession) };
@@ -134,4 +161,4 @@ async function chat(hub, id) {
   };
 }
 
-module.exports = { cardBubble, chat, textOf, transcriptItems, unwrap };
+module.exports = { cardBubble, chat, lastAssistantText, sessionTranscript, textOf, transcriptItems, unwrap };

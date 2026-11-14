@@ -45,6 +45,12 @@ async function startMachine(secret = 'machine-test-secret') {
     if (request.method === 'POST' && /\/keys$/.test(url.pathname)) {
       return send(response, 200, { ok: true });
     }
+    if (request.method === 'GET' && /\/transcript$/.test(url.pathname)) {
+      const found = sessions.get(decodeURIComponent(url.pathname.split('/')[3]));
+      if (!found) return send(response, 404, { error: 'unknown session' });
+      const data = found.transcript || '';
+      return send(response, 200, { offset: Buffer.byteLength(data), data });
+    }
     if (request.method === 'GET' && /\/pane$/.test(url.pathname)) {
       return send(response, 200, { pane: 'fake pane' });
     }

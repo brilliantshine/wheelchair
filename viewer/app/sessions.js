@@ -98,6 +98,24 @@ async function startSession(hub, thread, input) {
   return session;
 }
 
+// Reviewers and verifiers never post cards: the last assistant message of their turn is their
+// report, delivered to the session that started them as their result (Spec "Cards").
+async function deliverReport(hub, thread, target, payload) {
+  if (!['reviewer', 'verifier'].includes(target.role) || !target.started_by || target.finished) return;
+  const chat = require('./chat.js');
+  let text = String(payload['last-assistant-message'] || payload.payload?.last_assistant_message || '').trim();
+  if (!text) text = chat.lastAssistantText(target.cli, await chat.sessionTranscript(hub, thread, target));
+  if (!text) return;
+  const commit = text.match(/^COMMIT:\s*([0-9a-f]{7,40})/m)?.[1];
+  addCard(
+    thread,
+    { kind: 'result', task: target.role, outcome: 'done', summary: text, ...(commit ? { commit } : {}) },
+    { session: target.name },
+  );
+  target.finished = true;
+  await enqueue(hub, thread, target.started_by, `[wc:from ${target.name}] result: ${text}`, 'result');
+}
+
 // A session that has just become ready, with no first message of its own, has had no turn
 // to end, so no turn-ended event will ever arrive to release its queue.
 function markIdleIfFresh(target) {
@@ -150,7 +168,10 @@ async function event(hub, payload) {
     target.status = 'ready';
     markIdleIfFresh(target);
   }
-  if (['turn-ended', 'turn_ended', 'turn ended'].includes(type)) target.turn_ended = true;
+  if (['turn-ended', 'turn_ended', 'turn ended'].includes(type)) {
+    target.turn_ended = true;
+    await deliverReport(hub, thread, target, payload);
+  }
   const permission = type === 'prompt' && payload.notification_type === 'permission_prompt';
   if (type === 'stuck' || permission) {
     target.needs_open = true;
