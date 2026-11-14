@@ -78,14 +78,19 @@ function waitForLine(child) {
   });
 }
 
-async function startServer({ open, cacheRoot, port } = {}) {
+async function startServer({ open, cacheRoot, stateDir, port, env } = {}) {
   const root = cacheRoot || await makeDir();
   const graphDir = path.join(root, 'graphs');
   await fs.mkdir(graphDir, { recursive: true });
   const graphPath = open || path.join(graphDir, 'canonical.json');
   const chosenPort = port || await freePort();
   const args = ['viewer/server.js', '--port', String(chosenPort), '--cache-root', root, '--open', graphPath];
-  const child = spawn(process.execPath, args, { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
+  if (stateDir) args.push('--state-dir', stateDir);
+  const child = spawn(process.execPath, args, {
+    cwd: ROOT,
+    env: { ...process.env, ...env },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
   const url = await waitForLine(child);
   const token = (await fs.readFile(path.join(root, '.token'), 'utf8')).trim();
   assert.ok(token, 'server writes a token');
@@ -103,7 +108,11 @@ async function startServer({ open, cacheRoot, port } = {}) {
   };
 }
 
-async function request(ctx, route, { method = 'GET', graphPath = ctx.graphPath, body, token = ctx.token, origin = true } = {}) {
+async function request(
+  ctx,
+  route,
+  { method = 'GET', graphPath = ctx.graphPath, body, token = ctx.token, origin = true } = {},
+) {
   const url = new URL(`${ctx.url}${route.startsWith('/wheelchair') ? route.slice('/wheelchair'.length) : route}`);
   if (method === 'GET' && token !== undefined) url.searchParams.set('token', token);
   if (graphPath !== undefined) url.searchParams.set('path', graphPath);
@@ -140,4 +149,18 @@ async function withServer(options, work) {
   try { return await work(ctx); } finally { await ctx.stop(); }
 }
 
-module.exports = { ROOT, FIXTURES, makeDir, fixture, stage, startServer, withServer, request, getGraph, put, copy, sha256, freePort };
+module.exports = {
+  ROOT,
+  FIXTURES,
+  copy,
+  fixture,
+  freePort,
+  getGraph,
+  makeDir,
+  put,
+  request,
+  sha256,
+  stage,
+  startServer,
+  withServer,
+};

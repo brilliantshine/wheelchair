@@ -1066,7 +1066,7 @@ function withMutex(work) {
 }
 
 function configFromArgs(argv) {
-  const options = { port: DEFAULT_PORT, cacheRoot: null, open: null, stop: false, show: false,
+  const options = { port: DEFAULT_PORT, cacheRoot: null, stateDir: null, open: null, stop: false, show: false,
     browser: process.env.WHEELCHAIR_NO_BROWSER !== '1', service: false, rotateToken: false,
     url: false, ifStale: false, registerPlan: null };
   for (let index = 0; index < argv.length; index += 1) {
@@ -1078,6 +1078,9 @@ function configFromArgs(argv) {
     } else if (arg === '--cache-root') {
       if (!argv[index + 1]) throw new Error('Missing --cache-root value.');
       options.cacheRoot = path.resolve(argv[++index]);
+    } else if (arg === '--state-dir') {
+      if (!argv[index + 1]) throw new Error('Missing --state-dir value.');
+      options.stateDir = path.resolve(argv[++index]);
     } else if (arg === '--open') {
       if (!argv[index + 1]) throw new Error('Missing --open value.');
       options.open = path.resolve(argv[++index]);
@@ -2114,7 +2117,8 @@ async function startServer(config) {
   await fsp.mkdir(config.cacheRoot, { recursive: true, mode: 0o700 });
   const token = await ensureToken(config);
   const lock = { pid: process.pid, port: config.port, token, start_id: crypto.randomBytes(16).toString('hex') };
-  const state = { config, lock, port: config.port, server: null, watched: new Map(), code: await currentCode(),
+  const state = { config, lock, port: config.port, server: null, watched: new Map(), code: await currentCode(), app: null,
+    appInit: null,
     servedOrigin: await servedOrigin(config), closing: false, lastRegistryPrune: 0,
     ownRegistration: config.open ? { path: config.open, opened: true, ...(await registrationMetadata()) } : null };
   const server = http.createServer(async (request, response) => {
@@ -2135,6 +2139,20 @@ async function startServer(config) {
         const nonce = url.searchParams.get('nonce');
         if (nonce) body.proof = proofFor(nonce, state.lock.token);
         sendJson(response, 200, body); return;
+      }
+      if (url.pathname.startsWith(`${VIEWER_PREFIX}/api/`)) {
+        if (!state.app) { const { Hub } = require('./app/hub.js'); state.app = new Hub({ stateDir: config.stateDir || path.join(os.homedir(), '.local', 'state', 'wheelchair'), root: path.resolve(__dirname, '..') }); }
+        if (!state.appInit) state.appInit = state.app.init();
+        await state.appInit;
+        const machineRoute = url.pathname.startsWith(`${VIEWER_PREFIX}/api/machine/`);
+        const machineAuthenticated = machineRoute && await state.app.authenticatesMachine(request);
+        if (!machineRoute) {
+          if (request.method === 'GET') requireReadAuth(request, url, state);
+          else requirePutAuth(request, state);
+        }
+        try { await require('./app/hub.js').handle(state.app, request, response, url, machineAuthenticated); }
+        catch (error) { fail(error.status || 500, error.status ? 'app-error' : 'internal', error.message || 'App route failed.'); }
+        return;
       }
       if (request.method === 'GET' && url.pathname.startsWith(`${VIEWER_PREFIX}/assets/`)) { await handleAsset(response, url); return; }
       if (request.method === 'GET' && url.pathname === `${VIEWER_PREFIX}/`) { await handleRoot(request, response, url, state); return; }
