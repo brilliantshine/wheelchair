@@ -32,6 +32,7 @@ lands at one of the statuses the machine already has.
 | `graphs.md` | The graph format read by both harnesses — schema, verdicts, preservation, how the viewer starts, the run-picture switch |
 | `sensitivity.md` | The diagram-sensitivity dial: the region rendered into present harnesses' always-on files, and what each level draws |
 | `seen.md` | What the reader has seen: the plan record `docs/plans/<slug>/SEEN.md`, the wording list, and the hook that carries the wording list and a gap notice into every turn |
+| `app/` | The app's role protocol, one file per agent role plus the card formats; [its router](app/AGENTS.md). Replaces the stage files for sessions the app starts; the stage files above stay until a later feature retires them |
 | `templates/` | The skeletons a stage writes from: `MAP.md`, `IDEA.md`, `PLAN.md`, `COMPLETION.md`, `SEEN.md` |
 
 ## Boundaries
