@@ -71,6 +71,7 @@ async function startSession(hub, thread, input) {
       branch: input.branch,
       brief: input.brief || '',
       model: input.model,
+      verify_ref: input.verify_ref,
     });
   } catch (error) {
     // Leave no session claiming to be "starting" forever: record why it never started.
@@ -200,6 +201,8 @@ async function sessionRequest(hub, payload) {
     attempt_id: payload.attempt_id,
     brief: payload.brief,
     model: payload.model,
+    // A verifier checks the thread's branch as it stands, commits not yet pushed included.
+    verify_ref: payload.role === 'verifier' ? thread.branch : undefined,
   });
   return { session: publicSession(started) };
 }

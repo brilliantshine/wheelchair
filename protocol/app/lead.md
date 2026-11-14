@@ -33,7 +33,11 @@ That is deliberate: almost none of it helps him decide anything.
 
 Use `node <root>/viewer/app/wc.js session start --role <role> --cli <claude|codex> --tier <tier>
 --brief-file <path> --attempt <id>`, and `session stop <name>`, `session list`. The hub
-checks the rules and refuses anything else with the reason.
+checks the rules and refuses anything else with the reason. A refusal is final: change
+the request rather than resending it.
+
+Commit with `node <root>/viewer/app/wc.js git commit --paths <a,b> --message "<message>"`;
+a commit without a message is refused.
 
 - You may start: a **mapper** (mapping session), **reviewer** sessions, a **sub-lead**
   for your own thread, and a **verifier** (for a small fix, or for a fix you make in a

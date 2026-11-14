@@ -19,8 +19,8 @@ else writes there.
   A claim without output behind it is not accepted.
 - **If the same gate fails twice, stop and report rather than iterating.** A report that
   says what failed and what you tried is a good result; a third blind attempt is not.
-- Git writes go through `node <root>/viewer/app/wc.js git commit ...` and friends, naming
-  the exact paths you commit. You never run `git commit` or `git push` yourself.
+- Git writes go through `node <root>/viewer/app/wc.js git commit --paths <a,b> --message
+  "<message>"` and friends, naming the exact paths you commit. You never run `git commit` or `git push` yourself.
 
 ## When the plan did not settle something
 

@@ -170,12 +170,16 @@ class MachineService {
       branch = `wc-${thread}-w${workers}`;
     }
     safeName(branch, 'branch');
-    const destination = path.join(this.stateDir, 'worktrees', project, branch);
+    // A verifier checks out the thread's branch detached, so it needs a directory of its own
+    // rather than the branch's, which the lead's worktree already holds.
+    const destination = input.role === 'verifier'
+      ? path.join(this.stateDir, 'worktrees', project, safeName(sessionName, 'session name'))
+      : path.join(this.stateDir, 'worktrees', project, branch);
     const fetch = command('git', ['-C', repo, 'fetch', 'origin']);
     if (!fetch.ok) die(fetch.stderr.trim() || 'git fetch failed');
     const base = input.base || `origin/${input.default_branch || input.defaultBranch || 'main'}`;
     const args = input.role === 'verifier'
-      ? ['-C', repo, 'worktree', 'add', '--detach', destination, input.verify_ref || input.branch || base]
+      ? ['-C', repo, 'worktree', 'add', '--detach', destination, input.verify_ref || base]
       : ['-C', repo, 'worktree', 'add', '-b', branch, destination, base];
     const added = command('git', args);
     if (!added.ok) die(added.stderr.trim() || 'git worktree add failed');
@@ -436,6 +440,7 @@ class MachineService {
     const allowed = new Set(['fetch', 'commit', 'merge', 'cherry-pick', 'revert', 'push', 'pr']);
     if (!allowed.has(operation)) die('unsupported git operation');
     if (operation === 'commit' && (!Array.isArray(input.paths) || input.paths.length === 0)) throw Object.assign(new Error('commit requires explicit paths'), { status: 400 });
+    if (operation === 'commit' && !String(input.message || '').trim()) throw Object.assign(new Error('commit requires a message'), { status: 400 });
     const cwd = path.resolve(session.worktree);
     if (operation === 'commit' && input.paths.some(item => {
       const candidate = path.resolve(cwd, String(item));
@@ -444,7 +449,7 @@ class MachineService {
     const run = (program, argv) => command(program, argv, { cwd });
     let result;
     if (operation === 'commit') result = run('git', ['add', '--', ...input.paths,]);
-    if (operation === 'commit' && result.ok) result = run('git', ['commit', '-m', input.message || 'Update', '--', ...input.paths]);
+    if (operation === 'commit' && result.ok) result = run('git', ['commit', '-m', input.message, '--', ...input.paths]);
     if (operation === 'fetch') result = run('git', ['fetch', ...args]);
     if (operation === 'merge') result = run('git', ['merge', ...args]);
     if (operation === 'cherry-pick') result = run('git', ['cherry-pick', ...args]);
@@ -460,7 +465,14 @@ class MachineService {
       try {
         const response = await requestJson(`${this.config.hub_url.replace(/\/$/, '')}/api/machine/session`, 'POST', { [HUB_HEADER]: await this.secret() }, { ...input, calling_session: agent.name });
         if (response.status >= 200 && response.status < 300) return JSON.parse(response.body || '{}');
-      } catch { /* retry */ }
+        // The hub answered and refused: retrying repeats the refusal and, for a start, records
+        // another failed session each time. Hand the agent the hub's own reason instead.
+        if (response.status >= 400 && response.status < 500) {
+          let reason = 'hub refused the request';
+          try { reason = JSON.parse(response.body || '{}').error || reason; } catch { /* keep the generic reason */ }
+          throw Object.assign(new Error(reason), { status: response.status, refused: true });
+        }
+      } catch (error) { if (error.refused) throw error; /* otherwise retry */ }
       if (Date.now() >= until) throw Object.assign(new Error('hub unavailable'), { status: 503 });
       await new Promise(resolve => setTimeout(resolve, this.retryDelay));
     }

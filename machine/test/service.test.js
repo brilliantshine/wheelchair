@@ -200,8 +200,31 @@ test('agent session forward retries then reports hub unavailable', async () => {
   const hub = await hubServer(503); const env = await service(await temp(), { config: { hub_url: hub.url } }); try { await start(env); env.instance.retryWindow = 20; env.instance.retryDelay = 5; await assert.rejects(() => env.instance.forwardSession(env.instance.sessions['wc-t-lead'], { action: 'start', attempt_id: 'a' }), /hub unavailable/); assert.ok(hub.calls.filter(call => call.path.endsWith('/session')).length > 1); } finally { await env.close(); await hub.close(); }
 });
 test('git refuses paths outside the calling worktree', async () => {
-  const env = await service(await temp()); try { await start(env); const result = await api(env, 'POST', '/v1/agent/git', { operation: 'commit', paths: ['../outside'] }, { 'x-wheelchair-session-token': 'alpha' }); assert.equal(result.status, 403); } finally { await env.close(); }
+  const env = await service(await temp()); try { await start(env); const result = await api(env, 'POST', '/v1/agent/git', { operation: 'commit', paths: ['../outside'], message: 'm' }, { 'x-wheelchair-session-token': 'alpha' }); assert.equal(result.status, 403); } finally { await env.close(); }
 });
 test('git commit refuses no paths', async () => {
   const env = await service(await temp()); try { await start(env); const result = await api(env, 'POST', '/v1/agent/git', { operation: 'commit' }, { 'x-wheelchair-session-token': 'alpha' }); assert.equal(result.status, 400); } finally { await env.close(); }
+});
+test('a verifier gets its own detached worktree at the lead\'s unpushed commit', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true }); try {
+    const { repo, worktree } = await startedWorktree(env, root, 'verify');
+    await write(path.join(worktree, 'fix.txt'), 'fixed\n');
+    git(['-C', worktree, 'add', 'fix.txt']); git(['-C', worktree, '-c', 'user.name=t', '-c', 'user.email=t@example.test', 'commit', '-m', 'fix']);
+    const head = git(['-C', worktree, 'rev-parse', 'HEAD']).stdout.trim();
+    const verifier = await start(env, { role: 'verifier', cli: 'codex', name: 'wc-verify-verifier', thread_id: 'verify', token: 'v-token', project_dir: repo, project: 'project', default_branch: 'main', verify_ref: 'wc/verify', serviceWorktree: true });
+    assert.notEqual(verifier.worktree, worktree);
+    assert.equal(git(['-C', verifier.worktree, 'rev-parse', 'HEAD']).stdout.trim(), head);
+  } finally { await env.close(); }
+});
+test('a hub refusal reaches the agent at once, without retries', async () => {
+  const hub = await hubServer(400); const env = await service(await temp(), { config: { hub_url: hub.url } }); try { await start(env); env.instance.retryWindow = 2000; env.instance.retryDelay = 5; await assert.rejects(() => env.instance.forwardSession(env.instance.sessions['wc-t-lead'], { action: 'start', attempt_id: 'a' }), (error) => error.status === 400); assert.equal(hub.calls.filter(call => call.path.endsWith('/session')).length, 1); } finally { await env.close(); await hub.close(); }
+});
+test('a commit with no message is refused rather than titled for the agent', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true }); try {
+    const { worktree, session } = await startedWorktree(env, root, 'nomsg');
+    await write(path.join(worktree, 'a.txt'), 'a\n');
+    const result = await api(env, 'POST', '/v1/agent/git', { operation: 'commit', paths: ['a.txt'] }, { 'x-wheelchair-session-token': 'nomsg-token' });
+    assert.equal(result.status, 400); assert.match(JSON.stringify(result.body), /message/);
+    assert.ok(session);
+  } finally { await env.close(); }
 });

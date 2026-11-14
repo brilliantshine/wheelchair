@@ -614,3 +614,15 @@ async function startSublead(context, made, lead, attempt = 'build-1') {
   assert.equal(result.status, 200);
   return result.body.session;
 }
+
+test('a verifier the lead starts is pointed at the thread branch', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const lead = made.sessions[0];
+    const result = await machinePost(context, '/machine/session', {
+      calling_session: lead.name, action: 'start', role: 'verifier', cli: 'codex', attempt_id: 'verify-1',
+    });
+    assert.equal(result.status, 200, JSON.stringify(result.body));
+    assert.equal(context.machine.sessions.get(result.body.session.name).verify_ref, `wc/${made.id}`);
+  });
+});

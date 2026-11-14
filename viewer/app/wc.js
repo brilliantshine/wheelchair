@@ -38,7 +38,8 @@ function request(urlText, token, body) {
 function flags(args) {
   const output = { _: [] };
   for (let index = 0; index < args.length; index += 1) {
-    if (!args[index].startsWith('--')) output._.push(args[index]);
+    if (args[index] === '-m') output.message = args[++index];
+    else if (!args[index].startsWith('--')) output._.push(args[index]);
     else output[args[index].slice(2)] = args[++index];
   }
   return output;
@@ -50,6 +51,7 @@ function gitRequest(operation, tail) {
   const parsed = flags(tail);
   const paths = parsed.paths ? String(parsed.paths).split(',').filter(Boolean) : [];
   if (operation === 'commit' && !paths.length) throw new Error('commit requires --paths');
+  if (operation === 'commit' && !parsed.message) throw new Error('commit requires --message (or -m)');
   return {
     path: '/git',
     body: { operation, args: parsed._, paths, message: parsed.message },
