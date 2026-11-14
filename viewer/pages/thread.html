@@ -1,0 +1,26 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thread</title>
+<link rel="stylesheet" href="/wheelchair/assets/pages/app.css">
+<link rel="stylesheet" href="/wheelchair/assets/pages/thread.css">
+<header id="app-nav" data-current="threads"></header>
+<main class="app-main">
+  <div id="error" class="error-banner" hidden></div>
+  <section id="head" class="card"></section>
+  <section id="stub-open" class="card" hidden></section>
+  <section id="dead" class="card amber" hidden></section>
+  <section id="docview" class="card" hidden></section>
+  <section id="pinned"></section>
+  <section id="chat" aria-label="Chat"></section>
+  <section id="cards"></section>
+  <form id="composer">
+    <div id="queued-note" class="dim" hidden></div>
+    <div class="send-row">
+      <textarea id="msg" rows="2" placeholder="Message the lead"></textarea>
+      <button type="submit" class="primary" id="send">Send</button>
+    </div>
+  </form>
+</main>
+<script src="/wheelchair/assets/pages/nav.js" defer></script>
+<script src="/wheelchair/assets/pages/thread.js" defer></script>
