@@ -100,7 +100,9 @@ async function main(argv) {
   const [group, operation, ...tail] = argv;
   const token = process.env.WHEELCHAIR_SESSION_TOKEN;
   if (!token) throw new Error('WHEELCHAIR_SESSION_TOKEN is required');
-  const base = process.env.WHEELCHAIR_MACHINE_URL || 'http://127.0.0.1:7374/v1/agent';
+  // The service listens on its tailnet address only, and names it in each session's environment.
+  const origin = process.env.WHEELCHAIR_MACHINE_ORIGIN || 'http://127.0.0.1:7374';
+  const base = process.env.WHEELCHAIR_MACHINE_URL || `${origin}/v1/agent`;
   const input = group === 'git'
     ? gitRequest(operation, tail)
     : group === 'session'

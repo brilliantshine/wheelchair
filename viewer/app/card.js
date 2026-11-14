@@ -164,7 +164,9 @@ async function main(argv) {
   if (!checked.ok) throw new Error(checked.reason);
   const token = process.env.WHEELCHAIR_SESSION_TOKEN;
   if (!token) throw new Error('WHEELCHAIR_SESSION_TOKEN is required');
-  const endpoint = process.env.WHEELCHAIR_MACHINE_URL || 'http://127.0.0.1:7374/v1/agent/cards';
+  // The service listens on its tailnet address only, and names it in each session's environment.
+  const origin = process.env.WHEELCHAIR_MACHINE_ORIGIN || 'http://127.0.0.1:7374';
+  const endpoint = process.env.WHEELCHAIR_MACHINE_URL || `${origin}/v1/agent/cards`;
   const result = await post(endpoint, token, checked.card);
   if (result.status < 200 || result.status >= 300) {
     throw new Error(`machine refused card (${result.status}): ${result.body}`);
