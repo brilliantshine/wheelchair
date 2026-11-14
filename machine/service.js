@@ -294,7 +294,71 @@ class MachineService {
     this.tmux(['kill-session', '-t', name]);
     session.status = 'stopped'; session.stopped_at = new Date().toISOString();
     await this.persistSessions();
-    if (session.role === 'verifier' && session.created_worktree) command('git', ['-C', session.worktree, 'worktree', 'remove', '--force', session.worktree]);
+    if (session.role === 'verifier' && session.created_worktree) command('git', ['-C', session.worktree, 'worktree', 'remove', session.worktree]);
+  }
+  gitPath(worktree, name) {
+    const result = command('git', ['-C', worktree, 'rev-parse', '--git-path', name]);
+    return result.ok ? result.stdout.trim() : null;
+  }
+  mergeInProgress(worktree) {
+    const marker = this.gitPath(worktree, 'MERGE_HEAD');
+    return Boolean(marker && fs.existsSync(marker));
+  }
+  rebaseInProgress(worktree) {
+    return ['rebase-merge', 'rebase-apply'].some(name => {
+      const marker = this.gitPath(worktree, name);
+      return marker && fs.existsSync(marker);
+    });
+  }
+  archiveCommit(worktree, message) {
+    const added = command('git', ['-C', worktree, 'add', '-A']);
+    if (!added.ok) return { ok: false, reason: added.stderr.trim() || 'git add failed' };
+    const committed = command('git', ['-C', worktree, 'commit', '-m', message]);
+    if (!committed.ok) return { ok: false, reason: committed.stderr.trim() || 'git commit failed' };
+    const head = command('git', ['-C', worktree, 'rev-parse', 'HEAD']);
+    return head.ok ? { ok: true, commit: head.stdout.trim() } : { ok: false, reason: head.stderr.trim() || 'git rev-parse failed' };
+  }
+  async archive(threadId) {
+    if (typeof threadId !== 'string' || !threadId) throw Object.assign(new Error('thread_id required'), { status: 400 });
+    safeName(threadId, 'thread id');
+    const sessions = Object.values(this.sessions).filter(session => session.thread_id === threadId);
+    const stopped = [];
+    for (const session of sessions) {
+      await this.stop(session.name);
+      stopped.push(session.name);
+    }
+    const worktrees = [...new Map(sessions
+      .filter(session => session.created_worktree && session.role !== 'verifier')
+      .map(session => [path.resolve(session.worktree), session])).values()];
+    const committed = []; const removed = []; const kept = [];
+    for (const session of worktrees) {
+      const worktree = path.resolve(session.worktree);
+      if (this.mergeInProgress(worktree)) {
+        const result = this.archiveCommit(worktree, 'WIP: archived (mid-merge)');
+        if (!result.ok) { kept.push({ worktree, reason: result.reason }); continue; }
+        committed.push({ worktree, commit: result.commit });
+      } else if (this.rebaseInProgress(worktree)) {
+        kept.push({ worktree, reason: 'rebase in progress' });
+        continue;
+      } else {
+        const status = command('git', ['-C', worktree, 'status', '--porcelain']);
+        if (!status.ok) { kept.push({ worktree, reason: status.stderr.trim() || 'git status failed' }); continue; }
+        if (status.stdout.trim()) {
+          const result = this.archiveCommit(worktree, 'WIP: archived');
+          if (!result.ok) { kept.push({ worktree, reason: result.reason }); continue; }
+          committed.push({ worktree, commit: result.commit });
+        }
+      }
+      const clean = command('git', ['-C', worktree, 'status', '--porcelain']);
+      if (!clean.ok) { kept.push({ worktree, reason: clean.stderr.trim() || 'git status failed' }); continue; }
+      if (clean.stdout.trim()) { kept.push({ worktree, reason: 'worktree has uncommitted changes' }); continue; }
+      const result = command('git', ['-C', worktree, 'worktree', 'remove', worktree]);
+      if (!result.ok) { kept.push({ worktree, reason: result.stderr.trim() || 'git worktree remove failed' }); continue; }
+      removed.push(worktree);
+    }
+    for (const session of sessions) delete this.sessions[session.name];
+    await this.persistSessions();
+    return { stopped, committed, removed, kept };
   }
   async copyTranscript(session, source) {
     if (!source) return { offset: 0, lines: [] };
@@ -422,6 +486,7 @@ class MachineService {
       if (request.method === 'POST' && url.pathname === '/v1/preflight') { await this.authorize(request, 'hub'); const result = command(path.join(ROOT, 'codex', 'preflight.sh'), []); return send(response, result.ok ? 200 : 409, result); }
       if (request.method === 'POST' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); return send(response, 201, await this.start(await bodyOf(request))); }
       if (request.method === 'GET' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); return send(response, 200, this.status().sessions); }
+      if (request.method === 'POST' && url.pathname === '/v1/archive') { await this.authorize(request, 'hub'); return send(response, 200, await this.archive((await bodyOf(request)).thread_id)); }
       if (pathBits[0] === 'v1' && pathBits[1] === 'sessions' && pathBits[2]) {
         const name = decodeURIComponent(pathBits[2]); await this.authorize(request, 'hub');
         if (request.method === 'DELETE' && pathBits.length === 3) { await this.stop(name); return send(response, 200, { ok: true }); }

@@ -9,6 +9,7 @@ The secret is never inherited by a tmux session.
 |---|---|---|
 | `POST /v1/sessions` | hub | Start a session. Body contains `role`, `cli`, `thread_id`, `token`, and either `worktree` or a project/worktree description. Optional `model`, `brief`, `attempt_id`, and `name` are retained. |
 | `GET /v1/sessions` | hub | Sessions and live tmux status. |
+| `POST /v1/archive` | hub | `{ "thread_id": "…" }`; stop the thread's sessions, locally commit or retain its service-created worktrees as appropriate, remove clean worktrees, and forget its sessions. Returns `200 { "stopped": [names], "committed": [{ "worktree", "commit" }], "removed": [paths], "kept": [{ "worktree", "reason" }] }`. |
 | `DELETE /v1/sessions/:name` | hub | Stop a managed session. |
 | `GET /v1/sessions/:name/pane` | hub | Current pane text. |
 | `POST /v1/sessions/:name/submit` | hub | `{ "text": "…" }`; bracketed paste followed by Enter. |
