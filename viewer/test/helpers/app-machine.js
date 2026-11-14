@@ -19,6 +19,12 @@ async function startMachine(secret = 'machine-test-secret') {
   const port = await freePort();
   const sessions = new Map();
   const calls = [];
+  const status = {
+    version: '',
+    claude: { installed: true, logged_in: true },
+    codex: { installed: true, logged_in: true },
+  };
+  let preflightOk = true;
   const server = http.createServer(async (request, response) => {
     if (request.headers['x-wheelchair-machine-secret'] !== secret) {
       return send(response, 401, { error: 'machine secret required' });
@@ -49,7 +55,10 @@ async function startMachine(secret = 'machine-test-secret') {
       return archive(response, sessions, input.thread_id);
     }
     if (request.method === 'GET' && url.pathname === '/v1/status') {
-      return send(response, 200, { sessions: [...sessions.values()] });
+      return send(response, 200, { ...status, sessions: [...sessions.values()] });
+    }
+    if (request.method === 'POST' && url.pathname === '/v1/preflight') {
+      return send(response, preflightOk ? 200 : 409, { ok: preflightOk });
     }
     return send(response, 404, { error: 'not found' });
   });
@@ -62,6 +71,9 @@ async function startMachine(secret = 'machine-test-secret') {
     secret,
     sessions,
     calls,
+    status,
+    get preflightOk() { return preflightOk; },
+    set preflightOk(value) { preflightOk = Boolean(value); },
     async stop() {
       await new Promise((resolve) => server.close(resolve));
     },

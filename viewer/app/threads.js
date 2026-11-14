@@ -7,6 +7,9 @@ const crypto = require('node:crypto');
 const path = require('node:path');
 const { appError } = require('./state.js');
 const { publicSession, startSession } = require('./sessions.js');
+const { check: readyCheck, same: sameReady } = require('./ready.js');
+
+const ARCHIVED_DOCUMENTS = new Set(['MAP.md', 'IDEA.md', 'PLAN.md']);
 
 const execFileAsync = promisify(execFile);
 
@@ -73,7 +76,7 @@ async function createStub(hub, parent, card) {
 async function openStub(hub, id, input = {}) {
   const thread = await hub.thread(id);
   if (!thread.stub || thread.sessions.length) return thread;
-  if (thread.depends_on_parent && !input.start_now) {
+  if (thread.depends_on_parent && !thread.ready && !input.start_now) {
     thread.waiting_on_parent = true;
     await hub.save(thread);
     return { waiting: true, thread };
@@ -117,8 +120,7 @@ async function archive(hub, id) {
 
 async function archivedDocument(hub, id, file) {
   const thread = await hub.thread(id);
-  const valid = /^[A-Za-z0-9._/-]+\.md$/.test(file || '') && !file.includes('..');
-  if (!thread.archived || !thread.branch || !thread.slug || !valid) {
+  if (!thread.archived || !thread.branch || !thread.slug || !ARCHIVED_DOCUMENTS.has(file)) {
     throw appError(404, 'archived document not found');
   }
   const object = `${thread.branch}:docs/plans/${thread.slug}/${file}`;
@@ -137,6 +139,22 @@ async function press(hub, id, cardId, input) {
   const thread = await hub.thread(id);
   const card = thread.cards.find((item) => item.id === cardId && !item.replaced);
   if (!card) throw appError(404, 'card not found');
+  if (input.action === 'recheck') {
+    if (card.kind !== 'approval') throw appError(400, 're-check requires an approval card');
+    card.ready = await readyCheck(hub, thread);
+    await hub.save(thread);
+    return { queued: false, ready: card.ready };
+  }
+  if (input.action === 'start-building') {
+    if (card.kind !== 'approval') throw appError(400, 'start building requires an approval card');
+    const ready = await readyCheck(hub, thread);
+    if (!sameReady(card.ready, ready)) {
+      card.ready = ready;
+      await hub.save(thread);
+      return { queued: false, ready };
+    }
+    if (!ready.ok) return { queued: false, ready };
+  }
   const lead = [...thread.sessions].reverse().find((item) => item.role === 'lead' && item.live);
   if (!lead) throw appError(409, 'no live lead');
   const suffixes = {
