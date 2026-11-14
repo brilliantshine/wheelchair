@@ -105,7 +105,18 @@ async function restartLead(hub, id) {
     role: 'lead', cli: thread.cli, brief: '', worktree: thread.worktree, branch: thread.branch,
   });
   const endedLeads = thread.sessions.filter((session) => session.role === 'lead' && !session.live);
-  const queued = endedLeads.flatMap((session) => session.queue || []);
+  // Move, not copy: each ended lead's waiting messages go to the new lead once, and an older
+  // restart's context note is dropped because the fresh one below replaces it.
+  const queued = endedLeads.flatMap((session) => session.queue || [])
+    .filter((message) => message.source !== 'context');
+  for (const session of endedLeads) {
+    session.queue = [];
+    delete thread.queues[session.name];
+  }
+  // The restart is the answer to every "Sessions ended" card the dead leads left open.
+  for (const card of thread.cards) {
+    if (card.kind === 'needs' && card.title === 'Sessions ended' && !card.answered) card.answered = true;
+  }
   lead.queue.push(...queued);
   thread.queues[lead.name] = lead.queue;
   await hub.enqueue(thread, lead.name, context, 'context', true);

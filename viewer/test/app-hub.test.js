@@ -281,6 +281,20 @@ test('starts a replacement lead after the old lead ends', async () => {
     const started = context.machine.sessions.get(restarted.body.name);
     assert.equal(started.worktree, `/tmp/${oldLead.name}`);
     assert.equal(started.branch, `wc/${made.id}`);
+    const after = await hub.thread(made.id);
+    assert.ok(after.cards.filter((item) => item.title === 'Sessions ended').every((item) => item.answered));
+    // The queued message moves once; the old lead keeps no copy.
+    const lead = after.sessions.find((item) => item.name === restarted.body.name);
+    assert.equal(lead.queue.filter((item) => item.text === 'Queued before death.').length, 1);
+    assert.equal(after.sessions.find((item) => item.name === oldLead.name).queue.length, 0);
+  });
+});
+
+test('a fresh Claude lead with no first message takes its queue without a turn-ended event', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context, { cli: 'claude', message: 'Deliver me now.' });
+    const submits = context.machine.sessions.get(made.sessions[0].name).submits || [];
+    assert.deepEqual(submits, ['Deliver me now.']);
   });
 });
 

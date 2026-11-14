@@ -84,13 +84,25 @@ async function startSession(hub, thread, input) {
     queue: session.queue || [],
     ready: started.status === 'ready',
     live: true,
+    // The service types a first message itself (Codex's [wc:role] line, or a brief) once the
+    // session is ready; without one, a ready session is idle and may take the queue at once.
+    first_message: session.cli === 'codex' || Boolean(input.brief),
   });
+  markIdleIfFresh(session);
   if (!thread.worktree && started.worktree) {
     thread.worktree = started.worktree;
     thread.branch = `wc/${thread.id}`;
   }
   await hub.save(thread);
   return session;
+}
+
+// A session that has just become ready, with no first message of its own, has had no turn
+// to end, so no turn-ended event will ever arrive to release its queue.
+function markIdleIfFresh(target) {
+  if (target.ready && target.turn_ended === undefined && target.first_message === false) {
+    target.turn_ended = true;
+  }
 }
 
 function session(thread, name) {
@@ -135,6 +147,7 @@ async function event(hub, payload) {
   if (type === 'ready') {
     target.ready = true;
     target.status = 'ready';
+    markIdleIfFresh(target);
   }
   if (['turn-ended', 'turn_ended', 'turn ended'].includes(type)) target.turn_ended = true;
   const permission = type === 'prompt' && payload.notification_type === 'permission_prompt';
