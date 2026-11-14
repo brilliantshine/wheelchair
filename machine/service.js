@@ -23,7 +23,8 @@ const DEFAULT_STATE = path.join(os.homedir(), '.local', 'state', 'wheelchair');
 const HUB_HEADER = 'x-wheelchair-machine-secret';
 const TOKEN_HEADER = 'x-wheelchair-session-token';
 
-function die(message) { throw new Error(message); }
+// A refusal of the request itself: 400, so the hub and agents report it rather than retry.
+function die(message) { throw Object.assign(new Error(message), { status: 400 }); }
 function safeName(value, label) {
   if (typeof value !== 'string' || !/^[A-Za-z0-9._/-]+$/.test(value) || value.includes('..')) die(`invalid ${label}`);
   return value;
@@ -470,7 +471,8 @@ class MachineService {
         if (response.status >= 200 && response.status < 300) return JSON.parse(response.body || '{}');
         // The hub answered and refused: retrying repeats the refusal and, for a start, records
         // another failed session each time. Hand the agent the hub's own reason instead.
-        if (response.status >= 400 && response.status < 500) {
+        // Only an unreachable or overloaded hub (502-504, or no answer) is worth retrying.
+        if (response.status < 502 || response.status > 504) {
           let reason = 'hub refused the request';
           try { reason = JSON.parse(response.body || '{}').error || reason; } catch { /* keep the generic reason */ }
           throw Object.assign(new Error(reason), { status: response.status, refused: true });

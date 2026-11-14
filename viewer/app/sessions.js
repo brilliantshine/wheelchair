@@ -72,6 +72,7 @@ async function startSession(hub, thread, input) {
       brief: input.brief || '',
       model: input.model,
       verify_ref: input.verify_ref,
+      base: input.base,
     });
   } catch (error) {
     // Leave no session claiming to be "starting" forever: record why it never started.
@@ -222,7 +223,11 @@ async function sessionRequest(hub, payload) {
     attempt_id: payload.attempt_id,
     brief: payload.brief,
     model: payload.model,
-    // A verifier checks the thread's branch as it stands, commits not yet pushed included.
+    // Spec "Branches and checkouts": the mapper, reviewers and the sub-lead run in the thread's
+    // own worktree; a worker gets a branch cut from the thread's branch; a verifier checks the
+    // thread's branch as it stands, commits not yet pushed included.
+    ...(['mapper', 'reviewer', 'sub-lead'].includes(payload.role) ? { worktree: thread.worktree, branch: thread.branch } : {}),
+    base: payload.role === 'worker' ? thread.branch : undefined,
     verify_ref: payload.role === 'verifier' ? thread.branch : undefined,
   });
   return { session: publicSession(started) };

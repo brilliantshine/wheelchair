@@ -680,3 +680,23 @@ test('a Codex verifier report comes from the notify payload when present, once',
     assert.match(results[0].summary, /VERDICT: FAIL/);
   });
 });
+
+test('a mapper works in the thread worktree; a worker branches from the thread branch', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const lead = made.sessions[0];
+    const mapper = await machinePost(context, '/machine/session', {
+      calling_session: lead.name, action: 'start', role: 'mapper', cli: 'codex', attempt_id: 'map-1',
+    });
+    const started = context.machine.sessions.get(mapper.body.session.name);
+    assert.equal(started.worktree, `/tmp/${lead.name}`);
+    assert.equal(started.branch, `wc/${made.id}`);
+    const sublead = await startSublead(context, made, lead, 'build-w');
+    const worker = await machinePost(context, '/machine/session', {
+      calling_session: sublead.name, action: 'start', role: 'worker', cli: 'codex', attempt_id: 'T1-1',
+    });
+    const workerStarted = context.machine.sessions.get(worker.body.session.name);
+    assert.equal(workerStarted.base, `wc/${made.id}`);
+    assert.equal(workerStarted.worktree, `/tmp/${worker.body.session.name}`);
+  });
+});

@@ -235,3 +235,9 @@ test('a thread branch made from origin/main tracks nothing', async () => {
     assert.notEqual(upstream.status, 0, upstream.stdout);
   } finally { await env.close(); }
 });
+test('a hub 500 reaches the agent at once; a 502 is retried', async () => {
+  const hub = await hubServer(500); const env = await service(await temp(), { config: { hub_url: hub.url } }); try { await start(env); env.instance.retryWindow = 2000; env.instance.retryDelay = 5; await assert.rejects(() => env.instance.forwardSession(env.instance.sessions['wc-t-lead'], { action: 'start', attempt_id: 'a' }), (error) => error.status === 500); assert.equal(hub.calls.filter(call => call.path.endsWith('/session')).length, 1); hub.setStatus(502); env.instance.retryWindow = 30; await assert.rejects(() => env.instance.forwardSession(env.instance.sessions['wc-t-lead'], { action: 'start', attempt_id: 'b' }), /hub unavailable/); assert.ok(hub.calls.filter(call => call.path.endsWith('/session')).length > 2); } finally { await env.close(); await hub.close(); }
+});
+test('a refused start is a 400 with the reason', async () => {
+  const env = await service(await temp()); try { const result = await api(env, 'POST', '/v1/sessions', { role: 'lead', cli: 'claude', thread_id: 't', token: 'alpha' }, hubHeader); assert.equal(result.status, 400); assert.match(result.body.error, /worktree or project_dir required/); } finally { await env.close(); }
+});
