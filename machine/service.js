@@ -180,7 +180,9 @@ class MachineService {
     const base = input.base || `origin/${input.default_branch || input.defaultBranch || 'main'}`;
     const args = input.role === 'verifier'
       ? ['-C', repo, 'worktree', 'add', '--detach', destination, input.verify_ref || base]
-      : ['-C', repo, 'worktree', 'add', '-b', branch, destination, base];
+      // --no-track: a branch made from origin/main would otherwise track main, and a plain
+      // push of the thread's branch is then refused.
+      : ['-C', repo, 'worktree', 'add', '--no-track', '-b', branch, destination, base];
     const added = command('git', args);
     if (!added.ok) die(added.stderr.trim() || 'git worktree add failed');
     return destination;

@@ -228,3 +228,10 @@ test('a commit with no message is refused rather than titled for the agent', asy
     assert.ok(session);
   } finally { await env.close(); }
 });
+test('a thread branch made from origin/main tracks nothing', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true }); try {
+    const { worktree } = await startedWorktree(env, root, 'track');
+    const upstream = git(['-C', worktree, 'rev-parse', '--abbrev-ref', '@{upstream}'], { allowFailure: true });
+    assert.notEqual(upstream.status, 0, upstream.stdout);
+  } finally { await env.close(); }
+});
