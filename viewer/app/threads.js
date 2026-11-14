@@ -99,7 +99,11 @@ async function restartLead(hub, id) {
     pinned: thread.pinned,
   };
   const context = `[wc:context restart] Thread state:\n${JSON.stringify(state)}`;
-  const lead = await startSession(hub, thread, { role: 'lead', cli: thread.cli, brief: '' });
+  // The thread keeps its worktree across leads; asking for a new one would fail on the
+  // existing wc/<thread-id> branch.
+  const lead = await startSession(hub, thread, {
+    role: 'lead', cli: thread.cli, brief: '', worktree: thread.worktree, branch: thread.branch,
+  });
   const endedLeads = thread.sessions.filter((session) => session.role === 'lead' && !session.live);
   const queued = endedLeads.flatMap((session) => session.queue || []);
   lead.queue.push(...queued);

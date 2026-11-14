@@ -277,6 +277,10 @@ test('starts a replacement lead after the old lead ends', async () => {
     const restarted = await api(context, `/threads/${made.id}/restart`, { method: 'POST', body: {} });
     assert.equal(restarted.status, 201);
     assert.notEqual(restarted.body.name, oldLead.name);
+    // The replacement works in the thread's existing worktree and branch, not a new one.
+    const started = context.machine.sessions.get(restarted.body.name);
+    assert.equal(started.worktree, `/tmp/${oldLead.name}`);
+    assert.equal(started.branch, `wc/${made.id}`);
   });
 });
 

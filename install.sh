@@ -313,12 +313,21 @@ RestartSec=2
 [Install]
 WantedBy=default.target
 EOF
+  # systemd starts user services with a bare PATH, and every agent session inherits the
+  # service's PATH through tmux. Give it this login's PATH, led by wherever claude and codex
+  # live, or a session dies at once with "claude: not found".
+  service_path=$PATH
+  for cli in codex claude; do
+    cli_path=$(command -v "$cli" 2>/dev/null) || continue
+    service_path="${cli_path%/*}:$service_path"
+  done
   cat > "$machine_unit_file" <<EOF
 [Unit]
 Description=Wheelchair machine service
 
 [Service]
 ExecStart=$node_path $ROOT/machine/service.js
+Environment="PATH=$service_path"
 Restart=always
 RestartSec=2
 KillMode=process

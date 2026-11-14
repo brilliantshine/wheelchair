@@ -472,6 +472,7 @@ assert '--no-serve keeps that origin after the retry' cmp -s <(printf '{"serve":
 
 assert 'the rendered service unit has the specified exact contents' cmp -s <(printf '[Unit]\nDescription=Wheelchair graph viewer\n\n[Service]\nExecStart=%s/node %s/viewer/server.js --service\nEnvironment=WHEELCHAIR_NO_BROWSER=1\nRestart=always\nRestartSec=2\n\n[Install]\nWantedBy=default.target\n' "${shim[explicit_serve]}" "$repo") "$(unit_path explicit_serve)"
 assert 'the machine unit preserves sessions across service restarts' bash -c 'grep -Fxq "Restart=always" "$1" && grep -Fxq "KillMode=process" "$1"' _ "$(machine_unit_path explicit_serve)"
+assert 'the machine unit gives agent sessions the installing PATH' bash -c 'grep -q "^Environment=\"PATH=.*$2" "$1"' _ "$(machine_unit_path explicit_serve)" "${shim[explicit_serve]}"
 assert 'serving setup prints the bookmark last' last_line_is "${output[explicit_serve]}" 'https://fixture.tailnet.ts.net/?token=fixture'
 assert 'dependency installation requests both browser engines' grep -Fq 'playwright install chromium firefox' "$repo/install.sh"
 
