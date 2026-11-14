@@ -9,7 +9,7 @@
   const $ = (x) => document.getElementById(x);
   const errorEl = $('error'); const headEl = $('head'); const stubEl = $('stub-open');
   const deadEl = $('dead'); const docEl = $('docview'); const pinnedEl = $('pinned');
-  const chatEl = $('chat'); const cardsEl = $('cards'); const queuedNote = $('queued-note');
+  const chatEl = $('chat'); const queuedNote = $('queued-note');
   const msgEl = $('msg'); const sendBtn = $('send');
 
   let data = null;
@@ -58,7 +58,7 @@
   function thread() { return data.thread; }
   function slug() {
     const t = thread();
-    if (t.slug) return t.slug;
+    if (data.slug || t.slug) return data.slug || t.slug;
     const d = data.cards.find((c) => c.kind === 'diagram');
     return d ? d.plan : '';
   }
@@ -185,7 +185,17 @@
       if (at >= 0) { humans.splice(at, 1); return false; }
       return true;
     });
+    const cards = data.cards.filter((c) => !PINNED_KINDS.includes(c.kind));
+    let next = 0;
+    const cardsBefore = (when) => {
+      while (next < cards.length) {
+        const cardAt = Date.parse(cards[next].at);
+        if (when !== undefined && !(cardAt < when)) break;
+        const n = renderCard(cards[next++]); if (n) chatEl.appendChild(n);
+      }
+    };
     for (const it of items) {
+      cardsBefore(Date.parse(it.at));
       if (it.type === 'human') {
         const b = el('div', 'bubble human' + (it.card ? ' card' : ''), it.text);
         chatEl.appendChild(b);
@@ -205,6 +215,7 @@
         chatEl.appendChild(c);
       }
     }
+    cardsBefore();
     for (const p of pending) {
       const b = el('div', 'bubble human pending', p.text);
       b.appendChild(el('span', 'tag', 'queued'));
@@ -222,7 +233,7 @@
       await poll(true);
     } catch (e) {
       cardErrors[card.id] = e.message;
-      sigs.cards = null; sigs.pinned = null;
+      sigs.chat = null; sigs.pinned = null;
       render();
     }
   }
@@ -230,7 +241,7 @@
 
   function renderCard(card) {
     const box = el('div', 'card card-' + card.kind);
-    box.dataset.card = card.id; box.dataset.kind = card.kind;
+    box.id = 'card-' + card.id; box.dataset.card = card.id; box.dataset.kind = card.kind;
     const off = card.answered || thread().archived;
     switch (card.kind) {
       case 'offer': {
@@ -373,13 +384,6 @@
     return box;
   }
 
-  function renderCards() {
-    cardsEl.textContent = '';
-    for (const c of data.cards) {
-      if (PINNED_KINDS.includes(c.kind)) continue;
-      const n = renderCard(c); if (n) cardsEl.appendChild(n);
-    }
-  }
   function renderPinned() {
     pinnedEl.textContent = '';
     const order = { offer: 0, idea: 1, progress: 2 };
@@ -398,10 +402,9 @@
     sync('stub', [t.stub, t.sessions.length, t.waiting_on_parent, t.ready, t.context, stubState], renderStub);
     sync('dead', [t.sessions.map((s) => [s.name, s.live]), t.archived], renderDead);
     sync('pinned', [data.pinned, data.cards.map((c) => c.answered), ideaOpen, cardErrors], renderPinned);
-    sync('cards', [data.cards.map((c) => [c.id, c.answered, c.replaced, c.ready]), cardErrors], renderCards);
     const nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
     let changed = false;
-    sync('chat', [data.items, pending], () => { renderChat(); changed = true; });
+    sync('chat', [data.items, pending, data.cards.filter((c) => !PINNED_KINDS.includes(c.kind)), cardErrors], () => { renderChat(); changed = true; });
     if (changed && nearBottom) window.scrollTo(0, document.body.scrollHeight);
     const queuedTotal = Math.max(data.queued, pending.length);
     queuedNote.hidden = queuedTotal === 0;

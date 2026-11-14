@@ -77,6 +77,7 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       await expect(dead).toHaveClass(/unreachable/);
       await expect(dead).toContainText('unreachable');
       await expect(dead.locator('.seen')).toContainText('last seen');
+      await expect(dead.locator('.seen')).toContainText('2030');
       await expect(dead.locator('.session')).toHaveCount(0);
       await expect(page.locator('section[data-machine="hub"]')).not.toHaveClass(/unreachable/);
     });

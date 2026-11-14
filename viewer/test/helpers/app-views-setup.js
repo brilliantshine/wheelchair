@@ -74,7 +74,7 @@ async function setupViews() {
   await fs.writeFile(path.join(state, 'machines.json'), JSON.stringify({
     hub: machine('hub', hub.port, hub.secret),
     'node-2': machine('node-2', second.port, second.secret),
-    'node-3': machine('node-3', deadPort, 'unused'),
+    'node-3': { ...machine('node-3', deadPort, 'unused'), last_seen: '2030-06-15T12:00:00.000Z' },
   }));
   const server = await startServer({ stateDir: state });
   const context = { state, hub, second, server };
