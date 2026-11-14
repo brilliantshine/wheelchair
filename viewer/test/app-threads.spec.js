@@ -24,6 +24,19 @@ for (const [label, size] of SIZES) {
 
     const open = (page, id) => page.goto(`${ctx.server.url}/app/thread?id=${id}`);
 
+    test('the nav stays at the top of a long thread', async ({ page }) => {
+      const made = await ctx.make({ cli: 'claude' });
+      await open(page, made.id);
+      await expect(page.locator('#app-nav a', { hasText: 'Sessions' })).toBeVisible();
+      await page.evaluate(() => {
+        const tall = document.createElement('div'); tall.style.height = '5000px'; document.body.appendChild(tall);
+        window.scrollTo(0, 4000);
+      });
+      const box = await page.locator('#app-nav').boundingBox();
+      expect(Math.abs(box.y)).toBeLessThan(2);
+      await noSideScroll(page);
+    });
+
     test('list: newest first, stubs marked, archived behind a filter', async ({ page }) => {
       const old = await ctx.make({ cli: 'claude' });
       const fresh = await ctx.make({ cli: 'claude' });
