@@ -55,21 +55,29 @@ async function startSession(hub, thread, input) {
   thread.sessions.push(session);
   await hub.save(thread);
 
-  const started = await hub.call(thread.machine, '/v1/sessions', 'POST', {
-    role,
-    cli: session.cli,
-    thread_id: thread.id,
-    token,
-    name: session.name,
-    attempt_id: session.attempt_id,
-    started_by: session.started_by,
-    project_dir: thread.project,
-    project: require('node:path').basename(thread.project),
-    worktree: input.worktree,
-    branch: input.branch,
-    brief: input.brief || '',
-    model: input.model,
-  });
+  let started;
+  try {
+    started = await hub.call(thread.machine, '/v1/sessions', 'POST', {
+      role,
+      cli: session.cli,
+      thread_id: thread.id,
+      token,
+      name: session.name,
+      attempt_id: session.attempt_id,
+      started_by: session.started_by,
+      project_dir: thread.project,
+      project: require('node:path').basename(thread.project),
+      worktree: input.worktree,
+      branch: input.branch,
+      brief: input.brief || '',
+      model: input.model,
+    });
+  } catch (error) {
+    // Leave no session claiming to be "starting" forever: record why it never started.
+    Object.assign(session, { status: 'failed', live: false, error: error.message });
+    await hub.save(thread);
+    throw error;
+  }
   Object.assign(session, started, {
     token,
     started_by: session.started_by,

@@ -101,15 +101,28 @@ class State {
     return Object.fromEntries(machines.map((machine) => [machine.name, machine]));
   }
 
+  // Threads name the hub's own machine "hub" (the default in threads.js and the new-thread
+  // form), but the installer registers it under the machine's hostname so worker machines can
+  // join beside it. "hub" therefore also means the entry for this host's own service.
+  async resolveMachine(machines, name) {
+    if (machines[name]) return machines[name];
+    if (name !== 'hub') return null;
+    const service = await readJson(path.join(this.dir, 'machine.json'), {});
+    const local = Object.values(machines).filter((machine) => (
+      (machine.address || machine.host) === service.host && (machine.port || 7374) === (service.port || 7374)
+    ));
+    return local.length === 1 ? local[0] : null;
+  }
+
   async machine(name) {
-    const machine = (await this.machines())[name];
+    const machine = await this.resolveMachine(await this.machines(), name);
     if (!machine) throw appError(404, `unknown machine: ${name}`);
     return machine;
   }
 
   async markMachineSeen(name, lastSeen) {
     const machines = await this.machines();
-    const machine = machines[name];
+    const machine = await this.resolveMachine(machines, name);
     if (!machine) throw appError(404, `unknown machine: ${name}`);
     machine.last_seen = lastSeen;
     await atomicWrite(this.machinesPath, json(machines));
