@@ -84,7 +84,10 @@ test('renders a card press as a short Collin bubble', () => {
     },
   ]);
   const item = transcriptItems('claude', transcript, {})[0];
-  assert.deepEqual(item, { type: 'human', text: 'Picked Start building', card: true });
+  assert.equal(item.type, 'human');
+  assert.equal(item.text, 'Picked Start building');
+  assert.equal(item.card, true);
+  assert.match(item.at, /^\d{4}-\d{2}-\d{2}T/);
 });
 
 test('collapses a Claude tool call to one chat item', () => {
@@ -103,7 +106,9 @@ test('collapses a Claude tool call to one chat item', () => {
     },
   ]);
   const items = transcriptItems('claude', transcript, {});
-  assert.deepEqual(items.at(-1), { type: 'tool', text: 'Bash' });
+  assert.equal(items.at(-1).type, 'tool');
+  assert.equal(items.at(-1).text, 'Bash');
+  assert.match(items.at(-1).at, /^\d{4}-\d{2}-\d{2}T/);
 });
 
 test('ignores Codex injected entries before turn_context', () => {
@@ -147,8 +152,25 @@ test('collapses a Codex function call to one chat item', () => {
       payload: { type: 'function_call', name: 'shell' },
     },
   ]);
-  assert.deepEqual(transcriptItems('codex', transcript, {}).at(-1), {
-    type: 'tool',
-    text: 'shell',
-  });
+  const item = transcriptItems('codex', transcript, {}).at(-1);
+  assert.equal(item.type, 'tool');
+  assert.equal(item.text, 'shell');
+  assert.match(item.at, /^\d{4}-\d{2}-\d{2}T/);
+});
+
+test('uses each transcript line timestamp for chat items', () => {
+  const transcript = lines([
+    {
+      type: 'user', timestamp: '2026-11-14T10:00:00.000Z', origin: { kind: 'human' },
+      message: { role: 'user', content: 'Timestamped request.' },
+    },
+    {
+      type: 'assistant', timestamp: '2026-11-14T10:00:02.000Z',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'Timestamped response.' }] },
+    },
+  ]);
+  assert.deepEqual(transcriptItems('claude', transcript, {}).map((item) => item.at), [
+    '2026-11-14T10:00:00.000Z',
+    '2026-11-14T10:00:02.000Z',
+  ]);
 });

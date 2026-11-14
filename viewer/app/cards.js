@@ -8,11 +8,13 @@ const { validate } = require('./card.js');
 const SINGLETONS = new Set(['offer', 'idea', 'progress']);
 
 function addCard(thread, card, meta = {}) {
+  const at = new Date().toISOString();
   const record = {
     ...card,
     id: crypto.randomUUID(),
     session: meta.session || null,
-    created_at: new Date().toISOString(),
+    at,
+    created_at: at,
     answered: false,
     system: Boolean(meta.system),
   };

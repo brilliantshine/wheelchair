@@ -47,6 +47,10 @@ function isCodexHuman(row, codexTurn, text) {
   return !text.startsWith('# AGENTS.md') && !text.startsWith('<environment_context>');
 }
 
+function itemAt(row) {
+  return row.timestamp || row.payload?.timestamp || row.message?.timestamp || new Date().toISOString();
+}
+
 function appendReply(turns, row, cli) {
   if (!turns.length) return;
   const payload = row.payload || row;
@@ -60,15 +64,15 @@ function appendReply(turns, row, cli) {
     : ['custom_tool_call', 'function_call'].includes(payload.type);
   if (assistant) {
     const text = unwrap(textOf(content));
-    if (text) turns.at(-1).replies.push({ type: 'assistant', text });
+    if (text) turns.at(-1).replies.push({ type: 'assistant', text, at: itemAt(row) });
     if (cli === 'claude' && Array.isArray(content)) {
       for (const item of content.filter((item) => item.type === 'tool_use')) {
-        turns.at(-1).replies.push({ type: 'tool', text: item.name || 'tool call' });
+        turns.at(-1).replies.push({ type: 'tool', text: item.name || 'tool call', at: itemAt(row) });
       }
     }
   } else if (tool) {
     const name = payload.name || payload.function?.name || 'tool call';
-    turns.at(-1).replies.push({ type: 'tool', text: name });
+    turns.at(-1).replies.push({ type: 'tool', text: name, at: itemAt(row) });
   }
 }
 
@@ -76,17 +80,17 @@ function renderTurn(turn, thread) {
   if (turn.human.startsWith('[wc:role]') || turn.human.startsWith('[wc:from ')) return [];
   if (turn.human.startsWith('[wc:context stub]')) {
     return [
-      { type: 'context', text: `Started from ${thread.parent_title || 'parent thread'}`, context: 'stub' },
+      { type: 'context', text: `Started from ${thread.parent_title || 'parent thread'}`, context: 'stub', at: turn.at },
       ...turn.replies,
     ];
   }
   if (turn.human.startsWith('[wc:context restart]')) {
-    return [{ type: 'context', text: 'Lead restarted', context: 'restart' }, ...turn.replies];
+    return [{ type: 'context', text: 'Lead restarted', context: 'restart', at: turn.at }, ...turn.replies];
   }
   const bubble = cardBubble(turn.human);
   const human = bubble
-    ? { type: 'human', text: bubble, card: true }
-    : { type: 'human', text: turn.human };
+    ? { type: 'human', text: bubble, card: true, at: turn.at }
+    : { type: 'human', text: turn.human, at: turn.at };
   return [human, ...turn.replies];
 }
 
@@ -105,7 +109,7 @@ function transcriptItems(cli, raw, thread) {
     }
     const claudeHuman = row.type === 'user' && row.origin?.kind === 'human';
     const human = cli === 'claude' ? claudeHuman : isCodexHuman(row, codexTurn, text);
-    if (human) turns.push({ human: text, replies: [] });
+    if (human) turns.push({ human: text, replies: [], at: itemAt(row) });
     else appendReply(turns, row, cli);
   }
   return turns.flatMap((turn) => renderTurn(turn, thread));
@@ -113,6 +117,7 @@ function transcriptItems(cli, raw, thread) {
 
 async function chat(hub, id) {
   const thread = await hub.thread(id);
+  await require('./views.js').findSlug(hub, thread);
   const items = [];
   for (const session of thread.sessions.filter((item) => item.role === 'lead')) {
     if (!session.transcript_path) continue;

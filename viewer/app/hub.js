@@ -17,10 +17,14 @@ class Hub {
     this.client = new MachineClient(this.state);
     this.stateDir = this.state.dir;
     this.threadsDir = this.state.threadsDir;
+    this.lastSeen = new Map();
   }
 
   async init() {
     await this.state.init();
+    for (const [name, machine] of Object.entries(await this.state.machines())) {
+      if (machine.last_seen) this.lastSeen.set(name, machine.last_seen);
+    }
     this.pollTimer = setInterval(() => this.pollDead().catch(() => {}), 10_000);
     this.pollTimer.unref();
     this.waitTimer = setInterval(() => this.pollWaiting().catch(() => {}), 600_000);
@@ -29,12 +33,22 @@ class Hub {
   }
 
   machines() { return this.state.machines(); }
+  machineSeen(name) { return this.lastSeen.get(name) || null; }
+  async markMachineSeen(name, at = new Date().toISOString()) {
+    this.lastSeen.set(name, at);
+    await this.state.markMachineSeen(name, at);
+    return at;
+  }
   machine(name) { return this.state.machine(name); }
   threadPath(id) { return this.state.threadPath(id); }
   thread(id) { return this.state.thread(id); }
   save(thread) { return this.state.save(thread); }
   allThreads() { return this.state.allThreads(); }
-  call(...args) { return this.client.call(...args); }
+  async call(machine, ...args) {
+    const result = await this.client.call(machine, ...args);
+    await this.markMachineSeen(machine);
+    return result;
+  }
   authenticatesMachine(request) { return this.client.authenticates(request); }
   session(thread, name) { return sessions.session(thread, name); }
   startSession(thread, input) { return sessions.startSession(this, thread, input); }
@@ -57,6 +71,7 @@ class Hub {
   chat(id) { return chat.chat(this, id); }
   features() { return views.features(this); }
   sessions() { return views.sessions(this); }
+  findSessionMachine(name) { return views.findSessionMachine(this, name); }
 }
 
 module.exports = { DEFAULT_STATE, Hub, handle, transcriptItems: chat.transcriptItems };

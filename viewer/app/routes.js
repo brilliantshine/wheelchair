@@ -3,6 +3,7 @@
 // Spec "Security" and "Views": browser and machine callback HTTP routes.
 const { appError } = require('./state.js');
 const { publicSession } = require('./sessions.js');
+const { findSlug } = require('./views.js');
 
 async function readBody(request) {
   const chunks = [];
@@ -55,7 +56,9 @@ async function handleMachine(hub, request, response, bits, body, authenticated) 
 
 async function handleThreads(hub, request, response, url, bits, body) {
   if (bits.length === 1 && request.method === 'GET') {
-    const threads = (await hub.allThreads()).map((thread) => ({
+    const all = await hub.allThreads();
+    await Promise.all(all.map((thread) => findSlug(hub, thread)));
+    const threads = all.map((thread) => ({
       ...thread,
       sessions: thread.sessions.map(publicSession),
     }));
@@ -101,12 +104,21 @@ async function handleSessions(hub, request, response, bits, body) {
     return send(response, 200, await hub.sessions());
   }
   if (!bits[1]) throw appError(404, 'route not found');
-  const thread = await hub.threadBySession(bits[1]);
   const encoded = encodeURIComponent(bits[1]);
   if (bits[2] === 'pane' && request.method === 'GET') {
-    return send(response, 200, await hub.call(thread.machine, `/v1/sessions/${encoded}/pane`, 'GET'));
+    const machine = await hub.findSessionMachine(bits[1]);
+    if (!machine) throw appError(404, 'session not found');
+    return send(response, 200, await hub.call(machine, `/v1/sessions/${encoded}/pane`, 'GET'));
   }
   if (bits[2] === 'keys' && request.method === 'POST') {
+    if (!bits[1].startsWith('wc-')) throw appError(403, 'session is read-only');
+    let thread;
+    try {
+      thread = await hub.threadBySession(bits[1]);
+    } catch (error) {
+      if (error.status === 404) throw appError(403, 'session is read-only');
+      throw error;
+    }
     const result = await hub.call(
       thread.machine,
       `/v1/sessions/${encoded}/keys`,

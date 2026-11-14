@@ -106,6 +106,15 @@ class State {
     if (!machine) throw appError(404, `unknown machine: ${name}`);
     return machine;
   }
+
+  async markMachineSeen(name, lastSeen) {
+    const machines = await this.machines();
+    const machine = machines[name];
+    if (!machine) throw appError(404, `unknown machine: ${name}`);
+    machine.last_seen = lastSeen;
+    await atomicWrite(this.machinesPath, json(machines));
+    return machine;
+  }
 }
 
 module.exports = { DEFAULT_STATE, State, appError, atomicWrite, readJson };

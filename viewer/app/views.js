@@ -79,16 +79,24 @@ async function sessions(hub) {
   const groups = [];
   for (const [machine] of Object.entries(await hub.machines())) {
     try {
+      const listed = await hub.call(machine, '/v1/sessions', 'GET');
       groups.push({
         machine,
         reachable: true,
-        sessions: await hub.call(machine, '/v1/sessions', 'GET'),
+        last_seen: hub.machineSeen(machine),
+        sessions: listed,
       });
     } catch {
-      groups.push({ machine, reachable: false, sessions: [] });
+      groups.push({ machine, reachable: false, last_seen: hub.machineSeen(machine), sessions: [] });
     }
   }
   return groups;
 }
 
-module.exports = { features, sessions };
+async function findSessionMachine(hub, name) {
+  const groups = await sessions(hub);
+  const group = groups.find((item) => item.sessions.some((session) => session.name === name));
+  return group?.machine || null;
+}
+
+module.exports = { features, findSessionMachine, findSlug, sessions };

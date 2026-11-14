@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 const test = require('node:test');
 const { validate } = require('../app/card.js');
 const { Hub } = require('../app/hub.js');
@@ -28,6 +29,16 @@ test('accepts a valid card for its own lead', async () => {
     });
     assert.equal(result.status, 202);
     assert.equal(result.body.kind, 'offer');
+  });
+});
+
+test('stores an ISO timestamp on every card', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const result = await card(context, made.id, made.sessions[0].name, {
+      kind: 'offer', summary: 'A timestamped card.',
+    });
+    assert.match(result.body.at, /^\d{4}-\d{2}-\d{2}T/);
   });
 });
 
@@ -349,7 +360,7 @@ test('waits for a dependent stub until the parent merges', async () => {
   });
 });
 
-test('marks a waiting stub ready when gh finds the merged parent PR', async () => {
+test('opens a waiting stub after the 10-minute check finds its parent merged', async () => {
   await withContext(async (context) => {
     const parent = await thread(context);
     const parentFile = path.join(context.state, 'threads', `${parent.id}.json`);
@@ -381,6 +392,33 @@ test('marks a waiting stub ready when gh finds the merged parent PR', async () =
     );
     assert.equal(stored.ready, true);
     assert.equal(stored.waiting_on_parent, false);
+    const opened = await api(context, `/threads/${result.body.thread_id}/open`, {
+      method: 'POST', body: {},
+    });
+    assert.equal(opened.body.sessions.length, 1);
+  });
+});
+
+test('rechecks an approval in place and gates Start building on the fresh result', async () => {
+  await withContext(async (context) => {
+    context.machine.status.version = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+    const made = await thread(context);
+    const approval = await card(context, made.id, made.sessions[0].name, {
+      kind: 'approval', objections: [], ready: { ok: false, missing: ['old result'] },
+    });
+    const rechecked = await api(context, `/threads/${made.id}/cards/${approval.body.id}/press`, {
+      method: 'POST', body: { action: 'recheck' },
+    });
+    assert.equal(rechecked.body.queued, false);
+    assert.deepEqual(rechecked.body.ready, { ok: true, missing: [] });
+    context.machine.preflightOk = false;
+    const stopped = await api(context, `/threads/${made.id}/cards/${approval.body.id}/press`, {
+      method: 'POST', body: { action: 'start-building' },
+    });
+    assert.equal(stopped.body.queued, false);
+    assert.equal(stopped.body.ready.ok, false);
+    assert.equal(context.machine.sessions.get(made.sessions[0].name).submits, undefined);
+    assert.ok(context.machine.calls.some((call) => call.path === '/v1/preflight'));
   });
 });
 
@@ -412,25 +450,54 @@ test('queues a card press as a lead message', async () => {
   });
 });
 
-test('reads archived documents with git show from the thread branch', async () => {
+async function archivedDocumentContext() {
   const bin = await fs.mkdtemp(path.join(os.tmpdir(), 'wc-git-'));
   const git = path.join(bin, 'git');
   await fs.writeFile(git, '#!/bin/sh\nprintf "archived plan\\n"\n');
   await fs.chmod(git, 0o755);
   const context = await setup({ env: { PATH: `${bin}:${process.env.PATH}` } });
+  const made = await thread(context);
+  const file = path.join(context.state, 'threads', `${made.id}.json`);
+  const stored = JSON.parse(await fs.readFile(file, 'utf8'));
+  stored.archived = true;
+  stored.branch = `wc/${made.id}`;
+  stored.slug = 'example';
+  await fs.writeFile(file, `${JSON.stringify(stored)}\n`);
+  return { context, made };
+}
+
+for (const file of ['MAP.md', 'IDEA.md', 'PLAN.md']) {
+  test(`reads archived ${file} with git show from the thread branch`, async () => {
+    const { context, made } = await archivedDocumentContext();
+    try {
+      const result = await api(context, `/threads/${made.id}/doc?file=${file}`);
+      assert.equal(result.body.content, 'archived plan\n');
+    } finally {
+      await close(context);
+    }
+  });
+}
+
+test('refuses archived documents outside MAP, IDEA and PLAN', async () => {
+  const { context, made } = await archivedDocumentContext();
   try {
-    const made = await thread(context);
-    const file = path.join(context.state, 'threads', `${made.id}.json`);
-    const stored = JSON.parse(await fs.readFile(file, 'utf8'));
-    stored.archived = true;
-    stored.branch = `wc/${made.id}`;
-    stored.slug = 'example';
-    await fs.writeFile(file, `${JSON.stringify(stored)}\n`);
-    const result = await api(context, `/threads/${made.id}/doc?file=PLAN.md`);
-    assert.equal(result.body.content, 'archived plan\n');
+    const result = await api(context, `/threads/${made.id}/doc?file=other.md`);
+    assert.equal(result.status, 404);
   } finally {
     await close(context);
   }
+});
+
+test('finds a worktree plan slug on thread and chat routes', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const worktree = context.machine.sessions.get(made.sessions[0].name).worktree;
+    await fs.mkdir(path.join(worktree, 'docs', 'plans', 'registered-feature'), { recursive: true });
+    const listed = await api(context, '/threads');
+    assert.equal(listed.body.threads.find((item) => item.id === made.id).slug, 'registered-feature');
+    const chat = await api(context, `/threads/${made.id}/chat`);
+    assert.equal(chat.body.thread.slug, 'registered-feature');
+  });
 });
 
 test('groups features by the current plan status and lists open needs', async () => {
@@ -451,12 +518,15 @@ test('groups features by the current plan status and lists open needs', async ()
   });
 });
 
-test('returns every machine session in the Sessions view', async () => {
+test('returns every machine session and persists its last-seen time', async () => {
   await withContext(async (context) => {
     const made = await thread(context);
     const result = await api(context, '/sessions');
     assert.equal(result.body[0].reachable, true);
     assert.equal(result.body[0].sessions[0].name, made.sessions[0].name);
+    assert.match(result.body[0].last_seen, /^\d{4}-\d{2}-\d{2}T/);
+    const machines = JSON.parse(await fs.readFile(path.join(context.state, 'machines.json'), 'utf8'));
+    assert.equal(machines.hub.last_seen, result.body[0].last_seen);
   });
 });
 
@@ -471,6 +541,18 @@ test('proxies pane reads and raw terminal keys through the machine service', asy
     });
     assert.equal(pane.body.pane, 'fake pane');
     assert.equal(keys.body.ok, true);
+  });
+});
+
+test('reads an unrecorded service pane but refuses its keys', async () => {
+  await withContext(async (context) => {
+    context.machine.sessions.set('scratch-shell', { name: 'scratch-shell', status: 'ready', running: true });
+    const pane = await api(context, '/sessions/scratch-shell/pane');
+    const keys = await api(context, '/sessions/scratch-shell/keys', {
+      method: 'POST', body: { keys: 'C-c' },
+    });
+    assert.equal(pane.status, 200);
+    assert.equal(keys.status, 403);
   });
 });
 
