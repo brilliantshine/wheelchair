@@ -49,3 +49,20 @@ other way, or the `delay-listen-retry` hook no longer writes `delayed` on the pa
 - `git log -- viewer/server.js viewer/test/lifecycle.test.js viewer/test/hooks/lifecycle.js`.
   The test was last changed in `aa84b57` ("make the lost-freed-port race test wait for its hook
   to arm") and made deterministic in `dc7217c`.
+
+## Viewer: "no drawn arrow's line passes through either box it connects, over every committed graph" fails
+
+Found 2026-11-14 while building the app-shell plan. It is not caused by that work: it fails the
+same way on `main` at `2715f61`, and still fails with the app-shell graphs removed from the index.
+
+**Reproduce**
+
+```bash
+npm --prefix viewer run test:browser -- browser.spec.js -g "no drawn arrow" --project chromium
+```
+
+**What is known**
+
+Both browsers fail with `page.evaluate: TypeError: Cannot read properties of null (reading 'map')`,
+so one committed graph renders without something the test's in-page code expects. Which graph
+was not narrowed down.

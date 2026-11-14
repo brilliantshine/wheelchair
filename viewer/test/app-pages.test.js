@@ -36,3 +36,9 @@ test('the existing page scripts are still served', async () => {
     assert.equal(response.status, 200);
   });
 });
+
+test('app pages may frame this origin, for diagram cards', () => {
+  const source = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'server.js'), 'utf8');
+  assert.match(source, /APP_PAGE_CSP = `\$\{PAGE_CSP\}; frame-src 'self'`/);
+  assert.match(source, /'content-security-policy': APP_PAGE_CSP/);
+});

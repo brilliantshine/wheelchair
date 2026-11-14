@@ -1828,6 +1828,8 @@ async function servePage(response, name, csp = false) {
 // The app's pages (docs/plans/app-shell, "Views") live in viewer/pages/ and their vendored
 // libraries in viewer/vendor/; both are public assets like list.js, matched by a narrow name.
 const APP_PAGES = new Set(['threads', 'thread', 'features', 'sessions', 'terminal']);
+// The thread page embeds the graph page for `diagram` cards, so app pages may frame this origin.
+const APP_PAGE_CSP = `${PAGE_CSP}; frame-src 'self'`;
 const APP_ASSET = /^(pages|vendor)\/[a-z0-9_-]+(\/[a-z0-9_.-]+)*\.(js|css)$/;
 
 async function handleAsset(response, url) {
@@ -1850,7 +1852,7 @@ async function handleAppPage(request, response, url, state) {
   if (!hasRememberCookie(request, state)) { await serveSignin(response); return; }
   const html = await fsp.readFile(path.join(__dirname, 'pages', `${name}.html`));
   sendFile(response, 200, html, 'text/html; charset=utf-8',
-    { 'content-security-policy': PAGE_CSP, 'set-cookie': rememberCookie(state) });
+    { 'content-security-policy': APP_PAGE_CSP, 'set-cookie': rememberCookie(state) });
 }
 
 async function serveSignin(response) {
