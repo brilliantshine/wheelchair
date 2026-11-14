@@ -11,7 +11,13 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 
 | File | Role |
 |---|---|
-| `server.js` | The whole server, with no runtime dependencies: routes, token and remember-cookie auth, graph validation, the layout pass, the agent-write contract, the lock and registry kept under the cache root. Its header comment is the route and error-code list |
+| `server.js` | The whole server, with no runtime dependencies: routes, token and remember-cookie auth, graph validation, the layout pass, the app-hub glue, the agent-write contract, the lock and registry kept under the cache root. Its header comment is the route and error-code list |
+| `app/state.js` | Hub-state paths, atomic JSON writes, and thread persistence. |
+| `app/machine-client.js` | The authenticated client for every machine-service route. |
+| `app/cards.js`, `card.js` | Hub card handling and the agent-side card validator/CLI. |
+| `app/sessions.js`, `wc.js` | Session policy, queues, lifecycle events, and the agent-side CLI. |
+| `app/chat.js`, `threads.js`, `views.js` | Transcript assembly, thread lifecycle, and view data. |
+| `app/routes.js`, `hub.js`, `API.md` | App HTTP dispatch, module composition, and the page-facing JSON contract. |
 | `index.html` | The graph page. Holds the second copy of the box and group size constants the server's layout reserves room for |
 | `list.html`, `list.js` | The list of open graphs and registered plans |
 | `doc.html`, `doc.js` | The plan document page, read from a plan's `docs/plans/<slug>/` |
@@ -37,6 +43,10 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 - **The pages carry no token.** The first visit's redirect sets the remember cookie, and
   `/wheelchair/assets/*` is served without one. Anything a page needs that is not public
   goes through an authenticated route.
+- **The app hub owns app state and queue rules.** Browser pages may not infer session
+  readiness, validate cards, or talk to a machine service directly. `server.js` applies
+  the same cookie/origin boundary to browser app writes as graph writes; machine callbacks
+  authenticate with their per-machine secret instead.
 
 ## Children without a router
 
