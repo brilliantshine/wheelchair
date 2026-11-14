@@ -174,3 +174,15 @@ test('uses each transcript line timestamp for chat items', () => {
     '2026-11-14T10:00:02.000Z',
   ]);
 });
+
+test('a line without a timestamp takes the previous one, and Claude echoes are not repeated', () => {
+  const transcript = lines([
+    { type: 'user', origin: { kind: 'human' }, timestamp: '2026-11-14T10:00:00.000Z', message: { role: 'user', content: 'Go' } },
+    { type: 'assistant', timestamp: '2026-11-14T10:00:05.000Z', message: { role: 'assistant', content: [{ type: 'tool_use', name: 'Bash' }] } },
+    { type: 'progress', message: { role: 'assistant', content: [{ type: 'tool_use' }] } },
+    { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'Done.' }] } },
+  ]);
+  const items = transcriptItems('claude', transcript, {});
+  assert.deepEqual(items.map((item) => item.text), ['Go', 'Bash', 'Done.']);
+  assert.equal(items.at(-1).at, '2026-11-14T10:00:05.000Z');
+});

@@ -47,8 +47,13 @@ function isCodexHuman(row, codexTurn, text) {
   return !text.startsWith('# AGENTS.md') && !text.startsWith('<environment_context>');
 }
 
+// A line without a timestamp takes the previous line's: stamping it "now" would sort it after
+// every card, and the page places cards by time.
+let lastAt = null;
 function itemAt(row) {
-  return row.timestamp || row.payload?.timestamp || row.message?.timestamp || new Date().toISOString();
+  const at = row.timestamp || row.payload?.timestamp || row.message?.timestamp;
+  if (at) lastAt = at;
+  return at || lastAt || new Date(0).toISOString();
 }
 
 function appendReply(turns, row, cli) {
@@ -70,7 +75,9 @@ function appendReply(turns, row, cli) {
         turns.at(-1).replies.push({ type: 'tool', text: item.name || 'tool call', at: itemAt(row) });
       }
     }
-  } else if (tool) {
+  } else if (tool && cli !== 'claude') {
+    // Claude's tool calls are listed from its assistant lines above; other lines that carry
+    // tool_use content (progress echoes) would show the same call twice.
     const name = payload.name || payload.function?.name || 'tool call';
     turns.at(-1).replies.push({ type: 'tool', text: name, at: itemAt(row) });
   }
@@ -95,6 +102,7 @@ function renderTurn(turn, thread) {
 }
 
 function transcriptItems(cli, raw, thread) {
+  lastAt = null;
   const turns = [];
   let codexTurn = false;
   for (const row of transcriptRows(raw)) {
