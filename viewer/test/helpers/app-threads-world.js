@@ -58,6 +58,16 @@ async function startWorld() {
     await fs.writeFile(file, TRANSCRIPT);
     await patch(ctx, id, (t) => { t.sessions[0].transcript_path = file; t.sessions[0].cli = 'claude'; });
   };
+  // A transcript whose lines carry the given ISO times: [[type, text, iso], ...] with type human|assistant.
+  ctx.timedTranscript = async (id, lines) => {
+    const file = path.join(ctx.state, `${id}.jsonl`);
+    const all = [human('[wc:role] lead instructions'), reply(say('ROLE-REPLY-HIDDEN'))];
+    for (const [type, text, timestamp] of lines) {
+      all.push({ ...(type === 'human' ? human(text) : reply(say(text))), timestamp });
+    }
+    await fs.writeFile(file, rows(all));
+    await patch(ctx, id, (t) => { t.sessions[0].transcript_path = file; t.sessions[0].cli = 'claude'; });
+  };
   return ctx;
 }
 

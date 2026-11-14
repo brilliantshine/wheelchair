@@ -258,6 +258,35 @@ for (const [label, size] of SIZES) {
       await expect(page.locator('#msg')).toBeDisabled();
     });
 
+    test('cards sit between chat items by time and carry a linkable id', async ({ page }) => {
+      const made = await ctx.make({ cli: 'claude' });
+      await ctx.timedTranscript(made.id, [
+        ['human', 'first message', '2030-01-01T00:00:00.000Z'],
+        ['assistant', 'later reply', '2030-01-01T02:00:00.000Z'],
+      ]);
+      const needs = await ctx.post(made.id, { kind: 'needs', title: 'Sign in', body: 'Codex is signed out.' });
+      await ctx.patch(made.id, (x) => {
+        x.cards.find((c) => c.id === needs.id).at = '2030-01-01T01:00:00.000Z';
+      });
+      await open(page, made.id);
+      const order = () => page.locator('#chat > *').evaluateAll((nodes) => nodes.map((n) => n.id || n.textContent));
+      await expect.poll(order).toEqual(['first message', `card-${needs.id}`, 'later reply']);
+      await expect(page.locator(`#card-${needs.id}`)).toHaveClass(/card-needs/);
+      await page.goto(`${ctx.server.url}/app/thread?id=${made.id}#card-${needs.id}`);
+      await expect(page.locator(`#card-${needs.id}`)).toBeVisible();
+    });
+
+    test('plan links use the slug the API returns, not a diagram card plan', async ({ page }) => {
+      const made = await ctx.make({ cli: 'claude' });
+      await ctx.post(made.id, { kind: 'diagram', plan: 'other-plan', graph: 'flow', title: 'Flow' });
+      await ctx.patch(made.id, (x) => { x.slug = 'dark'; x.worktree = '/tmp/wt-dark'; });
+      await open(page, made.id);
+      for (const f of ['MAP', 'IDEA', 'PLAN']) {
+        await expect(page.locator('#head a', { hasText: f })).toHaveAttribute(
+          'href', new RegExp(`plan=.*wt-dark%2Fdocs%2Fplans%2Fdark&file=${f}\\.md$`));
+      }
+    });
+
     test('plan document links go through the existing document page', async ({ page }) => {
       const made = await ctx.make({ cli: 'claude' });
       await ctx.patch(made.id, (x) => { x.slug = 'dark'; x.worktree = '/tmp/wt-dark'; });

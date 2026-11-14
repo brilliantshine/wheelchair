@@ -2,7 +2,7 @@
 #head .line { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
 #head h1 { overflow-wrap: anywhere; }
 #head .meta { font-size: 12px; color: var(--dim); margin-top: 4px; overflow-wrap: anywhere; }
-#stub-open, #dead, #docview, #pinned > *, #cards > * { margin-bottom: 12px; }
+#stub-open, #dead, #docview, #pinned > * { margin-bottom: 12px; }
 #docview pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 60vh; overflow: auto; font-size: 13px; }
 
 #chat { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
@@ -17,6 +17,7 @@
 .tool { align-self: flex-start; font-size: 12px; color: var(--dim); max-width: 100%; }
 .tool summary { cursor: pointer; overflow-wrap: anywhere; }
 
+#chat > .card { scroll-margin-top: 12px; }
 .card h3 { font-size: 15px; margin-bottom: 6px; }
 .card .fits { font-size: 12px; color: var(--dim); }
 .card .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }

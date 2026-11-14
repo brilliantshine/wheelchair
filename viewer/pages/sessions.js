@@ -2,8 +2,6 @@
 
 // Sessions view (Spec "Views"): every session on every machine, grouped by machine.
 (() => {
-  const lastSeen = new Map();
-
   function el(tag, className, text) {
     const node = document.createElement(tag);
     if (className) node.className = className;
@@ -55,23 +53,22 @@
     return row;
   }
 
-  function seenText(machine) {
-    const when = lastSeen.get(machine);
-    return when ? `last seen ${when.toLocaleTimeString()}` : 'last seen: not since this page opened';
+  function seenText(group) {
+    const when = group.last_seen ? new Date(group.last_seen) : null;
+    return when && !Number.isNaN(when.getTime()) ? `last seen ${when.toLocaleString()}` : 'last seen: never';
   }
 
   function render(groups) {
     const root = document.getElementById('machines');
     root.replaceChildren();
     for (const group of groups) {
-      if (group.reachable) lastSeen.set(group.machine, new Date());
       const section = el('section', `v-machine${group.reachable ? '' : ' unreachable'}`);
       section.dataset.machine = group.machine;
       const header = el('header');
       header.append(el('span', '', group.machine));
       header.append(el('span', `v-badge ${group.reachable ? 'ok' : 'bad'}`,
         group.reachable ? 'reachable' : 'unreachable'));
-      if (!group.reachable) header.append(el('span', 'v-badge seen', seenText(group.machine)));
+      if (!group.reachable) header.append(el('span', 'v-badge seen', seenText(group)));
       section.append(header);
       const list = el('ul', 'v-list');
       for (const session of group.sessions || []) list.append(sessionRow(group.machine, session));
