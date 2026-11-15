@@ -1,6 +1,6 @@
 ---
 slug: app-shell
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-14
 adopted-from: docs/proposals/app-shell/proposal.md
 ---
@@ -1288,3 +1288,4 @@ Spec item done as described, so every row is `partial` and nothing is marked `pr
 - 2026-11-14 — Choice: T10, test support: the fake machine reports this repo's HEAD as its version, and `Hub` defaults `root` to the repo root.
 - 2026-11-14 — Choice: T11, `viewer/app/routes.js`: the archived-graph route returns the graph JSON itself and uses the thread's `slug`, not the card's `plan`.
 - 2026-11-14 — Choice: T11, `viewer/app/chat.js`: tool input and result are each cut at 2,000 characters with a note; a call with no id gets its input only.
+- 2026-11-14: all tasks done and full validation green apart from the known failures; COMPLETION.md written; status is now `verifying`. Hand-off to Stage 4 (`/verify app-shell`).
