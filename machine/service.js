@@ -737,12 +737,51 @@ class MachineService {
       child.stdin.end(prompt);
     });
   }
+  // GET /v1/projects: reads only. `folder` lists git repos one level down; `check` vets one path.
+  async projects(params) {
+    const folder = params.get('folder'); const check = params.get('check');
+    if (folder === null && check === null) die('folder or check is required');
+    const expand = value => (value === '~' ? os.homedir() : value.startsWith('~/') ? path.join(os.homedir(), value.slice(2)) : value);
+    const nameOk = name => /^[A-Za-z0-9._-]+$/.test(name) && !name.includes('..');
+    const kind = async target => { try { return (await fsp.stat(target)).isDirectory() ? 'dir' : 'file'; } catch { return null; } };
+    const hasGit = target => fsp.lstat(path.join(target, '.git')).then(() => true, () => false);
+    const out = {};
+    if (folder !== null) {
+      const dir = expand(folder);
+      if (!path.isAbsolute(dir)) die('folder must be an absolute path');
+      const found = []; let error;
+      const type = await kind(dir);
+      if (!type) error = 'does not exist'; else if (type !== 'dir') error = 'is not a directory';
+      else {
+        let names = []; try { names = await fsp.readdir(dir); } catch (e) { error = e.code === 'EACCES' ? 'cannot be read' : 'does not exist'; }
+        for (const name of names.sort()) {
+          if (name.startsWith('.') || !nameOk(name)) continue;
+          const full = path.join(dir, name);
+          if (await kind(full) === 'dir' && await hasGit(full)) found.push({ name, path: full });
+        }
+      }
+      out.found = found; if (error) out.folder_error = error;
+    }
+    if (check !== null) {
+      const target = expand(check);
+      if (!path.isAbsolute(target)) out.checked = { path: target, ok: false, reason: 'must be an absolute path' };
+      else {
+        const type = await kind(target); let reason;
+        if (!type) reason = 'does not exist'; else if (type !== 'dir') reason = 'is not a directory';
+        else if (!nameOk(path.basename(target))) reason = "has characters a thread can't use in its name";
+        else if (!await hasGit(target)) reason = 'is not a git repository';
+        out.checked = reason ? { path: target, ok: false, reason } : { path: target, ok: true };
+      }
+    }
+    return out;
+  }
   async handle(request, response) {
     const url = new URL(request.url, 'http://machine.local');
     const pathBits = url.pathname.split('/').filter(Boolean);
     try {
       if (request.method === 'GET' && url.pathname === '/health') return send(response, 200, { ok: true });
       if (request.method === 'GET' && url.pathname === '/v1/status') { await this.authorize(request, 'hub'); return send(response, 200, this.status()); }
+      if (request.method === 'GET' && url.pathname === '/v1/projects') { await this.authorize(request, 'hub'); return send(response, 200, await this.projects(url.searchParams)); }
       if (request.method === 'POST' && url.pathname === '/v1/preflight') { await this.authorize(request, 'hub'); const result = command(path.join(ROOT, 'codex', 'preflight.sh'), []); return send(response, result.ok ? 200 : 409, result); }
       if (request.method === 'POST' && url.pathname === '/v1/preview') { await this.authorize(request, 'hub'); const result = await this.preview(await bodyOf(request)); return send(response, result.status, result.body); }
       if (request.method === 'POST' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); return send(response, 201, await this.start(await bodyOf(request))); }

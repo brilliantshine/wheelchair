@@ -702,3 +702,42 @@ test('/v1/preview times out with 504 without blocking the service, and reports c
     assert.equal(missing.status, 503); assert.deepEqual(missing.body, { error: 'claude is not installed' });
   } finally { await env.close(); }
 });
+test('/v1/projects lists git folders, expands ~, and checks paths', async () => {
+  const root = await temp(); const env = await service(root); const home = path.join(root, 'home'); const code = path.join(home, 'code');
+  try {
+    await fs.mkdir(path.join(code, 'alpha', '.git'), { recursive: true });
+    await write(path.join(code, 'filegit', '.git'), 'gitdir: x\n');
+    await fs.mkdir(path.join(code, 'plain'), { recursive: true });
+    await fs.mkdir(path.join(code, '.hidden', '.git'), { recursive: true });
+    await fs.mkdir(path.join(code, 'bad name', '.git'), { recursive: true });
+    await fs.mkdir(path.join(code, 'a..b', '.git'), { recursive: true });
+    await write(path.join(code, 'afile'), 'x');
+    await fs.mkdir(path.join(root, 'elsewhere', '.git'), { recursive: true });
+    await fs.symlink(path.join(root, 'elsewhere'), path.join(code, 'linked'));
+    await withEnv({ HOME: home }, async () => {
+      const get = query => api(env, 'GET', `/v1/projects?${query}`, undefined, hubHeader);
+      const listed = await get(`folder=${encodeURIComponent('~/code')}`);
+      assert.equal(listed.status, 200);
+      assert.deepEqual(listed.body, { found: ['alpha', 'filegit', 'linked'].map(name => ({ name, path: path.join(code, name) })) });
+      assert.equal((await get('folder=~')).body.found.length, 0);
+      assert.deepEqual((await get(`folder=${encodeURIComponent(path.join(code, 'nope'))}`)).body, { found: [], folder_error: 'does not exist' });
+      assert.deepEqual((await get(`folder=${encodeURIComponent(path.join(code, 'afile'))}`)).body, { found: [], folder_error: 'is not a directory' });
+      assert.equal((await get('folder=relative/dir')).status, 400);
+      assert.equal((await get('folder=~root')).status, 400);
+      assert.equal((await get('')).status, 400);
+      assert.equal((await api(env, 'GET', '/v1/projects?folder=~', undefined, {})).status, 401);
+      const check = async value => (await get(`check=${encodeURIComponent(value)}`)).body.checked;
+      assert.deepEqual(await check('~/code/alpha'), { path: path.join(code, 'alpha'), ok: true });
+      assert.deepEqual(await check(path.join(code, 'filegit')), { path: path.join(code, 'filegit'), ok: true });
+      assert.equal((await check(path.join(code, 'plain'))).reason, 'is not a git repository');
+      assert.equal((await check(path.join(code, 'nope'))).reason, 'does not exist');
+      assert.equal((await check(path.join(code, 'afile'))).reason, 'is not a directory');
+      assert.equal((await check('rel/path')).reason, 'must be an absolute path');
+      assert.deepEqual(await check('~root/x'), { path: '~root/x', ok: false, reason: 'must be an absolute path' });
+      assert.equal((await check(path.join(code, 'bad name'))).reason, "has characters a thread can't use in its name");
+      const both = (await get(`folder=${encodeURIComponent(code)}&check=~/code/alpha`)).body;
+      assert.ok(both.found && both.checked.ok);
+      assert.equal('checked' in listed.body, false);
+    });
+  } finally { await env.close(); }
+});
