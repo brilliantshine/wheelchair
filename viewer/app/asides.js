@@ -36,7 +36,7 @@ async function create(hub, thread, input) {
   const standard = await model(hub, provider, 'standard'), heavy = await model(hub, provider, 'heavy');
   if (!standard && !heavy) throw appError(409, `asides need a Standard or Heavy model for ${provider} in Settings`);
   const slot = input.action === 'draw' ? (heavy ? 'heavy' : 'standard') : (standard ? 'standard' : 'heavy');
-  const aside = { id: crypto.randomUUID(), number: (thread.asides || []).length + 1, anchor: { message_id: input.message_id, start: input.start, end: input.end, quote: input.quote }, action: input.action, created_at: now(), provider, account: lead.account, fork_parent: parent, cli_id: null, slot, status: 'open', pending: input.action === 'ask' ? [] : [{ kind: 'start', text: '' }], turn: null, history: [], failed: null, closed_at: null, outcome: null, sent_line: null };
+  const aside = { id: crypto.randomUUID(), number: (thread.asides || []).length + 1, anchor: { message_id: input.message_id, start: input.start, end: input.end, quote: input.quote }, action: input.action, created_at: now(), provider, account: lead.account, account_dir: lead.account_dir ?? null, fork_parent: parent, cli_id: null, slot, status: 'open', pending: input.action === 'ask' ? [] : [{ kind: 'start', text: '' }], turn: null, history: [], failed: null, closed_at: null, outcome: null, sent_line: null };
   (thread.asides ||= []).push(aside); await hub.save(thread); return aside;
 }
 async function change(hub, thread, aside, action, input) {
@@ -102,7 +102,7 @@ async function run(hub, thread, aside) {
       await hub.save(thread);
     }
     const style = settings.renderStyle((await settings.load(hub)).style);
-    const body = { turn_id: turn.id, provider: aside.provider, account_dir: aside.account === `default-${aside.provider}` ? null : `~/.wheelchair/accounts/${aside.account}`, cwd: thread.worktree, model: turn.model, ...(turn.effort ? { effort: turn.effort } : {}), mode: aside.cli_id ? 'resume' : 'fork', from: aside.cli_id || aside.fork_parent, new_id: turn.id, prompt: prompt(aside, turn.message), ...(style ? { style } : {}) };
+    const body = { turn_id: turn.id, provider: aside.provider, account_dir: Object.hasOwn(aside, 'account_dir') ? aside.account_dir : (aside.account === `default-${aside.provider}` ? null : `~/.wheelchair/accounts/${aside.account}`), cwd: thread.worktree, model: turn.model, ...(turn.effort ? { effort: turn.effort } : {}), mode: aside.cli_id ? 'resume' : 'fork', from: aside.cli_id || aside.fork_parent, new_id: turn.id, prompt: prompt(aside, turn.message), ...(style ? { style } : {}) };
     try { await hub.call(thread.machine, '/v1/aside-turns', 'POST', body); turn.state = 'running'; await hub.save(thread); } catch { /* retry with the same id */ }
     return;
   }

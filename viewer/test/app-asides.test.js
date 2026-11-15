@@ -123,12 +123,12 @@ test('routes anchor lead messages, expose summaries, hand off and archive', asyn
   const { Readable } = require('node:stream');
   const { handle } = require('../app/hub.js');
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'wc-asides-routes-'));
-  const registered = [], calls = [];
+  const registered = [], calls = [], turns = new Map();
   const hub = new Hub({ stateDir: dir, registerGraph: async (p) => registered.push(p) }); await hub.state.init();
-  const lead = { name: 'lead', role: 'lead', cli: 'claude', provider: 'claude', account: 'default-claude', live: true, cli_session_id: 'parent', queue: [], ready: false };
+  const lead = { name: 'lead', role: 'lead', cli: 'claude', provider: 'claude', account: 'default-claude', account_dir: '/x/y', live: true, cli_session_id: 'parent', queue: [], ready: false };
   await hub.save({ id: 'routes', project: '/tmp/repo', worktree: '/tmp/repo', machine: 'hub', sessions: [lead], asides: [], cards: [], pinned: {}, queues: {}, sent: [], archived: false });
   const transcript = [ { type: 'user', origin: { kind: 'human' }, message: { content: 'Hi' } }, { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'Hello words' }] } } ].map(JSON.stringify).join('\n');
-  hub.call = async (_, route, method, body) => { calls.push({ route, method, body }); if (route.endsWith('/transcript')) return { data: transcript }; if (route === '/v1/archive') return { kept: [] }; if (method === 'GET') { const error = new Error('missing'); error.status = 404; throw error; } return {}; };
+  hub.call = async (_, route, method, body) => { calls.push({ route, method, body }); if (route.endsWith('/transcript')) return { data: transcript }; if (route === '/v1/sessions') return [{ name: 'lead', running: true, cli_session_id: 'listed-cli', codex_thread_id: 'listed-codex' }]; if (route === '/v1/aside-turns' && method === 'POST') { turns.set(body.turn_id, { state: 'running' }); return {}; } if (method === 'GET' && turns.has(route.split('/')[3])) return turns.get(route.split('/')[3]); if (method === 'DELETE' && route === '/v1/aside-turns/turn1') { const error = new Error('missing'); error.status = 404; throw error; } if (route === '/v1/archive') return { kept: [] }; if (method === 'GET') { const error = new Error('missing'); error.status = 404; throw error; } return {}; };
   const original = settings.modelCommand; settings.modelCommand = async () => ({ stdout: 'model' });
   async function request(method, suffix, body) {
     const req = Readable.from(body === undefined ? [] : [Buffer.from(JSON.stringify(body))]); req.method = method;
@@ -136,6 +136,11 @@ test('routes anchor lead messages, expose summaries, hand off and archive', asyn
     try { await handle(hub, req, res, new URL(`http://localhost/wheelchair/api/threads/routes${suffix}`), false); return { status, body: output }; } catch (error) { return { status: error.status, error: error.message }; }
   }
   try {
+    await hub.event({ thread_id: 'routes', session: 'lead', type: 'turn-ended', codex_thread_id: 'event-codex' });
+    assert.equal((await hub.thread('routes')).sessions[0].codex_thread_id, 'event-codex');
+    await hub.pollDead();
+    let listed = (await hub.thread('routes')).sessions[0];
+    assert.equal(listed.cli_session_id, 'listed-cli'); assert.equal(listed.codex_thread_id, 'listed-codex');
     const chat = await request('GET', '/chat'); assert.equal(chat.body.items.at(-1).id, 'lead#0');
     assert.equal((await request('GET', '/chat')).body.items.at(-1).id, 'lead#0');
     const data = { message_id: 'lead#0', start: 0, end: 5, quote: 'Hello', action: 'ask' };
@@ -146,14 +151,43 @@ test('routes anchor lead messages, expose summaries, hand off and archive', asyn
     settings.modelCommand = async () => { const error = new Error('unused'); error.code = 3; throw error; };
     assert.equal((await request('POST', '/asides', data)).error, 'asides need a Standard or Heavy model for claude in Settings');
     settings.modelCommand = async () => ({ stdout: 'model' });
+    before = await hub.thread('routes'); before.sessions[0].provider = 'gpt'; await hub.save(before);
     const made = await request('POST', '/asides', data); assert.equal(made.status, 201); assert.equal(made.body.history, undefined);
-    const id = made.body.id; let t = await hub.thread('routes'); t.asides[0].history.push({ kind: 'start', text: '', reply: 'r', graph: '/tmp/a.json' }); await hub.save(t);
-    const full = await request('GET', `/asides/${id}`); assert.equal(full.body.history.length, 1); assert.deepEqual(registered, ['/tmp/a.json']);
+    const id = made.body.id; assert.equal(made.body.fork_parent, 'listed-codex'); let t = await hub.thread('routes'); t.asides[0].history.push({ kind: 'start', text: '', reply: 'r', graph: '/tmp/a.json' }); await hub.save(t);
+    t.asides[0].history.push({ kind: 'ask', text: 'Please explain', reply: 'first answer' }); await hub.save(t);
+    assert.equal((await request('POST', `/asides/${id}/think-harder`, {})).status, 200);
+    await asides.pump(hub, 'routes'); t = await hub.thread('routes');
+    const post = calls.find((c) => c.route === '/v1/aside-turns' && c.method === 'POST');
+    assert.equal(t.asides[0].slot, 'heavy'); assert.equal(post.body.account_dir, '/x/y'); assert.equal(post.body.from, 'listed-codex');
+    assert.match(post.body.prompt, /\[wc:aside ask slot=heavy\]\n\nPlease explain/);
+    turns.set(t.asides[0].turn.id, { state: 'ok', reply: 'better answer', conversation_id: 'fork' });
+    await asides.pump(hub, 'routes'); t = await hub.thread('routes'); assert.equal(t.asides[0].history.at(-1).reply, 'better answer');
+    const full = await request('GET', `/asides/${id}`); assert.equal(full.body.history.length, 3); assert.deepEqual(registered, ['/tmp/a.json']);
     assert.equal((await request('GET', '/chat')).body.asides[0].history, undefined);
     const closed = await request('POST', `/asides/${id}/close`, { outcome: 'changed', line: 'Use this' }); assert.equal(closed.status, 200);
     t = await hub.thread('routes'); assert.equal(t.asides[0].outcome, 'changed'); assert.equal(t.queues.lead[0].source, 'collin'); assert.match(t.queues.lead[0].text, /from aside 1 on: "Hello"/);
     t.asides[0].status = 'open'; t.asides[0].turn = { id: 'turn1', state: 'running', message: { kind: 'ask', text: 'test' } }; await hub.save(t);
     assert.equal((await request('POST', '/archive', {})).status, 200); assert.ok(calls.some((c) => c.route === '/v1/aside-turns/turn1' && c.method === 'DELETE'));
-    assert.equal((await request('GET', `/asides/${id}`)).status, 200); assert.equal((await request('POST', `/asides/${id}/messages`, { text: 'again' })).error, 'this thread is archived');
+    const archived = await request('GET', `/asides/${id}`); assert.equal(archived.status, 200); assert.equal(archived.body.status, 'closed'); assert.equal(archived.body.history.at(-1).reply, 'better answer');
+    for (const [suffix, body] of [['/asides', data], [`/asides/${id}/messages`, { text: 'again' }], [`/asides/${id}/close`, { outcome: 'done' }], [`/asides/${id}/retry`, {}], [`/asides/${id}/think-harder`, {}], [`/asides/${id}/summary`, {}]]) {
+      const response = await request('POST', suffix, body); assert.equal(response.status, 409); assert.equal(response.error, 'this thread is archived');
+    }
+  } finally { settings.modelCommand = original; }
+});
+
+test('Think harder repeats the last question and summary observes its readiness gates', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'wc-asides-controls-'));
+  const hub = new Hub({ stateDir: dir }); await hub.state.init();
+  const original = settings.modelCommand;
+  settings.modelCommand = async (_, args) => ({ stdout: args[0] === 'effort' ? 'high' : 'heavy-model' });
+  const a = { id: 'a', status: 'open', provider: 'gpt', slot: 'standard', cli_id: 'fork', turn: null, failed: null, pending: [], history: [{ kind: 'start', text: 'first', reply: 'one' }, { kind: 'ask', text: 'latest', reply: 'two' }, { kind: 'control', text: '', reply: 'draft' }] };
+  const t = { id: 'controls', machine: 'hub', asides: [a], sessions: [], cards: [], pinned: {}, queues: {}, sent: [] };
+  try {
+    await hub.save(t); await asides.change(hub, t, a, 'think-harder', {});
+    assert.equal(a.slot, 'heavy'); assert.deepEqual(a.pending, [{ kind: 'ask', text: 'latest' }]);
+    await assert.rejects(() => asides.change(hub, t, a, 'think-harder', {}), { status: 409 });
+    a.pending = []; await asides.change(hub, t, a, 'summary', {}); assert.deepEqual(a.pending, [{ kind: 'control', text: '' }]);
+    a.turn = { id: 'busy', state: 'running', message: a.pending.shift() };
+    await assert.rejects(() => asides.change(hub, t, a, 'summary', {}), { status: 409 });
   } finally { settings.modelCommand = original; }
 });

@@ -159,7 +159,10 @@ async function archive(hub, id) {
   const thread = await hub.thread(id);
   for (const aside of thread.asides || []) {
     if (aside.status === 'open') require('./asides.js').close(aside);
-    if (aside.turn) await hub.call(thread.machine, `/v1/aside-turns/${encodeURIComponent(aside.turn.id)}`, 'DELETE');
+    if (aside.turn) {
+      try { await hub.call(thread.machine, `/v1/aside-turns/${encodeURIComponent(aside.turn.id)}`, 'DELETE'); }
+      catch (error) { if (error.status !== 404) throw error; }
+    }
     aside.turn = null;
   }
   await hub.save(thread);
