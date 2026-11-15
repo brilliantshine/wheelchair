@@ -173,8 +173,10 @@ ul#list li.row.current .title { font-weight: 600; }
   #app-nav .new-thread .plus { display: inline; }
   #app-nav .needs-count, #app-nav .new-thread { margin-left: auto; }
   #app-nav .needs-count + .new-thread { margin-left: 0; }
-  #app-nav { gap: 6px; }
-  #app-nav .seg a { padding: 6px 8px; }
+  #app-nav { gap: 4px; }
+  #app-nav .seg a { padding: 6px 6px; }
+  #app-nav .seg .lbl { display: none; }
+  #app-nav .seg .gear { display: inline-flex; vertical-align: middle; }
   #app-nav .needs-count { padding: 5px 9px; font-size: 12px; }
   #app-nav .new-thread { padding: 8px 10px; }
 }
