@@ -774,6 +774,21 @@ test('login sessions start, expose state, accept code and stay out of session re
     assert.match(await log(env), /CODEX_HOME=.*accounts\/other/);
   } finally { delete process.env.FAKE_SESSIONS; delete process.env.FAKE_CLAUDE_AUTH; if (previous === undefined) delete process.env.HOME; else process.env.HOME = previous; await env.close(); }
 });
+test('Claude login menu is answered once across repeated login state reads', async () => {
+  const root = await temp(), previous = process.env.HOME; process.env.HOME = root;
+  const env = await service(root); try {
+    const started = await api(env, 'POST', '/v1/logins', { account: 'menu', cli: 'claude', dir: '~/.wheelchair/accounts/menu' }, hubHeader);
+    assert.equal(started.status, 201);
+    await write(env.fake.pane, await fs.readFile(path.join(__dirname, 'fixtures/login/claude-menu.txt'), 'utf8'));
+    const first = await api(env, 'GET', '/v1/logins/menu', undefined, hubHeader);
+    assert.equal(first.body.state, 'starting');
+    await api(env, 'GET', '/v1/logins/menu', undefined, hubHeader);
+    const commands = (await log(env)).split('\n').filter(line => line.includes('send-keys -t wc-login-menu Enter'));
+    assert.equal(commands.length, 1);
+    await write(env.fake.pane, await fs.readFile(path.join(__dirname, 'fixtures/login/claude.txt'), 'utf8'));
+    assert.equal((await api(env, 'GET', '/v1/logins/menu', undefined, hubHeader)).body.state, 'waiting');
+  } finally { if (previous === undefined) delete process.env.HOME; else process.env.HOME = previous; await env.close(); }
+});
 test('default Claude start preserves complete command and settings', async () => {
   const root = await temp(), env = await service(root); try {
     const session = await start(env, { cli_session_id: 'fixed', role_prompt: 'role' });
