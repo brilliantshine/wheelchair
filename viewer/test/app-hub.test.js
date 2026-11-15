@@ -886,6 +886,10 @@ test('models per role: Claude always gets a model and effort, and preferences re
     assert.equal(context.machine.sessions.get(lead.name).model, 'claude-opus-5-5');
     assert.equal(context.machine.sessions.get(lead.name).effort, 'high');
     assert.equal(context.machine.sessions.get(lead.name).permission_mode, 'bypass');
+    assert.equal(context.machine.sessions.get(lead.name).codex_mode, 'sandboxed');
+    await api(context, '/settings/preferences', { method: 'PUT', body: { codex_mode: 'unrestricted' } });
+    const codexLead = (await thread(context, { cli: 'codex' })).sessions[0];
+    assert.equal(context.machine.sessions.get(codexLead.name).codex_mode, 'unrestricted');
     const reviewer = await startAs(context, lead, 'reviewer', 'claude', 'haiku');
     assert.equal(context.machine.sessions.get(reviewer.body.session.name).model, pinned(context, 'claude', 'critical'));
   });

@@ -20,7 +20,7 @@ const DEFAULT_STYLE = Object.freeze({
 });
 
 function defaults() {
-  return { permission_mode: 'auto', other_agents: { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard' }, templates: [], style: structuredClone(DEFAULT_STYLE), style_version: 0 };
+  return { permission_mode: 'auto', codex_mode: 'sandboxed', other_agents: { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard' }, templates: [], style: structuredClone(DEFAULT_STYLE), style_version: 0 };
 }
 
 function fail(message) { throw appError(400, message); }
@@ -152,6 +152,7 @@ function normalize(saved) {
   const base = defaults();
   return {
     permission_mode: saved.permission_mode === 'bypass' ? 'bypass' : 'auto',
+    codex_mode: saved.codex_mode === 'unrestricted' ? 'unrestricted' : 'sandboxed',
     other_agents: { ...base.other_agents, ...(saved.other_agents || {}) },
     templates: Array.isArray(saved.templates) ? saved.templates : [],
     style: saved.style ? validateStyle(saved.style) : base.style,
@@ -202,7 +203,7 @@ async function describe(hub) {
   for (const thread of threads) for (const session of thread.sessions) if (session.live && session.template_id) templateCounts.set(session.template_id, (templateCounts.get(session.template_id) || 0) + 1);
   const projectSet = new Set(projects);
   const templates = settings.templates.map((template) => ({ ...template, live_sessions: templateCounts.get(template.id) || 0, scope_missing: template.scope !== 'all' && !projectSet.has(template.scope) }));
-  return { models: modelValues, model_options: options(modelValues), heads_up: heads, permission_mode: settings.permission_mode, other_agents: settings.other_agents, templates, in_use: templates.filter((template) => template.in_use).map((template) => template.id), style: settings.style, style_version: settings.style_version, projects };
+  return { models: modelValues, model_options: options(modelValues), heads_up: heads, permission_mode: settings.permission_mode, codex_mode: settings.codex_mode, other_agents: settings.other_agents, templates, in_use: templates.filter((template) => template.in_use).map((template) => template.id), style: settings.style, style_version: settings.style_version, projects };
 }
 
 async function preview(hub, style) {

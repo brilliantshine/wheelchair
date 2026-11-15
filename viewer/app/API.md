@@ -25,10 +25,10 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 | `POST /machine/cards` | service envelope `{thread_id,session,...card}` | accepted card, `202` |
 | `POST /machine/events` | `{thread_id,session,type,...}` | `{ok:true}`, `202` |
 | `POST /machine/session` | `{calling_session,action,...}` | the hub-authorized session result |
-| `GET /settings` | — | `{models,model_options,heads_up,permission_mode,other_agents,templates,in_use,style,style_version,projects}`; templates include `in_use`, `live_sessions`, and `scope_missing` when a saved project is no longer listed |
+| `GET /settings` | — | `{models,model_options,heads_up,permission_mode,codex_mode,other_agents,templates,in_use,style,style_version,projects}`; templates include `in_use`, `live_sessions`, and `scope_missing` when a saved project is no longer listed |
 | `PUT /settings/models` | `{provider:"claude"|"gpt",slot,model|null,effort?}` | `{models}`; `slot` is `light`, `standard`, `heavy`, `critical`, or `lead` |
 | `POST /settings/models/heads-up` | `{action:"switch",tier,model}`, `{action:"skip",model}`, or `{action:"reset"}` | `{models,heads_up}` |
-| `PUT /settings/preferences` | `{permission_mode?:"auto"|"bypass",other_agents?:{reviewer?,verifier?,mapper?}}` | saved preference values |
+| `PUT /settings/preferences` | `{permission_mode?:"auto"|"bypass",codex_mode?:"sandboxed"|"unrestricted",other_agents?:{reviewer?,verifier?,mapper?}}` | saved preference values |
 | `POST /settings/templates` | `{name,role,scope,switches?,text}` | new template, including generated `id` and `in_use:false` |
 | `PUT /settings/templates/:id` | template fields and optional `in_use` | saved template; enabling one clears the other template for its role and scope |
 | `DELETE /settings/templates/:id` | — | `{ok:true}` |

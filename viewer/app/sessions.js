@@ -128,6 +128,7 @@ async function startSession(hub, thread, input) {
       model: resolved.model,
       ...(resolved.effort ? { effort: resolved.effort } : {}),
       permission_mode: settings.permission_mode,
+      codex_mode: settings.codex_mode,
       role_layers: layers.text,
       verify_ref: input.verify_ref,
       base: input.base,
