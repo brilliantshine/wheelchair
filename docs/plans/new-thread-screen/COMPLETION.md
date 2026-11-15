@@ -2,7 +2,16 @@
 slug: new-thread-screen
 date: 2026-11-15
 implemented-by: "claude standard (claude-sonnet-5-5) for T1, T2, T3; sub-lead claude-opus-5-5"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: codex gpt-6.1-sol (FAIL, REMEDIATION-1.md)
+    checks: claude standard (claude-sonnet-5-5)
+  - round: 2
+    lane: codex gpt-6.1-sol (FAIL, REMEDIATION-2.md)
+    checks: claude standard (claude-sonnet-5-5), claude light (claude-haiku-5-5)
+  - round: 3
+    lane: codex gpt-6.1-sol (PASS on 6b81bf00ec28a0b37f253e2a265ba3b3d1150e3f)
+    checks: claude standard (claude-sonnet-5-5), claude light (claude-haiku-5-5)
 ---
 
 # Completion Report — A New thread screen, with projects found from a folder
