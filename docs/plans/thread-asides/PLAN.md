@@ -588,3 +588,5 @@ Round 9 is clean: no blocking or major finding upheld.
 |---|-----------|--------------------|------|-----------|------------|--------|
 
 ## Log
+
+- 2026-11-15 Ready check: hub and machine service answer (`wc.js session list`); Claude logged in (claude.ai); Codex logged in (ChatGPT); `codex/preflight.sh` passes. Every reviewer ran on GPT: the hub could not start a Claude reviewer in any round.
