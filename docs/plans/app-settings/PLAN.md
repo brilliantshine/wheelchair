@@ -210,7 +210,7 @@ The hub sends `role_prompt` on `POST /v1/sessions` (the service already accepts 
    for your role; nothing below overrides it.`
 2. If a template applies: a heading line naming it as Collin's behavior template for this
    role, then its sentences and text.
-3. For a lead only, if a style is saved: a heading line naming it as Collin's writing style
+3. For a lead only, always (the defaults below until Collin saves one): a heading line naming it as Collin's writing style
    for everything he reads (thread replies and the text of cards), then its rendering
    (below).
 Total `role_prompt` length is capped at 12000 characters; the API refuses a template or
@@ -229,9 +229,10 @@ saving.
   "load-bearing", and the two sentences of free text in `SettingsWriting.dc.html`.
 - Rendering: one fixed sentence per choice, the never-say list as one sentence listing the
   phrases, then `text`. The same rendering is used at start, on delivery and in the preview.
-- Delivery to running leads: on a style save, the hub records the new `style_version`.
-  When `deliver` (`viewer/app/sessions.js:208-233`) submits a message to a live `lead`
-  session whose recorded `style_version` is lower, it appends to that message's text a
+- Delivery to running leads: `style_version` starts at 0 (the defaults) and each save
+  increments it. When `deliver` (`viewer/app/sessions.js:208-233`) submits a message to a
+  live `lead` session whose `style_version` is missing or lower than the current one (a
+  missing value, such as on a lead started before this feature, counts as owing), it appends to that message's text a
   trailer: a blank line, `[wc:style]`, and the rendering, saying it replaces any earlier
   style; then sets the session's `style_version`. A lead started after the save records the
   current version at start and owes nothing. The `sent` record keeps the text as submitted.
@@ -251,10 +252,13 @@ saving.
   text) and "With your style" (empty until previewed) and a **Preview** button.
 - Preview sends the unsaved style to `POST /wheelchair/api/settings/style/preview`; the hub
   calls the hub machine's new `POST /v1/preview` `{prompt, model}`, which runs
-  `claude -p --model <model> --permission-mode default` with `WHEELCHAIR_LANE=1`, the prompt
-  on stdin, no tools needed, a 60 s timeout, and returns `{text}`. Model = the `claude.light`
+  `claude -p --model <model> --permission-mode dontAsk` with `WHEELCHAIR_LANE=1`, the prompt
+  on stdin (no tool is needed; `dontAsk` denies any that would prompt), a 60 s timeout, and returns `{text}`. Model = the `claude.light`
   slot, or `claude-haiku-5-5` if it is `none`.
 - The prompt asks for the sample rewritten under the rendered style, output only.
+- The hub's machine client times requests out after 5 s (`viewer/app/machine-client.js:28`,
+  `:42`). The preview call passes a per-request timeout of 75 s (the client gains an optional
+  timeout argument; every other call keeps 5 s).
 - While running the button shows a spinner and is disabled. Errors (Claude not installed or
   not logged in, timeout, non-zero exit) show one plain line under the panel; nothing is
   saved by previewing.
@@ -353,6 +357,8 @@ table built here.
 
 **Lanes:** Codex / Heavy (gpt-6.1-sol), mechanics; Claude / CLI default, intent; cross-family: yes.
 
+**Outcome:** not clean (1 blocking, 4 major upheld, all fixed in the Spec). Round 2 to follow.
+
 **Changed since Round N-1:** n/a (first round — whole Spec in scope)
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
@@ -361,6 +367,9 @@ table built here.
 | Claude intent | major | Claude's model list is fixed and the heads-up is GPT-only, so a new Claude release needs a code change | upheld | Claude picker gains "latest of family" aliases (`haiku`, `sonnet`, `opus`, `fable`, which the CLI resolves to the newest); both pickers gain "Other…" free entry. IDEA's heads-up line narrowed to GPT: idea-change, asked on a card |
 | Claude intent | minor | IDEA's "A Critical part of a build actually runs on a Critical model" implies critical marking, which decision 9 moved out | upheld | IDEA line reworded with the same card |
 | Claude intent | minor | Writing style design lists "Phone notifications" under Covers; the Spec is silent | upheld | Spec: the Covers line lists thread messages and cards only; notifications are part of the deferred Notifications section |
+| Codex mechanics | blocking | Preview uses `--permission-mode default`, which the installed CLI rejects | upheld | Checked `claude --help`: choices are acceptEdits, auto, bypassPermissions, manual, dontAsk, plan. Spec uses `dontAsk` |
+| Codex mechanics | major | Preview allows 60 s but the hub's machine client aborts after 5 s | upheld | Confirmed `viewer/app/machine-client.js:28,42`; Spec adds a per-request timeout of 75 s for the preview only |
+| Codex mechanics | major | Live leads have no `style_version`, and `undefined < n` is false, so they never get the style | upheld | Spec: missing counts as owing; version starts at 0 = defaults; new leads always get the style (defaults until saved) |
 
 ## Prior Work
 
