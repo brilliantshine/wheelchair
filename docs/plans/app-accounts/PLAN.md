@@ -283,8 +283,9 @@ No reading → room.
 - `pollDead` (`sessions.js:370-395`) skips sessions with `status: 'waiting'`: they have no
   machine session yet. `stopSession` (`sessions.js:358-366`) on a waiting session skips the
   machine call and marks it `stopped`.
-- **Lead waiting line** on the thread page, in the status area beside the Ready block
-  (`viewer/pages/thread.js:456-466`), drawn from the live lead's session record in the
+- **Lead waiting line** on the thread page: one line at the top of the thread, above the
+  pinned cards (the Ready block at `viewer/pages/thread.js:456-466` lives inside the approval
+  card, so it is not a home for this), drawn from the live lead's session record in the
   thread state: `status: 'waiting'` → "Waiting for <provider> to refill, about
   <waiting_until>"; a running lead with a future `limited_until` → "Waiting for <account
   name> to refill, about <limited_until>" (it is tied to its account). Hidden otherwise.
