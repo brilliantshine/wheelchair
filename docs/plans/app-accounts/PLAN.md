@@ -176,7 +176,11 @@ Codex.
   hook list gains `StopFailure` (which Claude fires instead of `Stop` when a turn fails);
   `hookEvent` maps a payload with `error === 'rate_limit'` (also accept `error_type`, for
   older builds) to `limit-hit`, with `limited_until` by the exhausted-window rule. Any other
-  `StopFailure` maps to `turn-ended`.
+  `StopFailure` maps to a new `turn-failed` event: the hub sets `turn_ended = true` (so the
+  queue can deliver) but does **not** run the report path (`sessions.js:165-177`), so a
+  reviewer's or verifier's partial text is never delivered as its result and `finished` stays
+  unset. It queues `[wc:from app] your session <name>'s turn failed: <error>` to the session's
+  starter, which decides whether to restart it.
 - **Exhausted-window rule** (both CLIs), from the session's latest reading: the
   **earliest** `resets_at` among windows with `used >= 95`; none that high → the earliest
   `resets_at` present; none at all → now + 1 h. Readings lag (Claude's at most once a
@@ -256,8 +260,12 @@ No reading → room.
   the record instead of failing; `wc.js` prints "waiting for room until <time>". A repeat
   start with the same `attempt_id` returns the same waiting record.
 - The hub re-runs `choose` for every waiting session every 60 s (alongside `pollDead`) and on
-  every new reading, oldest first, and on success runs the normal start from
-  `pending_start`, then deletes `pending_start`. Threads are scanned at hub startup.
+  every new reading, oldest first. On success it **promotes the same record**: `startSession`
+  gains a path that takes the existing waiting session and keeps its `name`, `token`,
+  `attempt_id`, `started_by` and `queue` (messages queued while it waited stay queued), sets
+  `status: 'starting'`, `cli` and `account`, makes the machine call from `pending_start`, then
+  deletes `pending_start`, `waiting_until` and `waiting_reason`. No second record is created.
+  Threads are scanned at hub startup.
 - `pollDead` (`sessions.js:370-395`) skips sessions with `status: 'waiting'`: they have no
   machine session yet. `stopSession` (`sessions.js:358-366`) on a waiting session skips the
   machine call and marks it `stopped`.
@@ -282,6 +290,8 @@ of the provider's combined weekly capacity, over unpaused accounts:
   `R`. `P = 0` or no readings → never amber.
 - Margin test: Claude is below the margin when `L − P × hours(now → R) < margin / 100`.
 - Check: one weight-1 account at 50% after 84 h → `L = 0.5`, `P = 0.5/84`, runs out in 84 h.
+- Every account paused (`C = 0`): the bar shows "All accounts paused", no amber, no notify;
+  the balancer finds no room there.
 
 ### 6. Settings panels
 `viewer/pages/settings.js`: add `accounts` and `usage` to `SECTIONS` (`:8`), first and
@@ -439,6 +449,22 @@ Added to `viewer/app/routes.js` and documented in `viewer/app/API.md`:
 | intent (Claude) | minor | Both-built verifier pair under margin gives two GPT verifiers | upheld | §9: no second verifier when the first's provider wasn't honoured |
 | intent (Claude) | minor | Validation still names `--not-same-as` | upheld | Validation updated |
 | intent (Claude) | minor | D16 sits above D15 | upheld | Row moved below D15, content unchanged |
+| mechanics (Codex) | blocking | Promoting a waiting session through the normal start creates a second record and loses its queue | upheld | §5: promote the same record, keep name, token, attempt, queue |
+| mechanics (Codex) | major | Non-limit `StopFailure` as `turn-ended` delivers partial text as a reviewer's or verifier's result | upheld | §4: `turn-failed` skips the report path, tells the starter |
+| mechanics (Codex) | minor | Forecast is 0/0 when every account is paused | upheld | §5: "All accounts paused", no amber |
+
+### Round 3 — 2026-11-15
+
+**Lanes:** Claude (intent lens); Codex (mechanics lens); cross-family: yes.
+
+**Changed since Round 2:**
+- §4: exhausted-window rule now the earliest reset at ≥95%, accepting one failed retry; non-limit `StopFailure` → `turn-failed`.
+- §5: `--provider` strict for workers (waits, including signed out) and a preference for reviewers and verifiers; waiting sessions promoted in place; all-paused forecast.
+- §9: intent reviewer preference, mechanics reviewer `--not-provider` the intent reviewer's provider; no second verifier when the first's provider wasn't honoured.
+- Validation updated for the flags and the window rule.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
