@@ -42,3 +42,11 @@ test('a lead whose machine refuses the start is recorded as failed, not left sta
   assert.equal(made.sessions[0].live, false);
   assert.ok(made.sessions[0].error);
 });
+
+test('wc.js passes worktree-remove through with the worker session, and requires a commit message', () => {
+  const { gitRequest } = require('../app/wc.js');
+  assert.deepEqual(gitRequest('worktree-remove', ['wc-t-worker']).body.args, ['wc-t-worker']);
+  assert.equal(gitRequest('commit', ['--paths', 'a.txt', '-m', 'msg']).body.message, 'msg');
+  assert.throws(() => gitRequest('commit', ['--paths', 'a.txt']), /message/);
+  assert.throws(() => gitRequest('rebase', []), /unsupported/);
+});

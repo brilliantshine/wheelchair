@@ -28,6 +28,7 @@ case "$(basename \"$0\"):$1" in
   systemd-run:*) exit 1 ;;
   git:rev-parse) echo deadbeef ;;
   claude:--version) echo claude-test ;;
+  claude:auth) printf '%s\\n' "\${FAKE_CLAUDE_AUTH:-{\\"loggedIn\\":true}}" ;;
   codex:--version) echo codex-test ;;
 esac
 `;
@@ -374,4 +375,13 @@ test('a Claude session gets the model the hub chose, and none when it chose none
     await start(env, { model: 'haiku' }); assert.match(await log(env), /'--model' 'haiku'/);
   } finally { await env.close(); }
   const plain = await service(await temp()); try { await start(plain); assert.doesNotMatch(await log(plain), /--model/); } finally { await plain.close(); }
+});
+test('Claude login comes from claude auth status', async () => {
+  const env = await service(await temp()); const prior = process.env.FAKE_CLAUDE_AUTH; try {
+    assert.equal(env.instance.cliStatus('claude').logged_in, true);
+    process.env.FAKE_CLAUDE_AUTH = '{"loggedIn":false}';
+    assert.equal(env.instance.cliStatus('claude').logged_in, false);
+    process.env.FAKE_CLAUDE_AUTH = 'not json';
+    assert.equal(env.instance.cliStatus('claude').logged_in, false);
+  } finally { if (prior === undefined) delete process.env.FAKE_CLAUDE_AUTH; else process.env.FAKE_CLAUDE_AUTH = prior; await env.close(); }
 });

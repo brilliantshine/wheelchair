@@ -571,7 +571,13 @@ class MachineService {
     const version = command('sh', ['-c', `command -v ${cli}`]);
     if (!version.ok) return { installed: false, logged_in: false };
     const check = command(cli, ['--version']);
-    return { installed: true, logged_in: check.ok, version: check.stdout.trim() || check.stderr.trim() };
+    // Claude reports its login itself; Codex's login is the preflight's job (/v1/preflight).
+    let loggedIn = check.ok;
+    if (cli === 'claude') {
+      const auth = command('claude', ['auth', 'status'], { timeout: 15_000 });
+      try { loggedIn = auth.ok && JSON.parse(auth.stdout).loggedIn === true; } catch { loggedIn = false; }
+    }
+    return { installed: true, logged_in: loggedIn, version: check.stdout.trim() || check.stderr.trim() };
   }
   async handle(request, response) {
     const url = new URL(request.url, 'http://machine.local');

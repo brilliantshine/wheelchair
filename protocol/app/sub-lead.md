@@ -106,7 +106,8 @@ A worker's `result` card is a claim, not a fact. When one arrives:
    log "worker didn't report its choices; I listed N" (including when N is 0).
 3. If it passes, merge the worker's branch into the feature branch with
    `wc.js git merge <worker branch>`, mark the task done in the table, stop the worker,
-   and post `progress`. The worker's worktree is removed once merged.
+   and post `progress`. Then remove its worktree with `wc.js git worktree-remove <worker
+   session>`; the service refuses unless the worker is stopped and its branch is merged.
 4. If it does not pass, rewrite the brief and start a fresh attempt. Never resume a worker
    by feeding it its own dead ends.
 

@@ -63,7 +63,8 @@ a commit without a message is refused.
   model; GPT Sol); `top` is the only tier you pass, and the hub resolves it per CLI. When both CLIs are installed on the machine, start one of the two
   reviewers and the verifier on the other family from yours; with one family installed,
   use it for both. A CLI is installed when `command -v claude` or `command -v codex`
-  finds it; the hub refuses a start for a CLI that is missing or logged out.
+  finds it. The Ready check covers both families' logins; a start for a missing CLI fails at
+  the machine with the reason.
 - If a start fails with "hub unavailable", wait a minute and run the same command again.
   Never work around it.
 

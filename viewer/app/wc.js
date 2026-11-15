@@ -46,7 +46,7 @@ function flags(args) {
 }
 
 function gitRequest(operation, tail) {
-  const operations = ['fetch', 'commit', 'merge', 'cherry-pick', 'revert', 'push', 'pr'];
+  const operations = ['fetch', 'commit', 'merge', 'cherry-pick', 'revert', 'push', 'pr', 'worktree-remove'];
   if (!operations.includes(operation)) throw new Error('unsupported git operation');
   const parsed = flags(tail);
   const paths = parsed.paths ? String(parsed.paths).split(',').filter(Boolean) : [];
