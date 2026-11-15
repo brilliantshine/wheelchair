@@ -1,6 +1,6 @@
 ---
 slug: new-thread-screen
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-15
 ---
 
@@ -42,9 +42,32 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 14 | Supersedes 3: no `GET /machines`; `GET /new-thread` carries the machine list, with `hub` first and the hub's own hostname entry folded into it | `machines.json` names the hub by hostname (`install.sh:161`, `state.js:152`) | review-round-1 |
 | 15 | Supersedes 4 and 13: each saved directory belongs to the machine it was saved on (`{name, path, machine}`) and only shows for that machine. Names are unique per machine. Dedup against found folders is by path only; a found folder is never hidden by name | A directory valid on one machine is not valid on another; hiding by name could make a found repo unpickable | review-round-1 |
 | 16 | A found or checked project's folder name must match `^[A-Za-z0-9._-]+$` and not contain `..`; other names are left out of the list and refused by the check with "has characters a thread can't use in its name" | The machine service refuses such names at thread start (`safeName`, `machine/service.js:27-29,232`) | review-round-1 |
+| 18 | Supersedes 5 (its "Used before" source): "Used before" lists projects of earlier threads on the selected machine, not `projects.json`. A thread's machine matches when it equals the requested name or both resolve to the same entry through `state.resolveMachine` (so a thread stored under the hub's hostname counts as `hub`) | `projects.json` has no machine; every entry was written by `createThread`, so nothing is lost | review-round-3 |
 | 17 | Supersedes 11 in part: only exactly `~` or a path starting `~/` expands; `~user` is refused as not absolute, by the hub and the machine alike | Hub and machine must accept the same values | review-round-1 |
 
 ## Spec
+
+```mermaid
+flowchart TD
+  A["Press + New thread above the thread list"] --> B["New thread screen opens"]
+  B --> C["Pick a machine"]
+  C --> D["Ask that machine for the git repos in the default folder"]
+  D --> E["Project dropdown: saved for this machine, found in the folder, used before"]
+  E --> F["Press Start"]
+  F --> G{"Path is a git repo on that machine?"}
+  G -- no --> H["Refused on the screen; nothing saved"]
+  G -- yes --> I["Thread saved, lead starts, thread page opens"]
+  B --> J["Save a directory under a name"]
+  J --> K{"Path checks out on the chosen machine?"}
+  K -- no --> L["Refusal beside the row"]
+  K -- yes --> E
+```
+
+Pressing "+ New thread" opens the screen. Picking a machine asks that machine for the git
+repositories in the default folder; the dropdown lists saved entries for that machine, the
+found repositories, and projects used before on it. Start checks the path on the machine
+first: a bad path is refused with nothing saved, a good one creates the thread as today.
+Saving a directory is checked the same way and then appears in the dropdown.
 
 ### What changes, from Collin's side
 
@@ -99,7 +122,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
     updating"); the route still returns 200.
   - `saved`: the `saved_dirs` entries whose `machine` equals the requested one.
     `previous`: the distinct `project` paths of threads (archived included) whose `machine`
-    equals the requested one, newest first. `projects.json` has no machine field, so it is not
+    equals the requested one, or resolves through `state.resolveMachine` to the same entry
+    (a thread stored under the hub's hostname counts as `hub`), newest first. `projects.json` has no machine field, so it is not
     used here.
 - `POST /settings/saved-dirs` `{name, path, machine}`: validates the fields, checks `path`
   on `machine` through `/v1/projects?check=`, stores the expanded path. Refusals: `400`
@@ -259,6 +283,9 @@ refusal. The `POST /threads` body is unchanged.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| Codex mechanics | — | No findings | — | — |
+| Claude intent | minor | Decision 5 not superseded by the new "Used before" source | upheld | Decision 18 |
+| Claude intent | minor | A thread stored under the hub's hostname shows under no machine in "Used before" | upheld — `state.js:155-161` | Decision 18; Spec `previous` |
 
 ## Prior Work
 
