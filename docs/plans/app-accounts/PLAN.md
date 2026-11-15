@@ -41,11 +41,18 @@ get buried as this file grows. **Map:** `MAP.md`.
 - **Context:** Nothing runs `claude auth login` / `codex login`; the mock's Sign in button
   has no code path.
 
-### Q6: How usage is read per CLI (pending research), and what to show when it can't be
+### Q6: How usage is read per CLI, and what to show when it can't be
+- **Context:** see Log, research 2026-11-15. Claude: official `rate_limits` in statusline JSON
+  (live session only); undocumented OAuth usage endpoint from the login folder. Codex:
+  `/status` in a session; undocumented `wham/usage` endpoint from `auth.json`.
 
 ### Q7: Weighting the combined bar across plans of different size
 
 ### Q8: Terms of service for several personal subscriptions in one automated setup
+- **Context:** neither Anthropic nor OpenAI bans one person holding several paid accounts.
+  Anthropic's consumer terms bar "automated or non-human means" except where permitted,
+  and limits "assume ordinary, individual usage"; third-party OAuth clients were banned
+  Feb 2026. Running the real CLI binary is not addressed. Risk is Collin's to accept.
 
 ## Watch List
 
@@ -84,3 +91,16 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 |---|-----------|--------------------|------|-----------|------------|--------|
 
 ## Log
+
+- 2026-11-15, research (web, not code). Claude: statusline JSON `rate_limits.five_hour|seven_day`
+  {used_percentage, resets_at}, Pro/Max only, after first response
+  (code.claude.com/docs/en/statusline); `GET api.anthropic.com/api/oauth/usage` with OAuth
+  token + `anthropic-beta: oauth-2025-04-20`, undocumented; limit hit fires `StopFailure`
+  hook `error_type: rate_limit` and a synthetic transcript turn `"error":"rate_limit"`;
+  weekly anchoring unconfirmed. Codex: `/status`; undocumented
+  `GET chatgpt.com/backend-api/wham/usage` from `auth.json`; weekly period starts at first
+  request after reset; set `cli_auth_credentials_store = "file"` per `CODEX_HOME`;
+  headless login `codex login --device-auth`. Gemini CLI: subscriber access ended
+  2026-06-18 (Antigravity CLI replaces it; `GEMINI_CLI_HOME` for the old CLI). OpenRouter:
+  `GET openrouter.ai/api/v1/key` gives limit, remaining, usage; Claude Code works against it
+  via `ANTHROPIC_BASE_URL=https://openrouter.ai/api`.
