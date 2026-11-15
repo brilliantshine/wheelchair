@@ -35,6 +35,7 @@ None.
 | D9 | Refines D3: the machine service, not `card.js`, copies a shown image into the uploads folder, when the card reaches `/v1/agent/cards` and before it is spooled. | The service already knows the thread and owns `<state>`; `card.js` stays a validator and poster | defaulted |
 | D10 | Supersedes D7: the card's `format` is `graph` (default), `form` or `html`. Form files are read by a new route that returns them unchanged and are never registered as graphs. | Review round 1: the graph route validates and canonicalizes boxes-and-arrows only | review-round-1 |
 | D11 | The machine serializes archive, uploads and image copies per thread, and refuses uploads for a thread with no lead session record. | Review round 1: a write in flight could recreate files after archive | review-round-1 |
+| D12 | The hand-written HTML fallback is static: no scripts. Iframe `sandbox` with no tokens, CSP with no script source. Supersedes the proposal's `allow-scripts` (D19's sandbox wording) and D2's iframe and CSP. | Scripts can navigate their own frame, which CSP cannot stop, so "no network" would not hold | user |
 
 ## Spec
 
@@ -84,7 +85,8 @@ top-level `form`, one of the four below; anything else is a drawing error (below
 - The four JSON forms get no "Open full screen" link (they already fit the card).
 
 **HTML fallback** (`format: "html"`). The file is `docs/plans/<plan>/graphs/<graph>.html`,
-self-contained: inline `<style>` and `<script>` only, no external loads.
+self-contained and static: HTML, inline `<style>` and inline SVG. No scripts (D12): any
+`<script>` in the file never runs.
 
 - New hub route `GET /wheelchair/diagram-html?path=<abs path>` serves a live file and
   `GET /wheelchair/api/threads/<id>/diagram-html?file=<graph>.html` an archived one (read with
@@ -94,10 +96,12 @@ self-contained: inline `<style>` and `<script>` only, no external loads.
   `viewer/server.js:1907`), authenticated by the remember cookie like other pages.
 - Both responses send `content-type: text/html; charset=utf-8`,
   `x-content-type-options: nosniff` and
-  `content-security-policy: default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; sandbox allow-scripts`.
-  No `connect-src`, so fetch, XHR, WebSocket and images from the network are all blocked.
-- The thread page embeds it as `<iframe sandbox="allow-scripts" src=...>` (no
-  `allow-same-origin`), same 340 px height as a graph, with an "Open full screen" link to
+  `content-security-policy: default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; sandbox`.
+  No script source at all, and `sandbox` with no tokens also blocks scripts, forms,
+  popups and automatic redirects (meta refresh), so the picture loads nothing after itself.
+  The only way out is Collin tapping a link in it, which is accepted.
+- The thread page embeds it as `<iframe sandbox src=...>` (empty sandbox: no scripts, no
+  same origin), same 340 px height as a graph, with an "Open full screen" link to
   the same URL. `APP_PAGE_CSP`'s `frame-src 'self'` already allows it.
 - If the cookie is not sent on the sandboxed frame's request in either browser the suite
   runs, the browser test fails; the fix then is a signed per-file URL, not dropping the sandbox.
@@ -225,9 +229,11 @@ New tests, at least:
   a registered plan's `graphs/` and sends the CSP above.
 - Browser (Chromium and Firefox), at a 390 × 844 viewport: one thread with a card of each
   of the four JSON forms and one HTML card; each is visible and
-  `document.documentElement.scrollWidth <= innerWidth`. The HTML card's script runs (it
-  writes text the test reads through the frame) and its `fetch` to the page's origin
-  fails. Pasting an image file into the composer shows a chip; sending posts a message
+  `document.documentElement.scrollWidth <= innerWidth`. The HTML card's fixture holds a
+  `<script>` that fetches a test-only URL, an `<img>` and a `<link rel=stylesheet>` pointing
+  at test-only URLs, and a `<meta http-equiv=refresh>` to one; the test server records no
+  request to any of them, and the frame's CSS-styled text is visible in a screenshot-free
+  check (the iframe's bounding box is non-zero and the response carried the CSP above). Pasting an image file into the composer shows a chip; sending posts a message
   whose text ends with `[attached: <path>]`, and the file exists at that path with the
   same bytes. An `image` card shows an `<img>` that loads (`naturalWidth > 0`).
 
@@ -247,9 +253,22 @@ New tests, at least:
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
 | mechanics (gpt) | blocking | `/wheelchair/graph` validates schema 1 and drops `form`, so it cannot load the new forms | upheld (`viewer/server.js:158-175,1649`) | D10: card `format` graph/form/html; new `/wheelchair/diagram-form` route returns the file unchanged; forms never registered as graphs |
-| mechanics (gpt) | blocking | A sandboxed script can still navigate its own frame to any URL; CSP does not stop navigation, so "no network" is not guaranteed | user-decision | Question to Collin: keep scripts and accept it, or static HTML only |
+| mechanics (gpt) | blocking | A sandboxed script can still navigate its own frame to any URL; CSP does not stop navigation, so "no network" is not guaranteed | user-decision | Collin picked static only (D12) |
 | mechanics (gpt) | major | Uploads or image copies in flight can recreate files after archive removed the folder | upheld (archive and the cards handler share no lock, `machine/service.js:430,837`) | Spec part 3: per-thread lock on the machine, `.part` files, late requests refused |
 | intent (gpt) | blocking | Archive could succeed while uploads stay on disk, against IDEA's "gone after archive" | upheld (major: contradicts IDEA.md:35 as written) | Spec part 3, Archive: a failed removal keeps the thread unarchived with a needs card, like a kept rebase |
+
+### Round 2 — 2026-11-15
+
+**Lanes:** intent lens; mechanics lens; cross-family: see lanes.
+
+**Changed since Round 1:**
+- D10: `diagram` card `format` (`graph`/`form`/`html`); new `/wheelchair/diagram-form` route; forms never registered as graphs.
+- D11: per-thread lock on the machine for archive, uploads and image copies; `.part` files; late uploads refused 409.
+- D12: HTML fallback is static only (empty sandbox, no script source in CSP).
+- Archive: a failed uploads removal keeps the thread unarchived with a needs card.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
