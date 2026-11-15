@@ -242,3 +242,40 @@ Flaky under parallel suites, passing alone (3/3): `server.test.js` "the global w
 - **Two failures already on main** remain in the suites (above), outside this feature.
 
 ## Remediation rounds
+
+### Remediation 1 — 2026-11-15
+
+Round 1 on `ed2ec6c`: Claude verifier PASS; Codex verifier FAIL with three gaps. Gap list verbatim and tasks in `REMEDIATION-1.md`. Fixed on branch at `58be76c`:
+
+| Gap | Fix (file:line) | Test |
+|---|---|---|
+| §5 limit recovery: a limited Codex verifier published partial text as its result | `viewer/app/sessions.js` turn-ended branch: no `deliverReport` while the session's `limited_until` is in the future; the report goes out on the first turn end after release | `viewer/test/app-balancer.test.js` (R1: limited verifier gets no result card, `finished` unset; after release one card with the real text) |
+| §5 account held until reset: a newer reading erased `limited_until` | `viewer/app/usage.js:44` `record` keeps a stored future `limited_until` when the newer reading has none | `viewer/test/app-usage.test.js` (R1: limit-hit then a newer reading → still no room until the time passes) |
+| §2 account isolation: removing and re-adding a name reused the id and folder | `viewer/app/routes.js` DELETE records the id in `retired_accounts`; POST makes ids unique against current and retired ids; `viewer/app/settings.js` keeps `retired_accounts` in `defaults()`/`normalize()` | `viewer/test/app-usage.test.js` (R1: add, remove, re-add "Personal" → a new id, no reading, no live sessions) |
+| Minor (Claude verifier): promoted waiting record lacked `template_id` / `style_version` | `viewer/app/sessions.js` promotion sets both | `viewer/test/app-balancer.test.js` (R1: promoted lead's first delivery has no `[wc:style]`) |
+| Minor (Claude verifier): waiting line named "Claude" with no provider chosen | `viewer/app/balancer.js` waiting records carry `waiting_provider`; `viewer/pages/thread.js` `waitingLine()` reads it, else the lead's or thread's provider, else "Waiting for room, about …" | `viewer/test/app-balancer.test.js` (R1: `waiting_provider: 'gpt'` under a GPT-first lead order); `viewer/test/app-accounts.spec.js` (R2: both wordings) |
+
+Lanes: R1 codex standard (gpt-6.1-terra), R2 claude light (claude-haiku-5-5), each the family that built the code it fixed.
+
+Validation at `58be76c`, sequential:
+
+```
+$ bash sensitivity/test/run.sh -> RESULT 64 passed, 0 failed
+$ bash seen/test/run.sh        -> RESULT 21 passed, 0 failed
+$ bash codex/test/run.sh       -> RESULT 72 passed, 0 failed
+$ bash install/test/run.sh     -> RESULT 90 passed, 0 failed
+$ bash machine/test/run.sh     -> # pass 79  # fail 0
+$ node --test viewer/test/*.test.js
+not ok 189 - a starter that loses the freed port registers through the new holder
+# tests 304
+# pass 303
+# fail 1
+$ npm --prefix viewer run test:browser
+  2 failed
+    [chromium] › test/browser.spec.js:2395:1 › no drawn arrow's line passes through either box it connects, over every committed graph
+    [firefox] › test/browser.spec.js:2395:1 › no drawn arrow's line passes through either box it connects, over every committed graph
+  2 skipped
+  508 passed (1.7m)
+```
+
+The two failures are the same ones on `main` (above). Round 1's Claude verifier also saw `registration.test.js` "registration rejects every out-of-scope plan and graph path before open reaches a port" fail once in a full run and pass 3/3 alone; it did not fail here. This branch does not touch that file.
