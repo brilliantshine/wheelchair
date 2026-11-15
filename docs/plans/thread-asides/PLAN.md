@@ -44,6 +44,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 13 | An aside uses the lead's own account as well as its provider | A Claude conversation can only be resumed from the account folder that holds it (`machine/adapters/claude.js:26`) | defaulted |
 | 14 | Supersedes 7: "waiting on" is the oldest unanswered `question`, `needs` or `approval` card, the same rule as the Needs you list | A pending Start building or a blocker is also something the thread waits on | review-round-1 |
 | 15 | Supersedes 8 in part: an aside writes no files at all; a drawn graph comes back in its reply and the hub registers and saves it | A Codex aside runs read-only, and the viewer refuses unregistered graph writes (`viewer/server.js:1645`) | review-round-1 |
+| 16 | Supersedes 2 and 4 on mechanism: an aside is not a session. Each message runs as one headless CLI turn (fork for the first, resume after), with no tmux, token or stop | Rounds 2-5 kept finding races in starting, stopping and restarting long-lived aside sessions; one-shot turns have none of that state, and with no token an aside can't post cards or use git | review-round-5 |
+| 17 | Supersedes 3: the copy is made at the aside's first turn, from the lead conversation recorded when the aside was opened. It may include lead turns from between opening and the first message; it never sees later ones | Forking needs a message to run; recording the parent at opening keeps a lead restart from losing context | review-round-5 |
 
 ## Spec
 
@@ -54,10 +56,11 @@ from it.
 ### Terms
 
 - **Aside:** a side conversation about part of one lead message, held in a panel beside the
-  thread. Each aside has a record in the hub (below) and, while it runs, one CLI session.
-- **Fork:** a new CLI conversation that starts with a copy of an existing one's history.
-  Claude: `claude --resume <parent id> --fork-session --session-id <new uuid> ...`. Codex:
-  `codex fork <parent thread id> ...`. The parent conversation is not changed.
+  thread. Each aside has a record in the hub (§3); each message to it runs as one headless
+  CLI turn (§4).
+- **Fork:** a new CLI conversation that starts with a copy of an existing one's history
+  (`claude -p --resume <id> --fork-session`, `codex exec fork <id>`). The parent
+  conversation is not changed.
 - **Anchor:** where an aside's words sit in a lead message: the message's id, start and
   end offsets into that message's rendered text (the bubble's `textContent`), and the
   quoted words. A whole-message aside has offsets covering the whole text.
@@ -79,263 +82,241 @@ asides; no other item type needs an id.
   small menu on the bubble; always visible on touch screens).
 - Pressing one sends `POST /threads/:id/asides` with `{message_id, start, end, quote,
   action}`, `action` one of `ask`, `simpler`, `draw`. The panel opens at once showing the
-  quote and "Starting…".
-- For `ask`, the panel's input takes focus and the first message is what Collin types. For
-  `simpler` and `draw` the hub sends the request immediately.
+  quote. Creating the aside records the lead's conversation id (§3, `fork_parent`).
+- For `ask`, the panel's input takes focus and the `start` message is made when Collin
+  sends what he types. For `simpler` and `draw` the `start` message is queued at once.
 
 ### 3. The aside record (hub, `viewer/app/threads.js` / `state.js`)
 
 The thread record gains `asides: []`, each:
-`{id, anchor: {message_id, start, end, quote}, action, created_at, session, provider,
-account, cli_id, slot, status, proc, pending, inflight, last_ask, number, closed_at,
-outcome, sent_line, graph, notice}`.
-- `status`, `proc`, `pending`, `inflight`, `last_ask`: see §6. `slot`: `standard` or
-  `heavy`. `number`: 1 for the thread's first aside, and so on.
+`{id, number, anchor: {message_id, start, end, quote}, action, created_at, provider,
+account, fork_parent, cli_id, slot, status, pending, turn, history, failed, closed_at,
+outcome, sent_line, graph}`.
+- `number`: 1 for the thread's first aside, and so on.
+- `fork_parent`: the lead's conversation id when the aside was created (Claude
+  `cli_session_id`, Codex `codex_thread_id`).
+- `cli_id`: the aside's own conversation id, set from its first successful turn.
+- `slot`: `standard` or `heavy`. `status`: `open` or `closed`.
+- `pending`: messages not yet run, each `{kind, text}`, `kind` one of `start`, `ask`,
+  `control`. `turn`: the turn running now, or null. `failed`: the failure notice of the
+  last turn, or null.
+- `history`: the aside's conversation as shown in the panel, each `{kind, text, reply,
+  model, at}`; `control` entries are kept but not shown.
 - `outcome`: `null`, `done` or `changed`. `sent_line`: the line sent on `changed`.
-- `cli_id`: the aside's own saved conversation id (§6), so it can be resumed later.
-- `/chat` returns `asides` (the records, without tokens) so the page can underline and list
-  them. Archiving a thread stops aside sessions like any other.
+- `/chat` returns the asides (all fields but `history`) so the page can underline and
+  list them.
 
-### 4. The aside session (hub `sessions.js`, machine `service.js` and adapters)
+### 4. How an aside runs (machine `service.js`, hub)
 
-- New role `aside` in `SESSION_ROLES`. It is never started by an agent: not in
-  `ALLOWED_START` for any role; only the hub's own asides route starts it.
-- **Provider, account, model.** The latest live lead's provider and account, bypassing the
-  balancer (Decision 13). Model from `codex/model.sh <provider> standard`, or `heavy` for
-  `draw`. A slot set to "Not used" in Settings (`model.sh` exits 3) is skipped: with
-  `standard` not used the aside starts on `heavy`; with `heavy` not used it starts on
-  `standard` (also for `draw`) and can't move up. With neither, the route returns 409
-  "asides need a Standard or Heavy model for <provider> in Settings" and the panel says so.
-  No live lead, or a lead whose conversation id is not yet known (Claude
-  `cli_session_id`, Codex `codex_thread_id`): the route returns 409 "the lead isn't
-  ready yet" and the page says so in the panel.
-- **Start payload** to the machine gains `fork_from` (the parent conversation id) or
-  `resume` (the aside's own `cli_id`, for reopening and stepping up). Adapters:
-  - Claude, fork: add `--resume <fork_from> --fork-session --session-id <new uuid>`.
-    Resume: `--resume <cli_id>` and no `--session-id`, keeping `cli_session_id = cli_id`.
-    The aside's role prompt goes in `--append-system-prompt` as today.
-  - Codex, fork: `codex fork <fork_from>` with the same flags as a fresh start. Resume:
-    `codex resume <cli_id>`. The first message the hub sends starts `[wc:role]` with the
-    aside role prompt, so the existing thread binding (`machine/adapters/codex.js:11-20`)
-    binds the new thread id, unless T1 shows a fork reports its input differently, in
-    which case binding uses the turn-end event's thread id for a session started with
-    `fork_from` or `resume`.
-  - Same working directory as the lead (a Claude fork must resume in the directory that
-    holds the conversation). Codex runs with `-s read-only -a never`, like a reviewer.
-- **What an aside may not do.** `card.js` already refuses any kind for a role not listed;
-  `aside` is listed for none. The hub's session start refuses a caller whose role is
-  `aside`. The machine's `/v1/agent/git` refuses a caller whose role is `aside` with 403
-  "an aside makes no git changes". These three refusals are tested.
-- **Role prompt** `protocol/app/aside.md` (new; wrapper-free, read by the session like the
-  other role files). It says, in short:
+An aside is not a session. Each message Collin sends it is **one headless CLI turn**: the
+machine runs the CLI once in print mode, it answers, and the process exits. There is no
+tmux window, readiness screen, session token, session queue or stop. That is why an
+aside can't post cards, start sessions or use git: it has no token for the routes that do
+those things (`machine/service.js:837-859`), and nothing about it is in `thread.sessions`,
+so the main chat, the queued count and the app's session notices never see it.
+
+- **Machine route** `POST /v1/aside-turns` (hub auth), modelled on `preview`
+  (`machine/service.js:749-770`): input `{turn_id, provider, account_dir, cwd, model,
+  effort, mode: "fork" | "resume", from, new_id, prompt}`. It starts the process and answers
+  202 at once. `GET /v1/aside-turns/:turn_id` returns `{state: "running" | "ok" |
+  "failed", reply, conversation_id, error, limit}`. `DELETE` kills a running turn. A turn
+  still running after 15 minutes is killed and reported `failed` ("took too long"). Turns
+  live in memory; after a machine restart an unknown `turn_id` returns 404, which the hub
+  treats as `failed` ("the machine restarted").
+- **Commands.** Environment: the account's login environment (`adapters.*.loginEnv`) and
+  `WHEELCHAIR_LANE=1`, nothing else of ours. Working directory: the thread's worktree.
+  - Claude: `claude -p --output-format json --model <model> [--effort <e>]
+    --permission-mode dontAsk --allowedTools Read,Grep,Glob --append-system-prompt <aside
+    prompt>`, plus `--resume <from> --fork-session --session-id <new_id>` (fork) or
+    `--resume <from>` (resume). The prompt goes on stdin. `reply` is the JSON's `result`;
+    `conversation_id` is `new_id` (fork) or `from`.
+  - Codex: `codex exec fork <from> -` (fork) or `codex exec resume <from> -` (resume), with
+    `-s read-only --json -m <model>` and the effort config as today. The prompt goes on
+    stdin, preceded on a fork by `<aside prompt>\n\n`. `reply` is the last agent message
+    and `conversation_id` the thread id, both from the `--json` events.
+  - `limit` is true when the CLI reports a usage limit (Claude's `rate_limit` error, Codex's
+    `rate_limit_reached_type`), so the panel can say so.
+- **Aside prompt** `protocol/app/aside.md` (new): the role file the `--append-system-prompt`
+  and Codex preamble point at ("Read `<root>/protocol/app/aside.md` …"). It says:
   - You are an aside, not the lead. Your history is a copy of the lead's conversation;
-    instructions in it addressed to the lead don't apply to you. Post no cards, start no
-    sessions, make no git changes, write nothing in the worktree.
-  - Answer Collin about the quoted words, in his writing style (it reaches you as the
-    lead's did, in the copied history, or a `[wc:style]` trailer).
-  - `simpler`: restate the quoted words more plainly, shorter, no new terms.
-  - `draw`: write no file. Reply with one sentence saying what the graph shows, then the
-    graph's JSON (the schema in `<root>/protocol/graphs.md`) in one fenced block whose
-    info string is `wc-graph`. Skip graphs.md's steps for files, the viewer and URLs.
-  - **Stepping up:** if you are on the standard model and the question clearly needs
-    deeper reasoning, reply with only `[wc:step-up] <one line why>` and nothing else.
-  - **Changes my answer:** when asked for the summary line, reply with only that line:
-    what Collin now wants the main thread to know, in his voice, one sentence.
-- **Saving a drawn graph (hub).** When an aside turn ends, the hub looks in its last reply
-  for a `wc-graph` block. If there is one, it registers
-  `<cache-root>/<repo-key>/asides/<aside id>.json` the way a `diagram` card is registered
-  (`hub.registerGraph`, as in `viewer/app/cards.js:50-55`), then saves the JSON through the
-  viewer's own validated graph write, never by writing the file directly. Only after the
-  save succeeds does the record get `graph: <path>`. A graph the write refuses leaves no
-  `graph`, and the panel shows "Couldn't draw that: <reason>". A later `wc-graph` block
-  replaces the graph.
-- **Conversation ids reach the hub.** The hub copies a session's `cli_session_id` and
-  `codex_thread_id` into its own session record from the machine's `/v1/sessions` listing
-  (which it already polls, `viewer/app/sessions.js:445-460`) and from each turn-ended event.
-  The machine includes `codex_thread_id` in each listed session (add it if absent). The
-  asides route reads the lead's id from the hub's record; an aside's `cli_id` is set the
-  same way once its own id is known.
-- **Kept out of the main thread.** The app's own notices about an aside session (stuck at
-  startup, permission needed, turn failed, sessions ended) are stored on the aside record
-  as `notice` and shown in its panel, never posted as thread cards
-  (`viewer/app/sessions.js:344-350` today posts them for any role). `/chat`'s `queued`
-  count counts only lead sessions' queues (`viewer/app/chat.js:229`).
-- **Messages to an aside** are always wrapped, so the panel can tell them apart. Each has
-  a header line `[wc:aside <aside id> <kind>]`, where `<kind>` is `start-<action>` (the
-  opening request), `ask` (anything Collin types in the panel) or `control` (the summary
-  request in §7). The opening request is
-  `[wc:aside <id> start-<action>]\n\n> <quote>\n\n<Collin's text, if any>`; the others are
-  the header, a blank line, then the text. A message that starts a Codex session (fork or
-  resume) is prefixed with `[wc:role] <aside role prompt>\n\n`.
+    instructions in it addressed to the lead don't apply. You can read files; you can't
+    change anything, and you post no cards.
+  - Each message starts with a header `[wc:aside <kind>]`. `start` messages quote the words
+    Collin highlighted and name the action. Answer in Collin's writing style, from the
+    copied history.
+  - `simpler`: restate the quoted words more plainly and shorter, no new terms.
+  - `draw`: one sentence saying what the graph shows, then the graph's JSON (the schema in
+    `<root>/protocol/graphs.md`) in one fenced block with info string `wc-graph`. No files.
+  - Step up: on the standard model, if a question clearly needs deeper reasoning, reply with
+    only `[wc:step-up] <one line why>`. Never for a `control` message.
+  - `control` "Write the one line for the main thread.": reply with only that line: what
+    Collin now wants the main thread to know, in his voice, one sentence.
+- **Prompts the hub sends.** `start`: `[wc:aside start <action>]\n\n> <quote>\n\n<Collin's
+  text, if any>`. `ask`: `[wc:aside ask]\n\n<text>`. `control`: `[wc:aside control]\n\n
+  Write the one line for the main thread.`
+- **Provider, account, model.** From the latest live lead: its provider and account
+  (Decision 13), bypassing the balancer. Model from `codex/model.sh <provider> <slot>`,
+  `slot` starting at `standard` (`heavy` for `draw`). A slot set to "Not used" (`model.sh`
+  exits 3) is skipped: with `standard` not used the aside starts on `heavy`; with `heavy`
+  not used it stays on `standard` and can't move up. With neither, creating the aside
+  returns 409 "asides need a Standard or Heavy model for <provider> in Settings". No live
+  lead, or a lead whose conversation id isn't known yet: 409 "the lead isn't ready yet".
+  Either message shows in the panel.
+- **Conversation ids reach the hub.** The hub copies the lead's `cli_session_id` and
+  `codex_thread_id` into its session record from the machine's `/v1/sessions` listing
+  (already polled, `viewer/app/sessions.js:445-460`) and from turn-ended events. The machine
+  includes `codex_thread_id` in each listed session (add it if absent).
 
-### 5. The panel
+### 5. Running turns (hub)
+
+One rule, run after every change to an aside and on each poll:
+
+- If no `turn` is running and `pending` isn't empty and `failed` is null, the hub takes the
+  first `pending` message and starts a turn: `mode: "resume", from: cli_id` when `cli_id`
+  is set, else `mode: "fork", from: fork_parent, new_id: <new uuid>`. So the aside always
+  copies the lead's conversation as it was opened from, even if a new lead has taken over
+  since.
+- The hub polls `GET /v1/aside-turns/:turn_id` every 2 seconds while a turn runs.
+- **ok**: the message leaves `pending` and goes into `history` with its reply; `cli_id` is
+  set if empty; then the reply is handled:
+  - `[wc:step-up] <why>` on a `start` or `ask` message, with `slot` `standard` and `heavy`
+    usable, and the aside `open`: `history` gets the line "Thinking harder: <why>", `slot`
+    becomes `heavy`, and the same message goes back to the front of `pending`. Otherwise the
+    marker is dropped; a `control` reply then becomes the draft, and any other reply shows
+    "Can't think harder: the stronger model is off in Settings" when that is why.
+  - A `wc-graph` block: saved as in §6.
+  - A `control` reply: the draft line in the panel's edit box (§7).
+- **failed**: the message stays first in `pending`, and `failed` holds the notice ("Hit the
+  usage limit", "took too long", the CLI's last error line). Nothing runs until Collin
+  presses Retry, which clears `failed`. So Retry always repeats the message that failed.
+- **Closing** (`status: closed`) clears `pending`; a running turn is left to finish and its
+  reply goes into `history`. A closed aside never starts a turn.
+- **Reopening**: Collin types in a closed aside: `status: open`, the message goes into
+  `pending`, and the rule above runs it.
+- **Think harder** is enabled when the aside is `open`, `slot` is `standard`, `heavy` is
+  usable and no turn is running. It sets `slot: heavy` and puts the last `start` or `ask`
+  message in `history` back into `pending`.
+- **Archiving** the thread `DELETE`s any running aside turn.
+
+### 6. Saving a drawn graph (hub)
+
+When a reply holds a `wc-graph` block, the hub registers
+`<cache-root>/<repo-key>/asides/<aside id>.json` the way a `diagram` card is registered
+(`hub.registerGraph`, as in `viewer/app/cards.js:50-55`) and saves the JSON through the
+viewer's own validated graph write, never by writing the file directly. Only after the save
+succeeds does the record get `graph: <path>`. A refused graph leaves `graph` unchanged and
+puts "Couldn't draw that: <reason>" in `history`. A later block replaces the graph. The
+block itself is not shown as text.
+
+### 7. The panel
 
 - Desktop: a right-hand panel beside the chat, replacing the files column while open (the
   files list returns on close). Phone (≤899px): a full-screen sheet over the thread with a
   back control (Decision 6).
-- Top: "Aside", a close control, the quote, and the **waiting-on line**: the oldest card
-  still waiting on Collin, using the same rule as the "Needs you" list
-  (`viewer/app/views.js:96-107`: an unanswered `question`, `needs` or `approval` card).
-  It reads "Waiting on: <the card's title or question, shortened>" ("Start building" for
-  an approval) and links to that card in the thread. With none, "The lead is working" if
-  its last turn hasn't ended, else "Nothing is waiting on you".
-- Body: only the aside's own turns. `chat.js` exports a function returning an aside's
-  items. It parses the transcript into turns as for the lead, without `renderTurn`'s hiding.
-  It drops every turn before the first whose human text has a line exactly equal to
-  `[wc:aside <this aside's id> start-<action>]` (the id is unique, so a lead turn that only
-  mentions the marker never matches). From there, each turn's header decides: `start-*`
-  shows Collin's text after the quote (if any) and the replies; `ask` shows the text after
-  the header and the replies; `control` turns are hidden with their replies; any text before
-  the header (a Codex `[wc:role]` prefix) is never shown. Rendered with the same Markdown
-  renderer and tool-step setting as the main chat. The copied lead history before it is never shown. A `[wc:step-up]` reply shows as one
-  muted line, "Thinking harder: <why>". Once the record has `graph`, the graph is embedded like a
-  `diagram` card (`viewer/pages/thread.js:161-165`) with `?path=` to that file, and the
-  `wc-graph` block itself is not shown as text. Notices on the record show as muted lines.
-- Input: "Ask more about this" and Send. Sending goes to `POST
-  /threads/:id/asides/:aside/messages`, which adds it to the aside's own `pending` list
-  (§6), not to a session queue.
-- Footer: **Think harder** (shown only when §6 allows it), **Done, back to …** and **This changes
-  my answer**. "…" is a short name for the waiting-on card ("Done, back to your question",
-  "Done, back to Start building"), or "the thread" when nothing is waiting.
-- The page polls `GET /threads/:id/asides/:aside` while the panel is open, at the same
-  2-second rate as `/chat`.
+- Top: "Aside <number>", a close control, the quote, and the **waiting-on line**: the
+  oldest card still waiting on Collin, by the "Needs you" rule (`viewer/app/views.js:96-107`:
+  an unanswered `question`, `needs` or `approval` card). It reads "Waiting on: <the card's
+  title or question, shortened>" ("Start building" for an approval) and links to that card.
+  With none: "The lead is working" if the lead's last turn hasn't ended, else "Nothing is
+  waiting on you".
+- Body: `history` except `control` entries: Collin's text (for `start`, only what he typed,
+  since the quote is at the top), then the reply rendered with the main chat's Markdown
+  renderer; "Thinking…" while a turn runs; the `failed` notice with Retry; the graph, once
+  `graph` is set, embedded like a `diagram` card (`viewer/pages/thread.js:161-165`).
+- Input: "Ask more about this" and Send: `POST /threads/:id/asides/:aside/messages`, which
+  adds an `ask` message to `pending` (and reopens a closed aside).
+- Footer: **Think harder** (when §5 allows it), **Done, back to …** and **This changes my
+  answer**. "…" is a short name for the waiting-on card ("Done, back to your question",
+  "Done, back to Start building"), or "the thread".
+- The page polls `GET /threads/:id/asides/:aside` (the full record) every 2 seconds while
+  the panel is open.
 
-### 6. Aside lifecycle and moving up (Decision 10)
+### 8. Finishing
 
-One set of rules owns every start and stop of an aside's session, so close, reopen, step-up,
-Think harder, failures and the idle timeout can't race each other.
-
-- **Record fields.** `status` (`open` | `closed`) is what Collin sees. `proc` (`none` |
-  `starting` | `running` | `stopping`) is what the process is doing. `pending` is the
-  aside's list of messages not yet delivered, each `{kind, text}`. `inflight` is the message
-  delivered and not yet answered. `last_ask` is the last `start-*` or `ask` message the
-  session finished a turn on. Aside sessions don't use the hub's per-session queue.
-- **A saved conversation.** `cli_id` is set only once a turn of that session has ended and
-  its transcript has been found (Claude: the Stop hook's path; Codex: the bound thread). A
-  generated `cli_session_id` alone (`machine/service.js:304`) doesn't count.
-- **Delivering.** When `status` is `open`, `proc` is `running`, the session is ready and
-  `inflight` is empty, the hub delivers the first `pending` message and moves it to
-  `inflight`. At turn end the reply is handled (graph, step-up, summary) and `inflight`
-  clears, becoming `last_ask` unless it was `control`.
-- **Starting.** When `status` is `open`, `proc` is `none` and `pending` isn't empty, the hub
-  starts a session on the record's `slot`: with `resume` when `cli_id` is set, else as a
-  fresh fork of the current lead (§4). `proc` goes `starting`, then `running` when ready.
-- **Stopping.** Done, a step-up, Think harder and the 30-minute idle timeout only ask for a
-  stop: `proc` becomes `stopping`. The hub stops the process only once it is idle: its turn
-  ended, failed or hit a limit; or it is ready with nothing in flight; or it never became
-  ready (stuck at startup). So a stop never cuts off an answer. The machine's stop must
-  confirm the tmux session is gone, and returns an error otherwise (today it ignores a
-  failed kill, `machine/service.js:400-405`); the hub retries on its next poll. Only a
-  confirmed stop sets `proc: none`, so a resume never overlaps the old process.
-- **Unexpected death.** If the machine listing shows the session gone while `proc` is
-  `starting` or `running`, or a start is refused: `inflight` goes back to the front of
-  `pending`, `proc` becomes `none`, and the panel shows a notice. An open aside then starts
-  again by the rule above, once. If that one dies too, it stops trying and the notice gets a
-  Retry button, which allows one more start.
-- **Done.** `status: closed`, `pending` cleared, stop requested. A closed aside never starts
-  a session by itself. An answer already in flight finishes, and is there on reopening.
-- **Reopening.** Collin types in a closed aside: `status: open`, the message goes into
-  `pending`. If `proc` is still `stopping` and the stop hasn't been sent to the machine, the
-  stop is cancelled and the live session takes the message; otherwise the start rule runs
-  once `proc` is `none`. Nothing is replayed.
-- **Stepping up, automatically.** At turn end, if the reply is `[wc:step-up] ...`, `status`
-  is `open`, `slot` is `standard` and `heavy` is usable: the panel shows "Thinking harder:
-  <why>", `slot` becomes `heavy`, `last_ask` goes to the front of `pending`, and a stop is
-  requested. The start rule then resumes the conversation on `heavy`. In any other case the
-  reply shows as text, and if `heavy` isn't usable, as "Can't think harder: the stronger
-  model is off in Settings".
-- **Think harder** is shown only when `status` is `open`, `slot` is `standard`, `heavy` is
-  usable, `cli_id` is set and nothing is in flight. It does the same as a step-up.
-- On `heavy` the aside stays on `heavy`.
-
-### 7. Finishing
-
-- **Done, back to …**: `POST .../asides/:aside/close {outcome: "done"}`. The hub closes it
-  as in §6. The page closes the panel and scrolls to the waiting-on
-  card, or keeps the scroll position when nothing is waiting.
-- **This changes my answer** is enabled when `status` is `open`, `cli_id` is set and nothing
-  is in flight. The hub adds a `control` message, "Write the one line for the main
-  thread.", to `pending` and puts the reply in an editable box in the panel, with Send and Cancel. Send:
-  `POST .../close {outcome: "changed", line}`. The hub enqueues to the latest live lead,
-  as `collin`, the text `<line>\n\n(from aside <n> on: "<quote, cut to 80 chars>")`, where `<n>`
-  is the aside's number in the thread (1, 2, …, stored on the record as `number`), so it
-  shows in the main thread as Collin's message. The page turns a trailing
-  "(from aside <n> on: …)" in a human item into a link that opens aside `<n>`. Then it
-  closes the aside as in §6. Cancel
-  leaves the aside open.
+- **Done, back to …**: `POST .../asides/:aside/close {outcome: "done"}`: closed as in §5.
+  The page closes the panel and scrolls to the waiting-on card, or keeps its scroll
+  position when nothing is waiting.
+- **This changes my answer**: enabled when the aside is `open`, `cli_id` is set and no turn
+  is running. It adds a `control` message to `pending`; its reply fills an editable box in
+  the panel with Send and Cancel. Send: `POST .../close {outcome: "changed", line}`. The hub
+  enqueues to the latest live lead, as `collin`, `<line>\n\n(from aside <number> on:
+  "<quote, cut to 80 chars>")`, so it shows in the main thread as Collin's message, then
+  closes the aside. The page turns a trailing "(from aside <n> on: …)" in a human item into
+  a link opening aside `<n>`. Cancel leaves the aside open.
 - The lead treats that message like any typed message: if a `question` card is open, it is
-  his typed answer to it (`protocol/app/lead.md`, resolve rule). Add one line to `lead.md`'s "How you talk to Collin" saying a
-  message ending "(from aside <n> on: …)" is his own answer, reached in a side
-  conversation.
-- Closing the browser tab changes nothing; an aside idle for 30 minutes is closed as in §6
-  with outcome `null`.
+  his typed answer to it (`protocol/app/lead.md`, resolve rule). Add one line to `lead.md`'s
+  "How you talk to Collin": a message ending "(from aside <n> on: …)" is his own answer,
+  reached in a side conversation.
+- An aside with no turn for 30 minutes is closed with outcome `null`. Closing the browser
+  tab changes nothing else.
 
-### 8. Underlines and reopening
+### 9. Underlines and reopening
 
 - After each `renderChat` rebuild, the page re-applies every aside's anchor: it wraps the
   range (splitting across nested Markdown nodes) in `<mark class="aside-mark"
   data-aside="<id>">`. Placement follows Decision 12; an unanchored aside has no underline
-  but still appears in the list below.
-- Clicking an underline opens that aside's panel. A closed aside shows its conversation
-  until Collin types, which reopens it (§6).
-- The thread header shows "N asides" (the design's count chip) when the thread has any;
-  it opens a short list (quote, when, outcome) and each entry opens its panel.
+  but is still listed.
+- Clicking an underline opens that aside's panel, open or closed. A closed aside shows its
+  history; typing reopens it (§5).
+- The thread header shows "N asides" (the design's count chip) when there are any; it opens
+  a short list (number, quote, when, outcome) and each entry opens its panel.
 - Overlapping underlines: the newer aside's mark wins the overlap; both stay listed.
 
-### 9. Proving the fork (implementation task T1, before anything else)
+### 10. Proving the commands (implementation task T1, before anything else)
 
-A probe script `machine/test/fork-probe.sh`, run by hand against real CLIs (it costs real
-turns, so it is not part of `machine/test/run.sh`). For each logged-in CLI: start a
-conversation, tell it a code word, fork it in tmux the way §4 does, and check:
-- the forked session reaches the adapter's ready screen;
-- asked for the code word, the fork knows it;
-- the parent's transcript is unchanged in size after the fork's turn;
-- where the fork's transcript lands and how its turn-end event reports the thread id;
-- for Claude, that the fork's `--append-system-prompt` is the new one.
+A probe script `machine/test/aside-probe.sh`, run by hand against real CLIs (it costs real
+turns, so it is not part of `machine/test/run.sh`). For each logged-in CLI: start an
+interactive conversation as the app starts a lead, tell it a code word, then run §4's fork
+command and a resume of the fork, and check:
+- the fork knows the code word, and the resume knows the fork's earlier answer;
+- the parent conversation's transcript is unchanged by both;
+- forking works while the parent's interactive session is still open;
+- the reply and conversation id come out of the output as §4 says;
+- Claude: `--append-system-prompt` and `--allowedTools` apply; an edit attempt is refused;
+- Codex: the read-only sandbox refuses a write.
 
-It writes its findings to `docs/plans/thread-asides/reports/T1.md`. If any check fails for a
-CLI, T1 is reported blocked and the build stops for that provider's asides; the lead takes it
-to Collin.
+Findings go to `docs/plans/thread-asides/reports/T1.md`. If a check fails for a CLI, T1 is
+reported blocked and the build stops for that provider's asides; the lead takes it to
+Collin.
 
 ### Non-goals
 
 - The free-text answer box on question cards; Settings rows for asides; asides on cards,
   on Collin's messages or on other sessions; an aside posting into the main thread anything
-  but the one line Collin sends; feeding later lead turns into an open aside (Decision 3).
+  but the one line Collin sends; feeding later lead turns into an aside after its first
+  turn; tool steps in the panel; counting aside turns in the Usage screens.
 
 ### Edge cases
 
-- The lead restarts (a new lead session): asides keep working from their own `cli_id`;
-  new asides fork the new lead. Anchors on the old lead's messages still resolve because
-  ids carry the session name.
-- The lead is mid-turn when an aside starts: the fork copies what the lead has saved so
-  far; that's fine.
-- Two asides started at once: each is its own session with its own record; the hub's
-  per-thread lock (`hub.withThread`) serialises record writes.
-- A rate-limited or failed aside turn: the panel shows the notice and a Retry button, which
-  puts `last_ask` back in `pending`.
+- The lead restarts: asides keep using their own `cli_id`, and one with no `cli_id` yet
+  forks `fork_parent`. Anchors on the old lead's messages still resolve, because ids carry
+  the session name.
+- The lead is mid-turn when an aside's first turn forks it: the fork copies what the lead
+  has saved so far.
+- Two asides at once: separate records and turns; `hub.withThread` serialises record
+  writes.
+- A `draw` whose reply has no `wc-graph` block: the reply shows as text.
 
 ### Validation
 
 ```bash
-node --test viewer/test/*.test.js     # new tests: message ids stable across polls; asides
-                                      # route refuses with no ready lead; aside role refused
-                                      # for cards and session start; close with "changed"
-                                      # enqueues the line to the lead as collin; §6 lifecycle
-                                      # with a fake machine: Done mid-turn lets the turn finish
-                                      # then stops; step-up after Done does nothing; reopen
-                                      # while stopping reuses the session; step-up replays
-                                      # last_ask then pending in order; death re-queues
-                                      # inflight and restarts once; no resume without a
-                                      # saved cli_id; "Not used" slots
-bash machine/test/run.sh              # new: fork and resume argv for both adapters; git
-                                      # route refuses role aside; stop reports an error when
-                                      # the tmux session survives
-npm --prefix viewer run test:browser  # new: selection bar appears for a selection in a lead
-                                      # bubble and not across bubbles; panel opens with the
-                                      # quote and waiting-on line; underline survives a chat
-                                      # rebuild; reopen from underline; phone-width sheet
-bash machine/test/fork-probe.sh       # T1, by hand, real CLIs
+node --test viewer/test/*.test.js     # new, with a fake machine: message ids stable across
+                                      # polls; 409s for no ready lead and no usable model;
+                                      # first turn forks fork_parent, later turns resume
+                                      # cli_id; a failed turn waits for Retry and repeats the
+                                      # same message; step-up re-runs the same message on
+                                      # heavy, never for control; closing mid-turn keeps the
+                                      # reply and starts nothing more; reopen runs the typed
+                                      # message only; close with "changed" enqueues the line
+                                      # to the lead as collin; wc-graph saved and registered
+bash machine/test/run.sh              # new, with fake CLIs: fork and resume argv for both
+                                      # CLIs; reply and id parsing; timeout; 404 after restart
+npm --prefix viewer run test:browser  # new: selection bar for a selection in one lead bubble
+                                      # and not across bubbles; panel with quote and
+                                      # waiting-on line; underline survives a chat rebuild;
+                                      # reopen from underline; phone-width sheet; the
+                                      # "(from aside n on: …)" link
+bash machine/test/aside-probe.sh      # T1, by hand, real CLIs
 ```
 
 ## Accepted Risks
@@ -433,6 +414,27 @@ Recurring theme across rounds 2-4: the aside session's lifecycle was specified a
 - §5: the panel filter uses the headers; Think harder shown per §6.
 - §4: "Not used" model slots.
 - §7: numbered asides for the link back; summary request goes through `pending`.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent (gpt) | major | An `ask` aside forks only when Collin types, so a lead restart in between loses context | upheld | §6: every aside forks at once, and reforks use `fork_parent` |
+| intent (gpt) | major | Retry resends the last successful question, not the one that failed | upheld | §6 "A failed turn": the failed message stays first in `pending`; Retry delivers it |
+| intent (gpt) | major | A step-up reply to the summary request abandons the handoff | upheld | §4 role prompt: never step up on it; §6 step-up excludes `control`; edge case keeps the draft |
+| mechanics (gpt) | major | Step-up replays the previous question, or nothing on a first turn | upheld | Superseded by Decision 16; §5 re-runs the same message |
+| mechanics (gpt) | major | Failed turns have no transition for `inflight` | upheld | §5: the message stays first in `pending` with `failed` until Retry |
+| mechanics (gpt) | major | A crash during a deferred stop is never recovered | upheld | Decision 16: no stops exist |
+| mechanics (gpt) | major | Reopening during a step-up stop reuses the standard process | upheld | Decision 16: each turn picks its model at start |
+| mechanics (gpt) | major | A fresh refork loses the panel's display boundary | upheld | Decision 16: the panel shows the record's `history`, not a transcript |
+| mechanics (gpt) | major | Codex startup has two delivery owners | upheld | Decision 16: no interactive startup |
+| mechanics (gpt) | major | The rate-limit "Continue." path bypasses the aside lifecycle | upheld | Decision 16: asides aren't sessions; a limit is a failed turn with Retry |
+
+Round 5 verdict: the long-lived session design was the source of every lifecycle finding since round 2. Replaced by headless one-shot turns (Decision 16); §3-§10 rewritten.
+
+### Round 6 — 2026-11-15
+
+**Lanes:** intent: pending; mechanics: pending.
+
+**Changed since Round 5:** the Spec from §3 on is rewritten. An aside is no longer a session: each message is one headless CLI turn (fork, then resume) run by a new machine route (§4), driven by one hub rule (§5); the panel shows the record's `history` (§7). Decisions 16 and 17. Everything in §3-§10 is in scope in depth.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
