@@ -28,7 +28,20 @@
     setTimeout(() => { button.textContent = 'Copy'; }, 1500);
   }
 
+  // A tmux session the app did not start: named, never typed into (the terminal page and the
+  // keys route refuse it too).
+  function unmanagedRow(machine, session) {
+    const row = el('li', 'v-card session unmanaged');
+    row.dataset.session = session.name;
+    row.style.opacity = '0.6';
+    row.append(el('span', 'v-label', session.name));
+    row.append(el('span', 'v-badge role', 'unmanaged'));
+    row.append(el('span', 'v-badge', 'read-only'));
+    return row;
+  }
+
   function sessionRow(machine, session) {
+    if (session.managed === false) return unmanagedRow(machine, session);
     const running = session.running !== false && session.status !== 'stopped';
     const row = el('li', 'v-card session');
     row.dataset.session = session.name;

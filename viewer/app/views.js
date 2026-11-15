@@ -111,7 +111,8 @@ async function sessions(hub) {
         machine,
         reachable: true,
         last_seen: hub.machineSeen(machine),
-        sessions: listed,
+        // Other tmux sessions on the machine arrive as { name, managed: false }: listed, read-only.
+        sessions: listed.map((item) => (item.managed === false ? { name: item.name, managed: false } : item)),
       });
     } catch {
       groups.push({ machine, reachable: false, last_seen: hub.machineSeen(machine), sessions: [] });

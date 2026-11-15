@@ -48,7 +48,7 @@ test('keeps initialized hub state on disk across a new Hub instance', async () =
     const threads = await fs.stat(path.join(context.state, 'threads'));
     assert.equal(threads.mode & 0o777, 0o700);
     assert.ok(await fs.readFile(path.join(context.state, 'machines.json'), 'utf8'));
-    assert.equal(await fs.readFile(path.join(context.state, 'projects.json'), 'utf8'), '[]\n');
+    assert.equal(await fs.readFile(path.join(context.state, 'projects.json'), 'utf8'), '[\n  "/tmp/project"\n]\n');
     const restarted = new Hub({ stateDir: context.state });
     await restarted.init();
     assert.equal((await restarted.thread(made.id)).id, made.id);
@@ -493,7 +493,9 @@ test('queues a card press as a lead message', async () => {
 async function archivedDocumentContext() {
   const bin = await fs.mkdtemp(path.join(os.tmpdir(), 'wc-git-'));
   const git = path.join(bin, 'git');
-  await fs.writeFile(git, '#!/bin/sh\nprintf "archived plan\\n"\n');
+  // The hub's own version check runs `git rev-parse HEAD` too; it gets the real commit.
+  const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  await fs.writeFile(git, `#!/bin/sh\ncase "$*" in *rev-parse*) echo ${head};; *) printf "archived plan\\n";; esac\n`);
   await fs.chmod(git, 0o755);
   const context = await setup({ env: { PATH: `${bin}:${process.env.PATH}` } });
   const made = await thread(context);
@@ -720,5 +722,108 @@ test('a mapper works in the thread worktree; a worker branches from the thread b
     const workerStarted = context.machine.sessions.get(worker.body.session.name);
     assert.equal(workerStarted.base, `wc/${made.id}`);
     assert.equal(workerStarted.worktree, `/tmp/${worker.body.session.name}`);
+  });
+});
+
+function pinned(tier) {
+  return execFileSync(path.join(__dirname, '..', '..', 'codex', 'model.sh'), [tier], { encoding: 'utf8' }).trim();
+}
+
+async function startAs(context, lead, role, cli, tier) {
+  return machinePost(context, '/machine/session', {
+    calling_session: lead.name, action: 'start', role, cli, tier, attempt_id: `${role}-${cli}-${tier}`,
+  });
+}
+
+test('models per role: a Codex lead runs on Sol and tiers resolve through codex/model.sh', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context, { cli: 'codex' });
+    const lead = made.sessions[0];
+    assert.equal(context.machine.sessions.get(lead.name).model, pinned('sol'));
+    for (const [tier, model] of [['terra', pinned('terra')], ['luna', pinned('luna')], ['top', pinned('sol')]]) {
+      const result = await startAs(context, lead, 'reviewer', 'codex', tier);
+      assert.equal(result.status, 200);
+      assert.equal(context.machine.sessions.get(result.body.session.name).model, model);
+    }
+  });
+});
+
+test('models per role: Claude tiers pass by name and top means no model', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context, { cli: 'claude' });
+    const lead = made.sessions[0];
+    assert.equal(context.machine.sessions.get(lead.name).model, undefined);
+    const sonnet = await startAs(context, lead, 'reviewer', 'claude', 'sonnet');
+    assert.equal(context.machine.sessions.get(sonnet.body.session.name).model, 'sonnet');
+    const top = await startAs(context, lead, 'verifier', 'claude', 'top');
+    assert.equal(context.machine.sessions.get(top.body.session.name).model, undefined);
+  });
+});
+
+test('models per role: a tier that does not fit the CLI is refused with the reason', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context, { cli: 'claude' });
+    const lead = made.sessions[0];
+    const wrong = await startAs(context, lead, 'reviewer', 'claude', 'luna');
+    assert.equal(wrong.status, 400);
+    assert.match(wrong.body.detail, /tier "luna" does not fit claude/);
+    const other = await startAs(context, lead, 'reviewer', 'codex', 'haiku');
+    assert.equal(other.status, 400);
+    assert.match(other.body.detail, /does not fit codex/);
+  });
+});
+
+test('no session starts while the machine service runs another commit', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    context.machine.status.version = 'not-the-hubs-commit';
+    const refused = await startAs(context, made.sessions[0], 'reviewer', 'codex', 'top');
+    assert.equal(refused.status, 409);
+    assert.match(refused.body.detail, /machine service out of date/);
+    const lead = await api(context, '/threads', { method: 'POST', body: { project: '/tmp/project', cli: 'codex' } });
+    assert.equal(lead.status, 409);
+  });
+});
+
+test('the Ready check covers the other family and takes Codex login from the preflight', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context, { cli: 'claude' });
+    const approval = await card(context, made.id, made.sessions[0].name, {
+      kind: 'approval', objections: [], ready: { ok: true, missing: [] },
+    });
+    const press = () => api(context, `/threads/${made.id}/cards/${approval.body.id}/press`, {
+      method: 'POST', body: { action: 'recheck' },
+    });
+    assert.deepEqual((await press()).body.ready, { ok: true, missing: [] });
+    context.machine.preflightOk = false;
+    const failed = (await press()).body.ready;
+    assert.equal(failed.ok, false);
+    assert.match(failed.missing[0], /Codex preflight failed/);
+    context.machine.preflightOk = true;
+    context.machine.status.codex = { installed: false, logged_in: false };
+    assert.equal((await press()).body.ready.ok, true);
+    context.machine.status.codex = { installed: true, logged_in: true };
+    context.machine.status.claude.logged_in = false;
+    assert.match((await press()).body.ready.missing[0], /claude is not logged in/);
+  });
+});
+
+test('projects.json records each thread project once and GET /projects lists them', async () => {
+  await withContext(async (context) => {
+    await thread(context, { project: '/tmp/proj-a' });
+    await thread(context, { project: '/tmp/proj-a' });
+    await thread(context, { project: '/tmp/proj-b' });
+    const result = await api(context, '/projects');
+    assert.deepEqual(result.body.projects, ['/tmp/proj-a', '/tmp/proj-b']);
+    const stored = JSON.parse(await fs.readFile(path.join(context.state, 'projects.json'), 'utf8'));
+    assert.deepEqual(stored, result.body.projects);
+  });
+});
+
+test('the sessions list passes unmanaged tmux sessions through as read-only', async () => {
+  await withContext(async (context) => {
+    await thread(context);
+    const result = await api(context, '/sessions');
+    assert.deepEqual(result.body[0].sessions.at(-1), { name: 'other-shell', managed: false });
   });
 });

@@ -120,6 +120,22 @@ class State {
     return machine;
   }
 
+  async projects() {
+    const list = await readJson(this.projectsPath, []);
+    return Array.isArray(list) ? list : [];
+  }
+
+  // Spec "State": projects.json is the repos the app lists. Serialized so two threads created
+  // together can't lose each other's entry.
+  addProject(project) {
+    this.projectsWrite = (this.projectsWrite || Promise.resolve()).catch(() => {}).then(async () => {
+      const list = await this.projects();
+      if (list.includes(project)) return;
+      await atomicWrite(this.projectsPath, json([...list, project]));
+    });
+    return this.projectsWrite;
+  }
+
   async markMachineSeen(name, lastSeen) {
     const machines = await this.machines();
     const machine = await this.resolveMachine(machines, name);

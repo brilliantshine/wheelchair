@@ -2,6 +2,7 @@
 
 // Small machine-service double; archive response matches the T2b service contract.
 const http = require('node:http');
+const { execFileSync } = require('node:child_process');
 const { freePort } = require('./server.js');
 
 async function readBody(request) {
@@ -15,12 +16,16 @@ function send(response, status, value) {
   response.end(JSON.stringify(value));
 }
 
+// Another tmux session on the machine, which the real service lists as unmanaged.
+const UNMANAGED = { name: 'other-shell', managed: false };
+
 async function startMachine(secret = 'machine-test-secret') {
   const port = await freePort();
   const sessions = new Map();
   const calls = [];
   const status = {
-    version: '',
+    // The hub's own commit: this repo, the same checkout the test server runs from.
+    version: execFileSync('git', ['-C', __dirname, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
     claude: { installed: true, logged_in: true },
     codex: { installed: true, logged_in: true },
   };
@@ -37,7 +42,7 @@ async function startMachine(secret = 'machine-test-secret') {
       return startSession(response, sessions, input);
     }
     if (request.method === 'GET' && url.pathname === '/v1/sessions') {
-      return send(response, 200, [...sessions.values()]);
+      return send(response, 200, [...sessions.values(), UNMANAGED]);
     }
     if (request.method === 'POST' && /\/submit$/.test(url.pathname)) {
       return submit(response, sessions, url, input);
@@ -61,7 +66,7 @@ async function startMachine(secret = 'machine-test-secret') {
       return archive(response, sessions, input.thread_id);
     }
     if (request.method === 'GET' && url.pathname === '/v1/status') {
-      return send(response, 200, { ...status, sessions: [...sessions.values()] });
+      return send(response, 200, { ...status, sessions: [...sessions.values(), UNMANAGED] });
     }
     if (request.method === 'POST' && url.pathname === '/v1/preflight') {
       return send(response, preflightOk ? 200 : 409, { ok: preflightOk });

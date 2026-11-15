@@ -8,6 +8,7 @@
   const form = document.getElementById('new-form');
   let threads = [];
   let titles = {};
+  let known = [];
 
   function el(tag, cls, text) {
     const n = document.createElement(tag);
@@ -57,7 +58,7 @@
   }
 
   function fillDatalists() {
-    const projects = new Set(); const machines = new Set(['hub']);
+    const projects = new Set(known); const machines = new Set(['hub']);
     for (const t of threads) { projects.add(t.project); machines.add(t.machine); }
     const fill = (id, set) => {
       const dl = document.getElementById(id); dl.textContent = '';
@@ -71,6 +72,9 @@
       const res = await fetch(API + '/threads');
       if (!res.ok) throw new Error('http ' + res.status);
       threads = (await res.json()).threads || [];
+      // projects.json: the repos the app lists; the field stays free text.
+      const listed = await fetch(API + '/projects').then((r) => (r.ok ? r.json() : {})).catch(() => ({}));
+      known = listed.projects || [];
       titles = {};
       for (const t of threads) titles[t.id] = nameOf(t);
       errorEl.hidden = true;

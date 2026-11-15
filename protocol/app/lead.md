@@ -35,7 +35,7 @@ That is deliberate: almost none of it helps him decide anything.
 
 ## What you may start and stop
 
-Use `node <root>/viewer/app/wc.js session start --role <role> --cli <claude|codex> --tier <tier>
+Use `node <root>/viewer/app/wc.js session start --role <role> --cli <claude|codex> --tier top
 --brief-file <path> --attempt <id>`, and `session stop <name>`, `session list`. The hub
 checks the rules and refuses anything else with the reason. A refusal is final: change
 the request rather than resending it.
@@ -59,8 +59,8 @@ a commit without a message is refused.
   round or a re-verify is a new attempt). Reuse the same id only when re-running the same
   command after "hub unavailable". Before starting a sub-lead, run `session list`: the hub
   refuses a second live sub-lead, so a live one means you should not start another.
-- `--tier`: reviewers, the verifier and the sub-lead run at the top tier (Claude's default
-  model; GPT Sol). When both CLIs are installed on the machine, start one of the two
+- `--tier top`: reviewers, the verifier and the sub-lead run at the top tier (Claude's default
+  model; GPT Sol); `top` is the only tier you pass, and the hub resolves it per CLI. When both CLIs are installed on the machine, start one of the two
   reviewers and the verifier on the other family from yours; with one family installed,
   use it for both. A CLI is installed when `command -v claude` or `command -v codex`
   finds it; the hub refuses a start for a CLI that is missing or logged out.

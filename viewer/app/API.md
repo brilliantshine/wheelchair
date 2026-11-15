@@ -17,7 +17,8 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 | `POST /threads/:id/archive` | — | the machine archive response |
 | `GET /threads/:id/doc?file=PLAN.md` | — | `{content}` from the archived branch, read-only |
 | `GET /features` | — | `{idea,planning,review,building,verifying,done,needs}` |
-| `GET /sessions` | — | machine groups `{machine,reachable,last_seen,sessions}` |
+| `GET /projects` | — | `{projects:[path]}`, the repos in `projects.json`, added when a thread is created |
+| `GET /sessions` | — | machine groups `{machine,reachable,last_seen,sessions}`; other tmux sessions appear as `{name,managed:false}` (read-only) |
 | `GET /sessions/:name/pane` | — | `{pane}` |
 | `POST /sessions/:name/keys` | `{keys}` | `{ok:true}` |
 | `POST /machine/cards` | service envelope `{thread_id,session,...card}` | accepted card, `202` |
@@ -33,3 +34,9 @@ Chat `items` are `{type:"human"|"assistant"|"tool"|"context",text,at}`. `at` is 
 ISO timestamp on that transcript line, so pages can interleave chat and cards in time order.
 `human` card presses include `card:true`; context items include `context:"stub"|"restart"`.
 Tool items are collapsed summaries; the transcript remains the authoritative detail.
+
+Session start (`wc.js session start --tier`, and the hub's own lead starts, which use `top`): the hub
+turns the tier into the machine request's `model`. Codex takes `luna`, `terra`, `sol` (resolved through
+`codex/model.sh <tier>`) or `top` (Sol); Claude takes `haiku`, `sonnet`, `opus` (passed as `--model`)
+or `top` (no `--model`). A tier that does not fit the CLI is a 400 with the reason. A start is a 409
+("machine service out of date") while that machine's `/v1/status` commit differs from the hub's.
