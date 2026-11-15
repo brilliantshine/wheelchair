@@ -567,3 +567,4 @@ table built here.
 - 2026-11-15 — Remediation 1: R1-1 accepted (boolean switches saved as true or false; settings spec 18/18 on rerun).
 - 2026-11-15 — Choice: R1-1, `viewer/pages/settings.js` `blankDraft()`: a new template's draft starts with both boolean switches `false`; a template loaded without the key sends none until toggled.
 - 2026-11-15 — Choice: R1-1, `viewer/test/app-settings.spec.js`: the false-switch assertions extend the existing template test; the prompt check reads `role=worker` with no project.
+- 2026-11-15 — Verification attempt 2 (commit `9649e1f`): Claude verifier PASS; Codex verifier FAIL, 2 new gaps (old tier names refused by `PUT /settings/models`; template scope not checked against `projects.json`). Both upheld; REMEDIATION-2.md, task R2-1 (Codex Light).
