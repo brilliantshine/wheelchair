@@ -32,6 +32,12 @@ three sentences. The answer arrives as a message starting `[wc:from <session>]` 
 your current turn ends. If you can safely continue on other parts meanwhile, do. If a
 small decision does not matter, make it and list it in your choices (below).
 
+This is the one built-in rule a behavior template may change. With a worker template whose
+switch is "Pick, record it, keep going" (unsettled: decide), do not send the lead a card:
+pick the option you judge best, keep going, and list the question, the options and your pick
+under your report's Choices, flagged "decided under the template, not asked". With "Ask the
+lead" or no template, the rule stands as written above.
+
 ## Finishing
 
 1. Write your report to `docs/plans/<slug>/reports/<task>.md` (the slug and task id are
