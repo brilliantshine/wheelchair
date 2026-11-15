@@ -350,6 +350,20 @@ bash machine/test/fork-probe.sh       # T1, by hand, real CLIs
 | mechanics (gpt) | major | Early close then quick reopen could run two processes on one conversation | upheld | §4: reopening during a pending stop cancels it and reuses the live session; `resume` only after a real stop |
 | intent (gpt) | minor | Reopening would replay an already-answered question | upheld | §6: reopening moves the queue but re-sends nothing |
 
+### Round 4 — 2026-11-15
+
+Collin chose "Keep going" after three rounds; the budget is reset.
+
+**Lanes:** intent: pending; mechanics: pending.
+
+**Changed since Round 3:**
+- Reopening moves queued messages but re-sends nothing (§6).
+- Think harder re-sends only the last delivered message; queued ones follow once (§6).
+- Reopening during a pending deferred stop cancels it and reuses the live session; `resume` only after a real stop (§4).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
