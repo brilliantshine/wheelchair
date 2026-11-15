@@ -297,8 +297,8 @@ refusal. The `POST /threads` body is unchanged.
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Machine route `GET /v1/projects` (found + check), API.md, tests | `machine/service.js`, `machine/API.md`, `machine/test/service.test.js` | claude standard (claude-sonnet-5-5) | wc-1a4f2c3d8d4c-worker | `bash machine/test/run.sh` | done (merged 08801b5; 66/66 re-run by sub-lead) |
-| T2 | Hub: settings fields, `/new-thread`, saved-dirs, preferences, createThread check, template scope, API.md, fake machine `/v1/projects`, node tests | `viewer/app/`, `viewer/test/helpers/app-machine.js`, `viewer/test/*.test.js` (not pages, server.js, specs) | attempts 1-2 claude standard (claude-sonnet-5-5); attempt 3 claude light (claude-haiku-5-5), a transcription brief | wc-1a4f2c3d8d4c-worker-4 (attempt 3; worker-2, worker-3 earlier) | `node --test viewer/test/*.test.js` | attempt 3 in progress |
-| T3 | Pages: New thread screen, APP_PAGES, removals (threads/thread/nav/app.css), Settings field, Playwright specs | `viewer/pages/`, `viewer/server.js` (APP_PAGES), `viewer/test/*.spec.js`, `viewer/test/app-pages.test.js` | claude standard (claude-sonnet-5-5) | — | node tests + `npm --prefix viewer run test:browser` | waits on T2 (browser specs need the hub routes) |
+| T2 | Hub: settings fields, `/new-thread`, saved-dirs, preferences, createThread check, template scope, API.md, fake machine `/v1/projects`, node tests | `viewer/app/`, `viewer/test/helpers/app-machine.js`, `viewer/test/*.test.js` (not pages, server.js, specs) | claude standard (claude-sonnet-5-5) | wc-1a4f2c3d8d4c-worker-3 (commits 9af06ab + 3fe67e0); worker-2 collided, worker-4 (light, claude-haiku-5-5) stopped as redundant | `node --test viewer/test/*.test.js` | done (merged; 275 pass, 1 known flaky fail, re-run by sub-lead) |
+| T3 | Pages: New thread screen, APP_PAGES, removals (threads/thread/nav/app.css), Settings field, Playwright specs | `viewer/pages/`, `viewer/server.js` (APP_PAGES), `viewer/test/*.spec.js`, `viewer/test/app-pages.test.js` | claude standard (claude-sonnet-5-5) | wc-1a4f2c3d8d4c-worker-5 | node tests + `npm --prefix viewer run test:browser` | in progress |
 
 ## Log
 
@@ -318,3 +318,5 @@ refusal. The `POST /threads` body is unchanged.
 - 2026-11-15 — Choice: T2, routes.js `PUT /settings/preferences`: a non-string `default_project_folder` is `400`; the response includes `default_project_folder`.
 - 2026-11-15 — Choice: T2, threads.js refusal message uses the machine's returned `checked.path`, falling back to the submitted path.
 - 2026-11-15 — Choice: T2, viewer/test/helpers/app-machine.js: a failed check of a relative path returns `{ok:false, reason}` without `path`.
+- 2026-11-15 — T2 accepted from worker-3 after all: before it was stopped it committed 3fe67e0, which removes the duplicates (one copy each of `newThread`, `addSavedDir`, `checkProject`; `checkProject` returns the machine's answer and its callers refuse on not-ok). Diff read; node suite re-run on its branch: 275 pass, 1 fail (the known flaky port-holder test). Merged. Attempt 3 (worker-4, branch wc-1a4f2c3d8d4c-w4) stopped as redundant and not merged; its worktree stays because the service removes only merged ones.
+- 2026-11-15 — T3 dispatched (worker-5).
