@@ -30,3 +30,15 @@ Raised by Collin during the app-shell acceptance run (2026-11-14), for after sli
   thread ("decided: …") that the lead treats like a card answer.
 - Whether "answer in my own words" is just a text box on every card that sends
   `[card <id>] answered: <text>`, or the first message of a side conversation.
+
+## Later design
+
+Collin designed this as **asides** on 2026-11-14:
+- highlight words in a lead message and Ask about this, Say it simpler or Draw it;
+- a side panel quoting the highlight, which shows what the main thread is waiting on;
+- "Done, back to …" or "This changes my answer";
+- the aside runs as a copy of the lead's conversation.
+
+The full design is in `../app-settings/proposal.md` ("Asides"), and the screen is
+`../app-shell/design/ThreadAside.dc.html`. Plan the two together.
+

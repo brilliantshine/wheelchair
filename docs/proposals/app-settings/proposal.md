@@ -2,7 +2,25 @@
 
 Nov 14, 2026 · Collin Zhong
 
-An addendum to [proposal.md](proposal.md), settled while designing the settings screens and
+> **Status:** a proposal waiting for `/adopt`, not yet planned or built. Collin wrote it as
+> an addendum to the app-shell proposal while designing the settings screens and the thread
+> aside on 2026-11-14. By then the app-shell plan (`docs/plans/app-shell/`) had already been
+> built and verified as slice 1, so the addendum moved here as its own feature, unchanged
+> below this note. "The proposal" in the text means
+> [`../app-shell/proposal.md`](../app-shell/proposal.md). The screens stay on the shared
+> app canvas in [`../app-shell/design/`](../app-shell/design/): `SettingsAccounts`,
+> `SettingsUsage`, `SettingsModels`, `SettingsTemplates`, `SettingsWriting` and
+> `ThreadAside` (`.dc.html`).
+>
+> **Overlaps to settle when planning:**
+> - Asides solve the problem `../app-side-conversations/proposal.md` raises, which came up
+>   during the acceptance run. Plan the two together.
+> - The Settings page item in `docs/plans/app-shell/acceptance-followups.md` (the
+>   permission mode and model pins) belongs here too.
+> - The tier rename and the lead writing style reach `protocol/`, which is outside the app:
+>   `lanes.md`'s tier names, and IDEA's non-goal that app agents drop the writing rules.
+
+An addendum to the proposal, settled while designing the settings screens and
 the thread aside on 2026-11-14. Read it alongside the proposal. Where the two disagree, this
 file is newer and wins; the two changes it makes to earlier decisions are listed first.
 
@@ -155,4 +173,4 @@ get back to what the thread was doing.
 
 The settings screens and the aside are on the Wheelchair App design canvas, in the
 Settings row and at the end of the second row. Updated copies of every screen are in
-[`design/`](design/).
+[`../app-shell/design/`](../app-shell/design/).

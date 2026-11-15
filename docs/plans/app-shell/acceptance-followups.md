@@ -55,7 +55,7 @@ and are listed in COMPLETION.md.
   choices. It doesn't: the newer-model heads-up from `codex/preflight.sh` only reaches an
   agent's terminal. One Settings page could hold the permission mode above, and each
   tier's model per family (`codex/model.sh` pins), with the heads-up shown there and
-  switch/skip buttons.
+  switch/skip buttons. Collin has since designed it in full: `docs/proposals/app-settings/proposal.md`.
 - **Agent-raised needs never close, and a typed answer leaves its question open.** The
   Spec only closes cards by a press or by the hub's own stuck/prompt rules, so a `needs`
   card a lead raises stays under "Needs you" forever. Raised by the Stage 4 verifier and
