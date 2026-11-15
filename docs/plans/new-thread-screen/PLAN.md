@@ -124,7 +124,7 @@ refusal. The `POST /threads` body is unchanged.
   `data-current` match (or `threads`).
 - On load and whenever Machine changes, fetch `GET /new-thread?machine=`. Project dropdown,
   in this order, without duplicates by path: **Saved** (by name), **In <default folder>**
-  (found, by name; hidden when a saved entry has the same name), **Used before**
+  (found, by name), **Used before**
   (`previous` not already listed, by last path segment, with the full path where two share
   one). A found folder whose path equals a saved entry's path is listed once, under Saved;
   nothing is ever hidden by name. Use `<optgroup>` labels. The option's value is the path; the full path shows under
