@@ -20,7 +20,7 @@ const DEFAULT_STYLE = Object.freeze({
 });
 
 function defaults() {
-  return { permission_mode: 'auto', codex_mode: 'sandboxed', tool_steps: 'show', other_agents: { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard' }, templates: [], style: structuredClone(DEFAULT_STYLE), style_version: 0 };
+  return { permission_mode: 'auto', codex_mode: 'sandboxed', tool_steps: 'show', other_agents: { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard' }, templates: [], style: structuredClone(DEFAULT_STYLE), style_version: 0, default_project_folder: '', saved_dirs: [] };
 }
 
 function fail(message) { throw appError(400, message); }
@@ -158,7 +158,15 @@ function normalize(saved) {
     templates: Array.isArray(saved.templates) ? saved.templates : [],
     style: saved.style ? validateStyle(saved.style) : base.style,
     style_version: Number.isInteger(saved.style_version) && saved.style_version >= 0 ? saved.style_version : 0,
+    default_project_folder: typeof saved.default_project_folder === 'string' ? saved.default_project_folder : '',
+    saved_dirs: Array.isArray(saved.saved_dirs) ? saved.saved_dirs : [],
   };
+}
+
+// Spec "Hub", State: the project folders a template scope may name are the repos threads have
+// used (projects.json) plus every saved directory's path.
+function knownProjects(projects, settings) {
+  return [...new Set([...projects, ...settings.saved_dirs.map((entry) => entry.path)])];
 }
 
 async function load(hub) {
@@ -202,9 +210,10 @@ async function describe(hub) {
   const active = new Set(threads.flatMap((thread) => thread.sessions.filter((session) => session.live).map((session) => session.template_id)).filter(Boolean));
   const templateCounts = new Map();
   for (const thread of threads) for (const session of thread.sessions) if (session.live && session.template_id) templateCounts.set(session.template_id, (templateCounts.get(session.template_id) || 0) + 1);
-  const projectSet = new Set(projects);
+  const known = knownProjects(projects, settings);
+  const projectSet = new Set(known);
   const templates = settings.templates.map((template) => ({ ...template, live_sessions: templateCounts.get(template.id) || 0, scope_missing: template.scope !== 'all' && !projectSet.has(template.scope) }));
-  return { models: modelValues, model_options: options(modelValues), heads_up: heads, permission_mode: settings.permission_mode, codex_mode: settings.codex_mode, tool_steps: settings.tool_steps, other_agents: settings.other_agents, templates, in_use: templates.filter((template) => template.in_use).map((template) => template.id), style: settings.style, style_version: settings.style_version, projects };
+  return { models: modelValues, model_options: options(modelValues), heads_up: heads, permission_mode: settings.permission_mode, codex_mode: settings.codex_mode, tool_steps: settings.tool_steps, other_agents: settings.other_agents, templates, in_use: templates.filter((template) => template.in_use).map((template) => template.id), style: settings.style, style_version: settings.style_version, projects: known, default_project_folder: settings.default_project_folder, saved_dirs: settings.saved_dirs };
 }
 
 async function preview(hub, style) {
@@ -219,4 +228,4 @@ async function preview(hub, style) {
   } catch (error) { throw appError(502, `Preview failed: ${error.message}`); }
 }
 
-module.exports = { DEFAULT_STYLE, ROLES, SAMPLE, TIER_ALIASES, WORK_TIERS, assertFits, defaults, describe, fullPrompt, headsUp, load, modelCommand, models, normalize, options, preview, renderStyle, roleLayers, save, switchSentences, templateFor, tier, update, validateStyle, validateTemplate };
+module.exports = { DEFAULT_STYLE, ROLES, SAMPLE, TIER_ALIASES, WORK_TIERS, assertFits, defaults, describe, fullPrompt, headsUp, knownProjects, load, modelCommand, models, normalize, options, preview, renderStyle, roleLayers, save, switchSentences, templateFor, tier, update, validateStyle, validateTemplate };

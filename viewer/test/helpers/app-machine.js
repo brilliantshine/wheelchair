@@ -33,6 +33,8 @@ async function startMachine(secret = 'machine-test-secret') {
   let submitOk = true;
   let archiveKept = [];
   let sessionsAvailable = true;
+  let projects = { found: [], folder_error: undefined, bad: {} };
+  let projectsAvailable = true;
   let preview = { ok: true, text: 'Previewed message.' };
   const server = http.createServer(async (request, response) => {
     if (request.headers['x-wheelchair-machine-secret'] !== secret) {
@@ -73,6 +75,10 @@ async function startMachine(secret = 'machine-test-secret') {
     if (request.method === 'POST' && url.pathname === '/v1/archive') {
       return archive(response, sessions, input.thread_id, archiveKept);
     }
+    if (request.method === 'GET' && url.pathname === '/v1/projects') {
+      if (!projectsAvailable) return send(response, 404, { error: 'not found' });
+      return projectsReply(response, url, projects);
+    }
     if (request.method === 'GET' && url.pathname === '/v1/status') {
       return send(response, 200, { ...status, sessions: [...sessions.values(), UNMANAGED] });
     }
@@ -99,12 +105,34 @@ async function startMachine(secret = 'machine-test-secret') {
     set archiveKept(value) { archiveKept = Array.isArray(value) ? value : []; },
     get sessionsAvailable() { return sessionsAvailable; },
     set sessionsAvailable(value) { sessionsAvailable = Boolean(value); },
+    get projects() { return projects; },
+    set projects(value) { projects = { ...projects, ...value }; },
+    get projectsAvailable() { return projectsAvailable; },
+    set projectsAvailable(value) { projectsAvailable = Boolean(value); },
     get preview() { return preview; },
     set preview(value) { preview = { ...preview, ...value }; },
     async stop() {
       await new Promise((resolve) => server.close(resolve));
     },
   };
+}
+
+// Stands in for GET /v1/projects: `found` and `folder_error` answer a folder; a path in `bad`
+// fails a check with its reason; `~` and `~/x` expand to /home/fake.
+function projectsReply(response, url, projects) {
+  const reply = {};
+  if (url.searchParams.has('folder')) {
+    reply.found = projects.found;
+    if (projects.folder_error) reply.folder_error = projects.folder_error;
+  }
+  if (url.searchParams.has('check')) {
+    let target = url.searchParams.get('check');
+    if (target === '~' || target.startsWith('~/')) target = `/home/fake${target.slice(1)}`;
+    if (!target.startsWith('/')) reply.checked = { path: target, ok: false, reason: 'must be an absolute path' };
+    else if (Object.hasOwn(projects.bad, target)) reply.checked = { path: target, ok: false, reason: projects.bad[target] };
+    else reply.checked = { path: target, ok: true };
+  }
+  return send(response, 200, reply);
 }
 
 function startSession(response, sessions, input) {

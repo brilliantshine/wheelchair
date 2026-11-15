@@ -4,6 +4,7 @@
 // "hub" (docs/plans/app-shell, "State" and "Machine service on the hub").
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
+const http = require('node:http');
 const path = require('node:path');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
@@ -35,14 +36,56 @@ test('"hub" names the installer-registered entry for this host\'s own service', 
   assert.equal((await state.machines()).hearth.last_seen, '2026-11-14T00:00:00.000Z');
 });
 
+// A machine service that passes the path check and refuses everything else, so the start
+// itself is what fails.
+async function checkOnlyMachine() {
+  const server = http.createServer((request, response) => {
+    const url = new URL(request.url, 'http://machine.test');
+    const ok = url.pathname === '/v1/projects';
+    response.writeHead(ok ? 200 : 503, { 'content-type': 'application/json' });
+    response.end(JSON.stringify(ok ? { checked: { path: url.searchParams.get('check'), ok: true } } : { error: 'refused' }));
+  });
+  const port = await freePort();
+  await new Promise((resolve) => server.listen(port, '127.0.0.1', resolve));
+  return { port, stop: () => new Promise((resolve) => server.close(resolve)) };
+}
+
+// A service that passes the path check but refuses to start the session.
+async function refusingStartMachine() {
+  const server = http.createServer((request, response) => {
+    const url = new URL(request.url, 'http://machine.test');
+    response.writeHead(url.pathname === '/v1/projects' ? 200 : 500, { 'content-type': 'application/json' });
+    response.end(JSON.stringify(url.pathname === '/v1/projects'
+      ? { checked: { path: url.searchParams.get('check'), ok: true } }
+      : { error: 'start refused' }));
+  });
+  const port = await freePort();
+  await new Promise((resolve) => server.listen(port, '127.0.0.1', resolve));
+  return { port, stop: () => new Promise((resolve) => server.close(resolve)) };
+}
+
 test('a lead whose machine refuses the start is recorded as failed, not left starting', async () => {
+  const machine = await refusingStartMachine();
+  try {
+    const hub = new Hub({ stateDir: await installerShapedState(machine.port) });
+    await hub.init();
+    await assert.rejects(hub.createThread({ project: '/tmp/nowhere', cli: 'claude', machine: 'hub' }));
+    const [made] = await hub.allThreads();
+    assert.equal(made.sessions[0].status, 'failed');
+    assert.equal(made.sessions[0].live, false);
+    assert.ok(made.sessions[0].error);
+  } finally { await machine.stop(); }
+});
+
+test('an unreachable machine leaves no thread and no projects.json entry', async () => {
   const hub = new Hub({ stateDir: await installerShapedState(await freePort()) });
   await hub.init();
-  await assert.rejects(hub.createThread({ project: '/tmp/nowhere', cli: 'claude', machine: 'hub' }));
-  const [made] = await hub.allThreads();
-  assert.equal(made.sessions[0].status, 'failed');
-  assert.equal(made.sessions[0].live, false);
-  assert.ok(made.sessions[0].error);
+  await assert.rejects(
+    hub.createThread({ project: '/tmp/nowhere', cli: 'claude', machine: 'hub' }),
+    (error) => error.status === 502 && error.message === 'hub is not reachable',
+  );
+  assert.deepEqual(await hub.allThreads(), []);
+  assert.deepEqual(await hub.projects(), []);
 });
 
 test('wc.js passes worktree-remove through with the worker session, and requires a commit message', () => {
