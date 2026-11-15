@@ -68,6 +68,7 @@ async function choose(hub, thread, role, tier, constraints = {}) {
     }
     return blockers.length ? [new Date(Math.max(...blockers)).toISOString()] : [];
   }).sort();
-  return { wait: { until: resets[0] || new Date(now + 60000).toISOString(), reason: `no ${relevant.length === 1 ? relevant[0] + ' account' : 'account'} has room` } };
+  const waitingProvider = ['lead', 'sub-lead'].includes(role) && thread.provider ? thread.provider : role === 'worker' && provider && !margin[provider] ? provider : role === 'lead' ? settings.lead_order.find((p) => p !== 'any') || null : null;
+  return { wait: { provider: waitingProvider, until: resets[0] || new Date(now + 60000).toISOString(), reason: `no ${relevant.length === 1 ? relevant[0] + ' account' : 'account'} has room` } };
 }
 module.exports = { choose, slotFor };

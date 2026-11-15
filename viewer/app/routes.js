@@ -63,7 +63,7 @@ async function handleSettings(hub, request, response, url, bits, body) {
         if (!Object.hasOwn(PROVIDERS, body.provider) || typeof body.name !== 'string' || !body.name.trim() || !Object.hasOwn(settings.PLANS[body.provider], body.plan)) throw appError(400, 'invalid account');
         const base = body.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '') || 'account';
         let id = base, n = 2;
-        while (id.startsWith('default-') || value.accounts.some((a) => a.id === id)) { const suffix = `-${n++}`; id = base.slice(0, 40 - suffix.length) + suffix; if (id.startsWith('default-')) id = `account${suffix}`; }
+        while (id.startsWith('default-') || (value.accounts.some((a) => a.id === id) || value.retired_accounts.includes(id))) { const suffix = `-${n++}`; id = base.slice(0, 40 - suffix.length) + suffix; if (id.startsWith('default-')) id = `account${suffix}`; }
         account = { id, provider: body.provider, name: body.name.trim(), plan: body.plan, weight: settings.PLANS[body.provider][body.plan], paused: false };
         value.accounts.push(account);
       });
@@ -75,7 +75,7 @@ async function handleSettings(hub, request, response, url, bits, body) {
         const index = value.accounts.findIndex((a) => a.id === bits[2]);
         if (index < 0) throw appError(404, 'account not found');
         account = value.accounts[index];
-        if (request.method === 'DELETE') { if (account.id === `default-${account.provider}`) throw appError(400, 'default account cannot be removed'); value.accounts.splice(index, 1); return; }
+        if (request.method === 'DELETE') { if (account.id === `default-${account.provider}`) throw appError(400, 'default account cannot be removed'); value.accounts.splice(index, 1); value.retired_accounts.push(account.id); return; }
         if (body.name !== undefined && (typeof body.name !== 'string' || !body.name.trim())) throw appError(400, 'invalid name');
         if (body.plan !== undefined && !Object.hasOwn(settings.PLANS[account.provider], body.plan)) throw appError(400, 'invalid plan');
         if (body.weight !== undefined && (typeof body.weight !== 'number' || !Number.isFinite(body.weight) || body.weight <= 0)) throw appError(400, 'invalid weight');
