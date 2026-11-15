@@ -95,6 +95,44 @@ test.describe('desktop', () => {
     await expect(page.getByLabel('Checker', { exact: true })).toHaveValue('critical');
   });
 
+  test('effort selects: GPT tier and both leads save; GPT has no max', async ({ page }) => {
+    await openPage(page, context, '/app/settings#models');
+    const gptStd = page.getByLabel('GPT standard effort', { exact: true });
+    await expect(gptStd.locator('option')).toHaveText(['CLI default', 'low', 'medium', 'high', 'xhigh']);
+    await expect(page.getByLabel('Claude heavy effort', { exact: true }).locator('option')).toHaveText(['CLI default', 'low', 'medium', 'high', 'xhigh', 'max']);
+    await gptStd.selectOption('high');
+    await expect.poll(async () => (await settings(page)).models.gpt.standard.effort).toBe('high');
+    await page.getByLabel('GPT lead effort', { exact: true }).selectOption('medium');
+    await expect.poll(async () => (await settings(page)).models.gpt.lead.effort).toBe('medium');
+    await page.getByLabel('Claude lead effort', { exact: true }).selectOption('max');
+    await expect.poll(async () => (await settings(page)).models.claude.lead.effort).toBe('max');
+    await page.reload();
+    await expect(page.getByLabel('GPT standard effort', { exact: true })).toHaveValue('high');
+    await expect(page.getByLabel('Claude lead effort', { exact: true })).toHaveValue('max');
+  });
+
+  test('Escalation: default text, Model first, Highest tier Heavy', async ({ page }) => {
+    await openPage(page, context, '/app/settings#models');
+    await expect(page.locator('h2#escalation')).toHaveText('Escalation');
+    const text = page.locator('.escalation-text');
+    await expect(text).toContainText('up to xhigh');
+    await expect(text).toContainText('up to Critical');
+    await expect(text).toContainText('Before moving a task to Critical');
+    await page.getByRole('radiogroup', { name: 'What steps up first' }).getByRole('radio', { name: 'Model' }).click();
+    await expect(text).toContainText('Move up one tier');
+    await expect.poll(async () => (await settings(page)).escalation.first).toBe('model');
+    await page.reload();
+    await expect(page.getByRole('radiogroup', { name: 'What steps up first' }).getByRole('radio', { name: 'Model' })).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('.escalation-text p').nth(1)).toHaveText(/^Move up one tier/);
+    await page.getByRole('radiogroup', { name: 'Highest tier' }).getByRole('radio', { name: 'Heavy' }).click();
+    await expect(text).not.toContainText('Before moving a task to Critical');
+    await expect.poll(async () => (await settings(page)).escalation.max_tier).toBe('heavy');
+    // put the defaults back
+    await page.getByRole('radiogroup', { name: 'Highest tier' }).getByRole('radio', { name: 'Critical' }).click();
+    await page.getByRole('radiogroup', { name: 'What steps up first' }).getByRole('radio', { name: 'Effort' }).click();
+    await expect.poll(async () => (await settings(page)).escalation).toEqual({ first: 'effort', max_effort: 'xhigh', max_tier: 'critical', ask_before: 'critical' });
+  });
+
   test('creating and saving a template, marking it in use, and the worker-only switch', async ({ page }) => {
     await openPage(page, context, '/app/settings#templates');
     await page.getByRole('button', { name: '+ New template' }).click();
@@ -252,6 +290,25 @@ test.describe('phone', () => {
       });
     }
   }
+
+  test('the Escalation section fits a phone and the effort selects stay usable', async ({ page }) => {
+    await openPage(page, context, '/app/settings#models');
+    const section = page.locator('#escalation');
+    await section.scrollIntoViewIfNeeded();
+    await expect(section).toBeVisible();
+    await expect(page.locator('.escalation-text')).toContainText('up to xhigh');
+    await expect(page.getByRole('radiogroup', { name: 'Ask me before' })).toBeVisible();
+    await page.getByRole('radiogroup', { name: 'Ask me before' }).getByRole('radio', { name: 'Any step up' }).click();
+    await expect.poll(async () => (await settings(page)).escalation.ask_before).toBe('any');
+    await page.getByRole('radiogroup', { name: 'Ask me before' }).getByRole('radio', { name: 'Critical', exact: true }).click();
+    await expect.poll(async () => (await settings(page)).escalation.ask_before).toBe('critical');
+    const sel = page.getByLabel('GPT heavy effort', { exact: true });
+    await sel.scrollIntoViewIfNeeded();
+    const box = await sel.boundingBox();
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(390);
+    await noSideScroll(page);
+  });
 
   test('Settings keeps its accessible name on a phone', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 800 });

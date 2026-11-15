@@ -53,6 +53,8 @@
 .row-line:first-child { border-top: 0; }
 .row-line .what { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
 .row-line .what .hint { margin: 0; }
+.escalation-text { display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 1.5; color: var(--ink-2); margin-bottom: 10px; }
+.escalation-text p { margin: 0; overflow-wrap: anywhere; }
 .row-line .ctl { flex: 0 1 280px; min-width: 0; }
 .row-line .ctl.wide { flex-basis: 340px; }
 .seg-radio { display: flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: 8px; background: var(--bg); border: 1px solid var(--line); }
