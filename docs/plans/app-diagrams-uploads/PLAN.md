@@ -363,6 +363,11 @@ Clean round: approved.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Machine: uploads routes, image-card copy, per-thread lock, closing flag, archive cleanup | machine/service.js, machine/test/, machine/API.md | gpt standard (gpt-6.1-terra) | wc-c56d4b2c5f5f-worker | `bash machine/test/run.sh` | in progress |
+| T2 | Hub: card fields, image storage, uploads/files/diagram routes, MachineClient.stream, archive handling | viewer/server.js, viewer/app/*.js, viewer/app/API.md, viewer/test/*.test.js, viewer/test/helpers/app-machine.js | gpt standard (gpt-6.1-terra) | wc-c56d4b2c5f5f-worker-2 | `node --test viewer/test/*.test.js` | in progress |
+| T3 | Thread page: form renderers, HTML and image cards, composer uploads; browser tests | viewer/pages/thread.*, new viewer/test/*.spec.js, browser test helpers | claude standard; after T1, T2 | — | `npm --prefix viewer run test:browser` | not started |
+| T4 | Protocol: cards.md diagram format, forms, image card; lead.md pointer | protocol/app/cards.md, protocol/app/lead.md | gpt standard (gpt-6.1-terra) | wc-c56d4b2c5f5f-worker-3 | grep, diff stat | in progress |
+| T5 | Integration: archive through the real hub route while an upload to the real machine service is paused | one new viewer/test/*.test.js | standard; after T1, T2 | — | `node --test viewer/test/*.test.js` | not started |
 
 ## Log
 
