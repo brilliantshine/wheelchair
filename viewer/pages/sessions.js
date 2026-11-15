@@ -39,9 +39,14 @@
     return row;
   }
 
+  // An unmanaged tmux session is always live: the machine lists only the ones that exist.
+  function isRunning(session) {
+    return session.managed === false || (session.running !== false && session.status !== 'stopped');
+  }
+
   function sessionRow(machine, session, isHub) {
     if (session.managed === false) return unmanagedRow(machine, session);
-    const running = session.running !== false && session.status !== 'stopped';
+    const running = isRunning(session);
     const row = el('li', 'v-card session');
     row.dataset.session = session.name;
     const head = el('div', 'session-head');
@@ -102,17 +107,35 @@
         group.reachable ? 'reachable' : 'unreachable'));
       if (!group.reachable) header.append(el('span', 'v-badge seen', seenText(group)));
       section.append(header);
+      // Stopped sessions fold under one line so the running ones are what the page shows.
+      const all = group.sessions || [];
+      const live = all.filter(isRunning);
+      const stopped = all.filter((session) => !isRunning(session));
       const list = el('ul', 'v-list');
-      for (const session of group.sessions || []) list.append(sessionRow(group.machine, session, group.hub === true));
-      if (group.reachable && !(group.sessions || []).length) {
-        list.append(el('li', 'v-empty', 'No sessions.'));
+      for (const session of live) list.append(sessionRow(group.machine, session, group.hub === true));
+      if (group.reachable && !live.length) {
+        list.append(el('li', 'v-empty', stopped.length ? 'No running sessions.' : 'No sessions.'));
       }
       section.append(list);
+      if (stopped.length) {
+        const fold = el('details', 'v-stopped');
+        // The page redraws every five seconds; keep a fold the reader opened open.
+        fold.open = openFolds.has(group.machine);
+        fold.addEventListener('toggle', () => {
+          if (fold.open) openFolds.add(group.machine); else openFolds.delete(group.machine);
+        });
+        fold.append(el('summary', '', `${stopped.length} stopped`));
+        const folded = el('ul', 'v-list');
+        for (const session of stopped) folded.append(sessionRow(group.machine, session, group.hub === true));
+        fold.append(folded);
+        section.append(fold);
+      }
       root.append(section);
     }
     document.getElementById('empty').hidden = groups.length > 0;
   }
 
+  const openFolds = new Set();
   let titles = {};
   async function loadTitles() {
     try {

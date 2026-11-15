@@ -97,12 +97,24 @@ for (const [label, size] of SIZES) {
       await noSideScroll(page);
     });
 
+    test('list: ?new=1 goes to the New thread screen', async ({ page }) => {
+      await page.goto(`${ctx.server.url}/app/threads?new=1`);
+      await expect(page).toHaveURL(/\/app\/new$/);
+      await expect(page.locator('#nt-project')).toBeVisible();
+    });
+
     test('list: new thread posts and opens the thread', async ({ page }) => {
       await page.goto(`${ctx.server.url}/app/threads`);
+      await page.evaluate(() => fetch('/wheelchair/api/settings/preferences', {
+        method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ default_project_folder: '/tmp' }),
+      }));
+      ctx.machine.projects = { found: [{ name: 'project', path: '/tmp/project' }] };
       await page.locator('#new-toggle').click();
-      await page.locator('#nt-project').fill('/tmp/project');
+      await expect(page).toHaveURL(/\/app\/new$/);
+      await expect(page.locator('#nt-project option[value="/tmp/project"]')).toHaveCount(1);
+      await page.locator('#nt-project').selectOption('/tmp/project');
       await expect(page.locator('#nt-cli')).toHaveCount(0);
-      await page.locator('#nt-machine').fill('hub');
+      await page.locator('#nt-machine').selectOption('hub');
       const request = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith('/api/threads'));
       await page.locator('#nt-go').click();
       expect((await request).postDataJSON()).toMatchObject({ project: '/tmp/project', machine: 'hub' });
@@ -544,6 +556,35 @@ for (const [label, size] of SIZES) {
       await card.getByRole('button', { name: 'Take it into planning' }).click();
       await expect(card.locator('.answered-tag')).toHaveText(/You picked Take it into planning/);
       await expect(card.locator('button.picked')).toHaveText(/Take it into planning/);
+    });
+
+    test('pinned cards stay under the header in a long thread and fold to one line', async ({ page }) => {
+      const made = await ctx.make({ cli: 'claude' });
+      const start = Date.parse('2030-01-01T00:00:00.000Z');
+      await ctx.timedTranscript(made.id, Array.from({ length: 60 }, (_, i) =>
+        [i % 2 ? 'assistant' : 'human', 'line ' + i + ' ' + 'words '.repeat(20), new Date(start + i * 60000).toISOString()]));
+      await ctx.post(made.id, { kind: 'idea', bullets: [{ id: 'b1', text: 'dark mode' }] });
+      await open(page, made.id);
+      const pinned = page.locator('#pinned');
+      await expect(pinned.locator('.card-idea')).toContainText('dark mode');
+      await expect(page.locator('#chat .bubble', { hasText: 'line 59' })).toBeVisible();
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      // Scrolled to the bottom, the strip still sits just below the header, in view.
+      await expect.poll(async () => {
+        const head = await page.locator('#head').boundingBox();
+        const pin = await pinned.boundingBox();
+        return Math.abs(pin.y - (head.y + head.height)) <= 1 && pin.y >= 0;
+      }).toBe(true);
+      // Hide folds it to a one-line summary; the choice survives a reload.
+      await pinned.getByRole('button', { name: 'Hide' }).click();
+      await expect(pinned.locator('.card-idea')).toHaveCount(0);
+      await expect(pinned.locator('.pin-bar')).toContainText('Your idea · 1 thing');
+      await page.reload();
+      await expect(pinned.locator('.pin-bar')).toContainText('Your idea · 1 thing');
+      await expect(pinned.locator('.card-idea')).toHaveCount(0);
+      await pinned.getByRole('button', { name: 'Show' }).click();
+      await expect(pinned.locator('.card-idea')).toContainText('dark mode');
+      await noSideScroll(page);
     });
 
     test('plan document links open the in-app document page', async ({ page }) => {

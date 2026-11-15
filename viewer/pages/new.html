@@ -1,0 +1,40 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>New thread</title>
+<link rel="stylesheet" href="/wheelchair/assets/pages/app.css">
+<link rel="stylesheet" href="/wheelchair/assets/pages/new.css">
+<script src="/wheelchair/assets/pages/nav.js" defer></script>
+<script src="/wheelchair/assets/pages/new.js" defer></script>
+<header id="app-nav" data-current="threads"></header>
+<main class="new-screen">
+  <h1>New thread</h1>
+  <form id="new-form" novalidate>
+    <div id="form-error" class="error-banner" role="alert" hidden></div>
+    <div class="field"><label for="nt-machine">Machine</label>
+      <select id="nt-machine"></select></div>
+    <div class="field"><label for="nt-project">Project</label>
+      <select id="nt-project"></select>
+      <code id="nt-path" class="path" hidden></code>
+      <span id="nt-note" class="hint" hidden></span>
+      <span id="nt-found-error" class="hint warn" hidden></span>
+      <span id="nt-no-folder" class="hint" hidden>Set a default project folder in <a href="/wheelchair/app/settings">Settings</a></span>
+      <span id="nt-empty" class="hint" hidden>Nothing to pick yet. Save a directory below.</span></div>
+    <div class="field"><label for="nt-message">First message (optional)</label>
+      <textarea id="nt-message" rows="4"></textarea></div>
+    <span class="hint">The first message opens a tmux session for the lead. Small fixes it just does. When something grows into a feature, it asks before starting the plan workflow, and the thread gets a card on the Features board.</span>
+    <button type="submit" class="primary" id="nt-go">Start</button>
+  </form>
+  <section class="saved" aria-labelledby="saved-h">
+    <h2 id="saved-h">Saved directories</h2>
+    <p class="hint">Saved for the machine chosen above.</p>
+    <ul id="saved-list"></ul>
+    <p id="saved-empty" class="dim" hidden>Nothing saved for this machine.</p>
+    <form id="add-form" class="add-row" novalidate>
+      <input id="add-name" aria-label="Name" placeholder="Name" autocomplete="off">
+      <input id="add-path" aria-label="Path" placeholder="/path/to/repo or ~/repo" autocomplete="off">
+      <button type="submit" id="add-go">Save</button>
+    </form>
+    <div id="add-error" class="error-banner" role="alert" hidden></div>
+  </section>
+</main>

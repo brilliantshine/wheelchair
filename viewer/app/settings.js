@@ -23,7 +23,7 @@ const DEFAULT_STYLE = Object.freeze({
 const PLANS = { claude: { unknown: 1, pro: 1, max5: 5, max20: 20 }, gpt: { unknown: 1, plus: 1, pro: 6 } };
 const BALANCING = ['lead_order', 'worker_order', 'within', 'leave', 'notify_below', 'save_claude_for_leads', 'margin'];
 function defaults() {
-  return { retired_accounts: [], accounts: Object.keys(PROVIDERS).map((provider) => ({ id: `default-${provider}`, provider, name: 'default', plan: 'unknown', weight: 1, paused: false })), lead_order: ['claude', 'any'], worker_order: ['gpt', 'claude'], within: 'soonest', leave: 10, notify_below: 25, save_claude_for_leads: true, margin: 5, permission_mode: 'auto', codex_mode: 'sandboxed', other_agents: { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard' }, templates: [], style: structuredClone(DEFAULT_STYLE), style_version: 0 };
+  return { retired_accounts: [], accounts: Object.keys(PROVIDERS).map((provider) => ({ id: `default-${provider}`, provider, name: 'default', plan: 'unknown', weight: 1, paused: false })), lead_order: ['claude', 'any'], worker_order: ['gpt', 'claude'], within: 'soonest', leave: 10, notify_below: 25, save_claude_for_leads: true, margin: 5, permission_mode: 'auto', codex_mode: 'sandboxed', tool_steps: 'show', other_agents: { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard' }, templates: [], style: structuredClone(DEFAULT_STYLE), style_version: 0, default_project_folder: '', saved_dirs: [] };
 }
 
 function fail(message) { throw appError(400, message); }
@@ -167,10 +167,13 @@ function normalize(saved) {
     accounts, retired_accounts: Array.isArray(saved.retired_accounts) ? saved.retired_accounts.filter((id) => typeof id === 'string') : [], ...balancing,
     permission_mode: saved.permission_mode === 'bypass' ? 'bypass' : 'auto',
     codex_mode: saved.codex_mode === 'unrestricted' ? 'unrestricted' : 'sandboxed',
+    tool_steps: saved.tool_steps === 'hide' ? 'hide' : 'show',
     other_agents: { ...base.other_agents, ...(saved.other_agents || {}) },
     templates: Array.isArray(saved.templates) ? saved.templates : [],
     style: saved.style ? validateStyle(saved.style) : base.style,
     style_version: Number.isInteger(saved.style_version) && saved.style_version >= 0 ? saved.style_version : 0,
+    default_project_folder: typeof saved.default_project_folder === 'string' ? saved.default_project_folder : '',
+    saved_dirs: Array.isArray(saved.saved_dirs) ? saved.saved_dirs : [],
   };
 }
 
@@ -179,6 +182,12 @@ function validBalancing(key, value) {
   if (key === 'within') return ['soonest', 'spread', 'one'].includes(value);
   if (key === 'save_claude_for_leads') return typeof value === 'boolean';
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100;
+}
+
+// Spec "Hub", State: the project folders a template scope may name are the repos threads have
+// used (projects.json) plus every saved directory's path.
+function knownProjects(projects, settings) {
+  return [...new Set([...projects, ...settings.saved_dirs.map((entry) => entry.path)])];
 }
 
 async function load(hub) {
@@ -222,9 +231,10 @@ async function describe(hub) {
   const active = new Set(threads.flatMap((thread) => thread.sessions.filter((session) => session.live).map((session) => session.template_id)).filter(Boolean));
   const templateCounts = new Map();
   for (const thread of threads) for (const session of thread.sessions) if (session.live && session.template_id) templateCounts.set(session.template_id, (templateCounts.get(session.template_id) || 0) + 1);
-  const projectSet = new Set(projects);
+  const known = knownProjects(projects, settings);
+  const projectSet = new Set(known);
   const templates = settings.templates.map((template) => ({ ...template, live_sessions: templateCounts.get(template.id) || 0, scope_missing: template.scope !== 'all' && !projectSet.has(template.scope) }));
-  return { accounts: settings.accounts, ...Object.fromEntries(BALANCING.map((key) => [key, settings[key]])), models: modelValues, model_options: options(modelValues), heads_up: heads, permission_mode: settings.permission_mode, codex_mode: settings.codex_mode, other_agents: settings.other_agents, templates, in_use: templates.filter((template) => template.in_use).map((template) => template.id), style: settings.style, style_version: settings.style_version, projects };
+  return { accounts: settings.accounts, ...Object.fromEntries(BALANCING.map((key) => [key, settings[key]])), models: modelValues, model_options: options(modelValues), heads_up: heads, permission_mode: settings.permission_mode, codex_mode: settings.codex_mode, tool_steps: settings.tool_steps, other_agents: settings.other_agents, templates, in_use: templates.filter((template) => template.in_use).map((template) => template.id), style: settings.style, style_version: settings.style_version, projects: known, default_project_folder: settings.default_project_folder, saved_dirs: settings.saved_dirs };
 }
 
 async function preview(hub, style) {
@@ -239,4 +249,4 @@ async function preview(hub, style) {
   } catch (error) { throw appError(502, `Preview failed: ${error.message}`); }
 }
 
-module.exports = { PLANS, BALANCING, validBalancing, DEFAULT_STYLE, ROLES, SAMPLE, TIER_ALIASES, WORK_TIERS, assertFits, defaults, describe, fullPrompt, headsUp, load, modelCommand, models, normalize, options, preview, renderStyle, roleLayers, save, switchSentences, templateFor, tier, update, validateStyle, validateTemplate };
+module.exports = { PLANS, BALANCING, validBalancing, DEFAULT_STYLE, ROLES, SAMPLE, TIER_ALIASES, WORK_TIERS, assertFits, defaults, describe, fullPrompt, headsUp, knownProjects, load, modelCommand, models, normalize, options, preview, renderStyle, roleLayers, save, switchSentences, templateFor, tier, update, validateStyle, validateTemplate };

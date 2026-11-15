@@ -4,7 +4,6 @@
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const crypto = require('node:crypto');
-const path = require('node:path');
 const { appError } = require('./state.js');
 const { truncateTitle } = require('./card.js');
 const { publicSession, startSession } = require('./sessions.js');
@@ -21,7 +20,7 @@ function newId() {
 function emptyThread(input) {
   return {
     id: newId(),
-    project: path.resolve(input.project),
+    project: input.project,
     machine: input.machine || 'hub',
     stub: false,
     context: '',
@@ -38,11 +37,30 @@ function emptyThread(input) {
   };
 }
 
+// Spec "Hub", Starting a thread: ask the machine itself whether `project` is a git repository
+// there. The machine expands `~`; a missing answer is a 502, an older service a 502 too.
+async function checkProject(hub, machine, project) {
+  await hub.state.machine(machine);
+  let result;
+  try {
+    result = await hub.call(machine, `/v1/projects?check=${encodeURIComponent(project)}`, 'GET');
+  } catch (error) {
+    if (error.status === 404) throw appError(502, `${machine} needs updating`);
+    throw appError(502, `${machine} is not reachable`);
+  }
+  const checked = result && result.checked;
+  if (!checked || typeof checked.ok !== 'boolean') throw appError(502, `${machine} needs updating`);
+  return checked;
+}
+
 async function createThread(hub, input) {
   if (!input || typeof input.project !== 'string' || !input.project) {
     throw appError(400, 'project is required');
   }
-  const thread = emptyThread(input);
+  const machine = input.machine || 'hub';
+  const checked = await checkProject(hub, machine, input.project);
+  if (!checked.ok) throw appError(400, `${checked.path || input.project} ${checked.reason || 'is not usable'} on ${machine}`);
+  const thread = emptyThread({ ...input, project: checked.path });
   if (typeof input.message === 'string') {
     const title = truncateTitle(input.message.split(/\r?\n/, 1)[0], 60);
     if (title) thread.title = title;
@@ -211,9 +229,14 @@ async function press(hub, id, cardId, input) {
     }
     if (!ready.ok) return { queued: false, ready };
   }
+  if (card.kind === 'needs' && (card.system || card.answered)) {
+    throw appError(422, card.system ? 'a system needs card closes itself' : 'card is already answered');
+  }
+  if (input.action === 'keep-going' && card.kind !== 'needs') throw appError(400, 'keep going requires a needs card');
   const lead = [...thread.sessions].reverse().find((item) => item.role === 'lead' && item.live);
   if (!lead) throw appError(409, 'no live lead');
   const suffixes = {
+    'keep-going': 'keep going',
     picked: `picked: ${input.value}`,
     removed: `removed: ${input.value}`,
     talk: `talk about: ${input.value}`,
@@ -225,6 +248,10 @@ async function press(hub, id, cardId, input) {
     card.answered = true;
     card.answered_action = input.action;
     card.answered_value = input.value ?? null;
+  }
+  // A needs card Collin answers is closed by him, so it dims like a resolved one.
+  if (card.kind === 'needs') {
+    require('./cards.js').resolveCard(card, 'collin', input.action === 'keep-going' ? 'Keep going' : 'Talking it over');
   }
   await hub.enqueue(thread, lead.name, `[card ${card.id}] ${suffixes[input.action]}`, 'card');
   return { queued: true, text: suffixes[input.action] };
@@ -271,6 +298,7 @@ module.exports = {
   archive,
   archivedDocument,
   archivedGraph,
+  checkProject,
   createStub,
   createThread,
   dismiss,

@@ -804,6 +804,24 @@ test('the chat reads the lead transcript through the machine service', async () 
   });
 });
 
+test('Tool steps: Hide leaves the lead\'s tool calls out of the chat', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context, { cli: 'claude' });
+    context.machine.sessions.get(made.sessions[0].name).transcript = [
+      { type: 'user', origin: { kind: 'human' }, message: { role: 'user', content: 'List the files.' } },
+      { type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_1', name: 'Bash', input: { command: 'ls' } }] } },
+      { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'Two files.' }] } },
+    ].map((row) => JSON.stringify(row)).join('\n');
+    const shown = await api(context, `/threads/${made.id}/chat`);
+    assert.deepEqual(shown.body.items.map((item) => item.type), ['human', 'tool', 'assistant']);
+    assert.equal((await api(context, '/settings/preferences', { method: 'PUT', body: { tool_steps: 'blur' } })).status, 400);
+    const saved = await api(context, '/settings/preferences', { method: 'PUT', body: { tool_steps: 'hide' } });
+    assert.equal(saved.body.tool_steps, 'hide');
+    const hidden = await api(context, `/threads/${made.id}/chat`);
+    assert.deepEqual(hidden.body.items.map((item) => item.type), ['human', 'assistant']);
+  });
+});
+
 async function startVerifier(context, made) {
   const result = await machinePost(context, '/machine/session', {
     calling_session: made.sessions[0].name, action: 'start', role: 'verifier', cli: 'codex', attempt_id: 'v-1',
@@ -1559,6 +1577,31 @@ test('a resolve retried with the same delivery id is a duplicate', async () => {
     const retry = await machinePost(context, '/machine/cards', body);
     assert.equal(retry.status, 200);
     assert.equal(retry.body.duplicate, true);
+  });
+});
+
+test('keep going and talk about it close a lead needs card and reach the lead', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const first = await openNeed(context, made);
+    const pressed = await api(context, `/threads/${made.id}/cards/${first}/press`, { method: 'POST', body: { action: 'keep-going' } });
+    assert.equal(pressed.status, 202);
+    assert.equal(pressed.body.text, 'keep going');
+    let card = (await api(context, `/threads/${made.id}/chat`)).body.cards.find((item) => item.id === first);
+    assert.equal(card.answered, true);
+    assert.equal(card.resolved_by, 'collin');
+    assert.equal(card.resolved_note, 'Keep going');
+    const again = await api(context, `/threads/${made.id}/cards/${first}/press`, { method: 'POST', body: { action: 'keep-going' } });
+    assert.equal(again.status, 422);
+    const second = await openNeed(context, made);
+    const talk = await api(context, `/threads/${made.id}/cards/${second}/press`, { method: 'POST', body: { action: 'talk', value: 'Review is stuck' } });
+    assert.equal(talk.status, 202);
+    card = (await api(context, `/threads/${made.id}/chat`)).body.cards.find((item) => item.id === second);
+    assert.equal(card.resolved_note, 'Talking it over');
+    const stored = JSON.parse(await fs.readFile(path.join(context.state, 'threads', `${made.id}.json`), 'utf8'));
+    // The lead hears each press, whether still queued or already typed in.
+    assert.ok(JSON.stringify(stored).includes(`[card ${first}] keep going`));
+    assert.ok(JSON.stringify(stored).includes(`[card ${second}] talk about: Review is stuck`));
   });
 });
 

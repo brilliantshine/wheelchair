@@ -38,6 +38,7 @@
   let styleDraft = null;
   let preview = { running: false, after: null, error: '' };
   let styleNote = '';
+  let folderDraft = null; // the typed Default project folder, kept across re-renders until saved
   const panel = document.getElementById('panel');
 
   function h(tag, props, ...kids) {
@@ -210,6 +211,35 @@
       h('div', { class: 'ctl' }, select));
   }
 
+  // The Default project folder: typed, then saved with the button. A refusal shows under the
+  // input and the typed value stays.
+  function folderRow() {
+    const saved = data.default_project_folder || '';
+    const input = h('input', { type: 'text', id: 'default-folder', 'aria-label': 'Default project folder', placeholder: '~/projects', autocomplete: 'off', spellcheck: false, value: folderDraft === null ? saved : folderDraft });
+    const save = h('button', { type: 'button', text: 'Save' });
+    const status = h('p', { class: 'note', role: 'status' });
+    const host = h('div', { class: 'ctl wide' }, h('div', { class: 'folder' }, input, save), status);
+    input.addEventListener('input', () => { folderDraft = input.value; status.textContent = ''; inlineErr(host, ''); });
+    const go = async () => {
+      save.disabled = true;
+      inlineErr(host, '');
+      status.textContent = '';
+      try {
+        const res = await api('/settings/preferences', { method: 'PUT', body: { default_project_folder: input.value.trim() } });
+        data.default_project_folder = res.default_project_folder || '';
+        folderDraft = null;
+        input.value = data.default_project_folder;
+        status.textContent = 'Saved';
+      } catch (e) { inlineErr(host, e.message); }
+      save.disabled = false;
+    };
+    save.addEventListener('click', go);
+    input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); go(); } });
+    return h('div', { class: 'row-line' },
+      h('div', { class: 'what' }, h('span', { text: 'Default project folder' }), h('span', { class: 'hint', text: "Each git repository inside it can be picked when starting a thread. ~ is each machine's home folder." })),
+      host);
+  }
+
   function renderModels() {
     const items = (data.heads_up || []).slice();
     if (data.models.malformed && !items.some((i) => i.kind === 'malformed')) items.unshift({ kind: 'malformed' });
@@ -278,6 +308,13 @@
           h('div', { class: 'row-line' },
             h('div', { class: 'what' }, h('span', { text: 'Codex sessions' }), h('span', { class: 'hint', text: codexHint })),
             codexMode))),
+      h('section', { 'aria-labelledby': 'thread-view' },
+        h('h2', { id: 'thread-view', text: 'Threads' }),
+        h('div', { class: 'box rows' },
+          h('div', { class: 'row-line' },
+            h('div', { class: 'what' }, h('span', { text: 'Tool steps' }), h('span', { class: 'hint', text: data.tool_steps === 'hide' ? 'Hidden: a thread shows only messages and cards.' : 'Commands and file reads show as folded lines between messages.' })),
+            modeGroup('tool_steps', 'Tool steps', [['show', 'Show'], ['hide', 'Hide']])),
+          folderRow())),
       h('section', { 'aria-labelledby': 'others' },
         h('h2', { id: 'others', text: 'Other agents' }),
         h('div', { class: 'box rows' },

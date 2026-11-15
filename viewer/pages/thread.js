@@ -21,6 +21,11 @@
   let pending = [];          // messages posted but not yet seen in the transcript
   let sigs = {};
   let ideaOpen = false;
+  // Whether the pinned strip is folded to one line. A per-viewer convenience, so it lives in
+  // this browser only; storage that throws (private window, blocked site data) just means open.
+  const PINS_KEY = 'wheelchair.pinsFolded';
+  let pinsFolded = false;
+  try { pinsFolded = localStorage.getItem(PINS_KEY) === '1'; } catch (e) { /* stays open */ }
   let archiveAsk = false;
   let accountNames = null;   // account id -> name, from /settings; null until fetched
   const cardErrors = {};
@@ -310,18 +315,6 @@
       render();
     }
   }
-  async function dismiss(card) {
-    try {
-      await post(T + '/cards/' + encodeURIComponent(card.id) + '/dismiss', {});
-      delete cardErrors[card.id];
-      card.answered = true;
-      await poll(true);
-    } catch (e) {
-      cardErrors[card.id] = e.message;
-      sigs.chat = null; sigs.pinned = null;
-      render();
-    }
-  }
   // What a pressed question or offer shows as its pick: the offer's mapped label, else the value itself.
   function pickedLabel(card) {
     if (card.kind === 'offer') {
@@ -498,10 +491,12 @@
           a.href = '/wheelchair/app/terminal?name=' + encodeURIComponent(card.session);
           const actions = el('div', 'actions'); actions.appendChild(a); box.appendChild(actions);
         }
-        // A card a lead posted stays until it is settled; Collin can close it early.
+        // A card a lead posted stays until it is settled. Collin answers it with either
+        // button, and the lead always replies, so nothing closes silently.
         if (!card.system && !card.answered) {
           const actions = el('div', 'actions');
-          actions.appendChild(button('Dismiss', 'small dismiss', () => dismiss(card), thread().archived));
+          actions.appendChild(button('Keep going', 'primary', () => press(card, 'keep-going'), thread().archived));
+          actions.appendChild(button('Talk about it', '', () => press(card, 'talk', card.title), thread().archived));
           box.appendChild(actions);
         }
         break;
@@ -569,15 +564,59 @@
     return box;
   }
 
+  // One short label per pin, for the folded strip.
+  function pinLabel(card) {
+    if (card.kind === 'offer') return card.answered ? 'Planning offer' : 'Planning offer: needs you';
+    if (card.kind === 'idea') {
+      const n = (card.bullets || []).length;
+      return 'Your idea · ' + n + (n === 1 ? ' thing' : ' things');
+    }
+    if (card.kind === 'progress') {
+      return 'Building ' + card.done + ' of ' + card.total + (card.choice_waiting ? ': choice for you' : '');
+    }
+    return card.kind;
+  }
+
   function renderPinned() {
     pinnedEl.textContent = '';
     const order = { offer: 0, idea: 1, progress: 2 };
-    const pins = data.pinned.filter((c) => c.kind in order).sort((a, b) => order[a.kind] - order[b.kind]);
-    for (const p of pins) {
-      const live = data.cards.find((c) => c.id === p.id) || p;
-      const n = renderCard(live); if (n) pinnedEl.appendChild(n);
-    }
+    const pins = data.pinned.filter((c) => c.kind in order).sort((a, b) => order[a.kind] - order[b.kind])
+      .map((p) => data.cards.find((c) => c.id === p.id) || p);
+    pinnedEl.classList.toggle('folded', pinsFolded);
+    if (!pins.length) return;
+    const bar = el('div', 'pin-bar');
+    const label = el('span', 'pin-bar-label');
+    label.appendChild(icon(ICON.pin, 12));
+    label.appendChild(document.createTextNode(pinsFolded ? ' ' + pins.map(pinLabel).join(' · ') : ' Pinned'));
+    const toggle = button(pinsFolded ? 'Show' : 'Hide', 'link pin-toggle', () => {
+      pinsFolded = !pinsFolded;
+      try { localStorage.setItem(PINS_KEY, pinsFolded ? '1' : '0'); } catch (e) { /* this page only */ }
+      sigs.pinned = null; render();
+    });
+    toggle.setAttribute('aria-expanded', String(!pinsFolded));
+    bar.append(label, toggle);
+    pinnedEl.appendChild(bar);
+    if (pinsFolded) return;
+    const list = el('div', 'pin-list');
+    for (const live of pins) { const n = renderCard(live); if (n) list.appendChild(n); }
+    pinnedEl.appendChild(list);
   }
+
+  // The pinned strip sticks just under the thread header, whose height changes as it wraps;
+  // the strip's own height and the composer's tell scrolling (a #card- link) where the open
+  // middle of the screen is, so a card is never scrolled in underneath either.
+  const composerEl = $('composer');
+  function syncStickyHeights() {
+    const root = document.documentElement.style;
+    root.setProperty('--head-h', headEl.offsetHeight + 'px');
+    root.setProperty('--pins-h', pinnedEl.offsetHeight + 'px');
+    root.setProperty('--composer-h', composerEl.offsetHeight + 'px');
+  }
+  syncStickyHeights();
+  if (window.ResizeObserver) {
+    const ro = new ResizeObserver(syncStickyHeights);
+    for (const n of [headEl, pinnedEl, composerEl]) ro.observe(n);
+  } else window.addEventListener('resize', syncStickyHeights);
 
   // One line above the pinned cards while the live lead is waiting for room or rate-limited.
   function clock(iso) {
@@ -625,7 +664,7 @@
     sync('stub', [t.stub, t.sessions.length, t.depends_on_parent, t.ready, t.context, t.parent_pr_url], renderStub);
     sync('wait', [waitingLine(), accountNames], renderWait);
     sync('dead', [t.sessions.map((s) => [s.name, s.live]), t.archived], renderDead);
-    sync('pinned', [data.pinned, data.cards.map((c) => [c.answered, c.answered_value]), ideaOpen, cardErrors], renderPinned);
+    sync('pinned', [data.pinned, data.cards.map((c) => [c.answered, c.answered_value]), ideaOpen, pinsFolded, cardErrors], renderPinned);
     const nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
     let changed = false;
     sync('chat', [data.items, pending, slug(), data.cards.filter((c) => !PINNED_KINDS.includes(c.kind)), cardErrors], () => { renderChat(); changed = true; });

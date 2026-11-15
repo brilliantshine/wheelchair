@@ -108,6 +108,10 @@ new thread (lead, cli chosen)      agent: wc.js session start --cli X --tier T
         transcript found under $CLAUDE_CONFIG_DIR | $CODEX_HOME (service's env) -> copy -> hub /chat
 ```
 
+## Checked against the newer commit
+
+Steps 4-7 and the Logins section below were re-read only where `git diff` showed changes (permission/codex modes, `composeRolePrompt`, readiness text for bypass). Their `service.js:NNN` numbers are from the older commit and have shifted about 20-40 lines; trust the claims, re-grep the numbers.
+
 ## Logins: one account per CLI per machine
 
 - Nothing chooses a login. The `env` prefix sets only the four `WHEELCHAIR_*` variables

@@ -204,7 +204,10 @@ vague part is rewritten, a repeat is rejected with the reason recorded.
 
 **Budget.** A round is clean when your triage upholds no blocking and no major finding and
 no `user-decision` is open. Three triaged rounds since Collin's last decision without a
-clean one: stop, and post a `needs` card whose `items` are the recurring objections. A
+clean one: stop, and post a `needs` card whose `items` are the recurring objections, and
+whose body says in a line what each button will do. "Keep going" means: run another round,
+with the budget reset, and say so in your reply. "Talk about it" means: explain the
+objections in plain words and put the fork to him as a `question` card. A
 round ended by a dead reviewer does not count and is not triaged; restart that reviewer.
 Once he settles the fork, the budget resets. No round count, summary or finding ever
 reaches the thread.

@@ -233,25 +233,50 @@ test.describe('phone', () => {
   });
 
   for (const width of [390, 360]) {
-    for (const route of ['/app/threads', '/app/settings']) {
+    for (const route of ['/app/threads', '/app/settings', '/app/new']) {
       test(`the nav fits ${width}px on ${route}`, async ({ page }) => {
         await page.setViewportSize({ width, height: 800 });
         await openPage(page, context, route);
         const boxes = await page.locator('#app-nav').evaluate((nav) => [...nav.children]
           .filter((n) => n.getClientRects().length)
           .map((n) => ({ cls: n.className, ...n.getBoundingClientRect().toJSON() })));
-        expect(boxes.length).toBeGreaterThanOrEqual(4);
+        expect(boxes.length).toBeGreaterThanOrEqual(3);
         for (const b of boxes) {
           expect(b.left, b.cls).toBeGreaterThanOrEqual(0);
           expect(b.right, b.cls).toBeLessThanOrEqual(width);
         }
-        const add = await page.locator('#app-nav .new-thread').boundingBox();
-        expect(add.x).toBeGreaterThanOrEqual(0);
-        expect(add.x + add.width).toBeLessThanOrEqual(width);
+        if (route === '/app/threads') {
+          const add = await page.locator('#new-toggle').boundingBox();
+          expect(add.x).toBeGreaterThanOrEqual(0);
+          expect(add.x + add.width).toBeLessThanOrEqual(width);
+        }
         await noSideScroll(page);
       });
     }
   }
+
+  test('the Default project folder saves, and a refusal shows under it with the typed value kept', async ({ page }) => {
+    await openPage(page, context, '/app/settings');
+    const input = page.getByLabel('Default project folder', { exact: true });
+    await expect(input).toHaveValue('');
+    await input.fill('~/projects');
+    await page.getByRole('button', { name: 'Save', exact: true }).last().click();
+    await expect(page.locator('.row-line', { hasText: 'Default project folder' }).getByRole('status')).toHaveText('Saved');
+    expect((await settings(page)).default_project_folder).toBe('~/projects');
+    await page.reload();
+    await expect(page.getByLabel('Default project folder', { exact: true })).toHaveValue('~/projects');
+    const again = page.getByLabel('Default project folder', { exact: true });
+    await again.fill('relative/path');
+    await page.locator('.row-line', { hasText: 'Default project folder' }).getByRole('button', { name: 'Save' }).click();
+    const err = page.locator('.row-line', { hasText: 'Default project folder' }).locator('.inline-err');
+    await expect(err).toBeVisible();
+    await expect(again).toHaveValue('relative/path');
+    expect((await settings(page)).default_project_folder).toBe('~/projects');
+    await again.fill('');
+    await page.locator('.row-line', { hasText: 'Default project folder' }).getByRole('button', { name: 'Save' }).click();
+    await expect(page.locator('.row-line', { hasText: 'Default project folder' }).getByRole('status')).toHaveText('Saved');
+    expect((await settings(page)).default_project_folder).toBe('');
+  });
 
   test('Settings keeps its accessible name on a phone', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 800 });

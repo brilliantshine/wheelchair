@@ -154,9 +154,14 @@ that a lead posted, including one a previous lead posted, or an open `question` 
 thread. A resolved question shows "Answered in chat" and the note. It is refused (422, with
 the reason) for a `needs` card the app posted itself (stuck, permission, "Sessions ended":
 those close on their own), for any other kind of card, for a card in another thread or one
-that does not exist, and for a card already answered. Collin can dismiss only an open lead
-`needs` card himself, which marks it the same way and reaches you as `[card <id>] dismissed`:
-treat it as settled.
+that does not exist, and for a card already answered.
+
+An open lead `needs` card has two buttons, "Keep going" and "Talk about it". Either one closes
+the card as answered by Collin and reaches you as `[card <id>] keep going` or
+`[card <id>] talk about: <card title>`. Your reply is shown, so always answer: say in a line
+what you are doing next, or, for "talk about it", explain the problem plainly and post a
+`question` card for the decision he has to make. An older form, `[card <id>] dismissed`, gets
+the same treatment: say what you will do now instead of going quiet.
 
 ### `done`
 
@@ -263,6 +268,7 @@ The press forms, in full:
 - `[card <id>] talk about: <finding>`
 - `[card <id>] start building`
 - `[card <id>] start thread about: <text>`
+- `[card <id>] keep going` and `[card <id>] talk about: <needs card title>`, on your `needs` card
 
 Two consequences for a lead. Nothing you write in the reply to a `[wc:from ...]` message
 reaches Collin, so when such a message means he must decide something, post a card. And a

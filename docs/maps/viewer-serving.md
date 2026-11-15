@@ -19,8 +19,8 @@ Files covered: `viewer/server.js`, `viewer/doc.html`, `viewer/doc.js`,
    under `fonts/` from `node_modules/@fontsource` (`server.js:1835-1840`, `1850-1859`),
    else only names matching `^(pages|vendor)/…\.(js|css)$` (`server.js:1841`, `1860-1864`).
 3. **App pages.** `handleAppPage` serves `viewer/pages/<name>.html` for the seven names in
-   `APP_PAGES` — threads, thread, doc, features, sessions, settings, terminal (`server.js:1830`,
-   `1867-1885`) — behind the remember cookie (a `token` query is swapped for the cookie by a
+   `APP_PAGES` — threads, thread, doc, features, sessions, settings, terminal
+   (`server.js:1830`, `1867-1885`) — behind the remember cookie (a `token` query is swapped for the cookie by a
    redirect), with `APP_PAGE_CSP` = `PAGE_CSP` plus `frame-src 'self'` (`server.js:1832`).
    `PAGE_CSP` now includes `font-src 'self'` (`server.js:47`).
 4. **The in-app document page** (`/wheelchair/app/doc?thread=&file=`) loads `nav.js`,
@@ -45,7 +45,7 @@ browser -> server.js handler
 
 - A new page is a name in `APP_PAGES` (`server.js:1830`), an HTML file in `viewer/pages/`,
   and its script/CSS under `viewer/pages/` (served by the existing asset pattern with no
-  further change). A nav entry is one more row in `nav.js:38-42`.
+  further change). A nav entry is one more row in `nav.js:38-43`.
 - Its data comes from `/wheelchair/api/*`, routed by `viewer/app/routes.js` (see
   `docs/maps/app-sessions.md`).
 
