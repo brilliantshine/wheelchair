@@ -144,18 +144,17 @@
 
   $('add-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
+    if (!state || state.machine !== machineEl.value) return;
     const name = $('add-name').value.trim();
     const path = $('add-path').value.trim();
     const go = $('add-go');
     clearErrors();
     go.disabled = true;
     try {
-      await call('/settings/saved-dirs', json('POST', { name, path, machine: machineEl.value }));
-      const res = await call('/new-thread?machine=' + encodeURIComponent(machineEl.value));
-      state = { saved: [], found: [], previous: [], machines: ['hub'], ...res };
-      const added = state.saved.find((s) => s.name === name);
-      fillMachines(); fillProjects(added ? added.path : ''); fillSaved();
+      const res = await call('/settings/saved-dirs', json('POST', { name, path, machine: state.machine }));
+      const added = (res.saved || []).find((s) => s.name === name);
       $('add-name').value = ''; $('add-path').value = '';
+      await load(added ? added.path : '');
     } catch (e) { show($('add-error'), e.message); }
     go.disabled = false;
   });

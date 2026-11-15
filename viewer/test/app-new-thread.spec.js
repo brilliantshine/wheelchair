@@ -178,3 +178,35 @@ test('a failed Remove shows inside that entry; an Add refusal shows under the Ad
   await expect(page.locator('#add-error')).toHaveText("name can't be . or ..");
   await expect(page.locator('#saved-list .row-error')).toHaveCount(0);
 });
+
+test('a Save refresh that lands after a machine switch does not take the screen back', async ({ page }) => {
+  let hold = false;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let held;
+  const heldSeen = new Promise((resolve) => { held = resolve; });
+  await page.route('**/api/new-thread?machine=*', async (route) => {
+    const machine = new URL(route.request().url()).searchParams.get('machine');
+    if (machine === 'hub' && hold) { held(); await gate; }
+    const saved = machine === 'hub' && hold ? [{ name: 'mine', path: '/srv/saved', machine }] : [];
+    await route.fulfill({ json: answer(machine, { saved, found: [{ name: machine + '-repo', path: '/srv/' + machine + '-repo' }] }) });
+  });
+  await page.route('**/api/settings/saved-dirs', (route) => route.fulfill({
+    json: { saved: [{ name: 'mine', path: '/srv/saved', machine: 'hub' }] },
+  }));
+  await open(page);
+  await expect(page.locator('#nt-project option')).toHaveText(['hub-repo']);
+  hold = true;
+  await page.locator('#add-name').fill('mine');
+  await page.locator('#add-path').fill('/srv/saved');
+  await page.locator('#add-go').click();
+  await heldSeen;
+  await page.locator('#nt-machine').selectOption('other');
+  await expect(page.locator('#nt-project option')).toHaveText(['other-repo']);
+  release();
+  await page.waitForTimeout(300);
+  await expect(page.locator('#nt-machine')).toHaveValue('other');
+  await expect(page.locator('#nt-project')).toHaveValue('/srv/other-repo');
+  await expect(page.locator('#nt-go')).toBeEnabled();
+  await expect(page.locator('#saved-list li')).toHaveCount(0);
+});
