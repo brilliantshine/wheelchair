@@ -62,6 +62,40 @@ test('uses the card CLI validator for a locally valid card', () => {
   assert.equal(result.ok, true);
 });
 
+test('derives an opening title and lets only the lead rename it with title cards', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context, {
+      message: '  First  line title has enough words to demonstrate the sixty character cut exactly here today  \nSecond line is ignored.',
+    });
+    assert.equal(made.title, 'First line title has enough words to demonstrate the sixty…');
+    const untitled = await thread(context);
+    assert.equal(Object.hasOwn(untitled, 'title'), false);
+
+    const lead = made.sessions[0];
+    const first = await card(context, made.id, lead.name, { kind: 'title', title: '  A concise name  ' });
+    assert.equal(first.status, 202);
+    const second = await card(context, made.id, lead.name, { kind: 'title', title: 'A later name' });
+    assert.equal(second.status, 202);
+    const after = await api(context, `/threads/${made.id}/chat`);
+    assert.equal(after.body.thread.title, 'A later name');
+    assert.equal(after.body.cards.some((item) => item.kind === 'title'), false);
+
+    const sublead = await startSublead(context, made, lead);
+    const refused = await card(context, made.id, sublead.name, { kind: 'title', title: 'Nope' });
+    assert.equal(refused.status, 422);
+  });
+});
+
+test('validates the optional question document name', () => {
+  const question = {
+    fits: 'This confirms the idea.', question: 'Does this fit?',
+    options: [{ id: 'yes', label: 'Yes', consequence: 'Continue.' }, { id: 'no', label: 'No', consequence: 'Change it.' }],
+    leaning: 'yes', why: 'It matches the request.', doc: 'IDEA.md',
+  };
+  assert.equal(validate('question', question, 'lead').ok, true);
+  assert.equal(validate('question', { ...question, doc: 'x.md' }, 'lead').ok, false);
+});
+
 test('refuses a card with an unknown field', async () => {
   await withContext(async (context) => {
     const made = await thread(context);
@@ -105,13 +139,99 @@ test('replaces a thread singleton card', async () => {
   await withContext(async (context) => {
     const made = await thread(context);
     const lead = made.sessions[0];
-    await card(context, made.id, lead.name, { kind: 'offer', summary: 'First.' });
-    await card(context, made.id, lead.name, { kind: 'offer', summary: 'Second.' });
+    await card(context, made.id, lead.name, { kind: 'idea', bullets: [{ id: 'one', text: 'First.' }] });
+    await card(context, made.id, lead.name, { kind: 'idea', bullets: [{ id: 'two', text: 'Second.' }] });
     const stored = JSON.parse(
       await fs.readFile(path.join(context.state, 'threads', `${made.id}.json`), 'utf8'),
     );
-    assert.equal(stored.pinned.offer.summary, 'Second.');
+    assert.equal(stored.pinned.idea.bullets[0].text, 'Second.');
     assert.equal(stored.cards.filter((item) => !item.replaced).length, 1);
+  });
+});
+
+test('records a press and lets a lead resolve an open question only in its thread', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const lead = made.sessions[0];
+    const question = {
+      kind: 'question', fits: 'This settles the approach.', question: 'Which?',
+      options: [{ id: 'a', label: 'A', consequence: 'Use A.' }, { id: 'b', label: 'B', consequence: 'Use B.' }],
+      leaning: 'a', why: 'It is simpler.',
+    };
+    const pressedQuestion = await card(context, made.id, lead.name, question);
+    const pressed = await api(context, `/threads/${made.id}/cards/${pressedQuestion.body.id}/press`, {
+      method: 'POST', body: { action: 'picked', value: 'A' },
+    });
+    assert.equal(pressed.status, 202);
+    const pressedCard = (await api(context, `/threads/${made.id}/chat`)).body.cards.find((item) => item.id === pressedQuestion.body.id);
+    assert.equal(pressedCard.answered_action, 'picked');
+    assert.equal(pressedCard.answered_value, 'A');
+
+    const openQuestion = await card(context, made.id, lead.name, question);
+    const resolved = await card(context, made.id, lead.name, {
+      kind: 'resolve', card: openQuestion.body.id, note: 'Collin chose A in chat.',
+    });
+    assert.equal(resolved.status, 202);
+    const resolvedCard = (await api(context, `/threads/${made.id}/chat`)).body.cards.find((item) => item.id === openQuestion.body.id);
+    assert.equal(resolvedCard.resolved_note, 'Collin chose A in chat.');
+
+    const answered = await card(context, made.id, lead.name, {
+      kind: 'resolve', card: openQuestion.body.id, note: 'Again.',
+    });
+    assert.equal(answered.status, 422);
+    const other = await thread(context);
+    const foreignQuestion = await card(context, other.id, other.sessions[0].name, question);
+    const foreign = await card(context, made.id, lead.name, {
+      kind: 'resolve', card: foreignQuestion.body.id, note: 'Wrong thread.',
+    });
+    assert.equal(foreign.status, 422);
+    const systemNeed = await event(context, made.id, lead.name, 'prompt', { notification_type: 'permission_prompt' });
+    assert.equal(systemNeed.status, 202);
+    const chat = await api(context, `/threads/${made.id}/chat`);
+    const system = chat.body.cards.find((item) => item.kind === 'needs' && item.system);
+    const systemRefused = await card(context, made.id, lead.name, {
+      kind: 'resolve', card: system.id, note: 'No.',
+    });
+    assert.equal(systemRefused.status, 422);
+    const dismissed = await api(context, `/threads/${made.id}/cards/${pressedQuestion.body.id}/dismiss`, {
+      method: 'POST', body: {},
+    });
+    assert.equal(dismissed.status, 422);
+  });
+});
+
+test('limits offers to a second request after keep talking first', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const lead = made.sessions[0];
+    const first = await card(context, made.id, lead.name, { kind: 'offer', summary: 'First offer.' });
+    assert.equal(first.status, 202);
+    const keptTalking = await api(context, `/threads/${made.id}/cards/${first.body.id}/press`, {
+      method: 'POST', body: { action: 'picked', value: 'keep talking first' },
+    });
+    assert.equal(keptTalking.status, 202);
+    const second = await card(context, made.id, lead.name, { kind: 'offer', summary: 'Clearer offer.' });
+    assert.equal(second.status, 202);
+    const chat = await api(context, `/threads/${made.id}/chat`);
+    assert.equal(chat.body.pinned.find((item) => item.kind === 'offer').id, second.body.id);
+    const third = await card(context, made.id, lead.name, { kind: 'offer', summary: 'Third offer.' });
+    assert.equal(third.status, 422);
+    assert.equal(third.body.detail, 'the offer was already asked');
+
+    const planned = await thread(context);
+    const plannedFirst = await card(context, planned.id, planned.sessions[0].name, { kind: 'offer', summary: 'Plan it.' });
+    await api(context, `/threads/${planned.id}/cards/${plannedFirst.body.id}/press`, {
+      method: 'POST', body: { action: 'picked', value: 'take it into planning' },
+    });
+    const afterPlanning = await card(context, planned.id, planned.sessions[0].name, { kind: 'offer', summary: 'Again.' });
+    assert.equal(afterPlanning.status, 422);
+    assert.equal(afterPlanning.body.detail, 'the offer was already asked');
+
+    const unanswered = await thread(context);
+    await card(context, unanswered.id, unanswered.sessions[0].name, { kind: 'offer', summary: 'Waiting.' });
+    const whileOpen = await card(context, unanswered.id, unanswered.sessions[0].name, { kind: 'offer', summary: 'Too soon.' });
+    assert.equal(whileOpen.status, 422);
+    assert.equal(whileOpen.body.detail, 'the offer was already asked');
   });
 });
 
@@ -834,8 +954,8 @@ test('serializes concurrent cards and de-duplicates a delivered card', async () 
   await withContext(async (context) => {
     const made = await thread(context);
     const lead = made.sessions[0];
-    const post = (summary, delivery_id) => machinePost(context, '/machine/cards', {
-      thread_id: made.id, session: lead.name, kind: 'offer', summary, delivery_id,
+    const post = (text, delivery_id) => machinePost(context, '/machine/cards', {
+      thread_id: made.id, session: lead.name, kind: 'idea', bullets: [{ id: delivery_id, text }], delivery_id,
     });
     const [one, two] = await Promise.all([post('One.', 'd-one'), post('Two.', 'd-two')]);
     assert.equal(one.status, 202); assert.equal(two.status, 202);
@@ -1095,11 +1215,14 @@ test('serializes concurrent card and event arrivals without losing either', asyn
     const lead = made.sessions[0];
     const turns = 12;
     await Promise.all([...Array(turns)].flatMap((_, index) => [
-      card(context, made.id, lead.name, { kind: 'offer', summary: `Offer ${index}.` }),
+      card(context, made.id, lead.name, {
+        kind: 'question', fits: 'Concurrent card.', question: `Question ${index}?`, leaning: 'yes', why: 'Test concurrency.',
+        options: [{ id: 'yes', label: 'Yes', consequence: 'Continue.' }, { id: 'no', label: 'No', consequence: 'Wait.' }],
+      }),
       event(context, made.id, lead.name, 'prompt', { notification_type: 'permission_prompt' }),
     ]));
     const stored = await (new Hub({ stateDir: context.state })).thread(made.id);
-    assert.equal(stored.cards.filter((card) => card.kind === 'offer').length, turns);
+    assert.equal(stored.cards.filter((card) => card.kind === 'question').length, turns);
     assert.equal(stored.cards.filter((card) => card.kind === 'needs' && card.title === 'Permission needed').length, turns);
     assert.equal(stored.sessions.find((session) => session.name === lead.name).permission_open, true);
   });
@@ -1343,17 +1466,14 @@ test('a resolve is refused for a system card, another kind, another thread and a
     const other = await thread(context);
     const lead = made.sessions[0].name;
     const otherNeed = await openNeed(context, other);
-    const question = await card(context, made.id, lead, {
-      kind: 'question', fits: 'x', question: 'Which?', leaning: 'a', why: 'because',
-      options: [{ id: 'a', label: 'A', consequence: 'a' }, { id: 'b', label: 'B', consequence: 'b' }],
-    });
+    const idea = await card(context, made.id, lead, { kind: 'idea', bullets: [{ id: 'one', text: 'A choice.' }] });
     // A hub-posted needs card: a permission prompt.
     await event(context, made.id, lead, 'turn-ended');
     await event(context, made.id, lead, 'prompt', { notification_type: 'permission_prompt' });
     const chat = await api(context, `/threads/${made.id}/chat`);
     const system = chat.body.cards.find((item) => item.system && item.kind === 'needs');
     assert.ok(system);
-    for (const target of [system.id, question.body.id, otherNeed, 'no-such-card']) {
+    for (const target of [system.id, idea.body.id, otherNeed, 'no-such-card']) {
       const refused = await card(context, made.id, lead, { kind: 'resolve', card: target, note: 'no' });
       assert.equal(refused.status, 422, target);
       assert.ok(refused.body.error);

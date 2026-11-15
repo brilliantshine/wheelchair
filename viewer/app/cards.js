@@ -4,7 +4,7 @@
 const crypto = require('node:crypto');
 const path = require('node:path');
 const { appError } = require('./state.js');
-const { resolvable, validate } = require('./card.js');
+const { resolvable, truncateTitle, validate } = require('./card.js');
 
 const SINGLETONS = new Set(['offer', 'idea', 'progress']);
 
@@ -56,11 +56,24 @@ async function acceptCard(hub, payload) {
 
     if (checked.card.kind === 'resolve') {
       // A resolve is an instruction, never a card: it marks its target and is not stored.
-      const found = resolvable(thread, checked.card.card);
+      const found = resolvable(thread, checked.card.card, 'lead');
       if (!found.ok) throw appError(422, found.reason);
       resolveCard(found.card, session.name, checked.card.note);
       if (payload.delivery_id) thread.delivered_ids = [...thread.delivered_ids, payload.delivery_id].slice(-500);
       return { card: { ok: true, resolved: found.card.id }, targetName: null };
+    }
+
+    if (checked.card.kind === 'title') {
+      thread.title = truncateTitle(checked.card.title, 80);
+      if (payload.delivery_id) thread.delivered_ids = [...thread.delivered_ids, payload.delivery_id].slice(-500);
+      return { card: { ok: true, title: thread.title }, targetName: null };
+    }
+
+    if (checked.card.kind === 'offer') {
+      const offers = thread.cards.filter((item) => item.kind === 'offer');
+      if (offers.length > 1 || (offers.length === 1 && offers[0].answered_value !== 'keep talking first')) {
+        throw appError(422, 'the offer was already asked');
+      }
     }
 
     const card = addCard(thread, checked.card, { session: session.name });

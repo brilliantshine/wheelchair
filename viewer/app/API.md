@@ -8,10 +8,10 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 | Route | Request | Response |
 |---|---|---|
 | `GET /threads` | — | `{threads:[Thread]}` newest first |
-| `POST /threads` | `{project,cli,machine?,message?}` | a `Thread`, with its lead started |
+| `POST /threads` | `{project,cli,machine?,message?}` | a `Thread`, with its lead started; a non-empty string `message` sets `title` from its trimmed, whitespace-collapsed first line, cut at a word boundary to 60 characters plus `…` |
 | `GET /threads/:id/chat` | — | `{thread,items,cards,pinned,queued}` |
 | `POST /threads/:id/messages` | `{text}` | `{queued:true}`; delivery waits for the lead turn end |
-| `POST /threads/:id/cards/:cardId/press` | `{action,value?}` | `{queued:true,text}` for lead actions; `recheck` updates an approval in place, and `start-building` first re-checks Ready |
+| `POST /threads/:id/cards/:cardId/press` | `{action,value?}` | `{queued:true,text}` for lead actions and records `answered_action` and `answered_value` on an answered card; `recheck` updates an approval in place, and `start-building` first re-checks Ready |
 | `POST /threads/:id/cards/:cardId/dismiss` | — | `{ok:true}`; closes an open `needs` card a lead posted (`resolved_by:"collin"`, shown dimmed as resolved). A `system` needs card is refused with 422, an unknown card with 404 |
 | `POST /threads/:id/open` | `{start_now?:boolean}` | a started stub, or `{waiting:true,thread}` |
 | `POST /threads/:id/restart` | — | replacement lead session; its restart context is queued first |
@@ -29,7 +29,17 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 `Thread` has `id`, `project`, `cli`, `machine`, `stub`, `context`, `parent`,
 `depends_on_parent`, `waiting_on_parent`, `sessions`, `cards`, `pinned`, `queues`, `sent`,
 `worktree`, `branch`, `slug`, and `archived`. Card records retain their card fields plus `id`,
-`session`, `at`, `created_at`, `answered`, and `system`. A closed `needs` card also has `resolved_by` (a lead's session name, or `collin`), `resolved_note` and `resolved_at`; a lead closes one by posting a `resolve` card (`{card,note}`, never stored), refused with 422 for a system, non-needs, foreign, missing or already answered target. `at` is the ISO time the hub stored the card.
+`session`, `at`, `created_at`, `answered`, `answered_action`, `answered_value`, and `system`.
+A closed `needs` card, or a question the lead resolved after an answer in chat, also has
+`resolved_by` (a lead's session name, or `collin` for a needs dismissal), `resolved_note` and
+`resolved_at`; a lead closes one by posting a `resolve` card (`{card,note}`, never stored).
+Collin's dismiss remains needs-only. `at` is the ISO time the hub stored the card.
+
+Accepted agent cards include a lead-only `title` card: it trims and word-cuts its `title`
+field to 80 characters, renames the thread, and is never stored. `question.doc`, when
+present, is one of `MAP.md`, `IDEA.md` or `PLAN.md`. The hub accepts an `offer` only when no
+offer exists, or when exactly one prior offer was answered with `answered_value: "keep talking
+first"`; otherwise it returns 422, `the offer was already asked`.
 
 Chat `items` are `{type:"human"|"assistant"|"tool"|"context",text,at}`. `at` is the
 ISO timestamp on that transcript line, so pages can interleave chat and cards in time order.
