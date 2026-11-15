@@ -51,6 +51,7 @@ async function api(context, route, options = {}) {
 }
 
 async function thread(context, input = {}) {
+  await api(context, '/settings/balancing', { method: 'PUT', body: { lead_order: [input.cli === 'claude' ? 'claude' : 'gpt'] } });
   const result = await api(context, '/threads', {
     method: 'POST',
     body: { project: '/tmp/project', cli: 'codex', ...input },

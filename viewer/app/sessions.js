@@ -82,9 +82,15 @@ async function startSession(hub, thread, input) {
     try { await hub.call(thread.machine, '/v1/preflight', 'POST', { dir }); }
     catch (error) {
       const machineState = await usage.machineAccounts(hub);
-      if (machineState[thread.machine]) machineState[thread.machine].accounts[selection.account.id] = false;
+      const configured = await hub.machines();
+      const resolvedMachine = await hub.state.resolveMachine(configured, thread.machine);
+      const machineName = Object.keys(configured).find((name) => configured[name] === resolvedMachine || configured[name].name === resolvedMachine?.name) || thread.machine;
+      if (machineState[machineName]) machineState[machineName].accounts[selection.account.id] = false;
       selection = await choose(hub, thread, role, input.tier, input);
-      if (selection.wait) throw appError(409, `Codex preflight failed: ${error.body?.output || error.message}`);
+      if (selection.wait) {
+        if (role === 'lead') { addCard(thread, { kind: 'needs', title: 'Codex preflight failed', body: `Codex preflight failed: ${error.body?.output || error.message}` }, { system: true }); await hub.save(thread); }
+        throw appError(409, `Codex preflight failed: ${error.body?.output || error.message}`);
+      }
       cli = cliOf(selection.provider);
       if (cli === 'codex') {
         const retryDir = selection.account.id === 'default-gpt' ? null : `~/.wheelchair/accounts/${selection.account.id}`;
@@ -155,12 +161,13 @@ async function startSession(hub, thread, input) {
     await hub.save(thread);
     throw error;
   }
+  const identity = { name: session.name, attempt_id: session.attempt_id, started_by: session.started_by, queue: session.queue };
   Object.assign(session, started, {
+    ...identity,
     token,
     provider: selection.provider,
     account: selection.account.id,
-    started_by: session.started_by,
-    queue: session.queue || [],
+    queue: identity.queue || [],
     ready: started.status === 'ready',
     live: true,
     // The service types a first message itself (Codex's [wc:role] line, or a brief) once the
