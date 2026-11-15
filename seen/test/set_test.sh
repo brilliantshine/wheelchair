@@ -12,7 +12,7 @@ fail() { printf 'FAIL %s\n' "$1"; failures=$((failures + 1)); }
 assert() { local note=$1; shift; if "$@"; then pass "$note"; else fail "$note"; fi; }
 state() { [[ -e $1 ]] && sha256sum "$1" | awk '{print $1}' || printf absent; }
 
-declare -A claude codex wording present output status command
+declare -A claude codex wording present output status command allow
 new_case() {
   local name=$1 base=$fixture/$1
   claude[$name]=$base/claude; codex[$name]=$base/codex; wording[$name]=$base/wheelchair/wording.md
@@ -21,7 +21,7 @@ new_case() {
 run_case() {
   local name=$1
   set +e
-  output[$name]=$(WHEELCHAIR_PRESENT="${present[$name]}" WHEELCHAIR_CLAUDE_HOME="${claude[$name]}" WHEELCHAIR_CODEX_HOME="${codex[$name]}" WHEELCHAIR_WORDING="${wording[$name]}" "${command[$name]}" 2>&1)
+  output[$name]=$(WHEELCHAIR_ALLOW_WORKTREE="${allow[$name]-1}" WHEELCHAIR_PRESENT="${present[$name]}" WHEELCHAIR_CLAUDE_HOME="${claude[$name]}" WHEELCHAIR_CODEX_HOME="${codex[$name]}" WHEELCHAIR_WORDING="${wording[$name]}" "${command[$name]}" 2>&1)
   status[$name]=$?
   set -e
 }
@@ -66,6 +66,32 @@ printf '%s\n' '{"hooks":{"UserPromptSubmit":[{"matcher":"*","hooks":[{"type":"co
 run_case foreign
 assert 'foreign group stays beside ours' bash -c '[[ $1 == 0 && $(python3 -c "import json; print(len(json.load(open(\"$2\"))[\"hooks\"][\"UserPromptSubmit\"]))") == 2 && $(python3 -c "import json; print(json.load(open(\"$2\"))[\"hooks\"][\"UserPromptSubmit\"][0][\"hooks\"][0][\"command\"])") == moshi-hook ]]' _ "${status[foreign]}" "$(settings foreign)"
 
+new_case other_clone
+mkdir -p "${claude[other_clone]}" "${codex[other_clone]}"
+printf '%s\n' '{"hooks":{"UserPromptSubmit":[{"hooks":[{"type":"command","command":"/elsewhere/wheelchair/seen/hook.sh claude notice","timeout":2}]}]},"permissions":{"allow":["Bash(ls:*)","Bash(/elsewhere/wheelchair/seen/wording.sh:*)"]}}' > "$(settings other_clone)"
+printf '%s\n' '{"hooks":{"UserPromptSubmit":[{"hooks":[{"type":"command","command":"/elsewhere/wheelchair/seen/hook.sh codex notice","timeout":2}]}]}}' > "$(hooks other_clone)"
+run_case other_clone
+assert "another clone's hook and wording grant are replaced, not joined" python3 - "${status[other_clone]}" "$(settings other_clone)" "$(hooks other_clone)" "$repo" <<'PY'
+import json, shlex, sys
+status, settings, hooks, root = sys.argv[1:]
+assert status == '0'
+for path in (settings, hooks):
+    groups = json.load(open(path))['hooks']['UserPromptSubmit']
+    assert [shlex.split(g['hooks'][0]['command'])[0] for g in groups] == [root + '/seen/hook.sh'], groups
+allow = json.load(open(settings))['permissions']['allow']
+assert allow == ['Bash(ls:*)', 'Bash(' + root + '/seen/wording.sh:*)'], allow
+PY
+
+new_case refuse_worktree
+git init -q "$fixture/guard-repo"
+git -C "$fixture/guard-repo" -c user.name=fixture -c user.email=fixture@invalid commit -q --allow-empty -m init
+git -C "$fixture/guard-repo" worktree add -q "$fixture/guard-worktree" 2>/dev/null
+mkdir -p "$fixture/guard-worktree/seen" "$fixture/guard-worktree/install"
+cp "$writer" "$fixture/guard-worktree/seen/set.sh"; cp "$repo/install/guard.sh" "$fixture/guard-worktree/install/guard.sh"
+command[refuse_worktree]=$fixture/guard-worktree/seen/set.sh; allow[refuse_worktree]=''
+run_case refuse_worktree
+assert 'the writer refuses to run from a linked worktree and writes nothing' bash -c '[[ $1 == 3 && $2 == *"linked git worktree"* && ! -e $3 && ! -e $4 && ! -e $5 ]]' _ "${status[refuse_worktree]}" "${output[refuse_worktree]}" "${claude[refuse_worktree]}" "${codex[refuse_worktree]}" "${wording[refuse_worktree]%/*}"
+
 new_case changed_args
 run_case changed_args
 python3 - "$(hooks changed_args)" <<'PY'
@@ -100,19 +126,25 @@ for kind in config_multiline config_bad; do
   assert "$kind refuses before creating wording or changing config" bash -c '[[ $1 == 1 && $2 == "$3" && ! -e $4 ]]' _ "${status[$kind]}" "$(state "$(config "$kind")")" "$before" "${wording[$kind]%/*}"
 done
 
+# A modified copy of the writer, with the guard it sources beside it.
+copy_writer() {
+  mkdir -p "$fixture/$1/seen" "$fixture/$1/install"
+  cp "$writer" "$fixture/$1/seen/set.sh"; cp "$repo/install/guard.sh" "$fixture/$1/install/guard.sh"
+}
+
 new_case no_codex_notice
-cp "$writer" "$fixture/no-notice-set.sh"
-sed -i 's/"codex": "notice"/"codex": "no-notice"/' "$fixture/no-notice-set.sh"
-chmod +x "$fixture/no-notice-set.sh"; command[no_codex_notice]=$fixture/no-notice-set.sh; present[no_codex_notice]=codex
+copy_writer no-notice
+sed -i 's/"codex": "notice"/"codex": "no-notice"/' "$fixture/no-notice/seen/set.sh"
+chmod +x "$fixture/no-notice/seen/set.sh"; command[no_codex_notice]=$fixture/no-notice/seen/set.sh; present[no_codex_notice]=codex
 run_case no_codex_notice
 assert 'no-notice still installs its hook without grant files' bash -c '[[ $1 == 0 && -f $2 && ! -e $3 && ! -e $4 ]]' _ "${status[no_codex_notice]}" "$(hooks no_codex_notice)" "$(config no_codex_notice)" "${wording[no_codex_notice]%/*}"
 
 set +e; python3 -I -c 'import tomllib'; tomllibrc=$?; set -e
 assert 'isolated Python imports tomllib' bash -c '[[ $1 == 0 ]]' _ "$tomllibrc"
 new_case tomllib_missing
-cp "$writer" "$fixture/tomllib-missing-set.sh"
-sed -i 's/^    import tomllib$/    import tomllib_missing_for_test as tomllib/' "$fixture/tomllib-missing-set.sh"
-chmod +x "$fixture/tomllib-missing-set.sh"; command[tomllib_missing]=$fixture/tomllib-missing-set.sh
+copy_writer tomllib-missing
+sed -i 's/^    import tomllib$/    import tomllib_missing_for_test as tomllib/' "$fixture/tomllib-missing/seen/set.sh"
+chmod +x "$fixture/tomllib-missing/seen/set.sh"; command[tomllib_missing]=$fixture/tomllib-missing/seen/set.sh
 run_case tomllib_missing
 assert 'missing tomllib refuses before writing' bash -c '[[ $1 == 1 && $2 == "seen hook: needs Python 3.11 or newer (tomllib); nothing written" && ! -e $3 && ! -e $4 && ! -e $5 && ! -e $6 ]]' _ "${status[tomllib_missing]}" "${output[tomllib_missing]}" "$(settings tomllib_missing)" "$(hooks tomllib_missing)" "$(config tomllib_missing)" "${wording[tomllib_missing]%/*}"
 

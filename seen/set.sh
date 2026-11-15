@@ -3,6 +3,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$ROOT/install/guard.sh"
+guard_canonical_clone "$ROOT" "seen hook"
 claude_home=${WHEELCHAIR_CLAUDE_HOME:-"$HOME/.claude"}
 codex_home=${WHEELCHAIR_CODEX_HOME:-"$HOME/.codex"}
 
@@ -79,6 +81,11 @@ def canonical_group(harness):
     command = f"{shlex.quote(HOOK_PATH)} {harness} {NOTICE[harness]}"
     return {"hooks": [{"type": "command", "command": command, "timeout": 2}]}
 
+# Any wheelchair checkout's hook counts as ours, not only this one's: a run from another clone or a
+# worktree left its own path behind, and adding ours beside it would run the hook twice.
+def is_wheelchair_hook(path):
+    return path == HOOK_PATH or path.endswith("/seen/hook.sh")
+
 def owns_group(group):
     for handler in group["hooks"]:
         if not isinstance(handler, dict) or not isinstance(handler.get("command"), str):
@@ -87,7 +94,7 @@ def owns_group(group):
             tokens = shlex.split(handler["command"])
         except ValueError:
             continue
-        if tokens and tokens[0] == HOOK_PATH:
+        if tokens and is_wheelchair_hook(tokens[0]):
             return True
     return False
 
@@ -170,10 +177,18 @@ def grant_claude(document, path, enabled):
     if not enabled:
         return
     rule = f"Bash({os.path.join(ROOT, 'seen', 'wording.sh')}:*)"
-    if rule not in allow:
+    # Another checkout's grant is replaced, in place, the same way its hook group is.
+    granted = [index for index, old in enumerate(allow) if isinstance(old, str) and WORDING_RULE.match(old)]
+    if granted:
+        allow[granted[0]] = rule
+        for index in reversed(granted[1:]):
+            del allow[index]
+    else:
         allow.append(rule)
     if wording_dir not in allow_write:
         allow_write.append(wording_dir)
+
+WORDING_RULE = re.compile(r"^Bash\(.*/seen/wording\.sh:\*\)$")
 
 def json_bytes(document):
     return (json.dumps(document, indent=2, ensure_ascii=False) + "\n").encode("utf-8")

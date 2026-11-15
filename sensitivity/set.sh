@@ -45,6 +45,12 @@ case $# in
   *) usage_refusal "$@" ;;
 esac
 
+# Reporting reads only; a write would point every harness at this checkout.
+if [[ $mode == write ]]; then
+  . "$root/install/guard.sh"
+  guard_canonical_clone "$root" "${0##*/}"
+fi
+
 declare -A state levels starts ends start_lines end_lines
 
 # Set state[path] to absent, valid, or malformed.  A malformed block is never

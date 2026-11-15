@@ -29,7 +29,7 @@ real_codex="$HOME/.codex/AGENTS.md"
 real_claude_before=$(file_state "$real_claude")
 real_codex_before=$(file_state "$real_codex")
 
-declare -A claude codex output status present
+declare -A claude codex output status present allow
 new_case() {
   local name=$1 base
   base=$fixture/$name
@@ -41,7 +41,7 @@ new_case() {
 run_case() {
   local name=$1
   set +e
-  output[$name]=$(WHEELCHAIR_PRESENT="${present[$name]}" WHEELCHAIR_CLAUDE_HOME="${claude[$name]}" WHEELCHAIR_CODEX_HOME="${codex[$name]}" "$writer" "${@:2}" 2>&1)
+  output[$name]=$(WHEELCHAIR_ALLOW_WORKTREE="${allow[$name]-1}" WHEELCHAIR_PRESENT="${present[$name]}" WHEELCHAIR_CLAUDE_HOME="${claude[$name]}" WHEELCHAIR_CODEX_HOME="${codex[$name]}" "$writer" "${@:2}" 2>&1)
   status[$name]=$?
   set -e
 }
@@ -286,6 +286,23 @@ assert 'landed region excludes PLAN.md and Spec sections' bash -c '! grep -q "PL
 assert 'landed region names no path relative to nowhere' bash -c '! grep -q '"'"'`protocol/'"'"' "$1"' _ "$(target_claude equality)"
 assert 'landed region has no unsubstituted placeholder' bash -c '! grep -q "{{" "$1"' _ "$(target_claude equality)"
 assert 'landed region names this clone by absolute path' bash -c 'grep -Fq "$2/protocol/" "$1"' _ "$(target_claude equality)" "$repo"
+
+# A write from a linked worktree would point every harness at it; a report only reads.
+git init -q "$fixture/guard-repo"
+git -C "$fixture/guard-repo" -c user.name=fixture -c user.email=fixture@invalid commit -q --allow-empty -m init
+git -C "$fixture/guard-repo" worktree add -q "$fixture/guard-worktree" 2>/dev/null
+mkdir -p "$fixture/guard-worktree/sensitivity" "$fixture/guard-worktree/install" "$fixture/guard-worktree/protocol"
+cp "$writer" "$fixture/guard-worktree/sensitivity/set.sh"
+cp "$repo/install/guard.sh" "$fixture/guard-worktree/install/guard.sh"
+cp "$repo/protocol/sensitivity.md" "$fixture/guard-worktree/protocol/sensitivity.md"
+new_case refuse_worktree
+allow[refuse_worktree]=''
+saved_writer=$writer; writer=$fixture/guard-worktree/sensitivity/set.sh
+run_case refuse_worktree high
+assert 'a write from a linked worktree is refused and lands nothing' bash -c '[[ $1 == 3 && $2 == *"linked git worktree"* && ! -e $3 && ! -e $4 ]]' _ "${status[refuse_worktree]}" "${output[refuse_worktree]}" "$(target_claude refuse_worktree)" "$(target_codex refuse_worktree)"
+run_case refuse_worktree --report
+assert 'a report from a linked worktree still runs' bash -c '[[ $1 != 3 ]]' _ "${status[refuse_worktree]}"
+writer=$saved_writer
 
 assert 'real CLAUDE.md is byte-identical after suite' bash -c '[[ $1 == "$2" ]]' _ "$real_claude_before" "$(file_state "$real_claude")"
 assert 'real AGENTS.md is byte-identical after suite' bash -c '[[ $1 == "$2" ]]' _ "$real_codex_before" "$(file_state "$real_codex")"

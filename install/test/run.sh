@@ -66,7 +66,7 @@ both_wrappers_landed() {
 
 last_line_is() { [[ ${1##*$'\n'} == "$2" ]]; }
 
-declare -A home claude codex shim present output status tty display input args dns loginctl_status linger node_stop_status tailscale_absent serve_status serve_status_exit tailscale_ip tailscale_ip_status
+declare -A home claude codex shim present output status tty display input args allow case_installer dns loginctl_status linger node_stop_status tailscale_absent serve_status serve_status_exit tailscale_ip tailscale_ip_status
 status_with_handlers() {
   printf '{"TCP":{"443":{"HTTPS":true}},"Web":{"fixture.tailnet.ts.net:443":{"Handlers":%s}}}' "$1"
 }
@@ -79,6 +79,8 @@ new_case() {
   shim[$name]=$base/shims
   present[$name]=claude,codex
   tty[$name]=0
+  allow[$name]=1
+  case_installer[$name]=$installer
   display[$name]=0
   input[$name]=''
   args[$name]=''
@@ -162,6 +164,7 @@ run_case() {
     "HOME=${home[$name]}" "USER=fixture-user" "PATH=${shim[$name]}:$command_path"
     "WHEELCHAIR_SHIM_LOG=${home[$name]}/commands.log"
     "WHEELCHAIR_PRESENT=${present[$name]}" WHEELCHAIR_SKIP_DEPS=1
+    "WHEELCHAIR_ALLOW_WORKTREE=${allow[$name]}"
     "WHEELCHAIR_CLAUDE_HOME=${claude[$name]}" "WHEELCHAIR_CODEX_HOME=${codex[$name]}"
     "WHEELCHAIR_WORDING=${home[$name]}/wheelchair/wording.md"
     "WHEELCHAIR_TTY=${tty[$name]}" "WHEELCHAIR_TAILSCALE_DNS=${dns[$name]}"
@@ -175,7 +178,7 @@ run_case() {
     "WHEELCHAIR_NODE_STOP_STATUS=${node_stop_status[$name]}")
   [[ ${display[$name]} == 1 ]] && command+=(DISPLAY=:fixture)
   set +e
-  output[$name]=$(printf '%s' "${input[$name]}" | "${command[@]}" "$installer" ${args[$name]} 2>&1)
+  output[$name]=$(printf '%s' "${input[$name]}" | "${command[@]}" "${case_installer[$name]}" ${args[$name]} 2>&1)
   status[$name]=$?
   set -e
 }
@@ -200,6 +203,34 @@ real_seen_settings_before=$(file_state "$HOME/.claude/settings.json")
 real_seen_hooks_before=$(file_state "$HOME/.codex/hooks.json")
 real_seen_config_before=$(file_state "$HOME/.codex/config.toml")
 real_wheelchair_before=$(tree_state "$HOME/.wheelchair")
+
+# A checkout the guard must refuse: install.sh and its guard copied into <dir>, which the caller
+# has made a linked git worktree or placed under the app's worktree directory.
+copy_installer() {
+  mkdir -p "$1/install"
+  cp "$installer" "$1/install.sh"
+  cp "$repo/install/guard.sh" "$1/install/guard.sh"
+}
+
+new_case refuse_linked_worktree
+git init -q "$fixture/guard-repo"
+git -C "$fixture/guard-repo" -c user.name=fixture -c user.email=fixture@invalid commit -q --allow-empty -m init
+git -C "$fixture/guard-repo" worktree add -q "$fixture/guard-worktree" 2>/dev/null
+copy_installer "$fixture/guard-worktree"
+case_installer[refuse_linked_worktree]=$fixture/guard-worktree/install.sh
+allow[refuse_linked_worktree]=''
+before=$(tree_state "${home[refuse_linked_worktree]}")
+run_case refuse_linked_worktree
+assert 'install.sh refuses to run from a linked worktree and touches nothing' bash -c '[[ $1 == 3 && $2 == *"linked git worktree"* && $3 == "$4" ]]' _ "${status[refuse_linked_worktree]}" "${output[refuse_linked_worktree]}" "$before" "$(tree_state "${home[refuse_linked_worktree]}")"
+
+new_case refuse_app_worktree_dir
+app_checkout=${home[refuse_app_worktree_dir]}/.local/state/wheelchair/worktrees/wheelchair/wc/fixture
+copy_installer "$app_checkout"
+case_installer[refuse_app_worktree_dir]=$app_checkout/install.sh
+allow[refuse_app_worktree_dir]=''
+before=$(tree_state "${home[refuse_app_worktree_dir]}")
+run_case refuse_app_worktree_dir
+assert 'install.sh refuses to run from under the app worktree directory and touches nothing' bash -c '[[ $1 == 3 && $2 == *"wheelchair/worktrees"* && $3 == "$4" ]]' _ "${status[refuse_app_worktree_dir]}" "${output[refuse_app_worktree_dir]}" "$before" "$(tree_state "${home[refuse_app_worktree_dir]}")"
 
 new_case claude_only
 present[claude_only]=claude

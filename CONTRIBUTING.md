@@ -66,7 +66,10 @@ harness, or after pulling a change under `viewer/`. It renders wrappers into the
 homes, installs the viewer dependencies and both Chromium and Firefox, stops any
 already-running viewer that isn't running the code you just pulled, sets up the app's state and, on a serving systemd machine, the viewer and machine
 services, then updates the diagram-sensitivity block. This reaches outside the clone; the fixture suites below do
-not.
+not. Because of that it runs only from the canonical clone: from a linked worktree or
+anything under `~/.local/state/wheelchair/worktrees`, it, `seen/set.sh` and
+`sensitivity/set.sh` refuse (exit 3) unless `WHEELCHAIR_ALLOW_WORKTREE=1` forces them. To
+check the installer from a worktree, run `bash install/test/run.sh`.
 
 Edits under `protocol/` normally take effect immediately because installed wrappers
 point back to this checkout. The exception is the delimited region in
@@ -83,7 +86,7 @@ bash sensitivity/test/run.sh
 bash codex/test/run.sh
 bash install/test/run.sh
 bash machine/test/run.sh
-./install.sh && ./install.sh
+./install.sh && ./install.sh   # canonical clone only; refused from a worktree
 node --test viewer/test/*.test.js
 npm --prefix viewer run test:browser
 ```
