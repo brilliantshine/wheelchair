@@ -409,6 +409,21 @@ Added to `viewer/app/routes.js` and documented in `viewer/app/API.md`:
 | mechanics (Codex) | major | Save Claude ignores exclusions and Not used | upheld | "eligible providers" defined in §5 |
 | mechanics (Codex) | major | No rule for which window's reset applies, or missing resets | upheld | §4 exhausted-window rule |
 
+### Round 2 — 2026-11-15
+
+**Lanes:** Claude (intent lens); Codex (mechanics lens); cross-family: yes.
+
+**Changed since Round 1:**
+- D16: `--provider` / `--not-provider` replace `--not-same-as`; allowed for worker, reviewer, verifier only (§5 Constraints, §7, §8).
+- §9 rewritten: lead.md reviewer and verifier flags; sub-lead.md "Which family" and verifier rule.
+- §1: what a later CLI needs, corrected.
+- §4: `StopFailure` reads `error`; the exhausted-window rule.
+- §5: `choose` takes the tier; "eligible providers"; Save Claude over eligible providers; Waiting with `pending_start`, poll and stop handling; limit hold in `canDeliver` and release; forecast rewritten in fractions.
+- §7: constraint path through `/v1/agent/session` → `/machine/session` → `sessionRequest`.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
