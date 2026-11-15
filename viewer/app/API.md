@@ -18,7 +18,7 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 | `GET /threads/:id/doc?file=PLAN.md` | — | `{content}` from the archived branch, read-only |
 | `GET /features` | — | `{idea,planning,review,building,verifying,done,needs}` |
 | `GET /projects` | — | `{projects:[path]}`, the repos in `projects.json`, added when a thread is created |
-| `GET /sessions` | — | machine groups `{machine,reachable,last_seen,sessions}`; other tmux sessions appear as `{name,managed:false}` (read-only) |
+| `GET /sessions` | — | machine groups `{machine,hub,reachable,last_seen,sessions}, `hub:true` on the entry `"hub"` resolves to`; other tmux sessions appear as `{name,managed:false}` (read-only) |
 | `GET /sessions/:name/pane` | — | `{pane}` |
 | `POST /sessions/:name/keys` | `{keys}` | `{ok:true}` |
 | `POST /machine/cards` | service envelope `{thread_id,session,...card}` | accepted card, `202` |

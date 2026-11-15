@@ -32,12 +32,12 @@
   };
 
   // One tmux key name per character. tmux send-keys takes a single key argument here, so
-  // a space is `Space` and a semicolon is escaped so tmux does not read it as a separator.
+  // a space is `Space` and a semicolon is sent as backslash-semicolon (one argv word), since a bare `;` is tmux's command separator.
   function charKey(char) {
     const code = char.codePointAt(0);
     if (code >= 1 && code <= 26) return `C-${String.fromCharCode(code + 96)}`;
     if (char === ' ') return 'Space';
-    if (char === ';') return '\;';
+    if (char === ';') return '\\;';
     return char;
   }
 

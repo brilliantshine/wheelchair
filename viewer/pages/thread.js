@@ -357,7 +357,11 @@
         box.appendChild(el('h3', '', card.title));
         if (card.note) box.appendChild(el('p', 'dim', card.note));
         box.appendChild(el('div', 'dim', 'What you can do now'));
-        const ul = el('ul'); for (const c of card.can_do || []) ul.appendChild(el('li', '', c)); box.appendChild(ul);
+        for (const c of card.can_do || []) {
+          const row = el('div', 'bullet'); row.appendChild(el('span', '', c));
+          row.appendChild(button('Start a thread about it', '', () => press(card, 'start-thread', c), thread().archived));
+          box.appendChild(row);
+        }
         if ((card.left_as_is || []).length) {
           box.appendChild(el('div', 'dim', 'Left as is'));
           for (const l of card.left_as_is) {
@@ -375,12 +379,13 @@
       case 'diagram': {
         box.appendChild(el('h3', '', card.title));
         if (thread().archived) {
-          // The worktree is gone, so the graph page can't open it; the committed JSON is read from the branch.
+          // The worktree is gone: the graph page draws the committed JSON the hub reads from the branch, read-only.
+          const src = '/wheelchair/?archive=' + encodeURIComponent(id) + '&file=' + encodeURIComponent(card.graph + '.json');
           box.appendChild(el('p', 'dim', 'Diagram kept on branch ' + (thread().branch || '')));
+          const f = el('iframe', 'diagram'); f.src = src; f.title = card.title;
+          box.appendChild(f);
           const a = el('div', 'actions');
-          const link = el('a', 'btn', 'Open diagram (read-only JSON)');
-          link.href = T + '/graph?file=' + encodeURIComponent(card.graph + '.json');
-          link.target = '_blank'; link.rel = 'noopener';
+          const link = el('a', 'btn', 'Open full screen'); link.href = src; link.target = '_blank'; link.rel = 'noopener';
           a.appendChild(link); box.appendChild(a);
           break;
         }

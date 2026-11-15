@@ -104,18 +104,22 @@ function addNeeds(needs, thread) {
 
 async function sessions(hub) {
   const groups = [];
-  for (const [machine] of Object.entries(await hub.machines())) {
+  const registry = await hub.machines();
+  const hubEntry = await hub.state.resolveMachine(registry, 'hub');
+  for (const [machine] of Object.entries(registry)) {
+    const isHub = !!hubEntry && registry[machine] === hubEntry;
     try {
       const listed = await hub.call(machine, '/v1/sessions', 'GET');
       groups.push({
         machine,
+        hub: isHub,
         reachable: true,
         last_seen: hub.machineSeen(machine),
         // Other tmux sessions on the machine arrive as { name, managed: false }: listed, read-only.
         sessions: listed.map((item) => (item.managed === false ? { name: item.name, managed: false } : item)),
       });
     } catch {
-      groups.push({ machine, reachable: false, last_seen: hub.machineSeen(machine), sessions: [] });
+      groups.push({ machine, hub: isHub, reachable: false, last_seen: hub.machineSeen(machine), sessions: [] });
     }
   }
   return groups;

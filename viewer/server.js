@@ -1899,6 +1899,13 @@ async function handleRoot(request, response, url, state) {
     await serveSignin(response); return;
   }
   if (!validCookie) { await serveSignin(response); return; }
+  // `?archive=<thread>&file=` is the graph page reading an archived thread's picture from the hub's
+  // read-only route; it names no file path, so there is nothing to validate or register.
+  if (url.searchParams.has('archive') && !url.searchParams.has('path')) {
+    const html = await fsp.readFile(path.join(__dirname, 'index.html'));
+    sendFile(response, 200, html, 'text/html; charset=utf-8', { 'set-cookie': rememberCookie(state) });
+    return;
+  }
   if (!url.searchParams.has('path')) {
     const html = await fsp.readFile(path.join(__dirname, 'list.html'));
     sendFile(response, 200, html, 'text/html; charset=utf-8', { 'content-security-policy': PAGE_CSP, 'set-cookie': rememberCookie(state) });
