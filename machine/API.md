@@ -27,8 +27,9 @@ queued cards and events in order, retrying every 5 seconds while either spool is
 `POST {hub_url}/api/machine/cards` and `/api/machine/events`, and forwards agent session requests
 to `POST {hub_url}/api/machine/session`. At most one drain per kind runs at a time. A successful
 2xx acknowledgement removes a spool item; a hub 4xx moves it to `spool/rejected/<kind>/`, logs the
-reason, and continues with later items. Draining an event first runs the normal hook handler, so an
-offline hook event is rebound to its managed session, transcript, prompt state, and `thread_id`.
+reason, and continues with later items. Preparing an offline hook event runs the normal hook handler,
+rebinding it to its managed session, transcript, prompt state, and `thread_id`.
+Spooled events are enriched once and rewritten before the first delivery, so retries send the identical body.
 
 `machine.json` is `{ "hub_url", "secret_file", "host", "port" }` under the configured
 state directory. It defaults to `~/.local/state/wheelchair/`, the machine's Tailscale IPv4,

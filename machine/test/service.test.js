@@ -844,3 +844,36 @@ test('spooled Codex turn end carries its limit reading on drain', async () => {
     } finally { await env.close(); await hub.close(); }
   } finally { if (previous === undefined) delete process.env.HOME; else process.env.HOME = previous; }
 });
+
+for (const source of ['raw spool', 'live hook']) {
+  test(`Codex ${source} retries the same prepared reading`, async () => {
+    const root = await temp(), previous = process.env.HOME; process.env.HOME = root;
+    const hub = await hubServer(), env = await service(root, { pane: readyCodex, config: { hub_url: hub.url } });
+    try {
+      const session = await start(env, { cli: 'codex', account: { id: 'acct', dir: '~/.wheelchair/accounts/acct' } });
+      const rollout = path.join(root, '.wheelchair/accounts/acct/sessions/2026/rollout-abc.jsonl');
+      const line = (used, reset) => JSON.stringify({ timestamp: '2026-01-01T00:00:00Z', payload: { rate_limits: { primary: { used_percent: used, window_minutes: 300, resets_at: reset }, rate_limit_reached_type: 'primary' } } }) + '\n';
+      await write(rollout, line(100, 2100000000));
+      const event = { type: 'turn-ended', 'thread-id': 'abc', 'input-messages': ['[wc:role] hi'] };
+      hub.setStatus(503);
+      const dir = path.join(env.state, 'spool', 'events');
+      if (source === 'raw spool') {
+        await write(path.join(dir, '000000000000001-12345678-1234-1234-1234-123456789abc.json'), JSON.stringify({ ...event, session: session.name }) + '\n');
+        await env.instance.drainSpool('events');
+      } else {
+        await env.instance.hook(session.name, event);
+      }
+      const files = await fs.readdir(dir); assert.equal(files.length, 1);
+      const stored = JSON.parse(await fs.readFile(path.join(dir, files[0]), 'utf8'));
+      assert.equal(stored.prepared, true);
+      assert.equal(stored.reading.limited_until, new Date(2100000000 * 1000).toISOString());
+      await fs.appendFile(rollout, line(100, 2200000000));
+      hub.setStatus(200); await env.instance.drainSpool('events');
+      const ends = hub.calls.filter(c => c.path.endsWith('/events')).map(c => JSON.parse(c.body)).filter(e => e.type === 'turn-ended');
+      assert.equal(ends.length, 2); assert.deepEqual(ends[0], ends[1]);
+      assert.equal(ends[1].reading.limited_until, new Date(2100000000 * 1000).toISOString());
+      assert.equal(Object.hasOwn(ends[0], 'prepared'), false);
+      assert.deepEqual(await fs.readdir(dir), []);
+    } finally { await env.close(); await hub.close(); if (previous === undefined) delete process.env.HOME; else process.env.HOME = previous; }
+  });
+}

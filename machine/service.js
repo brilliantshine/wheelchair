@@ -563,15 +563,17 @@ class MachineService {
     for (const file of files) {
       let payload = await readJson(path.join(dir, file), null); if (!payload) continue;
       payload.delivery_id ||= this.deliveryId(file);
-      if (kind === 'events') {
+      if (kind === 'events' && payload.prepared !== true) {
         try {
           const prepared = await this.hook(payload.session, payload, { spooled: true });
           if (prepared.ignored) { await this.rejectSpool(kind, file, 'event ignored by the live hook handler'); continue; }
           payload = { ...prepared.event, delivery_id: payload.delivery_id };
         } catch (error) { await this.rejectSpool(kind, file, error.message || String(error)); continue; }
+        await atomicWrite(path.join(dir, file), `${json(payload)}\n`);
       }
       try {
-        const response = await requestJson(`${this.config.hub_url.replace(/\/$/, '')}/api/machine/${kind}`, 'POST', { [HUB_HEADER]: await this.secret() }, payload);
+        const { prepared: ignoredPrepared, ...eventBody } = payload;
+        const response = await requestJson(`${this.config.hub_url.replace(/\/$/, '')}/api/machine/${kind}`, 'POST', { [HUB_HEADER]: await this.secret() }, kind === 'events' ? eventBody : payload);
         if (response.status >= 200 && response.status < 300) { await fsp.unlink(path.join(dir, file)); continue; }
         if (response.status >= 400 && response.status < 500) {
           let reason = `hub refused (${response.status})`;
@@ -609,7 +611,7 @@ class MachineService {
     if (event.type === 'limit-hit') event = { ...event, limited_until: limitedUntil(current.last_reading) };
     if (event.type === 'prompt' && event.notification_type !== 'permission_prompt') return { ignored: true };
     const { session: ignoredSession, thread_id: ignoredThread, delivery_id: ignoredDelivery, ...rest } = event;
-    const forwarded = { ...rest, session, thread_id: current.thread_id };
+    const forwarded = { ...rest, session, thread_id: current.thread_id, prepared: true };
     if (event.type === 'prompt') { current.prompt_open = true; await this.persistSessions(); }
     if (spooled) return { ok: true, event: forwarded };
     await this.emitEvent(forwarded);
