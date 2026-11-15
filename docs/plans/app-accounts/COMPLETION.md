@@ -279,3 +279,40 @@ $ npm --prefix viewer run test:browser
 ```
 
 The two failures are the same ones on `main` (above). Round 1's Claude verifier also saw `registration.test.js` "registration rejects every out-of-scope plan and graph path before open reaches a port" fail once in a full run and pass 3/3 alone; it did not fail here. This branch does not touch that file.
+
+### Remediation 2 — 2026-11-15
+
+Round 2 on `1047177`: Claude verifier PASS; Codex verifier FAIL with three gaps. Gap list verbatim and the task in `REMEDIATION-2.md`. Fixed on branch at `9f070d2`:
+
+| Gap | Fix (file:line) | Test |
+|---|---|---|
+| §5 limit recovery through the spool path (second fix of round 1's gap) | `machine/service.js:590-599`: a Codex turn end's reading is attached to the forwarded `turn-ended` event as `reading` (no separate `usage` event), identical live and when drained from the spool; `viewer/app/sessions.js` `event()` applies any `payload.reading` (record, `limited_until`) before the turn-ended branch decides the report path | `machine/test/service.test.js` (R3: reached-limit rollout → one `turn-ended` carrying `reading.limited_until`, live and from the spool); `viewer/test/app-balancer.test.js` (R3: limited verifier turn end → no result card; after release → one) |
+| §6 dot dedup keyed on the earliest reset | `viewer/app/usage.js` `weekKey`, `alert`, `seen`: seen per provider per ISO week of the hub's local time | `viewer/test/app-usage.test.js` (R3: two accounts below, seen, pause the earliest-reset one → no dot; next week → dot) |
+| §6 dot never shown with an unknown reset | same: alerting no longer requires `first_refill` | `viewer/test/app-usage.test.js` (R3: `below_notify` with `first_refill: null` → dot; after seen → none) |
+
+Lane: R3 codex standard (gpt-6.1-terra), the family that built this code. Deviation added: the nav dot's "once per week" is the calendar (ISO) week of the hub's local time, not the provider's refill week.
+
+Residual risk added from round 2's Claude verifier: model options in the Models editor are still hard-coded per provider (`viewer/app/settings.js:208-216`), so a third CLI would edit that file too (its model rows are out of scope, D2).
+
+Validation at `9f070d2`, sequential:
+
+```
+$ bash sensitivity/test/run.sh -> RESULT 64 passed, 0 failed
+$ bash seen/test/run.sh        -> RESULT 21 passed, 0 failed
+$ bash codex/test/run.sh       -> RESULT 72 passed, 0 failed
+$ bash install/test/run.sh     -> RESULT 90 passed, 0 failed
+$ bash machine/test/run.sh     -> # pass 80  # fail 0
+$ node --test viewer/test/*.test.js
+not ok 190 - a starter that loses the freed port registers through the new holder
+# tests 305
+# pass 304
+# fail 1
+$ npm --prefix viewer run test:browser
+  2 failed
+    [chromium] › test/browser.spec.js:2395:1 › no drawn arrow's line passes through either box it connects, over every committed graph
+    [firefox] › test/browser.spec.js:2395:1 › no drawn arrow's line passes through either box it connects, over every committed graph
+  2 skipped
+  508 passed (1.8m)
+```
+
+The two failures are the same ones on `main` (above).
