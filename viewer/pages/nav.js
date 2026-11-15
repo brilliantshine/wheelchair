@@ -42,6 +42,8 @@
     ['settings', 'Settings', '/wheelchair/app/settings'],
   ];
   let sessionCount = null;
+  let settingsLink = null;
+  let alertDot = null;
   for (const [key, label, href] of links) {
     const a = el('a', '');
     a.href = href;
@@ -55,6 +57,11 @@
         + '<path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"></path></svg>';
       a.append(gear, el('span', 'lbl', label));
       a.setAttribute('aria-label', label);
+      settingsLink = a;
+      alertDot = el('span', 'usage-dot');
+      alertDot.hidden = true;
+      alertDot.setAttribute('aria-hidden', 'true');
+      a.append(alertDot);
     } else {
       a.textContent = label;
     }
@@ -134,8 +141,27 @@
     } catch (e) { /* keep the last line */ }
   }
 
+  // The Settings dot: on while a provider's week is running short and nobody has opened Usage.
+  function showDot(on) {
+    if (!alertDot) return;
+    alertDot.hidden = !on;
+    settingsLink.setAttribute('aria-label', on ? 'Settings, usage needs a look' : 'Settings');
+  }
+  async function refreshAlert() {
+    try {
+      const res = await fetch(API + '/usage/alert');
+      if (!res.ok) return;
+      const data = await res.json();
+      showDot(data.dot === true);
+    } catch (e) { /* keep the last state */ }
+  }
+  // The Settings page tells us when Usage was opened and the alerts were marked seen.
+  window.addEventListener('wc-usage-seen', () => showDot(false));
+
   refreshNeeds();
   refreshSessions();
+  refreshAlert();
+  setInterval(refreshAlert, 300000);
   setInterval(refreshNeeds, 10000);
   setInterval(refreshSessions, 10000);
 })();

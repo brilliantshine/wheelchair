@@ -12,6 +12,7 @@
   const STAGE = {
     idea: 'Idea', planning: 'Planning', review: 'Review', building: 'Building', verifying: 'Verifying', done: 'Done',
   };
+  const PROVIDER_LABEL = { claude: 'Claude', gpt: 'GPT' };
   let threads = [];
   let titles = {};
   let known = [];
@@ -59,7 +60,7 @@
     if (t.archived) top.appendChild(el('span', 'badge', 'archived'));
     a.appendChild(top);
     a.appendChild(el('div', 'sub', [
-      stage, waiting[t.id] ? 'needs you' : '', t.cli, t.machine, ago(t.updated_at || t.created_at),
+      stage, waiting[t.id] ? 'needs you' : '', PROVIDER_LABEL[t.provider] || t.cli, t.machine, ago(t.updated_at || t.created_at),
     ].filter(Boolean).join(' · ')));
     li.appendChild(a);
     return li;
@@ -133,7 +134,6 @@
     ev.preventDefault();
     const body = {
       project: document.getElementById('nt-project').value.trim(),
-      cli: document.getElementById('nt-cli').value,
       machine: document.getElementById('nt-machine').value.trim() || 'hub',
     };
     const message = document.getElementById('nt-message').value.trim();

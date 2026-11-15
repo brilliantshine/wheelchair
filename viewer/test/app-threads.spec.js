@@ -101,11 +101,11 @@ for (const [label, size] of SIZES) {
       await page.goto(`${ctx.server.url}/app/threads`);
       await page.locator('#new-toggle').click();
       await page.locator('#nt-project').fill('/tmp/project');
-      await page.locator('#nt-cli').selectOption('claude');
+      await expect(page.locator('#nt-cli')).toHaveCount(0);
       await page.locator('#nt-machine').fill('hub');
       const request = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith('/api/threads'));
       await page.locator('#nt-go').click();
-      expect((await request).postDataJSON()).toMatchObject({ project: '/tmp/project', cli: 'claude', machine: 'hub' });
+      expect((await request).postDataJSON()).toMatchObject({ project: '/tmp/project', machine: 'hub' });
       await expect(page).toHaveURL(/\/app\/thread\?id=[0-9a-f]+/);
       await noSideScroll(page);
     });
