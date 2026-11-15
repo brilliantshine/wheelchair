@@ -1,6 +1,6 @@
 ---
 slug: agents-screen
-status: planning   # planning | ready-for-review | approved | implementing | verifying | done
+status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-15
 ---
 
@@ -12,15 +12,7 @@ get buried as this file grows.
 
 ## Open Questions
 
-### Q2: Where does the names list live?
-- **Context:** Hub settings are `settings.json` in the hub state directory, editable on
-  the Settings page; unknown fields are dropped (`viewer/app/settings.js:171-196`).
-  Model pins already live in a separate plain file, `~/.wheelchair/models`.
-- **Options:** (a) A field in the hub settings, editable as a text box on the Settings
-  page. (b) A plain file, one name per line, e.g. `~/.wheelchair/lead-names`, edited by
-  hand.
-- **Recommendation:** (a). It is editable from a phone and uses the existing validated
-  settings path.
+(none)
 
 ## Watch List
 
@@ -41,17 +33,135 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 6 | The Agents screen shows live agents. Ended agents are hidden, except a lead's family keeps its ended lead row dimmed while any of its children are live. A Threads row whose lead has ended still shows the name, without a link. | Matches what the Sessions page shows today; avoids a growing list of dead sessions. | defaulted |
 | 7 | A lead's name belongs to the thread: a restarted lead (`lead-2`, …) keeps the name, and the children of earlier leads in the thread show under the current lead in the tree. | Collin picked "Keep the name" (Q1). A restart is a repair; the Threads link lands on whoever is in charge now. | user |
 | 8 | Supersedes #2 on reuse: a thread holds its name until it is archived, not only while its lead is live. Choice is otherwise as #2: first list name held by no unarchived thread, else a number is added. | Follows from #7: a restart after the lead died must not find its name taken by another thread. | defaulted |
+| 9 | The names list is a hub setting, `lead_names`, edited on the Settings page as a text box, one name per line. | Collin picked "Settings page" (Q2). | user |
+| 10 | The Agents screen reads a new hub endpoint built from the hub's own thread records (names, `started_by`, model, effort, `turn_ended`, `finished`), not the machine session lists. | The tree, names and waiting state all live in hub records; the machine lists lack model and names. | defaulted |
+| 11 | Unmanaged tmux sessions (ones the app did not start) are not shown on the Agents screen. | They are not agents; IDEA.md is about the app's agents. | defaulted |
+| 12 | Threads that already have a lead when this ships get names at hub start, oldest thread first. | So existing work is named without waiting for a restart. | defaulted |
 
 ## Spec
 
-(Grows as decisions land.)
-
 ### Lead names
-- A name is stored on the thread, not the session. It is assigned when the thread's first
-  lead session is created (never for a stub until it is opened), and kept across restarts.
-- Choice and reuse: Decision Log #2 and #8. A thread holds its name until it is archived.
-- In the Agents tree, a thread's lead node is its current lead session; children whose
-  `started_by` is an earlier lead of the same thread hang under it.
+- **Stored on the thread** as `thread.lead_name` (string), not on a session. A restarted
+  lead (`lead-2`, …) shows the same name.
+- **Assigned** when the thread's first lead session is created: in `createThread` and in
+  `openStub` (`viewer/app/threads.js`), before `startSession`. Never for an unopened stub.
+  `restartLead` keeps the existing name; if the thread has none (a pre-existing thread),
+  it assigns one.
+- **Choice:** the list is `settings.lead_names` if non-empty, else the Greek alphabet in
+  order (Alpha, Beta, Gamma, Delta, Epsilon, Zeta, Eta, Theta, Iota, Kappa, Lambda, Mu, Nu,
+  Xi, Omicron, Pi, Rho, Sigma, Tau, Upsilon, Phi, Chi, Psi, Omega). Take the first list
+  name not held (case-insensitive) by any unarchived thread. If all are held, take the
+  first name `<list name> <n>` (n = 2, 3, …, walking the list for each n) that is free.
+- **Release:** an archived thread no longer holds its name; it keeps `lead_name` for
+  display. Unarchiving (if possible) does not re-check for clashes.
+- **Serialized hub-wide:** assignment reads all threads and writes one, so it runs inside
+  one hub-wide queue (a promise chain in the hub), so two threads created at once never
+  get the same name.
+- **Backfill:** at hub start, every unarchived thread that has at least one lead session
+  and no `lead_name` gets one, oldest `created_at` first.
+- Editing the list never renames existing threads.
+- Workers, reviewers, verifiers, mappers and sub-leads have no names.
+
+### The names setting
+- `settings.lead_names`: array of strings, default `[]`. `normalize` keeps it (it currently
+  drops unknown fields, `viewer/app/settings.js:171-196`). Validation on save: each name
+  trimmed, 1–40 characters, no duplicates (case-insensitive), at most 200 names; blank
+  lines are dropped, not errors.
+- Settings page: a "Lead names" text box in the Leads section, one name per line, with a
+  hint "Empty uses Greek letters. New leads only." Saved like other settings.
+
+### Model on the session record
+- `startSession` (`viewer/app/sessions.js`) stores `model: resolved.model` and
+  `effort: input.effort || resolved.effort || null` on the hub's session record. Sessions
+  started before this ships have no model; show "model unknown".
+
+### Agents API
+- `GET /wheelchair/api/agents` (added to `viewer/app/routes.js`, documented in
+  `viewer/app/API.md`). Built from `hub.allThreads()`, unarchived threads only. Returns
+  `{ leads: [Lead], machines: [{ machine, reachable, last_seen }] }` where each `Lead` is:
+  `{ thread_id, thread_title, lead_name, machine, session: Agent, children: [Agent] }`
+  and `Agent` is the public session (no token) plus `children: [Agent]` and
+  `waiting_on: [child name]`.
+- **Tree:** a thread's lead node is its newest lead session (largest `created_at`). Its
+  children are every non-lead session whose `started_by` is any lead session of that
+  thread. A session whose `started_by` is a non-lead session (a sub-lead's worker) hangs
+  under that session. A session with `started_by` missing or not found in the thread
+  hangs under the lead node.
+- **Shown:** live sessions only (`live: true`). An ended session is dropped unless it has a
+  live descendant, in which case it stays, marked ended. A thread whose lead node and all
+  descendants are ended is omitted. Pending (`status: waiting`) sessions are live and shown.
+- **Waiting on:** for an agent with `turn_ended === true`, `waiting_on` lists its direct
+  children with `live: true` and `finished` not true. Otherwise `waiting_on` is `[]`.
+  (`finished` is set when a child's `result` is delivered, `viewer/app/cards.js:88` and
+  `viewer/app/sessions.js:219`.)
+- Machine reachability comes from `hub.machineSeen` and one `/v1/status` call per machine,
+  as `views.js` `sessions` does.
+- The old `GET /wheelchair/api/sessions` stays (nav badge and `findSessionMachine` use it).
+
+### Agents page
+- New `viewer/pages/agents.html` + `agents.js` (+ CSS in `views.css`), served at
+  `/wheelchair/app/agents`, added to the server's page allowlist. Polls the API every 5s,
+  keeps open/closed state of folds across redraws.
+- One block per lead, ordered by thread `collin_at || created_at`, newest first. The block
+  has `id="lead-<thread_id>"` so `/wheelchair/app/agents#lead-<thread_id>` scrolls to it
+  and highlights it briefly.
+- Each agent is a card like today's Sessions card: name line (a lead shows its
+  `lead_name`, e.g. "Alpha", with "lead" badge; others show their role, e.g. "reviewer",
+  plus the internal session name in small text), thread title (lead only), machine, CLI,
+  model, effort ("default effort" when null), status badge (running / starting /
+  waiting for capacity / ended), an "Open terminal" button (to
+  `/wheelchair/app/terminal?name=<session name>`), the attach command with Copy, and on the
+  lead an "Open thread" button.
+- **Waiting line:** when `waiting_on` is non-empty, the card shows "Waiting on: reviewer,
+  verifier" (child roles, de-duplicated, in start order), and each named child's card gets
+  a subtle marker.
+- **Tree:** children indent under their parent with a connecting line; works at 360px wide
+  (indent capped so three levels fit without horizontal scroll).
+- Unreachable machines show a banner line at the top: "<machine> unreachable, last seen …".
+- Empty state: "No agents running."
+
+### Sessions page removal
+- Delete `viewer/pages/sessions.html` and `sessions.js`. `/wheelchair/app/sessions`
+  redirects (302) to `/wheelchair/app/agents`.
+- Nav (`viewer/pages/nav.js`): the `sessions` entry becomes `['agents', 'Agents',
+  '/wheelchair/app/agents']`; its live-count badge counts live agents from the agents API.
+- Terminal page: `data-current="agents"` and back link "← Agents" to `/wheelchair/app/agents`.
+- Update every other reference (`server.js` header comment, routers `viewer/AGENTS.md`,
+  `AGENTS.md`, tests that load the sessions page).
+
+### Threads page
+- Each row shows the lead name after the title as a small link-styled chip, e.g. "Alpha".
+  The row today is one `<a>` (`viewer/pages/threads.js`); the chip must not be nested inside
+  it. Restructure the row so the thread link and the chip are siblings (the thread link
+  still covers the rest of the row for tapping).
+- The chip links to `/wheelchair/app/agents#lead-<thread_id>` when the thread's newest lead
+  session is live; otherwise it is plain text (no link). No chip when `lead_name` is unset
+  (unopened stub).
+- `GET /wheelchair/api/threads` returns `lead_name` (it returns stored threads already).
+
+### Thread page
+- The thread page header shows the lead name next to the title (plain text, same chip
+  style, linking to the Agents entry when live).
+
+### Non-goals
+- Starting, stopping or restarting agents from the Agents screen.
+- Names for non-lead roles. Renaming a thread's lead by hand.
+- Changing how sessions are started, balanced, restarted or how results are delivered.
+- Showing unmanaged tmux sessions.
+
+### Validation
+- `node --test viewer/test/*.test.js` passes, with new unit tests for: name choice
+  (default list, custom list, all held → numbered, case-insensitive, archived releases),
+  concurrent creation getting distinct names, restart keeping the name, stub getting a name
+  only when opened, backfill, `lead_names` validation, model/effort recorded, and the
+  agents API tree (grandchildren under a sub-lead, children of an ended earlier lead under
+  the current lead, ended-with-live-descendant kept, `waiting_on` true/false cases).
+- `npm --prefix viewer run test:browser` passes, with browser tests for: Agents page renders
+  a tree and the waiting line at 360px and desktop widths without horizontal scroll; the
+  Threads chip navigates to `#lead-<id>`; `/wheelchair/app/sessions` redirects; Settings
+  saves a names list.
+- Run viewer checks only with a server started with `--port` and `--cache-root` (see root
+  `AGENTS.md`, Verification).
 
 ## Accepted Risks
 
@@ -59,6 +169,15 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 |------|--------------|-------|
 
 ## Review Rounds
+
+### Round 1 — 2026-11-15
+
+**Lanes:** intent lens; mechanics lens; cross-family: see Log.
+
+**Changed since Round N-1:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
