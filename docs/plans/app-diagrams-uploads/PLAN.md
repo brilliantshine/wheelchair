@@ -391,3 +391,4 @@ Clean round: approved.
 - 2026-11-15 — T3 accepted. The worker stopped on its fails-twice rule: Firefox gave the test image naturalWidth 0. Cause found by sub-lead: the spec's embedded PNG had a bad IDAT CRC (Chromium tolerates it, Firefox does not). Sub-lead replaced it with a valid 2×2 PNG; app-diagrams-uploads.spec.js then passed 4/4 in Chromium and Firefox.
 - 2026-11-15 — Choice: T6, viewer/app/machine-client.js: errors from the outgoing machine request are tagged `machineConnection`, to tell a dropped connection from a config error.
 - 2026-11-15 — T6 accepted: app-uploads-archive.test.js passes. Full validation on the merged branch: machine 89/89; node 348/349 (known port race); browser 568 passed, 2 failed (known drawn-arrow issue, both browsers). COMPLETION.md written; status verifying.
+- 2026-11-15 — Verifier 1 started with --not-provider gpt; the hub could not avoid GPT ("Could not avoid gpt; using gpt."), so verification is same-family.
