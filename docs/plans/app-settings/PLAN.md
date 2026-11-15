@@ -18,31 +18,7 @@ Source proposal: `docs/proposals/app-settings/proposal.md`.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q1: How far does the tier rename reach?
-- **Context:** The app tiers become Light, Standard, Heavy, Critical. Today the names
-  Luna/Terra/Sol/Astra are the tier names in `viewer/app/sessions.js:15-25`, the keys of
-  the pins file `~/.wheelchair/models` (`codex/model.sh:15-25`), and appear in seven
-  `protocol/` files used by both the app and the terminal workflow (`/plan`, `/implement`),
-  plus the codex and installer test suites. The proposal keeps the old names only inside GPT
-  model names.
-- **Options:** (a) rename everywhere: protocol, `model.sh` (old names accepted as aliases
-  so an existing pins file and old plan docs still read), hub, tests; (b) rename in the app
-  and the app role files (`protocol/app/`) only, terminal workflow keeps the old names and
-  the hub maps between them; (c) labels only: the app screens say Light…Critical, every
-  file keeps the old names.
-- **Recommendation:** (a). One vocabulary; the aliases keep the terminal workflow working.
-
-### Q2: One source for model choices, or two?
-- **Context:** GPT pins live in `~/.wheelchair/models`, read by `codex/model.sh` for the
-  terminal workflow. The Settings table needs somewhere to store Claude's cells, "Not used"
-  and the lead's model too.
-- **Options:** (a) the Settings page writes the one models file (extended to Claude and
-  Not used), so the terminal workflow follows the page; (b) the hub keeps its own settings
-  file and the terminal workflow keeps the pins file; (c) the hub file wins and the pins
-  file is retired.
-- **Recommendation:** (a), pending Q1.
-
-### Q3: Which parts of the Models screen land here?
+### Q1: Which parts of the Models screen land here?
 - **Context:** `SettingsModels` also shows worker provider order, "Save Claude for
   leads", the 5% margin, rules by kind of work (UI prefers Claude, critical, suggested
   rules) and "Other agents" (reviewers, checker, mapping, asides). Most of the first group
@@ -53,7 +29,7 @@ Log and is deleted from here.
   model only.
 - **Recommendation:** (a) or (b); to discuss.
 
-### Q4: What does "Critical" do in this thread?
+### Q2: What does "Critical" do in this thread?
 - **Context:** Critical needs a second provider to check it, and parts are marked critical
   on the plan or the Plan approved card. Today the hub refuses `--tier astra`
   (`sessions.js:17`, `27-29`) while `sub-lead.md:119` lists it.
@@ -62,7 +38,7 @@ Log and is deleted from here.
   "mark critical" flow on the Plan approved card; (c) only make the tier startable.
 - **Recommendation:** (a).
 
-### Q5: The permission mode setting
+### Q3: The permission mode setting
 - **Context:** Sessions run Claude `--permission-mode auto`, Codex `-a never`
   (`machine/service.js:242-262`). Claude's readiness waits for "auto mode on" in the pane
   (`service.js:254`, `298`). Collin wanted to be able to bypass permissions
@@ -70,13 +46,13 @@ Log and is deleted from here.
 - **Options:** which modes to offer (auto / bypass, per CLI), and where on the page.
 - **Recommendation:** auto and bypass for Claude, in Models and preferences.
 
-### Q6: When does a running lead follow a changed writing style?
+### Q4: When does a running lead follow a changed writing style?
 - **Context:** The design says "Leads pick it up on their next message"; IDEA's Not doing
   says running agents don't change. The hub can prefix the style to messages it delivers
   to the lead, or only set it at start.
 - **Recommendation:** to discuss.
 
-### Q7: The before-and-after preview
+### Q5: The before-and-after preview
 - **Context:** The design says "Rewritten live as you change the settings above." That
   means a model call per change.
 - **Options:** (a) a real rewrite by a cheap model on demand (button) of a fixed sample;
@@ -101,10 +77,35 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 3 | The lead's model is a setting, defaulting to Claude Opus 5.5, not a fixed rule | Collin: "that's my preference … not a global rule" | user |
 | 4 | Settings sidebar entries without a design here (Accounts, Usage, Nodes, Diagrams, Notifications) are left out of the sidebar until their thread builds them | Nothing to show; dead links read as broken | defaulted |
 | 5 | Templates and the writing style reach an agent through the machine service's existing `role_prompt` (`machine/service.js:245`, `283-286`), composed by the hub as built-in pointer, then template, then (leads only) style | The slot exists and is fixed at start, matching "applies to agents started after saving" | defaulted |
+| 6 | Rename the tiers everywhere: Luna→Light, Terra→Standard, Sol→Heavy, Astra→Critical in the app, `protocol/`, `codex/model.sh`, the pins file and tests; the old names stay accepted as aliases | One vocabulary; aliases keep existing pins files and old plan docs readable | user |
+| 7 | One models file: the Settings page reads and writes the hub machine's models file (`~/.wheelchair/models`), extended to hold Claude's cells, "Not used" and the lead's model; `codex/model.sh` (or its successor) stays its only parser and writer, used by both the hub and the terminal workflow | Follows from 6: one vocabulary and one source, so the terminal workflow and the app never disagree | defaulted |
 
 ## Spec
 
 The settled design, grown as decisions land.
+
+### Tier names
+
+- Four tiers, everywhere: **Light** (was Luna), **Standard** (Terra), **Heavy** (Sol),
+  **Critical** (Astra). Every file that names a tier uses the new name: `viewer/app/sessions.js`,
+  `viewer/app/API.md`, `codex/model.sh`, `protocol/lanes.md`, `protocol/app/sub-lead.md`,
+  `protocol/app/lead.md`, `protocol/implementation.md`, `protocol/verification.md`,
+  `protocol/plan-review.md`, `protocol/templates/COMPLETION.md`, and the codex, installer and
+  hub test suites (full list: `docs/maps/app-sessions.md`, "Every place the tier names …").
+- Old names are accepted on input wherever a tier is read (`wc.js session start --tier`,
+  `model.sh <tier>`, pins file keys) and mean the new tier. Output always uses the new name.
+  Old plan documents under `docs/plans/` are history and are not edited.
+- GPT model names (`gpt-6-luna` …) are model names, not tier names, and are unchanged.
+- `top` stays as an accepted tier value meaning Heavy, for compatibility.
+
+### Where model choices live
+
+- One file, the hub machine's `~/.wheelchair/models` (`WHEELCHAIR_MODELS` overrides, as
+  today). It holds, per provider (Claude, GPT) and tier, a model or "not used", plus the
+  lead's model. `codex/model.sh`'s parser and writer are extended to it; the hub reads and
+  writes it through the same code path, never a second parser.
+- An existing pins file in the old format reads unchanged (old tier keys are aliases; GPT
+  rows only).
 
 ## Accepted Risks
 
