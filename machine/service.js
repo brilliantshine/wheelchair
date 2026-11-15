@@ -389,7 +389,15 @@ class MachineService {
     return { offset: stat.size, lines: additions };
   }
   async transcript(name, offset = 0) {
-    const session = this.managed(name);
+    let session;
+    try { session = this.managed(name); } catch (error) {
+      // An archived thread's sessions are forgotten, but their transcript copies are kept so
+      // the thread's chat still opens (Spec "Archive").
+      const thread = /^wc-([A-Za-z0-9]+)-[a-z]/.exec(safeName(name, 'session name'))?.[1];
+      const kept = thread && await fsp.readFile(path.join(this.stateDir, 'transcripts', thread, `${name}.jsonl`), 'utf8').catch(() => null);
+      if (kept === null || kept === undefined || kept === false) throw error;
+      return { offset: Buffer.byteLength(kept), data: Buffer.from(kept).subarray(Number(offset)).toString('utf8') };
+    }
     if (session.source_transcript) await this.copyTranscript(session, session.source_transcript);
     const data = session.transcript_path ? await fsp.readFile(session.transcript_path, 'utf8').catch(() => '') : '';
     const byte = Buffer.byteLength(data);

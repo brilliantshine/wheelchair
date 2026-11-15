@@ -252,3 +252,15 @@ test('a Codex notify payload is posted as turn-ended, keeping its last message',
     assert.equal(bodies[0].type, 'turn-ended'); assert.equal(bodies[0]['last-assistant-message'], 'No findings.');
   } finally { await new Promise(resolve => server.close(resolve)); }
 });
+test('an archived session\'s kept transcript is still served; an unknown one is not', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true }); try {
+    const { session } = await startedWorktree(env, root, 'kept');
+    await write(path.join(env.state, 'transcripts', 'kept', `${session.name}.jsonl`), '{"line":1}\n');
+    const archived = await api(env, 'POST', '/v1/archive', { thread_id: 'kept' }, hubHeader);
+    assert.equal(archived.status, 200, JSON.stringify(archived.body));
+    const result = await api(env, 'GET', `/v1/sessions/${session.name}/transcript`, undefined, hubHeader);
+    assert.equal(result.status, 200); assert.equal(result.body.data, '{"line":1}\n');
+    const unknown = await api(env, 'GET', '/v1/sessions/wc-nope-lead/transcript', undefined, hubHeader);
+    assert.equal(unknown.status, 404);
+  } finally { await env.close(); }
+});
