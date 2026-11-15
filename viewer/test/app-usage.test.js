@@ -36,6 +36,10 @@ test('ranking and unknown transcript', () => {
   const accounts = [account, { ...account, id: 'b', paused: true }, { ...account, id: 'c' }];
   const ranked = usage.rank(accounts, { a: reading }, { hub: { reachable: true, accounts: { a: true, b: true, c: false } } }, settings.defaults(), 'hub', now);
   assert.deepEqual(ranked.map((a) => a.reason), ['next: refills soonest', 'skipped: paused', 'skipped: signed out on hub']);
+  const state = { hub: { reachable: true, accounts: { a: true, b: true, c: true } } };
+  const one = { ...settings.defaults(), within: 'one' };
+  assert.equal(usage.rank(accounts, { a: reading }, state, one, 'hub', now, { claude: 'c' }).find((a) => a.next).id, 'c');
+  assert.equal(usage.rank(accounts, { a: reading }, state, one, 'hub', now, 'b').find((a) => a.next).id, 'a');
   assert.match(transcriptItems('other', '{}', {})[0].text, /has no transcript reader/);
 });
 test('Ready accepts a second signed-in account and old service status', async () => {
