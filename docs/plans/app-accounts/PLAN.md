@@ -283,9 +283,11 @@ No reading → room.
 - `pollDead` (`sessions.js:370-395`) skips sessions with `status: 'waiting'`: they have no
   machine session yet. `stopSession` (`sessions.js:358-366`) on a waiting session skips the
   machine call and marks it `stopped`.
-- A waiting lead, or a running lead with `limited_until` set, shows on the thread as an app
-  line: "Waiting for <provider> to refill, about <time>". It goes when the lead starts or is
-  released.
+- **Lead waiting line** on the thread page, in the status area beside the Ready block
+  (`viewer/pages/thread.js:456-466`), drawn from the live lead's session record in the
+  thread state: `status: 'waiting'` → "Waiting for <provider> to refill, about
+  <waiting_until>"; a running lead with a future `limited_until` → "Waiting for <account
+  name> to refill, about <limited_until>" (it is tied to its account). Hidden otherwise.
 
 **A running session that hits its limit** (`limit-hit`, or a Codex reading with
 `limited_until`): the hub stores `limited_until` on the account's reading and on the
@@ -390,6 +392,11 @@ Added to `viewer/app/routes.js` and documented in `viewer/app/API.md`:
   `sessions.js:341-344` accepts it), a sub-lead resumed from Implementation Tasks, a
   reviewer, verifier or mapper started fresh. Never start a replacement while the failed one
   is live.
+- `sub-lead.md` remediation (`:152-153`, "Route to the same family that built the work"):
+  remediation workers start with `--provider <the provider that built the task>`, read
+  from `session list`.
+- `lead.md:89` "Collin picks the project, the CLI and the machine" → "the project and the
+  machine".
 - `protocol/app/cards.md`: no change.
 
 ### Edge cases
@@ -422,7 +429,8 @@ Added to `viewer/app/routes.js` and documented in `viewer/app/API.md`:
   validation.
 - `npm --prefix viewer run test:browser` — add: Accounts panel renders accounts and the sign-in
   card (link, paste box, Codex code) against a fake service; Usage panel renders bars, amber
-  line and the account table; second-Claude warning; CLI picker gone from the new-thread form.
+  line and the account table; second-Claude warning; CLI picker gone from the new-thread form; the lead waiting line for a
+  waiting lead and for a limited lead, and hidden otherwise.
 - `bash codex/test/run.sh`, `bash install/test/run.sh`, `bash sensitivity/test/run.sh`,
   `bash seen/test/run.sh` still pass.
 - Never start a viewer by hand (AGENTS.md "Verification"); use the suites' helpers.
@@ -543,6 +551,9 @@ Collin chose "keep going" (2026-11-15); the round budget resets.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent (Claude) | minor | Lead waiting line has no place, source or test; says provider for an account-bound hold | upheld | §5: thread status area, from the session record, account name when limited; browser test |
+| intent (Claude) | minor | Remediation "same family that built it" not carried over | upheld | §9: `--provider <builder's provider>` |
+| intent (Claude) | minor | lead.md:89 still mentions picking the CLI | upheld | §9 edit added |
 
 ## Prior Work
 
