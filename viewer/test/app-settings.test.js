@@ -25,6 +25,11 @@ test('settings defaults, templates, prompt composition, counts, and validation',
     assert.equal(initial.status, 200);
     assert.deepEqual(initial.body.other_agents, { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard' });
     assert.equal(initial.body.permission_mode, 'auto');
+    assert.equal(initial.body.codex_mode, 'sandboxed');
+    assert.equal((await api(context, '/settings/preferences', { method: 'PUT', body: { codex_mode: 'yolo' } })).status, 400);
+    const unrestricted = await api(context, '/settings/preferences', { method: 'PUT', body: { codex_mode: 'unrestricted' } });
+    assert.equal(unrestricted.body.codex_mode, 'unrestricted');
+    assert.equal((await api(context, '/settings')).body.codex_mode, 'unrestricted');
     const all = await api(context, '/settings/templates', { method: 'POST', body: workerTemplate('All workers') });
     const project = await api(context, '/settings/templates', { method: 'POST', body: workerTemplate('Project workers', '/tmp/project', 'Use the project convention.') });
     assert.equal(all.status, 201);

@@ -81,12 +81,17 @@ test.describe('desktop', () => {
 
     await page.getByRole('radio', { name: 'Bypass' }).click();
     await expect.poll(async () => (await settings(page)).permission_mode).toBe('bypass');
+    await expect(page.getByText('Never asks: it can write only inside its worktree.')).toBeVisible();
+    await page.getByRole('radio', { name: 'Unrestricted' }).click();
+    await expect.poll(async () => (await settings(page)).codex_mode).toBe('unrestricted');
+    await expect(page.getByText(/it can change anything on the machine/)).toBeVisible();
     await page.getByLabel('Checker', { exact: true }).selectOption('critical');
     await expect.poll(async () => (await settings(page)).other_agents.verifier).toBe('critical');
 
     await page.reload();
     await expect(page.getByLabel('Claude standard model', { exact: true })).toHaveValue('__none');
     await expect(page.getByRole('radio', { name: 'Bypass' })).toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByRole('radio', { name: 'Unrestricted' })).toHaveAttribute('aria-checked', 'true');
     await expect(page.getByLabel('Checker', { exact: true })).toHaveValue('critical');
   });
 

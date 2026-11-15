@@ -571,6 +571,33 @@ test('permission_mode does not change Codex', async () => {
     assert.ok(!argv.some(a => /bypass|--effort|--permission-mode/.test(a)));
   } finally { await env.close(); }
 });
+test('codex_mode: sandboxed by default, unrestricted drops the sandbox, reviewers stay read-only, anything else is refused', async () => {
+  const env = await service(await temp(), { pane: readyCodex }); try {
+    await start(env, { cli: 'codex', role: 'worker', token: 'a', thread_id: 'a' });
+    assert.deepEqual(argvOf(env, 'wc-a-worker').slice(0, 7), ['codex', '-s', 'workspace-write', '-a', 'never', '-c', 'sandbox_workspace_write.network_access=true']);
+    assert.equal(env.instance.sessions['wc-a-worker'].codex_mode, 'sandboxed');
+    await start(env, { cli: 'codex', role: 'worker', token: 'b', thread_id: 'b', codex_mode: 'unrestricted' });
+    const free = argvOf(env, 'wc-b-worker');
+    assert.deepEqual(free.slice(0, 2), ['codex', '--dangerously-bypass-approvals-and-sandbox']);
+    assert.ok(!free.includes('-s') && !free.includes('-a'));
+    assert.ok(free.some(a => /^notify=/.test(a)) && free.some(a => /trust_level/.test(a)));
+    assert.equal(env.instance.sessions['wc-b-worker'].codex_mode, 'unrestricted');
+    await start(env, { cli: 'codex', role: 'reviewer', token: 'c', thread_id: 'c', codex_mode: 'unrestricted' });
+    const reviewer = argvOf(env, 'wc-c-reviewer');
+    assert.deepEqual(reviewer.slice(0, 5), ['codex', '-s', 'read-only', '-a', 'never']);
+    assert.ok(!reviewer.includes('--dangerously-bypass-approvals-and-sandbox'));
+    for (const bad of ['yolo', '', 1, null]) {
+      const result = await api(env, 'POST', '/v1/sessions', { role: 'worker', cli: 'codex', thread_id: 'd', token: 'd', worktree: env.state, codex_mode: bad }, hubHeader);
+      assert.equal(result.status, 400, String(bad)); assert.match(result.body.error, /codex_mode/);
+    }
+  } finally { await env.close(); }
+});
+test('codex_mode does not change Claude', async () => {
+  const env = await service(await temp()); try {
+    await start(env, { thread_id: 'u', token: 'u', codex_mode: 'unrestricted' });
+    assert.ok(!argvOf(env, 'wc-u-lead').some(a => /dangerously|sandbox/.test(a)));
+  } finally { await env.close(); }
+});
 test('a bypass session is ready on the bypass status line, not on the auto one, and an auto session the reverse', async () => {
   const env = await service(await temp(), { pane: readyBypass }); try {
     const bypass = await start(env, { thread_id: 'x', token: 'x', permission_mode: 'bypass' });

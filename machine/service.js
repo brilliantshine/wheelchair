@@ -49,6 +49,7 @@ function command(program, args, options = {}) {
   return { ok: result.status === 0, status: result.status, stdout: result.stdout || '', stderr: result.stderr || '' };
 }
 const PERMISSION_MODES = { auto: 'auto', bypass: 'bypassPermissions' };
+const CODEX_MODES = ['sandboxed', 'unrestricted'];
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const PREVIEW_TIMEOUT_MS = 60_000;
 // The one place the starting instructions are composed, so the Claude system prompt and the
@@ -64,9 +65,11 @@ function composeRolePrompt(input) {
 function startOptions(input) {
   const mode = input.permission_mode === undefined || input.permission_mode === null ? 'auto' : input.permission_mode;
   if (!Object.hasOwn(PERMISSION_MODES, mode)) die('permission_mode must be auto or bypass');
+  const codexMode = input.codex_mode === undefined ? 'sandboxed' : input.codex_mode;
+  if (!CODEX_MODES.includes(codexMode)) die('codex_mode must be sandboxed or unrestricted');
   if (input.effort !== undefined && input.effort !== null && !EFFORTS.includes(input.effort)) die(`effort must be one of ${EFFORTS.join(', ')}`);
   if (input.role_layers !== undefined && input.role_layers !== null && typeof input.role_layers !== 'string') die('role_layers must be text');
-  return { permission_mode: mode, effort: input.effort || null };
+  return { permission_mode: mode, codex_mode: codexMode, effort: input.effort || null };
 }
 function shellQuote(value) { return `'${String(value).replace(/'/g, `'\\''`)}'`; }
 function maybeTailscaleIp() {
@@ -276,7 +279,12 @@ class MachineService {
     if (input.cli === 'codex') {
       const trust = `projects={${json(worktree)}={trust_level="trusted"}}`;
       const notify = `notify=[${json(path.join(ROOT, 'machine', 'hook.sh'))},"codex",${json(session.name)}]`;
-      return { argv: ['codex', '-s', input.role === 'reviewer' ? 'read-only' : 'workspace-write', '-a', 'never', '-c', 'sandbox_workspace_write.network_access=true', '-c', notify, '-c', trust, ...(input.model ? ['-m', input.model] : [])] };
+      // A reviewer stays read-only whatever the mode: it only reads. Unrestricted drops
+      // the sandbox and approvals entirely (Codex's --yolo); sandboxed confines writes to the worktree.
+      const access = input.role === 'reviewer' ? ['-s', 'read-only', '-a', 'never']
+        : session.codex_mode === 'unrestricted' ? ['--dangerously-bypass-approvals-and-sandbox']
+          : ['-s', 'workspace-write', '-a', 'never', '-c', 'sandbox_workspace_write.network_access=true'];
+      return { argv: ['codex', ...access, '-c', notify, '-c', trust, ...(input.model ? ['-m', input.model] : [])] };
     }
     die('cli must be claude or codex');
   }
@@ -290,7 +298,7 @@ class MachineService {
     const createdWorktree = !input.worktree;
     const created = await this.createWorktree(input, name);
     const worktree = created.worktree;
-    const session = { name, role: input.role, cli: input.cli, permission_mode: options.permission_mode, effort: options.effort, thread_id: input.thread_id, token: input.token,
+    const session = { name, role: input.role, cli: input.cli, permission_mode: options.permission_mode, codex_mode: options.codex_mode, effort: options.effort, thread_id: input.thread_id, token: input.token,
       worktree, created_worktree: createdWorktree, attempt_id: input.attempt_id || null, started_by: input.started_by || null,
       branch: created.branch || input.branch || null, default_branch: created.defaultBranch || input.default_branch || input.defaultBranch || null,
       cli_session_id: input.cli_session_id || crypto.randomUUID(), status: 'starting', created_at: new Date().toISOString() };

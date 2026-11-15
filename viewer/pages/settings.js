@@ -227,22 +227,30 @@
       })));
     const table = h('table', { class: 'tiers' }, h('thead', {}, head), h('tbody', {}, body));
 
-    const mode = data.permission_mode;
-    const modeGroup = h('div', { class: 'seg-radio', role: 'radiogroup', 'aria-label': 'Permission mode' },
-      [['auto', 'Auto'], ['bypass', 'Bypass']].map(([value, label]) => h('button', {
-        type: 'button', role: 'radio', 'aria-checked': String(mode === value), text: label,
-        onclick: async () => {
-          if (data.permission_mode === value) return;
-          const row = modeGroup.closest('.row-line');
-          try {
-            const res = await api('/settings/preferences', { method: 'PUT', body: { permission_mode: value } });
-            data.permission_mode = res.permission_mode;
-            inlineErr(row, '');
-            renderPanel();
-            setNote(SAVED, false);
-          } catch (e) { inlineErr(row, e.message); setNote('', false); }
-        },
-      })));
+    // One segmented choice per CLI; each saves its own key through the preferences route.
+    const modeGroup = (key, label, choices) => {
+      const group = h('div', { class: 'seg-radio', role: 'radiogroup', 'aria-label': label },
+        choices.map(([value, text]) => h('button', {
+          type: 'button', role: 'radio', 'aria-checked': String(data[key] === value), text,
+          onclick: async () => {
+            if (data[key] === value) return;
+            const row = group.closest('.row-line');
+            try {
+              const res = await api('/settings/preferences', { method: 'PUT', body: { [key]: value } });
+              data[key] = res[key];
+              inlineErr(row, '');
+              renderPanel();
+              setNote(SAVED, false);
+            } catch (e) { inlineErr(row, e.message); setNote('', false); }
+          },
+        })));
+      return group;
+    };
+    const claudeMode = modeGroup('permission_mode', 'Claude permission mode', [['auto', 'Auto'], ['bypass', 'Bypass']]);
+    const codexMode = modeGroup('codex_mode', 'Codex permission mode', [['sandboxed', 'Sandboxed'], ['unrestricted', 'Unrestricted']]);
+    const codexHint = data.codex_mode === 'unrestricted'
+      ? 'Never asks, no sandbox: it can change anything on the machine. Reviewers stay read-only.'
+      : 'Never asks: it can write only inside its worktree.';
 
     return h('div', { class: 'models' },
       h('div', {},
@@ -264,9 +272,11 @@
         h('h2', { id: 'perm', text: 'Permission mode' }),
         h('div', { class: 'box rows' },
           h('div', { class: 'row-line' },
-            h('div', { class: 'what' }, h('span', { text: 'Claude sessions' }),
-              h('span', { class: 'hint', text: 'Codex never asks: it runs sandboxed to its worktree.' })),
-            modeGroup))),
+            h('div', { class: 'what' }, h('span', { text: 'Claude sessions' })),
+            claudeMode),
+          h('div', { class: 'row-line' },
+            h('div', { class: 'what' }, h('span', { text: 'Codex sessions' }), h('span', { class: 'hint', text: codexHint })),
+            codexMode))),
       h('section', { 'aria-labelledby': 'others' },
         h('h2', { id: 'others', text: 'Other agents' }),
         h('div', { class: 'box rows' },
