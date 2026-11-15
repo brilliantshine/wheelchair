@@ -23,7 +23,7 @@ const DEFAULT_STYLE = Object.freeze({
 const PLANS = { claude: { unknown: 1, pro: 1, max5: 5, max20: 20 }, gpt: { unknown: 1, plus: 1, pro: 6 } };
 const BALANCING = ['lead_order', 'worker_order', 'within', 'leave', 'notify_below', 'save_claude_for_leads', 'margin'];
 function defaults() {
-  return { accounts: Object.keys(PROVIDERS).map((provider) => ({ id: `default-${provider}`, provider, name: 'default', plan: 'unknown', weight: 1, paused: false })), lead_order: ['claude', 'any'], worker_order: ['gpt', 'claude'], within: 'soonest', leave: 10, notify_below: 25, save_claude_for_leads: true, margin: 5, permission_mode: 'auto', codex_mode: 'sandboxed', other_agents: { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard' }, templates: [], style: structuredClone(DEFAULT_STYLE), style_version: 0 };
+  return { retired_accounts: [], accounts: Object.keys(PROVIDERS).map((provider) => ({ id: `default-${provider}`, provider, name: 'default', plan: 'unknown', weight: 1, paused: false })), lead_order: ['claude', 'any'], worker_order: ['gpt', 'claude'], within: 'soonest', leave: 10, notify_below: 25, save_claude_for_leads: true, margin: 5, permission_mode: 'auto', codex_mode: 'sandboxed', other_agents: { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard' }, templates: [], style: structuredClone(DEFAULT_STYLE), style_version: 0 };
 }
 
 function fail(message) { throw appError(400, message); }
@@ -164,7 +164,7 @@ function normalize(saved) {
   const balancing = {};
   for (const key of BALANCING) balancing[key] = validBalancing(key, saved[key]) ? saved[key] : base[key];
   return {
-    accounts, ...balancing,
+    accounts, retired_accounts: Array.isArray(saved.retired_accounts) ? saved.retired_accounts.filter((id) => typeof id === 'string') : [], ...balancing,
     permission_mode: saved.permission_mode === 'bypass' ? 'bypass' : 'auto',
     codex_mode: saved.codex_mode === 'unrestricted' ? 'unrestricted' : 'sandboxed',
     other_agents: { ...base.other_agents, ...(saved.other_agents || {}) },

@@ -224,3 +224,43 @@ test('removing an account leaves its live session intact and removes it from set
     assert.equal(JSON.parse(await fs.readFile(path.join(ctx.state, 'threads', 'remove-test.json'))).sessions[0].live, true);
   } finally { await close(ctx); }
 });
+
+test('newer ordinary readings preserve a future limit until it expires', async () => {
+  const { Hub } = require('../app/hub.js');
+  const { event } = require('./helpers/app.js');
+  const ctx = await setup();
+  try {
+    const thread = (await api(ctx, '/threads', { method: 'POST', body: { project: '/tmp/usage-limit' } })).body;
+    const lead = thread.sessions[0], limit = new Date(Date.now() + 3600000).toISOString();
+    await event(ctx, thread.id, lead.name, 'limit-hit', { limited_until: limit });
+    const hub = new Hub({ stateDir: ctx.state });
+    const previous = (await usage.readings(hub))[lead.account];
+    await usage.record(hub, { account: lead.account, at: new Date(Date.parse(previous.at) + 1000).toISOString(), five_hour: null, week: null });
+    const stored = (await usage.readings(hub))[lead.account];
+    assert.equal(stored.limited_until, limit);
+    assert.equal(usage.hasRoom(account, stored, { loggedIn: true }), false);
+    assert.equal(usage.hasRoom(account, stored, { loggedIn: true, now: Date.parse(limit) + 1 }), true);
+    const later = new Date(Date.parse(limit) + 3600000).toISOString();
+    await usage.record(hub, { ...stored, at: new Date(Date.parse(stored.at) + 1000).toISOString(), limited_until: later });
+    assert.equal((await usage.readings(hub))[lead.account].limited_until, later);
+  } finally { await close(ctx); }
+});
+
+test('removed account ids are retired and do not inherit usage or sessions', async () => {
+  const { Hub } = require('../app/hub.js');
+  const ctx = await setup();
+  try {
+    const add = () => api(ctx, '/settings/accounts', { method: 'POST', body: { provider: 'gpt', name: 'Personal', plan: 'pro' } });
+    const first = (await add()).body;
+    const hub = new Hub({ stateDir: ctx.state });
+    await usage.record(hub, { account: first.id, at: new Date().toISOString() });
+    const thread = (await api(ctx, '/threads', { method: 'POST', body: { project: '/tmp/retired-account' } })).body;
+    const stored = await hub.thread(thread.id); stored.sessions[0].account = first.id; await hub.save(stored);
+    assert.equal((await api(ctx, `/settings/accounts/${first.id}`, { method: 'DELETE' })).status, 200);
+    const second = (await add()).body;
+    assert.notEqual(second.id, first.id); assert.equal(second.id, 'personal-2');
+    assert.ok((await settings.load(hub)).retired_accounts.includes(first.id));
+    const summary = (await api(ctx, '/usage')).body.providers.gpt.accounts.find(a => a.id === second.id);
+    assert.equal(summary.reading, null); assert.equal(summary.live_sessions, 0);
+  } finally { await close(ctx); }
+});

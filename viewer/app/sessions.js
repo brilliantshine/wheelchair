@@ -71,7 +71,7 @@ async function startSession(hub, thread, input) {
       token: crypto.randomBytes(32).toString('hex'), attempt_id: input.attempt_id || null,
       queue: [], ready: false, live: true, created_at: new Date().toISOString(),
     };
-    Object.assign(waiting, { status: 'waiting', waiting_until: selection.wait.until, waiting_reason: selection.wait.reason, pending_start: input._waiting ? waiting.pending_start : { ...input } });
+    Object.assign(waiting, { status: 'waiting', waiting_until: selection.wait.until, waiting_reason: selection.wait.reason, waiting_provider: selection.wait.provider, pending_start: input._waiting ? waiting.pending_start : { ...input } });
     if (!input._waiting) thread.sessions.push(waiting);
     await hub.save(thread);
     return waiting;
@@ -125,9 +125,9 @@ async function startSession(hub, thread, input) {
     ...(role === 'lead' ? { style_version: settings.style_version } : {}),
   };
   if (!input._waiting) thread.sessions.push(session);
-  Object.assign(session, { status: 'starting', cli, provider: selection.provider, account: selection.account.id });
+  Object.assign(session, { status: 'starting', cli, provider: selection.provider, account: selection.account.id, template_id: layers.template?.id || null, ...(role === 'lead' ? { style_version: settings.style_version } : {}) });
   if (selection.note) session.note = selection.note;
-  delete session.pending_start; delete session.waiting_until; delete session.waiting_reason;
+  delete session.pending_start; delete session.waiting_until; delete session.waiting_reason; delete session.waiting_provider;
   await hub.save(thread);
 
   let started;
@@ -315,7 +315,7 @@ async function event(hub, payload) {
   if (['turn-ended', 'turn_ended', 'turn ended'].includes(type)) {
     target.turn_ended = true;
     if (target.role === 'lead') for (const card of thread.cards) if (card.kind === 'needs' && card.title === "The lead's turn failed" && !card.answered) card.answered = true;
-    const reportTarget = await deliverReport(hub, thread, target, payload);
+    const reportTarget = Date.parse(target.limited_until) > Date.now() ? null : await deliverReport(hub, thread, target, payload);
     if (reportTarget) deliveryTargets.add(reportTarget.name);
   }
   const permission = type === 'prompt' && payload.notification_type === 'permission_prompt';

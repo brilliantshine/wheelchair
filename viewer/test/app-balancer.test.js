@@ -267,3 +267,51 @@ test('worker placement uses account login on its own machine', async () => {
     assert.equal(selection.account.id, account);
   }
 });
+
+test('limited verifier reports only after release and continuation', async () => {
+  const { Hub } = require('../app/hub.js');
+  const { releaseLimits } = require('../app/sessions.js');
+  const c = await setup();
+  try {
+    const thread = (await api(c, '/threads', { method: 'POST', body: { project: '/tmp/limited-verifier' } })).body;
+    const verifier = (await machinePost(c, '/machine/session', { calling_session: thread.sessions[0].name, action: 'start', role: 'verifier', attempt_id: 'limited-verifier' })).body.session;
+    const future = new Date(Date.now() + 3600000).toISOString();
+    await event(c, thread.id, verifier.name, 'usage', { reading: { account: verifier.account, at: new Date().toISOString(), limited_until: future } });
+    await event(c, thread.id, verifier.name, 'turn-ended', { 'last-assistant-message': 'Partial report' });
+    const hub = new Hub({ stateDir: c.state });
+    let stored = await hub.thread(thread.id);
+    assert.equal(stored.sessions.find(s => s.name === verifier.name).finished, undefined);
+    assert.equal(stored.cards.filter(card => card.kind === 'result').length, 0);
+    stored.sessions.find(s => s.name === verifier.name).limited_until = new Date(Date.now() - 1000).toISOString();
+    await hub.save(stored); await releaseLimits(hub);
+    assert.ok(c.machine.sessions.get(verifier.name).submits.includes('Continue.'));
+    await event(c, thread.id, verifier.name, 'turn-ended', { 'last-assistant-message': 'Complete report' });
+    stored = await hub.thread(thread.id);
+    const results = stored.cards.filter(card => card.kind === 'result');
+    assert.equal(results.length, 1); assert.equal(results[0].summary, 'Complete report');
+    assert.equal(stored.sessions.find(s => s.name === verifier.name).finished, true);
+  } finally { await close(c); }
+});
+
+test('waiting lead records provider and promoted role layers and style', async () => {
+  const { Hub } = require('../app/hub.js');
+  const settings = require('../app/settings.js');
+  const { retryWaiting } = require('../app/sessions.js');
+  const c = await setup();
+  try {
+    const hub = new Hub({ stateDir: c.state });
+    await settings.update(hub, s => { s.lead_order = ['gpt', 'any']; s.accounts.forEach(a => { a.paused = true; }); s.style_version = 3; s.templates.push({ id: 'lead-template', role: 'lead', scope: 'all', in_use: true, switches: {}, text: '', name: 'Lead' }); });
+    const thread = (await api(c, '/threads', { method: 'POST', body: { project: '/tmp/waiting-lead' } })).body;
+    const lead = thread.sessions[0];
+    assert.equal(lead.status, 'waiting'); assert.equal(lead.waiting_provider, 'gpt');
+    await settings.update(hub, s => { s.accounts.forEach(a => { a.paused = false; }); });
+    await retryWaiting(hub);
+    let stored = await hub.thread(thread.id);
+    const promoted = stored.sessions.find(s => s.name === lead.name);
+    assert.equal(promoted.template_id, 'lead-template'); assert.equal(promoted.style_version, 3);
+    await event(c, thread.id, lead.name, 'turn-ended');
+    stored = await hub.thread(thread.id); await hub.enqueue(stored, lead.name, 'First message');
+    assert.ok(c.machine.sessions.get(lead.name).submits.includes('First message'));
+    assert.ok(!c.machine.sessions.get(lead.name).submits.some(s => s.includes('[wc:style]')));
+  } finally { await close(c); }
+});
