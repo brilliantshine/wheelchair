@@ -49,6 +49,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D5 | The hub owns the account list (id, provider, name, plan, nodes). Each account's login folder is at a fixed path on every machine, `~/.wheelchair/accounts/<id>/`, sent in the start request; each machine service reports per-account login state in `/v1/status`. Today's default login becomes an account called "default" pointing at the CLI's usual folder, so nothing changes until a second account is added | Settings already live on the hub; a fixed path makes the folder a node fact without a per-node list | defaulted |
 | D6 | Supersedes D4. The Leads panel gets a provider order for new leads, set by Collin (e.g. "Claude > GPT", or "Claude, then whatever's left"). A thread keeps the provider its lead started on: a running lead never switches, and a restarted lead or a sub-lead in that thread waits for that provider to have room | Collin: switching mid-feature is worse than waiting; the order applies only to new leads | user |
 | D7 | Signing in: Sign in on a machine starts a login session in tmux on that machine running the CLI's own login (`claude auth login` / `codex login --device-auth`) with the account's folder set; the app opens its terminal page on it; the account turns green when that machine reports it logged in | Works from the phone with pages that already exist | user |
+| D8 | Refines D7: Sign in shows a sign-in card, not the terminal. Claude: an "Open sign-in link" button (the OAuth URL read from the login session's output) and a box to paste the code back, which the app types into the session. Codex: a link to auth.openai.com/codex/device and the device code with a copy button. The terminal page stays as a fallback link | Collin: maximum convenience, a link and a code, nothing else | user |
 
 ## Spec
 
@@ -102,8 +103,13 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
   missing) running `claude auth login` with `CLAUDE_CONFIG_DIR`, or `codex login
   --device-auth` with `CODEX_HOME` (and `cli_auth_credentials_store = "file"` in that
   folder's `config.toml`, so the login lands in the folder, not a shared keyring).
-- The app opens the existing terminal page on it (`viewer/pages/terminal.js:7`, keys and
-  pane routes). Collin follows the link or code. When the CLI exits the session ends; the
+- Sign-in card (D8): the hub reads the login session's pane (the existing pane route) until
+  it finds the sign-in URL and, for Codex, the device code. Claude: "Open sign-in link"
+  button plus a paste box; submitting sends the code and Enter to the session (existing
+  keys route). Codex: link to `https://auth.openai.com/codex/device` and the code with a
+  copy button. If no URL appears within 30 s, or the text can't be parsed, the card says so
+  and offers "Open terminal" (`viewer/pages/terminal.js`), which also stays available as a
+  small link throughout. When the CLI exits the session ends; the
   account's per-machine state comes from `/v1/status` on the next refresh.
 - Seeding a new folder (Watch W1): before first use the service links the user's
   `CLAUDE.md` / `AGENTS.md` from the CLI's usual folder into the account folder, so agents
