@@ -470,6 +470,23 @@ Round 5 verdict: the long-lived session design was the source of every lifecycle
 | mechanics (gpt) | major | Graph parent directory never created | upheld | §6: hub creates it before saving |
 | mechanics (gpt) | major | Graph registrations expire | upheld | Checked `viewer/server.js:1216-1223`; §6: re-registered whenever the record is served |
 
+### Round 7 — 2026-11-15
+
+Collin chose "Keep going" again; the budget is reset.
+
+**Lanes:** intent: pending; mechanics: pending.
+
+**Changed since Round 6:**
+- §2: the first message typed into an aside is always `start`.
+- §4: Claude limited with `--tools`; POST idempotent on `turn_id`; slot in every prompt header; step-up only on `slot=standard`.
+- §5: `turn` saved before dispatch and re-POSTed after a lost answer; ineligible step-up re-runs once then fails; closing clears `failed`; Think harder needs history; archive closes asides and refuses routes.
+- §6: one graph per reply, parent directory created, registration refreshed when served.
+- §8: no idle timeout.
+- §10: the probe tests `--tools` against a granting settings file.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
