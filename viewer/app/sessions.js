@@ -291,12 +291,17 @@ async function event(hub, payload) {
     await usage.record(hub, { ...payload.reading, machine: thread.machine });
   }
   const limit = type === 'limit-hit' ? payload.limited_until : payload.reading?.limited_until;
+  const limitEnded = type === 'limit-hit' || Boolean(payload.reading?.limited_until);
   if (limit && Date.parse(limit) > Date.now()) {
     const readings = await usage.readings(hub);
     const prior = readings[target.account] || { account: target.account, machine: thread.machine, five_hour: null, week: null };
     await usage.record(hub, { ...prior, at: new Date(Math.max(Date.now(), Date.parse(prior.at) + 1 || 0)).toISOString(), limited_until: limit });
     target.limited_until = limit;
     target.turn_ended = true;
+  } else if (limitEnded && limit && Date.parse(limit) <= Date.now()) {
+    delete target.limited_until;
+    target.turn_ended = true;
+    if (target.live) await enqueue(hub, thread, target.name, 'Continue.', 'app', true, { save: false, deliver: false });
   }
   if (type === 'turn-failed') {
     target.turn_ended = true;
@@ -315,7 +320,7 @@ async function event(hub, payload) {
   if (['turn-ended', 'turn_ended', 'turn ended'].includes(type)) {
     target.turn_ended = true;
     if (target.role === 'lead') for (const card of thread.cards) if (card.kind === 'needs' && card.title === "The lead's turn failed" && !card.answered) card.answered = true;
-    const reportTarget = Date.parse(target.limited_until) > Date.now() ? null : await deliverReport(hub, thread, target, payload);
+    const reportTarget = limitEnded || Date.parse(target.limited_until) > Date.now() ? null : await deliverReport(hub, thread, target, payload);
     if (reportTarget) deliveryTargets.add(reportTarget.name);
   }
   const permission = type === 'prompt' && payload.notification_type === 'permission_prompt';
