@@ -26,7 +26,7 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 | `POST /machine/session` | `{calling_session,action,...}` | the hub-authorized session result |
 
 `Thread` has `id`, `project`, `cli`, `machine`, `stub`, `context`, `parent`,
-`depends_on_parent`, `waiting_on_parent`, `sessions`, `cards`, `pinned`, `queues`,
+`depends_on_parent`, `waiting_on_parent`, `sessions`, `cards`, `pinned`, `queues`, `sent`,
 `worktree`, `branch`, `slug`, and `archived`. Card records retain their card fields plus `id`,
 `session`, `at`, `created_at`, `answered`, and `system`. `at` is the ISO time the hub stored the card.
 
@@ -34,6 +34,9 @@ Chat `items` are `{type:"human"|"assistant"|"tool"|"context",text,at}`. `at` is 
 ISO timestamp on that transcript line, so pages can interleave chat and cards in time order.
 `human` card presses include `card:true`; context items include `context:"stub"|"restart"`.
 Tool items are collapsed summaries; the transcript remains the authoritative detail.
+
+`sent` records successful app submissions as `{to,text,source,at}`. A thread keeps its most
+recent 500; older records append to `threads/<id>.sent.jsonl` in the hub state directory.
 
 Session start (`wc.js session start --tier`, and the hub's own lead starts, which use `top`): the hub
 turns the tier into the machine request's `model`. Codex takes `luna`, `terra`, `sol` (resolved through

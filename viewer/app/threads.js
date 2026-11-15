@@ -31,6 +31,7 @@ function emptyThread(input) {
     cards: [],
     pinned: {},
     queues: {},
+    sent: [],
     archived: false,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -105,6 +106,9 @@ async function restartLead(hub, id) {
     slug: thread.slug,
     cards: thread.cards.filter((card) => !card.replaced),
     pinned: thread.pinned,
+    recent_messages: (thread.sent || [])
+      .filter((message) => message.source === 'collin' || message.source === 'card')
+      .slice(-20),
   };
   const context = `[wc:context restart] Thread state:\n${JSON.stringify(state)}`;
   // The thread keeps its worktree across leads; asking for a new one would fail on the
@@ -216,7 +220,7 @@ async function press(hub, id, cardId, input) {
     'start-thread': `start thread about: ${input.value}`,
   };
   if (!(input.action in suffixes)) throw appError(400, 'unknown card press');
-  card.answered = true;
+  if (!(card.kind === 'approval' && input.action === 'talk')) card.answered = true;
   await hub.enqueue(thread, lead.name, `[card ${card.id}] ${suffixes[input.action]}`, 'card');
   return { queued: true, text: suffixes[input.action] };
 }

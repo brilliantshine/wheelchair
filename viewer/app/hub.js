@@ -13,7 +13,7 @@ const views = require('./views.js');
 const { handle } = require('./routes.js');
 
 class Hub {
-  constructor({ stateDir = DEFAULT_STATE, root, codeVersion, registerPlan = null, registerGraph = null } = {}) {
+  constructor({ stateDir = DEFAULT_STATE, root, codeVersion, registerPlan = null, registerGraph = null, queueRetryInterval } = {}) {
     this.root = root || path.resolve(__dirname, '..', '..');
     // The server supplies the commit it read at its own boot.  Direct Hub tests still read
     // their supplied root once, but a pull under a running viewer never changes this value.
@@ -33,6 +33,8 @@ class Hub {
     this.threadsDir = this.state.threadsDir;
     this.lastSeen = new Map();
     this.threadLocks = new Map();
+    const configuredRetry = Number(queueRetryInterval ?? process.env.WHEELCHAIR_QUEUE_RETRY_MS ?? 5_000);
+    this.queueRetryInterval = Number.isFinite(configuredRetry) && configuredRetry > 0 ? configuredRetry : 5_000;
   }
 
   async init() {
@@ -42,6 +44,10 @@ class Hub {
     }
     this.pollTimer = setInterval(() => this.pollDead().catch(() => {}), 10_000);
     this.pollTimer.unref();
+    // A transient tmux/service failure leaves the message at the front of its queue. Retry
+    // independently of the hook or card that originally queued it.
+    this.queueRetryTimer = setInterval(() => this.retryQueues().catch(() => {}), this.queueRetryInterval);
+    this.queueRetryTimer.unref();
     // Spec: a waiting stub shows ready within ten minutes of the merge; a minute keeps the
     // wait short for someone watching, at one gh call per waiting stub.
     this.waitTimer = setInterval(() => this.pollWaiting().catch(() => {}), 60_000);
@@ -87,12 +93,14 @@ class Hub {
     return sessions.enqueue(this, thread, name, text, source, first);
   }
   deliver(thread, name, options) { return sessions.deliver(this, thread, sessions.session(thread, name), options); }
+  appendSent(thread, entries) { return this.state.appendSent(thread.id, entries); }
   event(payload) { return this.withThread(payload.thread_id, () => sessions.event(this, payload)); }
   async sessionRequest(payload) {
     const thread = await threads.threadBySession(this, payload.calling_session);
     return this.withThread(thread.id, () => sessions.sessionRequest(this, payload));
   }
   pollDead() { return sessions.pollDead(this); }
+  retryQueues() { return sessions.retryQueues(this); }
   acceptCard(payload) { return this.withThread(payload.thread_id, () => cards.acceptCard(this, payload)); }
   createThread(input) { return threads.createThread(this, input); }
   threadBySession(name) { return threads.threadBySession(this, name); }

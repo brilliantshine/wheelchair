@@ -73,15 +73,17 @@ async function acceptCard(hub, payload) {
       : card.kind === 'result'
         ? thread.sessions.find((item) => item.name === payload.session)?.started_by
         : null;
-    // This machine submission is part of accepting a message/result card.  Keeping the
-    // mutation in this transaction means a failed submit leaves neither the card nor its
-    // delivery id behind; the service can safely retry the same envelope.
-    if (targetName) await hub.deliver(thread, targetName, { save: false });
     if (payload.delivery_id) thread.delivered_ids = [...thread.delivered_ids, payload.delivery_id].slice(-500);
-    return card;
+    // The card, queue and durable delivery id commit together. Delivery happens afterwards:
+    // a dead target must not turn a valid card into a rejected one.
+    return { card, targetName };
   });
   if (result.duplicate) return result;
-  return result;
+  if (result.targetName) {
+    const thread = await hub.thread(payload.thread_id);
+    await hub.deliver(thread, result.targetName);
+  }
+  return result.card;
 }
 
 module.exports = { SINGLETONS, addCard, acceptCard };

@@ -164,7 +164,15 @@ async function deliverReport(hub, thread, target, payload) {
     { session: target.name },
   );
   target.finished = true;
-  await enqueue(hub, thread, target.started_by, `[wc:from ${target.name}] result: ${text}`, 'result');
+  return enqueue(
+    hub,
+    thread,
+    target.started_by,
+    `[wc:from ${target.name}] result: ${text}`,
+    'result',
+    false,
+    { save: false, deliver: false },
+  );
 }
 
 // A session that has just become ready, with no first message of its own, has had no turn
@@ -181,30 +189,46 @@ function session(thread, name) {
   return found;
 }
 
-async function enqueue(hub, thread, name, text, source = 'app', first = false) {
+async function enqueue(hub, thread, name, text, source = 'app', first = false, { save = true, deliver: deliverNow = true } = {}) {
   const target = session(thread, name);
   target.queue ||= [];
+  thread.queues ||= {};
   const message = { text, source, at: new Date().toISOString() };
   if (first) target.queue.unshift(message);
   else target.queue.push(message);
   thread.queues[name] = target.queue;
-  await hub.save(thread);
-  await deliver(hub, thread, target);
+  if (save) await hub.save(thread);
+  if (deliverNow) await deliver(hub, thread, target);
+  return target;
 }
 
-async function deliver(hub, thread, target, { save = true } = {}) {
+function canDeliver(target) {
   const held = target.permission_open || target.needs_open;
-  if (!target.live || !target.ready || !target.turn_ended || held || !target.queue?.length) {
-    return false;
-  }
+  return Boolean(target.live && target.ready && target.turn_ended && !held && target.queue?.length);
+}
+
+async function deliver(hub, thread, target) {
+  if (!canDeliver(target)) return false;
   const next = target.queue[0];
   // Submission is the acknowledgement.  Do not discard a message or mark the session busy
   // until the machine accepted it; a transient service failure must leave it retryable.
-  await hub.call(thread.machine, `/v1/sessions/${encodeURIComponent(target.name)}/submit`, 'POST', { text: next.text });
+  try {
+    await hub.call(thread.machine, `/v1/sessions/${encodeURIComponent(target.name)}/submit`, 'POST', { text: next.text });
+  } catch (error) {
+    target.delivery_error = { text: error.message || String(error), at: new Date().toISOString() };
+    await hub.save(thread);
+    return false;
+  }
   target.queue.shift();
   target.turn_ended = false;
+  delete target.delivery_error;
+  thread.queues ||= {};
   thread.queues[target.name] = target.queue;
-  if (save) await hub.save(thread);
+  thread.sent ||= [];
+  thread.sent.push({ to: target.name, text: next.text, source: next.source, at: new Date().toISOString() });
+  const trimmed = thread.sent.splice(0, Math.max(0, thread.sent.length - 500));
+  await hub.appendSent(thread, trimmed);
+  await hub.save(thread);
   return true;
 }
 
@@ -215,6 +239,7 @@ async function event(hub, payload) {
     return { ok: true, duplicate: true };
   }
   const target = session(thread, payload.session);
+  const deliveryTargets = new Set();
   const type = payload.type;
   if (type === 'ready') {
     target.ready = true;
@@ -223,7 +248,8 @@ async function event(hub, payload) {
   }
   if (['turn-ended', 'turn_ended', 'turn ended'].includes(type)) {
     target.turn_ended = true;
-    await deliverReport(hub, thread, target, payload);
+    const reportTarget = await deliverReport(hub, thread, target, payload);
+    if (reportTarget) deliveryTargets.add(reportTarget.name);
   }
   const permission = type === 'prompt' && payload.notification_type === 'permission_prompt';
   if (type === 'stuck' || permission) {
@@ -248,14 +274,14 @@ async function event(hub, payload) {
       if (card) card.answered = true;
     }
   }
-  await hub.save(thread);
-  await deliver(hub, thread, target);
-  // The caller retries an event when a downstream submit fails.  Do not acknowledge that
-  // retry until the event's state change and any queued delivery have both completed.
+  // The event and its delivery id become durable before any submit is attempted. A failed
+  // submit is retried by the queue timer rather than asking the sender to replay the event.
   if (payload.delivery_id) {
     thread.delivered_ids = [...thread.delivered_ids, payload.delivery_id].slice(-500);
-    await hub.save(thread);
   }
+  await hub.save(thread);
+  deliveryTargets.add(target.name);
+  for (const name of deliveryTargets) await deliver(hub, thread, session(thread, name));
   return { ok: true };
 }
 
@@ -362,6 +388,24 @@ async function pollDead(hub) {
   }
 }
 
+// Retry only queues that could have accepted a message now. Each thread gets its existing
+// lock, and one bad machine must not stop the timer from reaching another thread.
+async function retryQueues(hub) {
+  const threads = await hub.allThreads();
+  await Promise.all(threads.filter((thread) => !thread.archived).map(async (listedThread) => {
+    try {
+      await hub.withThread(listedThread.id, async () => {
+        const thread = await hub.thread(listedThread.id);
+        for (const target of thread.sessions) {
+          if (canDeliver(target)) await deliver(hub, thread, target);
+        }
+      });
+    } catch {
+      // The next interval retries this queue; timer failures never escape the hub.
+    }
+  }));
+}
+
 module.exports = {
   ALLOWED_START,
   SESSION_ROLES,
@@ -369,6 +413,7 @@ module.exports = {
   enqueue,
   event,
   pollDead,
+  retryQueues,
   publicSession,
   resolveModel,
   session,
