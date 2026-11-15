@@ -89,7 +89,10 @@ class MachineClient {
       const request = transport.request(url, { method, headers }, (response) => {
         resolve({ status: response.statusCode, headers: response.headers, body: response });
       });
-      request.on('error', reject);
+      request.on('error', (error) => {
+        error.machineConnection = true;
+        reject(error);
+      });
       if (readable) {
         readable.on('aborted', () => request.destroy());
         readable.on('error', (error) => request.destroy(error));

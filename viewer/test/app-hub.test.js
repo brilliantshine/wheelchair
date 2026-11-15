@@ -1759,6 +1759,27 @@ test('uploads and files stream through the hub and enforce admission', async () 
   });
 });
 
+test('a machine reset during an upload returns 409', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    context.machine.resetUpload = true;
+    const base = `${context.server.url}/api/threads/${made.id}/uploads?name=a`;
+    const http = require('node:http');
+    const result = await new Promise((resolve, reject) => {
+      const req = http.request(base, { method: 'POST', headers: {
+        'x-graph-token': context.server.token, origin: new URL(base).origin, 'content-length': '100',
+      } }, (res) => {
+        let body = '';
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(body) }));
+      });
+      req.on('error', reject);
+      req.write('partial');
+    });
+    assert.deepEqual(result, { status: 409, body: { error: 'upload cancelled by the machine' } });
+  });
+});
+
 test('archive keeps thread open on upload removal failure and archives after success', async () => {
   await withContext(async (context) => {
     const made = await thread(context); context.machine.uploadsRemoved = false;
