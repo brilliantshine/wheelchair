@@ -37,6 +37,8 @@ test.describe('desktop', () => {
     const links = page.locator('#app-nav .seg a');
     await expect(links).toHaveText([/Features/, /Threads/, /Sessions/, /Settings/]);
     await expect(page.locator('#app-nav .seg a[aria-current="page"]')).toHaveText('Settings');
+    await expect(page.locator('#app-nav .seg .lbl')).toBeVisible();
+    await expect(page.locator('#app-nav .seg .gear')).toBeHidden();
     await expect(page.locator('#panel h1')).toHaveText('Models and preferences');
   });
 
@@ -223,5 +225,33 @@ test.describe('phone', () => {
     await page.locator('#sections a[data-section="models"]').click();
     await expect(page.getByLabel('Claude light model', { exact: true })).toBeVisible();
     await noSideScroll(page);
+  });
+
+  for (const width of [390, 360]) {
+    for (const route of ['/app/threads', '/app/settings']) {
+      test(`the nav fits ${width}px on ${route}`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 800 });
+        await openPage(page, context, route);
+        const boxes = await page.locator('#app-nav').evaluate((nav) => [...nav.children]
+          .filter((n) => n.getClientRects().length)
+          .map((n) => ({ cls: n.className, ...n.getBoundingClientRect().toJSON() })));
+        expect(boxes.length).toBeGreaterThanOrEqual(4);
+        for (const b of boxes) {
+          expect(b.left, b.cls).toBeGreaterThanOrEqual(0);
+          expect(b.right, b.cls).toBeLessThanOrEqual(width);
+        }
+        const add = await page.locator('#app-nav .new-thread').boundingBox();
+        expect(add.x).toBeGreaterThanOrEqual(0);
+        expect(add.x + add.width).toBeLessThanOrEqual(width);
+        await noSideScroll(page);
+      });
+    }
+  }
+
+  test('Settings keeps its accessible name on a phone', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 800 });
+    await openPage(page, context, '/app/settings');
+    await expect(page.getByRole('link', { name: 'Settings', exact: true })).toBeVisible();
+    await expect(page.locator('#app-nav .seg .lbl')).toBeHidden();
   });
 });
