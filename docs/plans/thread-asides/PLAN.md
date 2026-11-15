@@ -637,3 +637,4 @@ Round 9 is clean: no blocking or major finding upheld.
 - 2026-11-15 — Choice: T3, app-asides.test.js: the route fixture keeps a Claude-format transcript while switching the lead's provider to gpt, to exercise Codex conversation-id selection.
 - 2026-11-15 — Integrated branch after T2+T3: machine 89/89; viewer 346/347 (the known port test).
 - 2026-11-15 — T4 dispatched with --provider claude; the hub answered "Could not use claude; using gpt" and started it on GPT.
+- 2026-11-15 — Browser baseline on the feature branch before T4: 554 passed, 2 skipped, 2 failed. Both failures are "no drawn arrow's line passes through either box it connects, over every committed graph" (browser.spec.js:2395, chromium and firefox), which fails the same way on main e440dec. Not counted against any task; reported to the lead (not in docs/known-issues.md).
