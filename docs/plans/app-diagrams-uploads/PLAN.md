@@ -369,7 +369,7 @@ Clean round: approved.
 | T4 | Protocol: cards.md diagram format, forms, image card; lead.md pointer | protocol/app/cards.md, protocol/app/lead.md | gpt standard (gpt-6.1-terra) | wc-c56d4b2c5f5f-worker-3 | grep, diff stat | done |
 | T6 | Hub: an upload the machine cancels answers 409, not 500 (defect found by T5; T2 rework on a sharper brief, same tier: the T2 brief never said what to do when the machine drops the connection) | viewer/app/routes.js, viewer/app/machine-client.js, viewer/test/app-hub.test.js, viewer/test/helpers/app-machine.js | gpt standard (gpt-6.1-terra) | wc-c56d4b2c5f5f-worker-7 | `node --test viewer/test/app-uploads-archive.test.js` | done |
 | R1a | Remediation 1: composer uploads a snapshot in order; shows the hub's error detail | viewer/pages/thread.js, thread.css, viewer/test/app-diagrams-uploads.spec.js, viewer/test/helpers/app-machine.js | gpt standard (gpt-6.1-terra) | — | `npm --prefix viewer run test:browser` | in progress |
-| R1b | Remediation 1: image card path must be absolute (card.js and machine) | viewer/app/card.js, machine/service.js, viewer/test/app-hub.test.js, machine/test/service.test.js | gpt standard (gpt-6.1-terra) | — | `bash machine/test/run.sh`; node suite | in progress |
+| R1b | Remediation 1: image card path must be absolute (card.js and machine) | viewer/app/card.js, machine/service.js, viewer/test/app-hub.test.js, machine/test/service.test.js | gpt standard (gpt-6.1-terra) | wc-c56d4b2c5f5f-worker-9 | `bash machine/test/run.sh`; node suite | done |
 | T5 | Integration: archive through the real hub route while an upload to the real machine service is paused | one new viewer/test/*.test.js | gpt standard (gpt-6.1-terra) | wc-c56d4b2c5f5f-worker-5 | `node --test viewer/test/*.test.js` | done (test merged; it exposed the T6 defect) |
 
 ## Log
@@ -395,3 +395,4 @@ Clean round: approved.
 - 2026-11-15 — T6 accepted: app-uploads-archive.test.js passes. Full validation on the merged branch: machine 89/89; node 348/349 (known port race); browser 568 passed, 2 failed (known drawn-arrow issue, both browsers). COMPLETION.md written; status verifying.
 - 2026-11-15 — Verifier 1 started with --not-provider gpt; the hub could not avoid GPT ("Could not avoid gpt; using gpt."), so verification is same-family.
 - 2026-11-15 — Verification 1 FAIL on 8ec85f3: three gaps (REMEDIATION-1.md). R1a and R1b opened on GPT standard with sharpened briefs; status back to implementing.
+- 2026-11-15 — R1b accepted: worker reported no choices; machine suite 89/89 re-run by sub-lead; diff matches the brief.
