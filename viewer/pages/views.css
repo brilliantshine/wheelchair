@@ -68,6 +68,7 @@
 .session-head .who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .session-name { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
 .session-sub { font-family: var(--mono); font-size: 11px; color: var(--dim); overflow-wrap: anywhere; }
+.session-thread { display: block; font-size: 13px; color: var(--ink-2); margin: 2px 0; overflow-wrap: anywhere; }
 .v-card.session.needs-you { border-color: var(--warn); }
 .session-body { padding: 12px 14px; background: var(--term-bg); }
 .v-attach { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }

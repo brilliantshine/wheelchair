@@ -12,7 +12,7 @@
     ['verifying', 'Verifying'],
     ['done', 'Done'],
   ];
-  const KIND = { question: 'Question', needs: 'Needs you', approval: 'Approval, start building' };
+  const KIND = { question: 'Question', needs: 'Needs you', approval: 'Plan approved' };
   const DONE_SHOWN = 3;
 
   let state = { features: {}, threads: [], projects: [], machines: [] };

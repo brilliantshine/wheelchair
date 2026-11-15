@@ -50,6 +50,9 @@
     const terminal = el('a', 'v-link session-name', session.name);
     terminal.href = `/wheelchair/app/terminal?name=${encodeURIComponent(session.name)}`;
     who.append(terminal);
+    // Spec "Views": each session shows the thread or feature it belongs to.
+    const title = session.thread_id && (titles[session.thread_id] || session.thread_id);
+    if (title) who.append(el('span', 'session-thread', title));
     who.append(el('span', 'session-sub', [machine, session.cli, session.model].filter(Boolean).join(' \u00b7 ')));
     head.append(who);
     head.append(el('span', 'v-badge role', session.role || 'session'));
@@ -110,9 +113,20 @@
     document.getElementById('empty').hidden = groups.length > 0;
   }
 
+  let titles = {};
+  async function loadTitles() {
+    try {
+      const response = await fetch('/wheelchair/api/threads');
+      if (!response.ok) return;
+      const body = await response.json();
+      titles = Object.fromEntries((body.threads || []).map((thread) => [thread.id, thread.title || thread.slug || thread.id]));
+    } catch { /* titles are a nicety; the thread id still shows */ }
+  }
+
   async function refresh() {
     const error = document.getElementById('error');
     try {
+      await loadTitles();
       const response = await fetch('/wheelchair/api/sessions');
       if (!response.ok) throw new Error(`sessions ${response.status}`);
       render(await response.json());
