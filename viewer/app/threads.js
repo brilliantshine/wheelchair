@@ -28,6 +28,7 @@ function emptyThread(input) {
     waiting_on_parent: false,
     sessions: [],
     cards: [],
+    asides: [],
     pinned: {},
     queues: {},
     sent: [],
@@ -156,6 +157,15 @@ async function restartLead(hub, id) {
 
 async function archive(hub, id) {
   const thread = await hub.thread(id);
+  for (const aside of thread.asides || []) {
+    if (aside.status === 'open') require('./asides.js').close(aside);
+    if (aside.turn) {
+      try { await hub.call(thread.machine, `/v1/aside-turns/${encodeURIComponent(aside.turn.id)}`, 'DELETE'); }
+      catch (error) { if (error.status !== 404) throw error; }
+    }
+    aside.turn = null;
+  }
+  await hub.save(thread);
   const result = await hub.call(thread.machine, '/v1/archive', 'POST', { thread_id: thread.id });
   thread.archive = result;
   const rebases = (result.kept || []).filter((item) => item.reason === 'rebase in progress');

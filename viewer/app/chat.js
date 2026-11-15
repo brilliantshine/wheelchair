@@ -139,16 +139,17 @@ function renderTurn(turn, thread) {
   return [human, ...turn.replies];
 }
 
-function parseClaude(raw, thread) {
+function parseClaude(raw, thread, sessionName) {
   lastAt = null;
   const turns = [], calls = new Map();
   for (const row of transcriptRows(raw)) {
     if (row.type === 'user' && row.origin?.kind === 'human') turns.push({ human: unwrap(textOf(row.message?.content)), replies: [], at: itemAt(row) });
     else claudeReply(turns, row, calls);
   }
+  if (sessionName) { let n = 0; for (const turn of turns) for (const reply of turn.replies) if (reply.type === 'assistant') reply.id = `${sessionName}#${n++}`; }
   return turns.flatMap((turn) => renderTurn(turn, thread));
 }
-function parseCodex(raw, thread) {
+function parseCodex(raw, thread, sessionName) {
   lastAt = null;
   const turns = [], calls = new Map();
   let codexTurn = false, codexHumanSeen = false;
@@ -163,12 +164,13 @@ function parseCodex(raw, thread) {
     if (isCodexHuman(row, codexTurn, text)) { turns.push({ human: text, replies: [], at: itemAt(row) }); codexHumanSeen = true; }
     else codexReply(turns, row, calls);
   }
+  if (sessionName) { let n = 0; for (const turn of turns) for (const reply of turn.replies) if (reply.type === 'assistant') reply.id = `${sessionName}#${n++}`; }
   return turns.flatMap((turn) => renderTurn(turn, thread));
 }
 const PARSERS = { claude: parseClaude, codex: parseCodex };
-function transcriptItems(cli, raw, thread) {
+function transcriptItems(cli, raw, thread, sessionName) {
   const parser = Object.hasOwn(PARSERS, cli) && PARSERS[cli];
-  return parser ? parser(raw, thread) : [{ type: 'notice', text: `This session's CLI (${cli}) has no transcript reader.`, at: new Date(0).toISOString() }];
+  return parser ? parser(raw, thread, sessionName) : [{ type: 'notice', text: `This session's CLI (${cli}) has no transcript reader.`, at: new Date(0).toISOString() }];
 }
 
 // The machine service keeps each session's transcript copy (a Claude Stop hook or a bound
@@ -206,7 +208,7 @@ async function chat(hub, id) {
   for (const session of thread.sessions.filter((item) => item.role === 'lead')) {
     const raw = await sessionTranscript(hub, thread, session);
     if (!raw && Object.hasOwn(PARSERS, session.cli)) continue;
-    items.push(...transcriptItems(session.cli, raw, thread));
+    items.push(...transcriptItems(session.cli, raw, thread, session.name));
   }
   // Settings "Tool steps: Hide" drops the lead's tool calls (commands, file reads) entirely.
   const { tool_steps: toolSteps } = await require('./settings.js').load(hub);
@@ -222,7 +224,8 @@ async function chat(hub, id) {
     parent_pr_url: prOf(parent),
   };
   return {
-    thread: publicThread,
+    thread: { ...publicThread, asides: (thread.asides || []).map(require('./asides.js').brief) },
+    asides: (thread.asides || []).map(require('./asides.js').brief),
     items: shown,
     cards: thread.cards.filter((card) => !card.replaced),
     pinned: Object.values(thread.pinned),

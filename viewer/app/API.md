@@ -9,7 +9,14 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 |---|---|---|
 | `GET /threads` | — | `{threads:[Thread]}` newest first |
 | `POST /threads` | `{project,machine?,message?}` | a `Thread`, with its lead started or waiting for room. Before anything is saved the thread's machine checks `project` (`GET /v1/projects?check=`): not a usable git repository → `400 "<path> <reason> on <machine>"`, unknown machine → `404`, no answer or an older service → `502`; nothing is saved or added to `projects.json` on any of these, and the stored `project` is the path the machine returned (`~` and `~/…` expanded there). A non-empty string `message` sets `title` from its trimmed, whitespace-collapsed first line, cut at a word boundary to 60 characters plus `…` |
-| `GET /threads/:id/chat` | — | `{thread,items,cards,pinned,queued}`; `items` leaves out the lead's tool steps when Settings has `tool_steps:"hide"` |
+| `GET /threads/:id/chat` | — | `{thread,items,cards,pinned,queued,asides}`; `items` leaves out the lead's tool steps when Settings has `tool_steps:"hide"` |
+| `POST /threads/:id/asides` | `{message_id,start,end,quote,action}` | `201` aside without history; action is `ask`, `simpler`, or `draw` |
+| `GET /threads/:id/asides/:aside` | — | full aside including history; also works when archived |
+| `POST /threads/:id/asides/:aside/messages` | `{text}` | `202`, queues a message and reopens the aside |
+| `POST /threads/:id/asides/:aside/close` | `{outcome:"done"}` or `{outcome:"changed",line}` | `200`; changed sends the line to the lead |
+| `POST /threads/:id/asides/:aside/retry` | — | `200`, retries a failed message |
+| `POST /threads/:id/asides/:aside/think-harder` | — | `200`, repeats the last question on Heavy when enabled |
+| `POST /threads/:id/asides/:aside/summary` | — | `200`, queues a handoff draft when enabled |
 | `POST /threads/:id/messages` | `{text}` | `{queued:true}`; delivery waits for the lead turn end |
 | `POST /threads/:id/cards/:cardId/press` | `{action,value?}` | `{queued:true,text}` for lead actions and records `answered_action` and `answered_value` on an answered card; `recheck` updates an approval in place, and `start-building` first re-checks Ready. On an open lead `needs` card, `keep-going` and `talk` (value: the card title) also close it as `resolved_by:"collin"`; a `system` or answered needs card is refused with 422 |
 | `POST /threads/:id/cards/:cardId/dismiss` | — | `{ok:true}`; closes an open `needs` card a lead posted (`resolved_by:"collin"`, shown dimmed as resolved). The thread page no longer shows a Dismiss button; it uses the press actions above. A `system` needs card is refused with 422, an unknown card with 404 |
@@ -53,6 +60,8 @@ field to 80 characters, renames the thread, and is never stored. `question.doc`,
 present, is one of `MAP.md`, `IDEA.md` or `PLAN.md`. The hub accepts an `offer` only when no
 offer exists, or when exactly one prior offer was answered with `answered_value: "keep talking
 first"`; otherwise it returns 422, `the offer was already asked`.
+
+An aside turn records its resolved `model` and `effort` alongside `id`, `state`, and `message`; retries reuse them and history records the model actually used. Aside-changing routes return 409 when the thread is archived. Chat `asides` holds each aside without its history. Lead assistant text items have a stable `id` of `<session name>#<index>`.
 
 Chat `items` are `{type:"human"|"assistant"|"tool"|"context",text,at}`. `at` is the
 ISO timestamp on that transcript line, so pages can interleave chat and cards in time order.
