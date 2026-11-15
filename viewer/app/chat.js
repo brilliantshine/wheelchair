@@ -20,6 +20,10 @@ function unwrap(text) {
     .trim();
 }
 
+function stripStyleTrailer(text) {
+  return String(text || '').replace(/\n\n\[wc:style\]\n[\s\S]*$/, '');
+}
+
 function cardBubble(text) {
   const match = text.match(/^\[card [^\]]+\] (.*)$/s);
   if (!match) return null;
@@ -130,20 +134,21 @@ function appendReply(turns, row, cli, calls = new Map()) {
 }
 
 function renderTurn(turn, thread) {
-  if (turn.human.startsWith('[wc:role]') || turn.human.startsWith('[wc:from ')) return [];
-  if (turn.human.startsWith('[wc:context stub]')) {
+  const humanText = stripStyleTrailer(turn.human);
+  if (humanText.startsWith('[wc:role]') || humanText.startsWith('[wc:from ')) return [];
+  if (humanText.startsWith('[wc:context stub]')) {
     return [
       { type: 'context', text: `Started from ${thread.parent_title || 'parent thread'}`, context: 'stub', at: turn.at },
       ...turn.replies,
     ];
   }
-  if (turn.human.startsWith('[wc:context restart]')) {
+  if (humanText.startsWith('[wc:context restart]')) {
     return [{ type: 'context', text: 'Lead restarted', context: 'restart', at: turn.at }, ...turn.replies];
   }
-  const bubble = cardBubble(turn.human);
+  const bubble = cardBubble(humanText);
   const human = bubble
     ? { type: 'human', text: bubble, card: true, at: turn.at }
-    : { type: 'human', text: turn.human, at: turn.at };
+    : { type: 'human', text: humanText, at: turn.at };
   return [human, ...turn.replies];
 }
 
@@ -243,4 +248,4 @@ async function chat(hub, id) {
   };
 }
 
-module.exports = { cardBubble, chat, lastAssistantText, sessionTranscript, textOf, transcriptItems, unwrap };
+module.exports = { cardBubble, chat, lastAssistantText, sessionTranscript, stripStyleTrailer, textOf, transcriptItems, unwrap };

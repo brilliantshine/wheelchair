@@ -33,6 +33,7 @@ async function startMachine(secret = 'machine-test-secret') {
   let submitOk = true;
   let archiveKept = [];
   let sessionsAvailable = true;
+  let preview = { ok: true, text: 'Previewed message.' };
   const server = http.createServer(async (request, response) => {
     if (request.headers['x-wheelchair-machine-secret'] !== secret) {
       return send(response, 401, { error: 'machine secret required' });
@@ -43,6 +44,9 @@ async function startMachine(secret = 'machine-test-secret') {
     calls.push({ method: request.method, path: url.pathname, body: input });
     if (request.method === 'POST' && url.pathname === '/v1/sessions') {
       return startSession(response, sessions, input);
+    }
+    if (request.method === 'POST' && url.pathname === '/v1/preview') {
+      return send(response, preview.ok ? 200 : 503, preview.ok ? { text: preview.text } : { error: preview.error || 'preview unavailable' });
     }
     if (request.method === 'GET' && url.pathname === '/v1/sessions') {
       if (!sessionsAvailable) return send(response, 503, { error: 'machine unavailable' });
@@ -95,6 +99,8 @@ async function startMachine(secret = 'machine-test-secret') {
     set archiveKept(value) { archiveKept = Array.isArray(value) ? value : []; },
     get sessionsAvailable() { return sessionsAvailable; },
     set sessionsAvailable(value) { sessionsAvailable = Boolean(value); },
+    get preview() { return preview; },
+    set preview(value) { preview = { ...preview, ...value }; },
     async stop() {
       await new Promise((resolve) => server.close(resolve));
     },

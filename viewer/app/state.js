@@ -44,6 +44,7 @@ class State {
     this.threadsDir = path.join(this.dir, 'threads');
     this.machinesPath = path.join(this.dir, 'machines.json');
     this.projectsPath = path.join(this.dir, 'projects.json');
+    this.settingsPath = path.join(this.dir, 'settings.json');
     this.writes = new Map();
   }
 
@@ -170,6 +171,14 @@ class State {
   async projects() {
     const list = await readJson(this.projectsPath, []);
     return Array.isArray(list) ? list : [];
+  }
+
+  async settings(fallback) {
+    return readJson(this.settingsPath, fallback);
+  }
+
+  saveSettings(value) {
+    return this.queued(this.settingsPath, () => atomicWrite(this.settingsPath, json(value)));
   }
 
   // Spec "State": projects.json is the repos the app lists. Serialized so two threads created
