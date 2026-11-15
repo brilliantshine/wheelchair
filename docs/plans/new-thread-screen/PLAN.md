@@ -331,3 +331,10 @@ refusal. The `POST /threads` body is unchanged.
 - 2026-11-15 — Choice: T3, app-views.spec.js: unused `fs`/`path` requires removed.
 - 2026-11-15 — Choice: T3, specs set the default folder through `PUT /settings/preferences` and drive found repos with `machine.projects`.
 - 2026-11-15 — Full validation on 4b914fe: machine 66/66; node 276/277 and browser 464 passed / 2 failed, the failures being the two in docs/known-issues.md. COMPLETION.md written; status verifying.
+- 2026-11-15 — Verification attempt 1 (Codex gpt-6.1-sol): FAIL, four gaps. REMEDIATION-1.md written; R1 dispatched to Claude standard (worker-6), one session because all four touch viewer/pages/new.js.
+- 2026-11-15 — R1 accepted (worker-6, d6068fc): diff read; node 277/278, browser 470 passed / 2 failed, the failures being the known ones. Merged. R1e (saved-list Remove during a machine switch) found in review and dispatched as a Light follow-up.
+- 2026-11-15 — Choice: R1, new.js: the machine-change handler sets `state.machine = null` so Start is refused until the new answer lands.
+- 2026-11-15 — Choice: R1, new.css: saved-list `li` wraps so a row error spans the width under the entry.
+- 2026-11-15 — Choice: R1, app-new-thread.spec.js: `page.route` fulfils `/new-thread` for both machines (the helpers register one machine).
+- 2026-11-15 — Choice: R1, routes.js: the `.`/`..` name check runs after trimming.
+
