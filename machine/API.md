@@ -35,3 +35,9 @@ state directory. It defaults to `~/.local/state/wheelchair/`, the machine's Tail
 and port 7374. Tests and the unit may override host, port and state directory on the command line.
 
 Claude's settings run `machine/statusline.sh claude <session>` to display the model and five-hour usage and forward status payloads at most once a minute, with the same local spool fallback as hooks. `StopFailure` forwards `limit-hit` with `error` and `limited_until`, or `turn-failed` with `error`. Usage events carry `reading: {account, at, five_hour, week, plan_type?, limited_until?}`; each window is null or `{used, resets_at}`. Codex readings come from appended rollout lines on turn end. Reset times and `at` are ISO strings.
+
+### Login sessions
+
+All routes require the hub secret. `POST /v1/logins` accepts `{account, cli, dir}` and returns `201 {state: "starting"}`. The directory must match the account folder contract, or be null for the matching default account. It seeds the folder and replaces any existing `wc-login-<account>` tmux session.
+
+`GET /v1/logins/:account` returns `{state, url, code, wantsCode, logged_in}`. State is `starting`, `waiting`, `done`, or `failed`; a login unknown to the service and absent from tmux returns 404. `POST /v1/logins/:account/code` accepts `{code}` and submits it. `GET /v1/logins/:account/pane` returns `{text}` and `POST /v1/logins/:account/keys` accepts `{keys}`. Login sessions are excluded from session listing, recovery, and archive.
