@@ -44,6 +44,20 @@ class State {
     this.threadsDir = path.join(this.dir, 'threads');
     this.machinesPath = path.join(this.dir, 'machines.json');
     this.projectsPath = path.join(this.dir, 'projects.json');
+    this.writes = new Map();
+  }
+
+  // Atomic replacement protects a single write; this queue protects the read-modify-write
+  // transaction that precedes it.  Keep the queue keyed by path so unrelated threads do not
+  // block each other.
+  queued(file, operation) {
+    const previous = this.writes.get(file) || Promise.resolve();
+    const next = previous.catch(() => {}).then(operation);
+    const retained = next.finally(() => {
+      if (this.writes.get(file) === retained) this.writes.delete(file);
+    });
+    this.writes.set(file, retained);
+    return next;
   }
 
   async init() {
@@ -78,9 +92,24 @@ class State {
   }
 
   async save(thread) {
-    thread.updated_at = new Date().toISOString();
-    await atomicWrite(this.threadPath(thread.id), json(thread));
-    return thread;
+    const file = this.threadPath(thread.id);
+    return this.queued(file, async () => {
+      thread.updated_at = new Date().toISOString();
+      await atomicWrite(file, json(thread));
+      return thread;
+    });
+  }
+
+  async updateThread(id, operation) {
+    const file = this.threadPath(id);
+    return this.queued(file, async () => {
+      const thread = await readJson(file, null);
+      if (!thread) throw appError(404, 'thread not found');
+      const result = await operation(thread);
+      thread.updated_at = new Date().toISOString();
+      await atomicWrite(file, json(thread));
+      return result;
+    });
   }
 
   async allThreads() {
@@ -128,21 +157,22 @@ class State {
   // Spec "State": projects.json is the repos the app lists. Serialized so two threads created
   // together can't lose each other's entry.
   addProject(project) {
-    this.projectsWrite = (this.projectsWrite || Promise.resolve()).catch(() => {}).then(async () => {
+    return this.queued(this.projectsPath, async () => {
       const list = await this.projects();
       if (list.includes(project)) return;
       await atomicWrite(this.projectsPath, json([...list, project]));
     });
-    return this.projectsWrite;
   }
 
   async markMachineSeen(name, lastSeen) {
-    const machines = await this.machines();
-    const machine = await this.resolveMachine(machines, name);
-    if (!machine) throw appError(404, `unknown machine: ${name}`);
-    machine.last_seen = lastSeen;
-    await atomicWrite(this.machinesPath, json(machines));
-    return machine;
+    return this.queued(this.machinesPath, async () => {
+      const machines = await this.machines();
+      const machine = await this.resolveMachine(machines, name);
+      if (!machine) throw appError(404, `unknown machine: ${name}`);
+      machine.last_seen = lastSeen;
+      await atomicWrite(this.machinesPath, json(machines));
+      return machine;
+    });
   }
 }
 

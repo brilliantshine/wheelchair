@@ -52,9 +52,18 @@ function gitRequest(operation, tail) {
   const paths = parsed.paths ? String(parsed.paths).split(',').filter(Boolean) : [];
   if (operation === 'commit' && !paths.length) throw new Error('commit requires --paths');
   if (operation === 'commit' && !parsed.message) throw new Error('commit requires --message (or -m)');
+  const commitArgs = [];
+  if (operation === 'commit') {
+    for (let index = 0; index < tail.length; index += 1) {
+      if (tail[index] === '--paths') { index += 1; continue; }
+      if (tail[index] === '-m' || tail[index] === '--message') { index += 1; continue; }
+      commitArgs.push(tail[index]);
+    }
+  }
   return {
     path: '/git',
-    body: { operation, args: parsed._, paths, message: parsed.message },
+    // Git and gh own their flags.  Only commit's local --paths/-m controls are consumed here.
+    body: { operation, args: operation === 'commit' ? commitArgs : tail, paths, message: parsed.message },
   };
 }
 
@@ -76,6 +85,7 @@ function sessionRequest(operation, tail) {
       tier: parsed.tier || 'top',
       attempt_id: parsed.attempt,
       brief: fs.readFileSync(parsed['brief-file'], 'utf8'),
+      replaces: parsed.replaces,
     },
   };
 }

@@ -69,6 +69,18 @@ async function startSession(hub, thread, input) {
   const role = input.role;
   if (!SESSION_ROLES.has(role)) throw appError(400, 'unknown role');
   const cli = input.cli || thread.cli;
+  if (cli === 'codex') {
+    try {
+      await hub.call(thread.machine, '/v1/preflight', 'POST', {});
+    } catch (error) {
+      const detail = error.body?.output || error.message;
+      if (role === 'lead') {
+        addCard(thread, { kind: 'needs', title: 'Codex preflight failed', body: `Codex preflight failed: ${detail}` }, { system: true });
+        await hub.save(thread);
+      }
+      throw appError(409, `Codex preflight failed: ${detail}`);
+    }
+  }
   const model = await resolveModel(hub, cli, input.tier);
   // Spec "Machine service on the hub": no new sessions while that service runs another commit.
   // A service that can't be reached falls through to the start, which records the failure.
@@ -109,6 +121,7 @@ async function startSession(hub, thread, input) {
       model,
       verify_ref: input.verify_ref,
       base: input.base,
+      default_branch: thread.default_branch,
     });
   } catch (error) {
     // Leave no session claiming to be "starting" forever: record why it never started.
@@ -131,6 +144,7 @@ async function startSession(hub, thread, input) {
     thread.worktree = started.worktree;
     thread.branch = `wc/${thread.id}`;
   }
+  if (started.default_branch) thread.default_branch = started.default_branch;
   await hub.save(thread);
   return session;
 }
@@ -183,20 +197,27 @@ async function deliver(hub, thread, target) {
   if (!target.live || !target.ready || !target.turn_ended || held || !target.queue?.length) {
     return false;
   }
-  const next = target.queue.shift();
+  const next = target.queue[0];
+  // Submission is the acknowledgement.  Do not discard a message or mark the session busy
+  // until the machine accepted it; a transient service failure must leave it retryable.
+  await hub.call(thread.machine, `/v1/sessions/${encodeURIComponent(target.name)}/submit`, 'POST', { text: next.text });
+  target.queue.shift();
   target.turn_ended = false;
   thread.queues[target.name] = target.queue;
   await hub.save(thread);
-  await hub.call(
-    thread.machine,
-    `/v1/sessions/${encodeURIComponent(target.name)}/submit`,
-    'POST',
-    { text: next.text },
-  );
   return true;
 }
 
 async function event(hub, payload) {
+  if (payload.delivery_id) {
+    const duplicate = await hub.updateThread(payload.thread_id, async (stored) => {
+      stored.delivered_ids ||= [];
+      if (stored.delivered_ids.includes(payload.delivery_id)) return true;
+      stored.delivered_ids = [...stored.delivered_ids, payload.delivery_id].slice(-500);
+      return false;
+    });
+    if (duplicate) return { ok: true, duplicate: true };
+  }
   const thread = await hub.thread(payload.thread_id);
   const target = session(thread, payload.session);
   const type = payload.type;
@@ -268,13 +289,19 @@ async function sessionRequest(hub, payload) {
     ...(['mapper', 'reviewer', 'sub-lead'].includes(payload.role) ? { worktree: thread.worktree, branch: thread.branch } : {}),
     base: payload.role === 'worker' ? thread.branch : undefined,
     verify_ref: payload.role === 'verifier' ? thread.branch : undefined,
+    ...(payload.role === 'worker' && payload.replaces ? (() => {
+      const replaced = session(thread, payload.replaces);
+      if (replaced.role !== 'worker' || replaced.live) throw appError(400, 'replacement must be a dead worker in this thread');
+      return { worktree: replaced.worktree, branch: replaced.branch };
+    })() : {}),
   });
   return { session: publicSession(started) };
 }
 
 async function stopSession(hub, thread, caller, name) {
   const target = session(thread, name);
-  const canStop = target.started_by === caller.name || (
+  const starter = target.started_by && thread.sessions.find((item) => item.name === target.started_by);
+  const canStop = target.started_by === caller.name || (starter && starter.role === caller.role) || (
     caller.role === 'lead' && target.started_by && target.role !== 'lead'
   );
   if (!canStop) throw appError(403, 'only the starter may stop this session');
@@ -304,28 +331,31 @@ async function pollDead(hub) {
         .filter((item) => item.running !== false && item.status !== 'stopped')
         .map((item) => item.name),
     );
-    for (const thread of threads) {
-      let changed = false;
-      for (const target of thread.sessions.filter((item) => item.live && !live.has(item.name))) {
-        target.live = false;
-        target.status = 'ended';
-        changed = true;
-        if (target.started_by) {
-          const text = `[wc:from app] your session ${target.name} ended`;
-          await enqueue(hub, thread, target.started_by, text, 'app');
-        } else if (target.role === 'lead') {
-          addCard(
-            thread,
-            {
-              kind: 'needs',
-              title: 'Sessions ended',
-              body: 'The lead session ended. Restart it to continue.',
-            },
-            { system: true },
-          );
+    for (const listedThread of threads) {
+      await hub.withThread(listedThread.id, async () => {
+        const thread = await hub.thread(listedThread.id);
+        let changed = false;
+        for (const target of thread.sessions.filter((item) => item.live && !live.has(item.name))) {
+          target.live = false;
+          target.status = 'ended';
+          changed = true;
+          if (target.started_by) {
+            const text = `[wc:from app] your session ${target.name} ended`;
+            await enqueue(hub, thread, target.started_by, text, 'app');
+          } else if (target.role === 'lead') {
+            addCard(
+              thread,
+              {
+                kind: 'needs',
+                title: 'Sessions ended',
+                body: 'The lead session ended. Restart it to continue.',
+              },
+              { system: true },
+            );
+          }
         }
-      }
-      if (changed) await hub.save(thread);
+        if (changed) await hub.save(thread);
+      });
     }
   }
 }

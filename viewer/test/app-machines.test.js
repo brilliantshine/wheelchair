@@ -50,3 +50,20 @@ test('wc.js passes worktree-remove through with the worker session, and requires
   assert.throws(() => gitRequest('commit', ['--paths', 'a.txt']), /message/);
   assert.throws(() => gitRequest('rebase', []), /unsupported/);
 });
+
+test('wc.js preserves git flags and the worker replacement option', () => {
+  const { gitRequest, sessionRequest } = require('../app/wc.js');
+  assert.deepEqual(gitRequest('pr', ['--title', 'X', '--body', 'b', '--base', 'main']).body.args,
+    ['--title', 'X', '--body', 'b', '--base', 'main']);
+  assert.deepEqual(gitRequest('merge', ['--no-ff', 'wc-branch']).body.args, ['--no-ff', 'wc-branch']);
+  assert.deepEqual(gitRequest('commit', ['--paths', 'a,b', '-m', 'msg']).body, {
+    operation: 'commit', args: [], paths: ['a', 'b'], message: 'msg',
+  });
+  assert.deepEqual(gitRequest('pr', ['--title', 'X', '--body', 'Y', '--base', 'main']).body.args,
+    ['--title', 'X', '--body', 'Y', '--base', 'main']);
+  const oldRead = require('node:fs').readFileSync;
+  require('node:fs').readFileSync = () => 'brief';
+  try {
+    assert.equal(sessionRequest('start', ['--role', 'worker', '--cli', 'codex', '--brief-file', 'x', '--attempt', 'again', '--replaces', 'wc-old']).body.replaces, 'wc-old');
+  } finally { require('node:fs').readFileSync = oldRead; }
+});

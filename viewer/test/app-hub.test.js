@@ -827,3 +827,95 @@ test('the sessions list passes unmanaged tmux sessions through as read-only', as
     assert.deepEqual(result.body[0].sessions.at(-1), { name: 'other-shell', managed: false });
   });
 });
+
+test('serializes concurrent cards and de-duplicates a delivered card', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const lead = made.sessions[0];
+    const post = (summary, delivery_id) => machinePost(context, '/machine/cards', {
+      thread_id: made.id, session: lead.name, kind: 'offer', summary, delivery_id,
+    });
+    const [one, two] = await Promise.all([post('One.', 'd-one'), post('Two.', 'd-two')]);
+    assert.equal(one.status, 202); assert.equal(two.status, 202);
+    const duplicate = await post('One again.', 'd-one');
+    assert.equal(duplicate.status, 200); assert.equal(duplicate.body.duplicate, true);
+    const stored = await (new Hub({ stateDir: context.state })).thread(made.id);
+    assert.equal(stored.cards.length, 2);
+    assert.deepEqual(stored.delivered_ids.sort(), ['d-one', 'd-two']);
+  });
+});
+
+test('keeps a queued message idle and retryable when submit fails', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const lead = made.sessions[0];
+    await event(context, made.id, lead.name, 'turn-ended');
+    context.machine.submitOk = false;
+    const failed = await api(context, `/threads/${made.id}/messages`, { method: 'POST', body: { text: 'Keep me.' } });
+    assert.equal(failed.status, 503);
+    const stored = await (new Hub({ stateDir: context.state })).thread(made.id);
+    assert.equal(stored.sessions[0].queue[0].text, 'Keep me.');
+    assert.equal(stored.sessions[0].turn_ended, true);
+  });
+});
+
+test('runs Codex preflight before a lead start and records its failure as a need', async () => {
+  await withContext(async (context) => {
+    context.machine.preflightOk = false;
+    const result = await api(context, '/threads', { method: 'POST', body: { project: '/tmp/project', cli: 'codex' } });
+    assert.equal(result.status, 409);
+    const [stored] = await (new Hub({ stateDir: context.state })).allThreads();
+    assert.equal(stored.cards.at(-1).title, 'Codex preflight failed');
+    assert.ok(context.machine.calls.some((call) => call.path === '/v1/preflight'));
+  });
+});
+
+test('terminal Enter marks its session busy before the next hook event', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    await api(context, `/sessions/${made.sessions[0].name}/keys`, { method: 'POST', body: { keys: 'Enter' } });
+    const stored = await (new Hub({ stateDir: context.state })).thread(made.id);
+    assert.equal(stored.sessions[0].turn_ended, false);
+  });
+});
+
+test('unreachable sessions are public and marked unreachable', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    context.machine.sessionsAvailable = false;
+    const result = await api(context, '/sessions');
+    const session = result.body[0].sessions.find((item) => item.name === made.sessions[0].name);
+    assert.equal(result.body[0].reachable, false);
+    assert.equal(session.state, 'unreachable');
+    assert.equal(Object.hasOwn(session, 'token'), false);
+  });
+});
+
+test('a kept rebase makes a need and leaves the thread open', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    context.machine.archiveKept = [{ worktree: '/tmp/wc-rebase', reason: 'rebase in progress' }];
+    const result = await api(context, `/threads/${made.id}/archive`, { method: 'POST', body: {} });
+    assert.equal(result.status, 200);
+    const stored = await (new Hub({ stateDir: context.state })).thread(made.id);
+    assert.equal(stored.archived, false);
+    const need = stored.cards.find((card) => card.title === 'Rebase needs attention');
+    assert.match(need.body, /finish or abort the rebase in \/tmp\/wc-rebase/);
+  });
+});
+
+test('serializes concurrent card and event arrivals without losing either', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const lead = made.sessions[0];
+    const turns = 12;
+    await Promise.all([...Array(turns)].flatMap((_, index) => [
+      card(context, made.id, lead.name, { kind: 'offer', summary: `Offer ${index}.` }),
+      event(context, made.id, lead.name, 'prompt', { notification_type: 'permission_prompt' }),
+    ]));
+    const stored = await (new Hub({ stateDir: context.state })).thread(made.id);
+    assert.equal(stored.cards.filter((card) => card.kind === 'offer').length, turns);
+    assert.equal(stored.cards.filter((card) => card.kind === 'needs' && card.title === 'Permission needed').length, turns);
+    assert.equal(stored.sessions.find((session) => session.name === lead.name).permission_open, true);
+  });
+});

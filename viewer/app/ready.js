@@ -1,19 +1,6 @@
 'use strict';
 
 // Spec lifecycle step 6: the hub, not the lead, owns the machine readiness gate.
-const { execFile } = require('node:child_process');
-const { promisify } = require('node:util');
-
-const execFileAsync = promisify(execFile);
-
-async function hubVersion(root) {
-  try {
-    return (await execFileAsync('git', ['-C', root, 'rev-parse', 'HEAD'])).stdout.trim();
-  } catch {
-    return '';
-  }
-}
-
 function missing(machine, text) {
   return `${machine}: ${text}`;
 }
@@ -21,7 +8,7 @@ function missing(machine, text) {
 // The one comparison of a machine service's commit with the hub's. An unknown hub version
 // counts as out of date, so the gate fails closed.
 async function outOfDate(hub, status) {
-  const expected = await hubVersion(hub.root);
+  const expected = hub.codeVersion;
   return !expected || status.version !== expected;
 }
 

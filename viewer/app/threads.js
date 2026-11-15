@@ -47,8 +47,13 @@ async function createThread(hub, input) {
   const thread = emptyThread(input);
   await hub.save(thread);
   await hub.state.addProject(thread.project);
-  const lead = await startSession(hub, thread, { role: 'lead', cli: thread.cli, brief: '', tier: 'top' });
-  if (input.message) await hub.enqueue(thread, lead.name, input.message, 'collin');
+  const lead = await hub.withThread(thread.id, async () => {
+    const current = await hub.thread(thread.id);
+    const started = await startSession(hub, current, { role: 'lead', cli: current.cli, brief: '', tier: 'top' });
+    if (input.message) await hub.enqueue(current, started.name, input.message, 'collin');
+    return started;
+  });
+  Object.assign(thread, await hub.thread(thread.id));
   return thread;
 }
 
@@ -68,9 +73,10 @@ async function createStub(hub, parent, card) {
     parent: parent.id,
     parent_title: parent.title || parent.id,
     depends_on_parent: card.depends_on_parent,
+    commits: card.commits || [],
   };
   card.thread_id = child.id;
-  await hub.save(child);
+  await hub.withThread(child.id, () => hub.save(child));
   return child;
 }
 
@@ -83,7 +89,8 @@ async function openStub(hub, id, input = {}) {
     return { waiting: true, thread };
   }
   const lead = await startSession(hub, thread, { role: 'lead', cli: thread.cli, brief: '', tier: 'top' });
-  const context = `[wc:context stub] ${thread.context}`;
+  const commits = thread.commits?.length ? `\ncommits to cherry-pick: ${thread.commits.join(', ')}` : '';
+  const context = `[wc:context stub] ${thread.context}${commits}`;
   await hub.enqueue(thread, lead.name, context, 'context', true);
   return thread;
 }
@@ -128,6 +135,17 @@ async function archive(hub, id) {
   const thread = await hub.thread(id);
   const result = await hub.call(thread.machine, '/v1/archive', 'POST', { thread_id: thread.id });
   thread.archive = result;
+  const rebases = (result.kept || []).filter((item) => item.reason === 'rebase in progress');
+  if (rebases.length) {
+    for (const kept of rebases) {
+      const worktree = kept.worktree || kept.path || String(kept);
+      const { addCard } = require('./cards.js');
+      addCard(thread, { kind: 'needs', title: 'Rebase needs attention', body: `finish or abort the rebase in ${worktree}, then archive again` }, { system: true });
+    }
+    thread.archived = false;
+    await hub.save(thread);
+    return result;
+  }
   thread.archived = true;
   for (const session of thread.sessions) session.live = false;
   await hub.save(thread);
@@ -204,12 +222,14 @@ async function press(hub, id, cardId, input) {
 }
 
 async function pollWaiting(hub) {
-  for (const thread of await hub.allThreads()) {
+  for (const listedThread of await hub.allThreads()) {
+    await hub.withThread(listedThread.id, async () => {
+      const thread = await hub.thread(listedThread.id);
     // Every stub that builds on an unmerged parent is watched, opened or not: leaving it alone
     // is waiting, and it shows "ready" once the parent's pull request merges.
-    if (!thread.depends_on_parent || thread.ready || thread.archived || thread.sessions.length || !thread.parent) continue;
+    if (!thread.depends_on_parent || thread.ready || thread.archived || thread.sessions.length || !thread.parent) return;
     const parent = await hub.thread(thread.parent).catch(() => null);
-    if (!parent?.branch) continue;
+    if (!parent?.branch) return;
     try {
       const result = await execFileAsync('gh', [
         'pr', 'list', '--head', parent.branch, '--state', 'merged', '--json', 'number',
@@ -222,6 +242,7 @@ async function pollWaiting(hub) {
     } catch {
       // A missing gh binary or an unavailable remote leaves the stub waiting.
     }
+    });
   }
 }
 
