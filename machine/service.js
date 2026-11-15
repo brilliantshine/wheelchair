@@ -410,6 +410,7 @@ class MachineService {
     const sessions = Object.values(this.sessions).filter(session => session.thread_id === threadId);
     const stopped = [];
     for (const session of sessions) {
+      if (session.archived_pending) continue;
       await this.stop(session.name);
       stopped.push(session.name);
     }
@@ -442,7 +443,19 @@ class MachineService {
       if (!result.ok) { kept.push({ worktree, reason: result.stderr.trim() || 'git worktree remove failed' }); continue; }
       removed.push(worktree);
     }
-    for (const session of sessions) delete this.sessions[session.name];
+    const keptWorktrees = new Set(kept.map(item => path.resolve(item.worktree)));
+    for (const session of sessions) {
+      const worktree = typeof session.worktree === 'string' ? path.resolve(session.worktree) : null;
+      if (worktree && keptWorktrees.has(worktree)) {
+        // A rebase cannot be safely archived. Keep enough ownership information for a later
+        // archive after it is resolved, while making clear that this session is no longer live.
+        session.archived_pending = true;
+        session.status = 'stopped';
+        session.running = false;
+      } else {
+        delete this.sessions[session.name];
+      }
+    }
     await this.persistSessions();
     return { stopped, committed, removed, kept };
   }

@@ -13,13 +13,20 @@ const views = require('./views.js');
 const { handle } = require('./routes.js');
 
 class Hub {
-  constructor({ stateDir = DEFAULT_STATE, root, registerPlan = null } = {}) {
+  constructor({ stateDir = DEFAULT_STATE, root, codeVersion, registerPlan = null, registerGraph = null } = {}) {
     this.root = root || path.resolve(__dirname, '..', '..');
-    // Read once at boot.  A pull under a running hub must not make it claim it has restarted.
-    try { this.codeVersion = execFileSync('git', ['-C', this.root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(); } catch { this.codeVersion = ''; }
+    // The server supplies the commit it read at its own boot.  Direct Hub tests still read
+    // their supplied root once, but a pull under a running viewer never changes this value.
+    if (codeVersion !== undefined) this.codeVersion = codeVersion;
+    else {
+      try { this.codeVersion = execFileSync('git', ['-C', this.root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(); } catch { this.codeVersion = ''; }
+    }
     // Given by viewer/server.js so a thread's plan joins the viewer's plan registry and its
     // MAP/IDEA/PLAN links open in the existing document page.
     this.registerPlan = registerPlan;
+    // Graphs have their own registry: registering the containing plan does not authorize an
+    // iframe to fetch the graph itself.
+    this.registerGraph = registerGraph;
     this.state = new State(stateDir);
     this.client = new MachineClient(this.state);
     this.stateDir = this.state.dir;
@@ -79,7 +86,7 @@ class Hub {
   enqueue(thread, name, text, source, first) {
     return sessions.enqueue(this, thread, name, text, source, first);
   }
-  deliver(thread, name) { return sessions.deliver(this, thread, sessions.session(thread, name)); }
+  deliver(thread, name, options) { return sessions.deliver(this, thread, sessions.session(thread, name), options); }
   event(payload) { return this.withThread(payload.thread_id, () => sessions.event(this, payload)); }
   async sessionRequest(payload) {
     const thread = await threads.threadBySession(this, payload.calling_session);

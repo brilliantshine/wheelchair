@@ -192,7 +192,7 @@ async function enqueue(hub, thread, name, text, source = 'app', first = false) {
   await deliver(hub, thread, target);
 }
 
-async function deliver(hub, thread, target) {
+async function deliver(hub, thread, target, { save = true } = {}) {
   const held = target.permission_open || target.needs_open;
   if (!target.live || !target.ready || !target.turn_ended || held || !target.queue?.length) {
     return false;
@@ -204,21 +204,16 @@ async function deliver(hub, thread, target) {
   target.queue.shift();
   target.turn_ended = false;
   thread.queues[target.name] = target.queue;
-  await hub.save(thread);
+  if (save) await hub.save(thread);
   return true;
 }
 
 async function event(hub, payload) {
-  if (payload.delivery_id) {
-    const duplicate = await hub.updateThread(payload.thread_id, async (stored) => {
-      stored.delivered_ids ||= [];
-      if (stored.delivered_ids.includes(payload.delivery_id)) return true;
-      stored.delivered_ids = [...stored.delivered_ids, payload.delivery_id].slice(-500);
-      return false;
-    });
-    if (duplicate) return { ok: true, duplicate: true };
-  }
   const thread = await hub.thread(payload.thread_id);
+  thread.delivered_ids ||= [];
+  if (payload.delivery_id && thread.delivered_ids.includes(payload.delivery_id)) {
+    return { ok: true, duplicate: true };
+  }
   const target = session(thread, payload.session);
   const type = payload.type;
   if (type === 'ready') {
@@ -255,6 +250,12 @@ async function event(hub, payload) {
   }
   await hub.save(thread);
   await deliver(hub, thread, target);
+  // The caller retries an event when a downstream submit fails.  Do not acknowledge that
+  // retry until the event's state change and any queued delivery have both completed.
+  if (payload.delivery_id) {
+    thread.delivered_ids = [...thread.delivered_ids, payload.delivery_id].slice(-500);
+    await hub.save(thread);
+  }
   return { ok: true };
 }
 

@@ -153,6 +153,29 @@ test('archive keeps and reports a worktree mid-rebase', async () => {
     await fs.access(worktree);
   } finally { await env.close(); }
 });
+test('a retained rebase worktree is removed by archive after the rebase is aborted', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true }); try {
+    const { repo, worktree } = await startedWorktree(env, root, 'archive-rebase-retry');
+    const mapper = await start(env, { role: 'mapper', thread_id: 'archive-rebase-retry', token: 'archive-rebase-retry-mapper', worktree });
+    await write(path.join(worktree, 'rebase.txt'), 'worktree\n');
+    git(['-C', worktree, 'add', 'rebase.txt']); git(['-C', worktree, 'commit', '-m', 'worktree change']);
+    await write(path.join(repo, 'rebase.txt'), 'main\n');
+    git(['-C', repo, 'add', 'rebase.txt']); git(['-C', repo, 'commit', '-m', 'main change']);
+    assert.equal(git(['-C', worktree, 'rebase', 'main'], { allowFailure: true }).status, 1);
+    const first = await api(env, 'POST', '/v1/archive', { thread_id: 'archive-rebase-retry' }, hubHeader);
+    assert.deepEqual(first.body.kept, [{ worktree, reason: 'rebase in progress' }]);
+    const name = 'wc-archive-rebase-retry-lead';
+    assert.equal(env.instance.sessions[name].archived_pending, true);
+    assert.equal(env.instance.sessions[name].status, 'stopped');
+    assert.equal(env.instance.sessions[mapper.name].archived_pending, true);
+    git(['-C', worktree, 'rebase', '--abort']);
+    const second = await api(env, 'POST', '/v1/archive', { thread_id: 'archive-rebase-retry' }, hubHeader);
+    assert.deepEqual(second.body.kept, []);
+    assert.deepEqual(second.body.removed, [worktree]);
+    assert.equal(env.instance.sessions[name], undefined);
+    await assert.rejects(fs.access(worktree));
+  } finally { await env.close(); }
+});
 test('archive route refuses a session token', async () => {
   const env = await service(await temp()); try { await start(env); assert.equal((await api(env, 'POST', '/v1/archive', { thread_id: 't' }, { 'x-wheelchair-session-token': 'alpha' })).status, 401); } finally { await env.close(); }
 });

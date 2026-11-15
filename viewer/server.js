@@ -37,7 +37,7 @@ const fsp = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const crypto = require('node:crypto');
-const { spawn } = require('node:child_process');
+const { execFileSync, spawn } = require('node:child_process');
 
 const DEFAULT_PORT = 7373;
 const DAY = 24 * 60 * 60 * 1000;
@@ -2135,6 +2135,16 @@ async function currentCode() {
   return hashBytes(await fsp.readFile(__filename)).slice(0, 12);
 }
 
+// A viewer process serves the commit it was launched from, not a later checkout after pull.
+// This is separate from currentCode(), whose short source hash identifies the port holder.
+function bootCodeVersion() {
+  try {
+    return execFileSync('git', ['-C', path.resolve(__dirname, '..'), 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  } catch {
+    return '';
+  }
+}
+
 function listen(server, port) {
   return new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -2156,7 +2166,7 @@ async function startServer(config) {
   await fsp.mkdir(config.cacheRoot, { recursive: true, mode: 0o700 });
   const token = await ensureToken(config);
   const lock = { pid: process.pid, port: config.port, token, start_id: crypto.randomBytes(16).toString('hex') };
-  const state = { config, lock, port: config.port, server: null, watched: new Map(), code: await currentCode(), app: null,
+  const state = { config, lock, port: config.port, server: null, watched: new Map(), code: await currentCode(), codeVersion: bootCodeVersion(), app: null,
     appInit: null,
     servedOrigin: await servedOrigin(config), closing: false, lastRegistryPrune: 0,
     ownRegistration: config.open ? { path: config.open, opened: true, ...(await registrationMetadata()) } : null };
@@ -2180,8 +2190,9 @@ async function startServer(config) {
         sendJson(response, 200, body); return;
       }
       if (url.pathname.startsWith(`${VIEWER_PREFIX}/api/`)) {
-        if (!state.app) { const { Hub } = require('./app/hub.js'); state.app = new Hub({ stateDir: config.stateDir || path.join(os.homedir(), '.local', 'state', 'wheelchair'), root: path.resolve(__dirname, '..'),
-          registerPlan: (planPath) => withMutex(() => registerPlanPath(config, planPath, null, 'other')) }); }
+        if (!state.app) { const { Hub } = require('./app/hub.js'); state.app = new Hub({ stateDir: config.stateDir || path.join(os.homedir(), '.local', 'state', 'wheelchair'), root: path.resolve(__dirname, '..'), codeVersion: state.codeVersion,
+          registerPlan: (planPath) => withMutex(() => registerPlanPath(config, planPath, null, 'other')),
+          registerGraph: (graphPath) => withMutex(() => registerPath(config, graphPath, false, null, 'other')) }); }
         if (!state.appInit) state.appInit = state.app.init();
         await state.appInit;
         const machineRoute = url.pathname.startsWith(`${VIEWER_PREFIX}/api/machine/`);
