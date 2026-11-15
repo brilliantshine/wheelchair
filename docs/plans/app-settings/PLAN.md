@@ -1,6 +1,6 @@
 ---
 slug: app-settings
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-15
 ---
 
@@ -561,3 +561,4 @@ table built here.
 - 2026-11-15 — Choice: T4, `settings.js` save notes: templates "Saved. Changes apply to agents started after you save."; style "Saved" beside "Leads pick it up on their next message.".
 - 2026-11-15 — Choice: T4, `settings.css` phone width: section tabs wrap labels instead of scrolling; the tier table becomes stacked cards.
 - 2026-11-15 — Sub-lead: T4 accepted. Browser suite 428 passed, 2 failed: both are "no drawn arrow's line passes through either box …", which fails identically on main (`fb9e244`), so it predates this feature.
+- 2026-11-15 — Sub-lead: all tasks merged; full validation on the integrated branch passes apart from three failures that also fail without this work (see COMPLETION.md). Routers `viewer/AGENTS.md` and root `AGENTS.md` updated by hand (highways not installed). Status set to verifying.
