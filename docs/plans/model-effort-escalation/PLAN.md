@@ -296,10 +296,10 @@ Filled by Stage 3. One row per worker brief.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | GPT effort in model.sh: parse, write, set, effort, show --json (Spec §1) | codex/model.sh, codex/test/run.sh | codex standard (gpt-6.1-terra) | | bash codex/test/run.sh; bash install/test/run.sh | not started |
-| T2 | Codex argv `-c model_reasoning_effort` when effort set; API.md row (Spec §1, §4) | machine/service.js, machine/API.md, machine/test/service.test.js | codex light (gpt-6-luna) | | bash machine/test/run.sh | not started |
-| T5 | sub-lead.md escalation section and lead.md §7 sentence (Spec §4) | protocol/app/sub-lead.md, protocol/app/lead.md | claude standard (claude-sonnet-5-5) | | git diff review | not started |
-| T3 | Hub: GPT/lead effort, `--effort`, ceilings, escalation store, sentences, role layers, routes, API.md (Spec §1–§3); after T1 | viewer/app/{settings,routes,sessions,wc}.js, viewer/app/API.md, viewer/test/*.test.js | codex standard (gpt-6.1-terra) | | node --test viewer/test/*.test.js | not started |
+| T1 | GPT effort in model.sh: parse, write, set, effort, show --json (Spec §1) | codex/model.sh, codex/test/run.sh | codex standard (gpt-6.1-terra) | wc-70d7c545bb47-worker | bash codex/test/run.sh; bash install/test/run.sh | done |
+| T2 | Codex argv `-c model_reasoning_effort` when effort set; API.md row (Spec §1, §4) | machine/service.js, machine/API.md, machine/test/service.test.js | codex light (gpt-6-luna) | wc-70d7c545bb47-worker-2 | bash machine/test/run.sh | done |
+| T5 | sub-lead.md escalation section and lead.md §7 sentence (Spec §4) | protocol/app/sub-lead.md, protocol/app/lead.md | claude standard (claude-sonnet-5-5) | wc-70d7c545bb47-worker-3 | git diff review | done |
+| T3 | Hub: GPT/lead effort, `--effort`, ceilings, escalation store, sentences, role layers, routes, API.md (Spec §1–§3); after T1 | viewer/app/{settings,routes,sessions,wc}.js, viewer/app/API.md, viewer/test/*.test.js | codex standard (gpt-6.1-terra) | wc-70d7c545bb47-worker-4 | node --test viewer/test/*.test.js | in progress |
 | T4 | Settings page: GPT and lead effort selects, Escalation section (Spec §1, §3); after T3 | viewer/pages/settings.js, viewer/pages/settings.css, viewer/test/app-settings.spec.js | claude standard (claude-sonnet-5-5) | | npm --prefix viewer run test:browser | not started |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
@@ -308,3 +308,8 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 Free-form running notes: deviations discovered mid-implementation, scope events,
 anything a future session needs that fits nowhere above.
+
+- 2026-11-15 — Choice: T5, sub-lead.md Tiers: left "Heavy and Critical are not implementation tiers … only as an escalation, below." unchanged; it does not contradict.
+- 2026-11-15 — Choice: T5, sub-lead.md order sentence: "then change tier" reworded to "then step up" so it covers both step kinds.
+- 2026-11-15 — T1, T2 reported no choices. T2 also renamed the machine test "effort … is ignored for Codex" to drop the Codex clause (body unchanged).
+- 2026-11-15 — Sub-lead decision for T3 (not in the Spec): the heads-up "switch" action keeps a GPT cell's effort when it changes the model, since model.sh `set` without an effort now clears a GPT effort.
