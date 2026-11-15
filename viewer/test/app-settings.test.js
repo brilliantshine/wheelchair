@@ -20,6 +20,7 @@ const workerTemplate = (name, scope = 'all', text = 'Work carefully.') => ({ nam
 
 test('settings defaults, templates, prompt composition, counts, and validation', async () => {
   await withContext(async (context) => {
+    await fs.writeFile(path.join(context.state, 'projects.json'), JSON.stringify(['/tmp/project']));
     const initial = await api(context, '/settings');
     assert.equal(initial.status, 200);
     assert.deepEqual(initial.body.other_agents, { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard' });
@@ -99,8 +100,10 @@ test('settings updates serialize concurrent saves and report a missing template 
       api(context, '/settings/templates', { method: 'POST', body: workerTemplate(`Concurrent ${index}`) })
     )));
     assert.ok(created.every((result) => result.status === 201));
+    await fs.writeFile(path.join(context.state, 'projects.json'), JSON.stringify(['/tmp/no-longer-listed']));
     const missing = await api(context, '/settings/templates', { method: 'POST', body: workerTemplate('Old project', '/tmp/no-longer-listed') });
     assert.equal(missing.status, 201);
+    await fs.writeFile(path.join(context.state, 'projects.json'), JSON.stringify([]));
     const listed = await api(context, '/settings');
     assert.equal(listed.body.templates.filter((item) => item.name.startsWith('Concurrent ')).length, 10);
     assert.equal(listed.body.templates.find((item) => item.id === missing.body.id).scope_missing, true);
@@ -165,12 +168,49 @@ test('settings model and heads-up routes reject bad input and preserve the setti
   await withContext(async (context) => {
     const model = await api(context, '/settings/models', { method: 'PUT', body: { provider: 'gpt', slot: 'critical', model: 'gpt-6-astra' } });
     assert.equal(model.status, 200);
+    const gptAlias = await api(context, '/settings/models', { method: 'PUT', body: { provider: 'gpt', slot: 'terra', model: 'custom-model' } });
+    assert.equal(gptAlias.status, 200);
+    assert.equal(gptAlias.body.models.gpt.standard.model, 'custom-model');
+    const claudeAlias = await api(context, '/settings/models', { method: 'PUT', body: { provider: 'claude', slot: 'opus', model: 'opus' } });
+    assert.equal(claudeAlias.status, 200);
+    assert.equal(claudeAlias.body.models.claude.heavy.model, 'opus');
+    assert.equal((await api(context, '/settings/models', { method: 'PUT', body: { provider: 'gpt', slot: 'opus', model: 'custom-model' } })).status, 400);
     assert.equal((await api(context, '/settings/models', { method: 'PUT', body: { provider: 'other', slot: 'light', model: 'x' } })).status, 400);
+    const switched = await api(context, '/settings/models/heads-up', { method: 'POST', body: { action: 'switch', tier: 'sol', model: 'custom-heavy' } });
+    assert.equal(switched.status, 200);
+    assert.equal(switched.body.models.gpt.heavy.model, 'custom-heavy');
     assert.equal((await api(context, '/settings/models/heads-up', { method: 'POST', body: { action: 'skip', model: 'gpt-6-astra' } })).status, 200);
     assert.equal((await api(context, '/settings/models/heads-up', { method: 'POST', body: { action: 'reset' } })).status, 200);
     await api(context, '/settings/preferences', { method: 'PUT', body: { permission_mode: 'bypass', other_agents: { mapper: 'critical' } } });
     const bytes = await fs.readFile(path.join(context.state, 'settings.json'));
     assert.equal((await fs.stat(path.join(context.state, 'settings.json'))).mode & 0o777, 0o600);
     assert.match(bytes.toString(), /"bypass"/);
+  });
+});
+
+test('template scopes must be listed when added or changed, while removed-project templates remain editable', async () => {
+  await withContext(async (context) => {
+    const settingsPath = path.join(context.state, 'settings.json');
+    const projectsPath = path.join(context.state, 'projects.json');
+    await fs.writeFile(projectsPath, JSON.stringify(['/tmp/listed-project']));
+
+    const seed = await api(context, '/settings/templates', { method: 'POST', body: workerTemplate('Seed') });
+    assert.equal(seed.status, 201);
+    const before = await fs.readFile(settingsPath, 'utf8');
+    const refused = await api(context, '/settings/templates', { method: 'POST', body: workerTemplate('Unlisted', '/tmp/unlisted-project') });
+    assert.equal(refused.status, 400);
+    assert.equal(refused.body.error, 'template.scope must be all or a listed project');
+    assert.equal(await fs.readFile(settingsPath, 'utf8'), before);
+
+    const created = await api(context, '/settings/templates', { method: 'POST', body: workerTemplate('Listed', '/tmp/listed-project') });
+    assert.equal(created.status, 201);
+    const changed = await api(context, `/settings/templates/${created.body.id}`, { method: 'PUT', body: { scope: '/tmp/unlisted-project' } });
+    assert.equal(changed.status, 400);
+
+    await fs.writeFile(projectsPath, JSON.stringify([]));
+    const renamed = await api(context, `/settings/templates/${created.body.id}`, { method: 'PUT', body: { name: 'Removed project retained' } });
+    assert.equal(renamed.status, 200);
+    assert.equal(renamed.body.scope, '/tmp/listed-project');
+    assert.equal(renamed.body.name, 'Removed project retained');
   });
 });
