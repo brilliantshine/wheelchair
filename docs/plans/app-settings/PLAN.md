@@ -50,6 +50,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 17 | Running leads get a new style as a `[wc:style]` trailer at the end of their next delivered message, stripped from the chat | A trailer keeps start-of-message markers working and stays out of Collin's bubble | defaulted |
 | 18 | IDEA narrowed: the newer-model notice is GPT only (Claude cells offer "Latest" family aliases instead), and Critical here means startable, not parts marked critical | Round 1 intent findings; follows decision 9 | idea-change |
 | 19 | The "when the brief doesn't settle something" switch is offered on worker templates only, and `worker.md` names its escalation rule as the one built-in rule a template may change; decided questions are flagged in the report | Collin designed the switch; the alternative (no effect) would make it a dead control | defaulted |
+| 20 | "Pick, record it, keep going" really lets workers decide: `worker.md`'s escalation rule is the one built-in rule a worker template may change, and IDEA's constraint names that exception | Collin, on the card | user / idea-change |
 
 ## Spec
 
@@ -406,7 +407,21 @@ table built here.
 | Claude intent | minor | Missing `style_version` counted as owing sends the default style to every running lead on deploy, beyond IDEA's exception | upheld | Missing counts as 0; owes only after the first save |
 | Claude intent | minor | Agent-tool lane behaviour undefined when `family` exits 3, and exact version/effort are lost on that path | upheld | Spec: such lanes launch from a shell; `lanes.md` documents the Agent path follows family only |
 | Claude intent | minor | Old tier names `haiku/sonnet/opus` now mean slots, which can surprise next to the "Latest" aliases | upheld | Spec: alias lines in `API.md` and `sub-lead.md` say old names mean slots |
-| Codex mechanics | major | `unsettled: decide` contradicts `worker.md:27-33`, which no template may override | user-decision | It also collides with IDEA's constraint that templates never override built-in rules; asked Collin. Spec holds the provisional fix (decision 19) until he answers |
+| Codex mechanics | major | `unsettled: decide` contradicts `worker.md:27-33`, which no template may override | user-decision | It also collides with IDEA's constraint that templates never override built-in rules; Collin picked "Really pick" (decision 20); Spec as decision 19, IDEA constraint gains the named exception |
+
+### Round 3 — 2026-11-15
+
+**Lanes:** Codex / Heavy (gpt-6.1-sol), mechanics; Claude / CLI default, intent; cross-family: yes.
+
+**Changed since Round 2:**
+- Other agents tiers are app-only; the panel says so ("Settings store").
+- `style_version`: missing counts as 0; owes only after the first save.
+- Agent-tool Claude lanes fall back to a shell launch when the cell has no family word, an exact version or an effort ("Tier names").
+- Old tier names `haiku/sonnet/opus` documented as slots, not models.
+- `unsettled: decide` on worker templates only; `worker.md`'s escalation rule is the one rule a template may change; IDEA constraint names the exception (decisions 19, 20).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 

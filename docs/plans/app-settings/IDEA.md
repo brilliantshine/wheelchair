@@ -50,7 +50,9 @@ newer-model heads-up never reaches him.
 
 ## Constraints
 
-- Nothing in a template or style overrides wheelchair's built-in rules for a role.
+- Nothing in a template or style overrides wheelchair's built-in rules for a role, with one
+  named exception: a worker template may tell workers to decide an unsettled question
+  themselves instead of asking the lead, flagging each such decision in their report.
 - The tier rename reaches the workflow rules under `protocol/`, which are used outside the
   app too, so it must not break the terminal workflow.
 - The screens follow Collin's designs in `docs/proposals/app-shell/design/`:
