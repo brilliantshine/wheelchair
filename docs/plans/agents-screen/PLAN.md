@@ -12,16 +12,6 @@ get buried as this file grows.
 
 ## Open Questions
 
-### Q1: When a lead dies and is restarted, does the new lead keep the old one's name?
-- **Context:** A restart creates a new session (`lead-2`) and keeps the old one's record
-  and children (`viewer/app/threads.js:118-153`). Children's `started_by` stays the dead
-  lead.
-- **Options:** (a) The name belongs to the thread: the replacement is still Alpha, and the
-  dead lead's children show under it. (b) Each lead session gets its own name: the
-  replacement is Beta, and Alpha shows as ended with its children.
-- **Recommendation:** (a). Collin thinks of "the lead of this thread"; a restart is a
-  repair, not a new person, and the Threads link must land on whoever is in charge now.
-
 ### Q2: Where does the names list live?
 - **Context:** Hub settings are `settings.json` in the hub state directory, editable on
   the Settings page; unknown fields are dropped (`viewer/app/settings.js:171-196`).
@@ -49,10 +39,19 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 4 | The hub records the model it resolved on each session record, next to effort, so cards can show it. | The machine stores effort but not model (`machine/service.js:301-308`); the page already tries to show `session.model`. | defaulted |
 | 5 | The Sessions page is removed; its nav entry becomes Agents, and `sessions` page URLs redirect to Agents. The terminal page's back link goes to Agents. | IDEA.md: Agents replaces Sessions. | defaulted |
 | 6 | The Agents screen shows live agents. Ended agents are hidden, except a lead's family keeps its ended lead row dimmed while any of its children are live. A Threads row whose lead has ended still shows the name, without a link. | Matches what the Sessions page shows today; avoids a growing list of dead sessions. | defaulted |
+| 7 | A lead's name belongs to the thread: a restarted lead (`lead-2`, …) keeps the name, and the children of earlier leads in the thread show under the current lead in the tree. | Collin picked "Keep the name" (Q1). A restart is a repair; the Threads link lands on whoever is in charge now. | user |
+| 8 | Supersedes #2 on reuse: a thread holds its name until it is archived, not only while its lead is live. Choice is otherwise as #2: first list name held by no unarchived thread, else a number is added. | Follows from #7: a restart after the lead died must not find its name taken by another thread. | defaulted |
 
 ## Spec
 
 (Grows as decisions land.)
+
+### Lead names
+- A name is stored on the thread, not the session. It is assigned when the thread's first
+  lead session is created (never for a stub until it is opened), and kept across restarts.
+- Choice and reuse: Decision Log #2 and #8. A thread holds its name until it is archived.
+- In the Agents tree, a thread's lead node is its current lead session; children whose
+  `started_by` is an earlier lead of the same thread hang under it.
 
 ## Accepted Risks
 
