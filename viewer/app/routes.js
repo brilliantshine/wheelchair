@@ -85,12 +85,16 @@ async function handleSettings(hub, request, response, url, bits, body) {
         if (!['sandboxed', 'unrestricted'].includes(body.codex_mode)) throw appError(400, 'codex_mode must be sandboxed or unrestricted');
         value.codex_mode = body.codex_mode;
       }
+      if (body.tool_steps !== undefined) {
+        if (!['show', 'hide'].includes(body.tool_steps)) throw appError(400, 'tool_steps must be show or hide');
+        value.tool_steps = body.tool_steps;
+      }
       if (body.other_agents !== undefined) {
         if (!body.other_agents || typeof body.other_agents !== 'object' || Array.isArray(body.other_agents)) throw appError(400, 'other_agents must be an object');
         for (const role of ['reviewer', 'verifier', 'mapper']) if (body.other_agents[role] !== undefined) value.other_agents[role] = settings.tier(body.other_agents[role], `other_agents.${role}`);
       }
     });
-    return send(response, 200, { permission_mode: value.permission_mode, codex_mode: value.codex_mode, other_agents: value.other_agents });
+    return send(response, 200, { permission_mode: value.permission_mode, codex_mode: value.codex_mode, tool_steps: value.tool_steps, other_agents: value.other_agents });
   }
   if (bits[1] === 'templates' && bits.length === 2 && request.method === 'POST') {
     let template;

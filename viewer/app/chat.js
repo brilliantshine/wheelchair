@@ -229,6 +229,9 @@ async function chat(hub, id) {
     if (!raw) continue;
     items.push(...transcriptItems(session.cli, raw, thread));
   }
+  // Settings "Tool steps: Hide" drops the lead's tool calls (commands, file reads) entirely.
+  const { tool_steps: toolSteps } = await require('./settings.js').load(hub);
+  const shown = toolSteps === 'hide' ? items.filter((item) => item.type !== 'tool') : items;
   // The pull request each thread produced, from its latest done card, so the page can link it
   // and a stub can link the one it waits on.
   const prOf = (item) => [...(item?.cards || [])].reverse().find((card) => card.kind === 'done' && card.pr_url)?.pr_url || null;
@@ -241,7 +244,7 @@ async function chat(hub, id) {
   };
   return {
     thread: publicThread,
-    items,
+    items: shown,
     cards: thread.cards.filter((card) => !card.replaced),
     pinned: Object.values(thread.pinned),
     queued: Object.values(thread.queues).flat().length,
