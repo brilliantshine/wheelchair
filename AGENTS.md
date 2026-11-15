@@ -33,7 +33,7 @@ fresh off disk on each turn rather than rendered into a file an agent's instruct
 | Canonical rules | `protocol/` | an agent executing a stage |
 | Per-feature state | `docs/plans/<slug>/` | every stage, to find out where the work stands |
 | Harness adapter | `skills/`, `codex/prompts/` | Claude Code and the Codex CLI, at registration |
-| Executable | `sensitivity/`, `seen/`, `install/`, `viewer/`, `install.sh` | run by a command, not read as guidance |
+| Executable | `sensitivity/`, `seen/`, `install/`, `viewer/`, `machine/`, `install.sh` | run by a command, not read as guidance |
 
 Two rules follow, and between them they cover most of what can go wrong here:
 
@@ -55,6 +55,7 @@ Two rules follow, and between them they cover most of what can go wrong here:
 | `install/` | — | `test/run.sh`, the installer fixture suite. Temp homes and command shims only; real harness and machine state stay untouched |
 | `codex/` | [AGENTS.md](codex/AGENTS.md) | `prompts/`, the Codex CLI wrappers, same convention as `skills/`, one line each; `preflight.sh`, the login check that also prints the model heads-up; `model.sh`, the GPT model pins' reader and writer; and `test/`, its fixture suite |
 | `docs/` | — | `plans/<slug>/` per feature; `proposals/<name>/`, ideas written outside the workflow and waiting for `/adopt`; `known-issues.md`, failures recorded but not yet fixed. State, not rules — nothing here is a contract |
+| `machine/` | [AGENTS.md](machine/AGENTS.md) | the per-machine agent session service the app's hub drives: `service.js` (sessions in tmux, worktrees, git for agents, transcript copies, spools), `hook.sh` and `lib/hook-post.js` (the CLIs' turn-end and prompt hooks), `API.md` (its route contract), `test/run.sh`. Runs as the `wheelchair-machine` user service, never read as guidance |
 | `viewer/` | [AGENTS.md](viewer/AGENTS.md) | the browser graph viewer, its list and document pages, the sign-in page a browser gets before it is remembered, and the server behind them — `index.html`, `list.html`, `list.js`, `doc.html`, `doc.js`, `signin.html`, `server.js`, `playwright.config.js`. Started by an agent turn, never read as guidance |
 
 ## Files at the root
