@@ -167,3 +167,50 @@ $ npm --prefix viewer run test:browser -- app-new-thread.spec.js app-threads.spe
 The arrow test is the recorded known issue (`docs/known-issues.md:53`). The other two failed on
 test-server startup (a port race in the helper) and a 30 s timeout under load, and pass on repeat.
 The freed-port node test passed this run.
+
+### Remediation 2 — 2026-11-15
+
+Verification attempt 2 (Codex `gpt-6.1-sol`, on `ccbc8b3`) failed with one gap, verbatim in
+`REMEDIATION-2.md`: Save's refresh fetched `/new-thread` outside `load()`'s out-of-order guard,
+so a late answer could restore the previous machine. This is the second fix attempt on the
+machine-scoped selection gap. Fixed by R2 (Claude standard, `claude-sonnet-5-5`, `f086a04`).
+
+| Gap | Fix at (file:line) | Validated by |
+|-----|--------------------|--------------|
+| Save's refresh bypassed `load()`'s guard | `viewer/pages/new.js:` onward: Add refuses while the list is stale, posts `machine: state.machine`, takes the added path from the POST answer and refreshes with `await load(path)`. `state` is now assigned from an answer, and `fillMachines`/`fillProjects`/`fillSaved` called, only in `load()` (`new.js:103-104`); the switch handler's `machine: null` (`:135`) is the only other write | `viewer/test/app-new-thread.spec.js:182`: the held hub refresh after Save, a switch to other, then release; Machine stays other with other's project. The worker's report shows it failing on the previous code in both browsers ("Expected other, Received hub") |
+
+Correction to the Remediation 1 section: "The first two Deviations above … no longer hold" should
+read "The first Deviation above". The second Deviation (status codes the Spec left open) still
+stands.
+
+Validation on `wc/1a4f2c3d8d4c` at `f086a04`, run by the sub-lead:
+
+```
+$ bash machine/test/run.sh
+# tests 66
+# pass 66
+# fail 0
+
+$ node --test viewer/test/*.test.js
+not ok 172 - a starter that loses the freed port registers through the new holder
+not ok 242 - the global write lock serializes concurrent writes and retry retains both changes
+# tests 278
+# pass 276
+# fail 2
+
+$ npm --prefix viewer run test:browser
+  ✘  [chromium] › test/browser.spec.js:2395:1 › no drawn arrow's line passes through either box it connects, over every committed graph
+  ✘  [chromium] › test/browser.spec.js:2576:1 › a same-row arrow and an upward arrow both use side faces
+  ✘  [firefox] › test/browser.spec.js:2395:1 › no drawn arrow's line passes through either box it connects, over every committed graph
+  3 failed, 2 skipped, 473 passed
+
+$ node --test --test-name-pattern="global write lock serializes" viewer/test/*.test.js   (three runs)
+# fail 0   # fail 0   # fail 0
+$ npm --prefix viewer run test:browser -- browser.spec.js -g "same-row arrow and an upward" --repeat-each 3
+  6 passed
+```
+
+The freed-port and committed-graph arrow tests are the recorded known issues
+(`docs/known-issues.md:6`, `:53`). The write-lock and same-row arrow tests are in code this
+build did not touch (R2 changed only `viewer/pages/new.js` and its spec) and passed on every
+repeat. On R2's own branch the full browser suite gave 474 passed, 2 failed (the arrow test only).
