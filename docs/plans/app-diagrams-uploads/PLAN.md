@@ -1,6 +1,6 @@
 ---
 slug: app-diagrams-uploads
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-15
 adopted-from: docs/proposals/app-diagrams-uploads/proposal.md
 ---
@@ -367,7 +367,7 @@ Clean round: approved.
 | T2 | Hub: card fields, image storage, uploads/files/diagram routes, MachineClient.stream, archive handling | viewer/server.js, viewer/app/*.js, viewer/app/API.md, viewer/test/*.test.js, viewer/test/helpers/app-machine.js | gpt standard (gpt-6.1-terra) | wc-c56d4b2c5f5f-worker-2 | `node --test viewer/test/*.test.js` | done |
 | T3 | Thread page: form renderers, HTML and image cards, composer uploads; browser tests | viewer/pages/thread.*, new viewer/test/*.spec.js, browser test helpers | gpt standard (gpt-6.1-terra); asked for claude, hub fell back | wc-c56d4b2c5f5f-worker-4 | `npm --prefix viewer run test:browser` | done |
 | T4 | Protocol: cards.md diagram format, forms, image card; lead.md pointer | protocol/app/cards.md, protocol/app/lead.md | gpt standard (gpt-6.1-terra) | wc-c56d4b2c5f5f-worker-3 | grep, diff stat | done |
-| T6 | Hub: an upload the machine cancels answers 409, not 500 (defect found by T5; T2 rework on a sharper brief, same tier: the T2 brief never said what to do when the machine drops the connection) | viewer/app/routes.js, viewer/app/machine-client.js, viewer/test/app-hub.test.js, viewer/test/helpers/app-machine.js | gpt standard (gpt-6.1-terra) | see Log | `node --test viewer/test/app-uploads-archive.test.js` | in progress |
+| T6 | Hub: an upload the machine cancels answers 409, not 500 (defect found by T5; T2 rework on a sharper brief, same tier: the T2 brief never said what to do when the machine drops the connection) | viewer/app/routes.js, viewer/app/machine-client.js, viewer/test/app-hub.test.js, viewer/test/helpers/app-machine.js | gpt standard (gpt-6.1-terra) | wc-c56d4b2c5f5f-worker-7 | `node --test viewer/test/app-uploads-archive.test.js` | done |
 | T5 | Integration: archive through the real hub route while an upload to the real machine service is paused | one new viewer/test/*.test.js | gpt standard (gpt-6.1-terra) | wc-c56d4b2c5f5f-worker-5 | `node --test viewer/test/*.test.js` | done (test merged; it exposed the T6 defect) |
 
 ## Log
@@ -389,3 +389,5 @@ Clean round: approved.
 - 2026-11-15 — Choice: T3, viewer/test/helpers/app-machine.js: optional on-disk upload mode (`uploadsDir`); default in-memory mode unchanged.
 - 2026-11-15 — Choice: T3, viewer/test/app-diagrams-uploads.spec.js: the sandbox network recorder is a loopback server; the image test embeds a tiny PNG.
 - 2026-11-15 — T3 accepted. The worker stopped on its fails-twice rule: Firefox gave the test image naturalWidth 0. Cause found by sub-lead: the spec's embedded PNG had a bad IDAT CRC (Chromium tolerates it, Firefox does not). Sub-lead replaced it with a valid 2×2 PNG; app-diagrams-uploads.spec.js then passed 4/4 in Chromium and Firefox.
+- 2026-11-15 — Choice: T6, viewer/app/machine-client.js: errors from the outgoing machine request are tagged `machineConnection`, to tell a dropped connection from a config error.
+- 2026-11-15 — T6 accepted: app-uploads-archive.test.js passes. Full validation on the merged branch: machine 89/89; node 348/349 (known port race); browser 568 passed, 2 failed (known drawn-arrow issue, both browsers). COMPLETION.md written; status verifying.
