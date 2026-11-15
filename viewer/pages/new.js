@@ -110,9 +110,10 @@
   }
 
   async function removeSaved(name) {
+    if (!state || state.machine !== machineEl.value) return;
     clearErrors();
     try {
-      await call('/settings/saved-dirs/' + encodeURIComponent(name) + '?machine=' + encodeURIComponent(machineEl.value),
+      await call('/settings/saved-dirs/' + encodeURIComponent(name) + '?machine=' + encodeURIComponent(state.machine),
         { method: 'DELETE' });
       await load(projectEl.value);
     } catch (e) {
@@ -133,6 +134,8 @@
     clearErrors();
     state = state && { ...state, machine: null };
     projectEl.textContent = '';
+    $('saved-list').textContent = '';
+    $('saved-empty').hidden = true;
     if (state) syncProject(0);
     else { projectEl.disabled = true; goEl.disabled = true; }
     load('');
