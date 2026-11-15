@@ -133,6 +133,25 @@ test('switching machine disables Start and empties the project list until the an
   expect((await request).postDataJSON()).toMatchObject({ machine: 'other', project: '/srv/other-repo' });
 });
 
+test('switching machine empties the saved list until the answer lands', async ({ page }) => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  await page.route('**/api/new-thread?machine=*', async (route) => {
+    const machine = new URL(route.request().url()).searchParams.get('machine');
+    if (machine === 'other') await gate;
+    const saved = [{ name: machine + '-dir', path: '/srv/' + machine + '-dir', machine }];
+    await route.fulfill({ json: answer(machine, { saved, found: [{ name: machine + '-repo', path: '/srv/' + machine + '-repo' }] }) });
+  });
+  await open(page);
+  await expect(page.locator('#saved-list li')).toHaveCount(1);
+  await expect(page.locator('#saved-list li[data-name="hub-dir"]')).toHaveCount(1);
+  await page.locator('#nt-machine').selectOption('other');
+  await expect(page.locator('#saved-list li')).toHaveCount(0);
+  release();
+  await expect(page.locator('#saved-list li[data-name="other-dir"]')).toHaveCount(1);
+  await expect(page.locator('#saved-list li')).toHaveCount(1);
+});
+
 test('two saved entries with one path give one option', async ({ page }) => {
   await page.route('**/api/new-thread?machine=*', (route) => route.fulfill({ json: answer('hub', {
     saved: [{ name: 'a', path: '/srv/same', machine: 'hub' }, { name: 'b', path: '/srv/same', machine: 'hub' }],
