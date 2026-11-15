@@ -521,6 +521,21 @@ for (const [label, size] of SIZES) {
       await expect(card.locator('button.opt').first()).toBeDisabled();
     });
 
+    test('S4: a redraw while typing keeps the draft, focus and caret', async ({ page }) => {
+      const made = await ctx.make({ cli: 'claude' });
+      const q = await ctx.post(made.id, QUESTION);
+      await open(page, made.id);
+      const box = page.locator(`#card-${q.id} .own-words textarea`);
+      await box.fill('keep the old name please');
+      await box.evaluate((n) => { n.setSelectionRange(4, 4); n.dispatchEvent(new KeyboardEvent('keyup')); });
+      const before = await box.elementHandle();
+      await ctx.post(made.id, { ...QUESTION, question: 'Another one?' });
+      await expect.poll(() => before.evaluate((n) => n.isConnected)).toBe(false);
+      await expect(box).toBeFocused();
+      await expect(box).toHaveValue('keep the old name please');
+      expect(await box.evaluate((n) => [n.selectionStart, n.selectionEnd])).toEqual([4, 4]);
+    });
+
     test('S4: an answered card with no stored value keeps the generic tag; an unmatched value is shown bare', async ({ page }) => {
       const made = await ctx.make({ cli: 'claude' });
       const old = await ctx.post(made.id, QUESTION);

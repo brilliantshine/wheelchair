@@ -30,7 +30,8 @@
   let accountNames = null;   // account id -> name, from /settings; null until fetched
   const cardErrors = {};
   let answerFocus = null;    // card id whose own-words box has focus
-  const answerDrafts = {};    // card id -> text typed into a question card's own-words box
+  const answerDrafts = {};
+  const answerCaret = {};    // card id -> [selectionStart, selectionEnd] in that box    // card id -> text typed into a question card's own-words box
 
   function el(tag, cls, text) {
     const n = document.createElement(tag);
@@ -360,7 +361,14 @@
     // A poll that redraws the chat replaces this box; keep the caret where Collin was typing.
     ta.addEventListener('focus', () => { answerFocus = card.id; });
     ta.addEventListener('blur', () => setTimeout(() => { if (ta.isConnected && answerFocus === card.id) answerFocus = null; }, 0));
-    if (answerFocus === card.id) requestAnimationFrame(() => { if (ta.isConnected) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } });
+    const keepCaret = () => { answerCaret[card.id] = [ta.selectionStart, ta.selectionEnd]; };
+    for (const ev of ['input', 'keyup', 'mouseup', 'select']) ta.addEventListener(ev, keepCaret);
+    if (answerFocus === card.id) requestAnimationFrame(() => {
+      if (!ta.isConnected) return;
+      ta.focus();
+      const [start, end] = answerCaret[card.id] || [ta.value.length, ta.value.length];
+      ta.setSelectionRange(start, end);
+    });
     wrap.append(ta, send);
     return wrap;
   }
