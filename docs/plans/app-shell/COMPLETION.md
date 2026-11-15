@@ -393,3 +393,32 @@ work and the lead's fixes) and a fresh Opus (whole Spec, final round). A Firefox
 the fresh verifier's run and then passed 408 repeated runs. It is recorded in
 `docs/known-issues.md` as flaky.
 
+
+## After verification
+
+Two changes landed after the round-4 PASS, at Collin's request, before the pull request.
+Neither changes a Spec behaviour that was verified.
+
+- **UI pass** (merge 76dc816; Claude / Sonnet, lead review against each artboard). The pages
+  match the design boards:
+  - dark theme and a shared header;
+  - Features with a projects and machines sidebar, Needs-you cards and stage columns;
+  - three columns on the Threads page, and a sticky thread header carrying Archive, Sessions,
+    Open in terminal and the pull request;
+  - the boards' card styles, Sessions cards showing their thread, and phone layouts;
+  - Markdown in chat, built from DOM nodes, with `javascript:` links and markup made inert.
+
+  Left out because the API doesn't provide the data: progress bars, pane previews, which
+  option an answered question picked, and "Keep talking first". The fonts are not served as
+  web fonts. Browser suite 354 passed.
+- **Needs cards that can close** (merge 5fa4a85; Claude / Sonnet, lead review).
+  - A lead posts a `resolve` card for a settled lead-raised `needs` card. It is relayed and
+    de-duplicated like every card.
+  - Collin can Dismiss one in the thread page, and the live lead hears
+    `[card <id>] dismissed`.
+  - System cards (stuck, permission, "Sessions ended") can't be closed this way.
+
+  `cards.md` and `lead.md` updated. Node 247 tests, 246 passing (known port race); browser
+  356 passed (known no-drawn-arrow failures).
+- **Collin's settings and asides design** (6765836) moved to its own proposal,
+  `docs/proposals/app-settings/` (600704b).
