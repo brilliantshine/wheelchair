@@ -296,3 +296,38 @@ Codex resumes ran in the wrong directory twice; `docs/known-issues.md` explains 
 | `./install.sh && ./install.sh` | both exit 0; no new changes |
 
 The install pair restarted the live hub and machine services on the remediated code.
+
+## Remediation 2
+
+Verification round 2 at 9aa03cb failed. Gaps are verbatim in `REMEDIATION-2.md`. The
+lead's own fixes (ba2c84f) came first, because the live viewer could crash:
+- A refused card no longer ends the viewer. Round 1's write queue left a rejection
+  uncaught. A new test fails without the fix.
+- `--replaces` is taught in `protocol/app/sub-lead.md` and documented in
+  `viewer/app/API.md`.
+- D72 now says correctly that the hub marks a stub ready and doesn't start it.
+
+| Task | Lane | Change |
+|---|---|---|
+| R4 | GPT / Terra, xhigh, fresh | A delivery id is recorded only once its event or card is fully applied, so a retry after a failed submit delivers. A diagram card registers its graph as well as its plan. The version is read when the viewer server starts and passed to the hub. Codex turn filtering resets each turn. Sessions on a kept worktree stay `archived_pending`, so archiving again removes it. |
+| R5 | Claude / Sonnet, fresh | Opening a child on an archived picture requests the child's file. The breadcrumb returns to the parent, still read-only. |
+
+Still declined: closing a question card when Collin types an answer instead of pressing
+one. `cards.md` lets a typed answer reach the lead as an ordinary message, but nothing
+says the card closes, and a typed message names no card. Collin decides this together
+with the side-conversations follow-up.
+
+**Validation after remediation 2:**
+
+| Suite | Result |
+|---|---|
+| sensitivity | 62/0 |
+| seen | 18/0 |
+| codex | 45/0 |
+| install | 87/0 |
+| machine | 50/50 |
+| node | 237 tests, 235 pass; the failures are the known port race and the intermittent write lock |
+| browser | 334 passed, 2 failed (the known "no drawn arrow"), 2 skipped |
+| `./install.sh && ./install.sh` | both exit 0 |
+
+The live services run this code.

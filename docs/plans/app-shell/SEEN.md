@@ -87,3 +87,11 @@
 2026-11-15T04:49:50Z new a8d2 archiving again after finishing a rebase leaves the worktree behind
 2026-11-15T04:49:50Z new c5d2 opening a child picture in an archived diagram shows the parent again
 2026-11-15T04:49:50Z new 6396 whether typing an answer should close a question card is undecided
+2026-11-15T04:50:03Z shown b6e9
+2026-11-15T04:50:03Z shown 50be
+2026-11-15T04:50:03Z shown e420
+2026-11-15T04:50:03Z shown b579
+2026-11-15T04:50:03Z shown a8d2
+2026-11-15T04:50:03Z shown c5d2
+2026-11-15T04:50:03Z shown 6396
+2026-11-15T04:50:03Z turn
