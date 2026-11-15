@@ -12,17 +12,6 @@ get buried as this file grows. **Map:** `MAP.md`.
 
 ## Open Questions
 
-### Q6: How usage is read per CLI, and what to show when it can't be
-- **Checked locally 2026-11-15:** Codex rollout transcripts already carry
-  `rate_limits {primary|secondary: {used_percent, window_minutes, resets_at}, plan_type}`
-  (`~/.codex/sessions/.../rollout-*.jsonl`). Claude's per-session settings file
-  (`service.js:274`) can carry a `statusLine` command, which receives `rate_limits`.
-- **Context:** see Log, research 2026-11-15. Claude: official `rate_limits` in statusline JSON
-  (live session only); undocumented OAuth usage endpoint from the login folder. Codex:
-  `/status` in a session; undocumented `wham/usage` endpoint from `auth.json`.
-
-### Q7: Weighting the combined bar across plans of different size
-
 ### Q8: Terms of service for several personal subscriptions in one automated setup
 - **Context:** neither Anthropic nor OpenAI bans one person holding several paid accounts.
   Anthropic's consumer terms bar "automated or non-human means" except where permitted,
@@ -33,8 +22,8 @@ get buried as this file grows. **Map:** `MAP.md`.
 
 | # | Noticed | What needs looking into | Raised to user? | Outcome |
 |---|---------|-------------------------|-----------------|---------|
-| W1 | MAP.md | A fresh login folder lacks the user's CLAUDE.md/AGENTS.md, trust records and may show first-run screens that break the ready test | no | |
-| W2 | MAP.md | Style preview, Codex preflight and `model.sh` cache all read the service's own login | no | |
+| W1 | MAP.md | A fresh login folder lacks the user's CLAUDE.md/AGENTS.md, trust records and may show first-run screens that break the ready test | no | Settled in Spec: folder seeded with links; the service already answers Claude's trust prompt (`service.js:340-353`); first-run screens are a validation step |
+| W2 | MAP.md | Style preview, Codex preflight and `model.sh` cache all read the service's own login | no | D11 |
 
 ## Decision Log
 
@@ -50,6 +39,10 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D6 | Supersedes D4. The Leads panel gets a provider order for new leads, set by Collin (e.g. "Claude > GPT", or "Claude, then whatever's left"). A thread keeps the provider its lead started on: a running lead never switches, and a restarted lead or a sub-lead in that thread waits for that provider to have room | Collin: switching mid-feature is worse than waiting; the order applies only to new leads | user |
 | D7 | Signing in: Sign in on a machine starts a login session in tmux on that machine running the CLI's own login (`claude auth login` / `codex login --device-auth`) with the account's folder set; the app opens its terminal page on it; the account turns green when that machine reports it logged in | Works from the phone with pages that already exist | user |
 | D8 | Refines D7: Sign in shows a sign-in card, not the terminal. Claude: an "Open sign-in link" button (the OAuth URL read from the login session's output) and a box to paste the code back, which the app types into the session. Codex: a link to auth.openai.com/codex/device and the device code with a copy button. The terminal page stays as a fallback link | Collin: maximum convenience, a link and a code, nothing else | user |
+| D9 | Usage comes only from running sessions: Codex's `rate_limits` in its rollout transcript, Claude's `rate_limits` via a status-line command the service writes into each session's settings file. Each reading is stored per account with its time; idle accounts show their last reading "as of …"; an account never read shows "no reading yet" and the balancer treats it as full | Official, free, no terms risk; current whenever work runs | user |
+| D10 | The provider bar weights each account by its plan size: Claude Pro 1, Max 5x 5, Max 20x 20; ChatGPT Plus 1, Pro 6 (Codex plan names map by `plan_type`); Collin can override an account's weight | Answers the proposal's open question with the published multipliers; overridable | defaulted |
+| D11 | The style preview and `model.sh`'s Codex cache keep using the `default` account; the Codex preflight runs against the chosen account's folder at session start | Only the preflight protects a session's login; the others are account-independent | defaulted |
+| D12 | "Notify below 25%" is shown in the app (an amber line on the Usage bar and a dot on Settings in the nav), not a phone push: the app has no push path today (no notification code in `viewer/app/`) | Push notifications are their own feature | defaulted |
 
 ## Spec
 
