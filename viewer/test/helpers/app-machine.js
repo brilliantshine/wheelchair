@@ -2,6 +2,8 @@
 
 // Small machine-service double; archive response matches the T2b service contract.
 const http = require('node:http');
+const fs = require('node:fs');
+const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { freePort } = require('./server.js');
 
@@ -19,7 +21,7 @@ function send(response, status, value) {
 // Another tmux session on the machine, which the real service lists as unmanaged.
 const UNMANAGED = { name: 'other-shell', managed: false };
 
-async function startMachine(secret = 'machine-test-secret') {
+async function startMachine(secret = 'machine-test-secret', options = {}) {
   const port = await freePort();
   const sessions = new Map();
   const calls = [];
@@ -30,6 +32,7 @@ async function startMachine(secret = 'machine-test-secret') {
     codex: { installed: true, logged_in: true },
     accounts: [{ id: 'default-claude', cli: 'claude', logged_in: true }, { id: 'default-gpt', cli: 'codex', logged_in: true }],
   };
+  let uploadsDir = options.uploadsDir;
   let preflightOk = true;
   let startOk = true;
   let submitOk = true;
@@ -49,13 +52,18 @@ async function startMachine(secret = 'machine-test-secret') {
       const chunks = [];
       for await (const chunk of request) chunks.push(chunk);
       const id = url.searchParams.get('thread_id');
-      const name = `1-${url.searchParams.get('name')}`;
-      uploads.set(`${id}/${name}`, Buffer.concat(chunks));
+      const n = uploadsDir ? [...uploads.keys()].filter((key) => key.startsWith(id + '/')).length + 1 : 1;
+      const name = `${n}-${url.searchParams.get('name')}`;
+      const bytes = Buffer.concat(chunks);
+      uploads.set(`${id}/${name}`, bytes);
+      if (uploadsDir) { fs.mkdirSync(path.join(uploadsDir, id), { recursive: true }); fs.writeFileSync(path.join(uploadsDir, id, name), bytes); }
       calls.push({ method: request.method, path: url.pathname, body: Buffer.concat(chunks) });
-      return send(response, 201, { path: `/fake/uploads/${id}/${name}` });
+      return send(response, 201, { path: uploadsDir ? path.join(uploadsDir, id, name) : `/fake/uploads/${id}/${name}` });
     }
     if (request.method === 'GET' && url.pathname.startsWith('/v1/uploads/')) {
-      const data = uploads.get(url.pathname.slice('/v1/uploads/'.length));
+      const key = url.pathname.slice('/v1/uploads/'.length);
+      const diskPath = uploadsDir && path.join(uploadsDir, key);
+      const data = diskPath && fs.existsSync(diskPath) ? fs.readFileSync(diskPath) : uploads.get(key);
       if (!data) return send(response, 404, { error: 'not found' });
       response.writeHead(200, { 'content-type': 'image/png', 'x-content-type-options': 'nosniff' });
       return response.end(data);
@@ -114,6 +122,8 @@ async function startMachine(secret = 'machine-test-secret') {
   return {
     port,
     secret,
+    get uploadsDir() { return uploadsDir; },
+    set uploadsDir(value) { uploadsDir = value; },
     sessions,
     calls,
     status,
