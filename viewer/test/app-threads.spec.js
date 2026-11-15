@@ -414,16 +414,16 @@ for (const [label, size] of SIZES) {
       await open(page, made.id);
       for (const f of ['MAP', 'IDEA', 'PLAN']) {
         await expect(page.locator('#files a', { hasText: f })).toHaveAttribute(
-          'href', new RegExp(`plan=.*wt-dark%2Fdocs%2Fplans%2Fdark&file=${f}\\.md$`));
+          'href', `/wheelchair/app/doc?thread=${made.id}&file=${f}.md`);
       }
     });
 
-    test('plan document links go through the existing document page', async ({ page }) => {
+    test('plan document links open the in-app document page', async ({ page }) => {
       const made = await ctx.make({ cli: 'claude' });
       await ctx.patch(made.id, (x) => { x.slug = 'dark'; x.worktree = '/tmp/wt-dark'; });
       await open(page, made.id);
       const plan = page.locator('#files a', { hasText: 'PLAN' });
-      await expect(plan).toHaveAttribute('href', /^\/wheelchair\/docs\?plan=.*dark&file=PLAN\.md$/);
+      await expect(plan).toHaveAttribute('href', `/wheelchair/app/doc?thread=${made.id}&file=PLAN.md`);
       await expect(page.locator('#files a', { hasText: 'MAP' })).toHaveCount(1);
       await expect(page.locator('#files a', { hasText: 'IDEA' })).toHaveCount(1);
     });

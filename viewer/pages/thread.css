@@ -16,8 +16,7 @@
 .head-files .btn, .head-files button { font-family: var(--mono); font-size: 11px; }
 #error { margin: 12px 24px 0; }
 
-#stub-open, #dead, #docview { margin: 12px 24px 0; }
-#docview pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 60vh; overflow: auto; font-size: 13px; font-family: var(--mono); }
+#stub-open, #dead { margin: 12px 24px 0; }
 #stub-open h3, #dead p { margin-top: 0; }
 
 /* ---- pinned: offer, idea, progress ---- */
@@ -195,7 +194,7 @@ iframe.diagram { display: block; width: 100%; height: 340px; border: 0; backgrou
   .head-actions .confirm-note { flex-basis: 100%; }
   .thread-head .back { order: 0; }
   .thread-head .title-block { order: 1; flex: 1 1 55%; }
-  #error, #stub-open, #dead, #docview { margin-left: 12px; margin-right: 12px; }
+  #error, #stub-open, #dead { margin-left: 12px; margin-right: 12px; }
   #pinned { padding: 8px 12px; }
   .chat-wrap { padding: 16px 12px; }
   .bubble { max-width: 90%; }

@@ -27,6 +27,22 @@ test('the bookmark token signs a new browser in on an app page, and a wrong one 
   });
 });
 
+test('the document page is served behind the remember cookie like the other app pages', async () => {
+  await withServer({}, async (ctx) => {
+    const bare = await fetch(`${ctx.url}/app/doc?thread=t1&file=PLAN.md`);
+    assert.equal(bare.status, 401);
+    const signin = await fetch(`${ctx.url}/app/doc?token=${ctx.token}&thread=t1&file=PLAN.md`, { redirect: 'manual' });
+    assert.equal(signin.status, 303);
+    assert.equal(signin.headers.get('location'), '/wheelchair/app/doc?thread=t1&file=PLAN.md');
+    const cookie = signin.headers.get('set-cookie').split(';')[0];
+    const page = await fetch(`${ctx.url}/app/doc?thread=t1&file=PLAN.md`, { headers: { cookie } });
+    assert.equal(page.status, 200);
+    for (const asset of ['pages/doc.js', 'pages/doc.css', 'pages/markdown.js']) {
+      assert.equal((await fetch(`${ctx.url}/assets/${asset}`)).status, 200, asset);
+    }
+  });
+});
+
 test('an unknown app page is not served', async () => {
   await withServer({}, async (ctx) => {
     const response = await fetch(`${ctx.url}/app/server`);
