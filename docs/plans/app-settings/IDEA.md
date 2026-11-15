@@ -44,7 +44,8 @@ newer-model heads-up never reaches him.
   ("Accounts, usage and balancing").
 - Asides: the side-conversations thread owns them.
 - Writing rules for any agent other than leads; the old wording list stays dropped.
-- Changing an agent that is already running.
+- Changing an agent that is already running, with one exception: a running lead follows a
+  newly saved writing style from its next message.
 
 ## Constraints
 

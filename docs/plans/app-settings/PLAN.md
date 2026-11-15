@@ -18,13 +18,7 @@ Source proposal: `docs/proposals/app-settings/proposal.md`.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q1: When does a running lead follow a changed writing style?
-- **Context:** The design says "Leads pick it up on their next message"; IDEA's Not doing
-  says running agents don't change. The hub can prefix the style to messages it delivers
-  to the lead, or only set it at start.
-- **Recommendation:** to discuss.
-
-### Q2: The before-and-after preview
+### Q1: The before-and-after preview
 - **Context:** The design says "Rewritten live as you change the settings above." That
   means a model call per change.
 - **Options:** (a) a real rewrite by a cheap model on demand (button) of a fixed sample;
@@ -55,6 +49,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 8 | The Models screen here builds the tier table (Claude, GPT), the lead's model, and "Other agents" (plan reviewers, checker, code mapping). Worker provider order, Save Claude for leads, the margin, rules by kind of work (UI, critical marking, suggested rules) and the asides row go to the "Accounts, usage and balancing" thread | Everything kept here works without usage data; the deferred parts are about running low, which needs the balancer | user |
 | 9 | Critical here means only that the tier is startable and resolves through the table (fixing today's refusal of Astra); marking parts critical and the cross-check by another provider's Critical model are rules by kind of work, so they go with decision 8 to the accounts thread | Follows from 8 | defaulted |
 | 10 | Claude sessions get a permission mode setting: auto (today's) or bypass. Codex is unchanged (`-a never`, sandboxed to its worktree) | Bypass is what Collin assumed sessions did; auto stays as the tested fallback | user |
+| 11 | A saved writing style reaches running leads too: the next message the hub delivers to each live lead after the save carries the new style once. IDEA's Not doing gains this one exception | Threads live for days; waiting for a lead restart would hide the change. Collin agreed to the IDEA change on the card | idea-change |
 
 ## Spec
 
@@ -96,6 +91,21 @@ The settled design, grown as decisions land.
 - Readiness (`machine/service.js:298`) must recognise the bypass pane as ready, as it does
   "auto mode on" today, or every bypass session goes stuck after 30 s. Any one-time
   confirmation Claude shows when entering bypass must not block the start.
+
+### Writing style
+
+- Leads only. Stored in the hub's settings: length (Short, Balanced, Thorough), lists and
+  headings (Mostly prose, When it helps scanning, Always), technical terms (Build up to
+  them unless used before, Use freely, Avoid entirely), a "never say" list, and free text.
+  Collin's starting values are the design's: Short, When it helps scanning, Build up to
+  them, never say "It's worth noting" and "load-bearing", and his two sentences of free text.
+- A new lead gets the style as the last layer of its starting instructions (decision 5).
+- On save, the hub marks every live lead session as owing the style. The next message it
+  delivers to such a lead (`viewer/app/sessions.js:192-233`) is prefixed once with the new
+  style, marked so the lead reads it as replacing the earlier one; then the mark clears.
+  A lead started after the save gets it at start and owes nothing.
+- The style text, at start or on delivery, is the same rendering of the settings, so a
+  lead sees one form of it.
 
 ### Handed to the "Accounts, usage and balancing" thread
 
