@@ -16,8 +16,7 @@
 .head-files .btn, .head-files button { font-family: var(--mono); font-size: 11px; }
 #error { margin: 12px 24px 0; }
 
-#stub-open, #dead, #docview { margin: 12px 24px 0; }
-#docview pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 60vh; overflow: auto; font-size: 13px; font-family: var(--mono); }
+#stub-open, #dead { margin: 12px 24px 0; }
 #stub-open h3, #dead p { margin-top: 0; }
 
 /* ---- pinned: offer, idea, progress ---- */
@@ -115,6 +114,10 @@
 .opt.lean { border-color: var(--accent); background: var(--accent-soft); }
 .lean-tag { font-weight: 400; color: var(--accent-hi); margin-left: 6px; }
 .card-needs.is-answered { opacity: 0.6; border-color: var(--line); }
+.card-question.is-resolved { opacity: 0.6; }
+.doc-link { display: inline-block; margin-top: 8px; font-size: 13px; }
+.opt.picked { border-color: var(--good-line); background: var(--good-soft); }
+button.picked { border-color: var(--good-line); }
 .card-needs.is-answered .eyebrow { color: var(--dim); }
 .answered-tag { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; padding: 5px 10px; border-radius: 999px;
   background: var(--good-soft); color: var(--good-text); font-size: 12px; }
@@ -195,7 +198,7 @@ iframe.diagram { display: block; width: 100%; height: 340px; border: 0; backgrou
   .head-actions .confirm-note { flex-basis: 100%; }
   .thread-head .back { order: 0; }
   .thread-head .title-block { order: 1; flex: 1 1 55%; }
-  #error, #stub-open, #dead, #docview { margin-left: 12px; margin-right: 12px; }
+  #error, #stub-open, #dead { margin-left: 12px; margin-right: 12px; }
   #pinned { padding: 8px 12px; }
   .chat-wrap { padding: 16px 12px; }
   .bubble { max-width: 90%; }

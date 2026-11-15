@@ -6,6 +6,7 @@ const { promisify } = require('node:util');
 const crypto = require('node:crypto');
 const path = require('node:path');
 const { appError } = require('./state.js');
+const { truncateTitle } = require('./card.js');
 const { publicSession, startSession } = require('./sessions.js');
 const { check: readyCheck, same: sameReady } = require('./ready.js');
 
@@ -46,6 +47,10 @@ async function createThread(hub, input) {
     throw appError(400, 'project and cli are required');
   }
   const thread = emptyThread(input);
+  if (typeof input.message === 'string') {
+    const title = truncateTitle(input.message.split(/\r?\n/, 1)[0], 60);
+    if (title) thread.title = title;
+  }
   await hub.save(thread);
   await hub.state.addProject(thread.project);
   const lead = await hub.withThread(thread.id, async () => {
@@ -220,7 +225,11 @@ async function press(hub, id, cardId, input) {
     'start-thread': `start thread about: ${input.value}`,
   };
   if (!(input.action in suffixes)) throw appError(400, 'unknown card press');
-  if (!(card.kind === 'approval' && input.action === 'talk')) card.answered = true;
+  if (!(card.kind === 'approval' && input.action === 'talk')) {
+    card.answered = true;
+    card.answered_action = input.action;
+    card.answered_value = input.value ?? null;
+  }
   await hub.enqueue(thread, lead.name, `[card ${card.id}] ${suffixes[input.action]}`, 'card');
   return { queued: true, text: suffixes[input.action] };
 }

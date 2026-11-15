@@ -36,6 +36,8 @@ That is deliberate: almost none of it helps him decide anything.
   (he answered it in chat, or it fixed itself), post a `resolve` card for it with a one-line
   note. On a restart, look through the thread's open `needs` cards and resolve any that no
   longer apply. You cannot resolve the app's own cards (stuck, permission, "Sessions ended").
+  When he answers an open `question` card by typing instead of pressing, resolve that card
+  with a one-line note of his answer, then carry on as if he had pressed.
 
 ## What you may start and stop
 
@@ -82,6 +84,11 @@ the only memory you have.
 
 Collin picks the project, the CLI and the machine, then writes in plain words.
 
+- **On your first turn, post a `title` card** with a few short words for the thread in
+  Collin's terms. Post it again if the subject changes, such as when a split leaves this
+  thread with only part of the original ask. A stub's lead renames only when the stub's title
+  no longer fits.
+
 - **A small fix** (a couple of files, nothing to parallelize) is just done. Make it in the
   worktree, commit it (`wc.js git commit` with the exact paths), and write no plan
   documents. Start a verifier on that commit with a brief that says what Collin asked
@@ -90,16 +97,19 @@ Collin picks the project, the CLI and the machine, then writes in plain words.
   or drop it, which you do with `wc.js git revert`). Then push, open the pull request
   (`wc.js git push`, `wc.js git pr`), and post a `done` card. Say in your reply what
   changed.
-- **Anything bigger** gets one `offer` card: "Take it into planning?" Ask once per thread,
-  never again.
+- **Anything bigger** gets an `offer` card: "Take it into planning?" Taking it into planning,
+  or typing instead of answering, makes the thread a feature. "Keep talking first"
+  means not yet: keep talking; do not create the plan directory, start mapping or post an
+  idea card. You may post the offer once more later when what he has said makes the case
+  clearer, never a third time; the hub refuses it. If the talk shows this is small, just do it.
 
 Not sure which? A few files and nothing parallel is small. Anything that needs a design
 decision from him, several areas, or parallel workers is a feature.
 
 ### 2. Ideation
 
-Pressing the offer, or keeping on talking instead of answering it, both make this a
-feature. If he kept talking, the app pins the offer; never ask again. Then:
+Pressing "Take it into planning", or keeping on talking instead of answering the offer,
+makes this a feature. Then:
 
 - Pick a short kebab-case slug and create `docs/plans/<slug>/` in the worktree.
 - Start mapping now (step 3), in the background.
@@ -122,9 +132,10 @@ against. The mapper checks that; you only rely on MAP.md once the `result` arriv
 
 ### 4. Planning
 
-1. Confirm IDEA.md first. Write it from `<root>/protocol/templates/IDEA.md` and show it
-   through a `question` card with options to confirm or change it (leaning: confirm). Set
-   `status: confirmed` in it once he agrees. Do not ask a design question until then.
+1. Confirm IDEA.md first. Write it from `<root>/protocol/templates/IDEA.md`, commit it, and
+   show it through a `question` card with options to confirm or change it (leaning: confirm)
+   and `doc: "IDEA.md"`. Set `status: confirmed` in it once he agrees. Do not ask a design
+   question until then.
 2. Create `docs/plans/<slug>/PLAN.md` from `<root>/protocol/templates/PLAN.md` and set
    `status: planning`.
 3. Put every open question in PLAN.md's Open Questions, ordered by leverage. A question
@@ -134,8 +145,9 @@ against. The mapper checks that; you only rely on MAP.md once the `result` arriv
    each, reread IDEA.md and check the plan still serves it; if it drifted, say so plainly.
    When the answer arrives, append the decision to the Decision Log (append-only), remove
    the question, fold the consequence into the Spec, and cascade. Save the file before you
-   ask the next question. Anything noticed that is not yet a decision goes on the Watch
-   List; it is empty before planning ends.
+   ask the next question. When he answers by typing instead of pressing, resolve the question
+   with a one-line note of his answer, then carry on as if he had pressed. Anything noticed
+   that is not yet a decision goes on the Watch List; it is empty before planning ends.
 5. Links to MAP.md, IDEA.md and PLAN.md are always one click from the thread through the
    document page; you do not need to paste them.
 6. When the Open Questions and the Watch List are empty, write the final pass of the Spec:
