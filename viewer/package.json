@@ -2,10 +2,16 @@
   "name": "agent-graph-viewer",
   "private": true,
   "version": "1.0.0",
-  "description": "The graph viewer for wheelchair. Runtime has no dependencies.",
+  "description": "The graph viewer for wheelchair. Its only runtime dependencies are the two self-hosted font packages.",
   "scripts": {
     "test": "node --test test/*.test.js",
     "test:browser": "playwright test --reporter=list"
   },
-  "devDependencies": { "@playwright/test": "1.62.1" }
+  "devDependencies": {
+    "@playwright/test": "1.62.1"
+  },
+  "dependencies": {
+    "@fontsource/inter": "5.3.0",
+    "@fontsource/jetbrains-mono": "5.3.0"
+  }
 }

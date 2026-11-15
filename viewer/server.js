@@ -4,7 +4,7 @@ Routes (all responses use Cache-Control: no-store):
   GET  /wheelchair/list         -> { sessions, plans }
   GET  /wheelchair/plan, /doc   -> plan data and raw Markdown
   GET  /wheelchair/docs         -> viewer/doc.html
-  GET  /wheelchair/assets/*     -> page scripts (no token): list.js, doc.js, pages/*, vendor/*
+  GET  /wheelchair/assets/*     -> page scripts (no token): list.js, doc.js, pages/*, vendor/*, fonts/<name>.woff2 (four allowlisted)
   GET  /wheelchair/app/<page>   -> viewer/pages/<page>.html (threads, thread, doc, features, sessions, terminal)
   GET  /wheelchair/graph        -> { hash, graph, children }
   PUT  /wheelchair/graph, /view -> { hash }
@@ -44,7 +44,7 @@ const DAY = 24 * 60 * 60 * 1000;
 const REGISTERED_MAX_AGE = 30 * DAY;
 const REGISTRY_PRUNE_INTERVAL_MS = 60 * 60 * 1000;
 const REGISTER_SIGNATURE_WINDOW_MS = 60 * 1000;
-const PAGE_CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+const PAGE_CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 const VIEWER_PREFIX = '/wheelchair';
 const REMEMBER_COOKIE = 'wheelchair_remember';
 const REMEMBER_LABEL = 'wheelchair-remember-v1';
@@ -1830,6 +1830,14 @@ async function servePage(response, name, csp = false) {
 const APP_PAGES = new Set(['threads', 'thread', 'doc', 'features', 'sessions', 'terminal']);
 // The thread page embeds the graph page for `diagram` cards, so app pages may frame this origin.
 const APP_PAGE_CSP = `${PAGE_CSP}; frame-src 'self'`;
+// The app's fonts: served name -> file under node_modules/@fontsource (latin subset, normal style).
+// Only these four are servable; nothing else under node_modules is reachable.
+const FONT_FILES = {
+  'inter-400': '@fontsource/inter/files/inter-latin-400-normal.woff2',
+  'inter-600': '@fontsource/inter/files/inter-latin-600-normal.woff2',
+  'inter-700': '@fontsource/inter/files/inter-latin-700-normal.woff2',
+  'jetbrains-mono-400': '@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2',
+};
 const APP_ASSET = /^(pages|vendor)\/[a-z0-9_-]+(\/[a-z0-9_.-]+)*\.(js|css)$/;
 
 async function handleAsset(response, url) {
@@ -1837,6 +1845,16 @@ async function handleAsset(response, url) {
   if (['list.js', 'doc.js'].includes(name)) {
     const script = await fsp.readFile(path.join(__dirname, name));
     sendFile(response, 200, script, 'text/javascript; charset=utf-8');
+    return;
+  }
+  if (name.startsWith('fonts/')) {
+    const match = /^fonts\/([a-z0-9-]+)\.woff2$/.exec(name);
+    const file = match && Object.hasOwn(FONT_FILES, match[1]) ? FONT_FILES[match[1]] : null;
+    if (!file) fail(404, 'no-route', 'The requested route does not exist.');
+    let font;
+    try { font = await fsp.readFile(path.join(__dirname, 'node_modules', file)); }
+    catch { fail(404, 'no-route', 'The requested route does not exist.'); }
+    sendFile(response, 200, font, 'font/woff2');
     return;
   }
   if (!APP_ASSET.test(name) || name.split('/').includes('..')) fail(404, 'no-route', 'The requested route does not exist.');

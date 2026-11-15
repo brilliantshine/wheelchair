@@ -160,10 +160,31 @@ test('/wheelchair/docs and list have CSP while a graph page keeps the index page
     };
     const docs = await fetchPage(`/docs?plan=${encodeURIComponent(plan)}`); const list = await fetchPage('/');
     const index = await fetchPage(`/?path=${encodeURIComponent(graph)}`);
-    const csp = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+    const csp = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
     assert.equal(docs.status, 200); assert.equal(list.status, 200); assert.equal(index.status, 200);
     assert.equal(docs.headers.get('content-security-policy'), csp); assert.equal(list.headers.get('content-security-policy'), csp);
     assert.equal(index.headers.get('content-security-policy'), null); assert.match(index.body, /graph viewer/i);
+  } finally { await ctx.stop(); }
+});
+
+test('an app page carries font-src self and the font route serves only the allowlist', async () => {
+  const ctx = await startServer({ cacheRoot: await makeDir(), port: await freePort() });
+  try {
+    const tokenPage = await fetch(`${ctx.url}/?token=${ctx.token}`, { redirect: 'manual' });
+    const cookie = tokenPage.headers.get('set-cookie');
+    const page = await fetch(`${ctx.url}/app/threads`, { headers: { cookie } });
+    assert.equal(page.status, 200);
+    const csp = page.headers.get('content-security-policy');
+    assert.match(csp, /(^|; )font-src 'self'(;|$)/); assert.match(csp, /frame-src 'self'/);
+    for (const name of ['inter-400', 'inter-600', 'inter-700', 'jetbrains-mono-400']) {
+      const font = await fetch(`${ctx.url}/assets/fonts/${name}.woff2`);
+      assert.equal(font.status, 200, name); assert.equal(font.headers.get('content-type'), 'font/woff2', name);
+      const bytes = Buffer.from(await font.arrayBuffer()); assert.equal(bytes.subarray(0, 4).toString('latin1'), 'wOF2', name);
+    }
+    for (const bad of ['nope.woff2', 'inter-500.woff2', 'inter-400.woff', '..%2Fserver.js', '%2e%2e/inter-400.woff2', 'inter-400.woff2/..']) {
+      const response = await fetch(`${ctx.url}/assets/fonts/${bad}`); assert.equal(response.status, 404, bad);
+    }
+    const traversal = await fetch(`${ctx.url}/assets/fonts/../../node_modules/@fontsource/inter/package.json`); assert.notEqual(traversal.status, 200); // fetch normalizes the dots away, so this never reaches the font route
   } finally { await ctx.stop(); }
 });
 
@@ -318,7 +339,7 @@ test('page responses renew the Lax cookie while JSON responses do not, and anony
   try {
     const cookie = await remember(ctx); const page = await raw(ctx, '/', { headers: { cookie } });
     assert.match(page.headers.get('set-cookie'), /SameSite=Lax/); const list = await raw(ctx, `/list?token=${ctx.token}`); assert.equal(list.headers.get('set-cookie'), null);
-    const anonymous = await raw(ctx, '/'); assert.equal(anonymous.status, 401); assert.match(anonymous.body, /Open your bookmark link once/); assert.match(anonymous.body, /<code>node viewer\/server\.js --url<\/code>/); assert.equal(anonymous.headers.get('content-security-policy'), "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+    const anonymous = await raw(ctx, '/'); assert.equal(anonymous.status, 401); assert.match(anonymous.body, /Open your bookmark link once/); assert.match(anonymous.body, /<code>node viewer\/server\.js --url<\/code>/); assert.equal(anonymous.headers.get('content-security-policy'), "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
     assert.equal((await raw(ctx, '/list')).status, 401);
   } finally { await ctx.stop(); }
 });
