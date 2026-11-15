@@ -346,6 +346,17 @@ test('a verifier gets its own detached worktree at the lead\'s unpushed commit',
     assert.equal(git(['-C', verifier.worktree, 'rev-parse', 'HEAD']).stdout.trim(), head);
   } finally { await env.close(); }
 });
+test('stopping a verifier removes its throwaway worktree even with untracked files', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true }); try {
+    const { repo, worktree } = await startedWorktree(env, root, 'verify-stop');
+    const verifier = await start(env, { role: 'verifier', cli: 'codex', name: 'wc-verify-stop-verifier', thread_id: 'verify-stop', token: 'verify-stop-token', project_dir: repo, project: 'project', default_branch: 'main', verify_ref: 'wc/verify-stop', serviceWorktree: true });
+    assert.notEqual(verifier.worktree, worktree);
+    await write(path.join(verifier.worktree, 'left-by-test.txt'), 'untracked\n');
+    const stopped = await api(env, 'DELETE', `/v1/sessions/${verifier.name}`, undefined, hubHeader);
+    assert.equal(stopped.status, 200);
+    await assert.rejects(fs.access(verifier.worktree));
+  } finally { await env.close(); }
+});
 test('a hub refusal reaches the agent at once, without retries', async () => {
   const hub = await hubServer(400); const env = await service(await temp(), { config: { hub_url: hub.url } }); try { await start(env); env.instance.retryWindow = 2000; env.instance.retryDelay = 5; await assert.rejects(() => env.instance.forwardSession(env.instance.sessions['wc-t-lead'], { action: 'start', attempt_id: 'a' }), (error) => error.status === 400); assert.equal(hub.calls.filter(call => call.path.endsWith('/session')).length, 1); } finally { await env.close(); await hub.close(); }
 });

@@ -87,6 +87,22 @@ class State {
     return path.join(this.threadsDir, `${id}.json`);
   }
 
+  sentPath(id) {
+    this.threadPath(id);
+    return path.join(this.threadsDir, `${id}.sent.jsonl`);
+  }
+
+  // Sent history rolls out of the thread's bounded JSON record into an append-only sibling.
+  // The thread lock owns this append, so records stay in their submit order.
+  async appendSent(id, entries) {
+    if (!entries.length) return;
+    await fs.appendFile(
+      this.sentPath(id),
+      `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`,
+      { mode: 0o600 },
+    );
+  }
+
   async thread(id) {
     const thread = await readJson(this.threadPath(id), null);
     if (!thread) throw appError(404, 'thread not found');

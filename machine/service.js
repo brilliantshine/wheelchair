@@ -380,7 +380,7 @@ class MachineService {
     session.prompt_open = false;
     session.status = 'stopped'; session.stopped_at = new Date().toISOString();
     await this.persistSessions();
-    if (session.role === 'verifier' && session.created_worktree) command('git', ['-C', session.worktree, 'worktree', 'remove', session.worktree]);
+    if (session.role === 'verifier' && session.created_worktree) command('git', ['-C', session.worktree, 'worktree', 'remove', '--force', session.worktree]);
   }
   gitPath(worktree, name) {
     const result = command('git', ['-C', worktree, 'rev-parse', '--git-path', name]);

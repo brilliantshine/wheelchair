@@ -12,8 +12,8 @@ const { api, card, close, event, machinePost, setup, thread } = require('./helpe
 const { startMachine } = require('./helpers/app-machine.js');
 const { ROOT, startServer } = require('./helpers/server.js');
 
-async function withContext(work) {
-  const context = await setup();
+async function withContext(work, options = {}) {
+  const context = await setup(options);
   try {
     await work(context);
   } finally {
@@ -847,19 +847,19 @@ test('serializes concurrent cards and de-duplicates a delivered card', async () 
   });
 });
 
-test('a failed event submit is retried once before its delivery id is recorded', async () => {
+test('a failed event submit records its delivery id and leaves its queue for a later retry', async () => {
   await withContext(async (context) => {
     const made = await thread(context);
     const lead = made.sessions[0];
     await api(context, `/threads/${made.id}/messages`, { method: 'POST', body: { text: 'Deliver on retry.' } });
     context.machine.submitOk = false;
     const first = await event(context, made.id, lead.name, 'turn-ended', { delivery_id: 'event-retry' });
-    assert.equal(first.status, 503);
+    assert.equal(first.status, 202);
     let stored = await (new Hub({ stateDir: context.state })).thread(made.id);
-    assert.equal(stored.delivered_ids?.includes('event-retry'), false);
+    assert.equal(stored.delivered_ids?.includes('event-retry'), true);
     assert.equal(stored.sessions.find((session) => session.name === lead.name).queue.length, 1);
     context.machine.submitOk = true;
-    const retry = await event(context, made.id, lead.name, 'turn-ended', { delivery_id: 'event-retry' });
+    const retry = await event(context, made.id, lead.name, 'turn-ended');
     assert.equal(retry.status, 202);
     assert.deepEqual(context.machine.sessions.get(lead.name).submits, ['Deliver on retry.']);
     stored = await (new Hub({ stateDir: context.state })).thread(made.id);
@@ -868,7 +868,7 @@ test('a failed event submit is retried once before its delivery id is recorded',
   });
 });
 
-test('a failed message-card submit leaves its delivery id and card retryable', async () => {
+test('a failed result-card submit is accepted, queued, and never rejected', async () => {
   await withContext(async (context) => {
     const made = await thread(context);
     const lead = made.sessions[0];
@@ -877,38 +877,156 @@ test('a failed message-card submit leaves its delivery id and card retryable', a
     const payload = {
       thread_id: made.id,
       session: sublead.name,
-      kind: 'message',
-      to: lead.name,
-      text: 'Send this once.',
+      kind: 'result',
+      task: 'build',
+      outcome: 'done',
+      summary: 'Send this once.',
       delivery_id: 'card-retry',
     };
     context.machine.submitOk = false;
     const first = await machinePost(context, '/machine/cards', payload);
-    assert.equal(first.status, 503);
-    let stored = await (new Hub({ stateDir: context.state })).thread(made.id);
-    assert.equal(stored.delivered_ids?.includes('card-retry'), false);
-    assert.equal(stored.cards.some((item) => item.kind === 'message' && item.text === 'Send this once.'), false);
-    context.machine.submitOk = true;
-    const retry = await machinePost(context, '/machine/cards', payload);
-    assert.equal(retry.status, 202);
-    assert.deepEqual(context.machine.sessions.get(lead.name).submits, [`[wc:from ${sublead.name}] Send this once.`]);
-    stored = await (new Hub({ stateDir: context.state })).thread(made.id);
-    assert.equal(stored.cards.filter((item) => item.kind === 'message' && item.text === 'Send this once.').length, 1);
+    assert.equal(first.status, 202);
+    const stored = await (new Hub({ stateDir: context.state })).thread(made.id);
     assert.deepEqual(stored.delivered_ids.filter((id) => id === 'card-retry'), ['card-retry']);
+    assert.equal(stored.cards.filter((item) => item.kind === 'result' && item.summary === 'Send this once.').length, 1);
+    const queued = stored.sessions.find((session) => session.name === lead.name);
+    assert.equal(queued.queue[0].text, `[wc:from ${sublead.name}] result: Send this once.`);
+    assert.match(queued.delivery_error.text, /temporarily unavailable/);
+    assert.match(queued.delivery_error.at, /^\d{4}-\d{2}-\d{2}T/);
+    await assert.rejects(fs.access(path.join(context.state, 'spool', 'rejected', 'cards')));
   });
 });
 
-test('keeps a queued message idle and retryable when submit fails', async () => {
+test('a browser message stays queued and reports delivery failure without failing its route', async () => {
   await withContext(async (context) => {
     const made = await thread(context);
     const lead = made.sessions[0];
     await event(context, made.id, lead.name, 'turn-ended');
     context.machine.submitOk = false;
     const failed = await api(context, `/threads/${made.id}/messages`, { method: 'POST', body: { text: 'Keep me.' } });
-    assert.equal(failed.status, 503);
+    assert.equal(failed.status, 202);
     const stored = await (new Hub({ stateDir: context.state })).thread(made.id);
     assert.equal(stored.sessions[0].queue[0].text, 'Keep me.');
     assert.equal(stored.sessions[0].turn_ended, true);
+    assert.match(stored.sessions[0].delivery_error.text, /temporarily unavailable/);
+  });
+});
+
+test('a verifier report survives a failed submit and the queue timer retries it', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const lead = made.sessions[0];
+    await event(context, made.id, lead.name, 'turn-ended');
+    const verifier = await startVerifier(context, made);
+    context.machine.submitOk = false;
+    const report = await event(context, made.id, verifier.name, 'turn-ended', {
+      delivery_id: 'verifier-report',
+      'last-assistant-message': 'COMMIT: abc1234\nVERDICT: PASS',
+    });
+    assert.equal(report.status, 202);
+    let stored = await (new Hub({ stateDir: context.state })).thread(made.id);
+    assert.equal(stored.sessions.find((session) => session.name === verifier.name).finished, true);
+    assert.equal(stored.sessions.find((session) => session.name === lead.name).queue.length, 1);
+    assert.match(stored.sessions.find((session) => session.name === lead.name).delivery_error.text, /temporarily unavailable/);
+    context.machine.submitOk = true;
+    const deadline = Date.now() + 1_000;
+    while (!(context.machine.sessions.get(lead.name).submits || []).length && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.deepEqual(context.machine.sessions.get(lead.name).submits, [
+      `[wc:from ${verifier.name}] result: COMMIT: abc1234\nVERDICT: PASS`,
+    ]);
+    stored = await (new Hub({ stateDir: context.state })).thread(made.id);
+    assert.equal(stored.sessions.find((session) => session.name === lead.name).queue.length, 0);
+    assert.equal(stored.sessions.find((session) => session.name === lead.name).delivery_error, undefined);
+  }, { env: { WHEELCHAIR_QUEUE_RETRY_MS: '10' } });
+});
+
+test('talking about an approval keeps it open for Needs you and Start building', async () => {
+  await withContext(async (context) => {
+    context.machine.status.version = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+    const made = await thread(context);
+    const approval = await card(context, made.id, made.sessions[0].name, {
+      kind: 'approval', objections: [], ready: { ok: true, missing: [] },
+    });
+    const talked = await api(context, `/threads/${made.id}/cards/${approval.body.id}/press`, {
+      method: 'POST', body: { action: 'talk', value: 'One more concern.' },
+    });
+    assert.equal(talked.status, 202);
+    let stored = await (new Hub({ stateDir: context.state })).thread(made.id);
+    assert.equal(stored.cards.find((card) => card.id === approval.body.id).answered, false);
+    const features = await api(context, '/features');
+    assert.equal(features.body.needs.some((need) => need.card_id === approval.body.id), true);
+    const started = await api(context, `/threads/${made.id}/cards/${approval.body.id}/press`, {
+      method: 'POST', body: { action: 'start-building' },
+    });
+    assert.equal(started.status, 202);
+    stored = await (new Hub({ stateDir: context.state })).thread(made.id);
+    assert.equal(stored.cards.find((card) => card.id === approval.body.id).answered, true);
+  });
+});
+
+test('successful submits record their destination, source, text, and time', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const lead = made.sessions[0];
+    await event(context, made.id, lead.name, 'turn-ended');
+    await api(context, `/threads/${made.id}/messages`, { method: 'POST', body: { text: 'Remember this.' } });
+    const stored = await (new Hub({ stateDir: context.state })).thread(made.id);
+    assert.deepEqual({
+      to: stored.sent[0].to,
+      text: stored.sent[0].text,
+      source: stored.sent[0].source,
+    }, { to: lead.name, text: 'Remember this.', source: 'collin' });
+    assert.match(stored.sent[0].at, /^\d{4}-\d{2}-\d{2}T/);
+  });
+});
+
+test('sent history keeps 500 entries and appends older entries beside the thread file', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const file = path.join(context.state, 'threads', `${made.id}.json`);
+    const before = JSON.parse(await fs.readFile(file, 'utf8'));
+    before.sent = Array.from({ length: 500 }, (_, index) => ({
+      to: made.sessions[0].name, text: `old-${index}`, source: 'collin', at: `2026-01-01T00:00:${String(index % 60).padStart(2, '0')}.000Z`,
+    }));
+    await fs.writeFile(file, `${JSON.stringify(before)}\n`);
+    await event(context, made.id, made.sessions[0].name, 'turn-ended');
+    await api(context, `/threads/${made.id}/messages`, { method: 'POST', body: { text: 'newest' } });
+    const stored = await (new Hub({ stateDir: context.state })).thread(made.id);
+    assert.equal(stored.sent.length, 500);
+    assert.equal(stored.sent[0].text, 'old-1');
+    assert.equal(stored.sent.at(-1).text, 'newest');
+    const archived = (await fs.readFile(path.join(context.state, 'threads', `${made.id}.sent.jsonl`), 'utf8'))
+      .trim().split('\n').map((line) => JSON.parse(line));
+    assert.deepEqual(archived, [before.sent[0]]);
+  });
+});
+
+test('restart context includes the latest twenty Collin and card messages', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const oldLead = made.sessions[0];
+    const file = path.join(context.state, 'threads', `${made.id}.json`);
+    const before = JSON.parse(await fs.readFile(file, 'utf8'));
+    before.sent = Array.from({ length: 28 }, (_, index) => ({
+      to: oldLead.name,
+      text: `message-${index}`,
+      source: index % 4 === 0 ? 'app' : (index % 2 ? 'collin' : 'card'),
+      at: `2026-01-01T00:00:${String(index).padStart(2, '0')}.000Z`,
+    }));
+    await fs.writeFile(file, `${JSON.stringify(before)}\n`);
+    context.machine.sessions.get(oldLead.name).running = false;
+    const hub = new Hub({ stateDir: context.state });
+    await hub.init();
+    await hub.pollDead();
+    const restarted = await api(context, `/threads/${made.id}/restart`, { method: 'POST', body: {} });
+    const after = await hub.thread(made.id);
+    const replacement = after.sessions.find((session) => session.name === restarted.body.name);
+    const contextMessage = replacement.queue.find((message) => message.source === 'context');
+    const state = JSON.parse(contextMessage.text.replace(/^\[wc:context restart] Thread state:\n/, ''));
+    const expected = before.sent.filter((message) => ['collin', 'card'].includes(message.source)).slice(-20);
+    assert.deepEqual(state.recent_messages, expected);
   });
 });
 
