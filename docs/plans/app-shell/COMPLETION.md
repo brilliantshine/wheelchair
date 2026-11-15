@@ -339,3 +339,38 @@ with the side-conversations follow-up.
 | `./install.sh && ./install.sh` | both exit 0 |
 
 The live services run this code.
+
+## Remediation 3
+
+Verification round 3 at d306315 failed with 6 gaps, verbatim in `REMEDIATION-3.md`. Two
+came from remediation 2's brief, which let a message's delivery join the operation that
+queued it. Remediation 3 settles that a failed delivery never undoes its operation.
+
+| Task | Lane | Change |
+|---|---|---|
+| R6 | GPT / Terra, xhigh, fresh | Cards and events commit with their queued message and delivery id, then delivery is tried. A failed submit leaves the message first in its queue with a `delivery_error`, and a 5-second timer retries every queue. "Talk about this" on an approval leaves it open. Verifier worktrees are removed with `--force`. Each submit is recorded in `thread.sent`, which keeps the last 500 and spills older entries to `threads/<id>.sent.jsonl`. A restarted lead gets the last 20 of Collin's messages and presses. |
+| lead | — | The root `AGENTS.md` describes `viewer/app/`, `pages/`, `vendor/` and `machine/test/run.sh`. `viewer/AGENTS.md` lists `app/ready.js`. Stale known gaps corrected. |
+
+**Residual risks, not gaps:**
+- An empty Enter in the browser terminal holds messages until a later turn ends.
+- A hub 500 on a relayed card can cause a duplicate if the agent resends.
+- Clearing a permission prompt hasn't been seen in a live run.
+- The 5-second hub-to-service timeout around a session start's `git fetch`.
+- `projects.json` lists only projects typed into earlier threads.
+- Closing a question card on a typed answer is Collin's decision, which goes with the
+  side-conversations follow-up.
+
+**Validation after remediation 3:**
+
+| Suite | Result |
+|---|---|
+| sensitivity | 62/0 |
+| seen | 18/0 |
+| codex | 45/0 |
+| install | 87/0 |
+| machine | 51/51 |
+| node | 242 tests, 241 pass; the one failure is the known port race |
+| browser | 334 passed, 2 failed (the known "no drawn arrow"), 2 skipped |
+| `./install.sh && ./install.sh` | both exit 0 |
+
+The live services run this code.

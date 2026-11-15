@@ -100,3 +100,8 @@
 2026-11-15T05:27:53Z new e65d pressing Talk about this on the plan approval disables Start building for good
 2026-11-15T05:27:53Z new 717b a checker's worktree with leftover files is never removed
 2026-11-15T05:27:53Z new c945 messages the app types in aren't kept for restarts
+2026-11-15T05:28:03Z shown 68dd
+2026-11-15T05:28:03Z shown e65d
+2026-11-15T05:28:03Z shown 717b
+2026-11-15T05:28:03Z shown c945
+2026-11-15T05:28:03Z turn
