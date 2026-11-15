@@ -1,6 +1,6 @@
 ---
 slug: agents-screen
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-15
 ---
 
@@ -39,6 +39,23 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 12 | Threads that already have a lead when this ships get names at hub start, oldest thread first. | So existing work is named without waiting for a restart. | defaulted |
 
 ## Spec
+
+A thread's first lead gets a name from the list; the hub builds each lead's family from
+who started whom; the Agents page draws it, and the Threads, thread and terminal pages link
+to it.
+
+```mermaid
+flowchart TD
+  A[thread gets its first lead] --> B[pick first free name from Settings list or Greek letters]
+  B --> C[name stays with the thread through restarts until archived]
+  C --> D[hub builds each lead's family from who started whom]
+  D --> E{agent idle with a started agent that hasn't reported back?}
+  E -- yes --> F[card shows Waiting on]
+  E -- no --> G[card shows status]
+  F --> H[Agents page: one block per lead, tree of cards]
+  G --> H
+  I[Threads, thread and terminal pages show the name] --> H
+```
 
 ### Lead names
 - **Stored on the thread** as `thread.lead_name` (string), not on a session. A restarted
@@ -213,6 +230,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+
+No findings from either lens. Clean round. (Mechanics reviewer restarted once after a false "ended" notice; the original's report was used.)
 
 ## Prior Work
 
