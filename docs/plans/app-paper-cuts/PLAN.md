@@ -1,6 +1,6 @@
 ---
 slug: app-paper-cuts
-status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
+status: done   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-14
 ---
 
@@ -275,7 +275,7 @@ returns true when no `@font-face` matches, so it passes before the fix.)
 node --test viewer/test/*.test.js
 npm --prefix viewer run test:browser
 bash machine/test/run.sh
-./install.sh && ./install.sh && git status --porcelain   # stays empty
+bash install/test/run.sh   # installer idempotence in temp homes; never ./install.sh outside the canonical clone
 ```
 
 Never check the viewer by starting a server on the default port; the suites start their
@@ -368,3 +368,5 @@ own with `--port` and `--cache-root` (see `AGENTS.md`, Verification).
 - 2026-11-14 — Choice: T3, thread.css: picked styling uses the existing `--good-*` tokens; a resolved question dims with opacity 0.6, like an answered needs card.
 - 2026-11-14 — Choice: T3, app-threads.spec.js: the resolved-question spec posts a real `resolve` card rather than patching state.
 2026-11-14 — Verification round 1 at 7e8aaab: PASS from both verifiers (Claude top, Codex top). The Codex verifier's full node run failed one queue-retry test that passed in isolation, which is the known load-flaky test. The Claude verifier noted one edge, not a gap: the doc page reads only `thread.slug`, so a slug known only from a diagram card gives 'No <file> in this thread yet' (T1's logged choice).
+
+2026-11-14 — Incident resolved: Collin chose to restore; the lead ran install.sh from the canonical clone (services back on the clone at 23:32:59) and removed the leftover w3 hook and wording.sh entries from ~/.claude/settings.json and ~/.codex/hooks.json by hand. The w3 worktree no longer has anything pointing at it. Validation line changed to `bash install/test/run.sh`. Follow-up stub: "Running install.sh from a worktree takes over the machine".
