@@ -148,7 +148,7 @@ that a lead posted, including one a previous lead posted. It is refused (422, wi
 reason) for a card the app posted itself (stuck, permission, "Sessions ended": those close on
 their own), for any other kind of card, for a card in another thread or one that does not
 exist, and for a card already answered. Collin can also dismiss such a card himself, which
-marks it the same way.
+marks it the same way and reaches you as `[card <id>] dismissed`: treat it as settled.
 
 ### `done`
 

@@ -231,6 +231,9 @@ async function dismiss(hub, id, cardId) {
   if (!found.ok) throw appError(found.reason === 'no such card in this thread' ? 404 : 422, found.reason);
   require('./cards.js').resolveCard(found.card, 'collin', null);
   await hub.save(thread);
+  // A dismissal is Collin's answer, like a press: the live lead hears it so it stops waiting.
+  const lead = [...thread.sessions].reverse().find((item) => item.role === 'lead' && item.live);
+  if (lead) await hub.enqueue(thread, lead.name, `[card ${cardId}] dismissed`, 'card');
   return { ok: true };
 }
 

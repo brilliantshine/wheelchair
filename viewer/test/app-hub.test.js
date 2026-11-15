@@ -1395,6 +1395,9 @@ test('dismiss closes a lead needs card as collin and refuses a system one', asyn
     assert.equal(closed.answered, true);
     assert.equal(closed.resolved_by, 'collin');
     assert.equal((await needsStrip(context)).some((item) => item.card_id === id), false);
+    // The live lead hears the dismissal (held here behind the open permission prompt).
+    const stored = JSON.parse(await fs.readFile(path.join(context.state, 'threads', `${made.id}.json`), 'utf8'));
+    assert.ok(stored.queues[lead].some((message) => message.text === `[card ${id}] dismissed`));
     const twice = await api(context, `/threads/${made.id}/cards/${id}/dismiss`, { method: 'POST', body: {} });
     assert.equal(twice.status, 422);
   });
