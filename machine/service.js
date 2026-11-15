@@ -104,6 +104,10 @@ class MachineService {
     this.retryWindow = Number(process.env.WHEELCHAIR_RETRY_WINDOW_MS || 90_000);
     this.retryDelay = Number(process.env.WHEELCHAIR_RETRY_DELAY_MS || 1_000);
     this.spoolInterval = Number(process.env.WHEELCHAIR_SPOOL_INTERVAL_MS || 5_000);
+    // Read this once, when this process is made.  A pull changes ROOT's HEAD but not
+    // the JavaScript this service is executing.
+    this.version = command('git', ['-C', ROOT, 'rev-parse', 'HEAD']).stdout.trim();
+    this.drains = new Map();
     this.options = options;
   }
 
@@ -121,6 +125,10 @@ class MachineService {
     await mkdir(path.join(this.stateDir, 'spool', 'events'));
     this.pollTimer = setInterval(() => this.pollReadiness().catch(error => this.log(error)), 2000);
     this.pollTimer.unref();
+    // Trust is the one startup screen where waiting two seconds makes a newly-created
+    // worktree feel stalled. Stuck sessions and open prompts remain on pollTimer.
+    this.trustTimer = setInterval(() => this.pollTrust().catch(error => this.log(error)), 500);
+    this.trustTimer.unref();
   }
   liveTmux() {
     const ls = this.tmux(['list-sessions', '-F', '#S']);
@@ -184,7 +192,17 @@ class MachineService {
     return candidate;
   }
   async createWorktree(input, sessionName) {
-    if (input.worktree) return path.resolve(input.worktree);
+    if (input.worktree) {
+      const worktree = path.resolve(input.worktree);
+      if (input.role === 'worker' && input.branch) {
+        let stat;
+        try { stat = await fsp.stat(worktree); } catch { die(`worker worktree does not exist: ${worktree}`); }
+        if (!stat.isDirectory()) die(`worker worktree is not a directory: ${worktree}`);
+        const current = command('git', ['-C', worktree, 'rev-parse', '--abbrev-ref', 'HEAD']);
+        if (!current.ok || current.stdout.trim() !== input.branch) die(`worker worktree is not on branch ${input.branch}`);
+      }
+      return { worktree, defaultBranch: input.default_branch || input.defaultBranch || null, branch: input.branch || null };
+    }
     const repo = input.project_dir || input.projectDir || input.repo;
     if (!repo) die('worktree or project_dir required');
     const project = safeName(input.project || path.basename(repo), 'project');
@@ -202,7 +220,8 @@ class MachineService {
       : path.join(this.stateDir, 'worktrees', project, branch);
     const fetch = command('git', ['-C', repo, 'fetch', 'origin']);
     if (!fetch.ok) die(fetch.stderr.trim() || 'git fetch failed');
-    const base = input.base || `origin/${input.default_branch || input.defaultBranch || 'main'}`;
+    const defaultBranch = this.defaultBranch(repo);
+    const base = input.base || `origin/${defaultBranch}`;
     const args = input.role === 'verifier'
       ? ['-C', repo, 'worktree', 'add', '--detach', destination, input.verify_ref || base]
       // --no-track: a branch made from origin/main would otherwise track main, and a plain
@@ -210,7 +229,15 @@ class MachineService {
       : ['-C', repo, 'worktree', 'add', '--no-track', '-b', branch, destination, base];
     const added = command('git', args);
     if (!added.ok) die(added.stderr.trim() || 'git worktree add failed');
-    return destination;
+    return { worktree: destination, defaultBranch, branch };
+  }
+  defaultBranch(repo) {
+    const symbolic = command('git', ['-C', repo, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD']);
+    const remote = symbolic.stdout.trim();
+    if (symbolic.ok && remote.startsWith('origin/') && remote.length > 'origin/'.length) return remote.slice('origin/'.length);
+    const shown = command('git', ['-C', repo, 'remote', 'show', 'origin']);
+    const match = shown.stdout.match(/^\s*HEAD branch:\s*(\S+)\s*$/m);
+    return match ? match[1] : 'main';
   }
   commandFor(input, session, worktree) {
     // Spec "Machine service on the hub": exact interactive CLI permissions and hooks.
@@ -240,9 +267,11 @@ class MachineService {
     if (!name.startsWith('wc-')) die('session name must begin wc-');
     if (this.sessions[name]) return this.sessions[name];
     const createdWorktree = !input.worktree;
-    const worktree = await this.createWorktree(input, name);
+    const created = await this.createWorktree(input, name);
+    const worktree = created.worktree;
     const session = { name, role: input.role, cli: input.cli, thread_id: input.thread_id, token: input.token,
       worktree, created_worktree: createdWorktree, attempt_id: input.attempt_id || null, started_by: input.started_by || null,
+      branch: created.branch || input.branch || null, default_branch: created.defaultBranch || input.default_branch || input.defaultBranch || null,
       cli_session_id: input.cli_session_id || crypto.randomUUID(), status: 'starting', created_at: new Date().toISOString() };
     const built = this.commandFor(input, session, worktree);
     if (built.settingsPath) await atomicWrite(built.settingsPath, `${json(built.settings)}\n`);
@@ -313,6 +342,13 @@ class MachineService {
       ...watched.filter(s => s.status === 'starting' || s.status === 'stuck').map(s => this.checkReady(s)),
       ...watched.filter(s => s.prompt_open && s.status === 'ready').map(s => this.checkPrompt(s)),
     ]);
+  }
+  async pollTrust() {
+    const now = Date.now();
+    await Promise.all(Object.values(this.sessions)
+      .filter(session => session.cli === 'claude' && session.status === 'starting'
+        && now - new Date(session.created_at).getTime() < 30_000)
+      .map(session => this.checkReady(session)));
   }
   // A permission prompt the service relayed is cleared once the pane shows the input screen again.
   async checkPrompt(session) {
@@ -418,7 +454,12 @@ class MachineService {
     let begin = changed ? 0 : (current?.offset || 0);
     const file = await fsp.open(source, 'r'); let text;
     try { const size = stat.size - begin; const buffer = Buffer.alloc(Math.max(size, 0)); await file.read(buffer, 0, buffer.length, begin); text = buffer.toString('utf8'); } finally { await file.close(); }
-    const lines = text.split('\n'); if (lines.at(-1) === '') lines.pop();
+    // A JSONL record isn't durable until its newline arrives.  Leave an unfinished
+    // tail for the next read instead of copying a fragment and advancing past it.
+    const newline = text.lastIndexOf('\n');
+    const complete = newline < 0 ? '' : text.slice(0, newline + 1);
+    const lines = complete ? complete.slice(0, -1).split('\n') : [];
+    const nextOffset = begin + Buffer.byteLength(complete);
     const target = path.join(this.stateDir, 'transcripts', session.thread_id, `${session.name}.jsonl`);
     let copied = '';
     try { copied = await fsp.readFile(target, 'utf8'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
@@ -426,9 +467,9 @@ class MachineService {
     const additions = lines.filter(line => { const hash = crypto.createHash('sha256').update(line).digest('hex'); if (hashes.has(hash)) return false; hashes.add(hash); return true; });
     if (additions.length) { await mkdir(path.dirname(target)); await fsp.appendFile(target, `${additions.join('\n')}\n`, { mode: 0o600 }); }
     session.transcript_path = target;
-    session.transcript_source = { path: source, offset: stat.size, ino: stat.ino };
+    session.transcript_source = { path: source, offset: nextOffset, ino: stat.ino };
     await this.persistSessions();
-    return { offset: stat.size, lines: additions };
+    return { offset: nextOffset, lines: additions };
   }
   async transcript(name, offset = 0) {
     let session;
@@ -445,7 +486,10 @@ class MachineService {
       const found = await this.claudeTranscript(session.cli_session_id);
       if (found) session.source_transcript = found;
     }
-    if (session.source_transcript) await this.copyTranscript(session, session.source_transcript);
+    if (session.source_transcript) {
+      try { await this.copyTranscript(session, session.source_transcript); }
+      catch (error) { if (error.code !== 'ENOENT') throw error; }
+    }
     const data = session.transcript_path ? await fsp.readFile(session.transcript_path, 'utf8').catch(() => '') : '';
     const byte = Buffer.byteLength(data);
     return { offset: byte, data: Buffer.from(data).subarray(Number(offset)).toString('utf8') };
@@ -453,28 +497,61 @@ class MachineService {
   async spool(kind, payload) {
     const dir = path.join(this.stateDir, 'spool', kind);
     await mkdir(dir);
-    const name = `${String(Date.now()).padStart(15, '0')}-${crypto.randomUUID()}.json`;
+    const deliveryId = payload.delivery_id || crypto.randomUUID();
+    const name = `${String(Date.now()).padStart(15, '0')}-${deliveryId}.json`;
     const file = path.join(dir, name);
-    await atomicWrite(file, `${json(payload)}\n`);
-    return file;
+    const stored = { ...payload, delivery_id: deliveryId };
+    await atomicWrite(file, `${json(stored)}\n`);
+    return { file, payload: stored };
+  }
+  deliveryId(file) {
+    const match = /-([0-9a-f-]{36})\.json$/i.exec(file);
+    return match ? match[1] : crypto.randomUUID();
+  }
+  async rejectSpool(kind, file, reason) {
+    const from = path.join(this.stateDir, 'spool', kind, file);
+    const toDir = path.join(this.stateDir, 'spool', 'rejected', kind);
+    await mkdir(toDir);
+    await fsp.rename(from, path.join(toDir, file));
+    this.log(`rejected ${kind} spool ${file}: ${reason}`);
   }
   async drainSpool(kind) {
+    if (this.drains.has(kind)) return this.drains.get(kind);
+    const running = this.drainSpoolNow(kind).finally(() => this.drains.delete(kind));
+    this.drains.set(kind, running);
+    return running;
+  }
+  async drainSpoolNow(kind) {
     if (!this.config.hub_url) return;
     const dir = path.join(this.stateDir, 'spool', kind);
     const files = (await fsp.readdir(dir).catch(() => [])).filter(f => f.endsWith('.json')).sort();
     for (const file of files) {
-      const payload = await readJson(path.join(dir, file), null); if (!payload) continue;
+      let payload = await readJson(path.join(dir, file), null); if (!payload) continue;
+      payload.delivery_id ||= this.deliveryId(file);
+      if (kind === 'events') {
+        try {
+          const prepared = await this.hook(payload.session, payload, { spooled: true });
+          if (prepared.ignored) { await this.rejectSpool(kind, file, 'event ignored by the live hook handler'); continue; }
+          payload = { ...prepared.event, delivery_id: payload.delivery_id };
+        } catch (error) { await this.rejectSpool(kind, file, error.message || String(error)); continue; }
+      }
       try {
         const response = await requestJson(`${this.config.hub_url.replace(/\/$/, '')}/api/machine/${kind}`, 'POST', { [HUB_HEADER]: await this.secret() }, payload);
-        if (response.status < 200 || response.status >= 300) break;
-        await fsp.unlink(path.join(dir, file));
+        if (response.status >= 200 && response.status < 300) { await fsp.unlink(path.join(dir, file)); continue; }
+        if (response.status >= 400 && response.status < 500) {
+          let reason = `hub refused (${response.status})`;
+          try { reason = JSON.parse(response.body || '{}').error || reason; } catch { /* keep status */ }
+          await this.rejectSpool(kind, file, reason);
+          continue;
+        }
+        break;
       } catch { break; }
     }
   }
-  async hook(session, event) {
+  async hook(session, event, { spooled = false } = {}) {
     const current = this.managed(session);
     if (event.transcript_path) { current.source_transcript = event.transcript_path; await this.copyTranscript(current, event.transcript_path); }
-    if (current.cli === 'codex' && !current.codex_thread_id) {
+    if (current.cli === 'codex' && event.type === 'turn-ended' && !current.codex_thread_id) {
       const first = event['input-messages']?.[0] || event.input_messages?.[0] || '';
       const threadId = event['thread-id'] || event.thread_id;
       if (!first.startsWith('[wc:role]') || !threadId || !await this.codexRollout(threadId)) return { ignored: true };
@@ -482,8 +559,11 @@ class MachineService {
     }
     if (current.cli === 'codex' && event['thread-id'] && current.codex_thread_id !== event['thread-id']) return { ignored: true };
     if (event.type === 'prompt' && event.notification_type !== 'permission_prompt') return { ignored: true };
-    await this.emitEvent({ ...event, session, thread_id: current.thread_id });
+    const { session: ignoredSession, thread_id: ignoredThread, delivery_id: ignoredDelivery, ...rest } = event;
+    const forwarded = { ...rest, session, thread_id: current.thread_id };
     if (event.type === 'prompt') { current.prompt_open = true; await this.persistSessions(); }
+    if (spooled) return { ok: true, event: forwarded };
+    await this.emitEvent(forwarded);
     return { ok: true };
   }
   async claudeTranscript(cliSessionId) {
@@ -564,7 +644,7 @@ class MachineService {
   status() {
     const live = this.liveTmux();
     const others = [...live].filter(name => !this.sessions[name]).map(name => ({ name, managed: false, running: true }));
-    return { version: command('git', ['-C', ROOT, 'rev-parse', 'HEAD']).stdout.trim(),
+    return { version: this.version,
       claude: this.cliStatus('claude'), codex: this.cliStatus('codex'), sessions: [...Object.values(this.sessions).map(s => ({ ...s, managed: true, running: live.has(s.name) })), ...others] };
   }
   cliStatus(cli) {
@@ -597,7 +677,26 @@ class MachineService {
         if (request.method === 'POST' && pathBits[3] === 'submit') { const input = await bodyOf(request); await this.submit(name, String(input.text || '')); return send(response, 200, { ok: true }); }
         if (request.method === 'POST' && pathBits[3] === 'keys') { const input = await bodyOf(request); this.raw(name, String(input.keys || '')); return send(response, 200, { ok: true }); }
       }
-      if (request.method === 'POST' && url.pathname === '/v1/agent/cards') { const agent = await this.authorize(request, 'agent'); await this.spool('cards', { ...(await bodyOf(request)), session: agent.name, thread_id: agent.thread_id }); await this.drainSpool('cards'); return send(response, 202, { ok: true }); }
+      if (request.method === 'POST' && url.pathname === '/v1/agent/cards') {
+        const agent = await this.authorize(request, 'agent');
+        // Cards keep their order: anything still spooled from a hub outage goes first.
+        const waiting = (await fsp.readdir(path.join(this.stateDir, 'spool', 'cards')).catch(() => [])).filter(f => f.endsWith('.json'));
+        if (waiting.length && this.config.hub_url) await this.drainSpool('cards');
+        const behind = (await fsp.readdir(path.join(this.stateDir, 'spool', 'cards')).catch(() => [])).some(f => f.endsWith('.json'));
+        if (behind) { await this.spool('cards', { ...(await bodyOf(request)), session: agent.name, thread_id: agent.thread_id }); return send(response, 202, { ok: true, spooled: true }); }
+        const queued = await this.spool('cards', { ...(await bodyOf(request)), session: agent.name, thread_id: agent.thread_id });
+        if (!this.config.hub_url) return send(response, 202, { ok: true, spooled: true });
+        try {
+          const relay = await requestJson(`${this.config.hub_url.replace(/\/$/, '')}/api/machine/cards`, 'POST', { [HUB_HEADER]: await this.secret() }, queued.payload);
+          let body; try { body = JSON.parse(relay.body || '{}'); } catch { body = { error: relay.body || 'hub returned invalid JSON' }; }
+          if (relay.status >= 200 && relay.status < 300) { await fsp.unlink(queued.file); return send(response, relay.status, body); }
+          if ([502, 503, 504].includes(relay.status)) return send(response, 202, { ok: true, spooled: true });
+          if (relay.status >= 400 && relay.status < 500) await this.rejectSpool('cards', path.basename(queued.file), body.error || `hub refused (${relay.status})`);
+          return send(response, relay.status, body);
+        } catch {
+          return send(response, 202, { ok: true, spooled: true });
+        }
+      }
       if (request.method === 'POST' && url.pathname === '/v1/agent/hooks') { const agent = await this.authorize(request, 'agent'); const input = await bodyOf(request); return send(response, 202, await this.hook(agent.name, input)); }
       if (request.method === 'POST' && url.pathname === '/v1/agent/git') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.git(agent, await bodyOf(request))); }
       if (request.method === 'POST' && url.pathname === '/v1/agent/session') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.forwardSession(agent, await bodyOf(request))); }
@@ -611,7 +710,7 @@ class MachineService {
     // Spec "Machine service on the hub": spools are retried until the hub acknowledges them.
     this.spoolTimer = setInterval(() => { for (const kind of ['events', 'cards']) this.drainSpool(kind).catch(error => this.log(error)); }, this.spoolInterval);
     this.spoolTimer.unref();
-    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.pollTimer); });
+    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.pollTimer); clearInterval(this.trustTimer); });
     process.stdout.write(`machine service listening on ${this.config.host}:${this.config.port}\n`);
     await this.drainSpool('events'); await this.drainSpool('cards');
   }
