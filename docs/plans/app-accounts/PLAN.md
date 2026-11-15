@@ -41,8 +41,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D12 | "Notify below 25%" is shown in the app (an amber line on the Usage bar and a dot on Settings in the nav), not a phone push: the app has no push path today (no notification code in `viewer/app/`) | Push notifications are their own feature | defaulted |
 | D13 | Several Claude and ChatGPT accounts are allowed; adding a second Claude account shows a one-line warning about Anthropic's consumer terms before it saves | Collin's accounts, Collin's risk; the warning keeps it visible | user |
 | D14 | A start with no provider that has room is held by the hub as a `waiting` session and started when room appears; a running session that hits its limit is never moved: the hub marks its account full until the reset and queues "Continue." to it once the reset passes | Agents have no timer; Collin's "we'll just wait" (D6) needs something to do the waiting | defaulted |
-| D16 | Supersedes D3's "not the same provider as X": worker, reviewer and verifier starts may pass `--provider <p>` or `--not-provider <p>`; lead, sub-lead and mapper may not. Keeps today's routing (UI work to Claude, sub-lead.md:66-69; intent reviewer on Claude, lead.md:173; verifier opposite the builders, sub-lead.md:144-145) under the balancer | Round 1 found `--not-same-as` put both reviewers on GPT and couldn't express "opposite all builders"; dropping `--cli` would silently remove the UI-to-Claude rule | review-round-1 |
 | D15 | Workers and other agents follow a worker order set in Settings, default GPT then Claude; Save Claude for leads defaults on | The proposal's order with the two providers in scope; editable like the lead order | defaulted |
+| D16 | Supersedes D3's "not the same provider as X": worker, reviewer and verifier starts may pass `--provider <p>` or `--not-provider <p>`; lead, sub-lead and mapper may not. Keeps today's routing (UI work to Claude, sub-lead.md:66-69; intent reviewer on Claude, lead.md:173; verifier opposite the builders, sub-lead.md:144-145) under the balancer | Round 1 found `--not-same-as` put both reviewers on GPT and couldn't express "opposite all builders"; dropping `--cli` would silently remove the UI-to-Claude rule | review-round-1 |
 
 ## Spec
 
@@ -177,10 +177,12 @@ Codex.
   `hookEvent` maps a payload with `error === 'rate_limit'` (also accept `error_type`, for
   older builds) to `limit-hit`, with `limited_until` by the exhausted-window rule. Any other
   `StopFailure` maps to `turn-ended`.
-- **Exhausted-window rule** (both CLIs), from the session's latest reading: among windows
-  with `used >= 100`, the **latest** `resets_at` (both exhausted → the week's). No window at
-  100 → the latest `resets_at` present. No `resets_at` at all → now + 1 h, recomputed on
-  the next reading.
+- **Exhausted-window rule** (both CLIs), from the session's latest reading: the
+  **earliest** `resets_at` among windows with `used >= 95`; none that high → the earliest
+  `resets_at` present; none at all → now + 1 h. Readings lag (Claude's at most once a
+  minute), so this may release a session whose other window is still full: it then hits
+  the limit again, a fresh reading arrives, and the rule picks the next reset. One failed
+  retry is cheaper than holding an account until the weekly refill after a 5-hour limit.
 - The service forwards readings to the hub (`POST` to the hub like turn events). The hub
   keeps the latest reading per account in `usage.json` in its state dir (one writer queue,
   as `State.updateSettings`, `state.js:176-194`).
@@ -233,11 +235,14 @@ No reading → room.
   ignore the margin.
 - **Constraints** from `wc.js` (D16), accepted only for worker, reviewer and verifier
   starts (400 for lead, sub-lead, mapper):
-  - `--provider <claude|gpt>`: only that provider. Counts as "a rule asks for Claude", so
-    Save Claude for leads does not skip it. If that provider has no room → wait. If it is
-    Claude and Claude is below the margin, or the provider has no logged-in account on the
-    machine at all → the hub ignores the constraint, picks normally, and says so in the
-    start response's `note`.
+  - `--provider <claude|gpt>`: counts as "a rule asks for Claude", so Save Claude for leads
+    does not skip it.
+    - **Worker**: strict. No room, or no logged-in account on the machine → wait (today's
+      "a family that is not logged in holds back only its own tasks"). The one exception:
+      Claude below the margin → the hub ignores the constraint, picks normally, and says so
+      in the start response's `note`.
+    - **Reviewer, verifier**: a preference. If the provider has no room, is below the margin,
+      or has no logged-in account → picked normally, with a `note`.
   - `--not-provider <claude|gpt>`: never that provider. If it leaves no provider with a
     logged-in account on the machine → ignored, with a `note` (today's "one family: use it
     for both").
@@ -334,18 +339,20 @@ Added to `viewer/app/routes.js` and documented in `viewer/app/API.md`:
 ### 9. Protocol text
 - `protocol/app/lead.md` (start command at `:47`, reviewers and verifier at `:73-76`, review
   at `:171-173`): the start command loses `--cli`. Plan reviewers: the intent-lens reviewer
-  with `--provider claude`, the mechanics-lens reviewer with `--not-provider claude`, so the
-  two land on two providers whenever both have room. A small-fix verifier, and an after-done
+  with `--provider claude` (a preference: it moves to GPT rather than wait), the
+  mechanics-lens reviewer with `--not-provider <the provider the intent reviewer got>` (from
+  the first start's output), so the two land on two providers whenever both have room. A small-fix verifier, and an after-done
   fix verifier: `--not-provider <provider the lead runs on>` (from `session list`). The
   sentences about `command -v` and "with one family installed, use it for both" are replaced
   by: the hub drops a constraint it cannot meet and says so in the start output's note.
 - `protocol/app/sub-lead.md`: the start command (`:73`) loses `--cli`. "Which family"
   (`:66-69`) becomes: interface, frontend and other taste-sensitive work is started with
-  `--provider claude`; the hub holds it until Claude has room, or sends it elsewhere only
-  when Claude is below its margin. Other work passes no provider flag. Verifier (`:144-145`):
+  `--provider claude`; the hub holds it until Claude has room (including while Claude is
+  signed out on that machine), and sends it elsewhere only when Claude is below its margin. Other work passes no provider flag. Verifier (`:144-145`):
   if every builder ran on one provider, one verifier with `--not-provider <that provider>`;
   if both providers built, one verifier per provider with `--provider claude` and
-  `--provider gpt`.
+  `--provider gpt`; if the first start's output has a `note` saying its provider was not
+  honoured, start no second verifier.
 - `protocol/app/cards.md`: no change.
 
 ### Edge cases
@@ -370,7 +377,10 @@ Added to `viewer/app/routes.js` and documented in `viewer/app/API.md`:
 - `node --test viewer/test/*.test.js` — add a table-driven balancer test: soonest / spread /
   one; leave share; paused and signed-out accounts; Save Claude for leads; margin skips
   workers but not leads; lead order with `any`; restart pinned to `thread.provider`; waiting
-  and resuming on a new reading; `--not-same-as` and its one-provider fallback; forecast and
+  and resuming on a new reading; `--provider` strict for workers (wait) and preferred for
+  reviewers and verifiers (fallback with `note`); `--not-provider` and its one-provider
+  fallback; 400 for either flag on lead, sub-lead or mapper and for both together;
+  exhausted-window rule including a 5-hour limit with a stale reading; forecast and
   amber; settings normalize keeps one default per provider and drops nothing new; routes'
   validation.
 - `npm --prefix viewer run test:browser` — add: Accounts panel renders accounts and the sign-in
@@ -423,6 +433,12 @@ Added to `viewer/app/routes.js` and documented in `viewer/app/API.md`:
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent (Claude) | major | Exhausted-window fallback to the latest reset holds an account until the weekly refill after a 5-hour limit | upheld | §4: earliest reset at ≥95%, accept one failed retry |
+| intent (Claude) | minor | §9 UI text vs §5 rerouting when Claude signed out | upheld | Worker `--provider` strict incl. signed out; §9 matches |
+| intent (Claude) | minor | Intent reviewer `--provider claude` waits while GPT has room | upheld | `--provider` is a preference for reviewers and verifiers |
+| intent (Claude) | minor | Both-built verifier pair under margin gives two GPT verifiers | upheld | §9: no second verifier when the first's provider wasn't honoured |
+| intent (Claude) | minor | Validation still names `--not-same-as` | upheld | Validation updated |
+| intent (Claude) | minor | D16 sits above D15 | upheld | Row moved below D15, content unchanged |
 
 ## Prior Work
 
