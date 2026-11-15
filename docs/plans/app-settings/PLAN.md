@@ -371,6 +371,21 @@ table built here.
 | Codex mechanics | major | Preview allows 60 s but the hub's machine client aborts after 5 s | upheld | Confirmed `viewer/app/machine-client.js:28,42`; Spec adds a per-request timeout of 75 s for the preview only |
 | Codex mechanics | major | Live leads have no `style_version`, and `undefined < n` is false, so they never get the style | upheld | Spec: missing counts as owing; version starts at 0 = defaults; new leads always get the style (defaults until saved) |
 
+### Round 2 — 2026-11-15
+
+**Lanes:** Codex / Heavy (gpt-6.1-sol), mechanics; Claude / CLI default, intent; cross-family: yes.
+
+**Changed since Round 1:**
+- Terminal Claude lanes read the models file (`model.sh claude <tier>`, `model.sh family claude <tier>`); lanes.md Claude section changes ("Tier names").
+- Claude picker: "Latest Haiku/Sonnet/Opus/Fable" aliases; both pickers gain "Other…" free entry; heads-up is GPT only (IDEA narrowed, decision 18).
+- IDEA: Critical means startable; heads-up GPT only.
+- Writing style "Covers" line omits phone notifications.
+- Preview runs `claude -p --permission-mode dontAsk`; preview request gets a 75 s machine-client timeout.
+- style_version starts at 0 (defaults); a missing value counts as owing; new leads always get the style.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
