@@ -338,3 +338,4 @@ refusal. The `POST /threads` body is unchanged.
 - 2026-11-15 — Choice: R1, app-new-thread.spec.js: `page.route` fulfils `/new-thread` for both machines (the helpers register one machine).
 - 2026-11-15 — Choice: R1, routes.js: the `.`/`..` name check runs after trimming.
 
+- 2026-11-15 — R1e accepted (worker-7, 3803075); choices: removeSaved drops a stale click silently; the new test seeds one saved entry per machine and checks the count after the answer lands. Full validation re-run; COMPLETION.md Remediation 1 added; verification attempt 2 started.
