@@ -27,6 +27,7 @@ case "$(basename \"$0\"):$1" in
   tmux:load-buffer) cat >> "$FAKE_LOG" ;;
   systemd-run:*) exit 1 ;;
   git:*) if [[ " $* " == *" rev-parse "* ]]; then echo "\${FAKE_GIT_VERSION:-deadbeef}"; fi ;;
+  claude:-p) cat > "$FAKE_LOG.stdin"; echo "lane=\${WHEELCHAIR_LANE:-}" >> "$FAKE_LOG"; [ -z "\${FAKE_PREVIEW_SLEEP:-}" ] || sleep "$FAKE_PREVIEW_SLEEP"; [ -z "\${FAKE_PREVIEW_ERR:-}" ] || printf '%s\\n' "$FAKE_PREVIEW_ERR" >&2; [ -z "\${FAKE_PREVIEW_OUT:-}" ] || printf '%s\\n' "$FAKE_PREVIEW_OUT"; exit "\${FAKE_PREVIEW_EXIT:-0}" ;;
   claude:--version) echo claude-test ;;
   claude:auth) printf '%s\\n' "\${FAKE_CLAUDE_AUTH:-{\\"loggedIn\\":true}}" ;;
   codex:--version) echo codex-test ;;
@@ -524,4 +525,144 @@ test('Claude login comes from claude auth status', async () => {
     process.env.FAKE_CLAUDE_AUTH = 'not json';
     assert.equal(env.instance.cliStatus('claude').logged_in, false);
   } finally { if (prior === undefined) delete process.env.FAKE_CLAUDE_AUTH; else process.env.FAKE_CLAUDE_AUTH = prior; await env.close(); }
+});
+
+const readyBypass = '⏵⏵ bypass permissions on (shift+tab to cycle)\n❯ Try anything\n';
+const bypassWarning = 'WARNING: Claude Code running in Bypass Permissions mode\n❯ 1. No, exit\n  2. Yes, I accept\n';
+const argvOf = (env, name = 'wc-t-lead') => env.instance.sessions[name].command;
+const flagValue = (argv, flag) => argv[argv.indexOf(flag) + 1];
+
+test('permission_mode: auto by default and when named, bypass maps to bypassPermissions, anything else is refused', async () => {
+  const env = await service(await temp()); try {
+    await start(env, { thread_id: 'a', token: 'a' });
+    assert.equal(flagValue(argvOf(env, 'wc-a-lead'), '--permission-mode'), 'auto');
+    assert.equal(env.instance.sessions['wc-a-lead'].permission_mode, 'auto');
+    await start(env, { thread_id: 'b', token: 'b', permission_mode: 'auto' });
+    assert.equal(flagValue(argvOf(env, 'wc-b-lead'), '--permission-mode'), 'auto');
+    env.fake.pane && await fs.writeFile(env.fake.pane, readyBypass);
+    await start(env, { thread_id: 'c', token: 'c', permission_mode: 'bypass' });
+    assert.equal(flagValue(argvOf(env, 'wc-c-lead'), '--permission-mode'), 'bypassPermissions');
+    assert.equal(env.instance.sessions['wc-c-lead'].permission_mode, 'bypass');
+    const settings = JSON.parse(await fs.readFile(path.join(env.state, 'settings', 'wc-c-lead.json'), 'utf8'));
+    assert.equal(settings.skipDangerousModePermissionPrompt, true);
+    const autoSettings = JSON.parse(await fs.readFile(path.join(env.state, 'settings', 'wc-a-lead.json'), 'utf8'));
+    assert.equal(autoSettings.skipDangerousModePermissionPrompt, undefined);
+    for (const bad of ['bypassPermissions', 'yolo', 5, '']) {
+      const result = await api(env, 'POST', '/v1/sessions', { role: 'lead', cli: 'claude', thread_id: 'd', token: 'd', worktree: env.state, permission_mode: bad }, hubHeader);
+      assert.equal(result.status, 400, String(bad)); assert.match(result.body.error, /permission_mode/);
+    }
+    assert.equal(env.instance.sessions['wc-d-lead'], undefined);
+  } finally { await env.close(); }
+});
+test('permission_mode does not change Codex', async () => {
+  const env = await service(await temp(), { pane: readyCodex }); try {
+    await start(env, { cli: 'codex', role: 'worker', token: 'beta', permission_mode: 'bypass', effort: 'max' });
+    const argv = argvOf(env, 'wc-t-worker');
+    assert.deepEqual(argv.slice(0, 6), ['codex', '-s', 'workspace-write', '-a', 'never', '-c']);
+    assert.ok(!argv.some(a => /bypass|--effort|--permission-mode/.test(a)));
+  } finally { await env.close(); }
+});
+test('a bypass session is ready on the bypass status line, not on the auto one, and an auto session the reverse', async () => {
+  const env = await service(await temp(), { pane: readyBypass }); try {
+    const bypass = await start(env, { thread_id: 'x', token: 'x', permission_mode: 'bypass' });
+    assert.equal(bypass.status, 'ready');
+    const auto = await start(env, { thread_id: 'y', token: 'y' });
+    assert.equal(auto.status, 'starting');
+    await fs.writeFile(env.fake.pane, readyClaude);
+    const other = await start(env, { thread_id: 'z', token: 'z', permission_mode: 'bypass' });
+    assert.equal(other.status, 'starting');
+  } finally { await env.close(); }
+});
+test('a Bypass Permissions confirmation is answered Down then Enter, and the session is not ready until it clears', async () => {
+  const env = await service(await temp(), { pane: bypassWarning }); try {
+    const session = await start(env, { permission_mode: 'bypass' });
+    assert.equal(session.status, 'starting');
+    const calls = await log(env);
+    assert.match(calls, /send-keys -t wc-t-lead Down\nbash|send-keys -t wc-t-lead Down/);
+    assert.match(calls, /send-keys -t wc-t-lead Enter/);
+    await fs.writeFile(env.fake.pane, readyBypass);
+    assert.equal(await env.instance.checkReady(env.instance.sessions['wc-t-lead']), true);
+  } finally { await env.close(); }
+});
+test('effort adds --effort for Claude, is refused when unknown, and is ignored for Codex', async () => {
+  const env = await service(await temp()); try {
+    for (const effort of ['low', 'medium', 'high', 'xhigh', 'max']) {
+      await start(env, { thread_id: `e${effort}`, token: effort, effort });
+      assert.equal(flagValue(argvOf(env, `wc-e${effort}-lead`), '--effort'), effort);
+    }
+    await start(env, { thread_id: 'none', token: 'none' });
+    assert.ok(!argvOf(env, 'wc-none-lead').includes('--effort'));
+    const bad = await api(env, 'POST', '/v1/sessions', { role: 'lead', cli: 'claude', thread_id: 'bad', token: 'bad', worktree: env.state, effort: 'ultra' }, hubHeader);
+    assert.equal(bad.status, 400); assert.match(bad.body.error, /effort/);
+  } finally { await env.close(); }
+});
+test('role_layers follow the local pointer for Claude; the pointer carries the new sentence with or without layers', async () => {
+  const env = await service(await temp()); try {
+    await start(env, { thread_id: 'p', token: 'p' });
+    const pointer = (role) => `Read ${path.resolve(__dirname, '..', '..', 'protocol', 'app', `${role}.md`)} before responding. It is wheelchair's built-in rules for your role.`;
+    assert.equal(flagValue(argvOf(env, 'wc-p-lead'), '--append-system-prompt'), pointer('lead'));
+    await start(env, { thread_id: 'q', token: 'q', role_layers: 'Nothing below overrides the built-in rules above.\n\nBe brief.' });
+    assert.equal(flagValue(argvOf(env, 'wc-q-lead'), '--append-system-prompt'), `${pointer('lead')}\n\nNothing below overrides the built-in rules above.\n\nBe brief.`);
+    await start(env, { thread_id: 'r', token: 'r', role_layers: '' });
+    assert.equal(flagValue(argvOf(env, 'wc-r-lead'), '--append-system-prompt'), pointer('lead'));
+    const bad = await api(env, 'POST', '/v1/sessions', { role: 'lead', cli: 'claude', thread_id: 's', token: 's', worktree: env.state, role_layers: 5 }, hubHeader);
+    assert.equal(bad.status, 400);
+  } finally { await env.close(); }
+});
+test('role_layers follow the local pointer in the Codex [wc:role] message', async () => {
+  const env = await service(await temp(), { pane: readyCodex }); try {
+    await start(env, { cli: 'codex', role: 'worker', token: 'beta', role_layers: 'Your template says: save every step.', brief: 'build it' });
+    const calls = await log(env);
+    assert.match(calls, /\[wc:role\] Read \S+protocol\/app\/worker\.md before responding\. It is wheelchair's built-in rules for your role\.\n\nYour template says: save every step\.\n\nbuild it/);
+  } finally { await env.close(); }
+});
+test('role_prompt wins over role_layers for both CLIs', async () => {
+  const env = await service(await temp()); try {
+    await start(env, { thread_id: 'w', token: 'w', role_prompt: 'custom prompt', role_layers: 'ignored layers' });
+    assert.equal(flagValue(argvOf(env, 'wc-w-lead'), '--append-system-prompt'), 'custom prompt');
+  } finally { await env.close(); }
+  const codex = await service(await temp(), { pane: readyCodex }); try {
+    await start(codex, { cli: 'codex', role: 'worker', token: 'beta', role_prompt: 'custom prompt', role_layers: 'ignored layers', brief: 'go' });
+    const calls = await log(codex);
+    assert.match(calls, /\[wc:role\] custom prompt\n\ngo/); assert.doesNotMatch(calls, /ignored layers/);
+  } finally { await codex.close(); }
+});
+
+async function withEnv(values, body) {
+  const prior = {}; for (const key of Object.keys(values)) { prior[key] = process.env[key]; process.env[key] = values[key]; }
+  try { return await body(); } finally { for (const key of Object.keys(values)) { if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key]; } }
+}
+test('/v1/preview runs claude -p with the prompt on stdin and returns trimmed stdout', async () => {
+  const env = await service(await temp()); try {
+    const result = await withEnv({ FAKE_PREVIEW_OUT: '  rewritten sample  ' }, () => api(env, 'POST', '/v1/preview', { prompt: 'rewrite this', model: 'claude-haiku-5-5' }, hubHeader));
+    assert.equal(result.status, 200); assert.deepEqual(result.body, { text: 'rewritten sample' });
+    const calls = await log(env);
+    assert.match(calls, /claude -p --model claude-haiku-5-5 --permission-mode dontAsk/);
+    assert.match(calls, /lane=1/);
+    assert.equal(await fs.readFile(`${env.fake.log}.stdin`, 'utf8'), 'rewrite this');
+  } finally { await env.close(); }
+});
+test('/v1/preview refuses a bad request, a session token, and reports a non-zero exit with the last stderr line', async () => {
+  const env = await service(await temp()); try {
+    assert.equal((await api(env, 'POST', '/v1/preview', { prompt: 'x', model: 'm' }, { 'x-wheelchair-session-token': 'alpha' })).status, 401);
+    assert.equal((await api(env, 'POST', '/v1/preview', { prompt: 'x' }, hubHeader)).status, 400);
+    assert.equal((await api(env, 'POST', '/v1/preview', { prompt: 'x', model: '--bad flag' }, hubHeader)).status, 400);
+    assert.equal((await api(env, 'POST', '/v1/preview', { prompt: '  ', model: 'm' }, hubHeader)).status, 400);
+    let result = await withEnv({ FAKE_PREVIEW_EXIT: '3', FAKE_PREVIEW_ERR: 'first\nNot logged in' }, () => api(env, 'POST', '/v1/preview', { prompt: 'x', model: 'm' }, hubHeader));
+    assert.equal(result.status, 502); assert.deepEqual(result.body, { error: 'Not logged in' });
+    result = await withEnv({ FAKE_PREVIEW_EXIT: '4' }, () => api(env, 'POST', '/v1/preview', { prompt: 'x', model: 'm' }, hubHeader));
+    assert.equal(result.status, 502); assert.deepEqual(result.body, { error: 'claude exited 4' });
+  } finally { await env.close(); }
+});
+test('/v1/preview times out with 504 without blocking the service, and reports claude not installed with 503', async () => {
+  const env = await service(await temp()); try {
+    env.instance.previewTimeoutMs = 300;
+    const slow = withEnv({ FAKE_PREVIEW_SLEEP: '5' }, () => api(env, 'POST', '/v1/preview', { prompt: 'x', model: 'm' }, hubHeader));
+    await new Promise(resolve => setTimeout(resolve, 100));
+    assert.equal((await api(env, 'GET', '/health')).status, 200); // the loop is free while the preview waits
+    const result = await slow;
+    assert.equal(result.status, 504); assert.deepEqual(result.body, { error: 'preview timed out after 60 s' });
+    const missing = await withEnv({ PATH: '/nonexistent-wheelchair-test' }, () => api(env, 'POST', '/v1/preview', { prompt: 'x', model: 'm' }, hubHeader));
+    assert.equal(missing.status, 503); assert.deepEqual(missing.body, { error: 'claude is not installed' });
+  } finally { await env.close(); }
 });
