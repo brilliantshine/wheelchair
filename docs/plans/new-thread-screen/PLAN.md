@@ -339,3 +339,4 @@ refusal. The `POST /threads` body is unchanged.
 - 2026-11-15 — Choice: R1, routes.js: the `.`/`..` name check runs after trimming.
 
 - 2026-11-15 — R1e accepted (worker-7, 3803075); choices: removeSaved drops a stale click silently; the new test seeds one saved entry per machine and checks the count after the answer lands. Full validation re-run; COMPLETION.md Remediation 1 added; verification attempt 2 started.
+- 2026-11-15 — Verification attempt 2 (Codex gpt-6.1-sol, ccbc8b3): FAIL, one gap: Save's refresh bypasses load()'s guard (second fix attempt on machine-scoped selection). REMEDIATION-2.md written; R2 dispatched to Claude standard.
