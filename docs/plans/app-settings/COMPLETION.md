@@ -213,3 +213,26 @@ $ node --test viewer/test/*.test.js      # tests 262  # pass 261  # fail 1
 $ npm --prefix viewer run test:browser   428 passed, 2 skipped, 2 failed
   [chromium|firefox] no drawn arrow's line passes through either box …                (fails on main)
 ```
+
+### Remediation 3 — 2026-11-15
+
+Verification attempt 3 (commit `f833864`): Claude verifier PASS, Codex verifier FAIL with one
+new gap, upheld: the fourth nav link pushed New thread off a 390px screen. The gap and the
+task are in `REMEDIATION-3.md`.
+
+| Gap | Fix | Lane | Validated by |
+|-----|-----|------|--------------|
+| On a 390px phone, adding Settings pushed New thread outside the viewport | `viewer/pages/nav.js:45-60` (Settings link holds a gear icon and a label, `aria-label` kept); `viewer/pages/app.css:176-179` (at 480px and narrower: label hidden, gear shown, gap and padding tightened) | Claude / Standard (sonnet) | `viewer/test/app-settings.spec.js` phone tests: every `#app-nav` child within the viewport at 390px and 360px on the threads and settings pages, no horizontal scroll, accessible name "Settings" at 390px, visible "Settings" at 1280px |
+
+Validation after remediation, on the integrated branch (`~/.wheelchair/models` checksum
+`cdb9373d…` unchanged):
+
+```
+$ bash codex/test/run.sh                 RESULT 72 passed, 0 failed
+$ bash machine/test/run.sh               # fail 0
+$ bash install/test/run.sh               RESULT 90 passed, 0 failed
+$ node --test viewer/test/*.test.js      # tests 262  # pass 261  # fail 1
+  not ok 156 - a starter that loses the freed port registers through the new holder   (fails without this work)
+$ npm --prefix viewer run test:browser   438 passed, 2 skipped, 2 failed
+  [chromium|firefox] no drawn arrow's line passes through either box …                (fails on main)
+```
