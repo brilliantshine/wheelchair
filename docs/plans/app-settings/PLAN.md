@@ -510,7 +510,7 @@ table built here.
 | T2 | Machine service: `permission_mode` + bypass readiness, `effort`, `role_layers` after the local pointer, `/v1/preview` | `machine/` | Claude / Sonnet | wc-983d91c069d3-worker-2 | `bash machine/test/run.sh` | done |
 | T3 | Hub: per-role `resolveModel`, settings store and routes, template/style composition and cap, style trailer, chat stripping, machine-client timeout, `API.md` | `viewer/app/`, `viewer/test/*.test.js` | Codex / Terra (gpt-5.6-terra) | wc-983d91c069d3-worker-5 | `node --test viewer/test/*.test.js` | done (defects → T3b) |
 | T3b | Serialize settings read-modify-write; Claude-only `haiku/sonnet/opus` aliases; missing hub tests (cap, 75 s preview timeout, `scope_missing`, trailer once incl. Codex lead) | `viewer/app/settings.js`, `routes.js`, `state.js`, `sessions.js`, `viewer/test/*.test.js` | Codex / Standard (gpt-5.6-terra) | wc-983d91c069d3-worker-6 | `node --test viewer/test/*.test.js` | done |
-| T4 | Settings page (three sections), nav link, `APP_PAGES`, browser tests | `viewer/pages/settings.*`, `viewer/pages/nav.js`, `viewer/server.js` (APP_PAGES), `viewer/test/*settings*.spec.js` | Claude / Sonnet | wc-983d91c069d3-worker-7 | `npm --prefix viewer run test:browser` | dispatched |
+| T4 | Settings page (three sections), nav link, `APP_PAGES`, browser tests | `viewer/pages/settings.*`, `viewer/pages/nav.js`, `viewer/server.js` (APP_PAGES), `viewer/test/*settings*.spec.js` | Claude / Sonnet | wc-983d91c069d3-worker-7 | `npm --prefix viewer run test:browser` | done |
 | T5 | Protocol: tier rename and rule edits | `protocol/` (ten files named in its brief) | Claude / Sonnet | wc-983d91c069d3-worker-3 | rename grep over `protocol/` | done |
 
 ## Log
@@ -544,3 +544,20 @@ table built here.
 - 2026-11-15 — Sub-lead: T3 review found settings saves not serialized (load outside `State.queued`, so two quick saves from the page can lose one), `haiku/sonnet/opus` accepted for Codex too, and untested cap, 75 s preview timeout and `scope_missing`; merged to unblock T4, fixes in T3b.
 - 2026-11-15 — Choice: T3b, `viewer/test/app-settings.test.js`: the 12000-character cap cannot be reached through valid fields (one 4000-character template plus a 2000-character style per role), so the template-cap test goes through the store's update seam and the style-route test uses a stored oversized legacy template.
 - 2026-11-15 — Sub-lead: T3b accepted; 259/261 with only the two known environment failures; models checksum unchanged.
+- 2026-11-15 — Choice: T4, `settings.js` tier table and lead pickers: changing a model keeps the cell's existing effort; lead pickers have no effort picker, so a lead's saved effort is preserved.
+- 2026-11-15 — Choice: T4, `settings.js` Other agents: plain tier pickers; "Two providers when both are installed" and "Not the provider that built it" sit under the row names.
+- 2026-11-15 — Choice: T4, `settings.js` Code mapping line reads "Maps how the existing code works before planning" (the design's "Same order as workers" belongs to a non-goal).
+- 2026-11-15 — Choice: T4, `settings.js` Models section: a one-line hint under the table explains "Not used" and "CLI default", replacing the non-goal "Providers covering it" note; the lede drops "rules for a kind of work".
+- 2026-11-15 — Choice: T4, `settings.js` heads-up: newer/available items sit in the GPT cell for their tier; tierless and malformed lines above the table.
+- 2026-11-15 — Choice: T4, `settings.js` template switches: checked saves true, unchecked is omitted (never false); packages and unsettled always show a value, starting at "Ask the lead first" / "Ask the lead".
+- 2026-11-15 — Choice: T4, `settings.js` template list: one group per role (Checker and Mapper separate, unlike the design's combined group); empty groups hidden; a project template in use shows "in use here".
+- 2026-11-15 — Choice: T4, `settings.js` templates: added a "Mark in use" / "Stop using" footer button (the design has no control); it sends only `in_use`.
+- 2026-11-15 — Choice: T4, `settings.js` Duplicate saves "<name> copy" at once from the editor's contents and opens it.
+- 2026-11-15 — Choice: T4, `settings.js` Delete is a two-step inline "Delete" then "Really delete".
+- 2026-11-15 — Choice: T4, `settings.js` layer stack: non-worker layer 1 keeps "can't be turned off"; layer 3 reads "The brief / What it is asked to do each time it starts".
+- 2026-11-15 — Choice: T4, `settings.js` See it in full shows the saved composition, not unsaved edits.
+- 2026-11-15 — Choice: T4, `settings.js` project labels: folder name plus "only", or the full path when two share a folder name.
+- 2026-11-15 — Choice: T4, `settings.js` Writing style: the design's "Rewritten live …" line became "Preview rewrites the message under the style above, saved or not. It saves nothing."; a never-say phrase typed but not yet added is included on Save and Preview.
+- 2026-11-15 — Choice: T4, `settings.js` save notes: templates "Saved. Changes apply to agents started after you save."; style "Saved" beside "Leads pick it up on their next message.".
+- 2026-11-15 — Choice: T4, `settings.css` phone width: section tabs wrap labels instead of scrolling; the tier table becomes stacked cards.
+- 2026-11-15 — Sub-lead: T4 accepted. Browser suite 428 passed, 2 failed: both are "no drawn arrow's line passes through either box …", which fails identically on main (`fb9e244`), so it predates this feature.
