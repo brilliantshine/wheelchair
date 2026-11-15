@@ -79,6 +79,7 @@
       [base(t.project), t.cli, t.machine, t.branch].filter(Boolean).join(' · ')));
     const line = el('div', 'line');
     if (t.stub) line.appendChild(el('span', 'badge', 'stub'));
+    if (t.pr_url) line.appendChild(prLink(t.pr_url, 'btn'));
     if (t.archived) line.appendChild(el('span', 'badge', 'archived'));
     const s = slug();
     if (s && (planDir() || t.archived)) {
@@ -127,6 +128,13 @@
   }
 
   // ---- stub opening, dead lead ----
+  function prLink(url, cls) {
+    const number = (String(url).match(/\/pull\/(\d+)/) || [])[1];
+    const a = el('a', cls || '', number ? 'Pull request #' + number : 'Pull request');
+    a.href = url; a.target = '_blank'; a.rel = 'noopener';
+    return a;
+  }
+
   function renderStub() {
     const t = thread();
     const unopened = t.stub && !t.sessions.length && !t.archived;
@@ -137,8 +145,15 @@
     stubEl.appendChild(el('p', '', t.context || ''));
     const parent = t.parent_title || t.parent;
     if (parent) {
-      const p = el('p', 'dim', 'From '); const a = el('a', '', parent);
+      // What this stub builds on: the parent thread and, when it has one, its pull request.
+      const p = el('p', 'dim', (t.depends_on_parent ? 'Builds on ' : 'From '));
+      const a = el('a', '', parent);
       a.href = '/wheelchair/app/thread?id=' + encodeURIComponent(t.parent); p.appendChild(a);
+      if (t.parent_pr_url) {
+        p.appendChild(document.createTextNode(', '));
+        p.appendChild(prLink(t.parent_pr_url));
+        if (t.depends_on_parent) p.appendChild(document.createTextNode(t.ready ? ' (merged)' : ' (not merged yet)'));
+      }
       stubEl.appendChild(p);
     }
     const actions = el('div', 'actions');
@@ -396,8 +411,8 @@
     if (!data) return;
     const t = thread();
     document.title = (t.title || slug() || base(t.project)) + ' - thread';
-    sync('head', [t.title, t.stub, t.archived, t.worktree, t.branch, t.slug, slug(), archiveAsk], renderHead);
-    sync('stub', [t.stub, t.sessions.length, t.depends_on_parent, t.ready, t.context], renderStub);
+    sync('head', [t.title, t.stub, t.archived, t.worktree, t.branch, t.slug, slug(), archiveAsk, t.pr_url], renderHead);
+    sync('stub', [t.stub, t.sessions.length, t.depends_on_parent, t.ready, t.context, t.parent_pr_url], renderStub);
     sync('dead', [t.sessions.map((s) => [s.name, s.live]), t.archived], renderDead);
     sync('pinned', [data.pinned, data.cards.map((c) => c.answered), ideaOpen, cardErrors], renderPinned);
     const nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;

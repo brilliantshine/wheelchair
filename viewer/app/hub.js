@@ -30,7 +30,9 @@ class Hub {
     }
     this.pollTimer = setInterval(() => this.pollDead().catch(() => {}), 10_000);
     this.pollTimer.unref();
-    this.waitTimer = setInterval(() => this.pollWaiting().catch(() => {}), 600_000);
+    // Spec: a waiting stub shows ready within ten minutes of the merge; a minute keeps the
+    // wait short for someone watching, at one gh call per waiting stub.
+    this.waitTimer = setInterval(() => this.pollWaiting().catch(() => {}), 60_000);
     this.waitTimer.unref();
     await this.pollWaiting();
   }

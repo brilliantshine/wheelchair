@@ -246,6 +246,14 @@ for (const [label, size] of SIZES) {
       await expect(page.locator('#stub-open')).toContainText('Do the fix.');
       await expect(page.locator('#stub-open')).toContainText('has not merged yet');
       await expect(page.getByRole('button', { name: 'Open and start' })).toHaveCount(0);
+      // No pull request on the parent yet: just the thread link.
+      await expect(page.locator('#stub-open a', { hasText: 'Pull request' })).toHaveCount(0);
+      await ctx.post(parent.id, { kind: 'done', title: 'Built', can_do: ['x'], left_as_is: [], pr_url: 'https://github.com/o/r/pull/7' });
+      await expect(page.locator('#stub-open')).toContainText('Builds on Parent, Pull request #7 (not merged yet)');
+      await expect(page.locator('#stub-open a', { hasText: 'Pull request #7' })).toHaveAttribute('href', 'https://github.com/o/r/pull/7');
+      await open(page, parent.id);
+      await expect(page.locator('#head a', { hasText: 'Pull request #7' })).toHaveAttribute('href', 'https://github.com/o/r/pull/7');
+      await open(page, stub.id);
       await page.getByRole('button', { name: 'Start now anyway' }).click();
       await expect(page.locator('#stub-open')).toBeHidden();
       await expect(page.locator('#msg')).toBeEnabled();

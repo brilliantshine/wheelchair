@@ -159,7 +159,16 @@ async function chat(hub, id) {
     if (!raw) continue;
     items.push(...transcriptItems(session.cli, raw, thread));
   }
-  const publicThread = { ...thread, sessions: thread.sessions.map(publicSession) };
+  // The pull request each thread produced, from its latest done card, so the page can link it
+  // and a stub can link the one it waits on.
+  const prOf = (item) => [...(item?.cards || [])].reverse().find((card) => card.kind === 'done' && card.pr_url)?.pr_url || null;
+  const parent = thread.parent ? await hub.thread(thread.parent).catch(() => null) : null;
+  const publicThread = {
+    ...thread,
+    sessions: thread.sessions.map(publicSession),
+    pr_url: prOf(thread),
+    parent_pr_url: prOf(parent),
+  };
   return {
     thread: publicThread,
     items,
