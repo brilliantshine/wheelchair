@@ -84,7 +84,9 @@ asides; no other item type needs an id.
   action}`, `action` one of `ask`, `simpler`, `draw`. The panel opens at once showing the
   quote. Creating the aside records the lead's conversation id (§3, `fork_parent`).
 - For `ask`, the panel's input takes focus and the `start` message is made when Collin
-  sends what he types. For `simpler` and `draw` the `start` message is queued at once.
+  sends what he types. In general: a message typed into an aside whose `history` and
+  `pending` hold no `start` message becomes the `start` message (quote and action included);
+  every later one is `ask`. For `simpler` and `draw` the `start` message is queued at once.
 
 ### 3. The aside record (hub, `viewer/app/threads.js` / `state.js`)
 
@@ -118,7 +120,8 @@ so the main chat, the queued count and the app's session notices never see it.
 - **Machine route** `POST /v1/aside-turns` (hub auth), modelled on `preview`
   (`machine/service.js:749-770`): input `{turn_id, provider, account_dir, cwd, model,
   effort, mode: "fork" | "resume", from, new_id, prompt}`. It starts the process and answers
-  202 at once. `GET /v1/aside-turns/:turn_id` returns `{state: "running" | "ok" |
+  202 at once. The POST is idempotent on `turn_id`: a second POST with an id the machine
+  already knows returns that turn's state and starts nothing. `GET /v1/aside-turns/:turn_id` returns `{state: "running" | "ok" |
   "failed", reply, conversation_id, error, limit}`. `DELETE` kills a running turn. A turn
   still running after 15 minutes is killed and reported `failed` ("took too long"). Turns
   live in memory; after a machine restart an unknown `turn_id` returns 404, which the hub
@@ -126,8 +129,9 @@ so the main chat, the queued count and the app's session notices never see it.
 - **Commands.** Environment: the account's login environment (`adapters.*.loginEnv`) and
   `WHEELCHAIR_LANE=1`, nothing else of ours. Working directory: the thread's worktree.
   - Claude: `claude -p --output-format json --model <model> [--effort <e>]
-    --permission-mode dontAsk --allowedTools Read,Grep,Glob --append-system-prompt <aside
-    prompt>`, plus `--resume <from> --fork-session --session-id <new_id>` (fork) or
+    --permission-mode dontAsk --tools Read,Grep,Glob --append-system-prompt <aside
+    prompt>` (`--tools` limits which tools exist at all, so a permission grant from any
+    settings file, such as the wording script's, can't reach a writing tool), plus `--resume <from> --fork-session --session-id <new_id>` (fork) or
     `--resume <from>` (resume). The prompt goes on stdin. `reply` is the JSON's `result`;
     `conversation_id` is `new_id` (fork) or `from`.
   - Codex: `codex exec fork <from> -` (fork) or `codex exec resume <from> -` (resume), with
@@ -147,11 +151,13 @@ so the main chat, the queued count and the app's session notices never see it.
   - `simpler`: restate the quoted words more plainly and shorter, no new terms.
   - `draw`: one sentence saying what the graph shows, then the graph's JSON (the schema in
     `<root>/protocol/graphs.md`) in one fenced block with info string `wc-graph`. No files.
-  - Step up: on the standard model, if a question clearly needs deeper reasoning, reply with
-    only `[wc:step-up] <one line why>`. Never for a `control` message.
+  - Step up: only when the header says `slot=standard`, and the question clearly needs
+    deeper reasoning: reply with only `[wc:step-up] <one line why>`. Never for a `control`
+    message, never on `slot=heavy`.
   - `control` "Write the one line for the main thread.": reply with only that line: what
     Collin now wants the main thread to know, in his voice, one sentence.
-- **Prompts the hub sends.** `start`: `[wc:aside start <action>]\n\n> <quote>\n\n<Collin's
+- **Prompts the hub sends.** Every header carries the slot the turn runs on, `slot=standard`
+  or `slot=heavy`, after the kind. `start`: `[wc:aside start <action>]\n\n> <quote>\n\n<Collin's
   text, if any>`. `ask`: `[wc:aside ask]\n\n<text>`. `control`: `[wc:aside control]\n\n
   Write the one line for the main thread.`
 - **Provider, account, model.** From the latest live lead: its provider and account
@@ -171,8 +177,12 @@ so the main chat, the queued count and the app's session notices never see it.
 
 One rule, run after every change to an aside and on each poll:
 
-- If no `turn` is running and `pending` isn't empty and `failed` is null, the hub takes the
-  first `pending` message and starts a turn: `mode: "resume", from: cli_id` when `cli_id`
+- If the thread isn't archived, no `turn` is running and `pending` isn't empty and `failed`
+  is null, the hub takes the first `pending` message, saves `turn: {id: <new uuid>, state:
+  "dispatching"}` on the record, and only then POSTs it. If the POST's answer is lost or the
+  hub restarts, the hub re-POSTs the same `turn_id` on its next pass (the machine never
+  starts it twice); a 404 on a `dispatching` turn means it never started, so it is POSTed
+  again. The turn is started with `mode: "resume", from: cli_id` when `cli_id`
   is set, else `mode: "fork", from: fork_parent, new_id: <new uuid>`. So the aside always
   copies the lead's conversation as it was opened from, even if a new lead has taken over
   since.
@@ -182,31 +192,40 @@ One rule, run after every change to an aside and on each poll:
   - `[wc:step-up] <why>` on a `start` or `ask` message, with `slot` `standard` and `heavy`
     usable, and the aside `open`: `history` gets the line "Thinking harder: <why>", `slot`
     becomes `heavy`, and the same message goes back to the front of `pending`. Otherwise the
-    marker is dropped; a `control` reply then becomes the draft, and any other reply shows
-    "Can't think harder: the stronger model is off in Settings" when that is why.
+    marker isn't followed: if `heavy` isn't usable, `history` gets "Can't think harder: the
+    stronger model is off in Settings"; then (and in every other ineligible case) the same
+    message is run once more with the line "Answer now; stepping up isn't available." added.
+    A second marker makes the turn `failed` ("The aside couldn't answer"). For a `control`
+    message the marker is dropped and any remaining text is the draft.
   - A `wc-graph` block: saved as in §6.
   - A `control` reply: the draft line in the panel's edit box (§7).
 - **failed**: the message stays first in `pending`, and `failed` holds the notice ("Hit the
   usage limit", "took too long", the CLI's last error line). Nothing runs until Collin
   presses Retry, which clears `failed`. So Retry always repeats the message that failed.
-- **Closing** (`status: closed`) clears `pending`; a running turn is left to finish and its
-  reply goes into `history`. A closed aside never starts a turn.
+- **Closing** (`status: closed`) clears `pending` and `failed`; a running turn is left to
+  finish and its reply goes into `history`. A turn that fails after closing adds its notice
+  to `history` and sets nothing else. A closed aside never starts a turn.
 - **Reopening**: Collin types in a closed aside: `status: open`, the message goes into
   `pending`, and the rule above runs it.
 - **Think harder** is enabled when the aside is `open`, `slot` is `standard`, `heavy` is
-  usable and no turn is running. It sets `slot: heavy` and puts the last `start` or `ask`
+  usable, no turn is running and `history` holds at least one `start` or `ask` entry. It sets `slot: heavy` and puts the last `start` or `ask`
   message in `history` back into `pending`.
-- **Archiving** the thread `DELETE`s any running aside turn.
+- **Archiving** the thread closes every aside (as above) and `DELETE`s any running turn
+  before the worktree goes. After that every aside route for the thread returns 409 "this
+  thread is archived", and the panel shows its history read-only.
 
 ### 6. Saving a drawn graph (hub)
 
 When a reply holds a `wc-graph` block, the hub registers
 `<cache-root>/<repo-key>/asides/<aside id>-<n>.json` (`n` the reply's index in `history`) the way a `diagram` card is registered
-(`hub.registerGraph`, as in `viewer/app/cards.js:50-55`) and saves the JSON through the
+(`hub.registerGraph`, as in `viewer/app/cards.js:50-55`), creates its parent directory
+(`fs.mkdir`, recursive; the hub runs inside the viewer server, `viewer/server.js:2213`), and
+saves the JSON through the
 viewer's own validated graph write, never by writing the file directly. Only after the save
 succeeds does that `history` entry get `graph: <path>`. A refused graph puts "Couldn't draw
 that: <reason>" in the entry instead. Each drawing stays with the reply that made it. The
-block itself is not shown as text.
+block itself is not shown as text. Registrations expire (`viewer/server.js:1216-1223`), so
+each time the hub serves an aside record it registers that aside's graph paths again.
 
 ### 7. The panel
 
@@ -272,7 +291,8 @@ command and a resume of the fork, and check:
 - the parent conversation's transcript is unchanged by both;
 - forking works while the parent's interactive session is still open;
 - the reply and conversation id come out of the output as §4 says;
-- Claude: `--append-system-prompt` and `--allowedTools` apply; an edit attempt is refused;
+- Claude: `--append-system-prompt` and `--tools` apply; with a settings file that grants
+  Bash and Write, a write attempt still fails because the tool doesn't exist;
 - Codex: the read-only sandbox refuses a write.
 
 Findings go to `docs/plans/thread-asides/reports/T1.md`. If a check fails for a CLI, T1 is
@@ -440,6 +460,15 @@ Round 5 verdict: the long-lived session design was the source of every lifecycle
 |------|----------|---------|--------------|------------|
 | intent (gpt) | minor | The 30-minute idle close is pointless with headless turns and blocks "This changes my answer" | upheld | §8: no idle timeout |
 | intent (gpt) | minor | A later drawing replaces earlier ones | upheld | §6: one graph per reply, kept on its `history` entry |
+| mechanics (gpt) | blocking | The first typed message's kind is contradictory, so a fork could miss the quote | upheld | §2: the first message is always `start` |
+| mechanics (gpt) | blocking | `--allowedTools` grants rather than restricts, so inherited grants could allow writes | upheld | Checked `claude --help` (`--tools` limits the set); §4 uses `--tools`; T1 tests with a granting settings file |
+| mechanics (gpt) | major | Closing after a failure leaves `failed` set, so Retry runs the wrong message | upheld | §5: closing clears `failed`; late failures only add a notice |
+| mechanics (gpt) | major | Think harder enabled with nothing to replay | upheld | §5: needs a `start` or `ask` entry |
+| mechanics (gpt) | major | Lost POST or hub restart can strand or double a turn | upheld | §4/§5: `turn` saved before POST; POST idempotent on `turn_id` |
+| mechanics (gpt) | major | Archive doesn't stop asides | upheld | §5: archive closes all, kills turns, routes return 409 |
+| mechanics (gpt) | major | The aside can't know its slot; ineligible markers lose the answer | upheld | §4: slot in every header; §5: one re-run without step-up, then failed |
+| mechanics (gpt) | major | Graph parent directory never created | upheld | §6: hub creates it before saving |
+| mechanics (gpt) | major | Graph registrations expire | upheld | Checked `viewer/server.js:1216-1223`; §6: re-registered whenever the record is served |
 
 ## Prior Work
 
