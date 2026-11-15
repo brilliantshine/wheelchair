@@ -33,6 +33,8 @@ None.
 | D7 | Refines D1: the `diagram` card gains an optional `format` field, `json` (default) or `html`, so the page knows which file to load (`<graph>.json` or `<graph>.html`) without fetching both. | D1 left the page guessing between two files | defaulted |
 | D8 | Uploads are deleted at archive only when the hub will mark the thread archived: not when the machine keeps a worktree for a rebase in progress, since the thread then stays open (`viewer/app/threads.js:161-174`). | Refines D5: a thread still open must keep its files | defaulted |
 | D9 | Refines D3: the machine service, not `card.js`, copies a shown image into the uploads folder, when the card reaches `/v1/agent/cards` and before it is spooled. | The service already knows the thread and owns `<state>`; `card.js` stays a validator and poster | defaulted |
+| D10 | Supersedes D7: the card's `format` is `graph` (default), `form` or `html`. Form files are read by a new route that returns them unchanged and are never registered as graphs. | Review round 1: the graph route validates and canonicalizes boxes-and-arrows only | review-round-1 |
+| D11 | The machine serializes archive, uploads and image copies per thread, and refuses uploads for a thread with no lead session record. | Review round 1: a write in flight could recreate files after archive | review-round-1 |
 
 ## Spec
 
@@ -44,14 +46,16 @@ machine's state root, `~/.local/state/wheelchair` by default (`machine/service.j
 
 ### 1. Diagram forms (D1, D2, D7)
 
-**Card.** `diagram` keeps `plan`, `graph`, `title` and gains optional `format`: `"json"`
-(default when absent) or `"html"`. Validation in `viewer/app/card.js` (`fields.diagram`)
-accepts only those two values. `viewer/app/cards.js` registers the plan as today; it
-registers `<graph>.json` only when the format is `json`.
+**Card.** `diagram` keeps `plan`, `graph`, `title` and gains optional `format`: `"graph"`
+(default when absent: boxes and arrows, exactly as today), `"form"` (one of the four JSON
+forms) or `"html"`. Validation in `viewer/app/card.js` (`fields.diagram`) accepts only
+those three values. `viewer/app/cards.js` registers the plan as today, and registers
+`<graph>.json` as a graph only when the format is `graph`: the graph registry and routes
+validate the boxes-and-arrows schema and drop unknown keys (`viewer/server.js:158-175`),
+so a form file must never go through them.
 
-**JSON forms.** The file `docs/plans/<plan>/graphs/<graph>.json` has a top-level `form`.
-Absent or anything not listed below means boxes and arrows: rendered exactly as today
-(graph-page iframe, `viewer/pages/thread.js:571-581`). Every form has `explanation`
+**JSON forms** (`format: "form"`). The file `docs/plans/<plan>/graphs/<graph>.json` has a
+top-level `form`, one of the four below; anything else is a drawing error (below). Every form has `explanation`
 (string, required; shown above the picture, like the graph schema's field in
 `protocol/graphs.md`). Strings are rendered as text, never as HTML.
 
@@ -65,13 +69,18 @@ Absent or anything not listed below means boxes and arrows: rendered exactly as 
 - "Narrow card" means the card is under 600 px wide (a CSS container query or media query
   on the card; at phone width 390 px every form is one column).
 - No form scrolls sideways: long words wrap (`overflow-wrap: anywhere`).
-- Loading: live thread, `GET /wheelchair/graph?path=<worktree>/docs/plans/<plan>/graphs/<graph>.json`
-  (the route the graph page uses, `viewer/index.html:462`); archived thread,
-  `GET /wheelchair/api/threads/<id>/graph?file=<graph>.json` (`viewer/app/threads.js:195`).
+- Loading: live thread, new route `GET /wheelchair/diagram-form?path=<abs path>`: accepts
+  only a `.json` file directly inside the `graphs/` directory of a registered plan (same
+  check as the HTML route below), returns the file parsed as JSON and otherwise unchanged
+  (no schema check, no canonicalization), 2 MiB cap. Archived thread,
+  `GET /wheelchair/api/threads/<id>/graph?file=<graph>.json` (`viewer/app/threads.js:195-208`),
+  which already returns the committed file parsed and unchanged. The existing
+  `/wheelchair/graph` route is not touched.
   The page fetches once per card and caches by card id; it does not refetch on each poll.
 - A file that fails to load or does not match its form's shape shows, in the card,
   "This diagram could not be drawn" and the reason, plus the existing Open full screen link
   for boxes and arrows only.
+- A file that loads but has no or an unknown `form` is a drawing error.
 - The four JSON forms get no "Open full screen" link (they already fit the card).
 
 **HTML fallback** (`format: "html"`). The file is `docs/plans/<plan>/graphs/<graph>.html`,
@@ -165,14 +174,29 @@ file bytes), `content-type` the file's type.
   one more than the highest existing prefix (1 when empty); create with the `wx` flag and
   retry with the next `n` on `EEXIST`.
 - Stream to disk counting bytes; past `UPLOAD_LIMIT`, stop, delete the partial file and
-  answer 413. Return `201 {path: <absolute stored path>}`.
+  answer 413. Refuse 409 if this machine has no live `lead` session record for the thread. Return `201 {path: <absolute stored path>}`.
 - Same naming and directory are used for image cards (part 2).
+
+**Archive and in-flight writes.** The machine holds one promise-chain lock per thread id
+(`withThreadLock(threadId, fn)`). `archive`, the `/v1/uploads` handler (from the name
+check through the final rename or delete) and the image-card copy in `/v1/agent/cards`
+(from the file checks through the rewrite of `path`) each run inside it. Uploads stream to
+`<n>-<name>.part` and are renamed on success, so a crash leaves only `.part` files, which
+archive removes with the folder. After archive releases the lock, a late request is
+refused: an upload with 409 when this machine has no session record for that thread with
+role `lead` (archive deletes the records, `machine/service.js:473-480`); an image card with
+401, because its session token no longer matches a record (`machine/service.js:202-208`).
+Test: start an upload that pauses mid-stream, call archive, resume; the upload answers 409
+or completes before archive runs, and after archive the folder does not exist.
 
 **Archive** (`machine/service.js` `archive`). After worktrees are handled and before
 returning: if no entry in `kept` has reason `rebase in progress`, remove
 `<state>/uploads/<thread-id>/` recursively (`fs.rm`, `force: true`); report it in the
-result as `uploads_removed: true|false`. A failure to remove is logged and reported as
-`false`; it does not fail the archive.
+result as `uploads_removed: true|false` (true also when the folder never existed). In
+`viewer/app/threads.js` `archive`, `uploads_removed === false` is handled like a kept
+rebase: the thread stays unarchived and gets a system `needs` card "Uploads could not be
+removed" with the folder path and the error, so archiving again retries. Sessions are
+already stopped either way.
 
 ### Not in this plan
 
@@ -216,12 +240,16 @@ New tests, at least:
 
 ### Round 1 — 2026-11-15
 
-**Lanes:** intent lens; mechanics lens; cross-family: pending.
+**Lanes:** intent lens; mechanics lens; cross-family: no (both GPT; the hub could not place Claude).
 
 **Changed since Round 0:** n/a (first round — whole Spec in scope)
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics (gpt) | blocking | `/wheelchair/graph` validates schema 1 and drops `form`, so it cannot load the new forms | upheld (`viewer/server.js:158-175,1649`) | D10: card `format` graph/form/html; new `/wheelchair/diagram-form` route returns the file unchanged; forms never registered as graphs |
+| mechanics (gpt) | blocking | A sandboxed script can still navigate its own frame to any URL; CSP does not stop navigation, so "no network" is not guaranteed | user-decision | Question to Collin: keep scripts and accept it, or static HTML only |
+| mechanics (gpt) | major | Uploads or image copies in flight can recreate files after archive removed the folder | upheld (archive and the cards handler share no lock, `machine/service.js:430,837`) | Spec part 3: per-thread lock on the machine, `.part` files, late requests refused |
+| intent (gpt) | blocking | Archive could succeed while uploads stay on disk, against IDEA's "gone after archive" | upheld (major: contradicts IDEA.md:35 as written) | Spec part 3, Archive: a failed removal keeps the thread unarchived with a needs card, like a kept rebase |
 
 ## Prior Work
 
