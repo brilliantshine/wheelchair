@@ -1,6 +1,6 @@
 ---
 slug: app-diagrams-uploads
-status: approved   # planning | ready-for-review | approved | implementing | verifying | done
+status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-15
 adopted-from: docs/proposals/app-diagrams-uploads/proposal.md
 ---
