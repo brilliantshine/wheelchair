@@ -466,11 +466,11 @@
     return '/wheelchair/view?path=' + encodeURIComponent(path);
   }
 
-  async function getArchivedGraph() {
+  async function getArchivedGraph(path) {
     let res;
     try {
       res = await fetch('/wheelchair/api/threads/' + encodeURIComponent(ARCHIVE.thread)
-        + '/graph?file=' + encodeURIComponent(ARCHIVE.file), { cache: 'no-store' });
+        + '/graph?file=' + encodeURIComponent(path || ARCHIVE.file), { cache: 'no-store' });
     } catch (err) {
       return { ok: false, network: true, error: 'network', detail: String((err && err.message) || err) };
     }
@@ -480,7 +480,7 @@
   }
 
   async function getGraph(path) {
-    if (ARCHIVE) return getArchivedGraph();
+    if (ARCHIVE) return getArchivedGraph(path);
     let res;
     try {
       res = await fetch(graphUrl(path), { cache: 'no-store' });
