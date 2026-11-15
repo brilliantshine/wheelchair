@@ -1,0 +1,26 @@
+/* The New thread screen. Tokens come from app.css. */
+.new-screen { max-width: 640px; margin: 0 auto; padding: 24px 16px 48px; display: flex; flex-direction: column; gap: 24px; }
+.new-screen > h1 { font-size: 22px; font-weight: 600; }
+.new-screen h2 { font-size: 15px; font-weight: 600; }
+#new-form { display: flex; flex-direction: column; gap: 14px; }
+#new-form .field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+#new-form .field label { margin: 0; }
+#new-form select, #new-form textarea, #new-form input { width: 100%; min-width: 0; }
+#new-form .hint, .saved .hint { font-size: 12px; color: var(--dim); line-height: 1.5; }
+#new-form .hint.warn { color: var(--warn); }
+#nt-path { font-size: 12px; color: var(--ink-2); overflow-wrap: anywhere; }
+#nt-go { align-self: flex-start; }
+.saved { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+#saved-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+#saved-list li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--panel); min-width: 0; }
+#saved-list .what { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+#saved-list .what .p { font-family: var(--mono); font-size: 11px; color: var(--dim); }
+#saved-list button { flex: none; min-height: 30px; padding: 4px 12px; font-size: 12px; }
+.add-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto; gap: 8px; }
+.add-row input { min-width: 0; width: 100%; }
+@media (max-width: 899px) {
+  .new-screen { max-width: none; }
+  .add-row { grid-template-columns: minmax(0, 1fr); }
+  .add-row button, #nt-go { width: 100%; }
+}

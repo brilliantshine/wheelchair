@@ -2,8 +2,6 @@
 
 // Features, Sessions and Terminal pages against a real server (Spec "Views"), at phone and
 // desktop width. Server and fake machine services come from helpers/app-views-setup.js.
-const fs = require('node:fs/promises');
-const path = require('node:path');
 const { test, expect } = require('@playwright/test');
 const { closeViews, openPage, setupViews } = require('./helpers/app-views-setup.js');
 
@@ -96,12 +94,26 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       await expect(other.locator('code, button')).toHaveCount(0);
     });
 
-    test('the New thread form offers the projects in projects.json', async ({ page }) => {
-      await fs.writeFile(path.join(context.state, 'projects.json'), JSON.stringify(['/srv/listed-only']));
+    test('the New thread screen offers found repositories and earlier projects', async ({ page }) => {
       await openPage(page, context, '/app/threads');
-      await page.locator('#new-toggle').click();
-      await expect(page.locator('#nt-projects option[value="/srv/listed-only"]')).toHaveCount(1);
-      await expect(page.locator('#nt-project')).toBeEditable();
+      await page.evaluate(() => fetch('/wheelchair/api/settings/preferences', {
+        method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ default_project_folder: '/srv/repos' }),
+      }));
+      context.hub.projects = { found: [{ name: 'listed-only', path: '/srv/repos/listed-only' }] };
+      try {
+        await page.goto(`${context.server.url}/app/new`);
+        await expect(page.locator('#nt-project optgroup[label="In /srv/repos"] option[value="/srv/repos/listed-only"]')).toHaveCount(1);
+        await expect(page.locator('#nt-project optgroup[label="Used before"] option[value="/tmp/proj-alpha"]')).toHaveCount(1);
+        await expect(page.locator('#nt-project')).toBeEnabled();
+        await expect(page.locator('#nt-note')).toHaveText('Only git repositories in /srv/repos are listed.');
+        await expect(page.locator('#nt-machine option')).toHaveText(['hub', 'node-2', 'node-3']);
+        await noSideScroll(page);
+      } finally {
+        context.hub.projects = { found: [] };
+        await page.evaluate(() => fetch('/wheelchair/api/settings/preferences', {
+          method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ default_project_folder: '' }),
+        }));
+      }
     });
 
     test('an unreachable machine is greyed and has no sessions', async ({ page }) => {
