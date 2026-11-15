@@ -1,6 +1,6 @@
 ---
 slug: app-accounts
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-15
 ---
 
@@ -48,6 +48,26 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 
 Read `MAP.md` first: it traces a session from start to transcript with every pointer used
 below. Decision numbers (D1…) refer to the Decision Log.
+
+How a session start is placed (redundant with §5):
+
+```mermaid
+flowchart TD
+  A[An agent or a new thread asks for a session: role, tier, maybe a provider wish] --> B{Which role?}
+  B -->|new lead| C[Try providers in your lead order]
+  B -->|restarted lead or sub-lead| D[Only the provider this thread started on]
+  B -->|worker, reviewer, checker, mapper| E[Try providers in the worker order, Claude last while Save Claude is on, none below the margin]
+  C --> F{An account with room on this machine?}
+  D --> F
+  E --> F
+  F -->|yes| G[Pick the account by your rule: soonest refill, spread, or one at a time]
+  G --> H[Start the CLI in that account's login folder]
+  F -->|no| I[Hold the start and retry every minute and on each new usage reading]
+  I --> F
+  H --> J{Session hits its limit?}
+  J -->|yes| K[Hold its messages until the reset, then send Continue]
+  K --> H
+```
 
 ### Scope
 - Providers: **Claude** (Claude Code CLI, `cli: claude`) and **GPT** (Codex CLI,
