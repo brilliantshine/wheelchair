@@ -187,22 +187,15 @@ async function press(hub, id, cardId, input) {
 
 async function pollWaiting(hub) {
   for (const thread of await hub.allThreads()) {
-    if (!thread.waiting_on_parent || !thread.parent) continue;
+    // Every stub that builds on an unmerged parent is watched, opened or not: leaving it alone
+    // is waiting, and it shows "ready" once the parent's pull request merges.
+    if (!thread.depends_on_parent || thread.ready || thread.archived || thread.sessions.length || !thread.parent) continue;
     const parent = await hub.thread(thread.parent).catch(() => null);
     if (!parent?.branch) continue;
     try {
       const result = await execFileAsync('gh', [
-        '-C',
-        thread.project,
-        'pr',
-        'list',
-        '--head',
-        parent.branch,
-        '--state',
-        'merged',
-        '--json',
-        'number',
-      ]);
+        'pr', 'list', '--head', parent.branch, '--state', 'merged', '--json', 'number',
+      ], { cwd: thread.project }); // gh has no -C: it runs in the project's clone
       if (JSON.parse(result.stdout).length) {
         thread.waiting_on_parent = false;
         thread.ready = true;

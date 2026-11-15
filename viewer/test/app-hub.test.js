@@ -391,11 +391,17 @@ test('opens a waiting stub after the 10-minute check finds its parent merged', a
       summary: 'Wait until merged.',
       depends_on_parent: true,
     });
-    await api(context, `/threads/${result.body.thread_id}/open`, { method: 'POST', body: {} });
+    // Not opened: a dependent stub left alone is watched all the same.
     const bin = await fs.mkdtemp(path.join(os.tmpdir(), 'wc-gh-'));
     const gh = path.join(bin, 'gh');
-    await fs.writeFile(gh, '#!/bin/sh\nprintf \'[{"number":1}]\'\n');
+    // Like the real gh, -C is refused.
+    await fs.writeFile(gh, '#!/bin/sh\n[ "$1" = "-C" ] && { echo "unknown shorthand flag: C" >&2; exit 1; }\nprintf \'[{"number":1}]\'\n');
     await fs.chmod(gh, 0o755);
+    // gh runs inside the project's clone, so the stub's project must exist.
+    const stubFile = path.join(context.state, 'threads', `${result.body.thread_id}.json`);
+    const stubState = JSON.parse(await fs.readFile(stubFile, 'utf8'));
+    stubState.project = bin;
+    await fs.writeFile(stubFile, `${JSON.stringify(stubState)}\n`);
     const previousPath = process.env.PATH;
     process.env.PATH = `${bin}:${previousPath}`;
     try {

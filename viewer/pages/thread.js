@@ -17,7 +17,6 @@
   let sigs = {};
   let ideaOpen = false;
   let archiveAsk = false;
-  let stubState = null;      // null | 'waiting'
   const cardErrors = {};
 
   function el(tag, cls, text) {
@@ -143,12 +142,12 @@
       stubEl.appendChild(p);
     }
     const actions = el('div', 'actions');
-    const waiting = stubState === 'waiting' || (t.waiting_on_parent && !t.ready);
-    if (waiting) {
+    // Leaving a dependent stub alone is waiting: the hub watches the parent's pull request and
+    // marks the stub ready when it merges, so the only choice to offer is starting early.
+    if (t.depends_on_parent && !t.ready) {
       stubEl.appendChild(el('p', 'warn',
-        'This builds on ' + parent + ', which has not merged yet. Wait for it, or start now without it?'));
-      actions.appendChild(button('Wait for ' + parent, '', () => { location.href = '/wheelchair/app/threads'; }));
-      actions.appendChild(button('Start now', 'primary', () => openStub(true)));
+        'This builds on ' + parent + ', which has not merged yet. It will show ready here once it does.'));
+      actions.appendChild(button('Start now anyway', 'primary', () => openStub(true)));
     } else {
       if (t.ready) stubEl.appendChild(el('p', 'ready-ok', 'Ready: ' + parent + ' has merged.'));
       actions.appendChild(button('Open and start', 'primary', () => openStub(t.ready)));
@@ -157,8 +156,7 @@
   }
   async function openStub(startNow) {
     try {
-      const out = await post(T + '/open', startNow ? { start_now: true } : {});
-      stubState = out.waiting ? 'waiting' : null;
+      await post(T + '/open', startNow ? { start_now: true } : {});
       sigs.stub = null;
       await poll();
     } catch (e) { showError('Could not open: ' + e.message); }
@@ -399,7 +397,7 @@
     const t = thread();
     document.title = (t.title || slug() || base(t.project)) + ' - thread';
     sync('head', [t.title, t.stub, t.archived, t.worktree, t.branch, t.slug, slug(), archiveAsk], renderHead);
-    sync('stub', [t.stub, t.sessions.length, t.waiting_on_parent, t.ready, t.context, stubState], renderStub);
+    sync('stub', [t.stub, t.sessions.length, t.depends_on_parent, t.ready, t.context], renderStub);
     sync('dead', [t.sessions.map((s) => [s.name, s.live]), t.archived], renderDead);
     sync('pinned', [data.pinned, data.cards.map((c) => c.answered), ideaOpen, cardErrors], renderPinned);
     const nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;

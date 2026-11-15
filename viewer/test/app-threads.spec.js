@@ -236,7 +236,7 @@ for (const [label, size] of SIZES) {
       await expect(page.locator('.card-idea .bullet')).toHaveCount(3);
     });
 
-    test('stub: opening asks wait or start; start now opens the lead', async ({ page }) => {
+    test('stub: a dependent stub waits by itself; start now anyway opens the lead', async ({ page }) => {
       const parent = await ctx.make({ cli: 'claude' });
       await ctx.patch(parent.id, (x) => { x.title = 'Parent'; });
       await ctx.post(parent.id, { kind: 'stub', title: 'Fix it', summary: 'Do the fix.', depends_on_parent: true });
@@ -244,9 +244,9 @@ for (const [label, size] of SIZES) {
       const stub = threads.find((x) => x.stub);
       await open(page, stub.id);
       await expect(page.locator('#stub-open')).toContainText('Do the fix.');
-      await page.getByRole('button', { name: 'Open and start' }).click();
       await expect(page.locator('#stub-open')).toContainText('has not merged yet');
-      await page.getByRole('button', { name: 'Start now' }).click();
+      await expect(page.getByRole('button', { name: 'Open and start' })).toHaveCount(0);
+      await page.getByRole('button', { name: 'Start now anyway' }).click();
       await expect(page.locator('#stub-open')).toBeHidden();
       await expect(page.locator('#msg')).toBeEnabled();
       await noSideScroll(page);

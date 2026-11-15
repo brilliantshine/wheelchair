@@ -43,7 +43,7 @@
       if (t.stub) {
         top.appendChild(el('span', 'badge', 'stub'));
         if (t.ready) top.appendChild(el('span', 'badge good', 'ready'));
-        else if (t.waiting_on_parent) {
+        else if (t.depends_on_parent && !t.ready && !(t.sessions || []).length) {
           top.appendChild(el('span', 'badge warn', 'waiting for ' + (titles[t.parent] || t.parent_title || t.parent)));
         }
       }
