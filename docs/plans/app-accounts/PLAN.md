@@ -600,3 +600,4 @@ Collin chose "keep going" (2026-11-15); the round budget resets.
   2026-06-18 (Antigravity CLI replaces it; `GEMINI_CLI_HOME` for the old CLI). OpenRouter:
   `GET openrouter.ai/api/v1/key` gives limit, remaining, usage; Claude Code works against it
   via `ANTHROPIC_BASE_URL=https://openrouter.ai/api`.
+- 2026-11-15, Ready check at approval: hub and machine service answer (session list; reviewer starts passed the version check); claude and codex installed; Claude logged in; Codex preflight: token fresh. Ready.
