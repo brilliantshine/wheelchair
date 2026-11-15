@@ -167,6 +167,21 @@ test('records a press and lets a lead resolve an open question only in its threa
     assert.equal(pressedCard.answered_action, 'picked');
     assert.equal(pressedCard.answered_value, 'A');
 
+    const typedQuestion = await card(context, made.id, lead.name, question);
+    const typedUrl = `/threads/${made.id}/cards/${typedQuestion.body.id}/press`;
+    assert.equal((await api(context, typedUrl, { method: 'POST', body: { action: 'answered', value: '   ' } })).status, 400);
+    const typed = await api(context, typedUrl, { method: 'POST', body: { action: 'answered', value: ' B, but only on Linux ' } });
+    assert.equal(typed.status, 202);
+    assert.equal(typed.body.text, 'answered: B, but only on Linux');
+    const typedCard = (await api(context, `/threads/${made.id}/chat`)).body.cards.find((item) => item.id === typedQuestion.body.id);
+    assert.equal(typedCard.answered_action, 'answered');
+    assert.equal(typedCard.answered_value, 'B, but only on Linux');
+    assert.equal((await api(context, typedUrl, { method: 'POST', body: { action: 'answered', value: 'Again' } })).status, 422);
+    const idea = await card(context, made.id, lead.name, { kind: 'idea', bullets: [{ id: 'one', text: 'First.' }] });
+    assert.equal((await api(context, `/threads/${made.id}/cards/${idea.body.id}/press`, {
+      method: 'POST', body: { action: 'answered', value: 'Text' },
+    })).status, 400);
+
     const openQuestion = await card(context, made.id, lead.name, question);
     const resolved = await card(context, made.id, lead.name, {
       kind: 'resolve', card: openQuestion.body.id, note: 'Collin chose A in chat.',

@@ -29,6 +29,9 @@
   let archiveAsk = false;
   let accountNames = null;   // account id -> name, from /settings; null until fetched
   const cardErrors = {};
+  let answerFocus = null;    // card id whose own-words box has focus
+  const answerDrafts = {};
+  const answerCaret = {};    // card id -> [selectionStart, selectionEnd, selectionDirection] in that box    // card id -> text typed into a question card's own-words box
 
   function el(tag, cls, text) {
     const n = document.createElement(tag);
@@ -335,11 +338,41 @@
     } else if (card.kind === 'question' && card.resolved_by) {
       label = ' Answered in chat' + (card.resolved_note ? ' \u00b7 ' + card.resolved_note : '');
       tag.classList.add('resolved');
+    } else if (card.kind === 'question' && card.answered_action === 'answered') {
+      label = ' You answered: ' + card.answered_value;
     } else if ((card.kind === 'question' || card.kind === 'offer') && card.answered_value != null) {
       label = ' You picked ' + pickedLabel(card);
     }
     tag.append(icon(ICON.check, 12), document.createTextNode(label));
     return tag;
+  }
+  // The box under a question's options: Collin's own answer, sent as `[card <id>] answered: <text>`.
+  function ownWords(card) {
+    const wrap = el('div', 'own-words');
+    const ta = el('textarea');
+    ta.rows = 2; ta.placeholder = 'Or answer in your own words';
+    ta.setAttribute('aria-label', 'Answer in your own words');
+    ta.value = answerDrafts[card.id] || '';
+    const send = button('Send answer', 'small', () => {
+      const text = ta.value.trim();
+      if (!text) return;
+      send.disabled = true;
+      press(card, 'answered', text).then(() => { if (card.answered) delete answerDrafts[card.id]; });
+    }, !ta.value.trim());
+    ta.addEventListener('input', () => { answerDrafts[card.id] = ta.value; send.disabled = !ta.value.trim(); });
+    // A poll that redraws the chat replaces this box; keep the caret where Collin was typing.
+    ta.addEventListener('focus', () => { answerFocus = card.id; });
+    ta.addEventListener('blur', () => setTimeout(() => { if (ta.isConnected && answerFocus === card.id) answerFocus = null; }, 0));
+    const keepCaret = () => { answerCaret[card.id] = [ta.selectionStart, ta.selectionEnd, ta.selectionDirection]; };
+    for (const ev of ['input', 'keyup', 'mouseup', 'select']) ta.addEventListener(ev, keepCaret);
+    if (answerFocus === card.id) requestAnimationFrame(() => {
+      if (!ta.isConnected) return;
+      ta.focus();
+      const [start, end, dir] = answerCaret[card.id] || [ta.value.length, ta.value.length, 'none'];
+      ta.setSelectionRange(start, end, dir);
+    });
+    wrap.append(ta, send);
+    return wrap;
   }
   function head(box, eyebrow, tone, title) {
     if (eyebrow) box.appendChild(el('div', 'eyebrow ' + (tone || ''), eyebrow));
@@ -405,7 +438,7 @@
         let n = 0;
         for (const o of card.options || []) {
           const lean = o.id === card.leaning;
-          const picked = card.answered && card.answered_value != null && o.label === card.answered_value;
+          const picked = card.answered && card.answered_action !== 'answered' && card.answered_value != null && o.label === card.answered_value;
           const b = button('', 'opt' + (lean ? ' lean' : '') + (picked ? ' picked' : ''), () => press(card, 'picked', o.label), off);
           b.dataset.option = o.id;
           const line = el('span', 'opt-line');
@@ -419,6 +452,7 @@
           box.appendChild(b);
         }
         if (card.why) box.appendChild(el('div', 'fits', 'Why the lean: ' + card.why));
+        if (!off) box.appendChild(ownWords(card));
         break;
       }
       case 'approval': {

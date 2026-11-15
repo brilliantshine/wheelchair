@@ -233,11 +233,18 @@ async function press(hub, id, cardId, input) {
     throw appError(422, card.system ? 'a system needs card closes itself' : 'card is already answered');
   }
   if (input.action === 'keep-going' && card.kind !== 'needs') throw appError(400, 'keep going requires a needs card');
+  if (input.action === 'answered') {
+    if (card.kind !== 'question') throw appError(400, 'a typed answer requires a question card');
+    if (card.answered) throw appError(422, 'card is already answered');
+    input = { ...input, value: typeof input.value === 'string' ? input.value.trim() : '' };
+    if (!input.value) throw appError(400, 'a typed answer needs text');
+  }
   const lead = [...thread.sessions].reverse().find((item) => item.role === 'lead' && item.live);
   if (!lead) throw appError(409, 'no live lead');
   const suffixes = {
     'keep-going': 'keep going',
     picked: `picked: ${input.value}`,
+    answered: `answered: ${input.value}`,
     removed: `removed: ${input.value}`,
     talk: `talk about: ${input.value}`,
     'start-building': 'start building',
