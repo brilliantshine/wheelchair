@@ -14,19 +14,6 @@ get buried as this file grows.
 
 ## Open Questions
 
-### Q1: What "This changes my answer" sends, and who writes it
-- **Context:** The main thread must get one line the lead acts on. Today a browser message
-  goes to the latest live lead as Collin's own visible text (`viewer/app/routes.js:343-350`).
-  An open `question` card is answered by a press or by Collin typing, which the lead then
-  resolves (`protocol/app/lead.md`).
-- **Options:**
-  - a) The aside drafts the line; Collin edits it in the panel and sends it. It lands in the
-    main thread as his message, with a link back to the aside. If a question card is
-    waiting, the lead treats it as his typed answer to that card.
-  - b) Collin writes the line himself; the aside drafts nothing.
-  - c) The aside sends its own summary straight away, no review.
-- **Recommendation:** a.
-
 ### Q2: How an aside moves up to the stronger model
 - **Context:** The design says an aside starts on the lead provider's Standard model,
   moves up to Heavy when the question needs it and says so in one line; "Draw it" starts on
@@ -38,7 +25,7 @@ get buried as this file grows.
   - b) A "Think harder" button in the panel; Collin decides.
   - c) Both: the aside may step up, and the button is always there.
   - d) No switching: an aside runs on the lead's own model.
-- **Recommendation:** pending Q1.
+- **Recommendation:** c. The aside steps up on its own when a question clearly needs it, and the button covers the times it misjudges.
 
 ## Watch List
 
@@ -61,10 +48,15 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 6 | On a phone the panel is a full-screen sheet over the thread, with a back control | The side column is hidden at phone width (`viewer/pages/app.css:141-150`) | defaulted |
 | 7 | "What the main thread is waiting on" is the oldest open `question` card; with none, the panel says what the lead is doing or that nothing is waiting | Open cards are already in `/chat` (`viewer/app/chat.js:224-228`) | defaulted |
 | 8 | An aside writes nothing in the worktree. "Draw it" graphs go in the hub's per-thread state outside the repository and are shown in the panel, not as a `diagram` card in the main thread | During a build the worktree belongs to the sub-lead; the main thread must not change | defaulted |
+| 9 | "This changes my answer": the aside drafts the one line, Collin edits it in the panel and sends it. It lands in the main thread as his message, linking back to the aside; if a question card is open, the lead treats it as his typed answer to that card | Saves typing on a phone; he still owns the words | user |
 
 ## Spec
 
-To be written as decisions land.
+To be written in full as decisions land. Settled so far:
+
+### Finishing an aside
+- **Done, back to …** closes the panel and stops the aside's session. Nothing reaches the main thread.
+- **This changes my answer** asks the aside for a one-line summary of what changed, puts it in an editable box in the panel, and on Send posts it to the main thread through the ordinary Collin message route (`viewer/app/routes.js:343-350`), so it shows as his bubble. The message carries a link to the aside. If a `question` card is open, the lead handles it as a typed answer to that card (`protocol/app/lead.md`, resolve rule). The aside then closes as with Done.
 
 ## Accepted Risks
 
