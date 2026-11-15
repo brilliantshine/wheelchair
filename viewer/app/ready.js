@@ -1,5 +1,8 @@
 'use strict';
 
+const { PROVIDERS, providerOf } = require('./providers.js');
+const settings = require('./settings.js');
+
 // Spec lifecycle step 6: the hub, not the lead, owns the machine readiness gate.
 function missing(machine, text) {
   return `${machine}: ${text}`;
@@ -35,7 +38,8 @@ async function check(hub, thread) {
   if (await outOfDate(hub, status)) absent.push(missing(thread.machine, 'service out of date'));
   // The thread's own family is required. The other family, when installed, serves the cross-family
   // reviewers and verifier, so it has to be logged in too; absent, the thread just runs on one family.
-  const other = thread.cli === 'codex' ? 'claude' : 'codex';
+  const other = Object.values(PROVIDERS).map((p) => p.cli).find((cli) => cli !== thread.cli);
+  const accounts = hub.state ? (await settings.load(hub)).accounts : settings.defaults().accounts;
   let preflight = null;
   for (const cli of [thread.cli, other]) {
     const state = status[cli] || {};
@@ -43,12 +47,14 @@ async function check(hub, thread) {
       if (cli === thread.cli) absent.push(missing(thread.machine, `${cli} is not installed`));
       continue;
     }
-    let loggedIn = Boolean(state.logged_in);
-    if (cli === 'codex') {
+    let loggedIn = Array.isArray(status.accounts)
+      ? accounts.some((account) => account.provider === providerOf(cli) && !account.paused && status.accounts.some((entry) => entry.id === account.id && entry.cli === cli && entry.logged_in))
+      : Boolean(state.logged_in);
+    if (cli === 'codex' && !Array.isArray(status.accounts)) {
       preflight ??= await preflightFailed(hub, thread.machine);
       loggedIn = !preflight;
     }
-    if (!loggedIn) absent.push(missing(thread.machine, cli === 'codex' ? 'Codex preflight failed' : `${cli} is not logged in`));
+    if (!loggedIn) absent.push(missing(thread.machine, !Array.isArray(status.accounts) && cli === 'codex' ? 'Codex preflight failed' : `${providerOf(cli) || cli} is not logged in`));
   }
   return { ok: absent.length === 0, missing: absent };
 }
