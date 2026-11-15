@@ -125,8 +125,8 @@ function escalationSentences(escalation) {
   const sentences = [
     'A worker that came back wrong gets a rewritten brief and a fresh session; each step up comes after one failed try.',
     escalation.first === 'effort'
-      ? `Raise effort first, one level at a time, up to ${effort}, then move to the next tier and repeat, up to ${tier}. A tier's own effort setting is used as is.`
-      : `Move up one tier at a time, up to ${tier}, at each tier's own effort; then raise effort at the top tier, up to ${effort}.`,
+      ? `Raise effort first, one level at a time from the tier's own effort ("CLI default" counts as high), up to ${effort}, then move to the next tier and repeat, up to ${tier}. A tier's own effort setting is used as is, and a tier already at ${escalation.max_effort} or above takes no effort step.`
+      : `Move up one tier at a time, up to ${tier}, at each tier's own effort; then raise effort at the top tier, one level at a time from its own effort ("CLI default" counts as high), up to ${effort}. A tier already at ${escalation.max_effort} or above takes no effort step.`,
   ];
   if (escalation.ask_before === 'critical' && escalation.max_tier === 'critical') sentences.push('Before moving a task to Critical, ask the lead, who asks Collin.');
   if (escalation.ask_before === 'any') sentences.push('Before any step up, ask the lead, who asks Collin.');

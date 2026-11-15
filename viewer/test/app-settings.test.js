@@ -233,12 +233,12 @@ test('escalation settings, sentences, and role layers', async () => {
   const sentences = settings.escalationSentences(defaults.escalation);
   assert.deepEqual(sentences, [
     'A worker that came back wrong gets a rewritten brief and a fresh session; each step up comes after one failed try.',
-    "Raise effort first, one level at a time, up to xhigh, then move to the next tier and repeat, up to Critical. A tier's own effort setting is used as is.",
+    'Raise effort first, one level at a time from the tier\'s own effort ("CLI default" counts as high), up to xhigh, then move to the next tier and repeat, up to Critical. A tier\'s own effort setting is used as is, and a tier already at xhigh or above takes no effort step.',
     'Before moving a task to Critical, ask the lead, who asks Collin.',
     'A task still failing at the limits is reported as blocked.',
   ]);
   const variant = { ...defaults.escalation, first: 'model', max_effort: 'max', max_tier: 'heavy', ask_before: 'any' };
-  assert.equal(settings.escalationSentences(variant)[1], "Move up one tier at a time, up to Heavy, at each tier's own effort; then raise effort at the top tier, up to max (GPT stops at xhigh, which is its highest).");
+  assert.equal(settings.escalationSentences(variant)[1], 'Move up one tier at a time, up to Heavy, at each tier\'s own effort; then raise effort at the top tier, one level at a time from its own effort ("CLI default" counts as high), up to max (GPT stops at xhigh, which is its highest). A tier already at max or above takes no effort step.');
   assert.equal(settings.escalationSentences(variant)[2], 'Before any step up, ask the lead, who asks Collin.');
   assert.match(settings.escalationSentences({ ...variant, ask_before: 'never' })[2], /^Do not stop to ask/);
   assert.equal(settings.escalationSentences({ ...variant, ask_before: 'critical' }).length, 3);
