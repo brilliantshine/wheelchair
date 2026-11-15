@@ -20,7 +20,9 @@ async function resolveModel(hub, cli, role, requestedTier = 'top') {
   if (['lead', 'sub-lead'].includes(role)) slot = 'lead';
   else if (['reviewer', 'verifier', 'mapper'].includes(role)) slot = settings.other_agents[role];
   else {
-    try { slot = settingsStore.tier(requestedTier, 'tier', true); }
+    const tier = cli === 'claude' && ({ haiku: 'light', sonnet: 'standard', opus: 'heavy' })[requestedTier]
+      || requestedTier;
+    try { slot = settingsStore.tier(tier, 'tier', true); }
     catch { throw appError(400, `unknown tier "${requestedTier}"; use light, standard, heavy, critical, or top`); }
     if (slot === 'top') slot = 'heavy';
   }

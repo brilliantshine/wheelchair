@@ -10,7 +10,7 @@ const { appError } = require('./state.js');
 const execFileAsync = promisify(execFile);
 const ROLES = new Set(['lead', 'sub-lead', 'worker', 'reviewer', 'verifier', 'mapper']);
 const WORK_TIERS = ['light', 'standard', 'heavy', 'critical'];
-const TIER_ALIASES = { luna: 'light', terra: 'standard', sol: 'heavy', astra: 'critical', haiku: 'light', sonnet: 'standard', opus: 'heavy' };
+const TIER_ALIASES = { luna: 'light', terra: 'standard', sol: 'heavy', astra: 'critical' };
 const SAMPLE = "It's worth noting that the idempotency guarantee here is load-bearing: because the hook fires on every turn, any non-idempotent side effect in the notify path would compound across retries, so I've restructured the handler accordingly.";
 
 const DEFAULT_STYLE = Object.freeze({
@@ -147,8 +147,7 @@ function assertFits(settings) {
   }
 }
 
-async function load(hub) {
-  const saved = await hub.state.settings(null);
+function normalize(saved) {
   if (!saved) return defaults();
   const base = defaults();
   return {
@@ -160,7 +159,22 @@ async function load(hub) {
   };
 }
 
+async function load(hub) {
+  return normalize(await hub.state.settings(null));
+}
+
 async function save(hub, settings) { assertFits(settings); await hub.state.saveSettings(settings); return settings; }
+
+// Keep normalization, validation, and the write in State's one read-modify-write queue.
+// A rejected change never reaches atomicWrite, so the prior settings file remains intact.
+async function update(hub, change) {
+  return hub.state.updateSettings(async (saved) => {
+    const value = normalize(saved);
+    await change(value);
+    assertFits(value);
+    return value;
+  });
+}
 
 async function modelCommand(hub, args) {
   return execFileAsync(path.join(hub.root, 'codex', 'model.sh'), args, { encoding: 'utf8' });
@@ -203,4 +217,4 @@ async function preview(hub, style) {
   } catch (error) { throw appError(502, `Preview failed: ${error.message}`); }
 }
 
-module.exports = { DEFAULT_STYLE, ROLES, SAMPLE, TIER_ALIASES, WORK_TIERS, assertFits, defaults, describe, fullPrompt, headsUp, load, modelCommand, models, options, preview, renderStyle, roleLayers, save, switchSentences, templateFor, tier, validateStyle, validateTemplate };
+module.exports = { DEFAULT_STYLE, ROLES, SAMPLE, TIER_ALIASES, WORK_TIERS, assertFits, defaults, describe, fullPrompt, headsUp, load, modelCommand, models, normalize, options, preview, renderStyle, roleLayers, save, switchSentences, templateFor, tier, update, validateStyle, validateTemplate };
