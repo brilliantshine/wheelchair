@@ -287,6 +287,20 @@ test('holds a queued message until both readiness and a turn end', async () => {
   });
 });
 
+test('stamps when Collin last wrote in a thread, and only for his messages', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    // Read through the same list route the Threads page polls.
+    const stampOf = async () => (await api(context, '/threads')).body.threads.find((t) => t.id === made.id).collin_at;
+    const before = await stampOf();
+    await api(context, `/threads/${made.id}/messages`, { method: 'POST', body: { text: 'Sort me up.' } });
+    const stamped = await stampOf();
+    assert.ok(stamped && stamped !== before);
+    await event(context, made.id, made.sessions[0].name, 'turn-ended');
+    assert.equal(await stampOf(), stamped);
+  });
+});
+
 test('posts a permission need and holds the session queue while the prompt is open', async () => {
   await withContext(async (context) => {
     const made = await thread(context);
