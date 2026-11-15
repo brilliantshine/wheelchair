@@ -61,7 +61,7 @@ present, is one of `MAP.md`, `IDEA.md` or `PLAN.md`. The hub accepts an `offer` 
 offer exists, or when exactly one prior offer was answered with `answered_value: "keep talking
 first"`; otherwise it returns 422, `the offer was already asked`.
 
-Aside-changing routes return 409 when the thread is archived. Chat `asides` holds each aside without its history. Lead assistant text items have a stable `id` of `<session name>#<index>`.
+An aside turn records its resolved `model` and `effort` alongside `id`, `state`, and `message`; retries reuse them and history records the model actually used. Aside-changing routes return 409 when the thread is archived. Chat `asides` holds each aside without its history. Lead assistant text items have a stable `id` of `<session name>#<index>`.
 
 Chat `items` are `{type:"human"|"assistant"|"tool"|"context",text,at}`. `at` is the
 ISO timestamp on that transcript line, so pages can interleave chat and cards in time order.

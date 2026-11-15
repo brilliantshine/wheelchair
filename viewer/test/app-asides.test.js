@@ -22,7 +22,8 @@ test('aside turns fork, resume, save before ack, and retry failures', async () =
   const aside = { id: 'a', number: 1, anchor: { quote: 'words' }, action: 'ask', provider: 'gpt', account: 'default-gpt', fork_parent: 'parent', cli_id: null, slot: 'standard', status: 'open', pending: [{ kind: 'start', text: 'why?' }], turn: null, history: [], failed: null };
   thread.asides.push(aside); await hub.save(thread);
   const original = settings.modelCommand;
-  settings.modelCommand = async (_, args) => ({ stdout: args[0] === 'effort' ? 'high' : `model-${args[1]}` });
+  let modelPrefix = 'model';
+  settings.modelCommand = async (_, args) => ({ stdout: args[0] === 'effort' ? 'high' : `${modelPrefix}-${args[1]}` });
   const turns = new Map(), posts = [];
   hub.call = async (_, route, method, body) => {
     if (route === '/v1/aside-turns' && method === 'POST') { posts.push(body); turns.set(body.turn_id, { state: 'running' }); return {}; }
@@ -35,9 +36,10 @@ test('aside turns fork, resume, save before ack, and retry failures', async () =
     await asides.pump(hub, thread.id);
     let current = (await hub.thread(thread.id)).asides[0];
     assert.equal(posts[0].mode, 'fork'); assert.equal(posts[0].from, 'parent'); assert.ok(posts[0].style);
+    modelPrefix = 'changed';
     turns.set(current.turn.id, { state: 'ok', reply: 'answer', conversation_id: 'fork' });
     await asides.pump(hub, thread.id);
-    current = (await hub.thread(thread.id)).asides[0]; assert.equal(current.history[0].reply, 'answer');
+    current = (await hub.thread(thread.id)).asides[0]; assert.equal(current.history[0].reply, 'answer'); assert.equal(current.history[0].model, 'model-standard');
     const record = await hub.thread(thread.id); await asides.change(hub, record, record.asides[0], 'messages', { text: 'again' });
     await asides.pump(hub, thread.id); current = (await hub.thread(thread.id)).asides[0];
     assert.equal(posts[1].mode, 'resume'); assert.equal(posts[1].from, 'fork');
@@ -107,12 +109,13 @@ test('dispatching turns recover a lost POST with the same id', async () => {
   const hub = new Hub({ stateDir: dir }); await hub.state.init();
   const aside = { id: 'a', anchor: { quote: 'words' }, action: 'ask', provider: 'gpt', account: 'default-gpt', fork_parent: 'parent', cli_id: null, slot: 'standard', status: 'open', pending: [], turn: { id: 'same-id', state: 'dispatching', message: { kind: 'start', text: 'why' } }, history: [], failed: null };
   await hub.save({ id: 'lost', project: '/tmp/repo', worktree: '/tmp/repo', machine: 'hub', sessions: [], asides: [aside], cards: [], pinned: {}, queues: {}, sent: [] });
-  const original = settings.modelCommand; settings.modelCommand = async () => ({ stdout: 'model' });
+  const original = settings.modelCommand; let configured = 'model';
+  settings.modelCommand = async (_, args) => ({ stdout: args[0] === 'effort' ? 'high' : configured });
   const posts = []; hub.call = async (_, route, method, body) => {
     if (method === 'GET') { const error = new Error('missing'); error.status = 404; throw error; }
     posts.push(body); if (posts.length === 1) throw new Error('lost response'); return {};
   };
-  try { await asides.pump(hub, 'lost'); await asides.pump(hub, 'lost'); assert.equal(posts.length, 2); assert.equal(posts[0].turn_id, posts[1].turn_id); assert.equal((await hub.thread('lost')).asides[0].turn.state, 'running'); }
+  try { await asides.pump(hub, 'lost'); configured = 'changed'; await asides.pump(hub, 'lost'); assert.equal(posts.length, 2); assert.equal(posts[0].turn_id, posts[1].turn_id); assert.equal(posts[1].model, 'model'); assert.equal(posts[1].effort, 'high'); assert.equal((await hub.thread('lost')).asides[0].turn.state, 'running'); }
   finally { settings.modelCommand = original; }
 });
 

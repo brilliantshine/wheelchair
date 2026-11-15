@@ -82,7 +82,9 @@ async function graph(hub, thread, aside, reply) {
 }
 async function run(hub, thread, aside) {
   if (!aside.turn && aside.status === 'open' && aside.pending.length && !aside.failed && !thread.archived) {
-    aside.turn = { id: crypto.randomUUID(), state: 'dispatching', message: aside.pending.shift() }; await hub.save(thread);
+    const resolved = await model(hub, aside.provider, aside.slot);
+    if (!resolved) { aside.failed = 'the model is off in Settings'; await hub.save(thread); return; }
+    aside.turn = { id: crypto.randomUUID(), state: 'dispatching', message: aside.pending.shift(), model: resolved.model, effort: resolved.effort || null }; await hub.save(thread);
   }
   if (!aside.turn || thread.archived) return;
   const turn = aside.turn, base = `/v1/aside-turns/${encodeURIComponent(turn.id)}`;
@@ -93,10 +95,14 @@ async function run(hub, thread, aside) {
     if (turn.state === 'running') result = { state: 'failed', error: 'the machine lost this turn' };
   }
   if (!result && turn.state === 'dispatching') {
-    const resolved = await model(hub, aside.provider, aside.slot);
-    if (!resolved) { aside.failed = 'the model is off in Settings'; aside.pending.unshift(turn.message); aside.turn = null; await hub.save(thread); return; }
+    if (!turn.model) {
+      const resolved = await model(hub, aside.provider, aside.slot);
+      if (!resolved) { aside.failed = 'the model is off in Settings'; aside.pending.unshift(turn.message); aside.turn = null; await hub.save(thread); return; }
+      Object.assign(turn, { model: resolved.model, effort: resolved.effort || null });
+      await hub.save(thread);
+    }
     const style = settings.renderStyle((await settings.load(hub)).style);
-    const body = { turn_id: turn.id, provider: aside.provider, account_dir: aside.account === `default-${aside.provider}` ? null : `~/.wheelchair/accounts/${aside.account}`, cwd: thread.worktree, ...resolved, mode: aside.cli_id ? 'resume' : 'fork', from: aside.cli_id || aside.fork_parent, new_id: turn.id, prompt: prompt(aside, turn.message), ...(style ? { style } : {}) };
+    const body = { turn_id: turn.id, provider: aside.provider, account_dir: aside.account === `default-${aside.provider}` ? null : `~/.wheelchair/accounts/${aside.account}`, cwd: thread.worktree, model: turn.model, ...(turn.effort ? { effort: turn.effort } : {}), mode: aside.cli_id ? 'resume' : 'fork', from: aside.cli_id || aside.fork_parent, new_id: turn.id, prompt: prompt(aside, turn.message), ...(style ? { style } : {}) };
     try { await hub.call(thread.machine, '/v1/aside-turns', 'POST', body); turn.state = 'running'; await hub.save(thread); } catch { /* retry with the same id */ }
     return;
   }
@@ -111,17 +117,17 @@ async function run(hub, thread, aside) {
       else {
         const heavy = await model(hub, aside.provider, 'heavy');
         if (aside.status === 'open' && aside.slot === 'standard' && heavy) { aside.history.push({ kind: 'note', text: `Thinking harder: ${marker[1]}`, at: now() }); aside.slot = 'heavy'; aside.pending.unshift(message); }
-        else { if (!heavy) aside.history.push({ kind: 'note', text: "Can't think harder: the stronger model is off in Settings", at: now() }); if (aside.status === 'open') aside.pending.unshift({ ...message, no_step_up: true }); else aside.history.push({ kind: message.kind, text: message.text, reply, model: (await model(hub, aside.provider, aside.slot))?.model || null, at: now(), graph: null, graph_error: null }); }
+        else { if (!heavy) aside.history.push({ kind: 'note', text: "Can't think harder: the stronger model is off in Settings", at: now() }); if (aside.status === 'open') aside.pending.unshift({ ...message, no_step_up: true }); else aside.history.push({ kind: message.kind, text: message.text, reply, model: turn.model || null, at: now(), graph: null, graph_error: null }); }
       }
     } else {
       if (message.kind === 'control') reply = reply.replace(/^\s*\[wc:step-up\]\s*/, '');
       const drawn = await graph(hub, thread, aside, reply);
-      aside.history.push({ kind: message.kind, text: message.text, ...drawn, model: (await model(hub, aside.provider, aside.slot))?.model || null, at: now() });
+      aside.history.push({ kind: message.kind, text: message.text, ...drawn, model: turn.model || null, at: now() });
     }
   }
   if (result.state === 'failed') {
     const notice = result.limit ? 'Hit the usage limit' : (result.error || 'The aside failed');
-    if (aside.status === 'closed') { aside.history.push({ kind: 'note', text: notice, at: now() }, { kind: message.kind, text: message.text, reply: null, model: null, at: now(), graph: null, graph_error: null }); }
+    if (aside.status === 'closed') { aside.history.push({ kind: 'note', text: notice, at: now() }, { kind: message.kind, text: message.text, reply: null, model: turn.model || null, at: now(), graph: null, graph_error: null }); }
     else { aside.pending.unshift(message); aside.failed = notice; }
   }
   aside.turn = null; await hub.save(thread);
