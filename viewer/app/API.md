@@ -8,7 +8,7 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 | Route | Request | Response |
 |---|---|---|
 | `GET /threads` | — | `{threads:[Thread]}` newest first |
-| `POST /threads` | `{project,cli,machine?,message?}` | a `Thread`, with its lead started; a non-empty string `message` sets `title` from its trimmed, whitespace-collapsed first line, cut at a word boundary to 60 characters plus `…` |
+| `POST /threads` | `{project,machine?,message?}` | a `Thread`, with its lead started or waiting for room; a non-empty string `message` sets `title` from its trimmed, whitespace-collapsed first line, cut at a word boundary to 60 characters plus `…` |
 | `GET /threads/:id/chat` | — | `{thread,items,cards,pinned,queued}` |
 | `POST /threads/:id/messages` | `{text}` | `{queued:true}`; delivery waits for the lead turn end |
 | `POST /threads/:id/cards/:cardId/press` | `{action,value?}` | `{queued:true,text}` for lead actions and records `answered_action` and `answered_value` on an answered card; `recheck` updates an approval in place, and `start-building` first re-checks Ready |
@@ -84,3 +84,7 @@ machine sign-in states, placement reason and live session count. `GET /usage/ale
 `GET /accounts/:id/signin/:machine` returns its state; `POST .../code` sends `{code}`;
 `GET .../pane` and `POST .../keys` provide the login terminal. Unknown accounts or machines
 return 404.
+
+Session starts through `POST /machine/session` accept `role`, `tier`, `brief`, `attempt_id`, and optional `provider` or `not_provider` (`claude` or `gpt`) for workers, reviewers and verifiers. The flags are mutually exclusive; worker constraints are strict, subject to the Claude margin exception, and reviewer and verifier constraints are preferences. The obsolete `cli` field is ignored. The response has `session` and may have a `note`. Sessions carry `provider` and `account`; a waiting session has `status: "waiting"`, `waiting_until`, `waiting_reason`, and `pending_start`. Its identity and queue survive promotion.
+
+Machine events include `usage` with a reading, `limit-hit` with `limited_until` and `error`, and `turn-failed` with `error`. A limit holds delivery until its reset and then queues `Continue.` first. A failed turn releases the queue and informs the starter without delivering a partial reviewer or verifier report; a failed lead turn creates a needs card.

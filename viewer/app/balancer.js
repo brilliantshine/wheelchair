@@ -1,0 +1,56 @@
+'use strict';
+const path = require('node:path');
+const { execFile } = require('node:child_process');
+const { promisify } = require('node:util');
+const settingsStore = require('./settings.js');
+const usage = require('./usage.js');
+const { providerOf } = require('./providers.js');
+const { appError } = require('./state.js');
+const exec = promisify(execFile);
+
+async function slotFor(hub, role, requestedTier = 'top') {
+  if (['lead', 'sub-lead'].includes(role)) return 'lead';
+  const settings = await settingsStore.load(hub);
+  if (['reviewer', 'verifier', 'mapper'].includes(role)) return settings.other_agents[role];
+  const tier = ({ haiku: 'light', sonnet: 'standard', opus: 'heavy' })[requestedTier] || requestedTier;
+  try { const slot = settingsStore.tier(tier, 'tier', true); return slot === 'top' ? 'heavy' : slot; }
+  catch { throw appError(400, `unknown tier "${requestedTier}"; use light, standard, heavy, critical, or top`); }
+}
+async function choose(hub, thread, role, tier, constraints = {}) {
+  const { provider, not_provider: excluded } = constraints;
+  if ((provider || excluded) && (!['worker', 'reviewer', 'verifier'].includes(role) || (provider && excluded) || (provider && !['claude', 'gpt'].includes(provider)) || (excluded && !['claude', 'gpt'].includes(excluded)))) throw appError(400, 'invalid provider constraint');
+  const slot = await slotFor(hub, role, tier);
+  const [settings, readings, machines, last, threads] = await Promise.all([settingsStore.load(hub), usage.readings(hub), usage.machineAccounts(hub), usage.lastChosen(hub), hub.allThreads()]);
+  const now = Date.now();
+  if (!thread.provider && thread.cli && thread.sessions?.length) thread.provider = providerOf(thread.cli);
+  let order = role === 'lead' && !thread.provider ? settings.lead_order.flatMap((p) => p === 'any' ? settings.worker_order : [p]) : ['lead', 'sub-lead'].includes(role) ? [thread.provider] : [...settings.worker_order];
+  order = [...new Set(order.filter(Boolean))];
+  const available = {};
+  const margin = {};
+  for (const p of order) {
+    try { await exec(path.join(hub.root, 'codex', 'model.sh'), [p, slot]); } catch (e) { if (e.code === 3) continue; throw e; }
+    const accounts = settings.accounts.filter((a) => a.provider === p).map((a) => ({ ...a, live_sessions: threads.reduce((n, t) => n + t.sessions.filter((s) => s.live && s.account === a.id).length, 0) }));
+    margin[p] = p === 'claude' && !['lead', 'sub-lead'].includes(role) && usage.belowMargin(usage.forecast(accounts, readings, now), settings.margin, now);
+    available[p] = usage.rank(accounts, readings, machines, settings, thread.machine, now, last).find((a) => a.next);
+  }
+  const normal = () => {
+    let list = order.filter((p) => !margin[p]);
+    if (settings.save_claude_for_leads && !['lead', 'sub-lead'].includes(role)) list = [...list.filter((p) => p !== 'claude'), ...list.filter((p) => p === 'claude')];
+    return list.find((p) => available[p]);
+  };
+  let picked, note;
+  if (provider && !margin[provider] && available[provider]) picked = provider;
+  else if (provider && role === 'worker' && !margin[provider]) picked = undefined;
+  else if (excluded) {
+    picked = order.find((p) => p !== excluded && !margin[p] && available[p]);
+    if (!picked && role !== 'worker') { picked = normal(); if (picked) note = `Could not avoid ${excluded}; using ${picked}.`; }
+  } else {
+    picked = normal();
+    if (provider && picked) note = `Could not use ${provider}; using ${picked}.`;
+  }
+  if (picked) return { provider: picked, account: available[picked], ...(note ? { note } : {}) };
+  const relevant = provider && role === 'worker' && !margin[provider] ? [provider] : excluded && role === 'worker' ? order.filter((p) => p !== excluded) : order;
+  const resets = settings.accounts.filter((a) => relevant.includes(a.provider) && !a.paused && machines[thread.machine]?.accounts?.[a.id]).flatMap((a) => [readings[a.id]?.limited_until, readings[a.id]?.five_hour?.resets_at, readings[a.id]?.week?.resets_at]).filter((v) => Date.parse(v) > now).sort();
+  return { wait: { until: resets[0] || new Date(now + 60000).toISOString(), reason: `no ${relevant.length === 1 ? relevant[0] + ' account' : 'account'} has room` } };
+}
+module.exports = { choose, slotFor };
