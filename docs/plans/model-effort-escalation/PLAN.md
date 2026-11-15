@@ -301,6 +301,7 @@ Filled by Stage 3. One row per worker brief.
 | T5 | sub-lead.md escalation section and lead.md §7 sentence (Spec §4) | protocol/app/sub-lead.md, protocol/app/lead.md | claude standard (claude-sonnet-5-5) | wc-70d7c545bb47-worker-3 | git diff review | done |
 | T3 | Hub: GPT/lead effort, `--effort`, ceilings, escalation store, sentences, role layers, routes, API.md (Spec §1–§3); after T1 | viewer/app/{settings,routes,sessions,wc}.js, viewer/app/API.md, viewer/test/*.test.js | codex standard (gpt-6.1-terra) | wc-70d7c545bb47-worker-4 | node --test viewer/test/*.test.js | done |
 | T4 | Settings page: GPT and lead effort selects, Escalation section (Spec §1, §3); after T3 | viewer/pages/settings.js, viewer/pages/settings.css, viewer/test/app-settings.spec.js | claude standard (claude-sonnet-5-5) | wc-70d7c545bb47-worker-5 | npm --prefix viewer run test:browser | done |
+| R1 | Remediation 1: escalation sentence 2 states unset=high, no step at/above ceiling, model-first one level at a time | viewer/app/settings.js, viewer/test/app-settings.test.js | codex light (gpt-6-luna) | wc-70d7c545bb47-worker-6 | node --test viewer/test/*.test.js | done |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -319,3 +320,4 @@ anything a future session needs that fits nowhere above.
 - 2026-11-15 — Choice: T4, viewer/pages/settings.js: escalation_text rendered as one `<p>` per line, empty lines dropped.
 - 2026-11-15 — Full validation on c959d63: codex, machine, install suites green; node 266/267 and browser 452 passed / 2 failed, all three failures not from this build (see COMPLETION.md). No task needed escalation.
 - 2026-11-15 — Verification round 1: verifier-2 (claude) and verifier-3 (codex; the first codex start, verifier, timed out at the machine and never went live). Checking commit 57aea28.
+- 2026-11-15 — R1 reported no choices; diff matches the brief verbatim. Merged d393ad0. Verification attempt 2 started.

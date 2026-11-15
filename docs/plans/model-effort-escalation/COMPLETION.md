@@ -119,3 +119,31 @@ The three failures are not from this build:
 ## Remediation rounds
 
 None yet.
+
+### Remediation 1 — 2026-11-15
+
+Verification attempt 1 (commit 57aea28) failed on one Spec §3 point, raised by all three
+verifiers: the rendered escalation rules did not state the stepping rule (unset effort
+counts as `high`; a tier at or above the effort ceiling takes no effort step; model-first
+climbs effort one level at a time). Gaps verbatim and the task in REMEDIATION-1.md.
+
+Fix (R1, codex light gpt-6-luna, commit d393ad0): sentence 2 of `escalationSentences`
+now states the whole rule — viewer/app/settings.js:127-129. Default text:
+
+> Raise effort first, one level at a time from the tier's own effort ("CLI default" counts as high), up to xhigh, then move to the next tier and repeat, up to Critical. A tier's own effort setting is used as is, and a tier already at xhigh or above takes no effort step.
+
+Model-first: "… then raise effort at the top tier, one level at a time from its own effort
+("CLI default" counts as high), up to <E>. A tier already at <E> or above takes no effort step."
+
+Validated by app-settings.test.js "escalation settings, sentences, and role layers" (both
+strings asserted verbatim). Re-run on the merged branch:
+
+```
+$ node --test viewer/test/*.test.js
+not ok 161 - a starter that loses the freed port registers through the new holder   (known, docs/known-issues.md:6)
+# tests 267
+# pass 266
+# fail 1
+$ npm --prefix viewer run test:browser -- app-settings
+  34 passed (14.6s)
+```
