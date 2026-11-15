@@ -49,6 +49,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 16 | `codex/model.sh` keeps its path while covering Claude too | Moving it touches every protocol reference for no behavior gain | defaulted |
 | 17 | Running leads get a new style as a `[wc:style]` trailer at the end of their next delivered message, stripped from the chat | A trailer keeps start-of-message markers working and stays out of Collin's bubble | defaulted |
 | 18 | IDEA narrowed: the newer-model notice is GPT only (Claude cells offer "Latest" family aliases instead), and Critical here means startable, not parts marked critical | Round 1 intent findings; follows decision 9 | idea-change |
+| 19 | The "when the brief doesn't settle something" switch is offered on worker templates only, and `worker.md` names its escalation rule as the one built-in rule a template may change; decided questions are flagged in the report | Collin designed the switch; the alternative (no effect) would make it a dead control | defaulted |
 
 ## Spec
 
@@ -81,7 +82,9 @@ asides. Running agents are not changed, except the style delivery below.
   hub test suites (full list: `docs/maps/app-sessions.md`, "Every place the tier names …").
 - Old names are accepted on input wherever a tier is read and mean the new tier:
   `luna|terra|sol|astra` → light/standard/heavy/critical for any CLI, and Claude's current
-  `haiku|sonnet|opus` → light/standard/heavy. Output always uses the new name. Old plan
+  `haiku|sonnet|opus` → light/standard/heavy. These old names now mean slots, not models:
+  `--tier opus` runs whatever the Heavy cell holds. `viewer/app/API.md` and `sub-lead.md`
+  say so in their alias line. Output always uses the new name. Old plan
   documents under `docs/plans/` are history and are not edited.
 - GPT model names (`gpt-6-luna` …) are model names, not tier names, and are unchanged.
 - `top` stays accepted and means Heavy for a worker (see resolution below).
@@ -91,7 +94,10 @@ asides. Running agents are not changed, except the style delivery below.
   `--effort` when `model.sh effort claude <tier>` prints one); launched with Claude Code's
   Agent tool, which takes only family aliases, the family of that tier's model
   (`haiku`/`sonnet`/`opus`/`fable`, from `model.sh family claude <tier>`). Review lanes use
-  the Heavy tier. A tier set to `none` for Claude means the terminal workflow uses the GPT
+  the Heavy tier. When `model.sh family` exits 3 (an "Other…" model with no family word),
+  or the cell names an exact version or an effort that matters, the lane is launched from
+  a shell instead, so it runs the exact model; `lanes.md` says the Agent tool path follows
+  the family only. A tier set to `none` for Claude means the terminal workflow uses the GPT
   lane for it.
 
 ### The models file
@@ -165,6 +171,9 @@ asides. Running agents are not changed, except the style delivery below.
   (`{reviewer, verifier, mapper}` tiers, defaults heavy/heavy/standard), `templates`
   (below), `style` (below) and `style_version` (integer, bumped on each style save).
 - Model choices are not in it; they are in the models file.
+- `other_agents` governs app sessions only. The terminal stages (`/plan-review`,
+  `/verify`, mapping) keep the tiers their protocol documents name. The Other agents panel
+  says so in one line: "For threads in the app. Terminal commands keep their own rules."
 
 ### Permission mode
 
@@ -186,7 +195,12 @@ asides. Running agents are not changed, except the style delivery below.
   project path from `projects.json`. `switches`, all optional:
   - `save_every_step` (bool), `full_tests_before_done` (bool),
   - `packages`: `ask` | `go` | `never` ("Ask the lead first", "Go ahead", "Never"),
-  - `unsettled`: `ask` | `decide` ("Ask the lead", "Pick, record it, keep going"),
+  - `unsettled`: `ask` | `decide` ("Ask the lead", "Pick, record it, keep going"), offered
+    on worker templates only. `protocol/app/worker.md`'s "When the plan did not settle
+    something" (`:25-33`) is the one built-in rule a template may change, and it says so:
+    with `decide`, the worker picks the option it judges best, keeps going, and lists the
+    question, the options and its pick under its report's choices, flagged "decided under
+    the template, not asked"; with `ask` or no template, the rule stands as written.
   - `file_limit`: integer ≥ 1 or absent.
   `text`: free text, at most 4000 characters.
 - In use: per role, at most one template is in use for `all` and one per project. Marking a
@@ -231,8 +245,9 @@ saving.
   phrases, then `text`. The same rendering is used at start, on delivery and in the preview.
 - Delivery to running leads: `style_version` starts at 0 (the defaults) and each save
   increments it. When `deliver` (`viewer/app/sessions.js:208-233`) submits a message to a
-  live `lead` session whose `style_version` is missing or lower than the current one (a
-  missing value, such as on a lead started before this feature, counts as owing), it appends to that message's text a
+  live `lead` session whose `style_version` is lower than the current one (a missing value,
+  such as on a lead started before this feature, counts as 0, so it owes nothing until the
+  first save), it appends to that message's text a
   trailer: a blank line, `[wc:style]`, and the rendering, saying it replaces any earlier
   style; then sets the session's `style_version`. A lead started after the save records the
   current version at start and owes nothing. The `sent` record keeps the text as submitted.
@@ -375,6 +390,8 @@ table built here.
 
 **Lanes:** Codex / Heavy (gpt-6.1-sol), mechanics; Claude / CLI default, intent; cross-family: yes.
 
+**Outcome:** not clean (2 major upheld, fixed in the Spec).
+
 **Changed since Round 1:**
 - Terminal Claude lanes read the models file (`model.sh claude <tier>`, `model.sh family claude <tier>`); lanes.md Claude section changes ("Tier names").
 - Claude picker: "Latest Haiku/Sonnet/Opus/Fable" aliases; both pickers gain "Other…" free entry; heads-up is GPT only (IDEA narrowed, decision 18).
@@ -385,6 +402,11 @@ table built here.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| Claude intent | major | "Other agents" tiers live only in `settings.json`, so terminal `/plan-review` and `/verify` don't follow them, against decision 7 | upheld | Decision 7 covers models per tier; role tiers are app-only. Spec "Settings store" says so and the panel states it in one line |
+| Claude intent | minor | Missing `style_version` counted as owing sends the default style to every running lead on deploy, beyond IDEA's exception | upheld | Missing counts as 0; owes only after the first save |
+| Claude intent | minor | Agent-tool lane behaviour undefined when `family` exits 3, and exact version/effort are lost on that path | upheld | Spec: such lanes launch from a shell; `lanes.md` documents the Agent path follows family only |
+| Claude intent | minor | Old tier names `haiku/sonnet/opus` now mean slots, which can surprise next to the "Latest" aliases | upheld | Spec: alias lines in `API.md` and `sub-lead.md` say old names mean slots |
+| Codex mechanics | major | `unsettled: decide` contradicts `worker.md:27-33`, which no template may override | user-decision | It also collides with IDEA's constraint that templates never override built-in rules; asked Collin. Spec holds the provisional fix (decision 19) until he answers |
 
 ## Prior Work
 
