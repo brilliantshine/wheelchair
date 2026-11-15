@@ -151,8 +151,8 @@ account, cli_id, slot, status, closed_at, outcome, sent_line, graph, notice}`.
   asides route reads the lead's id from the hub's record; an aside's `cli_id` is set the
   same way once its own id is known.
 - **Before the first turn ends.** Until an aside's first turn has ended and its `cli_id` is
-  known, Think harder is disabled. Done or This changes my answer pressed in that window
-  marks the aside `closed` at once and the hub stops the session when that turn ends (or
+  known, Think harder and This changes my answer are disabled (the summary needs a finished
+  turn to draft from). Done pressed in that window marks the aside `closed` at once and the hub stops the session when that turn ends (or
   at once if the session never became ready). An aside closed with no `cli_id` can't be
   continued: reopening it shows its conversation, and typing starts a new fork for the same
   anchor, replacing `session` and `cli_id` on the record.
@@ -177,8 +177,9 @@ account, cli_id, slot, status, closed_at, outcome, sent_line, graph, notice}`.
   its last turn hasn't ended, else "Nothing is waiting on you".
 - Body: only the aside's own turns. `chat.js` exports a function returning an aside's
   items: it parses the transcript into turns as for the lead but without `renderTurn`'s
-  hiding of `[wc:role]` turns, drops every turn before the first whose human text contains
-  `[wc:aside `, and for that turn shows only the text after the quote (Collin's own words,
+  hiding of `[wc:role]` turns, drops every turn before the first whose human text has a line
+  exactly equal to this aside's envelope header, `[wc:aside <action>] <aside id>` (the id is
+  unique, so a lead turn that merely mentions the marker never matches), and for that turn shows only the text after the quote (Collin's own words,
   if any) plus its replies. This works whether the role prompt and the aside request arrive
   as one turn (Codex) or the role prompt is a system prompt (Claude). Rendered with the same Markdown renderer and tool-step setting as the main chat.
   The copied lead history before it is never shown. A `[wc:step-up]` reply shows as one
@@ -199,6 +200,10 @@ account, cli_id, slot, status, closed_at, outcome, sent_line, graph, notice}`.
 - Automatic: when an aside turn's last reply is `[wc:step-up] ...`, the hub stops the
   session, restarts it with `resume` on `heavy`, sets `slot: heavy`, and re-sends the
   question that triggered it.
+- Queue on restart: the replacement session's queue is the re-sent question first, then
+  every message still queued on the stopped session, in their original order. The hub moves
+  them under the thread lock (`hub.withThread`) before stopping the old session, so none is
+  lost or sent twice. The same applies to Think harder and to reopening.
 - **Think harder**: the same, re-sending Collin's last message in the aside.
 - On `heavy` the aside never steps up again, and any `[wc:step-up]` reply is shown as
   text.
@@ -317,6 +322,21 @@ bash machine/test/fork-probe.sh       # T1, by hand, real CLIs
 - Behaviour before an aside's first turn ends: Think harder disabled, early close, reopening with no id (§4).
 - The panel's own transcript filter, which works for Codex's combined first turn (§5).
 - Aside notices and queue counts kept out of the main thread (§4).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| mechanics (gpt) | blocking | Substring cutoff on `[wc:aside ` can expose copied lead history when an earlier lead turn mentions the marker | upheld | Checked §5; the cutoff now matches this aside's exact envelope header line |
+| mechanics (gpt) | major | Step-up restart strands messages queued on the stopped session | upheld | Checked `viewer/app/sessions.js:245-260`; queued messages move to the replacement, after the re-sent question |
+| intent (gpt) | major | Early-close rule closes "This changes my answer" before Collin can edit and send the line | upheld | Checked Decision 9 and §7; This changes my answer is now disabled until the first turn ends, so only Done can close early |
+
+### Round 3 — 2026-11-15
+
+**Lanes:** intent: pending; mechanics: pending.
+
+**Changed since Round 2:**
+- This changes my answer is disabled until an aside's first turn ends; only Done can close early (§4).
+- The panel's transcript cutoff matches this aside's exact envelope header line (§5).
+- Messages queued on an aside move to its replacement session on step-up, Think harder and reopening (§6).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
