@@ -318,6 +318,54 @@ test('limited verifier reports only after release and continuation', async () =>
   } finally { await close(c); }
 });
 
+for (const role of ['reviewer', 'verifier', 'worker']) {
+  for (const scenario of ['live', 'late', 'spooled retry', 'limit-hit', 'control']) {
+    test(`${role}: ${scenario} limit-ended delivery`, async () => {
+      const { Hub } = require('../app/hub.js');
+      const { releaseLimits } = require('../app/sessions.js');
+      const c = await setup();
+      try {
+        const thread = (await api(c, '/threads', { method: 'POST', body: { project: `/tmp/d18-${role}-${scenario}` } })).body;
+        let starter = thread.sessions[0];
+        if (role === 'worker') starter = (await machinePost(c, '/machine/session', { calling_session: starter.name, action: 'start', role: 'sub-lead', attempt_id: 'sub' })).body.session;
+        const target = (await machinePost(c, '/machine/session', { calling_session: starter.name, action: 'start', role, attempt_id: 'target' })).body.session;
+        const hub = new Hub({ stateDir: c.state });
+        const until = new Date(Date.now() + (scenario === 'live' ? 3600000 : -3600000)).toISOString();
+        const extra = { 'last-assistant-message': 'Partial report' };
+        if (scenario === 'limit-hit') extra.limited_until = until;
+        else if (scenario !== 'control') extra.reading = { account: target.account, at: new Date().toISOString(), limited_until: until };
+        if (scenario === 'spooled retry') extra.delivery_id = 'retry-id';
+        const type = scenario === 'limit-hit' ? 'limit-hit' : 'turn-ended';
+        await event(c, thread.id, target.name, type, extra);
+        if (scenario === 'spooled retry') await event(c, thread.id, target.name, type, extra);
+        let stored = await hub.thread(thread.id);
+        const current = stored.sessions.find(s => s.name === target.name);
+        const results = () => stored.cards.filter(card => card.kind === 'result');
+        const submits = () => c.machine.sessions.get(target.name).submits || [];
+        if (scenario === 'control') {
+          assert.equal(results().length, role === 'worker' ? 0 : 1);
+          if (role !== 'worker') assert.equal(results()[0].summary, 'Partial report');
+          return;
+        }
+        assert.equal(current.finished, undefined);
+        assert.equal(results().length, 0);
+        if (scenario === 'live') {
+          assert.equal(current.limited_until, until);
+          assert.equal(submits().length, 0);
+          current.limited_until = new Date(Date.now() - 1000).toISOString();
+          await hub.save(stored);
+          await releaseLimits(hub);
+        } else assert.equal(current.limited_until, undefined);
+        assert.deepEqual(submits(), ['Continue.']);
+        await event(c, thread.id, target.name, 'turn-ended', { 'last-assistant-message': 'Complete report' });
+        stored = await hub.thread(thread.id);
+        assert.equal(results().length, role === 'worker' ? 0 : 1);
+        if (role !== 'worker') assert.equal(results()[0].summary, 'Complete report');
+      } finally { await close(c); }
+    });
+  }
+}
+
 test('waiting lead records provider and promoted role layers and style', async () => {
   const { Hub } = require('../app/hub.js');
   const settings = require('../app/settings.js');
