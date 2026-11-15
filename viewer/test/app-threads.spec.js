@@ -46,10 +46,12 @@ for (const [label, size] of SIZES) {
       const waiting = await ctx.make({ cli: 'claude' });
       const ready = await ctx.make({ cli: 'claude' });
       const gone = await ctx.make({ cli: 'claude' });
+      const opened = await ctx.make({ cli: 'claude' });
       const t = (n) => new Date(Date.now() - n * 60000).toISOString();
       await ctx.patch(old.id, (x) => { x.title = 'Old one'; x.updated_at = t(50); });
       await ctx.patch(fresh.id, (x) => { x.title = 'Fresh one'; x.updated_at = t(1); });
-      await ctx.patch(parent.id, (x) => { x.title = 'Parent work'; x.updated_at = t(40); });
+      // A long parent name: its "waiting for" badge must wrap under the stub's title, not squeeze it.
+      await ctx.patch(parent.id, (x) => { x.title = 'Parent work with a long name that fills the row'; x.updated_at = t(40); });
       await ctx.patch(waiting.id, (x) => {
         x.title = 'Waiting stub'; x.updated_at = t(10); x.stub = true; x.sessions = [];
         x.parent = parent.id; x.waiting_on_parent = true; x.depends_on_parent = true;
@@ -58,18 +60,38 @@ for (const [label, size] of SIZES) {
         x.title = 'Ready stub'; x.updated_at = t(20); x.stub = true; x.sessions = []; x.ready = true;
       });
       await ctx.patch(gone.id, (x) => { x.title = 'Gone one'; x.updated_at = t(5); x.archived = true; });
+      // A stub someone opened: a lead runs in it, so it is no longer marked a stub.
+      await ctx.patch(opened.id, (x) => {
+        x.title = 'Opened stub'; x.updated_at = t(30); x.stub = true; x.ready = true;
+        x.parent = parent.id; x.depends_on_parent = true;
+      });
 
       await page.goto(`${ctx.server.url}/app/threads`);
       const titles = () => page.locator('#list li .title').allTextContents();
-      await expect.poll(titles).toEqual(['Fresh one', 'Waiting stub', 'Ready stub', 'Parent work', 'Old one']);
+      await expect.poll(titles).toEqual(['Fresh one', 'Waiting stub', 'Ready stub', 'Opened stub',
+        'Parent work with a long name that fills the row', 'Old one']);
       const wl = page.locator('#list li', { hasText: 'Waiting stub' });
       await expect(wl).toContainText('stub');
       await expect(wl).toContainText('waiting for Parent work');
+      // At every row width the title keeps a readable width: the badges wrap below it instead.
+      const narrowest = await wl.evaluate((li) => {
+        const top = li.querySelector('.top'); const title = top.querySelector('.title');
+        let least = Infinity;
+        for (let w = 160; w <= 520; w += 8) {
+          top.style.width = w + 'px';
+          least = Math.min(least, title.getBoundingClientRect().width);
+        }
+        top.style.width = '';
+        return least;
+      });
+      expect(narrowest).toBeGreaterThan(90);
+      await expect(page.locator('#list li', { hasText: 'Opened stub' }).locator('.badge')).toHaveCount(0);
       await expect(page.locator('#list li', { hasText: 'Ready stub' })).toContainText('ready');
       await expect(page.locator('#list li', { hasText: 'Gone one' })).toHaveCount(0);
       await page.locator('#show-archived').check();
       await expect.poll(titles).toEqual(
-        ['Fresh one', 'Gone one', 'Waiting stub', 'Ready stub', 'Parent work', 'Old one']);
+        ['Fresh one', 'Gone one', 'Waiting stub', 'Ready stub', 'Opened stub',
+          'Parent work with a long name that fills the row', 'Old one']);
       await expect(page.locator('#list li', { hasText: 'Gone one' })).toContainText('archived');
       await expect(page.locator('#app-nav a[aria-current="page"]')).toHaveText('Threads');
       await noSideScroll(page);
