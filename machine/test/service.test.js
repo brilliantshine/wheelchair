@@ -369,3 +369,9 @@ test('worktree-remove: only a merged, finished worker of the same thread, called
     assert.equal(env.instance.sessions[worker.name].worktree_removed, true);
   } finally { await env.close(); }
 });
+test('a Claude session gets the model the hub chose, and none when it chose none', async () => {
+  const env = await service(await temp()); try {
+    await start(env, { model: 'haiku' }); assert.match(await log(env), /'--model' 'haiku'/);
+  } finally { await env.close(); }
+  const plain = await service(await temp()); try { await start(plain); assert.doesNotMatch(await log(plain), /--model/); } finally { await plain.close(); }
+});

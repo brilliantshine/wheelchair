@@ -224,7 +224,7 @@ class MachineService {
         Stop: [{ hooks: [{ type: 'command', command: `${shellQuote(hook)} claude ${shellQuote(session.name)}` }] }],
         Notification: [{ hooks: [{ type: 'command', command: `${shellQuote(hook)} claude ${shellQuote(session.name)}` }] }],
       } };
-      return { settingsPath, settings, argv: ['claude', '--session-id', session.cli_session_id, '--settings', settingsPath, '--permission-mode', 'auto', '--append-system-prompt', rolePrompt] };
+      return { settingsPath, settings, argv: ['claude', '--session-id', session.cli_session_id, '--settings', settingsPath, '--permission-mode', 'auto', ...(input.model ? ['--model', input.model] : []), '--append-system-prompt', rolePrompt] };
     }
     if (input.cli === 'codex') {
       const trust = `projects={${json(worktree)}={trust_level="trusted"}}`;
