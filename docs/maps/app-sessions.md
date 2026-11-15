@@ -1,6 +1,9 @@
 # Map: how the app starts an agent session (tier, model, permissions, login, role prompt, transcript)
 
-Checked against: `5742e2f990d2f99c82aa82b01403ee772a6bf502` (origin/main)
+Checked against: `695931e84556a21d3c22729d21083992640dcc0e` (origin/main) for the parts marked
+(re-checked): the model/effort resolution, the command line, the role prompt and the settings
+store. The rest was last checked at `5742e2f` and `machine/service.js` has since gained ~84
+lines, so its line numbers below (readiness, transcripts, logins) may be off by 20-40.
 Files covered: `viewer/app/sessions.js`, `viewer/app/threads.js` (createThread),
 `viewer/app/wc.js` (session start), `viewer/app/ready.js`, `viewer/app/routes.js`,
 `viewer/app/state.js`, `machine/service.js`, `codex/model.sh`, `codex/preflight.sh`,
@@ -15,30 +18,35 @@ Files covered: `viewer/app/sessions.js`, `viewer/app/threads.js` (createThread),
    the hub's `/api/machine/session` (`machine/service.js:637-656`, route at `:715`), and `sessionRequest`
    checks who may start what (`viewer/app/sessions.js:288-326`; the table is
    `sessions.js:47-50`).
-2. **The hub resolves the model.** `startSession` (`sessions.js:68-150`) runs the Codex
-   preflight first for a Codex session (`sessions.js:72-82`), then `resolveModel`
-   (`sessions.js:21-35`):
-   - Claude: `top` → no model at all (the CLI's own default); `haiku|sonnet|opus` → passed
-     through as the alias.
-   - Codex: `top` → `sol`; `luna|terra|sol` → `codex/model.sh <tier>`, which prints the
-     pinned model from `~/.wheelchair/models` or the shipped default
-     (`codex/model.sh:15-20`, `31`, `227`).
-   - The allowed tiers are hard-coded (`sessions.js:16-19`).
+2. **The hub resolves the model and effort** (re-checked). `startSession`
+   (`viewer/app/sessions.js:71-160`) runs the Codex preflight first for a Codex session
+   (`:75-86`), then `resolveModel` (`:16-39`). The role picks a *slot*: lead and sub-lead →
+   `lead`; reviewer, verifier, mapper → the tier saved in Settings' `other_agents`
+   (`:20-21`); anything else → the requested tier, with `top` meaning `heavy`, and Claude's
+   old `haiku|sonnet|opus` meaning light|standard|heavy (`:22-27`). It then runs
+   `codex/model.sh <claude|gpt> <slot>` for the model and, **for Claude only**,
+   `codex/model.sh effort claude <slot>` (`:29-33`). Allowed tiers are `settings.js:12-13`.
+   A cell set to `none` is a 400 (`:36`).
 3. **The hub asks the machine service to start it**, `POST /v1/sessions` with role, cli,
-   token, worktree, brief, model and git refs (`sessions.js:110-128`). **The hub never sends
-   `role_prompt` or any per-session config, environment or login choice.**
-4. **The service builds the command line** in `commandFor` (`machine/service.js:242-262`):
-   - The role prompt is `input.role_prompt` if given, else the one line
-     `Read <root>/protocol/app/<role>.md before responding.` (`service.js:245`, again at
-     `:283`).
+   token, worktree, brief, `model`, `effort` (only when set), `permission_mode`, `codex_mode`,
+   `role_layers` and git refs (`sessions.js:115-135`) (re-checked). The hub never sends
+   `role_prompt`, and nothing chooses a login or environment.
+4. **The service builds the command line** in `commandFor` (`machine/service.js:266-289`)
+   (re-checked):
+   - The role prompt is `composeRolePrompt` (`service.js:57-63`): the pointer line `Read
+     <root>/protocol/app/<role>.md before responding. It is wheelchair's built-in rules for
+     your role.`, then a blank line and `role_layers` when there are any. `role_prompt`, if
+     sent, replaces both.
    - Claude: `claude --session-id <uuid> --settings <stateDir>/settings/<name>.json
-     --permission-mode auto [--model M] --append-system-prompt <role prompt>`
-     (`service.js:254`). The settings file is written per session and holds only
-     `cleanupPeriodDays`, `promptSuggestionEnabled:false` and the Stop/Notification hooks
-     (`service.js:250-253`, written at `:277`).
-   - Codex: `codex -s workspace-write|read-only -a never -c network on -c notify=<hook>
-     -c trust=<worktree> [-m M]` (`service.js:259`). The role prompt goes as the first
-     message instead: `[wc:role] <role prompt>\n\n<brief>` (`service.js:284-286`).
+     --permission-mode auto|bypassPermissions [--model M] [--effort E]
+     --append-system-prompt <role prompt>` (`service.js:277`). `--effort` appears only when
+     the session record has one (`startOptions`, `service.js:65-73`, accepts low, medium,
+     high, xhigh, max).
+   - Codex: `codex <access flags> -c notify=… -c projects={…trust…} [-m M]`
+     (`service.js:287`). **No reasoning-effort flag at all**: `grep reasoning_effort` finds it
+     only in protocol text (`protocol/lanes.md`), never in `machine/`, `viewer/` or `codex/`.
+     The role prompt and layers go as the first `[wc:role]` message instead
+     (`service.js:310-314`).
 5. **tmux runs it**: `env WHEELCHAIR_LANE=1 WHEELCHAIR_SESSION_TOKEN=… WHEELCHAIR_STATE_DIR=…
    WHEELCHAIR_MACHINE_ORIGIN=… <argv>` in `tmux new-session -d -s <name> -c <worktree>`,
    under `systemd-run --user --scope` when available (`service.js:278`, `287-291`).
@@ -87,23 +95,26 @@ new thread (lead, top)        agent: wc.js session start --tier T
 - `GET /v1/status` returns per CLI only `{installed, logged_in, version}`
   (`service.js:657-673`).
 
-## Permission mode
+## Permission mode (re-checked)
 
-- Hard-coded: Claude `--permission-mode auto` (`service.js:254`); Codex `-a never` with a
-  sandbox chosen by role (`service.js:259`). **Readiness depends on it**: Claude counts as
-  ready only when the pane says `auto mode on` (`service.js:298`). A different mode would
-  leave every Claude session `stuck`.
+- No longer hard-coded: Settings holds `permission_mode` (`auto`|`bypass`) and `codex_mode`
+  (`sandboxed`|`unrestricted`); the hub passes them on start (`sessions.js:130-131`) and
+  the service maps them in `commandFor` (`service.js:266-289`). Readiness still depends on
+  the mode (`auto mode on` in the pane, or the bypass confirmation answered by key presses).
 
 ## Where a role's instructions come from
 
-- One line pointing at `protocol/app/<role>.md`, delivered by `--append-system-prompt`
-  (Claude) or the first `[wc:role]` message (Codex). The chat hides `[wc:role]` turns
-  (`viewer/app/chat.js:133`).
-- **A ready hook for layering**: the service already accepts `input.role_prompt` and uses
-  it in place of the one line, for both CLIs (`service.js:245`, `283-286`). The hub never
-  sends it. A template or writing style could be composed by the hub into `role_prompt`, or
-  appended to the brief, with no service change. For Claude it would then sit on the tmux
-  command line inside `--append-system-prompt`.
+- The pointer line to `protocol/app/<role>.md` plus **`role_layers`** (re-checked), delivered
+  by `--append-system-prompt` (Claude) or the first `[wc:role]` message (Codex). The chat
+  hides `[wc:role]` turns (`viewer/app/chat.js:133`).
+- **`role_layers` is how Settings reaches an agent.** `settings.roleLayers`
+  (`viewer/app/settings.js:121-134`) builds it per role and project: one line "Nothing below
+  overrides the built-in rules above", then the in-use behavior template for that role
+  (project-scoped wins over `all`, `settings.js:116-119`) with its switch sentences
+  (`:93-106`) and free text, then "where the template and the brief disagree, the brief
+  wins"; for a **lead only**, also the rendered writing style (`:132`). The hub computes it at
+  start (`sessions.js:89`, `132`) and `composeRolePrompt` appends it (`service.js:57-63`). A
+  running session keeps what it started with.
 - The brief is typed in as the first message (`service.js:284-286`); a lead's brief is
   empty (`threads.js:57`).
 - **The wording list does not reach app sessions**: every session runs with
@@ -154,12 +165,14 @@ accounts, usage or models.
 
 ## Hub routes and state
 
-- Browser API routes are dispatched in `viewer/app/routes.js:27-44`: `machine`, `threads`,
-  `features`, `projects`, `sessions`; anything else is 404. The contract is
+- Browser API routes are dispatched in `viewer/app/routes.js:27-45`: `machine`, `threads`,
+  `features`, `projects`, `settings`, `sessions`; anything else is 404. The contract is
   `viewer/app/API.md:8-27`.
 - Hub-wide state lives in `~/.local/state/wheelchair/` (`viewer/app/state.js:9`):
-  `machines.json`, `projects.json` and `threads/<id>.json` (`state.js:45-46`, `87`). There
-  is no settings file.
+  `machines.json`, `projects.json`, `threads/<id>.json` and, new, `settings.json`
+  (`state.js:47`, `176-193`; written through one read-modify-write queue, `updateSettings`).
+  Model and effort pins are **not** in it: they live in `~/.wheelchair/models`, owned by
+  `codex/model.sh`.
 - Machine routes are in `machine/service.js:675-718` and `machine/API.md:8-22`.
 
 ## Every place the tier names Luna, Terra, Sol, Astra appear (outside plan history)
@@ -180,13 +193,10 @@ accounts, usage or models.
 
 ## Wrong today
 
-- **Astra cannot be reached from the app.** `TIERS.codex` is `luna, terra, sol`
-  (`sessions.js:17`), but `model.sh` pins `astra` (`codex/model.sh:19`) and the sub-lead is
-  told the ladder runs to Astra (`protocol/app/sub-lead.md:119`). A `--tier astra` start is
-  refused with 400 (`sessions.js:27-29`). `sub-lead.md:74` lists only luna/terra/sol/top,
-  so the role files disagree with each other.
-- **A Claude `top` session runs whatever the CLI defaults to**, not a named model
-  (`sessions.js:24`): "leads run on Opus 5.5" is not enforced anywhere.
+- (Re-checked: the old "Astra cannot be reached" finding is fixed; `critical` is a valid tier,
+  `sessions.js:22-27`, `settings.js:12`.)
+- **"Leads run on Opus 5.5" is now a pin, not a CLI default** (`model.sh:21`): `top` no longer
+  means "no `--model`"; every session gets a model (`sessions.js:29-34`).
 
 ## What I did not look at
 
