@@ -1230,6 +1230,7 @@ Spec item done as described, so every row is `partial` and nothing is marked `pr
 | R3 | Remediation 1, pages: terminal `;`, hub attach command, Done card buttons, archived diagrams drawn | `viewer/pages/`, specs | Claude / Sonnet | n/a | browser suite, node suite | done (merged a4f6852) |
 | R4 | Remediation 2: event delivery id after success, diagram graph registration, version from server start, Codex turn reset, archive after a rebase | `viewer/app/`, two `server.js` hooks, `machine/service.js` archive | GPT / Terra (gpt-5.6-terra), xhigh, fresh | 01a1dd8a-6781-7761-b710-87f81635cc3e | machine, node, browser suites | done (merged) |
 | R5 | Remediation 2, archived child pictures navigate to the child | `viewer/index.html`, specs | Claude / Sonnet (fresh) | n/a | browser suite, node suite | done (merged 2e7f34b) |
+| R6 | Remediation 3: a failed delivery never undoes its operation, queues retried on a timer, Talk about this leaves the approval open, verifier worktrees force-removed, sent messages recorded | `viewer/app/`, `machine/service.js` verifier stop | GPT / Terra (gpt-5.6-terra), xhigh, fresh | pending | machine, node, browser suites | in-progress |
 
 ## Log
 
@@ -1326,3 +1327,4 @@ Spec item done as described, so every row is `partial` and nothing is marked `pr
 - 2026-11-14 — Choice: R5, `viewer/test/app-threads.spec.js`: child opened by pointerup (the open badge listens for pointerup).
 - 2026-11-14 — Choice: R5, `viewer/index.html`: a child missing from the branch shows as present (childrenMap stays empty in archive mode; opening it shows the usual 404).
 - 2026-11-14: remediation 2 validated: sensitivity 62/0, seen 18/0, codex 45/0, install 87/0, machine 50/50, node 237 with 235 passing (known port race; intermittent write lock), browser 334 passed / 2 failed (known no-drawn-arrow) / 2 skipped, install pair exit 0 twice. Live services redeployed. Re-verify (round 3).
+- 2026-11-14: Stage 4 round 3 (resumed Opus, resumed Sol, fresh Opus) FAIL: 6 gaps. Both delivery gaps trace to remediation 2's brief letting delivery join the queuing operation. REMEDIATION-3 settles that a failed delivery never undoes its operation and a timer retries queues. R6 goes to a fresh Terra at xhigh; the lead fixes the root router and stale known gaps.

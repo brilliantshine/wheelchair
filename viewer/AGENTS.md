@@ -18,6 +18,7 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 | `app/sessions.js`, `wc.js` | Session policy, queues, lifecycle events, and the agent-side CLI. |
 | `app/chat.js`, `threads.js`, `views.js` | Transcript assembly, thread lifecycle, and view data. |
 | `app/routes.js`, `hub.js`, `API.md` | App HTTP dispatch, module composition, and the page-facing JSON contract. |
+| `app/ready.js` | The Ready check before Start building: each machine reachable, on the hub's commit, and its CLIs logged in. |
 | `index.html` | The graph page. Holds the second copy of the box and group size constants the server's layout reserves room for |
 | `list.html`, `list.js` | The list of open graphs and registered plans |
 | `doc.html`, `doc.js` | The plan document page, read from a plan's `docs/plans/<slug>/` |

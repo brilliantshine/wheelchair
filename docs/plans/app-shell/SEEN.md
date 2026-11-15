@@ -95,3 +95,8 @@
 2026-11-15T04:50:03Z shown c5d2
 2026-11-15T04:50:03Z shown 6396
 2026-11-15T04:50:03Z turn
+2026-11-15T05:18:46Z turn
+2026-11-15T05:27:53Z new 68dd a valid card or a checker's report could be lost or refused when its target session can't take it at that moment
+2026-11-15T05:27:53Z new e65d pressing Talk about this on the plan approval disables Start building for good
+2026-11-15T05:27:53Z new 717b a checker's worktree with leftover files is never removed
+2026-11-15T05:27:53Z new c945 messages the app types in aren't kept for restarts

@@ -56,7 +56,7 @@ Two rules follow, and between them they cover most of what can go wrong here:
 | `codex/` | [AGENTS.md](codex/AGENTS.md) | `prompts/`, the Codex CLI wrappers, same convention as `skills/`, one line each; `preflight.sh`, the login check that also prints the model heads-up; `model.sh`, the GPT model pins' reader and writer; and `test/`, its fixture suite |
 | `docs/` | — | `plans/<slug>/` per feature; `proposals/<name>/`, ideas written outside the workflow and waiting for `/adopt`; `known-issues.md`, failures recorded but not yet fixed. State, not rules — nothing here is a contract |
 | `machine/` | [AGENTS.md](machine/AGENTS.md) | the per-machine agent session service the app's hub drives: `service.js` (sessions in tmux, worktrees, git for agents, transcript copies, spools), `hook.sh` and `lib/hook-post.js` (the CLIs' turn-end and prompt hooks), `API.md` (its route contract), `test/run.sh`. Runs as the `wheelchair-machine` user service, never read as guidance |
-| `viewer/` | [AGENTS.md](viewer/AGENTS.md) | the browser graph viewer, its list and document pages, the sign-in page a browser gets before it is remembered, and the server behind them — `index.html`, `list.html`, `list.js`, `doc.html`, `doc.js`, `signin.html`, `server.js`, `playwright.config.js`. Started by an agent turn, never read as guidance |
+| `viewer/` | [AGENTS.md](viewer/AGENTS.md) | the browser graph viewer, its list and document pages, the sign-in page a browser gets before it is remembered, and the server behind them — `index.html`, `list.html`, `list.js`, `doc.html`, `doc.js`, `signin.html`, `server.js`, `playwright.config.js` — plus the app served from the hub: `app/` (the hub: state, threads, sessions, cards, the Ready check, `wc.js` and `card.js` that agents run, `API.md`), `pages/` (the Threads, thread, Features, Sessions and terminal pages) and `vendor/` (xterm.js). Runs as the `wheelchair-viewer` user service or is started by an agent turn, never read as guidance |
 
 ## Files at the root
 
@@ -76,11 +76,10 @@ If `highways` is installed, run `highways search "<what you're looking for>"` be
    rule uses are the words it is stored under.
 3. **Graphify last**, under the policy below.
 
-No module-docstring rung: `viewer/` is real JavaScript, but it is eight files — the graph
-page, the list and document pages and their scripts, the sign-in page, the server, and its
-Playwright config —
-and a router's file/role table already says what each one does at that size, so there is
-still nothing a docstring would tell you faster.
+No module-docstring rung: `viewer/` and `machine/` are real JavaScript, but each of their
+files has one role, and their routers' file/role tables (`viewer/AGENTS.md`,
+`viewer/app/API.md`, `machine/AGENTS.md`, `machine/API.md`) already say what each one does,
+so there is still nothing a docstring would tell you faster.
 
 ## Graphify policy
 
@@ -107,6 +106,7 @@ bash sensitivity/test/run.sh          # the dial's block writer, exit-code gated
 bash seen/test/run.sh                 # the hook and wording-list writer, exit-code gated
 bash codex/test/run.sh                # the GPT model pins and heads-up, exit-code gated
 bash install/test/run.sh              # presence-aware installer assertions, exit-code gated
+bash machine/test/run.sh              # the machine service, with fake tmux, CLIs and hub
 ./install.sh && ./install.sh          # idempotent; git status --porcelain stays empty
 node --test viewer/test/*.test.js     # unquoted glob; works on Node 20 and 26
 npm --prefix viewer run test:browser  # Chromium and Firefox; fails loudly if either is missing

@@ -15,6 +15,15 @@ verified-by:
   - round: 2
     lane: sol (gpt-6.1-sol, resumed thread 01a1dd51-d8d6-7942-9d49-0f7c06f2a8c3)
     checks: sonnet, lead opus
+  - round: 3
+    lane: opus (resumed)
+    checks: terra
+  - round: 3
+    lane: sol (gpt-6.1-sol, resumed thread 01a1dd51-d8d6-7942-9d49-0f7c06f2a8c3)
+    checks: sonnet, lead opus
+  - round: 3
+    lane: opus (fresh)
+    checks: terra, sonnet
 ---
 
 # Completion Report — Wheelchair as an app on the hub (slice 1)
@@ -244,13 +253,12 @@ tmux, and the root router.
 - **Model tiers are new.** They haven't been exercised in a live build since T10. A worker
   started with `--tier terra` should run `gpt-5.6-terra`, but no acceptance run has
   watched one.
-- **Archived diagrams open as raw JSON** read from the branch, not as the drawn graph.
+- **Archived diagrams open as raw JSON**: fixed in remediation 1 (R3) and remediation 2 (R5). They draw read-only from the branch.
 - **A session rebuilt from tmux has no token.** That only happens when `sessions.json` is
   lost while sessions live on. Its `card.js`, `wc.js` and hook calls are refused until it
   is restarted.
-- **A restarted worker gets a fresh worktree** (`-w2`), so commits on the first worker's
-  branch don't carry over. That differs from `protocol/app/sub-lead.md`'s "same worktree
-  and branch".
+- **A restarted worker gets a fresh worktree**: fixed in remediation 1 (R1, R2) with
+  `--replaces`, which `protocol/app/sub-lead.md` teaches since remediation 2.
 - **Smaller follow-ups** from Collin and from watching the run are listed in
   `docs/plans/app-shell/acceptance-followups.md`: Markdown in chat, own-words answers,
   thread titles, Archive placement, in-app documents, a permission-mode setting, Escape not
