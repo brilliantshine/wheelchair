@@ -192,6 +192,26 @@ def visible_models(cache_path):
     return newer_first(models)
 
 
+def listed_models(cache_path):
+    try:
+        with open(cache_path, encoding="utf-8") as handle:
+            cache = json.load(handle)
+    except (OSError, UnicodeError, ValueError, RecursionError):
+        return []
+    if not isinstance(cache, dict) or not isinstance(cache.get("models"), list):
+        return []
+    parsed, other, seen = [], [], set()
+    for entry in cache["models"]:
+        if not isinstance(entry, dict) or not isinstance(entry.get("slug"), str) or not isinstance(entry.get("visibility"), str):
+            return []
+        model = entry["slug"]
+        if entry["visibility"] != "list" or not VALUE.match(model) or model in seen:
+            continue
+        seen.add(model)
+        (parsed if model_parts(model) is not None else other).append(model)
+    return newer_first(parsed) + other
+
+
 def heads_up_events(pin_path, cache_path):
     pins, skipped, malformed = read_pins(pin_path)
     events = []
@@ -336,7 +356,7 @@ def main(root, argv):
                 model, effort = cell(pins, provider, slot)
                 result[provider][slot] = None if model == "none" else {
                     "model": model, "effort": effort if provider == "claude" else None}
-        result["malformed"], result["visible"] = malformed, visible_models(cache_path)
+        result["malformed"], result["visible"] = malformed, listed_models(cache_path)
         print(json.dumps(result, separators=(",", ":")))
         return
     if len(argv) == 3 and argv[0] == "set" and (slot := slot_for("gpt", argv[1])) in WORK_TIERS:
