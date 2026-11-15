@@ -39,6 +39,7 @@
     ['features', 'Features', '/wheelchair/app/features'],
     ['threads', 'Threads', '/wheelchair/app/threads'],
     ['sessions', 'Sessions', '/wheelchair/app/sessions'],
+    ['settings', 'Settings', '/wheelchair/app/settings'],
   ];
   let sessionCount = null;
   for (const [key, label, href] of links) {
