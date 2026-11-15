@@ -165,7 +165,7 @@ Codex.
 - **Codex:** each rollout line with `payload.rate_limits` (event `token_count`) gives a
   reading. Map by `window_minutes`: 300 → `five_hour`, 10080 → `week`, from `primary` and
   `secondary` whichever carries it; `resets_at` is Unix seconds. `rate_limit_reached_type`
-  non-null → `limited_until` = the matching window's `resets_at`. The service already
+  non-null → `limited_until` by the **exhausted-window rule** below. The service already
   locates and copies the rollout (`service.js:502-526`, `622-638`); it scans new lines on
   each turn end.
 - **Claude:** the per-session settings file gets `statusLine: {type: 'command', command:
@@ -173,9 +173,14 @@ Codex.
   JSON from stdin, prints one short line (model and 5-hour percent) and posts
   `rate_limits.five_hour|seven_day {used_percentage, resets_at}` to the service like
   `hook-post.js` does (same spool fallback), at most once a minute per session. The
-  `Stop`-type hook list gains `StopFailure`; `hookEvent` maps `error_type: 'rate_limit'` to
-  `limit-hit`, `limited_until` = the latest reading's earliest `resets_at` with
-  `used >= 100`, else now + 1 h.
+  hook list gains `StopFailure` (which Claude fires instead of `Stop` when a turn fails);
+  `hookEvent` maps a payload with `error === 'rate_limit'` (also accept `error_type`, for
+  older builds) to `limit-hit`, with `limited_until` by the exhausted-window rule. Any other
+  `StopFailure` maps to `turn-ended`.
+- **Exhausted-window rule** (both CLIs), from the session's latest reading: among windows
+  with `used >= 100`, the **latest** `resets_at` (both exhausted → the week's). No window at
+  100 → the latest `resets_at` present. No `resets_at` at all → now + 1 h, recomputed on
+  the next reading.
 - The service forwards readings to the hub (`POST` to the hub like turn events). The hub
   keeps the latest reading per account in `usage.json` in its state dir (one writer queue,
   as `State.updateSettings`, `state.js:176-194`).
@@ -183,9 +188,12 @@ Codex.
 - An account with no reading shows "no reading yet" and counts as having room (§5).
 
 ### 5. The balancer
-One function, `viewer/app/balancer.js` `choose(hub, thread, role, constraints)` → `{provider,
-account}` or `{wait: {until, reason}}`, called by `startSession` (`sessions.js:72`) before
-`resolveModel`; `input.cli` is replaced by `cliOf(provider)`.
+One function, `viewer/app/balancer.js` `choose(hub, thread, role, tier, constraints)` →
+`{provider, account, note?}` or `{wait: {until, reason}}`, called by `startSession`
+(`sessions.js:72`) before `resolveModel`; `input.cli` is replaced by `cliOf(provider)`. The
+slot is resolved from role and tier first (the logic at `sessions.js:20-27`, which does not
+depend on provider), and a provider whose cell is Not used at that slot (`model.sh` exit 3)
+is ineligible.
 
 **Settings** (hub `settings.json`, edited on the Usage panel unless noted):
 - `lead_order`: ordered providers, optionally ending in `any` ("then whatever's left").
@@ -216,8 +224,10 @@ No reading → room.
 - **Worker, mapper, reviewer, verifier:** `worker_order`, skipping providers excluded by
   constraints, by Not used at the resolved slot (`model.sh` exit 3, `sessions.js:36`), and
   by Save Claude/margin below. None → wait.
+- **Eligible** providers for a start: in the order, not excluded by a constraint, not Not
+  used at the slot, with at least one account logged in on the machine.
 - **Save Claude for leads** on: Claude is tried for these roles only after every other
-  provider in `worker_order` has no room, whatever its position.
+  eligible provider has no room, whatever its position.
 - **Margin:** for these roles Claude is skipped entirely when its forecast (below) puts the
   provider's combined week below `margin` percent at the earliest account's reset. Leads
   ignore the margin.
@@ -233,25 +243,40 @@ No reading → room.
     for both").
   - The two are mutually exclusive (400 if both).
 
-**Waiting** (D14): a start that must wait creates the session record with
-`status: 'waiting', waiting_until, waiting_reason` and returns it (HTTP 202) instead of
-failing; `wc.js` prints "waiting for room until <time>". The hub re-runs `choose` for
-waiting sessions every 60 s and on every new reading, and starts the session when it gets
-an account. A lead that is waiting shows on the thread as a `needs`-style line from the app:
-"Waiting for Claude to refill, about <time>". `session stop` on a waiting session cancels it.
+**Waiting** (D14):
+- A start that must wait creates the session record with `status: 'waiting', live: true,
+  waiting_until, waiting_reason` and `pending_start`: the complete `startSession` input
+  (role, tier, brief, constraints, started_by, attempt_id, worktree, branch, base,
+  verify_ref, replaces) saved in the thread file, so a hub restart loses nothing. It returns
+  the record instead of failing; `wc.js` prints "waiting for room until <time>". A repeat
+  start with the same `attempt_id` returns the same waiting record.
+- The hub re-runs `choose` for every waiting session every 60 s (alongside `pollDead`) and on
+  every new reading, oldest first, and on success runs the normal start from
+  `pending_start`, then deletes `pending_start`. Threads are scanned at hub startup.
+- `pollDead` (`sessions.js:370-395`) skips sessions with `status: 'waiting'`: they have no
+  machine session yet. `stopSession` (`sessions.js:358-366`) on a waiting session skips the
+  machine call and marks it `stopped`.
+- A waiting lead shows on the thread as an app line: "Waiting for Claude to refill, about
+  <time>".
 
 **A running session that hits its limit** (`limit-hit`, or a Codex reading with
 `limited_until`): the hub stores `limited_until` on the account's reading and on the
-session; the account has no room until then. When `limited_until` passes and the session is
-still live and idle, the hub queues the message `Continue.` to it (the existing queue,
-`sessions.js`). It is never moved.
+session, and sets `turn_ended = true` (the turn is over). The account has no room until
+then. `canDeliver` (`sessions.js:216-218`) also requires the session's `limited_until` to be
+absent or past, so ordinary queued messages are held too. When `limited_until` passes (the
+60 s timer) and the session is still live, the hub puts `Continue.` at the front of its queue,
+clears `limited_until` and delivers. It is never moved.
 
-**Forecast** (per provider, for the bar, the amber line and the margin): combined week left
-= Σ(weight × (100 − week.used)) / Σ(weight × 100) over unpaused accounts with a week
-reading; accounts with none count as 100% left. Pace = Σ(weight × week.used) / hours since
-the earliest window start (`resets_at − 7 d`). Runs out at = now + left / pace. Amber when
-that is before the earliest `week.resets_at` among the provider's accounts. Pace zero →
-never amber.
+**Forecast** (per provider, for the bar, the amber line and the margin), all in fractions
+of the provider's combined weekly capacity, over unpaused accounts:
+- `C = Σ weight × 100`; `U = Σ weight × week.used` (no reading → used 0).
+- Left `L = (C − U) / C`. Used so far `F = U / C`.
+- Elapsed `h` = hours since the earliest window start among accounts with a reading
+  (`resets_at − 7 d`); pace `P = F / h` per hour.
+- Runs out at = now + `L / P` hours. Amber when that is before the earliest `week.resets_at`
+  `R`. `P = 0` or no readings → never amber.
+- Margin test: Claude is below the margin when `L − P × hours(now → R) < margin / 100`.
+- Check: one weight-1 account at 50% after 84 h → `L = 0.5`, `P = 0.5/84`, runs out in 84 h.
 
 ### 6. Settings panels
 `viewer/pages/settings.js`: add `accounts` and `usage` to `SECTIONS` (`:8`), first and
@@ -292,8 +317,10 @@ Added to `viewer/app/routes.js` and documented in `viewer/app/API.md`:
   accounts: [{id, name, plan, weight, paused, machines: {<m>: signed_in|signed_out|unknown},
   reading, next, reason, live_sessions}]}`.
 - Sign-in routes of §3.
-- `POST /sessions` (what `wc.js session start` calls) accepts `provider`, `not_provider`;
-  `cli` is ignored if sent, so old briefs still work.
+- The agent start path carries `provider` and `not_provider` end to end: `wc.js` →
+  service `/v1/agent/session` → hub `/machine/session` (`routes.js:156-157`) →
+  `sessionRequest`, which copies them into the `startSession` input next to
+  `tier` (`sessions.js:328-345`). `cli` is ignored if sent, so old briefs still work.
 
 ### 8. Thread creation and wc.js
 - New-thread form: the CLI picker is removed; `threads.js:44-47` no longer requires `cli`;
@@ -372,6 +399,15 @@ Added to `viewer/app/routes.js` and documented in `viewer/app/API.md`:
 | intent (Claude) | major | Sub-lead verifier's exclusion names the wrong session and can't express "opposite all builders / one per family" | upheld | D16; §9 verifier rule |
 | intent (Claude) | major | Dropping `--cli` silently removes sub-lead.md:66-69 UI-to-Claude routing; Spec doesn't say what happens to that text | upheld | D16 keeps it via `--provider claude`; §9 rewrites :66-69 |
 | intent (Claude) | minor | "Two files and one registry entry" overstates; chat parser and model.sh also change | upheld | §1 wording corrected |
+| mechanics (Codex) | blocking | StopFailure carries `error: "rate_limit"`, not `error_type` | upheld | §4 checks `error`, accepts `error_type` too |
+| mechanics (Codex) | blocking | Forecast mixes fraction and percentage-point units | upheld | §5 forecast rewritten in fractions, with a worked check |
+| mechanics (Codex) | blocking | Queue can't resume a limited session (`turn_ended` never set; no hold) | upheld | §5: set `turn_ended`, `canDeliver` holds on `limited_until`, `Continue.` at front on release |
+| mechanics (Codex) | major | Waiting sessions vs `pollDead` and `stopSession` | upheld | §5 Waiting: poll skip, hub-only stop |
+| mechanics (Codex) | major | Deferred start inputs not stored durably | upheld | `pending_start` in the thread file; scanned at startup |
+| mechanics (Codex) | major | `choose` has no tier, can't skip Not used | upheld | tier passed; slot resolved first |
+| mechanics (Codex) | major | Constraints must flow via `/v1/agent/session` → `/machine/session`, not `POST /sessions` | upheld | §7 names the real path |
+| mechanics (Codex) | major | Save Claude ignores exclusions and Not used | upheld | "eligible providers" defined in §5 |
+| mechanics (Codex) | major | No rule for which window's reset applies, or missing resets | upheld | §4 exhausted-window rule |
 
 ## Prior Work
 
