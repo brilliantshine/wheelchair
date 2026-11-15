@@ -84,6 +84,14 @@ asides. Running agents are not changed, except the style delivery below.
   documents under `docs/plans/` are history and are not edited.
 - GPT model names (`gpt-6-luna` …) are model names, not tier names, and are unchanged.
 - `top` stays accepted and means Heavy for a worker (see resolution below).
+- Terminal workflow Claude lanes follow the table too. `protocol/lanes.md`'s Claude lane
+  section (`:153-167`) and ladder (`:208`) change to: launched from a shell,
+  `WHEELCHAIR_LANE=1 claude --model "$(<root>/codex/model.sh claude <tier>)" -p …` (adding
+  `--effort` when `model.sh effort claude <tier>` prints one); launched with Claude Code's
+  Agent tool, which takes only family aliases, the family of that tier's model
+  (`haiku`/`sonnet`/`opus`/`fable`, from `model.sh family claude <tier>`). Review lanes use
+  the Heavy tier. A tier set to `none` for Claude means the terminal workflow uses the GPT
+  lane for it.
 
 ### The models file
 
@@ -114,6 +122,8 @@ asides. Running agents are not changed, except the style delivery below.
   - `model.sh <provider> <slot>` → the model; exits 3 with "<provider> is not used at
     <slot>" when `none`.
   - `model.sh effort <provider> <slot>` → the effort, or nothing.
+  - `model.sh family claude <slot>` → `haiku`, `sonnet`, `opus` or `fable`, the first of
+    those words found in the model name (exit 3 if none).
   - `model.sh set <provider> <slot> <model|none> [effort]`; `set <tier> <model>` = gpt.
   - `model.sh skip <model>`, `init`, `check` as today; `check --json` prints
     `[{kind:"newer"|"available"|"tierless"|"malformed", tier, model, current}]` with the same
@@ -208,7 +218,10 @@ saving.
 
 ### Writing style
 
-- Leads only. `style`: `length` (`short` | `balanced` | `thorough`), `lists`
+- Leads only. The section's "Covers" line lists thread messages, question cards, and the
+  Plan approved and Done cards; it omits the design's "Phone notifications", which belong to
+  the deferred Notifications section.
+- `style`: `length` (`short` | `balanced` | `thorough`), `lists`
   (`prose` | `when-helpful` | `always`), `terms` (`build-up` | `freely` | `avoid`),
   `never_say` (list of phrases), `text` (free text, at most 2000 characters). Defaults are
   Collin's starting style: short, when-helpful, build-up, never say "It's worth noting" and
@@ -263,9 +276,14 @@ saving.
 - Models and preferences: the tier table (rows Claude "Claude Code" and GPT "Codex"; columns
   Light, Standard, Heavy, Critical with the design's one-line descriptions); each cell a
   picker of the provider's models plus "Not used", and for Claude an effort picker (default
-  "CLI default"). Claude's list: `claude-haiku-5-5`, `claude-sonnet-5-5`, `claude-opus-5-5`,
-  `claude-fable-5-2`. GPT's list: models visible in the Codex models cache plus the current
-  values. The current value always appears in the list even when unknown. Then "Leads and
+  "CLI default"). Claude's list: "Latest Haiku", "Latest Sonnet", "Latest Opus", "Latest Fable" (stored as
+  the CLI aliases `haiku`, `sonnet`, `opus`, `fable`, which the Claude CLI resolves to the
+  newest model of that family), then `claude-haiku-5-5`, `claude-sonnet-5-5`,
+  `claude-opus-5-5`, `claude-fable-5-2`. GPT's list: models visible in the Codex models
+  cache plus the current values. Both lists end with "Other…", a text entry validated by
+  the models file's `VALUE` pattern. The current value always appears in the list even when
+  unknown. The newer-model heads-up is GPT only; Claude's way to stay current is a "Latest"
+  alias. Then "Leads and
   sub-leads run on": one picker per provider (same lists, no Not used). Then Permission
   mode. Then Other agents: Plan reviewers, Checker, Code mapping, each a tier picker, with
   the design's explanatory lines (reviewers and checker keep the cross-family rule from
@@ -338,6 +356,10 @@ table built here.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| Claude intent | major | Decision 7's "one source" is not met for Claude: the Spec never makes terminal Claude lanes read the models file (`protocol/lanes.md:155-157`, `:208`) | upheld | Spec "The models file" and "Tier names": `lanes.md` Claude lanes launched from a shell use `model.sh claude <tier>`; Agent-tool lanes use the family alias of the cell's model |
+| Claude intent | major | Claude's model list is fixed and the heads-up is GPT-only, so a new Claude release needs a code change | upheld | Claude picker gains "latest of family" aliases (`haiku`, `sonnet`, `opus`, `fable`, which the CLI resolves to the newest); both pickers gain "Other…" free entry. IDEA's heads-up line narrowed to GPT: idea-change, asked on a card |
+| Claude intent | minor | IDEA's "A Critical part of a build actually runs on a Critical model" implies critical marking, which decision 9 moved out | upheld | IDEA line reworded with the same card |
+| Claude intent | minor | Writing style design lists "Phone notifications" under Covers; the Spec is silent | upheld | Spec: the Covers line lists thread messages and cards only; notifications are part of the deferred Notifications section |
 
 ## Prior Work
 
