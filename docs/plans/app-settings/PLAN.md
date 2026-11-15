@@ -506,7 +506,7 @@ table built here.
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Models file: `codex/model.sh` both providers, new format, commands, aliases, `check --json`, `show --json`, `reset` | `codex/`, `install/test/run.sh` (models-file assertions) | Codex / Terra (gpt-5.6-terra) | wc-983d91c069d3-worker | `bash codex/test/run.sh`; `bash install/test/run.sh` | dispatched |
-| T2 | Machine service: `permission_mode` + bypass readiness, `effort`, `role_layers` after the local pointer, `/v1/preview` | `machine/` | Claude / Sonnet | wc-983d91c069d3-worker-2 | `bash machine/test/run.sh` | dispatched |
+| T2 | Machine service: `permission_mode` + bypass readiness, `effort`, `role_layers` after the local pointer, `/v1/preview` | `machine/` | Claude / Sonnet | wc-983d91c069d3-worker-2 | `bash machine/test/run.sh` | done |
 | T3 | Hub: per-role `resolveModel`, settings store and routes, template/style composition and cap, style trailer, chat stripping, machine-client timeout, `API.md` | `viewer/app/`, `viewer/test/*.test.js` | Codex / Terra (gpt-5.6-terra) | — | `node --test viewer/test/*.test.js` | waits on T1 |
 | T4 | Settings page (three sections), nav link, `APP_PAGES`, browser tests | `viewer/pages/settings.*`, `viewer/pages/nav.js`, `viewer/server.js` (APP_PAGES), `viewer/test/*settings*.spec.js` | Claude / Sonnet | — | `npm --prefix viewer run test:browser` | waits on T3 |
 | T5 | Protocol: tier rename and rule edits | `protocol/` (ten files named in its brief) | Claude / Sonnet | wc-983d91c069d3-worker-3 | rename grep over `protocol/` | done |
@@ -524,3 +524,12 @@ table built here.
 - 2026-11-15 — Choice: T5, `protocol/templates/COMPLETION.md`: lane example became `"standard (lead: fable)" or "sonnet, standard"`.
 - 2026-11-15 — Choice: T5, `protocol/app/sub-lead.md`: the verifier start line keeps "top tier"; the Settings sentence sits in Tiers.
 - 2026-11-15 — Sub-lead: T5 accepted; the GPT measurement notes in `lanes.md` now read "Light"/"Heavy" for what was measured on Luna/Sol models; accepted, since the model names beside them stay.
+- 2026-11-15 — Bypass readiness (Spec "Permission mode"): installed Claude Code 2.1.325's pane in bypass mode shows `bypass permissions on`; no confirmation appeared, because `~/.claude/settings.json` already sets `skipDangerousModePermissionPrompt`. The service does both: the per-session settings file sets that key for bypass sessions, and `checkReady` answers a "Yes, I accept" dialog with Down, Enter. Neither was seen against a live dialog (residual risk).
+- 2026-11-15 — Choice: T2, `machine/service.js`: the skip-prompt key is set only for bypass sessions.
+- 2026-11-15 — Choice: T2, `machine/service.js`: a session with no recorded `permission_mode` is auto for readiness.
+- 2026-11-15 — Choice: T2, `machine/service.js`: `role_layers` is trimmed; whitespace-only counts as empty; non-string is 400.
+- 2026-11-15 — Choice: T2, `machine/service.js`: `null` `effort`/`permission_mode` count as missing; any other invalid value, including `""`, is 400.
+- 2026-11-15 — Choice: T2, `machine/service.js`: `/v1/preview` validates `model` against `[A-Za-z0-9._:[]-]+` and requires a non-blank prompt.
+- 2026-11-15 — Choice: T2, `machine/service.js`: the 504 body always says "60 s"; a timed-out child is killed with SIGKILL; the timeout is an instance field tests shorten.
+- 2026-11-15 — Choice: T2, `machine/service.js`: a spawn error other than ENOENT is 502 with its message.
+- 2026-11-15 — Choice: T2, `machine/test/service.test.js`: the fake `claude -p` saves stdin to `<log>.stdin`.
