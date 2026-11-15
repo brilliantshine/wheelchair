@@ -98,7 +98,7 @@ Collin picks the project, the CLI and the machine, then writes in plain words.
   (`wc.js git push`, `wc.js git pr`), and post a `done` card. Say in your reply what
   changed.
 - **Anything bigger** gets an `offer` card: "Take it into planning?" Taking it into planning,
-  or typing instead of answering, makes the thread a feature as today. "Keep talking first"
+  or typing instead of answering, makes the thread a feature. "Keep talking first"
   means not yet: keep talking; do not create the plan directory, start mapping or post an
   idea card. You may post the offer once more later when what he has said makes the case
   clearer, never a third time; the hub refuses it. If the talk shows this is small, just do it.

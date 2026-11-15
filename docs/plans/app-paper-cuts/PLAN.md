@@ -328,7 +328,7 @@ own with `--port` and `--cache-root` (see `AGENTS.md`, Verification).
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | S3: in-app document page, shared Markdown renderer, thread page links | `viewer/pages/doc.{html,js,css}`, `viewer/pages/markdown.js`, `viewer/doc.{js,html}`, `viewer/server.js` (APP_PAGES only), `viewer/pages/thread.{js,html,css}` (fileLinks and #docview only), `viewer/test/app-pages.test.js`, `app-threads.spec.js`/`app-doc.spec.js`, fixtures, `viewer/test/render.spec.js` (one line: mockRoutes serves pages/markdown.js, lead-approved), `viewer/AGENTS.md` | Claude Sonnet | wc-1f02c3554935-worker (branch wc-1f02c3554935-w1) | `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser` | done |
-| T2 | S1, S2, S4, S5 hub, card validation and protocol text | `viewer/app/{card,cards,threads}.js`, `viewer/app/API.md`, `protocol/app/{cards,lead}.md`, `viewer/test/app-hub.test.js` | GPT terra (gpt-5.6-terra) | wc-1f02c3554935-worker-2 (branch wc-1f02c3554935-w2) | `node --test viewer/test/*.test.js`; `bash machine/test/run.sh` | in progress (wave 1) |
+| T2 | S1, S2, S4, S5 hub, card validation and protocol text | `viewer/app/{card,cards,threads}.js`, `viewer/app/API.md`, `protocol/app/{cards,lead}.md`, `viewer/test/app-hub.test.js` | GPT terra (gpt-5.6-terra) | wc-1f02c3554935-worker-2 (branch wc-1f02c3554935-w2) | `node --test viewer/test/*.test.js`; `bash machine/test/run.sh` | done |
 | T3 | S1, S2, S4, S5 thread page: title spec, Open IDEA.md link, You picked / Answered in chat, Keep talking first | `viewer/pages/thread.{js,css}`, `viewer/test/app-threads.spec.js`, test helpers | Claude Sonnet | — | `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser` | not started (wave 2, after T1+T2) |
 | T4 | S6: self-hosted fonts | `viewer/package{,-lock}.json`, `viewer/server.js` (handleAsset, PAGE_CSP), `viewer/pages/app.css`, `viewer/test/routes.test.js`, new font spec, `viewer/AGENTS.md` | Claude Sonnet | wc-1f02c3554935-worker-3 (branch wc-1f02c3554935-w3) | `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser`; `./install.sh && ./install.sh` | in progress |
 
@@ -347,3 +347,10 @@ own with `--port` and `--cache-root` (see `AGENTS.md`, Verification).
 - 2026-11-14 — Choice: T1, app-threads.spec.js: the `:410` slug test's hrefs also moved to the in-app URL.
 - 2026-11-14 — Choice: T1, pages/doc.html: nav marks Threads as current.
 - 2026-11-14 — Choice: T1, app-doc.spec.js: builds its own temp git repos; app-threads-world.js unchanged.
+2026-11-14 — T2 accepted after re-run: node 250/251 (only the pre-existing lifecycle freed-port failure), machine 51/51. The worker stopped under its guardrail on that pre-existing failure, correctly. Sub-lead edit on merge: `protocol/app/lead.md` "makes the thread a feature as today" → "makes the thread a feature" (a standing rule should not say "today").
+- 2026-11-14 — T2 reported "none" for choices; I listed 5 from the diff:
+- 2026-11-14 — Choice: T2, card.js: the shared cut is `truncateTitle(value, limit)` in card.js, exported and used by cards.js and threads.js.
+- 2026-11-14 — Choice: T2, threads.js: the first line is split on `\r?\n`, so a message starting with a blank line gets no title.
+- 2026-11-14 — Choice: T2, cards.js: an accepted `title` card answers `{ok:true, title}`.
+- 2026-11-14 — Choice: T2, app-hub.test.js: three existing tests that posted repeated offers (singleton replace, concurrent de-dup, concurrent card/event) now use idea or question cards, and the resolve-refusal test's "another kind" target moved from a question to an idea card, since the offer limit and question resolve made the old fixtures invalid.
+- 2026-11-14 — Choice: T2, cards.md: the offer heading lost "asked once per thread"; the limit is stated in the body instead.
