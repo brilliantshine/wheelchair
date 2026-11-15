@@ -100,7 +100,11 @@ class Hub {
     const thread = await threads.threadBySession(this, payload.calling_session);
     return this.withThread(thread.id, () => sessions.sessionRequest(this, payload));
   }
-  pollDead() { return sessions.pollDead(this); }
+  // One poll at a time: an overlapping poll would act on a listing older than the one before it.
+  pollDead() {
+    if (!this.polling) this.polling = sessions.pollDead(this).finally(() => { this.polling = null; });
+    return this.polling;
+  }
   retryQueues() { return sessions.retryQueues(this); }
   acceptCard(payload) { return this.withThread(payload.thread_id, () => cards.acceptCard(this, payload)); }
   createThread(input) { return threads.createThread(this, input); }

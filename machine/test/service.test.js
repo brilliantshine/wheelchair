@@ -23,7 +23,7 @@ set -eu
 echo "$(basename \"$0\") $*" >> "$FAKE_LOG"
 case "$(basename \"$0\"):$1" in
   tmux:capture-pane) cat "$FAKE_PANE" ;;
-  tmux:list-sessions) printf '%s\\n' \${FAKE_SESSIONS:-} ;;
+  tmux:list-sessions) if [ -n "\${FAKE_LS_ERR:-}" ]; then printf '%s\\n' "$FAKE_LS_ERR" >&2; exit 1; fi; printf '%s\\n' \${FAKE_SESSIONS:-} ;;
   tmux:load-buffer) cat >> "$FAKE_LOG" ;;
   systemd-run:*) exit 1 ;;
   git:*) if [[ " $* " == *" rev-parse "* ]]; then echo "\${FAKE_GIT_VERSION:-deadbeef}"; fi ;;
@@ -472,6 +472,23 @@ test('the spool is retried on a timer until the hub acknowledges', async () => {
       for (let i = 0; i < 50 && (await fs.readdir(path.join(env.state, 'spool', 'cards'))).length; i += 1) await new Promise(resolve => setTimeout(resolve, 20));
       assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 0);
     } finally { await env.close(); await hub.close(); }
+  });
+});
+test('a failed tmux listing reports running as unknown, and "no server" as not running', async () => {
+  await withEnv({ FAKE_SESSIONS: 'wc-t-lead scratch' }, async () => {
+    const env = await service(await temp()); try {
+      await start(env);
+      const listed = async () => (await api(env, 'GET', '/v1/sessions', undefined, hubHeader)).body;
+      assert.equal((await listed()).find(s => s.name === 'wc-t-lead').running, true);
+      await withEnv({ FAKE_LS_ERR: 'server exited unexpectedly' }, async () => {
+        const sessions = await listed();
+        assert.equal('running' in sessions.find(s => s.name === 'wc-t-lead'), false);
+        assert.equal(sessions.some(s => s.name === 'scratch'), false);
+      });
+      await withEnv({ FAKE_LS_ERR: 'no server running on /tmp/tmux-1000/default' }, async () => {
+        assert.equal((await listed()).find(s => s.name === 'wc-t-lead').running, false);
+      });
+    } finally { await env.close(); }
   });
 });
 test('status lists other tmux sessions read-only and typing into them is refused', async () => {

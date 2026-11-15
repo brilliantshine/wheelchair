@@ -260,15 +260,20 @@ class MachineService {
     this.trustTimer = setInterval(() => this.pollTrust().catch(error => this.log(error)), 500);
     this.trustTimer.unref();
   }
+  // The names of the running tmux sessions, or null when tmux could not be asked. "No server" is
+  // a real empty answer; any other failure is unknown, and must not read as "every session ended".
   liveTmux() {
     const ls = this.tmux(['list-sessions', '-F', '#S']);
-    return new Set(ls.ok ? ls.stdout.trim().split('\n').filter(Boolean) : []);
+    if (ls.ok) return new Set(ls.stdout.trim().split('\n').filter(Boolean));
+    if (/no server running|error connecting to/.test(ls.stderr)) return new Set();
+    this.log(`tmux list-sessions failed: ${ls.stderr.trim() || `exit ${ls.status}`}`);
+    return null;
   }
   // Spec "Machine service on the hub": a live wc-* tmux session missing from sessions.json (a lost or
   // stale file) is adopted again, so it can still be read, typed into and stopped.  It has no token.
   async recoverFromTmux() {
     let changed = false;
-    for (const name of this.liveTmux()) {
+    for (const name of this.liveTmux() || []) {
       if (!name.startsWith('wc-') || name.startsWith('wc-login-') || this.sessions[name]) continue;
       const parsed = /^wc-(.+?)-(sub-lead|lead|worker|reviewer|verifier|[a-z]+)(?:-\d+)?$/.exec(name);
       if (!parsed) continue;
@@ -729,7 +734,9 @@ class MachineService {
     const worker = this.sessions[workerName];
     if (!worker || worker.role !== 'worker' || worker.thread_id !== caller.thread_id) die('args[0] must name a worker session of this thread');
     if (!worker.created_worktree || worker.worktree_removed) die('worker has no removable worktree');
-    if (worker.status !== 'stopped' && this.liveTmux().has(worker.name)) die('worker is still running');
+    const live = worker.status === 'stopped' ? new Set() : this.liveTmux();
+    if (!live) die('tmux could not be checked; try again');
+    if (live.has(worker.name)) die('worker is still running');
     const branch = command('git', ['-C', worker.worktree, 'rev-parse', '--abbrev-ref', 'HEAD']);
     if (!branch.ok || !branch.stdout.trim() || branch.stdout.trim() === 'HEAD') die('worker branch cannot be determined');
     if (!command('git', ['merge-base', '--is-ancestor', branch.stdout.trim(), 'HEAD'], { cwd }).ok) die('worker branch is not fully merged into yours');
@@ -784,7 +791,7 @@ class MachineService {
   loginRecord(account) {
     if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(account)) die('invalid account');
     let record = this.logins[account];
-    if (!record && this.liveTmux().has(`wc-login-${account}`)) {
+    if (!record && this.liveTmux()?.has(`wc-login-${account}`)) {
       const defaultEntry = Object.entries(adapters).find(([, adapter]) => account === `default-${adapter.provider}`);
       if (defaultEntry) record = { cli: defaultEntry[0], dir: null };
       else {
@@ -832,7 +839,7 @@ class MachineService {
   }
   status() {
     const live = this.liveTmux();
-    const others = [...live].filter(name => !name.startsWith('wc-login-') && !this.sessions[name]).map(name => ({ name, managed: false, running: true }));
+    const others = [...(live || [])].filter(name => !name.startsWith('wc-login-') && !this.sessions[name]).map(name => ({ name, managed: false, running: true }));
     const defaults = Object.fromEntries(Object.entries(adapters).map(([cli, adapter]) => [cli, adapter.loginStatus(null)]));
     const claude = this.cliStatus('claude', defaults.claude), codex = this.cliStatus('codex', defaults.codex);
     const accounts = Object.entries(adapters).map(([cli, adapter]) => ({ id: `default-${adapter.provider}`, cli, ...defaults[cli] }));
@@ -841,7 +848,7 @@ class MachineService {
     for (const folder of folders.filter(e => e.isDirectory())) {
       try { const record = JSON.parse(fs.readFileSync(path.join(root, folder.name, 'wheelchair-account.json'), 'utf8')); if (record.id !== folder.name || !adapters[record.cli] || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(record.id)) continue; accounts.push({ id: record.id, cli: record.cli, ...adapters[record.cli].loginStatus(path.join(root, folder.name)) }); } catch {}
     }
-    return { version: this.version, claude, codex, accounts, sessions: [...Object.values(this.sessions).filter(s => !s.name.startsWith('wc-login-')).map(s => ({ ...s, managed: true, running: live.has(s.name) })), ...others] };
+    return { version: this.version, claude, codex, accounts, sessions: [...Object.values(this.sessions).filter(s => !s.name.startsWith('wc-login-')).map(s => ({ ...s, managed: true, ...(live ? { running: live.has(s.name) } : {}) })), ...others] };
   }
   cliStatus(cli, login = adapters[cli].loginStatus(null)) {
     const version = command('sh', ['-c', `command -v ${cli}`]);
