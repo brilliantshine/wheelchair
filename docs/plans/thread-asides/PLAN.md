@@ -91,7 +91,7 @@ asides; no other item type needs an id.
 The thread record gains `asides: []`, each:
 `{id, number, anchor: {message_id, start, end, quote}, action, created_at, provider,
 account, fork_parent, cli_id, slot, status, pending, turn, history, failed, closed_at,
-outcome, sent_line, graph}`.
+outcome, sent_line}`.
 - `number`: 1 for the thread's first aside, and so on.
 - `fork_parent`: the lead's conversation id when the aside was created (Claude
   `cli_session_id`, Codex `codex_thread_id`).
@@ -101,7 +101,7 @@ outcome, sent_line, graph}`.
   `control`. `turn`: the turn running now, or null. `failed`: the failure notice of the
   last turn, or null.
 - `history`: the aside's conversation as shown in the panel, each `{kind, text, reply,
-  model, at}`; `control` entries are kept but not shown.
+  model, at, graph}`; `control` entries are kept but not shown.
 - `outcome`: `null`, `done` or `changed`. `sent_line`: the line sent on `changed`.
 - `/chat` returns the asides (all fields but `history`) so the page can underline and
   list them.
@@ -201,11 +201,11 @@ One rule, run after every change to an aside and on each poll:
 ### 6. Saving a drawn graph (hub)
 
 When a reply holds a `wc-graph` block, the hub registers
-`<cache-root>/<repo-key>/asides/<aside id>.json` the way a `diagram` card is registered
+`<cache-root>/<repo-key>/asides/<aside id>-<n>.json` (`n` the reply's index in `history`) the way a `diagram` card is registered
 (`hub.registerGraph`, as in `viewer/app/cards.js:50-55`) and saves the JSON through the
 viewer's own validated graph write, never by writing the file directly. Only after the save
-succeeds does the record get `graph: <path>`. A refused graph leaves `graph` unchanged and
-puts "Couldn't draw that: <reason>" in `history`. A later block replaces the graph. The
+succeeds does that `history` entry get `graph: <path>`. A refused graph puts "Couldn't draw
+that: <reason>" in the entry instead. Each drawing stays with the reply that made it. The
 block itself is not shown as text.
 
 ### 7. The panel
@@ -221,8 +221,8 @@ block itself is not shown as text.
   waiting on you".
 - Body: `history` except `control` entries: Collin's text (for `start`, only what he typed,
   since the quote is at the top), then the reply rendered with the main chat's Markdown
-  renderer; "Thinking…" while a turn runs; the `failed` notice with Retry; the graph, once
-  `graph` is set, embedded like a `diagram` card (`viewer/pages/thread.js:161-165`).
+  renderer; "Thinking…" while a turn runs; the `failed` notice with Retry; each entry's graph, once
+  set, embedded like a `diagram` card (`viewer/pages/thread.js:161-165`).
 - Input: "Ask more about this" and Send: `POST /threads/:id/asides/:aside/messages`, which
   adds an `ask` message to `pending` (and reopens a closed aside).
 - Footer: **Think harder** (when §5 allows it), **Done, back to …** and **This changes my
@@ -247,8 +247,8 @@ block itself is not shown as text.
   his typed answer to it (`protocol/app/lead.md`, resolve rule). Add one line to `lead.md`'s
   "How you talk to Collin": a message ending "(from aside <n> on: …)" is his own answer,
   reached in a side conversation.
-- An aside with no turn for 30 minutes is closed with outcome `null`. Closing the browser
-  tab changes nothing else.
+- An aside stays open until Collin finishes it; there is no idle timeout (nothing runs
+  between turns). Closing the panel without Done or the browser tab leaves it open.
 
 ### 9. Underlines and reopening
 
@@ -438,6 +438,8 @@ Round 5 verdict: the long-lived session design was the source of every lifecycle
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent (gpt) | minor | The 30-minute idle close is pointless with headless turns and blocks "This changes my answer" | upheld | §8: no idle timeout |
+| intent (gpt) | minor | A later drawing replaces earlier ones | upheld | §6: one graph per reply, kept on its `history` entry |
 
 ## Prior Work
 
