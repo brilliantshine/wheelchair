@@ -120,3 +120,52 @@ New browser spec, all four (two tests × two browsers):
 - The sub-lead, not a worker, replaced the browser spec's embedded PNG (bad IDAT CRC, rejected by Firefox) with a valid one (commit `af83eaf`).
 
 ## Remediation rounds
+
+### Remediation 1 — 2026-11-15
+
+Verification 1 (GPT, on `8ec85f3`) failed on three gaps; list verbatim in `REMEDIATION-1.md`. Fixed by R1a and R1b (GPT standard, `gpt-6.1-terra`).
+
+| Gap | Fix (file:line) | Validated by |
+|-----|-----------------|--------------|
+| Spec 3, upload each file in order (removing a chip mid-upload skipped the next file) | viewer/pages/thread.js:829 (send uploads a snapshot), :802 (remove disabled while uploading); textarea, attach, paste and drop do nothing while uploading; success removes exactly the sent files | viewer/test/app-diagrams-uploads.spec.js:74 (both browsers) |
+| Spec 3, show upload failure reason ("Upload failed: app-error") | viewer/pages/thread.js:87 (`out.detail || out.error`) | viewer/test/app-diagrams-uploads.spec.js:101 (both browsers) |
+| Spec 2, absolute image path | viewer/app/card.js:100; machine/service.js:229 (422 "image path must be absolute", nothing spooled or copied) | viewer/test/app-hub.test.js:1725; machine/test/service.test.js:966 |
+
+Validation after remediation, sub-lead run on `6e8f883`:
+
+`bash machine/test/run.sh`:
+```text
+# tests 89
+# pass 89
+# fail 0
+exit 0
+```
+
+`node --test viewer/test/*.test.js`:
+```text
+not ok 233 - a starter that loses the freed port registers through the new holder
+# tests 349
+# pass 348
+# fail 1
+exit 1
+```
+
+`npm --prefix viewer run test:browser`:
+```text
+  ✓    1 [chromium] › test/app-diagrams-uploads.spec.js:15:1 › forms and static sandboxed HTML render without overflow or network (1.6s)
+  ✓   13 [chromium] › test/app-diagrams-uploads.spec.js:49:1 › paste uploads bytes, oversize is refused, and image cards respect archive (6.1s)
+  ✓   49 [chromium] › test/app-diagrams-uploads.spec.js:74:1 › attachments stay fixed during upload and are sent in order (2.0s)
+  ✓   68 [chromium] › test/app-diagrams-uploads.spec.js:101:1 › upload app error shows detail and preserves the draft (580ms)
+  ✓  155 [firefox] › test/app-diagrams-uploads.spec.js:15:1 › forms and static sandboxed HTML render without overflow or network (2.2s)
+  ✓  175 [firefox] › test/app-diagrams-uploads.spec.js:49:1 › paste uploads bytes, oversize is refused, and image cards respect archive (4.6s)
+  ✓  207 [firefox] › test/app-diagrams-uploads.spec.js:74:1 › attachments stay fixed during upload and are sent in order (2.6s)
+  ✓  223 [firefox] › test/app-diagrams-uploads.spec.js:101:1 › upload app error shows detail and preserves the draft (1.0s)
+  ✘  324 [chromium] › test/browser.spec.js:2395:1 › no drawn arrow's line passes through either box it connects, over every committed graph (563ms)
+  ✘  552 [firefox] › test/browser.spec.js:2395:1 › no drawn arrow's line passes through either box it connects, over every committed graph (408ms)
+  2 failed
+  2 skipped
+  572 passed (2.2m)
+exit 1
+```
+
+Remaining failures are the same two known ones as before: the port-race unit test and the drawn-arrow browser test (`docs/known-issues.md:53`).
