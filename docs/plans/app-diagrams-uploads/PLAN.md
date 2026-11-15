@@ -178,7 +178,7 @@ file bytes), `content-type` the file's type.
   one more than the highest existing prefix (1 when empty); create with the `wx` flag and
   retry with the next `n` on `EEXIST`.
 - Stream to disk counting bytes; past `UPLOAD_LIMIT`, stop, delete the partial file and
-  answer 413. Refuse 409 if this machine has no live `lead` session record for the thread. Return `201 {path: <absolute stored path>}`.
+  answer 413. Refuse 409 unless the thread has a writable lead (defined below). Return `201 {path: <absolute stored path>}`.
 - Same naming and directory are used for image cards (part 2).
 
 **Archive and in-flight writes.** The machine holds one promise-chain lock per thread id
@@ -186,12 +186,23 @@ file bytes), `content-type` the file's type.
 check through the final rename or delete) and the image-card copy in `/v1/agent/cards`
 (from the file checks through the rewrite of `path`) each run inside it. Uploads stream to
 `<n>-<name>.part` and are renamed on success, so a crash leaves only `.part` files, which
-archive removes with the folder. After archive releases the lock, a late request is
-refused: an upload with 409 when this machine has no session record for that thread with
-role `lead` (archive deletes the records, `machine/service.js:473-480`); an image card with
-401, because its session token no longer matches a record (`machine/service.js:202-208`).
-Test: start an upload that pauses mid-stream, call archive, resume; the upload answers 409
-or completes before archive runs, and after archive the folder does not exist.
+archive removes with the folder.
+
+The admission check runs **inside the lock**, first thing, not only at authorization
+(which happens before the lock, `machine/service.js:838`). Archive does not always delete
+session records: a retained worktree keeps its records with `archived_pending: true` and
+`status: 'stopped'` (`machine/service.js:472-482`). So the check is on record state:
+
+- **Writable lead:** a record in `this.sessions` with that `thread_id`, `role: 'lead'`, no
+  `archived_pending`, and `status` not `'stopped'`. An upload without one answers 409.
+- **Image card:** re-read the posting session's record by name inside the lock; if it is
+  gone, `archived_pending`, or `status: 'stopped'`, answer 409 and spool nothing.
+
+Tests: (1) start an upload that pauses mid-stream, call archive, resume: the upload answers
+409 or finished before archive ran, and afterwards the folder does not exist. (2) Post an
+image card whose copy is held until archive has run (a test hook that delays entry to the
+lock): it answers 409 and the folder does not exist. (3) Archive with a non-rebase retained
+worktree, then post an image card with that session's still-valid token: 409.
 
 **Archive** (`machine/service.js` `archive`). After worktrees are handled and before
 returning: if no entry in `kept` has reason `rebase in progress`, remove
@@ -218,7 +229,8 @@ npm --prefix viewer run test:browser
 
 New tests, at least:
 
-- `card.js`: `diagram` accepts `format` `json`/`html` and refuses others; `image` requires
+- `card.js`: `diagram` accepts no `format` (meaning `graph`) or `format` `graph`/`form`/`html`,
+  and refuses any other value; `image` requires
   `path` and `title` and is lead-only.
 - Machine: upload stores `1-name`, then `2-name`; a 25 MB + 1 byte body answers 413 and
   leaves no file; an image card with a `.txt` path is refused 422; a valid one is copied
@@ -232,8 +244,10 @@ New tests, at least:
   `document.documentElement.scrollWidth <= innerWidth`. The HTML card's fixture holds a
   `<script>` that fetches a test-only URL, an `<img>` and a `<link rel=stylesheet>` pointing
   at test-only URLs, and a `<meta http-equiv=refresh>` to one; the test server records no
-  request to any of them, and the frame's CSS-styled text is visible in a screenshot-free
-  check (the iframe's bounding box is non-zero and the response carried the CSP above). Pasting an image file into the composer shows a chip; sending posts a message
+  request to any of them, the fixture's text is visible inside the frame (Playwright
+  `frameLocator`, which works on a sandboxed frame) and an element styled by the fixture's
+  inline `<style>` has that computed style (for example, its `color`); the response carried
+  the CSP above. Pasting an image file into the composer shows a chip; sending posts a message
   whose text ends with `[attached: <path>]`, and the file exists at that path with the
   same bytes. An `image` card shows an `<img>` that loads (`naturalWidth > 0`).
 
@@ -259,13 +273,30 @@ New tests, at least:
 
 ### Round 2 — 2026-11-15
 
-**Lanes:** intent lens; mechanics lens; cross-family: see lanes.
+**Lanes:** intent (gpt); mechanics (gpt); cross-family: no (the hub could not place Claude).
 
 **Changed since Round 1:**
 - D10: `diagram` card `format` (`graph`/`form`/`html`); new `/wheelchair/diagram-form` route; forms never registered as graphs.
 - D11: per-thread lock on the machine for archive, uploads and image copies; `.part` files; late uploads refused 409.
 - D12: HTML fallback is static only (empty sandbox, no script source in CSP).
 - Archive: a failed uploads removal keeps the thread unarchived with a needs card.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent (gpt) | — | No findings | — | — |
+| mechanics (gpt) | major | Image copy authorizes before the lock, so it can recreate the folder after archive | upheld (`machine/service.js:838` authorizes before the body is read) | Admission check moved inside the lock; test (2) |
+| mechanics (gpt) | major | Retained sessions keep valid tokens after a successful archive | upheld (`machine/service.js:472-482`) | Check record state (`archived_pending`, `stopped`) inside the lock; test (3) |
+| mechanics (gpt) | minor | Validator test still says `json`/`html` | upheld | Test bullet updated to `graph`/`form`/`html` |
+| mechanics (gpt) | minor | HTML visibility check passes on an empty frame | upheld | Assert fixture text and a computed style via `frameLocator` |
+
+### Round 3 — 2026-11-15
+
+**Lanes:** intent; mechanics.
+
+**Changed since Round 2:**
+- Admission check for uploads and image copies now runs inside the per-thread lock and checks record state (`archived_pending`, `stopped`), with three ordering tests.
+- Validator test bullet uses `graph`/`form`/`html`.
+- HTML browser test asserts fixture text and a computed style inside the frame.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
