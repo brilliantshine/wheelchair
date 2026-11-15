@@ -487,6 +487,21 @@ Added to `viewer/app/routes.js` and documented in `viewer/app/API.md`:
 
 Three rounds since Collin's last decision without a clean one: escalated to him with a `needs` card (lead.md step 5, Budget).
 
+Collin chose "keep going" (2026-11-15); the round budget resets.
+
+### Round 4 — 2026-11-15
+
+**Lanes:** Claude (intent lens); Codex (mechanics lens); cross-family: yes.
+
+**Changed since Round 3:**
+- §5 Constraints: `--not-provider` is a preference for reviewers and verifiers, strict for workers.
+- §9: mechanics reviewer with no flag when the intent reviewer is waiting; stop a second verifier that landed on the first's provider.
+- §4: a lead's `turn-failed` posts an app `needs` card.
+- §4/§5: expired-window rule (only future resets count; forecast and margin with no future reset).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
