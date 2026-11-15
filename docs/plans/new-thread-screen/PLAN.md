@@ -1,6 +1,6 @@
 ---
 slug: new-thread-screen
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-15
 ---
 
@@ -298,7 +298,7 @@ refusal. The `POST /threads` body is unchanged.
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Machine route `GET /v1/projects` (found + check), API.md, tests | `machine/service.js`, `machine/API.md`, `machine/test/service.test.js` | claude standard (claude-sonnet-5-5) | wc-1a4f2c3d8d4c-worker | `bash machine/test/run.sh` | done (merged 08801b5; 66/66 re-run by sub-lead) |
 | T2 | Hub: settings fields, `/new-thread`, saved-dirs, preferences, createThread check, template scope, API.md, fake machine `/v1/projects`, node tests | `viewer/app/`, `viewer/test/helpers/app-machine.js`, `viewer/test/*.test.js` (not pages, server.js, specs) | claude standard (claude-sonnet-5-5) | wc-1a4f2c3d8d4c-worker-3 (commits 9af06ab + 3fe67e0); worker-2 collided, worker-4 (light, claude-haiku-5-5) stopped as redundant | `node --test viewer/test/*.test.js` | done (merged; 275 pass, 1 known flaky fail, re-run by sub-lead) |
-| T3 | Pages: New thread screen, APP_PAGES, removals (threads/thread/nav/app.css), Settings field, Playwright specs | `viewer/pages/`, `viewer/server.js` (APP_PAGES), `viewer/test/*.spec.js`, `viewer/test/app-pages.test.js` | claude standard (claude-sonnet-5-5) | wc-1a4f2c3d8d4c-worker-5 | node tests + `npm --prefix viewer run test:browser` | in progress |
+| T3 | Pages: New thread screen, APP_PAGES, removals (threads/thread/nav/app.css), Settings field, Playwright specs | `viewer/pages/`, `viewer/server.js` (APP_PAGES), `viewer/test/*.spec.js`, `viewer/test/app-pages.test.js` | claude standard (claude-sonnet-5-5) | wc-1a4f2c3d8d4c-worker-5 | node tests + `npm --prefix viewer run test:browser` | done (merged 6644c74; suites re-run by sub-lead) |
 
 ## Log
 
@@ -320,3 +320,14 @@ refusal. The `POST /threads` body is unchanged.
 - 2026-11-15 — Choice: T2, viewer/test/helpers/app-machine.js: a failed check of a relative path returns `{ok:false, reason}` without `path`.
 - 2026-11-15 — T2 accepted from worker-3 after all: before it was stopped it committed 3fe67e0, which removes the duplicates (one copy each of `newThread`, `addSavedDir`, `checkProject`; `checkProject` returns the machine's answer and its callers refuse on not-ok). Diff read; node suite re-run on its branch: 275 pass, 1 fail (the known flaky port-holder test). Merged. Attempt 3 (worker-4, branch wc-1a4f2c3d8d4c-w4) stopped as redundant and not merged; its worktree stays because the service removes only merged ones.
 - 2026-11-15 — T3 dispatched (worker-5).
+- 2026-11-15 — T3 accepted: diff read; browser suite on its branch 463 passed, 3 failed (the known committed-graph arrow test in both browsers, and a Firefox phone approval timeout at app-threads.spec.js:339 that passed 3/3 on --repeat-each 3). Merged.
+- 2026-11-15 — Choice: T3, new.html: header `data-current="threads"`.
+- 2026-11-15 — Choice: T3, new.js: after Add the new entry is selected by name from the refreshed list; after Remove or a machine change the selection is kept if still listed, else the first option.
+- 2026-11-15 — Choice: T3, new.js: Start disabled whenever the dropdown is empty; Add and Remove errors share one line, `#saved-error`, above the Add row (listed as a deviation in COMPLETION.md).
+- 2026-11-15 — Choice: T3, new.js: Used-before label is the last path segment, the full path where two share it.
+- 2026-11-15 — Choice: T3, settings.js: "Saved" is a status line under the input; the typed draft survives re-renders until saved; Enter saves.
+- 2026-11-15 — Choice: T3, app.css: `#new-toggle`, now an `<a>`, has its own button-like rule.
+- 2026-11-15 — Choice: T3, app-settings.spec.js: the nav-fit minimum lowered from 4 to 3 boxes; `/app/new` added to its routes.
+- 2026-11-15 — Choice: T3, app-views.spec.js: unused `fs`/`path` requires removed.
+- 2026-11-15 — Choice: T3, specs set the default folder through `PUT /settings/preferences` and drive found repos with `machine.projects`.
+- 2026-11-15 — Full validation on 4b914fe: machine 66/66; node 276/277 and browser 464 passed / 2 failed, the failures being the two in docs/known-issues.md. COMPLETION.md written; status verifying.
