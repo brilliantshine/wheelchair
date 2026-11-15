@@ -199,7 +199,7 @@ test('template scopes must be listed when added or changed, while removed-projec
     const before = await fs.readFile(settingsPath, 'utf8');
     const refused = await api(context, '/settings/templates', { method: 'POST', body: workerTemplate('Unlisted', '/tmp/unlisted-project') });
     assert.equal(refused.status, 400);
-    assert.equal(refused.body.error, 'template.scope must be all or a listed project');
+    assert.equal(refused.body.detail, 'template.scope must be all or a listed project');
     assert.equal(await fs.readFile(settingsPath, 'utf8'), before);
 
     const created = await api(context, '/settings/templates', { method: 'POST', body: workerTemplate('Listed', '/tmp/listed-project') });

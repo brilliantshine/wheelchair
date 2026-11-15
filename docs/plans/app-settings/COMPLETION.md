@@ -188,3 +188,28 @@ $ node --test viewer/test/*.test.js      # tests 261  # pass 260  # fail 1
 $ npm --prefix viewer run test:browser   428 passed, 2 skipped, 2 failed
   [chromium|firefox] no drawn arrow's line passes through either box …                (fails on main)
 ```
+
+### Remediation 2 — 2026-11-15
+
+Verification attempt 2 (commit `9649e1f`): Claude verifier PASS, Codex verifier FAIL with two
+new gaps, both upheld. The gaps and the task are in `REMEDIATION-2.md`.
+
+| Gap | Fix | Lane | Validated by |
+|-----|-----|------|--------------|
+| `PUT /settings/models` refused old tier names (e.g. `terra`) | `viewer/app/routes.js:53-55` (slot aliases: `luna/terra/sol/astra` for either provider, `haiku/sonnet/opus` for Claude), `:65-67` (heads-up switch tier aliases) | Codex / Light (gpt-6-luna) | `viewer/test/app-settings.test.js` (alias tests: `terra` sets `gpt.standard`, Claude `opus` sets `claude.heavy`, GPT `opus` is 400, switch `sol` sets `gpt.heavy`) |
+| Template scope was not checked against `projects.json` | `viewer/app/routes.js:93-97` (create), `:113-119` (update, checked only when the scope changes, so a removed project's template stays editable) | Codex / Light (gpt-6-luna) | `viewer/test/app-settings.test.js` "template scopes must be listed when added or changed, while removed-project templates remain editable" |
+
+The worker's own validation stopped on its new test, which read the message from
+`body.error`; the sub-lead changed it to `body.detail`, the hub's error field.
+
+Validation after remediation, on the integrated branch (`~/.wheelchair/models` checksum
+`cdb9373d…` unchanged):
+
+```
+$ bash codex/test/run.sh                 RESULT 72 passed, 0 failed
+$ bash machine/test/run.sh               # fail 0
+$ node --test viewer/test/*.test.js      # tests 262  # pass 261  # fail 1
+  not ok 156 - a starter that loses the freed port registers through the new holder   (fails without this work)
+$ npm --prefix viewer run test:browser   428 passed, 2 skipped, 2 failed
+  [chromium|firefox] no drawn arrow's line passes through either box …                (fails on main)
+```
