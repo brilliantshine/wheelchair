@@ -2,7 +2,16 @@
 slug: app-diagrams-uploads
 date: 2026-11-15
 implemented-by: "gpt standard (gpt-6.1-terra) for T1–T6; sub-lead claude-opus-5-5 (one test-fixture fix)"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: gpt (verifier, gpt-6.1-sol) — FAIL, REMEDIATION-1.md
+    checks: gpt standard (gpt-6.1-terra)
+  - round: 2
+    lane: gpt (verifier, gpt-6.1-sol) — FAIL, REMEDIATION-2.md
+    checks: gpt standard (gpt-6.1-terra)
+  - round: 3
+    lane: gpt (verifier, gpt-6.1-sol) — PASS on 7fe7baf
+    checks: gpt standard (gpt-6.1-terra), gpt light (gpt-6-luna)
 ---
 
 # Completion Report — More diagram forms and file uploads in app threads
