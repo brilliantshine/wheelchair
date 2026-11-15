@@ -36,6 +36,10 @@ and are listed in COMPLETION.md.
   stopped after its result arrived.
 - **Old sessions keep stale environment.** Sessions started before a fix keep the old
   environment (machine address, prompt suggestions) until restarted.
+- **A restarted worker gets a fresh worktree.** sub-lead.md says a restarted worker keeps
+  the same worktree and branch so committed work carries on, but the service numbers worker
+  branches by count, so check 11's replacement got `-w2`. Partial commits on `-w1` would be
+  left behind.
 - **"Sessions ended" cards stay in the history**, one per dead lead, marked answered.
 - **A dead plan in the viewer's list.** Archiving removes the worktree, but the viewer's
   plan registry still points into it.
