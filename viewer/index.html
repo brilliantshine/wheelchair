@@ -317,7 +317,10 @@
   const GROUP_HEADER = 38; // extra clearance above, holding the name and the note line
 
   const params = new URLSearchParams(location.search);
-  let currentPath = params.get('path') || '';
+  // Archived picture (app hub): `?archive=<thread id>&file=<name>.json` reads the graph the hub
+  // serves from the thread's branch. It is read-only: no write is ever sent.
+  const ARCHIVE = params.get('archive') ? { thread: params.get('archive'), file: params.get('file') || '' } : null;
+  let currentPath = ARCHIVE ? ARCHIVE.file : (params.get('path') || '');
 
   const svg = document.getElementById('canvas');
   const topbar = document.getElementById('topbar');
@@ -463,7 +466,21 @@
     return '/wheelchair/view?path=' + encodeURIComponent(path);
   }
 
+  async function getArchivedGraph() {
+    let res;
+    try {
+      res = await fetch('/wheelchair/api/threads/' + encodeURIComponent(ARCHIVE.thread)
+        + '/graph?file=' + encodeURIComponent(ARCHIVE.file), { cache: 'no-store' });
+    } catch (err) {
+      return { ok: false, network: true, error: 'network', detail: String((err && err.message) || err) };
+    }
+    const body = await safeJson(res);
+    if (!res.ok) return { ok: false, status: res.status, error: body.error, detail: body.detail };
+    return { ok: true, hash: JSON.stringify(body).length + ':archived', graph: body, children: {}, rollups: {}, updated: 0 };
+  }
+
   async function getGraph(path) {
+    if (ARCHIVE) return getArchivedGraph();
     let res;
     try {
       res = await fetch(graphUrl(path), { cache: 'no-store' });
@@ -493,6 +510,7 @@
   let writeQueue = [];
 
   function putView(mutateFn) {
+    if (ARCHIVE) return Promise.resolve(false); // an archived picture is never written
     return new Promise((resolve) => {
       writeQueue.push({ mutateFn, resolve });
       drainWriteQueue();

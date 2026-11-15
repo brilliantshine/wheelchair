@@ -126,15 +126,38 @@ for (const [label, size] of SIZES) {
       await expect(tool.locator('b, i')).toHaveCount(0);
     });
 
-    test('an archived thread shows a diagram as a link to the graph kept on its branch', async ({ page }) => {
+    test('an archived thread draws a diagram read from its branch, read-only', async ({ page }) => {
+      const repo = await fs.mkdtemp(path.join(require('node:os').tmpdir(), 'wc-archived-'));
+      const git = (...args) => require('node:child_process').execFileSync('git', ['-C', repo, ...args], { stdio: 'pipe' });
+      git('init', '-q', '-b', 'wc/gone');
+      git('config', 'user.email', 't@example.com'); git('config', 'user.name', 't');
+      await fs.mkdir(path.join(repo, 'docs/plans/dark/graphs'), { recursive: true });
+      const graph = JSON.parse(await fs.readFile(path.join(__dirname, 'fixtures/canonical.json'), 'utf8'));
+      const file = path.join(repo, 'docs/plans/dark/graphs/flow.json');
+      await fs.writeFile(file, JSON.stringify(graph));
+      git('add', '-A'); git('commit', '-q', '-m', 'graph');
+      const before = await fs.readFile(file, 'utf8');
+
       const made = await ctx.make({ cli: 'claude' });
       await ctx.post(made.id, { kind: 'diagram', plan: 'dark', graph: 'flow', title: 'How it flows' });
-      await ctx.patch(made.id, (t) => { t.archived = true; t.branch = 'wc/gone'; t.slug = 'dark'; });
+      await ctx.patch(made.id, (t) => { t.archived = true; t.branch = 'wc/gone'; t.slug = 'dark'; t.project = repo; });
       await open(page, made.id);
       const card = page.locator('.card-diagram');
       await expect(card).toContainText('Diagram kept on branch wc/gone');
-      await expect(card.locator('iframe')).toHaveCount(0);
-      await expect(card.locator('a')).toHaveAttribute('href', new RegExp(`/threads/${made.id}/graph\\?file=flow\\.json$`));
+      await expect(card.locator('a')).toHaveAttribute('href', /archive=.*&file=flow\.json$/);
+      const frame = page.frameLocator('.card-diagram iframe.diagram');
+      const box = frame.locator('svg#canvas g.node[data-id="decide"] rect.node-box');
+      await expect(box).toBeVisible();
+      // Dragging a box and pressing a verdict key change nothing on disk and send no write.
+      const writes = [];
+      page.on('request', (r) => { if (r.method() === 'PUT') writes.push(r.url()); });
+      const at = await box.boundingBox();
+      await page.mouse.move(at.x + at.width / 2, at.y + at.height / 2);
+      await page.mouse.down(); await page.mouse.move(at.x + 60, at.y + 60, { steps: 4 }); await page.mouse.up();
+      await page.waitForTimeout(400);
+      expect(writes).toEqual([]);
+      expect(await fs.readFile(file, 'utf8')).toBe(before);
+      expect(git('show', 'wc/gone:docs/plans/dark/graphs/flow.json').toString()).toBe(before);
     });
 
     test('message box posts and shows queued', async ({ page }) => {
@@ -223,8 +246,15 @@ for (const [label, size] of SIZES) {
       expect((await req).postDataJSON()).toEqual({ action: 'talk', value: 'Moves lose work' });
 
       req = pressTo(dn.id);
-      await page.getByRole('button', { name: 'Start a thread about it' }).click();
+      await page.locator('.card-done .bullet', { hasText: 'Resize terminal' })
+        .getByRole('button', { name: 'Start a thread about it' }).click();
       expect((await req).postDataJSON()).toEqual({ action: 'start-thread', value: 'Resize terminal' });
+
+      // Every can_do entry offers it too, with the same press form.
+      req = pressTo(dn.id);
+      await page.locator('.card-done .bullet', { hasText: 'Use it' })
+        .getByRole('button', { name: 'Start a thread about it' }).click();
+      expect((await req).postDataJSON()).toEqual({ action: 'start-thread', value: 'Use it' });
 
       req = pressTo(ideaCard.id);
       await page.locator('.card-idea').getByRole('button', { name: 'Remove' }).click();

@@ -73,6 +73,19 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       await noSideScroll(page);
     });
 
+    test('the hub gets the plain tmux attach whatever name the installer registered it under', async ({ page }) => {
+      // The installer registers the hub under the machine's hostname; the response marks it `hub: true`.
+      await page.route('**/api/sessions', (route) => route.fulfill({ json: [
+        { machine: 'hearth', hub: true, reachable: true, sessions: [{ name: 'wc-a-lead', role: 'lead', running: true }] },
+        { machine: 'node-2', hub: false, reachable: true, sessions: [{ name: 'wc-b-lead', role: 'lead', running: true }] },
+      ] }));
+      await openPage(page, context, '/app/sessions');
+      await expect(page.locator('section[data-machine="hearth"] [data-session="wc-a-lead"] code'))
+        .toHaveText('tmux attach -t wc-a-lead');
+      await expect(page.locator('section[data-machine="node-2"] [data-session="wc-b-lead"] code'))
+        .toHaveText('ssh node-2 -t tmux attach -t wc-b-lead');
+    });
+
     test('an unmanaged tmux session is listed read-only, with no terminal link', async ({ page }) => {
       await openPage(page, context, '/app/sessions');
       const other = page.locator('section[data-machine="hub"] [data-session="other-shell"]');
@@ -116,6 +129,17 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       await page.waitForTimeout(700);
       const keys = context.hub.calls.filter((call) => call.path.endsWith('/keys')).slice(before);
       expect(keys.map((call) => call.body.keys)).toEqual(['l', 's', 'Enter']);
+    });
+
+    test('a typed semicolon is sent as backslash-semicolon, one argument', async ({ page }) => {
+      const name = context.seed.made['build-one'].sessions[0].name;
+      await openPage(page, context, `/app/terminal?name=${name}`);
+      const before = context.hub.calls.filter((call) => call.path.endsWith('/keys')).length;
+      await page.locator('.xterm').click();
+      await page.keyboard.type(';');
+      await expect.poll(() => context.hub.calls.filter((call) => call.path.endsWith('/keys')).length).toBe(before + 1);
+      const keys = context.hub.calls.filter((call) => call.path.endsWith('/keys')).slice(before);
+      expect(keys.map((call) => call.body.keys)).toEqual(['\\;']);
     });
 
     test('the key row sends Esc, Tab, Ctrl-C and arrows on a small screen', async ({ page }) => {

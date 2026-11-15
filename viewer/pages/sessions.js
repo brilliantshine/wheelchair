@@ -9,8 +9,8 @@
     return node;
   }
 
-  function attachCommand(machine, name) {
-    return machine === 'hub' ? `tmux attach -t ${name}` : `ssh ${machine} -t tmux attach -t ${name}`;
+  function attachCommand(machine, name, isHub) {
+    return isHub ? `tmux attach -t ${name}` : `ssh ${machine} -t tmux attach -t ${name}`;
   }
 
   async function copy(text, button) {
@@ -40,7 +40,7 @@
     return row;
   }
 
-  function sessionRow(machine, session) {
+  function sessionRow(machine, session, isHub) {
     if (session.managed === false) return unmanagedRow(machine, session);
     const running = session.running !== false && session.status !== 'stopped';
     const row = el('li', 'v-card session');
@@ -56,7 +56,7 @@
       row.append(thread);
     }
     const attach = el('div', 'v-attach');
-    const command = attachCommand(machine, session.name);
+    const command = attachCommand(machine, session.name, isHub);
     attach.append(el('code', 'attach', command));
     const button = el('button', '', 'Copy');
     button.type = 'button';
@@ -84,7 +84,7 @@
       if (!group.reachable) header.append(el('span', 'v-badge seen', seenText(group)));
       section.append(header);
       const list = el('ul', 'v-list');
-      for (const session of group.sessions || []) list.append(sessionRow(group.machine, session));
+      for (const session of group.sessions || []) list.append(sessionRow(group.machine, session, group.hub === true));
       if (group.reachable && !(group.sessions || []).length) {
         list.append(el('li', 'v-empty', 'No sessions.'));
       }
