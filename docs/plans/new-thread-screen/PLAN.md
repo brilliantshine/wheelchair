@@ -39,6 +39,10 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 11 | `~` and `~/...` in the default folder or a saved path expand on the target machine (its `$HOME`); other paths must be absolute | Paths differ per machine; relative paths resolved on the hub are today's bug (`threads.js:24`) | defaulted |
 | 12 | Supersedes 7: known projects for behavior-template scope are `projects.json` plus saved-directory paths. Found folders join `projects.json` when a thread starts in them, as today | Listing a machine's folder from a Settings write would make template saves depend on a machine being up | defaulted |
 | 13 | Saving a directory checks its path on the machine currently selected on the screen | The only machine the screen has in hand; a path can be valid on one machine and not another | defaulted |
+| 14 | Supersedes 3: no `GET /machines`; `GET /new-thread` carries the machine list, with `hub` first and the hub's own hostname entry folded into it | `machines.json` names the hub by hostname (`install.sh:161`, `state.js:152`) | review-round-1 |
+| 15 | Supersedes 4 and 13: each saved directory belongs to the machine it was saved on (`{name, path, machine}`) and only shows for that machine. Names are unique per machine. Dedup against found folders is by path only; a found folder is never hidden by name | A directory valid on one machine is not valid on another; hiding by name could make a found repo unpickable | review-round-1 |
+| 16 | A found or checked project's folder name must match `^[A-Za-z0-9._-]+$` and not contain `..`; other names are left out of the list and refused by the check with "has characters a thread can't use in its name" | The machine service refuses such names at thread start (`safeName`, `machine/service.js:27-29,232`) | review-round-1 |
+| 17 | Supersedes 11 in part: only exactly `~` or a path starting `~/` expands; `~user` is refused as not absolute, by the hub and the machine alike | Hub and machine must accept the same values | review-round-1 |
 
 ## Spec
 
@@ -57,15 +61,18 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 `GET /v1/projects?folder=<path>&check=<path>` (hub secret, like `/v1/status`), in
 `machine/service.js` beside the other `/v1/*` routes, documented in `machine/API.md`.
 
-- `folder` (optional): expand `~` / `~/` against the service's `$HOME`; must then be
-  absolute, else `400`. Returns `found`: the immediate subdirectories (symlinks to
-  directories followed) whose name does not start with `.` and which contain a `.git`
-  entry (directory or file), as `[{name, path}]` sorted by name. A folder that does not
+- `folder` (optional): expand exactly `~` or a leading `~/` against the service's `$HOME`;
+  must then be absolute, else `400`. Returns `found`: the immediate subdirectories (symlinks
+  to directories followed) whose name does not start with `.`, matches
+  `^[A-Za-z0-9._-]+$` without `..`, and which contain a `.git` entry (directory or file), as
+  `[{name, path}]` sorted by name. A folder that does not
   exist or is not a directory gives `found: []` and `folder_error: "<plain reason>"`.
 - `check` (optional): expand the same way. Returns `checked: {path, ok, reason?}` where
   `path` is the expanded absolute path, and `ok` is true only for an existing directory
   containing `.git`. `reason` is one of "does not exist", "is not a directory",
-  "is not a git repository", "must be an absolute path".
+  "is not a git repository", "must be an absolute path",
+  "has characters a thread can't use in its name" (the last path segment fails the name rule
+  above, which the service's `safeName` enforces at thread start, `machine/service.js:27-29`).
 - Neither given: `400`. Reads only; writes nothing.
 
 ### Hub
@@ -73,30 +80,34 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 **State.** `settings.json` gains two fields, with defaults in `defaults()` and lines in
 `normalize` (`viewer/app/settings.js:22-24, 150-162`):
 - `default_project_folder`: string, default `""` (unset).
-- `saved_dirs`: array of `{name, path}`, default `[]`. `name` non-empty after trim, at most
-  60 characters, unique; `path` non-empty, absolute or starting with `~`.
+- `saved_dirs`: array of `{name, path, machine}`, default `[]`. `name` non-empty after trim,
+  at most 60 characters, unique within its `machine`; `path` is the expanded absolute path the
+  machine returned; `machine` is the name the screen used (`hub` for the hub).
 
 **Routes** (`viewer/app/routes.js`, documented in `viewer/app/API.md`):
 - `PUT /settings/preferences` accepts `default_project_folder` (string; trimmed; `""`
-  clears; otherwise must be absolute or start with `~`, else `400`). It is not checked
+  clears; otherwise must be absolute, exactly `~`, or start with `~/`, else `400`). It is not checked
   against a machine. The response and `GET /settings` include it.
 - `GET /new-thread?machine=<name>` (default `hub`) returns
   `{machines, machine, default_folder, saved, found, found_error?, previous}`:
-  - `machines`: names from `machines.json`, with `hub` first. A new `GET /machines` is not
-    added; this route carries the list.
+  - `machines`: `hub` first, then every other name in `machines.json` except the entry that
+    `state.resolveMachine(machines, 'hub')` returns (the hub's own hostname entry,
+    `viewer/app/state.js:152-161`). There is no `GET /machines`.
   - `found`: from the machine's `/v1/projects?folder=` when a folder is set, else `[]`.
-    A machine that does not answer, or answers 404 (an older service), gives `found: []`
+    The machine's `folder_error` is passed on as `found_error`. A machine that does not answer, or answers 404 (an older service), gives `found: []`
     and `found_error` in plain words ("<machine> is not reachable", "<machine> needs
     updating"); the route still returns 200.
-  - `saved`: `saved_dirs`. `previous`: `projects.json`.
+  - `saved`: the `saved_dirs` entries whose `machine` equals the requested one.
+    `previous`: `projects.json`.
 - `POST /settings/saved-dirs` `{name, path, machine}`: validates the fields, checks `path`
   on `machine` through `/v1/projects?check=`, stores the expanded path. Refusals: `400`
-  with the field error or the check's reason; `409` when the name exists; `502` when the
+  with the field error or the check's reason; `409` when the name exists for that machine; `502` when the
   machine does not answer. Returns `{saved}`.
-- `DELETE /settings/saved-dirs/:name` returns `{saved}`; `404` for an unknown name.
+- `DELETE /settings/saved-dirs/:name?machine=<name>` (default `hub`) returns `{saved}` for that
+  machine; `404` for an unknown name.
   Removing one changes no thread.
-- Template scope (`routes.js:104,127`) accepts a path in `projects.json` or in
-  `saved_dirs`. `describe()`'s `projects` and `scope_missing` use the same union.
+- Template scope (`routes.js:104,127`) accepts a path in `projects.json` or any
+  `saved_dirs` path. `describe()`'s `projects` and `scope_missing` use the same union.
 
 **Starting a thread** (`createThread`, `viewer/app/threads.js:42-64`): after the existing
 field checks and **before** `hub.save`, call the thread's machine with
@@ -115,8 +126,10 @@ refusal. The `POST /threads` body is unchanged.
   in this order, without duplicates by path: **Saved** (by name), **In <default folder>**
   (found, by name; hidden when a saved entry has the same name), **Used before**
   (`previous` not already listed, by last path segment, with the full path where two share
-  one). Use `<optgroup>` labels. The option's value is the path; the full path shows under
+  one). A found folder whose path equals a saved entry's path is listed once, under Saved;
+  nothing is ever hidden by name. Use `<optgroup>` labels. The option's value is the path; the full path shows under
   the dropdown for the selected one.
+- Under the dropdown, a short note: "Only git repositories in <default folder> are listed."
 - `found_error` shows as one line under the dropdown. No default folder set: one line
   "Set a default project folder in Settings" linking to Settings.
 - An empty list (nothing saved, found or used before) disables Start and says to save a
@@ -129,9 +142,21 @@ refusal. The `POST /threads` body is unchanged.
   show beside the row.
 - Phone (under 900px): one column, full-width controls, no horizontal scroll.
 
+### Settings page
+
+- `viewer/pages/settings.js`: in the existing "Threads" section (beside Tool steps,
+  `:282-285`), a **Default project folder** text input with a Save button and a one-line
+  hint ("Each git repository inside it can be picked when starting a thread. `~` is each
+  machine's home folder."). Save sends `PUT /settings/preferences {default_project_folder}`;
+  a `400` shows its message under the input and keeps the typed value; success shows "Saved".
+  Empty and saved clears it.
+
 ### Removals
 
-- `viewer/pages/threads.html`: the `col-side` aside (the form) goes; `#new-toggle` becomes
+- `viewer/pages/threads.html`: the `col-side` aside (the form) goes, and its `.shell` gets a
+  class (e.g. `no-side`) with a two-column grid rule (`minmax(220px, 280px) minmax(0, 1fr)`)
+  that also overrides the 900-1099px rule (`viewer/pages/app.css:107,184`), so no empty third
+  column remains; `#new-toggle` becomes
   `<a id="new-toggle" href="/wheelchair/app/new">+ New thread</a>`.
 - `viewer/pages/thread.html:45-59`: the form goes; the rest of `col-side` (files) stays;
   `#new-toggle` (`:14`) becomes the same link.
@@ -154,10 +179,12 @@ refusal. The `POST /threads` body is unchanged.
 - `viewer/test/*.test.js`: `GET /new-thread` (with a fake machine: found, unreachable,
   404), saved-dir add/duplicate/remove/check refusal, `default_project_folder` validation,
   `createThread` refusing a bad path with no thread and no `projects.json` entry, template
-  scope accepting a saved path, `new` page served.
+  scope accepting a saved path, saved entries filtered by machine, `hub` alias in the machine
+  list, `~user` refused, `new` page served.
 - Browser specs that used the form (`viewer/test/app-ui.spec.js:50-76`,
   `app-threads.spec.js:102-107`, `app-views.spec.js:102-104`) move to the new screen; add
-  one for the screen at phone width.
+  one for the screen at phone width, and one for the Settings field (save, and a `400`
+  shown under it).
 - Commands:
   ```bash
   bash machine/test/run.sh
@@ -178,6 +205,30 @@ refusal. The `POST /threads` body is unchanged.
 **Lanes:** Codex (mechanics); Claude (intent); cross-family: yes.
 
 **Changed since Round N-1:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| Codex mechanics | major | Folder names with spaces/Unicode pass discovery and the check but fail at start (`safeName`) | upheld (major) — confirmed `machine/service.js:27-29,232` | Decision 16; name rule in the route and check |
+| Codex mechanics | minor | Machine list must fold the hub's hostname entry into `hub` | upheld — `install.sh:161` | Decision 14; Spec `machines` |
+| Codex mechanics | minor | `folder_error` not forwarded to `found_error` | upheld | Spec route |
+| Codex mechanics | minor | Removing the sidebar leaves an empty third grid column | upheld — `app.css:107,184` | Spec Removals |
+| Codex mechanics | minor | `~user` accepted by hub, rejected by machine | upheld | Decision 17 |
+| Claude intent | minor | Saved directories not tied to a machine | upheld | Decision 15 |
+| Claude intent | minor | Found folder hidden by a same-named saved entry | upheld | Decision 15; Spec screen |
+| Claude intent | minor | Git-only listing differs from IDEA's "every directory" with no hint | upheld | Note on the screen and in the Settings hint |
+| Claude intent | minor | Decision 3 contradicts the Spec on `GET /machines` | upheld | Decision 14 |
+| Claude intent | minor | Settings page side of the field unspecified | upheld | Spec "Settings page" |
+
+### Round 2 — 2026-11-15
+
+**Lanes:** Codex (mechanics); Claude (intent); cross-family: yes.
+
+**Changed since Round 1:**
+- Saved directories belong to a machine and show only for it; dedup by path only (Decision 15).
+- Folder-name rule matching the service's `safeName` (Decision 16).
+- `~` expansion narrowed to `~` and `~/` (Decision 17).
+- Machine list folds the hub's hostname entry into `hub` (Decision 14); `folder_error` forwarded.
+- New "Settings page" section; two-column grid for the Threads page; git-only note on the screen.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
