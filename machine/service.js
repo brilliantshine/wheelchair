@@ -19,6 +19,7 @@ const path = require('node:path');
 const { spawnSync, spawn } = require('node:child_process');
 const adapters = require('./adapters');
 const { limitedUntil } = require('./lib/limits');
+const { AsideTurns } = require('./lib/aside-turns');
 
 const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_STATE = path.join(os.homedir(), '.local', 'state', 'wheelchair');
@@ -133,6 +134,7 @@ class MachineService {
     this.configPath = path.join(this.stateDir, 'machine.json');
     this.sessionsPath = path.join(this.stateDir, 'sessions.json');
     this.config = {};
+    this.asideTurns = new AsideTurns(this.stateDir, atomicWrite, accountDir);
     this.sessions = {};
     this.logins = {};
     this.server = null;
@@ -155,6 +157,7 @@ class MachineService {
     if (this.options.hubUrl) this.config.hub_url = this.options.hubUrl;
     if (this.options.secretFile) this.config.secret_file = this.options.secretFile;
     await atomicWrite(this.configPath, `${json(this.config)}\n`);
+    await this.asideTurns.load();
     this.sessions = await readJson(this.sessionsPath, {});
     await this.recoverFromTmux();
     await mkdir(path.join(this.stateDir, 'spool', 'cards'));
@@ -735,7 +738,7 @@ class MachineService {
     for (const folder of folders.filter(e => e.isDirectory())) {
       try { const record = JSON.parse(fs.readFileSync(path.join(root, folder.name, 'wheelchair-account.json'), 'utf8')); if (record.id !== folder.name || !adapters[record.cli] || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(record.id)) continue; accounts.push({ id: record.id, cli: record.cli, ...adapters[record.cli].loginStatus(path.join(root, folder.name)) }); } catch {}
     }
-    return { version: this.version, claude, codex, accounts, sessions: [...Object.values(this.sessions).filter(s => !s.name.startsWith('wc-login-')).map(s => ({ ...s, managed: true, running: live.has(s.name) })), ...others] };
+    return { version: this.version, claude, codex, accounts, sessions: [...Object.values(this.sessions).filter(s => !s.name.startsWith('wc-login-')).map(s => ({ ...s, codex_thread_id: s.codex_thread_id || null, managed: true, running: live.has(s.name) })), ...others] };
   }
   cliStatus(cli, login = adapters[cli].loginStatus(null)) {
     const version = command('sh', ['-c', `command -v ${cli}`]);
@@ -815,6 +818,13 @@ class MachineService {
       if (request.method === 'GET' && url.pathname === '/v1/projects') { await this.authorize(request, 'hub'); return send(response, 200, await this.projects(url.searchParams)); }
       if (request.method === 'POST' && url.pathname === '/v1/preflight') { await this.authorize(request, 'hub'); const input = await bodyOf(request); const dir = accountDir(input.dir); const result = command(path.join(ROOT, 'codex', 'preflight.sh'), [], dir ? { env: { ...process.env, ...adapters.codex.loginEnv(dir) } } : {}); return send(response, result.ok ? 200 : 409, result); }
       if (request.method === 'POST' && url.pathname === '/v1/preview') { await this.authorize(request, 'hub'); const result = await this.preview(await bodyOf(request)); return send(response, result.status, result.body); }
+      if (pathBits[0] === 'v1' && pathBits[1] === 'aside-turns') {
+        await this.authorize(request, 'hub');
+        if (request.method === 'POST' && pathBits.length === 2) { const result = await this.asideTurns.start(await bodyOf(request)); return send(response, result.status, result.body); }
+        if (pathBits.length === 3 && request.method === 'GET') return send(response, 200, this.asideTurns.result(this.asideTurns.get(pathBits[2])));
+        if (pathBits.length === 3 && request.method === 'DELETE') { await this.asideTurns.stop(pathBits[2]); return send(response, 200, { ok: true }); }
+        if (pathBits.length === 4 && pathBits[3] === 'ack' && request.method === 'POST') { await this.asideTurns.ack(pathBits[2]); return send(response, 200, { ok: true }); }
+      }
       if (request.method === 'POST' && url.pathname === '/v1/logins') { await this.authorize(request, 'hub'); return send(response, 201, await this.startLogin(await bodyOf(request))); }
       if (pathBits[0] === 'v1' && pathBits[1] === 'logins' && pathBits[2]) {
         await this.authorize(request, 'hub'); const account = decodeURIComponent(pathBits[2]); this.loginRecord(account);
