@@ -591,6 +591,7 @@ Collin chose "keep going" (2026-11-15); the round budget resets.
 | T4 | Machine login sessions: `loginCommand`, `parseLogin`, `/v1/logins` routes (§3 service side); plus T1's gaps (last Codex turn-end branch behind the adapter, reached flag in `usageFrom`, one login check per default in `status()`, missing tests); after T1 | `machine/` | codex standard (gpt-6.1-terra) | worker-5 | `bash machine/test/run.sh`; `node --test viewer/test/*.test.js` | done |
 | T5 | Balancer, waiting and promotion, limit hold, `turn-failed`, account in start request, constraints path, threads without `cli`, `wc.js` flags and list (§5, §7 start path, §8); after T2 | `viewer/app/{balancer,sessions,threads,wc,hub}.js`, sessions/threads/machine branches of `routes.js`, their node tests | codex standard (gpt-6.1-terra) | worker-6 | `node --test viewer/test/*.test.js`; `bash machine/test/run.sh` | in progress |
 | T6 | Settings Accounts and Usage panels, Leads order, sign-in card, terminal login mode, new-thread form without CLI, thread waiting line, nav dot, browser tests (§3 UI, §5 waiting line, §6, §8 form); after T4, T5 | `viewer/pages/`, browser specs | claude standard (claude-sonnet-5-5), interface work | | `npm --prefix viewer run test:browser`; `node --test viewer/test/*.test.js` | not started |
+| T7 | Fixture test for the Claude login-method menu answer (`loginPrompt`, answered once) | `machine/test/` | codex light (gpt-6-luna) | worker-7 | `bash machine/test/run.sh` | in progress |
 
 ## Log
 
