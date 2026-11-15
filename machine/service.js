@@ -449,6 +449,8 @@ class MachineService {
     const committed = []; const removed = []; const kept = [];
     for (const session of worktrees) {
       const worktree = path.resolve(session.worktree);
+      // A worker checkout the sub-lead already merged and removed has nothing left to keep.
+      if (!fs.existsSync(worktree)) continue;
       if (this.mergeInProgress(worktree)) {
         const result = this.archiveCommit(worktree, 'WIP: archived (mid-merge)');
         if (!result.ok) { kept.push({ worktree, reason: result.reason }); continue; }

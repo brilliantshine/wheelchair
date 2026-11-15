@@ -126,6 +126,15 @@ test('archive commits a dirty worktree and removes it while retaining its branch
     await assert.rejects(fs.access(worktree));
   } finally { await env.close(); }
 });
+test('archive forgets sessions whose worktree was already removed', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true }); try {
+    const { repo, worktree } = await startedWorktree(env, root, 'archive-gone');
+    git(['-C', repo, 'worktree', 'remove', '--force', worktree]);
+    const result = await api(env, 'POST', '/v1/archive', { thread_id: 'archive-gone' }, hubHeader);
+    assert.equal(result.status, 200); assert.deepEqual(result.body.kept, []);
+    assert.equal(env.instance.sessions['wc-archive-gone-lead'], undefined);
+  } finally { await env.close(); }
+});
 test('archive commits a worktree mid-merge as it stands', async () => {
   const root = await temp(); const env = await service(root, { realGit: true }); try {
     const { repo, worktree } = await startedWorktree(env, root, 'archive-merge');
