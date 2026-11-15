@@ -95,7 +95,7 @@ class Hub {
   }
   deliver(thread, name, options) { return sessions.deliver(this, thread, sessions.session(thread, name), options); }
   appendSent(thread, entries) { return this.state.appendSent(thread.id, entries); }
-  async event(payload) { const result = await this.withThread(payload.thread_id, () => sessions.event(this, payload)); if (payload.type === 'usage' && !result.duplicate) await sessions.retryWaiting(this); return result; }
+  async event(payload) { const result = await this.withThread(payload.thread_id, () => sessions.event(this, payload)); if (payload.reading && !result.duplicate) await sessions.retryWaiting(this); return result; }
   async sessionRequest(payload) {
     const thread = await threads.threadBySession(this, payload.calling_session);
     return this.withThread(thread.id, () => sessions.sessionRequest(this, payload));
