@@ -1,6 +1,6 @@
 ---
 slug: app-settings
-status: draft   # draft | confirmed
+status: confirmed   # draft | confirmed
 created: 2026-11-15
 ---
 
@@ -51,3 +51,5 @@ newer-model heads-up never reaches him.
 - Nothing in a template or style overrides wheelchair's built-in rules for a role.
 - The tier rename reaches the workflow rules under `protocol/`, which are used outside the
   app too, so it must not break the terminal workflow.
+- The screens follow Collin's designs in `docs/proposals/app-shell/design/`:
+  `SettingsModels`, `SettingsTemplates` and `SettingsWriting` (`.dc.html`).
