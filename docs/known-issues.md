@@ -66,3 +66,25 @@ npm --prefix viewer run test:browser -- browser.spec.js -g "no drawn arrow" --pr
 Both browsers fail with `page.evaluate: TypeError: Cannot read properties of null (reading 'map')`,
 so one committed graph renders without something the test's in-page code expects. Which graph
 was not narrowed down.
+
+## Viewer: "the global write lock serializes concurrent writes and retry retains both changes" fails sometimes
+
+Found 2026-11-14 during the app-shell validation run. It is a race in the test, not in the
+server: `viewer/test/server.test.js` hasn't changed since `2554bf3`, and the test passes or
+fails on the same code depending on timing (3 of 3 passed run alone, then it failed in the full
+suite twice and in its own file once).
+
+**Reproduce**
+
+```bash
+node --test viewer/test/server.test.js
+```
+
+**What is known**
+
+The test (`viewer/test/server.test.js:536`) sends two writes from the same base: `left` sets a
+note on `gather`, `right` one on `inspect`. One wins and one gets `409`. The retry then always
+re-applies `right`'s change (`:553`), as if `left` had won. When `right` wins, the retry
+re-sends a change that is already there, `left`'s note is never written, and `:556` fails with
+`expected 'left', actual undefined`. The fix is for the retry to re-apply whichever write was
+refused.
