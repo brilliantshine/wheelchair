@@ -142,6 +142,13 @@ write_cache '{"models":[{"slug":"gpt-6.1-sol","visibility":"list"},{"slug":"gpt-
 run_model show --json
 assert 'show JSON supplies models, effort, null cells, malformed and visible cache' json_assert 'import json,sys; x=json.load(sys.stdin); assert x["claude"]["light"] == {"model":"claude-haiku-custom","effort":"medium"}; assert x["gpt"]["critical"] is None; assert x["gpt"]["heavy"]["effort"] is None; assert x["malformed"] is False; assert x["visible"] == ["gpt-7-sol","gpt-6.1-sol"]'
 
+new_case
+write_cache '{"models":[{"slug":"gpt-7","visibility":"list"},{"slug":"gpt-7-nova","visibility":"list"},{"slug":"gpt-8","visibility":"hide"}]}'
+run_model show --json
+assert 'show JSON includes listed unparsed models after parsed models' json_assert 'import json,sys; assert json.load(sys.stdin)["visible"] == ["gpt-7-nova","gpt-7"]'
+run_model check
+assert 'check heads-up stays filtered for the same cache' equals "$output" "heads-up: gpt-7-nova is available and matches no tier. Pin it: $repo/codex/model.sh set gpt <tier> gpt-7-nova (or $repo/codex/model.sh skip gpt-7-nova)"
+
 # Legacy behavior coverage ported to the new tier names and models-file format.
 new_case
 run_model light
