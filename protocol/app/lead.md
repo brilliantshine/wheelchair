@@ -241,6 +241,9 @@ On `[card <id>] start building`:
    answer. While a question is waiting, post the `progress` card again with
    `choice_waiting: true` (same `done`, `total` and `machines` as the sub-lead's last
    one), and with `false` once he answers; the sub-lead keeps `done` and `total` current.
+   A sub-lead asking to step a task up becomes a `question` card with two options, "Step
+   up" and "Stop here" (the task is reported blocked); the answer goes back to the
+   sub-lead as a `message`.
 4. A worker that hit something the plan did not settle sends you a `message`. The same
    rule applies: answer it (with a `message` back), or pass on to Collin only what you
    cannot answer.
