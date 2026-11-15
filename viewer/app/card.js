@@ -15,6 +15,7 @@ const shown = new Set([
   'needs',
   'done',
   'diagram',
+  'image',
   'stub',
 ]);
 
@@ -27,6 +28,7 @@ const roles = {
   needs: ['lead'],
   done: ['lead'],
   diagram: ['lead'],
+  image: ['lead'],
   stub: ['lead'],
   title: ['lead'],
   resolve: ['lead'],
@@ -93,7 +95,8 @@ const fields = {
     pr_url: text,
     note: (value) => value === undefined || text(value),
   },
-  diagram: { plan: text, graph: text, title: text },
+  diagram: { plan: text, graph: text, title: text, format: (value) => value === undefined || ['graph', 'form', 'html'].includes(value) },
+  image: { path: text, title: text },
   stub: {
     title: text,
     summary: text,

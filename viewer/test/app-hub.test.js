@@ -1716,3 +1716,73 @@ test('restarting a failed lead answers its turn-failed card', async () => {
     assert.ok((await hub.thread(made.id)).cards.some(card => card.title === "The lead's turn failed" && card.answered));
   });
 });
+
+test('diagram formats and lead-only image cards validate and persist', async () => {
+  const diagram = { plan: 'demo', graph: 'flow', title: 'Flow' };
+  for (const format of [undefined, 'graph', 'form', 'html']) assert.equal(validate('diagram', { ...diagram, format }, 'lead').ok, true);
+  assert.equal(validate('diagram', { ...diagram, format: 'other' }, 'lead').ok, false);
+  for (const value of [{ path: '/tmp/a.png' }, { title: 'Image' }]) assert.equal(validate('image', value, 'lead').ok, false);
+  assert.equal(validate('image', { path: '/tmp/a.png', title: 'Image' }, 'worker').ok, false);
+  await withContext(async (context) => {
+    const made = await thread(context); const graphs = [];
+    const hub = new Hub({ stateDir: context.state, registerPlan: async () => {}, registerGraph: async (graph) => graphs.push(graph) });
+    await hub.init();
+    for (const format of ['form', 'html']) await hub.acceptCard({ thread_id: made.id, session: made.sessions[0].name, kind: 'diagram', ...diagram, format });
+    assert.deepEqual(graphs, []);
+    await hub.acceptCard({ thread_id: made.id, session: made.sessions[0].name, kind: 'image', path: '/uploads/1-a.png', title: 'Image' });
+    const saved = await hub.thread(made.id);
+    assert.equal(saved.cards.find((item) => item.kind === 'image').file, '1-a.png');
+    assert.deepEqual(saved.cards.filter((item) => item.kind === 'diagram').map((item) => item.format), ['form', 'html']);
+  });
+});
+
+test('uploads and files stream through the hub and enforce admission', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context); const base = `${context.server.url}/api/threads/${made.id}`;
+    const headers = { 'x-graph-token': context.server.token, origin: new URL(base).origin, 'content-type': 'image/png' };
+    const uploaded = await fetch(`${base}/uploads?name=a.png`, { method: 'POST', headers, body: Buffer.from('picture') });
+    assert.equal(uploaded.status, 201); assert.equal((await uploaded.json()).path, `/fake/uploads/${made.id}/1-a.png`);
+    const file = await fetch(`${base}/files/1-a.png?token=${context.server.token}`);
+    assert.equal(file.status, 200); assert.equal(file.headers.get('content-type'), 'image/png'); assert.equal(file.headers.get('x-content-type-options'), 'nosniff'); assert.equal(await file.text(), 'picture');
+    assert.equal((await api(context, `/threads/${made.id}/files/bad`)).status, 400);
+    const http = require('node:http');
+    const raw = (extra) => new Promise((resolve, reject) => {
+      const req = http.request(`${base}/uploads?name=a`, { method: 'POST', headers: { ...headers, ...extra } }, (res) => { res.resume(); res.on('end', () => resolve(res.statusCode)); });
+      req.on('error', reject); req.end();
+    });
+    assert.equal(await raw({ 'transfer-encoding': 'chunked' }), 413);
+    assert.equal(await raw({ 'content-length': String(25 * 1024 * 1024 + 1) }), 413);
+    const hub = new Hub({ stateDir: context.state }); const saved = await hub.thread(made.id); saved.sessions[0].live = false; await hub.save(saved);
+    assert.equal((await fetch(`${base}/uploads?name=a`, { method: 'POST', headers, body: 'x' })).status, 409);
+    saved.archived = true; saved.sessions[0].live = true; await hub.save(saved);
+    assert.equal((await fetch(`${base}/uploads?name=a`, { method: 'POST', headers, body: 'x' })).status, 409);
+  });
+});
+
+test('archive keeps thread open on upload removal failure and archives after success', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context); context.machine.uploadsRemoved = false;
+    await api(context, `/threads/${made.id}/archive`, { method: 'POST', body: {} });
+    const hub = new Hub({ stateDir: context.state }); const saved = await hub.thread(made.id);
+    assert.equal(saved.archived, false);
+    const need = saved.cards.find((item) => item.title === 'Uploads could not be removed');
+    assert.equal(need.system, true); assert.match(need.body, new RegExp(made.id)); assert.match(need.body, /permission denied/);
+    context.machine.uploadsRemoved = true;
+    await api(context, `/threads/${made.id}/archive`, { method: 'POST', body: {} });
+    assert.equal((await hub.thread(made.id)).archived, true);
+  });
+});
+
+test('archived HTML route sends the static sandbox headers', async () => {
+  const routes = require('../app/routes.js'); const threads = require('../app/threads.js');
+  const original = threads.archivedHtml;
+  threads.archivedHtml = async (_hub, id, file) => { assert.equal(id, '123'); assert.equal(file, 'picture.html'); return '<p>Archived</p>'; };
+  try {
+    const response = { writeHead(status, headers) { this.status = status; this.headers = headers; }, end(body) { this.body = body; } };
+    await routes.handle({}, { method: 'GET' }, response, new URL('http://local/wheelchair/api/threads/123/diagram-html?file=picture.html'), false);
+    assert.equal(response.status, 200); assert.equal(response.body, '<p>Archived</p>');
+    assert.equal(response.headers['content-type'], 'text/html; charset=utf-8');
+    assert.equal(response.headers['x-content-type-options'], 'nosniff');
+    assert.equal(response.headers['content-security-policy'], "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; sandbox");
+  } finally { threads.archivedHtml = original; }
+});

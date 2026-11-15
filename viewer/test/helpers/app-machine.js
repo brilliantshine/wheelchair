@@ -34,6 +34,8 @@ async function startMachine(secret = 'machine-test-secret') {
   let startOk = true;
   let submitOk = true;
   let archiveKept = [];
+  let uploadsRemoved = true;
+  const uploads = new Map();
   let sessionsAvailable = true;
   let projects = { found: [], folder_error: undefined, bad: {} };
   let projectsAvailable = true;
@@ -43,6 +45,21 @@ async function startMachine(secret = 'machine-test-secret') {
       return send(response, 401, { error: 'machine secret required' });
     }
     const url = new URL(request.url, 'http://machine.test');
+    if (request.method === 'POST' && url.pathname === '/v1/uploads') {
+      const chunks = [];
+      for await (const chunk of request) chunks.push(chunk);
+      const id = url.searchParams.get('thread_id');
+      const name = `1-${url.searchParams.get('name')}`;
+      uploads.set(`${id}/${name}`, Buffer.concat(chunks));
+      calls.push({ method: request.method, path: url.pathname, body: Buffer.concat(chunks) });
+      return send(response, 201, { path: `/fake/uploads/${id}/${name}` });
+    }
+    if (request.method === 'GET' && url.pathname.startsWith('/v1/uploads/')) {
+      const data = uploads.get(url.pathname.slice('/v1/uploads/'.length));
+      if (!data) return send(response, 404, { error: 'not found' });
+      response.writeHead(200, { 'content-type': 'image/png', 'x-content-type-options': 'nosniff' });
+      return response.end(data);
+    }
     const write = ['POST', 'PUT'].includes(request.method);
     const input = write ? await readBody(request) : {};
     calls.push({ method: request.method, path: url.pathname, body: input });
@@ -75,7 +92,7 @@ async function startMachine(secret = 'machine-test-secret') {
       return stopSession(response, sessions, url);
     }
     if (request.method === 'POST' && url.pathname === '/v1/archive') {
-      return archive(response, sessions, input.thread_id, archiveKept);
+      return archive(response, sessions, input.thread_id, archiveKept, uploadsRemoved);
     }
     if (request.method === 'GET' && url.pathname === '/v1/projects') {
       if (!projectsAvailable) return send(response, 404, { error: 'not found' });
@@ -106,6 +123,8 @@ async function startMachine(secret = 'machine-test-secret') {
     set preflightOk(value) { preflightOk = typeof value === 'function' ? value : Boolean(value); },
     get submitOk() { return submitOk; },
     set submitOk(value) { submitOk = Boolean(value); },
+    get uploadsRemoved() { return uploadsRemoved; },
+    set uploadsRemoved(value) { uploadsRemoved = value; },
     get archiveKept() { return archiveKept; },
     set archiveKept(value) { archiveKept = Array.isArray(value) ? value : []; },
     get sessionsAvailable() { return sessionsAvailable; },
@@ -171,7 +190,7 @@ function stopSession(response, sessions, url) {
   return send(response, 200, { ok: true });
 }
 
-function archive(response, sessions, threadId, kept) {
+function archive(response, sessions, threadId, kept, uploadsRemoved) {
   const stopped = [...sessions.values()]
     .filter((session) => session.thread_id === threadId)
     .map((session) => {
@@ -184,6 +203,8 @@ function archive(response, sessions, threadId, kept) {
     committed: [],
     removed: stopped.map((name) => `/tmp/${name}`),
     kept,
+    uploads_removed: uploadsRemoved,
+    ...(uploadsRemoved === false ? { uploads_error: 'permission denied' } : {}),
   });
 }
 
