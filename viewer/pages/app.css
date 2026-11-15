@@ -1,6 +1,14 @@
 /* Shared by every app page (features, threads, thread, sessions, terminal).
    Dark only, the palette and type of docs/proposals/app-shell/design. Every colour in the app's
    three stylesheets comes from the variables below, defined once. */
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 400; font-display: swap;
+  src: url('/wheelchair/assets/fonts/inter-400.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 600; font-display: swap;
+  src: url('/wheelchair/assets/fonts/inter-600.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 700; font-display: swap;
+  src: url('/wheelchair/assets/fonts/inter-700.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 400; font-display: swap;
+  src: url('/wheelchair/assets/fonts/jetbrains-mono-400.woff2') format('woff2'); }
 :root {
   --bg: #14161a; --panel: #1c1f25; --panel-2: #23262d; --panel-3: #181a1e; --band: #161a20;
   --line: #2a2f38; --line-2: #3a3f48;

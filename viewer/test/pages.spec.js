@@ -15,7 +15,7 @@ const { spawn } = require('node:child_process');
 const { test, expect } = require('@playwright/test');
 const { ROOT, makeDir, freePort } = require('./helpers/server');
 
-const CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+const CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 // A fake `tmux` put first on a spawned process's PATH. `list-sessions -F '#S'` (server.js's
 // tmuxSessions, used to build /list) answers with FAKE_TMUX_LIST, comma-separated; `display-message
