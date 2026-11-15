@@ -506,9 +506,9 @@ table built here.
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Models file: `codex/model.sh` both providers, new format, commands, aliases, `check --json`, `show --json`, `reset` | `codex/`, `install/test/run.sh` (models-file assertions) | Codex / Terra (gpt-5.6-terra) | wc-983d91c069d3-worker | `bash codex/test/run.sh`; `bash install/test/run.sh` | done (coverage gap → T1b) |
-| T1b | Restore the ~45 `codex/test/run.sh` assertions T1 dropped, ported to the new names and file format | `codex/test/run.sh` | Codex / Light (gpt-6-luna) | — | `bash codex/test/run.sh` | dispatched |
+| T1b | Restore the ~45 `codex/test/run.sh` assertions T1 dropped, ported to the new names and file format | `codex/test/run.sh` | Codex / Light (gpt-6-luna) | wc-983d91c069d3-worker-4 | `bash codex/test/run.sh` | dispatched |
 | T2 | Machine service: `permission_mode` + bypass readiness, `effort`, `role_layers` after the local pointer, `/v1/preview` | `machine/` | Claude / Sonnet | wc-983d91c069d3-worker-2 | `bash machine/test/run.sh` | done |
-| T3 | Hub: per-role `resolveModel`, settings store and routes, template/style composition and cap, style trailer, chat stripping, machine-client timeout, `API.md` | `viewer/app/`, `viewer/test/*.test.js` | Codex / Terra (gpt-5.6-terra) | — | `node --test viewer/test/*.test.js` | waits on T1 |
+| T3 | Hub: per-role `resolveModel`, settings store and routes, template/style composition and cap, style trailer, chat stripping, machine-client timeout, `API.md` | `viewer/app/`, `viewer/test/*.test.js` | Codex / Terra (gpt-5.6-terra) | wc-983d91c069d3-worker-5 | `node --test viewer/test/*.test.js` | dispatched |
 | T4 | Settings page (three sections), nav link, `APP_PAGES`, browser tests | `viewer/pages/settings.*`, `viewer/pages/nav.js`, `viewer/server.js` (APP_PAGES), `viewer/test/*settings*.spec.js` | Claude / Sonnet | — | `npm --prefix viewer run test:browser` | waits on T3 |
 | T5 | Protocol: tier rename and rule edits | `protocol/` (ten files named in its brief) | Claude / Sonnet | wc-983d91c069d3-worker-3 | rename grep over `protocol/` | done |
 
