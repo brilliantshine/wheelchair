@@ -49,6 +49,9 @@ test('captured login screens parse wrapped URLs and device codes', () => {
   const fixture = name => fs.readFileSync(path.join(__dirname, 'fixtures/login', name), 'utf8');
   const claude = adapters.claude.parseLogin(fixture('claude.txt'));
   assert.equal(claude.wantsCode, true); assert.match(claude.url, /code_challenge=AAA/); assert.ok(claude.url.endsWith('BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'));
+  assert.deepEqual(adapters.claude.loginPrompt(fixture('claude-menu.txt')), ['Enter']);
+  assert.equal(adapters.claude.loginPrompt(fixture('claude.txt')), null);
+  assert.equal(adapters.claude.parseLogin(fixture('claude-menu.txt')), null);
   assert.deepEqual(adapters.codex.parseLogin(fixture('codex.txt')), { url: 'https://auth.openai.com/codex/device', code: 'ABCD-12345', wantsCode: false });
 });
 test('seed links instruction files and preserves existing Codex configuration', () => {
