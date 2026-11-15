@@ -24,6 +24,15 @@ verified-by:
   - round: 3
     lane: opus (fresh)
     checks: terra, sonnet
+  - round: 4
+    lane: opus (resumed)
+    checks: terra
+  - round: 4
+    lane: sol (gpt-6.1-sol, resumed thread 01a1dd51-d8d6-7942-9d49-0f7c06f2a8c3)
+    checks: sonnet, lead opus
+  - round: 4
+    lane: opus (fresh, resumed for the final round)
+    checks: terra, sonnet
 ---
 
 # Completion Report — Wheelchair as an app on the hub (slice 1)
@@ -374,3 +383,13 @@ queued it. Remediation 3 settles that a failed delivery never undoes its operati
 | `./install.sh && ./install.sh` | both exit 0 |
 
 The live services run this code.
+
+## Verification result
+
+Round 4 at 42de2e4: all three verifiers returned `VERDICT: PASS`. They were Opus (resumed,
+cross-family on the Terra work), Sol `gpt-6.1-sol` (resumed, cross-family on the Sonnet
+work and the lead's fixes) and a fresh Opus (whole Spec, final round). A Firefox test,
+"approval: Start building enabled when Ready and presses; offer press", timed out once in
+the fresh verifier's run and then passed 408 repeated runs. It is recorded in
+`docs/known-issues.md` as flaky.
+

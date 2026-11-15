@@ -100,3 +100,11 @@ couldn't find its work, and the lead killed the other before it edited anything.
 
 **What to do until lanes.md is fixed:** `cd` into the lane's directory before `codex exec
 resume`, then check the log's `workdir:` line.
+
+## Viewer: "approval: Start building enabled when Ready and presses; offer press" times out sometimes (Firefox, phone)
+
+Seen once, in the app-shell final verification at 42de2e4
+(`viewer/test/app-threads.spec.js:305`, Firefox, phone viewport). The test timed out waiting
+for the offer button's request. Rerunning that spec file three times with
+`--repeat-each=2` gave 408 passes. Nothing in that remediation changed the spec, its helpers
+or the pages. The cause is not known yet.

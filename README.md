@@ -81,6 +81,9 @@ It also writes a few things outside this repo:
   diagram-sensitivity setting
 - a per-turn hook and its write grant, in each harness's settings
 - `~/.wheelchair/models`, if Codex is present: the GPT model pinned per tier
+- `~/.local/state/wheelchair/`: the app's threads, machine registry and the machine service's
+  secret; on a serving systemd machine, the `wheelchair-viewer` and `wheelchair-machine` user
+  services
 
 The hook carries your wording list, which holds phrases you've asked agents to stop using. After a
 long break, it also tells the agent how long you've been away. Only the delimited block and the
@@ -106,6 +109,11 @@ checkout's code, at `https://<machine>.<tailnet>.ts.net/wheelchair/`. Open the b
 device and it's remembered. `--rotate-token` locks every device out again. Everything, including
 dragging boxes and rulings, works on a phone.
 
+A serving machine is also the hub for the app at `/wheelchair/app/`: threads with a lead
+agent, from idea through planning, review, building and checking, driven from a browser or
+phone. Each thread's agents run in tmux sessions, started by the machine service (`machine/`).
+The Features and Sessions pages, and a browser terminal, open into any session.
+
 `protocol/graphs.md` has the full format.
 
 ## Layout
@@ -114,7 +122,8 @@ dragging boxes and rulings, works on a phone.
 |---|---|
 | `protocol/` | The rules every stage follows. The single source of truth |
 | `skills/`, `codex/prompts/` | One-line wrappers for each harness, pointing into `protocol/` |
-| `viewer/` | The graph viewer: server, pages, tests |
+| `viewer/` | The graph viewer and the app's hub: server, pages, tests |
+| `machine/` | The machine service that runs agent sessions in tmux for the app |
 | `sensitivity/`, `seen/`, `install/` | The dial writer, the per-turn hook, and their test suites |
 | `docs/plans/` | One directory per feature. The only mutable state |
 

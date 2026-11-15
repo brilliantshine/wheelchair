@@ -1,6 +1,6 @@
 ---
 slug: app-shell
-status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
+status: done   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-14
 adopted-from: docs/proposals/app-shell/proposal.md
 ---
@@ -1333,3 +1333,4 @@ Spec item done as described, so every row is `partial` and nothing is marked `pr
 - 2026-11-14 — Choice: R6, `viewer/app/sessions.js`: delivery errors kept as text and time (sent records are timestamped at the successful submit).
 - 2026-11-14 — Choice: R6, `viewer/app/state.js`: trimmed sent entries written before the save (the side file is appended before the bounded thread record is saved).
 - 2026-11-14: remediation 3 validated: sensitivity 62/0, seen 18/0, codex 45/0, install 87/0, machine 51/51, node 242 with 241 passing (known port race), browser 334 passed / 2 failed (known no-drawn-arrow) / 2 skipped, install pair exit 0 twice. Live services redeployed. Re-verify (round 4).
+- 2026-11-14: Stage 4 round 4 PASS from all three verifiers (Opus resumed, Sol resumed, fresh Opus). Status `done`. Docs swept: README and CONTRIBUTING describe the app, the machine service and its suite; routers were already updated in remediation 3 (highways not installed, so no router sweep).

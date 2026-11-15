@@ -64,8 +64,8 @@ workflow.
 Run `./install.sh` after cloning, after changing a wrapper, after installing another
 harness, or after pulling a change under `viewer/`. It renders wrappers into the harness
 homes, installs the viewer dependencies and both Chromium and Firefox, stops any
-already-running viewer that isn't running the code you just pulled, then updates the
-diagram-sensitivity block. This reaches outside the clone; the fixture suites below do
+already-running viewer that isn't running the code you just pulled, sets up the app's state and, on a serving systemd machine, the viewer and machine
+services, then updates the diagram-sensitivity block. This reaches outside the clone; the fixture suites below do
 not.
 
 Edits under `protocol/` normally take effect immediately because installed wrappers
@@ -82,6 +82,7 @@ cross-cutting change:
 bash sensitivity/test/run.sh
 bash codex/test/run.sh
 bash install/test/run.sh
+bash machine/test/run.sh
 ./install.sh && ./install.sh
 node --test viewer/test/*.test.js
 npm --prefix viewer run test:browser
