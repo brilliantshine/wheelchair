@@ -51,7 +51,7 @@ async function acceptCard(hub, payload) {
     if (checked.card.kind === 'diagram' && hub.registerPlan) {
       const plan = path.join(thread.worktree || thread.project, 'docs', 'plans', checked.card.plan);
       await hub.registerPlan(plan);
-      if (hub.registerGraph) await hub.registerGraph(path.join(plan, 'graphs', `${checked.card.graph}.json`));
+      if ((!checked.card.format || checked.card.format === 'graph') && hub.registerGraph) await hub.registerGraph(path.join(plan, 'graphs', `${checked.card.graph}.json`));
     }
 
     if (checked.card.kind === 'resolve') {
@@ -76,7 +76,8 @@ async function acceptCard(hub, payload) {
       }
     }
 
-    const card = addCard(thread, checked.card, { session: session.name });
+    const stored = checked.card.kind === 'image' ? { ...checked.card, file: path.basename(checked.card.path) } : checked.card;
+    const card = addCard(thread, stored, { session: session.name });
     if (card.kind === 'message') {
       const target = hub.session(thread, card.to);
       target.queue ||= [];

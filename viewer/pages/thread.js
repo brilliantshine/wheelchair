@@ -29,6 +29,9 @@
   let archiveAsk = false;
   let accountNames = null;   // account id -> name, from /settings; null until fetched
   const cardErrors = {};
+  const formCache = new Map();
+  let attachments = [];
+  let uploading = false;
   let answerFocus = null;    // card id whose own-words box has focus
   const answerDrafts = {};
   const answerCaret = {};    // card id -> [selectionStart, selectionEnd, selectionDirection] in that box    // card id -> text typed into a question card's own-words box
@@ -164,6 +167,13 @@
     }
   }
   function diagramSource(card) {
+    if (card.format === 'form' || card.format === 'html') {
+      const html = card.format === 'html';
+      const file = card.graph + (html ? '.html' : '.json');
+      if (thread().archived) return T + (html ? '/diagram-html?file=' : '/graph?file=') + encodeURIComponent(file);
+      const path = thread().worktree + '/docs/plans/' + card.plan + '/graphs/' + file;
+      return '/wheelchair/diagram-' + (html ? 'html' : 'form') + '?path=' + encodeURIComponent(path);
+    }
     if (thread().archived) {
       return '/wheelchair/?archive=' + encodeURIComponent(id) + '&file=' + encodeURIComponent(card.graph + '.json');
     }
@@ -380,6 +390,48 @@
   }
   function seal() { const s = el('span', 'seal'); s.appendChild(icon(ICON.check, 14)); return s; }
 
+  function drawForm(value) {
+    const str = (v) => typeof v === 'string';
+    const optional = (v) => v === undefined || str(v);
+    const items = (v) => Array.isArray(v) && v.every(str);
+    if (!value || typeof value !== 'object' || !str(value.explanation)) throw new Error('Expected an explanation string');
+    const out = el('div', 'diagram-form');
+    out.appendChild(el('p', 'form-explanation', value.explanation));
+    const body = el('div', 'form-body form-' + value.form);
+    if (value.form === 'timeline') {
+      if (!Array.isArray(value.events) || !value.events.length || !value.events.every((e) => e && str(e.when) && str(e.label) && optional(e.detail))) throw new Error('Invalid timeline events');
+      for (const e of value.events) {
+        const row = el('div', 'form-event'); row.append(el('div', 'form-when', e.when), el('strong', '', e.label));
+        if (e.detail !== undefined) row.appendChild(el('div', 'form-detail', e.detail)); body.appendChild(row);
+      }
+    } else if (value.form === 'layers') {
+      if (!Array.isArray(value.layers) || !value.layers.length || !value.layers.every((e) => e && str(e.label) && optional(e.detail))) throw new Error('Invalid layers');
+      for (const e of value.layers) { const row = el('div', 'form-layer'); row.appendChild(el('strong', '', e.label)); if (e.detail !== undefined) row.appendChild(el('div', 'form-detail', e.detail)); body.appendChild(row); }
+    } else if (value.form === 'before-after' || value.form === 'side-by-side') {
+      const cols = value.form === 'before-after' ? [value.before, value.after] : value.columns;
+      if (!Array.isArray(cols) || (value.form === 'side-by-side' && (cols.length < 2 || cols.length > 4)) || !cols.every((c) => c && items(c.items) && (value.form === 'side-by-side' ? str(c.title) : optional(c.title)))) throw new Error('Invalid columns');
+      cols.forEach((c, i) => {
+        if (i === 1 && value.form === 'before-after') body.appendChild(el('div', 'form-arrow', '↓'));
+        const col = el('div', 'form-column'); col.appendChild(el('strong', '', c.title === undefined ? (i ? 'After' : 'Before') : c.title));
+        const ul = el('ul'); c.items.forEach((item) => ul.appendChild(el('li', '', item))); col.appendChild(ul); body.appendChild(col);
+      });
+    } else throw new Error('Missing or unknown form');
+    out.appendChild(body); return out;
+  }
+  function formCard(card, box, src) {
+    const target = el('div', 'form-content'); box.appendChild(target);
+    if (!formCache.has(card.id)) {
+      const promise = fetch(src).then(async (res) => {
+        if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.error || 'HTTP ' + res.status); }
+        return res.json();
+      });
+      formCache.set(card.id, promise);
+    }
+    formCache.get(card.id).then((value) => { target.appendChild(drawForm(value)); }).catch((e) => {
+      target.append(el('strong', '', 'This diagram could not be drawn'), el('div', 'form-detail', e.message));
+    });
+  }
+
   function renderCard(card) {
     const box = el('div', 'card card-' + card.kind);
     box.id = 'card-' + card.id; box.dataset.card = card.id; box.dataset.kind = card.kind;
@@ -572,13 +624,21 @@
         const bar = el('div', 'diagram-bar');
         bar.appendChild(el('h3', '', card.title));
         const src = diagramSource(card);
-        const link = el('a', 'btn small', 'Open full screen'); link.href = src; link.target = '_blank'; link.rel = 'noopener';
-        bar.appendChild(link);
+        if (card.format !== 'form') {
+          const link = el('a', 'btn small', 'Open full screen'); link.href = src; link.target = '_blank'; link.rel = 'noopener';
+          bar.appendChild(link);
+        }
         box.appendChild(bar);
         // An archived thread's worktree is gone: the graph page draws the committed JSON the hub reads from the branch, read-only.
         if (thread().archived) box.appendChild(el('p', 'dim diagram-note', 'Diagram kept on branch ' + (thread().branch || '')));
-        const f = el('iframe', 'diagram'); f.src = src; f.title = card.title;
-        box.appendChild(f);
+        if (card.format === 'form') formCard(card, box, src);
+        else { const f = el('iframe', 'diagram'); f.src = src; f.title = card.title; if (card.format === 'html') f.setAttribute('sandbox', ''); box.appendChild(f); }
+        break;
+      }
+      case 'image': {
+        box.appendChild(el('h3', '', card.title));
+        if (thread().archived) box.appendChild(el('p', 'dim', 'Image removed when the thread was archived'));
+        else { const url = T + '/files/' + encodeURIComponent(card.file); const a = el('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener'; const img = el('img', 'card-image'); img.src = url; img.alt = card.title; a.appendChild(img); box.appendChild(a); }
         break;
       }
       case 'stub': {
@@ -703,7 +763,7 @@
     sync('pinned', [data.pinned, data.cards.map((c) => [c.answered, c.answered_value]), ideaOpen, pinsFolded, cardErrors], renderPinned);
     const nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
     let changed = false;
-    sync('chat', [data.items, pending, slug(), data.cards.filter((c) => !PINNED_KINDS.includes(c.kind)), cardErrors], () => { renderChat(); changed = true; });
+    sync('chat', [data.items, pending, slug(), t.archived, data.cards.filter((c) => !PINNED_KINDS.includes(c.kind)), cardErrors], () => { renderChat(); changed = true; });
     const workingEl = $('working');
     const working = leadWorking() && !t.archived;
     if (workingEl.hidden === working) { workingEl.hidden = !working; if (working && nearBottom) changed = true; }
@@ -712,7 +772,7 @@
     queuedNote.hidden = queuedTotal === 0;
     queuedNote.textContent = queuedTotal + ' queued: waiting for the lead to finish its turn';
     const canSend = liveLead() && !t.archived;
-    msgEl.disabled = !canSend; sendBtn.disabled = !canSend;
+    msgEl.disabled = !canSend || uploading; sendBtn.disabled = !canSend || uploading; $('attach').disabled = !canSend || uploading;
     msgEl.placeholder = canSend ? 'Message the lead' : (t.archived ? 'Archived' : 'No live lead');
   }
 
@@ -729,20 +789,62 @@
     finally { busy = false; }
   }
 
-  $('composer').addEventListener('submit', async (ev) => {
+  const fileInput = $('attachment-input');
+  const chips = $('attachments');
+  const attachmentError = $('attachment-error');
+  function renderAttachments() {
+    chips.textContent = '';
+    attachments.forEach((file, i) => {
+      const chip = el('span', 'attachment-chip');
+      const size = file.size < 1024 ? file.size + ' B' : file.size < 1048576 ? (file.size / 1024).toFixed(1) + ' KB' : (file.size / 1048576).toFixed(1) + ' MB';
+      chip.appendChild(el('span', '', file.name + ' · ' + size));
+      const remove = button('×', 'attachment-remove', () => { if (uploading) return; attachments.splice(i, 1); renderAttachments(); });
+      remove.disabled = uploading;
+      remove.setAttribute('aria-label', 'Remove ' + file.name); chip.appendChild(remove); chips.appendChild(chip);
+    });
+  }
+  function addFiles(files, pasted) {
+    if (uploading) return;
+    const errors = [];
+    for (let file of files) {
+      if (pasted && file.type.startsWith('image/') && (!file.name || /^image\.[a-z0-9]+$/i.test(file.name))) {
+        const d = new Date(); const pad = (n) => String(n).padStart(2, '0');
+        const stamp = d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '-' + pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds());
+        const ext = ({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp' })[file.type] || file.type.slice(6).replace(/[^a-z0-9]/gi, '') || 'bin';
+        file = new File([file], 'pasted-' + stamp + '.' + ext, { type: file.type });
+      }
+      if (file.size > 25 * 1024 * 1024) errors.push(file.name + ' is over 25 MB'); else attachments.push(file);
+    }
+    attachmentError.textContent = errors.join(' · '); renderAttachments();
+  }
+  $('attach').addEventListener('click', () => { if (!uploading) fileInput.click(); });
+  fileInput.addEventListener('change', () => { addFiles(fileInput.files, false); fileInput.value = ''; });
+  msgEl.addEventListener('paste', (ev) => { if (ev.clipboardData && ev.clipboardData.files.length) { ev.preventDefault(); addFiles(ev.clipboardData.files, true); } });
+  composerEl.addEventListener('dragover', (ev) => { if (ev.dataTransfer.types.includes('Files')) ev.preventDefault(); });
+  composerEl.addEventListener('drop', (ev) => { if (ev.dataTransfer.files.length) { ev.preventDefault(); addFiles(ev.dataTransfer.files, false); } });
+  composerEl.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const text = msgEl.value.trim();
-    if (!text) return;
-    sendBtn.disabled = true;
+    if (uploading || (!text && !attachments.length)) return;
+    const sending = attachments.slice();
+    uploading = true; renderAttachments(); render();
     try {
-      await post(T + '/messages', { text });
-      pending.push({ text });
-      msgEl.value = '';
-      sigs.chat = null;
-      await poll();
-      render();
-    } catch (e) { showError('Message not sent: ' + e.message); }
-    sendBtn.disabled = false;
+      const paths = [];
+      for (const file of sending) {
+        let res;
+        try {
+          res = await fetch(T + '/uploads?name=' + encodeURIComponent(file.name), { method: 'POST', headers: { 'content-type': file.type || 'application/octet-stream' }, body: file });
+          const out = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(out.detail || out.error || 'http ' + res.status);
+          paths.push(out.path);
+        } catch (e) { throw new Error('Upload failed: ' + e.message); }
+      }
+      const message = [text, paths.map((path) => '[attached: ' + path + ']').join('\n')].filter(Boolean).join('\n\n');
+      await post(T + '/messages', { text: message });
+      pending.push({ text: message }); msgEl.value = ''; attachments = attachments.filter((file) => !sending.includes(file)); attachmentError.textContent = ''; renderAttachments();
+      sigs.chat = null; await poll(); render();
+    } catch (e) { showError(e.message.startsWith('Upload failed:') ? e.message : 'Message not sent: ' + e.message); }
+    finally { uploading = false; renderAttachments(); render(); }
   });
 
   poll();

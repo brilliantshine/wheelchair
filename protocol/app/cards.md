@@ -42,6 +42,7 @@ Rules for every card:
 | `needs` | yes | lead | no |
 | `done` | yes | lead | no |
 | `diagram` | yes | lead | no |
+| `image` | yes | lead | no |
 | `stub` | yes | lead | no |
 | `title` | never | lead | no |
 | `resolve` | never | lead | no |
@@ -183,16 +184,48 @@ A "Start a thread about it" press comes back as
 
 ### `diagram`
 
-A boxes-and-arrows graph shown inside the thread.
+A picture shown inside the thread.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
-| `plan` | string | yes | The slug of the plan directory the graph lives in |
-| `graph` | string | yes | The graph's file name under `docs/plans/<plan>/graphs/`, without `.json` |
+| `plan` | string | yes | The slug of the plan directory the picture lives in |
+| `graph` | string | yes | The file name under `docs/plans/<plan>/graphs/`, without its extension |
 | `title` | string | yes | One line saying what the picture answers |
+| `format` | string | no | `graph` (default), `form` or `html` |
 
-The card embeds the graph page with a link to open it full screen. Write the graph first
-(see `lead.md`, "Diagrams"); the card only points at it.
+`graph` and `form` load `graphs/<graph>.json`; `html` loads `graphs/<graph>.html`.
+Write the file first (see `lead.md`, "Diagrams"); the card only points at it. Graphs and
+HTML have an Open full screen link.
+
+A `form` file has a top-level `form` and a required string `explanation`, shown above the
+picture. Strings are shown as text, never as HTML.
+
+| `form` | Shape | Drawn as |
+|---|---|---|
+| `timeline` | `events: [{when, label, detail?}]`, 1+ items, in order | A vertical line with one marker per event; `when` small above `label`, `detail` muted below |
+| `before-after` | `before: {title?, items: [string]}`, `after: {title?, items: [string]}` | Two columns, headed "Before"/"After" unless `title` is given; on a narrow card, Before stacked over After with a ↓ between |
+| `layers` | `layers: [{label, detail?}]`, 1+ items, top layer first | Full-width stacked bands, top first |
+| `side-by-side` | `columns: [{title, items: [string]}]`, 2–4 items | Equal columns; on a narrow card, stacked in order |
+
+HTML is self-contained and static: HTML, inline `<style>` and inline SVG. Scripts never
+run, and nothing loads from the network.
+
+Pick a timeline for an order of events, before and after for a change, layers for a stack,
+side by side for a comparison of 2–4 things, boxes and arrows for connections, and HTML
+only when none fits.
+
+### `image`
+
+An image shown inside the thread.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `path` | string | yes | Absolute path to a PNG, JPEG, GIF or WebP on the lead's machine, at most 25 MB |
+| `title` | string | yes | One line |
+
+The machine copies the file into the thread's uploads folder, so the original may be
+deleted afterwards. Only the lead posts it: a screenshot another session took reaches
+Collin when the lead posts it. Images are removed when the thread is archived.
 
 ### `stub`
 
@@ -263,6 +296,9 @@ app uses to hide traffic Collin did not write:
 | `[card <id>] ...` | Collin pressed a button on card `<id>` | a short bubble from him ("Picked B"), and your reply is shown |
 | a final `[wc:style]` block, after a blank line at the END of a message | Collin's writing style, delivered to a lead, replacing any earlier style | stripped from Collin's bubble |
 | anything else | Collin's own words, typed in the app, the browser terminal or over `tmux attach` | his bubble, and your reply is shown |
+
+An uploaded file arrives in Collin's message as a line `[attached: <absolute path>]`;
+the lead can open that path.
 
 The press forms, in full:
 

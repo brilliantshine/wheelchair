@@ -17,6 +17,7 @@ const fsp = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync, spawn } = require('node:child_process');
+const { pipeline } = require('node:stream/promises');
 const adapters = require('./adapters');
 const { limitedUntil } = require('./lib/limits');
 
@@ -24,6 +25,16 @@ const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_STATE = path.join(os.homedir(), '.local', 'state', 'wheelchair');
 const HUB_HEADER = 'x-wheelchair-machine-secret';
 const TOKEN_HEADER = 'x-wheelchair-session-token';
+const UPLOAD_LIMIT = 25 * 1024 * 1024;
+const IMAGE_TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
+function threadName(id) { if (typeof id !== 'string' || !/^[A-Za-z0-9._-]+$/.test(id) || id.includes('..')) die('invalid thread id'); return id; }
+function uploadName(name) {
+  const clean = String(name || '').replace(/[^A-Za-z0-9._-]/g, '-').replace(/^\.+/, '');
+  const match = /^(.*)(\.[^.]{1,10})$/.exec(clean);
+  const ext = match ? match[2] : '';
+  const stem = (match ? match[1] : clean).slice(0, 100 - ext.length) || 'file';
+  return stem + ext;
+}
 
 // A refusal of the request itself: 400, so the hub and agents report it rather than retry.
 function die(message) { throw Object.assign(new Error(message), { status: 400 }); }
@@ -144,9 +155,92 @@ class MachineService {
     // the JavaScript this service is executing.
     this.version = command('git', ['-C', ROOT, 'rev-parse', 'HEAD']).stdout.trim();
     this.drains = new Map();
+    this.threadLocks = new Map();
+    this.closingThreads = new Map();
+    this.uploadRequests = new Map();
     this.options = options;
   }
 
+  async withThreadLock(id, fn) {
+    const previous = this.threadLocks.get(id) || Promise.resolve();
+    let release;
+    const current = new Promise(resolve => { release = resolve; });
+    this.threadLocks.set(id, current);
+    await previous;
+    try { return await fn(); } finally {
+      release();
+      if (this.threadLocks.get(id) === current) this.threadLocks.delete(id);
+    }
+  }
+  async reserveUpload(id, name) {
+    const dir = path.join(this.stateDir, 'uploads', threadName(id));
+    await mkdir(dir);
+    const entries = await fsp.readdir(dir);
+    let n = entries.reduce((max, entry) => Math.max(max, Number(/^(\d+)-/.exec(entry)?.[1] || 0)), 0) + 1;
+    for (;;) {
+      const target = path.join(dir, `${n}-${uploadName(name)}`);
+      try {
+        // Reserve both the final name and its temporary name against existing files.
+        const file = await fsp.open(`${target}.part`, 'wx', 0o600);
+        try { await fsp.access(target); await file.close(); await fsp.unlink(`${target}.part`); n++; continue; }
+        catch (error) { if (error.code !== 'ENOENT') { await file.close(); await fsp.unlink(`${target}.part`); throw error; } }
+        return { target, file };
+      } catch (error) { if (error.code !== 'EEXIST') throw error; n++; }
+    }
+  }
+  async upload(id, name, request) {
+    threadName(id);
+    const requests = this.uploadRequests.get(id) || new Set();
+    this.uploadRequests.set(id, requests);
+    requests.add(request);
+    try {
+      return await this.withThreadLock(id, async () => {
+        if (this.closingThreads.has(id) || !Object.values(this.sessions).some(s => s.thread_id === id && s.role === 'lead' && !s.archived_pending && s.status !== 'stopped')) throw Object.assign(new Error('thread is not writable'), { status: 409 });
+        const { target, file } = await this.reserveUpload(id, name);
+        try {
+          let size = 0;
+          for await (const chunk of request.iterator({ destroyOnReturn: false })) {
+            if (this.closingThreads.has(id)) throw Object.assign(new Error('thread is closing'), { status: 409 });
+            size += chunk.length;
+            if (size > UPLOAD_LIMIT) { request.pause(); throw Object.assign(new Error('file exceeds 25 MB'), { status: 413 }); }
+            await file.writeFile(chunk);
+          }
+          if (this.closingThreads.has(id)) throw Object.assign(new Error('thread is closing'), { status: 409 });
+          await file.close();
+          await fsp.rename(`${target}.part`, target);
+          return target;
+        } catch (error) {
+          await file.close().catch(() => {});
+          await fsp.unlink(`${target}.part`).catch(() => {});
+          if (this.closingThreads.has(id)) throw Object.assign(new Error('thread is closing'), { status: 409 });
+          throw error;
+        }
+      });
+    } finally {
+      requests.delete(request);
+      if (!requests.size) this.uploadRequests.delete(id);
+    }
+  }
+  async copyImage(agent, input) {
+    if (this.options.beforeImageLock) await this.options.beforeImageLock();
+    return this.withThreadLock(agent.thread_id, async () => {
+      const current = this.sessions[agent.name];
+      if (!current || current.archived_pending || current.status === 'stopped') throw Object.assign(new Error('session is not writable'), { status: 409 });
+      if (typeof input.path !== 'string' || !path.isAbsolute(input.path)) throw Object.assign(new Error('image path must be absolute'), { status: 422 });
+      const ext = path.extname(typeof input.path === 'string' ? input.path : '').toLowerCase();
+      if (!IMAGE_TYPES[ext]) throw Object.assign(new Error('unsupported image extension'), { status: 422 });
+      let stat;
+      try { stat = await fsp.stat(input.path); } catch { throw Object.assign(new Error('image does not exist'), { status: 422 }); }
+      if (!stat.isFile()) throw Object.assign(new Error('image is not a regular file'), { status: 422 });
+      if (stat.size > UPLOAD_LIMIT) throw Object.assign(new Error('image exceeds 25 MB'), { status: 422 });
+      const { target, file } = await this.reserveUpload(agent.thread_id, path.basename(input.path));
+      try {
+        await pipeline(fs.createReadStream(input.path), file.createWriteStream());
+      } catch (error) { await file.close().catch(() => {}); await fsp.unlink(`${target}.part`).catch(() => {}); throw error; }
+      await fsp.rename(`${target}.part`, target);
+      return { ...input, path: target };
+    });
+  }
   async init() {
     await mkdir(this.stateDir);
     this.config = await readJson(this.configPath, {});
@@ -429,7 +523,10 @@ class MachineService {
   }
   async archive(threadId) {
     if (typeof threadId !== 'string' || !threadId) throw Object.assign(new Error('thread_id required'), { status: 400 });
-    safeName(threadId, 'thread id');
+    threadName(threadId);
+    this.closingThreads.set(threadId, (this.closingThreads.get(threadId) || 0) + 1);
+    for (const request of this.uploadRequests.get(threadId) || []) request.destroy();
+    try { return await this.withThreadLock(threadId, async () => {
     const sessions = Object.values(this.sessions).filter(session => !session.name.startsWith('wc-login-') && session.thread_id === threadId);
     const stopped = [];
     for (const session of sessions) {
@@ -483,7 +580,16 @@ class MachineService {
       }
     }
     await this.persistSessions();
-    return { stopped, committed, removed, kept };
+    let uploads_removed = null; let uploads_error;
+    if (!kept.some(item => item.reason === 'rebase in progress')) {
+      try { await fsp.rm(path.join(this.stateDir, 'uploads', threadId), { recursive: true, force: true }); uploads_removed = true; }
+      catch (error) { uploads_removed = false; uploads_error = error.message; }
+    }
+    return { stopped, committed, removed, kept, uploads_removed, ...(uploads_error ? { uploads_error } : {}) };
+    }); } finally {
+      const remaining = this.closingThreads.get(threadId) - 1;
+      if (remaining) this.closingThreads.set(threadId, remaining); else this.closingThreads.delete(threadId);
+    }
   }
   async copyTranscript(session, source) {
     if (!source) return { offset: 0, lines: [] };
@@ -825,6 +931,21 @@ class MachineService {
       }
       if (request.method === 'POST' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); return send(response, 201, await this.start(await bodyOf(request))); }
       if (request.method === 'GET' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); return send(response, 200, this.status().sessions); }
+      if (request.method === 'POST' && url.pathname === '/v1/uploads') {
+        await this.authorize(request, 'hub');
+        const stored = await this.upload(url.searchParams.get('thread_id'), url.searchParams.get('name'), request);
+        return send(response, 201, { path: stored });
+      }
+      if (request.method === 'GET' && pathBits[0] === 'v1' && pathBits[1] === 'uploads' && pathBits.length === 4) {
+        await this.authorize(request, 'hub');
+        const id = threadName(decodeURIComponent(pathBits[2])); const name = decodeURIComponent(pathBits[3]);
+        if (!/^[0-9]+-[A-Za-z0-9._-]+$/.test(name)) die('invalid file name');
+        const target = path.join(this.stateDir, 'uploads', id, name);
+        let file; try { file = await fsp.open(target, 'r'); } catch (error) { if (error.code === 'ENOENT') throw Object.assign(new Error('not found'), { status: 404 }); throw error; }
+        const type = IMAGE_TYPES[path.extname(name).toLowerCase()];
+        response.writeHead(200, { 'content-type': type || 'application/octet-stream', 'x-content-type-options': 'nosniff', ...(!type ? { 'content-disposition': 'attachment' } : {}) });
+        file.createReadStream().on('error', () => response.destroy()).pipe(response); return;
+      }
       if (request.method === 'POST' && url.pathname === '/v1/archive') { await this.authorize(request, 'hub'); return send(response, 200, await this.archive((await bodyOf(request)).thread_id)); }
       if (pathBits[0] === 'v1' && pathBits[1] === 'sessions' && pathBits[2]) {
         const name = decodeURIComponent(pathBits[2]); await this.authorize(request, 'hub');
@@ -836,12 +957,14 @@ class MachineService {
       }
       if (request.method === 'POST' && url.pathname === '/v1/agent/cards') {
         const agent = await this.authorize(request, 'agent');
+        let input = await bodyOf(request);
+        if (input.kind === 'image') input = await this.copyImage(agent, input);
         // Cards keep their order: anything still spooled from a hub outage goes first.
         const waiting = (await fsp.readdir(path.join(this.stateDir, 'spool', 'cards')).catch(() => [])).filter(f => f.endsWith('.json'));
         if (waiting.length && this.config.hub_url) await this.drainSpool('cards');
         const behind = (await fsp.readdir(path.join(this.stateDir, 'spool', 'cards')).catch(() => [])).some(f => f.endsWith('.json'));
-        if (behind) { await this.spool('cards', { ...(await bodyOf(request)), session: agent.name, thread_id: agent.thread_id }); return send(response, 202, { ok: true, spooled: true }); }
-        const queued = await this.spool('cards', { ...(await bodyOf(request)), session: agent.name, thread_id: agent.thread_id });
+        if (behind) { await this.spool('cards', { ...input, session: agent.name, thread_id: agent.thread_id }); return send(response, 202, { ok: true, spooled: true }); }
+        const queued = await this.spool('cards', { ...input, session: agent.name, thread_id: agent.thread_id });
         if (!this.config.hub_url) return send(response, 202, { ok: true, spooled: true });
         try {
           const relay = await requestJson(`${this.config.hub_url.replace(/\/$/, '')}/api/machine/cards`, 'POST', { [HUB_HEADER]: await this.secret() }, queued.payload);
@@ -858,7 +981,7 @@ class MachineService {
       if (request.method === 'POST' && url.pathname === '/v1/agent/git') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.git(agent, await bodyOf(request))); }
       if (request.method === 'POST' && url.pathname === '/v1/agent/session') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.forwardSession(agent, await bodyOf(request))); }
       throw Object.assign(new Error('not found'), { status: 404 });
-    } catch (error) { send(response, error.status || 500, { error: error.message || String(error) }); }
+    } catch (error) { if (!response.destroyed && !response.headersSent) send(response, error.status || 500, { error: error.message || String(error) }); }
   }
   async listen() {
     await this.init();
