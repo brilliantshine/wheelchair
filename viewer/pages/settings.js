@@ -13,7 +13,7 @@
     ['critical', 'Critical', "Can't afford to get wrong"],
   ];
   const PROVIDERS = [['claude', 'Claude', 'Claude Code'], ['gpt', 'GPT', 'Codex']];
-  const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+  const EFFORTS = { claude: ['low', 'medium', 'high', 'xhigh', 'max'], gpt: ['low', 'medium', 'high', 'xhigh'] };
   const MODEL_VALUE = /^[a-z0-9][a-z0-9._-]*$/;
   const NONE = '__none';
   const OTHER = '__other';
@@ -107,7 +107,7 @@
 
     async function commit(model, newEffort) {
       const body = { provider, slot, model };
-      if (provider === 'claude' && model && newEffort) body.effort = newEffort;
+      if (model && newEffort) body.effort = newEffort;
       try {
         const res = await api('/settings/models', { method: 'PUT', body });
         data.models = res.models;
@@ -149,9 +149,9 @@
     }
 
     if (withEffort) {
-      effortSelect = h('select', { class: 'effort', 'aria-label': `Claude ${slot} effort` },
+      effortSelect = h('select', { class: 'effort', 'aria-label': `${provider === 'claude' ? 'Claude' : 'GPT'} ${slot} effort` },
         h('option', { value: '', text: 'CLI default' }),
-        EFFORTS.map((e) => h('option', { value: e, text: e })));
+        EFFORTS[provider].map((e) => h('option', { value: e, text: e })));
       effortSelect.value = effort;
       effortSelect.disabled = !current;
       effortSelect.addEventListener('change', () => commit(current, effortSelect.value));
@@ -251,7 +251,7 @@
     const body = PROVIDERS.map(([provider, name, cli]) => h('tr', { class: provider === 'gpt' ? 'gpt' : '', 'data-provider': provider },
       h('th', { scope: 'row' }, h('span', { class: 'prov', text: name }), h('span', { class: 'prov-sub', text: cli })),
       TIERS.map(([slot, label]) => {
-        const td = h('td', { 'data-label': label }, modelPicker(provider, slot, { allowNone: true, withEffort: provider === 'claude' }));
+        const td = h('td', { 'data-label': label }, modelPicker(provider, slot, { allowNone: true, withEffort: true }));
         if (provider === 'gpt') for (const item of tierItems(slot)) td.append(headsUpLine(item));
         return td;
       })));
@@ -276,6 +276,29 @@
         })));
       return group;
     };
+    // The same segmented control, saving one key inside `escalation`.
+    const escalationGroup = (key, label, choices) => {
+      const group = h('div', { class: 'seg-radio', role: 'radiogroup', 'aria-label': label },
+        choices.map(([value, text]) => h('button', {
+          type: 'button', role: 'radio', 'aria-checked': String(data.escalation[key] === value), text,
+          onclick: async () => {
+            if (data.escalation[key] === value) return;
+            const row = group.closest('.row-line');
+            try {
+              const res = await api('/settings/preferences', { method: 'PUT', body: { escalation: { [key]: value } } });
+              data.escalation = res.escalation;
+              data.escalation_text = res.escalation_text;
+              inlineErr(row, '');
+              renderPanel();
+              setNote(SAVED, false);
+            } catch (e) { inlineErr(row, e.message); setNote('', false); }
+          },
+        })));
+      return group;
+    };
+    const escRow = (title, key, choices) => h('div', { class: 'row-line' },
+      h('div', { class: 'what' }, h('span', { text: title })),
+      escalationGroup(key, title, choices));
     const claudeMode = modeGroup('permission_mode', 'Claude permission mode', [['auto', 'Auto'], ['bypass', 'Bypass']]);
     const codexMode = modeGroup('codex_mode', 'Codex permission mode', [['sandboxed', 'Sandboxed'], ['unrestricted', 'Unrestricted']]);
     const codexHint = data.codex_mode === 'unrestricted'
@@ -291,14 +314,24 @@
         h('h2', { id: 'tiers', text: 'Tiers' }),
         lines,
         h('div', { class: 'box' }, table),
-        h('span', { class: 'hint', text: '"Not used" means that provider can\'t be started at that tier. Claude\'s effort is how hard it thinks; "CLI default" leaves it to the CLI.' })),
+        h('span', { class: 'hint', text: '"Not used" means that provider can\'t be started at that tier. Effort is how hard the model thinks; "CLI default" leaves it to the CLI.' })),
       h('section', { 'aria-labelledby': 'leads' },
         h('h2', { id: 'leads', text: 'Leads' }),
         h('div', { class: 'box rows' },
           PROVIDERS.map(([provider, name]) => h('div', { class: 'row-line' },
             h('div', { class: 'what' }, h('span', { text: 'Leads and sub-leads run on' }), h('span', { class: 'hint', text: `${name} model` })),
-            h('div', { class: 'ctl wide' }, modelPicker(provider, 'lead', { allowNone: false, withEffort: false }))))
+            h('div', { class: 'ctl wide' }, modelPicker(provider, 'lead', { allowNone: false, withEffort: true }))))
           .concat([leadOrderRow()]))),
+      h('section', { 'aria-labelledby': 'escalation' },
+        h('h2', { id: 'escalation', text: 'Escalation' }),
+        h('div', { class: 'escalation-text' },
+          String(data.escalation_text || '').split('\n').filter(Boolean).map((line) => h('p', { text: line }))),
+        h('div', { class: 'box rows' },
+          escRow('What steps up first', 'first', [['effort', 'Effort'], ['model', 'Model']]),
+          escRow('Highest effort', 'max_effort', [['high', 'High'], ['xhigh', 'xhigh'], ['max', 'Max']]),
+          escRow('Highest tier', 'max_tier', [['standard', 'Standard'], ['heavy', 'Heavy'], ['critical', 'Critical']]),
+          escRow('Ask me before', 'ask_before', [['never', 'Never'], ['critical', 'Critical'], ['any', 'Any step up']])),
+        h('span', { class: 'hint', text: 'The build follows these when a worker comes back wrong. Applies to builds started afterwards.' })),
       h('section', { 'aria-labelledby': 'perm' },
         h('h2', { id: 'perm', text: 'Permission mode' }),
         h('div', { class: 'box rows' },

@@ -61,9 +61,25 @@ function newSessionName(thread, role) {
   return name;
 }
 
+// Spec §2: a requested worker effort, checked once the provider is known and before preflight.
+function checkEffort(settings, role, cli, effort) {
+  if (role !== 'worker' || effort === undefined) return;
+  if (cli === 'codex' && effort === 'max') throw appError(400, "GPT's highest effort is xhigh");
+  const efforts = ['low', 'medium', 'high', 'xhigh', 'max'];
+  const ceiling = settings.escalation.max_effort;
+  const max = cli === 'codex' && ceiling === 'max' ? 'xhigh' : ceiling;
+  if (efforts.indexOf(effort) > efforts.indexOf(max)) throw appError(400, `effort ${effort} is above the highest effort in Settings (${max})`);
+}
+
 async function startSession(hub, thread, input) {
   const role = input.role;
   if (!SESSION_ROLES.has(role)) throw appError(400, 'unknown role');
+  // Spec §2: the highest tier in Settings is checked before a provider is chosen or a wait is queued.
+  if (role === 'worker') {
+    const maxTier = (await settingsStore.load(hub)).escalation.max_tier;
+    const slot = await slotFor(hub, role, input.tier);
+    if (settingsStore.WORK_TIERS.indexOf(slot) > settingsStore.WORK_TIERS.indexOf(maxTier)) throw appError(400, `tier ${slot} is above the highest tier in Settings (${maxTier})`);
+  }
   let selection = await choose(hub, thread, role, input.tier, input);
   if (selection.wait) {
     const waiting = input._waiting || {
@@ -77,6 +93,7 @@ async function startSession(hub, thread, input) {
     return waiting;
   }
   let cli = cliOf(selection.provider);
+  checkEffort(await settingsStore.load(hub), role, cli, input.effort);
   if (PROVIDERS[selection.provider].preflight) {
     const dir = selection.account.id === `default-${selection.provider}` ? null : `~/.wheelchair/accounts/${selection.account.id}`;
     try { await hub.call(thread.machine, '/v1/preflight', 'POST', { dir }); }
@@ -92,6 +109,7 @@ async function startSession(hub, thread, input) {
         throw appError(409, `Codex preflight failed: ${error.body?.output || error.message}`);
       }
       cli = cliOf(selection.provider);
+      checkEffort(await settingsStore.load(hub), role, cli, input.effort);
       if (PROVIDERS[selection.provider].preflight) {
         const retryDir = selection.account.id === `default-${selection.provider}` ? null : `~/.wheelchair/accounts/${selection.account.id}`;
         try { await hub.call(thread.machine, '/v1/preflight', 'POST', { dir: retryDir }); }
@@ -147,7 +165,7 @@ async function startSession(hub, thread, input) {
       branch: input.branch,
       brief: input.brief || '',
       model: resolved.model,
-      ...(resolved.effort ? { effort: resolved.effort } : {}),
+      ...((input.effort || resolved.effort) ? { effort: input.effort || resolved.effort } : {}),
       permission_mode: settings.permission_mode,
       codex_mode: settings.codex_mode,
       role_layers: layers.text,
@@ -364,9 +382,12 @@ async function sessionRequest(hub, payload) {
     return { sessions: thread.sessions.map(publicSession) };
   }
   if (payload.action === 'stop') return stopSession(hub, thread, caller, payload.name);
+  if (payload.action === 'start' && payload.effort !== undefined && (caller.role !== 'sub-lead' || payload.role !== 'worker')) throw appError(400, 'effort can only be set for a worker');
   if (payload.action !== 'start' || !ALLOWED_START[caller.role]?.has(payload.role)) {
     throw appError(403, `${caller.role} may not start that session`);
   }
+  // The provider is chosen at start; a GPT worker refuses max there (startSession).
+  if (payload.effort !== undefined && !['low', 'medium', 'high', 'xhigh', 'max'].includes(payload.effort)) throw appError(400, 'effort must be one of low, medium, high, xhigh, max');
   if (!payload.attempt_id) throw appError(400, 'attempt_id is required');
   const duplicate = thread.sessions.find((item) => (
     item.started_by === caller.name && item.attempt_id === payload.attempt_id && item.live
@@ -383,6 +404,7 @@ async function sessionRequest(hub, payload) {
     attempt_id: payload.attempt_id,
     brief: payload.brief,
     tier: payload.tier,
+    effort: payload.effort,
     // Spec "Branches and checkouts": the mapper, reviewers and the sub-lead run in the thread's
     // own worktree; a worker gets a branch cut from the thread's branch; a verifier checks the
     // thread's branch as it stands, commits not yet pushed included.

@@ -158,8 +158,8 @@ async function handleSettings(hub, request, response, url, bits, body) {
     if (body.provider === 'claude') slot = ({ haiku: 'light', sonnet: 'standard', opus: 'heavy' })[slot] || slot;
     if (!['light', 'standard', 'heavy', 'critical', 'lead'].includes(slot)) throw appError(400, 'slot is invalid');
     if (body.model !== null && (typeof body.model !== 'string' || !/^[a-z0-9][a-z0-9._-]*$/.test(body.model))) throw appError(400, 'model is invalid');
-    if (body.provider === 'gpt' && body.effort !== undefined) throw appError(400, 'GPT models do not take effort');
-    if (body.effort !== undefined && !['low', 'medium', 'high', 'xhigh', 'max'].includes(body.effort)) throw appError(400, 'effort is invalid');
+    if (body.provider === 'gpt' && body.effort !== undefined && !['low', 'medium', 'high', 'xhigh'].includes(body.effort)) throw appError(400, 'effort for GPT must be one of low, medium, high, xhigh');
+    if (body.provider === 'claude' && body.effort !== undefined && !['low', 'medium', 'high', 'xhigh', 'max'].includes(body.effort)) throw appError(400, 'effort is invalid');
     try { await settings.modelCommand(hub, ['set', body.provider, slot, body.model || 'none', ...(body.effort ? [body.effort] : [])]); }
     catch (error) { throw appError(400, (error.stderr || error.message).trim()); }
     return send(response, 200, { models: await settings.models(hub) });
@@ -169,7 +169,8 @@ async function handleSettings(hub, request, response, url, bits, body) {
     if (body.action === 'switch') {
       const tier = settings.TIER_ALIASES[body.tier] || body.tier;
       if (!['light', 'standard', 'heavy', 'critical'].includes(tier) || typeof body.model !== 'string') throw appError(400, 'tier and model are required to switch');
-      args = ['set', 'gpt', tier, body.model];
+      const effort = (await settings.modelCommand(hub, ['effort', 'gpt', tier])).stdout.trim();
+      args = ['set', 'gpt', tier, body.model, ...(effort ? [effort] : [])];
     } else if (body.action === 'skip') {
       if (typeof body.model !== 'string') throw appError(400, 'model is required to skip');
       args = ['skip', body.model];
@@ -193,6 +194,15 @@ async function handleSettings(hub, request, response, url, bits, body) {
         if (!['show', 'hide'].includes(body.tool_steps)) throw appError(400, 'tool_steps must be show or hide');
         value.tool_steps = body.tool_steps;
       }
+      if (body.escalation !== undefined) {
+        if (!body.escalation || typeof body.escalation !== 'object' || Array.isArray(body.escalation)) throw appError(400, 'escalation must be an object');
+        for (const [key, entry] of Object.entries(body.escalation)) {
+          const allowed = settings.ESCALATION_VALUES[key];
+          if (!allowed || !Object.hasOwn(settings.ESCALATION_VALUES, key)) throw appError(400, `escalation.${key} is not a setting`);
+          if (!allowed.includes(entry)) throw appError(400, `escalation.${key} must be one of ${allowed.join(', ')}`);
+          value.escalation[key] = entry;
+        }
+      }
       if (body.default_project_folder !== undefined) {
         if (typeof body.default_project_folder !== 'string') throw appError(400, 'default_project_folder must be text');
         value.default_project_folder = validFolder(body.default_project_folder);
@@ -202,7 +212,7 @@ async function handleSettings(hub, request, response, url, bits, body) {
         for (const role of ['reviewer', 'verifier', 'mapper']) if (body.other_agents[role] !== undefined) value.other_agents[role] = settings.tier(body.other_agents[role], `other_agents.${role}`);
       }
     });
-    return send(response, 200, { permission_mode: value.permission_mode, codex_mode: value.codex_mode, tool_steps: value.tool_steps, other_agents: value.other_agents, default_project_folder: value.default_project_folder });
+    return send(response, 200, { permission_mode: value.permission_mode, codex_mode: value.codex_mode, tool_steps: value.tool_steps, other_agents: value.other_agents, default_project_folder: value.default_project_folder, escalation: value.escalation, escalation_text: settings.escalationSentences(value.escalation).join('\n') });
   }
   if (bits[1] === 'saved-dirs' && bits.length === 2 && request.method === 'POST') {
     return send(response, 201, await addSavedDir(hub, body));

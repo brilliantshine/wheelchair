@@ -91,13 +91,27 @@ run_model set claude standard claude-sonnet-custom high
 assert 'set accepts Claude effort' test "$status" -eq 0
 run_model effort claude sonnet
 assert 'Claude family alias resolves effort' equals "$output" high
-run_model set gpt heavy gpt-7-heavy high
-assert 'set rejects effort for GPT' test "$status" -eq 2
+run_model set gpt heavy gpt-7-heavy xhigh
+assert 'set accepts GPT effort' test "$status" -eq 0
+assert 'GPT effort is written to the pins file' grep -Fxq 'gpt.heavy = gpt-7-heavy @xhigh' "$pins"
+run_model effort gpt heavy
+assert 'GPT effort reads back' bash -c '[[ $1 == 0 && $2 == xhigh ]]' _ "$status" "$output"
+run_model show --json
+assert 'show JSON reports GPT effort' json_assert 'import json,sys; assert json.load(sys.stdin)["gpt"]["heavy"] == {"model":"gpt-7-heavy","effort":"xhigh"}'
+run_model set gpt heavy gpt-7-heavy max
+assert 'set rejects GPT max and names allowed efforts' bash -c '[[ $1 == 2 && $2 == *"low, medium, high, xhigh"* ]]' _ "$status" "$(<"$stderr")"
 run_model set claude light none low
 assert 'set rejects effort with none' test "$status" -eq 2
+run_model set gpt light none low
+assert 'set rejects GPT effort with none' test "$status" -eq 2
 run_model set claude critical custom-model
 run_model family claude critical
 assert 'family rejects a model without a known family' test "$status" -eq 3
+
+new_case
+printf 'gpt.heavy = gpt-7-heavy @max\n' > "$pins"
+run_model show --json
+assert 'GPT max in a pins file is malformed' json_assert 'import json,sys; assert json.load(sys.stdin)["malformed"] is True'
 
 # Init, set, skip and reset all render the complete new form.
 new_case

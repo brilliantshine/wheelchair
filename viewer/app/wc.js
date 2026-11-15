@@ -85,6 +85,7 @@ function sessionRequest(operation, tail) {
       provider: parsed.provider,
       not_provider: parsed['not-provider'],
       tier: parsed.tier || 'top',
+      ...(parsed.effort !== undefined ? { effort: parsed.effort } : {}),
       attempt_id: parsed.attempt,
       brief: fs.readFileSync(parsed['brief-file'], 'utf8'),
       replaces: parsed.replaces,

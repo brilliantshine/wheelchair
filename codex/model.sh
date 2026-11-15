@@ -29,10 +29,11 @@ DEFAULTS = {
 ALIASES = {"luna": "light", "terra": "standard", "sol": "heavy", "astra": "critical"}
 CLAUDE_ALIASES = {"haiku": "light", "sonnet": "standard", "opus": "heavy"}
 EFFORTS = {"low", "medium", "high", "xhigh", "max"}
+GPT_EFFORTS = {"low", "medium", "high", "xhigh"}
 VALUE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 MODEL = re.compile(r"^gpt-(\d+(?:\.\d+)*)-([a-z]+)$")
 USAGE = ("usage: model.sh <light|standard|heavy|critical> | <claude|gpt> <slot> | "
-         "effort claude <slot> | family claude <slot> | "
+         "effort <claude|gpt> <slot> | family claude <slot> | "
          "set [<provider> <slot> | <tier>] <model|none> [effort] | "
          "skip <model> | init | reset | check [--json] | show --json")
 
@@ -75,12 +76,12 @@ def parse_pins(text):
         if entry is not None:
             provider, raw_slot, model, effort = entry.groups()
             slot = slot_for(provider, raw_slot)
-            if slot is None or (provider == "gpt" and effort is not None):
+            if slot is None:
                 return None
             if model == "none":
                 if effort is not None:
                     return None
-            elif effort is not None and (provider != "claude" or effort not in EFFORTS):
+            elif effort is not None and effort not in (EFFORTS if provider == "claude" else GPT_EFFORTS):
                 return None
             key = provider, slot
             if key in seen:
@@ -123,7 +124,7 @@ def rendered(pins, skipped):
     for provider in PROVIDERS:
         for slot in SLOTS:
             model, effort = cell(pins, provider, slot)
-            suffix = f" @{effort}" if provider == "claude" and model != "none" and effort else ""
+            suffix = f" @{effort}" if model != "none" and effort else ""
             lines.append(f"{provider}.{slot} = {model}{suffix}\n")
     lines.extend(f"skip = {model}\n" for model in skipped)
     return "".join(lines)
@@ -319,7 +320,7 @@ def main(root, argv):
         return
     if len(argv) == 3 and argv[0] == "effort" and argv[1] in PROVIDERS and (slot := slot_for(argv[1], argv[2])) is not None:
         model, effort = read_cell(pin_path, argv[1], slot)
-        if argv[1] == "claude" and model != "none" and effort:
+        if model != "none" and effort:
             print(effort)
         return
     if len(argv) == 3 and argv[:2] == ["family", "claude"] and (slot := slot_for("claude", argv[2])) is not None:
@@ -355,7 +356,7 @@ def main(root, argv):
             for slot in SLOTS:
                 model, effort = cell(pins, provider, slot)
                 result[provider][slot] = None if model == "none" else {
-                    "model": model, "effort": effort if provider == "claude" else None}
+                    "model": model, "effort": effort}
         result["malformed"], result["visible"] = malformed, listed_models(cache_path)
         print(json.dumps(result, separators=(",", ":")))
         return
@@ -369,9 +370,12 @@ def main(root, argv):
         _, provider, raw_slot, model, *tail = argv
         slot = slot_for(provider, raw_slot)
         effort = tail[0] if tail else None
-        if (slot is None or not VALUE.match(model) or (provider == "gpt" and effort is not None)
+        if provider == "gpt" and effort is not None and effort not in GPT_EFFORTS:
+            print("GPT effort must be one of: low, medium, high, xhigh", file=sys.stderr)
+            die_usage()
+        if (slot is None or not VALUE.match(model)
                 or (model == "none" and effort is not None)
-                or (effort is not None and (provider != "claude" or effort not in EFFORTS))):
+                or (effort is not None and effort not in (EFFORTS if provider == "claude" else GPT_EFFORTS))):
             die_usage()
         write_pin(pin_path, provider, slot, model, effort)
         return

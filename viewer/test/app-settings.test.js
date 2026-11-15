@@ -182,9 +182,16 @@ test('settings model and heads-up routes reject bad input and preserve the setti
     assert.equal(claudeAlias.body.models.claude.heavy.model, 'opus');
     assert.equal((await api(context, '/settings/models', { method: 'PUT', body: { provider: 'gpt', slot: 'opus', model: 'custom-model' } })).status, 400);
     assert.equal((await api(context, '/settings/models', { method: 'PUT', body: { provider: 'other', slot: 'light', model: 'x' } })).status, 400);
+    const pin = await api(context, '/settings/models', { method: 'PUT', body: { provider: 'gpt', slot: 'heavy', model: 'custom-heavy', effort: 'xhigh' } });
+    assert.equal(pin.body.models.gpt.heavy.effort, 'xhigh');
+    const invalidEffort = await api(context, '/settings/models', { method: 'PUT', body: { provider: 'gpt', slot: 'heavy', model: 'custom-heavy', effort: 'max' } });
+    assert.equal(invalidEffort.body.detail, 'effort for GPT must be one of low, medium, high, xhigh');
     const switched = await api(context, '/settings/models/heads-up', { method: 'POST', body: { action: 'switch', tier: 'sol', model: 'custom-heavy' } });
     assert.equal(switched.status, 200);
     assert.equal(switched.body.models.gpt.heavy.model, 'custom-heavy');
+    assert.equal(switched.body.models.gpt.heavy.effort, 'xhigh');
+    const cleared = await api(context, '/settings/models', { method: 'PUT', body: { provider: 'gpt', slot: 'heavy', model: 'custom-heavy' } });
+    assert.ok(!cleared.body.models.gpt.heavy.effort);
     assert.equal((await api(context, '/settings/models/heads-up', { method: 'POST', body: { action: 'skip', model: 'gpt-6-astra' } })).status, 200);
     assert.equal((await api(context, '/settings/models/heads-up', { method: 'POST', body: { action: 'reset' } })).status, 200);
     await api(context, '/settings/preferences', { method: 'PUT', body: { permission_mode: 'bypass', other_agents: { mapper: 'critical' } } });
@@ -218,5 +225,40 @@ test('template scopes must be listed when added or changed, while removed-projec
     assert.equal(renamed.status, 200);
     assert.equal(renamed.body.scope, '/tmp/listed-project');
     assert.equal(renamed.body.name, 'Removed project retained');
+  });
+});
+
+test('escalation settings, sentences, and role layers', async () => {
+  const defaults = settings.defaults();
+  const sentences = settings.escalationSentences(defaults.escalation);
+  assert.deepEqual(sentences, [
+    'A worker that came back wrong gets a rewritten brief and a fresh session; each step up comes after one failed try.',
+    'Raise effort first, one level at a time from the tier\'s own effort ("CLI default" counts as high), up to xhigh, then move to the next tier and repeat, up to Critical. A tier\'s own effort setting is used as is, and a tier already at xhigh or above takes no effort step.',
+    'Before moving a task to Critical, ask the lead, who asks Collin.',
+    'A task still failing at the limits is reported as blocked.',
+  ]);
+  const variant = { ...defaults.escalation, first: 'model', max_effort: 'max', max_tier: 'heavy', ask_before: 'any' };
+  assert.equal(settings.escalationSentences(variant)[1], 'Move up one tier at a time, up to Heavy, at each tier\'s own effort; then raise effort at the top tier, one level at a time from its own effort ("CLI default" counts as high), up to max (GPT stops at xhigh, which is its highest). A tier already at max or above takes no effort step.');
+  assert.equal(settings.escalationSentences(variant)[2], 'Before any step up, ask the lead, who asks Collin.');
+  assert.match(settings.escalationSentences({ ...variant, ask_before: 'never' })[2], /^Do not stop to ask/);
+  assert.equal(settings.escalationSentences({ ...variant, ask_before: 'critical' }).length, 3);
+  assert.deepEqual(settings.normalize({ escalation: { first: 'bad', max_tier: 'heavy' } }).escalation, { ...defaults.escalation, max_tier: 'heavy' });
+  const layers = settings.roleLayers(defaults, 'sub-lead').text;
+  assert.ok(layers.includes(`Escalation rules from Settings:\n${sentences.join('\n')}`));
+  for (const role of ['lead', 'worker', 'reviewer', 'verifier', 'mapper']) assert.ok(!settings.roleLayers(defaults, role).text.includes('Escalation rules from Settings:'));
+  await withContext(async (context) => {
+    const initial = (await api(context, '/settings')).body;
+    assert.deepEqual(initial.escalation, defaults.escalation);
+    assert.equal(initial.escalation_text, sentences.join('\n'));
+    const saved = await api(context, '/settings/preferences', { method: 'PUT', body: { escalation: variant } });
+    assert.deepEqual(saved.body.escalation, variant);
+    assert.equal(saved.body.escalation_text, settings.escalationSentences(variant).join('\n'));
+    for (const [key, allowed] of Object.entries(settings.ESCALATION_VALUES)) {
+      const bad = await api(context, '/settings/preferences', { method: 'PUT', body: { escalation: { [key]: 'invalid' } } });
+      assert.equal(bad.status, 400);
+      assert.equal(bad.body.detail, `escalation.${key} must be one of ${allowed.join(', ')}`);
+    }
+    for (const value of [null, [], 'bad']) assert.equal((await api(context, '/settings/preferences', { method: 'PUT', body: { escalation: value } })).body.detail, 'escalation must be an object');
+    assert.equal((await api(context, '/settings/preferences', { method: 'PUT', body: { escalation: { unknown: 'bad' } } })).body.detail, 'escalation.unknown is not a setting');
   });
 });

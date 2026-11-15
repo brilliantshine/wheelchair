@@ -598,6 +598,21 @@ test('codex_mode does not change Claude', async () => {
     assert.ok(!argvOf(env, 'wc-u-lead').some(a => /dangerously|sandbox/.test(a)));
   } finally { await env.close(); }
 });
+test('Codex effort is passed as model_reasoning_effort when set', async () => {
+  const env = await service(await temp(), { pane: readyCodex }); try {
+    await start(env, { cli: 'codex', role: 'worker', thread_id: 'effort', token: 'effort', effort: 'xhigh' });
+    const argv = argvOf(env, 'wc-effort-worker');
+    const index = argv.indexOf('model_reasoning_effort=xhigh');
+    assert.ok(index > 0);
+    assert.deepEqual(argv.slice(index - 1, index + 1), ['-c', 'model_reasoning_effort=xhigh']);
+  } finally { await env.close(); }
+});
+test('Codex without effort has no model_reasoning_effort setting', async () => {
+  const env = await service(await temp(), { pane: readyCodex }); try {
+    await start(env, { cli: 'codex', role: 'worker', thread_id: 'noeffort', token: 'noeffort' });
+    assert.ok(!argvOf(env, 'wc-noeffort-worker').some(a => a.startsWith('model_reasoning_effort')));
+  } finally { await env.close(); }
+});
 test('a bypass session is ready on the bypass status line, not on the auto one, and an auto session the reverse', async () => {
   const env = await service(await temp(), { pane: readyBypass }); try {
     const bypass = await start(env, { thread_id: 'x', token: 'x', permission_mode: 'bypass' });
@@ -620,7 +635,7 @@ test('a Bypass Permissions confirmation is answered Down then Enter, and the ses
     assert.equal(await env.instance.checkReady(env.instance.sessions['wc-t-lead']), true);
   } finally { await env.close(); }
 });
-test('effort adds --effort for Claude, is refused when unknown, and is ignored for Codex', async () => {
+test('effort adds --effort for Claude and is refused when unknown', async () => {
   const env = await service(await temp()); try {
     for (const effort of ['low', 'medium', 'high', 'xhigh', 'max']) {
       await start(env, { thread_id: `e${effort}`, token: effort, effort });

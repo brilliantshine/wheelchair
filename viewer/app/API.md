@@ -25,10 +25,10 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 | `POST /machine/cards` | service envelope `{thread_id,session,...card}` | accepted card, `202` |
 | `POST /machine/events` | `{thread_id,session,type,...}` | `{ok:true}`, `202` |
 | `POST /machine/session` | `{calling_session,action,...}` | the hub-authorized session result |
-| `GET /settings` | — | `{models,model_options,heads_up,permission_mode,codex_mode,tool_steps,other_agents,templates,in_use,style,style_version,projects,default_project_folder,saved_dirs}`; `projects` is `projects.json` plus every saved directory's path; templates include `in_use`, `live_sessions`, and `scope_missing` when a saved project is no longer listed |
-| `PUT /settings/models` | `{provider:"claude"|"gpt",slot,model|null,effort?}` | `{models}`; `slot` is `light`, `standard`, `heavy`, `critical`, or `lead` |
+| `GET /settings` | — | `{models,model_options,heads_up,permission_mode,codex_mode,tool_steps,other_agents,escalation,escalation_text,templates,in_use,style,style_version,projects,default_project_folder,saved_dirs}`; `projects` is `projects.json` plus every saved directory's path; templates include `in_use`, `live_sessions`, and `scope_missing` when a saved project is no longer listed |
+| `PUT /settings/models` | `{provider:"claude"|"gpt",slot,model|null,effort?}` | `{models}`; `slot` is `light`, `standard`, `heavy`, `critical`, or `lead`; effort is `low`, `medium`, `high`, `xhigh`, and for Claude also `max`; omission clears it |
 | `POST /settings/models/heads-up` | `{action:"switch",tier,model}`, `{action:"skip",model}`, or `{action:"reset"}` | `{models,heads_up}` |
-| `PUT /settings/preferences` | `{permission_mode?:"auto"|"bypass",codex_mode?:"sandboxed"|"unrestricted",tool_steps?:"show"|"hide",other_agents?:{reviewer?,verifier?,mapper?},default_project_folder?:string}` | saved preference values, including `default_project_folder`; that field is trimmed, `""` clears it, otherwise it must be absolute, exactly `~`, or start with `~/` (`~user` → `400`); it is not checked against a machine |
+| `PUT /settings/preferences` | `{permission_mode?:"auto"|"bypass",codex_mode?:"sandboxed"|"unrestricted",tool_steps?:"show"|"hide",other_agents?:{reviewer?,verifier?,mapper?},default_project_folder?:string,escalation?:{first?,max_effort?,max_tier?,ask_before?}}` | saved preference values, including `default_project_folder`, `escalation` and `escalation_text`; that field is trimmed, `""` clears it, otherwise it must be absolute, exactly `~`, or start with `~/` (`~user` → `400`); it is not checked against a machine |
 | `GET /new-thread?machine=` | — | `{machines,machine,default_folder,saved,found,found_error?,previous}` for `machine` (default `hub`; unknown → `404`). `machines`: `hub` first, then the names in `machines.json` except the hub's own hostname entry. `saved`: `saved_dirs` entries of that machine. `found`: that machine's `/v1/projects?folder=` when a default folder is set, else `[]`; its `folder_error` becomes `found_error`, and an unreachable or older machine gives `found: []` with `found_error` `"<machine> is not reachable"` or `"<machine> needs updating"`, still `200`. `previous`: distinct `project` paths of threads on that machine (a thread stored under the hub's hostname counts as `hub`), newest first |
 | `POST /settings/saved-dirs` | `{name,path,machine}` | `201 {saved}` (that machine's entries). `path` is checked on `machine` and stored as the expanded path the machine returned. `400` for a field error (a `name` of `.` or `..` is refused) or the check's reason (`"<path> <reason> on <machine>"`), `404` for an unknown machine, `409` when the name exists for that machine, `502` when the machine does not answer |
 | `DELETE /settings/saved-dirs/:name?machine=` | — | `{saved}` for that machine (default `hub`); `404` for an unknown name; changes no thread |
@@ -66,8 +66,7 @@ Session start resolves a provider cell through `codex/model.sh`: leads and sub-l
 verifiers, and mappers use Settings' Other agents tier, and workers use their requested tier (`top` means
 Heavy). The tiers are `light`, `standard`, `heavy`, and `critical`; `luna`, `terra`, `sol`, `astra` and,
 for Claude, `haiku`, `sonnet`, `opus` are accepted aliases for slots, not model names — for example
-`--tier opus` runs whatever the Heavy cell holds. Every session receives a model; Claude also receives its
-configured effort when present. A provider cell set to `none` is a 400 directing the caller to the other CLI.
+`--tier opus` runs whatever the Heavy cell holds. Every session receives a model and its configured effort when present. A provider cell set to `none` is a 400 directing the caller to the other CLI.
 A start is a 409 ("machine service out of date") while that machine's `/v1/status` commit differs from the hub's.
 
 Worker restart (`wc.js session start --role worker ... --replaces <session>`): the hub checks the named session is a worker in the same thread and not live, then starts the new worker in that session's `worktree` on its `branch`. A live session or a non-worker is refused with 400.
@@ -91,3 +90,17 @@ return 404.
 Session starts through `POST /machine/session` accept `role`, `tier`, `brief`, `attempt_id`, and optional `provider` or `not_provider` (`claude` or `gpt`) for workers, reviewers and verifiers. The flags are mutually exclusive; worker constraints are strict, subject to the Claude margin exception, and reviewer and verifier constraints are preferences. The obsolete `cli` field is ignored. The response has `session` and may have a `note`. Sessions carry `provider` and `account`; a waiting session has `status: "waiting"`, `waiting_until`, `waiting_reason`, `waiting_provider` (the pinned provider, the first explicit lead-order provider for a new lead, or null), and `pending_start`. Its identity and queue survive promotion.
 
 Machine events may carry a `reading`, including Codex `turn-ended` events; they include `usage` with a reading, `limit-hit` with `limited_until` and `error`, and `turn-failed` with `error`. A limit-ended turn never delivers a report: a future limit holds delivery until reset, while an already expired limit queues `Continue.` immediately, in both cases at the front of the queue. A failed turn releases the queue and informs the starter without delivering a partial reviewer or verifier report; a failed lead turn creates a needs card.
+
+A sub-lead starting a worker may pass `--effort <e>` to `wc.js session start`; the
+`POST /machine/session` start body carries it as `effort`. Other starts with effort receive
+400 `effort can only be set for a worker`. Claude accepts low, medium, high, xhigh, max;
+a GPT worker accepts low, medium, high, xhigh and refuses max with 400 `GPT's highest effort is xhigh`.
+Other invalid values receive 400 `effort must be one of …`. Worker tiers above Settings'
+`max_tier` receive 400 `tier <t> is above the highest tier in Settings (<max>)`; requested
+effort above `max_effort` receives 400 `effort <e> is above the highest effort in Settings (<max>)`.
+Aliases resolve before the tier check. A GPT max ceiling counts as xhigh. Pinned efforts are
+not checked against the ceiling, and explicit effort overrides the pin. The tier check runs before a provider is chosen or a wait is queued; effort checks run once the provider is chosen, before preflight. The ask-before switch is guidance, not enforced.
+
+Escalation preference values are `first: effort|model`, `max_effort: high|xhigh|max`,
+`max_tier: standard|heavy|critical`, and `ask_before: never|critical|any`. Partial updates
+are accepted; invalid keys, values, and non-object inputs receive 400.

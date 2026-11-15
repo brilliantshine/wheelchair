@@ -12,6 +12,7 @@ const execFileAsync = promisify(execFile);
 const ROLES = new Set(['lead', 'sub-lead', 'worker', 'reviewer', 'verifier', 'mapper']);
 const WORK_TIERS = ['light', 'standard', 'heavy', 'critical'];
 const TIER_ALIASES = { luna: 'light', terra: 'standard', sol: 'heavy', astra: 'critical' };
+const ESCALATION_VALUES = { first: ['effort', 'model'], max_effort: ['high', 'xhigh', 'max'], max_tier: ['standard', 'heavy', 'critical'], ask_before: ['never', 'critical', 'any'] };
 const SAMPLE = "It's worth noting that the idempotency guarantee here is load-bearing: because the hook fires on every turn, any non-idempotent side effect in the notify path would compound across retries, so I've restructured the handler accordingly.";
 
 const DEFAULT_STYLE = Object.freeze({
@@ -23,7 +24,7 @@ const DEFAULT_STYLE = Object.freeze({
 const PLANS = { claude: { unknown: 1, pro: 1, max5: 5, max20: 20 }, gpt: { unknown: 1, plus: 1, pro: 6 } };
 const BALANCING = ['lead_order', 'worker_order', 'within', 'leave', 'notify_below', 'save_claude_for_leads', 'margin'];
 function defaults() {
-  return { retired_accounts: [], accounts: Object.keys(PROVIDERS).map((provider) => ({ id: `default-${provider}`, provider, name: 'default', plan: 'unknown', weight: 1, paused: false })), lead_order: ['claude', 'any'], worker_order: ['gpt', 'claude'], within: 'soonest', leave: 10, notify_below: 25, save_claude_for_leads: true, margin: 5, permission_mode: 'auto', codex_mode: 'sandboxed', tool_steps: 'show', other_agents: { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard' }, templates: [], style: structuredClone(DEFAULT_STYLE), style_version: 0, default_project_folder: '', saved_dirs: [] };
+  return { retired_accounts: [], accounts: Object.keys(PROVIDERS).map((provider) => ({ id: `default-${provider}`, provider, name: 'default', plan: 'unknown', weight: 1, paused: false })), lead_order: ['claude', 'any'], worker_order: ['gpt', 'claude'], within: 'soonest', leave: 10, notify_below: 25, save_claude_for_leads: true, margin: 5, permission_mode: 'auto', codex_mode: 'sandboxed', tool_steps: 'show', other_agents: { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard' }, escalation: { first: 'effort', max_effort: 'xhigh', max_tier: 'critical', ask_before: 'critical' }, templates: [], style: structuredClone(DEFAULT_STYLE), style_version: 0, default_project_folder: '', saved_dirs: [] };
 }
 
 function fail(message) { throw appError(400, message); }
@@ -121,6 +122,22 @@ function templateFor(settings, role, project) {
   return candidates.find((template) => template.scope === project) || candidates.find((template) => template.scope === 'all') || null;
 }
 
+function escalationSentences(escalation) {
+  const effort = escalation.max_effort === 'max' ? 'max (GPT stops at xhigh, which is its highest)' : escalation.max_effort;
+  const tier = escalation.max_tier[0].toUpperCase() + escalation.max_tier.slice(1);
+  const sentences = [
+    'A worker that came back wrong gets a rewritten brief and a fresh session; each step up comes after one failed try.',
+    escalation.first === 'effort'
+      ? `Raise effort first, one level at a time from the tier's own effort ("CLI default" counts as high), up to ${effort}, then move to the next tier and repeat, up to ${tier}. A tier's own effort setting is used as is, and a tier already at ${escalation.max_effort} or above takes no effort step.`
+      : `Move up one tier at a time, up to ${tier}, at each tier's own effort; then raise effort at the top tier, one level at a time from its own effort ("CLI default" counts as high), up to ${effort}. A tier already at ${escalation.max_effort} or above takes no effort step.`,
+  ];
+  if (escalation.ask_before === 'critical' && escalation.max_tier === 'critical') sentences.push('Before moving a task to Critical, ask the lead, who asks Collin.');
+  if (escalation.ask_before === 'any') sentences.push('Before any step up, ask the lead, who asks Collin.');
+  if (escalation.ask_before === 'never') sentences.push('Do not stop to ask; at the limits, report the task as blocked.');
+  sentences.push('A task still failing at the limits is reported as blocked.');
+  return sentences;
+}
+
 function roleLayers(settings, role, project) {
   const template = templateFor(settings, role, project);
   const deciding = role === 'worker' && template?.switches.unsettled === 'decide';
@@ -132,6 +149,7 @@ function roleLayers(settings, role, project) {
     if (template.text) lines.push(template.text);
     lines.push('Where the template and the brief you are given disagree, the brief wins.');
   }
+  if (role === 'sub-lead') lines.push('', 'Escalation rules from Settings:', ...escalationSentences(settings.escalation));
   if (role === 'lead') lines.push('', 'Collin’s writing style for everything he reads (thread replies and the text of cards):', renderStyle(settings.style));
   return { text: lines.join('\n'), template };
 }
@@ -169,6 +187,7 @@ function normalize(saved) {
     codex_mode: saved.codex_mode === 'unrestricted' ? 'unrestricted' : 'sandboxed',
     tool_steps: saved.tool_steps === 'hide' ? 'hide' : 'show',
     other_agents: { ...base.other_agents, ...(saved.other_agents || {}) },
+    escalation: Object.fromEntries(Object.entries(ESCALATION_VALUES).map(([key, allowed]) => [key, allowed.includes(saved.escalation?.[key]) ? saved.escalation[key] : base.escalation[key]])),
     templates: Array.isArray(saved.templates) ? saved.templates : [],
     style: saved.style ? validateStyle(saved.style) : base.style,
     style_version: Number.isInteger(saved.style_version) && saved.style_version >= 0 ? saved.style_version : 0,
@@ -234,7 +253,7 @@ async function describe(hub) {
   const known = knownProjects(projects, settings);
   const projectSet = new Set(known);
   const templates = settings.templates.map((template) => ({ ...template, live_sessions: templateCounts.get(template.id) || 0, scope_missing: template.scope !== 'all' && !projectSet.has(template.scope) }));
-  return { accounts: settings.accounts, ...Object.fromEntries(BALANCING.map((key) => [key, settings[key]])), models: modelValues, model_options: options(modelValues), heads_up: heads, permission_mode: settings.permission_mode, codex_mode: settings.codex_mode, tool_steps: settings.tool_steps, other_agents: settings.other_agents, templates, in_use: templates.filter((template) => template.in_use).map((template) => template.id), style: settings.style, style_version: settings.style_version, projects: known, default_project_folder: settings.default_project_folder, saved_dirs: settings.saved_dirs };
+  return { accounts: settings.accounts, ...Object.fromEntries(BALANCING.map((key) => [key, settings[key]])), models: modelValues, model_options: options(modelValues), heads_up: heads, permission_mode: settings.permission_mode, codex_mode: settings.codex_mode, tool_steps: settings.tool_steps, other_agents: settings.other_agents, escalation: settings.escalation, escalation_text: escalationSentences(settings.escalation).join('\n'), templates, in_use: templates.filter((template) => template.in_use).map((template) => template.id), style: settings.style, style_version: settings.style_version, projects: known, default_project_folder: settings.default_project_folder, saved_dirs: settings.saved_dirs };
 }
 
 async function preview(hub, style) {
@@ -249,4 +268,4 @@ async function preview(hub, style) {
   } catch (error) { throw appError(502, `Preview failed: ${error.message}`); }
 }
 
-module.exports = { PLANS, BALANCING, validBalancing, DEFAULT_STYLE, ROLES, SAMPLE, TIER_ALIASES, WORK_TIERS, assertFits, defaults, describe, fullPrompt, headsUp, knownProjects, load, modelCommand, models, normalize, options, preview, renderStyle, roleLayers, save, switchSentences, templateFor, tier, update, validateStyle, validateTemplate };
+module.exports = { ESCALATION_VALUES, escalationSentences, PLANS, BALANCING, validBalancing, DEFAULT_STYLE, ROLES, SAMPLE, TIER_ALIASES, WORK_TIERS, assertFits, defaults, describe, fullPrompt, headsUp, knownProjects, load, modelCommand, models, normalize, options, preview, renderStyle, roleLayers, save, switchSentences, templateFor, tier, update, validateStyle, validateTemplate };
