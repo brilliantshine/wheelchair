@@ -12,11 +12,11 @@ get buried as this file grows. **Map:** `MAP.md`.
 
 ## Open Questions
 
-### Q5: How signing in works from the app
-- **Context:** Nothing runs `claude auth login` / `codex login`; the mock's Sign in button
-  has no code path.
-
 ### Q6: How usage is read per CLI, and what to show when it can't be
+- **Checked locally 2026-11-15:** Codex rollout transcripts already carry
+  `rate_limits {primary|secondary: {used_percent, window_minutes, resets_at}, plan_type}`
+  (`~/.codex/sessions/.../rollout-*.jsonl`). Claude's per-session settings file
+  (`service.js:274`) can carry a `statusLine` command, which receives `rate_limits`.
 - **Context:** see Log, research 2026-11-15. Claude: official `rate_limits` in statusline JSON
   (live session only); undocumented OAuth usage endpoint from the login folder. Codex:
   `/status` in a session; undocumented `wham/usage` endpoint from `auth.json`.
@@ -48,6 +48,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D4 | Leads and sub-leads run on Claude (the Claude lead model) while any Claude account has room; when none has, on GPT's lead model instead of waiting. The Leads panel keeps both models; the thread CLI picker goes away | Never stall a new thread; Claude stays the first choice | user |
 | D5 | The hub owns the account list (id, provider, name, plan, nodes). Each account's login folder is at a fixed path on every machine, `~/.wheelchair/accounts/<id>/`, sent in the start request; each machine service reports per-account login state in `/v1/status`. Today's default login becomes an account called "default" pointing at the CLI's usual folder, so nothing changes until a second account is added | Settings already live on the hub; a fixed path makes the folder a node fact without a per-node list | defaulted |
 | D6 | Supersedes D4. The Leads panel gets a provider order for new leads, set by Collin (e.g. "Claude > GPT", or "Claude, then whatever's left"). A thread keeps the provider its lead started on: a running lead never switches, and a restarted lead or a sub-lead in that thread waits for that provider to have room | Collin: switching mid-feature is worse than waiting; the order applies only to new leads | user |
+| D7 | Signing in: Sign in on a machine starts a login session in tmux on that machine running the CLI's own login (`claude auth login` / `codex login --device-auth`) with the account's folder set; the app opens its terminal page on it; the account turns green when that machine reports it logged in | Works from the phone with pages that already exist | user |
 
 ## Spec
 
@@ -94,6 +95,19 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 - `/v1/status` reports, per account folder present on that machine, `{id, logged_in}`; the
   Ready check passes for a provider when at least one of its accounts is logged in on the
   thread's machine (`viewer/app/ready.js:26-54`).
+
+### Signing in (D7)
+- Accounts screen, per account and machine: **Sign in**. The hub asks that machine's service
+  to start a tmux session `wc-login-<account id>` in the account's folder (created if
+  missing) running `claude auth login` with `CLAUDE_CONFIG_DIR`, or `codex login
+  --device-auth` with `CODEX_HOME` (and `cli_auth_credentials_store = "file"` in that
+  folder's `config.toml`, so the login lands in the folder, not a shared keyring).
+- The app opens the existing terminal page on it (`viewer/pages/terminal.js:7`, keys and
+  pane routes). Collin follows the link or code. When the CLI exits the session ends; the
+  account's per-machine state comes from `/v1/status` on the next refresh.
+- Seeding a new folder (Watch W1): before first use the service links the user's
+  `CLAUDE.md` / `AGENTS.md` from the CLI's usual folder into the account folder, so agents
+  get the same global instructions.
 
 ## Accepted Risks
 
