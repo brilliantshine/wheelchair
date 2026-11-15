@@ -17,7 +17,8 @@ follow what the page says.
 
 Today all of this is fixed in code or in files only an agent's terminal sees. Model choices
 live in a pins file and hard-coded tier names; the Critical tier is on the build rules but
-the app refuses it; leads run on whatever model the Claude CLI defaults to. Collin cannot
+the app refuses it; leads run on whatever model the Claude CLI defaults to, with no way
+to choose. Collin cannot
 tell an agent how to behave, or tell leads how to write to him, without editing the
 workflow's own rules. Sessions run in a permission mode he can't see or change, and the
 newer-model heads-up never reaches him.
@@ -28,7 +29,8 @@ newer-model heads-up never reaches him.
 - The models table shows a row per provider (Claude, GPT) and the four tiers; he changes a
   cell, or marks it Not used, and the next session started at that tier uses it.
 - A Critical part of a build actually runs on a Critical model.
-- Leads run on Claude Opus 5.5.
+- He picks which model leads run on, as easily as any other setting (his own choice is
+  Claude Opus 5.5), and the next lead uses it.
 - He writes a template for a role (for one project or all) and the next agent in that role
   follows it, on top of wheelchair's own rules, which it cannot override.
 - He writes a style, and the next lead's messages and cards follow it; a before-and-after
