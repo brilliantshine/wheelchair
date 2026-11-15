@@ -494,6 +494,27 @@ test('a failed tmux listing reports running as unknown, and "no server" as not r
     } finally { await env.close(); }
   });
 });
+test('a replacement worker is refused while another worker still runs in its worktree', async () => {
+  await withEnv({ FAKE_GIT_VERSION: 'wc-t-w1' }, async () => {
+    const env = await service(await temp()); try {
+      const worktree = path.join(path.dirname(env.state), 'work-shared');
+      const first = await start(env, { role: 'worker', cli: 'codex', name: 'wc-t-worker', worktree, branch: 'wc-t-w1' });
+      const replace = (name) => api(env, 'POST', '/v1/sessions', { role: 'worker', cli: 'codex', thread_id: 't', token: 'beta', name, worktree, branch: 'wc-t-w1' }, hubHeader);
+      await withEnv({ FAKE_SESSIONS: first.name }, async () => {
+        const refused = await replace('wc-t-worker-2');
+        assert.equal(refused.status, 409); assert.match(refused.body.error, /in use \(wc-t-worker\)/);
+      });
+      await withEnv({ FAKE_LS_ERR: 'server exited unexpectedly' }, async () => {
+        assert.equal((await replace('wc-t-worker-2')).status, 409);
+      });
+      assert.equal((await replace('wc-t-worker-2')).status, 201);
+      await withEnv({ FAKE_SESSIONS: 'wc-t-worker-2' }, async () => {
+        const second = await replace('wc-t-worker-3');
+        assert.equal(second.status, 409); assert.match(second.body.error, /wc-t-worker-2/);
+      });
+    } finally { await env.close(); }
+  });
+});
 test('status lists other tmux sessions read-only and typing into them is refused', async () => {
   await withEnv({ FAKE_SESSIONS: 'wc-t-lead scratch' }, async () => {
     const env = await service(await temp()); try {

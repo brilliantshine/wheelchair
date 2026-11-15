@@ -145,6 +145,7 @@ class MachineService {
     this.sessionsPath = path.join(this.stateDir, 'sessions.json');
     this.config = {};
     this.sessions = {};
+    this.startingWorktrees = new Set();
     this.logins = {};
     this.server = null;
     this.retryWindow = Number(process.env.WHEELCHAIR_RETRY_WINDOW_MS || 90_000);
@@ -326,6 +327,21 @@ class MachineService {
     while (this.sessions[candidate]) candidate = `${base}-${++n}`;
     return candidate;
   }
+  // A replacement worker reuses a dead worker's worktree. It must be alone there: the hub's record
+  // of who is dead can be wrong or missing (a queued start, a lost response), so this service, which
+  // sees every session, has the final say. A worker still in tmux, or tmux unknown, refuses.
+  refuseSharedWorktree(worktree, sessionName) {
+    const others = Object.values(this.sessions).filter(other => other.role === 'worker' && other.name !== sessionName
+      && other.status !== 'stopped' && other.worktree && path.resolve(other.worktree) === worktree);
+    const conflict = (this.startingWorktrees.has(worktree) && 'another start') || (() => {
+      if (!others.length) return null;
+      const live = this.liveTmux();
+      if (!live) return 'tmux could not be checked';
+      return others.find(other => live.has(other.name))?.name || null;
+    })();
+    if (conflict) throw Object.assign(new Error(`worker worktree is in use (${conflict}): ${worktree}`), { status: 409 });
+    this.startingWorktrees.add(worktree); // released by start() once this session is recorded or failed
+  }
   async createWorktree(input, sessionName) {
     if (input.worktree) {
       const worktree = path.resolve(input.worktree);
@@ -395,7 +411,14 @@ class MachineService {
     if (dir) adapter.seed(dir, account.id);
     const options = startOptions(input);
     const createdWorktree = !input.worktree;
-    const created = await this.createWorktree(input, name);
+    const reserved = input.role === 'worker' && input.worktree && input.branch ? path.resolve(input.worktree) : null;
+    if (reserved) this.refuseSharedWorktree(reserved, name);
+    try {
+      const created = await this.createWorktree(input, name);
+      return await this.startIn(input, name, adapter, account, dir, options, createdWorktree, created);
+    } finally { if (reserved) this.startingWorktrees.delete(reserved); }
+  }
+  async startIn(input, name, adapter, account, dir, options, createdWorktree, created) {
     const worktree = created.worktree;
     const session = { name, role: input.role, cli: input.cli, account: account.id, account_dir: dir, permission_mode: options.permission_mode, codex_mode: options.codex_mode, effort: options.effort, thread_id: input.thread_id, token: input.token,
       worktree, created_worktree: createdWorktree, attempt_id: input.attempt_id || null, started_by: input.started_by || null,
