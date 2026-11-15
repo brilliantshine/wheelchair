@@ -8,7 +8,7 @@
 
   const $ = (x) => document.getElementById(x);
   const errorEl = $('error'); const headEl = $('head'); const stubEl = $('stub-open');
-  const deadEl = $('dead'); const docEl = $('docview'); const pinnedEl = $('pinned');
+  const deadEl = $('dead'); const pinnedEl = $('pinned');
   const filesEl = $('files'); const headFilesEl = $('head-files'); const chatEl = $('chat'); const queuedNote = $('queued-note');
   const msgEl = $('msg'); const sendBtn = $('send');
 
@@ -142,13 +142,9 @@
     const t = thread(); const s = slug();
     if (!(s && (planDir() || t.archived))) return;
     for (const f of ['MAP', 'IDEA', 'PLAN']) {
-      if (t.archived) {
-        into.appendChild(button(f + '.md', cls, () => showArchivedDoc(f + '.md')));
-      } else {
-        const a = el('a', cls, f + '.md');
-        a.href = '/wheelchair/docs?plan=' + encodeURIComponent(planDir()) + '&file=' + f + '.md';
-        into.appendChild(a);
-      }
+      const a = el('a', cls, f + '.md');
+      a.href = '/wheelchair/app/doc?thread=' + encodeURIComponent(id) + '&file=' + f + '.md';
+      into.appendChild(a);
     }
   }
   function diagramSource(card) {
@@ -181,18 +177,6 @@
   async function doArchive() {
     try { await post(T + '/archive'); archiveAsk = false; sigs.head = null; await poll(); }
     catch (e) { showError('Archive failed: ' + e.message); }
-  }
-  async function showArchivedDoc(file) {
-    docEl.hidden = false; docEl.textContent = 'Loading ' + file + '…';
-    try {
-      const res = await fetch(T + '/doc?file=' + encodeURIComponent(slug() ? file : file));
-      const out = await res.json();
-      if (!res.ok) throw new Error(out.detail || out.error || 'http ' + res.status);
-      docEl.textContent = '';
-      docEl.appendChild(el('h3', '', file));
-      docEl.appendChild(el('pre', '', out.content));
-      docEl.appendChild(button('Close', '', () => { docEl.hidden = true; }));
-    } catch (e) { docEl.textContent = 'Could not read ' + file + ': ' + e.message; }
   }
 
   // ---- stub opening, dead lead ----

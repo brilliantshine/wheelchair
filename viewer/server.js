@@ -5,7 +5,7 @@ Routes (all responses use Cache-Control: no-store):
   GET  /wheelchair/plan, /doc   -> plan data and raw Markdown
   GET  /wheelchair/docs         -> viewer/doc.html
   GET  /wheelchair/assets/*     -> page scripts (no token): list.js, doc.js, pages/*, vendor/*
-  GET  /wheelchair/app/<page>   -> viewer/pages/<page>.html (threads, thread, features, sessions, terminal)
+  GET  /wheelchair/app/<page>   -> viewer/pages/<page>.html (threads, thread, doc, features, sessions, terminal)
   GET  /wheelchair/graph        -> { hash, graph, children }
   PUT  /wheelchair/graph, /view -> { hash }
   GET  /wheelchair/whoami       no authentication -> { start_id }.
@@ -1827,7 +1827,7 @@ async function servePage(response, name, csp = false) {
 
 // The app's pages (docs/plans/app-shell, "Views") live in viewer/pages/ and their vendored
 // libraries in viewer/vendor/; both are public assets like list.js, matched by a narrow name.
-const APP_PAGES = new Set(['threads', 'thread', 'features', 'sessions', 'terminal']);
+const APP_PAGES = new Set(['threads', 'thread', 'doc', 'features', 'sessions', 'terminal']);
 // The thread page embeds the graph page for `diagram` cards, so app pages may frame this origin.
 const APP_PAGE_CSP = `${PAGE_CSP}; frame-src 'self'`;
 const APP_ASSET = /^(pages|vendor)\/[a-z0-9_-]+(\/[a-z0-9_.-]+)*\.(js|css)$/;

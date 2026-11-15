@@ -18,6 +18,7 @@ const LIST_HTML = readFile('list.html');
 const DOC_HTML = readFile('doc.html');
 const LIST_JS = readFile('list.js');
 const DOC_JS = readFile('doc.js');
+const MARKDOWN_JS = readFile('pages/markdown.js');
 
 function jsonBody(obj) {
   return { status: 200, contentType: 'application/json', body: JSON.stringify(obj) };
@@ -34,6 +35,7 @@ async function mockRoutes(page, handlers) {
     if (p === '/wheelchair/') return route.fulfill({ status: 200, contentType: 'text/html', body: LIST_HTML });
     if (p === '/wheelchair/docs') return route.fulfill({ status: 200, contentType: 'text/html', body: DOC_HTML });
     if (p === '/wheelchair/assets/list.js') return route.fulfill({ status: 200, contentType: 'text/javascript', body: LIST_JS });
+    if (p === '/wheelchair/assets/pages/markdown.js') return route.fulfill({ status: 200, contentType: 'text/javascript', body: MARKDOWN_JS });
     if (p === '/wheelchair/assets/doc.js') return route.fulfill({ status: 200, contentType: 'text/javascript', body: DOC_JS });
 
     if (p === '/wheelchair/list' && handlers.list) return handlers.list(route, u);
