@@ -1,6 +1,6 @@
 ---
 slug: app-diagrams-uploads
-status: draft   # draft | confirmed
+status: confirmed   # draft | confirmed
 created: 2026-11-15
 ---
 
