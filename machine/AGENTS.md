@@ -19,4 +19,5 @@ agents own neither tmux nor the machine secret.
 - Never accept a hub secret on an agent route, or a session token on a hub route.
 - A session name must start `wc-`; unmanaged tmux sessions are observable but never typed
   into or stopped here.
+- A recovered session (rebuilt from a live `wc-*` tmux session) has no token and never authorizes an agent route.
 - Git subprocesses use the authenticated session's recorded worktree, never a caller path.

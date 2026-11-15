@@ -23,7 +23,7 @@ set -eu
 echo "$(basename \"$0\") $*" >> "$FAKE_LOG"
 case "$(basename \"$0\"):$1" in
   tmux:capture-pane) cat "$FAKE_PANE" ;;
-  tmux:list-sessions) echo wc-t-lead ;;
+  tmux:list-sessions) printf '%s\\n' \${FAKE_SESSIONS:-} ;;
   tmux:load-buffer) cat >> "$FAKE_LOG" ;;
   systemd-run:*) exit 1 ;;
   git:rev-parse) echo deadbeef ;;
@@ -272,4 +272,100 @@ test('a stopped session is not reported stuck while it shuts down', async () => 
     assert.equal(session.status, 'stopped');
     assert.equal(hub.calls.filter(call => call.body.includes('"stuck"')).length, 0);
   } finally { await env.close(); await hub.close(); }
+});
+
+async function withEnv(vars, body) {
+  const prior = Object.fromEntries(Object.keys(vars).map(key => [key, process.env[key]]));
+  for (const [key, value] of Object.entries(vars)) process.env[key] = value;
+  try { return await body(); } finally { for (const [key, value] of Object.entries(prior)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } }
+}
+const agentHeader = token => ({ 'x-wheelchair-session-token': token });
+
+test('a relayed permission prompt is reported cleared when the pane shows input again', async () => {
+  const hub = await hubServer(); const env = await service(await temp(), { pane: 'Do you want to proceed?\n❯ 1. Yes\n', config: { hub_url: hub.url } }); try {
+    await start(env); const session = env.instance.sessions['wc-t-lead']; session.status = 'ready';
+    await api(env, 'POST', '/v1/agent/hooks', { type: 'prompt', notification_type: 'permission_prompt' }, agentHeader('alpha'));
+    assert.equal(session.prompt_open, true);
+    await env.instance.pollReadiness();
+    assert.equal(hub.calls.filter(call => call.body.includes('prompt-cleared')).length, 0);
+    await write(env.fake.pane, readyClaude); await env.instance.pollReadiness();
+    const cleared = hub.calls.filter(call => call.body.includes('prompt-cleared'));
+    assert.equal(cleared.length, 1); assert.equal(JSON.parse(cleared[0].body).session, 'wc-t-lead'); assert.equal(session.prompt_open, false);
+    await env.instance.pollReadiness();
+    assert.equal(hub.calls.filter(call => call.body.includes('prompt-cleared')).length, 1);
+    assert.equal(hub.calls.filter(call => call.body.includes('"ready"')).length, 0);
+  } finally { await env.close(); await hub.close(); }
+});
+test('a Claude transcript is found by session id before any Stop hook', async () => {
+  const root = await temp(); const config = path.join(root, 'claude-config');
+  await withEnv({ CLAUDE_CONFIG_DIR: config }, async () => {
+    const env = await service(root); try {
+      await start(env); const session = env.instance.sessions['wc-t-lead'];
+      assert.equal((await api(env, 'GET', '/v1/sessions/wc-t-lead/transcript', undefined, hubHeader)).body.data, '');
+      await write(path.join(config, 'projects', '-some-project', `${session.cli_session_id}.jsonl`), '{"a":1}\n');
+      const result = await api(env, 'GET', '/v1/sessions/wc-t-lead/transcript', undefined, hubHeader);
+      assert.equal(result.body.data, '{"a":1}\n'); assert.match(session.source_transcript, /-some-project/);
+    } finally { await env.close(); }
+  });
+});
+test('the spool is retried on a timer until the hub acknowledges', async () => {
+  const hub = await hubServer(503);
+  await withEnv({ WHEELCHAIR_SPOOL_INTERVAL_MS: '20' }, async () => {
+    const env = await service(await temp(), { config: { hub_url: hub.url } }); try {
+      await start(env); await api(env, 'POST', '/v1/agent/cards', { n: 1 }, agentHeader('alpha'));
+      assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 1);
+      hub.setStatus(200);
+      for (let i = 0; i < 50 && (await fs.readdir(path.join(env.state, 'spool', 'cards'))).length; i += 1) await new Promise(resolve => setTimeout(resolve, 20));
+      assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 0);
+    } finally { await env.close(); await hub.close(); }
+  });
+});
+test('status lists other tmux sessions read-only and typing into them is refused', async () => {
+  await withEnv({ FAKE_SESSIONS: 'wc-t-lead scratch' }, async () => {
+    const env = await service(await temp()); try {
+      await start(env);
+      const sessions = (await api(env, 'GET', '/v1/sessions', undefined, hubHeader)).body;
+      assert.equal(sessions.find(s => s.name === 'wc-t-lead').managed, true);
+      assert.deepEqual(sessions.find(s => s.name === 'scratch'), { name: 'scratch', managed: false, running: true });
+      assert.equal((await api(env, 'POST', '/v1/sessions/scratch/keys', { keys: 'C-c' }, hubHeader)).status, 404);
+      assert.equal((await api(env, 'POST', '/v1/sessions/scratch/submit', { text: 'x' }, hubHeader)).status, 404);
+      assert.equal((await api(env, 'DELETE', '/v1/sessions/scratch', undefined, hubHeader)).status, 404);
+      assert.doesNotMatch(await log(env), /kill-session -t scratch|send-keys -t scratch/);
+    } finally { await env.close(); }
+  });
+});
+test('a live wc-* tmux session missing from sessions.json is rebuilt and tokenless', async () => {
+  await withEnv({ FAKE_SESSIONS: 'wc-abc-worker-2 other' }, async () => {
+    const env = await service(await temp()); try {
+      const recovered = env.instance.sessions['wc-abc-worker-2'];
+      assert.equal(recovered.thread_id, 'abc'); assert.equal(recovered.role, 'worker'); assert.equal(recovered.status, 'ready'); assert.equal(recovered.recovered, true);
+      assert.equal(env.instance.sessions.other, undefined);
+      assert.equal((await api(env, 'POST', '/v1/sessions/wc-abc-worker-2/keys', { keys: 'C-c' }, hubHeader)).status, 200);
+      assert.equal((await api(env, 'GET', '/v1/sessions/wc-abc-worker-2/pane', undefined, hubHeader)).status, 200);
+      assert.equal((await api(env, 'POST', '/v1/agent/cards', { kind: 'idea' }, {})).status, 401);
+      assert.equal(JSON.parse(await fs.readFile(path.join(env.state, 'sessions.json'), 'utf8'))['wc-abc-worker-2'].recovered, true);
+      assert.equal((await api(env, 'DELETE', '/v1/sessions/wc-abc-worker-2', undefined, hubHeader)).status, 200);
+    } finally { await env.close(); }
+  });
+});
+test('worktree-remove: only a merged, finished worker of the same thread, called by a sub-lead', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true }); try {
+    const { repo, worktree } = await startedWorktree(env, root, 'wr');
+    const common = { thread_id: 'wr', project_dir: repo, project: 'project', default_branch: 'main', serviceWorktree: true };
+    const lead = agentHeader('wr-token'); const remove = (header, args) => api(env, 'POST', '/v1/agent/git', { operation: 'worktree-remove', args }, header);
+    const worker = await start(env, { ...common, role: 'worker', token: 'w-token' });
+    assert.equal((await remove(agentHeader('w-token'), [worker.name])).status, 400);
+    env.instance.sessions['wc-wr-lead'].role = 'sub-lead';
+    assert.equal((await remove(lead, ['wc-other-worker'])).status, 400);
+    assert.equal((await remove(lead, ['wc-wr-lead'])).status, 400);
+    await withEnv({ FAKE_SESSIONS: worker.name }, async () => { const r = await remove(lead, [worker.name]); assert.equal(r.status, 400); assert.match(r.body.error, /running/); });
+    await write(path.join(worker.worktree, 'w.txt'), 'w\n');
+    git(['-C', worker.worktree, 'add', 'w.txt']); git(['-C', worker.worktree, '-c', 'user.name=t', '-c', 'user.email=t@example.test', 'commit', '-m', 'w']);
+    const unmerged = await remove(lead, [worker.name]); assert.equal(unmerged.status, 400); assert.match(unmerged.body.error, /not fully merged/);
+    await fs.access(worker.worktree);
+    git(['-C', worktree, '-c', 'user.name=t', '-c', 'user.email=t@example.test', 'merge', 'wc-wr-w1']);
+    const done = await remove(lead, [worker.name]); assert.equal(done.status, 200); assert.equal(done.body.ok, true, JSON.stringify(done.body));
+    await assert.rejects(fs.access(worker.worktree));
+    assert.equal(env.instance.sessions[worker.name].worktree_removed, true);
+  } finally { await env.close(); }
 });

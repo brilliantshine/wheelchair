@@ -103,6 +103,7 @@ class MachineService {
     this.server = null;
     this.retryWindow = Number(process.env.WHEELCHAIR_RETRY_WINDOW_MS || 90_000);
     this.retryDelay = Number(process.env.WHEELCHAIR_RETRY_DELAY_MS || 1_000);
+    this.spoolInterval = Number(process.env.WHEELCHAIR_SPOOL_INTERVAL_MS || 5_000);
     this.options = options;
   }
 
@@ -115,10 +116,32 @@ class MachineService {
     if (this.options.secretFile) this.config.secret_file = this.options.secretFile;
     await atomicWrite(this.configPath, `${json(this.config)}\n`);
     this.sessions = await readJson(this.sessionsPath, {});
+    await this.recoverFromTmux();
     await mkdir(path.join(this.stateDir, 'spool', 'cards'));
     await mkdir(path.join(this.stateDir, 'spool', 'events'));
     this.pollTimer = setInterval(() => this.pollReadiness().catch(error => this.log(error)), 2000);
     this.pollTimer.unref();
+  }
+  liveTmux() {
+    const ls = this.tmux(['list-sessions', '-F', '#S']);
+    return new Set(ls.ok ? ls.stdout.trim().split('\n').filter(Boolean) : []);
+  }
+  // Spec "Machine service on the hub": a live wc-* tmux session missing from sessions.json (a lost or
+  // stale file) is adopted again, so it can still be read, typed into and stopped.  It has no token.
+  async recoverFromTmux() {
+    let changed = false;
+    for (const name of this.liveTmux()) {
+      if (!name.startsWith('wc-') || this.sessions[name]) continue;
+      const parsed = /^wc-(.+?)-(sub-lead|lead|worker|reviewer|verifier|[a-z]+)(?:-\d+)?$/.exec(name);
+      if (!parsed) continue;
+      const pane = this.tmux(['capture-pane', '-p', '-t', name]);
+      const where = this.tmux(['display-message', '-p', '-t', name, '#{pane_current_path}']);
+      this.sessions[name] = { name, thread_id: parsed[1], role: parsed[2], status: 'ready', recovered: true,
+        cli: pane.ok && pane.stdout.includes('Codex') ? 'codex' : 'claude',
+        worktree: where.ok ? where.stdout.trim() : '', created_worktree: false, token: '', created_at: new Date().toISOString() };
+      changed = true;
+    }
+    if (changed) await this.persistSessions();
   }
   async persistSessions() { await atomicWrite(this.sessionsPath, `${json(this.sessions)}\n`); }
   log(error) { process.stderr.write(`machine: ${error.message || error}\n`); }
@@ -134,6 +157,7 @@ class MachineService {
     }
     const token = request.headers[TOKEN_HEADER] || (request.headers.authorization || '').replace(/^Bearer\s+/i, '');
     const found = Object.values(this.sessions).find(session => {
+      if (!session.token) return false; // a recovered session has no token and must not match an empty one
       const got = Buffer.from(token || ''); const expected = Buffer.from(session.token || '');
       return got.length === expected.length && crypto.timingSafeEqual(got, expected);
     });
@@ -283,7 +307,22 @@ class MachineService {
   }
   // Only a session still coming up (or stuck coming up) is watched: a stopped one shutting down
   // never shows the ready screen and would otherwise be reported stuck.
-  async pollReadiness() { await Promise.all(Object.values(this.sessions).filter(s => s.status === 'starting' || s.status === 'stuck').map(s => this.checkReady(s))); }
+  async pollReadiness() {
+    const watched = Object.values(this.sessions);
+    await Promise.all([
+      ...watched.filter(s => s.status === 'starting' || s.status === 'stuck').map(s => this.checkReady(s)),
+      ...watched.filter(s => s.prompt_open && s.status === 'ready').map(s => this.checkPrompt(s)),
+    ]);
+  }
+  // A permission prompt the service relayed is cleared once the pane shows the input screen again.
+  async checkPrompt(session) {
+    let pane;
+    try { pane = this.pane(session.name); } catch { return false; }
+    if (!this.readyText(session, pane)) return false;
+    session.prompt_open = false; await this.persistSessions();
+    await this.emitEvent({ type: 'prompt-cleared', session: session.name, thread_id: session.thread_id });
+    return true;
+  }
   async submit(name, text) {
     const session = this.managed(name);
     if (session.status !== 'ready') throw Object.assign(new Error('session is not ready'), { status: 409 });
@@ -302,6 +341,7 @@ class MachineService {
   async stop(name) {
     const session = this.managed(name);
     this.tmux(['kill-session', '-t', name]);
+    session.prompt_open = false;
     session.status = 'stopped'; session.stopped_at = new Date().toISOString();
     await this.persistSessions();
     if (session.role === 'verifier' && session.created_worktree) command('git', ['-C', session.worktree, 'worktree', 'remove', session.worktree]);
@@ -400,6 +440,11 @@ class MachineService {
       if (kept === null || kept === undefined || kept === false) throw error;
       return { offset: Buffer.byteLength(kept), data: Buffer.from(kept).subarray(Number(offset)).toString('utf8') };
     }
+    // Spec "Branches and checkouts": before the first Stop hook, find Claude's file by session id.
+    if (!session.source_transcript && session.cli === 'claude' && session.cli_session_id) {
+      const found = await this.claudeTranscript(session.cli_session_id);
+      if (found) session.source_transcript = found;
+    }
     if (session.source_transcript) await this.copyTranscript(session, session.source_transcript);
     const data = session.transcript_path ? await fsp.readFile(session.transcript_path, 'utf8').catch(() => '') : '';
     const byte = Buffer.byteLength(data);
@@ -438,7 +483,16 @@ class MachineService {
     if (current.cli === 'codex' && event['thread-id'] && current.codex_thread_id !== event['thread-id']) return { ignored: true };
     if (event.type === 'prompt' && event.notification_type !== 'permission_prompt') return { ignored: true };
     await this.emitEvent({ ...event, session, thread_id: current.thread_id });
+    if (event.type === 'prompt') { current.prompt_open = true; await this.persistSessions(); }
     return { ok: true };
+  }
+  async claudeTranscript(cliSessionId) {
+    const root = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'projects');
+    for (const entry of await fsp.readdir(root, { withFileTypes: true }).catch(() => [])) {
+      const candidate = path.join(root, entry.name, `${cliSessionId}.jsonl`);
+      if (entry.isDirectory() && fs.existsSync(candidate)) return candidate;
+    }
+    return null;
   }
   async codexRollout(threadId) {
     const root = path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'sessions');
@@ -449,13 +503,28 @@ class MachineService {
     };
     return find(root);
   }
+  // Spec "Branches and checkouts": a sub-lead removes a worker's worktree once that worker is done and merged.
+  async removeWorkerWorktree(caller, workerName, cwd) {
+    if (caller.role !== 'sub-lead') die('only a sub-lead may remove a worker worktree');
+    const worker = this.sessions[workerName];
+    if (!worker || worker.role !== 'worker' || worker.thread_id !== caller.thread_id) die('args[0] must name a worker session of this thread');
+    if (!worker.created_worktree || worker.worktree_removed) die('worker has no removable worktree');
+    if (worker.status !== 'stopped' && this.liveTmux().has(worker.name)) die('worker is still running');
+    const branch = command('git', ['-C', worker.worktree, 'rev-parse', '--abbrev-ref', 'HEAD']);
+    if (!branch.ok || !branch.stdout.trim() || branch.stdout.trim() === 'HEAD') die('worker branch cannot be determined');
+    if (!command('git', ['merge-base', '--is-ancestor', branch.stdout.trim(), 'HEAD'], { cwd }).ok) die('worker branch is not fully merged into yours');
+    const result = command('git', ['worktree', 'remove', path.resolve(worker.worktree)], { cwd });
+    if (result.ok) { worker.worktree_removed = true; await this.persistSessions(); }
+    return { ok: result.ok, status: result.status, stdout: result.stdout, stderr: result.stderr };
+  }
   async git(session, input) {
     const operation = input.operation; const args = Array.isArray(input.args) ? input.args.map(String) : [];
-    const allowed = new Set(['fetch', 'commit', 'merge', 'cherry-pick', 'revert', 'push', 'pr']);
+    const allowed = new Set(['fetch', 'commit', 'merge', 'cherry-pick', 'revert', 'push', 'pr', 'worktree-remove']);
     if (!allowed.has(operation)) die('unsupported git operation');
     if (operation === 'commit' && (!Array.isArray(input.paths) || input.paths.length === 0)) throw Object.assign(new Error('commit requires explicit paths'), { status: 400 });
     if (operation === 'commit' && !String(input.message || '').trim()) throw Object.assign(new Error('commit requires a message'), { status: 400 });
     const cwd = path.resolve(session.worktree);
+    if (operation === 'worktree-remove') return this.removeWorkerWorktree(session, args[0], cwd);
     if (operation === 'commit' && input.paths.some(item => {
       const candidate = path.resolve(cwd, String(item));
       return candidate !== cwd && !candidate.startsWith(`${cwd}${path.sep}`);
@@ -493,10 +562,10 @@ class MachineService {
     }
   }
   status() {
-    const ls = this.tmux(['list-sessions', '-F', '#S']);
-    const live = new Set(ls.ok ? ls.stdout.trim().split('\n').filter(Boolean) : []);
+    const live = this.liveTmux();
+    const others = [...live].filter(name => !this.sessions[name]).map(name => ({ name, managed: false, running: true }));
     return { version: command('git', ['-C', ROOT, 'rev-parse', 'HEAD']).stdout.trim(),
-      claude: this.cliStatus('claude'), codex: this.cliStatus('codex'), sessions: Object.values(this.sessions).map(s => ({ ...s, running: live.has(s.name) })) };
+      claude: this.cliStatus('claude'), codex: this.cliStatus('codex'), sessions: [...Object.values(this.sessions).map(s => ({ ...s, managed: true, running: live.has(s.name) })), ...others] };
   }
   cliStatus(cli) {
     const version = command('sh', ['-c', `command -v ${cli}`]);
@@ -533,6 +602,10 @@ class MachineService {
     await this.init();
     this.server = http.createServer((request, response) => this.handle(request, response));
     await new Promise((resolve, reject) => { this.server.once('error', reject); this.server.listen(this.config.port, this.config.host, resolve); });
+    // Spec "Machine service on the hub": spools are retried until the hub acknowledges them.
+    this.spoolTimer = setInterval(() => { for (const kind of ['events', 'cards']) this.drainSpool(kind).catch(error => this.log(error)); }, this.spoolInterval);
+    this.spoolTimer.unref();
+    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.pollTimer); });
     process.stdout.write(`machine service listening on ${this.config.host}:${this.config.port}\n`);
     await this.drainSpool('events'); await this.drainSpool('cards');
   }
