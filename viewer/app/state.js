@@ -53,7 +53,9 @@ class State {
   queued(file, operation) {
     const previous = this.writes.get(file) || Promise.resolve();
     const next = previous.catch(() => {}).then(operation);
-    const retained = next.finally(() => {
+    // The chain swallows a failed operation's error (the caller still gets it from `next`);
+    // left uncaught, one refused card would end the whole viewer process.
+    const retained = next.catch(() => {}).finally(() => {
       if (this.writes.get(file) === retained) this.writes.delete(file);
     });
     this.writes.set(file, retained);

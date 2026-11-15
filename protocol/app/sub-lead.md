@@ -89,7 +89,10 @@ Record each task's lane in the table: GPT lanes as the tier plus the resolved mo
 - A worker that asks something the plan did not settle sends its question to the lead, not
   to you. If you hit something the plan does not settle, send the lead a `message` too.
 - A dead worker (the hub tells you by `message`) is restarted on the same brief, in the
-  same worktree and branch, so committed partial work carries on. A new `--attempt` id.
+  same worktree and branch, so committed partial work carries on: the same start command
+  plus `--replaces <dead worker's session name>`, and a new `--attempt` id. Without
+  `--replaces` the hub cuts a fresh branch and the partial work is left behind. Removing
+  that worktree after the merge still names the original worker's session.
   A dead verifier is started fresh.
 
 ## A finished worker is a claim

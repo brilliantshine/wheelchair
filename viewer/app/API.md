@@ -40,3 +40,5 @@ turns the tier into the machine request's `model`. Codex takes `luna`, `terra`, 
 `codex/model.sh <tier>`) or `top` (Sol); Claude takes `haiku`, `sonnet`, `opus` (passed as `--model`)
 or `top` (no `--model`). A tier that does not fit the CLI is a 400 with the reason. A start is a 409
 ("machine service out of date") while that machine's `/v1/status` commit differs from the hub's.
+
+Worker restart (`wc.js session start --role worker ... --replaces <session>`): the hub checks the named session is a worker in the same thread and not live, then starts the new worker in that session's `worktree` on its `branch`. A live session or a non-worker is refused with 400.
