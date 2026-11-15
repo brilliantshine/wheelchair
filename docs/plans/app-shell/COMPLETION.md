@@ -253,3 +253,40 @@ tmux, and the root router.
 ## Remediation rounds
 
 Appended by Stage 4 loops; never erase earlier content.
+
+## Remediation 1
+
+Verification round 1 at 2738897 failed. Opus and Sol between them found 35 gap lines, 30
+distinct, all listed verbatim in `REMEDIATION-1.md` with the lead's triage. One was declined
+because the Spec doesn't define it (closing agent-raised needs and typed answers; now a
+follow-up). The wait-or-start deviation is now recorded as D72, in Collin's words.
+
+| Task | Lane | Merged | What changed |
+|---|---|---|---|
+| R1 | GPT / Terra | 8edf85c | Spooled hook events are rebound to their session and run through the live hook handler. A card is relayed at once, and the hub's refusal goes back to the agent. Refused spool items move to `spool/rejected/` and no longer block. Delivery ids. One drain at a time. Boot-time version. The project's default branch. A dead worker restarts in its worktree. Transcripts copy only whole lines. The kept copy is served when the original is gone. The trust dialog is checked every 500 ms. 9 new tests. |
+| R2 | GPT / Terra | 1b99a8b | A per-thread lock around every read-modify-write, plus serialized file writes. A message leaves the queue only after the submit lands. Delivery-id dedupe. Codex preflight before any Codex start. Boot-time version. `wc.js git` passes git's flags through. `--replaces` for worker restart. Stop by role for lead and sub-lead. Opened stubs listed in Features. Needs come from every thread. Plans are found on untracked branches. Unreachable sessions are listed without tokens. A terminal Enter marks the session busy. A kept rebase raises a needs card and leaves the thread open. Stub commits reach the new lead. Codex human turns start only at `turn_context`. A diagram card registers its plan. `/api/sessions` returns no tokens. 12 new tests. |
+| R3 | Claude / Sonnet | a4f6852 | Terminal `;` is sent as `\;`, proven on a real private tmux. Hub sessions are marked `hub: true`, so the hub shows the plain attach command. "Start a thread about it" appears on every Done-card entry. Archived diagrams are drawn read-only in the graph page from the branch, with no writes. |
+
+The lead's own changes during integration:
+- Fixed R1's stale spool test.
+- Kept cards in order behind a spool.
+- Fixed R2's lock-chain rejection.
+- Resolved the `views.js` merge, with hub-recorded threads matched to the hub's registry
+  entry.
+
+Codex resumes ran in the wrong directory twice; `docs/known-issues.md` explains why.
+
+**Validation after remediation:**
+
+| Suite | Result |
+|---|---|
+| sensitivity | 62/0 |
+| seen | 18/0 |
+| codex | 45/0 |
+| install | 87/0 |
+| machine | 49/49 |
+| node | 230 tests, 229 pass; the one failure is the known port race |
+| browser | 330 passed, 2 failed (the known "no drawn arrow"), 2 skipped |
+| `./install.sh && ./install.sh` | both exit 0; no new changes |
+
+The install pair restarted the live hub and machine services on the remediated code.

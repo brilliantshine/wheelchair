@@ -63,3 +63,18 @@
 2026-11-15T04:06:56Z new 2146 diagrams inside a thread fail to load
 2026-11-15T04:06:56Z new deba archived diagrams show as raw data instead of a picture
 2026-11-15T04:06:56Z new 65c6 a semicolon typed in the browser terminal is dropped
+2026-11-15T04:07:15Z shown e42a
+2026-11-15T04:07:15Z shown ac19
+2026-11-15T04:07:15Z shown 3d6d
+2026-11-15T04:07:15Z shown a456
+2026-11-15T04:07:15Z shown db94
+2026-11-15T04:07:15Z shown 6a71
+2026-11-15T04:07:15Z shown ba25
+2026-11-15T04:07:15Z shown c149
+2026-11-15T04:07:15Z shown fc33
+2026-11-15T04:07:15Z shown be7b
+2026-11-15T04:07:15Z shown 2146
+2026-11-15T04:07:15Z shown deba
+2026-11-15T04:07:15Z shown 65c6
+2026-11-15T04:07:15Z turn
+2026-11-15T04:32:31Z new 4827 the codex resume lands in the current directory, not the lane's; recorded in known-issues
