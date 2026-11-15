@@ -119,7 +119,7 @@
     headEl.appendChild(block);
 
     const line = el('div', 'head-actions' + (archiveAsk ? ' asking' : ''));
-    if (t.stub) line.appendChild(el('span', 'badge', 'stub'));
+    if (t.stub && !t.sessions.length) line.appendChild(el('span', 'badge', 'stub'));
     if (t.archived) line.appendChild(el('span', 'badge', 'archived'));
     if (t.pr_url) { const pr = prLink(t.pr_url, 'btn small'); pr.prepend(icon(ICON.pr, 13)); line.appendChild(pr); }
     if (lead && !t.archived) {

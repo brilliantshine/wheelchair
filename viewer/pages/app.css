@@ -128,9 +128,11 @@ ul#list li.row a.row-link:hover { background: var(--panel); }
 ul#list li.row.current a.row-link, ul#list li.row.current a.row-link:hover { background: var(--panel-2); color: var(--ink); }
 ul#list li.row.current .title { font-weight: 600; }
 .row .top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.row .top .title { font-size: 13px; min-width: 0; overflow-wrap: anywhere; flex: 1; }
+/* A real basis, so the badges wrap under a title that would drop below it rather than
+   squeezing it into a one-word column; a badge longer than the row is cut with an ellipsis. */
+.row .top .title { font-size: 13px; min-width: 0; overflow-wrap: anywhere; flex: 1 1 10em; }
 .row .sub { font-size: 12px; color: var(--dim); padding-left: 15px; overflow-wrap: anywhere; }
-.row .badge { font-size: 10px; padding: 1px 6px; }
+.row .badge { font-size: 10px; padding: 1px 6px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 #list-error { margin: 0 0 8px; }
 #empty { padding: 6px 10px; }
 

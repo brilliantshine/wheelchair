@@ -48,10 +48,11 @@
     const dot = el('span', 'dotmark ' + (waiting[t.id] ? 'amber' : stage === 'Done' ? 'green' : stage ? 'blue' : ''));
     top.appendChild(dot);
     top.appendChild(el('span', 'title', nameOf(t)));
-    if (t.stub) {
+    // A stub is only a stub until it is opened: once a lead runs in it, it is ordinary work.
+    if (t.stub && !(t.sessions || []).length) {
       top.appendChild(el('span', 'badge', 'stub'));
       if (t.ready) top.appendChild(el('span', 'badge good', 'ready'));
-      else if (t.depends_on_parent && !t.ready && !(t.sessions || []).length) {
+      else if (t.depends_on_parent) {
         top.appendChild(el('span', 'badge warn', 'waiting for ' + (titles[t.parent] || t.parent_title || t.parent)));
       }
     }
