@@ -586,6 +586,11 @@ Round 9 is clean: no blocking or major finding upheld.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Real-CLI probe of §4's fork/resume commands (§10), once per CLI | `machine/test/aside-probe.sh`, `machine/test/aside-probe-mcp.js`, `reports/T1.md` | standard, gpt (gpt-6.1-terra) | wc-54ce860aef63-worker | `bash machine/test/aside-probe.sh claude\|codex` | in progress |
+| T2 | Machine aside-turn routes, persistence, restart recovery, `codex_thread_id` in listing (§4) | `machine/` (not the probe files), `machine/API.md`, `machine/AGENTS.md` | standard | — | `bash machine/test/run.sh` | waiting on T1 |
+| T3 | Hub: message ids, aside record, routes, turn-running rule, step-up, graph save, archive, handoff (§1, §3-§6, §8 hub side) | `viewer/app/`, `viewer/server.js` if needed, `viewer/test/app-asides.test.js` (new), `viewer/app/API.md` | standard | — | `node --test viewer/test/*.test.js` | waiting on T1 |
+| T4 | Page: selection bar, panel, underlines, aside list, phone sheet, handoff link (§2, §7, §9) | `viewer/pages/`, `viewer/test/app-asides.spec.js` (new) | standard, claude | — | `npm --prefix viewer run test:browser` | waiting on T3 |
+| T5 | `protocol/app/aside.md` and the `lead.md` line (§4 aside prompt, §8) | `protocol/app/aside.md`, `protocol/app/lead.md`, `protocol/app/AGENTS.md` | light | — | read-through against §4/§8 | waiting on T1 |
 
 ## Log
 
