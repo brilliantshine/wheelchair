@@ -596,6 +596,7 @@ Collin chose "keep going" (2026-11-15); the round budget resets.
 | T9 | Pre-verification gaps, interface: Codex `plan_type` beside the chosen plan, tests for the sign-in timeout, Rename/Change plan/Remove, the 30 s refresh | `viewer/pages/`, browser specs | claude standard (claude-sonnet-5-5) | worker-11 | `npm --prefix viewer run test:browser` | done |
 | R1 | Remediation 1, hub: no report while limited, limit kept across newer readings, account ids never reused, promoted record gets template and style version, `waiting_provider` | `viewer/app/`, node tests | codex standard (gpt-6.1-terra), the family that built T2/T5 | worker-13 | `node --test viewer/test/*.test.js`; `bash machine/test/run.sh` | done |
 | R2 | Remediation 1, thread page waiting-line provider text | `viewer/pages/thread.js`, `app-accounts.spec.js` | claude light (claude-haiku), the family that built T6 | worker-14 | accounts browser spec | done |
+| R3 | Remediation 2: the reading rides on the Codex turn end (live and spooled) and is applied before the report decision; nav-dot alerts seen per provider per calendar week, no `first_refill` requirement | `machine/`, `viewer/app/`, node tests | codex standard (gpt-6.1-terra), the family that built it | worker-15 | `bash machine/test/run.sh`; `node --test viewer/test/*.test.js` | in progress |
 
 ## Log
 
@@ -649,3 +650,4 @@ Collin chose "keep going" (2026-11-15); the round budget resets.
 - 2026-11-15 — Choice: R1, `viewer/app/settings.js`: removed account ids are kept in `retired_accounts` in settings.json; `waiting_provider` is the pinned provider (thread provider for a restart or sub-lead, the strict worker's `--provider`), else a new lead's first `lead_order` provider, else null.
 - 2026-11-15 — Choice: R2, `viewer/pages/thread.js`: the waiting line takes the first of `waiting_provider`, the lead's `provider`, the thread's `provider` that is `claude` or `gpt` (others skipped).
 - 2026-11-15 — Remediation 1 merged at `58be76c`; full validation as before (only the two failures on main). Verification round 2 started on the next commit, one verifier per family.
+- 2026-11-15 — Verification round 2 on `1047177`: Claude verifier PASS; Codex verifier FAIL with 3 gaps: the limit-recovery gap again through the spool path (its second and last fix attempt), and two nav-dot dedup gaps. REMEDIATION-2.md; R3 started. Choice (sub-lead): alerts are seen per provider per ISO calendar week of the hub's local time, replacing the `first_refill` key.
