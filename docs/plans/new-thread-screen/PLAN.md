@@ -340,3 +340,4 @@ refusal. The `POST /threads` body is unchanged.
 
 - 2026-11-15 — R1e accepted (worker-7, 3803075); choices: removeSaved drops a stale click silently; the new test seeds one saved entry per machine and checks the count after the answer lands. Full validation re-run; COMPLETION.md Remediation 1 added; verification attempt 2 started.
 - 2026-11-15 — Verification attempt 2 (Codex gpt-6.1-sol, ccbc8b3): FAIL, one gap: Save's refresh bypasses load()'s guard (second fix attempt on machine-scoped selection). REMEDIATION-2.md written; R2 dispatched to Claude standard.
+- 2026-11-15 — R2 accepted (worker-8, f086a04); choice: the new spec serves the POST answer itself and waits 300 ms after releasing the held answer before asserting. Full validation re-run; COMPLETION.md Remediation 2 added; verification attempt 3 started.
