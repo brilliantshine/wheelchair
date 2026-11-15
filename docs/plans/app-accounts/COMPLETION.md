@@ -2,7 +2,22 @@
 slug: app-accounts
 date: 2026-11-15
 implemented-by: "codex standard gpt-6.1-terra (T1, T2, T4, T5, T8), codex light gpt-6-luna (T3, T7), claude standard claude-sonnet-5-5 (T6, T9); sub-lead claude-opus-5-5"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude top (claude-fable-5-2) — PASS; codex top (gpt-6-astra) — FAIL
+    checks: codex standard/light (T1-T5, T7, T8), claude standard (T6, T9)
+  - round: 2
+    lane: claude top — PASS; codex top — FAIL
+    checks: R1 codex standard, R2 claude light
+  - round: 3
+    lane: claude top — FAIL; codex top — FAIL
+    checks: R3 codex standard
+  - round: 4
+    lane: codex top — FAIL (claude top stopped, commit superseded)
+    checks: R4 codex light, R5 codex standard
+  - round: 5
+    lane: claude top — PASS; codex top — PASS
+    checks: R6 codex standard, on f559674
 ---
 
 # Completion Report — Accounts, usage and balancing
@@ -390,3 +405,10 @@ $ npm --prefix viewer run test:browser
 ```
 
 The two failures are the same ones on `main` (above).
+
+### Round 5 — 2026-11-15
+
+Both verifiers PASS on `f559674` (Claude and Codex, top tier). Observations they raised that the Spec does not cover, left as residual risks:
+- A promoted waiting session whose machine start then fails is marked `failed` silently: `retryWaiting` swallows the error and `pollDead` only watches live sessions, so the starter is not told (a direct start returns the error).
+- The thread page's waiting line maps only `claude` and `gpt` to labels (`viewer/pages/thread.js:594-596`), like the Models editor's options: a third CLI edits these too.
+- Flaky under the full browser run, passing alone: Firefox `app-settings.spec.js:61` (3/3 alone, file 28/28).
