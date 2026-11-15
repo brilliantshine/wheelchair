@@ -365,9 +365,9 @@ Clean round: approved.
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Machine: uploads routes, image-card copy, per-thread lock, closing flag, archive cleanup | machine/service.js, machine/test/, machine/API.md | gpt standard (gpt-6.1-terra) | wc-c56d4b2c5f5f-worker | `bash machine/test/run.sh` | done |
 | T2 | Hub: card fields, image storage, uploads/files/diagram routes, MachineClient.stream, archive handling | viewer/server.js, viewer/app/*.js, viewer/app/API.md, viewer/test/*.test.js, viewer/test/helpers/app-machine.js | gpt standard (gpt-6.1-terra) | wc-c56d4b2c5f5f-worker-2 | `node --test viewer/test/*.test.js` | done |
-| T3 | Thread page: form renderers, HTML and image cards, composer uploads; browser tests | viewer/pages/thread.*, new viewer/test/*.spec.js, browser test helpers | claude standard; after T1, T2 | — | `npm --prefix viewer run test:browser` | not started |
+| T3 | Thread page: form renderers, HTML and image cards, composer uploads; browser tests | viewer/pages/thread.*, new viewer/test/*.spec.js, browser test helpers | gpt standard (gpt-6.1-terra); asked for claude, hub fell back | wc-c56d4b2c5f5f-worker-4 | `npm --prefix viewer run test:browser` | in progress |
 | T4 | Protocol: cards.md diagram format, forms, image card; lead.md pointer | protocol/app/cards.md, protocol/app/lead.md | gpt standard (gpt-6.1-terra) | wc-c56d4b2c5f5f-worker-3 | grep, diff stat | done |
-| T5 | Integration: archive through the real hub route while an upload to the real machine service is paused | one new viewer/test/*.test.js | standard; after T1, T2 | — | `node --test viewer/test/*.test.js` | not started |
+| T5 | Integration: archive through the real hub route while an upload to the real machine service is paused | one new viewer/test/*.test.js | gpt standard (gpt-6.1-terra) | wc-c56d4b2c5f5f-worker-5 | `node --test viewer/test/*.test.js` | in progress |
 
 ## Log
 
@@ -379,3 +379,4 @@ Clean round: approved.
 - 2026-11-15 — Choice: T2, viewer/server.js diagram-form: malformed JSON answers 422, over 2 MiB answers 413.
 - 2026-11-15 — Choice: T2, viewer/app/threads.js archive: the uploads needs card says "unknown error" when the machine sends no `uploads_error`, and marks the thread's sessions not live (they are stopped).
 - 2026-11-15 — T2 accepted: node suite 346/347 re-run by sub-lead on its branch; the one failure is the port race already failing on the feature branch. The worker stopped on its fails-twice rule over the browser gate, which fails only on the known "no drawn arrow's line passes through either box" issue in docs/known-issues.md; not caused by this build.
+- 2026-11-15 — T5's start produced two sessions with the same attempt id (worker-5, worker-6) from one command; worker-6 stopped at once, its worktree `wc-c56d4b2c5f5f-w6` left unmerged.
