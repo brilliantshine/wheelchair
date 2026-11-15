@@ -153,7 +153,10 @@ account, cli_id, slot, status, closed_at, outcome, sent_line, graph, notice}`.
 - **Before the first turn ends.** Until an aside's first turn has ended and its `cli_id` is
   known, Think harder and This changes my answer are disabled (the summary needs a finished
   turn to draft from). Done pressed in that window marks the aside `closed` at once and the hub stops the session when that turn ends (or
-  at once if the session never became ready). An aside closed with no `cli_id` can't be
+  at once if the session never became ready). Reopening an aside whose deferred stop is
+  still pending cancels that stop: the aside goes back to `open` on the same live session,
+  and what Collin types is queued to it. Only an aside whose session has actually stopped
+  is continued with `resume`, so two processes never hold one conversation. An aside closed with no `cli_id` can't be
   continued: reopening it shows its conversation, and typing starts a new fork for the same
   anchor, replacing `session` and `cli_id` on the record.
 - **Kept out of the main thread.** The app's own notices about an aside session (stuck at
@@ -200,11 +203,13 @@ account, cli_id, slot, status, closed_at, outcome, sent_line, graph, notice}`.
 - Automatic: when an aside turn's last reply is `[wc:step-up] ...`, the hub stops the
   session, restarts it with `resume` on `heavy`, sets `slot: heavy`, and re-sends the
   question that triggered it.
-- Queue on restart: the replacement session's queue is the re-sent question first, then
-  every message still queued on the stopped session, in their original order. The hub moves
+- Queue on restart: the replacement session's queue is the re-sent delivered message first,
+  then every message still queued (not yet delivered) on the stopped session, in their original order. The hub moves
   them under the thread lock (`hub.withThread`) before stopping the old session, so none is
-  lost or sent twice. The same applies to Think harder and to reopening.
-- **Think harder**: the same, re-sending Collin's last message in the aside.
+  lost or sent twice. The same applies to Think harder. Reopening moves queued messages the
+  same way but re-sends nothing: the conversation simply continues with what Collin types.
+- **Think harder**: the same, re-sending the last message already delivered to the aside
+  session (the one its latest turn answered or is answering), never one still queued.
 - On `heavy` the aside never steps up again, and any `[wc:step-up]` reply is shown as
   text.
 
@@ -340,6 +345,10 @@ bash machine/test/fork-probe.sh       # T1, by hand, real CLIs
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics (gpt) | major | Think harder could send a queued question twice | upheld | §6: replay only the last delivered message; queued ones follow once |
+| mechanics (gpt) | major | Reopening would replay an answered question | upheld | Same as the intent finding above, already fixed |
+| mechanics (gpt) | major | Early close then quick reopen could run two processes on one conversation | upheld | §4: reopening during a pending stop cancels it and reuses the live session; `resume` only after a real stop |
+| intent (gpt) | minor | Reopening would replay an already-answered question | upheld | §6: reopening moves the queue but re-sends nothing |
 
 ## Prior Work
 
