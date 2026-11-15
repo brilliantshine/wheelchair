@@ -48,6 +48,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 15 | Effort is a per-cell option for Claude only (`--effort`); GPT cells take none | The design's only effort choice is "Opus 5.5, highest effort" | defaulted |
 | 16 | `codex/model.sh` keeps its path while covering Claude too | Moving it touches every protocol reference for no behavior gain | defaulted |
 | 17 | Running leads get a new style as a `[wc:style]` trailer at the end of their next delivered message, stripped from the chat | A trailer keeps start-of-message markers working and stays out of Collin's bubble | defaulted |
+| 18 | IDEA narrowed: the newer-model notice is GPT only (Claude cells offer "Latest" family aliases instead), and Critical here means startable, not parts marked critical | Round 1 intent findings; follows decision 9 | idea-change |
 
 ## Spec
 

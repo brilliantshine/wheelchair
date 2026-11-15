@@ -28,7 +28,7 @@ newer-model heads-up never reaches him.
 - He opens Settings from the app's navigation, on his phone or a desktop.
 - The models table shows a row per provider (Claude, GPT) and the four tiers; he changes a
   cell, or marks it Not used, and the next session started at that tier uses it.
-- A Critical part of a build actually runs on a Critical model.
+- The Critical tier can be started from the app (today it is refused).
 - He picks which model leads run on, as easily as any other setting (his own choice is
   Claude Opus 5.5), and the next lead uses it.
 - He writes a template for a role (for one project or all) and the next agent in that role
@@ -36,7 +36,8 @@ newer-model heads-up never reaches him.
 - He writes a style, and the next lead's messages and cards follow it; a before-and-after
   preview shows the difference.
 - He sees the permission mode and can change it; sessions still start and count as ready.
-- When a newer model is available, the page says so with switch or skip.
+- When a newer GPT model is available, the page says so with switch or skip. Claude cells
+  can be set to the latest model of a family, which follows new releases by itself.
 
 ## Not doing
 
