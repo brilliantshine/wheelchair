@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wheelchair · phone lane view</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#14161a}
+a{color:#7fb4e6}a:hover{color:#a9cdf0}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #14161a; color: #e6e8ec; font-family: Inter, system-ui, sans-serif; font-size: 14px; display: flex; flex-direction: column; overflow: hidden;">
+
+  <header style="padding: 48px 12px 12px; display: flex; align-items: center; gap: 6px; border-bottom: 1px solid #2a2f38;">
+    <a href="PhoneInbox.dc.html" aria-label="Back to Needs you" style="min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center; color: #c5cad3; text-decoration: none;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg>
+    </a>
+    <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;">
+      <span style="font-size: 15px; font-weight: 600;">Part 3 · notice a dead session</span>
+      <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b929e;">session-control · codex · Terra · node-2</span>
+    </div>
+    <span style="font-size: 11px; font-weight: 600; color: #d9a441; padding: 4px 8px; border-radius: 999px; background: #241f15;">Needs you</span>
+  </header>
+
+  <section style="padding: 16px; display: flex; flex-direction: column; gap: 12px; border-bottom: 1px solid #2a2f38; background: #1a1813;">
+    <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #d9a441;">The choice it made</span>
+    <p style="margin: 0; font-size: 15px; line-height: 1.5;">When a session exits with an error, restart it once. If it dies again, mark the part <em>needs you</em> and leave it stopped.</p>
+    <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #8b929e;">The plan didn't say. Striking it makes a follow-up task; keeping it lets the run carry on.</p>
+    <div style="display: flex; gap: 8px;">
+      <button type="button" style="flex: 1; min-height: 48px; border-radius: 10px; border: 0; background: #4ea87b; color: #0c1410; font: inherit; font-weight: 600; font-size: 15px;">Keep</button>
+      <button type="button" style="flex: 1; min-height: 48px; border-radius: 10px; border: 1.5px dashed #c4645f; background: transparent; color: #e09a96; font: inherit; font-weight: 600; font-size: 15px;">Strike</button>
+    </div>
+  </section>
+
+  <div style="display: flex; align-items: center; gap: 8px; padding: 10px 16px;">
+    <span style="font-size: 12px; font-weight: 600; color: #c5cad3; flex: 1;">Live output</span>
+    <button type="button" style="min-height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid #2a2f38; background: transparent; color: #c5cad3; font: inherit; font-size: 12px;">Keys</button>
+  </div>
+  <pre style="flex: 1; margin: 0 12px; padding: 12px; border-radius: 10px; background: #0c0e10; border: 1px solid #2a2f38; font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.6; color: #b4bac4; white-space: pre-wrap; overflow: hidden;"><span style="color: #8b929e;">exec</span> apply_patch viewer/sessions.js
+  + onExit(name, code)
+  + restartOnce(name)
+<span style="color: #8b929e;">exec</span> node --test viewer/test/sessions.test.js
+<span style="color: #4ea87b;">✔ exits cleanly · no restart</span>
+<span style="color: #4ea87b;">✔ dies once · restarted</span>
+<span style="color: #4ea87b;">✔ dies twice · flagged, stays down</span>
+The brief didn't say what a crash should do.
+Recorded the choice in run.json.
+<span style="color: #d9a441;">Holding until it's ruled on.</span></pre>
+
+  <div style="display: flex; gap: 8px; padding: 12px 12px 28px;">
+    <label for="m" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);">Message this lane</label>
+    <input id="m" type="text" placeholder="Message this lane" style="flex: 1; min-width: 0; min-height: 44px; padding: 0 14px; border-radius: 10px; border: 1px solid #2a2f38; background: #1c1f25; color: #e6e8ec; font: inherit; font-size: 15px;">
+    <button type="button" aria-label="Send" style="min-width: 44px; min-height: 44px; border-radius: 10px; border: 0; background: #5b9dd9; color: #0e1114; display: flex; align-items: center; justify-content: center;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+    </button>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

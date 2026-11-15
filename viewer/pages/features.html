@@ -1,0 +1,30 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Features</title>
+<link rel="stylesheet" href="/wheelchair/assets/pages/app.css">
+<link rel="stylesheet" href="/wheelchair/assets/pages/views.css">
+<script src="/wheelchair/assets/pages/nav.js" defer></script>
+<script src="/wheelchair/assets/pages/features.js" defer></script>
+<header id="app-nav" data-current="features"></header>
+<div class="home">
+  <nav class="home-side" aria-label="Projects and machines">
+    <div class="side-title" id="side-projects-title">Projects</div>
+    <div id="side-projects"></div>
+    <div class="side-rule"></div>
+    <div class="side-title">Machines</div>
+    <div id="side-machines"></div>
+  </nav>
+  <main class="view home-main">
+    <p id="error" class="v-error" hidden></p>
+    <section id="needs" class="v-needs" hidden aria-label="Needs you">
+      <div class="section-head"><h2>Needs you</h2><span id="needs-sub" class="section-sub"></span></div>
+      <ul id="needs-list" class="needs-grid"></ul>
+    </section>
+    <section aria-label="Features">
+      <div class="section-head"><h2>Features</h2><span class="section-sub">Each column is a stage. A feature only moves right when its stage passes.</span></div>
+      <div class="stages-scroll"><div id="groups" class="stages"></div></div>
+      <p id="empty" class="v-empty" hidden>No features yet. Start a thread to begin one.</p>
+    </section>
+  </main>
+</div>

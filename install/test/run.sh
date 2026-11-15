@@ -66,7 +66,7 @@ both_wrappers_landed() {
 
 last_line_is() { [[ ${1##*$'\n'} == "$2" ]]; }
 
-declare -A home claude codex shim present output status tty display input args dns loginctl_status linger node_stop_status tailscale_absent serve_status serve_status_exit
+declare -A home claude codex shim present output status tty display input args dns loginctl_status linger node_stop_status tailscale_absent serve_status serve_status_exit tailscale_ip tailscale_ip_status
 status_with_handlers() {
   printf '{"TCP":{"443":{"HTTPS":true}},"Web":{"fixture.tailnet.ts.net:443":{"Handlers":%s}}}' "$1"
 }
@@ -87,6 +87,8 @@ new_case() {
   linger[$name]=no
   node_stop_status[$name]=0
   tailscale_absent[$name]=0
+  tailscale_ip[$name]=100.64.0.1
+  tailscale_ip_status[$name]=0
   serve_status[$name]=$(status_with_handlers '{}')
   serve_status_exit[$name]=0
   mkdir -p "${home[$name]}" "${shim[$name]}"
@@ -128,14 +130,21 @@ if [[ $1 == status && $2 == --json ]]; then
 elif [[ $1 == serve && $2 == status && $3 == --json ]]; then
   [[ ${WHEELCHAIR_TAILSCALE_SERVE_STATUS_EXIT:-0} == 0 ]] || exit "${WHEELCHAIR_TAILSCALE_SERVE_STATUS_EXIT}"
   printf '%s\n' "${WHEELCHAIR_TAILSCALE_SERVE_STATUS}"
+elif [[ $1 == ip && $2 == -4 ]]; then
+  [[ ${WHEELCHAIR_TAILSCALE_IP_STATUS:-0} == 0 ]] || exit "${WHEELCHAIR_TAILSCALE_IP_STATUS}"
+  printf '%s\n' "${WHEELCHAIR_TAILSCALE_IP}"
 fi
+EOF
+  cat > "$dir/hostname" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "${WHEELCHAIR_HOSTNAME:-fixture-host}"
 EOF
   cat > "$dir/sudo" <<'EOF'
 #!/usr/bin/env bash
 printf 'sudo %s\n' "$*" >> "$WHEELCHAIR_SHIM_LOG"
 "$@"
 EOF
-  chmod +x "$dir/node" "$dir/systemctl" "$dir/loginctl" "$dir/tailscale" "$dir/sudo"
+  chmod +x "$dir/node" "$dir/systemctl" "$dir/loginctl" "$dir/tailscale" "$dir/sudo" "$dir/hostname"
 }
 
 run_case() {
@@ -143,7 +152,7 @@ run_case() {
   local command_path=$PATH
   if [[ ${tailscale_absent[$name]} == 1 ]]; then
     local tool
-    for tool in awk basename bash cat cp cut dirname grep head mkdir mktemp od rm sed tail uname; do
+    for tool in awk basename bash cat chmod cp cut dirname grep head mkdir mktemp od rm sed tail tr uname; do
       ln -sf "/usr/bin/$tool" "${shim[$name]}/$tool"
     done
     command_path=${shim[$name]}
@@ -159,6 +168,8 @@ run_case() {
     "WHEELCHAIR_REAL_NODE=$real_node"
     "WHEELCHAIR_TAILSCALE_SERVE_STATUS=${serve_status[$name]}"
     "WHEELCHAIR_TAILSCALE_SERVE_STATUS_EXIT=${serve_status_exit[$name]}"
+    "WHEELCHAIR_TAILSCALE_IP=${tailscale_ip[$name]}"
+    "WHEELCHAIR_TAILSCALE_IP_STATUS=${tailscale_ip_status[$name]}"
     "WHEELCHAIR_LOGINCTL_STATUS=${loginctl_status[$name]}"
     "WHEELCHAIR_LINGER=${linger[$name]}"
     "WHEELCHAIR_NODE_STOP_STATUS=${node_stop_status[$name]}")
@@ -171,6 +182,11 @@ run_case() {
 
 serving_path() { printf '%s/.cache/agent-graphs/.serving' "${home[$1]}"; }
 unit_path() { printf '%s/.config/systemd/user/wheelchair-viewer.service' "${home[$1]}"; }
+machine_unit_path() { printf '%s/.config/systemd/user/wheelchair-machine.service' "${home[$1]}"; }
+machine_state_path() { printf '%s/.local/state/wheelchair' "${home[$1]}"; }
+machine_config_path() { printf '%s/machine.json' "$(machine_state_path "$1")"; }
+machines_path() { printf '%s/machines.json' "$(machine_state_path "$1")"; }
+machine_secret_path() { printf '%s/machine.secret' "$(machine_state_path "$1")"; }
 log_path() { printf '%s/commands.log' "${home[$1]}"; }
 seed_serving() {
   local name=$1
@@ -278,6 +294,7 @@ args[explicit_serve]=--serve
 run_case explicit_serve
 assert '--serve sets up serving without the opt-in prompt' bash -c '[[ $1 == 0 && $2 != *"set up this machine"* ]]' _ "${status[explicit_serve]}" "${output[explicit_serve]}"
 assert '--serve calls the systemd reload enable and restart sequence' bash -c 'grep -Fxq "systemctl --user daemon-reload" "$1" && grep -Fxq "systemctl --user enable --now wheelchair-viewer.service" "$1" && grep -Fxq "systemctl --user restart wheelchair-viewer.service" "$1"' _ "$(log_path explicit_serve)"
+assert '--serve enables and restarts the machine service with the viewer' bash -c 'grep -Fxq "systemctl --user enable --now wheelchair-machine.service" "$1" && grep -Fxq "systemctl --user restart wheelchair-machine.service" "$1"' _ "$(log_path explicit_serve)"
 
 new_case no_serve
 args[no_serve]=--no-serve
@@ -288,6 +305,7 @@ printf 'kept\n' > "${home[no_serve]}/.cache/agent-graphs/.token"
 run_case no_serve
 assert '--no-serve records false and keeps the origin for a retry' cmp -s <(printf '{"serve": false, "origin": "https://fixture.tailnet.ts.net"}\n') "$(serving_path no_serve)"
 assert '--no-serve stops and removes the user unit but keeps the token' bash -c '[[ ! -e $1 && -f $2 ]] && grep -Fxq "systemctl --user disable --now wheelchair-viewer.service" "$3"' _ "$(unit_path no_serve)" "${home[no_serve]}/.cache/agent-graphs/.token" "$(log_path no_serve)"
+assert '--no-serve stops and removes the machine unit too' bash -c '[[ ! -e $1 ]] && grep -Fxq "systemctl --user disable --now wheelchair-machine.service" "$2"' _ "$(machine_unit_path no_serve)" "$(log_path no_serve)"
 assert '--no-serve never suggests disabling every HTTPS mapping' bash -c '[[ $1 != *"sudo tailscale serve --https=443 off"* ]]' _ "${output[no_serve]}"
 
 new_case serving_rerun
@@ -320,6 +338,10 @@ tailscale_absent[tailscale_missing]=1
 run_case tailscale_missing
 assert 'missing tailscale writes no serving decision' test ! -e "$(serving_path tailscale_missing)"
 assert 'missing tailscale explains why setup was skipped' bash -c '[[ $1 == *"tailscale is not installed"* ]]' _ "${output[tailscale_missing]}"
+assert 'an absent tailscale falls back to localhost in machine.json' python3 - "$(machine_config_path tailscale_missing)" <<'PY'
+import json, sys
+assert json.load(open(sys.argv[1]))['host'] == '127.0.0.1'
+PY
 
 new_case tailscale_empty_name
 args[tailscale_empty_name]=--serve
@@ -449,8 +471,30 @@ assert '--no-serve uses an origin kept in an already-false serving record' bash 
 assert '--no-serve keeps that origin after the retry' cmp -s <(printf '{"serve": false, "origin": "https://fixture.tailnet.ts.net"}\n') "$(serving_path no_serve_false_record)"
 
 assert 'the rendered service unit has the specified exact contents' cmp -s <(printf '[Unit]\nDescription=Wheelchair graph viewer\n\n[Service]\nExecStart=%s/node %s/viewer/server.js --service\nEnvironment=WHEELCHAIR_NO_BROWSER=1\nRestart=always\nRestartSec=2\n\n[Install]\nWantedBy=default.target\n' "${shim[explicit_serve]}" "$repo") "$(unit_path explicit_serve)"
+assert 'the machine unit preserves sessions across service restarts' bash -c 'grep -Fxq "Restart=always" "$1" && grep -Fxq "KillMode=process" "$1"' _ "$(machine_unit_path explicit_serve)"
+assert 'the machine unit gives agent sessions the installing PATH' bash -c 'grep -q "^Environment=\"PATH=.*$2" "$1"' _ "$(machine_unit_path explicit_serve)" "${shim[explicit_serve]}"
 assert 'serving setup prints the bookmark last' last_line_is "${output[explicit_serve]}" 'https://fixture.tailnet.ts.net/?token=fixture'
 assert 'dependency installation requests both browser engines' grep -Fq 'playwright install chromium firefox' "$repo/install.sh"
+
+new_case machine_state_idempotent
+run_case machine_state_idempotent
+first_machine_state=$(tree_state "$(machine_state_path machine_state_idempotent)")
+first_secret=$(sha256sum "$(machine_secret_path machine_state_idempotent)" | awk '{print $1}')
+assert 'machine state directory and files have private modes' bash -c '[[ $(stat -c %a "$1") == 700 && $(stat -c %a "$2") == 600 && $(stat -c %a "$3") == 600 && $(stat -c %a "$4") == 600 ]]' _ "$(machine_state_path machine_state_idempotent)" "$(machine_secret_path machine_state_idempotent)" "$(machine_config_path machine_state_idempotent)" "$(machines_path machine_state_idempotent)"
+assert 'machine state files contain the hub and this machine' python3 - "$(machine_config_path machine_state_idempotent)" "$(machines_path machine_state_idempotent)" "$(machine_secret_path machine_state_idempotent)" <<'PY'
+import json, sys
+config, machines, secret = map(lambda p: p, sys.argv[1:])
+assert json.load(open(config)) == {
+    'hub_url': 'http://127.0.0.1:7373/wheelchair',
+    'secret_file': secret, 'host': '100.64.0.1', 'port': 7374,
+}
+assert json.load(open(machines)) == [{
+    'name': 'fixture-host', 'host': '100.64.0.1', 'port': 7374, 'secret_file': secret,
+}]
+PY
+run_case machine_state_idempotent
+assert 'a rerun leaves the machine secret unchanged' bash -c '[[ $1 == "$2" ]]' _ "$first_secret" "$(sha256sum "$(machine_secret_path machine_state_idempotent)" | awk '{print $1}')"
+assert 'a rerun writes byte-identical machine state files' bash -c '[[ $1 == "$2" ]]' _ "$first_machine_state" "$(tree_state "$(machine_state_path machine_state_idempotent)")"
 
 assert 'real CLAUDE.md is byte-identical after suite' bash -c '[[ $1 == "$2" ]]' _ "$real_claude_before" "$(file_state "$HOME/.claude/CLAUDE.md")"
 assert 'real AGENTS.md is byte-identical after suite' bash -c '[[ $1 == "$2" ]]' _ "$real_codex_before" "$(file_state "$HOME/.codex/AGENTS.md")"

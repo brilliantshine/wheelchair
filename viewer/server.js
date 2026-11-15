@@ -4,7 +4,8 @@ Routes (all responses use Cache-Control: no-store):
   GET  /wheelchair/list         -> { sessions, plans }
   GET  /wheelchair/plan, /doc   -> plan data and raw Markdown
   GET  /wheelchair/docs         -> viewer/doc.html
-  GET  /wheelchair/assets/*     -> page scripts (no token)
+  GET  /wheelchair/assets/*     -> page scripts (no token): list.js, doc.js, pages/*, vendor/*
+  GET  /wheelchair/app/<page>   -> viewer/pages/<page>.html (threads, thread, features, sessions, terminal)
   GET  /wheelchair/graph        -> { hash, graph, children }
   PUT  /wheelchair/graph, /view -> { hash }
   GET  /wheelchair/whoami       no authentication -> { start_id }.
@@ -36,7 +37,7 @@ const fsp = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const crypto = require('node:crypto');
-const { spawn } = require('node:child_process');
+const { execFileSync, spawn } = require('node:child_process');
 
 const DEFAULT_PORT = 7373;
 const DAY = 24 * 60 * 60 * 1000;
@@ -1066,7 +1067,7 @@ function withMutex(work) {
 }
 
 function configFromArgs(argv) {
-  const options = { port: DEFAULT_PORT, cacheRoot: null, open: null, stop: false, show: false,
+  const options = { port: DEFAULT_PORT, cacheRoot: null, stateDir: null, open: null, stop: false, show: false,
     browser: process.env.WHEELCHAIR_NO_BROWSER !== '1', service: false, rotateToken: false,
     url: false, ifStale: false, registerPlan: null };
   for (let index = 0; index < argv.length; index += 1) {
@@ -1078,6 +1079,9 @@ function configFromArgs(argv) {
     } else if (arg === '--cache-root') {
       if (!argv[index + 1]) throw new Error('Missing --cache-root value.');
       options.cacheRoot = path.resolve(argv[++index]);
+    } else if (arg === '--state-dir') {
+      if (!argv[index + 1]) throw new Error('Missing --state-dir value.');
+      options.stateDir = path.resolve(argv[++index]);
     } else if (arg === '--open') {
       if (!argv[index + 1]) throw new Error('Missing --open value.');
       options.open = path.resolve(argv[++index]);
@@ -1821,11 +1825,42 @@ async function servePage(response, name, csp = false) {
   sendFile(response, 200, html, 'text/html; charset=utf-8', csp ? { 'content-security-policy': PAGE_CSP } : {});
 }
 
+// The app's pages (docs/plans/app-shell, "Views") live in viewer/pages/ and their vendored
+// libraries in viewer/vendor/; both are public assets like list.js, matched by a narrow name.
+const APP_PAGES = new Set(['threads', 'thread', 'features', 'sessions', 'terminal']);
+// The thread page embeds the graph page for `diagram` cards, so app pages may frame this origin.
+const APP_PAGE_CSP = `${PAGE_CSP}; frame-src 'self'`;
+const APP_ASSET = /^(pages|vendor)\/[a-z0-9_-]+(\/[a-z0-9_.-]+)*\.(js|css)$/;
+
 async function handleAsset(response, url) {
   const name = url.pathname.slice(`${VIEWER_PREFIX}/assets/`.length);
-  if (!['list.js', 'doc.js'].includes(name)) fail(404, 'no-route', 'The requested route does not exist.');
-  const script = await fsp.readFile(path.join(__dirname, name));
-  sendFile(response, 200, script, 'text/javascript; charset=utf-8');
+  if (['list.js', 'doc.js'].includes(name)) {
+    const script = await fsp.readFile(path.join(__dirname, name));
+    sendFile(response, 200, script, 'text/javascript; charset=utf-8');
+    return;
+  }
+  if (!APP_ASSET.test(name) || name.split('/').includes('..')) fail(404, 'no-route', 'The requested route does not exist.');
+  let bytes;
+  try { bytes = await fsp.readFile(path.join(__dirname, name)); }
+  catch { fail(404, 'no-route', 'The requested route does not exist.'); }
+  sendFile(response, 200, bytes, name.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8');
+}
+
+async function handleAppPage(request, response, url, state) {
+  const name = url.pathname.slice(`${VIEWER_PREFIX}/app/`.length);
+  if (!APP_PAGES.has(name)) fail(404, 'no-route', 'The requested route does not exist.');
+  // A phone's first visit arrives on the bookmark link, so a page accepts the token the way
+  // the root and docs pages do: remember the browser, then drop the token from the address.
+  const validToken = tokenMatches(url.searchParams.get('token'), state.lock.token);
+  const validCookie = hasRememberCookie(request, state);
+  if (url.searchParams.has('token')) {
+    if (validToken || validCookie) { redirectWithoutToken(response, url, state, validToken); return; }
+    await serveSignin(response); return;
+  }
+  if (!validCookie) { await serveSignin(response); return; }
+  const html = await fsp.readFile(path.join(__dirname, 'pages', `${name}.html`));
+  sendFile(response, 200, html, 'text/html; charset=utf-8',
+    { 'content-security-policy': APP_PAGE_CSP, 'set-cookie': rememberCookie(state) });
 }
 
 async function serveSignin(response) {
@@ -1864,6 +1899,13 @@ async function handleRoot(request, response, url, state) {
     await serveSignin(response); return;
   }
   if (!validCookie) { await serveSignin(response); return; }
+  // `?archive=<thread>&file=` is the graph page reading an archived thread's picture from the hub's
+  // read-only route; it names no file path, so there is nothing to validate or register.
+  if (url.searchParams.has('archive') && !url.searchParams.has('path')) {
+    const html = await fsp.readFile(path.join(__dirname, 'index.html'));
+    sendFile(response, 200, html, 'text/html; charset=utf-8', { 'set-cookie': rememberCookie(state) });
+    return;
+  }
   if (!url.searchParams.has('path')) {
     const html = await fsp.readFile(path.join(__dirname, 'list.html'));
     sendFile(response, 200, html, 'text/html; charset=utf-8', { 'content-security-policy': PAGE_CSP, 'set-cookie': rememberCookie(state) });
@@ -2093,6 +2135,16 @@ async function currentCode() {
   return hashBytes(await fsp.readFile(__filename)).slice(0, 12);
 }
 
+// A viewer process serves the commit it was launched from, not a later checkout after pull.
+// This is separate from currentCode(), whose short source hash identifies the port holder.
+function bootCodeVersion() {
+  try {
+    return execFileSync('git', ['-C', path.resolve(__dirname, '..'), 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  } catch {
+    return '';
+  }
+}
+
 function listen(server, port) {
   return new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -2114,7 +2166,8 @@ async function startServer(config) {
   await fsp.mkdir(config.cacheRoot, { recursive: true, mode: 0o700 });
   const token = await ensureToken(config);
   const lock = { pid: process.pid, port: config.port, token, start_id: crypto.randomBytes(16).toString('hex') };
-  const state = { config, lock, port: config.port, server: null, watched: new Map(), code: await currentCode(),
+  const state = { config, lock, port: config.port, server: null, watched: new Map(), code: await currentCode(), codeVersion: bootCodeVersion(), app: null,
+    appInit: null,
     servedOrigin: await servedOrigin(config), closing: false, lastRegistryPrune: 0,
     ownRegistration: config.open ? { path: config.open, opened: true, ...(await registrationMetadata()) } : null };
   const server = http.createServer(async (request, response) => {
@@ -2136,7 +2189,24 @@ async function startServer(config) {
         if (nonce) body.proof = proofFor(nonce, state.lock.token);
         sendJson(response, 200, body); return;
       }
+      if (url.pathname.startsWith(`${VIEWER_PREFIX}/api/`)) {
+        if (!state.app) { const { Hub } = require('./app/hub.js'); state.app = new Hub({ stateDir: config.stateDir || path.join(os.homedir(), '.local', 'state', 'wheelchair'), root: path.resolve(__dirname, '..'), codeVersion: state.codeVersion,
+          registerPlan: (planPath) => withMutex(() => registerPlanPath(config, planPath, null, 'other')),
+          registerGraph: (graphPath) => withMutex(() => registerPath(config, graphPath, false, null, 'other')) }); }
+        if (!state.appInit) state.appInit = state.app.init();
+        await state.appInit;
+        const machineRoute = url.pathname.startsWith(`${VIEWER_PREFIX}/api/machine/`);
+        const machineAuthenticated = machineRoute && await state.app.authenticatesMachine(request);
+        if (!machineRoute) {
+          if (request.method === 'GET') requireReadAuth(request, url, state);
+          else requirePutAuth(request, state);
+        }
+        try { await require('./app/hub.js').handle(state.app, request, response, url, machineAuthenticated); }
+        catch (error) { fail(error.status || 500, error.status ? 'app-error' : 'internal', error.message || 'App route failed.'); }
+        return;
+      }
       if (request.method === 'GET' && url.pathname.startsWith(`${VIEWER_PREFIX}/assets/`)) { await handleAsset(response, url); return; }
+      if (request.method === 'GET' && url.pathname.startsWith(`${VIEWER_PREFIX}/app/`)) { await handleAppPage(request, response, url, state); return; }
       if (request.method === 'GET' && url.pathname === `${VIEWER_PREFIX}/`) { await handleRoot(request, response, url, state); return; }
       if (request.method === 'GET' && url.pathname === `${VIEWER_PREFIX}/list`) { await handleList(request, response, url, state); return; }
       if (request.method === 'GET' && url.pathname === `${VIEWER_PREFIX}/plan`) { await handlePlan(request, response, url, state); return; }

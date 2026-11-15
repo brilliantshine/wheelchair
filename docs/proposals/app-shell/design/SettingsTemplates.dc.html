@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wheelchair · settings, behavior templates</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#14161a}
+a{color:#7fb4e6}a:hover{color:#a9cdf0}
+</style>
+</helmet>
+<div style="min-height: 1060px; background: #14161a; color: #e6e8ec; font-family: Inter, system-ui, sans-serif; font-size: 14px; display: flex; flex-direction: column;">
+
+  <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 14px 24px; border-bottom: 1px solid #2a2f38; background: #1c1f25;">
+    <a href="Main.dc.html" style="display: flex; align-items: center; gap: 10px; color: #e6e8ec; text-decoration: none;">
+      <div style="width: 26px; height: 26px; border-radius: 7px; background: #5b9dd9; display: flex; align-items: center; justify-content: center;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#14161a" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="9" cy="16" r="5"></circle><path d="M9 3v8h7l3 8"></path></svg>
+      </div>
+      <span style="font-weight: 700; font-size: 16px;">wheelchair</span>
+    </a>
+    <nav aria-label="Views" style="display: flex; gap: 2px; padding: 3px; border-radius: 9px; background: #14161a; border: 1px solid #2a2f38;">
+      <a href="Main.dc.html" style="padding: 6px 14px; border-radius: 6px; color: #c5cad3; font-size: 13px; text-decoration: none;">Features</a>
+      <a href="Thread.dc.html" style="padding: 6px 14px; border-radius: 6px; color: #c5cad3; font-size: 13px; text-decoration: none;">Threads</a>
+      <a href="SessionWall.dc.html" style="padding: 6px 14px; border-radius: 6px; color: #c5cad3; font-size: 13px; text-decoration: none;">Sessions</a>
+      <a href="SettingsAccounts.dc.html" aria-current="page" style="padding: 6px 14px; border-radius: 6px; background: #2a2f38; color: #e6e8ec; font-size: 13px; font-weight: 600; text-decoration: none;">Settings</a>
+    </nav>
+    <div style="flex: 1 1 100px;"></div>
+    <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #8b929e;">beelink · hub · 2 workers</span>
+  </header>
+
+  <div style="display: flex; flex-wrap: wrap; flex: 1;">
+    <nav aria-label="Settings" style="flex: 1 1 200px; max-width: 240px; border-right: 1px solid #2a2f38; padding: 20px 12px; display: flex; flex-direction: column; gap: 2px; box-sizing: border-box;">
+      <a href="SettingsAccounts.dc.html" style="padding: 9px 12px; border-radius: 8px; color: #c5cad3; font-size: 13px; text-decoration: none;">Accounts</a>
+      <a href="SettingsUsage.dc.html" style="padding: 9px 12px; border-radius: 8px; color: #c5cad3; font-size: 13px; text-decoration: none;">Usage and balancing</a>
+      <a href="SettingsModels.dc.html" style="padding: 9px 12px; border-radius: 8px; color: #c5cad3; font-size: 13px; text-decoration: none;">Models and preferences</a>
+      <a href="SettingsTemplates.dc.html" aria-current="page" style="padding: 9px 12px; border-radius: 8px; background: #23262d; color: #e6e8ec; font-size: 13px; font-weight: 600; text-decoration: none;">Behavior templates</a>
+      <a href="SettingsWriting.dc.html" style="padding: 9px 12px; border-radius: 8px; color: #c5cad3; font-size: 13px; text-decoration: none;">Writing style</a>
+      <div style="height: 1px; background: #2a2f38; margin: 10px 0;"></div>
+      <a href="#" style="padding: 9px 12px; border-radius: 8px; color: #c5cad3; font-size: 13px; text-decoration: none;">Nodes</a>
+      <a href="#" style="padding: 9px 12px; border-radius: 8px; color: #c5cad3; font-size: 13px; text-decoration: none;">Diagrams</a>
+      <a href="#" style="padding: 9px 12px; border-radius: 8px; color: #c5cad3; font-size: 13px; text-decoration: none;">Notifications</a>
+    </nav>
+
+    <div style="flex: 999 1 640px; min-width: 0; display: flex; flex-wrap: wrap;">
+
+      <nav aria-label="Templates" style="flex: 1 1 240px; max-width: 280px; border-right: 1px solid #2a2f38; padding: 24px 14px; display: flex; flex-direction: column; gap: 3px; box-sizing: border-box;">
+        <h1 style="margin: 0 0 4px 8px; font-size: 20px; font-weight: 600;">Behavior templates</h1>
+        <p style="margin: 0 0 12px 8px; font-size: 12px; color: #8b929e; line-height: 1.45;">How each kind of agent works, on top of wheelchair's own rules.</p>
+        <button type="button" style="display: flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 12px; margin-bottom: 10px; border-radius: 8px; border: 1px solid #3a3f48; background: transparent; color: #e6e8ec; font: inherit; font-size: 13px;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>New template
+        </button>
+        <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #8b929e; padding: 8px 8px 4px;">Lead</span>
+        <a href="#" style="display: flex; justify-content: space-between; padding: 8px 10px; border-radius: 7px; color: #c5cad3; font-size: 13px; text-decoration: none;"><span>Default</span><span style="font-size: 11px; color: #8b929e;">in use</span></a>
+        <a href="#" style="display: flex; justify-content: space-between; padding: 8px 10px; border-radius: 7px; color: #c5cad3; font-size: 13px; text-decoration: none;"><span>Draws first</span><span></span></a>
+        <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #8b929e; padding: 10px 8px 4px;">Sub-lead</span>
+        <a href="#" style="display: flex; justify-content: space-between; padding: 8px 10px; border-radius: 7px; color: #c5cad3; font-size: 13px; text-decoration: none;"><span>Default</span><span style="font-size: 11px; color: #8b929e;">in use</span></a>
+        <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #8b929e; padding: 10px 8px 4px;">Worker</span>
+        <a href="#" style="display: flex; justify-content: space-between; padding: 8px 10px; border-radius: 7px; color: #c5cad3; font-size: 13px; text-decoration: none;"><span>Default</span><span></span></a>
+        <a href="#" aria-current="page" style="display: flex; justify-content: space-between; padding: 8px 10px; border-radius: 7px; background: #23262d; color: #e6e8ec; font-size: 13px; font-weight: 600; text-decoration: none;"><span>Careful</span><span style="font-size: 11px; font-weight: 400; color: #8b929e;">in use</span></a>
+        <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #8b929e; padding: 10px 8px 4px;">Reviewer</span>
+        <a href="#" style="display: flex; justify-content: space-between; padding: 8px 10px; border-radius: 7px; color: #c5cad3; font-size: 13px; text-decoration: none;"><span>Strict</span><span style="font-size: 11px; color: #8b929e;">in use</span></a>
+        <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #8b929e; padding: 10px 8px 4px;">Checker and mapper</span>
+        <a href="#" style="display: flex; justify-content: space-between; padding: 8px 10px; border-radius: 7px; color: #c5cad3; font-size: 13px; text-decoration: none;"><span>Checker · default</span><span style="font-size: 11px; color: #8b929e;">in use</span></a>
+        <a href="#" style="display: flex; justify-content: space-between; padding: 8px 10px; border-radius: 7px; color: #c5cad3; font-size: 13px; text-decoration: none;"><span>Mapper · default</span><span style="font-size: 11px; color: #8b929e;">in use</span></a>
+      </nav>
+
+      <main style="flex: 999 1 520px; min-width: 0; padding: 24px 28px; display: flex; flex-direction: column; gap: 20px; box-sizing: border-box; max-width: 880px;">
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px;">
+          <div style="flex: 1 1 260px; display: flex; flex-direction: column; gap: 4px;">
+            <label for="tname" style="font-size: 12px; color: #8b929e;">Name</label>
+            <input id="tname" type="text" value="Careful" style="padding: 9px 12px; border-radius: 8px; border: 1px solid #2a2f38; background: #1c1f25; color: #e6e8ec; font: inherit; font-size: 15px; font-weight: 600;">
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <label for="role" style="font-size: 12px; color: #8b929e;">For</label>
+            <select id="role" style="padding: 9px 12px; border-radius: 8px; border: 1px solid #2a2f38; background: #1c1f25; color: #e6e8ec; font: inherit; font-size: 13px;"><option>Workers</option><option>Lead</option><option>Sub-lead</option><option>Reviewers</option><option>Checker</option><option>Mapper</option></select>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <label for="where" style="font-size: 12px; color: #8b929e;">Used in</label>
+            <select id="where" style="padding: 9px 12px; border-radius: 8px; border: 1px solid #2a2f38; background: #1c1f25; color: #e6e8ec; font: inherit; font-size: 13px;"><option>All projects</option><option>wheelchair only</option><option>tetris-ai only</option></select>
+          </div>
+        </div>
+
+        <section aria-labelledby="sw" style="display: flex; flex-direction: column; gap: 4px; border-radius: 12px; border: 1px solid #2a2f38; background: #1c1f25;">
+          <h2 id="sw" style="margin: 0; padding: 14px 16px 6px; font-size: 14px; font-weight: 600;">How it works</h2>
+          <div style="display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-top: 1px solid #23262d;">
+            <span style="flex: 1; display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 13px;">Saves its work after every step</span><span style="font-size: 12px; color: #8b929e;">Needed if a worker may move to another node later</span></span>
+            <input type="checkbox" checked aria-label="Saves after every step" style="width: 18px; height: 18px; accent-color: #5b9dd9;">
+          </div>
+          <div style="display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-top: 1px solid #23262d;">
+            <span style="flex: 1; display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 13px;">Runs the whole test suite before reporting done</span><span style="font-size: 12px; color: #8b929e;">Slower, but the sub-lead rarely sends work back</span></span>
+            <input type="checkbox" checked aria-label="Runs the whole test suite" style="width: 18px; height: 18px; accent-color: #5b9dd9;">
+          </div>
+          <div style="display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-top: 1px solid #23262d;">
+            <label for="inst" style="flex: 1; display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 13px;">Installing packages</span><span style="font-size: 12px; color: #8b929e;">What it does when it needs something new</span></label>
+            <select id="inst" style="padding: 7px 10px; border-radius: 6px; border: 1px solid #2a2f38; background: #14161a; color: #e6e8ec; font: inherit; font-size: 13px;"><option>Ask the lead first</option><option>Go ahead</option><option>Never</option></select>
+          </div>
+          <div style="display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-top: 1px solid #23262d;">
+            <label for="stuck" style="flex: 1; display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 13px;">When the brief doesn't settle something</span><span style="font-size: 12px; color: #8b929e;">Matches the open question in the proposal</span></label>
+            <select id="stuck" style="padding: 7px 10px; border-radius: 6px; border: 1px solid #2a2f38; background: #14161a; color: #e6e8ec; font: inherit; font-size: 13px;"><option>Ask the lead</option><option>Pick, record it, keep going</option></select>
+          </div>
+          <div style="display: flex; align-items: center; gap: 12px; padding: 10px 16px 14px; border-top: 1px solid #23262d;">
+            <label for="files" style="flex: 1; display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 13px;">Stop and ask past this many files</span><span style="font-size: 12px; color: #8b929e;">A part that grows bigger than planned comes back to the sub-lead</span></label>
+            <input id="files" type="number" value="8" style="width: 64px; padding: 7px 10px; border-radius: 6px; border: 1px solid #2a2f38; background: #14161a; color: #e6e8ec; font: inherit; font-size: 13px;">
+          </div>
+        </section>
+
+        <section style="display: flex; flex-direction: column; gap: 6px;">
+          <label for="extra" style="font-size: 14px; font-weight: 600;">In your own words</label>
+          <span style="font-size: 12px; color: #8b929e;">Anything the switches don't cover. Written to the agent as is.</span>
+          <textarea id="extra" rows="5" style="padding: 12px 14px; border-radius: 10px; border: 1px solid #2a2f38; background: #1c1f25; color: #e6e8ec; font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 1.6; resize: vertical;">Match the style of the file you're editing.
+Don't add comments that repeat what the code does.
+If a test was already failing before your change, say so instead of fixing it.</textarea>
+        </section>
+
+        <section aria-labelledby="told" style="display: flex; flex-direction: column; gap: 10px;">
+          <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px;">
+            <h2 id="told" style="margin: 0; font-size: 14px; font-weight: 600;">What a worker is told, top to bottom</h2>
+            <a href="#" style="font-size: 12px; text-decoration: none;">See it in full</a>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            <div style="display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 8px; background: #181a1e; border: 1px solid #2a2f38;">
+              <span style="width: 22px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b929e;">1</span>
+              <span style="flex: 1; display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 13px; font-weight: 600;">Wheelchair's worker rules</span><span style="font-size: 12px; color: #8b929e;">Built in, can't be turned off: stay inside the files you own, report what you changed</span></span>
+              <span style="font-size: 11px; padding: 3px 8px; border-radius: 999px; background: #23262d; color: #8b929e;">fixed</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 8px; background: #1a2230; border: 1.5px solid #5b9dd9;">
+              <span style="width: 22px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #a9cdf0;">2</span>
+              <span style="flex: 1; display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 13px; font-weight: 600;">This template · Careful</span><span style="font-size: 12px; color: #c5cad3;">The switches above and your own words</span></span>
+              <span style="font-size: 11px; padding: 3px 8px; border-radius: 999px; background: #1f2b3a; color: #a9cdf0;">editing</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 8px; background: #181a1e; border: 1px solid #2a2f38;">
+              <span style="width: 22px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b929e;">3</span>
+              <span style="flex: 1; display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 13px; font-weight: 600;">The part's brief</span><span style="font-size: 12px; color: #8b929e;">Written by the sub-lead for each part: what to change and which files</span></span>
+              <span style="font-size: 11px; padding: 3px 8px; border-radius: 999px; background: #23262d; color: #8b929e;">per task</span>
+            </div>
+          </div>
+          <span style="font-size: 12px; color: #8b929e;">Where they disagree, the lower layer wins, except that nothing overrides layer 1.</span>
+        </section>
+
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-top: 4px;">
+          <button type="button" style="padding: 10px 18px; border-radius: 8px; border: 0; background: #5b9dd9; color: #0e1114; font: inherit; font-weight: 600; font-size: 13px;">Save</button>
+          <button type="button" style="padding: 10px 14px; border-radius: 8px; border: 1px solid #2a2f38; background: transparent; color: #c5cad3; font: inherit; font-size: 13px;">Duplicate</button>
+          <span style="flex: 1 1 240px; font-size: 12px; color: #8b929e;">3 workers are using this now. Changes apply to workers started after you save.</span>
+        </div>
+      </main>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1060}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

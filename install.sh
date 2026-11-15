@@ -20,6 +20,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cache_root="$HOME/.cache/agent-graphs"
 serving_file="$cache_root/.serving"
 unit_file="$HOME/.config/systemd/user/wheelchair-viewer.service"
+machine_unit_file="$HOME/.config/systemd/user/wheelchair-machine.service"
+machine_state_dir="$HOME/.local/state/wheelchair"
+machine_config_file="$machine_state_dir/machine.json"
+machines_file="$machine_state_dir/machines.json"
+machine_secret_file="$machine_state_dir/machine.secret"
 port=7373
 
 claude_home=${WHEELCHAIR_CLAUDE_HOME:-"$HOME/.claude"}
@@ -123,6 +128,41 @@ if "$ROOT/sensitivity/set.sh"; then
 else
   echo "diagram sensitivity: warning — not installed" >&2
 fi
+
+machine_host() {
+  local host
+  host=$(tailscale ip -4 2>/dev/null || true)
+  host=${host%%$'\n'*}
+  if [[ -n $host ]]; then
+    printf '%s\n' "$host"
+  else
+    printf '%s\n' '127.0.0.1'
+  fi
+}
+
+configure_machine_state() {
+  local host name
+  mkdir -p "$machine_state_dir"
+  chmod 700 "$machine_state_dir"
+  if [[ ! -e $machine_secret_file ]]; then
+    (umask 077; od -An -N32 -tx1 /dev/urandom | tr -d ' \n' > "$machine_secret_file")
+    chmod 600 "$machine_secret_file"
+  fi
+  host=$(machine_host)
+  if [[ ! -e $machine_config_file ]]; then
+    printf '{"hub_url":"http://127.0.0.1:7373/wheelchair","secret_file":"%s","host":"%s","port":7374}\n' \
+      "$machine_secret_file" "$host" > "$machine_config_file"
+    chmod 600 "$machine_config_file"
+  fi
+  if [[ ! -e $machines_file ]]; then
+    name=$(hostname)
+    printf '[{"name":"%s","host":"%s","port":7374,"secret_file":"%s"}]\n' \
+      "$name" "$host" "$machine_secret_file" > "$machines_file"
+    chmod 600 "$machines_file"
+  fi
+}
+
+configure_machine_state
 
 # Testing seam: WHEELCHAIR_TTY=1 or 0 replaces the terminal check. Production always uses the
 # actual terminal, while DISPLAY and WAYLAND_DISPLAY remain normal environment checks.
@@ -273,9 +313,33 @@ RestartSec=2
 [Install]
 WantedBy=default.target
 EOF
+  # systemd starts user services with a bare PATH, and every agent session inherits the
+  # service's PATH through tmux. Give it this login's PATH, led by wherever claude and codex
+  # live, or a session dies at once with "claude: not found".
+  service_path=$PATH
+  for cli in codex claude; do
+    cli_path=$(command -v "$cli" 2>/dev/null) || continue
+    service_path="${cli_path%/*}:$service_path"
+  done
+  cat > "$machine_unit_file" <<EOF
+[Unit]
+Description=Wheelchair machine service
+
+[Service]
+ExecStart=$node_path $ROOT/machine/service.js
+Environment="PATH=$service_path"
+Restart=always
+RestartSec=2
+KillMode=process
+
+[Install]
+WantedBy=default.target
+EOF
   systemctl --user daemon-reload
   systemctl --user enable --now wheelchair-viewer.service
+  systemctl --user enable --now wheelchair-machine.service
   systemctl --user restart wheelchair-viewer.service
+  systemctl --user restart wheelchair-machine.service
   # Ask first: without a terminal an unneeded enable-linger is refused, which would warn
   # about a setting that is already on.
   if [[ $(loginctl show-user "$USER" -p Linger --value 2>/dev/null) != yes ]] &&
@@ -300,7 +364,9 @@ disable_service() {
   origin=$(recorded_origin || true)
   if platform_supports_serving; then
     systemctl --user disable --now wheelchair-viewer.service || true
+    systemctl --user disable --now wheelchair-machine.service || true
     rm -f "$unit_file"
+    rm -f "$machine_unit_file"
     systemctl --user daemon-reload
   fi
   write_not_serving "$origin"

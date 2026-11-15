@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wheelchair · settings, models and preferences</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#14161a}
+a{color:#7fb4e6}a:hover{color:#a9cdf0}
+</style>
+</helmet>
+<div style="min-height: 1600px; background: #14161a; color: #e6e8ec; font-family: Inter, system-ui, sans-serif; font-size: 14px; display: flex; flex-direction: column;">
+
+  <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 14px 24px; border-bottom: 1px solid #2a2f38; background: #1c1f25;">
+    <a href="Main.dc.html" style="display: flex; align-items: center; gap: 10px; color: #e6e8ec; text-decoration: none;">
+      <div style="width: 26px; height: 26px; border-radius: 7px; background: #5b9dd9; display: flex; align-items: center; justify-content: center;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#14161a" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="9" cy="16" r="5"></circle><path d="M9 3v8h7l3 8"></path></svg>
+      </div>
+      <span style="font-weight: 700; font-size: 16px;">wheelchair</span>
+    </a>
+    <nav aria-label="Views" style="display: flex; gap: 2px; padding: 3px; border-radius: 9px; background: #14161a; border: 1px solid #2a2f38;">
+      <a href="Main.dc.html" style="padding: 6px 14px; border-radius: 6px; color: #c5cad3; font-size: 13px; text-decoration: none;">Features</a>
+      <a href="Thread.dc.html" style="padding: 6px 14px; border-radius: 6px; color: #c5cad3; font-size: 13px; text-decoration: none;">Threads</a>
+      <a href="SessionWall.dc.html" style="padding: 6px 14px; border-radius: 6px; color: #c5cad3; font-size: 13px; text-decoration: none;">Sessions</a>
+      <a href="SettingsAccounts.dc.html" aria-current="page" style="padding: 6px 14px; border-radius: 6px; background: #2a2f38; color: #e6e8ec; font-size: 13px; font-weight: 600; text-decoration: none;">Settings</a>
+    </nav>
+    <div style="flex: 1 1 100px;"></div>
+    <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #8b929e;">beelink · hub · 2 workers</span>
+  </header>
+
+  <div style="display: flex; flex-wrap: wrap; flex: 1;">
+    <nav aria-label="Settings" style="flex: 1 1 200px; max-width: 240px; border-right: 1px solid #2a2f38; padding: 20px 12px; display: flex; flex-direction: column; gap: 2px; box-sizing: border-box;">
+      <a href="SettingsAccounts.dc.html" style="padding: 9px 12px; border-radius: 8px; color: #c5cad3; font-size: 13px; text-decoration: none;">Accounts</a>
+      <a href="SettingsUsage.dc.html" style="padding: 9px 12px; border-radius: 8px; color: #c5cad3; font-size: 13px; text-decoration: none;">Usage and balancing</a>
+      <a href="SettingsModels.dc.html" aria-current="page" style="padding: 9px 12px; border-radius: 8px; background: #23262d; color: #e6e8ec; font-size: 13px; font-weight: 600; text-decoration: none;">Models and preferences</a>
+      <a href="SettingsTemplates.dc.html" style="padding: 9px 12px; border-radius: 8px; color: #c5cad3; font-size: 13px; text-decoration: none;">Behavior templates</a>
+      <a href="SettingsWriting.dc.html" style="padding: 9px 12px; border-radius: 8px; color: #c5cad3; font-size: 13px; text-decoration: none;">Writing style</a>
+      <div style="height: 1px; background: #2a2f38; margin: 10px 0;"></div>
+      <a href="#" style="padding: 9px 12px; border-radius: 8px; color: #c5cad3; font-size: 13px; text-decoration: none;">Nodes</a>
+      <a href="#" style="padding: 9px 12px; border-radius: 8px; color: #c5cad3; font-size: 13px; text-decoration: none;">Diagrams</a>
+      <a href="#" style="padding: 9px 12px; border-radius: 8px; color: #c5cad3; font-size: 13px; text-decoration: none;">Notifications</a>
+    </nav>
+
+    <main style="flex: 999 1 640px; min-width: 0; padding: 28px 32px 40px; display: flex; flex-direction: column; gap: 28px; box-sizing: border-box; max-width: 1080px;">
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <h1 style="margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -0.01em;">Models and preferences</h1>
+        <p style="margin: 0; font-size: 14px; line-height: 1.55; color: #c5cad3;">Who runs what. Rules for a kind of work beat the defaults for a role, and anything you mark critical beats both.</p>
+      </div>
+
+      <section aria-labelledby="tiers" style="display: flex; flex-direction: column; gap: 10px;">
+        <h2 id="tiers" style="margin: 0; font-size: 16px; font-weight: 600;">Tiers</h2>
+        <div style="overflow-x: auto; border-radius: 12px; border: 1px solid #2a2f38; background: #1c1f25;">
+          <table style="width: 100%; min-width: 860px; border-collapse: collapse; font-size: 13px; table-layout: fixed;">
+            <thead>
+              <tr style="text-align: left; vertical-align: top;">
+                <th scope="col" style="padding: 12px 16px; font-weight: 500; font-size: 12px; color: #8b929e; border-bottom: 1px solid #2a2f38; width: 22%;">Provider</th>
+                <th scope="col" style="padding: 12px 8px; font-weight: 400; border-bottom: 1px solid #2a2f38;"><span style="display: block; font-size: 13px; font-weight: 600; color: #e6e8ec;">Light</span><span style="display: block; font-size: 11px; color: #8b929e; margin-top: 2px;">Spelled-out changes, few files</span></th>
+                <th scope="col" style="padding: 12px 8px; font-weight: 400; border-bottom: 1px solid #2a2f38;"><span style="display: block; font-size: 13px; font-weight: 600; color: #e6e8ec;">Standard</span><span style="display: block; font-size: 11px; color: #8b929e; margin-top: 2px;">Most building</span></th>
+                <th scope="col" style="padding: 12px 8px; font-weight: 400; border-bottom: 1px solid #2a2f38;"><span style="display: block; font-size: 13px; font-weight: 600; color: #e6e8ec;">Heavy</span><span style="display: block; font-size: 11px; color: #8b929e; margin-top: 2px;">Leading, planning, review, checking</span></th>
+                <th scope="col" style="padding: 12px 16px 12px 8px; font-weight: 400; border-bottom: 1px solid #2a2f38;"><span style="display: block; font-size: 13px; font-weight: 600; color: #e6e8ec;">Critical</span><span style="display: block; font-size: 11px; color: #8b929e; margin-top: 2px;">Can't afford to get wrong</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row" style="padding: 12px 16px; text-align: left; font-weight: 400; border-bottom: 1px solid #23262d;"><span style="display: block; font-size: 14px; font-weight: 600;">Claude</span><span style="display: block; font-size: 11px; color: #8b929e; margin-top: 2px;">Claude Code · 2 accounts</span></th>
+                <td style="padding: 8px; border-bottom: 1px solid #23262d;"><select aria-label="Claude light model" style="width: 100%; padding: 7px 8px; border-radius: 6px; border: 1px solid #2a2f38; background: #14161a; color: #e6e8ec; font: inherit; font-size: 13px;"><option>Haiku 5.5</option><option>Not used</option></select></td>
+                <td style="padding: 8px; border-bottom: 1px solid #23262d;"><select aria-label="Claude standard model" style="width: 100%; padding: 7px 8px; border-radius: 6px; border: 1px solid #2a2f38; background: #14161a; color: #e6e8ec; font: inherit; font-size: 13px;"><option>Sonnet 5.5</option><option>Not used</option></select></td>
+                <td style="padding: 8px; border-bottom: 1px solid #23262d;"><select aria-label="Claude heavy model" style="width: 100%; padding: 7px 8px; border-radius: 6px; border: 1px solid #2a2f38; background: #14161a; color: #e6e8ec; font: inherit; font-size: 13px;"><option>Opus 5.5</option><option>Not used</option></select></td>
+                <td style="padding: 8px 16px 8px 8px; border-bottom: 1px solid #23262d;"><select aria-label="Claude critical model" style="width: 100%; padding: 7px 8px; border-radius: 6px; border: 1px solid #2a2f38; background: #14161a; color: #e6e8ec; font: inherit; font-size: 13px;"><option>Fable 5.1</option><option>Opus 5.5, highest effort</option><option>Not used</option></select></td>
+              </tr>
+              <tr>
+                <th scope="row" style="padding: 12px 16px; text-align: left; font-weight: 400; border-bottom: 1px solid #23262d;"><span style="display: block; font-size: 14px; font-weight: 600;">GPT</span><span style="display: block; font-size: 11px; color: #8b929e; margin-top: 2px;">Codex · 3 accounts</span></th>
+                <td style="padding: 8px; border-bottom: 1px solid #23262d;"><select aria-label="GPT light model" style="width: 100%; padding: 7px 8px; border-radius: 6px; border: 1px solid #2a2f38; background: #14161a; color: #e6e8ec; font-family: 'JetBrains Mono', monospace; font-size: 12px;"><option>gpt-6-luna</option><option>Not used</option></select></td>
+                <td style="padding: 8px; border-bottom: 1px solid #23262d;"><select aria-label="GPT standard model" style="width: 100%; padding: 7px 8px; border-radius: 6px; border: 1px solid #2a2f38; background: #14161a; color: #e6e8ec; font-family: 'JetBrains Mono', monospace; font-size: 12px;"><option>gpt-5.6-terra</option><option>Not used</option></select></td>
+                <td style="padding: 8px; border-bottom: 1px solid #23262d;"><select aria-label="GPT heavy model" style="width: 100%; padding: 7px 8px; border-radius: 6px; border: 1px solid #2a2f38; background: #14161a; color: #e6e8ec; font-family: 'JetBrains Mono', monospace; font-size: 12px;"><option>gpt-6.1-sol</option><option>Not used</option></select></td>
+                <td style="padding: 8px 16px 8px 8px; border-bottom: 1px solid #23262d;"><select aria-label="GPT critical model" style="width: 100%; padding: 7px 8px; border-radius: 6px; border: 1px solid #2a2f38; background: #14161a; color: #e6e8ec; font-family: 'JetBrains Mono', monospace; font-size: 12px;"><option>gpt-6-astra</option><option>Not used</option></select></td>
+              </tr>
+              <tr>
+                <th scope="row" style="padding: 12px 16px; text-align: left; font-weight: 400; border-bottom: 1px solid #23262d;"><span style="display: block; font-size: 14px; font-weight: 600;">Google</span><span style="display: block; font-size: 11px; color: #8b929e; margin-top: 2px;">Gemini CLI · 1 account</span></th>
+                <td style="padding: 8px; border-bottom: 1px solid #23262d;"><select aria-label="Google light model" style="width: 100%; padding: 7px 8px; border-radius: 6px; border: 1px dashed #3a3f48; background: transparent; color: #8b929e; font: inherit; font-size: 13px;"><option>Not used</option></select></td>
+                <td style="padding: 8px; border-bottom: 1px solid #23262d;"><select aria-label="Google standard model" style="width: 100%; padding: 7px 8px; border-radius: 6px; border: 1px solid #2a2f38; background: #14161a; color: #e6e8ec; font: inherit; font-size: 13px;"><option>Gemini 4 Hydrogen</option><option>Not used</option></select></td>
+                <td style="padding: 8px; border-bottom: 1px solid #23262d;"><select aria-label="Google heavy model" style="width: 100%; padding: 7px 8px; border-radius: 6px; border: 1px solid #2a2f38; background: #14161a; color: #e6e8ec; font: inherit; font-size: 13px;"><option>Gemini 4 Carbon</option><option>Not used</option></select></td>
+                <td style="padding: 8px 16px 8px 8px; border-bottom: 1px solid #23262d;"><select aria-label="Google critical model" style="width: 100%; padding: 7px 8px; border-radius: 6px; border: 1px dashed #3a3f48; background: transparent; color: #8b929e; font: inherit; font-size: 13px;"><option>Not used</option></select></td>
+              </tr>
+              <tr>
+                <th scope="row" style="padding: 12px 16px; text-align: left; font-weight: 400; border-bottom: 1px solid #23262d;"><span style="display: block; font-size: 14px; font-weight: 600;">OpenRouter</span><span style="display: block; font-size: 11px; color: #8b929e; margin-top: 2px;">Pay as you go · fallback only</span></th>
+                <td style="padding: 8px; border-bottom: 1px solid #23262d;"><select aria-label="OpenRouter light model" style="width: 100%; padding: 7px 8px; border-radius: 6px; border: 1px solid #2a2f38; background: #14161a; color: #e6e8ec; font: inherit; font-size: 13px;"><option>[cheap pick]</option><option>Not used</option></select></td>
+                <td style="padding: 8px; border-bottom: 1px solid #23262d;"><select aria-label="OpenRouter standard model" style="width: 100%; padding: 7px 8px; border-radius: 6px; border: 1px solid #2a2f38; background: #14161a; color: #e6e8ec; font: inherit; font-size: 13px;"><option>[a DeepSeek model]</option><option>Not used</option></select></td>
+                <td style="padding: 8px; border-bottom: 1px solid #23262d;"><select aria-label="OpenRouter heavy model" style="width: 100%; padding: 7px 8px; border-radius: 6px; border: 1px dashed #3a3f48; background: transparent; color: #8b929e; font: inherit; font-size: 13px;"><option>Not used</option></select></td>
+                <td style="padding: 8px 16px 8px 8px; border-bottom: 1px solid #23262d;"><select aria-label="OpenRouter critical model" style="width: 100%; padding: 7px 8px; border-radius: 6px; border: 1px dashed #3a3f48; background: transparent; color: #8b929e; font: inherit; font-size: 13px;"><option>Not used</option></select></td>
+              </tr>
+              <tr>
+                <td colspan="5" style="padding: 12px 16px;">
+                  <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+                    <span style="font-size: 12px; color: #8b929e; margin-right: 4px;">Add a coding CLI or plan:</span>
+                    <button type="button" style="padding: 6px 12px; border-radius: 999px; border: 1px solid #3a3f48; background: transparent; color: #e6e8ec; font: inherit; font-size: 12px;">+ Kimi Code</button>
+                    <button type="button" style="padding: 6px 12px; border-radius: 999px; border: 1px solid #3a3f48; background: transparent; color: #e6e8ec; font: inherit; font-size: 12px;">+ DeepSeek CLI</button>
+                    <button type="button" style="padding: 6px 12px; border-radius: 999px; border: 1px solid #3a3f48; background: transparent; color: #e6e8ec; font: inherit; font-size: 12px;">+ Other</button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+            <tfoot>
+              <tr style="font-size: 11px; color: #8b929e;">
+                <td style="padding: 10px 16px; border-top: 1px solid #2a2f38;">Providers covering it</td>
+                <td style="padding: 10px 8px; border-top: 1px solid #2a2f38;">3</td>
+                <td style="padding: 10px 8px; border-top: 1px solid #2a2f38;">4</td>
+                <td style="padding: 10px 8px; border-top: 1px solid #2a2f38;">3</td>
+                <td style="padding: 10px 16px 10px 8px; border-top: 1px solid #2a2f38;">2 · just enough to cross-check</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        <span style="font-size: 12px; color: #8b929e; line-height: 1.5;">"Not used" means that provider is skipped at that tier and the next one in line is tried. Critical work needs two providers so one can check the other; with only one, critical parts are checked by the other's heavy model and flagged to you.</span>
+      </section>
+
+      <section aria-labelledby="leads" style="display: flex; flex-direction: column; gap: 10px;">
+        <h2 id="leads" style="margin: 0; font-size: 16px; font-weight: 600;">Leads</h2>
+        <div style="display: flex; flex-direction: column; border-radius: 12px; border: 1px solid #2a2f38; background: #1c1f25;">
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid #23262d;">
+            <label for="leadm" style="flex: 1 1 260px; display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 13px; font-weight: 600;">Leads and sub-leads run on</span><span style="font-size: 12px; color: #8b929e;">Only this. If every Claude account is out, a new lead waits rather than starting on something else.</span></label>
+            <select id="leadm" style="padding: 8px 10px; border-radius: 8px; border: 1px solid #2a2f38; background: #14161a; color: #e6e8ec; font: inherit; font-size: 13px;"><option>Claude · Opus 5.5</option><option>Claude, then GPT heavy</option><option>Either</option></select>
+          </div>
+          <div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px 10px;">
+            <span style="flex: 1; display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 13px; font-weight: 600;">Save Claude for leads</span><span style="font-size: 12px; color: #8b929e; line-height: 1.45;">Leads hand work to other models. A worker only gets Claude when a rule below asks for it, or when nothing else in its list has room.</span></span>
+            <input type="checkbox" checked aria-label="Save Claude for leads" style="width: 18px; height: 18px; accent-color: #5b9dd9;">
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 8px; margin: 0 16px 14px; padding: 12px 14px; border-radius: 8px; background: #181a1e; border: 1px solid #23262d;">
+            <label for="margin" style="display: flex; justify-content: space-between; gap: 12px; font-size: 13px;"><span>Stop Claude workers if Claude is headed below this before its next reset</span><span style="color: #a9cdf0; font-weight: 600;">5%</span></label>
+            <input id="margin" type="range" min="0" max="30" value="5" style="accent-color: #5b9dd9;">
+            <span style="font-size: 12px; color: #8b929e; line-height: 1.45;">Uses the balancer's forecast, not today's number. Once Claude is headed below the line, workers stop getting Claude, rules included, and UI work falls back to GPT. Leads keep the margin.</span>
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="workers" style="display: flex; flex-direction: column; gap: 10px;">
+        <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px;">
+          <h2 id="workers" style="margin: 0; font-size: 16px; font-weight: 600;">Workers try these in order</h2>
+          <span style="font-size: 12px; color: #8b929e;">Moves down the list only when the one above has no room, or has "Not used" at the tier a part needs. The sub-lead picks the tier for each part.</span>
+        </div>
+        <ol style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px;">
+          <li style="display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 10px; border: 1px solid #2a2f38; background: #1c1f25;">
+            <span style="width: 22px; height: 22px; border-radius: 50%; background: #1f2b3a; color: #a9cdf0; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center;">1</span>
+            <span style="flex: 1; display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 13px; font-weight: 600;">GPT</span><span style="font-size: 12px; color: #8b929e;">gpt-5.6-terra, or gpt-6-luna for small parts · 3 accounts</span></span>
+            <button type="button" aria-label="Move down" style="width: 30px; height: 30px; border-radius: 6px; border: 1px solid #2a2f38; background: transparent; color: #c5cad3; font: inherit;">↓</button>
+          </li>
+          <li style="display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 10px; border: 1px dashed #3a3f48; background: transparent;">
+            <span style="width: 22px; height: 22px; border-radius: 50%; background: #23262d; color: #8b929e; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center;">2</span>
+            <span style="flex: 1; display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 13px; font-weight: 600; color: #c5cad3;">Google</span><span style="font-size: 12px; color: #8b929e;">Skipped until a Google account is connected</span></span>
+            <button type="button" aria-label="Move up" style="width: 30px; height: 30px; border-radius: 6px; border: 1px solid #2a2f38; background: transparent; color: #c5cad3; font: inherit;">↑</button>
+            <button type="button" aria-label="Move down" style="width: 30px; height: 30px; border-radius: 6px; border: 1px solid #2a2f38; background: transparent; color: #c5cad3; font: inherit;">↓</button>
+          </li>
+          <li style="display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 10px; border: 1px solid #2a2f38; background: #1c1f25;">
+            <span style="width: 22px; height: 22px; border-radius: 50%; background: #23262d; color: #c5cad3; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center;">3</span>
+            <span style="flex: 1; display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 13px; font-weight: 600;">Claude</span><span style="font-size: 12px; color: #8b929e;">Sonnet 5.5, or Haiku 5.5 for small parts · skipped when Claude is headed below its 5% margin</span></span>
+            <button type="button" aria-label="Move up" style="width: 30px; height: 30px; border-radius: 6px; border: 1px solid #2a2f38; background: transparent; color: #c5cad3; font: inherit;">↑</button>
+            <button type="button" aria-label="Move down" style="width: 30px; height: 30px; border-radius: 6px; border: 1px solid #2a2f38; background: transparent; color: #c5cad3; font: inherit;">↓</button>
+          </li>
+          <li style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 10px; border: 1px solid #2a2f38; background: #1c1f25;">
+            <span style="width: 22px; height: 22px; border-radius: 50%; background: #23262d; color: #c5cad3; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center;">4</span>
+            <span style="flex: 1 1 200px; display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 13px; font-weight: 600;">OpenRouter · pay as you go</span><span style="font-size: 12px; color: #8b929e;">Costs money per use, within the $20 monthly cap</span></span>
+            <select aria-label="OpenRouter model for workers" style="padding: 7px 10px; border-radius: 6px; border: 1px solid #2a2f38; background: #14161a; color: #e6e8ec; font: inherit; font-size: 13px;"><option>[your pick, e.g. a DeepSeek model]</option></select>
+            <button type="button" aria-label="Move up" style="width: 30px; height: 30px; border-radius: 6px; border: 1px solid #2a2f38; background: transparent; color: #c5cad3; font: inherit;">↑</button>
+          </li>
+        </ol>
+      </section>
+
+      <section aria-labelledby="kinds" style="display: flex; flex-direction: column; gap: 10px;">
+        <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px;">
+          <h2 id="kinds" style="margin: 0; font-size: 16px; font-weight: 600;">Rules by kind of work</h2>
+          <span style="font-size: 12px; color: #8b929e;">The sub-lead tags each part while planning the build. You can change a tag on the plan.</span>
+        </div>
+
+        <article style="display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 12px; border: 1px solid #2a2f38; background: #1c1f25;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 11px; padding: 3px 9px; border-radius: 999px; background: #1f2b3a; color: #a9cdf0; font-weight: 600;">UI and front end</span>
+            <span style="flex: 1;"></span>
+            <input type="checkbox" checked aria-label="Rule on" style="width: 18px; height: 18px; accent-color: #5b9dd9;">
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px;">
+            <div style="display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-radius: 8px; background: #181a1e;"><span style="font-size: 11px; color: #8b929e;">When the plan spells out the design</span><span style="font-size: 13px; font-weight: 600;">Claude · Sonnet 5.5</span></div>
+            <div style="display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-radius: 8px; background: #181a1e;"><span style="font-size: 11px; color: #8b929e;">When the design is still open</span><span style="font-size: 13px; font-weight: 600;">Claude · Opus 5.5</span></div>
+            <div style="display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-radius: 8px; background: #181a1e; border: 1px dashed #3a3f48;"><span style="font-size: 11px; color: #8b929e;">Only when Claude is below its margin</span><span style="font-size: 13px; font-weight: 600; color: #c5cad3;">GPT · gpt-6.1-sol</span></div>
+          </div>
+          <span style="font-size: 12px; color: #8b929e;">Strongly prefers Claude: counts as a reason to give a worker Claude even with "Save Claude for leads" on, as long as Claude isn't headed below its margin.</span>
+        </article>
+
+        <article style="display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 12px; border: 1px solid #5c4a24; background: #1c1f25;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 11px; padding: 3px 9px; border-radius: 999px; background: #241f15; color: #d9a441; font-weight: 600;">Critical</span>
+            <span style="flex: 1;"></span>
+            <input type="checkbox" checked aria-label="Rule on" style="width: 18px; height: 18px; accent-color: #5b9dd9;">
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px;">
+            <div style="display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-radius: 8px; background: #181a1e;"><span style="font-size: 11px; color: #8b929e;">Use</span><span style="font-size: 13px; font-weight: 600;">Critical tier, whichever provider has room</span></div>
+            <div style="display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-radius: 8px; background: #181a1e;"><span style="font-size: 11px; color: #8b929e;">Checked by</span><span style="font-size: 13px; font-weight: 600;">Another provider's critical model</span></div>
+          </div>
+          <span style="font-size: 12px; color: #8b929e;">A part is critical when you mark it, or when the lead marks it and you agree on the Plan approved card.</span>
+        </article>
+
+        <div style="display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border-radius: 12px; border: 1px dashed #3a3f48;">
+          <span style="font-size: 12px; font-weight: 600; color: #c5cad3;">Suggested rules</span>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #23262d;">
+            <span style="flex: 1 1 320px; font-size: 13px; color: #c5cad3;"><span style="color: #e6e8ec; font-weight: 600;">Logins, secrets, payments:</span> treat as critical automatically.</span>
+            <button type="button" style="padding: 6px 12px; border-radius: 6px; border: 1px solid #3a3f48; background: transparent; color: #e6e8ec; font: inherit; font-size: 12px;">Add</button>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #23262d;">
+            <span style="flex: 1 1 320px; font-size: 13px; color: #c5cad3;"><span style="color: #e6e8ec; font-weight: 600;">Changes that delete or migrate data:</span> heavy at least, and ask before it runs.</span>
+            <button type="button" style="padding: 6px 12px; border-radius: 6px; border: 1px solid #3a3f48; background: transparent; color: #e6e8ec; font: inherit; font-size: 12px;">Add</button>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #23262d;">
+            <span style="flex: 1 1 320px; font-size: 13px; color: #c5cad3;"><span style="color: #e6e8ec; font-weight: 600;">Tests:</span> written by the other family from the one that wrote the code, so they don't share its blind spots.</span>
+            <button type="button" style="padding: 6px 12px; border-radius: 6px; border: 1px solid #3a3f48; background: transparent; color: #e6e8ec; font: inherit; font-size: 12px;">Add</button>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #23262d;">
+            <span style="flex: 1 1 320px; font-size: 13px; color: #c5cad3;"><span style="color: #e6e8ec; font-weight: 600;">Work across many files:</span> never the light tier. Light models lose track over long context.</span>
+            <button type="button" style="padding: 6px 12px; border-radius: 6px; border: 1px solid #3a3f48; background: transparent; color: #e6e8ec; font: inherit; font-size: 12px;">Add</button>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px 0;">
+            <span style="flex: 1 1 320px; font-size: 13px; color: #c5cad3;"><span style="color: #e6e8ec; font-weight: 600;">Parts that come with your screenshots:</span> a model that can read images.</span>
+            <button type="button" style="padding: 6px 12px; border-radius: 6px; border: 1px solid #3a3f48; background: transparent; color: #e6e8ec; font: inherit; font-size: 12px;">Add</button>
+          </div>
+        </div>
+        <button type="button" style="align-self: flex-start; display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 8px; border: 1px solid #3a3f48; background: transparent; color: #e6e8ec; font: inherit; font-size: 13px;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>New rule
+        </button>
+      </section>
+
+      <section aria-labelledby="others" style="display: flex; flex-direction: column; gap: 10px;">
+        <h2 id="others" style="margin: 0; font-size: 16px; font-weight: 600;">Other agents</h2>
+        <div style="display: flex; flex-direction: column; border-radius: 12px; border: 1px solid #2a2f38; background: #1c1f25;">
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid #23262d;">
+            <span style="flex: 1 1 200px; font-size: 13px; font-weight: 600;">Plan reviewers</span>
+            <select aria-label="Plan reviewers" style="padding: 7px 10px; border-radius: 6px; border: 1px solid #2a2f38; background: #14161a; color: #e6e8ec; font: inherit; font-size: 13px;"><option>Two providers, heavy</option><option>GPT heavy only</option></select>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid #23262d;">
+            <span style="flex: 1 1 200px; font-size: 13px; font-weight: 600;">Checker</span>
+            <select aria-label="Checker" style="padding: 7px 10px; border-radius: 6px; border: 1px solid #2a2f38; background: #14161a; color: #e6e8ec; font: inherit; font-size: 13px;"><option>Not the provider that built it, heavy</option></select>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid #23262d;">
+            <span style="flex: 1 1 200px; font-size: 13px; font-weight: 600;">Code mapping</span>
+            <select aria-label="Code mapping" style="padding: 7px 10px; border-radius: 6px; border: 1px solid #2a2f38; background: #14161a; color: #e6e8ec; font: inherit; font-size: 13px;"><option>Same order as workers, standard</option></select>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 10px; padding: 12px 16px 14px;">
+            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px;">
+              <span style="flex: 1 1 200px; display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 13px; font-weight: 600;">Asides</span><span style="font-size: 12px; color: #8b929e;">Quick questions you ask off to the side of a thread</span></span>
+              <select aria-label="Aside model" style="padding: 7px 10px; border-radius: 6px; border: 1px solid #2a2f38; background: #14161a; color: #e6e8ec; font: inherit; font-size: 13px;"><option>Lead's provider, standard (Sonnet 5.5)</option><option>Lead's provider, light</option><option>Same as the lead</option></select>
+            </div>
+            <label style="display: flex; gap: 10px; align-items: flex-start;"><input type="checkbox" checked style="margin-top: 2px; accent-color: #5b9dd9;"><span style="display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 13px;">Move up to heavy when the question needs it</span><span style="font-size: 12px; color: #8b929e; line-height: 1.45;">The aside says so in one line, for example "Switching to Opus: this touches the whole plan". "Draw it" asides start on heavy.</span></span></label>
+            <span style="font-size: 12px; color: #8b929e; line-height: 1.45;">Asides stay with the lead's provider because they start from a copy of the lead's conversation, and another provider can't read it.</span>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1600}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

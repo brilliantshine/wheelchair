@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wheelchair · thread with a lead</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#14161a}
+a{color:#7fb4e6}a:hover{color:#a9cdf0}
+</style>
+</helmet>
+<div style="min-height: 1000px; background: #14161a; color: #e6e8ec; font-family: Inter, system-ui, sans-serif; font-size: 14px; display: flex; flex-direction: column;">
+
+  <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 14px 24px; border-bottom: 1px solid #2a2f38; background: #1c1f25;">
+    <a href="Main.dc.html" style="display: flex; align-items: center; gap: 10px; color: #e6e8ec; text-decoration: none;">
+      <div style="width: 26px; height: 26px; border-radius: 7px; background: #5b9dd9; display: flex; align-items: center; justify-content: center;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#14161a" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="9" cy="16" r="5"></circle><path d="M9 3v8h7l3 8"></path></svg>
+      </div>
+      <span style="font-weight: 700; font-size: 16px;">wheelchair</span>
+    </a>
+    <nav aria-label="Views" style="display: flex; gap: 2px; padding: 3px; border-radius: 9px; background: #14161a; border: 1px solid #2a2f38;">
+      <a href="Main.dc.html" style="padding: 6px 14px; border-radius: 6px; color: #c5cad3; font-size: 13px; text-decoration: none;">Features</a>
+      <a href="Thread.dc.html" aria-current="page" style="padding: 6px 14px; border-radius: 6px; background: #2a2f38; color: #e6e8ec; font-size: 13px; font-weight: 600; text-decoration: none;">Threads</a>
+      <a href="SessionWall.dc.html" style="padding: 6px 14px; border-radius: 6px; color: #c5cad3; font-size: 13px; text-decoration: none;">Sessions <span style="color: #8b929e;">6</span></a>
+    </nav>
+    <div style="flex: 1 1 100px;"></div>
+    <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #8b929e;">beelink · hub · 2 workers</span>
+  </header>
+
+  <div style="display: flex; flex-wrap: wrap; flex: 1;">
+
+    <nav aria-label="Threads" style="flex: 1 1 240px; max-width: 280px; border-right: 1px solid #2a2f38; padding: 16px 12px; display: flex; flex-direction: column; gap: 4px; box-sizing: border-box;">
+      <button type="button" style="display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 12px; margin-bottom: 12px; border-radius: 8px; border: 0; background: #5b9dd9; color: #0e1114; font: inherit; font-weight: 600; font-size: 13px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>New thread
+      </button>
+
+      <div style="font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #8b929e; padding: 6px 10px;">wheelchair</div>
+      <a href="#" aria-current="page" style="display: flex; flex-direction: column; gap: 3px; padding: 10px; border-radius: 8px; background: #23262d; color: #e6e8ec; text-decoration: none;">
+        <span style="display: flex; align-items: center; gap: 8px;"><span style="width: 7px; height: 7px; border-radius: 50%; background: #d9a441;"></span><span style="font-size: 13px; font-weight: 600; flex: 1;">App on a server</span></span>
+        <span style="font-size: 12px; color: #8b929e; padding-left: 15px;">Planning · asking you Q6</span>
+      </a>
+      <a href="Run.dc.html" style="display: flex; flex-direction: column; gap: 3px; padding: 10px; border-radius: 8px; color: #e6e8ec; text-decoration: none;">
+        <span style="display: flex; align-items: center; gap: 8px;"><span style="width: 7px; height: 7px; border-radius: 50%; background: #5b9dd9;"></span><span style="font-size: 13px; flex: 1;">Sessions from the browser</span></span>
+        <span style="font-size: 12px; color: #8b929e; padding-left: 15px;">Implementing · 3 workers</span>
+      </a>
+      <a href="#" style="display: flex; flex-direction: column; gap: 3px; padding: 10px; border-radius: 8px; color: #c5cad3; text-decoration: none;">
+        <span style="display: flex; align-items: center; gap: 8px;"><span style="width: 7px; height: 7px; border-radius: 50%; background: #4ea87b;"></span><span style="font-size: 13px; flex: 1;">Tab title stays on "needs you"</span></span>
+        <span style="font-size: 12px; color: #8b929e; padding-left: 15px;">Small fix · lead did it directly</span>
+      </a>
+      <a href="#" style="display: flex; flex-direction: column; gap: 3px; padding: 10px; border-radius: 8px; color: #c5cad3; text-decoration: none;">
+        <span style="display: flex; align-items: center; gap: 8px;"><span style="width: 7px; height: 7px; border-radius: 50%; background: #6b7280;"></span><span style="font-size: 13px; flex: 1;">Why is the layout pass slow?</span></span>
+        <span style="font-size: 12px; color: #8b929e; padding-left: 15px;">Question · answered with a graph</span>
+      </a>
+
+      <div style="font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #8b929e; padding: 14px 10px 6px;">tetris-ai</div>
+      <a href="#" style="display: flex; flex-direction: column; gap: 3px; padding: 10px; border-radius: 8px; color: #e6e8ec; text-decoration: none;">
+        <span style="display: flex; align-items: center; gap: 8px;"><span style="width: 7px; height: 7px; border-radius: 50%; background: #d9a441;"></span><span style="font-size: 13px; flex: 1;">Replay parser</span></span>
+        <span style="font-size: 12px; color: #8b929e; padding-left: 15px;">Review blocked · Codex signed out</span>
+      </a>
+
+      <div style="font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #8b929e; padding: 14px 10px 6px;">beat-edit</div>
+      <a href="#" style="display: flex; flex-direction: column; gap: 3px; padding: 10px; border-radius: 8px; color: #e6e8ec; text-decoration: none;">
+        <span style="display: flex; align-items: center; gap: 8px;"><span style="width: 7px; height: 7px; border-radius: 50%; background: #5b9dd9;"></span><span style="font-size: 13px; flex: 1;">Tap tempo</span></span>
+        <span style="font-size: 12px; color: #8b929e; padding-left: 15px;">Implementing · 1 worker</span>
+      </a>
+    </nav>
+
+    <main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column;">
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 14px 24px; border-bottom: 1px solid #2a2f38;">
+        <div style="flex: 1 1 300px; display: flex; flex-direction: column; gap: 3px;">
+          <span style="font-size: 16px; font-weight: 600;">App on a server</span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b929e;">wheelchair / app-shell · lead · claude · Opus · beelink · tmux wc-app-shell:0</span>
+        </div>
+        <a href="Planning.dc.html" style="padding: 7px 12px; border-radius: 6px; border: 1px solid #2a2f38; color: #c5cad3; font-size: 12px; text-decoration: none;">Feature page</a>
+        <button type="button" style="padding: 7px 12px; border-radius: 6px; border: 1px solid #2a2f38; background: transparent; color: #c5cad3; font: inherit; font-size: 12px;">Open in terminal</button>
+      </div>
+
+      <div style="flex: 1; padding: 24px; display: flex; flex-direction: column; gap: 18px; max-width: 820px; width: 100%; box-sizing: border-box; align-self: center;">
+
+        <div style="align-self: flex-end; max-width: 80%; padding: 12px 14px; border-radius: 12px 12px 4px 12px; background: #23303f; font-size: 14px; line-height: 1.55;">I want wheelchair to stop living in my terminal. It should run on one of my servers, start the agents and tmux sessions itself, and let me check in from anywhere.</div>
+
+        <div style="display: flex; flex-direction: column; gap: 10px; max-width: 90%;">
+          <span style="font-size: 12px; color: #8b929e;">Lead</span>
+          <p style="margin: 0; font-size: 14px; line-height: 1.6;">That touches the viewer server, how lanes start, and install.sh on every machine. It's too big to just do, and there are real choices to make first.</p>
+          <div style="padding: 16px; border-radius: 12px; border: 1.5px solid #5b9dd9; background: #1a2230; display: flex; flex-direction: column; gap: 12px;">
+            <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #a9cdf0;">This looks like a feature</span>
+            <span style="font-size: 15px; font-weight: 600; line-height: 1.4;">Take it into planning?</span>
+            <span style="font-size: 13px; color: #c5cad3; line-height: 1.5;">I'd map how the code works today, write up the idea for you to confirm, then ask the design questions one at a time. It gets a card on the Features board as <code style="font-family: 'JetBrains Mono', monospace; font-size: 12px;">app-shell</code>.</span>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+              <button type="button" style="padding: 9px 16px; border-radius: 8px; border: 0; background: #5b9dd9; color: #0e1114; font: inherit; font-weight: 600; font-size: 13px;">Plan it</button>
+              <button type="button" style="padding: 9px 16px; border-radius: 8px; border: 1px solid #2a2f38; background: transparent; color: #e6e8ec; font: inherit; font-size: 13px;">Keep talking first</button>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 10px; font-size: 12px; color: #8b929e;">
+          <span style="flex: 1; height: 1px; background: #2a2f38;"></span>
+          <span>You picked Plan it · mapped the code · you confirmed the idea · Q1 to Q4 answered</span>
+          <span style="flex: 1; height: 1px; background: #2a2f38;"></span>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 10px; max-width: 90%;">
+          <span style="font-size: 12px; color: #8b929e;">Lead</span>
+          <div style="padding: 14px 16px; border-radius: 12px; border: 1px solid #2a2f38; background: #1c1f25; display: flex; flex-direction: column; gap: 10px;">
+            <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #8b929e;">Question 5 · answered</span>
+            <span style="font-size: 14px; font-weight: 600;">When a worker is a full session, how does the lead know it's done?</span>
+            <span style="display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: 8px; background: #1d2a23; color: #8fd0ad; font-size: 13px;">✓ A · the session's own hook tells the hub</span>
+          </div>
+        </div>
+
+        <div style="align-self: flex-end; max-width: 80%; padding: 12px 14px; border-radius: 12px 12px 4px 12px; background: #23303f; font-size: 14px; line-height: 1.55;">A is good. Also, I want a thread like this one in the app, not just the boards.</div>
+
+        <div style="display: flex; flex-direction: column; gap: 10px; max-width: 90%;">
+          <span style="font-size: 12px; color: #8b929e;">Lead</span>
+          <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #e6e8ec;">Logged Q5. A thread is just a lead session in tmux, so this one is <code style="font-family: 'JetBrains Mono', monospace; font-size: 12px; background: #23262d; padding: 1px 5px; border-radius: 4px;">wc-app-shell:0</code> on beelink. The app shows it as chat, and you can still attach from a terminal. I've added that to the idea as a non-negotiable. Next question:</p>
+
+          <div style="padding: 16px; border-radius: 12px; border: 1.5px solid #5c4a24; background: #1c1f25; display: flex; flex-direction: column; gap: 12px;">
+            <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #d9a441;">Question 6 of about 8</span>
+            <span style="font-size: 15px; font-weight: 600; line-height: 1.4;">When a worker gets stuck, who does it ask?</span>
+            <fieldset style="margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 8px;">
+              <legend style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);">Pick one</legend>
+              <label style="display: flex; gap: 12px; padding: 12px; border-radius: 8px; border: 1px solid #5b9dd9; background: #1a2230;">
+                <input type="radio" name="q6" checked style="margin-top: 3px; accent-color: #5b9dd9;">
+                <span style="display: flex; flex-direction: column; gap: 4px;"><span style="font-size: 13px; font-weight: 600;">A · The lead. It answers what it can and passes only the rest to you <span style="font-weight: 400; color: #a9cdf0;">· leaning</span></span><span style="font-size: 13px; color: #c5cad3; line-height: 1.5;">You only hear about real decisions. Costs some of the lead's budget for each question.</span></span>
+              </label>
+              <label style="display: flex; gap: 12px; padding: 12px; border-radius: 8px; border: 1px solid #2a2f38;">
+                <input type="radio" name="q6" style="margin-top: 3px; accent-color: #5b9dd9;">
+                <span style="display: flex; flex-direction: column; gap: 4px;"><span style="font-size: 13px; font-weight: 600;">B · You, directly, in Needs you</span><span style="font-size: 13px; color: #c5cad3; line-height: 1.5;">Fastest answer, but every small question pings your phone.</span></span>
+              </label>
+              <label style="display: flex; gap: 12px; padding: 12px; border-radius: 8px; border: 1px solid #2a2f38;">
+                <input type="radio" name="q6" style="margin-top: 3px; accent-color: #5b9dd9;">
+                <span style="display: flex; flex-direction: column; gap: 4px;"><span style="font-size: 13px; font-weight: 600;">C · Nobody. It picks, records the choice, keeps going</span><span style="font-size: 13px; color: #c5cad3; line-height: 1.5;">How it works today: the choice shows up as a box you can strike later.</span></span>
+              </label>
+            </fieldset>
+            <div style="display: flex; gap: 8px;">
+              <button type="button" style="padding: 9px 16px; border-radius: 8px; border: 0; background: #5b9dd9; color: #0e1114; font: inherit; font-weight: 600; font-size: 13px;">Answer</button>
+              <a href="Planning.dc.html" style="padding: 9px 14px; border-radius: 8px; border: 1px solid #2a2f38; color: #c5cad3; font-size: 13px; text-decoration: none;">See it drawn</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="padding: 14px 24px 22px; border-top: 1px solid #2a2f38; display: flex; justify-content: center;">
+        <div style="width: 100%; max-width: 820px; display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 12px; border: 1px solid #3a3f48; background: #1c1f25;">
+          <label for="msg" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);">Message the lead</label>
+          <div style="display: flex; gap: 8px;">
+            <div style="position: relative; display: flex; align-items: center; gap: 8px; padding: 6px 30px 6px 6px; border-radius: 8px; border: 1px solid #2a2f38; background: #14161a;">
+              <div aria-hidden="true" style="width: 52px; height: 36px; border-radius: 4px; background: #23262d; display: flex; flex-direction: column; gap: 3px; padding: 4px; box-sizing: border-box;"><span style="height: 4px; width: 60%; border-radius: 2px; background: #5b9dd9;"></span><span style="height: 3px; width: 90%; border-radius: 2px; background: #3a3f48;"></span><span style="height: 3px; width: 75%; border-radius: 2px; background: #3a3f48;"></span><span style="height: 3px; width: 40%; border-radius: 2px; background: #d9a441;"></span></div>
+              <div style="display: flex; flex-direction: column; gap: 1px;"><span style="font-size: 12px;">Screenshot 01.24.png</span><span style="font-size: 11px; color: #8b929e;">pasted · sent to beelink</span></div>
+              <button type="button" aria-label="Remove attachment" style="position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 5px; border: 0; background: transparent; color: #8b929e; font: inherit; font-size: 14px;">×</button>
+            </div>
+          </div>
+          <textarea id="msg" rows="2" placeholder="Describe what you want, or ask about the code" style="background: transparent; border: 0; outline: 0; resize: none; color: #e6e8ec; font: inherit; font-size: 14px;"></textarea>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">
+            <button type="button" aria-label="Attach a file" style="width: 36px; height: 36px; border-radius: 8px; border: 1px solid #2a2f38; background: transparent; color: #c5cad3; display: flex; align-items: center; justify-content: center;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5l-8.6 8.6a5 5 0 0 1-7.1-7.1l8.6-8.6a3.3 3.3 0 0 1 4.7 4.7l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9"></path></svg>
+            </button>
+            <span style="font-size: 12px; color: #8b929e;">Paste or drop screenshots here. The lead decides whether this needs a plan.</span>
+            <div style="flex: 1;"></div>
+            <button type="button" aria-label="Send" style="width: 36px; height: 36px; border-radius: 8px; border: 0; background: #5b9dd9; color: #0e1114; display: flex; align-items: center; justify-content: center;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <aside style="flex: 1 1 280px; max-width: 320px; border-left: 1px solid #2a2f38; padding: 20px; display: flex; flex-direction: column; gap: 22px; box-sizing: border-box; background: #181a1e;">
+      <section style="display: flex; flex-direction: column; gap: 10px;">
+        <h3 style="margin: 0; font-size: 13px; font-weight: 600;">Starting a new thread</h3>
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <label for="proj" style="font-size: 12px; color: #8b929e;">Project</label>
+          <select id="proj" style="padding: 8px 10px; border-radius: 8px; border: 1px solid #2a2f38; background: #14161a; color: #e6e8ec; font: inherit; font-size: 13px;"><option>wheelchair</option><option>tetris-ai</option><option>beat-edit</option></select>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <label for="lead" style="font-size: 12px; color: #8b929e;">Lead runs as</label>
+          <select id="lead" style="padding: 8px 10px; border-radius: 8px; border: 1px solid #2a2f38; background: #14161a; color: #e6e8ec; font: inherit; font-size: 13px;"><option>Claude · Opus</option><option>Codex · Sol</option></select>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <label for="node" style="font-size: 12px; color: #8b929e;">On node</label>
+          <select id="node" style="padding: 8px 10px; border-radius: 8px; border: 1px solid #2a2f38; background: #14161a; color: #e6e8ec; font: inherit; font-size: 13px;"><option>beelink (hub)</option><option>node-2</option><option>node-3</option></select>
+        </div>
+        <span style="font-size: 12px; color: #8b929e; line-height: 1.5;">The first message opens a tmux session for the lead. Small fixes it just does. When something grows into a feature, it asks before starting the plan workflow, and the thread gets a card on the Features board.</span>
+      </section>
+
+      <section style="display: flex; flex-direction: column; gap: 8px;">
+        <h3 style="margin: 0; font-size: 13px; font-weight: 600;">This thread's files</h3>
+        <a href="#" style="font-family: 'JetBrains Mono', monospace; font-size: 12px; text-decoration: none;">MAP.md</a>
+        <a href="#" style="font-family: 'JetBrains Mono', monospace; font-size: 12px; text-decoration: none;">IDEA.md</a>
+        <a href="#" style="font-family: 'JetBrains Mono', monospace; font-size: 12px; text-decoration: none;">PLAN.md · 5 decisions</a>
+        <a href="#" style="font-family: 'JetBrains Mono', monospace; font-size: 12px; text-decoration: none;">graphs/ · 6 pictures</a>
+      </section>
+    </aside>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

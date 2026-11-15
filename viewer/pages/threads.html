@@ -1,0 +1,39 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Threads</title>
+<link rel="stylesheet" href="/wheelchair/assets/pages/app.css">
+<script src="/wheelchair/assets/pages/nav.js" defer></script>
+<script src="/wheelchair/assets/pages/threads.js" defer></script>
+<header id="app-nav" data-current="threads"></header>
+<div class="shell on-index">
+  <nav class="col-list" aria-label="Threads">
+    <button type="button" id="new-toggle">+ New thread</button>
+    <div id="list-error" class="error-banner" hidden></div>
+    <label class="list-opts"><input type="checkbox" id="show-archived"> Show archived</label>
+    <ul id="list"></ul>
+    <p id="empty" class="dim" hidden>No threads yet.</p>
+  </nav>
+  <main class="col-main">
+    <div class="placeholder">
+      <h2>Pick a thread</h2>
+      <p>Choose one on the left, or start a new one. Each thread is a conversation with a lead session.</p>
+    </div>
+  </main>
+  <aside class="col-side" aria-label="New thread">
+    <form id="new-form">
+      <h3>Starting a new thread</h3>
+      <div id="form-error" class="error-banner" hidden></div>
+      <div class="field"><label for="nt-project">Project</label>
+        <input id="nt-project" list="nt-projects" required autocomplete="off" placeholder="/path/to/repo"><datalist id="nt-projects"></datalist></div>
+      <div class="field"><label for="nt-cli">Lead runs as</label>
+        <select id="nt-cli"><option value="claude">Claude</option><option value="codex">Codex</option></select></div>
+      <div class="field"><label for="nt-machine">On node</label>
+        <input id="nt-machine" list="nt-machines" value="hub" autocomplete="off"><datalist id="nt-machines"></datalist></div>
+      <div class="field"><label for="nt-message">First message (optional)</label>
+        <textarea id="nt-message" rows="3"></textarea></div>
+      <span class="hint">The first message opens a tmux session for the lead. Small fixes it just does. When something grows into a feature, it asks before starting the plan workflow, and the thread gets a card on the Features board.</span>
+      <button type="submit" class="primary" id="nt-go">Start thread</button>
+    </form>
+  </aside>
+</div>

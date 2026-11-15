@@ -1,0 +1,211 @@
+/* The thread page: sticky header, pinned items, chat, cards, composer and the right column.
+   Tokens come from app.css. */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ---- sticky thread header ---- */
+.thread-head { position: sticky; top: var(--nav-h); z-index: 9; display: flex; flex-wrap: wrap; align-items: center;
+  gap: 8px 12px; padding: 12px 24px; background: var(--bg); border-bottom: 1px solid var(--line); }
+.thread-head .back { display: none; min-width: 36px; min-height: 36px; align-items: center; justify-content: center;
+  font-size: 24px; line-height: 1; color: var(--ink-2); text-decoration: none; }
+.thread-head .title-block { flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.thread-head h1 { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+.thread-head .meta { font-family: var(--mono); font-size: 11px; color: var(--dim); overflow-wrap: anywhere; }
+.head-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.head-actions .confirm-note { font-size: 12px; }
+.head-files { display: none; gap: 6px; flex-wrap: wrap; padding: 10px 12px 0; }
+.head-files .btn, .head-files button { font-family: var(--mono); font-size: 11px; }
+#error { margin: 12px 24px 0; }
+
+#stub-open, #dead, #docview { margin: 12px 24px 0; }
+#docview pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 60vh; overflow: auto; font-size: 13px; font-family: var(--mono); }
+#stub-open h3, #dead p { margin-top: 0; }
+
+/* ---- pinned: offer, idea, progress ---- */
+#pinned { background: var(--band); border-bottom: 1px solid var(--line); }
+#pinned:empty { display: none; }
+#pinned { padding: 10px 24px 12px; display: flex; flex-direction: column; gap: 8px; }
+#pinned > .card { width: 100%; max-width: 820px; margin: 0 auto; }
+.card-offer { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px 12px; padding: 10px 14px;
+  background: var(--accent-soft); border-color: var(--accent-line); }
+.card-offer .pin { color: var(--accent-text); padding-top: 3px; }
+.card-offer .offer-text { flex: 1 1 260px; min-width: 0; }
+.card-offer h3 { font-size: 14px; font-weight: 600; }
+.card-offer .md { font-size: 12.5px; color: var(--ink-2); }
+.card-offer .actions { margin: 0; align-self: center; }
+.card-idea { background: var(--accent-soft); border-color: var(--accent-line); padding: 12px 14px; }
+.card-idea .hint { font-size: 12px; color: var(--dim); margin: 2px 0 6px; }
+.card-idea .bullet { padding: 5px 0; }
+.card-idea .bullet-text::before { content: ''; display: inline-block; width: 4px; height: 4px; border-radius: 50%;
+  background: var(--accent); margin: 0 10px 2px 2px; }
+.card-idea .fold-note { font-size: 12px; margin: 4px 0; }
+.card-idea .actions { margin-top: 4px; }
+.card-progress { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 9px 14px; border-radius: 10px; }
+.card-progress .progress-label { font-size: 13px; font-weight: 600; }
+.card-progress .progress-text { font-size: 12px; color: var(--dim); }
+.card-progress .grow { flex: 1 1 20px; }
+.card-progress .segs { display: flex; gap: 3px; width: 120px; }
+.card-progress .segs span { flex: 1; height: 5px; border-radius: 2px; background: var(--line-2); }
+.card-progress .segs span.on { background: var(--good); }
+.choice-pill { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--warn-line); background: var(--warn-bg);
+  font-size: 12px; font-weight: 600; }
+
+/* ---- chat ---- */
+.chat-wrap { flex: 1; width: 100%; max-width: 868px; align-self: center; padding: 24px; }
+#chat { display: flex; flex-direction: column; gap: 18px; }
+#cards:not(:empty) { display: flex; flex-direction: column; gap: 18px; margin-top: 18px; }
+.bubble { max-width: 80%; font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; }
+.bubble.human { align-self: flex-end; padding: 12px 14px; border-radius: 12px 12px 4px 12px; background: var(--human);
+  white-space: pre-wrap; }
+.bubble.human.card { background: transparent; color: var(--dim); border: 1px solid var(--line); font-size: 12px;
+  padding: 6px 10px; border-radius: 10px; }
+.bubble.human.pending { opacity: .7; }
+.bubble .tag { display: block; font-size: 11px; opacity: .8; }
+/* The lead's text is plain prose under a small label. */
+.bubble.assistant { align-self: flex-start; max-width: 90%; padding: 0; background: none; border: 0; }
+.bubble.assistant::before { content: 'Lead'; display: block; font-size: 12px; color: var(--dim); margin-bottom: 6px; }
+.bubble.assistant + .bubble.assistant::before { display: none; }
+.bubble.assistant + .bubble.assistant { margin-top: -10px; }
+.ctx { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--dim); max-width: 100%; }
+.ctx::before, .ctx::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.ctx details { text-align: left; }
+.tool { align-self: flex-start; font-size: 12px; color: var(--dim); max-width: 100%; }
+.tool summary { cursor: pointer; overflow-wrap: anywhere; }
+.tool-detail { margin: 4px 0 0; padding: 8px 10px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px;
+  overflow: auto; font-family: var(--mono); font-size: 11px; background: var(--term-bg); border: 1px solid var(--line); border-radius: 8px; }
+
+/* Markdown, in the lead's text and in card bodies */
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p { margin: 0 0 10px; line-height: 1.6; }
+.md ul, .md ol { margin: 0 0 10px; padding-left: 22px; }
+.md li { margin: 3px 0; }
+.md code { font-family: var(--mono); font-size: 12px; background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+.md pre.md-code { margin: 0 0 10px; padding: 10px 12px; overflow: auto; background: var(--term-bg); border: 1px solid var(--line);
+  border-radius: 8px; max-width: 100%; }
+.md pre.md-code code { background: none; padding: 0; font-size: 12px; white-space: pre; }
+.md .md-head { font-size: 14px; }
+.md a { overflow-wrap: anywhere; }
+.md.dim { color: var(--dim); }
+
+/* ---- cards ---- */
+#chat > .card, #cards > .card { position: relative; padding: 16px; border-radius: 12px; border-width: 1.5px; }
+#chat > .card::before { content: 'Lead'; position: absolute; top: -20px; left: 0; font-size: 12px; color: var(--dim); }
+#chat > .bubble.assistant + .card::before { display: none; }
+#chat > .card { max-width: 90%; margin-top: 12px; }
+.card h3 { font-size: 15px; font-weight: 600; line-height: 1.4; margin: 0; }
+.card .eyebrow { margin-bottom: 6px; }
+.card .fits { font-size: 12px; color: var(--dim); margin-top: 4px; }
+.card .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+.card p { margin: 0; }
+.card ul { margin: 6px 0; padding-left: 20px; }
+.card .md { margin-top: 8px; font-size: 13px; color: var(--ink-2); }
+
+.card-offer { border-width: 1px; }
+.card-question { background: var(--panel); border-color: var(--warn-line); }
+.card-question.is-answered { border-color: var(--line); }
+.card-question .eyebrow { color: var(--warn); }
+.card-question.is-answered .eyebrow { color: var(--dim); }
+.opt { display: flex; flex-direction: column; align-items: stretch; gap: 4px; width: 100%; text-align: left;
+  margin-top: 8px; padding: 12px; border-radius: 8px; border: 1px solid var(--line); background: transparent;
+  color: var(--ink); height: auto; font-weight: 400; justify-content: flex-start; }
+.opt:hover:not(:disabled) { border-color: var(--accent-line); }
+.opt .opt-line { font-size: 13px; font-weight: 600; }
+.opt .opt-key { font-weight: 600; }
+.opt .cons { display: block; font-size: 13px; color: var(--ink-2); line-height: 1.5; font-weight: 400; }
+.opt.lean { border-color: var(--accent); background: var(--accent-soft); }
+.lean-tag { font-weight: 400; color: var(--accent-hi); margin-left: 6px; }
+.card-needs.is-answered { opacity: 0.6; border-color: var(--line); }
+.card-needs.is-answered .eyebrow { color: var(--dim); }
+.answered-tag { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; padding: 5px 10px; border-radius: 999px;
+  background: var(--good-soft); color: var(--good-text); font-size: 12px; }
+
+.approval-head { display: flex; align-items: center; gap: 10px; }
+.approval-head h3 { font-size: 18px; }
+.seal { width: 24px; height: 24px; border-radius: 50%; background: var(--good); color: var(--good-ink);
+  display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.card-approval, .card-done { background: var(--good-bg); border-color: var(--good-line); }
+.card .approval-note { margin: 6px 0 0 34px; font-size: 14px; line-height: 1.55; color: var(--ink-2); }
+.card-approval .obj { margin-top: 10px; padding: 14px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line);
+  display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.card-approval .obj .finding { font-size: 14px; font-weight: 600; line-height: 1.45; }
+.card-approval .obj .why { font-size: 13px; line-height: 1.55; color: var(--ink-2); }
+.ready-box { margin-top: 14px; }
+.ready-box .actions { margin-top: 0; }
+.ready-status { display: flex; gap: 10px; align-items: flex-start; margin-top: 12px; padding: 10px 12px; border-radius: 8px;
+  background: var(--panel); border: 1px solid var(--line); font-size: 13px; color: var(--ink-2); }
+.ready-status .dotmark { margin-top: 6px; }
+.ready-status ul { margin: 4px 0 0; padding-left: 18px; }
+.ready-ok { color: var(--good-text); font-weight: 600; }
+.ready-no { color: var(--warn); font-weight: 600; }
+
+.card-needs { background: var(--warn-tint); border-color: var(--warn-line); }
+.card-done .done-body { padding: 8px 0 0 34px; display: flex; flex-direction: column; gap: 8px; }
+.card-done .done-body .eyebrow { margin: 6px 0 0; }
+.card-done .done-body .md { margin: 0; }
+.card-done .done-body .actions { margin-top: 4px; }
+.card-done .bullet { padding: 4px 0; font-size: 14px; }
+.card-done .bullet-text::before { content: '\2022'; margin-right: 10px; color: var(--ink); }
+.card-done .left-as-is { margin: 12px 0 0; padding: 12px 14px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); }
+.card-done .left-as-is .bullet { font-size: 13px; color: var(--ink-2); }
+.card-done .left-as-is .bullet-text::before { content: none; }
+.bullet { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
+.bullet .bullet-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.bullet button.link { font-size: 12px; flex: none; text-align: right; }
+.bullet button.x { min-height: 24px; min-width: 24px; padding: 0; border: 0; color: var(--dim); font-size: 16px; line-height: 1; }
+.bullet button.x:hover { color: var(--ink); }
+.card-error { font-size: 12px; color: var(--bad-text); margin-top: 8px; }
+
+#chat > .card-diagram, #cards > .card-diagram { padding: 0; border-width: 1px; }
+.card-diagram.card-diagram { background: var(--figure); border-color: var(--line); overflow: hidden; }
+.diagram-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line);
+  background: var(--panel-3); }
+.diagram-bar h3 { flex: 1 1 200px; font-size: 13px; }
+.diagram-note { padding: 8px 14px 0; font-size: 12px; }
+iframe.diagram { display: block; width: 100%; height: 340px; border: 0; background: var(--bg); }
+.card-stub { background: var(--panel); }
+
+/* ---- composer ---- */
+#composer { position: sticky; bottom: 0; z-index: 8; padding: 14px 24px 18px; background: var(--bg); border-top: 1px solid var(--line); }
+#composer .composer-box { width: 100%; max-width: 820px; margin: 0 auto; padding: 12px; border-radius: 12px;
+  border: 1px solid var(--line-2); background: var(--panel); }
+#queued-note { font-size: 12px; margin-bottom: 6px; }
+#composer .send-row { display: grid; grid-template-columns: 1fr auto; grid-template-areas: 'ta ta' 'hint btn'; gap: 8px; align-items: center; }
+#composer textarea { grid-area: ta; width: 100%; min-width: 0; resize: none; background: transparent; border: 0; padding: 0;
+  outline: 0; font-size: 14px; min-height: 44px; }
+#composer .hint { grid-area: hint; font-size: 12px; color: var(--dim); }
+#composer #send { grid-area: btn; width: 36px; height: 36px; min-height: 36px; padding: 0; }
+
+/* ---- right column: the files ---- */
+#files h3 { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.file-list { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.file-list .file { font-family: var(--mono); font-size: 12px; text-decoration: none; color: var(--accent-text); border: 0; background: none;
+  min-height: 0; padding: 0; overflow-wrap: anywhere; text-align: left; }
+.file-list .file.dim { color: var(--dim); }
+.file-list .file.graph { padding-left: 12px; }
+
+@media (max-width: 899px) {
+  .thread-head { padding: 8px 12px; gap: 6px 8px; flex-wrap: wrap; }
+  .thread-head .back { display: inline-flex; }
+  .thread-head h1 { font-size: 15px; }
+  #head-files:not([hidden]) { display: flex; }
+  /* Archive stays beside the title; the other buttons wrap to a second row. */
+  .head-actions { display: contents; }
+  .head-actions > * { order: 3; }
+  .head-actions > .archive { order: 2; }
+  .head-actions .confirm-note { flex-basis: 100%; }
+  .thread-head .back { order: 0; }
+  .thread-head .title-block { order: 1; flex: 1 1 55%; }
+  #error, #stub-open, #dead, #docview { margin-left: 12px; margin-right: 12px; }
+  #pinned { padding: 8px 12px; }
+  .chat-wrap { padding: 16px 12px; }
+  .bubble { max-width: 90%; }
+  #chat > .card { max-width: 100%; }
+  #composer { padding: 10px 12px 14px; }
+  #composer .composer-box { padding: 8px; }
+  #composer .send-row { grid-template-columns: 1fr auto; grid-template-areas: 'ta btn'; }
+  #composer .hint { display: none; }
+  #composer textarea { min-height: 40px; border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; }
+  #composer #send { width: 44px; height: 44px; min-height: 44px; }
+  .card .approval-note { margin-left: 0; }
+  .card-done .done-body { padding-left: 0; }
+}
