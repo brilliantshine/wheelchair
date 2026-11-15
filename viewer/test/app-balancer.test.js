@@ -213,7 +213,7 @@ test('unused worker cell refuses a strict provider', async () => {
     const sub = (await machinePost(c, '/machine/session', { calling_session: made.sessions[0].name, action: 'start', role: 'sub-lead', attempt_id: 'sub-unused' })).body.session;
     await api(c, '/settings/models', { method: 'PUT', body: { provider: 'gpt', slot: 'heavy', model: null } });
     const response = await machinePost(c, '/machine/session', { calling_session: sub.name, action: 'start', role: 'worker', provider: 'gpt', tier: 'heavy', attempt_id: 'unused' });
-    assert.equal(response.status, 400); assert.match(response.body.message, /GPT is not used at heavy/);
+    assert.equal(response.status, 400); assert.equal(response.body.detail, 'GPT is not used at heavy');
   } finally { await close(c); }
 });
 
@@ -224,6 +224,9 @@ test('preflight retries on the other signed-in GPT account', async () => {
     c.machine.status.accounts.push({ id: 'second', cli: 'codex', logged_in: true });
     const made = (await api(c, '/threads', { method: 'POST', body: { project: '/tmp/retry' } })).body;
     const sub = (await machinePost(c, '/machine/session', { calling_session: made.sessions[0].name, action: 'start', role: 'sub-lead', attempt_id: 'sub-retry' })).body.session;
+    const usage = require('../app/usage.js');
+    const hub = new (require('../app/hub.js').Hub)({ stateDir: c.state });
+    await usage.record(hub, { account: 'default-gpt', at: new Date().toISOString(), week: { used: 20, resets_at: new Date(Date.now() + 3600000).toISOString() } });
     c.machine.preflightOk = input => input.dir !== null;
     const started = await machinePost(c, '/machine/session', { calling_session: sub.name, action: 'start', role: 'worker', provider: 'gpt', attempt_id: 'retry' });
     assert.equal(started.body.session.account, 'second');
@@ -242,4 +245,25 @@ test('startup promotes a waiting session when room is available', async () => {
     await hub.save(stored); await hub.init();
     assert.equal((await hub.thread(made.id)).sessions.at(-1).status, 'ready');
   } finally { await close(c); }
+});
+
+
+test('worker placement uses account login on its own machine', async () => {
+  const { Hub } = require('../app/hub.js');
+  const settings = require('../app/settings.js');
+  const { choose } = require('../app/balancer.js');
+  const { makeDir } = require('./helpers/server.js');
+  const hub = new Hub({ stateDir: await makeDir('balance-machines-') });
+  await hub.state.init();
+  await settings.update(hub, s => { s.accounts.push({ id: 'gpt-b', provider: 'gpt', name: 'B', plan: 'unknown', weight: 1, paused: false }); });
+  hub.machines = async () => ({ a: { name: 'a' }, b: { name: 'b' } });
+  hub.call = async machine => ({ accounts: [
+    { id: 'default-gpt', cli: 'codex', logged_in: machine === 'a' },
+    { id: 'gpt-b', cli: 'codex', logged_in: machine === 'b' },
+  ] });
+  hub.allThreads = async () => [];
+  for (const [machine, account] of [['a', 'default-gpt'], ['b', 'gpt-b']]) {
+    const selection = await choose(hub, { machine }, 'worker', 'top', { provider: 'gpt' });
+    assert.equal(selection.account.id, account);
+  }
 });

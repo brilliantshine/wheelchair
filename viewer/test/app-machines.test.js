@@ -95,3 +95,39 @@ test('a hub keeps the version captured at construction after its clone advances'
   const { outOfDate } = require('../app/ready.js');
   assert.equal(await outOfDate(hub, { version: versionA }), false);
 });
+
+
+test('wc.js sends provider constraints and prints waiting and notice output', async () => {
+  const http = require('node:http');
+  const { spawn } = require('node:child_process');
+  const dir = await makeDir('wc-output-');
+  const brief = path.join(dir, 'brief.txt');
+  await fs.writeFile(brief, 'work');
+  let received;
+  const server = http.createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    received = { path: request.url, token: request.headers['x-wheelchair-session-token'], body: JSON.parse(Buffer.concat(chunks)) };
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ session: { status: 'waiting', waiting_until: '2026-12-01T12:00:00.000Z' }, note: 'Using another provider.' }));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const child = spawn(process.execPath, [path.join(__dirname, '../app/wc.js'), 'session', 'start', '--role', 'worker', '--brief-file', brief, '--attempt', 'test', '--cli', 'codex', '--provider', 'gpt', '--not-provider', 'claude'], {
+      env: { ...process.env, WHEELCHAIR_MACHINE_ORIGIN: `http://127.0.0.1:${server.address().port}`, WHEELCHAIR_MACHINE_URL: '', WHEELCHAIR_SESSION_TOKEN: 'test-token' },
+    });
+    let stdout = '', stderr = '';
+    child.stdout.on('data', chunk => { stdout += chunk; });
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    const code = await new Promise((resolve, reject) => { child.on('error', reject); child.on('close', resolve); });
+    assert.equal(code, 0);
+    assert.equal(received.path, '/v1/agent/session');
+    assert.equal(received.token, 'test-token');
+    assert.equal(Object.hasOwn(received.body, 'cli'), false);
+    assert.equal(received.body.provider, 'gpt');
+    assert.equal(received.body.not_provider, 'claude');
+    assert.match(stderr, /--cli is ignored: the hub picks the provider/);
+    assert.match(stderr, /Using another provider\./);
+    assert.match(stdout, /waiting for room until 2026-12-01T12:00:00.000Z/);
+  } finally { await new Promise(resolve => server.close(resolve)); }
+});

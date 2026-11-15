@@ -498,6 +498,25 @@ test('creates an unstarted stub and opens it after a role turn ends', async () =
   });
 });
 
+test('stub lead follows lead order instead of inheriting its parent provider', async () => {
+  await withContext(async (context) => {
+    const parent = await thread(context);
+    assert.equal(parent.provider, 'gpt');
+    const result = await card(context, parent.id, parent.sessions[0].name, {
+      kind: 'stub', title: 'Follow-up', summary: 'Continue separately.', depends_on_parent: false,
+    });
+    const hub = new Hub({ stateDir: context.state });
+    const stub = await hub.thread(result.body.thread_id);
+    assert.equal(stub.provider, undefined);
+    assert.equal(stub.sessions.length, 0);
+    await api(context, '/settings/balancing', { method: 'PUT', body: { lead_order: ['claude', 'any'] } });
+    const opened = await api(context, `/threads/${stub.id}/open`, { method: 'POST', body: {} });
+    assert.equal(opened.body.provider, 'claude');
+    assert.equal(opened.body.cli, 'claude');
+    assert.equal(opened.body.sessions[0].provider, 'claude');
+  });
+});
+
 test('waits for a dependent stub until the parent merges', async () => {
   await withContext(async (context) => {
     const parent = await thread(context);
