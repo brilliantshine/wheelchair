@@ -225,6 +225,15 @@ async function press(hub, id, cardId, input) {
   return { queued: true, text: suffixes[input.action] };
 }
 
+async function dismiss(hub, id, cardId) {
+  const thread = await hub.thread(id);
+  const found = require('./card.js').resolvable(thread, cardId);
+  if (!found.ok) throw appError(found.reason === 'no such card in this thread' ? 404 : 422, found.reason);
+  require('./cards.js').resolveCard(found.card, 'collin', null);
+  await hub.save(thread);
+  return { ok: true };
+}
+
 async function pollWaiting(hub) {
   for (const listedThread of await hub.allThreads()) {
     await hub.withThread(listedThread.id, async () => {
@@ -256,6 +265,7 @@ module.exports = {
   archivedGraph,
   createStub,
   createThread,
+  dismiss,
   openStub,
   pollWaiting,
   press,

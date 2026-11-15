@@ -320,10 +320,27 @@
       render();
     }
   }
+  async function dismiss(card) {
+    try {
+      await post(T + '/cards/' + encodeURIComponent(card.id) + '/dismiss', {});
+      delete cardErrors[card.id];
+      card.answered = true;
+      await poll(true);
+    } catch (e) {
+      cardErrors[card.id] = e.message;
+      sigs.chat = null; sigs.pinned = null;
+      render();
+    }
+  }
   function answeredTag(card) {
     if (!card.answered) return null;
     const tag = el('div', 'answered-tag');
-    tag.append(icon(ICON.check, 12), document.createTextNode(' Answered'));
+    let label = ' Answered';
+    if (card.kind === 'needs' && card.resolved_by) {
+      label = ' ' + (card.resolved_note || (card.resolved_by === 'collin' ? 'Dismissed' : 'Resolved'));
+      tag.classList.add('resolved');
+    }
+    tag.append(icon(ICON.check, 12), document.createTextNode(label));
     return tag;
   }
   function head(box, eyebrow, tone, title) {
@@ -466,6 +483,12 @@
           a.href = '/wheelchair/app/terminal?name=' + encodeURIComponent(card.session);
           const actions = el('div', 'actions'); actions.appendChild(a); box.appendChild(actions);
         }
+        // A card a lead posted stays until it is settled; Collin can close it early.
+        if (!card.system && !card.answered) {
+          const actions = el('div', 'actions');
+          actions.appendChild(button('Dismiss', 'small dismiss', () => dismiss(card), thread().archived));
+          box.appendChild(actions);
+        }
         break;
       }
       case 'done': {
@@ -524,7 +547,7 @@
       default:
         return null;
     }
-    if (['offer', 'question', 'approval'].includes(card.kind)) {
+    if (['offer', 'question', 'approval'].includes(card.kind) || (card.kind === 'needs' && card.resolved_by)) {
       const t = answeredTag(card); if (t) box.appendChild(t);
     }
     if (cardErrors[card.id]) box.appendChild(el('div', 'card-error', 'Could not send: ' + cardErrors[card.id]));

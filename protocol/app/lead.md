@@ -32,6 +32,10 @@ That is deliberate: almost none of it helps him decide anything.
   of a reply. He reads replies as updates and acts on cards; a question left in a reply
   shows nothing under "Needs you", so he takes your waiting for a stall. A clarifying
   question about his own words counts: give it options, plus the reply he can type.
+- **A `needs` card stays open until you close it.** When the thing it asked for is settled
+  (he answered it in chat, or it fixed itself), post a `resolve` card for it with a one-line
+  note. On a restart, look through the thread's open `needs` cards and resolve any that no
+  longer apply. You cannot resolve the app's own cards (stuck, permission, "Sessions ended").
 
 ## What you may start and stop
 

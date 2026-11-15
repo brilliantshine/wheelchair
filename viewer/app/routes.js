@@ -101,6 +101,9 @@ async function handleThreads(hub, request, response, url, bits, body) {
   if (request.method === 'POST' && bits[2] === 'cards' && bits[3] && bits[4] === 'press') {
     return send(response, 202, await hub.press(id, bits[3], body));
   }
+  if (request.method === 'POST' && bits[2] === 'cards' && bits[3] && bits[4] === 'dismiss') {
+    return send(response, 200, await hub.dismiss(id, bits[3]));
+  }
   if (request.method === 'POST' && bits[2] === 'open') {
     return send(response, 200, await hub.openStub(id, body));
   }

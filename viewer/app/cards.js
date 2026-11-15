@@ -4,7 +4,7 @@
 const crypto = require('node:crypto');
 const path = require('node:path');
 const { appError } = require('./state.js');
-const { validate } = require('./card.js');
+const { resolvable, validate } = require('./card.js');
 
 const SINGLETONS = new Set(['offer', 'idea', 'progress']);
 
@@ -28,6 +28,13 @@ function addCard(thread, card, meta = {}) {
   return record;
 }
 
+function resolveCard(card, by, note) {
+  card.answered = true;
+  card.resolved_by = by;
+  card.resolved_note = note || null;
+  card.resolved_at = new Date().toISOString();
+}
+
 async function acceptCard(hub, payload) {
   const result = await hub.updateThread(payload.thread_id, async (thread) => {
     const session = hub.session(thread, payload.session);
@@ -45,6 +52,15 @@ async function acceptCard(hub, payload) {
       const plan = path.join(thread.worktree || thread.project, 'docs', 'plans', checked.card.plan);
       await hub.registerPlan(plan);
       if (hub.registerGraph) await hub.registerGraph(path.join(plan, 'graphs', `${checked.card.graph}.json`));
+    }
+
+    if (checked.card.kind === 'resolve') {
+      // A resolve is an instruction, never a card: it marks its target and is not stored.
+      const found = resolvable(thread, checked.card.card);
+      if (!found.ok) throw appError(422, found.reason);
+      resolveCard(found.card, session.name, checked.card.note);
+      if (payload.delivery_id) thread.delivered_ids = [...thread.delivered_ids, payload.delivery_id].slice(-500);
+      return { card: { ok: true, resolved: found.card.id }, targetName: null };
     }
 
     const card = addCard(thread, checked.card, { session: session.name });
@@ -86,4 +102,4 @@ async function acceptCard(hub, payload) {
   return result.card;
 }
 
-module.exports = { SINGLETONS, addCard, acceptCard };
+module.exports = { SINGLETONS, addCard, acceptCard, resolveCard };
