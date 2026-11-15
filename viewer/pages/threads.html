@@ -3,44 +3,37 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Threads</title>
 <link rel="stylesheet" href="/wheelchair/assets/pages/app.css">
-<header id="app-nav" data-current="threads"></header>
-<main class="app-main">
-  <div id="error" class="error-banner" hidden></div>
-  <div class="bar">
-    <h1>Threads</h1>
-    <label class="check"><input type="checkbox" id="show-archived"> Show archived</label>
-    <button id="new-toggle" class="primary">New thread</button>
-  </div>
-  <form id="new-form" class="card" hidden>
-    <div class="row"><div><label for="nt-project">Project (path)</label>
-      <input id="nt-project" list="nt-projects" required autocomplete="off"><datalist id="nt-projects"></datalist></div></div>
-    <div class="row">
-      <div><label for="nt-cli">Agent</label>
-        <select id="nt-cli"><option value="claude">Claude</option><option value="codex">Codex</option></select></div>
-      <div><label for="nt-machine">Machine</label>
-        <input id="nt-machine" list="nt-machines" value="hub" autocomplete="off"><datalist id="nt-machines"></datalist></div>
-    </div>
-    <div class="row"><div><label for="nt-message">First message (optional)</label>
-      <textarea id="nt-message" rows="3"></textarea></div></div>
-    <button type="submit" class="primary" id="nt-go">Start thread</button>
-  </form>
-  <ul id="list"></ul>
-  <p id="empty" class="dim" hidden>No threads yet.</p>
-</main>
-<style>
-  .bar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
-  .bar h1 { margin-right: auto; }
-  .check { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; }
-  .check input { min-height: 0; }
-  #new-form { margin-bottom: 14px; }
-  #new-form .row { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
-  #new-form .row > div { flex: 1; min-width: 140px; }
-  #new-form input, #new-form select, #new-form textarea { width: 100%; }
-  ul#list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-  ul#list a.row-link { display: block; padding: 12px 14px; color: var(--ink); text-decoration: none; }
-  .top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .top .title { font-weight: 600; min-width: 0; overflow-wrap: anywhere; flex: 1; }
-  .sub { font-size: 12px; color: var(--dim); margin-top: 4px; overflow-wrap: anywhere; }
-</style>
 <script src="/wheelchair/assets/pages/nav.js" defer></script>
 <script src="/wheelchair/assets/pages/threads.js" defer></script>
+<header id="app-nav" data-current="threads"></header>
+<div class="shell on-index">
+  <nav class="col-list" aria-label="Threads">
+    <button type="button" id="new-toggle">+ New thread</button>
+    <div id="list-error" class="error-banner" hidden></div>
+    <label class="list-opts"><input type="checkbox" id="show-archived"> Show archived</label>
+    <ul id="list"></ul>
+    <p id="empty" class="dim" hidden>No threads yet.</p>
+  </nav>
+  <main class="col-main">
+    <div class="placeholder">
+      <h2>Pick a thread</h2>
+      <p>Choose one on the left, or start a new one. Each thread is a conversation with a lead session.</p>
+    </div>
+  </main>
+  <aside class="col-side" aria-label="New thread">
+    <form id="new-form">
+      <h3>Starting a new thread</h3>
+      <div id="form-error" class="error-banner" hidden></div>
+      <div class="field"><label for="nt-project">Project</label>
+        <input id="nt-project" list="nt-projects" required autocomplete="off" placeholder="/path/to/repo"><datalist id="nt-projects"></datalist></div>
+      <div class="field"><label for="nt-cli">Lead runs as</label>
+        <select id="nt-cli"><option value="claude">Claude</option><option value="codex">Codex</option></select></div>
+      <div class="field"><label for="nt-machine">On node</label>
+        <input id="nt-machine" list="nt-machines" value="hub" autocomplete="off"><datalist id="nt-machines"></datalist></div>
+      <div class="field"><label for="nt-message">First message (optional)</label>
+        <textarea id="nt-message" rows="3"></textarea></div>
+      <span class="hint">The first message opens a tmux session for the lead. Small fixes it just does. When something grows into a feature, it asks before starting the plan workflow, and the thread gets a card on the Features board.</span>
+      <button type="submit" class="primary" id="nt-go">Start thread</button>
+    </form>
+  </aside>
+</div>
