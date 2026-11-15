@@ -601,7 +601,7 @@ Round 9 is clean: no blocking or major finding upheld.
 | T1 | Real-CLI probe of §4's fork/resume commands (§10), once per CLI | `machine/test/aside-probe.sh`, `machine/test/aside-probe-mcp.js`, `reports/T1.md` | standard, gpt (gpt-6.1-terra); attempt 2 at xhigh effort (rung 1: attempt 1 came back wrong, script edited mid-run and checks judged tools by printed names) | wc-54ce860aef63-worker, wc-54ce860aef63-worker-2 | `bash machine/test/aside-probe.sh claude\|codex` | done (attempt 2; merged 42f2566) |
 | T2 | Machine aside-turn routes, persistence, restart recovery, `codex_thread_id` in listing (§4) | `machine/` (not the probe files), `machine/API.md`, `machine/AGENTS.md` | standard, gpt (gpt-6.1-terra) | wc-54ce860aef63-worker-3, -worker-6, -worker-7 | `bash machine/test/run.sh` | done (attempt 3, merged) |
 | T3 | Hub: message ids, aside record, routes, turn-running rule, step-up, graph save, archive, handoff (§1, §3-§6, §8 hub side) | `viewer/app/`, `viewer/server.js` if needed, `viewer/test/app-asides.test.js` (new), `viewer/app/API.md` | standard, gpt (gpt-6.1-terra) | wc-54ce860aef63-worker-5, -worker-8 | `node --test viewer/test/*.test.js` | done (attempt 2, merged 3cc2694) |
-| T4 | Page: selection bar, panel, underlines, aside list, phone sheet, handoff link (§2, §7, §9) | `viewer/pages/`, `viewer/test/app-asides.spec.js` (new) | standard, claude | — | `npm --prefix viewer run test:browser` | waiting on T3 |
+| T4 | Page: selection bar, panel, underlines, aside list, phone sheet, handoff link (§2, §7, §9) | `viewer/pages/`, `viewer/test/app-asides.spec.js` (new) | standard, asked for claude; hub placed it on gpt (gpt-6.1-terra): "Could not use claude" | wc-54ce860aef63-worker-9 | `npm --prefix viewer run test:browser` | in progress |
 | T5 | `protocol/app/aside.md` and the `lead.md` line (§4 aside prompt, §8) | `protocol/app/aside.md`, `protocol/app/lead.md`, `protocol/app/AGENTS.md` | light, gpt (gpt-6-luna) | wc-54ce860aef63-worker-4 | read-through against §4/§8 | done (merged) |
 
 ## Log
@@ -636,3 +636,4 @@ Round 9 is clean: no blocking or major finding upheld.
 - 2026-11-15 — Choice: T3, asides.js: a lead with no account directory is recorded on the aside as an explicit `account_dir: null`.
 - 2026-11-15 — Choice: T3, app-asides.test.js: the route fixture keeps a Claude-format transcript while switching the lead's provider to gpt, to exercise Codex conversation-id selection.
 - 2026-11-15 — Integrated branch after T2+T3: machine 89/89; viewer 346/347 (the known port test).
+- 2026-11-15 — T4 dispatched with --provider claude; the hub answered "Could not use claude; using gpt" and started it on GPT.
