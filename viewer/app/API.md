@@ -68,3 +68,19 @@ configured effort when present. A provider cell set to `none` is a 400 directing
 A start is a 409 ("machine service out of date") while that machine's `/v1/status` commit differs from the hub's.
 
 Worker restart (`wc.js session start --role worker ... --replaces <session>`): the hub checks the named session is a worker in the same thread and not live, then starts the new worker in that session's `worktree` on its `branch`. A live session or a non-worker is refused with 400.
+
+### Accounts and usage
+
+`GET /settings` includes `accounts`, `lead_order`, `worker_order`, `within`, `leave`,
+`notify_below`, `save_claude_for_leads`, and `margin`. `POST /settings/accounts` accepts
+`{provider, name, plan}`; `PUT /settings/accounts/:id` accepts `{name?, plan?, weight?, paused?}`;
+`DELETE /settings/accounts/:id` removes a non-default account. `PUT /settings/balancing`
+updates the balancing keys. Invalid values and attempts to remove a default return 400.
+
+`GET /usage` returns `{providers}` with each provider's forecast and account readings,
+machine sign-in states, placement reason and live session count. `GET /usage/alert` returns
+`{dot}`; `POST /usage/seen` marks current provider alerts seen for their refill week.
+`POST /accounts/:id/signin` accepts `{machine}` and starts sign-in on that machine.
+`GET /accounts/:id/signin/:machine` returns its state; `POST .../code` sends `{code}`;
+`GET .../pane` and `POST .../keys` provide the login terminal. Unknown accounts or machines
+return 404.

@@ -19,6 +19,8 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 | `app/settings.js` | The Settings store (`settings.json` in the hub state dir), templates and writing style, the `role_layers` text sent at session start, and the style preview; models are read and written only through `codex/model.sh`. |
 | `app/chat.js`, `threads.js`, `views.js` | Transcript assembly, thread lifecycle, and view data. |
 | `app/routes.js`, `hub.js`, `API.md` | App HTTP dispatch, module composition, and the page-facing JSON contract. |
+| `app/providers.js` | Hub provider names, CLI mappings and labels. |
+| `app/usage.js` | Account usage persistence, machine sign-in state, forecasts and ranking. |
 | `app/ready.js` | The Ready check before Start building: each machine reachable, on the hub's commit, and its CLIs logged in. |
 | `index.html` | The graph page. Holds the second copy of the box and group size constants the server's layout reserves room for |
 | `list.html`, `list.js` | The list of open graphs and registered plans |

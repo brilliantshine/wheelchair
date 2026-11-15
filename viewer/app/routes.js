@@ -6,6 +6,8 @@ const { appError } = require('./state.js');
 const { publicSession } = require('./sessions.js');
 const { findSlug } = require('./views.js');
 const settings = require('./settings.js');
+const usage = require('./usage.js');
+const { PROVIDERS, cliOf } = require('./providers.js');
 
 async function readBody(request) {
   const chunks = [];
@@ -42,14 +44,56 @@ async function handle(hub, request, response, url, machineAuthenticated) {
     return send(response, 200, { projects: await hub.projects() });
   }
   if (bits[0] === 'settings') return handleSettings(hub, request, response, url, bits, body);
+  if (bits[0] === 'usage') {
+    if (bits.length === 1 && request.method === 'GET') { const { providers } = await usage.summary(hub); return send(response, 200, { providers }); }
+    if (bits[1] === 'alert' && request.method === 'GET') return send(response, 200, await usage.alert(hub));
+    if (bits[1] === 'seen' && request.method === 'POST') return send(response, 200, await usage.seen(hub));
+  }
+  if (bits[0] === 'accounts') return handleAccounts(hub, request, response, bits, body);
   if (bits[0] === 'sessions') return handleSessions(hub, request, response, bits, body);
   throw appError(404, 'route not found');
 }
 
 async function handleSettings(hub, request, response, url, bits, body) {
   if (bits.length === 1 && request.method === 'GET') return send(response, 200, await settings.describe(hub));
+  if (bits[1] === 'accounts') {
+    if (bits.length === 2 && request.method === 'POST') {
+      let account;
+      await settings.update(hub, (value) => {
+        if (!Object.hasOwn(PROVIDERS, body.provider) || typeof body.name !== 'string' || !body.name.trim() || !Object.hasOwn(settings.PLANS[body.provider], body.plan)) throw appError(400, 'invalid account');
+        const base = body.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '') || 'account';
+        let id = base, n = 2;
+        while (id.startsWith('default-') || value.accounts.some((a) => a.id === id)) { const suffix = `-${n++}`; id = base.slice(0, 40 - suffix.length) + suffix; if (id.startsWith('default-')) id = `account${suffix}`; }
+        account = { id, provider: body.provider, name: body.name.trim(), plan: body.plan, weight: settings.PLANS[body.provider][body.plan], paused: false };
+        value.accounts.push(account);
+      });
+      return send(response, 201, account);
+    }
+    if (bits.length === 3 && ['PUT', 'DELETE'].includes(request.method)) {
+      let account;
+      await settings.update(hub, (value) => {
+        const index = value.accounts.findIndex((a) => a.id === bits[2]);
+        if (index < 0) throw appError(404, 'account not found');
+        account = value.accounts[index];
+        if (request.method === 'DELETE') { if (account.id === `default-${account.provider}`) throw appError(400, 'default account cannot be removed'); value.accounts.splice(index, 1); return; }
+        if (body.name !== undefined && (typeof body.name !== 'string' || !body.name.trim())) throw appError(400, 'invalid name');
+        if (body.plan !== undefined && !Object.hasOwn(settings.PLANS[account.provider], body.plan)) throw appError(400, 'invalid plan');
+        if (body.weight !== undefined && (typeof body.weight !== 'number' || !Number.isFinite(body.weight) || body.weight <= 0)) throw appError(400, 'invalid weight');
+        if (body.paused !== undefined && typeof body.paused !== 'boolean') throw appError(400, 'invalid paused');
+        if (body.name !== undefined) account.name = body.name.trim();
+        if (body.plan !== undefined) { account.plan = body.plan; if (body.weight === undefined) account.weight = settings.PLANS[account.provider][body.plan]; }
+        if (body.weight !== undefined) account.weight = body.weight;
+        if (body.paused !== undefined) account.paused = body.paused;
+      });
+      return send(response, 200, request.method === 'DELETE' ? { ok: true } : account);
+    }
+  }
+  if (bits[1] === 'balancing' && bits.length === 2 && request.method === 'PUT') {
+    const value = await settings.update(hub, (value) => { for (const [key, v] of Object.entries(body)) { if (!settings.BALANCING.includes(key) || !settings.validBalancing(key, v)) throw appError(400, `invalid ${key}`); value[key] = v; } });
+    return send(response, 200, Object.fromEntries(settings.BALANCING.map((key) => [key, value[key]])));
+  }
   if (bits[1] === 'models' && request.method === 'PUT') {
-    if (!['claude', 'gpt'].includes(body.provider)) throw appError(400, 'provider must be claude or gpt');
+    if (!Object.hasOwn(PROVIDERS, body.provider)) throw appError(400, 'provider must be claude or gpt');
     let slot = settings.TIER_ALIASES[body.slot] || body.slot;
     if (body.provider === 'claude') slot = ({ haiku: 'light', sonnet: 'standard', opus: 'heavy' })[slot] || slot;
     if (!['light', 'standard', 'heavy', 'critical', 'lead'].includes(slot)) throw appError(400, 'slot is invalid');
@@ -140,6 +184,19 @@ async function handleSettings(hub, request, response, url, bits, body) {
     const project = url.searchParams.get('project') || undefined;
     return send(response, 200, { text: settings.fullPrompt(hub, await settings.load(hub), role, project) });
   }
+  throw appError(404, 'route not found');
+}
+
+async function handleAccounts(hub, request, response, bits, body) {
+  const account = (await settings.load(hub)).accounts.find((a) => a.id === bits[1]);
+  if (!account || bits[2] !== 'signin') throw appError(404, 'account not found');
+  const machine = bits[3] || body.machine;
+  if (typeof machine !== 'string' || !(await hub.state.resolveMachine(await hub.machines(), machine))) throw appError(404, 'machine not found');
+  const id = encodeURIComponent(account.id);
+  if (bits.length === 3 && request.method === 'POST') return send(response, 201, await hub.call(machine, '/v1/logins', 'POST', { account: account.id, cli: cliOf(account.provider), dir: account.id === `default-${account.provider}` ? null : `~/.wheelchair/accounts/${account.id}` }));
+  if (bits.length === 4 && request.method === 'GET') return send(response, 200, await hub.call(machine, `/v1/logins/${id}`, 'GET'));
+  if (bits.length === 5 && bits[4] === 'pane' && request.method === 'GET') return send(response, 200, await hub.call(machine, `/v1/logins/${id}/pane`, 'GET'));
+  if (bits.length === 5 && ['code', 'keys'].includes(bits[4]) && request.method === 'POST') return send(response, 200, await hub.call(machine, `/v1/logins/${id}/${bits[4]}`, 'POST', body));
   throw appError(404, 'route not found');
 }
 

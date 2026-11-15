@@ -152,7 +152,7 @@ function renderTurn(turn, thread) {
   return [human, ...turn.replies];
 }
 
-function transcriptItems(cli, raw, thread) {
+function parseTranscript(cli, raw, thread) {
   lastAt = null;
   const turns = [];
   const calls = new Map();
@@ -193,6 +193,12 @@ function transcriptItems(cli, raw, thread) {
   return turns.flatMap((turn) => renderTurn(turn, thread));
 }
 
+const PARSERS = { claude: (raw, thread) => parseTranscript('claude', raw, thread), codex: (raw, thread) => parseTranscript('codex', raw, thread) };
+function transcriptItems(cli, raw, thread) {
+  const parser = Object.hasOwn(PARSERS, cli) && PARSERS[cli];
+  return parser ? parser(raw, thread) : [{ type: 'notice', text: `This session's CLI (${cli}) has no transcript reader.`, at: new Date(0).toISOString() }];
+}
+
 // The machine service keeps each session's transcript copy (a Claude Stop hook or a bound
 // Codex rollout tells it where the source is), so the hub reads it from there; the hub's own
 // record never learns the path.
@@ -207,6 +213,7 @@ async function sessionTranscript(hub, thread, session) {
 
 // A reviewer's or verifier's report is the last assistant message of its turn.
 function lastAssistantText(cli, raw) {
+  if (!Object.hasOwn(PARSERS, cli)) return '';
   let last = '';
   for (const row of transcriptRows(raw)) {
     const payload = row.payload || row;
@@ -226,7 +233,7 @@ async function chat(hub, id) {
   const items = [];
   for (const session of thread.sessions.filter((item) => item.role === 'lead')) {
     const raw = await sessionTranscript(hub, thread, session);
-    if (!raw) continue;
+    if (!raw && Object.hasOwn(PARSERS, session.cli)) continue;
     items.push(...transcriptItems(session.cli, raw, thread));
   }
   // The pull request each thread produced, from its latest done card, so the page can link it
