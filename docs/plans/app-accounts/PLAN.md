@@ -184,7 +184,9 @@ Codex.
   `needs` card on the thread instead, posted the way `pollDead` posts one for a lead that
   ended (`sessions.js:392-400`) but with its own text: title "The lead's turn failed",
   body "<error>. The lead is still running: reply in the thread to have it try again."
-  It never suggests Restart (the lead is live).
+  It never suggests Restart (the lead is live). The hub marks that card answered (as
+  `threads.js:134-136` does for "Sessions ended") when that lead's next `turn-ended`
+  arrives, or when a restart replaces the lead.
 - **Exhausted-window rule** (both CLIs), from the session's latest reading: the
   **earliest** `resets_at` among windows with `used >= 95`; none that high → the earliest
   `resets_at` present; none at all → now + 1 h. Readings lag (Claude's at most once a
@@ -510,6 +512,18 @@ Collin chose "keep going" (2026-11-15); the round budget resets.
 |------|----------|---------|--------------|------------|
 | intent (Claude) | major | Starters have no rule for "turn failed" on a live session; restarting breaks | upheld | §9: message it to carry on; stop before any replacement |
 | intent (Claude) | minor | Lead's turn-failed card could copy pollDead's "Restart" text | upheld | §4: own text, "reply in the thread" |
+| mechanics (Codex) | major | Lead's turn-failed `needs` card never closes | upheld | §4: answered on the lead's next `turn-ended` or a restart |
+
+### Round 5 — 2026-11-15
+
+**Lanes:** Claude (intent lens); Codex (mechanics lens); cross-family: yes.
+
+**Changed since Round 4:**
+- §4: the lead's turn-failed `needs` card text, and when the hub marks it answered.
+- §9: new rule for starters on "turn failed" (message it; stop before replacing).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
