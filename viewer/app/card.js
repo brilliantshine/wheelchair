@@ -28,6 +28,7 @@ const roles = {
   done: ['lead'],
   diagram: ['lead'],
   stub: ['lead'],
+  title: ['lead'],
   resolve: ['lead'],
   message: ['lead', 'sub-lead', 'worker', 'mapper'],
   result: ['worker', 'mapper', 'sub-lead'],
@@ -38,6 +39,13 @@ const object = (value) => value && typeof value === 'object' && !Array.isArray(v
 const array = (value, check, minimum = 0) => (
   Array.isArray(value) && value.length >= minimum && value.every(check)
 );
+
+function truncateTitle(value, limit) {
+  const title = typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '';
+  if (title.length <= limit) return title;
+  const space = title.lastIndexOf(' ', limit);
+  return `${title.slice(0, space === -1 ? limit : space)}…`;
+}
 
 const fields = {
   offer: { summary: text },
@@ -55,6 +63,7 @@ const fields = {
     leaning: text,
     why: text,
     progress: (value) => value === undefined || text(value),
+    doc: (value) => value === undefined || ['MAP.md', 'IDEA.md', 'PLAN.md'].includes(value),
   },
   approval: {
     objections: (value) => array(value, (item) => (
@@ -91,6 +100,7 @@ const fields = {
     depends_on_parent: (value) => typeof value === 'boolean',
     commits: (value) => value === undefined || array(value, text),
   },
+  title: { title: text },
   resolve: { card: text, note: text },
   message: { to: text, text },
   result: {
@@ -127,13 +137,16 @@ function validate(kind, card, role) {
   return { ok: true, card: { ...card, kind } };
 }
 
-// Which card a resolve may close: an open needs card a lead posted in this thread. The hub's own
-// needs cards (system) close themselves or have their own button.
-function resolvable(thread, cardId) {
+// Which card a resolve may close: an open needs card a lead posted in this thread, or, for a
+// lead, an open question. The hub's own needs cards (system) close themselves or have their
+// own button.
+function resolvable(thread, cardId, mode) {
   const target = (thread.cards || []).find((item) => item.id === cardId && !item.replaced);
   if (!target) return { ok: false, reason: 'no such card in this thread' };
-  if (target.kind !== 'needs') return { ok: false, reason: 'only a needs card can be resolved' };
-  if (target.system) return { ok: false, reason: 'a system needs card closes itself' };
+  if (target.kind !== 'needs' && !(mode === 'lead' && target.kind === 'question')) {
+    return { ok: false, reason: mode === 'lead' ? 'only a needs or question card can be resolved' : 'only a needs card can be resolved' };
+  }
+  if (target.kind === 'needs' && target.system) return { ok: false, reason: 'a system needs card closes itself' };
   if (target.answered) return { ok: false, reason: 'card is already answered' };
   return { ok: true, card: target };
 }
@@ -193,4 +206,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { fields, resolvable, roles, shown, validate };
+module.exports = { fields, resolvable, roles, shown, truncateTitle, validate };

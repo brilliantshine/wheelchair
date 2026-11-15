@@ -43,6 +43,7 @@ Rules for every card:
 | `done` | yes | lead | no |
 | `diagram` | yes | lead | no |
 | `stub` | yes | lead | no |
+| `title` | never | lead | no |
 | `resolve` | never | lead | no |
 | `message` | never | any session except reviewer and verifier | no |
 | `result` | never | worker, mapper, sub-lead | no |
@@ -56,15 +57,17 @@ permission prompt, "Sessions ended"); you never post those.
 
 ### `offer`
 
-The one "Take it into planning?" question, asked once per thread.
+The "Take it into planning?" question.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `summary` | string | yes | One or two sentences: what you understood he wants, in his words |
 
-Button: "Take it into planning". A press comes back as
-`[card <id>] picked: take it into planning`. If he keeps talking instead of pressing, the
-app pins the offer and you never offer again.
+Buttons: "Take it into planning" and "Keep talking first". Their presses come back as
+`[card <id>] picked: take it into planning` and `[card <id>] picked: keep talking first`.
+The hub refuses a third offer, and also refuses a second unless the first was answered
+"keep talking first" (422, "the offer was already asked"). If he keeps talking instead
+of pressing, the app pins the offer and it is a feature as before.
 
 ### `idea`
 
@@ -90,10 +93,12 @@ One decision for Collin. Also used to confirm IDEA.md.
 | `leaning` | string | yes | The `id` of the option you would pick |
 | `why` | string | yes | One line on why you lean that way |
 | `progress` | string | no | For example "decision 4 of roughly 9" |
+| `doc` | string | no | One of `MAP.md`, `IDEA.md` or `PLAN.md` |
 
 A press comes back as `[card <id>] picked: <option label>`. Collin may instead type an
 answer or an objection in the thread; that arrives as an ordinary message, and you answer
-it like one.
+it like one. When `doc` is present, the card shows an "Open <doc>" link to that document's
+in-app page.
 
 ### `approval`
 
@@ -134,21 +139,24 @@ Something only Collin can fix or decide, where a question card does not fit.
 
 ### `resolve`
 
-Closes a `needs` card you posted when the thing it asked for is settled. It is never shown
-as a card of its own; its only effect is to mark the target answered, with your session name,
-the note and the time. It is not stored in the thread.
+Closes a `needs` card you posted when the thing it asked for is settled, or your open
+`question` card when Collin answered it in chat. It is never shown as a card of its own; its
+only effect is to mark the target answered, with your session name, the note and the time.
+It is not stored in the thread.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
-| `card` | string | yes | The id of the `needs` card to close (it is in the thread state you were given, or `[card <id>]` on a press) |
+| `card` | string | yes | The id of the `needs` or `question` card to close (it is in the thread state you were given, or `[card <id>]` on a press) |
 | `note` | string | yes | One line saying how it was resolved, shown on the dimmed card |
 
 Rules: only a lead may post it. The target must be an open `needs` card in your own thread
-that a lead posted, including one a previous lead posted. It is refused (422, with the
-reason) for a card the app posted itself (stuck, permission, "Sessions ended": those close on
-their own), for any other kind of card, for a card in another thread or one that does not
-exist, and for a card already answered. Collin can also dismiss such a card himself, which
-marks it the same way and reaches you as `[card <id>] dismissed`: treat it as settled.
+that a lead posted, including one a previous lead posted, or an open `question` card in that
+thread. A resolved question shows "Answered in chat" and the note. It is refused (422, with
+the reason) for a `needs` card the app posted itself (stuck, permission, "Sessions ended":
+those close on their own), for any other kind of card, for a card in another thread or one
+that does not exist, and for a card already answered. Collin can dismiss only an open lead
+`needs` card himself, which marks it the same way and reaches you as `[card <id>] dismissed`:
+treat it as settled.
 
 ### `done`
 
@@ -193,6 +201,14 @@ The app adds a stub thread to the list (same project, CLI and machine) and shows
 in this thread with a "Go to it" button. No session starts until Collin opens it.
 
 ## The kinds never shown
+
+### `title`
+
+Renames the thread. It is not stored and may be posted again when the name needs to change.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `title` | string | yes | The short thread name; it is trimmed and cut to 80 characters |
 
 ### `message`
 
@@ -241,7 +257,7 @@ app uses to hide traffic Collin did not write:
 
 The press forms, in full:
 
-- `[card <id>] picked: <option label>` and `[card <id>] picked: take it into planning`
+- `[card <id>] picked: <option label>`, `[card <id>] picked: take it into planning` and `[card <id>] picked: keep talking first`
 - `[card <id>] removed: <bullet text>`
 - `[card <id>] talk about: <finding>`
 - `[card <id>] start building`
