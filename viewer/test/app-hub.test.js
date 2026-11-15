@@ -919,3 +919,129 @@ test('serializes concurrent card and event arrivals without losing either', asyn
     assert.equal(stored.sessions.find((session) => session.name === lead.name).permission_open, true);
   });
 });
+
+test('Features includes an opened stub but not an unopened one, and needs need no slug', async () => {
+  await withContext(async (context) => {
+    const opened = await thread(context);
+    const worktree = context.machine.sessions.get(opened.sessions[0].name).worktree;
+    await fs.mkdir(path.join(worktree, 'docs', 'plans', 'opened'), { recursive: true });
+    await fs.writeFile(path.join(worktree, 'docs', 'plans', 'opened', 'PLAN.md'), 'status: implementing\n');
+    const openedFile = path.join(context.state, 'threads', `${opened.id}.json`);
+    const openedState = JSON.parse(await fs.readFile(openedFile, 'utf8'));
+    Object.assign(openedState, { stub: true, slug: 'opened', worktree });
+    await fs.writeFile(openedFile, JSON.stringify(openedState));
+    const unopened = await thread(context);
+    const unopenedFile = path.join(context.state, 'threads', `${unopened.id}.json`);
+    const unopenedState = JSON.parse(await fs.readFile(unopenedFile, 'utf8'));
+    unopenedState.stub = true;
+    unopenedState.slug = 'unopened';
+    unopenedState.sessions = [];
+    unopenedState.cards.push({ id: 'ended', kind: 'needs', title: 'Sessions ended', answered: false });
+    await fs.writeFile(unopenedFile, JSON.stringify(unopenedState));
+    const result = await api(context, '/features');
+    assert.equal(result.body.building.some((feature) => feature.id === opened.id), true);
+    assert.equal(result.body.building.some((feature) => feature.id === unopened.id), false);
+    assert.equal(result.body.needs.some((need) => need.thread_id === unopened.id && need.card_id === 'ended'), true);
+  });
+});
+
+test('stub commits persist and reach the opened lead context', async () => {
+  await withContext(async (context) => {
+    const parent = await thread(context);
+    const result = await card(context, parent.id, parent.sessions[0].name, {
+      kind: 'stub', title: 'Carry commit', summary: 'Pick up the partial fix.', depends_on_parent: false, commits: ['1234567'],
+    });
+    const child = await (new Hub({ stateDir: context.state })).thread(result.body.thread_id);
+    assert.deepEqual(child.commits, ['1234567']);
+    const opened = await api(context, `/threads/${child.id}/open`, { method: 'POST', body: {} });
+    const lead = opened.body.sessions[0];
+    await event(context, child.id, lead.name, 'turn-ended');
+    assert.match(context.machine.sessions.get(lead.name).submits[0], /commits to cherry-pick: 1234567/);
+  });
+});
+
+test('registers a diagram plan before persisting its card', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const file = path.join(context.state, 'threads', `${made.id}.json`);
+    const stored = JSON.parse(await fs.readFile(file, 'utf8'));
+    stored.worktree = '/tmp/diagram-worktree';
+    await fs.writeFile(file, JSON.stringify(stored));
+    let observed;
+    const hub = new Hub({ stateDir: context.state, registerPlan: async (plan) => {
+      observed = { plan, thread: await hub.thread(made.id) };
+    } });
+    await hub.init();
+    await hub.acceptCard({ thread_id: made.id, session: made.sessions[0].name, kind: 'diagram', plan: 'demo', graph: 'flow', title: 'Flow' });
+    assert.equal(observed.plan, '/tmp/diagram-worktree/docs/plans/demo');
+    assert.equal(observed.thread.cards.some((card) => card.kind === 'diagram'), false);
+    assert.equal((await hub.thread(made.id)).cards.some((card) => card.kind === 'diagram'), true);
+  });
+});
+
+test('reachable Sessions responses do not expose tokens', async () => {
+  await withContext(async (context) => {
+    await thread(context);
+    const result = await api(context, '/sessions');
+    assert.ok(result.body[0].sessions.every((session) => !Object.hasOwn(session, 'token')));
+  });
+});
+
+test('a replacement sub-lead stops its predecessor worker, but a worker cannot stop a worker child', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const first = await startSublead(context, made, made.sessions[0], 'first');
+    const worker = (await machinePost(context, '/machine/session', {
+      calling_session: first.name, action: 'start', role: 'worker', cli: 'codex', attempt_id: 'worker',
+    })).body.session;
+    const file = path.join(context.state, 'threads', `${made.id}.json`);
+    const stored = JSON.parse(await fs.readFile(file, 'utf8'));
+    stored.sessions.find((session) => session.name === first.name).live = false;
+    stored.sessions.find((session) => session.name === worker.name).worktree = '/tmp/reused-worker';
+    stored.sessions.find((session) => session.name === worker.name).branch = 'wc/reused-worker';
+    await fs.writeFile(file, JSON.stringify(stored));
+    const second = await startSublead(context, made, made.sessions[0], 'second');
+    const stopped = await machinePost(context, '/machine/session', { calling_session: second.name, action: 'stop', name: worker.name });
+    assert.equal(stopped.status, 200);
+    const current = JSON.parse(await fs.readFile(file, 'utf8'));
+    const other = { ...current.sessions.find((session) => session.name === worker.name), name: 'wc-other-worker', started_by: second.name, role: 'worker', live: true };
+    const child = { ...other, name: 'wc-worker-child', started_by: other.name, live: true };
+    current.sessions.push(other, child);
+    await fs.writeFile(file, JSON.stringify(current));
+    const denied = await machinePost(context, '/machine/session', { calling_session: worker.name, action: 'stop', name: child.name });
+    assert.equal(denied.status, 403);
+  });
+});
+
+test('worker replacement reuses a dead worker worktree and branch only', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const sublead = await startSublead(context, made, made.sessions[0], 'build');
+    const worker = (await machinePost(context, '/machine/session', {
+      calling_session: sublead.name, action: 'start', role: 'worker', cli: 'codex', attempt_id: 'original',
+    })).body.session;
+    const file = path.join(context.state, 'threads', `${made.id}.json`);
+    const stored = JSON.parse(await fs.readFile(file, 'utf8'));
+    const old = stored.sessions.find((session) => session.name === worker.name);
+    Object.assign(old, { live: false, worktree: '/tmp/reused-worker', branch: 'wc/reused-worker' });
+    await fs.writeFile(file, JSON.stringify(stored));
+    const replacement = await machinePost(context, '/machine/session', {
+      calling_session: sublead.name, action: 'start', role: 'worker', cli: 'codex', attempt_id: 'replacement', replaces: worker.name,
+    });
+    assert.equal(replacement.status, 200);
+    const start = context.machine.calls.filter((call) => call.path === '/v1/sessions' && call.method === 'POST').at(-1).body;
+    assert.equal(start.worktree, '/tmp/reused-worker');
+    assert.equal(start.branch, 'wc/reused-worker');
+    const current = JSON.parse(await fs.readFile(file, 'utf8'));
+    current.sessions.find((session) => session.name === worker.name).live = true;
+    await fs.writeFile(file, JSON.stringify(current));
+    const live = await machinePost(context, '/machine/session', {
+      calling_session: sublead.name, action: 'start', role: 'worker', cli: 'codex', attempt_id: 'live', replaces: worker.name,
+    });
+    assert.equal(live.status, 400);
+    const nonWorker = await machinePost(context, '/machine/session', {
+      calling_session: sublead.name, action: 'start', role: 'worker', cli: 'codex', attempt_id: 'non-worker', replaces: sublead.name,
+    });
+    assert.equal(nonWorker.status, 400);
+  });
+});

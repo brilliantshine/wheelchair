@@ -301,7 +301,8 @@ async function sessionRequest(hub, payload) {
 async function stopSession(hub, thread, caller, name) {
   const target = session(thread, name);
   const starter = target.started_by && thread.sessions.find((item) => item.name === target.started_by);
-  const canStop = target.started_by === caller.name || (starter && starter.role === caller.role) || (
+  const canResumeRole = ['lead', 'sub-lead'].includes(caller.role) && starter?.role === caller.role;
+  const canStop = target.started_by === caller.name || canResumeRole || (
     caller.role === 'lead' && target.started_by && target.role !== 'lead'
   );
   if (!canStop) throw appError(403, 'only the starter may stop this session');

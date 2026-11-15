@@ -40,6 +40,12 @@ async function acceptCard(hub, payload) {
     const checked = validate(payload.kind, input, session.role);
     if (!checked.ok) throw appError(422, checked.reason);
 
+    // A diagram iframe must never observe its card before its plan is registered.
+    if (checked.card.kind === 'diagram' && hub.registerPlan) {
+      const plan = require('node:path').join(thread.worktree || thread.project, 'docs', 'plans', checked.card.plan);
+      await hub.registerPlan(plan);
+    }
+
     const card = addCard(thread, checked.card, { session: session.name });
     if (card.kind === 'message') {
       const target = hub.session(thread, card.to);
@@ -69,13 +75,6 @@ async function acceptCard(hub, payload) {
       if (card) card.thread_id = child.id;
     });
     result.thread_id = child.id;
-  }
-  // Registration is the app equivalent of --register-plan: it happens before the card is
-  // observable to a page, so its iframe never races an unregistered plan directory.
-  if (result.kind === 'diagram' && hub.registerPlan) {
-    const thread = await hub.thread(payload.thread_id);
-    const plan = require('node:path').join(thread.worktree || thread.project, 'docs', 'plans', result.plan);
-    await hub.registerPlan(plan);
   }
   const thread = await hub.thread(payload.thread_id);
   const targetName = result.kind === 'message' ? result.to : result.kind === 'result' ? thread.sessions.find((item) => item.name === payload.session)?.started_by : null;
