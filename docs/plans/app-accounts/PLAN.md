@@ -12,16 +12,6 @@ get buried as this file grows. **Map:** `MAP.md`.
 
 ## Open Questions
 
-### Q1: Which providers does this thread build?
-- **Context:** Multi-account Claude and Codex needs the adapter, login folders per session,
-  usage reading and the balancer. Google means adding Gemini CLI as a third CLI; OpenRouter
-  has no CLI, so it needs a host coding tool. A third CLI touches about 40 places
-  (MAP.md, "Every place that assumes…").
-- **Options:** (a) Claude and Codex with several accounts, adapter shaped so a third CLI
-  plugs in later; (b) also Google via Gemini CLI; (c) also Google and OpenRouter.
-- **Recommendation:** (a). Gets the value (more room, balancing, visibility) on the two
-  CLIs already in use; a later thread adds a provider by filling in the adapter.
-
 ### Q2: Who chooses the provider and account for a session: the app, or the lead/sub-lead?
 - **Context:** Today agents pass `--cli` (MAP.md, "Usage and balancing"). Balancing by rule
   means the hub decides, before `resolveModel` (`viewer/app/sessions.js:16-39`).
@@ -68,10 +58,15 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | # | Decision | Rationale | Source |
 |---|----------|-----------|--------|
 | D1 | Defaults: within a provider, soonest refill first; notify below 25% once per provider per week; leave 10% per account; Claude margin 5% | The proposal's own numbers | defaulted |
+| D2 | Build several accounts, usage and balancing for Claude and Codex only. Google, OpenRouter and pay-as-you-go keys move to Not doing; the adapter is shaped so each new CLI is one later thread | Gemini CLI no longer serves Google subscriptions; a third CLI touches ~40 places; most value is on the two CLIs in use | idea-change |
 
 ## Spec
 
-(grows as decisions land)
+### Scope
+- Providers: Claude (Claude Code CLI) and GPT (Codex CLI), any number of subscription
+  accounts each. No third CLI, no pay-as-you-go keys (D2).
+- Defaults (D1): soonest refill first within a provider; notify below 25% once per provider
+  per week; leave 10% of each account; Claude margin 5%.
 
 ## Accepted Risks
 

@@ -8,8 +8,8 @@ created: 2026-11-15
 
 ## What we're building
 
-Collin can sign in several accounts for each AI provider (Claude, ChatGPT, then Google,
-OpenRouter and other coding CLIs), each kept separate. Settings gets an Accounts screen and
+Collin can sign in several accounts for Claude and for ChatGPT (Codex), each kept separate,
+in a way that lets Google, OpenRouter and other coding CLIs be added later. Settings gets an Accounts screen and
 a Usage screen showing how much of each provider's week is left. When the app starts an
 agent, it picks the provider and account by rules he sets, so work flows to whoever has
 room.
@@ -34,19 +34,21 @@ work to a provider that still has room.
 - Opening a provider shows each account, which one is next, and why.
 - New agents land on the account that refills soonest by default (or spread evenly, or one
   at a time, if he chooses).
-- Leads run on Claude. Workers try GPT, then Google, then Claude, then OpenRouter. With
+- Leads run on Claude. Workers try GPT, then Claude (Google and OpenRouter slot in when
+  added). With
   "Save Claude for leads" on, workers get Claude only when a rule asks or nothing else has
   room; below the margin, workers get no Claude at all.
 - He is told once per provider per week when it drops below a threshold; a share of each
-  account stays free for his own use; pay-as-you-go keys are used only when every
-  subscription is out, and stop at a monthly cap.
+  account stays free for his own use.
 - Adding a new CLI as a provider means filling in one adapter: how to start it, read its
   usage, notice a turn ending, and keep its logins apart. Claude and Codex go through the
   same adapter.
-- Google and OpenRouter appear as rows in the existing model table.
 
 ## Not doing
 
+- Google, OpenRouter or any third CLI as a provider, and their rows in the model table.
+  This thread shapes the adapter so each is a later thread of its own.
+- Pay-as-you-go keys and their monthly dollar cap (they arrive with OpenRouter).
 - Asides (they belong to the side-conversations thread).
 - The Settings page itself, the model table's columns, templates and writing style (already
   built by the Settings thread).
