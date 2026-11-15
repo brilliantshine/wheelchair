@@ -185,7 +185,10 @@ async function event(hub, payload) {
       { system: true, session: target.name },
     ).id;
   }
-  if (['ready', 'prompt-cleared', 'permission-cleared'].includes(type)) {
+  // Claude says when it asks for permission but not when the prompt goes; a turn that ends
+  // means the prompt was answered, so it clears the hold and the card too.
+  const turnEnded = ['turn-ended', 'turn_ended', 'turn ended'].includes(type);
+  if (['ready', 'prompt-cleared', 'permission-cleared'].includes(type) || (turnEnded && target.permission_open)) {
     target.permission_open = false;
     if (target.needs_open) {
       target.needs_open = false;

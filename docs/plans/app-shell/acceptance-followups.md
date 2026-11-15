@@ -22,6 +22,9 @@ and are listed in COMPLETION.md.
   each group" meant in an ordinary reply, then waited 20 minutes. Nothing showed under
   "Needs you" and Collin thought it had stalled. Anything a lead waits on him for should
   be a card.
+- **A permission-mode setting.** Sessions run Claude in auto mode, so some actions still ask
+  for permission. Collin assumed they ran with permissions bypassed and wants a setting for
+  that. In auto mode, the "Permission needed" card now links to the session's terminal.
 
 ## Seen while watching
 

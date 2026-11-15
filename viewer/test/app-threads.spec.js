@@ -156,6 +156,12 @@ for (const [label, size] of SIZES) {
       await expect(qc.locator('.opt')).toHaveCount(2);
       // needs, done, diagram, stub
       await expect(page.locator('.card-needs')).toContainText('Codex is signed out.');
+      // An agent's needs card has no terminal link; a session-level one from the hub does.
+      await expect(page.locator('.card-needs a', { hasText: 'Open terminal' })).toHaveCount(0);
+      await ctx.patch(id, (x) => { x.cards.push({ kind: 'needs', title: 'Permission needed', body: 'x', id: 'perm-1',
+        session: 'wc-x-lead', system: true, answered: false, at: new Date().toISOString() }); });
+      await expect(page.locator('#card-perm-1 a', { hasText: 'Open terminal' }))
+        .toHaveAttribute('href', '/wheelchair/app/terminal?name=wc-x-lead');
       const done = page.locator('.card-done');
       await expect(done.getByRole('link', { name: 'Review pull request' }))
         .toHaveAttribute('href', 'https://github.com/x/y/pull/1');

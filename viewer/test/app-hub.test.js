@@ -165,15 +165,31 @@ test('holds a queued message until both readiness and a turn end', async () => {
   });
 });
 
-test('posts a permission need and holds the session queue', async () => {
+test('posts a permission need and holds the session queue while the prompt is open', async () => {
   await withContext(async (context) => {
-    const made = await thread(context, { message: 'Wait for the prompt.' });
+    const made = await thread(context);
     const lead = made.sessions[0];
-    await event(context, made.id, lead.name, 'prompt', { notification_type: 'permission_prompt' });
     await event(context, made.id, lead.name, 'turn-ended');
+    await event(context, made.id, lead.name, 'prompt', { notification_type: 'permission_prompt' });
+    await api(context, `/threads/${made.id}/messages`, { method: 'POST', body: { text: 'Wait for the prompt.' } });
     assert.equal(context.machine.sessions.get(lead.name).submits, undefined);
     const chat = await api(context, `/threads/${made.id}/chat`);
     assert.equal(chat.body.cards.at(-1).title, 'Permission needed');
+    assert.equal(chat.body.cards.at(-1).session, lead.name);
+  });
+});
+
+test('a turn ending after a permission prompt clears the hold and the card', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const lead = made.sessions[0];
+    await event(context, made.id, lead.name, 'turn-ended');
+    await event(context, made.id, lead.name, 'prompt', { notification_type: 'permission_prompt' });
+    await api(context, `/threads/${made.id}/messages`, { method: 'POST', body: { text: 'After the prompt.' } });
+    await event(context, made.id, lead.name, 'turn-ended');
+    assert.deepEqual(context.machine.sessions.get(lead.name).submits, ['After the prompt.']);
+    const chat = await api(context, `/threads/${made.id}/chat`);
+    assert.equal(chat.body.cards.find((item) => item.title === 'Permission needed').answered, true);
   });
 });
 

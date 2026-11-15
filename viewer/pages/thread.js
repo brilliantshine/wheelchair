@@ -345,6 +345,12 @@
         if ((card.items || []).length) {
           const ul = el('ul'); for (const i of card.items) ul.appendChild(el('li', '', i)); box.appendChild(ul);
         }
+        // A session-level card (stuck, permission) goes straight to that session's terminal.
+        if (card.system && card.session && !card.answered) {
+          const a = el('a', 'btn primary', 'Open terminal');
+          a.href = '/wheelchair/app/terminal?name=' + encodeURIComponent(card.session);
+          const actions = el('div', 'actions'); actions.appendChild(a); box.appendChild(actions);
+        }
         break;
       }
       case 'done': {
