@@ -16,7 +16,7 @@ const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { spawnSync, spawn } = require('node:child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_STATE = path.join(os.homedir(), '.local', 'state', 'wheelchair');
@@ -47,6 +47,26 @@ function command(program, args, options = {}) {
   // callers select the documented fallback instead of crashing the service.
   if (result.error) return { ok: false, status: result.status ?? 127, stdout: result.stdout || '', stderr: result.stderr || result.error.message };
   return { ok: result.status === 0, status: result.status, stdout: result.stdout || '', stderr: result.stderr || '' };
+}
+const PERMISSION_MODES = { auto: 'auto', bypass: 'bypassPermissions' };
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+const PREVIEW_TIMEOUT_MS = 60_000;
+// The one place the starting instructions are composed, so the Claude system prompt and the
+// Codex [wc:role] message cannot drift. role_prompt wins and role_layers is then ignored.
+function composeRolePrompt(input) {
+  if (input.role_prompt) return input.role_prompt;
+  const roleFile = path.join(ROOT, 'protocol', 'app', `${input.role}.md`);
+  const pointer = `Read ${roleFile} before responding. It is wheelchair's built-in rules for your role.`;
+  const layers = typeof input.role_layers === 'string' ? input.role_layers.trim() : '';
+  return layers ? `${pointer}\n\n${layers}` : pointer;
+}
+// Validates the optional start fields; returns the normalised ones.
+function startOptions(input) {
+  const mode = input.permission_mode === undefined || input.permission_mode === null ? 'auto' : input.permission_mode;
+  if (!Object.hasOwn(PERMISSION_MODES, mode)) die('permission_mode must be auto or bypass');
+  if (input.effort !== undefined && input.effort !== null && !EFFORTS.includes(input.effort)) die(`effort must be one of ${EFFORTS.join(', ')}`);
+  if (input.role_layers !== undefined && input.role_layers !== null && typeof input.role_layers !== 'string') die('role_layers must be text');
+  return { permission_mode: mode, effort: input.effort || null };
 }
 function shellQuote(value) { return `'${String(value).replace(/'/g, `'\\''`)}'`; }
 function maybeTailscaleIp() {
@@ -104,6 +124,7 @@ class MachineService {
     this.retryWindow = Number(process.env.WHEELCHAIR_RETRY_WINDOW_MS || 90_000);
     this.retryDelay = Number(process.env.WHEELCHAIR_RETRY_DELAY_MS || 1_000);
     this.spoolInterval = Number(process.env.WHEELCHAIR_SPOOL_INTERVAL_MS || 5_000);
+    this.previewTimeoutMs = PREVIEW_TIMEOUT_MS; // tests shorten it on the instance
     // Read this once, when this process is made.  A pull changes ROOT's HEAD but not
     // the JavaScript this service is executing.
     this.version = command('git', ['-C', ROOT, 'rev-parse', 'HEAD']).stdout.trim();
@@ -241,17 +262,16 @@ class MachineService {
   }
   commandFor(input, session, worktree) {
     // Spec "Machine service on the hub": exact interactive CLI permissions and hooks.
-    const roleFile = path.join(ROOT, 'protocol', 'app', `${input.role}.md`);
-    const rolePrompt = input.role_prompt || `Read ${roleFile} before responding.`;
+    const rolePrompt = composeRolePrompt(input);
     if (input.cli === 'claude') {
       const settingsPath = path.join(this.stateDir, 'settings', `${session.name}.json`);
       const hook = path.join(ROOT, 'machine', 'hook.sh');
       // No suggested next prompt: one Enter in a terminal would send it as if Collin typed it.
-      const settings = { cleanupPeriodDays: 30, promptSuggestionEnabled: false, hooks: {
+      const settings = { cleanupPeriodDays: 30, promptSuggestionEnabled: false, ...(session.permission_mode === 'bypass' ? { skipDangerousModePermissionPrompt: true } : {}), hooks: {
         Stop: [{ hooks: [{ type: 'command', command: `${shellQuote(hook)} claude ${shellQuote(session.name)}` }] }],
         Notification: [{ hooks: [{ type: 'command', command: `${shellQuote(hook)} claude ${shellQuote(session.name)}` }] }],
       } };
-      return { settingsPath, settings, argv: ['claude', '--session-id', session.cli_session_id, '--settings', settingsPath, '--permission-mode', 'auto', ...(input.model ? ['--model', input.model] : []), '--append-system-prompt', rolePrompt] };
+      return { settingsPath, settings, argv: ['claude', '--session-id', session.cli_session_id, '--settings', settingsPath, '--permission-mode', PERMISSION_MODES[session.permission_mode], ...(input.model ? ['--model', input.model] : []), ...(session.effort ? ['--effort', session.effort] : []), '--append-system-prompt', rolePrompt] };
     }
     if (input.cli === 'codex') {
       const trust = `projects={${json(worktree)}={trust_level="trusted"}}`;
@@ -266,10 +286,11 @@ class MachineService {
     safeName(name, 'session name');
     if (!name.startsWith('wc-')) die('session name must begin wc-');
     if (this.sessions[name]) return this.sessions[name];
+    const options = startOptions(input);
     const createdWorktree = !input.worktree;
     const created = await this.createWorktree(input, name);
     const worktree = created.worktree;
-    const session = { name, role: input.role, cli: input.cli, thread_id: input.thread_id, token: input.token,
+    const session = { name, role: input.role, cli: input.cli, permission_mode: options.permission_mode, effort: options.effort, thread_id: input.thread_id, token: input.token,
       worktree, created_worktree: createdWorktree, attempt_id: input.attempt_id || null, started_by: input.started_by || null,
       branch: created.branch || input.branch || null, default_branch: created.defaultBranch || input.default_branch || input.defaultBranch || null,
       cli_session_id: input.cli_session_id || crypto.randomUUID(), status: 'starting', created_at: new Date().toISOString() };
@@ -279,7 +300,7 @@ class MachineService {
     session.command = built.argv;
     // Spec "Machine service on the hub": Codex's first, binding message always
     // uses the literal marker [wc:role], regardless of the selected role.
-    const rolePrompt = input.role_prompt || `Read ${path.join(ROOT, 'protocol', 'app', `${input.role}.md`)} before responding.`;
+    const rolePrompt = composeRolePrompt(input);
     const firstMessage = input.brief || input.first_message || '';
     session.pending_initial = input.cli === 'codex'
       ? `[wc:role] ${rolePrompt}${firstMessage ? `\n\n${firstMessage}` : ''}`
@@ -295,7 +316,8 @@ class MachineService {
     return session;
   }
   readyText(session, pane) {
-    if (session.cli === 'claude') return !pane.includes('Yes, I trust this folder') && !pane.includes('No, exit') && pane.includes('auto mode on') && /(^|\n).*❯\s/m.test(pane);
+    // A session without a recorded mode (recovered, or started before the field) is auto.
+    if (session.cli === 'claude') return !pane.includes('Yes, I trust this folder') && !pane.includes('No, exit') && !pane.includes('Yes, I accept') && pane.includes(session.permission_mode === 'bypass' ? 'bypass permissions on' : 'auto mode on') && /(^|\n).*❯\s/m.test(pane);
     return pane.includes('Ask Codex to do anything');
   }
   async emitEvent(event) {
@@ -312,6 +334,13 @@ class MachineService {
       this.tmux(['send-keys', '-t', session.name, 'Enter']);
       session.trust_answered = true;
       await this.persistSessions();
+      return false;
+    }
+    // Bypass: the CLI's one-time "Bypass Permissions mode" warning (1. No, exit / 2. Yes, I accept).
+    // The per-session settings file normally suppresses it; this answers it if it still appears.
+    if (session.cli === 'claude' && session.permission_mode === 'bypass' && pane.includes('Yes, I accept')) {
+      this.tmux(['send-keys', '-t', session.name, 'Down']);
+      this.tmux(['send-keys', '-t', session.name, 'Enter']);
       return false;
     }
     if (this.readyText(session, pane)) {
@@ -672,6 +701,31 @@ class MachineService {
     }
     return { installed: true, logged_in: loggedIn, version: check.stdout.trim() || check.stderr.trim() };
   }
+  // Runs claude -p for the hub's style preview. Asynchronous on purpose: up to a minute of
+  // waiting must not block the service's event loop. Never answers with a throw: the
+  // status and body come back together.
+  preview(input) {
+    const model = input.model; const prompt = input.prompt;
+    if (typeof model !== 'string' || !/^[A-Za-z0-9._:\[\]-]+$/.test(model)) die('model is required');
+    if (typeof prompt !== 'string' || !prompt.trim()) die('prompt is required');
+    return new Promise(resolve => {
+      let child; let out = ''; let err = ''; let done = false;
+      const finish = (status, body) => { if (done) return; done = true; clearTimeout(timer); resolve({ status, body }); };
+      const timer = setTimeout(() => { finish(504, { error: 'preview timed out after 60 s' }); if (child) child.kill('SIGKILL'); }, this.previewTimeoutMs);
+      try { child = spawn('claude', ['-p', '--model', model, '--permission-mode', 'dontAsk'], { env: { ...process.env, WHEELCHAIR_LANE: '1' }, stdio: ['pipe', 'pipe', 'pipe'] }); }
+      catch (error) { return finish(503, { error: 'claude is not installed' }); }
+      child.on('error', error => finish(error.code === 'ENOENT' ? 503 : 502, { error: error.code === 'ENOENT' ? 'claude is not installed' : error.message }));
+      child.stdout.on('data', chunk => { out += chunk; });
+      child.stderr.on('data', chunk => { err += chunk; });
+      child.stdin.on('error', () => {});
+      child.on('close', code => {
+        if (code === 0) return finish(200, { text: out.trim() });
+        const last = err.split('\n').map(l => l.trim()).filter(Boolean).pop();
+        finish(502, { error: last || `claude exited ${code}` });
+      });
+      child.stdin.end(prompt);
+    });
+  }
   async handle(request, response) {
     const url = new URL(request.url, 'http://machine.local');
     const pathBits = url.pathname.split('/').filter(Boolean);
@@ -679,6 +733,7 @@ class MachineService {
       if (request.method === 'GET' && url.pathname === '/health') return send(response, 200, { ok: true });
       if (request.method === 'GET' && url.pathname === '/v1/status') { await this.authorize(request, 'hub'); return send(response, 200, this.status()); }
       if (request.method === 'POST' && url.pathname === '/v1/preflight') { await this.authorize(request, 'hub'); const result = command(path.join(ROOT, 'codex', 'preflight.sh'), []); return send(response, result.ok ? 200 : 409, result); }
+      if (request.method === 'POST' && url.pathname === '/v1/preview') { await this.authorize(request, 'hub'); const result = await this.preview(await bodyOf(request)); return send(response, result.status, result.body); }
       if (request.method === 'POST' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); return send(response, 201, await this.start(await bodyOf(request))); }
       if (request.method === 'GET' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); return send(response, 200, this.status().sessions); }
       if (request.method === 'POST' && url.pathname === '/v1/archive') { await this.authorize(request, 'hub'); return send(response, 200, await this.archive((await bodyOf(request)).thread_id)); }
