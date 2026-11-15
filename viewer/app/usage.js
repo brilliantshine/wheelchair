@@ -85,7 +85,7 @@ function rank(accounts, readingsById, machineState, settings, machine, now = Dat
   if (selected) { selected.next = true; selected.reason = { soonest: 'next: refills soonest', spread: 'next: most room left', one: 'next: current account' }[settings.within]; }
   return ranked;
 }
-async function summary(hub, includeMachines = true) {
+async function summary(hub, includeMachines = true, now = Date.now()) {
   const [settings, data, machines, threads] = await Promise.all([settingsModule.load(hub), store(hub), includeMachines ? machineAccounts(hub) : {}, includeMachines ? hub.allThreads() : []]);
   const providers = {};
   const knownMachines = includeMachines ? await hub.machines() : {};
@@ -93,13 +93,21 @@ async function summary(hub, includeMachines = true) {
   const localName = Object.entries(knownMachines).find(([, m]) => local && (m.name === local.name || (m.address === local.address && m.port === local.port)))?.[0] || 'hub';
   for (const [provider, info] of Object.entries(PROVIDERS)) {
     const accounts = settings.accounts.filter((a) => a.provider === provider).map((a) => ({ ...a, live_sessions: threads.reduce((n, t) => n + t.sessions.filter((s) => s.live && s.account === a.id).length, 0) }));
-    const f = forecast(accounts, data.readings || {});
+    const f = forecast(accounts, data.readings || {}, now);
     const below_notify = f.left !== null && f.left < settings.notify_below / 100;
-    const ranked = rank(accounts, data.readings || {}, machines, settings, localName, Date.now(), data.last_chosen);
+    const ranked = rank(accounts, data.readings || {}, machines, settings, localName, now, data.last_chosen);
     providers[provider] = { label: info.label, left: f.left, amber: f.amber, runs_out_at: f.runs_out_at, first_refill: f.first_refill, below_notify, all_paused: f.all_paused, accounts: ranked.map((a) => ({ ...a, machines: Object.fromEntries(Object.entries(machines).map(([name, m]) => [name, !m.reachable ? 'unknown' : m.accounts[a.id] ? 'signed_in' : 'signed_out'])), reading: data.readings?.[a.id] || null })) };
   }
   return { providers, seen: data.seen || {} };
 }
-async function alert(hub) { const { providers, seen } = await summary(hub, false); return { dot: Object.entries(providers).some(([p, f]) => (f.amber || f.below_notify) && f.first_refill && seen[p] !== f.first_refill) }; }
-async function seen(hub) { const { providers } = await summary(hub, false); await change(hub, (data) => { for (const [p, f] of Object.entries(providers)) if ((f.amber || f.below_notify) && f.first_refill) data.seen[p] = f.first_refill; }); return { ok: true }; }
+function weekKey(now) {
+  const local = new Date(now);
+  const date = new Date(Date.UTC(local.getFullYear(), local.getMonth(), local.getDate()));
+  date.setUTCDate(date.getUTCDate() + 4 - (date.getUTCDay() || 7));
+  const year = date.getUTCFullYear();
+  const week = Math.ceil(((date - Date.UTC(year, 0, 1)) / 86400000 + 1) / 7);
+  return `${year}-W${String(week).padStart(2, '0')}`;
+}
+async function alert(hub, now = Date.now()) { const { providers, seen } = await summary(hub, false, now); return { dot: Object.entries(providers).some(([p, f]) => (f.amber || f.below_notify) && seen[p] !== weekKey(now)) }; }
+async function seen(hub, now = Date.now()) { const { providers } = await summary(hub, false, now); await change(hub, (data) => { for (const [p, f] of Object.entries(providers)) if (f.amber || f.below_notify) data.seen[p] = weekKey(now); }); return { ok: true }; }
 module.exports = { effective, hasRoom, forecast, belowMargin, record, readings, lastChosen, recordChosen, machineAccounts, rank, summary, alert, seen };

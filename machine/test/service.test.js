@@ -816,7 +816,31 @@ test('Codex account turn ends read only new rollout lines and report limits', as
     const event = { type: 'turn-ended', 'thread-id': 'abc', 'input-messages': ['[wc:role] hi'] };
     await env.instance.hook(session.name, event); await env.instance.hook(session.name, event);
     await fs.appendFile(file, line(100, 'primary')); await env.instance.hook(session.name, event);
-    const usage = hub.calls.map(c => JSON.parse(c.body)).filter(e => e.type === 'usage');
-    assert.equal(usage.length, 2); assert.equal(usage[0].reading.account, 'acct'); assert.equal(usage[0].reading.five_hour.used, 20); assert.equal(usage[1].reading.limited_until, new Date(2100000000 * 1000).toISOString());
+    const events = hub.calls.map(c => JSON.parse(c.body));
+    const ends = events.filter(e => e.type === 'turn-ended');
+    assert.equal(events.filter(e => e.type === 'usage').length, 0); assert.equal(ends.length, 3);
+    assert.equal(ends[0].reading.account, 'acct'); assert.equal(ends[0].reading.five_hour.used, 20); assert.equal(ends[2].reading.limited_until, new Date(2100000000 * 1000).toISOString());
   } finally { await env.close(); await hub.close(); if (previous === undefined) delete process.env.HOME; else process.env.HOME = previous; }
+});
+
+test('spooled Codex turn end carries its limit reading on drain', async () => {
+  const root = await temp(), previous = process.env.HOME; process.env.HOME = root;
+  const first = await service(root); await start(first, { cli: 'codex', account: { id: 'acct', dir: '~/.wheelchair/accounts/acct' } }); await first.close();
+  try {
+    const state = path.join(root, 'state');
+    const configured = JSON.parse(await fs.readFile(path.join(state, 'machine.json'), 'utf8'));
+    await write(path.join(state, 'machine.json'), JSON.stringify({ ...configured, host: '127.0.0.1', port: 1 }));
+    await write(path.join(root, '.wheelchair/accounts/acct/sessions/2026/rollout-abc.jsonl'), JSON.stringify({ timestamp: '2026-01-01T00:00:00Z', payload: { rate_limits: { primary: { used_percent: 100, window_minutes: 300, resets_at: 2100000000 }, rate_limit_reached_type: 'primary' } } }) + '\n');
+    const hook = path.join(process.cwd(), 'machine', 'hook.sh');
+    const result = spawnSync(hook, ['codex', 'wc-t-lead', JSON.stringify({ type: 'agent-turn-complete', 'thread-id': 'abc', 'input-messages': ['[wc:role] hi'] })], { encoding: 'utf8', env: { ...process.env, WHEELCHAIR_STATE_DIR: state, WHEELCHAIR_SESSION_TOKEN: 'alpha' } });
+    assert.equal(result.status, 0);
+    const hub = await hubServer(), env = await service(root, { config: { hub_url: hub.url } });
+    try {
+      await env.instance.drainSpool('events');
+      const events = hub.calls.map(c => JSON.parse(c.body));
+      const ends = events.filter(e => e.type === 'turn-ended');
+      assert.equal(ends.length, 1); assert.equal(ends[0].reading.limited_until, new Date(2100000000 * 1000).toISOString());
+      assert.equal(events.filter(e => e.type === 'usage').length, 0);
+    } finally { await env.close(); await hub.close(); }
+  } finally { if (previous === undefined) delete process.env.HOME; else process.env.HOME = previous; }
 });

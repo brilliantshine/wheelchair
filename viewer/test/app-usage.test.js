@@ -175,7 +175,7 @@ test('usage endpoints expose machine state, sessions and alert weeks', async () 
     const saved = JSON.parse(await fs.readFile(path.join(ctx.state, 'usage.json')));
     saved.readings['default-claude'].week.resets_at = new Date(Date.now() + 72 * 3600000).toISOString();
     await fs.writeFile(path.join(ctx.state, 'usage.json'), JSON.stringify(saved));
-    assert.equal((await api(ctx, '/usage/alert')).body.dot, true);
+    assert.equal((await api(ctx, '/usage/alert')).body.dot, false);
   } finally { await close(ctx); }
 });
 
@@ -263,4 +263,25 @@ test('removed account ids are retired and do not inherit usage or sessions', asy
     const summary = (await api(ctx, '/usage')).body.providers.gpt.accounts.find(a => a.id === second.id);
     assert.equal(summary.reading, null); assert.equal(summary.live_sessions, 0);
   } finally { await close(ctx); }
+});
+
+test('alerts are acknowledged per provider and local ISO week', async () => {
+  const { Hub } = require('../app/hub.js');
+  const { makeDir } = require('./helpers/server.js');
+  const hub = new Hub({ stateDir: await makeDir('alert-week-') });
+  await hub.state.init();
+  await settings.update(hub, s => { s.accounts.push({ ...account, id: 'b' }); });
+  const monday = new Date(2026, 0, 5, 12).getTime();
+  const nextWeek = new Date(2026, 0, 12, 12).getTime();
+  await usage.record(hub, { account: 'default-claude', at: new Date(monday).toISOString(), week: { used: 99, resets_at: null } });
+  await usage.record(hub, { account: 'b', at: new Date(monday).toISOString(), week: { used: 99, resets_at: null } });
+  assert.equal((await usage.summary(hub, false, monday)).providers.claude.first_refill, null);
+  assert.equal((await usage.alert(hub, monday)).dot, true);
+  await usage.seen(hub, monday);
+  assert.equal((await usage.alert(hub, monday)).dot, false);
+  await usage.record(hub, { account: 'default-claude', at: new Date(monday + 1000).toISOString(), week: { used: 99, resets_at: new Date(nextWeek + 86400000).toISOString() } });
+  await usage.record(hub, { account: 'b', at: new Date(monday + 1000).toISOString(), week: { used: 99, resets_at: new Date(nextWeek + 172800000).toISOString() } });
+  await settings.update(hub, s => { s.accounts.find(a => a.id === 'default-claude').paused = true; });
+  assert.equal((await usage.alert(hub, monday)).dot, false);
+  assert.equal((await usage.alert(hub, nextWeek)).dot, true);
 });

@@ -595,8 +595,7 @@ class MachineService {
         reading.account = current.account || `default-${adapter.provider}`;
         if (reached) reading.limited_until = limitedUntil(reading);
         current.last_reading = reading;
-        const usage = { type: 'usage', reading, session, thread_id: current.thread_id };
-        if (spooled) await this.spool('events', usage); else await this.emitEvent(usage);
+        event = { ...event, reading };
       }
       await this.persistSessions();
     }
