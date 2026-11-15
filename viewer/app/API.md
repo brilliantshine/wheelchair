@@ -8,7 +8,7 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 | Route | Request | Response |
 |---|---|---|
 | `GET /threads` | — | `{threads:[Thread]}` newest first |
-| `POST /threads` | `{project,cli,machine?,message?}` | a `Thread`, with its lead started; a non-empty string `message` sets `title` from its trimmed, whitespace-collapsed first line, cut at a word boundary to 60 characters plus `…` |
+| `POST /threads` | `{project,cli,machine?,message?}` | a `Thread`, with its lead started. Before anything is saved the thread's machine checks `project` (`GET /v1/projects?check=`): not a usable git repository → `400 "<path> <reason> on <machine>"`, unknown machine → `404`, no answer or an older service → `502`; nothing is saved or added to `projects.json` on any of these, and the stored `project` is the path the machine returned (`~` and `~/…` expanded there). A non-empty string `message` sets `title` from its trimmed, whitespace-collapsed first line, cut at a word boundary to 60 characters plus `…` |
 | `GET /threads/:id/chat` | — | `{thread,items,cards,pinned,queued}`; `items` leaves out the lead's tool steps when Settings has `tool_steps:"hide"` |
 | `POST /threads/:id/messages` | `{text}` | `{queued:true}`; delivery waits for the lead turn end |
 | `POST /threads/:id/cards/:cardId/press` | `{action,value?}` | `{queued:true,text}` for lead actions and records `answered_action` and `answered_value` on an answered card; `recheck` updates an approval in place, and `start-building` first re-checks Ready |
@@ -25,11 +25,14 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 | `POST /machine/cards` | service envelope `{thread_id,session,...card}` | accepted card, `202` |
 | `POST /machine/events` | `{thread_id,session,type,...}` | `{ok:true}`, `202` |
 | `POST /machine/session` | `{calling_session,action,...}` | the hub-authorized session result |
-| `GET /settings` | — | `{models,model_options,heads_up,permission_mode,codex_mode,tool_steps,other_agents,templates,in_use,style,style_version,projects}`; templates include `in_use`, `live_sessions`, and `scope_missing` when a saved project is no longer listed |
+| `GET /settings` | — | `{models,model_options,heads_up,permission_mode,codex_mode,tool_steps,other_agents,templates,in_use,style,style_version,projects,default_project_folder,saved_dirs}`; `projects` is `projects.json` plus every saved directory's path; templates include `in_use`, `live_sessions`, and `scope_missing` when a saved project is no longer listed |
 | `PUT /settings/models` | `{provider:"claude"|"gpt",slot,model|null,effort?}` | `{models}`; `slot` is `light`, `standard`, `heavy`, `critical`, or `lead` |
 | `POST /settings/models/heads-up` | `{action:"switch",tier,model}`, `{action:"skip",model}`, or `{action:"reset"}` | `{models,heads_up}` |
-| `PUT /settings/preferences` | `{permission_mode?:"auto"|"bypass",codex_mode?:"sandboxed"|"unrestricted",tool_steps?:"show"|"hide",other_agents?:{reviewer?,verifier?,mapper?}}` | saved preference values |
-| `POST /settings/templates` | `{name,role,scope,switches?,text}` | new template, including generated `id` and `in_use:false` |
+| `PUT /settings/preferences` | `{permission_mode?:"auto"|"bypass",codex_mode?:"sandboxed"|"unrestricted",tool_steps?:"show"|"hide",other_agents?:{reviewer?,verifier?,mapper?},default_project_folder?:string}` | saved preference values, including `default_project_folder`; that field is trimmed, `""` clears it, otherwise it must be absolute, exactly `~`, or start with `~/` (`~user` → `400`); it is not checked against a machine |
+| `GET /new-thread?machine=` | — | `{machines,machine,default_folder,saved,found,found_error?,previous}` for `machine` (default `hub`; unknown → `404`). `machines`: `hub` first, then the names in `machines.json` except the hub's own hostname entry. `saved`: `saved_dirs` entries of that machine. `found`: that machine's `/v1/projects?folder=` when a default folder is set, else `[]`; its `folder_error` becomes `found_error`, and an unreachable or older machine gives `found: []` with `found_error` `"<machine> is not reachable"` or `"<machine> needs updating"`, still `200`. `previous`: distinct `project` paths of threads on that machine (a thread stored under the hub's hostname counts as `hub`), newest first |
+| `POST /settings/saved-dirs` | `{name,path,machine}` | `201 {saved}` (that machine's entries). `path` is checked on `machine` and stored as the expanded path the machine returned. `400` for a field error or the check's reason (`"<path> <reason> on <machine>"`), `404` for an unknown machine, `409` when the name exists for that machine, `502` when the machine does not answer |
+| `DELETE /settings/saved-dirs/:name?machine=` | — | `{saved}` for that machine (default `hub`); `404` for an unknown name; changes no thread |
+| `POST /settings/templates` | `{name,role,scope,switches?,text}` | new template, including generated `id` and `in_use:false`; `scope` is `all`, a path in `projects.json`, or a saved directory path |
 | `PUT /settings/templates/:id` | template fields and optional `in_use` | saved template; enabling one clears the other template for its role and scope |
 | `DELETE /settings/templates/:id` | — | `{ok:true}` |
 | `PUT /settings/style` | `{length,lists,terms,never_say,text}` | `{style,style_version}` |
