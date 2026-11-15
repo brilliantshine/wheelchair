@@ -1,6 +1,6 @@
 ---
 slug: app-paper-cuts
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-14
 ---
 
@@ -47,6 +47,27 @@ The settled design. Six independent fixes to the app (`viewer/app/`, `viewer/pag
 `protocol/app/lead.md`, `viewer/app/API.md`). Each fix ships with a test that fails on
 `7246e90` (the commit this plan was mapped against) and passes after. File:line pointers
 are from `MAP.md` and `docs/maps/`; re-check them against the code before editing.
+
+How a card moves after this change: the lead posts it and the hub checks it (a `title`
+card renames the thread and is not stored; a third offer, or a second one not preceded by
+"Keep talking first", is refused). The page draws it, with an "Open IDEA.md" link when it
+carries `doc`. Collin either presses a button, and the hub stores what he picked, or types
+an answer, and the lead resolves the question with a note. The page then shows "You picked
+…" or "Answered in chat".
+
+```mermaid
+flowchart TD
+  A[lead posts a card] --> B{what kind?}
+  B -- title --> T[thread renamed, card not kept]
+  B -- offer --> O{first offer, or second after Keep talking first?}
+  O -- no --> R[refused: the offer was already asked]
+  O -- yes --> P[card shown, pinned]
+  B -- question --> P
+  P --> L[question with doc shows an Open IDEA.md link to the in-app document page]
+  P --> C{how does Collin answer?}
+  C -- presses a button --> V[hub stores what he picked] --> Y[card says You picked ...]
+  C -- types in the chat --> Z[lead resolves the question with a note] --> W[card says Answered in chat]
+```
 
 ### S1. Thread titles (D7, D8)
 
