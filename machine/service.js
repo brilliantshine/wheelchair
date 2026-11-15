@@ -284,7 +284,7 @@ class MachineService {
       const access = input.role === 'reviewer' ? ['-s', 'read-only', '-a', 'never']
         : session.codex_mode === 'unrestricted' ? ['--dangerously-bypass-approvals-and-sandbox']
           : ['-s', 'workspace-write', '-a', 'never', '-c', 'sandbox_workspace_write.network_access=true'];
-      return { argv: ['codex', ...access, '-c', notify, '-c', trust, ...(input.model ? ['-m', input.model] : [])] };
+      return { argv: ['codex', ...access, '-c', notify, '-c', trust, ...(input.model ? ['-m', input.model] : []), ...(session.effort ? ['-c', `model_reasoning_effort=${session.effort}`] : [])] };
     }
     die('cli must be claude or codex');
   }
