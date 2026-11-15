@@ -45,3 +45,26 @@ test('Claude failure hooks and status line survive an offline service', () => {
   assert.equal(result.status, 0); assert.equal(result.stdout.trim(), 'opus · 5h 42%');
   assert.equal(fs.readdirSync(path.join(state, 'spool/events')).length, 1);
 });
+test('captured login screens parse wrapped URLs and device codes', () => {
+  const fixture = name => fs.readFileSync(path.join(__dirname, 'fixtures/login', name), 'utf8');
+  const claude = adapters.claude.parseLogin(fixture('claude.txt'));
+  assert.equal(claude.wantsCode, true); assert.match(claude.url, /code_challenge=AAA/); assert.ok(claude.url.endsWith('BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'));
+  assert.deepEqual(adapters.codex.parseLogin(fixture('codex.txt')), { url: 'https://auth.openai.com/codex/device', code: 'ABCD-12345', wantsCode: false });
+});
+test('seed links instruction files and preserves existing Codex configuration', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'wc-seed-'));
+  const prev = { CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR, CODEX_HOME: process.env.CODEX_HOME };
+  try {
+    for (const [cli, env, name] of [['claude', 'CLAUDE_CONFIG_DIR', 'CLAUDE.md'], ['codex', 'CODEX_HOME', 'AGENTS.md']]) {
+      const usual = path.join(root, cli + '-usual'), dir = path.join(root, cli); fs.mkdirSync(usual); fs.mkdirSync(dir);
+      fs.writeFileSync(path.join(usual, name), 'instructions'); process.env[env] = usual;
+      if (cli === 'codex') fs.writeFileSync(path.join(dir, 'config.toml'), 'existing');
+      adapters[cli].seed(dir, cli); assert.equal(fs.readlinkSync(path.join(dir, name)), path.join(usual, name));
+      if (cli === 'codex') assert.equal(fs.readFileSync(path.join(dir, 'config.toml'), 'utf8'), 'existing');
+    }
+  } finally { for (const k of Object.keys(prev)) { if (prev[k] === undefined) delete process.env[k]; else process.env[k] = prev[k]; } }
+});
+test('Codex maps both quota windows and reached flag', () => {
+  const reading = adapters.codex.usageFrom({ payload: { rate_limits: { primary: { window_minutes: 300, used_percent: 100, resets_at: 1800000000 }, secondary: { window_minutes: 10080, used_percent: 23, resets_at: 1800100000 }, rate_limit_reached_type: 'primary' } } });
+  assert.equal(reading.five_hour.used, 100); assert.equal(reading.week.used, 23); assert.equal(reading.reached, true);
+});

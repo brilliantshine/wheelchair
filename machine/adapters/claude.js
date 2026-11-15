@@ -6,6 +6,13 @@ const usual = () => c.home('CLAUDE_CONFIG_DIR', '.claude');
 const loginEnv = dir => dir ? { CLAUDE_CONFIG_DIR: dir } : {};
 module.exports = {
   provider: 'claude', loginEnv,
+  loginCommand() { return ['claude', 'auth', 'login']; },
+  parseLogin(pane) {
+    const joined = pane.replace(/\r/g, '').replace(/\n(?=\S)(?!Paste code)/gi, '');
+    const url = joined.match(/https:\/\/(?:claude\.(?:ai|com)|console\.anthropic\.com)\/[^\s]+/)?.[0] || null;
+    return url ? { url, code: null, wantsCode: /paste code here if prompted/i.test(pane) } : null;
+  },
+  loginPrompt(pane) { return /(?:login method|account type)/i.test(pane) && /(?:Claude (?:Pro|subscription)|subscription)/i.test(pane) ? ['Enter'] : null; },
   command(input, session, worktree, context) {
     const settingsPath = path.join(context.stateDir, 'settings', `${session.name}.json`);
     const hook = `${c.quote(path.join(c.root, 'machine', 'hook.sh'))} claude ${c.quote(session.name)}`;
