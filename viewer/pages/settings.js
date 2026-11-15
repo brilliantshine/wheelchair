@@ -285,7 +285,7 @@
   }
 
   function blankDraft() {
-    return { id: null, name: '', role: 'worker', scope: 'all', switches: { packages: 'ask', unsettled: 'ask' }, text: '', in_use: false, live_sessions: 0 };
+    return { id: null, name: '', role: 'worker', scope: 'all', switches: { save_every_step: false, full_tests_before_done: false, packages: 'ask', unsettled: 'ask' }, text: '', in_use: false, live_sessions: 0 };
   }
 
   function select(id) {
@@ -300,8 +300,8 @@
   function templateBody() {
     const s = draft.switches || {};
     const switches = {};
-    if (s.save_every_step === true) switches.save_every_step = true;
-    if (s.full_tests_before_done === true) switches.full_tests_before_done = true;
+    if (typeof s.save_every_step === 'boolean') switches.save_every_step = s.save_every_step;
+    if (typeof s.full_tests_before_done === 'boolean') switches.full_tests_before_done = s.full_tests_before_done;
     if (s.packages) switches.packages = s.packages;
     if (draft.role === 'worker' && s.unsettled) switches.unsettled = s.unsettled;
     if (Number.isInteger(s.file_limit) && s.file_limit >= 1) switches.file_limit = s.file_limit;
