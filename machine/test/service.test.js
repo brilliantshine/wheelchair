@@ -26,7 +26,7 @@ case "$(basename \"$0\"):$1" in
   tmux:list-sessions) printf '%s\\n' \${FAKE_SESSIONS:-} ;;
   tmux:load-buffer) cat >> "$FAKE_LOG" ;;
   systemd-run:*) exit 1 ;;
-  git:rev-parse) echo deadbeef ;;
+  git:*) if [[ " $* " == *" rev-parse "* ]]; then echo "\${FAKE_GIT_VERSION:-deadbeef}"; fi ;;
   claude:--version) echo claude-test ;;
   claude:auth) printf '%s\\n' "\${FAKE_CLAUDE_AUTH:-{\\"loggedIn\\":true}}" ;;
   codex:--version) echo codex-test ;;
@@ -37,8 +37,20 @@ esac
   return { bin, log, pane };
 }
 async function hubServer(status = 200) {
-  const calls = []; let current = status;
-  const server = http.createServer((request, response) => { let body = ''; request.on('data', c => { body += c; }); request.on('end', () => { calls.push({ path: request.url, body }); response.writeHead(current); response.end('{}'); }); });
+  const calls = []; let current = status; const delivered = new Set();
+  const allowed = { idea: ['lead'], done: ['lead'], message: ['lead', 'sub-lead', 'worker', 'mapper'], result: ['worker', 'mapper', 'sub-lead'] };
+  const server = http.createServer((request, response) => { let body = ''; request.on('data', c => { body += c; }); request.on('end', () => {
+    let code = current; let answer = {};
+    let payload = {}; try { payload = JSON.parse(body || '{}'); } catch { /* test server records malformed payloads too */ }
+    if (code >= 200 && code < 300 && request.url.endsWith('/events') && !payload.thread_id) { code = 404; answer = { error: 'thread not found' }; }
+    if (code >= 200 && code < 300 && request.url.endsWith('/cards')) {
+      const role = /-(lead|sub-lead|worker|mapper|reviewer|verifier)(?:-\d+)?$/.exec(payload.session || '')?.[1];
+      if (!allowed[payload.kind]?.includes(role)) { code = 422; answer = { error: `${role || 'unknown'} may not post ${payload.kind || 'that card'}` }; }
+      else if (payload.delivery_id && delivered.has(`${payload.thread_id}:${payload.delivery_id}`)) answer = { ok: true, duplicate: true };
+      else if (payload.delivery_id) delivered.add(`${payload.thread_id}:${payload.delivery_id}`);
+    }
+    calls.push({ path: request.url, body, status: code }); response.writeHead(code, { 'content-type': 'application/json' }); response.end(JSON.stringify(answer));
+  }); });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   return { url: `http://127.0.0.1:${server.address().port}`, calls, setStatus: value => { current = value; }, close: () => new Promise(resolve => server.close(resolve)) };
 }
@@ -68,14 +80,14 @@ function git(args, options = {}) {
   if (!options.allowFailure) assert.equal(result.status, 0, result.stderr);
   return result;
 }
-async function project(root) {
+async function project(root, branch = 'main') {
   const origin = path.join(root, 'origin.git'); const repo = path.join(root, 'project');
-  git(['init', '--bare', '--initial-branch=main', origin]);
+  git(['init', '--bare', `--initial-branch=${branch}`, origin]);
   git(['clone', origin, repo]);
   git(['-C', repo, 'config', 'user.name', 'Machine test']);
   git(['-C', repo, 'config', 'user.email', 'machine-test@example.test']);
   await write(path.join(repo, 'README.md'), 'base\n');
-  git(['-C', repo, 'add', 'README.md']); git(['-C', repo, 'commit', '-m', 'base']); git(['-C', repo, 'push', '-u', 'origin', 'main']);
+  git(['-C', repo, 'add', 'README.md']); git(['-C', repo, 'commit', '-m', 'base']); git(['-C', repo, 'push', '-u', 'origin', branch]);
   return repo;
 }
 async function startedWorktree(env, root, threadId) {
@@ -174,12 +186,15 @@ test('hook posts a permission prompt', async () => {
 test('hook ignores an idle prompt', async () => {
   const env = await service(await temp()); try { await start(env); const result = await api(env, 'POST', '/v1/agent/hooks', { type: 'prompt', notification_type: 'idle_prompt' }, { 'x-wheelchair-session-token': 'alpha' }); assert.equal(result.body.ignored, true); } finally { await env.close(); }
 });
-test('down-service hook is spooled and drained when service starts', async () => {
-  const root = await temp(); const state = path.join(root, 'state'); await write(path.join(state, 'machine.json'), JSON.stringify({ host: '127.0.0.1', port: 1 }));
+test('down-service hook is rebound to its session and drained when service starts', async () => {
+  const root = await temp(); const first = await service(root); await start(first); await first.close();
+  const state = path.join(root, 'state'); const configured = JSON.parse(await fs.readFile(path.join(state, 'machine.json'), 'utf8')); await write(path.join(state, 'machine.json'), JSON.stringify({ ...configured, host: '127.0.0.1', port: 1 }));
   const hook = path.join(process.cwd(), 'machine', 'hook.sh'); const priorState = process.env.WHEELCHAIR_STATE_DIR; const priorToken = process.env.WHEELCHAIR_SESSION_TOKEN;
   process.env.WHEELCHAIR_STATE_DIR = state; process.env.WHEELCHAIR_SESSION_TOKEN = 'alpha'; spawnSync(hook, ['claude', 'wc-t-lead'], { input: JSON.stringify({ hook_event_name: 'Stop' }), encoding: 'utf8' }); Object.assign(process.env, { WHEELCHAIR_STATE_DIR: priorState, WHEELCHAIR_SESSION_TOKEN: priorToken });
-  assert.equal((await fs.readdir(path.join(state, 'spool', 'events'))).length, 1);
-  const hub = await hubServer(); const env = await service(root, { config: { hub_url: hub.url } }); try { await new Promise(resolve => setTimeout(resolve, 15)); assert.equal((await fs.readdir(path.join(env.state, 'spool', 'events'))).length, 0); assert.equal(hub.calls[0].path, '/api/machine/events'); } finally { await env.close(); await hub.close(); }
+  const spooled = await Promise.all((await fs.readdir(path.join(state, 'spool', 'events'))).map(async file => JSON.parse(await fs.readFile(path.join(state, 'spool', 'events', file), 'utf8'))));
+  // The first service's own ready event spooled too (no hub then); the hook's event has no thread_id until drained.
+  const hooked = spooled.filter(event => event.type === 'turn-ended'); assert.equal(hooked.length, 1); assert.equal(hooked[0].thread_id, undefined);
+  const hub = await hubServer(); const env = await service(root, { config: { hub_url: hub.url } }); try { await new Promise(resolve => setTimeout(resolve, 15)); assert.equal((await fs.readdir(path.join(env.state, 'spool', 'events'))).length, 0); const call = hub.calls.find(entry => entry.path === '/api/machine/events' && JSON.parse(entry.body).type === 'turn-ended'); assert.ok(call); const posted = JSON.parse(call.body); assert.equal(posted.thread_id, 't'); assert.match(posted.delivery_id, /^[0-9a-f-]{36}$/); } finally { await env.close(); await hub.close(); }
 });
 test('Codex binding rejects title notify and requires literal role marker plus rollout', async () => {
   const env = await service(await temp(), { pane: readyCodex }); const prior = process.env.CODEX_HOME;
@@ -195,7 +210,98 @@ test('transcript copy dedupes content after source shrinks', async () => {
   const env = await service(await temp()); try { await start(env); const source = path.join(path.dirname(env.state), 'source.jsonl'); await write(source, '{"one":1}\n{"two":2}\n'); const session = env.instance.sessions['wc-t-lead']; await env.instance.copyTranscript(session, source); await write(source, '{"one":1}\n'); await env.instance.copyTranscript(session, source); assert.equal((await fs.readFile(session.transcript_path, 'utf8')).trim().split('\n').length, 2); } finally { await env.close(); }
 });
 test('card spool keeps order and retries until acknowledged', async () => {
-  const hub = await hubServer(503); const env = await service(await temp(), { config: { hub_url: hub.url } }); try { await start(env); await api(env, 'POST', '/v1/agent/cards', { n: 1 }, { 'x-wheelchair-session-token': 'alpha' }); await api(env, 'POST', '/v1/agent/cards', { n: 2 }, { 'x-wheelchair-session-token': 'alpha' }); assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 2); hub.setStatus(200); await env.instance.drainSpool('cards'); assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 0); const cards = hub.calls.filter(call => call.path.endsWith('/cards')); assert.match(cards.at(-2).body, /"n":1/); assert.match(cards.at(-1).body, /"n":2/); } finally { await env.close(); await hub.close(); }
+  const hub = await hubServer(503); const env = await service(await temp(), { config: { hub_url: hub.url } }); try { await start(env); await api(env, 'POST', '/v1/agent/cards', { kind: 'idea', bullets: [{ id: 'one', text: 'one' }] }, { 'x-wheelchair-session-token': 'alpha' }); await api(env, 'POST', '/v1/agent/cards', { kind: 'idea', bullets: [{ id: 'two', text: 'two' }] }, { 'x-wheelchair-session-token': 'alpha' }); assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 2); hub.setStatus(200); await env.instance.drainSpool('cards'); assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 0); const cards = hub.calls.filter(call => call.path.endsWith('/cards')); assert.match(cards.at(-2).body, /"id":"one"/); assert.match(cards.at(-1).body, /"id":"two"/); } finally { await env.close(); await hub.close(); }
+});
+test('a refused card is returned to its worker, retained as rejected, and does not stop a following result', async () => {
+  const hub = await hubServer(); const env = await service(await temp(), { config: { hub_url: hub.url } }); try {
+    await start(env); await start(env, { role: 'worker', token: 'worker-token' });
+    const refused = await api(env, 'POST', '/v1/agent/cards', { kind: 'done' }, agentHeader('worker-token'));
+    assert.equal(refused.status, 422); assert.match(refused.body.error, /worker may not post done/);
+    const rejected = await fs.readdir(path.join(env.state, 'spool', 'rejected', 'cards'));
+    assert.equal(rejected.length, 1);
+    const accepted = await api(env, 'POST', '/v1/agent/cards', { kind: 'result' }, agentHeader('worker-token'));
+    assert.equal(accepted.status, 200);
+    assert.equal(JSON.parse(hub.calls.filter(call => call.path.endsWith('/cards')).at(-1).body).kind, 'result');
+  } finally { await env.close(); await hub.close(); }
+});
+test('a refused spooled card moves aside and the following card drains', async () => {
+  const hub = await hubServer(503); const env = await service(await temp(), { config: { hub_url: hub.url } }); try {
+    await start(env); await start(env, { role: 'worker', token: 'worker-token' });
+    assert.equal((await api(env, 'POST', '/v1/agent/cards', { kind: 'done' }, agentHeader('worker-token'))).status, 202);
+    assert.equal((await api(env, 'POST', '/v1/agent/cards', { kind: 'result' }, agentHeader('worker-token'))).status, 202);
+    hub.setStatus(200); await env.instance.drainSpool('cards');
+    assert.equal((await fs.readdir(path.join(env.state, 'spool', 'rejected', 'cards'))).length, 1);
+    assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 0);
+    const delivered = hub.calls.filter(call => call.path.endsWith('/cards') && call.status === 200).map(call => JSON.parse(call.body).kind);
+    assert.deepEqual(delivered, ['result']);
+  } finally { await env.close(); await hub.close(); }
+});
+test('concurrent card drains send each spooled card exactly once', async () => {
+  const hub = await hubServer(); const env = await service(await temp(), { config: { hub_url: hub.url } }); try {
+    await start(env);
+    await env.instance.spool('cards', { kind: 'idea', bullets: [{ id: 'one', text: 'one' }], session: 'wc-t-lead', thread_id: 't' });
+    await Promise.all([env.instance.drainSpool('cards'), env.instance.drainSpool('cards')]);
+    assert.equal(hub.calls.filter(call => call.path.endsWith('/cards')).length, 1);
+  } finally { await env.close(); await hub.close(); }
+});
+test('status keeps the version read when the service was constructed', async () => {
+  await withEnv({ FAKE_GIT_VERSION: 'boot-commit' }, async () => {
+    const env = await service(await temp()); try {
+      process.env.FAKE_GIT_VERSION = 'after-pull';
+      const status = await api(env, 'GET', '/v1/status', undefined, hubHeader);
+      assert.equal(status.body.version, 'boot-commit');
+    } finally { await env.close(); }
+  });
+});
+test('a worktree starts from origin trunk and records trunk as its default branch', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true }); try {
+    const repo = await project(root, 'trunk');
+    const session = await start(env, { thread_id: 'trunk', token: 'trunk-token', project_dir: repo, project: 'project', serviceWorktree: true });
+    assert.equal(session.default_branch, 'trunk');
+    assert.equal(git(['-C', repo, 'merge-base', '--is-ancestor', 'origin/trunk', session.branch]).status, 0);
+  } finally { await env.close(); }
+});
+test('a worker restart reuses its worktree and branch, while a missing worktree is refused', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true }); try {
+    const { repo } = await startedWorktree(env, root, 'reuse');
+    const first = await start(env, { role: 'worker', thread_id: 'reuse', token: 'worker-one', project_dir: repo, project: 'project', serviceWorktree: true });
+    const before = git(['-C', repo, 'for-each-ref', '--format=%(refname:short)', 'refs/heads/wc-reuse-w']).stdout;
+    const replacement = await start(env, { role: 'worker', name: 'wc-reuse-worker-2', thread_id: 'reuse', token: 'worker-two', worktree: first.worktree, branch: first.branch });
+    assert.equal(replacement.worktree, first.worktree); assert.equal(replacement.branch, first.branch);
+    assert.equal(git(['-C', repo, 'for-each-ref', '--format=%(refname:short)', 'refs/heads/wc-reuse-w']).stdout, before);
+    const missing = await api(env, 'POST', '/v1/sessions', { role: 'worker', cli: 'claude', thread_id: 'reuse', token: 'worker-three', name: 'wc-reuse-worker-3', worktree: path.join(root, 'missing-worker-worktree'), branch: first.branch }, hubHeader);
+    assert.equal(missing.status, 400); assert.match(missing.body.error, /does not exist/);
+  } finally { await env.close(); }
+});
+test('transcript copies wait for a complete JSONL line before advancing their offset', async () => {
+  const env = await service(await temp()); try {
+    await start(env); const session = env.instance.sessions['wc-t-lead']; const source = path.join(path.dirname(env.state), 'partial.jsonl');
+    await write(source, '{"one":1}\n{"two":'); await env.instance.copyTranscript(session, source);
+    assert.deepEqual((await fs.readFile(session.transcript_path, 'utf8')).trim().split('\n').map(JSON.parse), [{ one: 1 }]);
+    await fs.appendFile(source, '2}\n'); await env.instance.copyTranscript(session, source);
+    assert.deepEqual((await fs.readFile(session.transcript_path, 'utf8')).trim().split('\n').map(JSON.parse), [{ one: 1 }, { two: 2 }]);
+  } finally { await env.close(); }
+});
+test('a live session serves its kept transcript copy after the source transcript disappears', async () => {
+  const env = await service(await temp()); try {
+    await start(env); const session = env.instance.sessions['wc-t-lead']; const source = path.join(path.dirname(env.state), 'gone.jsonl');
+    await write(source, '{"kept":true}\n'); await env.instance.copyTranscript(session, source); session.source_transcript = source;
+    await fs.rename(source, `${source}.gone`);
+    const transcript = await env.instance.transcript(session.name);
+    assert.equal(transcript.data, '{"kept":true}\n');
+  } finally { await env.close(); }
+});
+test('Claude trust is checked within a second instead of waiting for the two-second readiness poll', async () => {
+  const env = await service(await temp(), { pane: 'loading' }); try {
+    await start(env); await write(env.fake.pane, trustDialog); const deadline = Date.now() + 1_000;
+    let calls = '';
+    while (Date.now() < deadline) {
+      calls = await log(env);
+      if (calls.includes('send-keys -t wc-t-lead Down') && calls.includes('send-keys -t wc-t-lead Enter')) break;
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    assert.match(calls, /send-keys -t wc-t-lead Down/); assert.match(calls, /send-keys -t wc-t-lead Enter/);
+  } finally { await env.close(); }
 });
 test('agent session forward retries then reports hub unavailable', async () => {
   const hub = await hubServer(503); const env = await service(await temp(), { config: { hub_url: hub.url } }); try { await start(env); env.instance.retryWindow = 20; env.instance.retryDelay = 5; await assert.rejects(() => env.instance.forwardSession(env.instance.sessions['wc-t-lead'], { action: 'start', attempt_id: 'a' }), /hub unavailable/); assert.ok(hub.calls.filter(call => call.path.endsWith('/session')).length > 1); } finally { await env.close(); await hub.close(); }
@@ -313,7 +419,7 @@ test('the spool is retried on a timer until the hub acknowledges', async () => {
   const hub = await hubServer(503);
   await withEnv({ WHEELCHAIR_SPOOL_INTERVAL_MS: '20' }, async () => {
     const env = await service(await temp(), { config: { hub_url: hub.url } }); try {
-      await start(env); await api(env, 'POST', '/v1/agent/cards', { n: 1 }, agentHeader('alpha'));
+      await start(env); await api(env, 'POST', '/v1/agent/cards', { kind: 'idea', bullets: [{ id: 'one', text: 'one' }] }, agentHeader('alpha'));
       assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 1);
       hub.setStatus(200);
       for (let i = 0; i < 50 && (await fs.readdir(path.join(env.state, 'spool', 'cards'))).length; i += 1) await new Promise(resolve => setTimeout(resolve, 20));
