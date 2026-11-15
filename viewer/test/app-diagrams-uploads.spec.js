@@ -71,6 +71,22 @@ test('paste uploads bytes, oversize is refused, and image cards respect archive'
   await page.reload(); await expect(page.getByText('Image removed when the thread was archived')).toBeVisible(); expect(requested).toEqual([]);
 });
 
+test('archiving redraws an open image card without reloading', async ({ page }) => {
+  const made = await ctx.make({ cli: 'claude' });
+  const dir = path.join(ctx.machine.uploadsDir, made.id);
+  const file = path.join(dir, '1-shot.png');
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(file, png);
+  await ctx.post(made.id, { kind: 'image', path: file, title: 'Screenshot' });
+  await page.goto(`${ctx.server.url}/app/thread?id=${made.id}`);
+  const img = page.locator('img.card-image');
+  await expect(img).toBeVisible();
+  await expect.poll(() => img.evaluate((node) => node.naturalWidth)).toBeGreaterThan(0);
+  await ctx.patch(made.id, (t) => { t.archived = true; });
+  await expect(page.getByText('Image removed when the thread was archived')).toBeVisible({ timeout: 10000 });
+  await expect(img).toHaveCount(0);
+});
+
 test('attachments stay fixed during upload and are sent in order', async ({ page }) => {
   const made = await ctx.make({ cli: 'claude' });
   await page.goto(`${ctx.server.url}/app/thread?id=${made.id}`);
