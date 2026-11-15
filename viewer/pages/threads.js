@@ -44,7 +44,9 @@
     if (t.id === currentId) a.setAttribute('aria-current', 'page');
     const top = el('div', 'top');
     const stage = stages[t.id];
-    const dot = el('span', 'dotmark ' + (waiting[t.id] ? 'amber' : stage === 'Done' ? 'green' : stage ? 'blue' : ''));
+    const working = !t.archived && (t.sessions || []).some((s) => s.role === 'lead' && s.live && s.ready && s.turn_ended === false);
+    const dot = el('span', 'dotmark ' + (waiting[t.id] ? 'amber' : stage === 'Done' ? 'green' : stage ? 'blue' : '') + (working ? ' working' : ''));
+    if (working) dot.title = 'Working';
     top.appendChild(dot);
     top.appendChild(el('span', 'title', nameOf(t)));
     // A stub is only a stub until it is opened: once a lead runs in it, it is ordinary work.

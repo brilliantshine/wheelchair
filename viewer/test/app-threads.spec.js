@@ -598,3 +598,22 @@ for (const [label, size] of SIZES) {
     });
   });
 }
+
+test.describe('working indicator', () => {
+  let ctx;
+  test.beforeEach(async ({ page }) => { ctx = await startWorld(); await signIn(page, ctx); });
+  test.afterEach(async () => { await ctx.close(); });
+
+  test('dots show under the chat and the list dot pulses while the lead is mid-turn', async ({ page }) => {
+    const made = await ctx.make({ cli: 'claude' });
+    const setTurn = (ended) => ctx.patch(made.id, (x) => {
+      for (const s of x.sessions) if (s.role === 'lead') { s.live = true; s.ready = true; s.turn_ended = ended; }
+    });
+    await setTurn(false);
+    await page.goto(`${ctx.server.url}/app/thread?id=${made.id}`);
+    await expect(page.locator('#working')).toBeVisible();
+    await expect(page.locator(`#list li[data-id="${made.id}"] .dotmark.working`)).toHaveCount(1);
+    await setTurn(true);
+    await expect(page.locator('#working')).toBeHidden({ timeout: 10000 });
+  });
+});
