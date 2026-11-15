@@ -120,3 +120,50 @@ test twice, and `app-threads.spec.js:339` Firefox phone approval timing out at 3
 ## Remediation rounds
 
 Appended by Stage 4 loops; never erase earlier content.
+
+### Remediation 1 — 2026-11-15
+
+Verification attempt 1 (Codex `gpt-6.1-sol`, on `26d926a`) failed with four gaps, listed
+verbatim in `REMEDIATION-1.md`. Fixed by R1 (Claude standard, `claude-sonnet-5-5`, `d6068fc`)
+and R1e (Claude light, `claude-haiku-5-5`, `3803075`; a fifth case of the first gap, found
+by the sub-lead reviewing R1).
+
+| Gap | Fix at (file:line) | Validated by |
+|-----|--------------------|--------------|
+| Machine switch kept the old project selectable and Start enabled; Start posted it with the new machine | `viewer/pages/new.js:133` (switch empties and disables Project and Start, sets `state.machine = null`); `:166` (Start refuses unless `state.machine` matches, and posts `state.machine`) | `viewer/test/app-new-thread.spec.js` delayed machine-switch test |
+| Saved list stayed clickable during a switch; Remove went to the new machine (R1e) | `viewer/pages/new.js:133` (saved list emptied); `:112` (Remove refuses when stale, deletes on `state.machine`) | `app-new-thread.spec.js` saved list empty until the delayed answer lands |
+| Duplicate paths within a group | `viewer/pages/new.js:37` (`group()` checks and marks `seen` per item) | `app-new-thread.spec.js` two saved names, one path, one option |
+| Name `..` saved but not removable | `viewer/app/routes.js:94` (`.` and `..` refused, 400); DELETE turns a malformed escape into 404; `viewer/app/API.md` POST row | `viewer/test/app-new-thread.test.js` (`..`, `.` → 400; `%E0%A4%A` → 404) |
+| Remove errors not beside the row | `viewer/pages/new.js:112` (error line inside that entry's `<li>`); `viewer/pages/new.html:40` (`#add-error` directly under the Add row); shared banner removed | `app-new-thread.spec.js` failed Remove shows in its row; Add refusal under the Add row |
+
+The first two Deviations above (saved-directory errors in one shared line) no longer hold: errors
+now sit beside their row. The residual risk "malformed percent-escape in DELETE" is closed.
+
+Validation on `wc/1a4f2c3d8d4c` at `77c12c1`, run by the sub-lead:
+
+```
+$ bash machine/test/run.sh
+# tests 66
+# pass 66
+# fail 0
+
+$ node --test viewer/test/*.test.js
+# tests 278
+# pass 278
+# fail 0
+
+$ npm --prefix viewer run test:browser
+  ✘  [chromium] › test/app-new-thread.spec.js:29:1 › one column, full-width controls, no sideways scroll
+     (setup: "server exited before ready (1): Refused to use a port held by a process it cannot identify")
+  ✘  [chromium] › test/browser.spec.js:2395:1 › no drawn arrow's line passes through either box it connects, over every committed graph
+  ✘  [firefox] › test/app-threads.spec.js:250:5 › phone › cards: every kind renders and presses call the press route (30.1s timeout)
+  ✘  [firefox] › test/browser.spec.js:2395:1 › no drawn arrow's line passes through either box it connects, over every committed graph
+  4 failed, 2 skipped, 470 passed
+
+$ npm --prefix viewer run test:browser -- app-new-thread.spec.js app-threads.spec.js --repeat-each 2
+  256 passed
+```
+
+The arrow test is the recorded known issue (`docs/known-issues.md:53`). The other two failed on
+test-server startup (a port race in the helper) and a 30 s timeout under load, and pass on repeat.
+The freed-port node test passed this run.
