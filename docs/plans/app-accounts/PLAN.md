@@ -12,12 +12,6 @@ get buried as this file grows. **Map:** `MAP.md`.
 
 ## Open Questions
 
-### Q2: Who chooses the provider and account for a session: the app, or the lead/sub-lead?
-- **Context:** Today agents pass `--cli` (MAP.md, "Usage and balancing"). Balancing by rule
-  means the hub decides, before `resolveModel` (`viewer/app/sessions.js:16-39`).
-- **Recommendation:** the hub decides for every session; `--cli` becomes a request the hub
-  may honour only when a rule allows (e.g. "other family from mine" for reviewers).
-
 ### Q3: Leads on Claude only, against the shipped Leads panel
 - **Context:** Settings lets each provider have a lead model
   (`viewer/pages/settings.js:265-270`); the proposal says leads run on Claude Opus only and
@@ -59,6 +53,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 |---|----------|-----------|--------|
 | D1 | Defaults: within a provider, soonest refill first; notify below 25% once per provider per week; leave 10% per account; Claude margin 5% | The proposal's own numbers | defaulted |
 | D2 | Build several accounts, usage and balancing for Claude and Codex only. Google, OpenRouter and pay-as-you-go keys move to Not doing; the adapter is shaped so each new CLI is one later thread | Gemini CLI no longer serves Google subscriptions; a third CLI touches ~40 places; most value is on the two CLIs in use | idea-change |
+| D3 | The hub picks provider and account for every session. Agents ask for role and tier only; a reviewer or verifier may ask for "not the same provider as <session or provider>", which the hub honours. `--cli` stops being a choice | Provider order, Save Claude for leads and the margin only hold if agents can't route around them | user |
 
 ## Spec
 
@@ -67,6 +62,17 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
   accounts each. No third CLI, no pay-as-you-go keys (D2).
 - Defaults (D1): soonest refill first within a provider; notify below 25% once per provider
   per week; leave 10% of each account; Claude margin 5%.
+
+### Who picks (D3)
+- Every session start (lead, sub-lead, mapper, reviewer, verifier, worker) goes through one
+  hub balancer that returns `{provider, account}` before `resolveModel`
+  (`viewer/app/sessions.js:16-39`) and overrides `input.cli` (`sessions.js:74`).
+- `wc.js session start` drops `--cli` as a choice. It gains `--not-provider <claude|gpt>` and
+  `--not-same-as <session name>` for reviewers and verifiers; the hub resolves the named
+  session's provider from its record. A constraint that leaves no provider with room is
+  refused with the reason, or waits (see open questions).
+- `protocol/app/lead.md:47` and `protocol/app/sub-lead.md:73` change to match: cross-family
+  rules are expressed with the new flags.
 
 ## Accepted Risks
 
