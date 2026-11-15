@@ -169,3 +169,64 @@ exit 1
 ```
 
 Remaining failures are the same two known ones as before: the port-race unit test and the drawn-arrow browser test (`docs/known-issues.md:53`).
+
+### Remediation 2 — 2026-11-15
+
+Verification 2 (GPT, on `6a65da5`) failed on one new gap; verbatim in `REMEDIATION-2.md`. Fixed by R2 (GPT light, `gpt-6-luna`).
+
+| Gap | Fix (file:line) | Validated by |
+|-----|-----------------|--------------|
+| Spec 2, archived image cards (image stayed visible after archive until reload) | viewer/pages/thread.js:766 (`t.archived` in the chat render signature) | viewer/test/app-diagrams-uploads.spec.js:74 (archive while the page is open, no reload; both browsers) |
+
+Validation after remediation, sub-lead run on `45430fc`:
+
+`bash machine/test/run.sh`:
+```text
+# tests 89
+# pass 89
+# fail 0
+exit 0
+```
+
+`node --test viewer/test/*.test.js`:
+```text
+not ok 233 - a starter that loses the freed port registers through the new holder
+# tests 349
+# pass 348
+# fail 1
+exit 1
+```
+
+`npm --prefix viewer run test:browser`:
+```text
+  ✓    1 [chromium] › test/app-diagrams-uploads.spec.js:15:1 › forms and static sandboxed HTML render without overflow or network (1.6s)
+  ✓   47 [chromium] › test/app-accounts.spec.js:148:5 › phone › a failed sign-in shows the fallback and an Open terminal link (377ms)
+  ✓   48 [chromium] › test/app-settings.spec.js:240:3 › desktop › a failed preview shows one plain line under the panel (217ms)
+  ✓   51 [chromium] › test/app-new-thread.spec.js:163:1 › a failed Remove shows inside that entry; an Add refusal shows under the Add row (326ms)
+  ✓   16 [chromium] › test/app-diagrams-uploads.spec.js:49:1 › paste uploads bytes, oversize is refused, and image cards respect archive (6.2s)
+  ✓   97 [chromium] › test/render.spec.js:129:3 › list page › a failed poll shows an error and keeps the last good list (91ms)
+  ✓   60 [chromium] › test/app-diagrams-uploads.spec.js:74:1 › archiving redraws an open image card without reloading (4.3s)
+  ✓  120 [chromium] › test/app-diagrams-uploads.spec.js:90:1 › attachments stay fixed during upload and are sent in order (514ms)
+  ✓  139 [chromium] › test/app-accounts.spec.js:148:5 › desktop › a failed sign-in shows the fallback and an Open terminal link (309ms)
+  ✓  128 [chromium] › test/app-diagrams-uploads.spec.js:117:1 › upload app error shows detail and preserves the draft (2.0s)
+  ✓  165 [firefox] › test/app-diagrams-uploads.spec.js:15:1 › forms and static sandboxed HTML render without overflow or network (2.4s)
+  ✓  192 [firefox] › test/app-diagrams-uploads.spec.js:49:1 › paste uploads bytes, oversize is refused, and image cards respect archive (2.9s)
+  ✓  217 [firefox] › test/app-accounts.spec.js:148:5 › phone › a failed sign-in shows the fallback and an Open terminal link (492ms)
+  ✓  206 [firefox] › test/app-diagrams-uploads.spec.js:74:1 › archiving redraws an open image card without reloading (3.4s)
+  ✓  229 [firefox] › test/app-diagrams-uploads.spec.js:90:1 › attachments stay fixed during upload and are sent in order (947ms)
+  ✓  233 [firefox] › test/app-diagrams-uploads.spec.js:117:1 › upload app error shows detail and preserves the draft (735ms)
+  ✓  242 [chromium] › test/app-accounts.spec.js:423:3 › lead waiting line › hidden when the lead is fine or the limit has passed (788ms)
+  ✓  293 [firefox] › test/app-new-thread.spec.js:163:1 › a failed Remove shows inside that entry; an Add refusal shows under the Add row (765ms)
+  ✘  313 [chromium] › test/browser.spec.js:2395:1 › no drawn arrow's line passes through either box it connects, over every committed graph (383ms)
+  ✓  311 [firefox] › test/app-accounts.spec.js:148:5 › desktop › a failed sign-in shows the fallback and an Open terminal link (836ms)
+  ✓  321 [firefox] › test/app-settings.spec.js:240:3 › desktop › a failed preview shows one plain line under the panel (2.3s)
+  ✓  373 [firefox] › test/render.spec.js:129:3 › list page › a failed poll shows an error and keeps the last good list (501ms)
+  ✓  473 [firefox] › test/app-accounts.spec.js:423:3 › lead waiting line › hidden when the lead is fine or the limit has passed (2.2s)
+  ✘  550 [firefox] › test/browser.spec.js:2395:1 › no drawn arrow's line passes through either box it connects, over every committed graph (398ms)
+  2 failed
+  2 skipped
+  574 passed (2.2m)
+exit 1
+```
+
+Remaining failures are the same two known ones: the port-race unit test and the drawn-arrow browser test (`docs/known-issues.md:53`).

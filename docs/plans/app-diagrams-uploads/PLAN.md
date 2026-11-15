@@ -1,6 +1,6 @@
 ---
 slug: app-diagrams-uploads
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-15
 adopted-from: docs/proposals/app-diagrams-uploads/proposal.md
 ---
@@ -370,7 +370,7 @@ Clean round: approved.
 | T6 | Hub: an upload the machine cancels answers 409, not 500 (defect found by T5; T2 rework on a sharper brief, same tier: the T2 brief never said what to do when the machine drops the connection) | viewer/app/routes.js, viewer/app/machine-client.js, viewer/test/app-hub.test.js, viewer/test/helpers/app-machine.js | gpt standard (gpt-6.1-terra) | wc-c56d4b2c5f5f-worker-7 | `node --test viewer/test/app-uploads-archive.test.js` | done |
 | R1a | Remediation 1: composer uploads a snapshot in order; shows the hub's error detail | viewer/pages/thread.js, thread.css, viewer/test/app-diagrams-uploads.spec.js, viewer/test/helpers/app-machine.js | gpt standard (gpt-6.1-terra) | wc-c56d4b2c5f5f-worker-8 | `npm --prefix viewer run test:browser` | done |
 | R1b | Remediation 1: image card path must be absolute (card.js and machine) | viewer/app/card.js, machine/service.js, viewer/test/app-hub.test.js, machine/test/service.test.js | gpt standard (gpt-6.1-terra) | wc-c56d4b2c5f5f-worker-9 | `bash machine/test/run.sh`; node suite | done |
-| R2 | Remediation 2: chat redraws when the thread is archived (image cards show the removal notice without reload) | viewer/pages/thread.js, viewer/test/app-diagrams-uploads.spec.js | gpt light | — | `npm --prefix viewer run test:browser` | in progress |
+| R2 | Remediation 2: chat redraws when the thread is archived (image cards show the removal notice without reload) | viewer/pages/thread.js, viewer/test/app-diagrams-uploads.spec.js | gpt light (gpt-6-luna) | wc-c56d4b2c5f5f-worker-10 | `npm --prefix viewer run test:browser` | done |
 | T5 | Integration: archive through the real hub route while an upload to the real machine service is paused | one new viewer/test/*.test.js | gpt standard (gpt-6.1-terra) | wc-c56d4b2c5f5f-worker-5 | `node --test viewer/test/*.test.js` | done (test merged; it exposed the T6 defect) |
 
 ## Log
@@ -399,3 +399,4 @@ Clean round: approved.
 - 2026-11-15 — R1b accepted: worker reported no choices; machine suite 89/89 re-run by sub-lead; diff matches the brief.
 - 2026-11-15 — R1a accepted: worker reported no choices; diff matches the brief. Full validation on 6e8f883: machine 89/89, node 348/349 (known port race), browser 572 passed, 2 failed (known drawn-arrow). COMPLETION.md Remediation 1 added; status verifying; verifier 2 started.
 - 2026-11-15 — Verification 2 FAIL on 6a65da5: one new gap (REMEDIATION-2.md), not a repeat of attempt 1's gaps. R2 opened at GPT light: the brief gives the exact one-line change.
+- 2026-11-15 — R2 accepted: worker reported no choices; diff is the briefed line plus its test. Full validation on 45430fc: machine 89/89, node 348/349 (known port race), browser 574 passed, 2 failed (known drawn-arrow). COMPLETION.md Remediation 2 added; status verifying; verifier 3 started.
