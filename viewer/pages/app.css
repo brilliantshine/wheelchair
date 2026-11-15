@@ -98,6 +98,11 @@ label { display: block; font-size: 12px; color: var(--dim); margin-bottom: 4px; 
 .dotmark.amber { background: var(--warn); }
 .dotmark.blue { background: var(--accent); }
 .dotmark.green { background: var(--good); }
+/* A thread whose lead is mid-turn: the dot pulses. */
+.dotmark.working { animation: dot-pulse 1.4s ease-in-out infinite; }
+.dotmark.working:not(.amber):not(.green) { background: var(--accent); }
+@keyframes dot-pulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent); } 70% { box-shadow: 0 0 0 5px transparent; } }
+@media (prefers-reduced-motion: reduce) { .dotmark.working { animation: none; } }
 
 /* ---- the Threads shell: thread list | main | side, used by the Threads and thread pages ---- */
 .shell { display: grid; grid-template-columns: minmax(220px, 280px) minmax(0, 1fr) minmax(250px, 320px);
