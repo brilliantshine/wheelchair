@@ -51,6 +51,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 18 | IDEA narrowed: the newer-model notice is GPT only (Claude cells offer "Latest" family aliases instead), and Critical here means startable, not parts marked critical | Round 1 intent findings; follows decision 9 | idea-change |
 | 19 | The "when the brief doesn't settle something" switch is offered on worker templates only, and `worker.md` names its escalation rule as the one built-in rule a template may change; decided questions are flagged in the report | Collin designed the switch; the alternative (no effect) would make it a dead control | defaulted |
 | 20 | "Pick, record it, keep going" really lets workers decide: `worker.md`'s escalation rule is the one built-in rule a worker template may change, and IDEA's constraint names that exception | Collin, on the card | user / idea-change |
+| 21 | Supersedes 5: the hub sends `role_layers` and the machine service composes its own role-file pointer first, so remote machines with a different clone path work | Round 3 mechanics finding | review-round-3 |
 
 ## Spec
 
@@ -361,16 +362,16 @@ browser-route rules (remember cookie, origin check).
 - A project removed from `projects.json`: its templates stay, shown as "project no longer
   listed".
 - A lead with a queued message when the style changes gets the trailer on that message.
-- Codex leads get the same role_prompt through their first `[wc:role]` message
+- Codex leads get the same composed instructions through their first `[wc:role]` message
   (`service.js:284-286`) and the same trailer.
 
 ### Validation
 
 ```bash
 bash codex/test/run.sh                # new file format, legacy read, aliases, none, effort, check --json, show --json
-bash machine/test/run.sh              # permission_mode argv and bypass readiness, effort, role_prompt, /v1/preview
+bash machine/test/run.sh              # permission_mode argv and bypass readiness, effort, role_layers composed after the local pointer, /v1/preview
 bash install/test/run.sh              # renamed tier names in installer assertions
-node --test viewer/test/*.test.js     # resolveModel per role, none refusal, critical startable, settings routes, templates in use, role_prompt composition and cap, style trailer once, chat strips trailer
+node --test viewer/test/*.test.js     # resolveModel per role, none refusal, critical startable, settings routes, templates in use, role_layers composition and cap, style trailer once, chat strips trailer
 npm --prefix viewer run test:browser  # Settings page: three sections, table edit saves, phone width tabs, template save, preview button states
 grep -rnE '\b(luna|terra|astra)\b|\bSol\b' protocol viewer/app codex machine --include=*.md --include=*.js --include=*.sh | grep -v 'gpt-'   # only alias tables and tests remain
 ```
