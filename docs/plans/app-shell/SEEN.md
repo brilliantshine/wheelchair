@@ -78,3 +78,12 @@
 2026-11-15T04:07:15Z shown 65c6
 2026-11-15T04:07:15Z turn
 2026-11-15T04:32:31Z new 4827 the codex resume lands in the current directory, not the lane's; recorded in known-issues
+2026-11-15T04:32:51Z shown 4827
+2026-11-15T04:32:51Z turn
+2026-11-15T04:49:50Z new b6e9 my round-1 fix made any refused card crash the viewer; fixed and redeployed
+2026-11-15T04:49:50Z new 50be a retried event after a failed send is wrongly treated as already done, so the message never goes
+2026-11-15T04:49:50Z new e420 new diagrams in a thread still don't load
+2026-11-15T04:49:50Z new b579 the out-of-date check still reads its commit too late
+2026-11-15T04:49:50Z new a8d2 archiving again after finishing a rebase leaves the worktree behind
+2026-11-15T04:49:50Z new c5d2 opening a child picture in an archived diagram shows the parent again
+2026-11-15T04:49:50Z new 6396 whether typing an answer should close a question card is undecided

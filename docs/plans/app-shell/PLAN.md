@@ -1228,6 +1228,8 @@ Spec item done as described, so every row is `partial` and nothing is marked `pr
 | R1 | Remediation 1, machine service: spooled events, card intake, delivery ids, one drain, boot version, default branch, worker restart in place, whole-line transcripts, trust check interval | `machine/` | GPT / Terra (gpt-5.6-terra) | 01a1dd63-3117-7f90-8664-dd5d6cb34b13 | `bash machine/test/run.sh`, node suite | done (merged 8edf85c) |
 | R2 | Remediation 1, hub: state serialization, queue loss, delivery ids, Codex preflight, boot version, wc.js flags, worker restart, stop by role, Features/Needs/unreachable, terminal busy, rebase needs, stub commits, Codex filter, diagram registration, token strip | `viewer/app/`, app tests | GPT / Terra (gpt-5.6-terra) | 01a1dd63-3117-70d0-bd58-ada5dd6b6c61 | node suite, browser suite | done (merged 1b99a8b) |
 | R3 | Remediation 1, pages: terminal `;`, hub attach command, Done card buttons, archived diagrams drawn | `viewer/pages/`, specs | Claude / Sonnet | n/a | browser suite, node suite | done (merged a4f6852) |
+| R4 | Remediation 2: event delivery id after success, diagram graph registration, version from server start, Codex turn reset, archive after a rebase | `viewer/app/`, two `server.js` hooks, `machine/service.js` archive | GPT / Terra (gpt-5.6-terra), xhigh, fresh | pending | machine, node, browser suites | in-progress |
+| R5 | Remediation 2, archived child pictures navigate to the child | `viewer/index.html`, specs | Claude / Sonnet (fresh) | n/a | browser suite, node suite | in-progress |
 
 ## Log
 
@@ -1313,3 +1315,4 @@ Spec item done as described, so every row is `partial` and nothing is marked `pr
 - 2026-11-14 — Choice: R2, `viewer/app/sessions.js`: stop by role only for lead and sub-lead (workers keep only direct-starter authority).
 - 2026-11-14 — Choice: R2, `viewer/test/app-slug.test.js`: test repos left in the system temp dir (the no-delete rule; also in app-machines.test.js).
 - 2026-11-14: remediation 1 validated: sensitivity 62/0, seen 18/0, codex 45/0, install 87/0, machine 49/49, node 230 with 229 passing (known port race), browser 330 passed / 2 failed (known no-drawn-arrow) / 2 skipped, install pair exit 0 twice with no new changes. Re-verify next.
+- 2026-11-14: Stage 4 round 2 (resumed Opus and Sol) FAIL. The lead fixed the viewer crash its own remediation introduced and taught `--replaces` in sub-lead.md (ba2c84f, deployed). Five round-1 gaps survived as edge cases, so R4 goes to a fresh Terra at xhigh and R5 to a fresh Sonnet. The card-resolution decline stands; Collin decides typed answers along with side conversations.

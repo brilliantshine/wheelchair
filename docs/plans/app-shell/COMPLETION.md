@@ -9,6 +9,12 @@ verified-by:
   - round: 1
     lane: sol (gpt-6.1-sol, thread 01a1dd51-d8d6-7942-9d49-0f7c06f2a8c3)
     checks: sonnet, lead opus
+  - round: 2
+    lane: opus (resumed)
+    checks: terra
+  - round: 2
+    lane: sol (gpt-6.1-sol, resumed thread 01a1dd51-d8d6-7942-9d49-0f7c06f2a8c3)
+    checks: sonnet, lead opus
 ---
 
 # Completion Report — Wheelchair as an app on the hub (slice 1)
