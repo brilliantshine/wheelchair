@@ -18,6 +18,24 @@ function missing(machine, text) {
   return `${machine}: ${text}`;
 }
 
+// The one comparison of a machine service's commit with the hub's. An unknown hub version
+// counts as out of date, so the gate fails closed.
+async function outOfDate(hub, status) {
+  const expected = await hubVersion(hub.root);
+  return !expected || status.version !== expected;
+}
+
+// Codex's login is what `codex/preflight.sh` (the service's /v1/preflight) says; the service has
+// no Claude preflight, so Claude's comes from the status's login flag.
+async function preflightFailed(hub, machine) {
+  try {
+    await hub.call(machine, '/v1/preflight', 'POST', {});
+    return false;
+  } catch {
+    return true;
+  }
+}
+
 async function check(hub, thread) {
   const absent = [];
   let status;
@@ -27,17 +45,23 @@ async function check(hub, thread) {
     return { ok: false, missing: [missing(thread.machine, 'service down')] };
   }
 
-  const expected = await hubVersion(hub.root);
-  if (!expected || status.version !== expected) absent.push(missing(thread.machine, 'service out of date'));
-  const cli = status[thread.cli] || {};
-  if (!cli.installed) absent.push(missing(thread.machine, `${thread.cli} is not installed`));
-  else if (!cli.logged_in) absent.push(missing(thread.machine, `${thread.cli} is not logged in`));
-  if (thread.cli === 'codex' && cli.installed && cli.logged_in) {
-    try {
-      await hub.call(thread.machine, '/v1/preflight', 'POST', {});
-    } catch {
-      absent.push(missing(thread.machine, 'Codex preflight failed'));
+  if (await outOfDate(hub, status)) absent.push(missing(thread.machine, 'service out of date'));
+  // The thread's own family is required. The other family, when installed, serves the cross-family
+  // reviewers and verifier, so it has to be logged in too; absent, the thread just runs on one family.
+  const other = thread.cli === 'codex' ? 'claude' : 'codex';
+  let preflight = null;
+  for (const cli of [thread.cli, other]) {
+    const state = status[cli] || {};
+    if (!state.installed) {
+      if (cli === thread.cli) absent.push(missing(thread.machine, `${cli} is not installed`));
+      continue;
     }
+    let loggedIn = Boolean(state.logged_in);
+    if (cli === 'codex') {
+      preflight ??= await preflightFailed(hub, thread.machine);
+      loggedIn = !preflight;
+    }
+    if (!loggedIn) absent.push(missing(thread.machine, cli === 'codex' ? 'Codex preflight failed' : `${cli} is not logged in`));
   }
   return { ok: absent.length === 0, missing: absent };
 }
@@ -47,4 +71,4 @@ function same(left, right) {
     && JSON.stringify(left?.missing || []) === JSON.stringify(right?.missing || []);
 }
 
-module.exports = { check, same };
+module.exports = { check, outOfDate, same };

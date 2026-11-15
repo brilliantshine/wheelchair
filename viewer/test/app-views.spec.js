@@ -2,6 +2,8 @@
 
 // Features, Sessions and Terminal pages against a real server (Spec "Views"), at phone and
 // desktop width. Server and fake machine services come from helpers/app-views-setup.js.
+const fs = require('node:fs/promises');
+const path = require('node:path');
 const { test, expect } = require('@playwright/test');
 const { closeViews, openPage, setupViews } = require('./helpers/app-views-setup.js');
 
@@ -58,8 +60,8 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       await openPage(page, context, '/app/sessions');
       const hub = page.locator('section[data-machine="hub"]');
       const node = page.locator('section[data-machine="node-2"]');
-      await expect(hub.locator('.session')).toHaveCount(5);
-      await expect(node.locator('.session')).toHaveCount(1);
+      await expect(hub.locator('.session:not(.unmanaged)')).toHaveCount(5);
+      await expect(node.locator('.session:not(.unmanaged)')).toHaveCount(1);
       const hubName = context.seed.made['plan-one'].sessions[0].name;
       const nodeName = context.seed.made['done-one'].sessions[0].name;
       await expect(hub.locator(`[data-session="${hubName}"] code`)).toHaveText(`tmux attach -t ${hubName}`);
@@ -69,6 +71,24 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
         .toHaveAttribute('href', `/wheelchair/app/terminal?name=${hubName}`);
       await expect(hub.locator(`[data-session="${hubName}"] .role`)).toHaveText('lead');
       await noSideScroll(page);
+    });
+
+    test('an unmanaged tmux session is listed read-only, with no terminal link', async ({ page }) => {
+      await openPage(page, context, '/app/sessions');
+      const other = page.locator('section[data-machine="hub"] [data-session="other-shell"]');
+      await expect(other).toHaveCount(1);
+      await expect(other).toHaveClass(/unmanaged/);
+      await expect(other).toContainText('read-only');
+      await expect(other.locator('a')).toHaveCount(0);
+      await expect(other.locator('code, button')).toHaveCount(0);
+    });
+
+    test('the New thread form offers the projects in projects.json', async ({ page }) => {
+      await fs.writeFile(path.join(context.state, 'projects.json'), JSON.stringify(['/srv/listed-only']));
+      await openPage(page, context, '/app/threads');
+      await page.locator('#new-toggle').click();
+      await expect(page.locator('#nt-projects option[value="/srv/listed-only"]')).toHaveCount(1);
+      await expect(page.locator('#nt-project')).toBeEditable();
     });
 
     test('an unreachable machine is greyed and has no sessions', async ({ page }) => {

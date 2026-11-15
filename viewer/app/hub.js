@@ -1,6 +1,7 @@
 'use strict';
 
 // Spec "State": the hub composes focused modules and owns no transient app state.
+const path = require('node:path');
 const { DEFAULT_STATE, State } = require('./state.js');
 const { MachineClient } = require('./machine-client.js');
 const cards = require('./cards.js');
@@ -12,7 +13,7 @@ const { handle } = require('./routes.js');
 
 class Hub {
   constructor({ stateDir = DEFAULT_STATE, root, registerPlan = null } = {}) {
-    this.root = root;
+    this.root = root || path.resolve(__dirname, '..', '..');
     // Given by viewer/server.js so a thread's plan joins the viewer's plan registry and its
     // MAP/IDEA/PLAN links open in the existing document page.
     this.registerPlan = registerPlan;
@@ -38,6 +39,7 @@ class Hub {
   }
 
   machines() { return this.state.machines(); }
+  projects() { return this.state.projects(); }
   machineSeen(name) { return this.lastSeen.get(name) || null; }
   async markMachineSeen(name, at = new Date().toISOString()) {
     this.lastSeen.set(name, at);

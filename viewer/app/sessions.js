@@ -3,7 +3,37 @@
 // Spec "Agents start and stop sessions", "Prompts mid-run", and Edge cases.
 const crypto = require('node:crypto');
 const { addCard } = require('./cards.js');
+const path = require('node:path');
+const { execFile } = require('node:child_process');
+const { promisify } = require('node:util');
 const { appError } = require('./state.js');
+const { outOfDate } = require('./ready.js');
+
+const execFileAsync = promisify(execFile);
+
+// Spec "Models per role": a tier names a model per CLI. `top` is Claude's default model (no
+// --model) and GPT Sol.
+const TIERS = {
+  codex: ['luna', 'terra', 'sol'],
+  claude: ['haiku', 'sonnet', 'opus'],
+};
+
+async function resolveModel(hub, cli, tier = 'top') {
+  if (!TIERS[cli]) throw appError(400, `unknown cli: ${cli}`);
+  if (tier === 'top') {
+    if (cli === 'claude') return undefined;
+    tier = 'sol';
+  }
+  if (!TIERS[cli].includes(tier)) {
+    throw appError(400, `tier "${tier}" does not fit ${cli}; use ${[...TIERS[cli], 'top'].join(', ')}`);
+  }
+  if (cli === 'claude') return tier;
+  try {
+    return (await execFileAsync(path.join(hub.root, 'codex', 'model.sh'), [tier])).stdout.trim();
+  } catch (error) {
+    throw appError(400, `no model pinned for ${tier}: ${(error.stderr || error.message).trim()}`);
+  }
+}
 
 const SESSION_ROLES = new Set([
   'lead',
@@ -38,13 +68,19 @@ function newSessionName(thread, role) {
 async function startSession(hub, thread, input) {
   const role = input.role;
   if (!SESSION_ROLES.has(role)) throw appError(400, 'unknown role');
+  const cli = input.cli || thread.cli;
+  const model = await resolveModel(hub, cli, input.tier);
+  // Spec "Machine service on the hub": no new sessions while that service runs another commit.
+  // A service that can't be reached falls through to the start, which records the failure.
+  const current = await hub.call(thread.machine, '/v1/status', 'GET').catch(() => null);
+  if (current && await outOfDate(hub, current)) throw appError(409, 'machine service out of date');
   const token = crypto.randomBytes(32).toString('hex');
   const session = {
     name: input.name || newSessionName(thread, role),
     role,
     started_by: input.started_by || null,
     token,
-    cli: input.cli || thread.cli,
+    cli,
     attempt_id: input.attempt_id || null,
     status: 'starting',
     queue: [],
@@ -59,7 +95,7 @@ async function startSession(hub, thread, input) {
   try {
     started = await hub.call(thread.machine, '/v1/sessions', 'POST', {
       role,
-      cli: session.cli,
+      cli,
       thread_id: thread.id,
       token,
       name: session.name,
@@ -70,7 +106,7 @@ async function startSession(hub, thread, input) {
       worktree: input.worktree,
       branch: input.branch,
       brief: input.brief || '',
-      model: input.model,
+      model,
       verify_ref: input.verify_ref,
       base: input.base,
     });
@@ -225,7 +261,7 @@ async function sessionRequest(hub, payload) {
     started_by: caller.name,
     attempt_id: payload.attempt_id,
     brief: payload.brief,
-    model: payload.model,
+    tier: payload.tier,
     // Spec "Branches and checkouts": the mapper, reviewers and the sub-lead run in the thread's
     // own worktree; a worker gets a branch cut from the thread's branch; a verifier checks the
     // thread's branch as it stands, commits not yet pushed included.
@@ -302,6 +338,7 @@ module.exports = {
   event,
   pollDead,
   publicSession,
+  resolveModel,
   session,
   sessionRequest,
   startSession,

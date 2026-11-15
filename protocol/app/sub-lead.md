@@ -71,7 +71,9 @@ looks.
   an escalation, below.
 
 Start a worker with `node <root>/viewer/app/wc.js session start --role worker --cli
-<claude|codex> --tier <luna|terra|haiku|sonnet|...> --brief-file <path> --attempt <id>`.
+<claude|codex> --tier <tier> --brief-file <path> --attempt <id>`. The tier is `luna`, `terra`, `sol` or `top`
+(GPT Sol) for `codex`, and `haiku`, `sonnet`, `opus` or `top` (Claude's default) for `claude`; a tier
+that does not fit the CLI is refused.
 The hub gives it its own worktree on a new branch cut from the feature branch, so two
 write-workers never share a checkout. You may start workers and verifiers for this thread
 only. You may stop sessions you started, once their `result` arrives.

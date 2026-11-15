@@ -46,7 +46,8 @@ async function createThread(hub, input) {
   }
   const thread = emptyThread(input);
   await hub.save(thread);
-  const lead = await startSession(hub, thread, { role: 'lead', cli: thread.cli, brief: '' });
+  await hub.state.addProject(thread.project);
+  const lead = await startSession(hub, thread, { role: 'lead', cli: thread.cli, brief: '', tier: 'top' });
   if (input.message) await hub.enqueue(thread, lead.name, input.message, 'collin');
   return thread;
 }
@@ -81,7 +82,7 @@ async function openStub(hub, id, input = {}) {
     await hub.save(thread);
     return { waiting: true, thread };
   }
-  const lead = await startSession(hub, thread, { role: 'lead', cli: thread.cli, brief: '' });
+  const lead = await startSession(hub, thread, { role: 'lead', cli: thread.cli, brief: '', tier: 'top' });
   const context = `[wc:context stub] ${thread.context}`;
   await hub.enqueue(thread, lead.name, context, 'context', true);
   return thread;
@@ -102,7 +103,7 @@ async function restartLead(hub, id) {
   // The thread keeps its worktree across leads; asking for a new one would fail on the
   // existing wc/<thread-id> branch.
   const lead = await startSession(hub, thread, {
-    role: 'lead', cli: thread.cli, brief: '', worktree: thread.worktree, branch: thread.branch,
+    role: 'lead', cli: thread.cli, brief: '', tier: 'top', worktree: thread.worktree, branch: thread.branch,
   });
   const endedLeads = thread.sessions.filter((session) => session.role === 'lead' && !session.live);
   // Move, not copy: each ended lead's waiting messages go to the new lead once, and an older

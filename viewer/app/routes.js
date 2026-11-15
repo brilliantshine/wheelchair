@@ -36,6 +36,9 @@ async function handle(hub, request, response, url, machineAuthenticated) {
   if (bits[0] === 'features' && request.method === 'GET') {
     return send(response, 200, await hub.features());
   }
+  if (bits[0] === 'projects' && request.method === 'GET') {
+    return send(response, 200, { projects: await hub.projects() });
+  }
   if (bits[0] === 'sessions') return handleSessions(hub, request, response, bits, body);
   throw appError(404, 'route not found');
 }
