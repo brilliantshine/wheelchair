@@ -134,6 +134,7 @@ class MachineService {
     this.sessionsPath = path.join(this.stateDir, 'sessions.json');
     this.config = {};
     this.sessions = {};
+    this.logins = {};
     this.server = null;
     this.retryWindow = Number(process.env.WHEELCHAIR_RETRY_WINDOW_MS || 90_000);
     this.retryDelay = Number(process.env.WHEELCHAIR_RETRY_DELAY_MS || 1_000);
@@ -174,7 +175,7 @@ class MachineService {
   async recoverFromTmux() {
     let changed = false;
     for (const name of this.liveTmux()) {
-      if (!name.startsWith('wc-') || this.sessions[name]) continue;
+      if (!name.startsWith('wc-') || name.startsWith('wc-login-') || this.sessions[name]) continue;
       const parsed = /^wc-(.+?)-(sub-lead|lead|worker|reviewer|verifier|[a-z]+)(?:-\d+)?$/.exec(name);
       if (!parsed) continue;
       const pane = this.tmux(['capture-pane', '-p', '-t', name]);
@@ -284,7 +285,7 @@ class MachineService {
     for (const key of ['role', 'cli', 'thread_id', 'token']) if (!input[key]) die(`missing ${key}`);
     const name = input.name || this.sessionName(input.thread_id, input.role);
     safeName(name, 'session name');
-    if (!name.startsWith('wc-')) die('session name must begin wc-');
+    if (!name.startsWith('wc-') || name.startsWith('wc-login-')) die('invalid session name');
     if (this.sessions[name]) return this.sessions[name];
     const adapter = adapters[input.cli];
     if (!adapter) die('cli must be claude or codex');
@@ -429,7 +430,7 @@ class MachineService {
   async archive(threadId) {
     if (typeof threadId !== 'string' || !threadId) throw Object.assign(new Error('thread_id required'), { status: 400 });
     safeName(threadId, 'thread id');
-    const sessions = Object.values(this.sessions).filter(session => session.thread_id === threadId);
+    const sessions = Object.values(this.sessions).filter(session => !session.name.startsWith('wc-login-') && session.thread_id === threadId);
     const stopped = [];
     for (const session of sessions) {
       if (session.archived_pending) continue;
@@ -586,28 +587,16 @@ class MachineService {
     const current = this.managed(session);
     const adapter = adapters[current.cli];
     if (event.transcript_path) { current.source_transcript = event.transcript_path; await this.copyTranscript(current, event.transcript_path); }
-    if (adapter.provider === 'gpt' && event.type === 'turn-ended') {
-      const threadId = event['thread-id'] || event.thread_id;
-      if (!current.codex_thread_id) {
-        const first = event['input-messages']?.[0] || event.input_messages?.[0] || '';
-        if (!first.startsWith('[wc:role]') || !threadId) return { ignored: true };
-        current.codex_thread_id = threadId;
-        current.source_transcript = await adapter.findTranscript(current, current.account_dir);
-        if (!current.source_transcript) { delete current.codex_thread_id; return { ignored: true }; }
-      }
-      if (threadId && current.codex_thread_id !== threadId) return { ignored: true };
-      const file = current.source_transcript || await adapter.findTranscript(current, current.account_dir);
-      if (file) {
-        const data = await fsp.readFile(file).catch(() => Buffer.alloc(0));
-        const start = Math.min(current.usage_offset || 0, data.length);
-        const chunk = data.subarray(start).toString('utf8');
-        const end = chunk.lastIndexOf('\n');
-        if (end >= 0) {
-          const complete = chunk.slice(0, end + 1); current.usage_offset = start + Buffer.byteLength(complete);
-          let latest = null, reached = false;
-          for (const line of complete.trimEnd().split('\n')) { const reading = adapter.usageFrom(line); if (reading) { latest = reading; try { reached = JSON.parse(line).payload.rate_limits.rate_limit_reached_type != null; } catch {} } }
-          if (latest) { latest.account = current.account || `default-${adapter.provider}`; if (reached) latest.limited_until = limitedUntil(latest); current.last_reading = latest; const usage = { type: 'usage', reading: latest, session, thread_id: current.thread_id }; if (spooled) await this.spool('events', usage); else await this.emitEvent(usage); }
-        }
+    if (event.type === 'turn-ended' && adapter.onTurnEnded) {
+      const result = await adapter.onTurnEnded(current, event);
+      if (result.ignored) return { ignored: true };
+      if (result.reading) {
+        const { reached, ...reading } = result.reading;
+        reading.account = current.account || `default-${adapter.provider}`;
+        if (reached) reading.limited_until = limitedUntil(reading);
+        current.last_reading = reading;
+        const usage = { type: 'usage', reading, session, thread_id: current.thread_id };
+        if (spooled) await this.spool('events', usage); else await this.emitEvent(usage);
       }
       await this.persistSessions();
     }
@@ -685,23 +674,73 @@ class MachineService {
       await new Promise(resolve => setTimeout(resolve, this.retryDelay));
     }
   }
+  loginRecord(account) {
+    if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(account)) die('invalid account');
+    let record = this.logins[account];
+    if (!record && this.liveTmux().has(`wc-login-${account}`)) {
+      const defaultEntry = Object.entries(adapters).find(([, adapter]) => account === `default-${adapter.provider}`);
+      if (defaultEntry) record = { cli: defaultEntry[0], dir: null };
+      else {
+        const dir = accountDir(`~/.wheelchair/accounts/${account}`, account);
+        try { const meta = JSON.parse(fs.readFileSync(path.join(dir, 'wheelchair-account.json'), 'utf8')); if (meta.id === account && adapters[meta.cli]) record = { cli: meta.cli, dir }; } catch {}
+      }
+      if (record) this.logins[account] = record;
+    }
+    if (!record) throw Object.assign(new Error('login not found'), { status: 404 });
+    return record;
+  }
+  async startLogin(input) {
+    const { account, cli } = input, adapter = adapters[cli];
+    if (typeof account !== 'string' || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(account) || !adapter) die('invalid account or cli');
+    const dir = accountDir(input.dir, account);
+    if ((!dir && account !== `default-${adapter.provider}`) || (dir && Object.values(adapters).some(a => account === `default-${a.provider}`))) die('invalid default account');
+    if (dir) adapter.seed(dir, account);
+    const name = `wc-login-${account}`;
+    this.tmux(['kill-session', '-t', name]);
+    const cmd = ['env', ...Object.entries(adapter.loginEnv(dir)).map(([k, v]) => `${k}=${v}`), ...adapter.loginCommand(dir)].map(shellQuote).join(' ');
+    const script = `${cmd}; printf '\n__wc_login_exit %s\n' "$?"; sleep 600`;
+    const result = this.tmux(['new-session', '-d', '-s', name, '-x', '200', '-y', '50', ['sh', '-c', script].map(shellQuote).join(' ')]);
+    if (!result.ok) die(result.stderr.trim() || 'login session failed to start');
+    this.logins[account] = { cli, dir };
+    return { state: 'starting' };
+  }
+  loginPane(account) {
+    this.loginRecord(account);
+    const result = this.tmux(['capture-pane', '-p', '-t', `wc-login-${account}`]);
+    if (!result.ok) throw Object.assign(new Error('login pane unavailable'), { status: 409 });
+    return result.stdout;
+  }
+  loginState(account) {
+    const record = this.loginRecord(account), adapter = adapters[record.cli];
+    const captured = this.tmux(['capture-pane', '-p', '-t', `wc-login-${account}`]);
+    const pane = captured.ok ? captured.stdout : '';
+    if (!captured.ok || /__wc_login_exit \d+/.test(pane)) {
+      const logged_in = adapter.loginStatus(record.dir).logged_in;
+      return { state: logged_in ? 'done' : 'failed', url: null, code: null, wantsCode: false, logged_in };
+    }
+    const keys = adapter.loginPrompt?.(pane);
+    if (keys && !record.answered) { for (const key of keys) this.tmux(['send-keys', '-t', `wc-login-${account}`, key]); record.answered = true; }
+    const parsed = adapter.parseLogin(pane);
+    return { state: parsed ? 'waiting' : 'starting', url: parsed?.url || null, code: parsed?.code || null, wantsCode: parsed?.wantsCode || false, logged_in: false };
+  }
   status() {
     const live = this.liveTmux();
-    const others = [...live].filter(name => !this.sessions[name]).map(name => ({ name, managed: false, running: true }));
-    const claude = this.cliStatus('claude'), codex = this.cliStatus('codex');
-    const accounts = Object.entries(adapters).map(([cli, adapter]) => ({ id: `default-${adapter.provider}`, cli, ...adapter.loginStatus(null) }));
+    const others = [...live].filter(name => !name.startsWith('wc-login-') && !this.sessions[name]).map(name => ({ name, managed: false, running: true }));
+    const defaults = Object.fromEntries(Object.entries(adapters).map(([cli, adapter]) => [cli, adapter.loginStatus(null)]));
+    const claude = this.cliStatus('claude', defaults.claude), codex = this.cliStatus('codex', defaults.codex);
+    const accounts = Object.entries(adapters).map(([cli, adapter]) => ({ id: `default-${adapter.provider}`, cli, ...defaults[cli] }));
     const root = path.join(os.homedir(), '.wheelchair', 'accounts');
     let folders = []; try { folders = fs.readdirSync(root, { withFileTypes: true }); } catch {}
     for (const folder of folders.filter(e => e.isDirectory())) {
       try { const record = JSON.parse(fs.readFileSync(path.join(root, folder.name, 'wheelchair-account.json'), 'utf8')); if (record.id !== folder.name || !adapters[record.cli] || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(record.id)) continue; accounts.push({ id: record.id, cli: record.cli, ...adapters[record.cli].loginStatus(path.join(root, folder.name)) }); } catch {}
     }
-    return { version: this.version, claude, codex, accounts, sessions: [...Object.values(this.sessions).map(s => ({ ...s, managed: true, running: live.has(s.name) })), ...others] };
+    return { version: this.version, claude, codex, accounts, sessions: [...Object.values(this.sessions).filter(s => !s.name.startsWith('wc-login-')).map(s => ({ ...s, managed: true, running: live.has(s.name) })), ...others] };
   }
-  cliStatus(cli) {
+  cliStatus(cli, login = adapters[cli].loginStatus(null)) {
     const version = command('sh', ['-c', `command -v ${cli}`]);
     if (!version.ok) return { installed: false, logged_in: false };
     const check = command(cli, ['--version']);
-    return { installed: true, logged_in: adapters[cli].loginStatus(null).logged_in, version: check.stdout.trim() || check.stderr.trim() };
+    return { installed: true, logged_in: login.logged_in, version: check.stdout.trim() || check.stderr.trim() };
   }
   // Runs claude -p for the hub's style preview. Asynchronous on purpose: up to a minute of
   // waiting must not block the service's event loop. Never answers with a throw: the
@@ -736,6 +775,14 @@ class MachineService {
       if (request.method === 'GET' && url.pathname === '/v1/status') { await this.authorize(request, 'hub'); return send(response, 200, this.status()); }
       if (request.method === 'POST' && url.pathname === '/v1/preflight') { await this.authorize(request, 'hub'); const input = await bodyOf(request); const dir = accountDir(input.dir); const result = command(path.join(ROOT, 'codex', 'preflight.sh'), [], dir ? { env: { ...process.env, ...adapters.codex.loginEnv(dir) } } : {}); return send(response, result.ok ? 200 : 409, result); }
       if (request.method === 'POST' && url.pathname === '/v1/preview') { await this.authorize(request, 'hub'); const result = await this.preview(await bodyOf(request)); return send(response, result.status, result.body); }
+      if (request.method === 'POST' && url.pathname === '/v1/logins') { await this.authorize(request, 'hub'); return send(response, 201, await this.startLogin(await bodyOf(request))); }
+      if (pathBits[0] === 'v1' && pathBits[1] === 'logins' && pathBits[2]) {
+        await this.authorize(request, 'hub'); const account = decodeURIComponent(pathBits[2]); this.loginRecord(account);
+        if (request.method === 'GET' && pathBits.length === 3) return send(response, 200, this.loginState(account));
+        if (request.method === 'GET' && pathBits[3] === 'pane') return send(response, 200, { text: this.loginPane(account) });
+        if (request.method === 'POST' && pathBits[3] === 'keys') { const input = await bodyOf(request); const r = this.tmux(['send-keys', '-t', `wc-login-${account}`, String(input.keys || '')]); if (!r.ok) throw Object.assign(new Error('tmux keys failed'), { status: 409 }); return send(response, 200, { ok: true }); }
+        if (request.method === 'POST' && pathBits[3] === 'code') { const input = await bodyOf(request); if (typeof input.code !== 'string' || !input.code) die('code required'); const buffer = `wc-${crypto.randomUUID()}`; const a = this.tmux(['load-buffer', '-b', buffer, '-'], { input: input.code }); const b = this.tmux(['paste-buffer', '-p', '-b', buffer, '-t', `wc-login-${account}`]); const c = this.tmux(['send-keys', '-t', `wc-login-${account}`, 'Enter']); if (!a.ok || !b.ok || !c.ok) throw Object.assign(new Error('tmux submit failed'), { status: 409 }); return send(response, 200, { ok: true }); }
+      }
       if (request.method === 'POST' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); return send(response, 201, await this.start(await bodyOf(request))); }
       if (request.method === 'GET' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); return send(response, 200, this.status().sessions); }
       if (request.method === 'POST' && url.pathname === '/v1/archive') { await this.authorize(request, 'hub'); return send(response, 200, await this.archive((await bodyOf(request)).thread_id)); }
