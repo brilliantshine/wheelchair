@@ -82,12 +82,13 @@ Tier order: `light < standard < heavy < critical`.
 ### 3. Escalation switches
 
 - Stored in hub `settings.json` as `escalation: {first, max_effort, max_tier, ask_before}`.
-  Values: `first` `effort|model`; `max_effort` `high|xhigh|max` (`high` means "don't raise effort", since unset counts as `high`);
+  Values: `first` `effort|model`; `max_effort` `high|xhigh|max` (`low`/`medium` are left out: as ceilings they would block every raise, which `high` already does for any tier at `high` or unset);
   `max_tier` `standard|heavy|critical`; `ask_before` `never|critical|any`. Defaults
   `effort`, `xhigh`, `critical`, `critical` (`viewer/app/settings.js defaults()` and
   `normalize`, merged like `other_agents`).
 - `PUT /settings/preferences` accepts `escalation` (partial object, each key validated, 400
-  naming the bad key). `GET /settings` returns `escalation` and `escalation_text` (the
+  naming the bad key) and its response adds `escalation` and `escalation_text` to the
+  fields it returns today (`viewer/app/routes.js:96`). `GET /settings` returns `escalation` and `escalation_text` (the
   sentences below joined). Update `viewer/app/API.md`.
 - `escalationSentences(escalation)` in `viewer/app/settings.js`, plain words, for example
   with the defaults:
@@ -100,6 +101,10 @@ Tier order: `light < standard < heavy < critical`.
      step up, ask the lead, who asks Collin." `never`: "Do not stop to ask; at the limits,
      report the task as blocked.")
   4. "A task still failing at the limits is reported as blocked."
+  Sentence 2 always names the actual `max_effort` and `max_tier` values ("up to <effort>",
+  "up to <Tier>"), whatever they are. Stepping rule for every value: effort climbs one level
+  at a time from the tier's own effort (unset counts as `high`, Decision 6) while it is below
+  `max_effort`; a tier already at or above the ceiling takes no effort step.
   An effort with no pin counts as `high` when stepping (Decision 6). When `max_effort` is
   `max`, sentence 2 adds "(GPT stops at xhigh, which is its highest)", so a Codex worker at
   `xhigh` steps tier instead of asking for `max`. The hub's refusal of `max` for a codex start
@@ -110,7 +115,7 @@ Tier order: `light < standard < heavy < critical`.
   "Nothing below overrides" line. Still within the 12000-character check.
 - Settings page: a new "Escalation" section after "Leads": the plain-words text at the top,
   then four rows with segmented controls like the permission-mode rows
-  (`modeGroup`): What steps up first (Effort / Model); Highest effort (Don't raise / xhigh / max); Highest tier
+  (`modeGroup`): What steps up first (Effort / Model); Highest effort (High / xhigh / Max); Highest tier
   (Standard / Heavy / Critical); Ask me before (Never / Critical / Any step up). A change
   saves immediately, re-renders the text from the response, and shows the usual
   "Saved, applies to new sessions" note. Works at phone width.
@@ -124,7 +129,9 @@ Tier order: `light < standard < heavy < critical`.
   refusal that names "the highest tier in Settings" or "the highest effort in Settings" means
   only that kind of step is used up: take the other kind of step if the rules still allow it,
   otherwise report the task as blocked. Any other refusal (a bad value, "hub unavailable", a
-  missing CLI) is not a limit: fix the request or retry as the role file already says. Asking means
+  missing CLI) is not a limit: fix the request or retry as the role file already says.
+  Exception: on a task's first dispatch, a tier refusal means start it at `max_tier`
+  instead; that is not an escalation step. Asking means
   a `message` to the lead naming the task, what failed, and the step proposed, then waiting.
 - `protocol/app/lead.md` step 7: one sentence: a sub-lead asking to step a task up becomes a
   `question` card with two options, "Step up" and "Stop here" (task reported blocked); the
@@ -216,6 +223,22 @@ round where knowing it matters most. `protocol/plan-review.md` shows a filled ex
 - §3 role-layer heading is "Escalation rules from Settings:".
 - §4 sub-lead.md refusal handling separates Settings-limit refusals from all others.
 - §4 adds `machine/API.md`.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent (Claude) | major | "Don't raise" for `high` is false when a tier is pinned below high; no sentence-2 wording for other values | upheld | Label is now High; sentence 2 always names the actual values; one stepping rule stated for every ceiling |
+| intent (Claude) | minor | First-dispatch tier refusal contradicts the "use the other step or report blocked" rule | upheld (minor) | §4 carve-out: first dispatch starts at `max_tier` |
+| intent (Claude) | minor | PUT preferences response lacks `escalation_text` the page re-renders from | upheld (minor) | §3 PUT response adds both fields |
+| mechanics (GPT) | major | Same as the intent finding: "Don't raise" vs a `low` pin stepping to `high` | upheld | Same fix as the intent row above |
+
+### Round 3 — 2026-11-15
+
+**Lanes:** Claude (intent lens); GPT (mechanics lens); cross-family: yes.
+
+**Changed since Round 2:**
+- §3 `max_effort` page label High / xhigh / Max; the reason `low`/`medium` are left out; sentence 2 always names the actual values; one stepping rule for every ceiling.
+- §3 PUT /settings/preferences response adds `escalation` and `escalation_text`.
+- §4 first-dispatch carve-out: a tier refusal on a first dispatch means start at `max_tier`.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
