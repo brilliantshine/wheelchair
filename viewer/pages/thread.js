@@ -277,6 +277,7 @@
         chatEl.appendChild(b);
       } else if (it.type === 'assistant') {
         const lead = el('div', 'bubble assistant md');
+        if (it.id) lead.dataset.messageId = it.id;
         window.WCMarkdown.render(it.text, lead);
         chatEl.appendChild(lead);
       } else if (it.type === 'tool') {
@@ -668,6 +669,7 @@
     const nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
     let changed = false;
     sync('chat', [data.items, pending, slug(), data.cards.filter((c) => !PINNED_KINDS.includes(c.kind)), cardErrors], () => { renderChat(); changed = true; });
+    if (window.WCAside) window.WCAside.update(data, changed);
     if (changed && nearBottom) window.scrollTo(0, document.body.scrollHeight);
     const queuedTotal = Math.max(data.queued, pending.length);
     queuedNote.hidden = queuedTotal === 0;
