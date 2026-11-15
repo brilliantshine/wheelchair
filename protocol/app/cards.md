@@ -43,6 +43,7 @@ Rules for every card:
 | `done` | yes | lead | no |
 | `diagram` | yes | lead | no |
 | `stub` | yes | lead | no |
+| `resolve` | never | lead | no |
 | `message` | never | any session except reviewer and verifier | no |
 | `result` | never | worker, mapper, sub-lead | no |
 
@@ -130,6 +131,24 @@ Something only Collin can fix or decide, where a question card does not fit.
 | `title` | string | yes | One line |
 | `body` | string | yes | What is wrong or stuck and what he can do about it |
 | `items` | array of strings | no | A list that belongs with it, such as the recurring objections |
+
+### `resolve`
+
+Closes a `needs` card you posted when the thing it asked for is settled. It is never shown
+as a card of its own; its only effect is to mark the target answered, with your session name,
+the note and the time. It is not stored in the thread.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `card` | string | yes | The id of the `needs` card to close (it is in the thread state you were given, or `[card <id>]` on a press) |
+| `note` | string | yes | One line saying how it was resolved, shown on the dimmed card |
+
+Rules: only a lead may post it. The target must be an open `needs` card in your own thread
+that a lead posted, including one a previous lead posted. It is refused (422, with the
+reason) for a card the app posted itself (stuck, permission, "Sessions ended": those close on
+their own), for any other kind of card, for a card in another thread or one that does not
+exist, and for a card already answered. Collin can also dismiss such a card himself, which
+marks it the same way and reaches you as `[card <id>] dismissed`: treat it as settled.
 
 ### `done`
 

@@ -28,6 +28,7 @@ const roles = {
   done: ['lead'],
   diagram: ['lead'],
   stub: ['lead'],
+  resolve: ['lead'],
   message: ['lead', 'sub-lead', 'worker', 'mapper'],
   result: ['worker', 'mapper', 'sub-lead'],
 };
@@ -90,6 +91,7 @@ const fields = {
     depends_on_parent: (value) => typeof value === 'boolean',
     commits: (value) => value === undefined || array(value, text),
   },
+  resolve: { card: text, note: text },
   message: { to: text, text },
   result: {
     task: text,
@@ -123,6 +125,17 @@ function validate(kind, card, role) {
     return { ok: false, reason: `${role} may not post ${kind}` };
   }
   return { ok: true, card: { ...card, kind } };
+}
+
+// Which card a resolve may close: an open needs card a lead posted in this thread. The hub's own
+// needs cards (system) close themselves or have their own button.
+function resolvable(thread, cardId) {
+  const target = (thread.cards || []).find((item) => item.id === cardId && !item.replaced);
+  if (!target) return { ok: false, reason: 'no such card in this thread' };
+  if (target.kind !== 'needs') return { ok: false, reason: 'only a needs card can be resolved' };
+  if (target.system) return { ok: false, reason: 'a system needs card closes itself' };
+  if (target.answered) return { ok: false, reason: 'card is already answered' };
+  return { ok: true, card: target };
 }
 
 function post(urlText, token, body) {
@@ -180,4 +193,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { fields, roles, shown, validate };
+module.exports = { fields, resolvable, roles, shown, validate };

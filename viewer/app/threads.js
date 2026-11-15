@@ -225,6 +225,18 @@ async function press(hub, id, cardId, input) {
   return { queued: true, text: suffixes[input.action] };
 }
 
+async function dismiss(hub, id, cardId) {
+  const thread = await hub.thread(id);
+  const found = require('./card.js').resolvable(thread, cardId);
+  if (!found.ok) throw appError(found.reason === 'no such card in this thread' ? 404 : 422, found.reason);
+  require('./cards.js').resolveCard(found.card, 'collin', null);
+  await hub.save(thread);
+  // A dismissal is Collin's answer, like a press: the live lead hears it so it stops waiting.
+  const lead = [...thread.sessions].reverse().find((item) => item.role === 'lead' && item.live);
+  if (lead) await hub.enqueue(thread, lead.name, `[card ${cardId}] dismissed`, 'card');
+  return { ok: true };
+}
+
 async function pollWaiting(hub) {
   for (const listedThread of await hub.allThreads()) {
     await hub.withThread(listedThread.id, async () => {
@@ -256,6 +268,7 @@ module.exports = {
   archivedGraph,
   createStub,
   createThread,
+  dismiss,
   openStub,
   pollWaiting,
   press,

@@ -109,6 +109,7 @@ class Hub {
   restartLead(id) { return this.withThread(id, () => threads.restartLead(this, id)); }
   archive(id) { return this.withThread(id, () => threads.archive(this, id)); }
   archivedDocument(id, file) { return threads.archivedDocument(this, id, file); }
+  dismiss(id, cardId) { return this.withThread(id, () => threads.dismiss(this, id, cardId)); }
   press(id, cardId, input) { return this.withThread(id, () => threads.press(this, id, cardId, input)); }
   pollWaiting() { return threads.pollWaiting(this); }
   chat(id) { return this.withThread(id, () => chat.chat(this, id)); }

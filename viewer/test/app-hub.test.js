@@ -1284,3 +1284,121 @@ test('worker replacement reuses a dead worker worktree and branch only', async (
     assert.equal(nonWorker.status, 400);
   });
 });
+
+async function openNeed(context, made, extra = {}) {
+  const posted = await card(context, made.id, made.sessions[0].name, {
+    kind: 'needs', title: 'Runaway loop', body: 'The loop kept failing.', ...extra,
+  });
+  assert.equal(posted.status, 202);
+  return posted.body.id;
+}
+
+const needsStrip = async (context) => (await api(context, '/features')).body.needs;
+
+test('validates a resolve card and the targets it may close', () => {
+  assert.equal(validate('resolve', { card: 'c1', note: 'Fixed itself.' }, 'lead').ok, true);
+  assert.equal(validate('resolve', { card: 'c1' }, 'lead').ok, false);
+  assert.equal(validate('resolve', { note: 'x' }, 'lead').ok, false);
+  assert.equal(validate('resolve', { card: 'c1', note: 'x' }, 'worker').ok, false);
+  const { resolvable } = require('../app/card.js');
+  const thread = {
+    cards: [
+      { id: 'open', kind: 'needs', answered: false, system: false },
+      { id: 'sys', kind: 'needs', answered: false, system: true },
+      { id: 'q', kind: 'question', answered: false, system: false },
+      { id: 'done', kind: 'needs', answered: true, system: false },
+    ],
+  };
+  assert.equal(resolvable(thread, 'open').ok, true);
+  assert.match(resolvable(thread, 'sys').reason, /system/);
+  assert.match(resolvable(thread, 'q').reason, /needs card/);
+  assert.match(resolvable(thread, 'missing').reason, /no such card/);
+  assert.match(resolvable(thread, 'done').reason, /already answered/);
+});
+
+test('a lead resolve closes its needs card and removes it from the Needs strip', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const lead = made.sessions[0].name;
+    const id = await openNeed(context, made);
+    assert.ok((await needsStrip(context)).some((item) => item.card_id === id));
+    const resolved = await card(context, made.id, lead, { kind: 'resolve', card: id, note: 'It fixed itself.' });
+    assert.equal(resolved.status, 202);
+    assert.equal((await needsStrip(context)).some((item) => item.card_id === id), false);
+    const chat = await api(context, `/threads/${made.id}/chat`);
+    const closed = chat.body.cards.find((item) => item.id === id);
+    assert.equal(closed.answered, true);
+    assert.equal(closed.resolved_by, lead);
+    assert.equal(closed.resolved_note, 'It fixed itself.');
+    assert.ok(closed.resolved_at);
+    assert.equal(chat.body.cards.some((item) => item.kind === 'resolve'), false);
+    const again = await card(context, made.id, lead, { kind: 'resolve', card: id, note: 'Twice.' });
+    assert.equal(again.status, 422);
+  });
+});
+
+test('a resolve is refused for a system card, another kind, another thread and a missing card', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const other = await thread(context);
+    const lead = made.sessions[0].name;
+    const otherNeed = await openNeed(context, other);
+    const question = await card(context, made.id, lead, {
+      kind: 'question', fits: 'x', question: 'Which?', leaning: 'a', why: 'because',
+      options: [{ id: 'a', label: 'A', consequence: 'a' }, { id: 'b', label: 'B', consequence: 'b' }],
+    });
+    // A hub-posted needs card: a permission prompt.
+    await event(context, made.id, lead, 'turn-ended');
+    await event(context, made.id, lead, 'prompt', { notification_type: 'permission_prompt' });
+    const chat = await api(context, `/threads/${made.id}/chat`);
+    const system = chat.body.cards.find((item) => item.system && item.kind === 'needs');
+    assert.ok(system);
+    for (const target of [system.id, question.body.id, otherNeed, 'no-such-card']) {
+      const refused = await card(context, made.id, lead, { kind: 'resolve', card: target, note: 'no' });
+      assert.equal(refused.status, 422, target);
+      assert.ok(refused.body.error);
+    }
+    const after = await api(context, `/threads/${made.id}/chat`);
+    assert.equal(after.body.cards.find((item) => item.id === system.id).answered, false);
+    assert.equal((await api(context, `/threads/${other.id}/chat`)).body.cards.find((item) => item.id === otherNeed).answered, false);
+  });
+});
+
+test('a resolve retried with the same delivery id is a duplicate', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const lead = made.sessions[0].name;
+    const id = await openNeed(context, made);
+    const body = { thread_id: made.id, session: lead, kind: 'resolve', card: id, note: 'Done.', delivery_id: 'r-1' };
+    assert.equal((await machinePost(context, '/machine/cards', body)).status, 202);
+    const retry = await machinePost(context, '/machine/cards', body);
+    assert.equal(retry.status, 200);
+    assert.equal(retry.body.duplicate, true);
+  });
+});
+
+test('dismiss closes a lead needs card as collin and refuses a system one', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const lead = made.sessions[0].name;
+    const id = await openNeed(context, made);
+    await event(context, made.id, lead, 'turn-ended');
+    await event(context, made.id, lead, 'prompt', { notification_type: 'permission_prompt' });
+    const system = (await api(context, `/threads/${made.id}/chat`)).body.cards.find((item) => item.system);
+    const refused = await api(context, `/threads/${made.id}/cards/${system.id}/dismiss`, { method: 'POST', body: {} });
+    assert.equal(refused.status, 422);
+    const missing = await api(context, `/threads/${made.id}/cards/nope/dismiss`, { method: 'POST', body: {} });
+    assert.equal(missing.status, 404);
+    const ok = await api(context, `/threads/${made.id}/cards/${id}/dismiss`, { method: 'POST', body: {} });
+    assert.equal(ok.status, 200);
+    const closed = (await api(context, `/threads/${made.id}/chat`)).body.cards.find((item) => item.id === id);
+    assert.equal(closed.answered, true);
+    assert.equal(closed.resolved_by, 'collin');
+    assert.equal((await needsStrip(context)).some((item) => item.card_id === id), false);
+    // The live lead hears the dismissal (held here behind the open permission prompt).
+    const stored = JSON.parse(await fs.readFile(path.join(context.state, 'threads', `${made.id}.json`), 'utf8'));
+    assert.ok(stored.queues[lead].some((message) => message.text === `[card ${id}] dismissed`));
+    const twice = await api(context, `/threads/${made.id}/cards/${id}/dismiss`, { method: 'POST', body: {} });
+    assert.equal(twice.status, 422);
+  });
+});
