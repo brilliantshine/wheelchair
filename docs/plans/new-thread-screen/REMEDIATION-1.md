@@ -26,3 +26,9 @@ nothing.
 
 Brief: the sub-lead's scratch file `remediate1.md` (its content is the table above plus
 ownership and validation), started as `wc-1a4f2c3d8d4c-worker-*` attempt `r1-a1`.
+
+## Follow-up found reviewing R1
+
+| # | Gap | Fix |
+|---|-----|-----|
+| R1e | Same machine-switch race, on the saved list: while the new machine's answer loads, the old machine's saved entries stay listed with live Remove buttons, and Remove sends `machineEl.value` (the new machine), so it can delete a same-named entry on the wrong machine | On Machine change, also empty `#saved-list` (and hide `#saved-empty`). `removeSaved` sends `state.machine` and returns without a request when `state` is null or `state.machine !== machineEl.value`. |
