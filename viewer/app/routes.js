@@ -69,8 +69,17 @@ async function upload(hub, request, response, url, id) {
   const length = request.headers['content-length'];
   if (typeof length !== 'string' || !/^\d+$/.test(length) || Number(length) > UPLOAD_LIMIT) throw appError(413, 'missing or oversized content-length');
   const query = new URLSearchParams({ thread_id: id, name: url.searchParams.get('name') || '' });
-  const result = await hub.client.stream(thread.machine, `/v1/uploads?${query}`, 'POST', request);
+  let result;
+  try {
+    result = await hub.client.stream(thread.machine, `/v1/uploads?${query}`, 'POST', request);
+  } catch (error) {
+    if (error.status || !error.machineConnection) throw error;
+    if (response.headersSent) response.destroy();
+    else if (response.writable && !response.destroyed) send(response, 409, { error: 'upload cancelled by the machine' });
+    return;
+  }
   response.writeHead(result.status, { 'content-type': result.headers['content-type'] || 'application/json' });
+  result.body.on('error', () => response.destroy());
   result.body.pipe(response);
 }
 
@@ -354,6 +363,7 @@ async function handleThreads(hub, request, response, url, bits, body) {
     const headers = {};
     for (const key of ['content-type', 'content-disposition', 'x-content-type-options']) if (result.headers[key]) headers[key] = result.headers[key];
     response.writeHead(result.status, headers);
+    result.body.on('error', () => response.destroy());
     result.body.pipe(response);
     return;
   }

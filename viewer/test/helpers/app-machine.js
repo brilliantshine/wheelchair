@@ -35,6 +35,7 @@ async function startMachine(secret = 'machine-test-secret') {
   let submitOk = true;
   let archiveKept = [];
   let uploadsRemoved = true;
+  let resetUpload = false;
   const uploads = new Map();
   let sessionsAvailable = true;
   let projects = { found: [], folder_error: undefined, bad: {} };
@@ -46,6 +47,10 @@ async function startMachine(secret = 'machine-test-secret') {
     }
     const url = new URL(request.url, 'http://machine.test');
     if (request.method === 'POST' && url.pathname === '/v1/uploads') {
+      if (resetUpload) {
+        request.once('data', () => request.destroy());
+        return;
+      }
       const chunks = [];
       for await (const chunk of request) chunks.push(chunk);
       const id = url.searchParams.get('thread_id');
@@ -125,6 +130,8 @@ async function startMachine(secret = 'machine-test-secret') {
     set submitOk(value) { submitOk = Boolean(value); },
     get uploadsRemoved() { return uploadsRemoved; },
     set uploadsRemoved(value) { uploadsRemoved = value; },
+    get resetUpload() { return resetUpload; },
+    set resetUpload(value) { resetUpload = Boolean(value); },
     get archiveKept() { return archiveKept; },
     set archiveKept(value) { archiveKept = Array.isArray(value) ? value : []; },
     get sessionsAvailable() { return sessionsAvailable; },
