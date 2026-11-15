@@ -2,6 +2,14 @@
   "v": 3,
   "attachments": {},
   "boards": {
+    "Done.dc.html": {
+      "expand": "fill",
+      "h": 1000,
+      "title": "Threads · built and checked",
+      "w": 1440,
+      "x": 6080,
+      "y": 0
+    },
     "IdeaLong.dc.html": {
       "h": 860,
       "title": "Pinned idea · 6 things",
@@ -31,6 +39,14 @@
       "x": 470,
       "y": 3080
     },
+    "PlanApproved.dc.html": {
+      "expand": "fill",
+      "h": 1000,
+      "title": "Threads · plan approved",
+      "w": 1440,
+      "x": 4560,
+      "y": 0
+    },
     "Planning.dc.html": {
       "expand": "fill",
       "h": 1000,
@@ -55,28 +71,52 @@
       "x": 1520,
       "y": 0
     },
+    "SettingsAccounts.dc.html": {
+      "expand": "fill",
+      "h": 1060,
+      "title": "Settings · accounts",
+      "w": 1440,
+      "x": 0,
+      "y": 4460
+    },
+    "SettingsModels.dc.html": {
+      "expand": "fill",
+      "h": 1600,
+      "title": "Settings · models and preferences",
+      "w": 1440,
+      "x": 3040,
+      "y": 4460
+    },
+    "SettingsTemplates.dc.html": {
+      "expand": "fill",
+      "h": 1060,
+      "title": "Settings · behavior templates",
+      "w": 1440,
+      "x": 4560,
+      "y": 4460
+    },
+    "SettingsWriting.dc.html": {
+      "expand": "fill",
+      "h": 1060,
+      "title": "Settings · writing style",
+      "w": 1440,
+      "x": 6080,
+      "y": 4460
+    },
+    "SettingsUsage.dc.html": {
+      "expand": "fill",
+      "h": 1060,
+      "title": "Settings · usage and balancing",
+      "w": 1440,
+      "x": 1520,
+      "y": 4460
+    },
     "Thread.dc.html": {
       "expand": "fill",
       "h": 1000,
       "title": "Threads · chat with a lead",
       "w": 1440,
       "x": 3040,
-      "y": 0
-    },
-    "ThreadPinned.dc.html": {
-      "expand": "fill",
-      "h": 1000,
-      "title": "Threads · feature offer pinned",
-      "w": 1440,
-      "x": 3040,
-      "y": 1120
-    },
-    "PlanApproved.dc.html": {
-      "expand": "fill",
-      "h": 1000,
-      "title": "Threads · plan approved",
-      "w": 1440,
-      "x": 4560,
       "y": 0
     },
     "ThreadBuilding.dc.html": {
@@ -95,13 +135,21 @@
       "x": 7060,
       "y": 1120
     },
-    "Done.dc.html": {
+    "ThreadAside.dc.html": {
       "expand": "fill",
       "h": 1000,
-      "title": "Threads · built and checked",
+      "title": "Threads · aside for a quick question",
       "w": 1440,
-      "x": 6080,
-      "y": 0
+      "x": 8580,
+      "y": 1120
+    },
+    "ThreadPinned.dc.html": {
+      "expand": "fill",
+      "h": 1000,
+      "title": "Threads · feature offer pinned",
+      "w": 1440,
+      "x": 3040,
+      "y": 1120
     }
   },
   "createdOnFiles": {
@@ -112,6 +160,12 @@
   "launch": {
     "view": "canvas"
   },
+  "noteOrder": [
+    "row1",
+    "row2",
+    "row4",
+    "row3"
+  ],
   "notes": {
     "row1": {
       "kind": "title1",
@@ -136,6 +190,14 @@
       "w": 240,
       "x": 0,
       "y": 2820
+    },
+    "row4": {
+      "kind": "title1",
+      "maxW": 7520,
+      "text": "Settings: accounts, usage, models, behavior, writing",
+      "w": 240,
+      "x": 0,
+      "y": 4200
     }
   },
   "order": [
@@ -147,11 +209,17 @@
     "ThreadPinned.dc.html",
     "ThreadBuilding.dc.html",
     "ThreadDiagram.dc.html",
+    "ThreadAside.dc.html",
     "IdeaLong.dc.html",
     "Run.dc.html",
     "Planning.dc.html",
     "PhoneInbox.dc.html",
-    "PhoneLane.dc.html"
+    "PhoneLane.dc.html",
+    "SettingsAccounts.dc.html",
+    "SettingsUsage.dc.html",
+    "SettingsModels.dc.html",
+    "SettingsTemplates.dc.html",
+    "SettingsWriting.dc.html"
   ],
   "pages": [],
   "title": "Wheelchair App"
