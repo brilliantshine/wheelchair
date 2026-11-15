@@ -39,7 +39,7 @@ for (const [label, size] of SIZES) {
       await noSideScroll(page);
     });
 
-    test('list: newest first, stubs marked, archived behind a filter', async ({ page }) => {
+    test('list: last written-in first (agent activity does not reorder), stubs marked, archived behind a filter', async ({ page }) => {
       const old = await ctx.make({ cli: 'claude' });
       const fresh = await ctx.make({ cli: 'claude' });
       const parent = await ctx.make({ cli: 'claude' });
@@ -48,21 +48,21 @@ for (const [label, size] of SIZES) {
       const gone = await ctx.make({ cli: 'claude' });
       const opened = await ctx.make({ cli: 'claude' });
       const t = (n) => new Date(Date.now() - n * 60000).toISOString();
-      await ctx.patch(old.id, (x) => { x.title = 'Old one'; x.updated_at = t(50); });
-      await ctx.patch(fresh.id, (x) => { x.title = 'Fresh one'; x.updated_at = t(1); });
+      await ctx.patch(old.id, (x) => { x.title = 'Old one'; x.collin_at = t(50); x.updated_at = t(0); });
+      await ctx.patch(fresh.id, (x) => { x.title = 'Fresh one'; x.collin_at = t(1); });
       // A long parent name: its "waiting for" badge must wrap under the stub's title, not squeeze it.
-      await ctx.patch(parent.id, (x) => { x.title = 'Parent work with a long name that fills the row'; x.updated_at = t(40); });
+      await ctx.patch(parent.id, (x) => { x.title = 'Parent work with a long name that fills the row'; x.collin_at = t(40); });
       await ctx.patch(waiting.id, (x) => {
-        x.title = 'Waiting stub'; x.updated_at = t(10); x.stub = true; x.sessions = [];
+        x.title = 'Waiting stub'; x.collin_at = t(10); x.stub = true; x.sessions = [];
         x.parent = parent.id; x.waiting_on_parent = true; x.depends_on_parent = true;
       });
       await ctx.patch(ready.id, (x) => {
-        x.title = 'Ready stub'; x.updated_at = t(20); x.stub = true; x.sessions = []; x.ready = true;
+        x.title = 'Ready stub'; x.collin_at = t(20); x.stub = true; x.sessions = []; x.ready = true;
       });
-      await ctx.patch(gone.id, (x) => { x.title = 'Gone one'; x.updated_at = t(5); x.archived = true; });
+      await ctx.patch(gone.id, (x) => { x.title = 'Gone one'; x.collin_at = t(5); x.archived = true; });
       // A stub someone opened: a lead runs in it, so it is no longer marked a stub.
       await ctx.patch(opened.id, (x) => {
-        x.title = 'Opened stub'; x.updated_at = t(30); x.stub = true; x.ready = true;
+        x.title = 'Opened stub'; x.collin_at = t(30); x.stub = true; x.ready = true;
         x.parent = parent.id; x.depends_on_parent = true;
       });
 

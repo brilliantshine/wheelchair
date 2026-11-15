@@ -33,7 +33,8 @@
     if (s < 86400) return Math.floor(s / 3600) + 'h ago';
     return Math.floor(s / 86400) + 'd ago';
   }
-  function stamp(t) { return Date.parse(t.updated_at || t.created_at) || 0; }
+  // Your last message in the thread; agent activity does not move it. Older threads fall back to creation.
+  function stamp(t) { return Date.parse(t.collin_at || t.created_at) || 0; }
   function nameOf(t) { return t.title || t.slug || base(t.project); }
 
   function row(t) {
@@ -58,7 +59,7 @@
     if (t.archived) top.appendChild(el('span', 'badge', 'archived'));
     a.appendChild(top);
     a.appendChild(el('div', 'sub', [
-      stage, waiting[t.id] ? 'needs you' : '', PROVIDER_LABEL[t.provider] || t.cli, t.machine, ago(t.updated_at || t.created_at),
+      stage, waiting[t.id] ? 'needs you' : '', PROVIDER_LABEL[t.provider] || t.cli, t.machine, ago(t.collin_at || t.created_at),
     ].filter(Boolean).join(' · ')));
     li.appendChild(a);
     return li;
@@ -69,7 +70,7 @@
       .sort((a, b) => stamp(b) - stamp(a));
     listEl.textContent = '';
     emptyEl.hidden = shown.length > 0;
-    // Groups by project, the most recently touched project first; newest first inside each.
+    // Groups by project, the project you last wrote in first; most recently written-in first inside each.
     const groups = new Map();
     for (const t of shown) {
       const key = base(t.project);
