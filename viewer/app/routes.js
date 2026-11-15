@@ -6,6 +6,9 @@ const { appError } = require('./state.js');
 const { publicSession } = require('./sessions.js');
 const { findSlug } = require('./views.js');
 const settings = require('./settings.js');
+const usage = require('./usage.js');
+const { PROVIDERS, cliOf } = require('./providers.js');
+const threadsModule = require('./threads.js');
 
 async function readBody(request) {
   const chunks = [];
@@ -41,15 +44,116 @@ async function handle(hub, request, response, url, machineAuthenticated) {
   if (bits[0] === 'projects' && request.method === 'GET') {
     return send(response, 200, { projects: await hub.projects() });
   }
+  if (bits[0] === 'new-thread' && bits.length === 1 && request.method === 'GET') {
+    return send(response, 200, await newThread(hub, url.searchParams.get('machine') || 'hub'));
+  }
   if (bits[0] === 'settings') return handleSettings(hub, request, response, url, bits, body);
+  if (bits[0] === 'usage') {
+    if (bits.length === 1 && request.method === 'GET') { const { providers } = await usage.summary(hub); return send(response, 200, { providers }); }
+    if (bits[1] === 'alert' && request.method === 'GET') return send(response, 200, await usage.alert(hub));
+    if (bits[1] === 'seen' && request.method === 'POST') return send(response, 200, await usage.seen(hub));
+  }
+  if (bits[0] === 'accounts') return handleAccounts(hub, request, response, bits, body);
   if (bits[0] === 'sessions') return handleSessions(hub, request, response, bits, body);
   throw appError(404, 'route not found');
 }
 
+// Spec "Hub", Routes: everything the New thread screen needs for one machine in one answer.
+async function newThread(hub, machine) {
+  const machines = await hub.state.machines();
+  const resolved = await hub.state.resolveMachine(machines, 'hub');
+  const known = await hub.state.resolveMachine(machines, machine);
+  if (!known) throw appError(404, `unknown machine: ${machine}`);
+  const names = ['hub', ...Object.keys(machines).filter((name) => !resolved || machines[name] !== resolved)];
+  const value = await settings.load(hub);
+  const result = { machines: [...new Set(names)], machine, default_folder: value.default_project_folder };
+  result.saved = value.saved_dirs.filter((entry) => entry.machine === machine);
+  result.found = [];
+  if (value.default_project_folder) {
+    try {
+      const listed = await hub.call(machine, `/v1/projects?folder=${encodeURIComponent(value.default_project_folder)}`, 'GET');
+      result.found = Array.isArray(listed.found) ? listed.found : [];
+      if (listed.folder_error) result.found_error = listed.folder_error;
+    } catch (error) {
+      result.found_error = error.status === 404 ? `${machine} needs updating` : `${machine} is not reachable`;
+    }
+  }
+  const matching = [];
+  for (const thread of await hub.allThreads()) {
+    const entry = thread.machine === machine ? known : await hub.state.resolveMachine(machines, thread.machine);
+    if (entry === known) matching.push(thread);
+  }
+  matching.sort((left, right) => String(right.created_at).localeCompare(String(left.created_at)));
+  result.previous = [...new Set(matching.map((thread) => thread.project))];
+  return result;
+}
+
+function validFolder(value) {
+  const folder = value.trim();
+  if (folder && !folder.startsWith('/') && folder !== '~' && !folder.startsWith('~/')) {
+    throw appError(400, 'default_project_folder must be an absolute path, ~, or start with ~/');
+  }
+  return folder;
+}
+
+async function addSavedDir(hub, body) {
+  if (typeof body.name !== 'string' || !body.name.trim()) throw appError(400, 'name is required');
+  const name = body.name.trim();
+  if (name === '.' || name === '..') throw appError(400, "name can't be . or ..");
+  if (name.length > 60) throw appError(400, 'name is too long (maximum 60 characters)');
+  if (typeof body.path !== 'string' || !body.path.trim()) throw appError(400, 'path is required');
+  const machine = typeof body.machine === 'string' && body.machine ? body.machine : 'hub';
+  const duplicate = (value) => value.saved_dirs.some((entry) => entry.name === name && entry.machine === machine);
+  if (duplicate(await settings.load(hub))) throw appError(409, `${name} is already saved for ${machine}`);
+  const checked = await threadsModule.checkProject(hub, machine, body.path.trim());
+  if (!checked.ok) throw appError(400, `${checked.path || body.path.trim()} ${checked.reason || 'is not usable'} on ${machine}`);
+  const value = await settings.update(hub, (current) => {
+    if (duplicate(current)) throw appError(409, `${name} is already saved for ${machine}`);
+    current.saved_dirs.push({ name, path: checked.path, machine });
+  });
+  return { saved: value.saved_dirs.filter((entry) => entry.machine === machine) };
+}
+
 async function handleSettings(hub, request, response, url, bits, body) {
   if (bits.length === 1 && request.method === 'GET') return send(response, 200, await settings.describe(hub));
+  if (bits[1] === 'accounts') {
+    if (bits.length === 2 && request.method === 'POST') {
+      let account;
+      await settings.update(hub, (value) => {
+        if (!Object.hasOwn(PROVIDERS, body.provider) || typeof body.name !== 'string' || !body.name.trim() || !Object.hasOwn(settings.PLANS[body.provider], body.plan)) throw appError(400, 'invalid account');
+        const base = body.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '') || 'account';
+        let id = base, n = 2;
+        while (id.startsWith('default-') || (value.accounts.some((a) => a.id === id) || value.retired_accounts.includes(id))) { const suffix = `-${n++}`; id = base.slice(0, 40 - suffix.length) + suffix; if (id.startsWith('default-')) id = `account${suffix}`; }
+        account = { id, provider: body.provider, name: body.name.trim(), plan: body.plan, weight: settings.PLANS[body.provider][body.plan], paused: false };
+        value.accounts.push(account);
+      });
+      return send(response, 201, account);
+    }
+    if (bits.length === 3 && ['PUT', 'DELETE'].includes(request.method)) {
+      let account;
+      await settings.update(hub, (value) => {
+        const index = value.accounts.findIndex((a) => a.id === bits[2]);
+        if (index < 0) throw appError(404, 'account not found');
+        account = value.accounts[index];
+        if (request.method === 'DELETE') { if (account.id === `default-${account.provider}`) throw appError(400, 'default account cannot be removed'); value.accounts.splice(index, 1); value.retired_accounts.push(account.id); return; }
+        if (body.name !== undefined && (typeof body.name !== 'string' || !body.name.trim())) throw appError(400, 'invalid name');
+        if (body.plan !== undefined && !Object.hasOwn(settings.PLANS[account.provider], body.plan)) throw appError(400, 'invalid plan');
+        if (body.weight !== undefined && (typeof body.weight !== 'number' || !Number.isFinite(body.weight) || body.weight <= 0)) throw appError(400, 'invalid weight');
+        if (body.paused !== undefined && typeof body.paused !== 'boolean') throw appError(400, 'invalid paused');
+        if (body.name !== undefined) account.name = body.name.trim();
+        if (body.plan !== undefined) { account.plan = body.plan; if (body.weight === undefined) account.weight = settings.PLANS[account.provider][body.plan]; }
+        if (body.weight !== undefined) account.weight = body.weight;
+        if (body.paused !== undefined) account.paused = body.paused;
+      });
+      return send(response, 200, request.method === 'DELETE' ? { ok: true } : account);
+    }
+  }
+  if (bits[1] === 'balancing' && bits.length === 2 && request.method === 'PUT') {
+    const value = await settings.update(hub, (value) => { for (const [key, v] of Object.entries(body)) { if (!settings.BALANCING.includes(key) || !settings.validBalancing(key, v)) throw appError(400, `invalid ${key}`); value[key] = v; } });
+    return send(response, 200, Object.fromEntries(settings.BALANCING.map((key) => [key, value[key]])));
+  }
   if (bits[1] === 'models' && request.method === 'PUT') {
-    if (!['claude', 'gpt'].includes(body.provider)) throw appError(400, 'provider must be claude or gpt');
+    if (!Object.hasOwn(PROVIDERS, body.provider)) throw appError(400, 'provider must be claude or gpt');
     let slot = settings.TIER_ALIASES[body.slot] || body.slot;
     if (body.provider === 'claude') slot = ({ haiku: 'light', sonnet: 'standard', opus: 'heavy' })[slot] || slot;
     if (!['light', 'standard', 'heavy', 'critical', 'lead'].includes(slot)) throw appError(400, 'slot is invalid');
@@ -99,17 +203,36 @@ async function handleSettings(hub, request, response, url, bits, body) {
           value.escalation[key] = entry;
         }
       }
+      if (body.default_project_folder !== undefined) {
+        if (typeof body.default_project_folder !== 'string') throw appError(400, 'default_project_folder must be text');
+        value.default_project_folder = validFolder(body.default_project_folder);
+      }
       if (body.other_agents !== undefined) {
         if (!body.other_agents || typeof body.other_agents !== 'object' || Array.isArray(body.other_agents)) throw appError(400, 'other_agents must be an object');
         for (const role of ['reviewer', 'verifier', 'mapper']) if (body.other_agents[role] !== undefined) value.other_agents[role] = settings.tier(body.other_agents[role], `other_agents.${role}`);
       }
     });
-    return send(response, 200, { permission_mode: value.permission_mode, codex_mode: value.codex_mode, tool_steps: value.tool_steps, other_agents: value.other_agents, escalation: value.escalation, escalation_text: settings.escalationSentences(value.escalation).join('\n') });
+    return send(response, 200, { permission_mode: value.permission_mode, codex_mode: value.codex_mode, tool_steps: value.tool_steps, other_agents: value.other_agents, default_project_folder: value.default_project_folder, escalation: value.escalation, escalation_text: settings.escalationSentences(value.escalation).join('\n') });
+  }
+  if (bits[1] === 'saved-dirs' && bits.length === 2 && request.method === 'POST') {
+    return send(response, 201, await addSavedDir(hub, body));
+  }
+  if (bits[1] === 'saved-dirs' && bits[2] && bits.length === 3 && request.method === 'DELETE') {
+    const machine = url.searchParams.get('machine') || 'hub';
+    let name;
+    try { name = decodeURIComponent(bits[2]); } catch { throw appError(404, 'saved directory not found'); }
+    const value = await settings.update(hub, (value) => {
+      const index = value.saved_dirs.findIndex((entry) => entry.name === name && entry.machine === machine);
+      if (index < 0) throw appError(404, 'saved directory not found');
+      value.saved_dirs.splice(index, 1);
+    });
+    return send(response, 200, { saved: value.saved_dirs.filter((entry) => entry.machine === machine) });
   }
   if (bits[1] === 'templates' && bits.length === 2 && request.method === 'POST') {
     let template;
-    const projects = await hub.projects();
+    const projectList = await hub.projects();
     await settings.update(hub, (value) => {
+      const projects = settings.knownProjects(projectList, value);
       const validated = settings.validateTemplate(body);
       if (validated.scope !== 'all' && !projects.includes(validated.scope)) throw appError(400, 'template.scope must be all or a listed project');
       template = { ...validated, id: crypto.randomUUID(), in_use: false };
@@ -128,8 +251,9 @@ async function handleSettings(hub, request, response, url, bits, body) {
     }
     if (request.method === 'PUT') {
       let updated;
-      const projects = await hub.projects();
+      const projectList = await hub.projects();
       await settings.update(hub, (value) => {
+        const projects = settings.knownProjects(projectList, value);
         const index = value.templates.findIndex((template) => template.id === bits[2]);
         if (index < 0) throw appError(404, 'template not found');
         const previous = value.templates[index];
@@ -154,6 +278,19 @@ async function handleSettings(hub, request, response, url, bits, body) {
     const project = url.searchParams.get('project') || undefined;
     return send(response, 200, { text: settings.fullPrompt(hub, await settings.load(hub), role, project) });
   }
+  throw appError(404, 'route not found');
+}
+
+async function handleAccounts(hub, request, response, bits, body) {
+  const account = (await settings.load(hub)).accounts.find((a) => a.id === bits[1]);
+  if (!account || bits[2] !== 'signin') throw appError(404, 'account not found');
+  const machine = bits[3] || body.machine;
+  if (typeof machine !== 'string' || !(await hub.state.resolveMachine(await hub.machines(), machine))) throw appError(404, 'machine not found');
+  const id = encodeURIComponent(account.id);
+  if (bits.length === 3 && request.method === 'POST') return send(response, 201, await hub.call(machine, '/v1/logins', 'POST', { account: account.id, cli: cliOf(account.provider), dir: account.id === `default-${account.provider}` ? null : `~/.wheelchair/accounts/${account.id}` }));
+  if (bits.length === 4 && request.method === 'GET') return send(response, 200, await hub.call(machine, `/v1/logins/${id}`, 'GET'));
+  if (bits.length === 5 && bits[4] === 'pane' && request.method === 'GET') return send(response, 200, await hub.call(machine, `/v1/logins/${id}/pane`, 'GET'));
+  if (bits.length === 5 && ['code', 'keys'].includes(bits[4]) && request.method === 'POST') return send(response, 200, await hub.call(machine, `/v1/logins/${id}/${bits[4]}`, 'POST', body));
   throw appError(404, 'route not found');
 }
 

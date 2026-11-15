@@ -63,17 +63,17 @@ looks.
 - The tier follows the brief you actually wrote. The moment a brief has to say "figure out
   where this belongs", it is Standard. Writing the missing decision into the brief
   to keep a task cheap is good; assuming the worker will work it out is not.
-- **Which family.** Interface, frontend and other taste-sensitive work goes to Claude when
-  Claude is installed; on a machine with only one family, use it and say so in your
-  progress message. A family that is not logged in holds back only its own tasks; do not
-  reroute them to the other family.
+- **Which family.** Start interface, frontend and other taste-sensitive work with
+  `--provider claude`. The hub holds it until Claude has room, including while Claude is
+  signed out on that machine, and sends it elsewhere only when Claude is below its margin.
+  Other work passes no provider flag.
 - Heavy and Critical are not implementation tiers. A brief reaches one only as an
   escalation, below.
 
-Start a worker with `node <root>/viewer/app/wc.js session start --role worker --cli
-<claude|codex> --tier <tier> --brief-file <path> --attempt <id> [--effort <e>]`. The optional
-`--effort` is for worker starts only and overrides the tier's pinned effort for that
-session. The tier is `light`, `standard`, `heavy`, `critical` or `top` (Heavy), for both CLIs; a tier whose
+Start a worker with `node <root>/viewer/app/wc.js session start --role worker --tier
+<tier> --brief-file <path> --attempt <id> [--provider <claude|gpt> |
+--not-provider <claude|gpt>] [--effort <e>]`. The optional `--effort` is for worker starts
+only and overrides the tier's pinned effort for that session. The tier is `light`, `standard`, `heavy`, `critical` or `top` (Heavy), for both CLIs; a tier whose
 cell in Settings is Not used for that CLI is refused. The old names `luna`, `terra`, `sol`, `astra`
 (any CLI) and `haiku`, `sonnet`, `opus` (Claude) are still accepted and mean the Light, Standard,
 Heavy (and Critical) slots, not fixed models: `--tier opus` runs whatever the Heavy cell holds.
@@ -92,6 +92,12 @@ Record each task's lane in the table: the tier plus the resolved model
   a question is with Collin; keep `done` and `total` current.
 - A worker that asks something the plan did not settle sends its question to the lead, not
   to you. If you hit something the plan does not settle, send the lead a `message` too.
+- On `[wc:from app] your session <name>'s turn failed: <error>`, that session is still live.
+  Send it a `message` asking it to carry on. Only if it fails again, run `session stop` on
+  it, then replace it by its role's restart rule: a worker uses `--replaces <name>` and a
+  new `--attempt`; a sub-lead resumes from Implementation Tasks; a reviewer, verifier or
+  mapper starts fresh.
+  Never start a replacement while the failed session is live.
 - A dead worker (the hub tells you by `message`) is restarted on the same brief, in the
   same worktree and branch, so committed partial work carries on: the same start command
   plus `--replaces <dead worker's session name>`, and a new `--attempt` id. Without
@@ -159,8 +165,12 @@ When every task is done and the full validation passes:
    risks, the lanes that built it. Every spec item gets a row, including pre-existing
    ones. It is written for a hostile reader: every claim checkable.
 2. Set `status: verifying` and commit PLAN.md and COMPLETION.md.
-3. Start a verifier (`--role verifier`, top tier, the family opposite the builders' when
-   both CLIs are installed; with both families having built, one verifier per family).
+3. If every builder ran on one provider, start one top-tier verifier with
+   `--not-provider <that provider>` from `session list`. If both providers built, start one
+   top-tier verifier with `--provider claude` and one with `--provider gpt`. If the first
+   start's output has a `note` saying its provider was not honoured, start no second verifier.
+   If the second start's output has such a note (it landed on the first verifier's provider),
+   stop the second verifier at once.
    Its brief gives it `<root>/protocol/app/verifier.md`, the PLAN.md and COMPLETION.md
    paths, and says nothing of this conversation. Its report arrives as a `result`; stop it
    then.
@@ -168,7 +178,8 @@ When every task is done and the full validation passes:
    COMPLETION.md, `commit` the commit verified).
 5. **FAIL**: write `docs/plans/<slug>/REMEDIATION-N.md` (N is the verification attempt):
    the gap list verbatim, then one task per gap in the brief format. Route to the same
-   family that built the work. Attempt 1 sharpens the brief rather than reaching for a
+   provider that built the work, using `--provider <that provider>` from `session list`.
+   Attempt 1 sharpens the brief rather than reaching for a
    bigger model: a first failure is a brief defect more often than a model defect. Fix,
    re-run validation, add a "Remediation N" section to COMPLETION.md without erasing
    history, and start a fresh verifier (a new attempt).

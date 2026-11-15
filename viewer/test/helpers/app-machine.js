@@ -28,11 +28,15 @@ async function startMachine(secret = 'machine-test-secret') {
     version: execFileSync('git', ['-C', __dirname, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
     claude: { installed: true, logged_in: true },
     codex: { installed: true, logged_in: true },
+    accounts: [{ id: 'default-claude', cli: 'claude', logged_in: true }, { id: 'default-gpt', cli: 'codex', logged_in: true }],
   };
   let preflightOk = true;
+  let startOk = true;
   let submitOk = true;
   let archiveKept = [];
   let sessionsAvailable = true;
+  let projects = { found: [], folder_error: undefined, bad: {} };
+  let projectsAvailable = true;
   let preview = { ok: true, text: 'Previewed message.' };
   const server = http.createServer(async (request, response) => {
     if (request.headers['x-wheelchair-machine-secret'] !== secret) {
@@ -43,7 +47,7 @@ async function startMachine(secret = 'machine-test-secret') {
     const input = write ? await readBody(request) : {};
     calls.push({ method: request.method, path: url.pathname, body: input });
     if (request.method === 'POST' && url.pathname === '/v1/sessions') {
-      return startSession(response, sessions, input);
+      return startOk ? startSession(response, sessions, input) : send(response, 503, { error: 'start refused' });
     }
     if (request.method === 'POST' && url.pathname === '/v1/preview') {
       return send(response, preview.ok ? 200 : 503, preview.ok ? { text: preview.text } : { error: preview.error || 'preview unavailable' });
@@ -73,11 +77,16 @@ async function startMachine(secret = 'machine-test-secret') {
     if (request.method === 'POST' && url.pathname === '/v1/archive') {
       return archive(response, sessions, input.thread_id, archiveKept);
     }
+    if (request.method === 'GET' && url.pathname === '/v1/projects') {
+      if (!projectsAvailable) return send(response, 404, { error: 'not found' });
+      return projectsReply(response, url, projects);
+    }
     if (request.method === 'GET' && url.pathname === '/v1/status') {
-      return send(response, 200, { ...status, sessions: [...sessions.values(), UNMANAGED] });
+      return send(response, 200, { ...status, accounts: status.accounts.map((a) => a.id.startsWith('default-') ? { ...a, logged_in: status[a.cli].logged_in } : a), sessions: [...sessions.values(), UNMANAGED] });
     }
     if (request.method === 'POST' && url.pathname === '/v1/preflight') {
-      return send(response, preflightOk ? 200 : 409, { ok: preflightOk });
+      const ok = typeof preflightOk === 'function' ? preflightOk(input) : preflightOk;
+      return send(response, ok ? 200 : 409, { ok });
     }
     return send(response, 404, { error: 'not found' });
   });
@@ -91,20 +100,44 @@ async function startMachine(secret = 'machine-test-secret') {
     sessions,
     calls,
     status,
+    get startOk() { return startOk; },
+    set startOk(value) { startOk = Boolean(value); },
     get preflightOk() { return preflightOk; },
-    set preflightOk(value) { preflightOk = Boolean(value); },
+    set preflightOk(value) { preflightOk = typeof value === 'function' ? value : Boolean(value); },
     get submitOk() { return submitOk; },
     set submitOk(value) { submitOk = Boolean(value); },
     get archiveKept() { return archiveKept; },
     set archiveKept(value) { archiveKept = Array.isArray(value) ? value : []; },
     get sessionsAvailable() { return sessionsAvailable; },
     set sessionsAvailable(value) { sessionsAvailable = Boolean(value); },
+    get projects() { return projects; },
+    set projects(value) { projects = { ...projects, ...value }; },
+    get projectsAvailable() { return projectsAvailable; },
+    set projectsAvailable(value) { projectsAvailable = Boolean(value); },
     get preview() { return preview; },
     set preview(value) { preview = { ...preview, ...value }; },
     async stop() {
       await new Promise((resolve) => server.close(resolve));
     },
   };
+}
+
+// Stands in for GET /v1/projects: `found` and `folder_error` answer a folder; a path in `bad`
+// fails a check with its reason; `~` and `~/x` expand to /home/fake.
+function projectsReply(response, url, projects) {
+  const reply = {};
+  if (url.searchParams.has('folder')) {
+    reply.found = projects.found;
+    if (projects.folder_error) reply.folder_error = projects.folder_error;
+  }
+  if (url.searchParams.has('check')) {
+    let target = url.searchParams.get('check');
+    if (target === '~' || target.startsWith('~/')) target = `/home/fake${target.slice(1)}`;
+    if (!target.startsWith('/')) reply.checked = { path: target, ok: false, reason: 'must be an absolute path' };
+    else if (Object.hasOwn(projects.bad, target)) reply.checked = { path: target, ok: false, reason: projects.bad[target] };
+    else reply.checked = { path: target, ok: true };
+  }
+  return send(response, 200, reply);
 }
 
 function startSession(response, sessions, input) {

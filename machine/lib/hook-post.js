@@ -12,17 +12,10 @@ async function main() {
   const text = await new Promise(resolve => { let value = ''; process.stdin.on('data', chunk => { value += chunk; }); process.stdin.on('end', () => resolve(value)); });
   let raw;
   try { raw = JSON.parse(text); } catch { process.exitCode = 0; return; }
-  let event;
-  if (kind === 'claude') {
-    if (raw.hook_event_name === 'Stop') event = { type: 'turn-ended', transcript_path: raw.transcript_path, payload: raw };
-    else if (raw.hook_event_name === 'Notification' && raw.notification_type === 'permission_prompt') event = { type: 'prompt', notification_type: raw.notification_type, payload: raw };
-    else return;
-  } else {
-    if (raw.type !== 'agent-turn-complete') return;
-    // Codex's own payload carries type: 'agent-turn-complete'; ours must win.
-    event = { ...raw, type: 'turn-ended' };
-  }
-  const config = JSON.parse(await fs.readFile(path.join(state, 'machine.json'), 'utf8'));
+  const adapter = require('../adapters')[kind];
+  const event = adapter?.hookEvent(raw);
+  if (!event) return;
+  const config = await fs.readFile(path.join(state, 'machine.json'), 'utf8').then(JSON.parse).catch(() => ({}));
   const body = JSON.stringify(event);
   const posted = await new Promise(resolve => {
     const request = http.request({ host: config.host, port: config.port, method: 'POST', path: '/v1/agent/hooks', headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body), 'x-wheelchair-session-token': token } }, response => { response.resume(); response.on('end', () => resolve(response.statusCode >= 200 && response.statusCode < 300)); });

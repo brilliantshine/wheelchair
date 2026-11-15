@@ -9,27 +9,21 @@ const { promisify } = require('node:util');
 const { appError } = require('./state.js');
 const { outOfDate } = require('./ready.js');
 const settingsStore = require('./settings.js');
+const usage = require('./usage.js');
+const { choose, slotFor } = require('./balancer.js');
+const { PROVIDERS, cliOf, providerOf } = require('./providers.js');
 
 const execFileAsync = promisify(execFile);
 
 // Spec "How the hub picks a session's model": model cells are per provider and role.
 async function resolveModel(hub, cli, role, requestedTier = 'top') {
-  if (!['codex', 'claude'].includes(cli)) throw appError(400, `unknown cli: ${cli}`);
-  const settings = await settingsStore.load(hub);
-  let slot;
-  if (['lead', 'sub-lead'].includes(role)) slot = 'lead';
-  else if (['reviewer', 'verifier', 'mapper'].includes(role)) slot = settings.other_agents[role];
-  else {
-    const tier = cli === 'claude' && ({ haiku: 'light', sonnet: 'standard', opus: 'heavy' })[requestedTier]
-      || requestedTier;
-    try { slot = settingsStore.tier(tier, 'tier', true); }
-    catch { throw appError(400, `unknown tier "${requestedTier}"; use light, standard, heavy, critical, or top`); }
-    if (slot === 'top') slot = 'heavy';
-  }
-  const provider = cli === 'claude' ? 'claude' : 'gpt';
+  if (!providerOf(cli)) throw appError(400, `unknown cli: ${cli}`);
+  const slot = await slotFor(hub, role, requestedTier);
+  const provider = providerOf(cli);
   try {
     const model = (await execFileAsync(path.join(hub.root, 'codex', 'model.sh'), [provider, slot])).stdout.trim();
-    const effort = (await execFileAsync(path.join(hub.root, 'codex', 'model.sh'), ['effort', provider, slot])).stdout.trim() || undefined;
+    let effort;
+    if (PROVIDERS[provider].effort) effort = (await execFileAsync(path.join(hub.root, 'codex', 'model.sh'), ['effort', provider, slot])).stdout.trim() || undefined;
     return { model, effort, slot };
   } catch (error) {
     if (error.code === 3) throw appError(400, `${provider} is not used at ${slot}; use the other CLI`);
@@ -67,40 +61,73 @@ function newSessionName(thread, role) {
   return name;
 }
 
+// Spec §2: a requested worker effort, checked once the provider is known and before preflight.
+function checkEffort(settings, role, cli, effort) {
+  if (role !== 'worker' || effort === undefined) return;
+  if (cli === 'codex' && effort === 'max') throw appError(400, "GPT's highest effort is xhigh");
+  const efforts = ['low', 'medium', 'high', 'xhigh', 'max'];
+  const ceiling = settings.escalation.max_effort;
+  const max = cli === 'codex' && ceiling === 'max' ? 'xhigh' : ceiling;
+  if (efforts.indexOf(effort) > efforts.indexOf(max)) throw appError(400, `effort ${effort} is above the highest effort in Settings (${max})`);
+}
+
 async function startSession(hub, thread, input) {
   const role = input.role;
   if (!SESSION_ROLES.has(role)) throw appError(400, 'unknown role');
-  const cli = input.cli || thread.cli;
+  // Spec §2: the highest tier in Settings is checked before a provider is chosen or a wait is queued.
+  if (role === 'worker') {
+    const maxTier = (await settingsStore.load(hub)).escalation.max_tier;
+    const slot = await slotFor(hub, role, input.tier);
+    if (settingsStore.WORK_TIERS.indexOf(slot) > settingsStore.WORK_TIERS.indexOf(maxTier)) throw appError(400, `tier ${slot} is above the highest tier in Settings (${maxTier})`);
+  }
+  let selection = await choose(hub, thread, role, input.tier, input);
+  if (selection.wait) {
+    const waiting = input._waiting || {
+      name: input.name || newSessionName(thread, role), role, started_by: input.started_by || null,
+      token: crypto.randomBytes(32).toString('hex'), attempt_id: input.attempt_id || null,
+      queue: [], ready: false, live: true, created_at: new Date().toISOString(),
+    };
+    Object.assign(waiting, { status: 'waiting', waiting_until: selection.wait.until, waiting_reason: selection.wait.reason, waiting_provider: selection.wait.provider, pending_start: input._waiting ? waiting.pending_start : { ...input } });
+    if (!input._waiting) thread.sessions.push(waiting);
+    await hub.save(thread);
+    return waiting;
+  }
+  let cli = cliOf(selection.provider);
+  checkEffort(await settingsStore.load(hub), role, cli, input.effort);
+  if (PROVIDERS[selection.provider].preflight) {
+    const dir = selection.account.id === `default-${selection.provider}` ? null : `~/.wheelchair/accounts/${selection.account.id}`;
+    try { await hub.call(thread.machine, '/v1/preflight', 'POST', { dir }); }
+    catch (error) {
+      const machineState = await usage.machineAccounts(hub);
+      const configured = await hub.machines();
+      const resolvedMachine = await hub.state.resolveMachine(configured, thread.machine);
+      const machineName = Object.keys(configured).find((name) => configured[name] === resolvedMachine || configured[name].name === resolvedMachine?.name) || thread.machine;
+      if (machineState[machineName]) machineState[machineName].accounts[selection.account.id] = false;
+      selection = await choose(hub, thread, role, input.tier, input);
+      if (selection.wait) {
+        if (role === 'lead') { addCard(thread, { kind: 'needs', title: 'Codex preflight failed', body: `Codex preflight failed: ${error.body?.output || error.message}` }, { system: true }); await hub.save(thread); }
+        throw appError(409, `Codex preflight failed: ${error.body?.output || error.message}`);
+      }
+      cli = cliOf(selection.provider);
+      checkEffort(await settingsStore.load(hub), role, cli, input.effort);
+      if (PROVIDERS[selection.provider].preflight) {
+        const retryDir = selection.account.id === `default-${selection.provider}` ? null : `~/.wheelchair/accounts/${selection.account.id}`;
+        try { await hub.call(thread.machine, '/v1/preflight', 'POST', { dir: retryDir }); }
+        catch (retryError) { throw appError(409, `Codex preflight failed: ${retryError.body?.output || retryError.message}`); }
+      }
+    }
+  }
+  await usage.recordChosen(hub, selection.provider, selection.account.id);
+  if (role === 'lead' && !thread.provider) { thread.provider = selection.provider; thread.cli = cli; }
   const resolved = await resolveModel(hub, cli, role, input.tier);
   const settings = await settingsStore.load(hub);
-  if (role === 'worker') {
-    const ceiling = settings.escalation;
-    if (settingsStore.WORK_TIERS.indexOf(resolved.slot) > settingsStore.WORK_TIERS.indexOf(ceiling.max_tier)) throw appError(400, `tier ${resolved.slot} is above the highest tier in Settings (${ceiling.max_tier})`);
-    if (input.effort !== undefined) {
-      const efforts = ['low', 'medium', 'high', 'xhigh', 'max'];
-      const max = cli === 'codex' && ceiling.max_effort === 'max' ? 'xhigh' : ceiling.max_effort;
-      if (efforts.indexOf(input.effort) > efforts.indexOf(max)) throw appError(400, `effort ${input.effort} is above the highest effort in Settings (${max})`);
-    }
-  }
-  if (cli === 'codex') {
-    try {
-      await hub.call(thread.machine, '/v1/preflight', 'POST', {});
-    } catch (error) {
-      const detail = error.body?.output || error.message;
-      if (role === 'lead') {
-        addCard(thread, { kind: 'needs', title: 'Codex preflight failed', body: `Codex preflight failed: ${detail}` }, { system: true });
-        await hub.save(thread);
-      }
-      throw appError(409, `Codex preflight failed: ${detail}`);
-    }
-  }
   const layers = settingsStore.roleLayers(settings, role, thread.project);
   // Spec "Machine service on the hub": no new sessions while that service runs another commit.
   // A service that can't be reached falls through to the start, which records the failure.
   const current = await hub.call(thread.machine, '/v1/status', 'GET').catch(() => null);
   if (current && await outOfDate(hub, current)) throw appError(409, 'machine service out of date');
-  const token = crypto.randomBytes(32).toString('hex');
-  const session = {
+  const token = input._waiting?.token || crypto.randomBytes(32).toString('hex');
+  const session = input._waiting || {
     name: input.name || newSessionName(thread, role),
     role,
     started_by: input.started_by || null,
@@ -115,7 +142,10 @@ async function startSession(hub, thread, input) {
     template_id: layers.template?.id || null,
     ...(role === 'lead' ? { style_version: settings.style_version } : {}),
   };
-  thread.sessions.push(session);
+  if (!input._waiting) thread.sessions.push(session);
+  Object.assign(session, { status: 'starting', cli, provider: selection.provider, account: selection.account.id, template_id: layers.template?.id || null, ...(role === 'lead' ? { style_version: settings.style_version } : {}) });
+  if (selection.note) session.note = selection.note;
+  delete session.pending_start; delete session.waiting_until; delete session.waiting_reason; delete session.waiting_provider;
   await hub.save(thread);
 
   let started;
@@ -123,6 +153,7 @@ async function startSession(hub, thread, input) {
     started = await hub.call(thread.machine, '/v1/sessions', 'POST', {
       role,
       cli,
+      account: { id: selection.account.id, dir: selection.account.id === `default-${selection.provider}` ? null : `~/.wheelchair/accounts/${selection.account.id}` },
       thread_id: thread.id,
       token,
       name: session.name,
@@ -148,15 +179,18 @@ async function startSession(hub, thread, input) {
     await hub.save(thread);
     throw error;
   }
+  const identity = { name: session.name, attempt_id: session.attempt_id, started_by: session.started_by, queue: session.queue };
   Object.assign(session, started, {
+    ...identity,
     token,
-    started_by: session.started_by,
-    queue: session.queue || [],
+    provider: selection.provider,
+    account: selection.account.id,
+    queue: identity.queue || [],
     ready: started.status === 'ready',
     live: true,
     // The service types a first message itself (Codex's [wc:role] line, or a brief) once the
     // session is ready; without one, a ready session is idle and may take the queue at once.
-    first_message: session.cli === 'codex' || Boolean(input.brief),
+    first_message: PROVIDERS[selection.provider].typesRoleMessage || Boolean(input.brief),
   });
   markIdleIfFresh(session);
   if (!thread.worktree && started.worktree) {
@@ -222,7 +256,7 @@ async function enqueue(hub, thread, name, text, source = 'app', first = false, {
 }
 
 function canDeliver(target) {
-  const held = target.permission_open || target.needs_open;
+  const held = target.permission_open || target.needs_open || (target.limited_until && Date.parse(target.limited_until) > Date.now());
   return Boolean(target.live && target.ready && target.turn_ended && !held && target.queue?.length);
 }
 
@@ -271,6 +305,31 @@ async function event(hub, payload) {
   const target = session(thread, payload.session);
   const deliveryTargets = new Set();
   const type = payload.type;
+  if (payload.reading) {
+    await usage.record(hub, { ...payload.reading, machine: thread.machine });
+  }
+  const limit = type === 'limit-hit' ? payload.limited_until : payload.reading?.limited_until;
+  const limitEnded = type === 'limit-hit' || Boolean(payload.reading?.limited_until);
+  if (limit && Date.parse(limit) > Date.now()) {
+    const readings = await usage.readings(hub);
+    const prior = readings[target.account] || { account: target.account, machine: thread.machine, five_hour: null, week: null };
+    await usage.record(hub, { ...prior, at: new Date(Math.max(Date.now(), Date.parse(prior.at) + 1 || 0)).toISOString(), limited_until: limit });
+    target.limited_until = limit;
+    target.turn_ended = true;
+  } else if (limitEnded && limit && Date.parse(limit) <= Date.now()) {
+    delete target.limited_until;
+    target.turn_ended = true;
+    if (target.live) await enqueue(hub, thread, target.name, 'Continue.', 'app', true, { save: false, deliver: false });
+  }
+  if (type === 'turn-failed') {
+    target.turn_ended = true;
+    if (target.started_by) {
+      const starter = await enqueue(hub, thread, target.started_by, `[wc:from app] your session ${target.name}'s turn failed: ${payload.error}`, 'app', false, { save: false, deliver: false });
+      deliveryTargets.add(starter.name);
+    } else if (target.role === 'lead') {
+      addCard(thread, { kind: 'needs', title: "The lead's turn failed", body: `${payload.error}. The lead is still running: reply in the thread to have it try again.` }, { system: true, session: target.name });
+    }
+  }
   if (type === 'ready') {
     target.ready = true;
     target.status = 'ready';
@@ -278,7 +337,8 @@ async function event(hub, payload) {
   }
   if (['turn-ended', 'turn_ended', 'turn ended'].includes(type)) {
     target.turn_ended = true;
-    const reportTarget = await deliverReport(hub, thread, target, payload);
+    if (target.role === 'lead') for (const card of thread.cards) if (card.kind === 'needs' && card.title === "The lead's turn failed" && !card.answered) card.answered = true;
+    const reportTarget = limitEnded || Date.parse(target.limited_until) > Date.now() ? null : await deliverReport(hub, thread, target, payload);
     if (reportTarget) deliveryTargets.add(reportTarget.name);
   }
   const permission = type === 'prompt' && payload.notification_type === 'permission_prompt';
@@ -326,12 +386,8 @@ async function sessionRequest(hub, payload) {
   if (payload.action !== 'start' || !ALLOWED_START[caller.role]?.has(payload.role)) {
     throw appError(403, `${caller.role} may not start that session`);
   }
-  if (payload.effort !== undefined) {
-    const cli = payload.cli || thread.cli;
-    const allowed = cli === 'codex' ? ['low', 'medium', 'high', 'xhigh'] : ['low', 'medium', 'high', 'xhigh', 'max'];
-    if (cli === 'codex' && payload.effort === 'max') throw appError(400, "GPT's highest effort is xhigh");
-    if (!allowed.includes(payload.effort)) throw appError(400, `effort must be one of ${allowed.join(', ')}`);
-  }
+  // The provider is chosen at start; a GPT worker refuses max there (startSession).
+  if (payload.effort !== undefined && !['low', 'medium', 'high', 'xhigh', 'max'].includes(payload.effort)) throw appError(400, 'effort must be one of low, medium, high, xhigh, max');
   if (!payload.attempt_id) throw appError(400, 'attempt_id is required');
   const duplicate = thread.sessions.find((item) => (
     item.started_by === caller.name && item.attempt_id === payload.attempt_id && item.live
@@ -342,7 +398,8 @@ async function sessionRequest(hub, payload) {
   }
   const started = await startSession(hub, thread, {
     role: payload.role,
-    cli: payload.cli,
+    provider: payload.provider,
+    not_provider: payload.not_provider,
     started_by: caller.name,
     attempt_id: payload.attempt_id,
     brief: payload.brief,
@@ -360,7 +417,7 @@ async function sessionRequest(hub, payload) {
       return { worktree: replaced.worktree, branch: replaced.branch };
     })() : {}),
   });
-  return { session: publicSession(started) };
+  return { session: publicSession(started), ...(started.note ? { note: started.note } : {}) };
 }
 
 async function stopSession(hub, thread, caller, name) {
@@ -371,7 +428,7 @@ async function stopSession(hub, thread, caller, name) {
     caller.role === 'lead' && target.started_by && target.role !== 'lead'
   );
   if (!canStop) throw appError(403, 'only the starter may stop this session');
-  await hub.call(thread.machine, `/v1/sessions/${encodeURIComponent(target.name)}`, 'DELETE');
+  if (target.status !== 'waiting') await hub.call(thread.machine, `/v1/sessions/${encodeURIComponent(target.name)}`, 'DELETE');
   target.live = false;
   target.status = 'stopped';
   await hub.save(thread);
@@ -401,7 +458,7 @@ async function pollDead(hub) {
       await hub.withThread(listedThread.id, async () => {
         const thread = await hub.thread(listedThread.id);
         let changed = false;
-        for (const target of thread.sessions.filter((item) => item.live && !live.has(item.name))) {
+        for (const target of thread.sessions.filter((item) => item.live && item.status !== 'waiting' && !live.has(item.name))) {
           target.live = false;
           target.status = 'ended';
           changed = true;
@@ -424,6 +481,26 @@ async function pollDead(hub) {
       });
     }
   }
+}
+
+async function retryWaiting(hub) {
+  const waiting = (await hub.allThreads()).flatMap((t) => t.sessions.filter((s) => s.live && s.status === 'waiting').map((s) => ({ thread: t.id, name: s.name, at: s.created_at }))).sort((a, b) => a.at.localeCompare(b.at));
+  for (const item of waiting) {
+    await hub.withThread(item.thread, async () => {
+      const thread = await hub.thread(item.thread);
+      const target = thread.sessions.find((s) => s.name === item.name && s.live && s.status === 'waiting');
+      if (target) await startSession(hub, thread, { ...target.pending_start, _waiting: target });
+    }).catch(() => {});
+  }
+}
+async function releaseLimits(hub) {
+  for (const listed of await hub.allThreads()) await hub.withThread(listed.id, async () => {
+    const thread = await hub.thread(listed.id);
+    for (const target of thread.sessions) if (target.live && target.limited_until && Date.parse(target.limited_until) <= Date.now()) {
+      delete target.limited_until;
+      await enqueue(hub, thread, target.name, 'Continue.', 'app', true);
+    }
+  });
 }
 
 // Retry only queues that could have accepted a message now. Each thread gets its existing
@@ -452,6 +529,8 @@ module.exports = {
   event,
   pollDead,
   retryQueues,
+  retryWaiting,
+  releaseLimits,
   publicSession,
   resolveModel,
   session,

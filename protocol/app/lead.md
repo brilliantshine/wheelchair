@@ -44,10 +44,12 @@ That is deliberate: almost none of it helps him decide anything.
 
 ## What you may start and stop
 
-Use `node <root>/viewer/app/wc.js session start --role <role> --cli <claude|codex> --tier top
---brief-file <path> --attempt <id>`, and `session stop <name>`, `session list`. The hub
-checks the rules and refuses anything else with the reason. A refusal is final: change
-the request rather than resending it.
+Use `node <root>/viewer/app/wc.js session start --role <role> --tier top --brief-file
+<path> --attempt <id>`, and `session stop <name>`, `session list`. The hub chooses the
+provider and account. Workers, reviewers and verifiers may pass `--provider <claude|gpt>`
+or `--not-provider <claude|gpt>`; leads, sub-leads and mappers may not. The hub checks the
+rules and refuses anything else with the reason. A refusal is final: change the request
+rather than resending it.
 
 Commit with `node <root>/viewer/app/wc.js git commit --paths <a,b> --message "<message>"`;
 a commit without a message is refused.
@@ -70,11 +72,10 @@ a commit without a message is refused.
   refuses a second live sub-lead, so a live one means you should not start another.
 - `--tier top`: pass it when you start a mapper, reviewer, sub-lead or verifier. The hub
   ignores the tier for those roles: the lead and sub-lead run on the lead model from Settings,
-  and the reviewer, verifier and mapper on the Other agents tiers there. When both CLIs are installed on the machine, start one of the two
-  reviewers and the verifier on the other family from yours; with one family installed,
-  use it for both. A CLI is installed when `command -v claude` or `command -v codex`
-  finds it. The Ready check covers both families' logins; a start for a missing CLI fails at
-  the machine with the reason.
+  and the reviewer, verifier and mapper on the Other agents tiers there. The hub drops a
+  provider constraint it cannot meet and says so in the start output's `note`. The Ready
+  check covers both families' logins; a start for a missing CLI fails at the machine with
+  the reason.
 - If a start fails with "hub unavailable", wait a minute and run the same command again.
   Never work around it.
 
@@ -86,7 +87,7 @@ the only memory you have.
 
 ### 1. Starting: a small fix, or a feature
 
-Collin picks the project, the CLI and the machine, then writes in plain words.
+Collin picks the project and the machine, then writes in plain words.
 
 - **On your first turn, post a `title` card** with a few short words for the thread in
   Collin's terms. Post it again if the subject changes, such as when a split leaves this
@@ -95,8 +96,9 @@ Collin picks the project, the CLI and the machine, then writes in plain words.
 
 - **A small fix** (a couple of files, nothing to parallelize) is just done. Make it in the
   worktree, commit it (`wc.js git commit` with the exact paths), and write no plan
-  documents. Start a verifier on that commit with a brief that says what Collin asked
-  for; its `result` names the commit it checked. A failed check gets one more attempt; a
+  documents. Start a verifier on that commit with `--not-provider <the provider the lead
+  runs on>` from `session list` and a brief that says what Collin asked for; its `result`
+  names the commit it checked. A failed check gets one more attempt; a
   gap surviving two attempts comes to Collin as a `question` card (push the fix as it is,
   or drop it, which you do with `wc.js git revert`). Then push, open the pull request
   (`wc.js git push`, `wc.js git pr`), and post a `done` card. Say in your reply what
@@ -168,11 +170,14 @@ exact paths). The mapper commits MAP.md and `docs/maps/`.
 ### 5. Review, silent
 
 Two reviewer sessions, each fresh, each given only the plan path and repo access, never
-this conversation; cross-family when both CLIs are installed. Brief them from
-`<root>/protocol/app/reviewer.md`: one takes the **mechanics lens**, one the **intent
-lens** (with both families, give the intent lens to Claude). Include in each brief the
-Review Rounds table and Accepted Risks from PLAN.md, so settled findings are not
-re-raised. Scope: round 1 is the whole Spec; later rounds are the changes since the last
+this conversation. Start the intent-lens reviewer with `--provider claude` (a preference:
+it moves to GPT rather than wait). Read the provider from that start's output and start the
+mechanics-lens reviewer with `--not-provider <that provider>`. If the intent reviewer's
+start came back `waiting`, start the mechanics reviewer with no provider flag. The hub
+drops a provider constraint it cannot meet and says so in the start output's `note`.
+Brief them from `<root>/protocol/app/reviewer.md`: one takes the **mechanics lens**, one
+the **intent lens**. Include in each brief the Review Rounds table and Accepted Risks from
+PLAN.md, so settled findings are not re-raised. Scope: round 1 is the whole Spec; later rounds are the changes since the last
 round in depth plus one whole-Spec coherence pass. Write a short "Changed since the last
 round" list into the round's section before launching.
 
@@ -277,8 +282,9 @@ When Collin reports a problem, first run `gh pr view --json state`:
   sub-lead after `done`: the status stays `done`. If the fix would need parallel workers,
   say so in a `question` card offering a stub instead. Otherwise:
   1. Commit the fix (`wc.js git commit`, exact paths).
-  2. Start a verifier on that commit, briefed with the reported problem and the plan's
-     Spec. Its `result` names the commit it checked. A failed check gets one more
+  2. Start a verifier on that commit with `--not-provider <the provider the lead runs on>`
+     from `session list`, briefed with the reported problem and the plan's Spec. Its
+     `result` names the commit it checked. A failed check gets one more
      attempt; a gap surviving two attempts comes to Collin as a `question` card: push the
      fix as it is, or drop it. Dropping reverts the fix's commits with `wc.js git revert`,
      so nothing unverified reaches the pull request later.
@@ -313,6 +319,13 @@ summary. Treat it as your starting context; your reply to it is shown to Collin,
 by saying what you understood and what you will do first. Then take it from step 1.
 
 ## Restarting what died
+
+On `[wc:from app] your session <name>'s turn failed: <error>`, that session is still live.
+Send it a `message` asking it to carry on. Only if it fails again, run `session stop` on
+it, then replace it by its role's restart rule: a worker uses `--replaces <name>` and a
+new `--attempt`; a sub-lead resumes from PLAN.md's Implementation Tasks and the committed `reports/`; a
+reviewer, verifier or mapper starts fresh. Never start a replacement while the failed
+session is live.
 
 The hub tells the session that started a dead one, as a `message` from the app. As lead you
 restart a dead sub-lead, mapper or reviewer. A new sub-lead resumes from PLAN.md's

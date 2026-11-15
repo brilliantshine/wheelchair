@@ -73,15 +73,17 @@ function sessionRequest(operation, tail) {
   }
   const parsed = flags(tail);
   if (operation !== 'start') return { path: '/session', body: { action: operation, name: parsed._[0] } };
-  if (!parsed.role || !parsed.cli || !parsed.attempt || !parsed['brief-file']) {
-    throw new Error('start requires --role --cli --brief-file --attempt');
+  if (!parsed.role || !parsed.attempt || !parsed['brief-file']) {
+    throw new Error('start requires --role --brief-file --attempt');
   }
+  if (parsed.cli) process.stderr.write('--cli is ignored: the hub picks the provider\n');
   return {
     path: '/session',
     body: {
       action: operation,
       role: parsed.role,
-      cli: parsed.cli,
+      provider: parsed.provider,
+      not_provider: parsed['not-provider'],
       tier: parsed.tier || 'top',
       ...(parsed.effort !== undefined ? { effort: parsed.effort } : {}),
       attempt_id: parsed.attempt,
@@ -127,6 +129,11 @@ async function main(argv) {
     : await request(`${base}${input.path}`, token, input.body);
   if (result.status < 200 || result.status >= 300) {
     throw new Error(result.status === 503 ? 'hub unavailable' : result.output);
+  }
+  if (group === 'session' && operation === 'start') {
+    const response = JSON.parse(result.output);
+    if (response.note) process.stderr.write(`${response.note}\n`);
+    if (response.session?.status === 'waiting') process.stdout.write(`waiting for room until ${response.session.waiting_until}\n`);
   }
   process.stdout.write(`${result.output}\n`);
 }

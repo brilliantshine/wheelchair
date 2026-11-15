@@ -42,17 +42,17 @@ test.describe('desktop', () => {
     await expect(page.locator('#panel h1')).toHaveText('Models and preferences');
   });
 
-  test('three sections, kept across a reload through the hash', async ({ page }) => {
+  test('five sections, kept across a reload through the hash', async ({ page }) => {
     await openPage(page, context, '/app/settings');
     const nav = page.locator('#sections a');
-    await expect(nav).toHaveText(['Models and preferences', 'Behavior templates', 'Writing style']);
-    await nav.nth(1).click();
+    await expect(nav).toHaveText(['Accounts', 'Usage', 'Models and preferences', 'Behavior templates', 'Writing style']);
+    await nav.nth(3).click();
     await expect(page).toHaveURL(/#templates$/);
     await expect(page.locator('.tpl-list h1')).toHaveText('Behavior templates');
     await page.reload();
     await expect(page.locator('.tpl-list h1')).toBeVisible();
     await expect(page.locator('#sections a[aria-current="page"]')).toHaveText('Behavior templates');
-    await nav.nth(2).click();
+    await nav.nth(4).click();
     await page.reload();
     await expect(page.locator('#panel h1')).toHaveText('Writing style');
     await expect(page.locator('.covers')).not.toContainText('Phone notifications');
@@ -254,12 +254,12 @@ test.describe('phone', () => {
   test('the sections are tabs above the section and the page never scrolls sideways', async ({ page }) => {
     await openPage(page, context, '/app/settings');
     const tabs = page.locator('#sections a');
-    await expect(tabs).toHaveCount(3);
+    await expect(tabs).toHaveCount(5);
     const boxes = await tabs.evaluateAll((nodes) => nodes.map((n) => n.getBoundingClientRect().toJSON()));
     expect(new Set(boxes.map((b) => Math.round(b.top))).size).toBe(1);
     const panel = await page.locator('#panel').boundingBox();
     expect(boxes[0].bottom).toBeLessThanOrEqual(panel.y + 1);
-    for (const key of ['models', 'templates', 'writing']) {
+    for (const key of ['accounts', 'usage', 'models', 'templates', 'writing']) {
       await page.locator(`#sections a[data-section="${key}"]`).click();
       await expect(page.locator('#sections a[aria-current="page"]')).toHaveAttribute('data-section', key);
       await page.waitForTimeout(200);
@@ -271,21 +271,23 @@ test.describe('phone', () => {
   });
 
   for (const width of [390, 360]) {
-    for (const route of ['/app/threads', '/app/settings']) {
+    for (const route of ['/app/threads', '/app/settings', '/app/new']) {
       test(`the nav fits ${width}px on ${route}`, async ({ page }) => {
         await page.setViewportSize({ width, height: 800 });
         await openPage(page, context, route);
         const boxes = await page.locator('#app-nav').evaluate((nav) => [...nav.children]
           .filter((n) => n.getClientRects().length)
           .map((n) => ({ cls: n.className, ...n.getBoundingClientRect().toJSON() })));
-        expect(boxes.length).toBeGreaterThanOrEqual(4);
+        expect(boxes.length).toBeGreaterThanOrEqual(3);
         for (const b of boxes) {
           expect(b.left, b.cls).toBeGreaterThanOrEqual(0);
           expect(b.right, b.cls).toBeLessThanOrEqual(width);
         }
-        const add = await page.locator('#app-nav .new-thread').boundingBox();
-        expect(add.x).toBeGreaterThanOrEqual(0);
-        expect(add.x + add.width).toBeLessThanOrEqual(width);
+        if (route === '/app/threads') {
+          const add = await page.locator('#new-toggle').boundingBox();
+          expect(add.x).toBeGreaterThanOrEqual(0);
+          expect(add.x + add.width).toBeLessThanOrEqual(width);
+        }
         await noSideScroll(page);
       });
     }
@@ -308,6 +310,29 @@ test.describe('phone', () => {
     expect(box.x).toBeGreaterThanOrEqual(0);
     expect(box.x + box.width).toBeLessThanOrEqual(390);
     await noSideScroll(page);
+  });
+
+  test('the Default project folder saves, and a refusal shows under it with the typed value kept', async ({ page }) => {
+    await openPage(page, context, '/app/settings');
+    const input = page.getByLabel('Default project folder', { exact: true });
+    await expect(input).toHaveValue('');
+    await input.fill('~/projects');
+    await page.getByRole('button', { name: 'Save', exact: true }).last().click();
+    await expect(page.locator('.row-line', { hasText: 'Default project folder' }).getByRole('status')).toHaveText('Saved');
+    expect((await settings(page)).default_project_folder).toBe('~/projects');
+    await page.reload();
+    await expect(page.getByLabel('Default project folder', { exact: true })).toHaveValue('~/projects');
+    const again = page.getByLabel('Default project folder', { exact: true });
+    await again.fill('relative/path');
+    await page.locator('.row-line', { hasText: 'Default project folder' }).getByRole('button', { name: 'Save' }).click();
+    const err = page.locator('.row-line', { hasText: 'Default project folder' }).locator('.inline-err');
+    await expect(err).toBeVisible();
+    await expect(again).toHaveValue('relative/path');
+    expect((await settings(page)).default_project_folder).toBe('~/projects');
+    await again.fill('');
+    await page.locator('.row-line', { hasText: 'Default project folder' }).getByRole('button', { name: 'Save' }).click();
+    await expect(page.locator('.row-line', { hasText: 'Default project folder' }).getByRole('status')).toHaveText('Saved');
+    expect((await settings(page)).default_project_folder).toBe('');
   });
 
   test('Settings keeps its accessible name on a phone', async ({ page }) => {

@@ -17,6 +17,8 @@ const fsp = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync, spawn } = require('node:child_process');
+const adapters = require('./adapters');
+const { limitedUntil } = require('./lib/limits');
 
 const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_STATE = path.join(os.homedir(), '.local', 'state', 'wheelchair');
@@ -28,6 +30,15 @@ function die(message) { throw Object.assign(new Error(message), { status: 400 })
 function safeName(value, label) {
   if (typeof value !== 'string' || !/^[A-Za-z0-9._/-]+$/.test(value) || value.includes('..')) die(`invalid ${label}`);
   return value;
+}
+function accountDir(dir, id) {
+  if (dir === null || dir === undefined) return null;
+  if (typeof dir !== 'string' || !dir.startsWith('~/')) die('invalid account dir');
+  const expanded = path.resolve(os.homedir(), dir.slice(2));
+  const base = path.join(os.homedir(), '.wheelchair', 'accounts');
+  const name = path.basename(expanded);
+  if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(name) || dir !== `~/.wheelchair/accounts/${name}` || expanded !== path.join(base, name) || (id && id !== name)) die('invalid account dir');
+  return expanded;
 }
 function json(value) { return JSON.stringify(value); }
 async function mkdir(dir, mode = 0o700) { await fsp.mkdir(dir, { recursive: true, mode }); }
@@ -123,6 +134,7 @@ class MachineService {
     this.sessionsPath = path.join(this.stateDir, 'sessions.json');
     this.config = {};
     this.sessions = {};
+    this.logins = {};
     this.server = null;
     this.retryWindow = Number(process.env.WHEELCHAIR_RETRY_WINDOW_MS || 90_000);
     this.retryDelay = Number(process.env.WHEELCHAIR_RETRY_DELAY_MS || 1_000);
@@ -163,7 +175,7 @@ class MachineService {
   async recoverFromTmux() {
     let changed = false;
     for (const name of this.liveTmux()) {
-      if (!name.startsWith('wc-') || this.sessions[name]) continue;
+      if (!name.startsWith('wc-') || name.startsWith('wc-login-') || this.sessions[name]) continue;
       const parsed = /^wc-(.+?)-(sub-lead|lead|worker|reviewer|verifier|[a-z]+)(?:-\d+)?$/.exec(name);
       if (!parsed) continue;
       const pane = this.tmux(['capture-pane', '-p', '-t', name]);
@@ -264,55 +276,37 @@ class MachineService {
     return match ? match[1] : 'main';
   }
   commandFor(input, session, worktree) {
-    // Spec "Machine service on the hub": exact interactive CLI permissions and hooks.
-    const rolePrompt = composeRolePrompt(input);
-    if (input.cli === 'claude') {
-      const settingsPath = path.join(this.stateDir, 'settings', `${session.name}.json`);
-      const hook = path.join(ROOT, 'machine', 'hook.sh');
-      // No suggested next prompt: one Enter in a terminal would send it as if Collin typed it.
-      const settings = { cleanupPeriodDays: 30, promptSuggestionEnabled: false, ...(session.permission_mode === 'bypass' ? { skipDangerousModePermissionPrompt: true } : {}), hooks: {
-        Stop: [{ hooks: [{ type: 'command', command: `${shellQuote(hook)} claude ${shellQuote(session.name)}` }] }],
-        Notification: [{ hooks: [{ type: 'command', command: `${shellQuote(hook)} claude ${shellQuote(session.name)}` }] }],
-      } };
-      return { settingsPath, settings, argv: ['claude', '--session-id', session.cli_session_id, '--settings', settingsPath, '--permission-mode', PERMISSION_MODES[session.permission_mode], ...(input.model ? ['--model', input.model] : []), ...(session.effort ? ['--effort', session.effort] : []), '--append-system-prompt', rolePrompt] };
-    }
-    if (input.cli === 'codex') {
-      const trust = `projects={${json(worktree)}={trust_level="trusted"}}`;
-      const notify = `notify=[${json(path.join(ROOT, 'machine', 'hook.sh'))},"codex",${json(session.name)}]`;
-      // A reviewer stays read-only whatever the mode: it only reads. Unrestricted drops
-      // the sandbox and approvals entirely (Codex's --yolo); sandboxed confines writes to the worktree.
-      const access = input.role === 'reviewer' ? ['-s', 'read-only', '-a', 'never']
-        : session.codex_mode === 'unrestricted' ? ['--dangerously-bypass-approvals-and-sandbox']
-          : ['-s', 'workspace-write', '-a', 'never', '-c', 'sandbox_workspace_write.network_access=true'];
-      return { argv: ['codex', ...access, '-c', notify, '-c', trust, ...(input.model ? ['-m', input.model] : []), ...(session.effort ? ['-c', `model_reasoning_effort=${session.effort}`] : [])] };
-    }
-    die('cli must be claude or codex');
+    const adapter = adapters[input.cli];
+    if (!adapter) die('cli must be claude or codex');
+    return adapter.command(input, session, worktree, { stateDir: this.stateDir, rolePrompt: composeRolePrompt(input) });
   }
+
   async start(input) {
     for (const key of ['role', 'cli', 'thread_id', 'token']) if (!input[key]) die(`missing ${key}`);
     const name = input.name || this.sessionName(input.thread_id, input.role);
     safeName(name, 'session name');
-    if (!name.startsWith('wc-')) die('session name must begin wc-');
+    if (!name.startsWith('wc-') || name.startsWith('wc-login-')) die('invalid session name');
     if (this.sessions[name]) return this.sessions[name];
+    const adapter = adapters[input.cli];
+    if (!adapter) die('cli must be claude or codex');
+    const account = input.account || { id: `default-${adapter.provider}`, dir: null };
+    if (!account || typeof account.id !== 'string') die('invalid account');
+    const dir = accountDir(account.dir, account.id);
+    if (!dir && account.id !== `default-${adapter.provider}`) die('invalid default account');
+    if (dir) adapter.seed(dir, account.id);
     const options = startOptions(input);
     const createdWorktree = !input.worktree;
     const created = await this.createWorktree(input, name);
     const worktree = created.worktree;
-    const session = { name, role: input.role, cli: input.cli, permission_mode: options.permission_mode, codex_mode: options.codex_mode, effort: options.effort, thread_id: input.thread_id, token: input.token,
+    const session = { name, role: input.role, cli: input.cli, account: account.id, account_dir: dir, permission_mode: options.permission_mode, codex_mode: options.codex_mode, effort: options.effort, thread_id: input.thread_id, token: input.token,
       worktree, created_worktree: createdWorktree, attempt_id: input.attempt_id || null, started_by: input.started_by || null,
       branch: created.branch || input.branch || null, default_branch: created.defaultBranch || input.default_branch || input.defaultBranch || null,
       cli_session_id: input.cli_session_id || crypto.randomUUID(), status: 'starting', created_at: new Date().toISOString() };
     const built = this.commandFor(input, session, worktree);
     if (built.settingsPath) await atomicWrite(built.settingsPath, `${json(built.settings)}\n`);
-    const commandText = ['env', 'WHEELCHAIR_LANE=1', `WHEELCHAIR_SESSION_TOKEN=${session.token}`, `WHEELCHAIR_STATE_DIR=${this.stateDir}`, `WHEELCHAIR_MACHINE_ORIGIN=http://${this.config.host}:${this.config.port}`, ...built.argv].map(shellQuote).join(' ');
+    const commandText = ['env', 'WHEELCHAIR_LANE=1', `WHEELCHAIR_SESSION_TOKEN=${session.token}`, `WHEELCHAIR_STATE_DIR=${this.stateDir}`, `WHEELCHAIR_MACHINE_ORIGIN=http://${this.config.host}:${this.config.port}`, ...Object.entries(adapter.loginEnv(dir)).map(([key, value]) => `${key}=${value}`), ...built.argv].map(shellQuote).join(' ');
     session.command = built.argv;
-    // Spec "Machine service on the hub": Codex's first, binding message always
-    // uses the literal marker [wc:role], regardless of the selected role.
-    const rolePrompt = composeRolePrompt(input);
-    const firstMessage = input.brief || input.first_message || '';
-    session.pending_initial = input.cli === 'codex'
-      ? `[wc:role] ${rolePrompt}${firstMessage ? `\n\n${firstMessage}` : ''}`
-      : firstMessage;
+    session.pending_initial = adapter.firstMessage(input, composeRolePrompt(input));
     const tmuxArgs = ['new-session', '-d', '-s', name, '-x', '200', '-y', '50', '-c', worktree, commandText];
     // systemd-run scope prevents service restarts killing tmux; installer sets KillMode=process too.
     const scoped = command('systemd-run', ['--user', '--scope', 'tmux', ...tmuxArgs]);
@@ -324,10 +318,9 @@ class MachineService {
     return session;
   }
   readyText(session, pane) {
-    // A session without a recorded mode (recovered, or started before the field) is auto.
-    if (session.cli === 'claude') return !pane.includes('Yes, I trust this folder') && !pane.includes('No, exit') && !pane.includes('Yes, I accept') && pane.includes(session.permission_mode === 'bypass' ? 'bypass permissions on' : 'auto mode on') && /(^|\n).*❯\s/m.test(pane);
-    return pane.includes('Ask Codex to do anything');
+    return adapters[session.cli]?.readyText(session, pane) || false;
   }
+
   async emitEvent(event) {
     const spool = await this.spool('events', event);
     await this.drainSpool('events');
@@ -337,18 +330,11 @@ class MachineService {
     if (session.status === 'ready') return true;
     let pane;
     try { pane = this.pane(session.name); } catch { return false; }
-    if (session.cli === 'claude' && pane.includes('Yes, I trust this folder')) {
+    const prompt = adapters[session.cli]?.answerPrompts(session, pane);
+    if (prompt) {
       this.tmux(['send-keys', '-t', session.name, 'Down']);
       this.tmux(['send-keys', '-t', session.name, 'Enter']);
-      session.trust_answered = true;
-      await this.persistSessions();
-      return false;
-    }
-    // Bypass: the CLI's one-time "Bypass Permissions mode" warning (1. No, exit / 2. Yes, I accept).
-    // The per-session settings file normally suppresses it; this answers it if it still appears.
-    if (session.cli === 'claude' && session.permission_mode === 'bypass' && pane.includes('Yes, I accept')) {
-      this.tmux(['send-keys', '-t', session.name, 'Down']);
-      this.tmux(['send-keys', '-t', session.name, 'Enter']);
+      if (prompt === 'trust') { session.trust_answered = true; await this.persistSessions(); }
       return false;
     }
     if (this.readyText(session, pane)) {
@@ -383,7 +369,7 @@ class MachineService {
   async pollTrust() {
     const now = Date.now();
     await Promise.all(Object.values(this.sessions)
-      .filter(session => session.cli === 'claude' && session.status === 'starting'
+      .filter(session => adapters[session.cli]?.answerPrompts && session.status === 'starting'
         && now - new Date(session.created_at).getTime() < 30_000)
       .map(session => this.checkReady(session)));
   }
@@ -444,7 +430,7 @@ class MachineService {
   async archive(threadId) {
     if (typeof threadId !== 'string' || !threadId) throw Object.assign(new Error('thread_id required'), { status: 400 });
     safeName(threadId, 'thread id');
-    const sessions = Object.values(this.sessions).filter(session => session.thread_id === threadId);
+    const sessions = Object.values(this.sessions).filter(session => !session.name.startsWith('wc-login-') && session.thread_id === threadId);
     const stopped = [];
     for (const session of sessions) {
       if (session.archived_pending) continue;
@@ -534,11 +520,7 @@ class MachineService {
       if (kept === null || kept === undefined || kept === false) throw error;
       return { offset: Buffer.byteLength(kept), data: Buffer.from(kept).subarray(Number(offset)).toString('utf8') };
     }
-    // Spec "Branches and checkouts": before the first Stop hook, find Claude's file by session id.
-    if (!session.source_transcript && session.cli === 'claude' && session.cli_session_id) {
-      const found = await this.claudeTranscript(session.cli_session_id);
-      if (found) session.source_transcript = found;
-    }
+    if (!session.source_transcript) session.source_transcript = await adapters[session.cli]?.findTranscript(session, session.account_dir);
     if (session.source_transcript) {
       try { await this.copyTranscript(session, session.source_transcript); }
       catch (error) { if (error.code !== 'ENOENT') throw error; }
@@ -581,15 +563,17 @@ class MachineService {
     for (const file of files) {
       let payload = await readJson(path.join(dir, file), null); if (!payload) continue;
       payload.delivery_id ||= this.deliveryId(file);
-      if (kind === 'events') {
+      if (kind === 'events' && payload.prepared !== true) {
         try {
           const prepared = await this.hook(payload.session, payload, { spooled: true });
           if (prepared.ignored) { await this.rejectSpool(kind, file, 'event ignored by the live hook handler'); continue; }
           payload = { ...prepared.event, delivery_id: payload.delivery_id };
         } catch (error) { await this.rejectSpool(kind, file, error.message || String(error)); continue; }
+        await atomicWrite(path.join(dir, file), `${json(payload)}\n`);
       }
       try {
-        const response = await requestJson(`${this.config.hub_url.replace(/\/$/, '')}/api/machine/${kind}`, 'POST', { [HUB_HEADER]: await this.secret() }, payload);
+        const { prepared: ignoredPrepared, ...eventBody } = payload;
+        const response = await requestJson(`${this.config.hub_url.replace(/\/$/, '')}/api/machine/${kind}`, 'POST', { [HUB_HEADER]: await this.secret() }, kind === 'events' ? eventBody : payload);
         if (response.status >= 200 && response.status < 300) { await fsp.unlink(path.join(dir, file)); continue; }
         if (response.status >= 400 && response.status < 500) {
           let reason = `hub refused (${response.status})`;
@@ -603,38 +587,35 @@ class MachineService {
   }
   async hook(session, event, { spooled = false } = {}) {
     const current = this.managed(session);
+    const adapter = adapters[current.cli];
     if (event.transcript_path) { current.source_transcript = event.transcript_path; await this.copyTranscript(current, event.transcript_path); }
-    if (current.cli === 'codex' && event.type === 'turn-ended' && !current.codex_thread_id) {
-      const first = event['input-messages']?.[0] || event.input_messages?.[0] || '';
-      const threadId = event['thread-id'] || event.thread_id;
-      if (!first.startsWith('[wc:role]') || !threadId || !await this.codexRollout(threadId)) return { ignored: true };
-      current.codex_thread_id = threadId; current.source_transcript = await this.codexRollout(threadId); await this.persistSessions();
+    if (event.type === 'turn-ended' && adapter.onTurnEnded) {
+      const result = await adapter.onTurnEnded(current, event);
+      if (result.ignored) return { ignored: true };
+      if (result.reading) {
+        const { reached, ...reading } = result.reading;
+        reading.account = current.account || `default-${adapter.provider}`;
+        if (reached) reading.limited_until = limitedUntil(reading);
+        current.last_reading = reading;
+        event = { ...event, reading };
+      }
+      await this.persistSessions();
     }
-    if (current.cli === 'codex' && event['thread-id'] && current.codex_thread_id !== event['thread-id']) return { ignored: true };
+    if (event.type === 'usage-source') {
+      const reading = adapter.usageFrom(event.payload);
+      if (!reading) return { ignored: true };
+      reading.account = current.account || `default-${adapter.provider}`;
+      current.last_reading = reading; await this.persistSessions();
+      event = { type: 'usage', reading };
+    }
+    if (event.type === 'limit-hit') event = { ...event, limited_until: limitedUntil(current.last_reading) };
     if (event.type === 'prompt' && event.notification_type !== 'permission_prompt') return { ignored: true };
     const { session: ignoredSession, thread_id: ignoredThread, delivery_id: ignoredDelivery, ...rest } = event;
-    const forwarded = { ...rest, session, thread_id: current.thread_id };
+    const forwarded = { ...rest, session, thread_id: current.thread_id, prepared: true };
     if (event.type === 'prompt') { current.prompt_open = true; await this.persistSessions(); }
     if (spooled) return { ok: true, event: forwarded };
     await this.emitEvent(forwarded);
     return { ok: true };
-  }
-  async claudeTranscript(cliSessionId) {
-    const root = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'projects');
-    for (const entry of await fsp.readdir(root, { withFileTypes: true }).catch(() => [])) {
-      const candidate = path.join(root, entry.name, `${cliSessionId}.jsonl`);
-      if (entry.isDirectory() && fs.existsSync(candidate)) return candidate;
-    }
-    return null;
-  }
-  async codexRollout(threadId) {
-    const root = path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'sessions');
-    const find = async directory => {
-      let entries; try { entries = await fsp.readdir(directory, { withFileTypes: true }); } catch { return null; }
-      for (const entry of entries) { const next = path.join(directory, entry.name); if (entry.isDirectory()) { const hit = await find(next); if (hit) return hit; } else if (entry.name.endsWith(`-${threadId}.jsonl`)) return next; }
-      return null;
-    };
-    return find(root);
   }
   // Spec "Branches and checkouts": a sub-lead removes a worker's worktree once that worker is done and merged.
   async removeWorkerWorktree(caller, workerName, cwd) {
@@ -694,23 +675,73 @@ class MachineService {
       await new Promise(resolve => setTimeout(resolve, this.retryDelay));
     }
   }
+  loginRecord(account) {
+    if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(account)) die('invalid account');
+    let record = this.logins[account];
+    if (!record && this.liveTmux().has(`wc-login-${account}`)) {
+      const defaultEntry = Object.entries(adapters).find(([, adapter]) => account === `default-${adapter.provider}`);
+      if (defaultEntry) record = { cli: defaultEntry[0], dir: null };
+      else {
+        const dir = accountDir(`~/.wheelchair/accounts/${account}`, account);
+        try { const meta = JSON.parse(fs.readFileSync(path.join(dir, 'wheelchair-account.json'), 'utf8')); if (meta.id === account && adapters[meta.cli]) record = { cli: meta.cli, dir }; } catch {}
+      }
+      if (record) this.logins[account] = record;
+    }
+    if (!record) throw Object.assign(new Error('login not found'), { status: 404 });
+    return record;
+  }
+  async startLogin(input) {
+    const { account, cli } = input, adapter = adapters[cli];
+    if (typeof account !== 'string' || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(account) || !adapter) die('invalid account or cli');
+    const dir = accountDir(input.dir, account);
+    if ((!dir && account !== `default-${adapter.provider}`) || (dir && Object.values(adapters).some(a => account === `default-${a.provider}`))) die('invalid default account');
+    if (dir) adapter.seed(dir, account);
+    const name = `wc-login-${account}`;
+    this.tmux(['kill-session', '-t', name]);
+    const cmd = ['env', ...Object.entries(adapter.loginEnv(dir)).map(([k, v]) => `${k}=${v}`), ...adapter.loginCommand(dir)].map(shellQuote).join(' ');
+    const script = `${cmd}; printf '\n__wc_login_exit %s\n' "$?"; sleep 600`;
+    const result = this.tmux(['new-session', '-d', '-s', name, '-x', '200', '-y', '50', ['sh', '-c', script].map(shellQuote).join(' ')]);
+    if (!result.ok) die(result.stderr.trim() || 'login session failed to start');
+    this.logins[account] = { cli, dir };
+    return { state: 'starting' };
+  }
+  loginPane(account) {
+    this.loginRecord(account);
+    const result = this.tmux(['capture-pane', '-p', '-t', `wc-login-${account}`]);
+    if (!result.ok) throw Object.assign(new Error('login pane unavailable'), { status: 409 });
+    return result.stdout;
+  }
+  loginState(account) {
+    const record = this.loginRecord(account), adapter = adapters[record.cli];
+    const captured = this.tmux(['capture-pane', '-p', '-t', `wc-login-${account}`]);
+    const pane = captured.ok ? captured.stdout : '';
+    if (!captured.ok || /__wc_login_exit \d+/.test(pane)) {
+      const logged_in = adapter.loginStatus(record.dir).logged_in;
+      return { state: logged_in ? 'done' : 'failed', url: null, code: null, wantsCode: false, logged_in };
+    }
+    const keys = adapter.loginPrompt?.(pane);
+    if (keys && !record.answered) { for (const key of keys) this.tmux(['send-keys', '-t', `wc-login-${account}`, key]); record.answered = true; }
+    const parsed = adapter.parseLogin(pane);
+    return { state: parsed ? 'waiting' : 'starting', url: parsed?.url || null, code: parsed?.code || null, wantsCode: parsed?.wantsCode || false, logged_in: false };
+  }
   status() {
     const live = this.liveTmux();
-    const others = [...live].filter(name => !this.sessions[name]).map(name => ({ name, managed: false, running: true }));
-    return { version: this.version,
-      claude: this.cliStatus('claude'), codex: this.cliStatus('codex'), sessions: [...Object.values(this.sessions).map(s => ({ ...s, managed: true, running: live.has(s.name) })), ...others] };
+    const others = [...live].filter(name => !name.startsWith('wc-login-') && !this.sessions[name]).map(name => ({ name, managed: false, running: true }));
+    const defaults = Object.fromEntries(Object.entries(adapters).map(([cli, adapter]) => [cli, adapter.loginStatus(null)]));
+    const claude = this.cliStatus('claude', defaults.claude), codex = this.cliStatus('codex', defaults.codex);
+    const accounts = Object.entries(adapters).map(([cli, adapter]) => ({ id: `default-${adapter.provider}`, cli, ...defaults[cli] }));
+    const root = path.join(os.homedir(), '.wheelchair', 'accounts');
+    let folders = []; try { folders = fs.readdirSync(root, { withFileTypes: true }); } catch {}
+    for (const folder of folders.filter(e => e.isDirectory())) {
+      try { const record = JSON.parse(fs.readFileSync(path.join(root, folder.name, 'wheelchair-account.json'), 'utf8')); if (record.id !== folder.name || !adapters[record.cli] || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(record.id)) continue; accounts.push({ id: record.id, cli: record.cli, ...adapters[record.cli].loginStatus(path.join(root, folder.name)) }); } catch {}
+    }
+    return { version: this.version, claude, codex, accounts, sessions: [...Object.values(this.sessions).filter(s => !s.name.startsWith('wc-login-')).map(s => ({ ...s, managed: true, running: live.has(s.name) })), ...others] };
   }
-  cliStatus(cli) {
+  cliStatus(cli, login = adapters[cli].loginStatus(null)) {
     const version = command('sh', ['-c', `command -v ${cli}`]);
     if (!version.ok) return { installed: false, logged_in: false };
     const check = command(cli, ['--version']);
-    // Claude reports its login itself; Codex's login is the preflight's job (/v1/preflight).
-    let loggedIn = check.ok;
-    if (cli === 'claude') {
-      const auth = command('claude', ['auth', 'status'], { timeout: 15_000 });
-      try { loggedIn = auth.ok && JSON.parse(auth.stdout).loggedIn === true; } catch { loggedIn = false; }
-    }
-    return { installed: true, logged_in: loggedIn, version: check.stdout.trim() || check.stderr.trim() };
+    return { installed: true, logged_in: login.logged_in, version: check.stdout.trim() || check.stderr.trim() };
   }
   // Runs claude -p for the hub's style preview. Asynchronous on purpose: up to a minute of
   // waiting must not block the service's event loop. Never answers with a throw: the
@@ -737,14 +768,61 @@ class MachineService {
       child.stdin.end(prompt);
     });
   }
+  // GET /v1/projects: reads only. `folder` lists git repos one level down; `check` vets one path.
+  async projects(params) {
+    const folder = params.get('folder'); const check = params.get('check');
+    if (folder === null && check === null) die('folder or check is required');
+    const expand = value => (value === '~' ? os.homedir() : value.startsWith('~/') ? path.join(os.homedir(), value.slice(2)) : value);
+    const nameOk = name => /^[A-Za-z0-9._-]+$/.test(name) && !name.includes('..');
+    const kind = async target => { try { return (await fsp.stat(target)).isDirectory() ? 'dir' : 'file'; } catch { return null; } };
+    const hasGit = target => fsp.lstat(path.join(target, '.git')).then(() => true, () => false);
+    const out = {};
+    if (folder !== null) {
+      const dir = expand(folder);
+      if (!path.isAbsolute(dir)) die('folder must be an absolute path');
+      const found = []; let error;
+      const type = await kind(dir);
+      if (!type) error = 'does not exist'; else if (type !== 'dir') error = 'is not a directory';
+      else {
+        let names = []; try { names = await fsp.readdir(dir); } catch (e) { error = e.code === 'EACCES' ? 'cannot be read' : 'does not exist'; }
+        for (const name of names.sort()) {
+          if (name.startsWith('.') || !nameOk(name)) continue;
+          const full = path.join(dir, name);
+          if (await kind(full) === 'dir' && await hasGit(full)) found.push({ name, path: full });
+        }
+      }
+      out.found = found; if (error) out.folder_error = error;
+    }
+    if (check !== null) {
+      const target = expand(check);
+      if (!path.isAbsolute(target)) out.checked = { path: target, ok: false, reason: 'must be an absolute path' };
+      else {
+        const type = await kind(target); let reason;
+        if (!type) reason = 'does not exist'; else if (type !== 'dir') reason = 'is not a directory';
+        else if (!nameOk(path.basename(target))) reason = "has characters a thread can't use in its name";
+        else if (!await hasGit(target)) reason = 'is not a git repository';
+        out.checked = reason ? { path: target, ok: false, reason } : { path: target, ok: true };
+      }
+    }
+    return out;
+  }
   async handle(request, response) {
     const url = new URL(request.url, 'http://machine.local');
     const pathBits = url.pathname.split('/').filter(Boolean);
     try {
       if (request.method === 'GET' && url.pathname === '/health') return send(response, 200, { ok: true });
       if (request.method === 'GET' && url.pathname === '/v1/status') { await this.authorize(request, 'hub'); return send(response, 200, this.status()); }
-      if (request.method === 'POST' && url.pathname === '/v1/preflight') { await this.authorize(request, 'hub'); const result = command(path.join(ROOT, 'codex', 'preflight.sh'), []); return send(response, result.ok ? 200 : 409, result); }
+      if (request.method === 'GET' && url.pathname === '/v1/projects') { await this.authorize(request, 'hub'); return send(response, 200, await this.projects(url.searchParams)); }
+      if (request.method === 'POST' && url.pathname === '/v1/preflight') { await this.authorize(request, 'hub'); const input = await bodyOf(request); const dir = accountDir(input.dir); const result = command(path.join(ROOT, 'codex', 'preflight.sh'), [], dir ? { env: { ...process.env, ...adapters.codex.loginEnv(dir) } } : {}); return send(response, result.ok ? 200 : 409, result); }
       if (request.method === 'POST' && url.pathname === '/v1/preview') { await this.authorize(request, 'hub'); const result = await this.preview(await bodyOf(request)); return send(response, result.status, result.body); }
+      if (request.method === 'POST' && url.pathname === '/v1/logins') { await this.authorize(request, 'hub'); return send(response, 201, await this.startLogin(await bodyOf(request))); }
+      if (pathBits[0] === 'v1' && pathBits[1] === 'logins' && pathBits[2]) {
+        await this.authorize(request, 'hub'); const account = decodeURIComponent(pathBits[2]); this.loginRecord(account);
+        if (request.method === 'GET' && pathBits.length === 3) return send(response, 200, this.loginState(account));
+        if (request.method === 'GET' && pathBits[3] === 'pane') return send(response, 200, { text: this.loginPane(account) });
+        if (request.method === 'POST' && pathBits[3] === 'keys') { const input = await bodyOf(request); const r = this.tmux(['send-keys', '-t', `wc-login-${account}`, String(input.keys || '')]); if (!r.ok) throw Object.assign(new Error('tmux keys failed'), { status: 409 }); return send(response, 200, { ok: true }); }
+        if (request.method === 'POST' && pathBits[3] === 'code') { const input = await bodyOf(request); if (typeof input.code !== 'string' || !input.code) die('code required'); const buffer = `wc-${crypto.randomUUID()}`; const a = this.tmux(['load-buffer', '-b', buffer, '-'], { input: input.code }); const b = this.tmux(['paste-buffer', '-p', '-b', buffer, '-t', `wc-login-${account}`]); const c = this.tmux(['send-keys', '-t', `wc-login-${account}`, 'Enter']); if (!a.ok || !b.ok || !c.ok) throw Object.assign(new Error('tmux submit failed'), { status: 409 }); return send(response, 200, { ok: true }); }
+      }
       if (request.method === 'POST' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); return send(response, 201, await this.start(await bodyOf(request))); }
       if (request.method === 'GET' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); return send(response, 200, this.status().sessions); }
       if (request.method === 'POST' && url.pathname === '/v1/archive') { await this.authorize(request, 'hub'); return send(response, 200, await this.archive((await bodyOf(request)).thread_id)); }
