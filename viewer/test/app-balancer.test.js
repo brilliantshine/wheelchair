@@ -125,6 +125,30 @@ test('a reading promotes the same waiting worker and keeps its queue', async () 
   } finally { await close(c); }
 });
 
+test('a turn-ended reading promotes the same waiting worker and keeps its token', async () => {
+  const { Hub } = require('../app/hub.js');
+  const c = await setup();
+  try {
+    const made = (await api(c, '/threads', { method: 'POST', body: { project: '/tmp/waiting-turn-ended' } })).body;
+    const lead = made.sessions[0];
+    const sub = (await machinePost(c, '/machine/session', { calling_session: lead.name, action: 'start', role: 'sub-lead', attempt_id: 'sub-wait-turn-ended' })).body.session;
+    const reset = new Date(Date.now() + 3600000).toISOString();
+    const reading = { account: 'default-gpt', at: new Date(Date.now() - 1000).toISOString(), five_hour: null, week: { used: 100, resets_at: reset } };
+    await event(c, made.id, lead.name, 'usage', { reading });
+    const payload = { calling_session: sub.name, action: 'start', role: 'worker', provider: 'gpt', attempt_id: 'wait-turn-ended', brief: 'work' };
+    const waiting = (await machinePost(c, '/machine/session', payload)).body.session;
+    assert.equal(waiting.status, 'waiting');
+    const hub = new Hub({ stateDir: c.state });
+    const stored = await hub.thread(made.id);
+    const target = stored.sessions.find((s) => s.name === waiting.name);
+    const token = target.token;
+    await event(c, made.id, lead.name, 'turn-ended', { reading: { ...reading, at: new Date(Date.now() + 1000).toISOString(), week: { used: 0, resets_at: reset } } });
+    const promoted = (await hub.thread(made.id)).sessions.find((s) => s.name === waiting.name);
+    assert.equal(promoted.status, 'ready');
+    assert.equal(promoted.token, token);
+  } finally { await close(c); }
+});
+
 test('limit hold releases with Continue and failed turns notify without a result', async () => {
   const { Hub } = require('../app/hub.js');
   const { releaseLimits } = require('../app/sessions.js');
