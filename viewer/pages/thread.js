@@ -13,7 +13,7 @@
 
   const $ = (x) => document.getElementById(x);
   const errorEl = $('error'); const headEl = $('head'); const stubEl = $('stub-open');
-  const deadEl = $('dead'); const pinnedEl = $('pinned');
+  const deadEl = $('dead'); const pinnedEl = $('pinned'); const waitEl = $('lead-wait');
   const filesEl = $('files'); const headFilesEl = $('head-files'); const chatEl = $('chat'); const queuedNote = $('queued-note');
   const msgEl = $('msg'); const sendBtn = $('send');
 
@@ -22,6 +22,7 @@
   let sigs = {};
   let ideaOpen = false;
   let archiveAsk = false;
+  let accountNames = null;   // account id -> name, from /settings; null until fetched
   const cardErrors = {};
 
   function el(tag, cls, text) {
@@ -114,7 +115,7 @@
     block.appendChild(el('h1', '', t.title || slug() || base(t.project)));
     const where = slug() ? base(t.project) + ' / ' + slug() : base(t.project);
     block.appendChild(el('div', 'meta', [
-      where, lead ? 'lead' : '', t.cli, lead && lead.model, t.machine, lead && 'tmux ' + lead.name,
+      where, lead ? 'lead' : '', t.provider === 'gpt' ? 'GPT' : t.provider === 'claude' ? 'Claude' : t.cli, lead && lead.model, t.machine, lead && 'tmux ' + lead.name,
     ].filter(Boolean).join(' \u00b7 ')));
     headEl.appendChild(block);
 
@@ -578,6 +579,40 @@
     }
   }
 
+  // One line above the pinned cards while the live lead is waiting for room or rate-limited.
+  function clock(iso) {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return String(iso);
+    const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return d.toDateString() === new Date().toDateString() ? time : d.toLocaleDateString([], { weekday: 'short' }) + ' ' + time;
+  }
+  function waitingLine() {
+    const lead = leads().filter((s) => s.live || s.status === 'waiting').pop();
+    if (!lead) return '';
+    if (lead.status === 'waiting' && lead.waiting_until) {
+      const label = lead.provider === 'gpt' ? 'GPT' : lead.provider === 'claude' ? 'Claude' : (thread().provider === 'gpt' ? 'GPT' : 'Claude');
+      return 'Waiting for ' + label + ' to refill, about ' + clock(lead.waiting_until);
+    }
+    if (lead.live && lead.limited_until && Date.parse(lead.limited_until) > Date.now()) {
+      return 'Waiting for ' + ((accountNames && accountNames[lead.account]) || lead.account || 'the account') + ' to refill, about ' + clock(lead.limited_until);
+    }
+    return '';
+  }
+  async function loadAccountNames() {
+    try {
+      const res = await fetch(API + '/settings');
+      if (!res.ok) return;
+      const out = await res.json();
+      accountNames = Object.fromEntries((out.accounts || []).map((a) => [a.id, a.name]));
+      sigs.wait = null; render();
+    } catch (e) { accountNames = {}; }
+  }
+  function renderWait() {
+    const text = waitingLine();
+    waitEl.hidden = !text;
+    waitEl.textContent = text;
+  }
+
   function render() {
     if (!data) return;
     const t = thread();
@@ -585,6 +620,7 @@
     sync('head', [t.title, t.stub, t.archived, t.worktree, t.branch, t.slug, slug(), archiveAsk, t.pr_url, t.cli, t.machine, t.sessions.map((x) => [x.name, x.live, x.model, x.role])], renderHead);
     sync('files', [t.worktree, slug(), t.archived, data.cards.filter((c) => c.kind === 'diagram')], renderFiles);
     sync('stub', [t.stub, t.sessions.length, t.depends_on_parent, t.ready, t.context, t.parent_pr_url], renderStub);
+    sync('wait', [waitingLine(), accountNames], renderWait);
     sync('dead', [t.sessions.map((s) => [s.name, s.live]), t.archived], renderDead);
     sync('pinned', [data.pinned, data.cards.map((c) => [c.answered, c.answered_value]), ideaOpen, cardErrors], renderPinned);
     const nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
@@ -629,5 +665,6 @@
   });
 
   poll();
+  loadAccountNames();
   setInterval(poll, POLL_MS);
 })();

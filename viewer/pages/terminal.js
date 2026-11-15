@@ -3,8 +3,15 @@
 // Terminal page (Spec "Views"): xterm.js over pane reads and raw tmux keys. Every key goes
 // through as typed; this page never adds an Enter the user did not type.
 (() => {
-  const name = new URLSearchParams(location.search).get('name') || '';
-  const base = `/wheelchair/api/sessions/${encodeURIComponent(name)}`;
+  const params = new URLSearchParams(location.search);
+  // Login mode: ?login=<account id>&machine=<m> drives that sign-in's tmux pane through the
+  // account routes; the Sessions page never lists it.
+  const login = params.get('login') || '';
+  const loginMachine = params.get('machine') || '';
+  const name = login ? `sign-in ${login} on ${loginMachine}` : (params.get('name') || '');
+  const base = login
+    ? `/wheelchair/api/accounts/${encodeURIComponent(login)}/signin/${encodeURIComponent(loginMachine)}`
+    : `/wheelchair/api/sessions/${encodeURIComponent(name)}`;
   const status = document.getElementById('term-status');
   document.getElementById('term-name').textContent = name;
 
@@ -93,7 +100,8 @@
     try {
       const response = await fetch(`${base}/pane`);
       if (!response.ok) throw new Error(`pane ${response.status}`);
-      const { pane } = await response.json();
+      const body = await response.json();
+      const pane = login ? body.text : body.pane;
       setStatus('live', true);
       if (pane !== previous) {
         previous = pane;
