@@ -77,7 +77,7 @@ async function startMachine(secret = 'machine-test-secret') {
     }
     if (request.method === 'GET' && url.pathname === '/v1/projects') {
       if (!projectsAvailable) return send(response, 404, { error: 'not found' });
-      return projectsRoute(response, url, projects);
+      return projectsReply(response, url, projects);
     }
     if (request.method === 'GET' && url.pathname === '/v1/status') {
       return send(response, 200, { ...status, sessions: [...sessions.values(), UNMANAGED] });
@@ -117,28 +117,22 @@ async function startMachine(secret = 'machine-test-secret') {
   };
 }
 
-// GET /v1/projects: the folder's repos as configured, and a path check that passes unless the
-// path is relative or listed in `bad` (path -> reason). `~` and `~/x` expand to /home/fake.
-function projectsRoute(response, url, projects) {
-  const folder = url.searchParams.get('folder');
-  const check = url.searchParams.get('check');
-  if (folder === null && check === null) return send(response, 400, { error: 'folder or check is required' });
-  const body = {};
-  if (folder !== null) {
-    body.found = projects.found;
-    if (projects.folder_error) body.folder_error = projects.folder_error;
+// Stands in for GET /v1/projects: `found` and `folder_error` answer a folder; a path in `bad`
+// fails a check with its reason; `~` and `~/x` expand to /home/fake.
+function projectsReply(response, url, projects) {
+  const reply = {};
+  if (url.searchParams.has('folder')) {
+    reply.found = projects.found;
+    if (projects.folder_error) reply.folder_error = projects.folder_error;
   }
-  if (check !== null) {
-    if (!check.startsWith('/') && check !== '~' && !check.startsWith('~/')) {
-      body.checked = { ok: false, reason: 'must be an absolute path' };
-    } else {
-      const expanded = check === '~' || check.startsWith('~/') ? `/home/fake${check.slice(1)}` : check;
-      body.checked = Object.hasOwn(projects.bad, expanded) || Object.hasOwn(projects.bad, check)
-        ? { ok: false, reason: projects.bad[expanded] ?? projects.bad[check] }
-        : { path: expanded, ok: true };
-    }
+  if (url.searchParams.has('check')) {
+    let target = url.searchParams.get('check');
+    if (target === '~' || target.startsWith('~/')) target = `/home/fake${target.slice(1)}`;
+    if (!target.startsWith('/')) reply.checked = { path: target, ok: false, reason: 'must be an absolute path' };
+    else if (Object.hasOwn(projects.bad, target)) reply.checked = { path: target, ok: false, reason: projects.bad[target] };
+    else reply.checked = { path: target, ok: true };
   }
-  return send(response, 200, body);
+  return send(response, 200, reply);
 }
 
 function startSession(response, sessions, input) {

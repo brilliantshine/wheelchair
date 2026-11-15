@@ -54,23 +54,6 @@ async function checkProject(hub, machine, project) {
   return checked;
 }
 
-// Spec "Hub", Starting a thread: ask the machine whether `project` is a git repository there.
-// Returns its `checked` answer ({path, ok}) when it is; refuses with the plain reason when not.
-async function checkProject(hub, machine, project) {
-  await hub.machine(machine); // an unknown machine is the state's 404
-  let result;
-  try {
-    result = await hub.call(machine, `/v1/projects?check=${encodeURIComponent(project)}`, 'GET');
-  } catch (error) {
-    throw appError(502, error.status === 404 ? `${machine} needs updating` : `${machine} is not reachable`);
-  }
-  const checked = result?.checked;
-  if (!checked || typeof checked.ok !== 'boolean') throw appError(502, `${machine} needs updating`);
-  if (!checked.ok) throw appError(400, `${checked.path || project} ${checked.reason} on ${machine}`);
-  if (typeof checked.path !== 'string') throw appError(502, `${machine} needs updating`);
-  return checked;
-}
-
 async function createThread(hub, input) {
   if (!input || typeof input.project !== 'string' || !input.project) {
     throw appError(400, 'project and cli are required');
