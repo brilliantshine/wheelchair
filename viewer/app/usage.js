@@ -44,7 +44,7 @@ async function change(hub, fn) {
 async function record(hub, reading) { return change(hub, (data) => { const old = data.readings[reading.account]; if (!old || Date.parse(reading.at) > Date.parse(old.at)) data.readings[reading.account] = reading; }); }
 async function readings(hub) { return (await store(hub)).readings || {}; }
 async function lastChosen(hub) { return (await store(hub)).last_chosen || {}; }
-async function chooseAccount(hub, provider, id) { return change(hub, (data) => { (data.last_chosen ||= {})[provider] = id; }); }
+async function recordChosen(hub, provider, id) { return change(hub, (data) => { (data.last_chosen ||= {})[provider] = id; }); }
 async function machineAccounts(hub) {
   const previous = cache.get(hub);
   if (previous && Date.now() - previous.at < 15000) return previous.promise;
@@ -88,12 +88,13 @@ function rank(accounts, readingsById, machineState, settings, machine, now = Dat
 async function summary(hub, includeMachines = true) {
   const [settings, data, machines, threads] = await Promise.all([settingsModule.load(hub), store(hub), includeMachines ? machineAccounts(hub) : {}, includeMachines ? hub.allThreads() : []]);
   const providers = {};
+  const knownMachines = includeMachines ? await hub.machines() : {};
+  const local = includeMachines ? await hub.state.resolveMachine(knownMachines, 'hub') : null;
+  const localName = Object.entries(knownMachines).find(([, m]) => local && (m.name === local.name || (m.address === local.address && m.port === local.port)))?.[0] || 'hub';
   for (const [provider, info] of Object.entries(PROVIDERS)) {
     const accounts = settings.accounts.filter((a) => a.provider === provider).map((a) => ({ ...a, live_sessions: threads.reduce((n, t) => n + t.sessions.filter((s) => s.live && s.account === a.id).length, 0) }));
     const f = forecast(accounts, data.readings || {});
     const below_notify = f.left !== null && f.left < settings.notify_below / 100;
-    const local = await hub.state.resolveMachine(await hub.machines(), 'hub');
-    const localName = Object.entries(await hub.machines()).find(([, m]) => local && (m.name === local.name || (m.address === local.address && m.port === local.port)))?.[0] || 'hub';
     const ranked = rank(accounts, data.readings || {}, machines, settings, localName, Date.now(), data.last_chosen);
     providers[provider] = { label: info.label, left: f.left, amber: f.amber, runs_out_at: f.runs_out_at, first_refill: f.first_refill, below_notify, all_paused: f.all_paused, accounts: ranked.map((a) => ({ ...a, machines: Object.fromEntries(Object.entries(machines).map(([name, m]) => [name, !m.reachable ? 'unknown' : m.accounts[a.id] ? 'signed_in' : 'signed_out'])), reading: data.readings?.[a.id] || null })) };
   }
@@ -101,4 +102,4 @@ async function summary(hub, includeMachines = true) {
 }
 async function alert(hub) { const { providers, seen } = await summary(hub, false); return { dot: Object.entries(providers).some(([p, f]) => (f.amber || f.below_notify) && f.first_refill && seen[p] !== f.first_refill) }; }
 async function seen(hub) { const { providers } = await summary(hub, false); await change(hub, (data) => { for (const [p, f] of Object.entries(providers)) if ((f.amber || f.below_notify) && f.first_refill) data.seen[p] = f.first_refill; }); return { ok: true }; }
-module.exports = { effective, hasRoom, forecast, belowMargin, record, readings, lastChosen, chooseAccount, machineAccounts, rank, summary, alert, seen };
+module.exports = { effective, hasRoom, forecast, belowMargin, record, readings, lastChosen, recordChosen, machineAccounts, rank, summary, alert, seen };
