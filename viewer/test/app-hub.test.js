@@ -1722,6 +1722,8 @@ test('diagram formats and lead-only image cards validate and persist', async () 
   for (const format of [undefined, 'graph', 'form', 'html']) assert.equal(validate('diagram', { ...diagram, format }, 'lead').ok, true);
   assert.equal(validate('diagram', { ...diagram, format: 'other' }, 'lead').ok, false);
   for (const value of [{ path: '/tmp/a.png' }, { title: 'Image' }]) assert.equal(validate('image', value, 'lead').ok, false);
+  for (const imagePath of ['shot.png', './shot.png']) assert.equal(validate('image', { kind: 'image', path: imagePath, title: 'x' }, 'lead').ok, false);
+  assert.equal(validate('image', { kind: 'image', path: '/tmp/shot.png', title: 'x' }, 'lead').ok, true);
   assert.equal(validate('image', { path: '/tmp/a.png', title: 'Image' }, 'worker').ok, false);
   await withContext(async (context) => {
     const made = await thread(context); const graphs = [];

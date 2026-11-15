@@ -226,6 +226,7 @@ class MachineService {
     return this.withThreadLock(agent.thread_id, async () => {
       const current = this.sessions[agent.name];
       if (!current || current.archived_pending || current.status === 'stopped') throw Object.assign(new Error('session is not writable'), { status: 409 });
+      if (typeof input.path !== 'string' || !path.isAbsolute(input.path)) throw Object.assign(new Error('image path must be absolute'), { status: 422 });
       const ext = path.extname(typeof input.path === 'string' ? input.path : '').toLowerCase();
       if (!IMAGE_TYPES[ext]) throw Object.assign(new Error('unsupported image extension'), { status: 422 });
       let stat;

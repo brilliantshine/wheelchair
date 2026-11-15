@@ -5,6 +5,7 @@
 const fs = require('node:fs');
 const http = require('node:http');
 const https = require('node:https');
+const path = require('node:path');
 
 const shown = new Set([
   'offer',
@@ -96,7 +97,7 @@ const fields = {
     note: (value) => value === undefined || text(value),
   },
   diagram: { plan: text, graph: text, title: text, format: (value) => value === undefined || ['graph', 'form', 'html'].includes(value) },
-  image: { path: text, title: text },
+  image: { path: (value) => text(value) && path.isAbsolute(value), title: text },
   stub: {
     title: text,
     summary: text,

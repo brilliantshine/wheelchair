@@ -963,6 +963,10 @@ test('image cards are validated and copied before spooling, including archive or
   const root = await temp(); const env = await service(root); const headers = { 'x-wheelchair-session-token': 'alpha' };
   try {
     await start(env); const png = path.join(root, 'picture.PNG'); await write(png, 'image'); const txt = path.join(root, 'picture.txt'); await write(txt, 'text');
+    const relative = await api(env, 'POST', '/v1/agent/cards', { kind: 'image', path: 'shot.png', title: 'x' }, headers);
+    assert.equal(relative.status, 422); assert.match(JSON.stringify(relative.body), /image path must be absolute/);
+    assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 0);
+    await assert.rejects(fs.stat(path.join(env.state, 'uploads', 't')), { code: 'ENOENT' });
     assert.equal((await api(env, 'POST', '/v1/agent/cards', { kind: 'image', path: txt, title: 'x' }, headers)).status, 422);
     assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 0);
     assert.equal((await api(env, 'POST', '/v1/agent/cards', { kind: 'image', path: png, title: 'x' }, headers)).status, 202);
