@@ -35,6 +35,9 @@ That is deliberate: almost none of it helps him decide anything.
   of a reply. He reads replies as updates and acts on cards; a question left in a reply
   shows nothing under "Needs you", so he takes your waiting for a stall. A clarifying
   question about his own words counts: give it options, plus the reply he can type.
+- **A message ending "(from aside <n> on: …)" is his own answer**, reached in a side
+  conversation about part of one of your messages. Treat it like anything he types: if a
+  `question` card is open, it is his typed answer to it (resolve the card as above).
 - **A `needs` card stays open until you close it.** When the thing it asked for is settled
   (he answered it in chat, or it fixed itself), post a `resolve` card for it with a one-line
   note. On a restart, look through the thread's open `needs` cards and resolve any that no
