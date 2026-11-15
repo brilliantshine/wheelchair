@@ -5,6 +5,11 @@
   const T = API + '/threads/' + encodeURIComponent(id);
   const POLL_MS = 2000;
   const PINNED_KINDS = ['offer', 'idea', 'progress'];
+  // The offer's buttons press these fixed values; one map renders the buttons and marks the picked one.
+  const OFFER_CHOICES = [
+    ['take it into planning', 'Take it into planning', 'primary small'],
+    ['keep talking first', 'Keep talking first', 'small'],
+  ];
 
   const $ = (x) => document.getElementById(x);
   const errorEl = $('error'); const headEl = $('head'); const stubEl = $('stub-open');
@@ -316,6 +321,14 @@
       render();
     }
   }
+  // What a pressed question or offer shows as its pick: the offer's mapped label, else the value itself.
+  function pickedLabel(card) {
+    if (card.kind === 'offer') {
+      const hit = OFFER_CHOICES.find((c) => c[0] === card.answered_value);
+      if (hit) return hit[1];
+    }
+    return String(card.answered_value);
+  }
   function answeredTag(card) {
     if (!card.answered) return null;
     const tag = el('div', 'answered-tag');
@@ -323,6 +336,11 @@
     if (card.kind === 'needs' && card.resolved_by) {
       label = ' ' + (card.resolved_note || (card.resolved_by === 'collin' ? 'Dismissed' : 'Resolved'));
       tag.classList.add('resolved');
+    } else if (card.kind === 'question' && card.resolved_by) {
+      label = ' Answered in chat' + (card.resolved_note ? ' \u00b7 ' + card.resolved_note : '');
+      tag.classList.add('resolved');
+    } else if ((card.kind === 'question' || card.kind === 'offer') && card.answered_value != null) {
+      label = ' You picked ' + pickedLabel(card);
     }
     tag.append(icon(ICON.check, 12), document.createTextNode(label));
     return tag;
@@ -338,6 +356,7 @@
     box.id = 'card-' + card.id; box.dataset.card = card.id; box.dataset.kind = card.kind;
     const off = card.answered || thread().archived;
     if (card.answered) box.classList.add('is-answered');
+    if (card.kind === 'question' && card.resolved_by) box.classList.add('is-resolved');
     switch (card.kind) {
       case 'offer': {
         const pin = el('span', 'pin'); pin.appendChild(icon(ICON.pin, 14));
@@ -345,8 +364,12 @@
         text.appendChild(el('h3', '', 'This looks like a feature'));
         text.appendChild(prose('', card.summary));
         const a = el('div', 'actions');
-        a.appendChild(button('Take it into planning', 'primary small',
-          () => press(card, 'picked', 'take it into planning'), off));
+        for (const [value, label, cls] of OFFER_CHOICES) {
+          const b = button(label, cls + (card.answered && card.answered_value === value ? ' picked' : ''),
+            () => press(card, 'picked', value), off);
+          if (b.classList.contains('picked')) b.prepend(icon(ICON.check, 12), document.createTextNode(' '));
+          a.appendChild(b);
+        }
         box.append(pin, text, a);
         break;
       }
@@ -378,12 +401,19 @@
         head(box, card.progress || 'Question', card.answered ? '' : 'warn');
         box.appendChild(el('h3', '', card.question));
         if (card.fits) box.appendChild(el('div', 'fits', card.fits));
+        if (card.doc && slug()) {
+          const doc = el('a', 'doc-link', 'Open ' + card.doc);
+          doc.href = '/wheelchair/app/doc?thread=' + encodeURIComponent(id) + '&file=' + encodeURIComponent(card.doc);
+          box.appendChild(doc);
+        }
         let n = 0;
         for (const o of card.options || []) {
           const lean = o.id === card.leaning;
-          const b = button('', 'opt' + (lean ? ' lean' : ''), () => press(card, 'picked', o.label), off);
+          const picked = card.answered && card.answered_value != null && o.label === card.answered_value;
+          const b = button('', 'opt' + (lean ? ' lean' : '') + (picked ? ' picked' : ''), () => press(card, 'picked', o.label), off);
           b.dataset.option = o.id;
           const line = el('span', 'opt-line');
+          if (picked) { line.appendChild(icon(ICON.check, 12)); line.appendChild(document.createTextNode(' ')); }
           line.appendChild(el('span', 'opt-key', String.fromCharCode(65 + (n++ % 26)) + ' · '));
           line.appendChild(document.createTextNode(o.label));
           if (lean) line.appendChild(el('span', 'lean-tag', '· leaning'));
@@ -556,10 +586,10 @@
     sync('files', [t.worktree, slug(), t.archived, data.cards.filter((c) => c.kind === 'diagram')], renderFiles);
     sync('stub', [t.stub, t.sessions.length, t.depends_on_parent, t.ready, t.context, t.parent_pr_url], renderStub);
     sync('dead', [t.sessions.map((s) => [s.name, s.live]), t.archived], renderDead);
-    sync('pinned', [data.pinned, data.cards.map((c) => c.answered), ideaOpen, cardErrors], renderPinned);
+    sync('pinned', [data.pinned, data.cards.map((c) => [c.answered, c.answered_value]), ideaOpen, cardErrors], renderPinned);
     const nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
     let changed = false;
-    sync('chat', [data.items, pending, data.cards.filter((c) => !PINNED_KINDS.includes(c.kind)), cardErrors], () => { renderChat(); changed = true; });
+    sync('chat', [data.items, pending, slug(), data.cards.filter((c) => !PINNED_KINDS.includes(c.kind)), cardErrors], () => { renderChat(); changed = true; });
     if (changed && nearBottom) window.scrollTo(0, document.body.scrollHeight);
     const queuedTotal = Math.max(data.queued, pending.length);
     queuedNote.hidden = queuedTotal === 0;
