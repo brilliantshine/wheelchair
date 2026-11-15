@@ -8,30 +8,31 @@ const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { appError } = require('./state.js');
 const { outOfDate } = require('./ready.js');
+const settingsStore = require('./settings.js');
 
 const execFileAsync = promisify(execFile);
 
-// Spec "Models per role": a tier names a model per CLI. `top` is Claude's default model (no
-// --model) and GPT Sol.
-const TIERS = {
-  codex: ['luna', 'terra', 'sol'],
-  claude: ['haiku', 'sonnet', 'opus'],
-};
-
-async function resolveModel(hub, cli, tier = 'top') {
-  if (!TIERS[cli]) throw appError(400, `unknown cli: ${cli}`);
-  if (tier === 'top') {
-    if (cli === 'claude') return undefined;
-    tier = 'sol';
+// Spec "How the hub picks a session's model": model cells are per provider and role.
+async function resolveModel(hub, cli, role, requestedTier = 'top') {
+  if (!['codex', 'claude'].includes(cli)) throw appError(400, `unknown cli: ${cli}`);
+  const settings = await settingsStore.load(hub);
+  let slot;
+  if (['lead', 'sub-lead'].includes(role)) slot = 'lead';
+  else if (['reviewer', 'verifier', 'mapper'].includes(role)) slot = settings.other_agents[role];
+  else {
+    try { slot = settingsStore.tier(requestedTier, 'tier', true); }
+    catch { throw appError(400, `unknown tier "${requestedTier}"; use light, standard, heavy, critical, or top`); }
+    if (slot === 'top') slot = 'heavy';
   }
-  if (!TIERS[cli].includes(tier)) {
-    throw appError(400, `tier "${tier}" does not fit ${cli}; use ${[...TIERS[cli], 'top'].join(', ')}`);
-  }
-  if (cli === 'claude') return tier;
+  const provider = cli === 'claude' ? 'claude' : 'gpt';
   try {
-    return (await execFileAsync(path.join(hub.root, 'codex', 'model.sh'), [tier])).stdout.trim();
+    const model = (await execFileAsync(path.join(hub.root, 'codex', 'model.sh'), [provider, slot])).stdout.trim();
+    let effort;
+    if (provider === 'claude') effort = (await execFileAsync(path.join(hub.root, 'codex', 'model.sh'), ['effort', provider, slot])).stdout.trim() || undefined;
+    return { model, effort, slot };
   } catch (error) {
-    throw appError(400, `no model pinned for ${tier}: ${(error.stderr || error.message).trim()}`);
+    if (error.code === 3) throw appError(400, `${provider} is not used at ${slot}; use the other CLI`);
+    throw appError(400, (error.stderr || error.message).trim());
   }
 }
 
@@ -81,7 +82,9 @@ async function startSession(hub, thread, input) {
       throw appError(409, `Codex preflight failed: ${detail}`);
     }
   }
-  const model = await resolveModel(hub, cli, input.tier);
+  const resolved = await resolveModel(hub, cli, role, input.tier);
+  const settings = await settingsStore.load(hub);
+  const layers = settingsStore.roleLayers(settings, role, thread.project);
   // Spec "Machine service on the hub": no new sessions while that service runs another commit.
   // A service that can't be reached falls through to the start, which records the failure.
   const current = await hub.call(thread.machine, '/v1/status', 'GET').catch(() => null);
@@ -99,6 +102,8 @@ async function startSession(hub, thread, input) {
     ready: false,
     live: true,
     created_at: new Date().toISOString(),
+    template_id: layers.template?.id || null,
+    ...(role === 'lead' ? { style_version: settings.style_version } : {}),
   };
   thread.sessions.push(session);
   await hub.save(thread);
@@ -118,7 +123,10 @@ async function startSession(hub, thread, input) {
       worktree: input.worktree,
       branch: input.branch,
       brief: input.brief || '',
-      model,
+      model: resolved.model,
+      ...(resolved.effort ? { effort: resolved.effort } : {}),
+      permission_mode: settings.permission_mode,
+      role_layers: layers.text,
       verify_ref: input.verify_ref,
       base: input.base,
       default_branch: thread.default_branch,
@@ -210,22 +218,33 @@ function canDeliver(target) {
 async function deliver(hub, thread, target) {
   if (!canDeliver(target)) return false;
   const next = target.queue[0];
+  let submitted = next.text;
+  let deliveredStyleVersion;
+  if (target.role === 'lead' && target.live) {
+    const settings = await settingsStore.load(hub);
+    const version = target.style_version ?? 0;
+    if (version < settings.style_version) {
+      submitted += `\n\n[wc:style]\nThis replaces any earlier writing style.\n${settingsStore.renderStyle(settings.style)}`;
+      deliveredStyleVersion = settings.style_version;
+    }
+  }
   // Submission is the acknowledgement.  Do not discard a message or mark the session busy
   // until the machine accepted it; a transient service failure must leave it retryable.
   try {
-    await hub.call(thread.machine, `/v1/sessions/${encodeURIComponent(target.name)}/submit`, 'POST', { text: next.text });
+    await hub.call(thread.machine, `/v1/sessions/${encodeURIComponent(target.name)}/submit`, 'POST', { text: submitted });
   } catch (error) {
     target.delivery_error = { text: error.message || String(error), at: new Date().toISOString() };
     await hub.save(thread);
     return false;
   }
   target.queue.shift();
+  if (deliveredStyleVersion !== undefined) target.style_version = deliveredStyleVersion;
   target.turn_ended = false;
   delete target.delivery_error;
   thread.queues ||= {};
   thread.queues[target.name] = target.queue;
   thread.sent ||= [];
-  thread.sent.push({ to: target.name, text: next.text, source: next.source, at: new Date().toISOString() });
+  thread.sent.push({ to: target.name, text: submitted, source: next.source, at: new Date().toISOString() });
   const trimmed = thread.sent.splice(0, Math.max(0, thread.sent.length - 500));
   await hub.appendSent(thread, trimmed);
   await hub.save(thread);

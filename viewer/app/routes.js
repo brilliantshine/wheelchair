@@ -1,9 +1,11 @@
 'use strict';
 
+const crypto = require('node:crypto');
 // Spec "Security" and "Views": browser and machine callback HTTP routes.
 const { appError } = require('./state.js');
 const { publicSession } = require('./sessions.js');
 const { findSlug } = require('./views.js');
+const settings = require('./settings.js');
 
 async function readBody(request) {
   const chunks = [];
@@ -39,7 +41,88 @@ async function handle(hub, request, response, url, machineAuthenticated) {
   if (bits[0] === 'projects' && request.method === 'GET') {
     return send(response, 200, { projects: await hub.projects() });
   }
+  if (bits[0] === 'settings') return handleSettings(hub, request, response, url, bits, body);
   if (bits[0] === 'sessions') return handleSessions(hub, request, response, bits, body);
+  throw appError(404, 'route not found');
+}
+
+async function handleSettings(hub, request, response, url, bits, body) {
+  if (bits.length === 1 && request.method === 'GET') return send(response, 200, await settings.describe(hub));
+  if (bits[1] === 'models' && request.method === 'PUT') {
+    if (!['claude', 'gpt'].includes(body.provider)) throw appError(400, 'provider must be claude or gpt');
+    if (!['light', 'standard', 'heavy', 'critical', 'lead'].includes(body.slot)) throw appError(400, 'slot is invalid');
+    if (body.model !== null && (typeof body.model !== 'string' || !/^[a-z0-9][a-z0-9._-]*$/.test(body.model))) throw appError(400, 'model is invalid');
+    if (body.provider === 'gpt' && body.effort !== undefined) throw appError(400, 'GPT models do not take effort');
+    if (body.effort !== undefined && !['low', 'medium', 'high', 'xhigh', 'max'].includes(body.effort)) throw appError(400, 'effort is invalid');
+    try { await settings.modelCommand(hub, ['set', body.provider, body.slot, body.model || 'none', ...(body.effort ? [body.effort] : [])]); }
+    catch (error) { throw appError(400, (error.stderr || error.message).trim()); }
+    return send(response, 200, { models: await settings.models(hub) });
+  }
+  if (bits[1] === 'models' && bits[2] === 'heads-up' && request.method === 'POST') {
+    let args;
+    if (body.action === 'switch') {
+      if (!['light', 'standard', 'heavy', 'critical'].includes(body.tier) || typeof body.model !== 'string') throw appError(400, 'tier and model are required to switch');
+      args = ['set', 'gpt', body.tier, body.model];
+    } else if (body.action === 'skip') {
+      if (typeof body.model !== 'string') throw appError(400, 'model is required to skip');
+      args = ['skip', body.model];
+    } else if (body.action === 'reset') args = ['reset'];
+    else throw appError(400, 'unknown heads-up action');
+    try { await settings.modelCommand(hub, args); }
+    catch (error) { throw appError(400, (error.stderr || error.message).trim()); }
+    return send(response, 200, { models: await settings.models(hub), heads_up: await settings.headsUp(hub) });
+  }
+  if (bits[1] === 'preferences' && request.method === 'PUT') {
+    const value = await settings.load(hub);
+    if (body.permission_mode !== undefined) {
+      if (!['auto', 'bypass'].includes(body.permission_mode)) throw appError(400, 'permission_mode must be auto or bypass');
+      value.permission_mode = body.permission_mode;
+    }
+    if (body.other_agents !== undefined) {
+      if (!body.other_agents || typeof body.other_agents !== 'object' || Array.isArray(body.other_agents)) throw appError(400, 'other_agents must be an object');
+      for (const role of ['reviewer', 'verifier', 'mapper']) if (body.other_agents[role] !== undefined) value.other_agents[role] = settings.tier(body.other_agents[role], `other_agents.${role}`);
+    }
+    await settings.save(hub, value);
+    return send(response, 200, { permission_mode: value.permission_mode, other_agents: value.other_agents });
+  }
+  if (bits[1] === 'templates' && bits.length === 2 && request.method === 'POST') {
+    const value = await settings.load(hub);
+    const template = { ...settings.validateTemplate(body), id: crypto.randomUUID(), in_use: false };
+    value.templates.push(template);
+    await settings.save(hub, value);
+    return send(response, 201, template);
+  }
+  if (bits[1] === 'templates' && bits[2]) {
+    const value = await settings.load(hub);
+    const index = value.templates.findIndex((template) => template.id === bits[2]);
+    if (index < 0) throw appError(404, 'template not found');
+    if (request.method === 'DELETE') {
+      value.templates.splice(index, 1);
+      await settings.save(hub, value);
+      return send(response, 200, { ok: true });
+    }
+    if (request.method === 'PUT') {
+      const previous = value.templates[index];
+      const updated = { ...settings.validateTemplate({ ...previous, ...body }, { updating: true }), id: previous.id, in_use: body.in_use === undefined ? previous.in_use : body.in_use };
+      if (updated.in_use) for (const template of value.templates) if (template.id !== updated.id && template.role === updated.role && template.scope === updated.scope) template.in_use = false;
+      value.templates[index] = updated;
+      await settings.save(hub, value);
+      return send(response, 200, updated);
+    }
+  }
+  if (bits[1] === 'style' && bits.length === 2 && request.method === 'PUT') {
+    const value = await settings.load(hub);
+    value.style = settings.validateStyle(body);
+    value.style_version += 1;
+    await settings.save(hub, value);
+    return send(response, 200, { style: value.style, style_version: value.style_version });
+  }
+  if (bits[1] === 'style' && bits[2] === 'preview' && request.method === 'POST') return send(response, 200, await settings.preview(hub, body));
+  if (bits[1] === 'prompt' && request.method === 'GET') {
+    const role = url.searchParams.get('role');
+    const project = url.searchParams.get('project') || undefined;
+    return send(response, 200, { text: settings.fullPrompt(hub, await settings.load(hub), role, project) });
+  }
   throw appError(404, 'route not found');
 }
 
