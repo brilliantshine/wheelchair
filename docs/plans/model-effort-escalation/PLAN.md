@@ -1,6 +1,6 @@
 ---
 slug: model-effort-escalation
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-15
 ---
 
@@ -44,6 +44,26 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 Read IDEA.md and MAP.md first. Effort order everywhere: `low < medium < high < xhigh < max`.
 Tier order: `light < standard < heavy < critical`.
 
+How a worker that came back wrong steps up (with "effort first"; "model first" swaps the two climbs). The prose in §2 to §4 says all of this; the diagram leaves out the start of a task and the Settings page.
+
+```mermaid
+flowchart TD
+  A[Worker came back wrong] --> B[Rewrite the brief]
+  B --> C{Effort below the highest effort in Settings?}
+  C -- yes --> D[Fresh worker, one effort level up]
+  C -- no --> E{Tier below the highest tier in Settings?}
+  E -- no --> F[Report the task as blocked]
+  E -- yes --> G{Next tier needs asking Collin first?}
+  G -- no --> H[Fresh worker, next tier, at that tier's own effort]
+  G -- yes --> I[Sub-lead asks lead, lead posts a question card]
+  I -- Step up --> H
+  I -- Stop here --> F
+  D --> J[Hub checks the start against the limits]
+  H --> J
+  J -- above a limit --> E
+  J -- ok --> K[Worker runs]
+```
+
 ### 1. Effort for every model cell (Claude and GPT, tiers and lead)
 
 - `codex/model.sh`: accept `@<effort>` on `gpt.<slot>` lines, GPT efforts `low medium high
@@ -82,7 +102,7 @@ Tier order: `light < standard < heavy < critical`.
 ### 3. Escalation switches
 
 - Stored in hub `settings.json` as `escalation: {first, max_effort, max_tier, ask_before}`.
-  Values: `first` `effort|model`; `max_effort` `high|xhigh|max` (`low`/`medium` are left out: as ceilings they would block every raise, which `high` already does for any tier at `high` or unset);
+  Values: `first` `effort|model`; `max_effort` `high|xhigh|max` (`low`/`medium` are left out: they would only matter for tiers pinned below them, and a ceiling under the CLI default is not a useful limit);
   `max_tier` `standard|heavy|critical`; `ask_before` `never|critical|any`. Defaults
   `effort`, `xhigh`, `critical`, `critical` (`viewer/app/settings.js defaults()` and
   `normalize`, merged like `other_agents`).
@@ -99,13 +119,13 @@ Tier order: `light < standard < heavy < critical`.
      at each tier's own effort; then raise effort at the top tier, up to xhigh.")
   3. "Before moving a task to Critical, ask the lead, who asks Collin." (`any`: "Before any
      step up, ask the lead, who asks Collin." `never`: "Do not stop to ask; at the limits,
-     report the task as blocked.")
+     report the task as blocked.") With `ask_before: critical` and `max_tier` below
+     Critical, sentence 3 is left out, since that step can never happen.
   4. "A task still failing at the limits is reported as blocked."
   Sentence 2 always names the actual `max_effort` and `max_tier` values ("up to <effort>",
   "up to <Tier>"), whatever they are. Stepping rule for every value: effort climbs one level
   at a time from the tier's own effort (unset counts as `high`, Decision 6) while it is below
-  `max_effort`; a tier already at or above the ceiling takes no effort step.
-  An effort with no pin counts as `high` when stepping (Decision 6). When `max_effort` is
+  `max_effort`; a tier already at or above the ceiling takes no effort step. When `max_effort` is
   `max`, sentence 2 adds "(GPT stops at xhigh, which is its highest)", so a Codex worker at
   `xhigh` steps tier instead of asking for `max`. The hub's refusal of `max` for a codex start
   says "GPT's highest effort is xhigh" so it is never read as a Settings limit.
@@ -130,8 +150,8 @@ Tier order: `light < standard < heavy < critical`.
   only that kind of step is used up: take the other kind of step if the rules still allow it,
   otherwise report the task as blocked. Any other refusal (a bad value, "hub unavailable", a
   missing CLI) is not a limit: fix the request or retry as the role file already says.
-  Exception: on a task's first dispatch, a tier refusal means start it at `max_tier`
-  instead; that is not an escalation step. Asking means
+  Exception: on a task's first dispatch, a tier refusal means dispatch it at Standard or
+  below (first dispatches never start at Heavy or Critical); that is not an escalation step. Asking means
   a `message` to the lead naming the task, what failed, and the step proposed, then waiting.
 - `protocol/app/lead.md` step 7: one sentence: a sub-lead asking to step a task up becomes a
   `question` card with two options, "Step up" and "Stop here" (task reported blocked); the
@@ -242,6 +262,9 @@ round where knowing it matters most. `protocol/plan-review.md` shows a filled ex
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent (Claude) | minor | First-dispatch carve-out to `max_tier` could start at Heavy/Critical, which sub-lead.md forbids | upheld (minor) | Carve-out now: dispatch at Standard or below |
+| intent (Claude) | minor | "Ask before Critical" shown when `max_tier` is below Critical | upheld (minor) | Sentence 3 left out in that case |
+| intent (Claude) | minor | Duplicate "unset counts as high"; wrong reason for leaving out low/medium | upheld (minor) | Duplicate removed, reason corrected |
 
 Reported severity is the reviewer's opinion; the lead verdict
 (`upheld`/`downgraded`/`declined`/`accepted-risk`/`user-decision`) is what gates the
