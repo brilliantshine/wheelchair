@@ -82,7 +82,7 @@ Tier order: `light < standard < heavy < critical`.
 ### 3. Escalation switches
 
 - Stored in hub `settings.json` as `escalation: {first, max_effort, max_tier, ask_before}`.
-  Values: `first` `effort|model`; `max_effort` one of the Claude effort list;
+  Values: `first` `effort|model`; `max_effort` `high|xhigh|max` (`high` means "don't raise effort", since unset counts as `high`);
   `max_tier` `standard|heavy|critical`; `ask_before` `never|critical|any`. Defaults
   `effort`, `xhigh`, `critical`, `critical` (`viewer/app/settings.js defaults()` and
   `normalize`, merged like `other_agents`).
@@ -94,19 +94,23 @@ Tier order: `light < standard < heavy < critical`.
   1. "A worker that came back wrong gets a rewritten brief and a fresh session; each step up
      comes after one failed try."
   2. "Raise effort first, one level at a time, up to xhigh, then move to the next tier and
-     repeat, up to Critical." (`model` first: "Move up one tier at a time, up to Critical,
+     repeat, up to Critical. A tier's own effort setting is used as is." (`model` first: "Move up one tier at a time, up to Critical,
      at each tier's own effort; then raise effort at the top tier, up to xhigh.")
   3. "Before moving a task to Critical, ask the lead, who asks Collin." (`any`: "Before any
      step up, ask the lead, who asks Collin." `never`: "Do not stop to ask; at the limits,
      report the task as blocked.")
   4. "A task still failing at the limits is reported as blocked."
-  An effort with no pin counts as `high` when stepping (Decision 6).
+  An effort with no pin counts as `high` when stepping (Decision 6). When `max_effort` is
+  `max`, sentence 2 adds "(GPT stops at xhigh, which is its highest)", so a Codex worker at
+  `xhigh` steps tier instead of asking for `max`. The hub's refusal of `max` for a codex start
+  says "GPT's highest effort is xhigh" so it is never read as a Settings limit.
 - Role layers (`roleLayers`, `viewer/app/settings.js:121-134`): for role `sub-lead`, after
-  the template block, append a blank line, "Escalation rules from Settings (these replace the
-  defaults in your role file):" and the sentences. Still within the 12000-character check.
+  the template block, append a blank line, "Escalation rules from Settings:" and the sentences. `sub-lead.md` names this block as
+  the one source of escalation moves and limits, so it does not conflict with the layer's
+  "Nothing below overrides" line. Still within the 12000-character check.
 - Settings page: a new "Escalation" section after "Leads": the plain-words text at the top,
   then four rows with segmented controls like the permission-mode rows
-  (`modeGroup`): What steps up first (Effort / Model); Highest effort (low…max); Highest tier
+  (`modeGroup`): What steps up first (Effort / Model); Highest effort (Don't raise / xhigh / max); Highest tier
   (Standard / Heavy / Critical); Ask me before (Never / Critical / Any step up). A change
   saves immediately, re-renders the text from the response, and shows the usual
   "Saved, applies to new sessions" note. Works at phone width.
@@ -116,12 +120,17 @@ Tier order: `light < standard < heavy < critical`.
 - `protocol/app/sub-lead.md` "Escalation, only on evidence": keep the evidence rule and
   "rewrite the brief first, fresh session, record the rung and reason"; replace the fixed
   ladder with: the moves and limits are the "Escalation rules from Settings" in your
-  instructions; raise effort with `wc.js session start ... --effort <e>`; the hub refuses
-  a start above the limits, and a refusal means the task has reached the limit; asking means
+  instructions; raise effort with `wc.js session start ... --effort <e>`. Refusals: a
+  refusal that names "the highest tier in Settings" or "the highest effort in Settings" means
+  only that kind of step is used up: take the other kind of step if the rules still allow it,
+  otherwise report the task as blocked. Any other refusal (a bad value, "hub unavailable", a
+  missing CLI) is not a limit: fix the request or retry as the role file already says. Asking means
   a `message` to the lead naming the task, what failed, and the step proposed, then waiting.
 - `protocol/app/lead.md` step 7: one sentence: a sub-lead asking to step a task up becomes a
   `question` card with two options, "Step up" and "Stop here" (task reported blocked); the
   answer goes back as a `message`.
+- `machine/API.md` (`POST /v1/sessions` row, `:10`): effort now reaches Codex as
+  `-c model_reasoning_effort=<e>`; GPT values `low medium high xhigh`.
 - `protocol/app/cards.md`: no change. `protocol/lanes.md`, `implementation.md`,
   `verification.md`: no change.
 
@@ -187,6 +196,26 @@ round where knowing it matters most. `protocol/plan-review.md` shows a filled ex
 <!-- Round 2+: list what changed since the previous round; that list scopes the reviewers. -->
 
 **Changed since Round N-1:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent (Claude) | minor | Role-layer heading "replace the defaults" conflicts with the "Nothing below overrides" line and with §4 removing the ladder | upheld (minor) | Heading is now "Escalation rules from Settings:"; sub-lead.md names it as the one source |
+| intent (Claude) | minor | `max_effort` low/medium/high all mean "never raise" | upheld (minor) | Options reduced to high ("Don't raise") / xhigh / max |
+| mechanics (GPT) | major | Rendered rules don't say GPT stops at xhigh; a Codex worker would ask for max and misread the refusal | upheld | §3 adds the GPT clause when `max_effort` is max; codex `max` refusal worded distinctly |
+| mechanics (GPT) | major | "A refusal means the task has reached the limit" also covers operational refusals and the `top`-above-ceiling retry | upheld | §4 now separates Settings-limit refusals (named) from all others |
+| mechanics (GPT) | minor | `machine/API.md` still says effort is ignored for Codex | upheld (minor) | Added to §4 |
+| intent (Claude) | minor | Plain-words text says "up to xhigh" while a tier's pin may be higher | upheld (minor) | Sentence 2 adds "A tier's own effort setting is used as is." |
+
+### Round 2 — 2026-11-15
+
+**Lanes:** Claude (intent lens); GPT (mechanics lens); cross-family: yes.
+
+**Changed since Round 1:**
+- §3 `max_effort` options are now `high|xhigh|max`; page shows Don't raise / xhigh / max.
+- §3 sentence 2 adds "A tier's own effort setting is used as is." and, when `max_effort` is `max`, the GPT xhigh clause; codex `max` refusal wording.
+- §3 role-layer heading is "Escalation rules from Settings:".
+- §4 sub-lead.md refusal handling separates Settings-limit refusals from all others.
+- §4 adds `machine/API.md`.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
