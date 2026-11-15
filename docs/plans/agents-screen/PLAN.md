@@ -43,10 +43,14 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 ### Lead names
 - **Stored on the thread** as `thread.lead_name` (string), not on a session. A restarted
   lead (`lead-2`, …) shows the same name.
-- **Assigned** when the thread's first lead session is created: in `createThread` and in
-  `openStub` (`viewer/app/threads.js`), before `startSession`. Never for an unopened stub.
-  `restartLead` keeps the existing name; if the thread has none (a pre-existing thread),
-  it assigns one.
+- **Assigned** at the moment a lead session record is first pushed onto a thread that has
+  no `lead_name`: inside `startSession` (`viewer/app/sessions.js`), at both places a session
+  record is pushed (the capacity-waiting record and the normal record), when `role ===
+  'lead'`, saved with that same `hub.save(thread)`. A start that throws before any record is
+  pushed (out-of-date machine, preflight failure, unknown model) leaves the thread unnamed,
+  so an unopened stub never holds a name. A start that pushes a record and then fails
+  (status `failed`) keeps the name: the thread now has a lead. `restartLead` therefore keeps
+  an existing name and names a thread that has none.
 - **Choice:** the list is `settings.lead_names` if non-empty, else the Greek alphabet in
   order (Alpha, Beta, Gamma, Delta, Epsilon, Zeta, Eta, Theta, Iota, Kappa, Lambda, Mu, Nu,
   Xi, Omicron, Pi, Rho, Sigma, Tau, Upsilon, Phi, Chi, Psi, Omega). Take the first list
@@ -79,7 +83,10 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 - `GET /wheelchair/api/agents` (added to `viewer/app/routes.js`, documented in
   `viewer/app/API.md`). Built from `hub.allThreads()`, unarchived threads only. Returns
   `{ leads: [Lead], machines: [{ machine, reachable, last_seen }] }` where each `Lead` is:
-  `{ thread_id, thread_title, lead_name, machine, session: Agent, children: [Agent] }`
+  `{ thread_id, thread_title, lead_name, machine, session: Agent, children: [Agent] }`,
+  each `machines` entry also carries `hub: true|false` computed as `views.js` `sessions`
+  does (`hub.state.resolveMachine(registry, 'hub')`), and the page builds attach commands
+  from it exactly as `viewer/pages/sessions.js:12` does today
   and `Agent` is the public session (no token) plus `children: [Agent]` and
   `waiting_on: [child name]`.
 - **Tree:** a thread's lead node is its newest lead session (largest `created_at`). Its
@@ -90,8 +97,11 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 - **Shown:** live sessions only (`live: true`). An ended session is dropped unless it has a
   live descendant, in which case it stays, marked ended. A thread whose lead node and all
   descendants are ended is omitted. Pending (`status: waiting`) sessions are live and shown.
-- **Waiting on:** for an agent with `turn_ended === true`, `waiting_on` lists its direct
-  children with `live: true` and `finished` not true. Otherwise `waiting_on` is `[]`.
+- **Waiting on:** follows `started_by`, not the displayed tree, because results route to
+  `started_by` (`viewer/app/cards.js:90`). For an agent with `turn_ended === true`,
+  `waiting_on` lists the names of sessions whose `started_by` equals its own name, with
+  `live: true` and `finished` not true. Otherwise `waiting_on` is `[]`. So a restarted lead
+  is never shown waiting on an earlier lead's children, even though they display under it.
   (`finished` is set when a child's `result` is delivered, `viewer/app/cards.js:88` and
   `viewer/app/sessions.js:219`.)
 - Machine reachability comes from `hub.machineSeen` and one `/v1/status` call per machine,
@@ -112,6 +122,10 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
   waiting for capacity / ended), an "Open terminal" button (to
   `/wheelchair/app/terminal?name=<session name>`), the attach command with Copy, and on the
   lead an "Open thread" button.
+- **Controls by state:** "Open terminal" and the attach command show only for a session
+  with `live: true` and `status` not `waiting`. A capacity-waiting session shows "Waiting
+  for capacity until <time>" (from `waiting_until`) instead. An ended ancestor kept for its
+  live descendants is dimmed and shows only its name, role and "ended".
 - **Waiting line:** when `waiting_on` is non-empty, the card shows "Waiting on: reviewer,
   verifier" (child roles, de-duplicated, in start order), and each named child's card gets
   a subtle marker.
@@ -126,6 +140,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 - Nav (`viewer/pages/nav.js`): the `sessions` entry becomes `['agents', 'Agents',
   '/wheelchair/app/agents']`; its live-count badge counts live agents from the agents API.
 - Terminal page: `data-current="agents"` and back link "← Agents" to `/wheelchair/app/agents`.
+  For a lead session, the header shows the lead name before the session name (e.g.
+  "Alpha · wc-…-lead-2"), read from `GET /wheelchair/api/agents` (any lead session of a
+  thread maps to that thread's `lead_name`; ended leads too, via `/wheelchair/api/threads`).
 - Update every other reference (`server.js` header comment, routers `viewer/AGENTS.md`,
   `AGENTS.md`, tests that load the sessions page).
 
@@ -178,6 +195,24 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | major | A start that fails before any session exists would leave an unopened stub holding a name | upheld | Name now assigned when the first lead record is pushed, inside `startSession` |
+| mechanics | major | "Waiting on" ambiguous between `started_by` and the displayed tree | upheld | Spec: follows `started_by` (results route there) |
+| mechanics | minor | Terminal/attach controls undefined for capacity-waiting and ended-ancestor cards | upheld | Spec: controls by state |
+| mechanics | minor | Agents API lacks the hub flag needed for attach commands | upheld | Spec: `machines[].hub` |
+| intent | minor | Terminal header still shows only the internal name for leads | upheld | Spec: terminal header shows the lead name |
+
+### Round 2 — 2026-11-15
+
+**Lanes:** intent lens; mechanics lens.
+
+**Changed since Round 1:**
+- Lead names: assignment moved into `startSession`, at the first lead record push.
+- Agents API: `waiting_on` follows `started_by`; `machines[].hub` added.
+- Agents page: controls by state (capacity-waiting, ended ancestor).
+- Terminal page header shows the lead name.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
@@ -190,3 +225,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 |---|-----------|--------------------|------|-----------|------------|--------|
 
 ## Log
+
+- Round 1: both reviewers ran on GPT (Claude unavailable at start); not cross-family.
+- Noticed, out of scope: a `result` sent to a lead that has since died sits in the dead
+  lead's queue and is never delivered (`viewer/app/cards.js:90`; `restartLead` moves queues
+  only at restart time). Not this feature's to fix; raise to Collin as a possible stub.
