@@ -100,7 +100,8 @@ outcome, sent_line}`.
 - `cli_id`: the aside's own conversation id, set from its first successful turn.
 - `slot`: `standard` or `heavy`. `status`: `open` or `closed`.
 - `pending`: messages not yet run, each `{kind, text}`, `kind` one of `start`, `ask`,
-  `control`. `turn`: the turn running now, or null. `failed`: the failure notice of the
+  `control`. `turn`: the turn running now, `{id, state, message}`, or null; the message
+  lives there, not in `pending`, while it runs. `failed`: the failure notice of the
   last turn, or null.
 - `history`: the aside's conversation as shown in the panel, each `{kind, text, reply,
   model, at, graph}`; `control` entries are kept but not shown.
@@ -123,19 +124,24 @@ so the main chat, the queued count and the app's session notices never see it.
   202 at once. The POST is idempotent on `turn_id`: a second POST with an id the machine
   already knows returns that turn's state and starts nothing. `GET /v1/aside-turns/:turn_id` returns `{state: "running" | "ok" |
   "failed", reply, conversation_id, error, limit}`. `DELETE` kills a running turn. A turn
-  still running after 15 minutes is killed and reported `failed` ("took too long"). Turns
-  live in memory; after a machine restart an unknown `turn_id` returns 404, which the hub
-  treats as `failed` ("the machine restarted").
+  still running after 15 minutes is killed and reported `failed` ("took too long"). The
+  machine writes each turn to its state directory (beside `sessions.json`) when it accepts
+  the POST, before spawning, and keeps finished turns for 24 hours. On start it marks any
+  turn still `running` as `failed` ("the machine restarted"). So a 404 means the machine
+  never accepted that `turn_id`.
 - **Commands.** Environment: the account's login environment (`adapters.*.loginEnv`) and
   `WHEELCHAIR_LANE=1`, nothing else of ours. Working directory: the thread's worktree.
   - Claude: `claude -p --output-format json --model <model> [--effort <e>]
-    --permission-mode dontAsk --tools Read,Grep,Glob --append-system-prompt <aside
-    prompt>` (`--tools` limits which tools exist at all, so a permission grant from any
-    settings file, such as the wording script's, can't reach a writing tool), plus `--resume <from> --fork-session --session-id <new_id>` (fork) or
+    --permission-mode dontAsk --tools Read,Grep,Glob --strict-mcp-config
+    --append-system-prompt <aside prompt>` (`--tools` limits which built-in tools exist at
+    all, and `--strict-mcp-config` with no `--mcp-config` loads no MCP servers, so no
+    permission grant from any settings file, such as the wording script's, can reach a
+    writing tool), plus `--resume <from> --fork-session --session-id <new_id>` (fork) or
     `--resume <from>` (resume). The prompt goes on stdin. `reply` is the JSON's `result`;
     `conversation_id` is `new_id` (fork) or `from`.
   - Codex: `codex exec fork <from> -` (fork) or `codex exec resume <from> -` (resume), with
-    `-s read-only --json -m <model>` and the effort config as today. The prompt goes on
+    `-s read-only --json -m <model>`, `-c mcp_servers={}` (no MCP tools) and the effort config
+    as today. The prompt goes on
     stdin, preceded on a fork by `<aside prompt>\n\n`. `reply` is the last agent message
     and `conversation_id` the thread id, both from the `--json` events.
   - `limit` is true when the CLI reports a usage limit (Claude's `rate_limit` error, Codex's
@@ -178,8 +184,8 @@ so the main chat, the queued count and the app's session notices never see it.
 One rule, run after every change to an aside and on each poll:
 
 - If the thread isn't archived, no `turn` is running and `pending` isn't empty and `failed`
-  is null, the hub takes the first `pending` message, saves `turn: {id: <new uuid>, state:
-  "dispatching"}` on the record, and only then POSTs it. If the POST's answer is lost or the
+  is null, the hub moves the first `pending` message into `turn: {id: <new uuid>, state:
+  "dispatching", message}` on the record, saves it, and only then POSTs it. If the POST's answer is lost or the
   hub restarts, the hub re-POSTs the same `turn_id` on its next pass (the machine never
   starts it twice); a 404 on a `dispatching` turn means it never started, so it is POSTed
   again. The turn is started with `mode: "resume", from: cli_id` when `cli_id`
@@ -187,7 +193,7 @@ One rule, run after every change to an aside and on each poll:
   copies the lead's conversation as it was opened from, even if a new lead has taken over
   since.
 - The hub polls `GET /v1/aside-turns/:turn_id` every 2 seconds while a turn runs.
-- **ok**: the message leaves `pending` and goes into `history` with its reply; `cli_id` is
+- **ok**: `turn.message` goes into `history` with its reply and `turn` clears; `cli_id` is
   set if empty; then the reply is handled:
   - `[wc:step-up] <why>` on a `start` or `ask` message, with `slot` `standard` and `heavy`
     usable, and the aside `open`: `history` gets the line "Thinking harder: <why>", `slot`
@@ -199,20 +205,21 @@ One rule, run after every change to an aside and on each poll:
     message the marker is dropped and any remaining text is the draft.
   - A `wc-graph` block: saved as in §6.
   - A `control` reply: the draft line in the panel's edit box (§7).
-- **failed**: the message stays first in `pending`, and `failed` holds the notice ("Hit the
+- **failed**: `turn.message` goes back to the front of `pending` and `turn` clears, and `failed` holds the notice ("Hit the
   usage limit", "took too long", the CLI's last error line). Nothing runs until Collin
   presses Retry, which clears `failed`. So Retry always repeats the message that failed.
 - **Closing** (`status: closed`) clears `pending` and `failed`; a running turn is left to
   finish and its reply goes into `history`. A turn that fails after closing adds its notice
-  to `history` and sets nothing else. A closed aside never starts a turn.
+  to `history` (with `turn.message`, so the question isn't lost) and sets nothing else. A closed aside never starts a turn.
 - **Reopening**: Collin types in a closed aside: `status: open`, the message goes into
   `pending`, and the rule above runs it.
 - **Think harder** is enabled when the aside is `open`, `slot` is `standard`, `heavy` is
   usable, no turn is running and `history` holds at least one `start` or `ask` entry. It sets `slot: heavy` and puts the last `start` or `ask`
   message in `history` back into `pending`.
 - **Archiving** the thread closes every aside (as above) and `DELETE`s any running turn
-  before the worktree goes. After that every aside route for the thread returns 409 "this
-  thread is archived", and the panel shows its history read-only.
+  before the worktree goes. After that every aside route that changes something (create,
+  messages, close, retry, Think harder) returns 409 "this thread is archived"; `GET` of an
+  aside still works, so the panel shows its history read-only.
 
 ### 6. Saving a drawn graph (hub)
 
@@ -293,7 +300,10 @@ command and a resume of the fork, and check:
 - the reply and conversation id come out of the output as §4 says;
 - Claude: `--append-system-prompt` and `--tools` apply; with a settings file that grants
   Bash and Write, a write attempt still fails because the tool doesn't exist;
-- Codex: the read-only sandbox refuses a write.
+- Claude: with an MCP server configured in user settings and its tools granted, none of its
+  tools is available;
+- Codex: the read-only sandbox refuses a write, and a configured MCP server's tools aren't
+  available.
 
 Findings go to `docs/plans/thread-asides/reports/T1.md`. If a check fails for a CLI, T1 is
 reported blocked and the build stops for that provider's asides; the lead takes it to
@@ -330,7 +340,8 @@ node --test viewer/test/*.test.js     # new, with a fake machine: message ids st
                                       # message only; close with "changed" enqueues the line
                                       # to the lead as collin; wc-graph saved and registered
 bash machine/test/run.sh              # new, with fake CLIs: fork and resume argv for both
-                                      # CLIs; reply and id parsing; timeout; 404 after restart
+                                      # CLIs; reply and id parsing; timeout; duplicate POST
+                                      # starts nothing; a running turn is failed after restart
 npm --prefix viewer run test:browser  # new: selection bar for a selection in one lead bubble
                                       # and not across bubbles; panel with quote and
                                       # waiting-on line; underline survives a chat rebuild;
@@ -483,6 +494,24 @@ Collin chose "Keep going" again; the budget is reset.
 - §6: one graph per reply, parent directory created, registration refreshed when served.
 - §8: no idle timeout.
 - §10: the probe tests `--tools` against a granting settings file.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent (gpt) | major | Archive refuses the history GET, so archived asides can't be read | upheld | §5: only changing routes are refused; GET still works |
+| mechanics (gpt) | major | Closing a running turn loses its message | upheld | §3/§5: the message lives in `turn` while it runs |
+| mechanics (gpt) | major | A 404 after a machine restart doesn't prove the turn never ran | upheld | §4: turns persisted on accept; running ones failed on machine start; 404 means never accepted |
+| mechanics (gpt) | major | Archived history can't be loaded | upheld | Same as the intent finding, already fixed |
+| mechanics (gpt) | major | RE-RAISE: MCP tools escape `--tools` | upheld | Checked `claude --help` (`--strict-mcp-config`); §4 adds it, Codex gets `mcp_servers={}`; T1 tests both |
+
+### Round 8 — 2026-11-15
+
+**Lanes:** intent: pending; mechanics: pending.
+
+**Changed since Round 7:**
+- §5: archive refuses only changing routes; GET still works.
+- §3/§5: a running turn holds its message (`turn.message`).
+- §4: machine persists turns on accept; restart fails running ones; 404 means never accepted.
+- §4: no MCP tools for either CLI (`--strict-mcp-config`, `mcp_servers={}`); §10 tests it.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
