@@ -138,14 +138,11 @@ branch; the run above shows it failing without it.
 
 ## Known gaps / residual risks
 
-- **Machine-wide side effect, not yet undone.** T4's brief carried the plan's
-  `./install.sh && ./install.sh`, and the worker ran it in its worktree
-  `~/.local/state/wheelchair/worktrees/wheelchair/wc-1f02c3554935-w3`. The dial region in
-  `~/.claude/CLAUDE.md`, every wheelchair skill and Codex prompt, the seen hook in
-  `~/.claude/settings.json`, `~/.codex/AGENTS.md` and both systemd units now point at that
-  worktree, and wheelchair-viewer and wheelchair-machine were restarted on its code (T1 and T4,
-  not T2/T3). The lead has put the restore (re-run `install.sh` from the canonical clone) to
-  Collin. That worktree is deliberately kept and must not be removed before the restore.
+- **Machine-wide side effect, since undone.** T4's worker ran the plan's old `./install.sh`
+  validation in its worktree `wc-1f02c3554935-w3`, which re-pointed the global instruction files,
+  skills, prompts, seen hooks and both services at it. At Collin's choice the lead re-ran
+  `install.sh` from the canonical clone and removed the leftover w3 hook entries by hand; nothing
+  points at that worktree now. The plan's Validation uses `bash install/test/run.sh` instead.
 - Fonts are the latin subset only (as specified); text outside it falls back to system fonts.
 - `@fontsource` packages are now runtime dependencies of the viewer; a machine that skipped
   `npm --prefix viewer install` serves 404 for the fonts and falls back to system fonts (no
