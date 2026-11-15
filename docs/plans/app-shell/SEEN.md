@@ -49,3 +49,17 @@
 2026-11-14T12:54:38Z new 837a round 19 found Codex could bind to its internal title turn; fixed and added to the live check
 2026-11-14T12:54:38Z shown 837a
 2026-11-14T12:54:38Z turn
+2026-11-15T03:48:17Z turn
+2026-11-15T04:06:56Z new e42a a hook event saved while the machine service is down jams delivery for the whole machine when it restarts
+2026-11-15T04:06:56Z new ac19 a card the hub refuses is reported to the agent as sent and blocks every card after it
+2026-11-15T04:06:56Z new 3d6d the out-of-date check can never fire, because both sides read the clone's current commit
+2026-11-15T04:06:56Z new a456 agents' git commands lose every long option, so pull requests and pushes run without their arguments
+2026-11-15T04:06:56Z new db94 two updates to one thread at the same moment can lose one of them
+2026-11-15T04:06:56Z new 6a71 a failed message send loses the message
+2026-11-15T04:06:56Z new ba25 stubs never show in Features even after planning starts
+2026-11-15T04:06:56Z new c149 Needs you misses threads without a plan yet
+2026-11-15T04:06:56Z new fc33 sessions vanish from the list when a machine is unreachable
+2026-11-15T04:06:56Z new be7b a restarted worker can't pick up its predecessor's work
+2026-11-15T04:06:56Z new 2146 diagrams inside a thread fail to load
+2026-11-15T04:06:56Z new deba archived diagrams show as raw data instead of a picture
+2026-11-15T04:06:56Z new 65c6 a semicolon typed in the browser terminal is dropped

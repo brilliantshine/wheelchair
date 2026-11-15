@@ -2,7 +2,13 @@
 slug: app-shell
 date: 2026-11-14
 implemented-by: "terra (T2, T2b, T3, T3c, T7); sonnet (T1b, T4, T5, T5b, T6, T9, T10, T11); lead: opus 5.5 (integration, acceptance-run fixes)"
-verified-by: []   # Stage 4 appends; Stage 3 leaves this empty.
+verified-by:
+  - round: 1
+    lane: opus
+    checks: terra
+  - round: 1
+    lane: sol (gpt-6.1-sol, thread 01a1dd51-d8d6-7942-9d49-0f7c06f2a8c3)
+    checks: sonnet, lead opus
 ---
 
 # Completion Report — Wheelchair as an app on the hub (slice 1)

@@ -48,3 +48,15 @@ and are listed in COMPLETION.md.
   systemd, `gh -C`, Codex's notify `type`, a 500 being retried, transcripts after archive. A
   smoke suite that runs the real service with a real `claude --version` and a real git repo
   would have caught most of them.
+
+## Raised after the run
+
+- **A Settings page.** Collin asked (during Stage 4) whether the app had a page for model
+  choices. It doesn't: the newer-model heads-up from `codex/preflight.sh` only reaches an
+  agent's terminal. One Settings page could hold the permission mode above, and each
+  tier's model per family (`codex/model.sh` pins), with the heads-up shown there and
+  switch/skip buttons.
+- **Agent-raised needs never close, and a typed answer leaves its question open.** The
+  Spec only closes cards by a press or by the hub's own stuck/prompt rules, so a `needs`
+  card a lead raises stays under "Needs you" forever. Raised by the Stage 4 verifier and
+  declined as a gap because the Spec doesn't define it.
