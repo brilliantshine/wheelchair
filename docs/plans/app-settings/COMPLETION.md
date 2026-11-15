@@ -165,3 +165,26 @@ The failures predate this build, and none of them touches it:
 ## Remediation rounds
 
 Appended by Stage 4 loops; never erase earlier content.
+
+### Remediation 1 — 2026-11-15
+
+Verification attempt 1 (commit `10bf75b`): Claude verifier PASS, Codex verifier FAIL with two
+gaps, both upheld. The gaps and tasks are in `REMEDIATION-1.md`.
+
+| Gap | Fix | Lane | Validated by |
+|-----|-----|------|--------------|
+| The page dropped `false` boolean switch values on template Save | `viewer/pages/settings.js:288` (new drafts start `false`), `:303-304` (save the boolean either way) | Claude / Light (haiku) | `viewer/test/app-settings.spec.js` template test: both stored `false`, both "off" sentences in `GET /settings/prompt` |
+| `show --json` `visible` omitted cached models without a family word (e.g. `gpt-7`) | `codex/model.sh:195-212` (`listed_models`, used only by `show --json` at `:359`); heads-up still uses `visible_models` | Codex / Light (gpt-6-luna) | `bash codex/test/run.sh` (visible `gpt-7`, `gpt-7-nova`, hidden `gpt-8` → `["gpt-7-nova","gpt-7"]`; check output unchanged) |
+
+Validation after remediation, on the integrated branch (`~/.wheelchair/models` checksum
+`cdb9373d…` unchanged before and after):
+
+```
+$ bash codex/test/run.sh                 RESULT 72 passed, 0 failed
+$ bash machine/test/run.sh               # pass 62  # fail 0
+$ bash install/test/run.sh               RESULT 90 passed, 0 failed
+$ node --test viewer/test/*.test.js      # tests 261  # pass 260  # fail 1
+  not ok 155 - a starter that loses the freed port registers through the new holder   (fails without this work; see above)
+$ npm --prefix viewer run test:browser   428 passed, 2 skipped, 2 failed
+  [chromium|firefox] no drawn arrow's line passes through either box …                (fails on main)
+```
