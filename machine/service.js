@@ -65,7 +65,7 @@ function composeRolePrompt(input) {
 function startOptions(input) {
   const mode = input.permission_mode === undefined || input.permission_mode === null ? 'auto' : input.permission_mode;
   if (!Object.hasOwn(PERMISSION_MODES, mode)) die('permission_mode must be auto or bypass');
-  const codexMode = input.codex_mode === undefined || input.codex_mode === null ? 'sandboxed' : input.codex_mode;
+  const codexMode = input.codex_mode === undefined ? 'sandboxed' : input.codex_mode;
   if (!CODEX_MODES.includes(codexMode)) die('codex_mode must be sandboxed or unrestricted');
   if (input.effort !== undefined && input.effort !== null && !EFFORTS.includes(input.effort)) die(`effort must be one of ${EFFORTS.join(', ')}`);
   if (input.role_layers !== undefined && input.role_layers !== null && typeof input.role_layers !== 'string') die('role_layers must be text');

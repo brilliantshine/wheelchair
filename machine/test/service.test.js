@@ -577,7 +577,7 @@ test('codex_mode: sandboxed by default, unrestricted drops the sandbox, reviewer
     const reviewer = argvOf(env, 'wc-c-reviewer');
     assert.deepEqual(reviewer.slice(0, 5), ['codex', '-s', 'read-only', '-a', 'never']);
     assert.ok(!reviewer.includes('--dangerously-bypass-approvals-and-sandbox'));
-    for (const bad of ['yolo', '', 1]) {
+    for (const bad of ['yolo', '', 1, null]) {
       const result = await api(env, 'POST', '/v1/sessions', { role: 'worker', cli: 'codex', thread_id: 'd', token: 'd', worktree: env.state, codex_mode: bad }, hubHeader);
       assert.equal(result.status, 400, String(bad)); assert.match(result.body.error, /codex_mode/);
     }
