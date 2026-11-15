@@ -70,3 +70,47 @@ test('paste uploads bytes, oversize is refused, and image cards respect archive'
   const requested = []; page.on('request', (r) => { if (r.url().includes('/files/')) requested.push(r.url()); });
   await page.reload(); await expect(page.getByText('Image removed when the thread was archived')).toBeVisible(); expect(requested).toEqual([]);
 });
+
+test('attachments stay fixed during upload and are sent in order', async ({ page }) => {
+  const made = await ctx.make({ cli: 'claude' });
+  await page.goto(`${ctx.server.url}/app/thread?id=${made.id}`);
+  await expect(page.locator('#msg')).toBeEnabled();
+  await page.locator('#attachment-input').setInputFiles([
+    { name: 'first.txt', mimeType: 'text/plain', buffer: Buffer.from('first') },
+    { name: 'second.txt', mimeType: 'text/plain', buffer: Buffer.from('second') },
+  ]);
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  let started;
+  const uploadStarted = new Promise((resolve) => { started = resolve; });
+  await page.route('**/uploads?name=first.txt', async (route) => { started(); await held; await route.continue(); });
+  const message = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith('/messages'));
+  await page.locator('#send').click();
+  try {
+    await uploadStarted;
+    const remove = page.getByRole('button', { name: 'Remove first.txt' });
+    await expect(remove).toBeDisabled();
+    await remove.evaluate((button) => button.click());
+    await expect(page.locator('.attachment-chip')).toHaveCount(2);
+    await expect(page.locator('#msg')).toBeDisabled();
+  } finally { release(); }
+  expect((await message).postDataJSON().text).toMatch(/^\[attached: .*first\.txt\]\n\[attached: .*second\.txt\]$/);
+  await expect(page.locator('.attachment-chip')).toHaveCount(0);
+});
+
+test('upload app error shows detail and preserves the draft', async ({ page }) => {
+  const made = await ctx.make({ cli: 'claude' });
+  await page.goto(`${ctx.server.url}/app/thread?id=${made.id}`);
+  await expect(page.locator('#msg')).toBeEnabled();
+  await page.locator('#msg').fill('Keep this text');
+  await page.locator('#attachment-input').setInputFiles({ name: 'first.txt', mimeType: 'text/plain', buffer: Buffer.from('first') });
+  let messages = 0;
+  page.on('request', (r) => { if (r.method() === 'POST' && r.url().endsWith('/messages')) messages++; });
+  await page.route('**/uploads?name=first.txt', (route) => route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'app-error', detail: 'no live lead or thread is archived' }) }));
+  await page.locator('#send').click();
+  await expect(page.getByText('Upload failed: no live lead or thread is archived')).toBeVisible();
+  await expect(page.locator('#msg')).toHaveValue('Keep this text');
+  await expect(page.locator('.attachment-chip')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Remove first.txt' })).toBeEnabled();
+  expect(messages).toBe(0);
+});

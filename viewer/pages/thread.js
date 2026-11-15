@@ -772,7 +772,7 @@
     queuedNote.hidden = queuedTotal === 0;
     queuedNote.textContent = queuedTotal + ' queued: waiting for the lead to finish its turn';
     const canSend = liveLead() && !t.archived;
-    msgEl.disabled = !canSend; sendBtn.disabled = !canSend || uploading; $('attach').disabled = !canSend || uploading;
+    msgEl.disabled = !canSend || uploading; sendBtn.disabled = !canSend || uploading; $('attach').disabled = !canSend || uploading;
     msgEl.placeholder = canSend ? 'Message the lead' : (t.archived ? 'Archived' : 'No live lead');
   }
 
@@ -798,11 +798,13 @@
       const chip = el('span', 'attachment-chip');
       const size = file.size < 1024 ? file.size + ' B' : file.size < 1048576 ? (file.size / 1024).toFixed(1) + ' KB' : (file.size / 1048576).toFixed(1) + ' MB';
       chip.appendChild(el('span', '', file.name + ' · ' + size));
-      const remove = button('×', 'attachment-remove', () => { attachments.splice(i, 1); renderAttachments(); });
+      const remove = button('×', 'attachment-remove', () => { if (uploading) return; attachments.splice(i, 1); renderAttachments(); });
+      remove.disabled = uploading;
       remove.setAttribute('aria-label', 'Remove ' + file.name); chip.appendChild(remove); chips.appendChild(chip);
     });
   }
   function addFiles(files, pasted) {
+    if (uploading) return;
     const errors = [];
     for (let file of files) {
       if (pasted && file.type.startsWith('image/') && (!file.name || /^image\.[a-z0-9]+$/i.test(file.name))) {
@@ -815,7 +817,7 @@
     }
     attachmentError.textContent = errors.join(' · '); renderAttachments();
   }
-  $('attach').addEventListener('click', () => fileInput.click());
+  $('attach').addEventListener('click', () => { if (!uploading) fileInput.click(); });
   fileInput.addEventListener('change', () => { addFiles(fileInput.files, false); fileInput.value = ''; });
   msgEl.addEventListener('paste', (ev) => { if (ev.clipboardData && ev.clipboardData.files.length) { ev.preventDefault(); addFiles(ev.clipboardData.files, true); } });
   composerEl.addEventListener('dragover', (ev) => { if (ev.dataTransfer.types.includes('Files')) ev.preventDefault(); });
@@ -824,24 +826,25 @@
     ev.preventDefault();
     const text = msgEl.value.trim();
     if (uploading || (!text && !attachments.length)) return;
-    uploading = true; sendBtn.disabled = true; $('attach').disabled = true;
+    const sending = attachments.slice();
+    uploading = true; renderAttachments(); render();
     try {
       const paths = [];
-      for (const file of attachments) {
+      for (const file of sending) {
         let res;
         try {
           res = await fetch(T + '/uploads?name=' + encodeURIComponent(file.name), { method: 'POST', headers: { 'content-type': file.type || 'application/octet-stream' }, body: file });
           const out = await res.json().catch(() => ({}));
-          if (!res.ok) throw new Error(out.error || out.detail || 'http ' + res.status);
+          if (!res.ok) throw new Error(out.detail || out.error || 'http ' + res.status);
           paths.push(out.path);
         } catch (e) { throw new Error('Upload failed: ' + e.message); }
       }
       const message = [text, paths.map((path) => '[attached: ' + path + ']').join('\n')].filter(Boolean).join('\n\n');
       await post(T + '/messages', { text: message });
-      pending.push({ text: message }); msgEl.value = ''; attachments = []; attachmentError.textContent = ''; renderAttachments();
+      pending.push({ text: message }); msgEl.value = ''; attachments = attachments.filter((file) => !sending.includes(file)); attachmentError.textContent = ''; renderAttachments();
       sigs.chat = null; await poll(); render();
     } catch (e) { showError(e.message.startsWith('Upload failed:') ? e.message : 'Message not sent: ' + e.message); }
-    finally { uploading = false; render(); }
+    finally { uploading = false; renderAttachments(); render(); }
   });
 
   poll();
