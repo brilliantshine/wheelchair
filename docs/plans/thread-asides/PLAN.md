@@ -87,11 +87,12 @@ asides; no other item type needs an id.
 
 The thread record gains `asides: []`, each:
 `{id, anchor: {message_id, start, end, quote}, action, created_at, session, provider,
-account, cli_id, slot, status, closed_at, outcome, sent_line, graph, notice}`.
-- `status`: `starting` | `open` | `closed`. `slot`: `standard` or `heavy`.
+account, cli_id, slot, status, proc, pending, inflight, last_ask, number, closed_at,
+outcome, sent_line, graph, notice}`.
+- `status`, `proc`, `pending`, `inflight`, `last_ask`: see §6. `slot`: `standard` or
+  `heavy`. `number`: 1 for the thread's first aside, and so on.
 - `outcome`: `null`, `done` or `changed`. `sent_line`: the line sent on `changed`.
-- `cli_id`: the aside's own conversation id (Claude session id, or the bound Codex thread
-  id), so it can be resumed later.
+- `cli_id`: the aside's own saved conversation id (§6), so it can be resumed later.
 - `/chat` returns `asides` (the records, without tokens) so the page can underline and list
   them. Archiving a thread stops aside sessions like any other.
 
@@ -101,7 +102,11 @@ account, cli_id, slot, status, closed_at, outcome, sent_line, graph, notice}`.
   `ALLOWED_START` for any role; only the hub's own asides route starts it.
 - **Provider, account, model.** The latest live lead's provider and account, bypassing the
   balancer (Decision 13). Model from `codex/model.sh <provider> standard`, or `heavy` for
-  `draw`. No live lead, or a lead whose conversation id is not yet known (Claude
+  `draw`. A slot set to "Not used" in Settings (`model.sh` exits 3) is skipped: with
+  `standard` not used the aside starts on `heavy`; with `heavy` not used it starts on
+  `standard` (also for `draw`) and can't move up. With neither, the route returns 409
+  "asides need a Standard or Heavy model for <provider> in Settings" and the panel says so.
+  No live lead, or a lead whose conversation id is not yet known (Claude
   `cli_session_id`, Codex `codex_thread_id`): the route returns 409 "the lead isn't
   ready yet" and the page says so in the panel.
 - **Start payload** to the machine gains `fork_from` (the parent conversation id) or
@@ -150,22 +155,18 @@ account, cli_id, slot, status, closed_at, outcome, sent_line, graph, notice}`.
   The machine includes `codex_thread_id` in each listed session (add it if absent). The
   asides route reads the lead's id from the hub's record; an aside's `cli_id` is set the
   same way once its own id is known.
-- **Before the first turn ends.** Until an aside's first turn has ended and its `cli_id` is
-  known, Think harder and This changes my answer are disabled (the summary needs a finished
-  turn to draft from). Done pressed in that window marks the aside `closed` at once and the hub stops the session when that turn ends (or
-  at once if the session never became ready). Reopening an aside whose deferred stop is
-  still pending cancels that stop: the aside goes back to `open` on the same live session,
-  and what Collin types is queued to it. Only an aside whose session has actually stopped
-  is continued with `resume`, so two processes never hold one conversation. An aside closed with no `cli_id` can't be
-  continued: reopening it shows its conversation, and typing starts a new fork for the same
-  anchor, replacing `session` and `cli_id` on the record.
 - **Kept out of the main thread.** The app's own notices about an aside session (stuck at
   startup, permission needed, turn failed, sessions ended) are stored on the aside record
   as `notice` and shown in its panel, never posted as thread cards
   (`viewer/app/sessions.js:344-350` today posts them for any role). `/chat`'s `queued`
   count counts only lead sessions' queues (`viewer/app/chat.js:229`).
-- **First message** the hub sends (after `[wc:role]` for Codex):
-  `[wc:aside <action>] <aside id>\n\n> <quote>\n\n<Collin's text, if any>`.
+- **Messages to an aside** are always wrapped, so the panel can tell them apart. Each has
+  a header line `[wc:aside <aside id> <kind>]`, where `<kind>` is `start-<action>` (the
+  opening request), `ask` (anything Collin types in the panel) or `control` (the summary
+  request in §7). The opening request is
+  `[wc:aside <id> start-<action>]\n\n> <quote>\n\n<Collin's text, if any>`; the others are
+  the header, a blank line, then the text. A message that starts a Codex session (fork or
+  resume) is prefixed with `[wc:role] <aside role prompt>\n\n`.
 
 ### 5. The panel
 
@@ -179,57 +180,95 @@ account, cli_id, slot, status, closed_at, outcome, sent_line, graph, notice}`.
   an approval) and links to that card in the thread. With none, "The lead is working" if
   its last turn hasn't ended, else "Nothing is waiting on you".
 - Body: only the aside's own turns. `chat.js` exports a function returning an aside's
-  items: it parses the transcript into turns as for the lead but without `renderTurn`'s
-  hiding of `[wc:role]` turns, drops every turn before the first whose human text has a line
-  exactly equal to this aside's envelope header, `[wc:aside <action>] <aside id>` (the id is
-  unique, so a lead turn that merely mentions the marker never matches), and for that turn shows only the text after the quote (Collin's own words,
-  if any) plus its replies. This works whether the role prompt and the aside request arrive
-  as one turn (Codex) or the role prompt is a system prompt (Claude). Rendered with the same Markdown renderer and tool-step setting as the main chat.
-  The copied lead history before it is never shown. A `[wc:step-up]` reply shows as one
+  items. It parses the transcript into turns as for the lead, without `renderTurn`'s hiding.
+  It drops every turn before the first whose human text has a line exactly equal to
+  `[wc:aside <this aside's id> start-<action>]` (the id is unique, so a lead turn that only
+  mentions the marker never matches). From there, each turn's header decides: `start-*`
+  shows Collin's text after the quote (if any) and the replies; `ask` shows the text after
+  the header and the replies; `control` turns are hidden with their replies; any text before
+  the header (a Codex `[wc:role]` prefix) is never shown. Rendered with the same Markdown
+  renderer and tool-step setting as the main chat. The copied lead history before it is never shown. A `[wc:step-up]` reply shows as one
   muted line, "Thinking harder: <why>". Once the record has `graph`, the graph is embedded like a
   `diagram` card (`viewer/pages/thread.js:161-165`) with `?path=` to that file, and the
   `wc-graph` block itself is not shown as text. Notices on the record show as muted lines.
 - Input: "Ask more about this" and Send. Sending goes to `POST
-  /threads/:id/asides/:aside/messages` and is queued to the aside session like any queue
-  (`viewer/app/sessions.js:245-290`).
-- Footer: **Think harder** (hidden once on `heavy`), **Done, back to …** and **This changes
+  /threads/:id/asides/:aside/messages`, which adds it to the aside's own `pending` list
+  (§6), not to a session queue.
+- Footer: **Think harder** (shown only when §6 allows it), **Done, back to …** and **This changes
   my answer**. "…" is a short name for the waiting-on card ("Done, back to your question",
   "Done, back to Start building"), or "the thread" when nothing is waiting.
 - The page polls `GET /threads/:id/asides/:aside` while the panel is open, at the same
   2-second rate as `/chat`.
 
-### 6. Moving up (Decision 10)
+### 6. Aside lifecycle and moving up (Decision 10)
 
-- Automatic: when an aside turn's last reply is `[wc:step-up] ...`, the hub stops the
-  session, restarts it with `resume` on `heavy`, sets `slot: heavy`, and re-sends the
-  question that triggered it.
-- Queue on restart: the replacement session's queue is the re-sent delivered message first,
-  then every message still queued (not yet delivered) on the stopped session, in their original order. The hub moves
-  them under the thread lock (`hub.withThread`) before stopping the old session, so none is
-  lost or sent twice. The same applies to Think harder. Reopening moves queued messages the
-  same way but re-sends nothing: the conversation simply continues with what Collin types.
-- **Think harder**: the same, re-sending the last message already delivered to the aside
-  session (the one its latest turn answered or is answering), never one still queued.
-- On `heavy` the aside never steps up again, and any `[wc:step-up]` reply is shown as
-  text.
+One set of rules owns every start and stop of an aside's session, so close, reopen, step-up,
+Think harder, failures and the idle timeout can't race each other.
+
+- **Record fields.** `status` (`open` | `closed`) is what Collin sees. `proc` (`none` |
+  `starting` | `running` | `stopping`) is what the process is doing. `pending` is the
+  aside's list of messages not yet delivered, each `{kind, text}`. `inflight` is the message
+  delivered and not yet answered. `last_ask` is the last `start-*` or `ask` message the
+  session finished a turn on. Aside sessions don't use the hub's per-session queue.
+- **A saved conversation.** `cli_id` is set only once a turn of that session has ended and
+  its transcript has been found (Claude: the Stop hook's path; Codex: the bound thread). A
+  generated `cli_session_id` alone (`machine/service.js:304`) doesn't count.
+- **Delivering.** When `status` is `open`, `proc` is `running`, the session is ready and
+  `inflight` is empty, the hub delivers the first `pending` message and moves it to
+  `inflight`. At turn end the reply is handled (graph, step-up, summary) and `inflight`
+  clears, becoming `last_ask` unless it was `control`.
+- **Starting.** When `status` is `open`, `proc` is `none` and `pending` isn't empty, the hub
+  starts a session on the record's `slot`: with `resume` when `cli_id` is set, else as a
+  fresh fork of the current lead (§4). `proc` goes `starting`, then `running` when ready.
+- **Stopping.** Done, a step-up, Think harder and the 30-minute idle timeout only ask for a
+  stop: `proc` becomes `stopping`. The hub stops the process only once it is idle: its turn
+  ended, failed or hit a limit; or it is ready with nothing in flight; or it never became
+  ready (stuck at startup). So a stop never cuts off an answer. The machine's stop must
+  confirm the tmux session is gone, and returns an error otherwise (today it ignores a
+  failed kill, `machine/service.js:400-405`); the hub retries on its next poll. Only a
+  confirmed stop sets `proc: none`, so a resume never overlaps the old process.
+- **Unexpected death.** If the machine listing shows the session gone while `proc` is
+  `starting` or `running`, or a start is refused: `inflight` goes back to the front of
+  `pending`, `proc` becomes `none`, and the panel shows a notice. An open aside then starts
+  again by the rule above, once. If that one dies too, it stops trying and the notice gets a
+  Retry button, which allows one more start.
+- **Done.** `status: closed`, `pending` cleared, stop requested. A closed aside never starts
+  a session by itself. An answer already in flight finishes, and is there on reopening.
+- **Reopening.** Collin types in a closed aside: `status: open`, the message goes into
+  `pending`. If `proc` is still `stopping` and the stop hasn't been sent to the machine, the
+  stop is cancelled and the live session takes the message; otherwise the start rule runs
+  once `proc` is `none`. Nothing is replayed.
+- **Stepping up, automatically.** At turn end, if the reply is `[wc:step-up] ...`, `status`
+  is `open`, `slot` is `standard` and `heavy` is usable: the panel shows "Thinking harder:
+  <why>", `slot` becomes `heavy`, `last_ask` goes to the front of `pending`, and a stop is
+  requested. The start rule then resumes the conversation on `heavy`. In any other case the
+  reply shows as text, and if `heavy` isn't usable, as "Can't think harder: the stronger
+  model is off in Settings".
+- **Think harder** is shown only when `status` is `open`, `slot` is `standard`, `heavy` is
+  usable, `cli_id` is set and nothing is in flight. It does the same as a step-up.
+- On `heavy` the aside stays on `heavy`.
 
 ### 7. Finishing
 
-- **Done, back to …**: `POST .../asides/:aside/close {outcome: "done"}`. The hub stops the
-  session and marks it `closed`. The page closes the panel and scrolls to the waiting-on
+- **Done, back to …**: `POST .../asides/:aside/close {outcome: "done"}`. The hub closes it
+  as in §6. The page closes the panel and scrolls to the waiting-on
   card, or keeps the scroll position when nothing is waiting.
-- **This changes my answer**: the hub sends the aside "Write the one line for the main
-  thread." and puts the reply in an editable box in the panel, with Send and Cancel. Send:
+- **This changes my answer** is enabled when `status` is `open`, `cli_id` is set and nothing
+  is in flight. The hub adds a `control` message, "Write the one line for the main
+  thread.", to `pending` and puts the reply in an editable box in the panel, with Send and Cancel. Send:
   `POST .../close {outcome: "changed", line}`. The hub enqueues to the latest live lead,
-  as `collin`, the text `<line>\n\n(from an aside on: "<quote, cut to 80 chars>")`, so it
-  shows in the main thread as Collin's message. Then it closes the aside as above. Cancel
+  as `collin`, the text `<line>\n\n(from aside <n> on: "<quote, cut to 80 chars>")`, where `<n>`
+  is the aside's number in the thread (1, 2, …, stored on the record as `number`), so it
+  shows in the main thread as Collin's message. The page turns a trailing
+  "(from aside <n> on: …)" in a human item into a link that opens aside `<n>`. Then it
+  closes the aside as in §6. Cancel
   leaves the aside open.
 - The lead treats that message like any typed message: if a `question` card is open, it is
   his typed answer to it (`protocol/app/lead.md`, resolve rule). Add one line to `lead.md`'s "How you talk to Collin" saying a
-  message ending "(from an aside on: …)" is his own answer, reached in a side
+  message ending "(from aside <n> on: …)" is his own answer, reached in a side
   conversation.
-- Closing the browser tab leaves an open aside running until its turn ends; the hub stops
-  aside sessions idle for 30 minutes and marks them `closed` with outcome `null`.
+- Closing the browser tab changes nothing; an aside idle for 30 minutes is closed as in §6
+  with outcome `null`.
 
 ### 8. Underlines and reopening
 
@@ -238,8 +277,7 @@ account, cli_id, slot, status, closed_at, outcome, sent_line, graph, notice}`.
   data-aside="<id>">`. Placement follows Decision 12; an unanchored aside has no underline
   but still appears in the list below.
 - Clicking an underline opens that aside's panel. A closed aside shows its conversation
-  read-only until Collin types; sending then restarts its session with `resume` on its last
-  `slot` and marks it `open`.
+  until Collin types, which reopens it (§6).
 - The thread header shows "N asides" (the design's count chip) when the thread has any;
   it opens a short list (quote, when, outcome) and each entry opens its panel.
 - Overlapping underlines: the newer aside's mark wins the overlap; both stay listed.
@@ -274,18 +312,25 @@ to Collin.
   far; that's fine.
 - Two asides started at once: each is its own session with its own record; the hub's
   per-thread lock (`hub.withThread`) serialises record writes.
-- A rate-limited or failed aside turn: the panel shows the same notice the main chat would
-  and offers retry (re-send the last message).
+- A rate-limited or failed aside turn: the panel shows the notice and a Retry button, which
+  puts `last_ask` back in `pending`.
 
 ### Validation
 
 ```bash
 node --test viewer/test/*.test.js     # new tests: message ids stable across polls; asides
                                       # route refuses with no ready lead; aside role refused
-                                      # for cards and session start; step-up restart; close
-                                      # with "changed" enqueues the line to the lead as collin
+                                      # for cards and session start; close with "changed"
+                                      # enqueues the line to the lead as collin; §6 lifecycle
+                                      # with a fake machine: Done mid-turn lets the turn finish
+                                      # then stops; step-up after Done does nothing; reopen
+                                      # while stopping reuses the session; step-up replays
+                                      # last_ask then pending in order; death re-queues
+                                      # inflight and restarts once; no resume without a
+                                      # saved cli_id; "Not used" slots
 bash machine/test/run.sh              # new: fork and resume argv for both adapters; git
-                                      # route refuses role aside
+                                      # route refuses role aside; stop reports an error when
+                                      # the tmux session survives
 npm --prefix viewer run test:browser  # new: selection bar appears for a selection in a lead
                                       # bubble and not across bubbles; panel opens with the
                                       # quote and waiting-on line; underline survives a chat
@@ -360,6 +405,34 @@ Collin chose "Keep going" after three rounds; the budget is reset.
 - Reopening moves queued messages but re-sends nothing (§6).
 - Think harder re-sends only the last delivered message; queued ones follow once (§6).
 - Reopening during a pending deferred stop cancels it and reuses the live session; `resume` only after a real stop (§4).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent (gpt) | major | Early close and automatic step-up conflict at the same turn end | upheld | §6: closing wins; a closed aside never restarts |
+| intent (gpt) | major | After Cancel, Think harder would replay the summary request | upheld | §6: messages are marked Collin's or control; replays use Collin's only |
+| intent (gpt) | major | No outcome when Standard or Heavy is "Not used" in Settings | upheld | Checked `viewer/app/sessions.js:28` (exit 3 is a supported "not used"); §4 skips unused slots, §6 shows "Can't think harder" without restarting |
+| intent (gpt) | minor | The handoff message has no link back to the aside (Decision 9) | upheld | §7: the message names the aside by number, and the page links it |
+| mechanics (gpt) | major | An allocated Claude id is mistaken for a saved conversation after an early close | upheld | Checked `machine/service.js:304`; §6: `cli_id` only after a turn ends with a transcript |
+| mechanics (gpt) | major | Deferred close never completes for a session awaiting its first message or after a failed turn | upheld | §6: stops wait for any idle state, including failed turns and stuck startups |
+| mechanics (gpt) | major | Close and step-up conflict at the same turn end | upheld | Same as the intent finding; §6 step-up requires `status: open` |
+| mechanics (gpt) | major | Closing mid-follow-up kills an in-flight answer | upheld | §6: stops never cut off a turn |
+| mechanics (gpt) | major | Machine stop reports success when the tmux kill fails | upheld | Checked `machine/service.js:400-405`; §6 requires a confirmed stop before any resume |
+| mechanics (gpt) | major | No recovery when an aside session dies or a restart fails | upheld | §6 "Unexpected death": re-queue, one automatic restart, then Retry |
+| mechanics (gpt) | major | The handoff message can't identify which aside it came from | upheld | §7: numbered asides |
+| mechanics (gpt) | minor | Codex restarts would show `[wc:role]` text in the panel | upheld | §4/§5: every message has a header; text before it is never shown |
+
+Recurring theme across rounds 2-4: the aside session's lifecycle was specified as scattered rules. Round 4's fix replaces them with one lifecycle section (§6).
+
+### Round 5 — 2026-11-15
+
+**Lanes:** intent: pending; mechanics: pending.
+
+**Changed since Round 4:**
+- §6 rewritten as one lifecycle: `status`/`proc`/`pending`/`inflight`/`last_ask`, saved-conversation rule, stops that wait for idle and are confirmed, death recovery, closing wins, reopening, step-up and Think harder.
+- §4: every message to an aside has a header line; the "Before the first turn ends" rules are folded into §6.
+- §5: the panel filter uses the headers; Think harder shown per §6.
+- §4: "Not used" model slots.
+- §7: numbered asides for the link back; summary request goes through `pending`.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
