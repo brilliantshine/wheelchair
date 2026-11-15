@@ -56,7 +56,48 @@ function itemAt(row) {
   return at || lastAt || new Date(0).toISOString();
 }
 
-function appendReply(turns, row, cli) {
+// Spec "tool calls": a call is one line, expandable, with its result folded in. `detail` is the
+// call's input and, once it arrives, its result, each cut to DETAIL_LIMIT characters.
+const DETAIL_LIMIT = 2000;
+function clip(value) {
+  let text = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+  text = text === undefined ? '' : text;
+  if (text.length <= DETAIL_LIMIT) return text;
+  return `${text.slice(0, DETAIL_LIMIT)}\n[cut: ${text.length - DETAIL_LIMIT} more characters]`;
+}
+
+function toolDetail(input, result) {
+  const parts = [];
+  if (input !== undefined && input !== '') parts.push(`Input:\n${clip(input)}`);
+  if (result !== undefined) parts.push(`Result:\n${clip(result)}`);
+  return parts.join('\n\n');
+}
+
+function resultText(content) {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) return textOf(content);
+  return content === undefined ? '' : JSON.stringify(content);
+}
+
+// Folds a result row into the tool item its id names. Returns true when the row was a result.
+function foldResult(calls, row, cli) {
+  const payload = row.payload || row;
+  const found = [];
+  if (cli === 'claude' && row.type === 'user' && Array.isArray(row.message?.content)) {
+    for (const part of row.message.content.filter((p) => p.type === 'tool_result')) {
+      found.push([part.tool_use_id, resultText(part.content)]);
+    }
+  } else if (cli !== 'claude' && ['function_call_output', 'custom_tool_call_output'].includes(payload.type)) {
+    found.push([payload.call_id, resultText(payload.output)]);
+  }
+  for (const [id, result] of found) {
+    const call = calls.get(id);
+    if (call) call.item.detail = toolDetail(call.input, result);
+  }
+  return found.length > 0;
+}
+
+function appendReply(turns, row, cli, calls = new Map()) {
   if (!turns.length) return;
   const payload = row.payload || row;
   const content = payload.type === 'message' ? payload.content : row.message?.content;
@@ -72,14 +113,19 @@ function appendReply(turns, row, cli) {
     if (text) turns.at(-1).replies.push({ type: 'assistant', text, at: itemAt(row) });
     if (cli === 'claude' && Array.isArray(content)) {
       for (const item of content.filter((item) => item.type === 'tool_use')) {
-        turns.at(-1).replies.push({ type: 'tool', text: item.name || 'tool call', at: itemAt(row) });
+        const tool = { type: 'tool', text: item.name || 'tool call', at: itemAt(row), detail: toolDetail(item.input) };
+        turns.at(-1).replies.push(tool);
+        if (item.id) calls.set(item.id, { item: tool, input: item.input });
       }
     }
   } else if (tool && cli !== 'claude') {
     // Claude's tool calls are listed from its assistant lines above; other lines that carry
     // tool_use content (progress echoes) would show the same call twice.
     const name = payload.name || payload.function?.name || 'tool call';
-    turns.at(-1).replies.push({ type: 'tool', text: name, at: itemAt(row) });
+    const input = payload.arguments ?? payload.input;
+    const tool = { type: 'tool', text: name, at: itemAt(row), detail: toolDetail(input) };
+    turns.at(-1).replies.push(tool);
+    if (payload.call_id) calls.set(payload.call_id, { item: tool, input });
   }
 }
 
@@ -104,6 +150,7 @@ function renderTurn(turn, thread) {
 function transcriptItems(cli, raw, thread) {
   lastAt = null;
   const turns = [];
+  const calls = new Map();
   let codexTurn = false;
   for (const row of transcriptRows(raw)) {
     const payload = row.payload || row;
@@ -118,7 +165,7 @@ function transcriptItems(cli, raw, thread) {
     const claudeHuman = row.type === 'user' && row.origin?.kind === 'human';
     const human = cli === 'claude' ? claudeHuman : isCodexHuman(row, codexTurn, text);
     if (human) turns.push({ human: text, replies: [], at: itemAt(row) });
-    else appendReply(turns, row, cli);
+    else if (!foldResult(calls, row, cli)) appendReply(turns, row, cli, calls);
   }
   return turns.flatMap((turn) => renderTurn(turn, thread));
 }

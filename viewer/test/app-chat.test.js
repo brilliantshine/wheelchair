@@ -186,3 +186,78 @@ test('a line without a timestamp takes the previous one, and Claude echoes are n
   assert.deepEqual(items.map((item) => item.text), ['Go', 'Bash', 'Done.']);
   assert.equal(items.at(-1).at, '2026-11-14T10:00:05.000Z');
 });
+
+test('folds a Claude tool result into its call, cut at 2000 characters', () => {
+  const transcript = lines([
+    { type: 'user', origin: { kind: 'human' }, message: { role: 'user', content: 'Run it.' } },
+    {
+      type: 'assistant',
+      message: { role: 'assistant', content: [
+        { type: 'tool_use', id: 'toolu_1', name: 'Bash', input: { command: 'ls /tmp' } },
+        { type: 'tool_use', id: 'toolu_2', name: 'Read', input: { file_path: '/a' } },
+      ] },
+    },
+    {
+      type: 'user',
+      message: { role: 'user', content: [
+        { type: 'tool_result', tool_use_id: 'toolu_2', content: 'x'.repeat(2500) },
+        { type: 'tool_result', tool_use_id: 'toolu_1', content: [{ type: 'text', text: 'file-one' }] },
+      ] },
+    },
+  ]);
+  const items = transcriptItems('claude', transcript, {}).filter((item) => item.type === 'tool');
+  assert.equal(items.length, 2);
+  assert.match(items[0].detail, /"command": "ls \/tmp"/);
+  assert.match(items[0].detail, /Result:\nfile-one$/);
+  assert.match(items[1].detail, /\[cut: 500 more characters\]$/);
+  assert.ok(!items[1].detail.includes('x'.repeat(2001)));
+});
+
+test('folds a Codex function_call_output into its call', () => {
+  const transcript = lines([
+    { type: 'turn_context', payload: {} },
+    { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Go.' }] } },
+    { type: 'response_item', payload: { type: 'function_call', name: 'shell', call_id: 'call_1', arguments: '{"cmd":"pwd"}' } },
+    { type: 'response_item', payload: { type: 'function_call_output', call_id: 'call_1', output: '/work' } },
+  ]);
+  const items = transcriptItems('codex', transcript, {}).filter((item) => item.type === 'tool');
+  assert.equal(items.length, 1);
+  assert.equal(items[0].detail, 'Input:\n{"cmd":"pwd"}\n\nResult:\n/work');
+});
+
+test('GET /threads/:id/graph reads an archived thread graph from its branch, and nothing else', async () => {
+  const { execFileSync } = require('node:child_process');
+  const fs = require('node:fs/promises');
+  const os = require('node:os');
+  const path = require('node:path');
+  const { api, close, setup, thread } = require('./helpers/app.js');
+  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'wc-graph-'));
+  const git = (...args) => execFileSync('git', ['-C', repo, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args]);
+  git('init', '-q', '-b', 'main');
+  await fs.mkdir(path.join(repo, 'docs/plans/demo/graphs'), { recursive: true });
+  await fs.writeFile(path.join(repo, 'docs/plans/demo/graphs/flow.json'), '{"nodes":[{"id":"a"}]}');
+  await fs.writeFile(path.join(repo, 'docs/plans/demo/secret.json'), '{"no":true}');
+  git('add', '.');
+  git('commit', '-q', '-m', 'graph');
+  git('branch', 'wc/demo');
+  const context = await setup();
+  try {
+    const made = await thread(context, { project: repo });
+    const file = path.join(context.state, 'threads', `${made.id}.json`);
+    const stored = JSON.parse(await fs.readFile(file, 'utf8'));
+    Object.assign(stored, { branch: 'wc/demo', slug: 'demo' });
+    await fs.writeFile(file, JSON.stringify(stored));
+    const route = (name) => `/threads/${made.id}/graph?file=${encodeURIComponent(name)}`;
+    assert.equal((await api(context, route('flow.json'))).status, 404, 'a live thread has a worktree instead');
+    stored.archived = true;
+    await fs.writeFile(file, JSON.stringify(stored));
+    const good = await api(context, route('flow.json'));
+    assert.equal(good.status, 200);
+    assert.deepEqual(good.body, { nodes: [{ id: 'a' }] });
+    for (const bad of ['../secret.json', 'graphs/../secret.json', 'flow.md', 'missing.json', '..']) {
+      assert.equal((await api(context, route(bad))).status, 404, bad);
+    }
+  } finally {
+    await close(context);
+  }
+});

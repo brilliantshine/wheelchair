@@ -77,6 +77,9 @@ async function handleThreads(hub, request, response, url, bits, body) {
     const content = await hub.archivedDocument(id, url.searchParams.get('file'));
     return send(response, 200, { content });
   }
+  if (request.method === 'GET' && bits[2] === 'graph') {
+    return send(response, 200, await require('./threads.js').archivedGraph(hub, id, url.searchParams.get('file')));
+  }
   if (request.method === 'POST' && bits[2] === 'messages') {
     const thread = await hub.thread(id);
     const lead = [...thread.sessions].reverse().find((item) => item.role === 'lead' && item.live);

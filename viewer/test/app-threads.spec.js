@@ -2,6 +2,8 @@
 
 // The Threads list and the thread page (docs/plans/app-shell, "Views"), driven in a browser at
 // phone width and desktop width against a real viewer server and the fake machine service.
+const fs = require('node:fs/promises');
+const path = require('node:path');
 const { test, expect } = require('@playwright/test');
 const { startWorld, signIn } = require('./helpers/app-threads-world');
 
@@ -102,6 +104,37 @@ for (const [label, size] of SIZES) {
       expect(text).not.toContain('ROLE-REPLY-HIDDEN');
       expect(text).not.toContain('wc:from');
       await noSideScroll(page);
+    });
+
+    test('a tool line expands to its input and result, as text', async ({ page }) => {
+      const made = await ctx.make({ cli: 'claude' });
+      const file = path.join(ctx.state, `${made.id}-tools.jsonl`);
+      const rows = [
+        { type: 'user', origin: { kind: 'human' }, message: { role: 'user', content: 'Check it.' } },
+        { type: 'assistant', message: { role: 'assistant', content: [
+          { type: 'tool_use', id: 'tu1', name: 'Bash', input: { command: 'echo <b>hi</b>' } }] } },
+        { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu1', content: 'RESULT-<i>OK</i>' }] } },
+      ];
+      await fs.writeFile(file, rows.map((r) => JSON.stringify(r)).join('\n') + '\n');
+      await ctx.patch(made.id, (t) => { t.sessions[0].transcript_path = file; t.sessions[0].cli = 'claude'; });
+      await open(page, made.id);
+      const tool = page.locator('#chat details.tool');
+      await expect(tool.locator('summary')).toHaveText('Bash');
+      await tool.locator('summary').click();
+      await expect(tool.locator('pre.tool-detail')).toContainText('echo <b>hi</b>');
+      await expect(tool.locator('pre.tool-detail')).toContainText('RESULT-<i>OK</i>');
+      await expect(tool.locator('b, i')).toHaveCount(0);
+    });
+
+    test('an archived thread shows a diagram as a link to the graph kept on its branch', async ({ page }) => {
+      const made = await ctx.make({ cli: 'claude' });
+      await ctx.post(made.id, { kind: 'diagram', plan: 'dark', graph: 'flow', title: 'How it flows' });
+      await ctx.patch(made.id, (t) => { t.archived = true; t.branch = 'wc/gone'; t.slug = 'dark'; });
+      await open(page, made.id);
+      const card = page.locator('.card-diagram');
+      await expect(card).toContainText('Diagram kept on branch wc/gone');
+      await expect(card.locator('iframe')).toHaveCount(0);
+      await expect(card.locator('a')).toHaveAttribute('href', new RegExp(`/threads/${made.id}/graph\\?file=flow\\.json$`));
     });
 
     test('message box posts and shows queued', async ({ page }) => {

@@ -16,6 +16,7 @@
 .ctx details { text-align: left; }
 .tool { align-self: flex-start; font-size: 12px; color: var(--dim); max-width: 100%; }
 .tool summary { cursor: pointer; overflow-wrap: anywhere; }
+.tool-detail { margin: 4px 0 0; padding: 6px 8px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; }
 
 #chat > .card { scroll-margin-top: 12px; }
 .card h3 { font-size: 15px; margin-bottom: 6px; }
