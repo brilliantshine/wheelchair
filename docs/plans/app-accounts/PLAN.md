@@ -283,8 +283,9 @@ No reading → room.
 - `pollDead` (`sessions.js:370-395`) skips sessions with `status: 'waiting'`: they have no
   machine session yet. `stopSession` (`sessions.js:358-366`) on a waiting session skips the
   machine call and marks it `stopped`.
-- A waiting lead shows on the thread as an app line: "Waiting for Claude to refill, about
-  <time>".
+- A waiting lead, or a running lead with `limited_until` set, shows on the thread as an app
+  line: "Waiting for <provider> to refill, about <time>". It goes when the lead starts or is
+  released.
 
 **A running session that hits its limit** (`limit-hit`, or a Codex reading with
 `limited_until`): the hub stores `limited_until` on the account's reading and on the
@@ -380,11 +381,15 @@ Added to `viewer/app/routes.js` and documented in `viewer/app/API.md`:
   `--provider gpt`; if the first start's output has a `note` saying its provider was not
   honoured, start no second verifier; if the second's output has such a note (it landed on
   the first's provider), stop the second at once.
-- `lead.md` and `sub-lead.md`, new short rule beside "Restarting what died": on
+- `lead.md` (in "Restarting what died") and `sub-lead.md` (beside its restart rule at
+  `:93-97`), new short rule: on
   `[wc:from app] your session <name>'s turn failed: <error>`, the session is still live. Send
   it a `message` asking it to carry on (the usual fix); only if it fails again, `session stop`
-  it, then start a replacement with a new `--attempt`. Never start a replacement while the
-  failed one is live.
+  it, then replace it by that role's existing restart rule: a worker with `--replaces
+  <name>` and a new `--attempt` (so it keeps its branch; a stopped worker is not live, so
+  `sessions.js:341-344` accepts it), a sub-lead resumed from Implementation Tasks, a
+  reviewer, verifier or mapper started fresh. Never start a replacement while the failed one
+  is live.
 - `protocol/app/cards.md`: no change.
 
 ### Edge cases
@@ -524,6 +529,8 @@ Collin chose "keep going" (2026-11-15); the round budget resets.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent (Claude) | major | Turn-failed replacement omits `--replaces`; a worker would lose its branch | upheld | §9: replace by each role's existing restart rule |
+| intent (Claude) | minor | A running lead held at its limit shows nothing on the thread | upheld | §5: same waiting line for a limited lead |
 
 ## Prior Work
 
