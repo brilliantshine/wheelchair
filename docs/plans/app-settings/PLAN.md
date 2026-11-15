@@ -509,7 +509,7 @@ table built here.
 | T2 | Machine service: `permission_mode` + bypass readiness, `effort`, `role_layers` after the local pointer, `/v1/preview` | `machine/` | Claude / Sonnet | wc-983d91c069d3-worker-2 | `bash machine/test/run.sh` | dispatched |
 | T3 | Hub: per-role `resolveModel`, settings store and routes, template/style composition and cap, style trailer, chat stripping, machine-client timeout, `API.md` | `viewer/app/`, `viewer/test/*.test.js` | Codex / Terra (gpt-5.6-terra) | — | `node --test viewer/test/*.test.js` | waits on T1 |
 | T4 | Settings page (three sections), nav link, `APP_PAGES`, browser tests | `viewer/pages/settings.*`, `viewer/pages/nav.js`, `viewer/server.js` (APP_PAGES), `viewer/test/*settings*.spec.js` | Claude / Sonnet | — | `npm --prefix viewer run test:browser` | waits on T3 |
-| T5 | Protocol: tier rename and rule edits | `protocol/` (ten files named in its brief) | Claude / Sonnet | wc-983d91c069d3-worker-3 | rename grep over `protocol/` | dispatched |
+| T5 | Protocol: tier rename and rule edits | `protocol/` (ten files named in its brief) | Claude / Sonnet | wc-983d91c069d3-worker-3 | rename grep over `protocol/` | done |
 
 ## Log
 
@@ -517,3 +517,10 @@ table built here.
 - 2026-11-15 — Sub-lead decision: `model.sh show --json` also returns `visible` (GPT models in the Codex models cache, newest first), so the hub never reads the cache itself; `model.sh reset` added as the writer behind "Reset to defaults".
 - 2026-11-15 — Sub-lead decision: `/v1/preview` errors are 400 bad input, 503 Claude not installed, 504 timeout, 502 non-zero exit.
 - 2026-11-15 — Sub-lead: T1, T2, T5 run in parallel; T3 starts once T1 is merged (its tests call the new `model.sh` commands); T4 once T3 is merged.
+- 2026-11-15 — Choice: T5, `protocol/lanes.md`: one alias line, after the GPT tier list, not repeated in the Claude section.
+- 2026-11-15 — Choice: T5, `protocol/lanes.md`: the Claude ladder has the same four rungs as GPT.
+- 2026-11-15 — Choice: T5, `protocol/implementation.md`: "a Claude lane's entry needs no model" became "same form, with the model `model.sh claude <tier>` resolved".
+- 2026-11-15 — Choice: T5, `protocol/verification.md`: Claude verifier "Opus" became "Heavy"; the YAML example `checks: sonnet` left as a family name.
+- 2026-11-15 — Choice: T5, `protocol/templates/COMPLETION.md`: lane example became `"standard (lead: fable)" or "sonnet, standard"`.
+- 2026-11-15 — Choice: T5, `protocol/app/sub-lead.md`: the verifier start line keeps "top tier"; the Settings sentence sits in Tiers.
+- 2026-11-15 — Sub-lead: T5 accepted; the GPT measurement notes in `lanes.md` now read "Light"/"Heavy" for what was measured on Luna/Sol models; accepted, since the model names beside them stay.
