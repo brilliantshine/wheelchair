@@ -785,6 +785,24 @@ test('the chat reads the lead transcript through the machine service', async () 
   });
 });
 
+test('Tool steps: Hide leaves the lead\'s tool calls out of the chat', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context, { cli: 'claude' });
+    context.machine.sessions.get(made.sessions[0].name).transcript = [
+      { type: 'user', origin: { kind: 'human' }, message: { role: 'user', content: 'List the files.' } },
+      { type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_1', name: 'Bash', input: { command: 'ls' } }] } },
+      { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'Two files.' }] } },
+    ].map((row) => JSON.stringify(row)).join('\n');
+    const shown = await api(context, `/threads/${made.id}/chat`);
+    assert.deepEqual(shown.body.items.map((item) => item.type), ['human', 'tool', 'assistant']);
+    assert.equal((await api(context, '/settings/preferences', { method: 'PUT', body: { tool_steps: 'blur' } })).status, 400);
+    const saved = await api(context, '/settings/preferences', { method: 'PUT', body: { tool_steps: 'hide' } });
+    assert.equal(saved.body.tool_steps, 'hide');
+    const hidden = await api(context, `/threads/${made.id}/chat`);
+    assert.deepEqual(hidden.body.items.map((item) => item.type), ['human', 'assistant']);
+  });
+});
+
 async function startVerifier(context, made) {
   const result = await machinePost(context, '/machine/session', {
     calling_session: made.sessions[0].name, action: 'start', role: 'verifier', cli: 'codex', attempt_id: 'v-1',
