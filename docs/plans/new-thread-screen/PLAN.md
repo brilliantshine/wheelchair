@@ -297,9 +297,10 @@ refusal. The `POST /threads` body is unchanged.
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Machine route `GET /v1/projects` (found + check), API.md, tests | `machine/service.js`, `machine/API.md`, `machine/test/service.test.js` | claude standard (claude-sonnet-5-5) | wc-1a4f2c3d8d4c-worker | `bash machine/test/run.sh` | in progress |
-| T2 | Hub: settings fields, `/new-thread`, saved-dirs, preferences, createThread check, template scope, API.md, fake machine `/v1/projects`, node tests | `viewer/app/`, `viewer/test/helpers/app-machine.js`, `viewer/test/*.test.js` (not pages, server.js, specs) | claude standard (claude-sonnet-5-5) | wc-1a4f2c3d8d4c-worker-2 | `node --test viewer/test/*.test.js` | in progress |
+| T2 | Hub: settings fields, `/new-thread`, saved-dirs, preferences, createThread check, template scope, API.md, fake machine `/v1/projects`, node tests | `viewer/app/`, `viewer/test/helpers/app-machine.js`, `viewer/test/*.test.js` (not pages, server.js, specs) | claude standard (claude-sonnet-5-5) | wc-1a4f2c3d8d4c-worker-3 (replaces worker-2, died before any work) | `node --test viewer/test/*.test.js` | in progress |
 | T3 | Pages: New thread screen, APP_PAGES, removals (threads/thread/nav/app.css), Settings field, Playwright specs | `viewer/pages/`, `viewer/server.js` (APP_PAGES), `viewer/test/*.spec.js`, `viewer/test/app-pages.test.js` | claude standard (claude-sonnet-5-5) | — | node tests + `npm --prefix viewer run test:browser` | waits on T2 (browser specs need the hub routes) |
 
 ## Log
 
 - 2026-11-15 — Sub-lead restarted (sub-lead-2); nothing had been built or committed beyond the status line. T1 and T2 dispatched in parallel; T3 after T2 merges.
+- 2026-11-15 — T2 worker (worker-2) died with nothing committed or changed; restarted on the same brief and branch as worker-3 (attempt t2-a2).
