@@ -173,6 +173,15 @@ refusal. The `POST /threads` body is unchanged.
 
 ## Review Rounds
 
+### Round 1 — 2026-11-15
+
+**Lanes:** Codex (mechanics); Claude (intent); cross-family: yes.
+
+**Changed since Round N-1:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
