@@ -126,6 +126,18 @@ test.describe('desktop', () => {
     await page.getByRole('button', { name: 'Really delete' }).click();
     await expect(page.locator('.tpl-item', { hasText: 'Careful copy' })).toHaveCount(0);
     await expect(page.locator('.tpl-item', { hasText: 'Careful' })).toHaveCount(1);
+
+    await page.getByRole('button', { name: '+ New template' }).click();
+    await page.locator('#tname').fill('Plain');
+    await page.locator('#save-template').click();
+    await expect(page.locator('.tpl-item[aria-current="true"] .nm')).toHaveText('Plain');
+    await page.getByRole('button', { name: 'Mark in use' }).click();
+    await expect(page.locator('.tpl-item[aria-current="true"] .tag')).toContainText('in use');
+    const plain = (await settings(page)).templates.find((t) => t.name === 'Plain');
+    expect(plain.switches).toMatchObject({ save_every_step: false, full_tests_before_done: false });
+    const prompt = await page.evaluate(async () => (await fetch('/wheelchair/api/settings/prompt?role=worker')).json());
+    expect(prompt.text).toContain('Do not make an extra save after every step.');
+    expect(prompt.text).toContain('Run the tests that fit the change before reporting done.');
   });
 
   test('a template whose project is gone says so', async ({ page }) => {
