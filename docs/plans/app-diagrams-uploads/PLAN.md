@@ -366,9 +366,10 @@ Clean round: approved.
 | T1 | Machine: uploads routes, image-card copy, per-thread lock, closing flag, archive cleanup | machine/service.js, machine/test/, machine/API.md | gpt standard (gpt-6.1-terra) | wc-c56d4b2c5f5f-worker | `bash machine/test/run.sh` | in progress |
 | T2 | Hub: card fields, image storage, uploads/files/diagram routes, MachineClient.stream, archive handling | viewer/server.js, viewer/app/*.js, viewer/app/API.md, viewer/test/*.test.js, viewer/test/helpers/app-machine.js | gpt standard (gpt-6.1-terra) | wc-c56d4b2c5f5f-worker-2 | `node --test viewer/test/*.test.js` | in progress |
 | T3 | Thread page: form renderers, HTML and image cards, composer uploads; browser tests | viewer/pages/thread.*, new viewer/test/*.spec.js, browser test helpers | claude standard; after T1, T2 | — | `npm --prefix viewer run test:browser` | not started |
-| T4 | Protocol: cards.md diagram format, forms, image card; lead.md pointer | protocol/app/cards.md, protocol/app/lead.md | gpt standard (gpt-6.1-terra) | wc-c56d4b2c5f5f-worker-3 | grep, diff stat | in progress |
+| T4 | Protocol: cards.md diagram format, forms, image card; lead.md pointer | protocol/app/cards.md, protocol/app/lead.md | gpt standard (gpt-6.1-terra) | wc-c56d4b2c5f5f-worker-3 | grep, diff stat | done |
 | T5 | Integration: archive through the real hub route while an upload to the real machine service is paused | one new viewer/test/*.test.js | standard; after T1, T2 | — | `node --test viewer/test/*.test.js` | not started |
 
 ## Log
 
 2026-11-15 Ready check at approval: hub and machine service answer; claude and codex installed; Codex preflight passes. Every reviewer start fell back from Claude to GPT ("Could not use claude"), so the review was single-family.
+- 2026-11-15 — T4 accepted: worker reported no choices; diff matches the brief.
