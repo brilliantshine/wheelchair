@@ -599,7 +599,7 @@ Collin chose "keep going" (2026-11-15); the round budget resets.
 | R2 | Remediation 1, thread page waiting-line provider text | `viewer/pages/thread.js`, `app-accounts.spec.js` | claude light (claude-haiku), the family that built T6 | worker-14 | accounts browser spec | done |
 | R3 | Remediation 2: the reading rides on the Codex turn end (live and spooled) and is applied before the report decision; nav-dot alerts seen per provider per calendar week, no `first_refill` requirement | `machine/`, `viewer/app/`, node tests | codex standard (gpt-6.1-terra), the family that built it | worker-15 | `bash machine/test/run.sh`; `node --test viewer/test/*.test.js` | done |
 | R4 | Retry waiting starts on a reading carried by any event (`hub.js:98`), with a turn-ended test; the lead ruled it inside the Spec | `viewer/app/hub.js`, `app-balancer.test.js` | codex light (gpt-6-luna) | worker-16 | `node --test viewer/test/*.test.js` | done |
-| R5 | D17: one enriched event per turn end (prepared spool files, rewritten before the first post), 503→200 spool tests | `machine/` | codex standard (gpt-6.1-terra) | worker-17 | `bash machine/test/run.sh`; `node --test viewer/test/*.test.js` | in progress |
+| R5 | D17: one enriched event per turn end (prepared spool files, rewritten before the first post), 503→200 spool tests | `machine/` | codex standard (gpt-6.1-terra) | worker-17 | `bash machine/test/run.sh`; `node --test viewer/test/*.test.js` | done |
 
 ## Log
 
@@ -661,3 +661,4 @@ Collin chose "keep going" (2026-11-15); the round budget resets.
 - 2026-11-15 — Lead: make the `hub.js:98` fix now (inside §5); the spool-retry gap (option A or B) is with Collin; hold the spool change and round 4. R4 started.
 - 2026-11-15 — R4 merged (one-line `hub.js:98` change plus a turn-ended reading test; no choices). Holding the spool change and round 4 for Collin's A/B answer.
 - 2026-11-15 — Decision (Collin, via the lead): option A, recorded as D17. The `hub.js:98` fix is already merged (R4). R5 started; round 4 verification follows.
+- 2026-11-15 — R5 merged (no choices reported); full validation at `da2dc16` as before plus one Firefox flake (`app-threads.spec.js:327`, 3/3 alone). Verification round 4 started, one verifier per family.

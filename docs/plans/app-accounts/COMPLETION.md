@@ -316,3 +316,44 @@ $ npm --prefix viewer run test:browser
 ```
 
 The two failures are the same ones on `main` (above).
+
+### Remediation 3 — 2026-11-15
+
+Round 3 on `4dc3170`: both verifiers FAIL. Codex verifier: (1) a spooled Codex limit reading was lost on a failed delivery (replay advanced `usage_offset` without persisting the enriched event); (2) a reading carried on `turn-ended` did not retry waiting starts. Claude verifier: gap (2) only. Gap (1) had then survived two fixes; per sub-lead.md it went to the lead as a plan defect, and Collin chose to fix it (D17). Fixed on branch at `da2dc16`:
+
+| Gap | Fix (file:line) | Test |
+|---|---|---|
+| §5 limit recovery, failed delivery during spool replay (third fix, D17) | `machine/service.js` spool drain: an event not yet `prepared` is enriched once by `hook()` and the spool file is atomically rewritten with the enriched event (`prepared: true`, same `delivery_id`) before the first post; a prepared file is posted as stored without re-running `hook()`; the live path spools the forwarded event already `prepared`; the `prepared` field is stripped from the body sent to the hub. `usage_offset` therefore advances once per event | `machine/test/service.test.js` "Codex <live/offline> retries the same prepared reading" (hub 503 then 200: two identical bodies with `reading`, no `prepared`, spool empty after) |
+| §5 retry waiting on every new reading | `viewer/app/hub.js:98`: `retryWaiting` runs for any non-duplicate event carrying `payload.reading` | `viewer/test/app-balancer.test.js` "a turn-ended reading promotes the same waiting worker and keeps its token" |
+
+Lanes: R4 codex light (gpt-6-luna), R5 codex standard (gpt-6.1-terra).
+
+Validation at `da2dc16`, sequential:
+
+```
+$ bash sensitivity/test/run.sh -> RESULT 64 passed, 0 failed
+$ bash seen/test/run.sh        -> RESULT 21 passed, 0 failed
+$ bash codex/test/run.sh       -> RESULT 72 passed, 0 failed
+$ bash install/test/run.sh     -> RESULT 90 passed, 0 failed
+$ bash machine/test/run.sh     -> # pass 82  # fail 0
+$ node --test viewer/test/*.test.js
+not ok 191 - a starter that loses the freed port registers through the new holder
+# tests 306
+# pass 305
+# fail 1
+$ npm --prefix viewer run test:browser
+  3 failed
+    [chromium] › test/browser.spec.js:2395:1 › no drawn arrow's line passes through either box it connects, over every committed graph
+    [firefox] › test/app-threads.spec.js:327:5 › phone › approval: Start building enabled when Ready and presses; offer press
+    [firefox] › test/browser.spec.js:2395:1 › no drawn arrow's line passes through either box it connects, over every committed graph
+  2 skipped
+  507 passed (2.9m)
+$ npx --prefix viewer playwright test --config viewer/playwright.config.js viewer/test/app-threads.spec.js:327 --project=firefox   (x3)
+  2 passed (3.8s)
+  2 passed (3.8s)
+  2 passed (3.8s)
+```
+
+The arrow and lifecycle failures are on `main` (above). `app-threads.spec.js:327` in Firefox is flaky under the full run: it passes 3/3 alone, passed in rounds 1–3, and no file under `viewer/pages/` or that spec changed since `4dc3170`.
+
+Known issue outside this feature, seen during round 3: a verifier that ends a turn while its suites run in the background has that message taken as its report and is marked finished (the report-on-first-turn-end rule predates this feature). Round 4's verifier briefs ask for foreground runs.
