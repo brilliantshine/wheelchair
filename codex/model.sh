@@ -205,7 +205,7 @@ def heads_up_events(pin_path, cache_path):
     candidates = [model for model in visible if model not in skipped and model not in pinned]
     # Disabled cells do not get a heads-up of their own, but their shipped family
     # remains claimed so a newer member is not reintroduced as a tierless model.
-    words = {slot: (model_parts(model) or (None, slot))[1] for slot, model in active.items()}
+    words = {slot: (model_parts(model) or model_parts(DEFAULTS["gpt"][slot][0]))[1] for slot, model in active.items()}
     claimed_families = set(words.values())
     for slot in WORK_TIERS:
         if slot not in active:

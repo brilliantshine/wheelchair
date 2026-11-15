@@ -128,9 +128,9 @@ write_cache '{"models":[{"slug":"gpt-6.2-sol","visibility":"list"},{"slug":"gpt-
 run_model check --json
 assert 'check JSON reports newer and all tierless models' json_assert 'import json,sys; x=json.load(sys.stdin); assert x[0] == {"kind":"newer","tier":"heavy","model":"gpt-6.2-sol","current":"gpt-6.1-sol"}; assert [e["model"] for e in x if e["kind"] == "tierless"] == ["gpt-10-delta","gpt-9-nova"]'
 printf 'gpt.heavy = hand-set\n' > "$pins"
-write_cache '{"models":[{"slug":"gpt-8.2-heavy","visibility":"list"}]}'
+write_cache '{"models":[{"slug":"gpt-8.2-sol","visibility":"list"}]}'
 run_model check --json
-assert 'check JSON reports an available hand-set pin' json_assert 'import json,sys; assert any(e == {"kind":"available","tier":"heavy","model":"gpt-8.2-heavy","current":"hand-set"} for e in json.load(sys.stdin))'
+assert 'check JSON reports an available hand-set pin' json_assert 'import json,sys; assert any(e == {"kind":"available","tier":"heavy","model":"gpt-8.2-sol","current":"hand-set"} for e in json.load(sys.stdin))'
 printf 'not a models file\n' > "$pins"
 run_model check --json
 assert 'check JSON reports malformed files' json_assert 'import json,sys; assert json.load(sys.stdin)[0] == {"kind":"malformed","tier":None,"model":None,"current":None}'
@@ -230,10 +230,10 @@ assert 'a later pinned-family model is offered for that tier' equals "$output" "
 
 new_case
 printf 'gpt.heavy = hand-set\n' > "$pins"
-write_cache '{"models":[{"slug":"gpt-8.1-heavy","visibility":"list"},{"slug":"gpt-8.2-heavy","visibility":"list"}]}'
+write_cache '{"models":[{"slug":"gpt-8.1-sol","visibility":"list"},{"slug":"gpt-8.2-sol","visibility":"list"}]}'
 run_model check
-assert 'an unparseable pin uses its available-for line' equals "$output" "heads-up: gpt-8.2-heavy is available for Heavy, which is pinned to hand-set. Switch: $repo/codex/model.sh set gpt heavy gpt-8.2-heavy (or $repo/codex/model.sh skip gpt-8.2-heavy)"
-run_model skip gpt-8.2-heavy
+assert 'an unparseable pin uses its available-for line' equals "$output" "heads-up: gpt-8.2-sol is available for Heavy, which is pinned to hand-set. Switch: $repo/codex/model.sh set gpt heavy gpt-8.2-sol (or $repo/codex/model.sh skip gpt-8.2-sol)"
+run_model skip gpt-8.2-sol
 run_model check
 assert 'skipping the newest unparseable-pin candidate is quiet' equals "$output" ''
 

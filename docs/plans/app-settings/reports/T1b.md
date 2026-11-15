@@ -97,6 +97,6 @@ Nothing remains undone.
 
 - `codex/test/run.sh`: the unparseable Heavy pin fixture uses `gpt-8.2-heavy`, since
   current behavior uses the tier name as its family fallback when the pinned model cannot
-  be parsed.
+  be parsed. (Sub-lead: that fallback was a T1 regression, fixed to the shipped family word, `sol`; fixture now `gpt-8.2-sol`.)
 - `codex/test/run.sh`: the preflight fixture provides a sibling `model.sh` symlink because
   `preflight.sh` invokes the model script relative to its own directory.
