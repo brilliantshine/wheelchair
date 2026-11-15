@@ -187,16 +187,18 @@ and the dial's own warn-not-fail step still runs last. For each harness found on
   place of `claude notice`.
 
 Its own group is recognised by the script path its command starts with, arguments ignored
-(D14, D52), and any path ending in `/seen/hook.sh` counts: a group another wheelchair
-checkout wrote is this one's to replace, because two clones' groups side by side run the
-hook twice. A rerun rewrites the first such group in place, removes the others rather than
-adding another, and leaves every other hook, group and key in the file exactly where it is
-(D26).
+(D14, D52). Another wheelchair checkout's hook counts too, because two clones' groups side
+by side run the hook twice: a path ending in `/seen/hook.sh` whose checkout holds
+`protocol/seen.md`, or sits under `~/.local/state/wheelchair/worktrees` (a removed worktree's
+stale entry). Another project's `seen/hook.sh` is not. A rerun takes every such handler out
+of whatever group holds it, drops a group left empty, keeps a group that still holds someone
+else's handlers, and puts its one group where the first of them was. Every other hook,
+group and key in the file is left exactly where it is (D26).
 
 Grants happen only on a harness recorded above as displaying the notice — both, per the
 live check this document already records (D38, D43). On Claude Code, `seen/set.sh` adds
-`Bash(<root>/seen/wording.sh:*)` to `permissions.allow` — replacing, in the same way, any
-`Bash(<path>/seen/wording.sh:*)` another checkout left there — and the wording directory to
+`Bash(<root>/seen/wording.sh:*)` to `permissions.allow` — replacing, in the same way, a
+`Bash(<path>/seen/wording.sh:*)` that another wheelchair checkout, by the same test, left there — and the wording directory to
 `sandbox.filesystem.allowWrite`. On Codex, it adds the wording directory to
 `writable_roots` under `[sandbox_workspace_write]` in `~/.codex/config.toml` — adding the
 table if absent, inserting a `writable_roots` line right under the table's header if the

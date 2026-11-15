@@ -232,6 +232,16 @@ before=$(tree_state "${home[refuse_app_worktree_dir]}")
 run_case refuse_app_worktree_dir
 assert 'install.sh refuses to run from under the app worktree directory and touches nothing' bash -c '[[ $1 == 3 && $2 == *"wheelchair/worktrees"* && $3 == "$4" ]]' _ "${status[refuse_app_worktree_dir]}" "${output[refuse_app_worktree_dir]}" "$before" "$(tree_state "${home[refuse_app_worktree_dir]}")"
 
+new_case refuse_symlink_alias
+alias_target=${home[refuse_symlink_alias]}/.local/state/wheelchair/worktrees/wheelchair/wc/aliased
+copy_installer "$alias_target"
+ln -s "$alias_target" "$fixture/alias-checkout"
+case_installer[refuse_symlink_alias]=$fixture/alias-checkout/install.sh
+allow[refuse_symlink_alias]=''
+before=$(tree_state "${home[refuse_symlink_alias]}")
+run_case refuse_symlink_alias
+assert 'install.sh refuses through a symlink into the app worktree directory and touches nothing' bash -c '[[ $1 == 3 && $2 == *"wheelchair/worktrees"* && $3 == "$4" ]]' _ "${status[refuse_symlink_alias]}" "${output[refuse_symlink_alias]}" "$before" "$(tree_state "${home[refuse_symlink_alias]}")"
+
 new_case claude_only
 present[claude_only]=claude
 run_case claude_only

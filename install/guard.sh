@@ -17,9 +17,13 @@ guard_canonical_clone() {
      [[ $git_dir != "$common_dir" ]]; then
     why="it is a linked git worktree of $(dirname "$common_dir")"
   fi
+  # Compared physically, so a symlink into the worktree directory is caught too.
   worktrees="$HOME/.local/state/wheelchair/worktrees"
   if [[ -z $why ]]; then
-    case "$root/" in "$worktrees"/*) why="it is under $worktrees" ;; esac
+    local real_root real_worktrees
+    real_root=$(cd "$root" && pwd -P)
+    real_worktrees=$(cd "$worktrees" 2>/dev/null && pwd -P) || real_worktrees=$worktrees
+    case "$real_root/" in "$real_worktrees"/*) why="it is under $worktrees" ;; esac
   fi
   [[ -z $why ]] && return 0
   printf '%s: refusing to run from %s: %s.\n' "$who" "$root" "$why" >&2

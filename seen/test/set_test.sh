@@ -21,7 +21,7 @@ new_case() {
 run_case() {
   local name=$1
   set +e
-  output[$name]=$(WHEELCHAIR_ALLOW_WORKTREE="${allow[$name]-1}" WHEELCHAIR_PRESENT="${present[$name]}" WHEELCHAIR_CLAUDE_HOME="${claude[$name]}" WHEELCHAIR_CODEX_HOME="${codex[$name]}" WHEELCHAIR_WORDING="${wording[$name]}" "${command[$name]}" 2>&1)
+  output[$name]=$(HOME="$fixture/home" WHEELCHAIR_ALLOW_WORKTREE="${allow[$name]-1}" WHEELCHAIR_PRESENT="${present[$name]}" WHEELCHAIR_CLAUDE_HOME="${claude[$name]}" WHEELCHAIR_CODEX_HOME="${codex[$name]}" WHEELCHAIR_WORDING="${wording[$name]}" "${command[$name]}" 2>&1)
   status[$name]=$?
   set -e
 }
@@ -66,21 +66,41 @@ printf '%s\n' '{"hooks":{"UserPromptSubmit":[{"matcher":"*","hooks":[{"type":"co
 run_case foreign
 assert 'foreign group stays beside ours' bash -c '[[ $1 == 0 && $(python3 -c "import json; print(len(json.load(open(\"$2\"))[\"hooks\"][\"UserPromptSubmit\"]))") == 2 && $(python3 -c "import json; print(json.load(open(\"$2\"))[\"hooks\"][\"UserPromptSubmit\"][0][\"hooks\"][0][\"command\"])") == moshi-hook ]]' _ "${status[foreign]}" "$(settings foreign)"
 
+# Another wheelchair checkout (it holds protocol/seen.md), a removed app worktree (its path is
+# under the app's worktree directory and points at nothing), and an unrelated project that also
+# happens to have a seen/hook.sh. Only the first two are ours to replace.
 new_case other_clone
-mkdir -p "${claude[other_clone]}" "${codex[other_clone]}"
-printf '%s\n' '{"hooks":{"UserPromptSubmit":[{"hooks":[{"type":"command","command":"/elsewhere/wheelchair/seen/hook.sh claude notice","timeout":2}]}]},"permissions":{"allow":["Bash(ls:*)","Bash(/elsewhere/wheelchair/seen/wording.sh:*)"]}}' > "$(settings other_clone)"
-printf '%s\n' '{"hooks":{"UserPromptSubmit":[{"hooks":[{"type":"command","command":"/elsewhere/wheelchair/seen/hook.sh codex notice","timeout":2}]}]}}' > "$(hooks other_clone)"
+other=$fixture/other-clone; mkdir -p "$other/protocol"; : > "$other/protocol/seen.md"
+gone=$fixture/home/.local/state/wheelchair/worktrees/wheelchair/wc-gone
+mkdir -p "${claude[other_clone]}" "${codex[other_clone]}" "$fixture/home/.local/state/wheelchair/worktrees"
+cat > "$(settings other_clone)" <<JSON
+{"hooks":{"UserPromptSubmit":[
+  {"hooks":[{"type":"command","command":"$other/seen/hook.sh claude notice","timeout":2},{"type":"command","command":"moshi-hook"}]},
+  {"hooks":[{"type":"command","command":"/opt/unrelated-project/seen/hook.sh audit"}]}]},
+ "permissions":{"allow":["Bash(ls:*)","Bash($other/seen/wording.sh:*)","Bash(/opt/unrelated-project/seen/wording.sh:*)","Bash($gone/seen/wording.sh:*)"]}}
+JSON
+cat > "$(hooks other_clone)" <<JSON
+{"hooks":{"UserPromptSubmit":[{"hooks":[{"type":"command","command":"$gone/seen/hook.sh codex notice","timeout":2}]}]}}
+JSON
 run_case other_clone
-assert "another clone's hook and wording grant are replaced, not joined" python3 - "${status[other_clone]}" "$(settings other_clone)" "$(hooks other_clone)" "$repo" <<'PY'
-import json, shlex, sys
+assert "another checkout's hook and grant are replaced; unrelated handlers and grants stay" python3 - "${status[other_clone]}" "$(settings other_clone)" "$(hooks other_clone)" "$repo" <<'PY'
+import json, sys
 status, settings, hooks, root = sys.argv[1:]
-assert status == '0'
-for path in (settings, hooks):
-    groups = json.load(open(path))['hooks']['UserPromptSubmit']
-    assert [shlex.split(g['hooks'][0]['command'])[0] for g in groups] == [root + '/seen/hook.sh'], groups
-allow = json.load(open(settings))['permissions']['allow']
-assert allow == ['Bash(ls:*)', 'Bash(' + root + '/seen/wording.sh:*)'], allow
+assert status == '0', status
+ours = lambda harness: [{"type": "command", "command": f"{root}/seen/hook.sh {harness} notice", "timeout": 2}]
+d = json.load(open(settings))
+assert [g['hooks'] for g in d['hooks']['UserPromptSubmit']] == [
+    ours('claude'),
+    [{"type": "command", "command": "moshi-hook"}],
+    [{"type": "command", "command": "/opt/unrelated-project/seen/hook.sh audit"}],
+], d['hooks']
+assert d['permissions']['allow'] == ['Bash(ls:*)', f'Bash({root}/seen/wording.sh:*)', 'Bash(/opt/unrelated-project/seen/wording.sh:*)'], d['permissions']
+x = json.load(open(hooks))
+assert [g['hooks'] for g in x['hooks']['UserPromptSubmit']] == [ours('codex')], x
 PY
+other_s=$(state "$(settings other_clone)")
+run_case other_clone
+assert 'a rerun after replacing another checkout is byte-identical' bash -c '[[ $1 == 0 && $2 == "$3" ]]' _ "${status[other_clone]}" "$other_s" "$(state "$(settings other_clone)")"
 
 new_case refuse_worktree
 git init -q "$fixture/guard-repo"
