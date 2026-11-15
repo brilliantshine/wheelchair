@@ -1,6 +1,6 @@
 ---
 slug: app-diagrams-uploads
-status: planning   # planning | ready-for-review | approved | implementing | verifying | done
+status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-15
 adopted-from: docs/proposals/app-diagrams-uploads/proposal.md
 ---
@@ -13,15 +13,7 @@ get buried as this file grows. **Map:** `MAP.md`.
 
 ## Open Questions
 
-### Q1: What happens to images the lead showed once the thread is archived?
-- **Context:** A shown image lives on the lead's machine (D3). Archiving deletes the
-  thread's uploads (D28, IDEA). Diagrams survive archive because they are committed to the
-  branch; images are not.
-- **Options:** (a) they go with the uploads: an archived thread shows "image removed";
-  (b) shown images are kept after archive, only Collin's uploads are deleted;
-  (c) shown images are committed to the branch beside the graphs, so they reach the pull request.
-- **Recommendation:** (a). Archive means done, a screenshot is rarely needed after, and it
-  keeps one cleanup rule.
+None.
 
 ## Watch List
 
@@ -37,19 +29,183 @@ get buried as this file grows. **Map:** `MAP.md`.
 | D3 | The lead shows an image with a new `image` card (`path`, `title`). `card.js` copies the file into `~/.local/state/wheelchair/uploads/<thread-id>/` on the lead's machine and the card carries that stored name; the hub fetches it from the thread's machine when the page asks. Only the lead posts it; screenshots from other sessions reach Collin through the lead. PNG, JPEG, GIF, WebP; 25 MB. | Shown cards are lead-only (cards.md). Copying keeps the image after the agent's temp file is gone, and puts it under the same cleanup as uploads | defaulted |
 | D4 | Uploads: the page sends each file raw to the hub, which streams it to the thread's machine; the machine refuses anything over 25 MB, stores it as `uploads/<thread-id>/<n>-<sanitized filename>` (a counter prefix avoids collisions) and returns the absolute path. The message the lead receives gets one line per file: `[attached: <path>]`. The page refuses a file over 25 MB before sending. | D20/D28; a counter is simpler than asking about overwrites | defaulted |
 | D5 | Archive deletes `uploads/<thread-id>/` in the same machine archive call that stops sessions and removes worktrees (`machine/service.js:430-486`). | One place already owns archive cleanup (MAP) | defaulted |
+| D6 | Images the lead showed are deleted with the uploads at archive; an archived thread shows "Image removed when the thread was archived" in their place. | Archived means done; diagrams, the lasting pictures, survive on the branch | user |
+| D7 | Refines D1: the `diagram` card gains an optional `format` field, `json` (default) or `html`, so the page knows which file to load (`<graph>.json` or `<graph>.html`) without fetching both. | D1 left the page guessing between two files | defaulted |
+| D8 | Uploads are deleted at archive only when the hub will mark the thread archived: not when the machine keeps a worktree for a rebase in progress, since the thread then stays open (`viewer/app/threads.js:161-174`). | Refines D5: a thread still open must keep its files | defaulted |
+| D9 | Refines D3: the machine service, not `card.js`, copies a shown image into the uploads folder, when the card reaches `/v1/agent/cards` and before it is spooled. | The service already knows the thread and owns `<state>`; `card.js` stays a validator and poster | defaulted |
 
 ## Spec
 
-Draft; finalized when the open questions are settled.
+Three parts: new diagram forms, images the lead shows, and Collin's uploads. "Machine"
+means the machine service (`machine/service.js`) on the machine named by `thread.machine`;
+"hub" means the app server (`viewer/server.js` + `viewer/app/`). `<state>` is the
+machine's state root, `~/.local/state/wheelchair` by default (`machine/service.js:24`).
+`UPLOAD_LIMIT` is 25 MB = 25 × 1024 × 1024 bytes, one constant per side.
 
-### Diagram forms
-(D1, D2.) Schemas to be written into `protocol/app/cards.md` under `diagram`.
+### 1. Diagram forms (D1, D2, D7)
 
-### Images the lead shows
-(D3.)
+**Card.** `diagram` keeps `plan`, `graph`, `title` and gains optional `format`: `"json"`
+(default when absent) or `"html"`. Validation in `viewer/app/card.js` (`fields.diagram`)
+accepts only those two values. `viewer/app/cards.js` registers the plan as today; it
+registers `<graph>.json` only when the format is `json`.
 
-### Uploads
-(D4, D5.)
+**JSON forms.** The file `docs/plans/<plan>/graphs/<graph>.json` has a top-level `form`.
+Absent or anything not listed below means boxes and arrows: rendered exactly as today
+(graph-page iframe, `viewer/pages/thread.js:571-581`). Every form has `explanation`
+(string, required; shown above the picture, like the graph schema's field in
+`protocol/graphs.md`). Strings are rendered as text, never as HTML.
+
+| `form` | Shape | Drawn as |
+|---|---|---|
+| `timeline` | `events: [{when, label, detail?}]`, 1+ items, in order | A vertical line with one marker per event; `when` small above `label`, `detail` muted below |
+| `before-after` | `before: {title?, items: [string]}`, `after: {title?, items: [string]}` | Two columns, headed "Before"/"After" unless `title` is given; on a narrow card, Before stacked over After with a ↓ between |
+| `layers` | `layers: [{label, detail?}]`, 1+ items, top layer first | Full-width stacked bands, top first |
+| `side-by-side` | `columns: [{title, items: [string]}]`, 2–4 items | Equal columns; on a narrow card, stacked in order |
+
+- "Narrow card" means the card is under 600 px wide (a CSS container query or media query
+  on the card; at phone width 390 px every form is one column).
+- No form scrolls sideways: long words wrap (`overflow-wrap: anywhere`).
+- Loading: live thread, `GET /wheelchair/graph?path=<worktree>/docs/plans/<plan>/graphs/<graph>.json`
+  (the route the graph page uses, `viewer/index.html:462`); archived thread,
+  `GET /wheelchair/api/threads/<id>/graph?file=<graph>.json` (`viewer/app/threads.js:195`).
+  The page fetches once per card and caches by card id; it does not refetch on each poll.
+- A file that fails to load or does not match its form's shape shows, in the card,
+  "This diagram could not be drawn" and the reason, plus the existing Open full screen link
+  for boxes and arrows only.
+- The four JSON forms get no "Open full screen" link (they already fit the card).
+
+**HTML fallback** (`format: "html"`). The file is `docs/plans/<plan>/graphs/<graph>.html`,
+self-contained: inline `<style>` and `<script>` only, no external loads.
+
+- New hub route `GET /wheelchair/diagram-html?path=<abs path>` serves a live file and
+  `GET /wheelchair/api/threads/<id>/diagram-html?file=<graph>.html` an archived one (read with
+  `git show` from the branch, as `archivedGraph` does; same name pattern but `\.html$`).
+  The live route accepts only a path ending in `.html` directly inside the `graphs/`
+  directory of a registered plan (`registeredPlanPath`, as `doc.html` uses at
+  `viewer/server.js:1907`), authenticated by the remember cookie like other pages.
+- Both responses send `content-type: text/html; charset=utf-8`,
+  `x-content-type-options: nosniff` and
+  `content-security-policy: default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; sandbox allow-scripts`.
+  No `connect-src`, so fetch, XHR, WebSocket and images from the network are all blocked.
+- The thread page embeds it as `<iframe sandbox="allow-scripts" src=...>` (no
+  `allow-same-origin`), same 340 px height as a graph, with an "Open full screen" link to
+  the same URL. `APP_PAGE_CSP`'s `frame-src 'self'` already allows it.
+- If the cookie is not sent on the sandboxed frame's request in either browser the suite
+  runs, the browser test fails; the fix then is a signed per-file URL, not dropping the sandbox.
+
+**Protocol.** `protocol/app/cards.md` `diagram` section: add `format`, the four schemas
+above, the HTML rules, and one line on picking: timeline for an order of events, before
+and after for a change, layers for a stack, side by side for a comparison of 2–4 things,
+boxes and arrows for connections, HTML only when none fits. `protocol/app/lead.md`
+"Diagrams": one sentence pointing at that section.
+
+### 2. Images the lead shows (D3, D6)
+
+**Card.** New shown kind `image`, lead only, not pinned: `path` (absolute path to an image
+file on the lead's machine, required), `title` (one line, required). Add to `shown`,
+`roles` and `fields` in `viewer/app/card.js`, and document it in `cards.md`.
+
+**Flow.**
+
+1. `card.js image <file>` validates and posts to the machine's `/v1/agent/cards` as usual.
+2. The machine, for `kind: "image"` only and before spooling: checks the file exists, is a
+   regular file, at most `UPLOAD_LIMIT`, and its extension is `.png`, `.jpg`, `.jpeg`,
+   `.gif` or `.webp` (case-insensitive); otherwise 422 with the reason, nothing spooled.
+   It copies the file into `<state>/uploads/<thread-id>/` under the naming rule in part 3
+   and replaces `path` with the stored file's absolute path.
+3. The hub accepts it (role lead), and stores the card with an extra `file` field: the
+   basename of `path`. The hub never reads `path` itself.
+4. The page renders the title and `<img src="/wheelchair/api/threads/<id>/files/<file>" alt="<title>">`,
+   `max-width: 100%`, height auto. Tapping opens the image URL in a new tab.
+5. `GET /wheelchair/api/threads/<id>/files/<file>`: the hub checks `file` matches
+   `^[0-9]+-[A-Za-z0-9._-]+$`, then streams `GET /v1/uploads/<thread-id>/<file>` from
+   `thread.machine` with the hub secret. The machine serves the file with a content type
+   from its extension (images as `image/*`; anything else `application/octet-stream` with
+   `content-disposition: attachment`) and `x-content-type-options: nosniff`; 404 if absent.
+6. Archived thread: the page shows "Image removed when the thread was archived" and
+   fetches nothing.
+
+`MachineClient.call` is JSON-only; add a streaming variant (`stream(machine, suffix, method,
+readable?)`) that pipes a request body and returns the response stream with status and
+headers.
+
+### 3. Uploads (D4, D5, D8)
+
+**Composer** (`viewer/pages/thread.html`, `thread.js`, `thread.css`).
+
+- An attach button (paper-clip icon) beside Send opens a file picker (`multiple`, any type).
+- Pasting into the textarea with files on the clipboard, or dropping files on the composer,
+  adds them. Text pasted alone behaves as today.
+- Attached files show as chips above the textarea: name and size, with a remove ×. A
+  pasted image with no useful name is named `pasted-<YYYYMMDD-HHMMSS>.png` (its type's
+  extension).
+- A file over `UPLOAD_LIMIT` is never added: the chip area shows "<name> is over 25 MB"
+  for that file.
+- Send is allowed with text, files or both. On send: upload each file in order; if any
+  upload fails, show "Upload failed: <reason>", keep the chips and the text, and post no
+  message. When all succeed, post the message with text
+  `<typed text>\n\n[attached: <path>]` (one line per file; no leading blank lines when the
+  typed text is empty), then clear chips and textarea.
+
+**Hub route** `POST /wheelchair/api/threads/<id>/uploads?name=<filename>`, raw body (the
+file bytes), `content-type` the file's type.
+
+- `routes.js` `handle()` currently JSON-parses every POST body (`viewer/app/routes.js:37`);
+  this route must be matched before that and read the body as a stream.
+- Refuse 409 if the thread is archived or has no live lead (same check as `messages`,
+  `routes.js:343-350`), 413 if `content-length` is missing or over `UPLOAD_LIMIT`.
+- Stream the body to `POST /v1/uploads?thread_id=<id>&name=<filename>` on `thread.machine`;
+  return the machine's `{path}` as `201`.
+
+**Machine route** `POST /v1/uploads` (hub secret).
+
+- Sanitize `name`: keep `[A-Za-z0-9._-]`, replace every other character with `-`, strip
+  leading dots, cut to 100 characters; empty becomes `file`.
+- Create `<state>/uploads/<thread-id>/` (mode 0700). Stored name is `<n>-<sanitized>`, `n`
+  one more than the highest existing prefix (1 when empty); create with the `wx` flag and
+  retry with the next `n` on `EEXIST`.
+- Stream to disk counting bytes; past `UPLOAD_LIMIT`, stop, delete the partial file and
+  answer 413. Return `201 {path: <absolute stored path>}`.
+- Same naming and directory are used for image cards (part 2).
+
+**Archive** (`machine/service.js` `archive`). After worktrees are handled and before
+returning: if no entry in `kept` has reason `rebase in progress`, remove
+`<state>/uploads/<thread-id>/` recursively (`fs.rm`, `force: true`); report it in the
+result as `uploads_removed: true|false`. A failure to remove is logged and reported as
+`false`; it does not fail the archive.
+
+### Not in this plan
+
+Previews or downloads of Collin's own uploads in the thread (his bubble shows the
+`[attached: ...]` lines as text); uploads to sessions other than the lead; changes to boxes
+and arrows; deleting threads; worker machines (slice 2).
+
+### Validation
+
+```bash
+node --test viewer/test/*.test.js
+bash machine/test/run.sh
+npm --prefix viewer run test:browser
+```
+
+New tests, at least:
+
+- `card.js`: `diagram` accepts `format` `json`/`html` and refuses others; `image` requires
+  `path` and `title` and is lead-only.
+- Machine: upload stores `1-name`, then `2-name`; a 25 MB + 1 byte body answers 413 and
+  leaves no file; an image card with a `.txt` path is refused 422; a valid one is copied
+  and its `path` rewritten; archive removes the uploads folder, and keeps it when a rebase
+  is in progress.
+- Hub: uploads route refuses an archived thread (409) and oversize `content-length` (413);
+  the files route refuses a name outside the pattern; the HTML route refuses a path outside
+  a registered plan's `graphs/` and sends the CSP above.
+- Browser (Chromium and Firefox), at a 390 × 844 viewport: one thread with a card of each
+  of the four JSON forms and one HTML card; each is visible and
+  `document.documentElement.scrollWidth <= innerWidth`. The HTML card's script runs (it
+  writes text the test reads through the frame) and its `fetch` to the page's origin
+  fails. Pasting an image file into the composer shows a chip; sending posts a message
+  whose text ends with `[attached: <path>]`, and the file exists at that path with the
+  same bytes. An `image` card shows an `<img>` that loads (`naturalWidth > 0`).
 
 ## Accepted Risks
 
@@ -57,6 +213,15 @@ Draft; finalized when the open questions are settled.
 |------|--------------|-------|
 
 ## Review Rounds
+
+### Round 1 — 2026-11-15
+
+**Lanes:** intent lens; mechanics lens; cross-family: pending.
+
+**Changed since Round 0:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
