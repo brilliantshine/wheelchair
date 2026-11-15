@@ -531,6 +531,18 @@ Collin chose "keep going" (2026-11-15); the round budget resets.
 |------|----------|---------|--------------|------------|
 | intent (Claude) | major | Turn-failed replacement omits `--replaces`; a worker would lose its branch | upheld | §9: replace by each role's existing restart rule |
 | intent (Claude) | minor | A running lead held at its limit shows nothing on the thread | upheld | §5: same waiting line for a limited lead |
+| mechanics (Codex) | — | No findings | — | — |
+
+### Round 6 — 2026-11-15
+
+**Lanes:** Claude (intent lens); Codex (mechanics lens); cross-family: yes.
+
+**Changed since Round 5:**
+- §9: a failed session's replacement follows each role's existing restart rule (worker `--replaces`).
+- §5: a running lead held at its limit shows the same "Waiting for <provider> to refill" line.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
