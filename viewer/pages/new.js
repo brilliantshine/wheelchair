@@ -38,12 +38,14 @@
     projectEl.textContent = '';
     const seen = new Set();
     const group = (label, items) => {
-      const fresh = items.filter((i) => !seen.has(i.path));
-      if (!fresh.length) return;
       const g = document.createElement('optgroup');
       g.label = label;
-      for (const i of fresh) { seen.add(i.path); g.appendChild(option(i.path, i.label)); }
-      projectEl.appendChild(g);
+      for (const i of items) {
+        if (seen.has(i.path)) continue;
+        seen.add(i.path);
+        g.appendChild(option(i.path, i.label));
+      }
+      if (g.children.length) projectEl.appendChild(g);
     };
     group('Saved', state.saved.map((s) => ({ path: s.path, label: s.name })));
     group('In ' + state.default_folder, state.found.map((f) => ({ path: f.path, label: f.name })));
@@ -108,15 +110,33 @@
   }
 
   async function removeSaved(name) {
-    show($('saved-error'), '');
+    clearErrors();
     try {
       await call('/settings/saved-dirs/' + encodeURIComponent(name) + '?machine=' + encodeURIComponent(machineEl.value),
         { method: 'DELETE' });
       await load(projectEl.value);
-    } catch (e) { show($('saved-error'), 'Could not remove ' + name + ': ' + e.message); }
+    } catch (e) {
+      const li = [...$('saved-list').children].find((n) => n.dataset.name === name);
+      if (!li) return;
+      const line = el('div', 'row-error', 'Could not remove ' + name + ': ' + e.message);
+      line.setAttribute('role', 'alert');
+      li.appendChild(line);
+    }
   }
 
-  machineEl.addEventListener('change', () => { show($('saved-error'), ''); load(''); });
+  function clearErrors() {
+    show($('add-error'), '');
+    for (const n of $('saved-list').querySelectorAll('.row-error')) n.remove();
+  }
+
+  machineEl.addEventListener('change', () => {
+    clearErrors();
+    state = state && { ...state, machine: null };
+    projectEl.textContent = '';
+    if (state) syncProject(0);
+    else { projectEl.disabled = true; goEl.disabled = true; }
+    load('');
+  });
   projectEl.addEventListener('change', () => syncProject(projectEl.options.length));
 
   $('add-form').addEventListener('submit', async (ev) => {
@@ -124,7 +144,7 @@
     const name = $('add-name').value.trim();
     const path = $('add-path').value.trim();
     const go = $('add-go');
-    show($('saved-error'), '');
+    clearErrors();
     go.disabled = true;
     try {
       await call('/settings/saved-dirs', json('POST', { name, path, machine: machineEl.value }));
@@ -133,14 +153,15 @@
       const added = state.saved.find((s) => s.name === name);
       fillMachines(); fillProjects(added ? added.path : ''); fillSaved();
       $('add-name').value = ''; $('add-path').value = '';
-    } catch (e) { show($('saved-error'), e.message); }
+    } catch (e) { show($('add-error'), e.message); }
     go.disabled = false;
   });
 
   $('new-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
     if (goEl.disabled) return;
-    const body = { project: projectEl.value, cli: $('nt-cli').value, machine: machineEl.value || 'hub' };
+    if (!state || state.machine !== machineEl.value) return;
+    const body = { project: projectEl.value, cli: $('nt-cli').value, machine: state.machine };
     const message = $('nt-message').value.trim();
     if (message) body.message = message;
     goEl.disabled = true;
