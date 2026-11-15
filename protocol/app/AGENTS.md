@@ -16,6 +16,7 @@ that makes it checkable: `viewer/app/card.js` validates against it.
 | `worker.md` | a worker | Doing one briefed task inside its ownership boundary, asking the lead when the plan is silent, reporting |
 | `reviewer.md` | a plan reviewer | The two lenses, the severity ladder and the one-line finding format; read-only |
 | `verifier.md` | a verifier | Falsifying claims against the Spec or the reported problem; names the commit it checked |
+| `aside.md` | an aside: one headless turn of a side conversation about part of a lead message | Who it is (a read-only copy of the lead's conversation), the `[wc:aside …]` message headers, the ask, simpler and draw actions, stepping up, and the one-line summary for the main thread |
 | `cards.md` | every role | Every card kind and its JSON fields, which are shown, how a button press comes back, the message markers, and the `card.js`, `wc.js git` and `wc.js session` commands |
 
 ## Boundaries
