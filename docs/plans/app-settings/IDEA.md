@@ -32,7 +32,8 @@ newer-model heads-up never reaches him.
 - He picks which model leads run on, as easily as any other setting (his own choice is
   Claude Opus 5.5), and the next lead uses it.
 - He writes a template for a role (for one project or all) and the next agent in that role
-  follows it, on top of wheelchair's own rules, which it cannot override.
+  follows it, on top of wheelchair's own rules, which it cannot override (except the one
+  named in Constraints).
 - He writes a style, and the next lead's messages and cards follow it; a before-and-after
   preview shows the difference.
 - He sees the permission mode and can change it; sessions still start and count as ready.

@@ -202,6 +202,12 @@ asides. Running agents are not changed, except the style delivery below.
     with `decide`, the worker picks the option it judges best, keeps going, and lists the
     question, the options and its pick under its report's choices, flagged "decided under
     the template, not asked"; with `ask` or no template, the rule stands as written.
+    `protocol/app/sub-lead.md:105-109` keeps that flag when it copies the choice into
+    PLAN.md's Log (`Choice (decided under the template): …`).
+  - The Templates page's layer stack keeps the design's three layers but its footer reads:
+    "Where they disagree, the lower layer wins. Nothing overrides layer 1, except a worker
+    template's 'Pick, record it, keep going'." Layer 1's caption drops "can't be turned off"
+    for workers.
   - `file_limit`: integer ≥ 1 or absent.
   `text`: free text, at most 4000 characters.
 - In use: per role, at most one template is in use for `all` and one per project. Marking a
@@ -219,16 +225,31 @@ asides. Running agents are not changed, except the style delivery below.
 
 ### What an agent is told at start
 
-The hub sends `role_prompt` on `POST /v1/sessions` (the service already accepts it,
-`machine/service.js:245`, `283-286`), composed of, in order:
-1. `Read <root>/protocol/app/<role>.md before responding. It is wheelchair's built-in rules
-   for your role; nothing below overrides it.`
-2. If a template applies: a heading line naming it as Collin's behavior template for this
-   role, then its sentences and text.
-3. For a lead only, always (the defaults below until Collin saves one): a heading line naming it as Collin's writing style
-   for everything he reads (thread replies and the text of cards), then its rendering
-   (below).
-Total `role_prompt` length is capped at 12000 characters; the API refuses a template or
+The session may run on another machine whose wheelchair clone lives elsewhere, so the hub
+never writes a path. It sends a new optional field `role_layers` (text) on
+`POST /v1/sessions`; the machine service composes the starting instructions itself, in
+order:
+1. The service's own pointer, as today (`machine/service.js:245`, `283`), with its local
+   root: `Read <its root>/protocol/app/<role>.md before responding. It is wheelchair's
+   built-in rules for your role.` (The "nothing below overrides it" wording moves into the
+   layers, where the exception can be stated.)
+2. `role_layers`, when present, appended after a blank line. The hub composes it as:
+   - one line: "Nothing below overrides the built-in rules above" (for a worker whose
+     template has `unsettled: decide`: "…above, except where your template says to decide
+     unsettled questions yourself");
+   - if a template applies: a heading line naming it as Collin's behavior template for this
+     role, its sentences and text, then "Where the template and the brief you are given
+     disagree, the brief wins.";
+   - for a lead only, always (the defaults below until Collin saves one): a heading line
+     naming it as Collin's writing style for everything he reads (thread replies and the
+     text of cards), then its rendering (below).
+   The brief itself still arrives as the first message, as today.
+- `role_prompt` (whole replacement) stays accepted for compatibility but the hub no longer
+  sends it. For Codex the composed text goes in the first `[wc:role]` message
+  (`service.js:284-286`), as the pointer does today.
+- "See it in full" shows the composition with the hub's own root in line 1.
+- The cap below applies to `role_layers`.
+Total `role_layers` length is capped at 12000 characters; the API refuses a template or
 style save that would exceed it. Templates and style apply to sessions started after
 saving.
 
@@ -413,12 +434,32 @@ table built here.
 
 **Lanes:** Codex / Heavy (gpt-6.1-sol), mechanics; Claude / CLI default, intent; cross-family: yes.
 
+**Outcome:** not clean (1 major upheld, fixed in the Spec).
+
 **Changed since Round 2:**
 - Other agents tiers are app-only; the panel says so ("Settings store").
 - `style_version`: missing counts as 0; owes only after the first save.
 - Agent-tool Claude lanes fall back to a shell launch when the cell has no family word, an exact version or an effort ("Tier names").
 - Old tier names `haiku/sonnet/opus` documented as slots, not models.
 - `unsettled: decide` on worker templates only; `worker.md`'s escalation rule is the one rule a template may change; IDEA constraint names the exception (decisions 19, 20).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| Claude intent | minor | IDEA "What good looks like" still says templates can never override | upheld | IDEA line points to the Constraints exception |
+| Claude intent | minor | Design's layer-stack text "nothing overrides layer 1" becomes false | upheld | Spec gives the page's replacement footer and caption |
+| Claude intent | minor | The composed prompt never says template vs brief precedence | upheld | Spec adds the design's "lower layer wins" line to the composed prompt |
+| Claude intent | minor | `sub-lead.md` drops the "decided under the template" flag when logging choices | upheld | Spec: `sub-lead.md:105-109` keeps the flag |
+| Codex mechanics | major | A hub-composed `role_prompt` carries the hub's path to the role file, wrong on a machine whose clone lives elsewhere | upheld | Checked `machine/service.js:244-245` and `viewer/app/hub.js:17`. Spec: hub sends only `role_layers`; the service writes the pointer with its own root |
+
+### Round 4 — 2026-11-15
+
+**Lanes:** Codex / Heavy (gpt-6.1-sol), mechanics; Claude / CLI default, intent; cross-family: yes.
+
+**Changed since Round 3:**
+- Starting instructions: hub sends `role_layers`; the machine service writes the role-file pointer with its own root ("What an agent is told at start").
+- Precedence lines: built-in rules first (worker `decide` exception), template, "the brief wins" over the template.
+- Templates page layer-stack footer and caption text replaced; `sub-lead.md` keeps the "decided under the template" flag.
+- IDEA "What good looks like" points at the Constraints exception.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
