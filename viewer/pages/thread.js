@@ -590,7 +590,10 @@
     const lead = leads().filter((s) => s.live || s.status === 'waiting').pop();
     if (!lead) return '';
     if (lead.status === 'waiting' && lead.waiting_until) {
-      const label = lead.provider === 'gpt' ? 'GPT' : lead.provider === 'claude' ? 'Claude' : (thread().provider === 'gpt' ? 'GPT' : 'Claude');
+      // The provider the wait is pinned to, else the lead's, else the thread's; none set → room.
+      const provider = [lead.waiting_provider, lead.provider, thread().provider].find((p) => p === 'claude' || p === 'gpt');
+      if (!provider) return 'Waiting for room, about ' + clock(lead.waiting_until);
+      const label = provider === 'gpt' ? 'GPT' : 'Claude';
       return 'Waiting for ' + label + ' to refill, about ' + clock(lead.waiting_until);
     }
     if (lead.live && lead.limited_until && Date.parse(lead.limited_until) > Date.now()) {

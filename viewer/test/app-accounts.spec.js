@@ -398,6 +398,21 @@ test.describe('lead waiting line', () => {
     await noSideScroll(page);
   });
 
+  test('a waiting lead pinned to a provider names it when the lead has none', async ({ page }) => {
+    const made = await ctx.make({ cli: 'claude' });
+    await ctx.patch(made.id, (t) => { delete t.provider; delete t.sessions[0].provider; Object.assign(t.sessions[0], { status: 'waiting', waiting_provider: 'gpt', waiting_until: iso(3 * HOUR) }); });
+    await openThread(page, made.id);
+    await expect(page.locator('#lead-wait')).toHaveText(/^Waiting for GPT to refill, about \d/);
+  });
+
+  test('a waiting lead with no provider anywhere says it is waiting for room', async ({ page }) => {
+    const made = await ctx.make({ cli: 'claude' });
+    // The hub derives thread.provider from thread.cli on read, so both must go for "no provider anywhere".
+    await ctx.patch(made.id, (t) => { delete t.cli; delete t.provider; delete t.sessions[0].cli; delete t.sessions[0].provider; Object.assign(t.sessions[0], { status: 'waiting', waiting_until: iso(3 * HOUR) }); });
+    await openThread(page, made.id);
+    await expect(page.locator('#lead-wait')).toHaveText(/^Waiting for room, about \d/);
+  });
+
   test('a limited running lead names the account', async ({ page }) => {
     const made = await ctx.make({ cli: 'claude' });
     await ctx.patch(made.id, (t) => { Object.assign(t.sessions[0], { account: 'default-claude', provider: 'claude', limited_until: iso(2 * HOUR) }); });
