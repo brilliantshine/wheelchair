@@ -363,7 +363,7 @@ Clean round: approved.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | Machine: uploads routes, image-card copy, per-thread lock, closing flag, archive cleanup | machine/service.js, machine/test/, machine/API.md | gpt standard (gpt-6.1-terra) | wc-c56d4b2c5f5f-worker | `bash machine/test/run.sh` | in progress |
+| T1 | Machine: uploads routes, image-card copy, per-thread lock, closing flag, archive cleanup | machine/service.js, machine/test/, machine/API.md | gpt standard (gpt-6.1-terra) | wc-c56d4b2c5f5f-worker | `bash machine/test/run.sh` | done |
 | T2 | Hub: card fields, image storage, uploads/files/diagram routes, MachineClient.stream, archive handling | viewer/server.js, viewer/app/*.js, viewer/app/API.md, viewer/test/*.test.js, viewer/test/helpers/app-machine.js | gpt standard (gpt-6.1-terra) | wc-c56d4b2c5f5f-worker-2 | `node --test viewer/test/*.test.js` | in progress |
 | T3 | Thread page: form renderers, HTML and image cards, composer uploads; browser tests | viewer/pages/thread.*, new viewer/test/*.spec.js, browser test helpers | claude standard; after T1, T2 | — | `npm --prefix viewer run test:browser` | not started |
 | T4 | Protocol: cards.md diagram format, forms, image card; lead.md pointer | protocol/app/cards.md, protocol/app/lead.md | gpt standard (gpt-6.1-terra) | wc-c56d4b2c5f5f-worker-3 | grep, diff stat | done |
@@ -373,3 +373,6 @@ Clean round: approved.
 
 2026-11-15 Ready check at approval: hub and machine service answer; claude and codex installed; Codex preflight passes. Every reviewer start fell back from Claude to GPT ("Could not use claude"), so the review was single-family.
 - 2026-11-15 — T4 accepted: worker reported no choices; diff matches the brief.
+- 2026-11-15 — Choice: T1, machine/service.js archive: concurrent archive calls use a counted `closing` flag so one archive cannot reopen admission while another still runs.
+- 2026-11-15 — Choice: T1, machine/service.js GET /v1/uploads: non-image files get `content-disposition: attachment` with no filename.
+- 2026-11-15 — T1 accepted: machine suite 89/89 re-run by sub-lead. Viewer suite fails 2 tests (`a starter that loses the freed port registers through the new holder`, `an app page carries font-src self and the font route serves only the allowlist`) on the feature branch before any merge; not caused by this build.
