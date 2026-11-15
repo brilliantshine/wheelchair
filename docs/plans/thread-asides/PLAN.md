@@ -42,6 +42,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 11 | On touch screens the selection bar is fixed above the composer; with a mouse it floats just above the selection | Phone selection menus cover the area around the selection | defaulted |
 | 12 | Underline positions are offsets into the message's rendered text plus the quoted words; if the words are no longer at that place, the first exact match is used, and if none, the aside stays listed but unanchored | Rendering is deterministic, so rendered-text offsets are stable and avoid mapping back to Markdown source | defaulted |
 | 13 | An aside uses the lead's own account as well as its provider | A Claude conversation can only be resumed from the account folder that holds it (`machine/adapters/claude.js:26`) | defaulted |
+| 14 | Supersedes 7: "waiting on" is the oldest unanswered `question`, `needs` or `approval` card, the same rule as the Needs you list | A pending Start building or a blocker is also something the thread waits on | review-round-1 |
+| 15 | Supersedes 8 in part: an aside writes no files at all; a drawn graph comes back in its reply and the hub registers and saves it | A Codex aside runs read-only, and the viewer refuses unregistered graph writes (`viewer/server.js:1645`) | review-round-1 |
 
 ## Spec
 
@@ -85,7 +87,7 @@ asides; no other item type needs an id.
 
 The thread record gains `asides: []`, each:
 `{id, anchor: {message_id, start, end, quote}, action, created_at, session, provider,
-account, cli_id, slot, status, closed_at, outcome, sent_line}`.
+account, cli_id, slot, status, closed_at, outcome, sent_line, graph, notice}`.
 - `status`: `starting` | `open` | `closed`. `slot`: `standard` or `heavy`.
 - `outcome`: `null`, `done` or `changed`. `sent_line`: the line sent on `changed`.
 - `cli_id`: the aside's own conversation id (Claude session id, or the bound Codex thread
@@ -127,13 +129,38 @@ account, cli_id, slot, status, closed_at, outcome, sent_line}`.
   - Answer Collin about the quoted words, in his writing style (it reaches you as the
     lead's did, in the copied history, or a `[wc:style]` trailer).
   - `simpler`: restate the quoted words more plainly, shorter, no new terms.
-  - `draw`: write one graph following `<root>/protocol/graphs.md` in the cache root, at
-    `<cache-root>/<repo-key>/asides/<aside id>.json`, then reply with one sentence saying
-    what it shows. Skip graphs.md's steps for starting the viewer and printing a URL.
+  - `draw`: write no file. Reply with one sentence saying what the graph shows, then the
+    graph's JSON (the schema in `<root>/protocol/graphs.md`) in one fenced block whose
+    info string is `wc-graph`. Skip graphs.md's steps for files, the viewer and URLs.
   - **Stepping up:** if you are on the standard model and the question clearly needs
     deeper reasoning, reply with only `[wc:step-up] <one line why>` and nothing else.
   - **Changes my answer:** when asked for the summary line, reply with only that line:
     what Collin now wants the main thread to know, in his voice, one sentence.
+- **Saving a drawn graph (hub).** When an aside turn ends, the hub looks in its last reply
+  for a `wc-graph` block. If there is one, it registers
+  `<cache-root>/<repo-key>/asides/<aside id>.json` the way a `diagram` card is registered
+  (`hub.registerGraph`, as in `viewer/app/cards.js:50-55`), then saves the JSON through the
+  viewer's own validated graph write, never by writing the file directly. Only after the
+  save succeeds does the record get `graph: <path>`. A graph the write refuses leaves no
+  `graph`, and the panel shows "Couldn't draw that: <reason>". A later `wc-graph` block
+  replaces the graph.
+- **Conversation ids reach the hub.** The hub copies a session's `cli_session_id` and
+  `codex_thread_id` into its own session record from the machine's `/v1/sessions` listing
+  (which it already polls, `viewer/app/sessions.js:445-460`) and from each turn-ended event.
+  The machine includes `codex_thread_id` in each listed session (add it if absent). The
+  asides route reads the lead's id from the hub's record; an aside's `cli_id` is set the
+  same way once its own id is known.
+- **Before the first turn ends.** Until an aside's first turn has ended and its `cli_id` is
+  known, Think harder is disabled. Done or This changes my answer pressed in that window
+  marks the aside `closed` at once and the hub stops the session when that turn ends (or
+  at once if the session never became ready). An aside closed with no `cli_id` can't be
+  continued: reopening it shows its conversation, and typing starts a new fork for the same
+  anchor, replacing `session` and `cli_id` on the record.
+- **Kept out of the main thread.** The app's own notices about an aside session (stuck at
+  startup, permission needed, turn failed, sessions ended) are stored on the aside record
+  as `notice` and shown in its panel, never posted as thread cards
+  (`viewer/app/sessions.js:344-350` today posts them for any role). `/chat`'s `queued`
+  count counts only lead sessions' queues (`viewer/app/chat.js:229`).
 - **First message** the hub sends (after `[wc:role]` for Codex):
   `[wc:aside <action>] <aside id>\n\n> <quote>\n\n<Collin's text, if any>`.
 
@@ -142,22 +169,28 @@ account, cli_id, slot, status, closed_at, outcome, sent_line}`.
 - Desktop: a right-hand panel beside the chat, replacing the files column while open (the
   files list returns on close). Phone (≤899px): a full-screen sheet over the thread with a
   back control (Decision 6).
-- Top: "Aside", a close control, the quote, and the **waiting-on line**: the oldest open
-  `question` card ("Waiting on: your answer to <card question, shortened>") linking to that
-  card in the thread; with none, "The lead is working" if its last turn hasn't ended, else
-  "Nothing is waiting on you".
-- Body: only the aside's own turns: the transcript from the first `[wc:aside` human turn
-  onward, rendered with the same Markdown renderer and tool-step setting as the main chat.
+- Top: "Aside", a close control, the quote, and the **waiting-on line**: the oldest card
+  still waiting on Collin, using the same rule as the "Needs you" list
+  (`viewer/app/views.js:96-107`: an unanswered `question`, `needs` or `approval` card).
+  It reads "Waiting on: <the card's title or question, shortened>" ("Start building" for
+  an approval) and links to that card in the thread. With none, "The lead is working" if
+  its last turn hasn't ended, else "Nothing is waiting on you".
+- Body: only the aside's own turns. `chat.js` exports a function returning an aside's
+  items: it parses the transcript into turns as for the lead but without `renderTurn`'s
+  hiding of `[wc:role]` turns, drops every turn before the first whose human text contains
+  `[wc:aside `, and for that turn shows only the text after the quote (Collin's own words,
+  if any) plus its replies. This works whether the role prompt and the aside request arrive
+  as one turn (Codex) or the role prompt is a system prompt (Claude). Rendered with the same Markdown renderer and tool-step setting as the main chat.
   The copied lead history before it is never shown. A `[wc:step-up]` reply shows as one
-  muted line, "Thinking harder: <why>". A `draw` graph is embedded like a `diagram` card
-  (`viewer/pages/thread.js:161-165`) with `?path=` to the aside's graph file, once the file
-  exists.
+  muted line, "Thinking harder: <why>". Once the record has `graph`, the graph is embedded like a
+  `diagram` card (`viewer/pages/thread.js:161-165`) with `?path=` to that file, and the
+  `wc-graph` block itself is not shown as text. Notices on the record show as muted lines.
 - Input: "Ask more about this" and Send. Sending goes to `POST
   /threads/:id/asides/:aside/messages` and is queued to the aside session like any queue
   (`viewer/app/sessions.js:245-290`).
 - Footer: **Think harder** (hidden once on `heavy`), **Done, back to …** and **This changes
-  my answer**. "…" is the waiting-on target ("Done, back to Q6"), or "the thread" when
-  nothing is waiting.
+  my answer**. "…" is a short name for the waiting-on card ("Done, back to your question",
+  "Done, back to Start building"), or "the thread" when nothing is waiting.
 - The page polls `GET /threads/:id/asides/:aside` while the panel is open, at the same
   2-second rate as `/chat`.
 
@@ -259,9 +292,31 @@ bash machine/test/fork-probe.sh       # T1, by hand, real CLIs
 
 ### Round 1 — 2026-11-15
 
-**Lanes:** intent: pending; mechanics: pending; cross-family: pending.
+**Lanes:** intent: gpt; mechanics: gpt; cross-family: no (the hub could not start a Claude reviewer).
 
 **Changed since Round 0:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent (gpt) | blocking | Waiting-on line counts only question cards, so a pending approval or needs card shows "Nothing is waiting" | upheld | Checked `viewer/app/views.js:96-107`; waiting-on now uses the Needs you rule (Decision 14) |
+| mechanics (gpt) | blocking | Draw it never registers its graph, so writes and the iframe get 403 not-registered | upheld | Checked `protocol/graphs.md:488-500`, `viewer/app/cards.js:50-55`; the hub registers and saves the graph (Decision 15) |
+| mechanics (gpt) | major | A read-only Codex aside can't write the graph file | upheld | Graph returned in the reply instead (Decision 15) |
+| mechanics (gpt) | major | Late-bound Codex ids never reach the hub's records | upheld | Checked `machine/adapters/codex.js:11-20`; Spec now copies ids from the session listing and turn-ended events |
+| mechanics (gpt) | major | Close or Think harder before the first Codex turn ends leaves nothing to resume | upheld | Spec: Think harder waits for the id; early close stops at turn end; no-id reopen forks afresh |
+| mechanics (gpt) | major | Codex's combined `[wc:role]` turn is hidden by the parser, so the panel would be empty | upheld | Checked `viewer/app/chat.js:123`; aside items come from their own filter |
+| mechanics (gpt) | major | App notices and queue counts for aside sessions leak into the main thread | upheld | Checked `viewer/app/sessions.js:344-350`, `viewer/app/chat.js:229`; notices go to the aside record, `queued` counts leads only |
+
+### Round 2 — 2026-11-15
+
+**Lanes:** intent: pending; mechanics: pending.
+
+**Changed since Round 1:**
+- Waiting-on line uses the Needs you rule: question, needs and approval cards (§5, Decision 14).
+- Draw it: the aside writes no file; the graph comes back in a `wc-graph` block and the hub registers and saves it (§4, §5, Decision 15).
+- Conversation ids copied into the hub's records from the session listing and turn-ended events (§4).
+- Behaviour before an aside's first turn ends: Think harder disabled, early close, reopening with no id (§4).
+- The panel's own transcript filter, which works for Codex's combined first turn (§5).
+- Aside notices and queue counts kept out of the main thread (§4).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
