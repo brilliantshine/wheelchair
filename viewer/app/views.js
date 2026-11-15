@@ -27,19 +27,23 @@ async function features(hub) {
     done: [],
     needs: [],
   };
-  for (const thread of await hub.allThreads()) {
-    if (thread.stub || thread.archived) continue;
-    await findSlug(hub, thread);
-    if (!thread.slug) continue;
-    const status = await currentStatus(hub, thread);
-    const group = STATUS_GROUP[status] || 'idea';
-    output[group].push({
-      id: thread.id,
-      project: thread.project,
-      slug: thread.slug,
-      status,
+  for (const listedThread of await hub.allThreads()) {
+    await hub.withThread(listedThread.id, async () => {
+      const thread = await hub.thread(listedThread.id);
+      if (thread.archived) return;
+      addNeeds(output.needs, thread);
+      await findSlug(hub, thread);
+      if (thread.stub && !thread.sessions.length) return;
+      if (!thread.slug) return;
+      const status = await currentStatus(hub, thread);
+      const group = STATUS_GROUP[status] || 'idea';
+      output[group].push({
+        id: thread.id,
+        project: thread.project,
+        slug: thread.slug,
+        status,
+      });
     });
-    addNeeds(output.needs, thread);
   }
   return output;
 }
@@ -47,7 +51,7 @@ async function features(hub) {
 // A thread's worktree is a full checkout, so docs/plans/ already holds every earlier plan. The
 // thread's own plan is the one directory under docs/plans/ that this branch added or that is
 // still untracked there (Spec "Branches and checkouts": the plan is written on the thread's branch).
-async function newPlanDirectories(worktree) {
+async function newPlanDirectories(worktree, defaultBranch = 'main') {
   const names = new Set();
   const take = (output) => {
     for (const line of output.split('\n')) {
@@ -55,7 +59,7 @@ async function newPlanDirectories(worktree) {
       if (match) names.add(match[1]);
     }
   };
-  const base = await execFileAsync('git', ['-C', worktree, 'merge-base', 'HEAD', '@{upstream}'])
+  const base = await execFileAsync('git', ['-C', worktree, 'merge-base', 'HEAD', `origin/${defaultBranch}`])
     .then((result) => result.stdout.trim())
     .catch(() => execFileAsync('git', ['-C', worktree, 'rev-parse', 'HEAD']).then((result) => result.stdout.trim()))
     .catch(() => null);
@@ -70,7 +74,7 @@ async function newPlanDirectories(worktree) {
 
 async function findSlug(hub, thread) {
   if (thread.slug || !thread.worktree) return;
-  const names = await newPlanDirectories(thread.worktree);
+  const names = await newPlanDirectories(thread.worktree, thread.default_branch || 'main');
   if (names.length !== 1) return;
   thread.slug = names[0];
   await hub.save(thread);
@@ -116,10 +120,22 @@ async function sessions(hub) {
         reachable: true,
         last_seen: hub.machineSeen(machine),
         // Other tmux sessions on the machine arrive as { name, managed: false }: listed, read-only.
-        sessions: listed.map((item) => (item.managed === false ? { name: item.name, managed: false } : item)),
+        sessions: listed.map((item) => {
+          if (item.managed === false) return { name: item.name, managed: false };
+          const { token, ...publicItem } = item;
+          return publicItem;
+        }),
       });
     } catch {
-      groups.push({ machine, hub: isHub, reachable: false, last_seen: hub.machineSeen(machine), sessions: [] });
+      const recorded = (await hub.allThreads()).flatMap((thread) => (
+        (thread.machine === machine || (isHub && thread.machine === 'hub'))
+          ? thread.sessions.filter((session) => session.live).map((session) => {
+            const { token, ...publicSession } = session;
+            return { ...publicSession, state: 'unreachable' };
+          })
+          : []
+      ));
+      groups.push({ machine, hub: isHub, reachable: false, last_seen: hub.machineSeen(machine), sessions: recorded });
     }
   }
   return groups;

@@ -46,10 +46,12 @@ async function handle(hub, request, response, url, machineAuthenticated) {
 async function handleMachine(hub, request, response, bits, body, authenticated) {
   if (!authenticated) throw appError(401, 'machine secret required');
   if (bits[1] === 'cards' && request.method === 'POST') {
-    return send(response, 202, await hub.acceptCard(body));
+    const result = await hub.acceptCard(body);
+    return send(response, result.duplicate ? 200 : 202, result);
   }
   if (bits[1] === 'events' && request.method === 'POST') {
-    return send(response, 202, await hub.event(body));
+    const result = await hub.event(body);
+    return send(response, result.duplicate ? 200 : 202, result);
   }
   if (bits[1] === 'session' && request.method === 'POST') {
     return send(response, 200, await hub.sessionRequest(body));
@@ -60,7 +62,11 @@ async function handleMachine(hub, request, response, bits, body, authenticated) 
 async function handleThreads(hub, request, response, url, bits, body) {
   if (bits.length === 1 && request.method === 'GET') {
     const all = await hub.allThreads();
-    await Promise.all(all.map((thread) => findSlug(hub, thread)));
+    await Promise.all(all.map((thread) => hub.withThread(thread.id, async () => {
+      const current = await hub.thread(thread.id);
+      await findSlug(hub, current);
+      Object.assign(thread, current);
+    })));
     const threads = all.map((thread) => ({
       ...thread,
       sessions: thread.sessions.map(publicSession),
@@ -84,10 +90,12 @@ async function handleThreads(hub, request, response, url, bits, body) {
     return send(response, 200, await require('./threads.js').archivedGraph(hub, id, url.searchParams.get('file')));
   }
   if (request.method === 'POST' && bits[2] === 'messages') {
-    const thread = await hub.thread(id);
-    const lead = [...thread.sessions].reverse().find((item) => item.role === 'lead' && item.live);
-    if (!lead) throw appError(409, 'no live lead');
-    await hub.enqueue(thread, lead.name, String(body.text || ''), 'collin');
+    await hub.withThread(id, async () => {
+      const thread = await hub.thread(id);
+      const lead = [...thread.sessions].reverse().find((item) => item.role === 'lead' && item.live);
+      if (!lead) throw appError(409, 'no live lead');
+      await hub.enqueue(thread, lead.name, String(body.text || ''), 'collin');
+    });
     return send(response, 202, { queued: true });
   }
   if (request.method === 'POST' && bits[2] === 'cards' && bits[3] && bits[4] === 'press') {
@@ -125,12 +133,21 @@ async function handleSessions(hub, request, response, bits, body) {
       if (error.status === 404) throw appError(403, 'session is read-only');
       throw error;
     }
-    const result = await hub.call(
-      thread.machine,
-      `/v1/sessions/${encoded}/keys`,
-      'POST',
-      { keys: String(body.keys || '') },
-    );
+    const result = await hub.withThread(thread.id, async () => {
+      const current = await hub.thread(thread.id);
+      const sent = await hub.call(
+        current.machine,
+        `/v1/sessions/${encoded}/keys`,
+        'POST',
+        { keys: String(body.keys || '') },
+      );
+      if (String(body.keys || '') === 'Enter' || String(body.keys || '') === 'C-m') {
+        const target = hub.session(current, bits[1]);
+        target.turn_ended = false;
+        await hub.save(current);
+      }
+      return sent;
+    });
     return send(response, 200, result);
   }
   throw appError(404, 'route not found');

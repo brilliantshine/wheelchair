@@ -305,8 +305,8 @@ whose purpose is gone.
 Follow the diagram-sensitivity dial in your global instructions. When an answer earns a
 picture, write the graph with `<root>/protocol/graphs.md`: its schema, where graph files
 live (`docs/plans/<slug>/graphs/`) and its rules for filling the explanation. Skip its
-steps for starting the viewer and printing a URL: the thread shows the graph through a
-`diagram` card, so post that card instead. A thread with no plan directory yet has no
+steps for starting the viewer and printing a URL: posting the `diagram` card registers
+the plan for the thread viewer, so no separate registration is needed. A thread with no
 graph home; use prose.
 
 Documents have their own rule: PLAN.md's Spec gets a Mermaid diagram when it is approved

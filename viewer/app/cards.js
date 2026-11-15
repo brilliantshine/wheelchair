@@ -28,29 +28,58 @@ function addCard(thread, card, meta = {}) {
 }
 
 async function acceptCard(hub, payload) {
-  const thread = await hub.thread(payload.thread_id);
-  const session = hub.session(thread, payload.session);
-  if (thread.archived) throw appError(409, 'thread is archived');
-
-  const { session: ignoredSession, thread_id: ignoredThread, ...input } = payload;
-  const checked = validate(payload.kind, input, session.role);
-  if (!checked.ok) throw appError(422, checked.reason);
-
-  const card = addCard(thread, checked.card, { session: session.name });
-  if (card.kind === 'message') {
-    const target = hub.session(thread, card.to);
-    await hub.enqueue(thread, target.name, `[wc:from ${session.name}] ${card.text}`, 'session');
-  }
-  if (card.kind === 'result') {
-    session.finished = true;
-    if (session.started_by) {
-      const text = `[wc:from ${session.name}] result: ${card.summary}`;
-      await hub.enqueue(thread, session.started_by, text, 'result');
+  let createdStub = null;
+  const result = await hub.updateThread(payload.thread_id, async (thread) => {
+    const session = hub.session(thread, payload.session);
+    if (thread.archived) throw appError(409, 'thread is archived');
+    thread.delivered_ids ||= [];
+    if (payload.delivery_id && thread.delivered_ids.includes(payload.delivery_id)) {
+      return { ok: true, duplicate: true };
     }
+    const { session: ignoredSession, thread_id: ignoredThread, delivery_id: ignoredDelivery, ...input } = payload;
+    const checked = validate(payload.kind, input, session.role);
+    if (!checked.ok) throw appError(422, checked.reason);
+
+    // A diagram iframe must never observe its card before its plan is registered.
+    if (checked.card.kind === 'diagram' && hub.registerPlan) {
+      const plan = require('node:path').join(thread.worktree || thread.project, 'docs', 'plans', checked.card.plan);
+      await hub.registerPlan(plan);
+    }
+
+    const card = addCard(thread, checked.card, { session: session.name });
+    if (card.kind === 'message') {
+      const target = hub.session(thread, card.to);
+      target.queue ||= [];
+      const message = { text: `[wc:from ${session.name}] ${card.text}`, source: 'session', at: new Date().toISOString() };
+      target.queue.push(message);
+      thread.queues[target.name] = target.queue;
+    }
+    if (card.kind === 'result') {
+      session.finished = true;
+      if (session.started_by) {
+        const target = hub.session(thread, session.started_by);
+        target.queue ||= [];
+        target.queue.push({ text: `[wc:from ${session.name}] result: ${card.summary}`, source: 'result', at: new Date().toISOString() });
+        thread.queues[target.name] = target.queue;
+      }
+    }
+    if (card.kind === 'stub') createdStub = { parent: thread, card };
+    if (payload.delivery_id) thread.delivered_ids = [...thread.delivered_ids, payload.delivery_id].slice(-500);
+    return card;
+  });
+  if (result.duplicate) return result;
+  if (createdStub) {
+    const child = await hub.createStub(createdStub.parent, createdStub.card);
+    await hub.updateThread(payload.thread_id, async (thread) => {
+      const card = thread.cards.find((item) => item.id === result.id);
+      if (card) card.thread_id = child.id;
+    });
+    result.thread_id = child.id;
   }
-  if (card.kind === 'stub') await hub.createStub(thread, card);
-  await hub.save(thread);
-  return card;
+  const thread = await hub.thread(payload.thread_id);
+  const targetName = result.kind === 'message' ? result.to : result.kind === 'result' ? thread.sessions.find((item) => item.name === payload.session)?.started_by : null;
+  if (targetName) await hub.deliver(thread, targetName);
+  return result;
 }
 
 module.exports = { SINGLETONS, addCard, acceptCard };

@@ -157,8 +157,7 @@ function transcriptItems(cli, raw, thread) {
     const content = payload.type === 'message' ? payload.content : row.message?.content;
     const text = unwrap(textOf(content));
     const turnContext = row.type === 'turn_context' || payload.type === 'turn_context';
-    const started = row.type === 'event_msg' && payload.type === 'task_started';
-    if (cli === 'codex' && (started || turnContext)) {
+    if (cli === 'codex' && turnContext) {
       codexTurn = true;
       continue;
     }

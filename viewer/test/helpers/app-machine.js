@@ -30,6 +30,9 @@ async function startMachine(secret = 'machine-test-secret') {
     codex: { installed: true, logged_in: true },
   };
   let preflightOk = true;
+  let submitOk = true;
+  let archiveKept = [];
+  let sessionsAvailable = true;
   const server = http.createServer(async (request, response) => {
     if (request.headers['x-wheelchair-machine-secret'] !== secret) {
       return send(response, 401, { error: 'machine secret required' });
@@ -42,10 +45,11 @@ async function startMachine(secret = 'machine-test-secret') {
       return startSession(response, sessions, input);
     }
     if (request.method === 'GET' && url.pathname === '/v1/sessions') {
+      if (!sessionsAvailable) return send(response, 503, { error: 'machine unavailable' });
       return send(response, 200, [...sessions.values(), UNMANAGED]);
     }
     if (request.method === 'POST' && /\/submit$/.test(url.pathname)) {
-      return submit(response, sessions, url, input);
+      return submit(response, sessions, url, input, submitOk);
     }
     if (request.method === 'POST' && /\/keys$/.test(url.pathname)) {
       return send(response, 200, { ok: true });
@@ -63,7 +67,7 @@ async function startMachine(secret = 'machine-test-secret') {
       return stopSession(response, sessions, url);
     }
     if (request.method === 'POST' && url.pathname === '/v1/archive') {
-      return archive(response, sessions, input.thread_id);
+      return archive(response, sessions, input.thread_id, archiveKept);
     }
     if (request.method === 'GET' && url.pathname === '/v1/status') {
       return send(response, 200, { ...status, sessions: [...sessions.values(), UNMANAGED] });
@@ -85,6 +89,12 @@ async function startMachine(secret = 'machine-test-secret') {
     status,
     get preflightOk() { return preflightOk; },
     set preflightOk(value) { preflightOk = Boolean(value); },
+    get submitOk() { return submitOk; },
+    set submitOk(value) { submitOk = Boolean(value); },
+    get archiveKept() { return archiveKept; },
+    set archiveKept(value) { archiveKept = Array.isArray(value) ? value : []; },
+    get sessionsAvailable() { return sessionsAvailable; },
+    set sessionsAvailable(value) { sessionsAvailable = Boolean(value); },
     async stop() {
       await new Promise((resolve) => server.close(resolve));
     },
@@ -97,12 +107,14 @@ function startSession(response, sessions, input) {
     status: 'ready',
     running: true,
     worktree: input.worktree || `/tmp/${input.name}`,
+    default_branch: input.default_branch || 'main',
   };
   sessions.set(input.name, session);
   return send(response, 201, session);
 }
 
-function submit(response, sessions, url, input) {
+function submit(response, sessions, url, input, submitOk) {
+  if (!submitOk) return send(response, 503, { error: 'temporarily unavailable' });
   const name = decodeURIComponent(url.pathname.split('/')[3]);
   const session = sessions.get(name);
   session.submits ||= [];
@@ -120,7 +132,7 @@ function stopSession(response, sessions, url) {
   return send(response, 200, { ok: true });
 }
 
-function archive(response, sessions, threadId) {
+function archive(response, sessions, threadId, kept) {
   const stopped = [...sessions.values()]
     .filter((session) => session.thread_id === threadId)
     .map((session) => {
@@ -132,7 +144,7 @@ function archive(response, sessions, threadId) {
     stopped,
     committed: [],
     removed: stopped.map((name) => `/tmp/${name}`),
-    kept: [],
+    kept,
   });
 }
 

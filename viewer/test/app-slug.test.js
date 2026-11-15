@@ -27,7 +27,7 @@ async function repoWithOldPlans() {
   const branch = git(work, 'rev-parse', '--abbrev-ref', 'HEAD').trim();
   git(work, 'push', '-q', 'origin', branch);
   git(work, 'checkout', '-q', '-b', 'wc/t1', '--track', `origin/${branch}`);
-  return { root, work };
+  return { root, work, branch };
 }
 
 test('an untracked new plan directory is the thread plan, not an existing one', async () => {
@@ -47,6 +47,20 @@ test('a plan directory committed on the thread branch is found against its upstr
     git(work, 'add', '.'); git(work, 'commit', '-q', '-m', 'idea');
     assert.deepEqual(await newPlanDirectories(work), ['new-thing']);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('finds a committed plan on a no-track worktree branch against origin/default', async () => {
+  const { root, work, branch } = await repoWithOldPlans();
+  const noTrack = path.join(root, 'no-track');
+  try {
+    git(work, 'worktree', 'add', '--no-track', '-b', 'wc/no-track', noTrack, `origin/${branch}`);
+    await fs.mkdir(path.join(noTrack, 'docs', 'plans', 'no-track-plan'), { recursive: true });
+    await fs.writeFile(path.join(noTrack, 'docs', 'plans', 'no-track-plan', 'IDEA.md'), 'idea\n');
+    git(noTrack, 'add', '.'); git(noTrack, 'commit', '-q', '-m', 'no-track plan');
+    const thread = { worktree: noTrack, default_branch: branch };
+    await findSlug({ save: async () => {} }, thread);
+    assert.equal(thread.slug, 'no-track-plan');
+  } finally { /* temp repositories are intentionally left for the test runner to reclaim */ }
 });
 
 test('finding the slug registers the plan directory once', async () => {

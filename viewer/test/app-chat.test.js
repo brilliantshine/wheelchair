@@ -136,6 +136,16 @@ test('ignores Codex injected entries before turn_context', () => {
   ]);
 });
 
+test('does not let Codex task_started open a human turn before turn_context', () => {
+  const transcript = lines([
+    { type: 'event_msg', payload: { type: 'task_started' } },
+    { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Injected before context.' }] } },
+    { type: 'turn_context', payload: {} },
+    { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Actual human turn.' }] } },
+  ]);
+  assert.deepEqual(transcriptItems('codex', transcript, {}).map((item) => item.text), ['Actual human turn.']);
+});
+
 test('collapses a Codex function call to one chat item', () => {
   const transcript = lines([
     { type: 'turn_context', payload: {} },

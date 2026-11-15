@@ -5,6 +5,8 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const os = require('node:os');
+const { execFileSync } = require('node:child_process');
 const test = require('node:test');
 const { Hub } = require('../app/hub.js');
 const { State } = require('../app/state.js');
@@ -49,4 +51,35 @@ test('wc.js passes worktree-remove through with the worker session, and requires
   assert.equal(gitRequest('commit', ['--paths', 'a.txt', '-m', 'msg']).body.message, 'msg');
   assert.throws(() => gitRequest('commit', ['--paths', 'a.txt']), /message/);
   assert.throws(() => gitRequest('rebase', []), /unsupported/);
+});
+
+test('wc.js preserves git flags and the worker replacement option', () => {
+  const { gitRequest, sessionRequest } = require('../app/wc.js');
+  assert.deepEqual(gitRequest('pr', ['--title', 'X', '--body', 'b', '--base', 'main']).body.args,
+    ['--title', 'X', '--body', 'b', '--base', 'main']);
+  assert.deepEqual(gitRequest('merge', ['--no-ff', 'wc-branch']).body.args, ['--no-ff', 'wc-branch']);
+  assert.deepEqual(gitRequest('commit', ['--paths', 'a,b', '-m', 'msg']).body, {
+    operation: 'commit', args: [], paths: ['a', 'b'], message: 'msg',
+  });
+  assert.deepEqual(gitRequest('pr', ['--title', 'X', '--body', 'Y', '--base', 'main']).body.args,
+    ['--title', 'X', '--body', 'Y', '--base', 'main']);
+  const oldRead = require('node:fs').readFileSync;
+  require('node:fs').readFileSync = () => 'brief';
+  try {
+    assert.equal(sessionRequest('start', ['--role', 'worker', '--cli', 'codex', '--brief-file', 'x', '--attempt', 'again', '--replaces', 'wc-old']).body.replaces, 'wc-old');
+  } finally { require('node:fs').readFileSync = oldRead; }
+});
+
+test('a hub keeps the version captured at construction after its clone advances', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'hub-version-'));
+  const git = (...args) => execFileSync('git', ['-C', root, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args]);
+  git('init', '-q');
+  await fs.writeFile(path.join(root, 'version.txt'), 'A\n');
+  git('add', '.'); git('commit', '-q', '-m', 'A');
+  const versionA = git('rev-parse', 'HEAD').toString().trim();
+  const hub = new Hub({ stateDir: await makeDir('hub-version-state-'), root });
+  await fs.writeFile(path.join(root, 'version.txt'), 'B\n');
+  git('add', '.'); git('commit', '-q', '-m', 'B');
+  const { outOfDate } = require('../app/ready.js');
+  assert.equal(await outOfDate(hub, { version: versionA }), false);
 });
