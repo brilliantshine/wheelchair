@@ -219,8 +219,8 @@ a rerun with nothing left to change writes byte-identical output and prints noth
 
 Before any of that, it refuses with exit 3, reading nothing and writing nothing, when it runs
 from a checkout that is not the canonical clone: a linked git worktree, or anything under
-`~/.local/state/wheelchair/worktrees`. The check is `install/guard.sh`, which this script shares with `install.sh`
-and `sensitivity/set.sh` share; `WHEELCHAIR_ALLOW_WORKTREE=1` forces it.
+`~/.local/state/wheelchair/worktrees`. The check is `install/guard.sh`, which this script
+shares with `install.sh` and `sensitivity/set.sh`; `WHEELCHAIR_ALLOW_WORKTREE=1` forces it.
 
 ## Test seams
 
