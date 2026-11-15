@@ -47,6 +47,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D3 | The hub picks provider and account for every session. Agents ask for role and tier only; a reviewer or verifier may ask for "not the same provider as <session or provider>", which the hub honours. `--cli` stops being a choice | Provider order, Save Claude for leads and the margin only hold if agents can't route around them | user |
 | D4 | Leads and sub-leads run on Claude (the Claude lead model) while any Claude account has room; when none has, on GPT's lead model instead of waiting. The Leads panel keeps both models; the thread CLI picker goes away | Never stall a new thread; Claude stays the first choice | user |
 | D5 | The hub owns the account list (id, provider, name, plan, nodes). Each account's login folder is at a fixed path on every machine, `~/.wheelchair/accounts/<id>/`, sent in the start request; each machine service reports per-account login state in `/v1/status`. Today's default login becomes an account called "default" pointing at the CLI's usual folder, so nothing changes until a second account is added | Settings already live on the hub; a fixed path makes the folder a node fact without a per-node list | defaulted |
+| D6 | Supersedes D4. The Leads panel gets a provider order for new leads, set by Collin (e.g. "Claude > GPT", or "Claude, then whatever's left"). A thread keeps the provider its lead started on: a running lead never switches, and a restarted lead or a sub-lead in that thread waits for that provider to have room | Collin: switching mid-feature is worse than waiting; the order applies only to new leads | user |
 
 ## Spec
 
@@ -67,11 +68,17 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 - `protocol/app/lead.md:47` and `protocol/app/sub-lead.md:73` change to match: cross-family
   rules are expressed with the new flags.
 
-### Leads (D4)
-- Lead and sub-lead: provider Claude if any Claude account has room after the leave-for-you
-  share; else GPT. Model from the Leads panel for that provider. The new-thread CLI picker
-  is removed (`viewer/app/threads.js:46`, `58`); the lead's provider is chosen at each
-  start, so a restarted lead may land on a different provider than the one before.
+### Leads (D6, supersedes D4)
+- Settings, Leads panel: an ordered provider list for new leads, plus "then whatever's
+  left" as a final entry option. Stored in hub `settings.json` (`lead_order`). Default:
+  `[claude, any]`. Each provider keeps its own lead model (`viewer/pages/settings.js:265-270`).
+- A new thread's lead: first provider in the order with an account that has room (after
+  the leave-for-you share). The new-thread CLI picker is removed
+  (`viewer/app/threads.js:46`, `58`). The chosen provider is recorded on the thread.
+- After that the thread is pinned to that provider: a restarted lead and the sub-lead use
+  it (any of its accounts), and if none has room they wait rather than switch. The thread
+  shows that it is waiting and until when.
+- If no provider in the order has room, a new lead waits.
 
 ### Accounts (D5)
 - Hub `settings.json` gains `accounts: [{id, provider, name, plan, paused}]`
