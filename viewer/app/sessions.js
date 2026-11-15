@@ -287,10 +287,10 @@ async function event(hub, payload) {
   const target = session(thread, payload.session);
   const deliveryTargets = new Set();
   const type = payload.type;
-  if (type === 'usage') {
+  if (payload.reading) {
     await usage.record(hub, { ...payload.reading, machine: thread.machine });
   }
-  const limit = type === 'limit-hit' ? payload.limited_until : type === 'usage' ? payload.reading?.limited_until : null;
+  const limit = type === 'limit-hit' ? payload.limited_until : payload.reading?.limited_until;
   if (limit && Date.parse(limit) > Date.now()) {
     const readings = await usage.readings(hub);
     const prior = readings[target.account] || { account: target.account, machine: thread.machine, five_hour: null, week: null };

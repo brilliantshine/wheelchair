@@ -276,12 +276,13 @@ test('limited verifier reports only after release and continuation', async () =>
     const thread = (await api(c, '/threads', { method: 'POST', body: { project: '/tmp/limited-verifier' } })).body;
     const verifier = (await machinePost(c, '/machine/session', { calling_session: thread.sessions[0].name, action: 'start', role: 'verifier', attempt_id: 'limited-verifier' })).body.session;
     const future = new Date(Date.now() + 3600000).toISOString();
-    await event(c, thread.id, verifier.name, 'usage', { reading: { account: verifier.account, at: new Date().toISOString(), limited_until: future } });
-    await event(c, thread.id, verifier.name, 'turn-ended', { 'last-assistant-message': 'Partial report' });
+    await event(c, thread.id, verifier.name, 'turn-ended', { reading: { account: verifier.account, at: new Date().toISOString(), limited_until: future }, 'last-assistant-message': 'Partial report' });
     const hub = new Hub({ stateDir: c.state });
     let stored = await hub.thread(thread.id);
     assert.equal(stored.sessions.find(s => s.name === verifier.name).finished, undefined);
     assert.equal(stored.cards.filter(card => card.kind === 'result').length, 0);
+    const usage = require('../app/usage.js');
+    assert.equal(usage.hasRoom({ paused: false }, (await usage.readings(hub))[verifier.account], { loggedIn: true }), false);
     stored.sessions.find(s => s.name === verifier.name).limited_until = new Date(Date.now() - 1000).toISOString();
     await hub.save(stored); await releaseLimits(hub);
     assert.ok(c.machine.sessions.get(verifier.name).submits.includes('Continue.'));
