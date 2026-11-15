@@ -1,6 +1,6 @@
 ---
 slug: app-diagrams-uploads
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-15
 adopted-from: docs/proposals/app-diagrams-uploads/proposal.md
 ---
@@ -39,7 +39,27 @@ None.
 
 ## Spec
 
-Three parts: new diagram forms, images the lead shows, and Collin's uploads. "Machine"
+Three parts: new diagram forms, images the lead shows, and Collin's uploads.
+
+```mermaid
+flowchart TD
+  subgraph Pictures
+    L1[lead posts a diagram card] --> F{which format?}
+    F -- graph --> G[existing boxes-and-arrows page in a frame]
+    F -- form --> J[page reads the file unchanged and draws it; one column on a phone]
+    F -- html --> H[static page in an empty sandbox; nothing loads from the network]
+    L2[lead posts an image card] --> C[machine copies it into the thread's uploads folder]
+    C --> I[page shows it through the app]
+  end
+  subgraph Uploads
+    U[Collin pastes, drops or attaches] --> Z{over 25 MB?}
+    Z -- yes --> X[refused before sending]
+    Z -- no --> M[app streams it to the lead's machine, which stores it]
+    M --> P[message reaches the lead with an attached path]
+  end
+  A[thread archived] --> K[cancel uploads in flight, then delete the uploads folder]
+  K -- removal fails --> O[thread stays open with a card saying so]
+``` "Machine"
 means the machine service (`machine/service.js`) on the machine named by `thread.machine`;
 "hub" means the app server (`viewer/server.js` + `viewer/app/`). `<state>` is the
 machine's state root, `~/.local/state/wheelchair` by default (`machine/service.js:24`).
@@ -321,7 +341,7 @@ New tests, at least:
 
 ### Round 4 — 2026-11-15
 
-**Lanes:** intent; mechanics.
+**Lanes:** intent (gpt); mechanics (gpt); cross-family: no.
 
 **Changed since Round 3:**
 - Archive sets a per-thread `closing` flag and cancels in-flight uploads before taking the lock; uploads check it per chunk; hub-level test.
@@ -329,6 +349,10 @@ New tests, at least:
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent (gpt) | — | No findings | — | — |
+| mechanics (gpt) | — | No findings | — | — |
+
+Clean round: approved.
 
 ## Prior Work
 
