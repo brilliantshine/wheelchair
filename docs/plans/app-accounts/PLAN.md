@@ -12,15 +12,6 @@ get buried as this file grows. **Map:** `MAP.md`.
 
 ## Open Questions
 
-### Q3: Leads on Claude only, against the shipped Leads panel
-- **Context:** Settings lets each provider have a lead model
-  (`viewer/pages/settings.js:265-270`); the proposal says leads run on Claude Opus only and
-  wait when Claude is out.
-- **Recommendation:** to decide with Collin.
-
-### Q4: Where the account list lives, hub or each machine
-- **Context:** Login folders are machine-local; the hub holds settings (MAP.md, "Accounts").
-
 ### Q5: How signing in works from the app
 - **Context:** Nothing runs `claude auth login` / `codex login`; the mock's Sign in button
   has no code path.
@@ -54,6 +45,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D1 | Defaults: within a provider, soonest refill first; notify below 25% once per provider per week; leave 10% per account; Claude margin 5% | The proposal's own numbers | defaulted |
 | D2 | Build several accounts, usage and balancing for Claude and Codex only. Google, OpenRouter and pay-as-you-go keys move to Not doing; the adapter is shaped so each new CLI is one later thread | Gemini CLI no longer serves Google subscriptions; a third CLI touches ~40 places; most value is on the two CLIs in use | idea-change |
 | D3 | The hub picks provider and account for every session. Agents ask for role and tier only; a reviewer or verifier may ask for "not the same provider as <session or provider>", which the hub honours. `--cli` stops being a choice | Provider order, Save Claude for leads and the margin only hold if agents can't route around them | user |
+| D4 | Leads and sub-leads run on Claude (the Claude lead model) while any Claude account has room; when none has, on GPT's lead model instead of waiting. The Leads panel keeps both models; the thread CLI picker goes away | Never stall a new thread; Claude stays the first choice | user |
+| D5 | The hub owns the account list (id, provider, name, plan, nodes). Each account's login folder is at a fixed path on every machine, `~/.wheelchair/accounts/<id>/`, sent in the start request; each machine service reports per-account login state in `/v1/status`. Today's default login becomes an account called "default" pointing at the CLI's usual folder, so nothing changes until a second account is added | Settings already live on the hub; a fixed path makes the folder a node fact without a per-node list | defaulted |
 
 ## Spec
 
@@ -73,6 +66,27 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
   refused with the reason, or waits (see open questions).
 - `protocol/app/lead.md:47` and `protocol/app/sub-lead.md:73` change to match: cross-family
   rules are expressed with the new flags.
+
+### Leads (D4)
+- Lead and sub-lead: provider Claude if any Claude account has room after the leave-for-you
+  share; else GPT. Model from the Leads panel for that provider. The new-thread CLI picker
+  is removed (`viewer/app/threads.js:46`, `58`); the lead's provider is chosen at each
+  start, so a restarted lead may land on a different provider than the one before.
+
+### Accounts (D5)
+- Hub `settings.json` gains `accounts: [{id, provider, name, plan, paused}]`
+  (`viewer/app/settings.js` `defaults()` and `normalize()`, or it is dropped:
+  `settings.js:150-161`).
+- Login folder on every machine: `~/.wheelchair/accounts/<id>/`, except the built-in
+  `default` account of each provider, which uses the CLI's usual folder (no env set), so
+  today's single-login setup behaves exactly as now.
+- Start request gains `account: {id, dir}`; the service sets `CLAUDE_CONFIG_DIR` or
+  `CODEX_HOME` in the env prefix (`machine/service.js:307`) and looks for that session's
+  transcript in that folder (`service.js:538`, `610-611`, `622-638`). Both changes ship
+  together (MAP.md, "Accounts").
+- `/v1/status` reports, per account folder present on that machine, `{id, logged_in}`; the
+  Ready check passes for a provider when at least one of its accounts is logged in on the
+  thread's machine (`viewer/app/ready.js:26-54`).
 
 ## Accepted Risks
 
