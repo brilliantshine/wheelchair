@@ -418,6 +418,112 @@ for (const [label, size] of SIZES) {
       }
     });
 
+    test('S1: a thread created with a message is titled from it in the list', async ({ page }) => {
+      await ctx.make({ cli: 'claude', message: 'Add a dark mode to the settings page' });
+      await page.goto(`${ctx.server.url}/app/threads`);
+      await expect(page.locator('#list li .title')).toHaveText(['Add a dark mode to the settings page']);
+      await expect(page.locator('#list li .title')).not.toHaveText('project');
+    });
+
+    const QUESTION = {
+      kind: 'question', fits: 'Fits the idea.', question: 'Is IDEA.md right?', why: 'Simplest.',
+      options: [{ id: 'a', label: 'Yes, that is it', consequence: 'Plan next.' },
+                { id: 'b', label: 'Not quite', consequence: 'Revise it.' }],
+      leaning: 'a',
+    };
+
+    test('S2: a question with doc links to the in-app page; one without has no link', async ({ page }) => {
+      const made = await ctx.make({ cli: 'claude' });
+      await ctx.patch(made.id, (x) => { x.slug = 'dark'; x.worktree = '/tmp/wt-dark'; });
+      const withDoc = await ctx.post(made.id, { ...QUESTION, doc: 'IDEA.md' });
+      const without = await ctx.post(made.id, { ...QUESTION, question: 'Another one?' });
+      await open(page, made.id);
+      const link = page.locator(`#card-${withDoc.id} a`, { hasText: 'Open IDEA.md' });
+      await expect(link).toHaveAttribute('href', `/wheelchair/app/doc?thread=${made.id}&file=IDEA.md`);
+      await expect(page.locator(`#card-${without.id}`)).toContainText('Another one?');
+      await expect(page.locator(`#card-${without.id} a`)).toHaveCount(0);
+    });
+
+    test('S2: the link appears when the slug becomes known, without a reload', async ({ page }) => {
+      const made = await ctx.make({ cli: 'claude' });
+      const q = await ctx.post(made.id, { ...QUESTION, doc: 'IDEA.md' });
+      await open(page, made.id);
+      await expect(page.locator(`#card-${q.id}`)).toContainText('Is IDEA.md right?');
+      await expect(page.locator(`#card-${q.id} a`)).toHaveCount(0);
+      await ctx.patch(made.id, (x) => { x.slug = 'dark'; x.worktree = '/tmp/wt-dark'; });
+      await expect(page.locator(`#card-${q.id} a`, { hasText: 'Open IDEA.md' })).toHaveAttribute(
+        'href', `/wheelchair/app/doc?thread=${made.id}&file=IDEA.md`);
+    });
+
+    test('S4: pressing an option says what was picked and marks it', async ({ page }) => {
+      const made = await ctx.make({ cli: 'claude' });
+      const q = await ctx.post(made.id, QUESTION);
+      await open(page, made.id);
+      const card = page.locator(`#card-${q.id}`);
+      await card.locator('button.opt', { hasText: 'Not quite' }).click();
+      await expect(card.locator('.answered-tag')).toHaveText(/You picked Not quite/);
+      await expect(card.locator('.answered-tag')).not.toContainText('Answered');
+      await expect(card.locator('button.opt.picked')).toHaveCount(1);
+      await expect(card.locator('button.opt.picked')).toContainText('Not quite');
+      await expect(card.locator('button.opt.picked svg')).toHaveCount(1);
+      await expect(card.locator('button.opt:not(.picked) svg')).toHaveCount(0);
+      await expect(card.locator('button.opt').first()).toBeDisabled();
+    });
+
+    test('S4: an answered card with no stored value keeps the generic tag; an unmatched value is shown bare', async ({ page }) => {
+      const made = await ctx.make({ cli: 'claude' });
+      const old = await ctx.post(made.id, QUESTION);
+      const odd = await ctx.post(made.id, { ...QUESTION, question: 'Odd one?' });
+      await ctx.patch(made.id, (x) => {
+        x.cards.find((c) => c.id === old.id).answered = true;
+        const c = x.cards.find((c) => c.id === odd.id);
+        c.answered = true; c.answered_action = 'picked'; c.answered_value = 'something else';
+      });
+      await open(page, made.id);
+      await expect(page.locator(`#card-${old.id} .answered-tag`)).toHaveText(/Answered/);
+      await expect(page.locator(`#card-${odd.id} .answered-tag`)).toHaveText(/You picked something else/);
+      await expect(page.locator(`#card-${odd.id} button.opt.picked`)).toHaveCount(0);
+    });
+
+    test('S4: a question the lead resolved shows Answered in chat and the note, dimmed', async ({ page }) => {
+      const made = await ctx.make({ cli: 'claude' });
+      const q = await ctx.post(made.id, QUESTION);
+      await ctx.post(made.id, { kind: 'resolve', card: q.id, note: 'He wants the dark one.' });
+      await open(page, made.id);
+      const card = page.locator(`#card-${q.id}`);
+      await expect(card.locator('.answered-tag')).toContainText('Answered in chat');
+      await expect(card.locator('.answered-tag')).toContainText('He wants the dark one.');
+      await expect(card.locator('button.opt').first()).toBeDisabled();
+      await expect(card.locator('button.opt.picked')).toHaveCount(0);
+      expect(await card.evaluate((n) => Number(getComputedStyle(n).opacity))).toBeLessThan(1);
+    });
+
+    test('S5: the offer has two buttons; Keep talking first presses its value and says so', async ({ page }) => {
+      const made = await ctx.make({ cli: 'claude' });
+      const off = await ctx.post(made.id, { kind: 'offer', summary: 'You want dark mode.' });
+      await open(page, made.id);
+      const card = page.locator('#pinned .card-offer');
+      await expect(card.getByRole('button', { name: 'Take it into planning' })).toBeEnabled();
+      const keep = card.getByRole('button', { name: 'Keep talking first' });
+      const req = page.waitForRequest((r) => r.url().endsWith(`/cards/${off.id}/press`));
+      await keep.click();
+      expect((await req).postDataJSON()).toEqual({ action: 'picked', value: 'keep talking first' });
+      await expect(card.locator('.answered-tag')).toHaveText(/You picked Keep talking first/);
+      await expect(card.getByRole('button', { name: 'Take it into planning' })).toBeDisabled();
+      await expect(card.getByRole('button', { name: 'Keep talking first' })).toBeDisabled();
+      await expect(card.locator('button.picked')).toHaveText(/Keep talking first/);
+    });
+
+    test('S4: a pressed offer marks Take it into planning', async ({ page }) => {
+      const made = await ctx.make({ cli: 'claude' });
+      await ctx.post(made.id, { kind: 'offer', summary: 'You want dark mode.' });
+      await open(page, made.id);
+      const card = page.locator('#pinned .card-offer');
+      await card.getByRole('button', { name: 'Take it into planning' }).click();
+      await expect(card.locator('.answered-tag')).toHaveText(/You picked Take it into planning/);
+      await expect(card.locator('button.picked')).toHaveText(/Take it into planning/);
+    });
+
     test('plan document links open the in-app document page', async ({ page }) => {
       const made = await ctx.make({ cli: 'claude' });
       await ctx.patch(made.id, (x) => { x.slug = 'dark'; x.worktree = '/tmp/wt-dark'; });

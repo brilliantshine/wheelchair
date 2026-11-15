@@ -114,6 +114,10 @@
 .opt.lean { border-color: var(--accent); background: var(--accent-soft); }
 .lean-tag { font-weight: 400; color: var(--accent-hi); margin-left: 6px; }
 .card-needs.is-answered { opacity: 0.6; border-color: var(--line); }
+.card-question.is-resolved { opacity: 0.6; }
+.doc-link { display: inline-block; margin-top: 8px; font-size: 13px; }
+.opt.picked { border-color: var(--good-line); background: var(--good-soft); }
+button.picked { border-color: var(--good-line); }
 .card-needs.is-answered .eyebrow { color: var(--dim); }
 .answered-tag { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; padding: 5px 10px; border-radius: 999px;
   background: var(--good-soft); color: var(--good-text); font-size: 12px; }
