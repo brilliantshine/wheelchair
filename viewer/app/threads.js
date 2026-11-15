@@ -4,7 +4,6 @@
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const crypto = require('node:crypto');
-const path = require('node:path');
 const { appError } = require('./state.js');
 const { truncateTitle } = require('./card.js');
 const { publicSession, startSession } = require('./sessions.js');
@@ -21,7 +20,7 @@ function newId() {
 function emptyThread(input) {
   return {
     id: newId(),
-    project: path.resolve(input.project),
+    project: input.project,
     cli: input.cli,
     machine: input.machine || 'hub',
     stub: false,
@@ -39,6 +38,22 @@ function emptyThread(input) {
   };
 }
 
+// Spec "Hub", Starting a thread: ask the machine itself whether `project` is a git repository
+// there. The machine expands `~`; a missing answer is a 502, an older service a 502 too.
+async function checkProject(hub, machine, project) {
+  await hub.state.machine(machine);
+  let result;
+  try {
+    result = await hub.call(machine, `/v1/projects?check=${encodeURIComponent(project)}`, 'GET');
+  } catch (error) {
+    if (error.status === 404) throw appError(502, `${machine} needs updating`);
+    throw appError(502, `${machine} is not reachable`);
+  }
+  const checked = result && result.checked;
+  if (!checked || typeof checked.ok !== 'boolean') throw appError(502, `${machine} needs updating`);
+  return checked;
+}
+
 async function createThread(hub, input) {
   if (!input || typeof input.project !== 'string' || !input.project) {
     throw appError(400, 'project and cli are required');
@@ -46,7 +61,10 @@ async function createThread(hub, input) {
   if (!['claude', 'codex'].includes(input.cli)) {
     throw appError(400, 'project and cli are required');
   }
-  const thread = emptyThread(input);
+  const machine = input.machine || 'hub';
+  const checked = await checkProject(hub, machine, input.project);
+  if (!checked.ok) throw appError(400, `${checked.path || input.project} ${checked.reason || 'is not usable'} on ${machine}`);
+  const thread = emptyThread({ ...input, project: checked.path });
   if (typeof input.message === 'string') {
     const title = truncateTitle(input.message.split(/\r?\n/, 1)[0], 60);
     if (title) thread.title = title;
@@ -284,6 +302,7 @@ module.exports = {
   archive,
   archivedDocument,
   archivedGraph,
+  checkProject,
   createStub,
   createThread,
   dismiss,

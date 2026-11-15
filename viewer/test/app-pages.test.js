@@ -43,6 +43,21 @@ test('the document page is served behind the remember cookie like the other app 
   });
 });
 
+test('the New thread page is served behind the remember cookie, with its assets', async () => {
+  await withServer({}, async (ctx) => {
+    assert.equal((await fetch(`${ctx.url}/app/new`)).status, 401);
+    const signin = await fetch(`${ctx.url}/app/new?token=${ctx.token}`, { redirect: 'manual' });
+    assert.equal(signin.status, 303);
+    const cookie = signin.headers.get('set-cookie').split(';')[0];
+    const page = await fetch(`${ctx.url}/app/new`, { headers: { cookie } });
+    assert.equal(page.status, 200);
+    assert.match(await page.text(), /id="nt-project"/);
+    for (const asset of ['pages/new.js', 'pages/new.css']) {
+      assert.equal((await fetch(`${ctx.url}/assets/${asset}`)).status, 200, asset);
+    }
+  });
+});
+
 test('an unknown app page is not served', async () => {
   await withServer({}, async (ctx) => {
     const response = await fetch(`${ctx.url}/app/server`);

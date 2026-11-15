@@ -39,7 +39,7 @@ test.describe('thread page layout', () => {
   test.beforeEach(async ({ page }) => { ctx = await startWorld(); await signIn(page, ctx); });
   test.afterEach(async () => { await ctx.close(); });
 
-  test('desktop: thread list, chat and the new-thread column sit side by side', async ({ page }) => {
+  test('desktop: thread list, chat and the files column sit side by side', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     const made = await ctx.make({ cli: 'claude' });
     await ctx.patch(made.id, (t) => { t.title = 'Layout thread'; t.slug = 'dark'; t.worktree = '/tmp/wt-dark'; });
@@ -47,14 +47,17 @@ test.describe('thread page layout', () => {
     const list = page.locator('.col-list'); const chat = page.locator('.col-main'); const side = page.locator('.col-side');
     await expect(list.locator('li.row', { hasText: 'Layout thread' })).toBeVisible();
     await expect(chat.locator('#head h1')).toHaveText('Layout thread');
-    await expect(side.locator('#new-form')).toBeVisible();
+    await expect(side.locator('#new-form')).toHaveCount(0);
+    await expect(list.locator('#new-toggle')).toHaveAttribute('href', '/wheelchair/app/new');
     await expect(side.locator('#files a', { hasText: 'PLAN.md' })).toBeVisible();
     const [a, b, c] = await Promise.all([list.boundingBox(), chat.boundingBox(), side.boundingBox()]);
     expect(a.x + a.width).toBeLessThanOrEqual(b.x + 1);
     expect(b.x + b.width).toBeLessThanOrEqual(c.x + 1);
     expect(b.width).toBeGreaterThan(a.width);
-    // The new-thread form works from this column too.
-    await page.locator('#nt-project').fill('/tmp/project');
+    // The "+ New thread" link opens the New thread screen, and a project from an earlier thread can be started.
+    await list.locator('#new-toggle').click();
+    await expect(page).toHaveURL(/\/app\/new$/);
+    await expect(page.locator('#nt-project option[value="/tmp/project"]')).toHaveCount(1);
     await expect(page.locator('#nt-go')).toBeEnabled();
     await noSideScroll(page);
   });
@@ -71,8 +74,9 @@ test.describe('thread page layout', () => {
     await page.locator('#app-nav a', { hasText: 'Threads' }).click();
     await expect(page.locator('.col-list li.row')).toHaveCount(1);
     await expect(page.locator('.col-main')).toBeHidden();
-    await expect(page.locator('#new-form')).toBeHidden();
+    await expect(page.locator('#new-form')).toHaveCount(0);
     await page.locator('#new-toggle').click();
+    await expect(page).toHaveURL(/\/app\/new$/);
     await expect(page.locator('#nt-project')).toBeVisible();
     await noSideScroll(page);
   });

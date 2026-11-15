@@ -1,20 +1,18 @@
 (function () {
   'use strict';
-  // The thread list (grouped by project) and the New thread form, shared by the Threads page and
-  // the thread page: both load this script and carry the same #list, #new-toggle and #new-form.
+  // The thread list (grouped by project), shared by the Threads page and the thread page.
+  // `?new=1` is the old way into the New thread form and now goes to its own screen.
   const API = '/wheelchair/api';
   const listEl = document.getElementById('list');
   const emptyEl = document.getElementById('empty');
   const errorEl = document.getElementById('list-error');
   const archivedBox = document.getElementById('show-archived');
-  const form = document.getElementById('new-form');
   const currentId = new URLSearchParams(location.search).get('id') || '';
   const STAGE = {
     idea: 'Idea', planning: 'Planning', review: 'Review', building: 'Building', verifying: 'Verifying', done: 'Done',
   };
   let threads = [];
   let titles = {};
-  let known = [];
   let stages = {};   // thread id -> stage label, from the features data
   let waiting = {};  // thread id -> number of open cards that need you
 
@@ -83,24 +81,11 @@
     }
   }
 
-  function fillDatalists() {
-    const projects = new Set(known); const machines = new Set(['hub']);
-    for (const t of threads) { projects.add(t.project); machines.add(t.machine); }
-    const fill = (id, set) => {
-      const dl = document.getElementById(id); dl.textContent = '';
-      for (const v of set) { const o = document.createElement('option'); o.value = v; dl.appendChild(o); }
-    };
-    fill('nt-projects', projects); fill('nt-machines', machines);
-  }
-
   async function poll() {
     try {
       const res = await fetch(API + '/threads');
       if (!res.ok) throw new Error('http ' + res.status);
       threads = (await res.json()).threads || [];
-      // projects.json: the repos the app lists; the field stays free text.
-      const listed = await fetch(API + '/projects').then((r) => (r.ok ? r.json() : {})).catch(() => ({}));
-      known = listed.projects || [];
       const features = await fetch(API + '/features').then((r) => (r.ok ? r.json() : {})).catch(() => ({}));
       stages = {}; waiting = {};
       for (const key of Object.keys(STAGE)) for (const f of features[key] || []) stages[f.id] = STAGE[key];
@@ -108,53 +93,15 @@
       titles = {};
       for (const t of threads) titles[t.id] = nameOf(t);
       errorEl.hidden = true;
-      render(); fillDatalists();
+      render();
     } catch (e) {
       errorEl.hidden = false;
       errorEl.textContent = 'Could not refresh threads.';
     }
   }
 
-  function openForm() {
-    form.classList.add('open');
-    form.scrollIntoView({ block: 'nearest' });
-    document.getElementById('nt-project').focus();
-  }
-
   archivedBox.addEventListener('change', render);
-  document.getElementById('new-toggle').addEventListener('click', () => {
-    // Wide screens always show the form; a phone shows it on demand.
-    if (form.classList.contains('open') && getComputedStyle(form).display !== 'none' && window.innerWidth < 900) {
-      form.classList.remove('open');
-    } else openForm();
-  });
-  if (new URLSearchParams(location.search).get('new')) openForm();
-  form.addEventListener('submit', async (ev) => {
-    ev.preventDefault();
-    const body = {
-      project: document.getElementById('nt-project').value.trim(),
-      cli: document.getElementById('nt-cli').value,
-      machine: document.getElementById('nt-machine').value.trim() || 'hub',
-    };
-    const message = document.getElementById('nt-message').value.trim();
-    if (message) body.message = message;
-    const go = document.getElementById('nt-go');
-    go.disabled = true;
-    try {
-      const res = await fetch(API + '/threads', {
-        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.detail || data.error || 'http ' + res.status);
-      location.href = '/wheelchair/app/thread?id=' + encodeURIComponent(data.id);
-    } catch (e) {
-      const formError = document.getElementById('form-error');
-      formError.hidden = false;
-      formError.textContent = 'Could not start the thread: ' + e.message;
-      form.classList.add('open');
-      go.disabled = false;
-    }
-  });
+  if (new URLSearchParams(location.search).get('new')) location.replace('/wheelchair/app/new');
 
   poll();
   setInterval(poll, 5000);

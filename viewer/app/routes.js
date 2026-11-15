@@ -6,6 +6,7 @@ const { appError } = require('./state.js');
 const { publicSession } = require('./sessions.js');
 const { findSlug } = require('./views.js');
 const settings = require('./settings.js');
+const threadsModule = require('./threads.js');
 
 async function readBody(request) {
   const chunks = [];
@@ -41,9 +42,68 @@ async function handle(hub, request, response, url, machineAuthenticated) {
   if (bits[0] === 'projects' && request.method === 'GET') {
     return send(response, 200, { projects: await hub.projects() });
   }
+  if (bits[0] === 'new-thread' && bits.length === 1 && request.method === 'GET') {
+    return send(response, 200, await newThread(hub, url.searchParams.get('machine') || 'hub'));
+  }
   if (bits[0] === 'settings') return handleSettings(hub, request, response, url, bits, body);
   if (bits[0] === 'sessions') return handleSessions(hub, request, response, bits, body);
   throw appError(404, 'route not found');
+}
+
+// Spec "Hub", Routes: everything the New thread screen needs for one machine in one answer.
+async function newThread(hub, machine) {
+  const machines = await hub.state.machines();
+  const resolved = await hub.state.resolveMachine(machines, 'hub');
+  const known = await hub.state.resolveMachine(machines, machine);
+  if (!known) throw appError(404, `unknown machine: ${machine}`);
+  const names = ['hub', ...Object.keys(machines).filter((name) => !resolved || machines[name] !== resolved)];
+  const value = await settings.load(hub);
+  const result = { machines: [...new Set(names)], machine, default_folder: value.default_project_folder };
+  result.saved = value.saved_dirs.filter((entry) => entry.machine === machine);
+  result.found = [];
+  if (value.default_project_folder) {
+    try {
+      const listed = await hub.call(machine, `/v1/projects?folder=${encodeURIComponent(value.default_project_folder)}`, 'GET');
+      result.found = Array.isArray(listed.found) ? listed.found : [];
+      if (listed.folder_error) result.found_error = listed.folder_error;
+    } catch (error) {
+      result.found_error = error.status === 404 ? `${machine} needs updating` : `${machine} is not reachable`;
+    }
+  }
+  const matching = [];
+  for (const thread of await hub.allThreads()) {
+    const entry = thread.machine === machine ? known : await hub.state.resolveMachine(machines, thread.machine);
+    if (entry === known) matching.push(thread);
+  }
+  matching.sort((left, right) => String(right.created_at).localeCompare(String(left.created_at)));
+  result.previous = [...new Set(matching.map((thread) => thread.project))];
+  return result;
+}
+
+function validFolder(value) {
+  const folder = value.trim();
+  if (folder && !folder.startsWith('/') && folder !== '~' && !folder.startsWith('~/')) {
+    throw appError(400, 'default_project_folder must be an absolute path, ~, or start with ~/');
+  }
+  return folder;
+}
+
+async function addSavedDir(hub, body) {
+  if (typeof body.name !== 'string' || !body.name.trim()) throw appError(400, 'name is required');
+  const name = body.name.trim();
+  if (name === '.' || name === '..') throw appError(400, "name can't be . or ..");
+  if (name.length > 60) throw appError(400, 'name is too long (maximum 60 characters)');
+  if (typeof body.path !== 'string' || !body.path.trim()) throw appError(400, 'path is required');
+  const machine = typeof body.machine === 'string' && body.machine ? body.machine : 'hub';
+  const duplicate = (value) => value.saved_dirs.some((entry) => entry.name === name && entry.machine === machine);
+  if (duplicate(await settings.load(hub))) throw appError(409, `${name} is already saved for ${machine}`);
+  const checked = await threadsModule.checkProject(hub, machine, body.path.trim());
+  if (!checked.ok) throw appError(400, `${checked.path || body.path.trim()} ${checked.reason || 'is not usable'} on ${machine}`);
+  const value = await settings.update(hub, (current) => {
+    if (duplicate(current)) throw appError(409, `${name} is already saved for ${machine}`);
+    current.saved_dirs.push({ name, path: checked.path, machine });
+  });
+  return { saved: value.saved_dirs.filter((entry) => entry.machine === machine) };
 }
 
 async function handleSettings(hub, request, response, url, bits, body) {
@@ -89,17 +149,36 @@ async function handleSettings(hub, request, response, url, bits, body) {
         if (!['show', 'hide'].includes(body.tool_steps)) throw appError(400, 'tool_steps must be show or hide');
         value.tool_steps = body.tool_steps;
       }
+      if (body.default_project_folder !== undefined) {
+        if (typeof body.default_project_folder !== 'string') throw appError(400, 'default_project_folder must be text');
+        value.default_project_folder = validFolder(body.default_project_folder);
+      }
       if (body.other_agents !== undefined) {
         if (!body.other_agents || typeof body.other_agents !== 'object' || Array.isArray(body.other_agents)) throw appError(400, 'other_agents must be an object');
         for (const role of ['reviewer', 'verifier', 'mapper']) if (body.other_agents[role] !== undefined) value.other_agents[role] = settings.tier(body.other_agents[role], `other_agents.${role}`);
       }
     });
-    return send(response, 200, { permission_mode: value.permission_mode, codex_mode: value.codex_mode, tool_steps: value.tool_steps, other_agents: value.other_agents });
+    return send(response, 200, { permission_mode: value.permission_mode, codex_mode: value.codex_mode, tool_steps: value.tool_steps, other_agents: value.other_agents, default_project_folder: value.default_project_folder });
+  }
+  if (bits[1] === 'saved-dirs' && bits.length === 2 && request.method === 'POST') {
+    return send(response, 201, await addSavedDir(hub, body));
+  }
+  if (bits[1] === 'saved-dirs' && bits[2] && bits.length === 3 && request.method === 'DELETE') {
+    const machine = url.searchParams.get('machine') || 'hub';
+    let name;
+    try { name = decodeURIComponent(bits[2]); } catch { throw appError(404, 'saved directory not found'); }
+    const value = await settings.update(hub, (value) => {
+      const index = value.saved_dirs.findIndex((entry) => entry.name === name && entry.machine === machine);
+      if (index < 0) throw appError(404, 'saved directory not found');
+      value.saved_dirs.splice(index, 1);
+    });
+    return send(response, 200, { saved: value.saved_dirs.filter((entry) => entry.machine === machine) });
   }
   if (bits[1] === 'templates' && bits.length === 2 && request.method === 'POST') {
     let template;
-    const projects = await hub.projects();
+    const projectList = await hub.projects();
     await settings.update(hub, (value) => {
+      const projects = settings.knownProjects(projectList, value);
       const validated = settings.validateTemplate(body);
       if (validated.scope !== 'all' && !projects.includes(validated.scope)) throw appError(400, 'template.scope must be all or a listed project');
       template = { ...validated, id: crypto.randomUUID(), in_use: false };
@@ -118,8 +197,9 @@ async function handleSettings(hub, request, response, url, bits, body) {
     }
     if (request.method === 'PUT') {
       let updated;
-      const projects = await hub.projects();
+      const projectList = await hub.projects();
       await settings.update(hub, (value) => {
+        const projects = settings.knownProjects(projectList, value);
         const index = value.templates.findIndex((template) => template.id === bits[2]);
         if (index < 0) throw appError(404, 'template not found');
         const previous = value.templates[index];

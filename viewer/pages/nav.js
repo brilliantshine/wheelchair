@@ -1,7 +1,7 @@
 (function () {
   'use strict';
   // The header every app page shares: logo, hub line, the Features / Threads / Sessions control
-  // with the session count, the Needs you count and the New thread button.
+  // with the session count and the Needs you count.
   const host = document.getElementById('app-nav');
   if (!host) return;
   const current = host.getAttribute('data-current');
@@ -76,22 +76,6 @@
   needs.append(needsLabel, needsN);
   needs.setAttribute('aria-label', 'Needs you');
   host.appendChild(needs);
-
-  const add = el('a', 'new-thread');
-  add.append(el('span', 'plus', '+'), el('span', 'lbl', 'New thread'));
-  add.setAttribute('aria-label', 'New thread');
-  add.href = '/wheelchair/app/threads?new=1';
-  // Where the page already has the form, the button takes you to it instead of reloading.
-  add.addEventListener('click', (ev) => {
-    const form = document.getElementById('new-form');
-    if (!form) return;
-    ev.preventDefault();
-    form.classList.add('open');
-    form.scrollIntoView({ block: 'nearest' });
-    const field = document.getElementById('nt-project');
-    if (field) field.focus();
-  });
-  host.appendChild(add);
 
   function syncHeight() {
     document.documentElement.style.setProperty('--nav-h', host.offsetHeight + 'px');

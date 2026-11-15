@@ -97,12 +97,24 @@ for (const [label, size] of SIZES) {
       await noSideScroll(page);
     });
 
+    test('list: ?new=1 goes to the New thread screen', async ({ page }) => {
+      await page.goto(`${ctx.server.url}/app/threads?new=1`);
+      await expect(page).toHaveURL(/\/app\/new$/);
+      await expect(page.locator('#nt-project')).toBeVisible();
+    });
+
     test('list: new thread posts and opens the thread', async ({ page }) => {
       await page.goto(`${ctx.server.url}/app/threads`);
+      await page.evaluate(() => fetch('/wheelchair/api/settings/preferences', {
+        method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ default_project_folder: '/tmp' }),
+      }));
+      ctx.machine.projects = { found: [{ name: 'project', path: '/tmp/project' }] };
       await page.locator('#new-toggle').click();
-      await page.locator('#nt-project').fill('/tmp/project');
+      await expect(page).toHaveURL(/\/app\/new$/);
+      await expect(page.locator('#nt-project option[value="/tmp/project"]')).toHaveCount(1);
+      await page.locator('#nt-project').selectOption('/tmp/project');
       await page.locator('#nt-cli').selectOption('claude');
-      await page.locator('#nt-machine').fill('hub');
+      await page.locator('#nt-machine').selectOption('hub');
       const request = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith('/api/threads'));
       await page.locator('#nt-go').click();
       expect((await request).postDataJSON()).toMatchObject({ project: '/tmp/project', cli: 'claude', machine: 'hub' });

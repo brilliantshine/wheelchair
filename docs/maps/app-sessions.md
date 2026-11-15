@@ -1,6 +1,6 @@
 # Map: how the app starts an agent session (tier, model, permissions, login, role prompt, transcript)
 
-Checked against: `5742e2f990d2f99c82aa82b01403ee772a6bf502` (origin/main)
+Checked against: `c8ebeadbf0b733414c0c1682c027aa7c09b04d2a` (origin/main)
 Files covered: `viewer/app/sessions.js`, `viewer/app/threads.js` (createThread),
 `viewer/app/wc.js` (session start), `viewer/app/ready.js`, `viewer/app/routes.js`,
 `viewer/app/state.js`, `machine/service.js`, `codex/model.sh`, `codex/preflight.sh`,
@@ -15,24 +15,23 @@ Files covered: `viewer/app/sessions.js`, `viewer/app/threads.js` (createThread),
    the hub's `/api/machine/session` (`machine/service.js:637-656`, route at `:715`), and `sessionRequest`
    checks who may start what (`viewer/app/sessions.js:288-326`; the table is
    `sessions.js:47-50`).
-2. **The hub resolves the model.** `startSession` (`sessions.js:68-150`) runs the Codex
-   preflight first for a Codex session (`sessions.js:72-82`), then `resolveModel`
-   (`sessions.js:21-35`):
-   - Claude: `top` → no model at all (the CLI's own default); `haiku|sonnet|opus` → passed
-     through as the alias.
-   - Codex: `top` → `sol`; `luna|terra|sol` → `codex/model.sh <tier>`, which prints the
-     pinned model from `~/.wheelchair/models` or the shipped default
-     (`codex/model.sh:15-20`, `31`, `227`).
-   - The allowed tiers are hard-coded (`sessions.js:16-19`).
+2. **The hub resolves the model and the role layers.** `startSession` (`sessions.js:68-150`)
+   runs the Codex preflight first for a Codex session, then `resolveModel(hub, cli, role, tier)`
+   (`sessions.js:15-40`): leads and sub-leads use the Settings `lead` slot; reviewer, verifier
+   and mapper use `settings.other_agents[role]`; a worker uses its tier. The slot becomes a
+   model through `codex/model.sh <provider> <slot>`, plus an effort for Claude. Settings also
+   give `permission_mode`, `codex_mode` and the composed `role_layers`
+   (`settingsStore.roleLayers`, `sessions.js:89`). (Earlier versions of this map described
+   hard-coded `top|haiku|sonnet|opus` tiers; that is gone.)
 3. **The hub asks the machine service to start it**, `POST /v1/sessions` with role, cli,
-   token, worktree, brief, model and git refs (`sessions.js:110-128`). **The hub never sends
-   `role_prompt` or any per-session config, environment or login choice.**
+   token, `project_dir` (= `thread.project`) and `project` (its basename), worktree, brief,
+   model, effort, `permission_mode`, `codex_mode`, `role_layers` and git refs
+   (`sessions.js:115-137`). It sends no `role_prompt` and no login or environment choice.
 4. **The service builds the command line** in `commandFor` (`machine/service.js:242-262`):
-   - The role prompt is `input.role_prompt` if given, else the one line
-     `Read <root>/protocol/app/<role>.md before responding.` (`service.js:245`, again at
-     `:283`).
+   - The role prompt is `composeRolePrompt` (`service.js:56-63`): `input.role_prompt` if
+     given, else the pointer line plus `role_layers`.
    - Claude: `claude --session-id <uuid> --settings <stateDir>/settings/<name>.json
-     --permission-mode auto [--model M] --append-system-prompt <role prompt>`
+     --permission-mode auto|bypassPermissions [--model M] [--effort E] --append-system-prompt <role prompt>`
      (`service.js:254`). The settings file is written per session and holds only
      `cleanupPeriodDays`, `promptSuggestionEnabled:false` and the Stop/Notification hooks
      (`service.js:250-253`, written at `:277`).
@@ -71,6 +70,10 @@ new thread (lead, top)        agent: wc.js session start --tier T
                         |
                    transcript found in $CLAUDE_CONFIG_DIR / $CODEX_HOME -> copied -> hub /chat
 ```
+
+## Checked against the newer commit
+
+Steps 4-7 and the Logins section below were re-read only where `git diff` showed changes (permission/codex modes, `composeRolePrompt`, readiness text for bypass). Their `service.js:NNN` numbers are from the older commit and have shifted about 20-40 lines; trust the claims, re-grep the numbers.
 
 ## Logins: one account per CLI per machine
 
