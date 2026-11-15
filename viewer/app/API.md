@@ -25,6 +25,16 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 | `POST /machine/cards` | service envelope `{thread_id,session,...card}` | accepted card, `202` |
 | `POST /machine/events` | `{thread_id,session,type,...}` | `{ok:true}`, `202` |
 | `POST /machine/session` | `{calling_session,action,...}` | the hub-authorized session result |
+| `GET /settings` | — | `{models,model_options,heads_up,permission_mode,other_agents,templates,in_use,style,style_version,projects}`; templates include `in_use`, `live_sessions`, and `scope_missing` when a saved project is no longer listed |
+| `PUT /settings/models` | `{provider:"claude"|"gpt",slot,model|null,effort?}` | `{models}`; `slot` is `light`, `standard`, `heavy`, `critical`, or `lead` |
+| `POST /settings/models/heads-up` | `{action:"switch",tier,model}`, `{action:"skip",model}`, or `{action:"reset"}` | `{models,heads_up}` |
+| `PUT /settings/preferences` | `{permission_mode?:"auto"|"bypass",other_agents?:{reviewer?,verifier?,mapper?}}` | saved preference values |
+| `POST /settings/templates` | `{name,role,scope,switches?,text}` | new template, including generated `id` and `in_use:false` |
+| `PUT /settings/templates/:id` | template fields and optional `in_use` | saved template; enabling one clears the other template for its role and scope |
+| `DELETE /settings/templates/:id` | — | `{ok:true}` |
+| `PUT /settings/style` | `{length,lists,terms,never_say,text}` | `{style,style_version}` |
+| `POST /settings/style/preview` | unsaved style object | `{before,after}`; previewing never saves it |
+| `GET /settings/prompt?role=&project=` | — | `{text}` with the exact composed starting instructions, using the hub root in its pointer |
 
 `Thread` has `id`, `project`, `cli`, `machine`, `stub`, `context`, `parent`,
 `depends_on_parent`, `waiting_on_parent`, `sessions`, `cards`, `pinned`, `queues`, `sent`,
@@ -49,10 +59,12 @@ Tool items are collapsed summaries; the transcript remains the authoritative det
 `sent` records successful app submissions as `{to,text,source,at}`. A thread keeps its most
 recent 500; older records append to `threads/<id>.sent.jsonl` in the hub state directory.
 
-Session start (`wc.js session start --tier`, and the hub's own lead starts, which use `top`): the hub
-turns the tier into the machine request's `model`. Codex takes `luna`, `terra`, `sol` (resolved through
-`codex/model.sh <tier>`) or `top` (Sol); Claude takes `haiku`, `sonnet`, `opus` (passed as `--model`)
-or `top` (no `--model`). A tier that does not fit the CLI is a 400 with the reason. A start is a 409
-("machine service out of date") while that machine's `/v1/status` commit differs from the hub's.
+Session start resolves a provider cell through `codex/model.sh`: leads and sub-leads use `lead`, reviewers,
+verifiers, and mappers use Settings' Other agents tier, and workers use their requested tier (`top` means
+Heavy). The tiers are `light`, `standard`, `heavy`, and `critical`; `luna`, `terra`, `sol`, `astra` and,
+for Claude, `haiku`, `sonnet`, `opus` are accepted aliases for slots, not model names — for example
+`--tier opus` runs whatever the Heavy cell holds. Every session receives a model; Claude also receives its
+configured effort when present. A provider cell set to `none` is a 400 directing the caller to the other CLI.
+A start is a 409 ("machine service out of date") while that machine's `/v1/status` commit differs from the hub's.
 
 Worker restart (`wc.js session start --role worker ... --replaces <session>`): the hub checks the named session is a worker in the same thread and not live, then starts the new worker in that session's `worktree` on its `branch`. A live session or a non-worker is refused with 400.

@@ -847,8 +847,10 @@ test('a mapper works in the thread worktree; a worker branches from the thread b
   });
 });
 
-function pinned(tier) {
-  return execFileSync(path.join(__dirname, '..', '..', 'codex', 'model.sh'), [tier], { encoding: 'utf8' }).trim();
+function pinned(context, provider, tier) {
+  return execFileSync(path.join(__dirname, '..', '..', 'codex', 'model.sh'), [provider, tier], {
+    encoding: 'utf8', env: { ...process.env, WHEELCHAIR_MODELS: context.models, WHEELCHAIR_MODELS_CACHE: context.modelsCache },
+  }).trim();
 }
 
 async function startAs(context, lead, role, cli, tier) {
@@ -857,41 +859,79 @@ async function startAs(context, lead, role, cli, tier) {
   });
 }
 
-test('models per role: a Codex lead runs on Sol and tiers resolve through codex/model.sh', async () => {
+test('models per role: leads, other agents, workers, aliases, and critical resolve through their provider cells', async () => {
   await withContext(async (context) => {
     const made = await thread(context, { cli: 'codex' });
     const lead = made.sessions[0];
-    assert.equal(context.machine.sessions.get(lead.name).model, pinned('sol'));
-    for (const [tier, model] of [['terra', pinned('terra')], ['luna', pinned('luna')], ['top', pinned('sol')]]) {
+    assert.equal(context.machine.sessions.get(lead.name).model, pinned(context, 'gpt', 'lead'));
+    for (const tier of ['light', 'standard', 'heavy', 'critical', 'luna', 'terra', 'sol', 'astra', 'top']) {
       const result = await startAs(context, lead, 'reviewer', 'codex', tier);
       assert.equal(result.status, 200);
-      assert.equal(context.machine.sessions.get(result.body.session.name).model, model);
+      assert.equal(context.machine.sessions.get(result.body.session.name).model, pinned(context, 'gpt', 'heavy'));
     }
+    const sublead = await startSublead(context, made, lead, 'models-worker');
+    const worker = await machinePost(context, '/machine/session', { calling_session: sublead.name, action: 'start', role: 'worker', cli: 'codex', tier: 'critical', attempt_id: 'critical-worker' });
+    assert.equal(context.machine.sessions.get(worker.body.session.name).model, pinned(context, 'gpt', 'critical'));
+    const alias = await machinePost(context, '/machine/session', { calling_session: sublead.name, action: 'start', role: 'worker', cli: 'codex', tier: 'terra', attempt_id: 'alias-worker' });
+    assert.equal(context.machine.sessions.get(alias.body.session.name).model, pinned(context, 'gpt', 'standard'));
   });
 });
 
-test('models per role: Claude tiers pass by name and top means no model', async () => {
+test('models per role: Claude always gets a model and effort, and preferences reach the machine', async () => {
   await withContext(async (context) => {
+    await api(context, '/settings/models', { method: 'PUT', body: { provider: 'claude', slot: 'lead', model: 'claude-opus-5-5', effort: 'high' } });
+    await api(context, '/settings/preferences', { method: 'PUT', body: { permission_mode: 'bypass', other_agents: { reviewer: 'critical' } } });
     const made = await thread(context, { cli: 'claude' });
     const lead = made.sessions[0];
-    assert.equal(context.machine.sessions.get(lead.name).model, undefined);
-    const sonnet = await startAs(context, lead, 'reviewer', 'claude', 'sonnet');
-    assert.equal(context.machine.sessions.get(sonnet.body.session.name).model, 'sonnet');
-    const top = await startAs(context, lead, 'verifier', 'claude', 'top');
-    assert.equal(context.machine.sessions.get(top.body.session.name).model, undefined);
+    assert.equal(context.machine.sessions.get(lead.name).model, 'claude-opus-5-5');
+    assert.equal(context.machine.sessions.get(lead.name).effort, 'high');
+    assert.equal(context.machine.sessions.get(lead.name).permission_mode, 'bypass');
+    const reviewer = await startAs(context, lead, 'reviewer', 'claude', 'haiku');
+    assert.equal(context.machine.sessions.get(reviewer.body.session.name).model, pinned(context, 'claude', 'critical'));
   });
 });
 
-test('models per role: a tier that does not fit the CLI is refused with the reason', async () => {
+test('models per role: Claude family aliases do not become Codex tiers', async () => {
   await withContext(async (context) => {
-    const made = await thread(context, { cli: 'claude' });
+    const codex = await thread(context, { cli: 'codex' });
+    const codexSublead = await startSublead(context, codex, codex.sessions[0], 'codex-aliases');
+    const codexAlias = await machinePost(context, '/machine/session', {
+      calling_session: codexSublead.name, action: 'start', role: 'worker', cli: 'codex', tier: 'haiku', attempt_id: 'codex-haiku',
+    });
+    assert.equal(codexAlias.status, 400);
+    assert.match(codexAlias.body.detail, /light, standard, heavy, critical/);
+
+    const claude = await thread(context, { cli: 'claude', project: '/tmp/claude-aliases' });
+    const claudeSublead = await machinePost(context, '/machine/session', {
+      calling_session: claude.sessions[0].name, action: 'start', role: 'sub-lead', cli: 'claude', attempt_id: 'claude-aliases',
+    });
+    assert.equal(claudeSublead.status, 200);
+    const claudeAlias = await machinePost(context, '/machine/session', {
+      calling_session: claudeSublead.body.session.name, action: 'start', role: 'worker', cli: 'claude', tier: 'haiku', attempt_id: 'claude-haiku',
+    });
+    assert.equal(claudeAlias.status, 200);
+    assert.equal(context.machine.sessions.get(claudeAlias.body.session.name).model, pinned(context, 'claude', 'light'));
+
+    const oldClaudeAlias = await api(context, '/settings/preferences', { method: 'PUT', body: { other_agents: { reviewer: 'haiku' } } });
+    assert.equal(oldClaudeAlias.status, 400);
+    const oldTierAlias = await api(context, '/settings/preferences', { method: 'PUT', body: { other_agents: { reviewer: 'luna' } } });
+    assert.equal(oldTierAlias.status, 200);
+    assert.equal(oldTierAlias.body.other_agents.reviewer, 'light');
+  });
+});
+
+test('models per role: unknown tiers and unused provider cells are refused', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context, { cli: 'codex' });
     const lead = made.sessions[0];
-    const wrong = await startAs(context, lead, 'reviewer', 'claude', 'luna');
+    const sublead = await startSublead(context, made, lead, 'bad-tier');
+    const wrong = await machinePost(context, '/machine/session', { calling_session: sublead.name, action: 'start', role: 'worker', cli: 'codex', tier: 'wrong', attempt_id: 'wrong-tier' });
     assert.equal(wrong.status, 400);
-    assert.match(wrong.body.detail, /tier "luna" does not fit claude/);
-    const other = await startAs(context, lead, 'reviewer', 'codex', 'haiku');
-    assert.equal(other.status, 400);
-    assert.match(other.body.detail, /does not fit codex/);
+    assert.match(wrong.body.detail, /light, standard, heavy, critical/);
+    await api(context, '/settings/models', { method: 'PUT', body: { provider: 'gpt', slot: 'heavy', model: null } });
+    const unused = await startAs(context, lead, 'reviewer', 'codex', 'light');
+    assert.equal(unused.status, 400);
+    assert.match(unused.body.detail, /gpt is not used at heavy; use the other CLI/);
   });
 });
 

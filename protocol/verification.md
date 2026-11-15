@@ -22,18 +22,18 @@ older version is running; run ./install.sh", and carry on.
 ## Reviewer selection
 
 Read `implemented-by` from COMPLETION.md frontmatter. Where it names several lanes — for
-example, `terra (lead: fable)` — the family is the one that implemented the work, not the
+example, `standard (lead: fable)` — the family is the one that implemented the work, not the
 one that led it.
 
 With both families available, retain the existing selection: GPT work is checked by the
-Claude family's default reviewer, Claude work by Sol, and mixed implementation
+Claude family's default reviewer, Claude work by Heavy, and mixed implementation
 gets both checks. Read `lanes.md`, in this same directory, for the exact lane invocations
 and cautions.
 
 With one family, the verifier comes from that family regardless of what built the work:
 
-- GPT family — Sol, including for Luna-built work.
-- Claude family — Opus. Where Opus built the work, use a fresh Opus with no shared context.
+- GPT family — Heavy, including for Light-built work.
+- Claude family — Heavy. Where Heavy built the work, use a fresh Heavy lane with no shared context.
 
 Implementation spanning both families is not a one-account run: dispatch one verifier per
 implementing family as above. If a family reports that it is not authenticated, the
@@ -100,7 +100,7 @@ not maintained" is accepted. Verdict format: `VERDICT: PASS`, or
   rules. Round 1 sharpens the brief rather than reaching for a bigger model: a first FAIL
   is a brief defect more often than a model defect. Then re-apply Stage 3's tier test to
   the rewritten brief — a transcription-tier gap that turned out to need a decision is a
-  Terra task now, and the plan that left that decision unmade is what actually failed. A
+  Standard task now, and the plan that left that decision unmade is what actually failed. A
   gap that survives round 1 is the evidence lanes.md asks for: round 2 takes **one** rung
   in a fresh lane instead of resuming, and the failure mode picks which. A lane that
   produced nearly-right work and missed an edge case gets `xhigh` at the same tier. A lane

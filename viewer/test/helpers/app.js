@@ -8,6 +8,9 @@ const { startMachine } = require('./app-machine.js');
 
 async function setup(options = {}) {
   const state = await makeDir('app-state-');
+  const models = path.join(state, 'models');
+  const modelsCache = path.join(state, 'models-cache.json');
+  await fs.writeFile(modelsCache, JSON.stringify({ models: [] }));
   const machine = await startMachine();
   const machines = {
     hub: {
@@ -18,8 +21,8 @@ async function setup(options = {}) {
     },
   };
   await fs.writeFile(path.join(state, 'machines.json'), JSON.stringify(machines));
-  const server = await startServer({ stateDir: state, env: options.env });
-  return { machine, server, state };
+  const server = await startServer({ stateDir: state, env: { ...options.env, WHEELCHAIR_MODELS: models, WHEELCHAIR_MODELS_CACHE: modelsCache } });
+  return { machine, server, state, models, modelsCache };
 }
 
 async function close(context) {

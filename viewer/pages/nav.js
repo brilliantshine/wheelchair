@@ -39,11 +39,25 @@
     ['features', 'Features', '/wheelchair/app/features'],
     ['threads', 'Threads', '/wheelchair/app/threads'],
     ['sessions', 'Sessions', '/wheelchair/app/sessions'],
+    ['settings', 'Settings', '/wheelchair/app/settings'],
   ];
   let sessionCount = null;
   for (const [key, label, href] of links) {
-    const a = el('a', '', label);
+    const a = el('a', '');
     a.href = href;
+    if (key === 'settings') {
+      // Phones show a small gear in place of the word (app.css, 480px block); the name stays.
+      const gear = el('span', 'gear');
+      gear.hidden = true;
+      gear.setAttribute('aria-hidden', 'true');
+      gear.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle>'
+        + '<path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"></path></svg>';
+      a.append(gear, el('span', 'lbl', label));
+      a.setAttribute('aria-label', label);
+    } else {
+      a.textContent = label;
+    }
     if (key === 'sessions') {
       sessionCount = el('span', 'count', '');
       sessionCount.hidden = true;

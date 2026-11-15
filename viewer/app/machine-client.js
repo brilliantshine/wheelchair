@@ -7,7 +7,7 @@ const http = require('node:http');
 const https = require('node:https');
 const { appError } = require('./state.js');
 
-function requestJson(urlText, method, headers = {}, body) {
+function requestJson(urlText, method, headers = {}, body, timeout = 5000) {
   return new Promise((resolve, reject) => {
     const url = new URL(urlText);
     const payload = body === undefined ? '' : JSON.stringify(body);
@@ -25,7 +25,7 @@ function requestJson(urlText, method, headers = {}, body) {
               'content-length': Buffer.byteLength(payload),
             }),
         },
-        timeout: 5000,
+        timeout,
       },
       (response) => {
         let output = '';
@@ -61,7 +61,7 @@ class MachineClient {
     return `http://${host}:${machine.port || 7374}${suffix}`;
   }
 
-  async call(machineName, suffix, method, body) {
+  async call(machineName, suffix, method, body, timeout = 5000) {
     const machine = await this.state.machine(machineName);
     const secret = await this.secret(machine);
     const result = await requestJson(
@@ -69,6 +69,7 @@ class MachineClient {
       method,
       { 'x-wheelchair-machine-secret': secret },
       body,
+      timeout,
     );
     if (result.status < 200 || result.status >= 300) {
       throw appError(result.status || 502, result.body.error || 'machine refused request');

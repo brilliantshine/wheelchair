@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Read and maintain wheelchair's local GPT model pins.
+# Read and maintain wheelchair's local agent model pins.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -11,67 +11,120 @@ import re
 import sys
 import tempfile
 
-# The shipped pins live in one table so new installations and missing entries agree.
-DEFAULTS = (
-    ("luna", "gpt-6-luna"),
-    ("terra", "gpt-5.6-terra"),
-    ("sol", "gpt-6.1-sol"),
-    ("astra", "gpt-6-astra"),
-)
-TIERS = tuple(tier for tier, _ in DEFAULTS)
-DEFAULT_BY_TIER = dict(DEFAULTS)
+PROVIDERS = ("claude", "gpt")
+SLOTS = ("light", "standard", "heavy", "critical", "lead")
+WORK_TIERS = SLOTS[:-1]
+DEFAULTS = {
+    "claude": {
+        "light": ("claude-haiku-5-5", None), "standard": ("claude-sonnet-5-5", None),
+        "heavy": ("claude-opus-5-5", None), "critical": ("claude-fable-5-2", None),
+        "lead": ("claude-opus-5-5", None),
+    },
+    "gpt": {
+        "light": ("gpt-6-luna", None), "standard": ("gpt-5.6-terra", None),
+        "heavy": ("gpt-6.1-sol", None), "critical": ("gpt-6-astra", None),
+        "lead": ("gpt-6.1-sol", None),
+    },
+}
+ALIASES = {"luna": "light", "terra": "standard", "sol": "heavy", "astra": "critical"}
+CLAUDE_ALIASES = {"haiku": "light", "sonnet": "standard", "opus": "heavy"}
+EFFORTS = {"low", "medium", "high", "xhigh", "max"}
 VALUE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
-PIN_LINE = re.compile(r"^\s*(luna|terra|sol|astra|skip)\s*=\s*([a-z0-9][a-z0-9._-]*)\s*$")
 MODEL = re.compile(r"^gpt-(\d+(?:\.\d+)*)-([a-z]+)$")
-USAGE = "usage: model.sh <luna|terra|sol|astra> | set <tier> <model> | skip <model> | init | check"
+USAGE = ("usage: model.sh <light|standard|heavy|critical> | <claude|gpt> <slot> | "
+         "effort claude <slot> | family claude <slot> | "
+         "set [<provider> <slot> | <tier>] <model|none> [effort] | "
+         "skip <model> | init | reset | check [--json] | show --json")
 
 
 def paths():
-    pin_path = os.environ.get("WHEELCHAIR_MODELS") or os.path.expanduser("~/.wheelchair/models")
-    cache_path = os.environ.get("WHEELCHAIR_MODELS_CACHE") or os.path.join(
-        os.environ.get("CODEX_HOME") or os.path.expanduser("~/.codex"), "models_cache.json"
-    )
-    return pin_path, cache_path
+    pins = os.environ.get("WHEELCHAIR_MODELS") or os.path.expanduser("~/.wheelchair/models")
+    cache = os.environ.get("WHEELCHAIR_MODELS_CACHE") or os.path.join(
+        os.environ.get("CODEX_HOME") or os.path.expanduser("~/.codex"), "models_cache.json")
+    return pins, cache
+
+
+def slot_for(provider, name):
+    if name in SLOTS:
+        return name
+    if name in ALIASES:
+        return ALIASES[name]
+    if provider == "claude" and name in CLAUDE_ALIASES:
+        return CLAUDE_ALIASES[name]
+    return None
+
+
+def blank_pins():
+    return {provider: {} for provider in PROVIDERS}
 
 
 def parse_pins(text):
-    pins = {}
-    skipped = []
+    pins, skipped, seen = blank_pins(), [], set()
     for raw in text.splitlines():
-        stripped = raw.strip()
-        if not stripped or stripped.startswith("#"):
+        line = raw.strip()
+        if not line or line.startswith("#"):
             continue
-        match = PIN_LINE.match(raw)
-        if match is None:
+        skip = re.fullmatch(r"skip\s*=\s*([a-z0-9][a-z0-9._-]*)", line)
+        if skip is not None:
+            if skip.group(1) == "none":
+                return None
+            skipped.append(skip.group(1))
+            continue
+        entry = re.fullmatch(
+            r"(claude|gpt)\.([a-z]+)\s*=\s*([a-z0-9][a-z0-9._-]*)(?:\s+@([a-z]+))?", line)
+        if entry is not None:
+            provider, raw_slot, model, effort = entry.groups()
+            slot = slot_for(provider, raw_slot)
+            if slot is None or (provider == "gpt" and effort is not None):
+                return None
+            if model == "none":
+                if effort is not None:
+                    return None
+            elif effort is not None and (provider != "claude" or effort not in EFFORTS):
+                return None
+            key = provider, slot
+            if key in seen:
+                return None
+            seen.add(key)
+            pins[provider][slot] = model, effort
+            continue
+        legacy = re.fullmatch(r"([a-z]+)\s*=\s*([a-z0-9][a-z0-9._-]*)", line)
+        if legacy is None:
             return None
-        key, value = match.groups()
-        if key == "skip":
-            skipped.append(value)
-        elif key in pins:
+        raw_slot, model = legacy.groups()
+        slot = ALIASES.get(raw_slot, raw_slot if raw_slot in WORK_TIERS else None)
+        key = "gpt", slot
+        if slot is None or model == "none" or key in seen:
             return None
-        else:
-            pins[key] = value
+        seen.add(key)
+        pins["gpt"][slot] = model, None
     return pins, skipped
 
 
-def read_pins(pin_path):
+def read_pins(path):
     try:
-        with open(pin_path, encoding="utf-8") as handle:
+        with open(path, encoding="utf-8") as handle:
             parsed = parse_pins(handle.read())
     except FileNotFoundError:
-        return {}, [], False
+        return blank_pins(), [], False
     except (OSError, UnicodeError):
-        return {}, [], True
+        return blank_pins(), [], True
     if parsed is None:
-        return {}, [], True
-    pins, skipped = parsed
-    return pins, skipped, False
+        return blank_pins(), [], True
+    return *parsed, False
+
+
+def cell(pins, provider, slot):
+    return pins[provider].get(slot, DEFAULTS[provider][slot])
 
 
 def rendered(pins, skipped):
-    lines = ["# wheelchair's GPT model pins. Change them with codex/model.sh.\n"]
-    for tier in TIERS:
-        lines.append(f"{tier} = {pins.get(tier, DEFAULT_BY_TIER[tier])}\n")
+    lines = ["# wheelchair's model pins. Change them with codex/model.sh.\n"]
+    for provider in PROVIDERS:
+        for slot in SLOTS:
+            model, effort = cell(pins, provider, slot)
+            suffix = f" @{effort}" if provider == "claude" and model != "none" and effort else ""
+            lines.append(f"{provider}.{slot} = {model}{suffix}\n")
     lines.extend(f"skip = {model}\n" for model in skipped)
     return "".join(lines)
 
@@ -102,14 +155,11 @@ def locked_write(path, change):
 
 def model_parts(model):
     match = MODEL.match(model)
-    if match is None:
-        return None
-    return tuple(int(part) for part in match.group(1).split(".")), match.group(2)
+    return None if match is None else (tuple(int(part) for part in match.group(1).split(".")), match.group(2))
 
 
 def compare_versions(left, right):
-    length = max(len(left), len(right))
-    for index in range(length):
+    for index in range(max(len(left), len(right))):
         a = left[index] if index < len(left) else 0
         b = right[index] if index < len(right) else 0
         if a != b:
@@ -118,13 +168,9 @@ def compare_versions(left, right):
 
 
 def newer_first(models):
-    # Tuple padding makes numeric versions sortable while preserving a deterministic tie break.
     width = max((len(model_parts(model)[0]) for model in models), default=0)
-    return sorted(
-        models,
-        key=lambda model: (model_parts(model)[0] + (0,) * (width - len(model_parts(model)[0])), model),
-        reverse=True,
-    )
+    return sorted(models, key=lambda model: (
+        model_parts(model)[0] + (0,) * (width - len(model_parts(model)[0])), model), reverse=True)
 
 
 def visible_models(cache_path):
@@ -135,81 +181,92 @@ def visible_models(cache_path):
         return []
     if not isinstance(cache, dict) or not isinstance(cache.get("models"), list):
         return []
-    entries = cache["models"]
-    if any(not isinstance(entry, dict) or not isinstance(entry.get("slug"), str) or not isinstance(entry.get("visibility"), str) for entry in entries):
+    models, seen = [], set()
+    for entry in cache["models"]:
+        if not isinstance(entry, dict) or not isinstance(entry.get("slug"), str) or not isinstance(entry.get("visibility"), str):
+            return []
+        model = entry["slug"]
+        if entry["visibility"] == "list" and model_parts(model) is not None and model not in seen:
+            models.append(model)
+            seen.add(model)
+    return newer_first(models)
+
+
+def listed_models(cache_path):
+    try:
+        with open(cache_path, encoding="utf-8") as handle:
+            cache = json.load(handle)
+    except (OSError, UnicodeError, ValueError, RecursionError):
         return []
-    models = []
-    seen = set()
-    for entry in entries:
-        slug = entry["slug"]
-        if entry["visibility"] == "list" and model_parts(slug) is not None and slug not in seen:
-            models.append(slug)
-            seen.add(slug)
-    return models
+    if not isinstance(cache, dict) or not isinstance(cache.get("models"), list):
+        return []
+    parsed, other, seen = [], [], set()
+    for entry in cache["models"]:
+        if not isinstance(entry, dict) or not isinstance(entry.get("slug"), str) or not isinstance(entry.get("visibility"), str):
+            return []
+        model = entry["slug"]
+        if entry["visibility"] != "list" or not VALUE.match(model) or model in seen:
+            continue
+        seen.add(model)
+        (parsed if model_parts(model) is not None else other).append(model)
+    return newer_first(parsed) + other
 
 
-def heads_up(root, pin_path, cache_path):
+def heads_up_events(pin_path, cache_path):
     pins, skipped, malformed = read_pins(pin_path)
+    events = []
     if malformed:
-        print(f"heads-up: {pin_path} is malformed, so every GPT lane is using the shipped defaults. Fix or delete it")
-        pins, skipped = {}, []
-
-    visible = visible_models(cache_path)
-    skipped = set(skipped)
-    effective = {tier: pins.get(tier, DEFAULT_BY_TIER[tier]) for tier in TIERS}
-    pinned = set(effective.values())
+        events.append({"kind": "malformed", "tier": None, "model": None, "current": None})
+        pins, skipped = blank_pins(), []
+    visible, skipped = visible_models(cache_path), set(skipped)
+    active = {slot: cell(pins, "gpt", slot)[0] for slot in WORK_TIERS}
+    active = {slot: model for slot, model in active.items() if model != "none"}
+    pinned = set(active.values())
     candidates = [model for model in visible if model not in skipped and model not in pinned]
-    words = {}
-    for tier, pin in effective.items():
-        parsed = model_parts(pin)
-        words[tier] = parsed[1] if parsed is not None else tier
-
-    command = os.path.join(root, "codex", "model.sh")
-    for tier in TIERS:
-        pin = effective[tier]
-        parsed_pin = model_parts(pin)
-        family = words[tier]
-        family_models = [model for model in candidates if model_parts(model)[1] == family]
-        if parsed_pin is None:
-            # A hand-set pin has no version to compare.  Pick the newest visible
-            # family member first, then let its skip quiet the family until a
-            # genuinely later model arrives.
-            family_visible = [
-                model for model in visible
-                if model not in pinned and model_parts(model)[1] == family
-            ]
-            if not family_visible:
-                continue
-            newest = newer_first(family_visible)[0]
-            if newest in skipped:
-                continue
-            title = tier.title()
-            print(
-                f"heads-up: {newest} is available for {title}, which is pinned to {pin}. "
-                f"Switch: {command} set {tier} {newest} (or {command} skip {newest})"
-            )
+    # Disabled cells do not get a heads-up of their own, but their shipped family
+    # remains claimed so a newer member is not reintroduced as a tierless model.
+    words = {slot: (model_parts(model) or model_parts(DEFAULTS["gpt"][slot][0]))[1] for slot, model in active.items()}
+    claimed_families = set(words.values())
+    for slot in WORK_TIERS:
+        if slot not in active:
+            fallback = model_parts(DEFAULTS["gpt"][slot][0])
+            if fallback is not None:
+                claimed_families.add(fallback[1])
+    for slot, current in active.items():
+        parsed = model_parts(current)
+        family = words[slot]
+        family_candidates = [model for model in candidates if model_parts(model)[1] == family]
+        if parsed is None:
+            available = [model for model in visible if model not in pinned and model_parts(model)[1] == family]
+            if available and available[0] not in skipped:
+                events.append({"kind": "available", "tier": slot, "model": available[0], "current": current})
             continue
-        if not family_models:
-            continue
-        newer = [model for model in family_models if compare_versions(model_parts(model)[0], parsed_pin[0]) > 0]
+        newer = [model for model in family_candidates
+                 if compare_versions(model_parts(model)[0], parsed[0]) > 0]
         if newer:
-            newest = newer_first(newer)[0]
-            title = tier.title()
-            print(
-                f"heads-up: {newest} is newer than {title}'s {pin}. "
-                f"Switch: {command} set {tier} {newest} (or {command} skip {newest})"
-            )
+            events.append({"kind": "newer", "tier": slot, "model": newer_first(newer)[0], "current": current})
+    for model in newer_first([model for model in candidates if model_parts(model)[1] not in claimed_families]):
+        events.append({"kind": "tierless", "tier": None, "model": model, "current": None})
+    return events
 
-    family_words = set(words.values())
-    tierless = [model for model in candidates if model_parts(model)[1] not in family_words]
-    tierless = newer_first(tierless)
-    for model in tierless[:3]:
-        print(
-            f"heads-up: {model} is available and matches no tier. "
-            f"Pin it: {command} set <tier> {model} (or {command} skip {model})"
-        )
-    if len(tierless) > 3:
-        print(f"heads-up: and {len(tierless) - 3} more that match no tier")
+
+def print_heads_up(root, pin_path, cache_path):
+    command, tierless = os.path.join(root, "codex", "model.sh"), 0
+    for event in heads_up_events(pin_path, cache_path):
+        kind, tier, model, current = event["kind"], event["tier"], event["model"], event["current"]
+        if kind == "malformed":
+            print(f"heads-up: {pin_path} is malformed, so every GPT lane is using the shipped defaults. Fix or delete it")
+        elif kind == "newer":
+            print(f"heads-up: {model} is newer than {tier.title()}'s {current}. Switch: {command} set gpt {tier} {model} (or {command} skip {model})")
+        elif kind == "available":
+            print(f"heads-up: {model} is available for {tier.title()}, which is pinned to {current}. Switch: {command} set gpt {tier} {model} (or {command} skip {model})")
+        elif tierless < 3:
+            print(f"heads-up: {model} is available and matches no tier. Pin it: {command} set gpt <tier> {model} (or {command} skip {model})")
+            tierless += 1
+        else:
+            tierless += 1
+    if tierless > 3:
+        print(f"heads-up: and {tierless - 3} more that match no tier")
 
 
 def die_usage():
@@ -217,66 +274,118 @@ def die_usage():
     raise SystemExit(2)
 
 
+def read_cell(path, provider, slot):
+    pins, _, malformed = read_pins(path)
+    if malformed:
+        print(f"model: {path} is malformed; using shipped defaults", file=sys.stderr)
+        pins = blank_pins()
+    return cell(pins, provider, slot)
+
+
+def write(path, change):
+    try:
+        locked_write(path, change)
+    except OSError as error:
+        print(f"model: cannot write pins: {error}", file=sys.stderr)
+        raise SystemExit(1)
+
+
+def write_pin(path, provider, slot, model, effort):
+    def change():
+        pins, skipped, malformed = read_pins(path)
+        if malformed:
+            print("model: malformed pins file", file=sys.stderr)
+            raise SystemExit(1)
+        pins[provider][slot] = model, effort
+        atomic_write(path, rendered(pins, [item for item in skipped if item != model]))
+    write(path, change)
+
+
 def main(root, argv):
     pin_path, cache_path = paths()
-    if len(argv) == 1 and argv[0] in TIERS:
+    if len(argv) == 1 and (slot := slot_for("gpt", argv[0])) in WORK_TIERS:
+        model, _ = read_cell(pin_path, "gpt", slot)
+        if model == "none":
+            print(f"gpt is not used at {slot}", file=sys.stderr)
+            raise SystemExit(3)
+        print(model)
+        return
+    if len(argv) == 2 and argv[0] in PROVIDERS and (slot := slot_for(argv[0], argv[1])) is not None:
+        model, _ = read_cell(pin_path, argv[0], slot)
+        if model == "none":
+            print(f"{argv[0]} is not used at {slot}", file=sys.stderr)
+            raise SystemExit(3)
+        print(model)
+        return
+    if len(argv) == 3 and argv[0] == "effort" and argv[1] in PROVIDERS and (slot := slot_for(argv[1], argv[2])) is not None:
+        model, effort = read_cell(pin_path, argv[1], slot)
+        if argv[1] == "claude" and model != "none" and effort:
+            print(effort)
+        return
+    if len(argv) == 3 and argv[:2] == ["family", "claude"] and (slot := slot_for("claude", argv[2])) is not None:
+        model, _ = read_cell(pin_path, "claude", slot)
+        for family in ("haiku", "sonnet", "opus", "fable"):
+            if model != "none" and family in model:
+                print(family)
+                return
+        print(f"claude has no family at {slot}", file=sys.stderr)
+        raise SystemExit(3)
+    if argv == ["init"]:
+        write(pin_path, lambda: None if os.path.exists(pin_path) else atomic_write(pin_path, rendered(blank_pins(), [])))
+        return
+    if argv == ["reset"]:
+        write(pin_path, lambda: atomic_write(pin_path, rendered(blank_pins(), [])))
+        return
+    if argv in (["check"], ["check", "--json"]):
+        try:
+            if len(argv) == 2:
+                print(json.dumps(heads_up_events(pin_path, cache_path), separators=(",", ":")))
+            else:
+                print_heads_up(root, pin_path, cache_path)
+        except Exception:
+            if len(argv) == 2:
+                print("[]")
+        return
+    if argv == ["show", "--json"]:
         pins, _, malformed = read_pins(pin_path)
         if malformed:
-            print(f"model: {pin_path} is malformed; using shipped defaults", file=sys.stderr)
-            pins = {}
-        print(pins.get(argv[0], DEFAULT_BY_TIER[argv[0]]))
+            pins = blank_pins()
+        result = {provider: {} for provider in PROVIDERS}
+        for provider in PROVIDERS:
+            for slot in SLOTS:
+                model, effort = cell(pins, provider, slot)
+                result[provider][slot] = None if model == "none" else {
+                    "model": model, "effort": effort if provider == "claude" else None}
+        result["malformed"], result["visible"] = malformed, listed_models(cache_path)
+        print(json.dumps(result, separators=(",", ":")))
         return
-    if len(argv) == 1 and argv[0] == "init":
-        def initialize():
-            if os.path.exists(pin_path):
-                return
-            atomic_write(pin_path, rendered(dict(DEFAULTS), []))
-        try:
-            locked_write(pin_path, initialize)
-        except OSError as error:
-            print(f"model: cannot initialize pins: {error}", file=sys.stderr)
-            raise SystemExit(1)
+    if len(argv) == 3 and argv[0] == "set" and (slot := slot_for("gpt", argv[1])) in WORK_TIERS:
+        model = argv[2]
+        if not VALUE.match(model):
+            die_usage()
+        write_pin(pin_path, "gpt", slot, model, None)
         return
-    if len(argv) == 1 and argv[0] == "check":
-        try:
-            heads_up(root, pin_path, cache_path)
-        except Exception:
-            pass
+    if len(argv) in (4, 5) and argv[0] == "set" and argv[1] in PROVIDERS:
+        _, provider, raw_slot, model, *tail = argv
+        slot = slot_for(provider, raw_slot)
+        effort = tail[0] if tail else None
+        if (slot is None or not VALUE.match(model) or (provider == "gpt" and effort is not None)
+                or (model == "none" and effort is not None)
+                or (effort is not None and (provider != "claude" or effort not in EFFORTS))):
+            die_usage()
+        write_pin(pin_path, provider, slot, model, effort)
         return
-    if len(argv) == 3 and argv[0] == "set" and argv[1] in TIERS and VALUE.match(argv[2]):
-        tier, model = argv[1], argv[2]
-        def set_pin():
-            pins, skipped, malformed = read_pins(pin_path)
-            if malformed:
-                print("model: malformed pins file", file=sys.stderr)
-                raise SystemExit(1)
-            if not os.path.exists(pin_path):
-                pins = dict(DEFAULTS)
-            pins[tier] = model
-            atomic_write(pin_path, rendered(pins, [item for item in skipped if item != model]))
-        try:
-            locked_write(pin_path, set_pin)
-        except OSError as error:
-            print(f"model: cannot write pins: {error}", file=sys.stderr)
-            raise SystemExit(1)
-        return
-    if len(argv) == 2 and argv[0] == "skip" and VALUE.match(argv[1]):
+    if len(argv) == 2 and argv[0] == "skip" and VALUE.match(argv[1]) and argv[1] != "none":
         model = argv[1]
-        def skip_model():
+        def skip():
             pins, skipped, malformed = read_pins(pin_path)
             if malformed:
                 print("model: malformed pins file", file=sys.stderr)
                 raise SystemExit(1)
-            if not os.path.exists(pin_path):
-                pins = dict(DEFAULTS)
             if model not in skipped:
                 skipped.append(model)
             atomic_write(pin_path, rendered(pins, skipped))
-        try:
-            locked_write(pin_path, skip_model)
-        except OSError as error:
-            print(f"model: cannot write pins: {error}", file=sys.stderr)
-            raise SystemExit(1)
+        write(pin_path, skip)
         return
     die_usage()
 

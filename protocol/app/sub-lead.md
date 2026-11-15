@@ -52,34 +52,36 @@ Parallelize only tasks with disjoint ownership; overlapping boundaries run in se
 Choose each task's tier from how much the worker has to decide, not from how big the task
 looks.
 
-- **Luna (GPT) or Haiku (Claude): transcription.** The brief names every file, the exact
+- **Light: transcription.** The brief names every file, the exact
   change and a pattern already in the tree to copy, and the worker invents nothing. Test:
   could you have written the diff yourself and just did not want to type it? Second gate,
-  narrow context: a forty-file sweep is a Terra or Sonnet brief however mechanical each edit
+  narrow context: a forty-file sweep is a Standard brief however mechanical each edit
   is. Mechanical and small, or it moves up.
-- **Terra (GPT) or Sonnet (Claude): everything else**, and the default when the tier is
+- **Standard: everything else**, and the default when the tier is
   arguable. Any brief where the worker picks the shape: where a thing lives, what an
   interface looks like, how to handle a case the plan did not name.
 - The tier follows the brief you actually wrote. The moment a brief has to say "figure out
-  where this belongs", it is Terra or Sonnet. Writing the missing decision into the brief
+  where this belongs", it is Standard. Writing the missing decision into the brief
   to keep a task cheap is good; assuming the worker will work it out is not.
 - **Which family.** Interface, frontend and other taste-sensitive work goes to Claude when
   Claude is installed; on a machine with only one family, use it and say so in your
   progress message. A family that is not logged in holds back only its own tasks; do not
   reroute them to the other family.
-- Sol (GPT) and Opus (Claude) are not implementation tiers. A brief reaches one only as
-  an escalation, below.
+- Heavy and Critical are not implementation tiers. A brief reaches one only as an
+  escalation, below.
 
 Start a worker with `node <root>/viewer/app/wc.js session start --role worker --cli
-<claude|codex> --tier <tier> --brief-file <path> --attempt <id>`. The tier is `luna`, `terra`, `sol` or `top`
-(GPT Sol) for `codex`, and `haiku`, `sonnet`, `opus` or `top` (Claude's default) for `claude`; a tier
-that does not fit the CLI is refused.
+<claude|codex> --tier <tier> --brief-file <path> --attempt <id>`. The tier is `light`, `standard`, `heavy`, `critical` or `top` (Heavy), for both CLIs; a tier whose
+cell in Settings is Not used for that CLI is refused. The old names `luna`, `terra`, `sol`, `astra`
+(any CLI) and `haiku`, `sonnet`, `opus` (Claude) are still accepted and mean the Light, Standard,
+Heavy (and Critical) slots, not fixed models: `--tier opus` runs whatever the Heavy cell holds.
+The hub picks the tier of a reviewer, verifier or mapper from Settings; you pass none for them.
 The hub gives it its own worktree on a new branch cut from the feature branch, so two
 write-workers never share a checkout. You may start workers and verifiers for this thread
 only. You may stop sessions you started, once their `result` arrives.
 
-Record each task's lane in the table: GPT lanes as the tier plus the resolved model
-(`<root>/codex/model.sh <tier>` prints it), Claude lanes by tier name.
+Record each task's lane in the table: the tier plus the resolved model
+(`<root>/codex/model.sh <gpt|claude> <tier>` prints it).
 
 ## While workers run
 
@@ -104,7 +106,10 @@ A worker's `result` card is a claim, not a fact. When one arrives:
    pasted command output in every report and check the claimed file state.
 2. Read its report, `docs/plans/<slug>/reports/<task>.md` on its branch, including the
    closing choices section. Record each choice as a Log line in PLAN.md of the form
-   `- <date> — Choice: <task>, <part>: <the choice>`. A report with no choices section is
+   `- <date> — Choice: <task>, <part>: <the choice>`. A choice the worker made under a
+   template's "Pick, record it, keep going" (its report flags it "decided under the template,
+   not asked") is logged as `- <date> — Choice (decided under the template): <task>, <part>:
+   <the choice>`. A report with no choices section is
    not accepted as "none": list the choices you can see in the diff against the brief, and
    log "worker didn't report its choices; I listed N" (including when N is 0).
 3. If it passes, merge the worker's branch into the feature branch with
@@ -116,11 +121,10 @@ A worker's `result` card is a claim, not a fact. When one arrives:
 
 ### Escalation, only on evidence
 
-The ladder is Luna, Terra, Sol, Astra on the GPT side and Haiku, Sonnet, Opus on the
-Claude side, one rung at a time. A rung is bought only by a worker that already came back
+The ladder is Light, Standard, Heavy, Critical on both sides, one rung at a time. A rung is bought only by a worker that already came back
 wrong: it ignored the ownership boundary or the validation commands, claimed a completion
 the diff contradicts, or hit its fails-twice guardrail. "This task looks hard" is not
-evidence: a task you expect to be hard simply starts at Terra or Sonnet.
+evidence: a task you expect to be hard simply starts at Standard.
 
 Order: rewrite the brief first (a worker that failed against a vague success bar fails the
 same way with a bigger model), then change tier. Escalate in a fresh session on the

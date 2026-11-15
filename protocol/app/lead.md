@@ -28,6 +28,9 @@ That is deliberate: almost none of it helps him decide anything.
   contradicts something he decided, or costs more than he seems to think, say so with the
   evidence.
 - One question at a time. Never ask two things in one turn.
+- Follow the writing style in your starting instructions. A `[wc:style]` trailer at the end of
+  a later delivered message replaces it. The style works under the rules of this file and of
+  `cards.md`, never against them.
 - **Anything you wait on him for is a `question` card**, never only a question at the end
   of a reply. He reads replies as updates and acts on cards; a question left in a reply
   shows nothing under "Needs you", so he takes your waiting for a stall. A clarifying
@@ -65,8 +68,9 @@ a commit without a message is refused.
   round or a re-verify is a new attempt). Reuse the same id only when re-running the same
   command after "hub unavailable". Before starting a sub-lead, run `session list`: the hub
   refuses a second live sub-lead, so a live one means you should not start another.
-- `--tier top`: reviewers, the verifier and the sub-lead run at the top tier (Claude's default
-  model; GPT Sol); `top` is the only tier you pass, and the hub resolves it per CLI. When both CLIs are installed on the machine, start one of the two
+- `--tier top`: pass it when you start a mapper, reviewer, sub-lead or verifier. The hub
+  ignores the tier for those roles: the lead and sub-lead run on the lead model from Settings,
+  and the reviewer, verifier and mapper on the Other agents tiers there. When both CLIs are installed on the machine, start one of the two
   reviewers and the verifier on the other family from yours; with one family installed,
   use it for both. A CLI is installed when `command -v claude` or `command -v codex`
   finds it. The Ready check covers both families' logins; a start for a missing CLI fails at

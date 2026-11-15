@@ -96,8 +96,7 @@ Record a GPT lane's tier and its resolved model — the one `lanes.md` resolves 
 variable at dispatch, never a tier name alone — as `<Tier> (<model>)`. A resume that
 resolves a different model appends it: `<Tier> (<first model>, resumed on <second
 model>)`, and each further resume on yet another model appends `, resumed on <model>`
-again. A Claude lane's entry needs no model, since Haiku, Sonnet and Opus already move to
-each new model on their own.
+again. A Claude lane's entry takes the same form, with the model `model.sh claude <tier>` resolved.
 
 **Ask once for everything the run needs, before dispatching anyone.** List what the run
 depends on that only Collin can supply: every command named in the briefs' validation
@@ -170,8 +169,7 @@ Read `lanes.md`, in this same directory, for the
 exact invocations and cautions before launching any lane.
 
 `lanes.md` owns tier selection and every lane invocation. On a Claude-only machine,
-transcription briefs that would have gone to Luna go to Haiku, the Claude side's
-transcription tier. On a ChatGPT-only machine, interface, frontend, and
+transcription briefs that would have gone to GPT Light go to the Claude Light tier. On a ChatGPT-only machine, interface, frontend, and
 other taste-sensitive work goes to a GPT lane because no Claude lane exists; state that
 cost at dispatch rather than refusing the task. Where a Claude lane is available, those
 surfaces remain Claude work — the one-account exception does not permit rerouting one
@@ -182,9 +180,9 @@ task recorded **unstarted**, not attempted; do not reroute its brief to the othe
 Its escalation ladder is untouched: it is for a lane that came back wrong, and a lane that
 never ran has nothing to escalate.
 
-Sol, Astra and Opus are not implementation lanes. A brief reaches one only after a cheaper lane
+Heavy and Critical are not implementation lanes. A brief reaches one only after a cheaper lane
 came back wrong, by lanes.md's "Escalate the model only on evidence" — a task that merely
-looks hard is not grounds, it is just a task that starts at Terra. Escalating before a
+looks hard is not grounds, it is just a task that starts at Standard. Escalating before a
 lane has failed is the expensive mistake this stage exists to avoid; the lead's review
 loop, not a bigger model, is what makes a cheap lane safe.
 

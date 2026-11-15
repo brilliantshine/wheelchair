@@ -253,6 +253,7 @@ app uses to hide traffic Collin did not write:
 | `[wc:context stub]` | Context for a lead that starts a stub thread: the stub's summary | hidden, your reply **shown**, with "Started from <parent thread>" in its place |
 | `[wc:context restart]` | Context for a lead that replaces a dead one: the plan and the cards so far | hidden, your reply **shown**, with "Lead restarted" in its place |
 | `[card <id>] ...` | Collin pressed a button on card `<id>` | a short bubble from him ("Picked B"), and your reply is shown |
+| a final `[wc:style]` block, after a blank line at the END of a message | Collin's writing style, delivered to a lead, replacing any earlier style | stripped from Collin's bubble |
 | anything else | Collin's own words, typed in the app, the browser terminal or over `tmux attach` | his bubble, and your reply is shown |
 
 The press forms, in full:

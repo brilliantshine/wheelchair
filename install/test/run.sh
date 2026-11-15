@@ -255,7 +255,7 @@ run_case codex_only
 assert 'codex-only install succeeds and reports Codex' bash -c '[[ $1 == 0 && $2 == *"harness found: codex"* ]]' _ "${status[codex_only]}" "${output[codex_only]}"
 assert 'codex-only install renders every substituted Codex wrapper' codex_wrappers_landed "${codex[codex_only]}"
 assert 'codex-only install does not create the absent Claude home' test ! -e "${claude[codex_only]}"
-assert 'codex-only install creates the default model pins' cmp -s <(printf "# wheelchair's GPT model pins. Change them with codex/model.sh.\nluna = gpt-6-luna\nterra = gpt-5.6-terra\nsol = gpt-6.1-sol\nastra = gpt-6-astra\n") "${home[codex_only]}/.wheelchair/models"
+assert 'codex-only install creates the default model pins' cmp -s <(printf "# wheelchair's model pins. Change them with codex/model.sh.\nclaude.light = claude-haiku-5-5\nclaude.standard = claude-sonnet-5-5\nclaude.heavy = claude-opus-5-5\nclaude.critical = claude-fable-5-2\nclaude.lead = claude-opus-5-5\ngpt.light = gpt-6-luna\ngpt.standard = gpt-5.6-terra\ngpt.heavy = gpt-6.1-sol\ngpt.critical = gpt-6-astra\ngpt.lead = gpt-6.1-sol\n") "${home[codex_only]}/.wheelchair/models"
 
 new_case codex_pins_preserved
 present[codex_pins_preserved]=codex
