@@ -4,23 +4,60 @@
 <title>Thread</title>
 <link rel="stylesheet" href="/wheelchair/assets/pages/app.css">
 <link rel="stylesheet" href="/wheelchair/assets/pages/thread.css">
-<header id="app-nav" data-current="threads"></header>
-<main class="app-main">
-  <div id="error" class="error-banner" hidden></div>
-  <section id="head" class="card"></section>
-  <section id="stub-open" class="card" hidden></section>
-  <section id="dead" class="card amber" hidden></section>
-  <section id="docview" class="card" hidden></section>
-  <section id="pinned"></section>
-  <section id="chat" aria-label="Chat"></section>
-  <section id="cards"></section>
-  <form id="composer">
-    <div id="queued-note" class="dim" hidden></div>
-    <div class="send-row">
-      <textarea id="msg" rows="2" placeholder="Message the lead"></textarea>
-      <button type="submit" class="primary" id="send">Send</button>
-    </div>
-  </form>
-</main>
 <script src="/wheelchair/assets/pages/nav.js" defer></script>
+<script src="/wheelchair/assets/pages/md.js" defer></script>
+<script src="/wheelchair/assets/pages/threads.js" defer></script>
 <script src="/wheelchair/assets/pages/thread.js" defer></script>
+<header id="app-nav" data-current="threads"></header>
+<div class="shell on-thread">
+  <nav class="col-list" aria-label="Threads">
+    <button type="button" id="new-toggle">+ New thread</button>
+    <div id="list-error" class="error-banner" hidden></div>
+    <label class="list-opts"><input type="checkbox" id="show-archived"> Show archived</label>
+    <ul id="list"></ul>
+    <p id="empty" class="dim" hidden>No threads yet.</p>
+  </nav>
+  <main class="col-main">
+    <section id="head" class="thread-head"></section>
+    <div id="head-files" class="head-files" hidden></div>
+    <div id="error" class="error-banner" hidden></div>
+    <section id="stub-open" class="card" hidden></section>
+    <section id="dead" class="card amber" hidden></section>
+    <section id="docview" class="card" hidden></section>
+    <section id="pinned" aria-label="Pinned"></section>
+    <div class="chat-wrap">
+      <section id="chat" aria-label="Chat"></section>
+      <section id="cards"></section>
+    </div>
+    <form id="composer">
+      <div class="composer-box">
+        <div id="queued-note" class="dim" hidden></div>
+        <div class="send-row">
+          <label for="msg" class="sr-only">Message the lead</label>
+          <textarea id="msg" rows="2" placeholder="Message the lead"></textarea>
+          <span class="hint">The lead decides whether this needs a plan.</span>
+          <button type="submit" class="primary" id="send" aria-label="Send">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+          </button>
+        </div>
+      </div>
+    </form>
+  </main>
+  <aside class="col-side" aria-label="New thread and files">
+    <form id="new-form">
+      <h3>Starting a new thread</h3>
+      <div id="form-error" class="error-banner" hidden></div>
+      <div class="field"><label for="nt-project">Project</label>
+        <input id="nt-project" list="nt-projects" required autocomplete="off" placeholder="/path/to/repo"><datalist id="nt-projects"></datalist></div>
+      <div class="field"><label for="nt-cli">Lead runs as</label>
+        <select id="nt-cli"><option value="claude">Claude</option><option value="codex">Codex</option></select></div>
+      <div class="field"><label for="nt-machine">On node</label>
+        <input id="nt-machine" list="nt-machines" value="hub" autocomplete="off"><datalist id="nt-machines"></datalist></div>
+      <div class="field"><label for="nt-message">First message (optional)</label>
+        <textarea id="nt-message" rows="3"></textarea></div>
+      <span class="hint">The first message opens a tmux session for the lead. Small fixes it just does. When something grows into a feature, it asks before starting the plan workflow, and the thread gets a card on the Features board.</span>
+      <button type="submit" class="primary" id="nt-go">Start thread</button>
+    </form>
+    <section id="files" aria-label="This thread's files" hidden></section>
+  </aside>
+</div>

@@ -1,14 +1,22 @@
 (function () {
   'use strict';
+  // The thread list (grouped by project) and the New thread form, shared by the Threads page and
+  // the thread page: both load this script and carry the same #list, #new-toggle and #new-form.
   const API = '/wheelchair/api';
   const listEl = document.getElementById('list');
   const emptyEl = document.getElementById('empty');
-  const errorEl = document.getElementById('error');
+  const errorEl = document.getElementById('list-error');
   const archivedBox = document.getElementById('show-archived');
   const form = document.getElementById('new-form');
+  const currentId = new URLSearchParams(location.search).get('id') || '';
+  const STAGE = {
+    idea: 'Idea', planning: 'Planning', review: 'Review', building: 'Building', verifying: 'Verifying', done: 'Done',
+  };
   let threads = [];
   let titles = {};
   let known = [];
+  let stages = {};   // thread id -> stage label, from the features data
+  let waiting = {};  // thread id -> number of open cards that need you
 
   function el(tag, cls, text) {
     const n = document.createElement(tag);
@@ -29,31 +37,48 @@
   function stamp(t) { return Date.parse(t.updated_at || t.created_at) || 0; }
   function nameOf(t) { return t.title || t.slug || base(t.project); }
 
+  function row(t) {
+    const li = el('li', 'row' + (t.id === currentId ? ' current' : ''));
+    li.dataset.id = t.id;
+    const a = el('a', 'row-link');
+    a.href = '/wheelchair/app/thread?id=' + encodeURIComponent(t.id);
+    if (t.id === currentId) a.setAttribute('aria-current', 'page');
+    const top = el('div', 'top');
+    const stage = stages[t.id];
+    const dot = el('span', 'dotmark ' + (waiting[t.id] ? 'amber' : stage === 'Done' ? 'green' : stage ? 'blue' : ''));
+    top.appendChild(dot);
+    top.appendChild(el('span', 'title', nameOf(t)));
+    if (t.stub) {
+      top.appendChild(el('span', 'badge', 'stub'));
+      if (t.ready) top.appendChild(el('span', 'badge good', 'ready'));
+      else if (t.depends_on_parent && !t.ready && !(t.sessions || []).length) {
+        top.appendChild(el('span', 'badge warn', 'waiting for ' + (titles[t.parent] || t.parent_title || t.parent)));
+      }
+    }
+    if (t.archived) top.appendChild(el('span', 'badge', 'archived'));
+    a.appendChild(top);
+    a.appendChild(el('div', 'sub', [
+      stage, waiting[t.id] ? 'needs you' : '', t.cli, t.machine, ago(t.updated_at || t.created_at),
+    ].filter(Boolean).join(' · ')));
+    li.appendChild(a);
+    return li;
+  }
+
   function render() {
     const shown = threads.filter((t) => archivedBox.checked || !t.archived)
       .sort((a, b) => stamp(b) - stamp(a));
     listEl.textContent = '';
     emptyEl.hidden = shown.length > 0;
+    // Groups by project, the most recently touched project first; newest first inside each.
+    const groups = new Map();
     for (const t of shown) {
-      const li = el('li', 'card');
-      li.dataset.id = t.id;
-      const a = el('a', 'row-link');
-      a.href = '/wheelchair/app/thread?id=' + encodeURIComponent(t.id);
-      const top = el('div', 'top');
-      top.appendChild(el('span', 'title', nameOf(t)));
-      if (t.stub) {
-        top.appendChild(el('span', 'badge', 'stub'));
-        if (t.ready) top.appendChild(el('span', 'badge good', 'ready'));
-        else if (t.depends_on_parent && !t.ready && !(t.sessions || []).length) {
-          top.appendChild(el('span', 'badge warn', 'waiting for ' + (titles[t.parent] || t.parent_title || t.parent)));
-        }
-      }
-      if (t.archived) top.appendChild(el('span', 'badge', 'archived'));
-      a.appendChild(top);
-      a.appendChild(el('div', 'sub',
-        [base(t.project), t.cli, t.machine, ago(t.updated_at || t.created_at)].filter(Boolean).join(' · ')));
-      li.appendChild(a);
-      listEl.appendChild(li);
+      const key = base(t.project);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(t);
+    }
+    for (const [name, members] of groups) {
+      listEl.appendChild(el('li', 'group-label', name));
+      for (const t of members) listEl.appendChild(row(t));
     }
   }
 
@@ -75,6 +100,10 @@
       // projects.json: the repos the app lists; the field stays free text.
       const listed = await fetch(API + '/projects').then((r) => (r.ok ? r.json() : {})).catch(() => ({}));
       known = listed.projects || [];
+      const features = await fetch(API + '/features').then((r) => (r.ok ? r.json() : {})).catch(() => ({}));
+      stages = {}; waiting = {};
+      for (const key of Object.keys(STAGE)) for (const f of features[key] || []) stages[f.id] = STAGE[key];
+      for (const n of features.needs || []) waiting[n.thread_id] = (waiting[n.thread_id] || 0) + 1;
       titles = {};
       for (const t of threads) titles[t.id] = nameOf(t);
       errorEl.hidden = true;
@@ -85,8 +114,20 @@
     }
   }
 
+  function openForm() {
+    form.classList.add('open');
+    form.scrollIntoView({ block: 'nearest' });
+    document.getElementById('nt-project').focus();
+  }
+
   archivedBox.addEventListener('change', render);
-  document.getElementById('new-toggle').addEventListener('click', () => { form.hidden = !form.hidden; });
+  document.getElementById('new-toggle').addEventListener('click', () => {
+    // Wide screens always show the form; a phone shows it on demand.
+    if (form.classList.contains('open') && getComputedStyle(form).display !== 'none' && window.innerWidth < 900) {
+      form.classList.remove('open');
+    } else openForm();
+  });
+  if (new URLSearchParams(location.search).get('new')) openForm();
   form.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const body = {
@@ -106,8 +147,10 @@
       if (!res.ok) throw new Error(data.detail || data.error || 'http ' + res.status);
       location.href = '/wheelchair/app/thread?id=' + encodeURIComponent(data.id);
     } catch (e) {
-      errorEl.hidden = false;
-      errorEl.textContent = 'Could not start the thread: ' + e.message;
+      const formError = document.getElementById('form-error');
+      formError.hidden = false;
+      formError.textContent = 'Could not start the thread: ' + e.message;
+      form.classList.add('open');
       go.disabled = false;
     }
   });

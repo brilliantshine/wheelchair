@@ -413,7 +413,7 @@ for (const [label, size] of SIZES) {
       await ctx.patch(made.id, (x) => { x.slug = 'dark'; x.worktree = '/tmp/wt-dark'; });
       await open(page, made.id);
       for (const f of ['MAP', 'IDEA', 'PLAN']) {
-        await expect(page.locator('#head a', { hasText: f })).toHaveAttribute(
+        await expect(page.locator('#files a', { hasText: f })).toHaveAttribute(
           'href', new RegExp(`plan=.*wt-dark%2Fdocs%2Fplans%2Fdark&file=${f}\\.md$`));
       }
     });
@@ -422,10 +422,10 @@ for (const [label, size] of SIZES) {
       const made = await ctx.make({ cli: 'claude' });
       await ctx.patch(made.id, (x) => { x.slug = 'dark'; x.worktree = '/tmp/wt-dark'; });
       await open(page, made.id);
-      const plan = page.locator('#head a', { hasText: 'PLAN' });
+      const plan = page.locator('#files a', { hasText: 'PLAN' });
       await expect(plan).toHaveAttribute('href', /^\/wheelchair\/docs\?plan=.*dark&file=PLAN\.md$/);
-      await expect(page.locator('#head a', { hasText: 'MAP' })).toHaveCount(1);
-      await expect(page.locator('#head a', { hasText: 'IDEA' })).toHaveCount(1);
+      await expect(page.locator('#files a', { hasText: 'MAP' })).toHaveCount(1);
+      await expect(page.locator('#files a', { hasText: 'IDEA' })).toHaveCount(1);
     });
   });
 }

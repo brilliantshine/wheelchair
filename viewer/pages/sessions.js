@@ -33,7 +33,6 @@
   function unmanagedRow(machine, session) {
     const row = el('li', 'v-card session unmanaged');
     row.dataset.session = session.name;
-    row.style.opacity = '0.6';
     row.append(el('span', 'v-label', session.name));
     row.append(el('span', 'v-badge role', 'unmanaged'));
     row.append(el('span', 'v-badge', 'read-only'));
@@ -45,16 +44,22 @@
     const running = session.running !== false && session.status !== 'stopped';
     const row = el('li', 'v-card session');
     row.dataset.session = session.name;
-    const terminal = el('a', 'v-link', session.name);
+    const head = el('div', 'session-head');
+    head.append(el('span', `dotmark ${running ? 'blue' : ''}`));
+    const who = el('div', 'who');
+    const terminal = el('a', 'v-link session-name', session.name);
     terminal.href = `/wheelchair/app/terminal?name=${encodeURIComponent(session.name)}`;
-    row.append(terminal);
-    row.append(el('span', 'v-badge role', session.role || 'session'));
-    row.append(el('span', `v-badge ${running ? 'ok' : 'bad'}`, running ? 'running' : 'stopped'));
-    if (session.thread_id) {
-      const thread = el('a', 'v-link', `thread ${session.thread_id}`);
-      thread.href = `/wheelchair/app/thread?id=${encodeURIComponent(session.thread_id)}`;
-      row.append(thread);
-    }
+    who.append(terminal);
+    // Spec "Views": each session shows the thread or feature it belongs to.
+    const title = session.thread_id && (titles[session.thread_id] || session.thread_id);
+    if (title) who.append(el('span', 'session-thread', title));
+    who.append(el('span', 'session-sub', [machine, session.cli, session.model].filter(Boolean).join(' \u00b7 ')));
+    head.append(who);
+    head.append(el('span', 'v-badge role', session.role || 'session'));
+    head.append(el('span', `v-badge ${running ? 'ok' : 'bad'}`, running ? 'running' : 'stopped'));
+    row.append(head);
+
+    const body = el('div', 'session-body');
     const attach = el('div', 'v-attach');
     const command = attachCommand(machine, session.name, isHub);
     attach.append(el('code', 'attach', command));
@@ -62,7 +67,19 @@
     button.type = 'button';
     button.addEventListener('click', () => copy(command, button));
     attach.append(button);
-    row.append(attach);
+    body.append(attach);
+    row.append(body);
+
+    const foot = el('div', 'session-foot');
+    const open = el('a', 'btn', 'Open terminal');
+    open.href = terminal.href;
+    foot.append(open);
+    if (session.thread_id) {
+      const thread = el('a', 'btn', 'Open thread');
+      thread.href = `/wheelchair/app/thread?id=${encodeURIComponent(session.thread_id)}`;
+      foot.append(thread);
+    }
+    row.append(foot);
     return row;
   }
 
@@ -78,7 +95,9 @@
       const section = el('section', `v-machine${group.reachable ? '' : ' unreachable'}`);
       section.dataset.machine = group.machine;
       const header = el('header');
-      header.append(el('span', '', group.machine));
+      header.append(el('span', `dotmark ${group.reachable ? 'green' : ''}`));
+      header.append(el('span', 'machine-name', group.machine));
+      if (group.hub) header.append(el('span', 'v-badge', 'hub'));
       header.append(el('span', `v-badge ${group.reachable ? 'ok' : 'bad'}`,
         group.reachable ? 'reachable' : 'unreachable'));
       if (!group.reachable) header.append(el('span', 'v-badge seen', seenText(group)));
@@ -94,9 +113,20 @@
     document.getElementById('empty').hidden = groups.length > 0;
   }
 
+  let titles = {};
+  async function loadTitles() {
+    try {
+      const response = await fetch('/wheelchair/api/threads');
+      if (!response.ok) return;
+      const body = await response.json();
+      titles = Object.fromEntries((body.threads || []).map((thread) => [thread.id, thread.title || thread.slug || thread.id]));
+    } catch { /* titles are a nicety; the thread id still shows */ }
+  }
+
   async function refresh() {
     const error = document.getElementById('error');
     try {
+      await loadTitles();
       const response = await fetch('/wheelchair/api/sessions');
       if (!response.ok) throw new Error(`sessions ${response.status}`);
       render(await response.json());
