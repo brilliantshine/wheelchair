@@ -215,9 +215,14 @@ async function press(hub, id, cardId, input) {
     }
     if (!ready.ok) return { queued: false, ready };
   }
+  if (card.kind === 'needs' && (card.system || card.answered)) {
+    throw appError(422, card.system ? 'a system needs card closes itself' : 'card is already answered');
+  }
+  if (input.action === 'keep-going' && card.kind !== 'needs') throw appError(400, 'keep going requires a needs card');
   const lead = [...thread.sessions].reverse().find((item) => item.role === 'lead' && item.live);
   if (!lead) throw appError(409, 'no live lead');
   const suffixes = {
+    'keep-going': 'keep going',
     picked: `picked: ${input.value}`,
     removed: `removed: ${input.value}`,
     talk: `talk about: ${input.value}`,
@@ -229,6 +234,10 @@ async function press(hub, id, cardId, input) {
     card.answered = true;
     card.answered_action = input.action;
     card.answered_value = input.value ?? null;
+  }
+  // A needs card Collin answers is closed by him, so it dims like a resolved one.
+  if (card.kind === 'needs') {
+    require('./cards.js').resolveCard(card, 'collin', input.action === 'keep-going' ? 'Keep going' : 'Talking it over');
   }
   await hub.enqueue(thread, lead.name, `[card ${card.id}] ${suffixes[input.action]}`, 'card');
   return { queued: true, text: suffixes[input.action] };
