@@ -9,6 +9,8 @@ const test = require('node:test');
 const { validate } = require('../app/card.js');
 const { Hub } = require('../app/hub.js');
 const { api, card, close, event, machinePost, setup, thread } = require('./helpers/app.js');
+const { startMachine } = require('./helpers/app-machine.js');
+const { ROOT, startServer } = require('./helpers/server.js');
 
 async function withContext(work) {
   const context = await setup();
@@ -845,6 +847,57 @@ test('serializes concurrent cards and de-duplicates a delivered card', async () 
   });
 });
 
+test('a failed event submit is retried once before its delivery id is recorded', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const lead = made.sessions[0];
+    await api(context, `/threads/${made.id}/messages`, { method: 'POST', body: { text: 'Deliver on retry.' } });
+    context.machine.submitOk = false;
+    const first = await event(context, made.id, lead.name, 'turn-ended', { delivery_id: 'event-retry' });
+    assert.equal(first.status, 503);
+    let stored = await (new Hub({ stateDir: context.state })).thread(made.id);
+    assert.equal(stored.delivered_ids?.includes('event-retry'), false);
+    assert.equal(stored.sessions.find((session) => session.name === lead.name).queue.length, 1);
+    context.machine.submitOk = true;
+    const retry = await event(context, made.id, lead.name, 'turn-ended', { delivery_id: 'event-retry' });
+    assert.equal(retry.status, 202);
+    assert.deepEqual(context.machine.sessions.get(lead.name).submits, ['Deliver on retry.']);
+    stored = await (new Hub({ stateDir: context.state })).thread(made.id);
+    assert.deepEqual(stored.delivered_ids.filter((id) => id === 'event-retry'), ['event-retry']);
+    assert.equal(stored.sessions.find((session) => session.name === lead.name).queue.length, 0);
+  });
+});
+
+test('a failed message-card submit leaves its delivery id and card retryable', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const lead = made.sessions[0];
+    const sublead = await startSublead(context, made, lead);
+    await event(context, made.id, lead.name, 'turn-ended');
+    const payload = {
+      thread_id: made.id,
+      session: sublead.name,
+      kind: 'message',
+      to: lead.name,
+      text: 'Send this once.',
+      delivery_id: 'card-retry',
+    };
+    context.machine.submitOk = false;
+    const first = await machinePost(context, '/machine/cards', payload);
+    assert.equal(first.status, 503);
+    let stored = await (new Hub({ stateDir: context.state })).thread(made.id);
+    assert.equal(stored.delivered_ids?.includes('card-retry'), false);
+    assert.equal(stored.cards.some((item) => item.kind === 'message' && item.text === 'Send this once.'), false);
+    context.machine.submitOk = true;
+    const retry = await machinePost(context, '/machine/cards', payload);
+    assert.equal(retry.status, 202);
+    assert.deepEqual(context.machine.sessions.get(lead.name).submits, [`[wc:from ${sublead.name}] Send this once.`]);
+    stored = await (new Hub({ stateDir: context.state })).thread(made.id);
+    assert.equal(stored.cards.filter((item) => item.kind === 'message' && item.text === 'Send this once.').length, 1);
+    assert.deepEqual(stored.delivered_ids.filter((id) => id === 'card-retry'), ['card-retry']);
+  });
+});
+
 test('keeps a queued message idle and retryable when submit fails', async () => {
   await withContext(async (context) => {
     const made = await thread(context);
@@ -901,6 +954,20 @@ test('a kept rebase makes a need and leaves the thread open', async () => {
     assert.equal(stored.archived, false);
     const need = stored.cards.find((card) => card.title === 'Rebase needs attention');
     assert.match(need.body, /finish or abort the rebase in \/tmp\/wc-rebase/);
+  });
+});
+
+test('a second archive records the thread after a retained rebase worktree is removed', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    context.machine.archiveKept = [{ worktree: '/tmp/wc-rebase', reason: 'rebase in progress' }];
+    await api(context, `/threads/${made.id}/archive`, { method: 'POST', body: {} });
+    context.machine.archiveKept = [];
+    const second = await api(context, `/threads/${made.id}/archive`, { method: 'POST', body: {} });
+    assert.equal(second.status, 200);
+    const stored = await (new Hub({ stateDir: context.state })).thread(made.id);
+    assert.equal(stored.archived, true);
+    assert.deepEqual(stored.archive.kept, []);
   });
 });
 
@@ -977,6 +1044,60 @@ test('registers a diagram plan before persisting its card', async () => {
     assert.equal(observed.thread.cards.some((card) => card.kind === 'diagram'), false);
     assert.equal((await hub.thread(made.id)).cards.some((card) => card.kind === 'diagram'), true);
   });
+});
+
+test('a diagram card registers its graph for the real viewer iframe route', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const worktree = path.join(context.state, 'diagram-worktree');
+    const graph = path.join(worktree, 'docs', 'plans', 'demo', 'graphs', 'flow.json');
+    await fs.mkdir(path.dirname(graph), { recursive: true });
+    await fs.copyFile(path.join(__dirname, 'fixtures', 'canonical.json'), graph);
+    const file = path.join(context.state, 'threads', `${made.id}.json`);
+    const stored = JSON.parse(await fs.readFile(file, 'utf8'));
+    stored.worktree = worktree;
+    await fs.writeFile(file, JSON.stringify(stored));
+    const posted = await card(context, made.id, made.sessions[0].name, {
+      kind: 'diagram', plan: 'demo', graph: 'flow', title: 'Flow',
+    });
+    assert.equal(posted.status, 202);
+    const signIn = await fetch(`${context.server.url}/?token=${context.server.token}`, { redirect: 'manual' });
+    assert.equal(signIn.status, 303);
+    const cookie = signIn.headers.get('set-cookie').split(';')[0];
+    const iframe = await fetch(`${context.server.url}/?path=${encodeURIComponent(graph)}`, { headers: { cookie } });
+    assert.equal(iframe.status, 200);
+  });
+});
+
+test('the real viewer keeps its boot commit when its clone moves before the first app request', async () => {
+  const clone = await fs.mkdtemp(path.join(os.tmpdir(), 'wheelchair-viewer-version-'));
+  execFileSync('git', ['clone', '--quiet', '--no-local', ROOT, clone]);
+  // The test worktree has uncommitted implementation changes; give the temporary clone the
+  // running server and hub sources while retaining its own independent Git HEAD.
+  await fs.copyFile(path.join(ROOT, 'viewer', 'server.js'), path.join(clone, 'viewer', 'server.js'));
+  await fs.copyFile(path.join(ROOT, 'viewer', 'app', 'hub.js'), path.join(clone, 'viewer', 'app', 'hub.js'));
+  const machine = await startMachine();
+  const state = await fs.mkdtemp(path.join(os.tmpdir(), 'wheelchair-viewer-state-'));
+  await fs.writeFile(path.join(state, 'machines.json'), JSON.stringify({
+    hub: { name: 'hub', address: '127.0.0.1', port: machine.port, secret: machine.secret },
+  }));
+  const server = await startServer({ stateDir: state, cwd: clone });
+  try {
+    await fs.writeFile(path.join(clone, 'boot-version-test.txt'), 'new head\n');
+    execFileSync('git', ['-C', clone, 'config', 'user.email', 'test@example.com']);
+    execFileSync('git', ['-C', clone, 'config', 'user.name', 'Viewer test']);
+    execFileSync('git', ['-C', clone, 'add', 'boot-version-test.txt']);
+    execFileSync('git', ['-C', clone, 'commit', '--quiet', '-m', 'move HEAD after server boot']);
+    machine.status.version = execFileSync('git', ['-C', clone, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+    const firstAppRequest = await api({ server }, '/threads', {
+      method: 'POST', body: { project: clone, cli: 'codex' },
+    });
+    assert.equal(firstAppRequest.status, 409);
+    assert.match(firstAppRequest.body.detail, /out of date/);
+  } finally {
+    await server.stop();
+    await machine.stop();
+  }
 });
 
 test('reachable Sessions responses do not expose tokens', async () => {

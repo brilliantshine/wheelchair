@@ -152,18 +152,37 @@ function transcriptItems(cli, raw, thread) {
   const turns = [];
   const calls = new Map();
   let codexTurn = false;
+  let codexHumanSeen = false;
   for (const row of transcriptRows(raw)) {
     const payload = row.payload || row;
     const content = payload.type === 'message' ? payload.content : row.message?.content;
     const text = unwrap(textOf(content));
+    const taskStarted = row.type === 'event_msg' && payload.type === 'task_started';
+    if (cli === 'codex' && taskStarted) {
+      codexTurn = false;
+      codexHumanSeen = false;
+      continue;
+    }
     const turnContext = row.type === 'turn_context' || payload.type === 'turn_context';
     if (cli === 'codex' && turnContext) {
       codexTurn = true;
+      codexHumanSeen = false;
       continue;
     }
     const claudeHuman = row.type === 'user' && row.origin?.kind === 'human';
+    const codexUser = cli === 'codex' && row.type === 'response_item'
+      && (payload.type === 'message' ? payload.role : row.message?.role) === 'user';
+    // Some rollouts omit task_started.  The next user entry then begins the next turn and
+    // must not inherit the preceding turn_context's permission to render as Collin.
+    if (codexUser && codexHumanSeen) {
+      codexTurn = false;
+      codexHumanSeen = false;
+    }
     const human = cli === 'claude' ? claudeHuman : isCodexHuman(row, codexTurn, text);
-    if (human) turns.push({ human: text, replies: [], at: itemAt(row) });
+    if (human) {
+      turns.push({ human: text, replies: [], at: itemAt(row) });
+      if (cli === 'codex') codexHumanSeen = true;
+    }
     else if (!foldResult(calls, row, cli)) appendReply(turns, row, cli, calls);
   }
   return turns.flatMap((turn) => renderTurn(turn, thread));

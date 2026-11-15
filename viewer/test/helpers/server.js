@@ -78,7 +78,7 @@ function waitForLine(child) {
   });
 }
 
-async function startServer({ open, cacheRoot, stateDir, port, env } = {}) {
+async function startServer({ open, cacheRoot, stateDir, port, env, cwd = ROOT } = {}) {
   const root = cacheRoot || await makeDir();
   const graphDir = path.join(root, 'graphs');
   await fs.mkdir(graphDir, { recursive: true });
@@ -87,7 +87,7 @@ async function startServer({ open, cacheRoot, stateDir, port, env } = {}) {
   const args = ['viewer/server.js', '--port', String(chosenPort), '--cache-root', root, '--open', graphPath];
   if (stateDir) args.push('--state-dir', stateDir);
   const child = spawn(process.execPath, args, {
-    cwd: ROOT,
+    cwd,
     env: { ...process.env, ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
   });

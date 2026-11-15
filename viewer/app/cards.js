@@ -2,6 +2,7 @@
 
 // Spec "How the app reads and drives a session" and protocol/app/cards.md.
 const crypto = require('node:crypto');
+const path = require('node:path');
 const { appError } = require('./state.js');
 const { validate } = require('./card.js');
 
@@ -28,7 +29,6 @@ function addCard(thread, card, meta = {}) {
 }
 
 async function acceptCard(hub, payload) {
-  let createdStub = null;
   const result = await hub.updateThread(payload.thread_id, async (thread) => {
     const session = hub.session(thread, payload.session);
     if (thread.archived) throw appError(409, 'thread is archived');
@@ -42,8 +42,9 @@ async function acceptCard(hub, payload) {
 
     // A diagram iframe must never observe its card before its plan is registered.
     if (checked.card.kind === 'diagram' && hub.registerPlan) {
-      const plan = require('node:path').join(thread.worktree || thread.project, 'docs', 'plans', checked.card.plan);
+      const plan = path.join(thread.worktree || thread.project, 'docs', 'plans', checked.card.plan);
       await hub.registerPlan(plan);
+      if (hub.registerGraph) await hub.registerGraph(path.join(plan, 'graphs', `${checked.card.graph}.json`));
     }
 
     const card = addCard(thread, checked.card, { session: session.name });
@@ -63,22 +64,23 @@ async function acceptCard(hub, payload) {
         thread.queues[target.name] = target.queue;
       }
     }
-    if (card.kind === 'stub') createdStub = { parent: thread, card };
+    if (card.kind === 'stub') {
+      const child = await hub.createStub(thread, card);
+      card.thread_id = child.id;
+    }
+    const targetName = card.kind === 'message'
+      ? card.to
+      : card.kind === 'result'
+        ? thread.sessions.find((item) => item.name === payload.session)?.started_by
+        : null;
+    // This machine submission is part of accepting a message/result card.  Keeping the
+    // mutation in this transaction means a failed submit leaves neither the card nor its
+    // delivery id behind; the service can safely retry the same envelope.
+    if (targetName) await hub.deliver(thread, targetName, { save: false });
     if (payload.delivery_id) thread.delivered_ids = [...thread.delivered_ids, payload.delivery_id].slice(-500);
     return card;
   });
   if (result.duplicate) return result;
-  if (createdStub) {
-    const child = await hub.createStub(createdStub.parent, createdStub.card);
-    await hub.updateThread(payload.thread_id, async (thread) => {
-      const card = thread.cards.find((item) => item.id === result.id);
-      if (card) card.thread_id = child.id;
-    });
-    result.thread_id = child.id;
-  }
-  const thread = await hub.thread(payload.thread_id);
-  const targetName = result.kind === 'message' ? result.to : result.kind === 'result' ? thread.sessions.find((item) => item.name === payload.session)?.started_by : null;
-  if (targetName) await hub.deliver(thread, targetName);
   return result;
 }
 

@@ -146,6 +146,27 @@ test('does not let Codex task_started open a human turn before turn_context', ()
   assert.deepEqual(transcriptItems('codex', transcript, {}).map((item) => item.text), ['Actual human turn.']);
 });
 
+test('requires a fresh Codex turn_context for each turn', () => {
+  const user = (text) => ({
+    type: 'response_item',
+    payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] },
+  });
+  const transcript = lines([
+    { type: 'event_msg', payload: { type: 'task_started' } },
+    user('first injected before context'),
+    { type: 'turn_context', payload: {} },
+    user('First real human message.'),
+    // This rollout lacks task_started. Its first user entry still opens a new turn.
+    user('second injected before context'),
+    { type: 'turn_context', payload: {} },
+    user('Second real human message.'),
+  ]);
+  assert.deepEqual(transcriptItems('codex', transcript, {}).map((item) => item.text), [
+    'First real human message.',
+    'Second real human message.',
+  ]);
+});
+
 test('collapses a Codex function call to one chat item', () => {
   const transcript = lines([
     { type: 'turn_context', payload: {} },
