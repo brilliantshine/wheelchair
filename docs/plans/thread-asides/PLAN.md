@@ -84,8 +84,8 @@ asides; no other item type needs an id.
   action}`, `action` one of `ask`, `simpler`, `draw`. The panel opens at once showing the
   quote. Creating the aside records the lead's conversation id (§3, `fork_parent`).
 - For `ask`, the panel's input takes focus and the `start` message is made when Collin
-  sends what he types. In general: a message typed into an aside whose `history` and
-  `pending` hold no `start` message becomes the `start` message (quote and action included);
+  sends what he types. In general: a message typed into an aside whose `history`,
+  `pending` and running `turn.message` hold no `start` message becomes the `start` message (quote and action included);
   every later one is `ask`. For `simpler` and `draw` the `start` message is queued at once.
 
 ### 3. The aside record (hub, `viewer/app/threads.js` / `state.js`)
@@ -126,9 +126,14 @@ so the main chat, the queued count and the app's session notices never see it.
   "failed", reply, conversation_id, error, limit}`. `DELETE` kills a running turn. A turn
   still running after 15 minutes is killed and reported `failed` ("took too long"). The
   machine writes each turn to its state directory (beside `sessions.json`) when it accepts
-  the POST, before spawning, and keeps finished turns for 24 hours. On start it marks any
-  turn still `running` as `failed` ("the machine restarted"). So a 404 means the machine
-  never accepted that `turn_id`.
+  the POST, before spawning, and keeps it until the hub acknowledges the result (at most 30 days, see Accepted Risks)
+  (`POST /v1/aside-turns/:turn_id/ack`, sent after the hub has saved it), so a 404 means
+  the machine never accepted that `turn_id`. The CLI is spawned in its own process group,
+  and the turn records its pid and process start time. The service runs with
+  `KillMode=process` (`install.sh:336`), so children outlive a service restart: on start,
+  for each turn still `running`, the machine kills that process group if the pid still
+  belongs to the same process (start time matches), confirms it is gone, and only then
+  marks the turn `failed` ("the machine restarted").
 - **Commands.** Environment: the account's login environment (`adapters.*.loginEnv`) and
   `WHEELCHAIR_LANE=1`, nothing else of ours. Working directory: the thread's worktree.
   - Claude: `claude -p --output-format json --model <model> [--effort <e>]
@@ -140,7 +145,8 @@ so the main chat, the queued count and the app's session notices never see it.
     `--resume <from>` (resume). The prompt goes on stdin. `reply` is the JSON's `result`;
     `conversation_id` is `new_id` (fork) or `from`.
   - Codex: `codex exec fork <from> -` (fork) or `codex exec resume <from> -` (resume), with
-    `-s read-only --json -m <model>`, `-c mcp_servers={}` (no MCP tools) and the effort config
+    `-s read-only --json -m <model>`, one `-c mcp_servers.<name>.enabled=false` for every server `codex mcp list --json` lists
+    under that account's environment (an empty table doesn't disable configured servers) and the effort config
     as today. The prompt goes on
     stdin, preceded on a fork by `<aside prompt>\n\n`. `reply` is the last agent message
     and `conversation_id` the thread id, both from the `--json` events.
@@ -214,7 +220,7 @@ One rule, run after every change to an aside and on each poll:
 - **Reopening**: Collin types in a closed aside: `status: open`, the message goes into
   `pending`, and the rule above runs it.
 - **Think harder** is enabled when the aside is `open`, `slot` is `standard`, `heavy` is
-  usable, no turn is running and `history` holds at least one `start` or `ask` entry. It sets `slot: heavy` and puts the last `start` or `ask`
+  usable, no turn is running, `failed` is null and `history` holds at least one `start` or `ask` entry. It sets `slot: heavy` and puts the last `start` or `ask`
   message in `history` back into `pending`.
 - **Archiving** the thread closes every aside (as above) and `DELETE`s any running turn
   before the worktree goes. After that every aside route that changes something (create,
@@ -262,8 +268,8 @@ each time the hub serves an aside record it registers that aside's graph paths a
 - **Done, back to …**: `POST .../asides/:aside/close {outcome: "done"}`: closed as in §5.
   The page closes the panel and scrolls to the waiting-on card, or keeps its scroll
   position when nothing is waiting.
-- **This changes my answer**: enabled when the aside is `open`, `cli_id` is set and no turn
-  is running. It adds a `control` message to `pending`; its reply fills an editable box in
+- **This changes my answer**: enabled when the aside is `open`, `cli_id` is set, no turn
+  is running and `failed` is null. It adds a `control` message to `pending`; its reply fills an editable box in
   the panel with Send and Cancel. Send: `POST .../close {outcome: "changed", line}`. The hub
   enqueues to the latest live lead, as `collin`, `<line>\n\n(from aside <number> on:
   "<quote, cut to 80 chars>")`, so it shows in the main thread as Collin's message, then
@@ -302,8 +308,8 @@ command and a resume of the fork, and check:
   Bash and Write, a write attempt still fails because the tool doesn't exist;
 - Claude: with an MCP server configured in user settings and its tools granted, none of its
   tools is available;
-- Codex: the read-only sandbox refuses a write, and a configured MCP server's tools aren't
-  available.
+- Codex: the read-only sandbox refuses a write, and with a configured MCP server, the
+  disabling flags leave none of its tools available.
 
 Findings go to `docs/plans/thread-asides/reports/T1.md`. If a check fails for a CLI, T1 is
 reported blocked and the build stops for that provider's asides; the lead takes it to
@@ -341,7 +347,9 @@ node --test viewer/test/*.test.js     # new, with a fake machine: message ids st
                                       # to the lead as collin; wc-graph saved and registered
 bash machine/test/run.sh              # new, with fake CLIs: fork and resume argv for both
                                       # CLIs; reply and id parsing; timeout; duplicate POST
-                                      # starts nothing; a running turn is failed after restart
+                                      # starts nothing; on restart a running turn's process
+                                      # group is killed before it is marked failed; acked
+                                      # turns are dropped
 npm --prefix viewer run test:browser  # new: selection bar for a selection in one lead bubble
                                       # and not across bubbles; panel with quote and
                                       # waiting-on line; underline survives a chat rebuild;
@@ -354,6 +362,7 @@ bash machine/test/aside-probe.sh      # T1, by hand, real CLIs
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| The machine keeps unacknowledged aside turns for 30 days, then drops them; a hub gone that long could re-run one turn after a 404 | A hub down for a month has bigger problems; the cost is one repeated answer | 8 |
 
 ## Review Rounds
 
@@ -512,6 +521,25 @@ Collin chose "Keep going" again; the budget is reset.
 - §3/§5: a running turn holds its message (`turn.message`).
 - §4: machine persists turns on accept; restart fails running ones; 404 means never accepted.
 - §4: no MCP tools for either CLI (`--strict-mcp-config`, `mcp_servers={}`); §10 tests it.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent (gpt) | — | No findings | — | — |
+| mechanics (gpt) | major | RE-RAISE: `mcp_servers={}` doesn't disable Codex MCP servers | upheld | Reviewer ran `codex mcp list` with it; §4 disables each listed server |
+| mechanics (gpt) | major | RE-RAISE: 24-hour retention breaks "404 means never accepted" | upheld | §4: kept until the hub acknowledges; 30-day cap is an Accepted Risk |
+| mechanics (gpt) | major | Orphaned CLI processes survive a service restart | upheld | Checked `install.sh:336` (`KillMode=process`); §4 kills the process group before failing the turn |
+| mechanics (gpt) | major | RE-RAISE: the first-message test misses the running message | upheld | §2 includes `turn.message` |
+| mechanics (gpt) | major | Think harder and the summary are enabled while a failure waits for Retry | upheld | §5/§8: both need `failed` null |
+
+### Round 9 — 2026-11-15
+
+**Lanes:** intent: pending; mechanics: pending.
+
+**Changed since Round 8:**
+- §2: the first-message test includes the running message.
+- §4: Codex MCP servers disabled one by one; turns kept until acknowledged; orphaned processes killed on machine start.
+- §5/§8: Think harder and This changes my answer need no pending failure.
+- Accepted Risks: 30-day cap on unacknowledged turns.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
