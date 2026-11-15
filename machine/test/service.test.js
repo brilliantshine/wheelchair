@@ -264,3 +264,12 @@ test('an archived session\'s kept transcript is still served; an unknown one is 
     assert.equal(unknown.status, 404);
   } finally { await env.close(); }
 });
+test('a stopped session is not reported stuck while it shuts down', async () => {
+  const hub = await hubServer(); const env = await service(await temp(), { pane: 'shutting down', config: { hub_url: hub.url } }); try {
+    await start(env); const session = env.instance.sessions['wc-t-lead'];
+    session.status = 'stopped'; session.created_at = new Date(Date.now() - 60_000).toISOString();
+    await env.instance.pollReadiness();
+    assert.equal(session.status, 'stopped');
+    assert.equal(hub.calls.filter(call => call.body.includes('"stuck"')).length, 0);
+  } finally { await env.close(); await hub.close(); }
+});

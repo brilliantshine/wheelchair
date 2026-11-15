@@ -281,7 +281,9 @@ class MachineService {
     }
     return false;
   }
-  async pollReadiness() { await Promise.all(Object.values(this.sessions).filter(s => s.status !== 'ready').map(s => this.checkReady(s))); }
+  // Only a session still coming up (or stuck coming up) is watched: a stopped one shutting down
+  // never shows the ready screen and would otherwise be reported stuck.
+  async pollReadiness() { await Promise.all(Object.values(this.sessions).filter(s => s.status === 'starting' || s.status === 'stuck').map(s => this.checkReady(s))); }
   async submit(name, text) {
     const session = this.managed(name);
     if (session.status !== 'ready') throw Object.assign(new Error('session is not ready'), { status: 409 });
