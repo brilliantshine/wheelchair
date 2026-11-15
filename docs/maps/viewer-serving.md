@@ -1,6 +1,6 @@
 # Map: what the viewer server serves (pages, assets, document page, fonts)
 
-Checked against: `5742e2f990d2f99c82aa82b01403ee772a6bf502` (origin/main)
+Checked against: `c8ebeadbf0b733414c0c1682c027aa7c09b04d2a` (origin/main)
 Files covered: `viewer/server.js`, `viewer/doc.html`, `viewer/doc.js`,
 `viewer/pages/app.css`, `viewer/pages/thread.html`, `viewer/pages/md.js`,
 `viewer/pages/doc.html`, `viewer/pages/doc.js`, `viewer/pages/nav.js`, `viewer/package.json`
@@ -18,9 +18,9 @@ Files covered: `viewer/server.js`, `viewer/doc.html`, `viewer/doc.js`,
 2. **Assets.** `handleAsset` serves `list.js` and `doc.js` by name, four allowlisted fonts
    under `fonts/` from `node_modules/@fontsource` (`server.js:1835-1840`, `1850-1859`),
    else only names matching `^(pages|vendor)/…\.(js|css)$` (`server.js:1841`, `1860-1864`).
-3. **App pages.** `handleAppPage` serves `viewer/pages/<name>.html` for the six names in
-   `APP_PAGES` — threads, thread, doc, features, sessions, terminal (`server.js:1830`,
-   `1867-1885`) — behind the remember cookie (a `token` query is swapped for the cookie by a
+3. **App pages.** `handleAppPage` serves `viewer/pages/<name>.html` for the seven names in
+   `APP_PAGES` — threads, thread, doc, features, sessions, settings, terminal
+   (`server.js:1830`, `1867-1885`) — behind the remember cookie (a `token` query is swapped for the cookie by a
    redirect), with `APP_PAGE_CSP` = `PAGE_CSP` plus `frame-src 'self'` (`server.js:1832`).
    `PAGE_CSP` now includes `font-src 'self'` (`server.js:47`).
 4. **The in-app document page** (`/wheelchair/app/doc?thread=&file=`) loads `nav.js`,
@@ -30,13 +30,14 @@ Files covered: `viewer/server.js`, `viewer/doc.html`, `viewer/doc.js`,
 5. **The old document page** `/wheelchair/docs` still exists: it checks the cookie and the
    registered plan and serves `viewer/doc.html` (`server.js:1897-1909`).
 6. **The app nav** is built by `viewer/pages/nav.js` into `<header id="app-nav">`; its view
-   links are a fixed list of three: Features, Threads, Sessions (`nav.js:38-42`).
+   links are a fixed list of four: Features, Threads, Sessions, Settings (`nav.js:38-43`).
+   Its New thread button is a link to `/wheelchair/app/threads?new=1` (`nav.js:80-94`).
 
 ```
 browser -> server.js handler
              |- /api/*        -> app hub (cookie or write auth; /api/machine/* by machine secret)
              |- /assets/*     -> list.js, doc.js, 4 fonts, pages|vendor *.js|*.css
-             |- /app/<page>   -> pages/<page>.html (6 names), APP_PAGE_CSP
+             |- /app/<page>   -> pages/<page>.html (7 names), APP_PAGE_CSP
              |- /docs         -> old doc.html
              |- /doc, /plan   -> Markdown text, file list of a registered plan
 ```
@@ -45,7 +46,7 @@ browser -> server.js handler
 
 - A new page is a name in `APP_PAGES` (`server.js:1830`), an HTML file in `viewer/pages/`,
   and its script/CSS under `viewer/pages/` (served by the existing asset pattern with no
-  further change). A nav entry is one more row in `nav.js:38-42`.
+  further change). A nav entry is one more row in `nav.js:38-43`.
 - Its data comes from `/wheelchair/api/*`, routed by `viewer/app/routes.js` (see
   `docs/maps/app-sessions.md`).
 

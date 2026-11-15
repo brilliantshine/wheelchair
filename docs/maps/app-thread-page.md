@@ -1,6 +1,6 @@
 # Map: the app's thread page and Threads list (messages, cards, presses, plan links)
 
-Checked against: `5742e2f990d2f99c82aa82b01403ee772a6bf502` (origin/main)
+Checked against: `c8ebeadbf0b733414c0c1682c027aa7c09b04d2a` (origin/main)
 Files covered: `viewer/app/threads.js`, `viewer/app/cards.js`, `viewer/app/chat.js`,
 `viewer/app/views.js`, `viewer/app/routes.js`, `viewer/pages/thread.js`,
 `viewer/pages/thread.html`, `viewer/pages/threads.js`, `viewer/pages/nav.js`
@@ -8,10 +8,10 @@ Files covered: `viewer/app/threads.js`, `viewer/app/cards.js`, `viewer/app/chat.
 ## Flow
 
 1. **A thread is made.** The New thread form posts `{project, cli, machine, message?}`
-   (`viewer/pages/threads.js:143-144`). `createThread` builds the record, takes `title`
+   (`viewer/pages/threads.js:173-179`; the same script runs on the thread page). `createThread` builds the record, takes `title`
    from the message's first line cut to 60 characters, starts the lead with an empty brief
    at tier `top`, and queues the message to it as an ordinary message
-   (`viewer/app/threads.js:42-64`). A lead can rename it later with a `title` card
+   (`viewer/app/threads.js:42-64`; unchanged). A lead can rename it later with a `title` card
    (`viewer/app/cards.js:66-70`).
 2. **The plan slug is discovered, not declared.** Every `GET /threads/:id/chat` and
    `GET /features` runs `findSlug` (`viewer/app/chat.js:220`, `viewer/app/views.js:35`):
@@ -48,6 +48,12 @@ GET /chat every 2s -> chat(): lead sessions only -> machine /transcript -> trans
 typed message -> POST /messages -> queue -> delivered at lead turn end (/submit paste)
 press -> POST /cards/:id/press -> answered + answered_value -> "[card id] picked: X" queued
 ```
+
+## Changed since the older check
+
+- `viewer/pages/thread.js` (+63 lines) and `viewer/app/chat.js` (+22) changed after the older check. Their `file:NNN` numbers in this map are from the older commit and have shifted; the flow was not re-traced.
+- `chat()` now drops tool items when Settings `tool_steps` is `hide`, and strips a trailing `[wc:style]` block from human text (`viewer/app/chat.js`, diff against `5742e2f`). Not traced further here.
+- A stub badge shows only until a lead runs in it (`viewer/pages/threads.js:51-57`).
 
 ## Plan document links
 
