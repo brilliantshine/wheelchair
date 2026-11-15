@@ -98,7 +98,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
     and `found_error` in plain words ("<machine> is not reachable", "<machine> needs
     updating"); the route still returns 200.
   - `saved`: the `saved_dirs` entries whose `machine` equals the requested one.
-    `previous`: `projects.json`.
+    `previous`: the distinct `project` paths of threads (archived included) whose `machine`
+    equals the requested one, newest first. `projects.json` has no machine field, so it is not
+    used here.
 - `POST /settings/saved-dirs` `{name, path, machine}`: validates the fields, checks `path`
   on `machine` through `/v1/projects?check=`, stores the expanded path. Refusals: `400`
   with the field error or the check's reason; `409` when the name exists for that machine; `502` when the
@@ -129,7 +131,8 @@ refusal. The `POST /threads` body is unchanged.
   one). A found folder whose path equals a saved entry's path is listed once, under Saved;
   nothing is ever hidden by name. Use `<optgroup>` labels. The option's value is the path; the full path shows under
   the dropdown for the selected one.
-- Under the dropdown, a short note: "Only git repositories in <default folder> are listed."
+- When a default folder is set, a short note under the dropdown: "Only git repositories in
+  <default folder> are listed."
 - `found_error` shows as one line under the dropdown. No default folder set: one line
   "Set a default project folder in Settings" linking to Settings.
 - An empty list (nothing saved, found or used before) disables Start and says to save a
@@ -185,6 +188,12 @@ refusal. The `POST /threads` body is unchanged.
   `app-threads.spec.js:102-107`, `app-views.spec.js:102-104`) move to the new screen; add
   one for the screen at phone width, and one for the Settings field (save, and a `400`
   shown under it).
+- Existing tests that conflict and must change, keeping what they cover:
+  `viewer/test/app-settings.spec.js:248-250` (phone-width check of the removed nav button:
+  check the "+ New thread" link or the new screen instead);
+  `viewer/test/app-machines.test.js:38-45` (a refused start leaves a failed lead: the fake
+  machine must now pass the `/v1/projects?check=` call so the start itself is what fails, and
+  a second case asserts an unreachable machine leaves no thread and no `projects.json` entry).
 - Commands:
   ```bash
   bash machine/test/run.sh
@@ -229,6 +238,24 @@ refusal. The `POST /threads` body is unchanged.
 - `~` expansion narrowed to `~` and `~/` (Decision 17).
 - Machine list folds the hub's hostname entry into `hub` (Decision 14); `folder_error` forwarded.
 - New "Settings page" section; two-column grid for the Threads page; git-only note on the screen.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| Claude intent | major | Stale hide-by-name rule left in the screen section | downgraded to minor — a one-line leftover the same paragraph and Decision 15 contradict explicitly; a worker would follow the decision | Line removed |
+| Claude intent | minor | "Used before" not filtered by machine | upheld | `previous` from threads on that machine |
+| Claude intent | minor | Git-only note shows with no folder set | upheld | Shown only when a folder is set |
+| Codex mechanics | minor (re-raise) | Same stale hide-by-name line | upheld | Same fix |
+| Codex mechanics | minor | Two existing tests conflict with the new behavior | upheld — `app-settings.spec.js:248`, `app-machines.test.js:38-45` | Named in Tests |
+
+### Round 3 — 2026-11-15
+
+**Lanes:** Codex (mechanics); Claude (intent); cross-family: yes.
+
+**Changed since Round 2:**
+- Removed the leftover hide-by-name line in the screen section.
+- `previous` ("Used before") now comes from threads on the selected machine, not `projects.json`.
+- The git-only note shows only when a default folder is set.
+- Tests list names the two existing tests that must change.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
