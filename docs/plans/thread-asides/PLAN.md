@@ -46,6 +46,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 15 | Supersedes 8 in part: an aside writes no files at all; a drawn graph comes back in its reply and the hub registers and saves it | A Codex aside runs read-only, and the viewer refuses unregistered graph writes (`viewer/server.js:1645`) | review-round-1 |
 | 16 | Supersedes 2 and 4 on mechanism: an aside is not a session. Each message runs as one headless CLI turn (fork for the first, resume after), with no tmux, token or stop | Rounds 2-5 kept finding races in starting, stopping and restarting long-lived aside sessions; one-shot turns have none of that state, and with no token an aside can't post cards or use git | review-round-5 |
 | 17 | Supersedes 3: the copy is made at the aside's first turn, from the lead conversation recorded when the aside was opened. It may include lead turns from between opening and the first message; it never sees later ones | Forking needs a message to run; recording the parent at opening keeps a lead restart from losing context | review-round-5 |
+| 18 | Adds to 16 on mechanism: Claude fork and resume pass `--system-prompt-snapshot off`; Codex fork and resume pass `--disable apps` before the subcommand. No behaviour change: these make the read-only aside prompt and tool limits actually apply | T1 attempt 1 found Claude reusing the lead's recorded system prompt on a fork, and Codex forks keeping ChatGPT apps tools that the per-server flags miss; the lead checked both flags exist in the installed CLIs | implementation-T1 |
 
 ## Spec
 
@@ -165,7 +166,10 @@ so the main chat, the queued count and the app's session notices never see it.
   `WHEELCHAIR_LANE=1`, nothing else of ours. Working directory: the thread's worktree.
   - Claude: `claude -p --output-format json --model <model> [--effort <e>]
     --permission-mode dontAsk --tools Read,Grep,Glob --strict-mcp-config
-    --append-system-prompt <aside prompt>` (`--tools` limits which built-in tools exist at
+    --system-prompt-snapshot off --append-system-prompt <aside prompt>` (`--system-prompt-snapshot
+    off` makes Claude build the system prompt from this launch's flags instead of reusing the
+    one recorded for the lead's conversation, so the aside prompt applies on fork and resume;
+    `--tools` limits which built-in tools exist at
     all, and `--strict-mcp-config` with no `--mcp-config` loads no MCP servers, so no
     permission grant from any settings file, such as the wording script's, can reach a
     writing tool), plus `--resume <from> --fork-session --session-id <new_id>` (fork) or
@@ -174,7 +178,9 @@ so the main chat, the queued count and the app's session notices never see it.
   - Codex: `codex exec -s read-only --json -m <model> [flags below] fork <from> -` (fork)
     or `codex exec -s read-only --json -m <model> [flags below] resume <from> -` (resume):
     the flags go before the subcommand, which refuses them after it. Flags: one `-c mcp_servers.<name>.enabled=false` for every server `codex mcp list --json` lists
-    under that account's environment (an empty table doesn't disable configured servers) and the effort config
+    under that account's environment (an empty table doesn't disable configured servers),
+    `--disable apps` (ChatGPT apps are a built-in feature, not a listed server, and the
+    per-server flags miss them) and the effort config
     as today. The prompt goes on
     stdin, preceded on a fork by `<aside prompt>\n\n`. `reply` is the last agent message
     and `conversation_id` the thread id, both from the `--json` events.
@@ -332,12 +338,18 @@ command and a resume of the fork, and check:
 - the parent conversation's transcript is unchanged by both;
 - forking works while the parent's interactive session is still open;
 - the reply and conversation id come out of the output as §4 says;
-- Claude: `--append-system-prompt` and `--tools` apply; with a settings file that grants
+- the aside prompt is followed by the fork and the resume (Claude: `--append-system-prompt`
+  with `--system-prompt-snapshot off`; Codex: the stdin preamble);
+- tools are judged only by attempted calls and their tool-result events, never by tool
+  names the model prints (names can come from the copied history);
+- Claude: `--tools` applies; with a settings file that grants
   Bash and Write, a write attempt still fails because the tool doesn't exist;
 - Claude: with an MCP server configured in user settings and its tools granted, none of its
-  tools is available;
+  tools executes; a positive control first shows that server is configured and visible
+  without `--strict-mcp-config`;
 - Codex: the read-only sandbox refuses a write, and with a configured MCP server, the
-  disabling flags leave none of its tools available.
+  disabling flags leave none of its tools available; with `--disable apps`, no ChatGPT apps
+  tool (`mcp__codex_apps__*`) executes.
 
 Findings go to `docs/plans/thread-asides/reports/T1.md`. If a check fails for a CLI, T1 is
 reported blocked and the build stops for that provider's asides; the lead takes it to
@@ -597,3 +609,4 @@ Round 9 is clean: no blocking or major finding upheld.
 - 2026-11-15 Ready check: hub and machine service answer (`wc.js session list`); Claude logged in (claude.ai); Codex logged in (ChatGPT); `codex/preflight.sh` passes. Every reviewer ran on GPT: the hub could not start a Claude reviewer in any round.
 - 2026-11-15 — T1 attempt 1 (standard, gpt-6.1-terra) blocked: Claude's fork ignores --append-system-prompt (prompt snapshot); Codex fork keeps mcp__codex_apps__* tools; the worker edited its script mid-run so several Codex checks never ran. Reported to the lead with proposed flags (--system-prompt-snapshot off, --disable apps) and a rerun at xhigh.
 - 2026-11-15 — T1 attempt 2 started (standard, xhigh, --replaces worker): one paid run per CLI, as the lead cleared; tool checks by side effect; tests the two candidate flags.
+- 2026-11-15 — Lead approved the §4/§10 amendment (Decision 18) and the T1 rerun at xhigh, script frozen before the run; any executed write, shell or MCP/app call, or an ignored aside prompt, is T1 blocked and goes to Collin.
