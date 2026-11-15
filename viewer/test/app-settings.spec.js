@@ -42,17 +42,17 @@ test.describe('desktop', () => {
     await expect(page.locator('#panel h1')).toHaveText('Models and preferences');
   });
 
-  test('three sections, kept across a reload through the hash', async ({ page }) => {
+  test('five sections, kept across a reload through the hash', async ({ page }) => {
     await openPage(page, context, '/app/settings');
     const nav = page.locator('#sections a');
-    await expect(nav).toHaveText(['Models and preferences', 'Behavior templates', 'Writing style']);
-    await nav.nth(1).click();
+    await expect(nav).toHaveText(['Accounts', 'Usage', 'Models and preferences', 'Behavior templates', 'Writing style']);
+    await nav.nth(3).click();
     await expect(page).toHaveURL(/#templates$/);
     await expect(page.locator('.tpl-list h1')).toHaveText('Behavior templates');
     await page.reload();
     await expect(page.locator('.tpl-list h1')).toBeVisible();
     await expect(page.locator('#sections a[aria-current="page"]')).toHaveText('Behavior templates');
-    await nav.nth(2).click();
+    await nav.nth(4).click();
     await page.reload();
     await expect(page.locator('#panel h1')).toHaveText('Writing style');
     await expect(page.locator('.covers')).not.toContainText('Phone notifications');
@@ -216,12 +216,12 @@ test.describe('phone', () => {
   test('the sections are tabs above the section and the page never scrolls sideways', async ({ page }) => {
     await openPage(page, context, '/app/settings');
     const tabs = page.locator('#sections a');
-    await expect(tabs).toHaveCount(3);
+    await expect(tabs).toHaveCount(5);
     const boxes = await tabs.evaluateAll((nodes) => nodes.map((n) => n.getBoundingClientRect().toJSON()));
     expect(new Set(boxes.map((b) => Math.round(b.top))).size).toBe(1);
     const panel = await page.locator('#panel').boundingBox();
     expect(boxes[0].bottom).toBeLessThanOrEqual(panel.y + 1);
-    for (const key of ['models', 'templates', 'writing']) {
+    for (const key of ['accounts', 'usage', 'models', 'templates', 'writing']) {
       await page.locator(`#sections a[data-section="${key}"]`).click();
       await expect(page.locator('#sections a[aria-current="page"]')).toHaveAttribute('data-section', key);
       await page.waitForTimeout(200);

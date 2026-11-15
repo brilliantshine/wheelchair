@@ -498,6 +498,25 @@ test('creates an unstarted stub and opens it after a role turn ends', async () =
   });
 });
 
+test('stub lead follows lead order instead of inheriting its parent provider', async () => {
+  await withContext(async (context) => {
+    const parent = await thread(context);
+    assert.equal(parent.provider, 'gpt');
+    const result = await card(context, parent.id, parent.sessions[0].name, {
+      kind: 'stub', title: 'Follow-up', summary: 'Continue separately.', depends_on_parent: false,
+    });
+    const hub = new Hub({ stateDir: context.state });
+    const stub = await hub.thread(result.body.thread_id);
+    assert.equal(stub.provider, undefined);
+    assert.equal(stub.sessions.length, 0);
+    await api(context, '/settings/balancing', { method: 'PUT', body: { lead_order: ['claude', 'any'] } });
+    const opened = await api(context, `/threads/${stub.id}/open`, { method: 'POST', body: {} });
+    assert.equal(opened.body.provider, 'claude');
+    assert.equal(opened.body.cli, 'claude');
+    assert.equal(opened.body.sessions[0].provider, 'claude');
+  });
+});
+
 test('waits for a dependent stub until the parent merges', async () => {
   await withContext(async (context) => {
     const parent = await thread(context);
@@ -573,14 +592,14 @@ test('rechecks an approval in place and gates Start building on the fresh result
     });
     assert.equal(rechecked.body.queued, false);
     assert.deepEqual(rechecked.body.ready, { ok: true, missing: [] });
-    context.machine.preflightOk = false;
+    context.machine.status.codex.logged_in = false;
     const stopped = await api(context, `/threads/${made.id}/cards/${approval.body.id}/press`, {
       method: 'POST', body: { action: 'start-building' },
     });
     assert.equal(stopped.body.queued, false);
     assert.equal(stopped.body.ready.ok, false);
     assert.equal(context.machine.sessions.get(made.sessions[0].name).submits, undefined);
-    assert.ok(context.machine.calls.some((call) => call.path === '/v1/preflight'));
+    assert.match(stopped.body.ready.missing[0], /GPT is not logged in/);
   });
 });
 
@@ -873,7 +892,7 @@ function pinned(context, provider, tier) {
 
 async function startAs(context, lead, role, cli, tier) {
   return machinePost(context, '/machine/session', {
-    calling_session: lead.name, action: 'start', role, cli, tier, attempt_id: `${role}-${cli}-${tier}`,
+    calling_session: lead.name, action: 'start', role, cli, provider: cli === 'claude' ? 'claude' : 'gpt', tier, attempt_id: `${role}-${cli}-${tier}`,
   });
 }
 
@@ -920,8 +939,8 @@ test('models per role: Claude family aliases do not become Codex tiers', async (
     const codexAlias = await machinePost(context, '/machine/session', {
       calling_session: codexSublead.name, action: 'start', role: 'worker', cli: 'codex', tier: 'haiku', attempt_id: 'codex-haiku',
     });
-    assert.equal(codexAlias.status, 400);
-    assert.match(codexAlias.body.detail, /light, standard, heavy, critical/);
+    assert.equal(codexAlias.status, 200);
+    assert.equal(context.machine.sessions.get(codexAlias.body.session.name).model, pinned(context, 'gpt', 'light'));
 
     const claude = await thread(context, { cli: 'claude', project: '/tmp/claude-aliases' });
     const claudeSublead = await machinePost(context, '/machine/session', {
@@ -929,7 +948,7 @@ test('models per role: Claude family aliases do not become Codex tiers', async (
     });
     assert.equal(claudeSublead.status, 200);
     const claudeAlias = await machinePost(context, '/machine/session', {
-      calling_session: claudeSublead.body.session.name, action: 'start', role: 'worker', cli: 'claude', tier: 'haiku', attempt_id: 'claude-haiku',
+      calling_session: claudeSublead.body.session.name, action: 'start', role: 'worker', provider: 'claude', tier: 'haiku', attempt_id: 'claude-haiku',
     });
     assert.equal(claudeAlias.status, 200);
     assert.equal(context.machine.sessions.get(claudeAlias.body.session.name).model, pinned(context, 'claude', 'light'));
@@ -952,8 +971,9 @@ test('models per role: unknown tiers and unused provider cells are refused', asy
     assert.match(wrong.body.detail, /light, standard, heavy, critical/);
     await api(context, '/settings/models', { method: 'PUT', body: { provider: 'gpt', slot: 'heavy', model: null } });
     const unused = await startAs(context, lead, 'reviewer', 'codex', 'light');
-    assert.equal(unused.status, 400);
-    assert.match(unused.body.detail, /gpt is not used at heavy; use the other CLI/);
+    assert.equal(unused.status, 200);
+    assert.equal(unused.body.session.provider, 'claude');
+    assert.match(unused.body.note, /gpt.*claude/);
   });
 });
 
@@ -969,7 +989,7 @@ test('no session starts while the machine service runs another commit', async ()
   });
 });
 
-test('the Ready check covers the other family and takes Codex login from the preflight', async () => {
+test('the Ready check covers the other family and uses account login status', async () => {
   await withContext(async (context) => {
     const made = await thread(context, { cli: 'claude' });
     const approval = await card(context, made.id, made.sessions[0].name, {
@@ -979,16 +999,16 @@ test('the Ready check covers the other family and takes Codex login from the pre
       method: 'POST', body: { action: 'recheck' },
     });
     assert.deepEqual((await press()).body.ready, { ok: true, missing: [] });
-    context.machine.preflightOk = false;
+    context.machine.status.codex.logged_in = false;
     const failed = (await press()).body.ready;
     assert.equal(failed.ok, false);
-    assert.match(failed.missing[0], /Codex preflight failed/);
-    context.machine.preflightOk = true;
+    assert.match(failed.missing[0], /GPT is not logged in/);
+    context.machine.status.codex.logged_in = true;
     context.machine.status.codex = { installed: false, logged_in: false };
     assert.equal((await press()).body.ready.ok, true);
     context.machine.status.codex = { installed: true, logged_in: true };
     context.machine.status.claude.logged_in = false;
-    assert.match((await press()).body.ready.missing[0], /claude is not logged in/);
+    assert.match((await press()).body.ready.missing[0], /Claude is not logged in/);
   });
 });
 
@@ -1214,6 +1234,7 @@ test('restart context includes the latest twenty Collin and card messages', asyn
 
 test('runs Codex preflight before a lead start and records its failure as a need', async () => {
   await withContext(async (context) => {
+    await api(context, '/settings/balancing', { method: 'PUT', body: { lead_order: ['gpt'] } });
     context.machine.preflightOk = false;
     const result = await api(context, '/threads', { method: 'POST', body: { project: '/tmp/project', cli: 'codex' } });
     assert.equal(result.status, 409);
@@ -1607,5 +1628,17 @@ test('dismiss closes a lead needs card as collin and refuses a system one', asyn
     assert.ok(stored.queues[lead].some((message) => message.text === `[card ${id}] dismissed`));
     const twice = await api(context, `/threads/${made.id}/cards/${id}/dismiss`, { method: 'POST', body: {} });
     assert.equal(twice.status, 422);
+  });
+});
+
+test('restarting a failed lead answers its turn-failed card', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const old = made.sessions[0];
+    await event(context, made.id, old.name, 'turn-failed', { error: 'failed' });
+    context.machine.sessions.get(old.name).running = false;
+    const hub = new Hub({ stateDir: context.state }); await hub.pollDead();
+    assert.equal((await api(context, `/threads/${made.id}/restart`, { method: 'POST', body: {} })).status, 201);
+    assert.ok((await hub.thread(made.id)).cards.some(card => card.title === "The lead's turn failed" && card.answered));
   });
 });

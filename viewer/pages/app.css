@@ -167,3 +167,9 @@ ul#list li.row.current .title { font-weight: 600; }
   .shell { grid-template-columns: 220px minmax(0, 1fr) 250px; }
   .shell.no-side { grid-template-columns: minmax(220px, 280px) minmax(0, 1fr); }
 }
+
+/* The Settings dot (usage alert): amber, sits at the corner of the Settings link. */
+#app-nav .seg a { position: relative; }
+#app-nav .usage-dot { display: inline-block; width: 8px; height: 8px; margin-left: 6px; border-radius: 50%; background: var(--warn); vertical-align: middle; }
+#app-nav .usage-dot[hidden] { display: none; }
+@media (max-width: 480px) { #app-nav .usage-dot { position: absolute; top: 4px; right: 4px; margin: 0; } }

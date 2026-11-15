@@ -163,7 +163,7 @@
     ev.preventDefault();
     if (goEl.disabled) return;
     if (!state || state.machine !== machineEl.value) return;
-    const body = { project: projectEl.value, cli: $('nt-cli').value, machine: state.machine };
+    const body = { project: projectEl.value, machine: state.machine };
     const message = $('nt-message').value.trim();
     if (message) body.message = message;
     goEl.disabled = true;

@@ -702,6 +702,181 @@ test('/v1/preview times out with 504 without blocking the service, and reports c
     assert.equal(missing.status, 503); assert.deepEqual(missing.body, { error: 'claude is not installed' });
   } finally { await env.close(); }
 });
+
+test('account starts bind the CLI environment, validate directories, and report account status', async () => {
+  const root = await temp(); const oldHome = process.env.HOME; process.env.HOME = root;
+  const env = await service(root);
+  try {
+    for (const [cli, variable, id] of [['claude', 'CLAUDE_CONFIG_DIR', 'one'], ['codex', 'CODEX_HOME', 'two']]) {
+      await start(env, { cli, thread_id: id, account: { id, dir: `~/.wheelchair/accounts/${id}` } });
+      assert.match(await log(env), new RegExp(`${variable}=${root}/\\.wheelchair/accounts/${id}`));
+    }
+    const defaultSession = await start(env, { thread_id: 'default' });
+    assert.equal(defaultSession.account, 'default-claude');
+    const invalid = await api(env, 'POST', '/v1/sessions', { role: 'lead', cli: 'claude', thread_id: 'bad', token: 'x', worktree: root, account: { id: 'bad', dir: '~/elsewhere/bad' } }, hubHeader);
+    assert.equal(invalid.status, 400);
+    const status = await api(env, 'GET', '/v1/status', undefined, hubHeader);
+    assert.deepEqual(status.body.accounts.map(a => a.id).sort(), ['default-claude', 'default-gpt', 'one', 'two']);
+    const preflight = await api(env, 'POST', '/v1/preflight', { dir: '~/elsewhere/bad' }, hubHeader); assert.equal(preflight.status, 400);
+  } finally { await env.close(); process.env.HOME = oldHome; }
+});
+
+test('usage and failures are forwarded with account and limit time', async () => {
+  const root = await temp(); const hub = await hubServer(); const env = await service(root, { config: { hub_url: hub.url } });
+  try {
+    const session = await start(env);
+    const headers = { 'x-wheelchair-session-token': 'alpha' };
+    await api(env, 'POST', '/v1/agent/hooks', { type: 'usage-source', payload: { rate_limits: { five_hour: { used_percentage: 100, resets_at: 2000000000 }, seven_day: { used_percentage: 40, resets_at: 2100000000 } } } }, headers);
+    await api(env, 'POST', '/v1/agent/hooks', { type: 'limit-hit', error: 'rate_limit' }, headers);
+    await api(env, 'POST', '/v1/agent/hooks', { type: 'turn-failed', error: 'broken' }, headers);
+    const events = hub.calls.map(c => JSON.parse(c.body)).filter(x => x.session === session.name);
+    assert.equal(events.find(e => e.type === 'usage').reading.account, 'default-claude');
+    assert.equal(events.find(e => e.type === 'limit-hit').limited_until, new Date(2000000000 * 1000).toISOString());
+    assert.equal(events.find(e => e.type === 'turn-failed').error, 'broken');
+  } finally { await env.close(); await hub.close(); }
+});
+
+test('statusline posts a live reading and preflight accepts an account directory', async () => {
+  const root = await temp(); const oldHome = process.env.HOME; process.env.HOME = root;
+  const hub = await hubServer(); const env = await service(root, { config: { hub_url: hub.url } });
+  try {
+    await start(env);
+    const payload = JSON.stringify({ model: { display_name: 'opus' }, rate_limits: { five_hour: { used_percentage: 42, resets_at: 2000000000 } } });
+    const child = spawn(path.join(__dirname, '../statusline.sh'), ['claude', 'wc-t-lead'], { env: { ...process.env, WHEELCHAIR_STATE_DIR: env.state, WHEELCHAIR_SESSION_TOKEN: 'alpha' }, stdio: ['pipe', 'pipe', 'pipe'] });
+    let output = ''; child.stdout.on('data', chunk => { output += chunk; }); child.stdin.end(payload);
+    assert.equal(await new Promise(resolve => child.on('close', resolve)), 0);
+    assert.equal(output.trim(), 'opus · 5h 42%');
+    const second = spawn(path.join(__dirname, '../statusline.sh'), ['claude', 'wc-t-lead'], { env: { ...process.env, WHEELCHAIR_STATE_DIR: env.state, WHEELCHAIR_SESSION_TOKEN: 'alpha' }, stdio: ['pipe', 'pipe', 'pipe'] });
+    second.stdin.end(payload);
+    assert.equal(await new Promise(resolve => second.on('close', resolve)), 0);
+    assert.equal(hub.calls.map(c => JSON.parse(c.body)).filter(e => e.type === 'usage').length, 1);
+    assert.equal(hub.calls.map(c => JSON.parse(c.body)).find(e => e.type === 'usage').reading.five_hour.used, 42);
+    const dir = path.join(root, '.wheelchair/accounts/test'); await write(path.join(dir, 'auth.json'), '{}');
+    const preflight = await api(env, 'POST', '/v1/preflight', { dir: '~/.wheelchair/accounts/test' }, hubHeader);
+    assert.equal(preflight.status, 200); assert.ok((await fs.stat(path.join(dir, '.wheelchair-refresh.lock'))).isFile());
+  } finally { await env.close(); await hub.close(); process.env.HOME = oldHome; }
+});
+test('login sessions start, expose state, accept code and stay out of session recovery', async () => {
+  const root = await temp(), previous = process.env.HOME; process.env.HOME = root;
+  const env = await service(root); try {
+    const started = await api(env, 'POST', '/v1/logins', { account: 'test', cli: 'claude', dir: '~/.wheelchair/accounts/test' }, hubHeader);
+    assert.equal(started.status, 201); const cmd = await log(env); assert.match(cmd, /CLAUDE_CONFIG_DIR=/); assert.match(cmd, /auth.*login/); assert.doesNotMatch(cmd, /WHEELCHAIR_SESSION_TOKEN/);
+    await write(env.fake.pane, 'starting'); assert.equal((await api(env, 'GET', '/v1/logins/test', undefined, hubHeader)).body.state, 'starting');
+    await write(env.fake.pane, await fs.readFile(path.join(__dirname, 'fixtures/login/claude.txt'), 'utf8'));
+    assert.equal((await api(env, 'GET', '/v1/logins/test', undefined, hubHeader)).body.state, 'waiting');
+    assert.equal((await api(env, 'POST', '/v1/logins/test/code', { code: 'test-code' }, hubHeader)).status, 200);
+    assert.match(await log(env), /test-code[\s\S]*send-keys -t wc-login-test Enter/);
+    await write(env.fake.pane, '__wc_login_exit 0'); assert.equal((await api(env, 'GET', '/v1/logins/test', undefined, hubHeader)).body.state, 'done');
+    process.env.FAKE_CLAUDE_AUTH = '{"loggedIn":false}'; assert.equal((await api(env, 'GET', '/v1/logins/test', undefined, hubHeader)).body.state, 'failed'); delete process.env.FAKE_CLAUDE_AUTH;
+    process.env.FAKE_SESSIONS = 'wc-login-test'; await env.instance.recoverFromTmux(); assert.equal(env.instance.sessions['wc-login-test'], undefined);
+    assert.equal((await api(env, 'GET', '/v1/sessions', undefined, hubHeader)).body.some(s => s.name === 'wc-login-test'), false);
+    assert.equal((await api(env, 'POST', '/v1/logins', { account: 'test', cli: 'claude', dir: '~/bad/test' }, hubHeader)).status, 400);
+    assert.equal((await api(env, 'POST', '/v1/logins', { account: 'default-gpt', cli: 'codex', dir: null }, hubHeader)).status, 201);
+    const codexCommand = (await log(env)).split('\n').find(line => line.includes('new-session') && line.includes('wc-login-default-gpt'));
+    assert.match(codexCommand, /codex.*login.*--device-auth/); assert.doesNotMatch(codexCommand, /WHEELCHAIR_SESSION_TOKEN/);
+    assert.equal((await api(env, 'POST', '/v1/logins', { account: 'other', cli: 'codex', dir: '~/.wheelchair/accounts/other' }, hubHeader)).status, 201);
+    assert.match(await log(env), /CODEX_HOME=.*accounts\/other/);
+  } finally { delete process.env.FAKE_SESSIONS; delete process.env.FAKE_CLAUDE_AUTH; if (previous === undefined) delete process.env.HOME; else process.env.HOME = previous; await env.close(); }
+});
+test('Claude login menu is answered once across repeated login state reads', async () => {
+  const root = await temp(), previous = process.env.HOME; process.env.HOME = root;
+  const env = await service(root); try {
+    const started = await api(env, 'POST', '/v1/logins', { account: 'menu', cli: 'claude', dir: '~/.wheelchair/accounts/menu' }, hubHeader);
+    assert.equal(started.status, 201);
+    await write(env.fake.pane, await fs.readFile(path.join(__dirname, 'fixtures/login/claude-menu.txt'), 'utf8'));
+    const first = await api(env, 'GET', '/v1/logins/menu', undefined, hubHeader);
+    assert.equal(first.body.state, 'starting');
+    await api(env, 'GET', '/v1/logins/menu', undefined, hubHeader);
+    const commands = (await log(env)).split('\n').filter(line => line.includes('send-keys -t wc-login-menu Enter'));
+    assert.equal(commands.length, 1);
+    await write(env.fake.pane, await fs.readFile(path.join(__dirname, 'fixtures/login/claude.txt'), 'utf8'));
+    assert.equal((await api(env, 'GET', '/v1/logins/menu', undefined, hubHeader)).body.state, 'waiting');
+  } finally { if (previous === undefined) delete process.env.HOME; else process.env.HOME = previous; await env.close(); }
+});
+test('default Claude start preserves complete command and settings', async () => {
+  const root = await temp(), env = await service(root); try {
+    const session = await start(env, { cli_session_id: 'fixed', role_prompt: 'role' });
+    const settingsPath = path.join(env.state, 'settings', 'wc-t-lead.json');
+    assert.deepEqual(session.command, ['claude', '--session-id', 'fixed', '--settings', settingsPath, '--permission-mode', 'auto', '--append-system-prompt', 'role']);
+    const hook = `'${path.resolve(__dirname, '../hook.sh')}' claude 'wc-t-lead'`;
+    const entry = [{ hooks: [{ type: 'command', command: hook }] }];
+    assert.deepEqual(JSON.parse(await fs.readFile(settingsPath, 'utf8')), { cleanupPeriodDays: 30, promptSuggestionEnabled: false, hooks: { Stop: entry, Notification: entry, StopFailure: entry }, statusLine: { type: 'command', command: `'${path.resolve(__dirname, '../statusline.sh')}' claude 'wc-t-lead'` } });
+    const expected = ['env', 'WHEELCHAIR_LANE=1', 'WHEELCHAIR_SESSION_TOKEN=alpha', `WHEELCHAIR_STATE_DIR=${env.state}`, `WHEELCHAIR_MACHINE_ORIGIN=http://127.0.0.1:${env.instance.config.port}`, ...session.command].map(x => `'${x}'`).join(' ');
+    assert.ok((await log(env)).includes(`tmux new-session -d -s wc-t-lead -x 200 -y 50 -c ${session.worktree} ${expected}`));
+  } finally { await env.close(); }
+});
+test('Codex account turn ends read only new rollout lines and report limits', async () => {
+  const root = await temp(), previous = process.env.HOME; process.env.HOME = root;
+  const hub = await hubServer(), env = await service(root, { config: { hub_url: hub.url } });
+  try {
+    const session = await start(env, { cli: 'codex', account: { id: 'acct', dir: '~/.wheelchair/accounts/acct' } });
+    const file = path.join(root, '.wheelchair/accounts/acct/sessions/2026/rollout-abc.jsonl');
+    const line = (used, reached = null) => JSON.stringify({ timestamp: '2026-01-01T00:00:00Z', payload: { rate_limits: { primary: { used_percent: used, window_minutes: 300, resets_at: 2100000000 }, rate_limit_reached_type: reached } } }) + '\n';
+    await write(file, line(20));
+    const event = { type: 'turn-ended', 'thread-id': 'abc', 'input-messages': ['[wc:role] hi'] };
+    await env.instance.hook(session.name, event); await env.instance.hook(session.name, event);
+    await fs.appendFile(file, line(100, 'primary')); await env.instance.hook(session.name, event);
+    const events = hub.calls.map(c => JSON.parse(c.body));
+    const ends = events.filter(e => e.type === 'turn-ended');
+    assert.equal(events.filter(e => e.type === 'usage').length, 0); assert.equal(ends.length, 3);
+    assert.equal(ends[0].reading.account, 'acct'); assert.equal(ends[0].reading.five_hour.used, 20); assert.equal(ends[2].reading.limited_until, new Date(2100000000 * 1000).toISOString());
+  } finally { await env.close(); await hub.close(); if (previous === undefined) delete process.env.HOME; else process.env.HOME = previous; }
+});
+
+test('spooled Codex turn end carries its limit reading on drain', async () => {
+  const root = await temp(), previous = process.env.HOME; process.env.HOME = root;
+  const first = await service(root); await start(first, { cli: 'codex', account: { id: 'acct', dir: '~/.wheelchair/accounts/acct' } }); await first.close();
+  try {
+    const state = path.join(root, 'state');
+    const configured = JSON.parse(await fs.readFile(path.join(state, 'machine.json'), 'utf8'));
+    await write(path.join(state, 'machine.json'), JSON.stringify({ ...configured, host: '127.0.0.1', port: 1 }));
+    await write(path.join(root, '.wheelchair/accounts/acct/sessions/2026/rollout-abc.jsonl'), JSON.stringify({ timestamp: '2026-01-01T00:00:00Z', payload: { rate_limits: { primary: { used_percent: 100, window_minutes: 300, resets_at: 2100000000 }, rate_limit_reached_type: 'primary' } } }) + '\n');
+    const hook = path.join(process.cwd(), 'machine', 'hook.sh');
+    const result = spawnSync(hook, ['codex', 'wc-t-lead', JSON.stringify({ type: 'agent-turn-complete', 'thread-id': 'abc', 'input-messages': ['[wc:role] hi'] })], { encoding: 'utf8', env: { ...process.env, WHEELCHAIR_STATE_DIR: state, WHEELCHAIR_SESSION_TOKEN: 'alpha' } });
+    assert.equal(result.status, 0);
+    const hub = await hubServer(), env = await service(root, { config: { hub_url: hub.url } });
+    try {
+      await env.instance.drainSpool('events');
+      const events = hub.calls.map(c => JSON.parse(c.body));
+      const ends = events.filter(e => e.type === 'turn-ended');
+      assert.equal(ends.length, 1); assert.equal(ends[0].reading.limited_until, new Date(2100000000 * 1000).toISOString());
+      assert.equal(events.filter(e => e.type === 'usage').length, 0);
+    } finally { await env.close(); await hub.close(); }
+  } finally { if (previous === undefined) delete process.env.HOME; else process.env.HOME = previous; }
+});
+
+for (const source of ['raw spool', 'live hook']) {
+  test(`Codex ${source} retries the same prepared reading`, async () => {
+    const root = await temp(), previous = process.env.HOME; process.env.HOME = root;
+    const hub = await hubServer(), env = await service(root, { pane: readyCodex, config: { hub_url: hub.url } });
+    try {
+      const session = await start(env, { cli: 'codex', account: { id: 'acct', dir: '~/.wheelchair/accounts/acct' } });
+      const rollout = path.join(root, '.wheelchair/accounts/acct/sessions/2026/rollout-abc.jsonl');
+      const line = (used, reset) => JSON.stringify({ timestamp: '2026-01-01T00:00:00Z', payload: { rate_limits: { primary: { used_percent: used, window_minutes: 300, resets_at: reset }, rate_limit_reached_type: 'primary' } } }) + '\n';
+      await write(rollout, line(100, 2100000000));
+      const event = { type: 'turn-ended', 'thread-id': 'abc', 'input-messages': ['[wc:role] hi'] };
+      hub.setStatus(503);
+      const dir = path.join(env.state, 'spool', 'events');
+      if (source === 'raw spool') {
+        await write(path.join(dir, '000000000000001-12345678-1234-1234-1234-123456789abc.json'), JSON.stringify({ ...event, session: session.name }) + '\n');
+        await env.instance.drainSpool('events');
+      } else {
+        await env.instance.hook(session.name, event);
+      }
+      const files = await fs.readdir(dir); assert.equal(files.length, 1);
+      const stored = JSON.parse(await fs.readFile(path.join(dir, files[0]), 'utf8'));
+      assert.equal(stored.prepared, true);
+      assert.equal(stored.reading.limited_until, new Date(2100000000 * 1000).toISOString());
+      await fs.appendFile(rollout, line(100, 2200000000));
+      hub.setStatus(200); await env.instance.drainSpool('events');
+      const ends = hub.calls.filter(c => c.path.endsWith('/events')).map(c => JSON.parse(c.body)).filter(e => e.type === 'turn-ended');
+      assert.equal(ends.length, 2); assert.deepEqual(ends[0], ends[1]);
+      assert.equal(ends[1].reading.limited_until, new Date(2100000000 * 1000).toISOString());
+      assert.equal(Object.hasOwn(ends[0], 'prepared'), false);
+      assert.deepEqual(await fs.readdir(dir), []);
+    } finally { await env.close(); await hub.close(); if (previous === undefined) delete process.env.HOME; else process.env.HOME = previous; }
+  });
+}
 test('/v1/projects lists git folders, expands ~, and checks paths', async () => {
   const root = await temp(); const env = await service(root); const home = path.join(root, 'home'); const code = path.join(home, 'code');
   try {

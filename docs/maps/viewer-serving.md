@@ -1,6 +1,6 @@
 # Map: what the viewer server serves (pages, assets, document page, fonts)
 
-Checked against: `c8ebeadbf0b733414c0c1682c027aa7c09b04d2a` (origin/main)
+Checked against: `6a9811502bbd5d350fb22715f3158ad076999701` (origin/main; only the app-page list and the nav were re-read, see the note at the end)
 Files covered: `viewer/server.js`, `viewer/doc.html`, `viewer/doc.js`,
 `viewer/pages/app.css`, `viewer/pages/thread.html`, `viewer/pages/md.js`,
 `viewer/pages/doc.html`, `viewer/pages/doc.js`, `viewer/pages/nav.js`, `viewer/package.json`
@@ -31,7 +31,6 @@ Files covered: `viewer/server.js`, `viewer/doc.html`, `viewer/doc.js`,
    registered plan and serves `viewer/doc.html` (`server.js:1897-1909`).
 6. **The app nav** is built by `viewer/pages/nav.js` into `<header id="app-nav">`; its view
    links are a fixed list of four: Features, Threads, Sessions, Settings (`nav.js:38-43`).
-   Its New thread button is a link to `/wheelchair/app/threads?new=1` (`nav.js:80-94`).
 
 ```
 browser -> server.js handler
@@ -62,3 +61,8 @@ browser -> server.js handler
 - `viewer/pages/md.js` and `markdown.js` beyond which page loads which.
 - The font tests added since the last check, and any browser test that inspects fonts.
 - `sendFile` and caching headers beyond `no-store` in the route comment.
+
+Note at `6a98115`: only steps 3 and 6 (the page list and nav) were updated for the Settings
+page. `git diff --stat 5742e2f origin/main` also touches `viewer/server.js` (the one
+`APP_PAGES` line), `viewer/pages/nav.js` and `viewer/pages/app.css`; the rest of this map
+was not re-read.

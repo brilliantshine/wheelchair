@@ -21,7 +21,6 @@ function emptyThread(input) {
   return {
     id: newId(),
     project: input.project,
-    cli: input.cli,
     machine: input.machine || 'hub',
     stub: false,
     context: '',
@@ -56,10 +55,7 @@ async function checkProject(hub, machine, project) {
 
 async function createThread(hub, input) {
   if (!input || typeof input.project !== 'string' || !input.project) {
-    throw appError(400, 'project and cli are required');
-  }
-  if (!['claude', 'codex'].includes(input.cli)) {
-    throw appError(400, 'project and cli are required');
+    throw appError(400, 'project is required');
   }
   const machine = input.machine || 'hub';
   const checked = await checkProject(hub, machine, input.project);
@@ -90,7 +86,7 @@ async function threadBySession(hub, name) {
 
 async function createStub(hub, parent, card) {
   const child = {
-    ...emptyThread({ project: parent.project, cli: parent.cli, machine: parent.machine }),
+    ...emptyThread({ project: parent.project, machine: parent.machine }),
     stub: true,
     title: card.title,
     context: card.summary,
@@ -150,7 +146,7 @@ async function restartLead(hub, id) {
   }
   // The restart is the answer to every "Sessions ended" card the dead leads left open.
   for (const card of thread.cards) {
-    if (card.kind === 'needs' && card.title === 'Sessions ended' && !card.answered) card.answered = true;
+    if (card.kind === 'needs' && ['Sessions ended', "The lead's turn failed"].includes(card.title) && !card.answered) card.answered = true;
   }
   lead.queue.push(...queued);
   thread.queues[lead.name] = lead.queue;

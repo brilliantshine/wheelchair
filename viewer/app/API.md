@@ -8,7 +8,7 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 | Route | Request | Response |
 |---|---|---|
 | `GET /threads` | — | `{threads:[Thread]}` newest first |
-| `POST /threads` | `{project,cli,machine?,message?}` | a `Thread`, with its lead started. Before anything is saved the thread's machine checks `project` (`GET /v1/projects?check=`): not a usable git repository → `400 "<path> <reason> on <machine>"`, unknown machine → `404`, no answer or an older service → `502`; nothing is saved or added to `projects.json` on any of these, and the stored `project` is the path the machine returned (`~` and `~/…` expanded there). A non-empty string `message` sets `title` from its trimmed, whitespace-collapsed first line, cut at a word boundary to 60 characters plus `…` |
+| `POST /threads` | `{project,machine?,message?}` | a `Thread`, with its lead started or waiting for room. Before anything is saved the thread's machine checks `project` (`GET /v1/projects?check=`): not a usable git repository → `400 "<path> <reason> on <machine>"`, unknown machine → `404`, no answer or an older service → `502`; nothing is saved or added to `projects.json` on any of these, and the stored `project` is the path the machine returned (`~` and `~/…` expanded there). A non-empty string `message` sets `title` from its trimmed, whitespace-collapsed first line, cut at a word boundary to 60 characters plus `…` |
 | `GET /threads/:id/chat` | — | `{thread,items,cards,pinned,queued}`; `items` leaves out the lead's tool steps when Settings has `tool_steps:"hide"` |
 | `POST /threads/:id/messages` | `{text}` | `{queued:true}`; delivery waits for the lead turn end |
 | `POST /threads/:id/cards/:cardId/press` | `{action,value?}` | `{queued:true,text}` for lead actions and records `answered_action` and `answered_value` on an answered card; `recheck` updates an approval in place, and `start-building` first re-checks Ready. On an open lead `needs` card, `keep-going` and `talk` (value: the card title) also close it as `resolved_by:"collin"`; a `system` or answered needs card is refused with 422 |
@@ -71,3 +71,23 @@ configured effort when present. A provider cell set to `none` is a 400 directing
 A start is a 409 ("machine service out of date") while that machine's `/v1/status` commit differs from the hub's.
 
 Worker restart (`wc.js session start --role worker ... --replaces <session>`): the hub checks the named session is a worker in the same thread and not live, then starts the new worker in that session's `worktree` on its `branch`. A live session or a non-worker is refused with 400.
+
+### Accounts and usage
+
+`GET /settings` includes `accounts`, `lead_order`, `worker_order`, `within`, `leave`,
+`notify_below`, `save_claude_for_leads`, and `margin`. `POST /settings/accounts` accepts
+`{provider, name, plan}`; `PUT /settings/accounts/:id` accepts `{name?, plan?, weight?, paused?}`;
+`DELETE /settings/accounts/:id` removes a non-default account. `PUT /settings/balancing`
+updates the balancing keys. Invalid values and attempts to remove a default return 400.
+
+`GET /usage` returns `{providers}` with each provider's forecast and account readings,
+machine sign-in states, placement reason and live session count. `GET /usage/alert` returns
+`{dot}`; `POST /usage/seen` marks current provider alerts seen for their refill week.
+`POST /accounts/:id/signin` accepts `{machine}` and starts sign-in on that machine.
+`GET /accounts/:id/signin/:machine` returns its state; `POST .../code` sends `{code}`;
+`GET .../pane` and `POST .../keys` provide the login terminal. Unknown accounts or machines
+return 404.
+
+Session starts through `POST /machine/session` accept `role`, `tier`, `brief`, `attempt_id`, and optional `provider` or `not_provider` (`claude` or `gpt`) for workers, reviewers and verifiers. The flags are mutually exclusive; worker constraints are strict, subject to the Claude margin exception, and reviewer and verifier constraints are preferences. The obsolete `cli` field is ignored. The response has `session` and may have a `note`. Sessions carry `provider` and `account`; a waiting session has `status: "waiting"`, `waiting_until`, `waiting_reason`, `waiting_provider` (the pinned provider, the first explicit lead-order provider for a new lead, or null), and `pending_start`. Its identity and queue survive promotion.
+
+Machine events may carry a `reading`, including Codex `turn-ended` events; they include `usage` with a reading, `limit-hit` with `limited_until` and `error`, and `turn-failed` with `error`. A limit-ended turn never delivers a report: a future limit holds delivery until reset, while an already expired limit queues `Continue.` immediately, in both cases at the front of the queue. A failed turn releases the queue and informs the starter without delivering a partial reviewer or verifier report; a failed lead turn creates a needs card.

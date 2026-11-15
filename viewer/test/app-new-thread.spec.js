@@ -31,7 +31,7 @@ test('one column, full-width controls, no sideways scroll', async ({ page }) => 
   await expect(page.locator('#nt-project optgroup[label="In ~/code"] option')).toHaveText(['alpha']);
   await expect(page.locator('#nt-path')).toHaveText('/home/fake/code/alpha');
   await expect(page.locator('#nt-note')).toHaveText('Only git repositories in ~/code are listed.');
-  const widths = await page.evaluate(() => ['nt-machine', 'nt-project', 'nt-cli', 'nt-message', 'nt-go', 'add-name', 'add-path', 'add-go']
+  const widths = await page.evaluate(() => ['nt-machine', 'nt-project', 'nt-message', 'nt-go', 'add-name', 'add-path', 'add-go']
     .map((id) => [id, document.getElementById(id).getBoundingClientRect().width]));
   for (const [id, width] of widths) expect(width, id).toBeGreaterThan(300);
   await noSideScroll(page);
@@ -40,11 +40,11 @@ test('one column, full-width controls, no sideways scroll', async ({ page }) => 
 test('start posts the picked project and opens the thread', async ({ page }) => {
   await open(page);
   await expect(page.locator('#nt-go')).toBeEnabled();
-  await page.locator('#nt-cli').selectOption('codex');
+  await expect(page.locator('#nt-cli')).toHaveCount(0);
   await page.locator('#nt-message').fill('hello lead');
   const request = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith('/api/threads'));
   await page.locator('#nt-go').click();
-  expect((await request).postDataJSON()).toEqual({ project: '/home/fake/code/alpha', cli: 'codex', machine: 'hub', message: 'hello lead' });
+  expect((await request).postDataJSON()).toEqual({ project: '/home/fake/code/alpha', machine: 'hub', message: 'hello lead' });
   await expect(page).toHaveURL(/\/app\/thread\?id=[0-9a-f]+/);
 });
 
@@ -52,12 +52,10 @@ test('a refusal shows on the screen and keeps the fields', async ({ page }) => {
   ctx.machine.projects = { bad: { '/home/fake/code/alpha': 'is not a git repository' } };
   await open(page);
   await page.locator('#nt-message').fill('keep me');
-  await page.locator('#nt-cli').selectOption('codex');
   await page.locator('#nt-go').click();
   await expect(page.locator('#form-error')).toContainText('is not a git repository');
   await expect(page).toHaveURL(/\/app\/new$/);
   await expect(page.locator('#nt-message')).toHaveValue('keep me');
-  await expect(page.locator('#nt-cli')).toHaveValue('codex');
   await expect(page.locator('#nt-project')).toHaveValue('/home/fake/code/alpha');
   await expect(page.locator('#nt-go')).toBeEnabled();
   await noSideScroll(page);

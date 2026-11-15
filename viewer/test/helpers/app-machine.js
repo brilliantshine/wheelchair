@@ -28,8 +28,10 @@ async function startMachine(secret = 'machine-test-secret') {
     version: execFileSync('git', ['-C', __dirname, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
     claude: { installed: true, logged_in: true },
     codex: { installed: true, logged_in: true },
+    accounts: [{ id: 'default-claude', cli: 'claude', logged_in: true }, { id: 'default-gpt', cli: 'codex', logged_in: true }],
   };
   let preflightOk = true;
+  let startOk = true;
   let submitOk = true;
   let archiveKept = [];
   let sessionsAvailable = true;
@@ -45,7 +47,7 @@ async function startMachine(secret = 'machine-test-secret') {
     const input = write ? await readBody(request) : {};
     calls.push({ method: request.method, path: url.pathname, body: input });
     if (request.method === 'POST' && url.pathname === '/v1/sessions') {
-      return startSession(response, sessions, input);
+      return startOk ? startSession(response, sessions, input) : send(response, 503, { error: 'start refused' });
     }
     if (request.method === 'POST' && url.pathname === '/v1/preview') {
       return send(response, preview.ok ? 200 : 503, preview.ok ? { text: preview.text } : { error: preview.error || 'preview unavailable' });
@@ -80,10 +82,11 @@ async function startMachine(secret = 'machine-test-secret') {
       return projectsReply(response, url, projects);
     }
     if (request.method === 'GET' && url.pathname === '/v1/status') {
-      return send(response, 200, { ...status, sessions: [...sessions.values(), UNMANAGED] });
+      return send(response, 200, { ...status, accounts: status.accounts.map((a) => a.id.startsWith('default-') ? { ...a, logged_in: status[a.cli].logged_in } : a), sessions: [...sessions.values(), UNMANAGED] });
     }
     if (request.method === 'POST' && url.pathname === '/v1/preflight') {
-      return send(response, preflightOk ? 200 : 409, { ok: preflightOk });
+      const ok = typeof preflightOk === 'function' ? preflightOk(input) : preflightOk;
+      return send(response, ok ? 200 : 409, { ok });
     }
     return send(response, 404, { error: 'not found' });
   });
@@ -97,8 +100,10 @@ async function startMachine(secret = 'machine-test-secret') {
     sessions,
     calls,
     status,
+    get startOk() { return startOk; },
+    set startOk(value) { startOk = Boolean(value); },
     get preflightOk() { return preflightOk; },
-    set preflightOk(value) { preflightOk = Boolean(value); },
+    set preflightOk(value) { preflightOk = typeof value === 'function' ? value : Boolean(value); },
     get submitOk() { return submitOk; },
     set submitOk(value) { submitOk = Boolean(value); },
     get archiveKept() { return archiveKept; },

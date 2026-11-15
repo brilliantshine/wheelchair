@@ -5,7 +5,7 @@
 // copy of its own beyond the unsaved editor drafts.
 (() => {
   const API = '/wheelchair/api';
-  const SECTIONS = [['models', 'Models and preferences'], ['templates', 'Behavior templates'], ['writing', 'Writing style']];
+  const SECTIONS = [['accounts', 'Accounts'], ['usage', 'Usage'], ['models', 'Models and preferences'], ['templates', 'Behavior templates'], ['writing', 'Writing style']];
   const TIERS = [
     ['light', 'Light', 'Spelled-out changes, few files'],
     ['standard', 'Standard', 'Most building'],
@@ -297,7 +297,8 @@
         h('div', { class: 'box rows' },
           PROVIDERS.map(([provider, name]) => h('div', { class: 'row-line' },
             h('div', { class: 'what' }, h('span', { text: 'Leads and sub-leads run on' }), h('span', { class: 'hint', text: `${name} model` })),
-            h('div', { class: 'ctl wide' }, modelPicker(provider, 'lead', { allowNone: false, withEffort: false })))))),
+            h('div', { class: 'ctl wide' }, modelPicker(provider, 'lead', { allowNone: false, withEffort: false }))))
+          .concat([leadOrderRow()]))),
       h('section', { 'aria-labelledby': 'perm' },
         h('h2', { id: 'perm', text: 'Permission mode' }),
         h('div', { class: 'box rows' },
@@ -705,6 +706,419 @@
     return out;
   }
 
+  // ---------------------------------------------------------------- Accounts, Usage, lead order
+
+  const PLAN_OPTIONS = {
+    claude: [['unknown', 'Not sure'], ['pro', 'Pro'], ['max5', 'Max 5x'], ['max20', 'Max 20x']],
+    gpt: [['unknown', 'Not sure'], ['plus', 'Plus'], ['pro', 'Pro']],
+  };
+  const planLabel = (provider, plan) => ((PLAN_OPTIONS[provider] || []).find((p) => p[0] === plan) || [0, plan])[1];
+  const PROVIDER_NAME = { claude: 'Claude', gpt: 'GPT' };
+  const WITHIN = [['soonest', 'Soonest refill first'], ['spread', 'Spread evenly'], ['one', 'Stay on one account']];
+  const CLAUDE_TERMS = "Anthropic's terms say plan limits assume ordinary, individual use. Several Claude accounts behind one setup may get flagged.";
+  const SIGNIN_WAIT_MS = 30000;
+
+  let usage = null;            // GET /usage, or null until the first answer
+  let usageError = '';
+  let usageTimer = null;
+  let editing = null;          // {id, kind: 'rename'|'plan'|'remove'}
+  let adding = null;           // {provider, name, plan, warn} while the Add account form is open
+  let justAdded = null;        // an account id whose Sign in buttons are offered
+  let openProvider = null;     // the provider whose account table is open on Usage
+  let balDraft = null;         // unsaved balancing edits
+  let balNote = { text: '', bad: false };
+  let signCard = null;         // {account, machine, el, timers…} while a sign-in card is open
+
+  const when = (iso) => {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return String(iso);
+    const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    return d.toDateString() === new Date().toDateString() ? time : d.toLocaleDateString([], { weekday: 'short' }) + ' ' + time;
+  };
+  function dayPart(iso) {
+    const d = new Date(iso);
+    const hour = d.getHours();
+    const part = hour < 5 ? 'night' : hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : hour < 21 ? 'evening' : 'night';
+    return d.toLocaleDateString([], { weekday: 'long' }) + ' ' + part;
+  }
+  const dayTime = (iso) => new Date(iso).toLocaleDateString([], { weekday: 'long' }) + ' '
+    + new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+  const pct = (n) => Math.round(n) + '%';
+  const safeHref = (u) => (/^https?:\/\//i.test(String(u)) ? String(u) : '#');
+
+  async function refreshUsage() {
+    try {
+      usage = await api('/usage');
+      usageError = '';
+    } catch (e) { usageError = e.message; }
+    // A repaint would drop what is being typed, so it waits while a form is open.
+    const typing = document.activeElement && panel.contains(document.activeElement) && /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName);
+    if (!editing && !adding && !typing && (section === 'accounts' || section === 'usage')) renderPanel();
+  }
+
+  // The timer runs only while Accounts or Usage is shown.
+  function syncSection() {
+    const live = section === 'accounts' || section === 'usage';
+    if (live && !usageTimer) usageTimer = setInterval(refreshUsage, 30000);
+    if (!live && usageTimer) { clearInterval(usageTimer); usageTimer = null; }
+    if (live) refreshUsage();
+    if (section === 'usage') {
+      fetch(API + '/usage/seen', { method: 'POST' }).then(() => window.dispatchEvent(new CustomEvent('wc-usage-seen'))).catch(() => {});
+    }
+  }
+
+  const accountRows = (provider) => {
+    const live = usage && usage.providers && usage.providers[provider];
+    if (live) return live.accounts;
+    return (data.accounts || []).filter((a) => a.provider === provider).map((a) => ({ ...a, machines: {}, reading: null, live_sessions: 0 }));
+  };
+  const machineNames = () => {
+    const names = new Set();
+    for (const p of Object.values((usage && usage.providers) || {})) for (const a of p.accounts) for (const m of Object.keys(a.machines || {})) names.add(m);
+    return [...names];
+  };
+
+  // ---- the sign-in card
+
+  function closeSignin() {
+    if (!signCard) return;
+    clearInterval(signCard.poll); clearTimeout(signCard.close);
+    signCard.el.remove();
+    signCard = null;
+    refreshUsage();
+  }
+
+  function openSignin(account, machine) {
+    closeSignin();
+    const terminal = `/wheelchair/app/terminal?login=${encodeURIComponent(account.id)}&machine=${encodeURIComponent(machine)}`;
+    const status = h('p', { class: 'hint', role: 'status', text: 'Starting sign-in on ' + machine + '…' });
+    const actions = h('div', { class: 'actions signin-actions' });
+    const codeBox = h('div', { class: 'signin-code' });
+    const paste = h('textarea', { rows: 2, 'aria-label': 'Paste the code from the sign-in page', placeholder: 'Paste the code here' });
+    const send = h('button', { type: 'button', class: 'primary small', text: 'Send code', onclick: async () => {
+      const code = paste.value.trim();
+      if (!code) return;
+      try { await api(`/accounts/${encodeURIComponent(account.id)}/signin/${encodeURIComponent(machine)}/code`, { method: 'POST', body: { code } }); paste.value = ''; status.textContent = 'Code sent.'; } catch (e) { inlineErr(codeBox, e.message); }
+    } });
+    const pasteWrap = h('div', { class: 'paste', hidden: true }, h('label', { text: 'Paste the code' }), paste, send);
+    const termLink = h('a', { class: 'small-link', href: terminal, target: '_blank', rel: 'noopener', text: 'Open terminal' });
+    const closeBtn = h('button', { type: 'button', class: 'small', text: 'Close', onclick: closeSignin });
+    const root = h('section', { class: 'box signin-card', 'aria-label': 'Sign in', 'data-account': account.id },
+      h('div', { class: 'head-line' }, h('h2', { text: `Sign in ${account.name} on ${machine}` }), closeBtn),
+      status, actions, codeBox, pasteWrap, h('div', { class: 'actions' }, termLink));
+    const card = { account: account.id, machine, el: root, started: Date.now(), poll: null, close: null, hadUrl: false };
+    signCard = card;
+    const hostEl = document.getElementById('signin-host');
+    if (hostEl) hostEl.replaceChildren(root);
+
+    const fail = () => {
+      status.className = 'inline-err';
+      status.textContent = "Couldn't read the sign-in screen";
+      actions.replaceChildren(h('a', { class: 'btn-link', href: terminal, target: '_blank', rel: 'noopener', text: 'Open terminal' }));
+      codeBox.replaceChildren();
+      pasteWrap.hidden = true;
+      clearInterval(card.poll);
+    };
+    const paint = (st) => {
+      if (signCard !== card) return;
+      if (st.state === 'done' && st.logged_in) {
+        root.classList.add('done');
+        status.className = 'note'; status.textContent = 'Signed in.';
+        actions.replaceChildren(); codeBox.replaceChildren(); pasteWrap.hidden = true;
+        clearInterval(card.poll);
+        card.close = setTimeout(closeSignin, 2000);
+        return;
+      }
+      if (st.state === 'failed') return fail();
+      if (st.url) {
+        card.hadUrl = true;
+        status.className = 'hint'; status.textContent = st.wantsCode ? 'Open the link, sign in, then paste the code it shows.' : 'Open the link and sign in.';
+        if (account.provider === 'claude') {
+          actions.replaceChildren(h('a', { class: 'btn-link primary', href: safeHref(st.url), target: '_blank', rel: 'noopener', text: 'Open sign-in link' }));
+        } else {
+          actions.replaceChildren(h('a', { class: 'btn-link', href: safeHref(st.url), target: '_blank', rel: 'noopener', text: st.url }));
+        }
+        if (st.code) {
+          codeBox.replaceChildren(h('div', { class: 'device-code', text: st.code }),
+            h('button', { type: 'button', class: 'small', text: 'Copy', onclick: (ev) => {
+              const done = () => { ev.target.textContent = 'Copied'; };
+              if (navigator.clipboard) navigator.clipboard.writeText(st.code).then(done, () => {}); else done();
+            } }));
+        }
+        pasteWrap.hidden = !st.wantsCode;
+      } else if (Date.now() - card.started > SIGNIN_WAIT_MS) fail();
+    };
+    (async () => {
+      const base = `/accounts/${encodeURIComponent(account.id)}/signin/${encodeURIComponent(machine)}`;
+      try {
+        await api(`/accounts/${encodeURIComponent(account.id)}/signin`, { method: 'POST', body: { machine } });
+      } catch (e) { status.className = 'inline-err'; status.textContent = e.message; return; }
+      const tick = async () => {
+        try { paint(await api(base)); } catch (e) { if (signCard === card && Date.now() - card.started > SIGNIN_WAIT_MS) fail(); }
+      };
+      if (signCard !== card) return;
+      card.poll = setInterval(tick, 2000);
+      tick();
+    })();
+  }
+
+  // ---- Accounts panel
+
+  function windowLine(label, w, at) {
+    if (!w) return h('div', { class: 'win' }, h('span', { class: 'k', text: label }), h('span', { class: 'v dim', text: 'no reading yet' }));
+    const expired = w.resets_at && Date.parse(w.resets_at) <= Date.now();
+    const used = expired ? 0 : w.used;
+    return h('div', { class: 'win' }, h('span', { class: 'k', text: label }),
+      h('span', { class: 'meter' }, h('span', { style: `width:${Math.min(100, Math.max(0, used))}%` })),
+      h('span', { class: 'v', text: `${pct(used)} used` + (w.resets_at && !expired ? `, resets ${when(w.resets_at)}` : '') }));
+  }
+
+  async function mutate(host, fn) {
+    try { await fn(); } catch (e) { inlineErr(host, e.message); return false; }
+    inlineErr(host, '');
+    editing = null;
+    data = await api('/settings');
+    await refreshUsage();
+    renderPanel();
+    return true;
+  }
+
+  function planSelect(provider, value) {
+    return h('select', { 'aria-label': 'Plan' }, PLAN_OPTIONS[provider].map(([v, l]) => h('option', { value: v, text: l, selected: v === value })));
+  }
+
+  // The plan the CLI itself reported, shown beside the chosen one when they differ.
+  function reportedPlan(a) {
+    const reported = a.reading && a.reading.plan_type;
+    if (!reported) return '';
+    const r = String(reported).trim().toLowerCase();
+    const chosen = [String(a.plan).toLowerCase(), String(planLabel(a.provider, a.plan)).toLowerCase()];
+    return a.plan !== 'unknown' && chosen.includes(r) ? '' : ` · reported: ${reported}`;
+  }
+
+  function accountCard(a) {
+    const isDefault = a.id === `default-${a.provider}`;
+    const card = h('div', { class: 'acct', 'data-account': a.id });
+    const machines = Object.entries(a.machines || {});
+    const states = { signed_in: 'signed in', signed_out: 'signed out', unknown: 'unknown' };
+    card.append(
+      h('div', { class: 'acct-head' },
+        h('strong', { class: 'acct-name', text: a.name }),
+        h('span', { class: 'v-badge', text: `${planLabel(a.provider, a.plan)}${reportedPlan(a)} · weight ${a.weight}` }),
+        a.paused && h('span', { class: 'v-badge', text: 'paused' }),
+        h('span', { class: 'in-use' + (a.live_sessions ? ' on' : ''), text: a.live_sessions ? `in use · ${a.live_sessions} ${a.live_sessions === 1 ? 'agent' : 'agents'}` : 'idle' })),
+      machines.length && h('ul', { class: 'machines' }, machines.map(([m, st]) => h('li', { 'data-machine': m, 'data-state': st },
+        h('span', { class: 'mname', text: m }), h('span', { class: 'mstate ' + st, text: states[st] || st }),
+        st !== 'signed_in' && h('button', { type: 'button', class: 'small', text: 'Sign in', 'aria-label': `Sign in ${a.name} on ${m}`, onclick: () => openSignin(a, m) })))),
+      h('div', { class: 'wins' },
+        windowLine('5-hour window', a.reading && a.reading.five_hour),
+        windowLine('This week', a.reading && a.reading.week),
+        h('span', { class: 'hint', text: a.reading && a.reading.at ? 'as of ' + when(a.reading.at) : 'no reading yet' })));
+
+    const edit = editing && editing.id === a.id ? editing.kind : null;
+    if (edit === 'rename') {
+      const name = h('input', { value: a.name, 'aria-label': 'Account name' });
+      card.append(h('div', { class: 'actions' }, name,
+        h('button', { type: 'button', class: 'primary small', text: 'Save', onclick: () => mutate(card, () => api('/settings/accounts/' + encodeURIComponent(a.id), { method: 'PUT', body: { name: name.value } })) }),
+        h('button', { type: 'button', class: 'small', text: 'Cancel', onclick: () => { editing = null; renderPanel(); } })));
+    } else if (edit === 'plan') {
+      const plan = planSelect(a.provider, a.plan);
+      const weight = h('input', { type: 'number', min: '0.1', step: 'any', placeholder: 'weight (optional)', 'aria-label': 'Weight override' });
+      card.append(h('div', { class: 'actions' }, plan, weight,
+        h('button', { type: 'button', class: 'primary small', text: 'Save', onclick: () => {
+          const body = { plan: plan.value };
+          if (weight.value.trim() !== '') body.weight = Number(weight.value);
+          return mutate(card, () => api('/settings/accounts/' + encodeURIComponent(a.id), { method: 'PUT', body }));
+        } }),
+        h('button', { type: 'button', class: 'small', text: 'Cancel', onclick: () => { editing = null; renderPanel(); } })),
+      h('span', { class: 'hint', text: 'Weight is how big this account is next to the others. Leave it blank to use the plan\'s.' }));
+    } else if (edit === 'remove') {
+      card.append(h('div', { class: 'actions' }, h('span', { text: `Remove ${a.name}?` }),
+        h('button', { type: 'button', class: 'danger small', text: 'Remove', onclick: () => mutate(card, () => api('/settings/accounts/' + encodeURIComponent(a.id), { method: 'DELETE' })) }),
+        h('button', { type: 'button', class: 'small', text: 'Keep', onclick: () => { editing = null; renderPanel(); } })));
+    } else {
+      card.append(h('div', { class: 'actions' },
+        h('button', { type: 'button', class: 'small', text: a.paused ? 'Resume' : 'Pause', onclick: () => mutate(card, () => api('/settings/accounts/' + encodeURIComponent(a.id), { method: 'PUT', body: { paused: !a.paused } })) }),
+        h('button', { type: 'button', class: 'small', text: 'Rename', onclick: () => { editing = { id: a.id, kind: 'rename' }; renderPanel(); } }),
+        h('button', { type: 'button', class: 'small', text: 'Change plan', onclick: () => { editing = { id: a.id, kind: 'plan' }; renderPanel(); } }),
+        !isDefault && h('button', { type: 'button', class: 'small', text: 'Remove', onclick: () => { editing = { id: a.id, kind: 'remove' }; renderPanel(); } })));
+    }
+    if (justAdded === a.id) {
+      card.append(h('div', { class: 'actions just-added' }, h('span', { text: 'Added. Sign in on:' }),
+        machineNames().map((m) => h('button', { type: 'button', class: 'primary small', text: m, 'aria-label': `Sign in ${a.name} on ${m}`, onclick: () => openSignin(a, m) }))));
+    }
+    return card;
+  }
+
+  async function saveAdd(form) {
+    try {
+      const made = await api('/settings/accounts', { method: 'POST', body: { provider: adding.provider, name: adding.name.trim(), plan: adding.plan } });
+      justAdded = made.id;
+      adding = null;
+      data = await api('/settings');
+      await refreshUsage();
+      renderPanel();
+    } catch (e) { adding.warn = false; renderPanel(); inlineErr(document.querySelector('.add-form') || form, e.message); }
+  }
+
+  function addForm() {
+    if (!adding) return h('button', { type: 'button', id: 'add-account', class: 'small', text: 'Add account', onclick: () => { adding = { provider: 'claude', name: '', plan: 'unknown', warn: false }; renderPanel(); } });
+    const form = h('form', { class: 'box add-form', onsubmit: (ev) => {
+      ev.preventDefault();
+      if (!adding.name.trim()) { inlineErr(form, 'Give the account a name.'); return; }
+      const claudes = (data.accounts || []).filter((a) => a.provider === 'claude').length;
+      if (adding.provider === 'claude' && claudes >= 1 && !adding.warn) { adding.warn = true; renderPanel(); return; }
+      saveAdd(form);
+    } });
+    const provider = h('select', { id: 'add-provider', 'aria-label': 'Provider', onchange: () => { adding.provider = provider.value; adding.plan = 'unknown'; adding.warn = false; renderPanel(); } },
+      Object.entries(PROVIDER_NAME).map(([v, l]) => h('option', { value: v, text: l, selected: v === adding.provider })));
+    const name = h('input', { id: 'add-name', value: adding.name, 'aria-label': 'Account name', placeholder: 'Name, e.g. Work', required: true, oninput: () => { adding.name = name.value; } });
+    const plan = planSelect(adding.provider, adding.plan);
+    plan.id = 'add-plan';
+    plan.addEventListener('change', () => { adding.plan = plan.value; });
+    form.append(h('h2', { text: 'Add account' }), h('div', { class: 'fields' }, provider, name, plan));
+    if (adding.warn) {
+      form.append(h('div', { class: 'hu', role: 'alert', id: 'claude-warning' }, h('span', { class: 'msg', text: CLAUDE_TERMS }),
+        h('div', { class: 'hu-actions' },
+          h('button', { type: 'button', class: 'primary small', id: 'add-anyway', text: 'Add anyway', onclick: () => saveAdd(form) }),
+          h('button', { type: 'button', class: 'small', id: 'add-cancel', text: 'Cancel', onclick: () => { adding = null; renderPanel(); } }))));
+    } else {
+      form.append(h('div', { class: 'actions' }, h('button', { type: 'submit', class: 'primary', text: 'Save' }),
+        h('button', { type: 'button', text: 'Cancel', onclick: () => { adding = null; renderPanel(); } })));
+    }
+    return form;
+  }
+
+  function renderAccounts() {
+    return h('div', { class: 'models accounts' },
+      h('div', {}, h('h1', { text: 'Accounts' }),
+        h('p', { class: 'lede', text: 'The logins agents run on. New sessions pick the account with the most room.' }),
+        usageError && h('p', { class: 'inline-err', role: 'alert', text: 'Could not read usage: ' + usageError })),
+      h('div', { id: 'signin-host' }, signCard ? signCard.el : null),
+      Object.entries(PROVIDER_NAME).map(([provider, label]) => h('section', { class: 'prov-group', 'data-provider': provider, 'aria-label': label },
+        h('h2', { text: label }),
+        accountRows(provider).map(accountCard))),
+      addForm());
+  }
+
+  // ---- Usage panel
+
+  function balancingBody(keys) {
+    const body = {};
+    for (const k of keys) body[k] = balDraft[k];
+    return body;
+  }
+  function ensureDraft() {
+    if (balDraft) return;
+    balDraft = {};
+    for (const k of ['lead_order', 'worker_order', 'within', 'leave', 'notify_below', 'save_claude_for_leads', 'margin']) balDraft[k] = structuredClone(data[k]);
+  }
+
+  // An order editor: the providers in order, up/down to move; leads may end in "then whatever's left".
+  function orderEditor(key, label) {
+    ensureDraft();
+    const real = balDraft[key].filter((p) => p !== 'any');
+    const hasAny = balDraft[key].includes('any');
+    const missing = Object.keys(PROVIDER_NAME).filter((p) => !real.includes(p));
+    const commit = (list) => { balDraft[key] = hasAny && key === 'lead_order' ? [...list, 'any'] : list; renderPanel(); };
+    const move = (i, d) => { const next = real.slice(); const [item] = next.splice(i, 1); next.splice(i + d, 0, item); commit(next); };
+    return h('div', { class: 'order', 'data-order': key, role: 'group', 'aria-label': label },
+      h('ol', {}, real.map((p, i) => h('li', {}, h('span', { text: PROVIDER_NAME[p] }),
+        h('button', { type: 'button', class: 'small', text: '↑', 'aria-label': `Move ${PROVIDER_NAME[p]} up`, disabled: i === 0, onclick: () => move(i, -1) }),
+        h('button', { type: 'button', class: 'small', text: '↓', 'aria-label': `Move ${PROVIDER_NAME[p]} down`, disabled: i === real.length - 1, onclick: () => move(i, 1) }),
+        real.length > 1 && h('button', { type: 'button', class: 'small', text: 'Remove', 'aria-label': `Leave ${PROVIDER_NAME[p]} out`, onclick: () => commit(real.filter((x) => x !== p)) })))),
+      missing.map((p) => h('button', { type: 'button', class: 'small', text: `+ ${PROVIDER_NAME[p]}`, onclick: () => commit([...real, p]) })),
+      key === 'lead_order' && h('label', { class: 'check' },
+        h('input', { type: 'checkbox', checked: hasAny, onchange: (ev) => { balDraft[key] = ev.target.checked ? [...real, 'any'] : real; renderPanel(); } }),
+        h('span', { text: "then whatever's left" })));
+  }
+
+  async function saveBalancing(keys, host) {
+    try {
+      const res = await api('/settings/balancing', { method: 'PUT', body: balancingBody(keys) });
+      for (const k of keys) data[k] = res[k] !== undefined ? res[k] : balDraft[k];
+      balDraft = null;
+      inlineErr(host, '');
+      renderPanel();
+      setNote(SAVED, false);
+    } catch (e) { inlineErr(host, e.message); setNote('', false); }
+  }
+
+  const numField = (key, label, hint, max) => h('div', { class: 'row-line' },
+    h('div', { class: 'what' }, h('span', { text: label }), h('span', { class: 'hint', text: hint })),
+    h('input', { type: 'number', class: 'ctl num', id: 'bal-' + key, min: '0', max: String(max), value: String(balDraft[key]), 'aria-label': label,
+      oninput: (ev) => { balDraft[key] = ev.target.value === '' ? '' : Number(ev.target.value); } }));
+
+  function providerBar(provider, f) {
+    const left = f.left;
+    const lines = [];
+    if (f.all_paused) lines.push(h('p', { class: 'usage-line', text: 'All accounts paused' }));
+    else if (left === null) lines.push(h('p', { class: 'usage-line dim', text: 'no reading yet' }));
+    if (f.amber && f.runs_out_at) lines.push(h('p', { class: 'usage-line amber', text: `Runs out ${dayPart(f.runs_out_at)}, before the first refill ${f.first_refill ? dayTime(f.first_refill) : ''}`.trim() }));
+    if (f.below_notify) lines.push(h('p', { class: 'usage-line amber', text: 'Under your notify line for this week.' }));
+    const open = openProvider === provider;
+    return h('div', { class: 'usage-prov' + (f.amber ? ' amber' : ''), 'data-provider': provider },
+      h('button', { type: 'button', class: 'usage-toggle', 'aria-expanded': String(open), onclick: () => { openProvider = open ? null : provider; renderPanel(); } },
+        h('span', { class: 'usage-name', text: f.label }),
+        h('span', { class: 'bar', role: 'img', 'aria-label': left === null ? 'no reading' : pct(left * 100) + ' of the week left' },
+          h('span', { style: `width:${left === null ? 0 : Math.round(Math.min(1, Math.max(0, left)) * 100)}%` })),
+        h('span', { class: 'usage-left', text: left === null ? '–' : pct(left * 100) + ' left' })),
+      lines, open && accountTable(f));
+  }
+
+  function accountTable(f) {
+    const head = h('tr', {}, ['Account', '5-hour used', '5-hour resets', 'Week used', 'Week resets', 'Why'].map((t) => h('th', { scope: 'col', text: t })));
+    const rows = f.accounts.map((a) => {
+      const r = a.reading || {};
+      const cell = (label, text) => h('td', { 'data-label': label, text });
+      const gone = (w) => !w || (w.resets_at && Date.parse(w.resets_at) <= Date.now());
+      return h('tr', { class: a.next ? 'next' : '', 'data-account': a.id },
+        h('th', { scope: 'row', 'data-label': 'Account' }, a.name, a.next && h('span', { class: 'v-badge ok', text: 'next' })),
+        cell('5-hour used', r.five_hour ? pct(gone(r.five_hour) ? 0 : r.five_hour.used) : '–'),
+        cell('5-hour resets', r.five_hour && r.five_hour.resets_at && !gone(r.five_hour) ? when(r.five_hour.resets_at) : '–'),
+        cell('Week used', r.week ? pct(gone(r.week) ? 0 : r.week.used) : '–'),
+        cell('Week resets', r.week && r.week.resets_at && !gone(r.week) ? when(r.week.resets_at) : '–'),
+        h('td', { 'data-label': 'Why', class: 'why', text: a.reason || '' }));
+    });
+    return h('div', { class: 'box' }, h('table', { class: 'tiers usage-table' }, h('thead', {}, head), h('tbody', {}, rows)));
+  }
+
+  function renderUsage() {
+    ensureDraft();
+    const settingsBox = h('section', { class: 'balancing', 'aria-labelledby': 'bal' });
+    const within = h('select', { id: 'bal-within', 'aria-label': 'Within a provider', onchange: (ev) => { balDraft.within = ev.target.value; } },
+      WITHIN.map(([v, l]) => h('option', { value: v, text: l, selected: v === balDraft.within })));
+    const save = h('button', { type: 'button', class: 'primary', id: 'bal-save', text: 'Save', onclick: () => saveBalancing(['worker_order', 'within', 'leave', 'notify_below', 'save_claude_for_leads', 'margin'], settingsBox) });
+    settingsBox.append(
+      h('h2', { id: 'bal', text: 'Balancing' }),
+      h('div', { class: 'box rows' },
+        h('div', { class: 'row-line' }, h('div', { class: 'what' }, h('span', { text: 'Workers try first' }), h('span', { class: 'hint', text: 'Which provider new workers start on' })), orderEditor('worker_order', 'Worker order')),
+        h('div', { class: 'row-line' }, h('div', { class: 'what' }, h('span', { text: 'Within a provider' }), h('span', { class: 'hint', text: 'How to pick among its accounts' })), h('div', { class: 'ctl' }, within)),
+        numField('leave', 'Leave for you (%)', 'An account under this much left stays free for you', 100),
+        numField('notify_below', 'Warn me below (%)', 'Shows a dot on Settings when a provider drops under this', 100),
+        h('div', { class: 'row-line' }, h('div', { class: 'what' }, h('span', { text: 'Save Claude for leads' }), h('span', { class: 'hint', text: 'Workers go to GPT first so Claude stays for leads' })),
+          h('input', { type: 'checkbox', id: 'bal-save-claude', checked: !!balDraft.save_claude_for_leads, 'aria-label': 'Save Claude for leads', onchange: (ev) => { balDraft.save_claude_for_leads = ev.target.checked; } })),
+        numField('margin', 'Margin (%)', 'How early to call a week "running short"', 100)),
+      h('div', { class: 'actions' }, save), noteEl());
+    return h('div', { class: 'models usage' },
+      h('div', {}, h('h1', { text: 'Usage' }),
+        h('p', { class: 'lede', text: 'How much of this week is left, per provider.' }),
+        usageError && h('p', { class: 'inline-err', role: 'alert', text: 'Could not read usage: ' + usageError })),
+      h('section', { class: 'usage-bars', 'aria-label': 'Providers' },
+        usage ? Object.entries(usage.providers).map(([p, f]) => providerBar(p, f)) : h('p', { class: 'v-empty', text: 'Loading usage…' })),
+      settingsBox);
+  }
+
+  // The lead order editor on the Models panel, under the lead model pickers.
+  function leadOrderRow() {
+    ensureDraft();
+    const row = h('div', { class: 'row-line lead-order' },
+      h('div', { class: 'what' }, h('span', { text: 'Leads try' }), h('span', { class: 'hint', text: 'Which provider a new lead starts on, in order' })),
+      orderEditor('lead_order', 'Lead order'),
+      h('button', { type: 'button', class: 'primary small', id: 'lead-order-save', text: 'Save', onclick: () => saveBalancing(['lead_order'], row) }));
+    return row;
+  }
+
   // ---------------------------------------------------------------- shell
 
   function renderSections() {
@@ -718,7 +1132,8 @@
 
   function renderPanel() {
     if (!data) return;
-    const view = section === 'templates' ? renderTemplates() : section === 'writing' ? renderWriting() : renderModels();
+    const view = section === 'templates' ? renderTemplates() : section === 'writing' ? renderWriting()
+      : section === 'accounts' ? renderAccounts() : section === 'usage' ? renderUsage() : renderModels();
     const keep = document.getElementById('error');
     panel.replaceChildren(keep, view);
     renderSections();
@@ -730,7 +1145,7 @@
     if (next !== section) { section = next; setNote('', false); styleNote = ''; }
   }
 
-  window.addEventListener('hashchange', () => { readHash(); renderPanel(); });
+  window.addEventListener('hashchange', () => { readHash(); renderPanel(); syncSection(); });
   readHash();
   renderSections();
 
@@ -740,6 +1155,7 @@
       data = await api('/settings');
       document.getElementById('loading')?.remove();
       renderPanel();
+      syncSection();
     } catch (e) {
       error.hidden = false;
       error.textContent = 'Could not load settings: ' + e.message;

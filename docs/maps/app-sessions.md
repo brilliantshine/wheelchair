@@ -1,74 +1,111 @@
-# Map: how the app starts an agent session (tier, model, permissions, login, role prompt, transcript)
+# Map: how the app starts an agent session (tier, model, permissions, login, role prompt, transcript, turn end)
 
-Checked against: `c8ebeadbf0b733414c0c1682c027aa7c09b04d2a` (origin/main)
-Files covered: `viewer/app/sessions.js`, `viewer/app/threads.js` (createThread),
-`viewer/app/wc.js` (session start), `viewer/app/ready.js`, `viewer/app/routes.js`,
-`viewer/app/state.js`, `machine/service.js`, `codex/model.sh`, `codex/preflight.sh`,
-`seen/hook.sh` (lane skip only)
+Checked against: `6a9811502bbd5d350fb22715f3158ad076999701` (origin/main)
+Files covered: `viewer/app/sessions.js`, `viewer/app/settings.js`, `viewer/app/threads.js`
+(createThread), `viewer/app/wc.js` (session start), `viewer/app/ready.js`,
+`viewer/app/routes.js`, `viewer/app/state.js`, `viewer/app/chat.js` (per-CLI parts only),
+`machine/service.js`, `machine/hook.sh`, `machine/lib/hook-post.js`, `codex/model.sh`,
+`codex/preflight.sh`, `seen/hook.sh` (lane skip only)
+
+Earlier version was checked against `5742e2f`; the Settings feature merged since
+(`docs/plans/app-settings/`) and changed the model choice, the command line and the
+readiness test. Every pointer below was re-read at the commit above.
 
 ## Flow
 
 1. **Someone asks for a session.** A new thread starts its lead with
-   `{role:'lead', brief:'', tier:'top'}` (`viewer/app/threads.js:57`). Any other session is
-   an agent running `wc.js session start --role --cli --brief-file --attempt [--tier]`; the
-   tier defaults to `top` (`viewer/app/wc.js:77`, `85`). The machine service forwards it to
-   the hub's `/api/machine/session` (`machine/service.js:637-656`, route at `:715`), and `sessionRequest`
-   checks who may start what (`viewer/app/sessions.js:288-326`; the table is
-   `sessions.js:47-50`).
-2. **The hub resolves the model and the role layers.** `startSession` (`sessions.js:68-150`)
-   runs the Codex preflight first for a Codex session, then `resolveModel(hub, cli, role, tier)`
-   (`sessions.js:15-40`): leads and sub-leads use the Settings `lead` slot; reviewer, verifier
-   and mapper use `settings.other_agents[role]`; a worker uses its tier. The slot becomes a
-   model through `codex/model.sh <provider> <slot>`, plus an effort for Claude. Settings also
-   give `permission_mode`, `codex_mode` and the composed `role_layers`
-   (`settingsStore.roleLayers`, `sessions.js:89`). (Earlier versions of this map described
-   hard-coded `top|haiku|sonnet|opus` tiers; that is gone.)
-3. **The hub asks the machine service to start it**, `POST /v1/sessions` with role, cli,
-   token, `project_dir` (= `thread.project`) and `project` (its basename), worktree, brief,
-   model, effort, `permission_mode`, `codex_mode`, `role_layers` and git refs
-   (`sessions.js:115-137`). It sends no `role_prompt` and no login or environment choice.
-4. **The service builds the command line** in `commandFor` (`machine/service.js:242-262`):
-   - The role prompt is `composeRolePrompt` (`service.js:56-63`): `input.role_prompt` if
-     given, else the pointer line plus `role_layers`.
+   `{role:'lead', cli: thread.cli, brief:'', tier:'top'}` (`viewer/app/threads.js:58`; the same call at `:97` and `:122`). The
+   thread's CLI was chosen by the person and must be `claude` or `codex`
+   (`threads.js:46`). Any other session is an agent running
+   `wc.js session start --role --cli --brief-file --attempt [--tier]` (`wc.js:70-92`); the
+   tier defaults to `top`. The machine service forwards it to the hub
+   (`service.js:677-696`) and `sessionRequest` checks who may start what
+   (`sessions.js:310-348`; table `sessions.js:50-53`). **The calling agent picks the CLI**
+   (`--cli`, `sessions.js:330`); the hub does not choose or check it beyond
+   `claude|codex` (`sessions.js:17`).
+2. **The hub resolves the model.** `startSession` (`sessions.js:71-161`) runs the Codex
+   preflight first for a Codex session (`:75-86`), then `resolveModel(hub, cli, role, tier)`
+   (`sessions.js:16-39`):
+   - slot: lead and sub-lead → `lead`; reviewer, verifier, mapper → the tier in
+     `settings.other_agents[role]`; worker → the requested tier (`top` → `heavy`;
+     Claude's `haiku|sonnet|opus` and Codex's `luna|terra|sol|astra` are accepted as
+     aliases, `sessions.js:23-27`, `settings.js:12-13`).
+   - provider is `claude` for the claude CLI and `gpt` for codex (`sessions.js:29`).
+   - model = `codex/model.sh <provider> <slot>` (`sessions.js:31`); Claude also gets an
+     effort from `model.sh effort claude <slot>` (`:33`). A cell set to Not used makes
+     `model.sh` exit 3 and the start fails 400 "not used at <slot>; use the other CLI"
+     (`sessions.js:36`, `model.sh:313-317`).
+   - **The tier table is not in the settings file.** It is the pins file
+     `~/.wheelchair/models` on the **hub's machine**, read and written only by
+     `codex/model.sh` (`model.sh:41`, `117-118`, `293-301`); defaults at `model.sh:17-28`.
+     Settings' `PUT /settings/models` shells out to `model.sh set`
+     (`routes.js:51-61`). The Astra problem the old map recorded is gone: Critical works.
+3. **The hub builds the layers** (`settingsStore.roleLayers`, `sessions.js:89`) and sends the
+   machine service `POST /v1/sessions` with role, cli, token, model, effort,
+   `permission_mode`, `codex_mode`, `role_layers`, worktree, brief and git refs
+   (`sessions.js:115-136`). **The hub sends no account, login folder or environment.**
+4. **The service builds the command line** in `commandFor` (`service.js:266-290`), with
+   the starting instructions from `composeRolePrompt` (`service.js:57-63`):
    - Claude: `claude --session-id <uuid> --settings <stateDir>/settings/<name>.json
-     --permission-mode auto|bypassPermissions [--model M] [--effort E] --append-system-prompt <role prompt>`
-     (`service.js:254`). The settings file is written per session and holds only
-     `cleanupPeriodDays`, `promptSuggestionEnabled:false` and the Stop/Notification hooks
-     (`service.js:250-253`, written at `:277`).
-   - Codex: `codex -s workspace-write|read-only -a never -c network on -c notify=<hook>
-     -c trust=<worktree> [-m M]` (`service.js:259`). The role prompt goes as the first
-     message instead: `[wc:role] <role prompt>\n\n<brief>` (`service.js:284-286`).
-5. **tmux runs it**: `env WHEELCHAIR_LANE=1 WHEELCHAIR_SESSION_TOKEN=… WHEELCHAIR_STATE_DIR=…
-   WHEELCHAIR_MACHINE_ORIGIN=… <argv>` in `tmux new-session -d -s <name> -c <worktree>`,
-   under `systemd-run --user --scope` when available (`service.js:278`, `287-291`).
-6. **Readiness.** The service polls the pane: Claude is ready when the pane shows
-   `auto mode on` and a `❯` prompt (it answers the folder-trust prompt itself); Codex when
-   it shows `Ask Codex to do anything` (`service.js:297-300`, `306-338`). Then it types the
-   pending first message (the brief, or Codex's `[wc:role]` line) (`service.js:321-326`).
-   No ready screen after 30 s → `stuck` (`service.js:330-334`).
-7. **Transcripts.** Claude's file is found by session id under
-   `$CLAUDE_CONFIG_DIR/projects/*/<id>.jsonl` (`service.js:582-588`); Codex's rollout is
-   bound on the first turn-end whose first input starts `[wc:role]`, by thread id under
-   `$CODEX_HOME/sessions` (`service.js:568-572`, `590-598`). The service appends new lines
-   to its own copy `<stateDir>/transcripts/<thread>/<name>.jsonl` (`service.js:462-485`),
-   which the hub reads through `GET /v1/sessions/:name/transcript` (`service.js:487-509`,
-   `viewer/app/chat.js:194-201`).
+     --permission-mode auto|bypassPermissions [--model M] [--effort E]
+     --append-system-prompt <prompt>` (`:277`). The per-session settings file holds
+     `cleanupPeriodDays`, `promptSuggestionEnabled:false`, optional
+     `skipDangerousModePermissionPrompt`, and the `Stop` and `Notification` hooks that call
+     `machine/hook.sh claude <name>` (`:270-276`, written at `:306`).
+   - Codex: `codex <access flags> -c notify=[hook.sh,"codex",<name>] -c
+     projects={<worktree>={trust_level="trusted"}} [-m M]` (`:279-287`). Access flags: a
+     reviewer is always `-s read-only -a never`; `codex_mode` `unrestricted` →
+     `--dangerously-bypass-approvals-and-sandbox`; else `-s workspace-write -a never -c
+     sandbox_workspace_write.network_access=true`. The prompt goes as the first message
+     `[wc:role] <prompt>\n\n<brief>` (`:311-315`).
+   - Anything else → `die('cli must be claude or codex')` (`:289`).
+5. **tmux runs it**: `env WHEELCHAIR_LANE=1 WHEELCHAIR_SESSION_TOKEN=…
+   WHEELCHAIR_STATE_DIR=… WHEELCHAIR_MACHINE_ORIGIN=… <argv>` via
+   `tmux new-session -d -s <name> -x 200 -y 50 -c <worktree>`, under
+   `systemd-run --user --scope` when that works (`service.js:307`, `316-320`). That `env`
+   prefix is the **only** place a per-session environment could be added.
+6. **Readiness.** `readyText` (`service.js:326-330`): Claude is ready when the pane has no
+   trust or bypass-accept prompt, shows `auto mode on` (or `bypass permissions on` for a
+   bypass session) and a `❯` line; Codex when it shows `Ask Codex to do anything`. The
+   service answers the folder-trust prompt (and the bypass warning) with Down + Enter
+   (`:340-353`). When ready it types the pending first message (`:358-363`) and emits a
+   `ready` event. No ready screen after 30 s → `stuck` (`:367-371`). Pane scraping is the
+   only readiness signal for both CLIs.
+7. **Turn end.** Claude's `Stop` hook and Codex's `notify` call `machine/hook.sh`, which
+   needs `WHEELCHAIR_SESSION_TOKEN` (exits quietly without it, `hook.sh:12-14`) and pipes the
+   payload to `machine/lib/hook-post.js`. Claude: a `Stop` event becomes
+   `{type:'turn-ended', transcript_path}`; a `Notification` with `permission_prompt` becomes
+   `prompt` (`hook-post.js:16-19`). Codex: a payload of type `agent-turn-complete` becomes
+   `turn-ended` (`:21-23`). The event is POSTed to the service's `/v1/agent/hooks`, or
+   spooled to `<state>/spool/events/` when the service is down (`:26-37`). The service's
+   `hook()` (`service.js:604-621`) binds the transcript (below) and forwards to the hub,
+   which sets `turn_ended = true` and releases the queue (`sessions.js:271-272`,
+   `189-195`, `218`).
+8. **Transcripts.** Claude: the hook payload carries `transcript_path`, used directly
+   (`service.js:606`); before any Stop it is found by session id under
+   `$CLAUDE_CONFIG_DIR|~/.claude` + `/projects/*/<id>.jsonl` (`:538-541`, `622-629`).
+   Codex: bound on the first turn-end whose first input starts `[wc:role]`, by thread id,
+   under `$CODEX_HOME|~/.codex` + `/sessions/**/*-<thread>.jsonl` (`:607-612`, `630-638`).
+   `copyTranscript` appends new lines to the service's own copy
+   `<stateDir>/transcripts/<thread>/<name>.jsonl` (`:502-526`); the hub reads it through
+   `GET /v1/sessions/:name/transcript` and parses it per CLI (`viewer/app/chat.js:90-218`).
+   **Both lookups read the service's own process environment**, not the session's.
 
 ```
-new thread (lead, top)        agent: wc.js session start --tier T
-        \                           |
-         \                     machine /v1/agent/session -> hub sessionRequest (who may start what)
-          \                         |
-           +-----> startSession: codex? preflight -> resolveModel(cli, tier)
-                        |   claude: top=no --model, else alias | codex: model.sh pin
-                   POST machine /v1/sessions {role, cli, model, brief}   (no role_prompt, no login)
+new thread (lead, cli chosen)      agent: wc.js session start --cli X --tier T
+        \                                |
+         \                         hub sessionRequest (who may start what; cli = caller's pick)
+          +-------> startSession: codex? preflight -> resolveModel(cli, role, tier)
+                        |   slot -> provider (claude|gpt) -> codex/model.sh  (pins file, hub machine)
+                   POST machine /v1/sessions {cli, model, effort, modes, role_layers}   (no account)
                         |
-                   commandFor: claude ... --permission-mode auto --append-system-prompt "Read <role>.md"
-                               codex  -s ... -a never ...; first message "[wc:role] Read <role>.md"
+                   commandFor: claude ... --settings <hooks> | codex ... -c notify=<hook>
                         |
-                   tmux new-session (env WHEELCHAIR_LANE=1, token) -> pane polled until ready
+                   tmux new-session: env WHEELCHAIR_* <argv>  -> pane scraped until ready
                         |
-                   transcript found in $CLAUDE_CONFIG_DIR / $CODEX_HOME -> copied -> hub /chat
+        Stop / notify -> hook.sh -> hook-post.js -> service /v1/agent/hooks -> hub turn_ended
+                        |
+        transcript found under $CLAUDE_CONFIG_DIR | $CODEX_HOME (service's env) -> copy -> hub /chat
 ```
 
 ## Checked against the newer commit
@@ -77,76 +114,52 @@ Steps 4-7 and the Logins section below were re-read only where `git diff` showed
 
 ## Logins: one account per CLI per machine
 
-- Nothing chooses a login. The tmux command sets only the four `WHEELCHAIR_*` variables
-  (`service.js:278`), so each CLI uses whatever config directory the service's own user
-  environment gives it. The unit sets only `PATH` (`install.sh:332-336`).
-- The service reads `CLAUDE_CONFIG_DIR` and `CODEX_HOME` **from its own process
-  environment** to find transcripts (`service.js:583`, `591`). If a session were started
-  with a different config directory, these lookups would search the wrong place and the
-  thread's chat would stay empty.
-- Login status: Claude's is `claude auth status` → `loggedIn` (`service.js:669-672`);
-  Codex's is `codex/preflight.sh`, which reads and, if needed, refreshes
-  `$CODEX_HOME/auth.json` under a lock (`codex/preflight.sh:26-30`, `46-49`).
+- Nothing chooses a login. The `env` prefix sets only the four `WHEELCHAIR_*` variables
+  (`service.js:307`); each CLI uses whatever config directory the service's own user
+  environment gives it. The service unit sets only `PATH` (`install.sh:332-336`).
+- `CLAUDE_CONFIG_DIR` and `CODEX_HOME` are read in exactly two places in the service
+  (`service.js:623`, `631`), plus `codex/preflight.sh:26` and `codex/model.sh:43` (the
+  models cache). No other code names them (grep).
+- Login status: Claude's is `claude auth status` → JSON `loggedIn` (`service.js:709-712`).
+  Codex's is `codex/preflight.sh` (the service's `/v1/preflight`, `:746`), which reads
+  `$CODEX_HOME/auth.json`, refreshes the OAuth token under a `flock` when under 24 h of life
+  remains, and exits 2 when the refresh token is rejected (`preflight.sh:26-30`, `65-67`,
+  `87-90`). Run from the service, it sees the service's `CODEX_HOME` only. It then runs
+  `model.sh check` (`:123`).
 - `GET /v1/status` returns per CLI only `{installed, logged_in, version}`
-  (`service.js:657-673`).
+  (`service.js:697-714`).
 
 ## Permission mode
 
-- Hard-coded: Claude `--permission-mode auto` (`service.js:254`); Codex `-a never` with a
-  sandbox chosen by role (`service.js:259`). **Readiness depends on it**: Claude counts as
-  ready only when the pane says `auto mode on` (`service.js:298`). A different mode would
-  leave every Claude session `stuck`.
+- Settings now holds `permission_mode` (`auto|bypass`) and `codex_mode`
+  (`sandboxed|unrestricted`) (`settings.js:23`, `154-155`); the hub sends them on every
+  start (`sessions.js:130-131`). Readiness already follows the mode (`service.js:328`).
 
 ## Where a role's instructions come from
 
-- One line pointing at `protocol/app/<role>.md`, delivered by `--append-system-prompt`
-  (Claude) or the first `[wc:role]` message (Codex). The chat hides `[wc:role]` turns
-  (`viewer/app/chat.js:133`).
-- **A ready hook for layering**: the service already accepts `input.role_prompt` and uses
-  it in place of the one line, for both CLIs (`service.js:245`, `283-286`). The hub never
-  sends it. A template or writing style could be composed by the hub into `role_prompt`, or
-  appended to the brief, with no service change. For Claude it would then sit on the tmux
-  command line inside `--append-system-prompt`.
-- The brief is typed in as the first message (`service.js:284-286`); a lead's brief is
-  empty (`threads.js:57`).
-- **The wording list does not reach app sessions**: every session runs with
-  `WHEELCHAIR_LANE=1` (`service.js:278`) and `seen/hook.sh` returns at once when it is set
-  (`seen/hook.sh:166-167`). `protocol/app/AGENTS.md:23-25` states the same.
-- Nothing in the Claude argv restricts setting or memory sources (`service.js:254`), so I
-  expect a Claude app session loads the user's global instruction file (with the
-  diagram-sensitivity region) like any session. I did not run one to confirm.
+- `composeRolePrompt`: the pointer `Read <root>/protocol/app/<role>.md before responding. It
+  is wheelchair's built-in rules for your role.` plus the hub's `role_layers` (template, and
+  for a lead the writing style) (`service.js:57-63`, `settings.js:121-134`). `role_prompt`
+  still replaces both (`service.js:57`).
+- The wording list does not reach app sessions: `WHEELCHAIR_LANE=1` (`service.js:307`) and
+  `seen/hook.sh` returns at once when it is set (`seen/hook.sh:166-167`).
 
-## Forking a conversation
+## Other things that call a CLI
 
-- Nothing in the app resumes or forks a session: no `--resume`, `--fork-session` or
-  `codex resume|fork` anywhere under `machine/`, `viewer/app/` or `viewer/pages/` (grep).
-- The CLIs installed here can: `claude --resume <id> --fork-session` (Claude Code 2.1.325)
-  and `codex fork [SESSION_ID]` (codex-cli 0.169.0), from their `--help`. The service
-  already keeps what each needs: Claude's `cli_session_id` (`service.js:274`) and Codex's
-  `codex_thread_id` (`service.js:571`).
-- What a fork would trip over in the current code:
-  - `commandFor` has no resume path; Claude's `--session-id` is always a fresh UUID
-    (`service.js:274`).
-  - Readiness for Codex and the rollout binding both key on the first message starting
-    `[wc:role]` (`service.js:284-286`, `570`); a fork carries the lead's history and gets
-    no new `[wc:role]` line.
-  - `SESSION_ROLES` has no role for it (`sessions.js:38-45`); the chat reads only `lead`
-    sessions (`chat.js:222`), so a non-lead role stays out of the main thread.
-  - A fork is told it is the lead (its history holds `lead.md`) and gets a session token
-    the hub accepts cards from, so it could post cards to the thread unless the hub refuses
-    cards by role.
-  - A Claude transcript is stored per working directory; I did not check whether a resume
-    must run in the lead's worktree to find it.
+- The style preview: the service runs `claude -p --model M --permission-mode dontAsk` with
+  `WHEELCHAIR_LANE=1` and its own environment (`service.js:718-741`, route `:747`). It
+  always uses Claude and the service's login.
+- Session recovery guesses a recovered session's CLI from the pane text: contains `Codex`
+  → codex, else claude (`service.js:172`).
 
 ## Usage and limits
 
-- Nothing reads usage or rate limits anywhere: no usage call in `machine/service.js`,
-  `viewer/app/`, or `codex/` (grep for usage/limit).
-- **The newer-model heads-up is thrown away.** `preflight.sh` ends by running
-  `model.sh check` (`codex/preflight.sh:123`), which prints heads-up lines
-  (`codex/model.sh:151-212`, `240-244`). The service returns the command's stdout in the
-  `/v1/preflight` body (`service.js:681`), but the hub only looks at success or failure
-  (`viewer/app/ready.js:17-24`) or the error text on failure (`sessions.js:76`).
+- Nothing reads usage, quotas or rate limits anywhere: no usage call in `machine/`,
+  `viewer/app/`, `viewer/pages/` or `codex/` (grep for usage, quota, rate limit, 5-hour).
+  The only token-life check is the Codex preflight's 24 h margin (`preflight.sh:65`).
+- The newer-model heads-up now reaches Settings: `settings.headsUp` runs
+  `model.sh check --json` on the hub's machine (`settings.js:185`) and `describe` returns
+  it (`settings.js:206`).
 
 ## The Ready check
 
@@ -157,47 +170,31 @@ accounts, usage or models.
 
 ## Hub routes and state
 
-- Browser API routes are dispatched in `viewer/app/routes.js:27-44`: `machine`, `threads`,
-  `features`, `projects`, `sessions`; anything else is 404. The contract is
-  `viewer/app/API.md:8-27`.
-- Hub-wide state lives in `~/.local/state/wheelchair/` (`viewer/app/state.js:9`):
-  `machines.json`, `projects.json` and `threads/<id>.json` (`state.js:45-46`, `87`). There
-  is no settings file.
-- Machine routes are in `machine/service.js:675-718` and `machine/API.md:8-22`.
-
-## Every place the tier names Luna, Terra, Sol, Astra appear (outside plan history)
-
-- Code: `viewer/app/sessions.js:15`, `17`, `25`; `codex/model.sh` (6 lines: the defaults
-  table `:15-20`, the pin parser `:25`, usage `:27`); `codex/test/run.sh` (43 lines);
-  `install/test/run.sh:258`, `263-265`; `viewer/test/app-hub.test.js` (5 lines).
-- Pins file format: `~/.wheelchair/models` keys are the tier names (`codex/model.sh:25`).
-- Protocol: `protocol/lanes.md:42`, `68-83`, `162-167`, `188-214`;
-  `protocol/app/sub-lead.md:55-75`, `119-123`; `protocol/app/lead.md:69`;
-  `protocol/implementation.md:173`, `185-187`; `protocol/verification.md:25-35`, `103`;
-  `protocol/plan-review.md:34-36`; `protocol/templates/COMPLETION.md:4`.
-- API doc: `viewer/app/API.md:53-54`.
-- Designs: `docs/proposals/app-shell/design/` Run, SessionWall, SettingsModels, Main,
-  PhoneInbox, PhoneLane, Thread (`.dc.html`); `docs/proposals/app-settings/proposal.md`.
-- Past plans under `docs/plans/` (model-pins, one-account-setups, app-shell and others)
-  mention them as history.
+- Browser API routes (`viewer/app/routes.js:29-47`): `machine`, `threads`, `features`,
+  `projects`, `settings`, `sessions`; anything else is 404. `settings` routes are
+  `routes.js:49-144`; contract in `viewer/app/API.md:28-37`.
+- Hub state is in `~/.local/state/wheelchair/` (`viewer/app/state.js:9`): `machines.json`,
+  `projects.json`, `settings.json` and `threads/<id>.json` (`state.js:45-47`). `settings.json`
+  holds `permission_mode, codex_mode, other_agents, templates, style, style_version`
+  (`settings.js:23`), saved through one read-modify-write queue (`state.js:176-194`,
+  `settings.js:171-178`). Unknown keys are dropped on every load (`settings.js:150-161`).
+- Machine routes: `machine/service.js:743-` and `machine/API.md`.
 
 ## Wrong today
 
-- **Astra cannot be reached from the app.** `TIERS.codex` is `luna, terra, sol`
-  (`sessions.js:17`), but `model.sh` pins `astra` (`codex/model.sh:19`) and the sub-lead is
-  told the ladder runs to Astra (`protocol/app/sub-lead.md:119`). A `--tier astra` start is
-  refused with 400 (`sessions.js:27-29`). `sub-lead.md:74` lists only luna/terra/sol/top,
-  so the role files disagree with each other.
-- **A Claude `top` session runs whatever the CLI defaults to**, not a named model
-  (`sessions.js:24`): "leads run on Opus 5.5" is not enforced anywhere.
+- **The service cannot start a third CLI.** `commandFor` ends in
+  `die('cli must be claude or codex')` (`service.js:289`) and the hub refuses any other
+  value (`sessions.js:17`, `threads.js:46`).
+- **`provider` and `cli` are two vocabularies for the same thing**: Settings and
+  `model.sh` say `claude|gpt`, the rest of the code says `claude|codex`
+  (`sessions.js:29`, `routes.js:52`, `settings.js:213`).
 
 ## What I did not look at
 
 - `machine/service.js` stop, archive and git routes beyond their names.
 - `viewer/app/hub.js` beyond the state wiring; `views.js` `sessions()`.
 - How `hub.call` maps a 409 from the service into an exception.
-- Whether `claude --resume` must run in the original working directory, and how either
-  CLI's fork names its new transcript.
-- Whether a long `--append-system-prompt` on the tmux command line hits a length limit.
 - The full `codex/model.sh` heads-up logic and its cache file format.
-- `machine/hook.sh` and `machine/lib/hook-post.js`.
+- Whether `claude --resume` must run in the original working directory (forking is not
+  touched by this map any more; the previous version's fork notes were dropped as not
+  checked at this commit).
