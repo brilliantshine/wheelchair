@@ -314,18 +314,6 @@
       render();
     }
   }
-  async function dismiss(card) {
-    try {
-      await post(T + '/cards/' + encodeURIComponent(card.id) + '/dismiss', {});
-      delete cardErrors[card.id];
-      card.answered = true;
-      await poll(true);
-    } catch (e) {
-      cardErrors[card.id] = e.message;
-      sigs.chat = null; sigs.pinned = null;
-      render();
-    }
-  }
   // What a pressed question or offer shows as its pick: the offer's mapped label, else the value itself.
   function pickedLabel(card) {
     if (card.kind === 'offer') {
@@ -502,10 +490,12 @@
           a.href = '/wheelchair/app/terminal?name=' + encodeURIComponent(card.session);
           const actions = el('div', 'actions'); actions.appendChild(a); box.appendChild(actions);
         }
-        // A card a lead posted stays until it is settled; Collin can close it early.
+        // A card a lead posted stays until it is settled. Collin answers it with either
+        // button, and the lead always replies, so nothing closes silently.
         if (!card.system && !card.answered) {
           const actions = el('div', 'actions');
-          actions.appendChild(button('Dismiss', 'small dismiss', () => dismiss(card), thread().archived));
+          actions.appendChild(button('Keep going', 'primary', () => press(card, 'keep-going'), thread().archived));
+          actions.appendChild(button('Talk about it', '', () => press(card, 'talk', card.title), thread().archived));
           box.appendChild(actions);
         }
         break;

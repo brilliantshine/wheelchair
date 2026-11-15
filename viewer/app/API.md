@@ -11,8 +11,8 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 | `POST /threads` | `{project,cli,machine?,message?}` | a `Thread`, with its lead started; a non-empty string `message` sets `title` from its trimmed, whitespace-collapsed first line, cut at a word boundary to 60 characters plus `…` |
 | `GET /threads/:id/chat` | — | `{thread,items,cards,pinned,queued}`; `items` leaves out the lead's tool steps when Settings has `tool_steps:"hide"` |
 | `POST /threads/:id/messages` | `{text}` | `{queued:true}`; delivery waits for the lead turn end |
-| `POST /threads/:id/cards/:cardId/press` | `{action,value?}` | `{queued:true,text}` for lead actions and records `answered_action` and `answered_value` on an answered card; `recheck` updates an approval in place, and `start-building` first re-checks Ready |
-| `POST /threads/:id/cards/:cardId/dismiss` | — | `{ok:true}`; closes an open `needs` card a lead posted (`resolved_by:"collin"`, shown dimmed as resolved). A `system` needs card is refused with 422, an unknown card with 404 |
+| `POST /threads/:id/cards/:cardId/press` | `{action,value?}` | `{queued:true,text}` for lead actions and records `answered_action` and `answered_value` on an answered card; `recheck` updates an approval in place, and `start-building` first re-checks Ready. On an open lead `needs` card, `keep-going` and `talk` (value: the card title) also close it as `resolved_by:"collin"`; a `system` or answered needs card is refused with 422 |
+| `POST /threads/:id/cards/:cardId/dismiss` | — | `{ok:true}`; closes an open `needs` card a lead posted (`resolved_by:"collin"`, shown dimmed as resolved). The thread page no longer shows a Dismiss button; it uses the press actions above. A `system` needs card is refused with 422, an unknown card with 404 |
 | `POST /threads/:id/open` | `{start_now?:boolean}` | a started stub, or `{waiting:true,thread}` |
 | `POST /threads/:id/restart` | — | replacement lead session; its restart context is queued first |
 | `POST /threads/:id/archive` | — | the machine archive response |

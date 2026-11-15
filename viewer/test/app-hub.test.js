@@ -1559,6 +1559,31 @@ test('a resolve retried with the same delivery id is a duplicate', async () => {
   });
 });
 
+test('keep going and talk about it close a lead needs card and reach the lead', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const first = await openNeed(context, made);
+    const pressed = await api(context, `/threads/${made.id}/cards/${first}/press`, { method: 'POST', body: { action: 'keep-going' } });
+    assert.equal(pressed.status, 202);
+    assert.equal(pressed.body.text, 'keep going');
+    let card = (await api(context, `/threads/${made.id}/chat`)).body.cards.find((item) => item.id === first);
+    assert.equal(card.answered, true);
+    assert.equal(card.resolved_by, 'collin');
+    assert.equal(card.resolved_note, 'Keep going');
+    const again = await api(context, `/threads/${made.id}/cards/${first}/press`, { method: 'POST', body: { action: 'keep-going' } });
+    assert.equal(again.status, 422);
+    const second = await openNeed(context, made);
+    const talk = await api(context, `/threads/${made.id}/cards/${second}/press`, { method: 'POST', body: { action: 'talk', value: 'Review is stuck' } });
+    assert.equal(talk.status, 202);
+    card = (await api(context, `/threads/${made.id}/chat`)).body.cards.find((item) => item.id === second);
+    assert.equal(card.resolved_note, 'Talking it over');
+    const stored = JSON.parse(await fs.readFile(path.join(context.state, 'threads', `${made.id}.json`), 'utf8'));
+    // The lead hears each press, whether still queued or already typed in.
+    assert.ok(JSON.stringify(stored).includes(`[card ${first}] keep going`));
+    assert.ok(JSON.stringify(stored).includes(`[card ${second}] talk about: Review is stuck`));
+  });
+});
+
 test('dismiss closes a lead needs card as collin and refuses a system one', async () => {
   await withContext(async (context) => {
     const made = await thread(context);
