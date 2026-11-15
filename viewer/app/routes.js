@@ -50,19 +50,22 @@ async function handleSettings(hub, request, response, url, bits, body) {
   if (bits.length === 1 && request.method === 'GET') return send(response, 200, await settings.describe(hub));
   if (bits[1] === 'models' && request.method === 'PUT') {
     if (!['claude', 'gpt'].includes(body.provider)) throw appError(400, 'provider must be claude or gpt');
-    if (!['light', 'standard', 'heavy', 'critical', 'lead'].includes(body.slot)) throw appError(400, 'slot is invalid');
+    let slot = settings.TIER_ALIASES[body.slot] || body.slot;
+    if (body.provider === 'claude') slot = ({ haiku: 'light', sonnet: 'standard', opus: 'heavy' })[slot] || slot;
+    if (!['light', 'standard', 'heavy', 'critical', 'lead'].includes(slot)) throw appError(400, 'slot is invalid');
     if (body.model !== null && (typeof body.model !== 'string' || !/^[a-z0-9][a-z0-9._-]*$/.test(body.model))) throw appError(400, 'model is invalid');
     if (body.provider === 'gpt' && body.effort !== undefined) throw appError(400, 'GPT models do not take effort');
     if (body.effort !== undefined && !['low', 'medium', 'high', 'xhigh', 'max'].includes(body.effort)) throw appError(400, 'effort is invalid');
-    try { await settings.modelCommand(hub, ['set', body.provider, body.slot, body.model || 'none', ...(body.effort ? [body.effort] : [])]); }
+    try { await settings.modelCommand(hub, ['set', body.provider, slot, body.model || 'none', ...(body.effort ? [body.effort] : [])]); }
     catch (error) { throw appError(400, (error.stderr || error.message).trim()); }
     return send(response, 200, { models: await settings.models(hub) });
   }
   if (bits[1] === 'models' && bits[2] === 'heads-up' && request.method === 'POST') {
     let args;
     if (body.action === 'switch') {
-      if (!['light', 'standard', 'heavy', 'critical'].includes(body.tier) || typeof body.model !== 'string') throw appError(400, 'tier and model are required to switch');
-      args = ['set', 'gpt', body.tier, body.model];
+      const tier = settings.TIER_ALIASES[body.tier] || body.tier;
+      if (!['light', 'standard', 'heavy', 'critical'].includes(tier) || typeof body.model !== 'string') throw appError(400, 'tier and model are required to switch');
+      args = ['set', 'gpt', tier, body.model];
     } else if (body.action === 'skip') {
       if (typeof body.model !== 'string') throw appError(400, 'model is required to skip');
       args = ['skip', body.model];
@@ -87,8 +90,11 @@ async function handleSettings(hub, request, response, url, bits, body) {
   }
   if (bits[1] === 'templates' && bits.length === 2 && request.method === 'POST') {
     let template;
+    const projects = await hub.projects();
     await settings.update(hub, (value) => {
-      template = { ...settings.validateTemplate(body), id: crypto.randomUUID(), in_use: false };
+      const validated = settings.validateTemplate(body);
+      if (validated.scope !== 'all' && !projects.includes(validated.scope)) throw appError(400, 'template.scope must be all or a listed project');
+      template = { ...validated, id: crypto.randomUUID(), in_use: false };
       value.templates.push(template);
     });
     return send(response, 201, template);
@@ -104,11 +110,13 @@ async function handleSettings(hub, request, response, url, bits, body) {
     }
     if (request.method === 'PUT') {
       let updated;
+      const projects = await hub.projects();
       await settings.update(hub, (value) => {
         const index = value.templates.findIndex((template) => template.id === bits[2]);
         if (index < 0) throw appError(404, 'template not found');
         const previous = value.templates[index];
         updated = { ...settings.validateTemplate({ ...previous, ...body }, { updating: true }), id: previous.id, in_use: body.in_use === undefined ? previous.in_use : body.in_use };
+        if (updated.scope !== previous.scope && updated.scope !== 'all' && !projects.includes(updated.scope)) throw appError(400, 'template.scope must be all or a listed project');
         if (updated.in_use) for (const template of value.templates) if (template.id !== updated.id && template.role === updated.role && template.scope === updated.scope) template.in_use = false;
         value.templates[index] = updated;
       });
