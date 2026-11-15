@@ -91,6 +91,7 @@ function validFolder(value) {
 async function addSavedDir(hub, body) {
   if (typeof body.name !== 'string' || !body.name.trim()) throw appError(400, 'name is required');
   const name = body.name.trim();
+  if (name === '.' || name === '..') throw appError(400, "name can't be . or ..");
   if (name.length > 60) throw appError(400, 'name is too long (maximum 60 characters)');
   if (typeof body.path !== 'string' || !body.path.trim()) throw appError(400, 'path is required');
   const machine = typeof body.machine === 'string' && body.machine ? body.machine : 'hub';
@@ -164,7 +165,8 @@ async function handleSettings(hub, request, response, url, bits, body) {
   }
   if (bits[1] === 'saved-dirs' && bits[2] && bits.length === 3 && request.method === 'DELETE') {
     const machine = url.searchParams.get('machine') || 'hub';
-    const name = decodeURIComponent(bits[2]);
+    let name;
+    try { name = decodeURIComponent(bits[2]); } catch { throw appError(404, 'saved directory not found'); }
     const value = await settings.update(hub, (value) => {
       const index = value.saved_dirs.findIndex((entry) => entry.name === name && entry.machine === machine);
       if (index < 0) throw appError(404, 'saved directory not found');

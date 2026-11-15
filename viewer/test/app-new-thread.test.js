@@ -227,3 +227,14 @@ test('a template scope may name a saved directory path, and settings lists it as
     assert.equal(moved.status, 400);
   });
 });
+
+test('saved directories refuse . and .. as names and treat a malformed escape as unknown', async () => {
+  await withContext(async (context) => {
+    for (const name of ['..', '.', ' .. ']) {
+      const refused = await api(context, '/settings/saved-dirs', { method: 'POST', body: { name, path: '/srv/x', machine: 'hub' } });
+      assert.equal(refused.status, 400);
+      assert.match(refused.body.detail || refused.body.error || '', /can't be \. or \.\./);
+    }
+    assert.equal((await api(context, '/settings/saved-dirs/%E0%A4%A', { method: 'DELETE' })).status, 404);
+  });
+});

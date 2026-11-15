@@ -79,8 +79,9 @@ test('save a directory, pick it, then remove it', async ({ page }) => {
   await page.locator('#add-name').fill('nope');
   await page.locator('#add-path').fill('~/nope');
   await page.locator('#add-go').click();
-  await expect(page.locator('#saved-error')).toContainText('is not a git repository');
+  await expect(page.locator('#add-error')).toBeVisible();
   await expect(page.locator('#add-name')).toHaveValue('nope');
+  await expect(page.locator('#add-error')).toContainText('is not a git repository');
   await page.locator('#saved-list li[data-name="scratch"] button').click();
   await expect(page.locator('#saved-list li')).toHaveCount(0);
   await expect(page.locator('#nt-project optgroup[label="Saved"]')).toHaveCount(0);
@@ -101,4 +102,60 @@ test('no default folder: a line linking to Settings', async ({ page }) => {
   await open(page);
   await expect(page.locator('#nt-no-folder a')).toHaveAttribute('href', '/wheelchair/app/settings');
   await expect(page.locator('#nt-note')).toBeHidden();
+});
+
+// A /new-thread answer for the page, built by hand so a second machine needs no second service.
+const answer = (machine, extra = {}) => ({
+  machine, machines: ['hub', 'other'], default_folder: '~/code', found: [], previous: [], saved: [], ...extra,
+});
+
+test('switching machine disables Start and empties the project list until the answer lands', async ({ page }) => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  await page.route('**/api/new-thread?machine=*', async (route) => {
+    const machine = new URL(route.request().url()).searchParams.get('machine');
+    if (machine === 'other') await gate;
+    await route.fulfill({ json: answer(machine, { found: [{ name: machine + '-repo', path: '/srv/' + machine + '-repo' }] }) });
+  });
+  await open(page);
+  await expect(page.locator('#nt-project option')).toHaveText(['hub-repo']);
+  await expect(page.locator('#nt-go')).toBeEnabled();
+  await page.locator('#nt-machine').selectOption('other');
+  await expect(page.locator('#nt-go')).toBeDisabled();
+  await expect(page.locator('#nt-project')).toBeDisabled();
+  await expect(page.locator('#nt-project option')).toHaveCount(0);
+  release();
+  await expect(page.locator('#nt-project option')).toHaveText(['other-repo']);
+  await expect(page.locator('#nt-go')).toBeEnabled();
+  const request = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith('/api/threads'));
+  await page.route('**/api/threads', (route) => route.fulfill({ status: 500, json: { error: 'stop' } }));
+  await page.locator('#nt-go').click();
+  expect((await request).postDataJSON()).toMatchObject({ machine: 'other', project: '/srv/other-repo' });
+});
+
+test('two saved entries with one path give one option', async ({ page }) => {
+  await page.route('**/api/new-thread?machine=*', (route) => route.fulfill({ json: answer('hub', {
+    saved: [{ name: 'a', path: '/srv/same', machine: 'hub' }, { name: 'b', path: '/srv/same', machine: 'hub' }],
+  }) }));
+  await open(page);
+  await expect(page.locator('#nt-project option[value="/srv/same"]')).toHaveCount(1);
+  await expect(page.locator('#nt-project option')).toHaveCount(1);
+  await expect(page.locator('#saved-list li')).toHaveCount(2);
+});
+
+test('a failed Remove shows inside that entry; an Add refusal shows under the Add row', async ({ page }) => {
+  await page.route('**/api/new-thread?machine=*', (route) => route.fulfill({ json: answer('hub', {
+    saved: [{ name: 'a', path: '/srv/a', machine: 'hub' }, { name: 'b', path: '/srv/b', machine: 'hub' }],
+  }) }));
+  await page.route('**/api/settings/saved-dirs/a?*', (route) => route.fulfill({ status: 500, json: { error: 'disk full' } }));
+  await open(page);
+  await page.locator('#saved-list li[data-name="a"] button').click();
+  await expect(page.locator('#saved-list li[data-name="a"] [role="alert"]')).toHaveText('Could not remove a: disk full');
+  await expect(page.locator('#saved-list li[data-name="b"] [role="alert"]')).toHaveCount(0);
+  await page.route('**/api/settings/saved-dirs', (route) => route.fulfill({ status: 400, json: { error: "name can't be . or .." } }));
+  await page.locator('#add-name').fill('..');
+  await page.locator('#add-path').fill('/srv/x');
+  await page.locator('#add-go').click();
+  await expect(page.locator('#add-error')).toHaveText("name can't be . or ..");
+  await expect(page.locator('#saved-list .row-error')).toHaveCount(0);
 });
