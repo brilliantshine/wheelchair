@@ -50,9 +50,10 @@ class Hub {
     this.queueRetryTimer.unref();
     // Spec: a waiting stub shows ready within ten minutes of the merge; a minute keeps the
     // wait short for someone watching, at one gh call per waiting stub.
-    this.waitTimer = setInterval(() => this.pollWaiting().catch(() => {}), 60_000);
+    this.waitTimer = setInterval(() => Promise.all([this.pollWaiting(), sessions.retryWaiting(this), sessions.releaseLimits(this)]).catch(() => {}), 60_000);
     this.waitTimer.unref();
     await this.pollWaiting();
+    await sessions.retryWaiting(this);
   }
 
   machines() { return this.state.machines(); }
@@ -65,7 +66,7 @@ class Hub {
   }
   machine(name) { return this.state.machine(name); }
   threadPath(id) { return this.state.threadPath(id); }
-  thread(id) { return this.state.thread(id); }
+  async thread(id) { const thread = await this.state.thread(id); if (!thread.provider && thread.cli && thread.sessions?.length) { thread.provider = require('./providers.js').providerOf(thread.cli); await this.state.save(thread); } return thread; }
   save(thread) { return this.state.save(thread); }
   updateThread(id, operation) { return this.state.updateThread(id, operation); }
   // State's queue makes a single write atomic. This separate lock covers the read, remote
@@ -94,7 +95,7 @@ class Hub {
   }
   deliver(thread, name, options) { return sessions.deliver(this, thread, sessions.session(thread, name), options); }
   appendSent(thread, entries) { return this.state.appendSent(thread.id, entries); }
-  event(payload) { return this.withThread(payload.thread_id, () => sessions.event(this, payload)); }
+  async event(payload) { const result = await this.withThread(payload.thread_id, () => sessions.event(this, payload)); if (payload.type === 'usage' && !result.duplicate) await sessions.retryWaiting(this); return result; }
   async sessionRequest(payload) {
     const thread = await threads.threadBySession(this, payload.calling_session);
     return this.withThread(thread.id, () => sessions.sessionRequest(this, payload));

@@ -35,14 +35,26 @@ test('"hub" names the installer-registered entry for this host\'s own service', 
   assert.equal((await state.machines()).hearth.last_seen, '2026-11-14T00:00:00.000Z');
 });
 
-test('a lead whose machine refuses the start is recorded as failed, not left starting', async () => {
+test('a lead waits when its machine is unreachable', async () => {
   const hub = new Hub({ stateDir: await installerShapedState(await freePort()) });
   await hub.init();
-  await assert.rejects(hub.createThread({ project: '/tmp/nowhere', cli: 'claude', machine: 'hub' }));
-  const [made] = await hub.allThreads();
-  assert.equal(made.sessions[0].status, 'failed');
-  assert.equal(made.sessions[0].live, false);
-  assert.ok(made.sessions[0].error);
+  const made = await hub.createThread({ project: '/tmp/nowhere', machine: 'hub' });
+  assert.equal(made.sessions[0].status, 'waiting');
+  assert.equal(made.sessions[0].live, true);
+});
+
+test('a reachable machine that refuses a lead start records failure', async () => {
+  const { setup, close, api } = require('./helpers/app.js');
+  const context = await setup();
+  try {
+    context.machine.startOk = false;
+    const result = await api(context, '/threads', { method: 'POST', body: { project: '/tmp/refused' } });
+    assert.equal(result.status, 503);
+    const [made] = await (new Hub({ stateDir: context.state })).allThreads();
+    assert.equal(made.sessions[0].status, 'failed');
+    assert.equal(made.sessions[0].live, false);
+    assert.ok(made.sessions[0].error);
+  } finally { await close(context); }
 });
 
 test('wc.js passes worktree-remove through with the worker session, and requires a commit message', () => {
