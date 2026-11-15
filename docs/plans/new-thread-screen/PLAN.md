@@ -308,3 +308,4 @@ refusal. The `POST /threads` body is unchanged.
 - 2026-11-15 — Choice: T1, machine/service.js check order: exists, is a directory, name rule, then `.git`, so a bad-name non-repo reports the name reason.
 - 2026-11-15 — Choice: T1, machine/service.js params: a non-absolute `folder` is `400 "folder must be an absolute path"`; an empty `folder=`/`check=` counts as given and fails as not absolute.
 - 2026-11-15 — Choice: T1, machine/service.js name rule: a local regex `^[A-Za-z0-9._-]+$` without `..`, not `safeName` itself (which allows `/`).
+- 2026-11-15 — worker-2 was not dead: the hub's "ended" notice was wrong, and it kept editing w2 alongside worker-3. Stopped worker-2 on its own report of the collision; worker-3 told to re-check its files before finishing.
