@@ -702,3 +702,52 @@ test('/v1/preview times out with 504 without blocking the service, and reports c
     assert.equal(missing.status, 503); assert.deepEqual(missing.body, { error: 'claude is not installed' });
   } finally { await env.close(); }
 });
+
+test('account starts bind the CLI environment, validate directories, and report account status', async () => {
+  const root = await temp(); const oldHome = process.env.HOME; process.env.HOME = root;
+  const env = await service(root);
+  try {
+    for (const [cli, variable, id] of [['claude', 'CLAUDE_CONFIG_DIR', 'one'], ['codex', 'CODEX_HOME', 'two']]) {
+      await start(env, { cli, thread_id: id, account: { id, dir: `~/.wheelchair/accounts/${id}` } });
+      assert.match(await log(env), new RegExp(`${variable}=${root}/\\.wheelchair/accounts/${id}`));
+    }
+    const defaultSession = await start(env, { thread_id: 'default' });
+    assert.equal(defaultSession.account, 'default-claude');
+    const invalid = await api(env, 'POST', '/v1/sessions', { role: 'lead', cli: 'claude', thread_id: 'bad', token: 'x', worktree: root, account: { id: 'bad', dir: '~/elsewhere/bad' } }, hubHeader);
+    assert.equal(invalid.status, 400);
+    const status = await api(env, 'GET', '/v1/status', undefined, hubHeader);
+    assert.deepEqual(status.body.accounts.map(a => a.id).sort(), ['default-claude', 'default-gpt', 'one', 'two']);
+    const preflight = await api(env, 'POST', '/v1/preflight', { dir: '~/elsewhere/bad' }, hubHeader); assert.equal(preflight.status, 400);
+  } finally { await env.close(); process.env.HOME = oldHome; }
+});
+
+test('usage and failures are forwarded with account and limit time', async () => {
+  const root = await temp(); const hub = await hubServer(); const env = await service(root, { config: { hub_url: hub.url } });
+  try {
+    const session = await start(env);
+    const headers = { 'x-wheelchair-session-token': 'alpha' };
+    await api(env, 'POST', '/v1/agent/hooks', { type: 'usage-source', payload: { rate_limits: { five_hour: { used_percentage: 100, resets_at: 2000000000 }, seven_day: { used_percentage: 40, resets_at: 2100000000 } } } }, headers);
+    await api(env, 'POST', '/v1/agent/hooks', { type: 'limit-hit', error: 'rate_limit' }, headers);
+    await api(env, 'POST', '/v1/agent/hooks', { type: 'turn-failed', error: 'broken' }, headers);
+    const events = hub.calls.map(c => JSON.parse(c.body)).filter(x => x.session === session.name);
+    assert.equal(events.find(e => e.type === 'usage').reading.account, 'default-claude');
+    assert.equal(events.find(e => e.type === 'limit-hit').limited_until, new Date(2000000000 * 1000).toISOString());
+    assert.equal(events.find(e => e.type === 'turn-failed').error, 'broken');
+  } finally { await env.close(); await hub.close(); }
+});
+
+test('statusline posts a live reading and preflight accepts an account directory', async () => {
+  const root = await temp(); const oldHome = process.env.HOME; process.env.HOME = root;
+  const hub = await hubServer(); const env = await service(root, { config: { hub_url: hub.url } });
+  try {
+    await start(env);
+    const payload = JSON.stringify({ model: { display_name: 'opus' }, rate_limits: { five_hour: { used_percentage: 42, resets_at: 2000000000 } } });
+    const child = spawn(path.join(__dirname, '../statusline.sh'), ['claude', 'wc-t-lead'], { env: { ...process.env, WHEELCHAIR_STATE_DIR: env.state, WHEELCHAIR_SESSION_TOKEN: 'alpha' }, stdio: ['pipe', 'pipe', 'pipe'] });
+    let output = ''; child.stdout.on('data', chunk => { output += chunk; }); child.stdin.end(payload);
+    assert.equal(await new Promise(resolve => child.on('close', resolve)), 0);
+    assert.equal(output.trim(), 'opus · 5h 42%');
+    assert.equal(hub.calls.map(c => JSON.parse(c.body)).find(e => e.type === 'usage').reading.five_hour.used, 42);
+    const preflight = await api(env, 'POST', '/v1/preflight', { dir: '~/.wheelchair/accounts/test' }, hubHeader);
+    assert.notEqual(preflight.status, 400);
+  } finally { await env.close(); await hub.close(); process.env.HOME = oldHome; }
+});
