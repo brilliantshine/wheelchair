@@ -180,7 +180,9 @@ Codex.
   queue can deliver) but does **not** run the report path (`sessions.js:165-177`), so a
   reviewer's or verifier's partial text is never delivered as its result and `finished` stays
   unset. It queues `[wc:from app] your session <name>'s turn failed: <error>` to the session's
-  starter, which decides whether to restart it.
+  starter, which decides whether to restart it. A lead has no starter: the app posts its own
+  `needs` card on the thread instead ("The lead's turn failed: <error>"), as `pollDead` does
+  for a lead that ended (`sessions.js:392-400`).
 - **Exhausted-window rule** (both CLIs), from the session's latest reading: the
   **earliest** `resets_at` among windows with `used >= 95`; none that high → the earliest
   `resets_at` present; none at all → now + 1 h. Readings lag (Claude's at most once a
@@ -247,9 +249,12 @@ No reading → room.
       in the start response's `note`.
     - **Reviewer, verifier**: a preference. If the provider has no room, is below the margin,
       or has no logged-in account → picked normally, with a `note`.
-  - `--not-provider <claude|gpt>`: never that provider. If it leaves no provider with a
-    logged-in account on the machine → ignored, with a `note` (today's "one family: use it
-    for both").
+  - `--not-provider <claude|gpt>`: never that provider.
+    - **Worker**: strict; no eligible provider left → wait.
+    - **Reviewer, verifier**: a preference, like `--provider`. If excluding it leaves no
+      eligible provider with room (none logged in, none with room, or only Claude and Claude
+      below the margin) → picked normally, with a `note` (today's "one family: use it for
+      both"). These roles wait only when no provider at all has room.
   - The two are mutually exclusive (400 if both).
 
 **Waiting** (D14):
@@ -351,7 +356,9 @@ Added to `viewer/app/routes.js` and documented in `viewer/app/API.md`:
   at `:171-173`): the start command loses `--cli`. Plan reviewers: the intent-lens reviewer
   with `--provider claude` (a preference: it moves to GPT rather than wait), the
   mechanics-lens reviewer with `--not-provider <the provider the intent reviewer got>` (from
-  the first start's output), so the two land on two providers whenever both have room. A small-fix verifier, and an after-done
+  the first start's output), so the two land on two providers whenever both have room. If
+  the intent reviewer's start came back `waiting` (no provider has room at all), start the
+  mechanics reviewer with no provider flag. A small-fix verifier, and an after-done
   fix verifier: `--not-provider <provider the lead runs on>` (from `session list`). The
   sentences about `command -v` and "with one family installed, use it for both" are replaced
   by: the hub drops a constraint it cannot meet and says so in the start output's note.
@@ -465,6 +472,9 @@ Added to `viewer/app/routes.js` and documented in `viewer/app/API.md`:
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent (Claude) | major | `--not-provider` for reviewers and verifiers waits when the only other provider has no room or is below margin | upheld | §5: a preference for these roles; they wait only when no provider has room |
+| intent (Claude) | minor | Mechanics reviewer has no provider to exclude when the intent reviewer is waiting | upheld | §9: start it with no flag |
+| intent (Claude) | minor | Lead's `turn-failed` has no starter to tell | upheld | §4: app `needs` card, as `pollDead` does |
 
 ## Prior Work
 
