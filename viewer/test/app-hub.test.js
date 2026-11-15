@@ -891,6 +891,35 @@ test('models per role: Claude always gets a model and effort, and preferences re
   });
 });
 
+test('models per role: Claude family aliases do not become Codex tiers', async () => {
+  await withContext(async (context) => {
+    const codex = await thread(context, { cli: 'codex' });
+    const codexSublead = await startSublead(context, codex, codex.sessions[0], 'codex-aliases');
+    const codexAlias = await machinePost(context, '/machine/session', {
+      calling_session: codexSublead.name, action: 'start', role: 'worker', cli: 'codex', tier: 'haiku', attempt_id: 'codex-haiku',
+    });
+    assert.equal(codexAlias.status, 400);
+    assert.match(codexAlias.body.detail, /light, standard, heavy, critical/);
+
+    const claude = await thread(context, { cli: 'claude', project: '/tmp/claude-aliases' });
+    const claudeSublead = await machinePost(context, '/machine/session', {
+      calling_session: claude.sessions[0].name, action: 'start', role: 'sub-lead', cli: 'claude', attempt_id: 'claude-aliases',
+    });
+    assert.equal(claudeSublead.status, 200);
+    const claudeAlias = await machinePost(context, '/machine/session', {
+      calling_session: claudeSublead.body.session.name, action: 'start', role: 'worker', cli: 'claude', tier: 'haiku', attempt_id: 'claude-haiku',
+    });
+    assert.equal(claudeAlias.status, 200);
+    assert.equal(context.machine.sessions.get(claudeAlias.body.session.name).model, pinned(context, 'claude', 'light'));
+
+    const oldClaudeAlias = await api(context, '/settings/preferences', { method: 'PUT', body: { other_agents: { reviewer: 'haiku' } } });
+    assert.equal(oldClaudeAlias.status, 400);
+    const oldTierAlias = await api(context, '/settings/preferences', { method: 'PUT', body: { other_agents: { reviewer: 'luna' } } });
+    assert.equal(oldTierAlias.status, 200);
+    assert.equal(oldTierAlias.body.other_agents.reviewer, 'light');
+  });
+});
+
 test('models per role: unknown tiers and unused provider cells are refused', async () => {
   await withContext(async (context) => {
     const made = await thread(context, { cli: 'codex' });

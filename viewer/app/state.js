@@ -181,6 +181,18 @@ class State {
     return this.queued(this.settingsPath, () => atomicWrite(this.settingsPath, json(value)));
   }
 
+  // Settings saves are edited independently by the page.  Keep reading, changing, and
+  // replacing the file in one queue entry so a simultaneous save cannot restore an older
+  // snapshot over a newer field.
+  updateSettings(change) {
+    return this.queued(this.settingsPath, async () => {
+      const current = await readJson(this.settingsPath, null);
+      const updated = await change(current);
+      await atomicWrite(this.settingsPath, json(updated));
+      return updated;
+    });
+  }
+
   // Spec "State": projects.json is the repos the app lists. Serialized so two threads created
   // together can't lose each other's entry.
   addProject(project) {
