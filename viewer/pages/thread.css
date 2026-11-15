@@ -20,10 +20,21 @@
 #stub-open h3, #dead p { margin-top: 0; }
 
 /* ---- pinned: offer, idea, progress ---- */
-#pinned { background: var(--band); border-bottom: 1px solid var(--line); }
+/* Sticks under the thread header (--head-h is set by thread.js); a tall pin scrolls inside
+   the strip rather than covering the chat, and the bar folds the strip to one line. */
+#pinned { position: sticky; top: calc(var(--nav-h) + var(--head-h, 0px)); z-index: 8;
+  background: var(--band); border-bottom: 1px solid var(--line); }
 #pinned:empty { display: none; }
-#pinned { padding: 10px 24px 12px; display: flex; flex-direction: column; gap: 8px; }
-#pinned > .card { width: 100%; max-width: 820px; margin: 0 auto; }
+html:has(.shell.on-thread) { scroll-padding-top: calc(var(--nav-h) + var(--head-h, 0px) + var(--pins-h, 0px) + 8px);
+  scroll-padding-bottom: calc(var(--composer-h, 0px) + 8px); }
+#pinned { padding: 6px 24px 12px; display: flex; flex-direction: column; gap: 6px; }
+#pinned.folded { padding-bottom: 6px; }
+.pin-bar, .pin-list { width: 100%; max-width: 820px; margin: 0 auto; }
+.pin-bar { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+.pin-bar-label { flex: 1; min-width: 0; font-size: 12px; color: var(--dim); overflow-wrap: anywhere; }
+.pin-bar .pin-toggle { flex: none; min-height: 28px; font-size: 12px; }
+.pin-list { display: flex; flex-direction: column; gap: 8px; max-height: 40vh; max-height: 40dvh; overflow: auto; }
+.pin-list > .card { width: 100%; }
 .card-offer { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px 12px; padding: 10px 14px;
   background: var(--accent-soft); border-color: var(--accent-line); }
 .card-offer .pin { color: var(--accent-text); padding-top: 3px; }
@@ -199,7 +210,7 @@ iframe.diagram { display: block; width: 100%; height: 340px; border: 0; backgrou
   .thread-head .back { order: 0; }
   .thread-head .title-block { order: 1; flex: 1 1 55%; }
   #error, #stub-open, #dead { margin-left: 12px; margin-right: 12px; }
-  #pinned { padding: 8px 12px; }
+  #pinned { padding: 4px 12px 8px; }
   .chat-wrap { padding: 16px 12px; }
   .bubble { max-width: 90%; }
   #chat > .card { max-width: 100%; }
