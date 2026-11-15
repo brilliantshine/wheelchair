@@ -95,9 +95,12 @@ One decision for Collin. Also used to confirm IDEA.md.
 | `progress` | string | no | For example "decision 4 of roughly 9" |
 | `doc` | string | no | One of `MAP.md`, `IDEA.md` or `PLAN.md` |
 
-A press comes back as `[card <id>] picked: <option label>`. Collin may instead type an
-answer or an objection in the thread; that arrives as an ordinary message, and you answer
-it like one. When `doc` is present, the card shows an "Open <doc>" link to that document's
+A press comes back as `[card <id>] picked: <option label>`. Under the options the card has
+a box for his own words; sending it closes the card and comes back as
+`[card <id>] answered: <text>`. Treat it as his answer to the question: it may be a new
+option, an option with a condition, or an objection. It needs no `resolve`. Collin may
+also type in the thread instead; that arrives as an ordinary message, and you answer it
+like one. When `doc` is present, the card shows an "Open <doc>" link to that document's
 in-app page.
 
 ### `approval`
@@ -264,6 +267,7 @@ app uses to hide traffic Collin did not write:
 The press forms, in full:
 
 - `[card <id>] picked: <option label>`, `[card <id>] picked: take it into planning` and `[card <id>] picked: keep talking first`
+- `[card <id>] answered: <text>`, his own words in a question card's box
 - `[card <id>] removed: <bullet text>`
 - `[card <id>] talk about: <finding>`
 - `[card <id>] start building`

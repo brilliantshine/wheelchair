@@ -504,6 +504,23 @@ for (const [label, size] of SIZES) {
       await expect(card.locator('button.opt').first()).toBeDisabled();
     });
 
+    test('S4: an answer in his own words is sent, closes the card and is shown', async ({ page }) => {
+      const made = await ctx.make({ cli: 'claude' });
+      const q = await ctx.post(made.id, QUESTION);
+      await open(page, made.id);
+      const card = page.locator(`#card-${q.id}`);
+      const send = card.locator('.own-words button');
+      await expect(send).toBeDisabled();
+      await card.locator('.own-words textarea').fill('Yes, but keep the old name');
+      const req = page.waitForRequest((r) => r.url().includes(`/cards/${q.id}/press`));
+      await send.click();
+      expect((await req).postDataJSON()).toEqual({ action: 'answered', value: 'Yes, but keep the old name' });
+      await expect(card.locator('.answered-tag')).toHaveText(/You answered: Yes, but keep the old name/);
+      await expect(card.locator('.own-words')).toHaveCount(0);
+      await expect(card.locator('button.opt.picked')).toHaveCount(0);
+      await expect(card.locator('button.opt').first()).toBeDisabled();
+    });
+
     test('S4: an answered card with no stored value keeps the generic tag; an unmatched value is shown bare', async ({ page }) => {
       const made = await ctx.make({ cli: 'claude' });
       const old = await ctx.post(made.id, QUESTION);
