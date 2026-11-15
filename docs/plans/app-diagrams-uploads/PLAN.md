@@ -367,7 +367,8 @@ Clean round: approved.
 | T2 | Hub: card fields, image storage, uploads/files/diagram routes, MachineClient.stream, archive handling | viewer/server.js, viewer/app/*.js, viewer/app/API.md, viewer/test/*.test.js, viewer/test/helpers/app-machine.js | gpt standard (gpt-6.1-terra) | wc-c56d4b2c5f5f-worker-2 | `node --test viewer/test/*.test.js` | done |
 | T3 | Thread page: form renderers, HTML and image cards, composer uploads; browser tests | viewer/pages/thread.*, new viewer/test/*.spec.js, browser test helpers | gpt standard (gpt-6.1-terra); asked for claude, hub fell back | wc-c56d4b2c5f5f-worker-4 | `npm --prefix viewer run test:browser` | in progress |
 | T4 | Protocol: cards.md diagram format, forms, image card; lead.md pointer | protocol/app/cards.md, protocol/app/lead.md | gpt standard (gpt-6.1-terra) | wc-c56d4b2c5f5f-worker-3 | grep, diff stat | done |
-| T5 | Integration: archive through the real hub route while an upload to the real machine service is paused | one new viewer/test/*.test.js | gpt standard (gpt-6.1-terra) | wc-c56d4b2c5f5f-worker-5 | `node --test viewer/test/*.test.js` | in progress |
+| T6 | Hub: an upload the machine cancels answers 409, not 500 (defect found by T5; T2 rework on a sharper brief, same tier: the T2 brief never said what to do when the machine drops the connection) | viewer/app/routes.js, viewer/app/machine-client.js, viewer/test/app-hub.test.js, viewer/test/helpers/app-machine.js | gpt standard (gpt-6.1-terra) | see Log | `node --test viewer/test/app-uploads-archive.test.js` | in progress |
+| T5 | Integration: archive through the real hub route while an upload to the real machine service is paused | one new viewer/test/*.test.js | gpt standard (gpt-6.1-terra) | wc-c56d4b2c5f5f-worker-5 | `node --test viewer/test/*.test.js` | done (test merged; it exposed the T6 defect) |
 
 ## Log
 
@@ -380,3 +381,6 @@ Clean round: approved.
 - 2026-11-15 — Choice: T2, viewer/app/threads.js archive: the uploads needs card says "unknown error" when the machine sends no `uploads_error`, and marks the thread's sessions not live (they are stopped).
 - 2026-11-15 — T2 accepted: node suite 346/347 re-run by sub-lead on its branch; the one failure is the port race already failing on the feature branch. The worker stopped on its fails-twice rule over the browser gate, which fails only on the known "no drawn arrow's line passes through either box" issue in docs/known-issues.md; not caused by this build.
 - 2026-11-15 — T5's start produced two sessions with the same attempt id (worker-5, worker-6) from one command; worker-6 stopped at once, its worktree `wc-c56d4b2c5f5f-w6` left unmerged.
+- 2026-11-15 — Choice: T5, viewer/test/app-uploads-archive.test.js: real temp git repo with faked tmux, systemd-run and claude so the hub creates the lead normally.
+- 2026-11-15 — Choice: T5, viewer/test/app-uploads-archive.test.js: waits for the machine's `.part` file before the 5.2 s pause, so the upload is known to be inside the machine when archive runs.
+- 2026-11-15 — T5 accepted with its test failing: archive through the hub cancels a paused upload, but the upload answers 500, not 409 or a dropped connection (reproduced by sub-lead). Cause: the hub's upload route maps the machine's reset connection to 500. T6 opened; rung: brief rewritten, tier unchanged.
