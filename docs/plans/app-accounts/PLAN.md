@@ -192,7 +192,12 @@ Codex.
 - The service forwards readings to the hub (`POST` to the hub like turn events). The hub
   keeps the latest reading per account in `usage.json` in its state dir (one writer queue,
   as `State.updateSettings`, `state.js:176-194`).
-- A reading older than its window's `resets_at` is treated as 0% used for that window.
+- **Expired window**: once a window's `resets_at` is past, that window counts as `used 0`
+  with `resets_at` unknown (null) until a new reading arrives. Everywhere a reset time is
+  used (soonest sort, the first refill, elapsed time, the margin), only future `resets_at`
+  values count; an account whose week reset is unknown sorts with the no-reading accounts.
+  Forecast: `R` is the earliest future week reset; no future reset → no amber and the
+  margin test passes.
 - An account with no reading shows "no reading yet" and counts as having room (§5).
 
 ### 5. The balancer
@@ -369,7 +374,8 @@ Added to `viewer/app/routes.js` and documented in `viewer/app/API.md`:
   if every builder ran on one provider, one verifier with `--not-provider <that provider>`;
   if both providers built, one verifier per provider with `--provider claude` and
   `--provider gpt`; if the first start's output has a `note` saying its provider was not
-  honoured, start no second verifier.
+  honoured, start no second verifier; if the second's output has such a note (it landed on
+  the first's provider), stop the second at once.
 - `protocol/app/cards.md`: no change.
 
 ### Edge cases
@@ -475,6 +481,11 @@ Added to `viewer/app/routes.js` and documented in `viewer/app/API.md`:
 | intent (Claude) | major | `--not-provider` for reviewers and verifiers waits when the only other provider has no room or is below margin | upheld | §5: a preference for these roles; they wait only when no provider has room |
 | intent (Claude) | minor | Mechanics reviewer has no provider to exclude when the intent reviewer is waiting | upheld | §9: start it with no flag |
 | intent (Claude) | minor | Lead's `turn-failed` has no starter to tell | upheld | §4: app `needs` card, as `pollDead` does |
+| mechanics (Codex) | major | Lead `turn-failed` has no starter; enqueue to null throws | upheld | Same as the intent finding above: app `needs` card |
+| mechanics (Codex) | major | Expired windows keep past reset times in sorting, forecast and margin | upheld | §4 expired-window rule: only future resets count |
+| mechanics (Codex) | minor (RE-RAISE) | Second verifier can fall back onto the first's provider | upheld | §9: stop the second when its output has a note |
+
+Three rounds since Collin's last decision without a clean one: escalated to him with a `needs` card (lead.md step 5, Budget).
 
 ## Prior Work
 
