@@ -19,6 +19,11 @@ and are listed in COMPLETION.md.
 - **Plan documents open in the old viewer.** The links go to the pre-app document page.
   They should open inside the app, with its nav and a way back to the thread.
 
+- **A question in plain chat looks like a stall.** The priorities lead asked what "within
+  each group" meant in an ordinary reply, then waited 20 minutes. Nothing showed under
+  "Needs you" and Collin thought it had stalled. Anything a lead waits on him for should
+  be a card.
+
 ## Seen while watching
 
 - **Escape doesn't end a turn for the hub.** Interrupting a Claude session fires no Stop
