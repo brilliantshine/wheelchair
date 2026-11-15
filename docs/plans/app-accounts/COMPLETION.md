@@ -4,7 +4,7 @@ date: 2026-11-15
 implemented-by: "codex standard gpt-6.1-terra (T1, T2, T4, T5, T8), codex light gpt-6-luna (T3, T7), claude standard claude-sonnet-5-5 (T6, T9); sub-lead claude-opus-5-5"
 verified-by:
   - round: 1
-    lane: claude top (claude-fable-5-2) — PASS; codex top (gpt-6-astra) — FAIL
+    lane: claude top (claude-opus-5-5) — PASS; codex top (gpt-6.1-sol) — FAIL
     checks: codex standard/light (T1-T5, T7, T8), claude standard (T6, T9)
   - round: 2
     lane: claude top — PASS; codex top — FAIL
