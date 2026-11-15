@@ -83,6 +83,7 @@ function sessionRequest(operation, tail) {
       role: parsed.role,
       cli: parsed.cli,
       tier: parsed.tier || 'top',
+      ...(parsed.effort !== undefined ? { effort: parsed.effort } : {}),
       attempt_id: parsed.attempt,
       brief: fs.readFileSync(parsed['brief-file'], 'utf8'),
       replaces: parsed.replaces,

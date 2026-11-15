@@ -25,10 +25,10 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 | `POST /machine/cards` | service envelope `{thread_id,session,...card}` | accepted card, `202` |
 | `POST /machine/events` | `{thread_id,session,type,...}` | `{ok:true}`, `202` |
 | `POST /machine/session` | `{calling_session,action,...}` | the hub-authorized session result |
-| `GET /settings` | — | `{models,model_options,heads_up,permission_mode,codex_mode,tool_steps,other_agents,templates,in_use,style,style_version,projects}`; templates include `in_use`, `live_sessions`, and `scope_missing` when a saved project is no longer listed |
-| `PUT /settings/models` | `{provider:"claude"|"gpt",slot,model|null,effort?}` | `{models}`; `slot` is `light`, `standard`, `heavy`, `critical`, or `lead` |
+| `GET /settings` | — | `{models,model_options,heads_up,permission_mode,codex_mode,tool_steps,other_agents,escalation,escalation_text,templates,in_use,style,style_version,projects}`; templates include `in_use`, `live_sessions`, and `scope_missing` when a saved project is no longer listed |
+| `PUT /settings/models` | `{provider:"claude"|"gpt",slot,model|null,effort?}` | `{models}`; `slot` is `light`, `standard`, `heavy`, `critical`, or `lead`; effort is `low`, `medium`, `high`, `xhigh`, and for Claude also `max`; omission clears it |
 | `POST /settings/models/heads-up` | `{action:"switch",tier,model}`, `{action:"skip",model}`, or `{action:"reset"}` | `{models,heads_up}` |
-| `PUT /settings/preferences` | `{permission_mode?:"auto"|"bypass",codex_mode?:"sandboxed"|"unrestricted",tool_steps?:"show"|"hide",other_agents?:{reviewer?,verifier?,mapper?}}` | saved preference values |
+| `PUT /settings/preferences` | `{permission_mode?:"auto"|"bypass",codex_mode?:"sandboxed"|"unrestricted",tool_steps?:"show"|"hide",other_agents?:{reviewer?,verifier?,mapper?},escalation?:{first?,max_effort?,max_tier?,ask_before?}}` | saved preference values, including `escalation` and `escalation_text` |
 | `POST /settings/templates` | `{name,role,scope,switches?,text}` | new template, including generated `id` and `in_use:false` |
 | `PUT /settings/templates/:id` | template fields and optional `in_use` | saved template; enabling one clears the other template for its role and scope |
 | `DELETE /settings/templates/:id` | — | `{ok:true}` |
@@ -63,8 +63,22 @@ Session start resolves a provider cell through `codex/model.sh`: leads and sub-l
 verifiers, and mappers use Settings' Other agents tier, and workers use their requested tier (`top` means
 Heavy). The tiers are `light`, `standard`, `heavy`, and `critical`; `luna`, `terra`, `sol`, `astra` and,
 for Claude, `haiku`, `sonnet`, `opus` are accepted aliases for slots, not model names — for example
-`--tier opus` runs whatever the Heavy cell holds. Every session receives a model; Claude also receives its
-configured effort when present. A provider cell set to `none` is a 400 directing the caller to the other CLI.
+`--tier opus` runs whatever the Heavy cell holds. Every session receives a model and its configured effort when present. A provider cell set to `none` is a 400 directing the caller to the other CLI.
 A start is a 409 ("machine service out of date") while that machine's `/v1/status` commit differs from the hub's.
 
 Worker restart (`wc.js session start --role worker ... --replaces <session>`): the hub checks the named session is a worker in the same thread and not live, then starts the new worker in that session's `worktree` on its `branch`. A live session or a non-worker is refused with 400.
+
+A sub-lead starting a worker may pass `--effort <e>` to `wc.js session start`; the
+`POST /machine/session` start body carries it as `effort`. Other starts with effort receive
+400 `effort can only be set for a worker`. Claude accepts low, medium, high, xhigh, max;
+Codex accepts low, medium, high, xhigh and refuses max with 400 `GPT's highest effort is xhigh`.
+Other invalid values receive 400 `effort must be one of …`. Worker tiers above Settings'
+`max_tier` receive 400 `tier <t> is above the highest tier in Settings (<max>)`; requested
+effort above `max_effort` receives 400 `effort <e> is above the highest effort in Settings (<max>)`.
+Aliases resolve before the tier check. A GPT max ceiling counts as xhigh. Pinned efforts are
+not checked against the ceiling, and explicit effort overrides the pin. Refusals occur before
+preflight or creating a session record. The ask-before switch is guidance, not enforced.
+
+Escalation preference values are `first: effort|model`, `max_effort: high|xhigh|max`,
+`max_tier: standard|heavy|critical`, and `ask_before: never|critical|any`. Partial updates
+are accepted; invalid keys, values, and non-object inputs receive 400.

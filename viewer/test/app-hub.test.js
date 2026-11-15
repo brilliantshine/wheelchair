@@ -1609,3 +1609,47 @@ test('dismiss closes a lead needs card as collin and refuses a system one', asyn
     assert.equal(twice.status, 422);
   });
 });
+
+test('worker effort overrides and escalation ceilings reject before starting', async () => {
+  await withContext(async (context) => {
+    await api(context, '/settings/models', { method: 'PUT', body: { provider: 'gpt', slot: 'lead', model: 'gpt-6-sol', effort: 'high' } });
+    await api(context, '/settings/models', { method: 'PUT', body: { provider: 'gpt', slot: 'standard', model: 'gpt-6-sol', effort: 'xhigh' } });
+    const made = await thread(context, { cli: 'codex' });
+    const lead = made.sessions[0];
+    assert.equal(context.machine.sessions.get(lead.name).effort, 'high');
+    const sub = await startSublead(context, made, lead, 'ceilings');
+    await api(context, '/settings/preferences', { method: 'PUT', body: { escalation: { max_tier: 'standard', max_effort: 'high' } } });
+    const start = (extra) => machinePost(context, '/machine/session', { calling_session: sub.name, action: 'start', role: 'worker', cli: 'codex', attempt_id: `try-${Math.random()}`, ...extra });
+    const before = (await api(context, `/threads/${made.id}/chat`)).body.thread.sessions.length;
+    const preflights = context.machine.calls.filter((call) => call.path === '/v1/preflight').length;
+    for (const tier of ['critical', 'top']) {
+      const result = await start({ tier });
+      assert.equal(result.status, 400);
+      assert.equal(result.body.detail, `tier ${tier === 'top' ? 'heavy' : tier} is above the highest tier in Settings (standard)`);
+    }
+    assert.equal((await start({ tier: 'standard', effort: 'xhigh' })).body.detail, 'effort xhigh is above the highest effort in Settings (high)');
+    assert.equal((await api(context, `/threads/${made.id}/chat`)).body.thread.sessions.length, before);
+    assert.equal(context.machine.calls.filter((call) => call.path === '/v1/preflight').length, preflights);
+    const pinned = await start({ tier: 'standard' });
+    assert.equal(pinned.status, 200);
+    assert.equal(context.machine.sessions.get(pinned.body.session.name).effort, 'xhigh');
+    for (const role of ['reviewer', 'verifier']) {
+      const refused = await machinePost(context, '/machine/session', { calling_session: lead.name, action: 'start', role, cli: 'codex', effort: 'high', attempt_id: role });
+      assert.equal(refused.body.detail, 'effort can only be set for a worker');
+    }
+    await api(context, '/settings/preferences', { method: 'PUT', body: { escalation: { max_effort: 'max' } } });
+    assert.equal((await start({ tier: 'standard', effort: 'max' })).body.detail, "GPT's highest effort is xhigh");
+    const accepted = await start({ tier: 'standard', effort: 'xhigh' });
+    assert.equal(accepted.status, 200);
+    assert.equal(context.machine.sessions.get(accepted.body.session.name).effort, 'xhigh');
+    const override = await start({ tier: 'standard', effort: 'low' });
+    assert.equal(context.machine.sessions.get(override.body.session.name).effort, 'low');
+  });
+});
+
+test('wc session start includes effort only when supplied', () => {
+  const { sessionRequest } = require('../app/wc.js');
+  const args = ['--role', 'worker', '--cli', 'codex', '--attempt', 'one', '--brief-file', __filename];
+  assert.equal(Object.hasOwn(sessionRequest('start', args).body, 'effort'), false);
+  assert.equal(sessionRequest('start', [...args, '--effort', 'xhigh']).body.effort, 'xhigh');
+});

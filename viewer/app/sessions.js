@@ -29,8 +29,7 @@ async function resolveModel(hub, cli, role, requestedTier = 'top') {
   const provider = cli === 'claude' ? 'claude' : 'gpt';
   try {
     const model = (await execFileAsync(path.join(hub.root, 'codex', 'model.sh'), [provider, slot])).stdout.trim();
-    let effort;
-    if (provider === 'claude') effort = (await execFileAsync(path.join(hub.root, 'codex', 'model.sh'), ['effort', provider, slot])).stdout.trim() || undefined;
+    const effort = (await execFileAsync(path.join(hub.root, 'codex', 'model.sh'), ['effort', provider, slot])).stdout.trim() || undefined;
     return { model, effort, slot };
   } catch (error) {
     if (error.code === 3) throw appError(400, `${provider} is not used at ${slot}; use the other CLI`);
@@ -72,6 +71,17 @@ async function startSession(hub, thread, input) {
   const role = input.role;
   if (!SESSION_ROLES.has(role)) throw appError(400, 'unknown role');
   const cli = input.cli || thread.cli;
+  const resolved = await resolveModel(hub, cli, role, input.tier);
+  const settings = await settingsStore.load(hub);
+  if (role === 'worker') {
+    const ceiling = settings.escalation;
+    if (settingsStore.WORK_TIERS.indexOf(resolved.slot) > settingsStore.WORK_TIERS.indexOf(ceiling.max_tier)) throw appError(400, `tier ${resolved.slot} is above the highest tier in Settings (${ceiling.max_tier})`);
+    if (input.effort !== undefined) {
+      const efforts = ['low', 'medium', 'high', 'xhigh', 'max'];
+      const max = cli === 'codex' && ceiling.max_effort === 'max' ? 'xhigh' : ceiling.max_effort;
+      if (efforts.indexOf(input.effort) > efforts.indexOf(max)) throw appError(400, `effort ${input.effort} is above the highest effort in Settings (${max})`);
+    }
+  }
   if (cli === 'codex') {
     try {
       await hub.call(thread.machine, '/v1/preflight', 'POST', {});
@@ -84,8 +94,6 @@ async function startSession(hub, thread, input) {
       throw appError(409, `Codex preflight failed: ${detail}`);
     }
   }
-  const resolved = await resolveModel(hub, cli, role, input.tier);
-  const settings = await settingsStore.load(hub);
   const layers = settingsStore.roleLayers(settings, role, thread.project);
   // Spec "Machine service on the hub": no new sessions while that service runs another commit.
   // A service that can't be reached falls through to the start, which records the failure.
@@ -126,7 +134,7 @@ async function startSession(hub, thread, input) {
       branch: input.branch,
       brief: input.brief || '',
       model: resolved.model,
-      ...(resolved.effort ? { effort: resolved.effort } : {}),
+      ...((input.effort || resolved.effort) ? { effort: input.effort || resolved.effort } : {}),
       permission_mode: settings.permission_mode,
       codex_mode: settings.codex_mode,
       role_layers: layers.text,
@@ -314,8 +322,15 @@ async function sessionRequest(hub, payload) {
     return { sessions: thread.sessions.map(publicSession) };
   }
   if (payload.action === 'stop') return stopSession(hub, thread, caller, payload.name);
+  if (payload.action === 'start' && payload.effort !== undefined && (caller.role !== 'sub-lead' || payload.role !== 'worker')) throw appError(400, 'effort can only be set for a worker');
   if (payload.action !== 'start' || !ALLOWED_START[caller.role]?.has(payload.role)) {
     throw appError(403, `${caller.role} may not start that session`);
+  }
+  if (payload.effort !== undefined) {
+    const cli = payload.cli || thread.cli;
+    const allowed = cli === 'codex' ? ['low', 'medium', 'high', 'xhigh'] : ['low', 'medium', 'high', 'xhigh', 'max'];
+    if (cli === 'codex' && payload.effort === 'max') throw appError(400, "GPT's highest effort is xhigh");
+    if (!allowed.includes(payload.effort)) throw appError(400, `effort must be one of ${allowed.join(', ')}`);
   }
   if (!payload.attempt_id) throw appError(400, 'attempt_id is required');
   const duplicate = thread.sessions.find((item) => (
@@ -332,6 +347,7 @@ async function sessionRequest(hub, payload) {
     attempt_id: payload.attempt_id,
     brief: payload.brief,
     tier: payload.tier,
+    effort: payload.effort,
     // Spec "Branches and checkouts": the mapper, reviewers and the sub-lead run in the thread's
     // own worktree; a worker gets a branch cut from the thread's branch; a verifier checks the
     // thread's branch as it stands, commits not yet pushed included.
