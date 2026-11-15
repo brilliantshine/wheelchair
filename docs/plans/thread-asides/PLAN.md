@@ -1,6 +1,6 @@
 ---
 slug: thread-asides
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-15
 ---
 
@@ -48,6 +48,31 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 17 | Supersedes 3: the copy is made at the aside's first turn, from the lead conversation recorded when the aside was opened. It may include lead turns from between opening and the first message; it never sees later ones | Forking needs a message to run; recording the parent at opening keeps a lead restart from losing context | review-round-5 |
 
 ## Spec
+
+Collin highlights words in a lead message and picks an action, and the hub records an aside
+that remembers which lead conversation to copy. Each message he sends it is queued and run
+once on the machine as a copy of that conversation, reading only; the answer is saved and
+shown in the panel. A request to think harder re-runs the same message on the stronger model,
+and a failure waits for Retry. Done closes it; This changes my answer drafts one line, he
+edits and sends it, and it reaches the lead as his own message.
+
+```mermaid
+flowchart TD
+  A[Collin highlights words and picks an action] --> B[hub records the aside and which lead conversation to copy]
+  B --> C[his message waits in the aside's queue]
+  C --> D[machine runs it once: a read-only copy of the lead's conversation]
+  D --> E{how did it end?}
+  E -- answered --> F[answer saved and shown in the panel]
+  E -- asks to think harder --> G[same message again on the stronger model]
+  G --> D
+  E -- failed --> H[waits until Collin presses Retry]
+  H --> D
+  F --> I{what next?}
+  I -- another question --> C
+  I -- Done --> J[aside closes, main thread unchanged]
+  I -- This changes my answer --> K[aside drafts one line, Collin edits and sends it]
+  K --> L[the line reaches the lead as his message, linked back to the aside]
+```
 
 The design screen is `docs/proposals/app-shell/design/ThreadAside.dc.html`; match its layout
 and wording on desktop. Read `MAP.md` for how the code works today; every pointer below is
@@ -132,7 +157,9 @@ so the main chat, the queued count and the app's session notices never see it.
   and the turn records its pid and process start time. The service runs with
   `KillMode=process` (`install.sh:336`), so children outlive a service restart: on start,
   for each turn still `running`, the machine kills that process group if the pid still
-  belongs to the same process (start time matches), confirms it is gone, and only then
+  belongs to the same process (start time matches), and also any process whose environment
+  holds `WHEELCHAIR_ASIDE_TURN=<turn_id>` (set on every spawn, so a crash between spawning
+  and saving the pid is covered), confirms they are gone, and only then
   marks the turn `failed` ("the machine restarted").
 - **Commands.** Environment: the account's login environment (`adapters.*.loginEnv`) and
   `WHEELCHAIR_LANE=1`, nothing else of ours. Working directory: the thread's worktree.
@@ -144,8 +171,9 @@ so the main chat, the queued count and the app's session notices never see it.
     writing tool), plus `--resume <from> --fork-session --session-id <new_id>` (fork) or
     `--resume <from>` (resume). The prompt goes on stdin. `reply` is the JSON's `result`;
     `conversation_id` is `new_id` (fork) or `from`.
-  - Codex: `codex exec fork <from> -` (fork) or `codex exec resume <from> -` (resume), with
-    `-s read-only --json -m <model>`, one `-c mcp_servers.<name>.enabled=false` for every server `codex mcp list --json` lists
+  - Codex: `codex exec -s read-only --json -m <model> [flags below] fork <from> -` (fork)
+    or `codex exec -s read-only --json -m <model> [flags below] resume <from> -` (resume):
+    the flags go before the subcommand, which refuses them after it. Flags: one `-c mcp_servers.<name>.enabled=false` for every server `codex mcp list --json` lists
     under that account's environment (an empty table doesn't disable configured servers) and the effort config
     as today. The prompt goes on
     stdin, preceded on a fork by `<aside prompt>\n\n`. `reply` is the last agent message
@@ -543,6 +571,11 @@ Collin chose "Keep going" again; the budget is reset.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent (gpt) | — | No findings | — | — |
+| mechanics (gpt) | major | RE-RAISE: a crash between spawn and saving the pid leaves an untracked child | downgraded to minor | A worker can build §4 as written without stopping to ask; the window is the instant between spawn and one file write. Fixed anyway: recovery also finds the process by a `WHEELCHAIR_ASIDE_TURN` environment marker |
+| mechanics (gpt) | minor | Codex flags must go before `fork`/`resume` | upheld | Reviewer checked the installed CLI; §4 now shows the order |
+
+Round 9 is clean: no blocking or major finding upheld.
 
 ## Prior Work
 
