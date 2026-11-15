@@ -1,7 +1,7 @@
 ---
 slug: <slug>
 date: <YYYY-MM-DD>
-implemented-by: <lanes/models used, e.g. "terra (lead: fable)" or "sonnet, terra">
+implemented-by: <lanes/models used, e.g. "standard (lead: fable)" or "sonnet, standard">
 verified-by: []   # Stage 4 appends; Stage 3 leaves this empty. Shape below.
 ---
 

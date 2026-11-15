@@ -39,7 +39,7 @@ resumed later:
 ```bash
 BRIEF=$(mktemp) OUT=$(mktemp) LOG=$(mktemp)
 # ... write the brief to $BRIEF ...
-MODEL=$(<wheelchair-root>/codex/model.sh sol)
+MODEL=$(<wheelchair-root>/codex/model.sh heavy)
 WHEELCHAIR_LANE=1 codex exec -m "$MODEL" -c model_reasoning_effort=high \
   -s read-only -C "$PWD" --json -o "$OUT" - < "$BRIEF" > "$LOG" 2>&1
 RC=$?
@@ -63,24 +63,28 @@ rounds and verification rounds record it as `protocol/plan-review.md` and
 
 - `-m` — three implementation tiers, plus one rung reserved for escalation. Pick by **how
   much the lane has to decide**, not by how big the task looks. A tier's model comes from
-  `<wheelchair-root>/codex/model.sh <tier>`; the pins live in `~/.wheelchair/models`, and the
+  `<wheelchair-root>/codex/model.sh <tier>` (or `model.sh gpt <tier>`); the pins live in `~/.wheelchair/models`, and the
   shipped defaults are in `codex/model.sh`.
-  - Luna — *transcription*. The brief names the files, the change, and the
+  - Light — *transcription*. The brief names the files, the change, and the
     pattern to copy; the lane invents nothing. "Change these six call sites to the new
     signature." "Write tests for this function covering the cases listed." The test:
     could you have written the diff yourself and simply didn't want to type it?
-    Second gate — **narrow context**. Luna's long-context recall collapsed on 5.6 (41.3% MRCR
-    against Sol's 91.5%). That was measured on `gpt-5.6-luna` and hasn't been re-measured
-    on any later model, so keep treating it as true: a forty-file sweep is a Terra brief no matter
+    Second gate — **narrow context**. Light's long-context recall collapsed on 5.6 (41.3% MRCR
+    against Heavy's 91.5%). That was measured on `gpt-5.6-luna` and hasn't been re-measured
+    on any later model, so keep treating it as true: a forty-file sweep is a Standard brief no matter
     how mechanical each individual edit is. Mechanical *and* small, or it moves up.
-  - Terra — *everything else*, and the default when the tier is arguable. Any
+  - Standard — *everything else*, and the default when the tier is arguable. Any
     brief where the lane picks the shape: where a thing lives, what an interface looks
     like, how to handle a case the plan didn't name.
-  - Sol — judgment lanes (planning, plan review, verification). It reaches
+  - Heavy — judgment lanes (planning, plan review, verification). It reaches
     implementation only as an escalation ("Escalate the model only on evidence" below).
-  - Astra — the last escalation rung, above Sol, and never a first dispatch. It
+  - Critical — the last escalation rung, above Heavy, and never a first dispatch. It
     spends the single account's quota far faster than any other tier, so a lane reaches it
-    only after Sol has already come back wrong on the same task.
+    only after Heavy has already come back wrong on the same task.
+
+  The old names `luna`, `terra`, `sol`, `astra` (any CLI) and `haiku`, `sonnet`, `opus` (Claude)
+  are still accepted and mean the Light, Standard, Heavy (and Critical) slots, not fixed
+  models: `--tier opus` runs whatever the Heavy cell holds.
 
   Reasoning effort **does** need a flag at dispatch. `~/.codex/config.toml` may set
   `model_reasoning_effort = "high"`, but a lane must not depend on that being true on a given
@@ -150,21 +154,29 @@ changed.
 
 ## Claude lane
 
-From Claude Code: the Agent tool, with `model: haiku` for transcription workers,
-`model: sonnet` for every other worker, and the default model for reviewers.
-From Codex: `WHEELCHAIR_LANE=1 claude --model haiku -p "<brief>"` or
-`WHEELCHAIR_LANE=1 claude --model sonnet -p "<brief>"` by the same split, or plain
-`WHEELCHAIR_LANE=1 claude -p` for review lanes.
+A Claude lane takes the same tiers as the GPT side, by the same split: Light for
+transcription briefs, Standard for every other implementation lane, Heavy for review lanes
+and for escalation. Each tier's model comes from the models file, read with
+`<wheelchair-root>/codex/model.sh claude <tier>`.
+
+From a shell (the only form from Codex):
+`WHEELCHAIR_LANE=1 claude --model "$(<wheelchair-root>/codex/model.sh claude <tier>)" -p "<brief>"`,
+adding `--effort <value>` when `model.sh effort claude <tier>` prints one.
+From Claude Code's Agent tool: `model:` is the family alias `model.sh family claude <tier>`
+prints (`haiku`, `sonnet`, `opus` or `fable`). The Agent tool path follows the family only:
+when `family` exits 3 (an "Other…" model with no family word), or the cell names an exact
+version or an effort that matters, launch from a shell instead so the lane runs the exact
+model. Review lanes use the Heavy tier. A Claude tier set to `none` means the terminal
+workflow uses the GPT lane for it.
 
 For UI/frontend implementation and taste-sensitive surfaces, see
 `protocol/implementation.md`; it owns the placement rule.
 
-The Claude side has the same three implementation tiers as the GPT side. Haiku is its Luna:
-a transcription brief, by the same two gates as Luna above (the brief names every file, the
-exact change and a pattern to copy, and the context is narrow), goes to Haiku. Sonnet is its
-Terra and runs every other Claude implementation lane. Opus reaches one only as an
-escalation, by the same rule as Sol. Haiku's recall over long context hasn't been measured,
-so the narrow-context gate applies to it exactly as it does to Luna.
+A transcription brief, by the same two gates as Light above (the brief names every file, the
+exact change and a pattern to copy, and the context is narrow), goes to the Light tier;
+Standard runs every other Claude implementation lane. Heavy reaches one only as an
+escalation, by the same rule as GPT Heavy. Claude Light's recall over long context hasn't
+been measured, so the narrow-context gate applies to it exactly as it does to GPT Light.
 
 ## When a lane returns nothing
 
@@ -185,12 +197,12 @@ documents, not this one, say what follows from an authentication report.
 - **Never two write-lanes in one checkout.** Concurrent writers sweep each other's
   in-progress files even with disjoint scopes. Parallelize only across separate git
   worktrees; otherwise sequence.
-- **Escalate the model only on evidence.** The ladder is `luna → terra → sol → astra` on the GPT
-  side and `haiku → sonnet → opus` on the Claude side, one rung at a time, and a rung is bought
+- **Escalate the model only on evidence.** The ladder is `light → standard → heavy → critical` on both
+  the GPT and the Claude side, one rung at a time, and a rung is bought
   only by a lane that **already came back wrong** — it ignored the brief's ownership
   boundary or validation commands, claimed a completion the diff contradicts, or hit the
   fails-twice guardrail. "This task looks hard" is not evidence. A task you *expect* to be
-  hard just starts at Terra; that is a tier choice at dispatch, not an escalation.
+  hard just starts at Standard; that is a tier choice at dispatch, not an escalation.
 
   Three moves, in this order: **rewrite the brief → raise effort to `xhigh` → change
   tier.** Rewriting is first because a lane that failed against a vague success bar fails
@@ -201,17 +213,17 @@ documents, not this one, say what follows from an authentication report.
   than resuming — a resume hands the next rung a context full of the last one's dead ends.
   Record the rung and the reason next to the task in the plan doc.
 - **A finished lane is a claim, not a fact.** Re-run its validation and read the diff
-  yourself. Sol fabricated completions at a documented rate on 5.6, nothing establishes that
+  yourself. Heavy fabricated completions at a documented rate on 5.6, nothing establishes that
   a later model or the other tiers are better — demand pasted command output in every deliverable and check the
-  claimed file state. The cheaper the tier, the more literally this applies: a Luna brief
+  claimed file state. The cheaper the tier, the more literally this applies: a Light brief
   that turned out to need a decision is exactly where you get confident, wrong work.
-- **Tighten the brief before anything else.** Sol games vague success bars, and reasoning
+- **Tighten the brief before anything else.** Heavy games vague success bars, and reasoning
   it harder games them harder at higher cost — which is why every lane is dispatched at
   `high` and the brief, not the effort dial, is the lever.
 - **A GPT lane grinds; it does not course-correct.** Put a fails-twice guardrail in every
   implement brief: *"if the same gate fails twice, stop and report rather than
   iterating."* Your review loop is its only course correction.
-- **Judge GPT output by evidence, not prose.** Sol reads polished regardless of depth —
+- **Judge GPT output by evidence, not prose.** Heavy reads polished regardless of depth —
   parse the `SEVERITY`/`GAP` lines and the pasted evidence, ignore the fluency.
 
 ## Credentials — single account
