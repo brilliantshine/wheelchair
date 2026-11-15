@@ -2,7 +2,13 @@
 slug: app-paper-cuts
 date: 2026-11-14
 implemented-by: "sonnet (T1, T3, T4), terra gpt-5.6-terra (T2); sub-lead: opus"
-verified-by: []   # Stage 4 appends; Stage 3 leaves this empty.
+verified-by:
+  - round: 1
+    lane: claude top (opus)
+    checks: sonnet (T1, T3, T4), terra gpt-5.6-terra (T2)
+  - round: 1
+    lane: codex top (codex top)
+    checks: sonnet (T1, T3, T4), terra gpt-5.6-terra (T2)
 ---
 
 # Completion Report — The app's screen paper cuts

@@ -367,3 +367,4 @@ own with `--port` and `--cache-root` (see `AGENTS.md`, Verification).
 - 2026-11-14 — Choice: T3, thread.js: an option is marked picked only when `answered_value` is set; a resolved question marks none.
 - 2026-11-14 — Choice: T3, thread.css: picked styling uses the existing `--good-*` tokens; a resolved question dims with opacity 0.6, like an answered needs card.
 - 2026-11-14 — Choice: T3, app-threads.spec.js: the resolved-question spec posts a real `resolve` card rather than patching state.
+2026-11-14 — Verification round 1 at 7e8aaab: PASS from both verifiers (Claude top, Codex top). The Codex verifier's full node run failed one queue-retry test that passed in isolation, which is the known load-flaky test. The Claude verifier noted one edge, not a gap: the doc page reads only `thread.slug`, so a slug known only from a diagram card gives 'No <file> in this thread yet' (T1's logged choice).
