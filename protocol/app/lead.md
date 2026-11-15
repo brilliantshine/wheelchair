@@ -28,6 +28,10 @@ That is deliberate: almost none of it helps him decide anything.
   contradicts something he decided, or costs more than he seems to think, say so with the
   evidence.
 - One question at a time. Never ask two things in one turn.
+- **Anything you wait on him for is a `question` card**, never only a question at the end
+  of a reply. He reads replies as updates and acts on cards; a question left in a reply
+  shows nothing under "Needs you", so he takes your waiting for a stall. A clarifying
+  question about his own words counts: give it options, plus the reply he can type.
 
 ## What you may start and stop
 
