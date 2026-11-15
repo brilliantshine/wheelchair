@@ -2,7 +2,19 @@
 slug: model-effort-escalation
 date: 2026-11-15
 implemented-by: "codex standard (gpt-6.1-terra): T1, T3; codex light (gpt-6-luna): T2; claude standard (claude-sonnet-5-5): T4, T5; sub-lead claude-opus-5-5"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: codex heavy (wc-70d7c545bb47-verifier, -verifier-3)
+    checks: "codex standard/light (T1, T2, T3), claude standard (T4, T5)"
+  - round: 1
+    lane: claude heavy (wc-70d7c545bb47-verifier-2)
+    checks: "codex standard/light (T1, T2, T3), claude standard (T4, T5)"
+  - round: 2
+    lane: codex heavy (wc-70d7c545bb47-verifier-4)
+    checks: "all tasks plus R1 (codex light)"
+  - round: 2
+    lane: claude heavy (wc-70d7c545bb47-verifier-5)
+    checks: "all tasks plus R1 (codex light)"
 ---
 
 # Completion Report — Effort and escalation rules in Settings
@@ -147,3 +159,5 @@ not ok 161 - a starter that loses the freed port registers through the new holde
 $ npm --prefix viewer run test:browser -- app-settings
   34 passed (14.6s)
 ```
+
+Verification attempt 2 on 8ef7cc1: PASS from both verifier-4 (codex) and verifier-5 (claude).

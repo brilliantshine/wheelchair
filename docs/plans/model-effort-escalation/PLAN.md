@@ -321,3 +321,4 @@ anything a future session needs that fits nowhere above.
 - 2026-11-15 — Full validation on c959d63: codex, machine, install suites green; node 266/267 and browser 452 passed / 2 failed, all three failures not from this build (see COMPLETION.md). No task needed escalation.
 - 2026-11-15 — Verification round 1: verifier-2 (claude) and verifier-3 (codex; the first codex start, verifier, timed out at the machine and never went live). Checking commit 57aea28.
 - 2026-11-15 — R1 reported no choices; diff matches the brief verbatim. Merged d393ad0. Verification attempt 2 started.
+- 2026-11-15 — Verification attempt 2 on 8ef7cc1: PASS (verifier-4 codex, verifier-5 claude). Result sent to the lead.
