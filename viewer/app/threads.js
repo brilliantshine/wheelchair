@@ -150,6 +150,23 @@ async function archivedDocument(hub, id, file) {
   }
 }
 
+// Spec "Branches and checkouts": an archived thread's diagrams read from its branch too. Only a
+// plain `*.json` name under the plan's graphs/ is accepted: no separators, no `..`.
+async function archivedGraph(hub, id, file) {
+  const thread = await hub.thread(id);
+  if (!thread.archived || !thread.branch || !thread.slug || !/^[A-Za-z0-9][A-Za-z0-9._-]*\.json$/.test(String(file))
+    || String(file).includes('..')) {
+    throw appError(404, 'archived graph not found');
+  }
+  const object = `${thread.branch}:docs/plans/${thread.slug}/graphs/${file}`;
+  try {
+    const out = await execFileAsync('git', ['-C', thread.project, 'show', object], { maxBuffer: 2 * 1024 * 1024 });
+    return JSON.parse(out.stdout);
+  } catch {
+    throw appError(404, 'archived graph not found');
+  }
+}
+
 async function press(hub, id, cardId, input) {
   const thread = await hub.thread(id);
   const card = thread.cards.find((item) => item.id === cardId && !item.replaced);
@@ -210,6 +227,7 @@ async function pollWaiting(hub) {
 module.exports = {
   archive,
   archivedDocument,
+  archivedGraph,
   createStub,
   createThread,
   openStub,

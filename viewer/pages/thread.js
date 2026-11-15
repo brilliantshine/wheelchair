@@ -216,7 +216,7 @@
         chatEl.appendChild(el('div', 'bubble assistant', it.text));
       } else if (it.type === 'tool') {
         const d = el('details', 'tool'); d.appendChild(el('summary', '', it.text));
-        d.appendChild(el('div', '', 'Details are in the transcript.'));
+        d.appendChild(el('pre', 'tool-detail', it.detail || 'No details recorded.'));
         chatEl.appendChild(d);
       } else if (it.type === 'context') {
         const c = el('div', 'ctx');
@@ -374,6 +374,16 @@
       }
       case 'diagram': {
         box.appendChild(el('h3', '', card.title));
+        if (thread().archived) {
+          // The worktree is gone, so the graph page can't open it; the committed JSON is read from the branch.
+          box.appendChild(el('p', 'dim', 'Diagram kept on branch ' + (thread().branch || '')));
+          const a = el('div', 'actions');
+          const link = el('a', 'btn', 'Open diagram (read-only JSON)');
+          link.href = T + '/graph?file=' + encodeURIComponent(card.graph + '.json');
+          link.target = '_blank'; link.rel = 'noopener';
+          a.appendChild(link); box.appendChild(a);
+          break;
+        }
         const wt = thread().worktree;
         const path = wt + '/docs/plans/' + card.plan + '/graphs/' + card.graph + '.json';
         const src = '/wheelchair/?path=' + encodeURIComponent(path);
