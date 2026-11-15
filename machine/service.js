@@ -265,7 +265,7 @@ class MachineService {
   liveTmux() {
     const ls = this.tmux(['list-sessions', '-F', '#S']);
     if (ls.ok) return new Set(ls.stdout.trim().split('\n').filter(Boolean));
-    if (/no server running|error connecting to/.test(ls.stderr)) return new Set();
+    if (/no server running|error connecting to .*\(No such file or directory\)/.test(ls.stderr)) return new Set();
     this.log(`tmux list-sessions failed: ${ls.stderr.trim() || `exit ${ls.status}`}`);
     return null;
   }

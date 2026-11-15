@@ -80,5 +80,9 @@ test('--replaces is refused while the old worker still runs in tmux', async () =
     assert.equal(accepted.status, 200);
     const call = c.machine.calls.filter((x) => x.method === 'POST' && x.path === '/v1/sessions').at(-1);
     assert.equal(call.body.worktree, `/tmp/${worker.name}`);
+    // A second replacement of the same worker would share the first replacement's worktree.
+    const second = await start('replace-4');
+    assert.equal(second.status, 409);
+    assert.match(JSON.stringify(second.body), /already working in that worktree/);
   } finally { await close(c); }
 });

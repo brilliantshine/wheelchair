@@ -488,6 +488,9 @@ test('a failed tmux listing reports running as unknown, and "no server" as not r
       await withEnv({ FAKE_LS_ERR: 'no server running on /tmp/tmux-1000/default' }, async () => {
         assert.equal((await listed()).find(s => s.name === 'wc-t-lead').running, false);
       });
+      await withEnv({ FAKE_LS_ERR: 'error connecting to /tmp/tmux-1000/default (Permission denied)' }, async () => {
+        assert.equal('running' in (await listed()).find(s => s.name === 'wc-t-lead'), false);
+      });
     } finally { await env.close(); }
   });
 });

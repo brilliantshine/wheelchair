@@ -429,10 +429,19 @@ async function replacedWorker(hub, thread, name) {
   } catch {
     throw appError(409, `cannot check whether ${name} is still running; try again`);
   }
-  const entry = listed.find((item) => item.name === name);
-  if (entry && entry.running !== false) {
+  const running = (other) => {
+    const entry = listed.find((item) => item.name === other);
+    return Boolean(entry) && entry.running !== false;
+  };
+  if (running(name)) {
     throw appError(409, `${name} is still running in tmux; send it a message, or stop it with session stop before replacing it`);
   }
+  // An earlier replacement of the same worker may already be working there.
+  const occupant = thread.sessions.find((item) => (
+    item.name !== name && item.role === 'worker' && item.worktree && item.worktree === replaced.worktree
+    && (item.live || running(item.name))
+  ));
+  if (occupant) throw appError(409, `${occupant.name} is already working in that worktree`);
   return { worktree: replaced.worktree, branch: replaced.branch };
 }
 
