@@ -173,7 +173,9 @@ file bytes), `content-type` the file's type.
 **Machine route** `POST /v1/uploads` (hub secret).
 
 - Sanitize `name`: keep `[A-Za-z0-9._-]`, replace every other character with `-`, strip
-  leading dots, cut to 100 characters; empty becomes `file`.
+  leading dots. Split off the extension (the last `.` followed by 1–10 characters) and cut
+  the stem so stem plus extension is at most 100 characters; the extension is never cut.
+  An empty stem becomes `file`.
 - Create `<state>/uploads/<thread-id>/` (mode 0700). Stored name is `<n>-<sanitized>`, `n`
   one more than the highest existing prefix (1 when empty); create with the `wx` flag and
   retry with the next `n` on `EEXIST`.
@@ -187,6 +189,19 @@ check through the final rename or delete) and the image-card copy in `/v1/agent/
 (from the file checks through the rewrite of `path`) each run inside it. Uploads stream to
 `<n>-<name>.part` and are renamed on success, so a crash leaves only `.part` files, which
 archive removes with the folder.
+
+**Archive never waits behind an upload.** The hub's machine call times out after 5 s
+(`viewer/app/machine-client.js:42,64`) and a 25 MB upload from a phone can take longer, so
+archive must not queue behind one. The machine keeps, per thread, a `closing` flag and the
+set of in-flight upload requests. `archive` sets `closing` and destroys every in-flight
+upload for the thread **before** taking the lock; each destroyed upload deletes its
+`.part` file, releases the lock and answers 409 (if its connection still exists). An
+upload checks `closing` on admission and on every chunk. Image copies are local and short,
+so archive waits for those. `archive` clears `closing` when it returns; a late request is
+then refused by the admission check below. Test through the hub (real `archive` route,
+default timeout): start an upload paused for more than 5 s, request archive: archive
+answers within the timeout, the thread is archived, the upload ends with 409 or a
+dropped connection, and the uploads folder does not exist.
 
 The admission check runs **inside the lock**, first thing, not only at authorization
 (which happens before the lock, `machine/service.js:838`). Archive does not always delete
@@ -291,12 +306,26 @@ New tests, at least:
 
 ### Round 3 — 2026-11-15
 
-**Lanes:** intent; mechanics.
+**Lanes:** intent (gpt); mechanics (gpt); cross-family: no.
 
 **Changed since Round 2:**
 - Admission check for uploads and image copies now runs inside the per-thread lock and checks record state (`archived_pending`, `stopped`), with three ordering tests.
 - Validator test bullet uses `graph`/`form`/`html`.
 - HTML browser test asserts fixture text and a computed style inside the frame.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent (gpt) | — | No findings | — | — |
+| mechanics (gpt) | major | Archive can queue behind a slow upload past the hub's 5 s timeout | upheld (`viewer/app/machine-client.js:64`; lock held while streaming) | Archive cancels in-flight uploads before taking the lock; hub-level test |
+| mechanics (gpt) | minor | Truncating a long name can cut an image's extension | upheld | Sanitizer keeps the extension and cuts the stem |
+
+### Round 4 — 2026-11-15
+
+**Lanes:** intent; mechanics.
+
+**Changed since Round 3:**
+- Archive sets a per-thread `closing` flag and cancels in-flight uploads before taking the lock; uploads check it per chunk; hub-level test.
+- Filename sanitizer keeps the extension when cutting to 100 characters.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
