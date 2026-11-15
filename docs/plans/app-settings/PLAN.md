@@ -505,7 +505,8 @@ table built here.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | Models file: `codex/model.sh` both providers, new format, commands, aliases, `check --json`, `show --json`, `reset` | `codex/`, `install/test/run.sh` (models-file assertions) | Codex / Terra (gpt-5.6-terra) | wc-983d91c069d3-worker | `bash codex/test/run.sh`; `bash install/test/run.sh` | dispatched |
+| T1 | Models file: `codex/model.sh` both providers, new format, commands, aliases, `check --json`, `show --json`, `reset` | `codex/`, `install/test/run.sh` (models-file assertions) | Codex / Terra (gpt-5.6-terra) | wc-983d91c069d3-worker | `bash codex/test/run.sh`; `bash install/test/run.sh` | done (coverage gap → T1b) |
+| T1b | Restore the ~45 `codex/test/run.sh` assertions T1 dropped, ported to the new names and file format | `codex/test/run.sh` | Codex / Light (gpt-6-luna) | — | `bash codex/test/run.sh` | dispatched |
 | T2 | Machine service: `permission_mode` + bypass readiness, `effort`, `role_layers` after the local pointer, `/v1/preview` | `machine/` | Claude / Sonnet | wc-983d91c069d3-worker-2 | `bash machine/test/run.sh` | done |
 | T3 | Hub: per-role `resolveModel`, settings store and routes, template/style composition and cap, style trailer, chat stripping, machine-client timeout, `API.md` | `viewer/app/`, `viewer/test/*.test.js` | Codex / Terra (gpt-5.6-terra) | — | `node --test viewer/test/*.test.js` | waits on T1 |
 | T4 | Settings page (three sections), nav link, `APP_PAGES`, browser tests | `viewer/pages/settings.*`, `viewer/pages/nav.js`, `viewer/server.js` (APP_PAGES), `viewer/test/*settings*.spec.js` | Claude / Sonnet | — | `npm --prefix viewer run test:browser` | waits on T3 |
@@ -533,3 +534,5 @@ table built here.
 - 2026-11-15 — Choice: T2, `machine/service.js`: the 504 body always says "60 s"; a timed-out child is killed with SIGKILL; the timeout is an instance field tests shorten.
 - 2026-11-15 — Choice: T2, `machine/service.js`: a spawn error other than ENOENT is 502 with its message.
 - 2026-11-15 — Choice: T2, `machine/test/service.test.js`: the fake `claude -p` saves stdin to `<log>.stdin`.
+- 2026-11-15 — Choice: T1, `codex/model.sh`: the rendered file's header reads "# wheelchair's model pins. Change them with codex/model.sh."
+- 2026-11-15 — Sub-lead: T1's rewrite of `codex/test/run.sh` dropped about 45 existing assertions (numeric version order, malformed handling, skip dedupe, exit codes, cache edge cases, preflight exit codes). Behaviour re-checked by hand and correct; T1 merged to unblock T3, and the lost coverage is a new task T1b on the old file as the pattern to copy.
