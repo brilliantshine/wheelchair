@@ -37,6 +37,7 @@ test('Codex rollout fixture maps windows by their lengths', () => {
 });
 test('Claude failure hooks and status line survive an offline service', () => {
   assert.equal(adapters.claude.hookEvent({ hook_event_name: 'StopFailure', error: 'rate_limit' }).type, 'limit-hit');
+  assert.equal(adapters.claude.hookEvent({ hook_event_name: 'StopFailure', error_type: 'rate_limit' }).type, 'limit-hit');
   assert.deepEqual(adapters.claude.hookEvent({ hook_event_name: 'StopFailure', error: 'broken' }), { type: 'turn-failed', error: 'broken' });
   const state = fs.mkdtempSync(path.join(os.tmpdir(), 'wc-statusline-'));
   fs.writeFileSync(path.join(state, 'machine.json'), JSON.stringify({ host: '127.0.0.1', port: 1 }));

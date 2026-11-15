@@ -8,6 +8,7 @@ test('default placement, strict and preferred constraints, and invalid flags', a
   try {
     const made = (await api(c, '/threads', { method: 'POST', body: { project: '/tmp/placement' } })).body;
     assert.equal(made.provider, 'claude');
+    assert.equal(made.cli, 'claude');
     assert.equal(made.sessions[0].account, 'default-claude');
     const lead = made.sessions[0].name;
     const sub = await machinePost(c, '/machine/session', { calling_session: lead, action: 'start', role: 'sub-lead', attempt_id: 'sub' });
@@ -138,6 +139,8 @@ test('limit hold releases with Continue and failed turns notify without a result
     let hub = new Hub({ stateDir: c.state });
     let stored = await hub.thread(made.id);
     assert.ok(stored.sessions.find((s) => s.name === worker.name).limited_until);
+    const readings = await require('../app/usage.js').readings(hub);
+    assert.equal(readings[worker.account].limited_until, stored.sessions.find((s) => s.name === worker.name).limited_until);
     await hub.enqueue(stored, worker.name, 'held during limit');
     stored = await hub.thread(made.id);
     assert.ok(stored.sessions.find((s) => s.name === worker.name).queue.some((q) => q.text === 'held during limit'));
@@ -173,5 +176,70 @@ test('promotion failure marks the waiting session failed', async () => {
     await event(c, made.id, lead.name, 'usage', { reading: { ...reading, at: new Date(Date.now() + 1000).toISOString(), week: { used: 0, resets_at: reset } } });
     const target = (await (new Hub({ stateDir: c.state })).thread(made.id)).sessions.find((s) => s.name === waiting.name);
     assert.equal(target.status, 'failed'); assert.equal(target.live, false); assert.ok(target.error);
+  } finally { await close(c); }
+});
+
+test('waiting sessions survive polling and stop without a machine call', async () => {
+  const { Hub } = require('../app/hub.js');
+  const c = await setup();
+  try {
+    const made = (await api(c, '/threads', { method: 'POST', body: { project: '/tmp/wait-stop' } })).body;
+    const lead = made.sessions[0];
+    const sub = (await machinePost(c, '/machine/session', { calling_session: lead.name, action: 'start', role: 'sub-lead', attempt_id: 'sub-stop' })).body.session;
+    const reset = new Date(Date.now() + 3600000).toISOString();
+    await event(c, made.id, lead.name, 'usage', { reading: { account: 'default-gpt', at: new Date().toISOString(), five_hour: null, week: { used: 100, resets_at: reset } } });
+    const waiting = (await machinePost(c, '/machine/session', { calling_session: sub.name, action: 'start', role: 'worker', provider: 'gpt', attempt_id: 'wait-stop' })).body.session;
+    const hub = new Hub({ stateDir: c.state }); await hub.pollDead();
+    assert.equal((await hub.thread(made.id)).sessions.find(s => s.name === waiting.name).live, true);
+    const before = c.machine.calls.length;
+    assert.equal((await machinePost(c, '/machine/session', { calling_session: sub.name, action: 'stop', name: waiting.name })).status, 200);
+    assert.equal(c.machine.calls.slice(before).some(call => call.path.includes(encodeURIComponent(waiting.name))), false);
+    assert.equal((await hub.thread(made.id)).sessions.find(s => s.name === waiting.name).status, 'stopped');
+  } finally { await close(c); }
+});
+
+test('old threads acquire a provider on first read', async () => {
+  const { Hub } = require('../app/hub.js');
+  const { makeDir } = require('./helpers/server.js');
+  const hub = new Hub({ stateDir: await makeDir('old-thread-') }); await hub.state.init();
+  await hub.save({ id: 'old', cli: 'codex', sessions: [{ name: 'old-lead' }] });
+  assert.equal((await hub.thread('old')).provider, 'gpt');
+});
+
+test('unused worker cell refuses a strict provider', async () => {
+  const c = await setup();
+  try {
+    const made = (await api(c, '/threads', { method: 'POST', body: { project: '/tmp/unused' } })).body;
+    const sub = (await machinePost(c, '/machine/session', { calling_session: made.sessions[0].name, action: 'start', role: 'sub-lead', attempt_id: 'sub-unused' })).body.session;
+    await api(c, '/settings/models', { method: 'PUT', body: { provider: 'gpt', slot: 'heavy', model: null } });
+    const response = await machinePost(c, '/machine/session', { calling_session: sub.name, action: 'start', role: 'worker', provider: 'gpt', tier: 'heavy', attempt_id: 'unused' });
+    assert.equal(response.status, 400); assert.match(response.body.message, /GPT is not used at heavy/);
+  } finally { await close(c); }
+});
+
+test('preflight retries on the other signed-in GPT account', async () => {
+  const c = await setup();
+  try {
+    await api(c, '/settings/accounts', { method: 'POST', body: { provider: 'gpt', name: 'Second', plan: 'pro' } });
+    c.machine.status.accounts.push({ id: 'second', cli: 'codex', logged_in: true });
+    const made = (await api(c, '/threads', { method: 'POST', body: { project: '/tmp/retry' } })).body;
+    const sub = (await machinePost(c, '/machine/session', { calling_session: made.sessions[0].name, action: 'start', role: 'sub-lead', attempt_id: 'sub-retry' })).body.session;
+    c.machine.preflightOk = input => input.dir !== null;
+    const started = await machinePost(c, '/machine/session', { calling_session: sub.name, action: 'start', role: 'worker', provider: 'gpt', attempt_id: 'retry' });
+    assert.equal(started.body.session.account, 'second');
+    assert.deepEqual(c.machine.calls.filter(x => x.path === '/v1/preflight').map(x => x.body.dir), [null, '~/.wheelchair/accounts/second']);
+  } finally { await close(c); }
+});
+
+test('startup promotes a waiting session when room is available', async () => {
+  const { Hub } = require('../app/hub.js');
+  const c = await setup();
+  try {
+    const made = (await api(c, '/threads', { method: 'POST', body: { project: '/tmp/startup-wait' } })).body;
+    const hub = new Hub({ stateDir: c.state });
+    const stored = await hub.thread(made.id);
+    stored.sessions.push({ name: `wc-${made.id}-worker-startup`, role: 'worker', status: 'waiting', live: true, token: 'token', queue: [], pending_start: { role: 'worker', provider: 'gpt', attempt_id: 'startup' } });
+    await hub.save(stored); await hub.init();
+    assert.equal((await hub.thread(made.id)).sessions.at(-1).status, 'ready');
   } finally { await close(c); }
 });

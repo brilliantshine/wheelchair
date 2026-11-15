@@ -746,6 +746,10 @@ test('statusline posts a live reading and preflight accepts an account directory
     let output = ''; child.stdout.on('data', chunk => { output += chunk; }); child.stdin.end(payload);
     assert.equal(await new Promise(resolve => child.on('close', resolve)), 0);
     assert.equal(output.trim(), 'opus · 5h 42%');
+    const second = spawn(path.join(__dirname, '../statusline.sh'), ['claude', 'wc-t-lead'], { env: { ...process.env, WHEELCHAIR_STATE_DIR: env.state, WHEELCHAIR_SESSION_TOKEN: 'alpha' }, stdio: ['pipe', 'pipe', 'pipe'] });
+    second.stdin.end(payload);
+    assert.equal(await new Promise(resolve => second.on('close', resolve)), 0);
+    assert.equal(hub.calls.map(c => JSON.parse(c.body)).filter(e => e.type === 'usage').length, 1);
     assert.equal(hub.calls.map(c => JSON.parse(c.body)).find(e => e.type === 'usage').reading.five_hour.used, 42);
     const dir = path.join(root, '.wheelchair/accounts/test'); await write(path.join(dir, 'auth.json'), '{}');
     const preflight = await api(env, 'POST', '/v1/preflight', { dir: '~/.wheelchair/accounts/test' }, hubHeader);

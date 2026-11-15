@@ -11,19 +11,19 @@ const { outOfDate } = require('./ready.js');
 const settingsStore = require('./settings.js');
 const usage = require('./usage.js');
 const { choose, slotFor } = require('./balancer.js');
-const { cliOf, providerOf } = require('./providers.js');
+const { PROVIDERS, cliOf, providerOf } = require('./providers.js');
 
 const execFileAsync = promisify(execFile);
 
 // Spec "How the hub picks a session's model": model cells are per provider and role.
 async function resolveModel(hub, cli, role, requestedTier = 'top') {
-  if (!['codex', 'claude'].includes(cli)) throw appError(400, `unknown cli: ${cli}`);
+  if (!providerOf(cli)) throw appError(400, `unknown cli: ${cli}`);
   const slot = await slotFor(hub, role, requestedTier);
   const provider = providerOf(cli);
   try {
     const model = (await execFileAsync(path.join(hub.root, 'codex', 'model.sh'), [provider, slot])).stdout.trim();
     let effort;
-    if (provider === 'claude') effort = (await execFileAsync(path.join(hub.root, 'codex', 'model.sh'), ['effort', provider, slot])).stdout.trim() || undefined;
+    if (PROVIDERS[provider].effort) effort = (await execFileAsync(path.join(hub.root, 'codex', 'model.sh'), ['effort', provider, slot])).stdout.trim() || undefined;
     return { model, effort, slot };
   } catch (error) {
     if (error.code === 3) throw appError(400, `${provider} is not used at ${slot}; use the other CLI`);
@@ -77,8 +77,8 @@ async function startSession(hub, thread, input) {
     return waiting;
   }
   let cli = cliOf(selection.provider);
-  if (cli === 'codex') {
-    const dir = selection.account.id === 'default-gpt' ? null : `~/.wheelchair/accounts/${selection.account.id}`;
+  if (PROVIDERS[selection.provider].preflight) {
+    const dir = selection.account.id === `default-${selection.provider}` ? null : `~/.wheelchair/accounts/${selection.account.id}`;
     try { await hub.call(thread.machine, '/v1/preflight', 'POST', { dir }); }
     catch (error) {
       const machineState = await usage.machineAccounts(hub);
@@ -92,8 +92,8 @@ async function startSession(hub, thread, input) {
         throw appError(409, `Codex preflight failed: ${error.body?.output || error.message}`);
       }
       cli = cliOf(selection.provider);
-      if (cli === 'codex') {
-        const retryDir = selection.account.id === 'default-gpt' ? null : `~/.wheelchair/accounts/${selection.account.id}`;
+      if (PROVIDERS[selection.provider].preflight) {
+        const retryDir = selection.account.id === `default-${selection.provider}` ? null : `~/.wheelchair/accounts/${selection.account.id}`;
         try { await hub.call(thread.machine, '/v1/preflight', 'POST', { dir: retryDir }); }
         catch (retryError) { throw appError(409, `Codex preflight failed: ${retryError.body?.output || retryError.message}`); }
       }
@@ -172,7 +172,7 @@ async function startSession(hub, thread, input) {
     live: true,
     // The service types a first message itself (Codex's [wc:role] line, or a brief) once the
     // session is ready; without one, a ready session is idle and may take the queue at once.
-    first_message: session.cli === 'codex' || Boolean(input.brief),
+    first_message: PROVIDERS[selection.provider].typesRoleMessage || Boolean(input.brief),
   });
   markIdleIfFresh(session);
   if (!thread.worktree && started.worktree) {

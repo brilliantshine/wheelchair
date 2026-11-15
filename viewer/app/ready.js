@@ -42,6 +42,7 @@ async function check(hub, thread) {
   const accounts = hub.state ? (await settings.load(hub)).accounts : settings.defaults().accounts;
   let preflight = null;
   for (const cli of [thread.cli, other]) {
+    const provider = PROVIDERS[providerOf(cli)];
     const state = status[cli] || {};
     if (!state.installed) {
       if (cli === thread.cli) absent.push(missing(thread.machine, `${cli} is not installed`));
@@ -50,11 +51,11 @@ async function check(hub, thread) {
     let loggedIn = Array.isArray(status.accounts)
       ? accounts.some((account) => account.provider === providerOf(cli) && !account.paused && status.accounts.some((entry) => entry.id === account.id && entry.cli === cli && entry.logged_in))
       : Boolean(state.logged_in);
-    if (cli === 'codex' && !Array.isArray(status.accounts)) {
+    if (provider?.preflight && !Array.isArray(status.accounts)) {
       preflight ??= await preflightFailed(hub, thread.machine);
       loggedIn = !preflight;
     }
-    if (!loggedIn) absent.push(missing(thread.machine, !Array.isArray(status.accounts) && cli === 'codex' ? 'Codex preflight failed' : `${providerOf(cli) || cli} is not logged in`));
+    if (!loggedIn) absent.push(missing(thread.machine, !Array.isArray(status.accounts) && provider?.preflight ? 'Codex preflight failed' : `${provider?.label || cli} is not logged in`));
   }
   return { ok: absent.length === 0, missing: absent };
 }

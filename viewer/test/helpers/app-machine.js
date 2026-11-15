@@ -79,7 +79,8 @@ async function startMachine(secret = 'machine-test-secret') {
       return send(response, 200, { ...status, accounts: status.accounts.map((a) => a.id.startsWith('default-') ? { ...a, logged_in: status[a.cli].logged_in } : a), sessions: [...sessions.values(), UNMANAGED] });
     }
     if (request.method === 'POST' && url.pathname === '/v1/preflight') {
-      return send(response, preflightOk ? 200 : 409, { ok: preflightOk });
+      const ok = typeof preflightOk === 'function' ? preflightOk(input) : preflightOk;
+      return send(response, ok ? 200 : 409, { ok });
     }
     return send(response, 404, { error: 'not found' });
   });
@@ -96,7 +97,7 @@ async function startMachine(secret = 'machine-test-secret') {
     get startOk() { return startOk; },
     set startOk(value) { startOk = Boolean(value); },
     get preflightOk() { return preflightOk; },
-    set preflightOk(value) { preflightOk = Boolean(value); },
+    set preflightOk(value) { preflightOk = typeof value === 'function' ? value : Boolean(value); },
     get submitOk() { return submitOk; },
     set submitOk(value) { submitOk = Boolean(value); },
     get archiveKept() { return archiveKept; },
