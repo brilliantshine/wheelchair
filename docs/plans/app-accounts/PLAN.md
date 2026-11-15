@@ -43,6 +43,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D14 | A start with no provider that has room is held by the hub as a `waiting` session and started when room appears; a running session that hits its limit is never moved: the hub marks its account full until the reset and queues "Continue." to it once the reset passes | Agents have no timer; Collin's "we'll just wait" (D6) needs something to do the waiting | defaulted |
 | D15 | Workers and other agents follow a worker order set in Settings, default GPT then Claude; Save Claude for leads defaults on | The proposal's order with the two providers in scope; editable like the lead order | defaulted |
 | D16 | Supersedes D3's "not the same provider as X": worker, reviewer and verifier starts may pass `--provider <p>` or `--not-provider <p>`; lead, sub-lead and mapper may not. Keeps today's routing (UI work to Claude, sub-lead.md:66-69; intent reviewer on Claude, lead.md:173; verifier opposite the builders, sub-lead.md:144-145) under the balancer | Round 1 found `--not-same-as` put both reviewers on GPT and couldn't express "opposite all builders"; dropping `--cli` would silently remove the UI-to-Claude rule | review-round-1 |
+| D17 | Fix the surviving spool-retry gap: the service computes a Codex turn end's usage reading once, before anything is spooled or posted, stores it in the event, writes the enriched event to the spool file before the first post, and advances `usage_offset` only while producing it, so every retry sends the identical event | A limited verifier's partial text must never become its result, whatever the delivery path; option A of the plan-defect report | user |
 
 ## Spec
 
@@ -598,6 +599,7 @@ Collin chose "keep going" (2026-11-15); the round budget resets.
 | R2 | Remediation 1, thread page waiting-line provider text | `viewer/pages/thread.js`, `app-accounts.spec.js` | claude light (claude-haiku), the family that built T6 | worker-14 | accounts browser spec | done |
 | R3 | Remediation 2: the reading rides on the Codex turn end (live and spooled) and is applied before the report decision; nav-dot alerts seen per provider per calendar week, no `first_refill` requirement | `machine/`, `viewer/app/`, node tests | codex standard (gpt-6.1-terra), the family that built it | worker-15 | `bash machine/test/run.sh`; `node --test viewer/test/*.test.js` | done |
 | R4 | Retry waiting starts on a reading carried by any event (`hub.js:98`), with a turn-ended test; the lead ruled it inside the Spec | `viewer/app/hub.js`, `app-balancer.test.js` | codex light (gpt-6-luna) | worker-16 | `node --test viewer/test/*.test.js` | done |
+| R5 | D17: one enriched event per turn end (prepared spool files, rewritten before the first post), 503→200 spool tests | `machine/` | codex standard (gpt-6.1-terra) | worker-17 | `bash machine/test/run.sh`; `node --test viewer/test/*.test.js` | in progress |
 
 ## Log
 
@@ -658,3 +660,4 @@ Collin chose "keep going" (2026-11-15); the round budget resets.
 - 2026-11-15 — Round 3 Claude verifier (verifier-7): FAIL with one gap, the same `hub.js:98` retry-on-reading gap the Codex verifier found; nothing else against the Spec. Reported to the lead; still waiting on its decision about the surviving limit-recovery gap.
 - 2026-11-15 — Lead: make the `hub.js:98` fix now (inside §5); the spool-retry gap (option A or B) is with Collin; hold the spool change and round 4. R4 started.
 - 2026-11-15 — R4 merged (one-line `hub.js:98` change plus a turn-ended reading test; no choices). Holding the spool change and round 4 for Collin's A/B answer.
+- 2026-11-15 — Decision (Collin, via the lead): option A, recorded as D17. The `hub.js:98` fix is already merged (R4). R5 started; round 4 verification follows.
