@@ -296,6 +296,11 @@ Filled by Stage 3. One row per worker brief.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | GPT effort in model.sh: parse, write, set, effort, show --json (Spec §1) | codex/model.sh, codex/test/run.sh | codex standard (gpt-6.1-terra) | | bash codex/test/run.sh; bash install/test/run.sh | not started |
+| T2 | Codex argv `-c model_reasoning_effort` when effort set; API.md row (Spec §1, §4) | machine/service.js, machine/API.md, machine/test/service.test.js | codex light (gpt-6-luna) | | bash machine/test/run.sh | not started |
+| T5 | sub-lead.md escalation section and lead.md §7 sentence (Spec §4) | protocol/app/sub-lead.md, protocol/app/lead.md | claude standard (claude-sonnet-5-5) | | git diff review | not started |
+| T3 | Hub: GPT/lead effort, `--effort`, ceilings, escalation store, sentences, role layers, routes, API.md (Spec §1–§3); after T1 | viewer/app/{settings,routes,sessions,wc}.js, viewer/app/API.md, viewer/test/*.test.js | codex standard (gpt-6.1-terra) | | node --test viewer/test/*.test.js | not started |
+| T4 | Settings page: GPT and lead effort selects, Escalation section (Spec §1, §3); after T3 | viewer/pages/settings.js, viewer/pages/settings.css, viewer/test/app-settings.spec.js | claude standard (claude-sonnet-5-5) | | npm --prefix viewer run test:browser | not started |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
