@@ -1,6 +1,6 @@
 ---
 slug: app-settings
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-15
 ---
 
@@ -56,6 +56,31 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 ## Spec
 
 The settled design. A fresh agent with no conversation history implements from this section.
+
+How a new session picks up what Settings says: Collin saves a choice; the models go to the
+models file and everything else to the hub's settings. When any agent asks for a session,
+the hub picks the model from the session's role (lead's model, the Other agents tier, or the
+worker's requested tier) and stops if that cell is Not used. It then adds the template and,
+for a lead, the writing style, and the machine starts the CLI in the chosen permission mode
+with its own pointer to the role rules first. A lead that is already running gets a newly
+saved style once, at the end of its next message.
+
+```mermaid
+flowchart TD
+  A[Collin saves on the Settings page] --> B[models go to the models file]
+  A --> C[permission mode, other agents, templates, style go to the hub's settings]
+  D[an agent asks for a new session] --> E{which role?}
+  E -- lead or sub-lead --> F[use the lead's model]
+  E -- reviewer, checker, mapper --> G[use that role's tier from Settings]
+  E -- worker --> H[use the tier it asked for]
+  F --> I{is that cell Not used?}
+  G --> I
+  H --> I
+  I -- yes --> J[refuse, use the other CLI]
+  I -- no --> K[add the template, and the style for a lead]
+  K --> L[machine starts the CLI: its rules pointer first, then the layers, in the chosen permission mode]
+  C --> M[running lead gets a new style once, on its next message]
+```
 
 ### Scope
 
@@ -205,9 +230,9 @@ asides. Running agents are not changed, except the style delivery below.
     the template, not asked"; with `ask` or no template, the rule stands as written.
     `protocol/app/sub-lead.md:105-109` keeps that flag when it copies the choice into
     PLAN.md's Log (`Choice (decided under the template): …`).
-  - The Templates page's layer stack keeps the design's three layers but its footer reads:
-    "Where they disagree, the lower layer wins. Nothing overrides layer 1, except a worker
-    template's 'Pick, record it, keep going'." Layer 1's caption drops "can't be turned off"
+  - The Templates page's layer stack keeps the design's three layers but its footer reads
+    "Where they disagree, the lower layer wins. Nothing overrides layer 1." for every role,
+    and on a worker template adds "…except this template's 'Pick, record it, keep going'". Layer 1's caption drops "can't be turned off"
     for workers.
   - `file_limit`: integer ≥ 1 or absent.
   `text`: free text, at most 4000 characters.
@@ -232,8 +257,9 @@ never writes a path. It sends a new optional field `role_layers` (text) on
 order:
 1. The service's own pointer, as today (`machine/service.js:245`, `283`), with its local
    root: `Read <its root>/protocol/app/<role>.md before responding. It is wheelchair's
-   built-in rules for your role.` (The "nothing below overrides it" wording moves into the
-   layers, where the exception can be stated.)
+   built-in rules for your role.` The second sentence is new and goes on every session's
+   pointer, layers or not (today it is only `Read <roleFile> before responding.`);
+   `machine/test/run.sh`'s expected pointer text changes with it.
 2. `role_layers`, when present, appended after a blank line. The hub composes it as:
    - one line: "Nothing below overrides the built-in rules above" (for a worker whose
      template has `unsettled: decide`: "…above, except where your template says to decide
@@ -245,8 +271,8 @@ order:
      naming it as Collin's writing style for everything he reads (thread replies and the
      text of cards), then its rendering (below).
    The brief itself still arrives as the first message, as today.
-- `role_prompt` (whole replacement) stays accepted for compatibility but the hub no longer
-  sends it. For Codex the composed text goes in the first `[wc:role]` message
+- The service's existing `role_prompt` override (never sent by the hub) is left as is;
+  `role_layers` is ignored when `role_prompt` is given. For Codex the composed text goes in the first `[wc:role]` message
   (`service.js:284-286`), as the pointer does today.
 - "See it in full" shows the composition with the hub's own root in line 1.
 - The cap below applies to `role_layers`.
@@ -456,6 +482,8 @@ table built here.
 
 **Lanes:** Codex / Heavy (gpt-6.1-sol), mechanics; Claude / CLI default, intent; cross-family: yes.
 
+**Outcome:** clean (mechanics: no findings; intent: three minors, upheld and fixed).
+
 **Changed since Round 3:**
 - Starting instructions: hub sends `role_layers`; the machine service writes the role-file pointer with its own root ("What an agent is told at start").
 - Precedence lines: built-in rules first (worker `decide` exception), template, "the brief wins" over the template.
@@ -464,6 +492,9 @@ table built here.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| Claude intent | minor | The pointer's new second sentence is a change to every session's prompt, not a move | upheld | Spec says so and names the test change |
+| Claude intent | minor | "the hub no longer sends `role_prompt`" implies a call that never existed | upheld | Reworded: the service override is untouched and wins over `role_layers` |
+| Claude intent | minor | The layer-stack footer's worker exception was page-wide | upheld | Footer exception shown on worker templates only |
 
 ## Prior Work
 
