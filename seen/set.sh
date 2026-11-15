@@ -3,6 +3,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$ROOT/install/guard.sh"
+guard_canonical_clone "$ROOT" "seen hook"
 claude_home=${WHEELCHAIR_CLAUDE_HOME:-"$HOME/.claude"}
 codex_home=${WHEELCHAIR_CODEX_HOME:-"$HOME/.codex"}
 
@@ -79,17 +81,31 @@ def canonical_group(harness):
     command = f"{shlex.quote(HOOK_PATH)} {harness} {NOTICE[harness]}"
     return {"hooks": [{"type": "command", "command": command, "timeout": 2}]}
 
-def owns_group(group):
-    for handler in group["hooks"]:
-        if not isinstance(handler, dict) or not isinstance(handler.get("command"), str):
-            continue
-        try:
-            tokens = shlex.split(handler["command"])
-        except ValueError:
-            continue
-        if tokens and tokens[0] == HOOK_PATH:
-            return True
-    return False
+# Any wheelchair checkout's script counts as ours, not only this one's: a run from another clone or
+# a worktree left its own path behind, and adding ours beside it would run the hook twice. A checkout
+# is wheelchair's when it holds protocol/seen.md, or when it sits under the app's worktree directory
+# (where a removed worktree's stale entry points at nothing). Another project's seen/ is left alone.
+APP_WORKTREES = os.path.realpath(os.path.join(os.path.expanduser("~"), ".local", "state", "wheelchair", "worktrees"))
+
+def is_wheelchair_script(path, name):
+    if path == os.path.join(ROOT, "seen", name):
+        return True
+    suffix = "/seen/" + name
+    if not path.endswith(suffix):
+        return False
+    checkout = path[: -len(suffix)]
+    if os.path.isfile(os.path.join(checkout, "protocol", "seen.md")):
+        return True
+    return os.path.realpath(checkout).startswith(APP_WORKTREES + os.sep)
+
+def is_our_handler(handler):
+    if not isinstance(handler, dict) or not isinstance(handler.get("command"), str):
+        return False
+    try:
+        tokens = shlex.split(handler["command"])
+    except ValueError:
+        return False
+    return bool(tokens) and is_wheelchair_script(tokens[0], "hook.sh")
 
 def update_event(document, harness, path):
     hooks = document.get("hooks")
@@ -114,14 +130,24 @@ def update_event(document, harness, path):
             problem(f"UserPromptSubmit group hooks is not a list: {path}")
     if problems:
         return
+    # Our handlers come out of every group; a group left with none goes, and one still holding
+    # someone else's handlers stays as it was otherwise. Ours goes where the first of ours was.
     group = canonical_group(harness)
-    ours = [index for index, old in enumerate(event) if owns_group(old)]
-    if ours:
-        event[ours[0]] = group
-        for index in reversed(ours[1:]):
+    position = None
+    for index in reversed(range(len(event))):
+        handlers = event[index]["hooks"]
+        kept = [handler for handler in handlers if not is_our_handler(handler)]
+        if len(kept) == len(handlers):
+            continue
+        position = index
+        if kept:
+            event[index]["hooks"] = kept
+        else:
             del event[index]
-    else:
+    if position is None:
         event.append(group)
+    else:
+        event.insert(position, group)
 
 def grant_claude(document, path, enabled):
     permissions = document.get("permissions")
@@ -170,10 +196,19 @@ def grant_claude(document, path, enabled):
     if not enabled:
         return
     rule = f"Bash({os.path.join(ROOT, 'seen', 'wording.sh')}:*)"
-    if rule not in allow:
+    # Another checkout's grant is replaced, in place, the same way its hook group is.
+    granted = [index for index, old in enumerate(allow) if isinstance(old, str)
+               and (match := WORDING_RULE.match(old)) and is_wheelchair_script(match.group(1), "wording.sh")]
+    if granted:
+        allow[granted[0]] = rule
+        for index in reversed(granted[1:]):
+            del allow[index]
+    else:
         allow.append(rule)
     if wording_dir not in allow_write:
         allow_write.append(wording_dir)
+
+WORDING_RULE = re.compile(r"^Bash\((.*/seen/wording\.sh):\*\)$")
 
 def json_bytes(document):
     return (json.dumps(document, indent=2, ensure_ascii=False) + "\n").encode("utf-8")

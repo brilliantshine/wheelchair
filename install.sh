@@ -17,6 +17,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Before anything else, the viewer stop included: from a worktree this script would take over the machine.
+. "$ROOT/install/guard.sh"
+guard_canonical_clone "$ROOT" "${0##*/}"
 cache_root="$HOME/.cache/agent-graphs"
 serving_file="$cache_root/.serving"
 unit_file="$HOME/.config/systemd/user/wheelchair-viewer.service"

@@ -187,12 +187,18 @@ and the dial's own warn-not-fail step still runs last. For each harness found on
   place of `claude notice`.
 
 Its own group is recognised by the script path its command starts with, arguments ignored
-(D14, D52); a rerun rewrites that one group in place rather than adding another, and every
-other hook, group and key in the file is left exactly where it is (D26).
+(D14, D52). Another wheelchair checkout's hook counts too, because two clones' groups side
+by side run the hook twice: a path ending in `/seen/hook.sh` whose checkout holds
+`protocol/seen.md`, or sits under `~/.local/state/wheelchair/worktrees` (a removed worktree's
+stale entry). Another project's `seen/hook.sh` is not. A rerun takes every such handler out
+of whatever group holds it, drops a group left empty, keeps a group that still holds someone
+else's handlers, and puts its one group where the first of them was. Every other hook,
+group and key in the file is left exactly where it is (D26).
 
 Grants happen only on a harness recorded above as displaying the notice — both, per the
 live check this document already records (D38, D43). On Claude Code, `seen/set.sh` adds
-`Bash(<root>/seen/wording.sh:*)` to `permissions.allow` and the wording directory to
+`Bash(<root>/seen/wording.sh:*)` to `permissions.allow` — replacing, in the same way, a
+`Bash(<path>/seen/wording.sh:*)` that another wheelchair checkout, by the same test, left there — and the wording directory to
 `sandbox.filesystem.allowWrite`. On Codex, it adds the wording directory to
 `writable_roots` under `[sandbox_workspace_write]` in `~/.codex/config.toml` — adding the
 table if absent, inserting a `writable_roots` line right under the table's header if the
@@ -213,6 +219,11 @@ a rerun with nothing left to change writes byte-identical output and prints noth
 `install.sh` warns rather than failing the install if it refuses, the same contract
 `sensitivity/set.sh`'s own writer already uses for the dial.
 
+Before any of that, it refuses with exit 3, reading nothing and writing nothing, when it runs
+from a checkout that is not the canonical clone: a linked git worktree, or anything under
+`~/.local/state/wheelchair/worktrees`. The check is `install/guard.sh`, which this script
+shares with `install.sh` and `sensitivity/set.sh`; `WHEELCHAIR_ALLOW_WORKTREE=1` forces it.
+
 ## Test seams
 
 Two, set only by the fixture suites and never in production, the same convention
@@ -220,6 +231,9 @@ Two, set only by the fixture suites and never in production, the same convention
 
 - `WHEELCHAIR_WORDING` — replaces the wording file's path.
 - `WHEELCHAIR_STATE` — replaces `~/.cache/wheelchair`.
+
+The fixture suites also set `WHEELCHAIR_ALLOW_WORKTREE=1`, the canonical-clone guard's
+override, since they run from whatever checkout holds them and write only temporary homes.
 
 (D46)
 
