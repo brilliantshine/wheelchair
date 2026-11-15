@@ -357,3 +357,36 @@ $ npx --prefix viewer playwright test --config viewer/playwright.config.js viewe
 The arrow and lifecycle failures are on `main` (above). `app-threads.spec.js:327` in Firefox is flaky under the full run: it passes 3/3 alone, passed in rounds 1–3, and no file under `viewer/pages/` or that spec changed since `4dc3170`.
 
 Known issue outside this feature, seen during round 3: a verifier that ends a turn while its suites run in the background has that message taken as its report and is marked finished (the report-on-first-turn-end rule predates this feature). Round 4's verifier briefs ask for foreground runs.
+
+### Remediation 4 — 2026-11-15
+
+Round 4 on `51657bb`: Codex verifier FAIL. A prepared Codex limit event delivered after its `limited_until` had passed was treated as an ordinary turn end (`viewer/app/sessions.js:294` acted only on a future limit), so the partial text became the verifier's result, no `Continue.` was sent, and the real report was dropped. The gap's fourth path; sent to the lead, who chose a rule about the turn instead of the clock (D18, under Collin's D17 decision). The round 4 Claude verifier was stopped before reporting because the commit it checked was superseded. Fixed on branch at `df19cdf`:
+
+| Gap | Fix (file:line) | Test |
+|---|---|---|
+| §5 limit recovery, late delivery (D18) | `viewer/app/sessions.js` `event()`: `limitEnded` is a `limit-hit` or any event whose `reading` carries `limited_until`; a limit-ended turn never runs the report path; a past `limited_until` on arrival queues `Continue.` at the front and delivers it, with no hold stored; a future one holds as before | `viewer/test/app-balancer.test.js` "<reviewer/verifier/worker>: <live/late/spooled retry> limit-ended delivery" (no result card for the partial text, `Continue.` submitted, one result card with the real report after; duplicate `delivery_id` handled once), plus the control case where a plain turn end still reports |
+
+Lane: R6 codex standard (gpt-6.1-terra).
+
+Validation at `df19cdf`, sequential:
+
+```
+$ bash sensitivity/test/run.sh -> RESULT 64 passed, 0 failed
+$ bash seen/test/run.sh        -> RESULT 21 passed, 0 failed
+$ bash codex/test/run.sh       -> RESULT 72 passed, 0 failed
+$ bash install/test/run.sh     -> RESULT 90 passed, 0 failed
+$ bash machine/test/run.sh     -> # pass 82  # fail 0
+$ node --test viewer/test/*.test.js
+not ok 206 - a starter that loses the freed port registers through the new holder
+# tests 321
+# pass 320
+# fail 1
+$ npm --prefix viewer run test:browser
+  2 failed
+    [chromium] › test/browser.spec.js:2395:1 › no drawn arrow's line passes through either box it connects, over every committed graph
+    [firefox] › test/browser.spec.js:2395:1 › no drawn arrow's line passes through either box it connects, over every committed graph
+  2 skipped
+  508 passed (1.5m)
+```
+
+The two failures are the same ones on `main` (above).
