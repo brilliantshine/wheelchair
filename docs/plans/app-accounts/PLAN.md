@@ -181,8 +181,10 @@ Codex.
   reviewer's or verifier's partial text is never delivered as its result and `finished` stays
   unset. It queues `[wc:from app] your session <name>'s turn failed: <error>` to the session's
   starter, which decides whether to restart it. A lead has no starter: the app posts its own
-  `needs` card on the thread instead ("The lead's turn failed: <error>"), as `pollDead` does
-  for a lead that ended (`sessions.js:392-400`).
+  `needs` card on the thread instead, posted the way `pollDead` posts one for a lead that
+  ended (`sessions.js:392-400`) but with its own text: title "The lead's turn failed",
+  body "<error>. The lead is still running: reply in the thread to have it try again."
+  It never suggests Restart (the lead is live).
 - **Exhausted-window rule** (both CLIs), from the session's latest reading: the
   **earliest** `resets_at` among windows with `used >= 95`; none that high → the earliest
   `resets_at` present; none at all → now + 1 h. Readings lag (Claude's at most once a
@@ -376,6 +378,11 @@ Added to `viewer/app/routes.js` and documented in `viewer/app/API.md`:
   `--provider gpt`; if the first start's output has a `note` saying its provider was not
   honoured, start no second verifier; if the second's output has such a note (it landed on
   the first's provider), stop the second at once.
+- `lead.md` and `sub-lead.md`, new short rule beside "Restarting what died": on
+  `[wc:from app] your session <name>'s turn failed: <error>`, the session is still live. Send
+  it a `message` asking it to carry on (the usual fix); only if it fails again, `session stop`
+  it, then start a replacement with a new `--attempt`. Never start a replacement while the
+  failed one is live.
 - `protocol/app/cards.md`: no change.
 
 ### Edge cases
@@ -501,6 +508,8 @@ Collin chose "keep going" (2026-11-15); the round budget resets.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent (Claude) | major | Starters have no rule for "turn failed" on a live session; restarting breaks | upheld | §9: message it to carry on; stop before any replacement |
+| intent (Claude) | minor | Lead's turn-failed card could copy pollDead's "Restart" text | upheld | §4: own text, "reply in the thread" |
 
 ## Prior Work
 
