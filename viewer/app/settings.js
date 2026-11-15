@@ -175,7 +175,7 @@ function normalize(saved) {
 }
 
 function validBalancing(key, value) {
-  if (key === 'lead_order' || key === 'worker_order') return Array.isArray(value) && new Set(value).size === value.length && value.every((v, i) => Object.hasOwn(PROVIDERS, v) || (key === 'lead_order' && v === 'any' && i === value.length - 1));
+  if (key === 'lead_order' || key === 'worker_order') return Array.isArray(value) && value.length > 0 && new Set(value).size === value.length && value.every((v, i) => Object.hasOwn(PROVIDERS, v) || (key === 'lead_order' && v === 'any' && i === value.length - 1));
   if (key === 'within') return ['soonest', 'spread', 'one'].includes(value);
   if (key === 'save_claude_for_leads') return typeof value === 'boolean';
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100;

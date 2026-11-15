@@ -58,7 +58,7 @@ test('account and balancing routes and usage shape', async () => {
     for (const body of [{ provider: 'bad', name: 'a', plan: 'pro' }, { provider: 'gpt', name: '', plan: 'pro' }, { provider: 'gpt', name: 'x', plan: 'max5' }]) assert.equal((await api(ctx, '/settings/accounts', { method: 'POST', body })).status, 400);
     for (const body of [{ name: '' }, { plan: 'plus' }, { weight: 0 }, { paused: 'yes' }]) assert.equal((await api(ctx, `/settings/accounts/${add.body.id}`, { method: 'PUT', body })).status, 400);
     assert.equal((await api(ctx, '/settings/accounts/default-claude', { method: 'DELETE' })).status, 400);
-    for (const body of [{ lead_order: ['any', 'claude'] }, { lead_order: ['gpt', 'gpt'] }, { worker_order: ['any'] }, { worker_order: ['bad'] }, { within: 'bad' }, { leave: -1 }, { notify_below: 101 }, { margin: '5' }, { save_claude_for_leads: 1 }]) assert.equal((await api(ctx, '/settings/balancing', { method: 'PUT', body })).status, 400);
+    for (const body of [{ lead_order: [] }, { worker_order: [] }, { lead_order: ['any', 'claude'] }, { lead_order: ['gpt', 'gpt'] }, { worker_order: ['any'] }, { worker_order: ['bad'] }, { within: 'bad' }, { leave: -1 }, { notify_below: 101 }, { margin: '5' }, { save_claude_for_leads: 1 }]) assert.equal((await api(ctx, '/settings/balancing', { method: 'PUT', body })).status, 400);
     const result = await api(ctx, '/usage'); assert.equal(result.status, 200); assert.equal(result.body.providers.claude.accounts.length, 2); assert.ok(result.body.providers.gpt.accounts[0].machines.hub);
   } finally { await close(ctx); }
 });
@@ -131,7 +131,7 @@ test('Ready rejects paused accounts and preserves old Codex preflight', async ()
   let preflight = false;
   const hub = { codeVersion: 'v', state: { settings: async () => value }, call: async (_m, path) => { if (path === '/v1/preflight') { preflight = true; throw Error('failed'); } return status; } };
   const result = await ready.check(hub, { cli: 'claude', machine: 'hub' });
-  assert.equal(result.ok, false); assert.match(result.missing[0], /claude/);
+  assert.equal(result.ok, false); assert.match(result.missing[0], /Claude/);
   delete status.accounts; status.claude.installed = false; status.codex.installed = true;
   const old = await ready.check(hub, { cli: 'codex', machine: 'hub' });
   assert.equal(preflight, true); assert.match(old.missing[0], /Codex preflight failed/);
@@ -209,4 +209,18 @@ test('sign-in proxies forward the account, machine path and payload', async () =
     assert.equal((await api(ctx, '/accounts/absent/signin', { method: 'POST', body: { machine: 'test' } })).status, 404);
     assert.equal((await api(ctx, '/accounts/second/signin', { method: 'POST', body: { machine: 'absent' } })).status, 404);
   } finally { await close(ctx); await new Promise(resolve => service.close(resolve)); }
+});
+
+test('removing an account leaves its live session intact and removes it from settings and usage', async () => {
+  const fs = require('node:fs/promises'), path = require('node:path');
+  const ctx = await setup();
+  try {
+    const added = await api(ctx, '/settings/accounts', { method: 'POST', body: { provider: 'gpt', name: 'Remove me', plan: 'pro' } });
+    await fs.mkdir(path.join(ctx.state, 'threads'), { recursive: true });
+    await fs.writeFile(path.join(ctx.state, 'threads', 'remove-test.json'), JSON.stringify({ id: 'remove-test', sessions: [{ name: 'live', live: true, account: added.body.id }] }));
+    assert.equal((await api(ctx, `/settings/accounts/${added.body.id}`, { method: 'DELETE' })).status, 200);
+    assert.equal((await api(ctx, '/settings')).body.accounts.some(a => a.id === added.body.id), false);
+    assert.equal((await api(ctx, '/usage')).body.providers.gpt.accounts.some(a => a.id === added.body.id), false);
+    assert.equal(JSON.parse(await fs.readFile(path.join(ctx.state, 'threads', 'remove-test.json'))).sessions[0].live, true);
+  } finally { await close(ctx); }
 });

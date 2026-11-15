@@ -4,7 +4,7 @@ const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const settingsStore = require('./settings.js');
 const usage = require('./usage.js');
-const { providerOf } = require('./providers.js');
+const { PROVIDERS, providerOf } = require('./providers.js');
 const { appError } = require('./state.js');
 const exec = promisify(execFile);
 
@@ -18,7 +18,7 @@ async function slotFor(hub, role, requestedTier = 'top') {
 }
 async function choose(hub, thread, role, tier, constraints = {}) {
   const { provider, not_provider: excluded } = constraints;
-  if ((provider || excluded) && (!['worker', 'reviewer', 'verifier'].includes(role) || (provider && excluded) || (provider && !['claude', 'gpt'].includes(provider)) || (excluded && !['claude', 'gpt'].includes(excluded)))) throw appError(400, 'invalid provider constraint');
+  if ((provider || excluded) && (!['worker', 'reviewer', 'verifier'].includes(role) || (provider && excluded) || (provider && !Object.hasOwn(PROVIDERS, provider)) || (excluded && !Object.hasOwn(PROVIDERS, excluded)))) throw appError(400, 'invalid provider constraint');
   const slot = await slotFor(hub, role, tier);
   const [settings, readings, machines, last, threads] = await Promise.all([settingsStore.load(hub), usage.readings(hub), usage.machineAccounts(hub), usage.lastChosen(hub), hub.allThreads()]);
   const now = Date.now();
@@ -28,17 +28,21 @@ async function choose(hub, thread, role, tier, constraints = {}) {
   if (!thread.provider && thread.cli && thread.sessions?.length) thread.provider = providerOf(thread.cli);
   let order = role === 'lead' && !thread.provider ? settings.lead_order.flatMap((p) => p === 'any' ? settings.worker_order : [p]) : ['lead', 'sub-lead'].includes(role) ? [thread.provider] : [...settings.worker_order];
   order = [...new Set(order.filter(Boolean))];
+  if (provider && role === 'worker') {
+    try { await exec(path.join(hub.root, 'codex', 'model.sh'), [provider, slot]); }
+    catch (e) { if (e.code === 3) throw appError(400, `${PROVIDERS[provider].label} is not used at ${slot}`); throw e; }
+  }
   const available = {};
   const margin = {};
   for (const p of order) {
     try { await exec(path.join(hub.root, 'codex', 'model.sh'), [p, slot]); } catch (e) { if (e.code === 3) continue; throw e; }
     const accounts = settings.accounts.filter((a) => a.provider === p).map((a) => ({ ...a, live_sessions: threads.reduce((n, t) => n + t.sessions.filter((s) => s.live && s.account === a.id).length, 0) }));
-    margin[p] = p === 'claude' && !['lead', 'sub-lead'].includes(role) && usage.belowMargin(usage.forecast(accounts, readings, now), settings.margin, now);
+    margin[p] = PROVIDERS[p].saveForLeads && !['lead', 'sub-lead'].includes(role) && usage.belowMargin(usage.forecast(accounts, readings, now), settings.margin, now);
     available[p] = usage.rank(accounts, readings, machines, settings, machineName, now, last).find((a) => a.next);
   }
   const normal = (exclude) => {
     let list = order.filter((p) => p !== exclude && !margin[p]);
-    if (settings.save_claude_for_leads && !['lead', 'sub-lead'].includes(role)) list = [...list.filter((p) => p !== 'claude'), ...list.filter((p) => p === 'claude')];
+    if (settings.save_claude_for_leads && !['lead', 'sub-lead'].includes(role)) list = [...list.filter((p) => !PROVIDERS[p].saveForLeads), ...list.filter((p) => PROVIDERS[p].saveForLeads)];
     return list.find((p) => available[p]);
   };
   let picked, note;

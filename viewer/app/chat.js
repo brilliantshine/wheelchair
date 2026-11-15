@@ -84,50 +84,37 @@ function resultText(content) {
 }
 
 // Folds a result row into the tool item its id names. Returns true when the row was a result.
-function foldResult(calls, row, cli) {
-  const payload = row.payload || row;
-  const found = [];
-  if (cli === 'claude' && row.type === 'user' && Array.isArray(row.message?.content)) {
-    for (const part of row.message.content.filter((p) => p.type === 'tool_result')) {
-      found.push([part.tool_use_id, resultText(part.content)]);
-    }
-  } else if (cli !== 'claude' && ['function_call_output', 'custom_tool_call_output'].includes(payload.type)) {
-    found.push([payload.call_id, resultText(payload.output)]);
-  }
+function foldResults(calls, found) {
   for (const [id, result] of found) {
     const call = calls.get(id);
-    if (call) call.item.detail = toolDetail(call.input, result);
+    if (call) call.item.detail = toolDetail(call.input, resultText(result));
   }
   return found.length > 0;
 }
-
-function appendReply(turns, row, cli, calls = new Map()) {
-  if (!turns.length) return;
+function claudeReply(turns, row, calls) {
+  if (row.type === 'user' && Array.isArray(row.message?.content) && foldResults(calls, row.message.content.filter((p) => p.type === 'tool_result').map((p) => [p.tool_use_id, p.content]))) return;
+  if (!turns.length || row.type !== 'assistant' || row.message?.role !== 'assistant') return;
+  const content = row.message.content;
+  const text = unwrap(textOf(content));
+  if (text) turns.at(-1).replies.push({ type: 'assistant', text, at: itemAt(row) });
+  for (const item of Array.isArray(content) ? content.filter((p) => p.type === 'tool_use') : []) {
+    const tool = { type: 'tool', text: item.name || 'tool call', at: itemAt(row), detail: toolDetail(item.input) };
+    turns.at(-1).replies.push(tool);
+    if (item.id) calls.set(item.id, { item: tool, input: item.input });
+  }
+}
+function codexReply(turns, row, calls) {
   const payload = row.payload || row;
+  if (['function_call_output', 'custom_tool_call_output'].includes(payload.type)) { foldResults(calls, [[payload.call_id, payload.output]]); return; }
+  if (!turns.length) return;
   const content = payload.type === 'message' ? payload.content : row.message?.content;
   const role = payload.type === 'message' ? payload.role : row.message?.role;
-  const assistant = cli === 'claude'
-    ? row.type === 'assistant' && role === 'assistant'
-    : row.type === 'response_item' && role === 'assistant';
-  const tool = cli === 'claude'
-    ? Array.isArray(content) && content.some((item) => item.type === 'tool_use')
-    : ['custom_tool_call', 'function_call'].includes(payload.type);
-  if (assistant) {
+  if (row.type === 'response_item' && role === 'assistant') {
     const text = unwrap(textOf(content));
     if (text) turns.at(-1).replies.push({ type: 'assistant', text, at: itemAt(row) });
-    if (cli === 'claude' && Array.isArray(content)) {
-      for (const item of content.filter((item) => item.type === 'tool_use')) {
-        const tool = { type: 'tool', text: item.name || 'tool call', at: itemAt(row), detail: toolDetail(item.input) };
-        turns.at(-1).replies.push(tool);
-        if (item.id) calls.set(item.id, { item: tool, input: item.input });
-      }
-    }
-  } else if (tool && cli !== 'claude') {
-    // Claude's tool calls are listed from its assistant lines above; other lines that carry
-    // tool_use content (progress echoes) would show the same call twice.
-    const name = payload.name || payload.function?.name || 'tool call';
+  } else if (['custom_tool_call', 'function_call'].includes(payload.type)) {
     const input = payload.arguments ?? payload.input;
-    const tool = { type: 'tool', text: name, at: itemAt(row), detail: toolDetail(input) };
+    const tool = { type: 'tool', text: payload.name || payload.function?.name || 'tool call', at: itemAt(row), detail: toolDetail(input) };
     turns.at(-1).replies.push(tool);
     if (payload.call_id) calls.set(payload.call_id, { item: tool, input });
   }
@@ -152,48 +139,33 @@ function renderTurn(turn, thread) {
   return [human, ...turn.replies];
 }
 
-function parseTranscript(cli, raw, thread) {
+function parseClaude(raw, thread) {
   lastAt = null;
-  const turns = [];
-  const calls = new Map();
-  let codexTurn = false;
-  let codexHumanSeen = false;
+  const turns = [], calls = new Map();
+  for (const row of transcriptRows(raw)) {
+    if (row.type === 'user' && row.origin?.kind === 'human') turns.push({ human: unwrap(textOf(row.message?.content)), replies: [], at: itemAt(row) });
+    else claudeReply(turns, row, calls);
+  }
+  return turns.flatMap((turn) => renderTurn(turn, thread));
+}
+function parseCodex(raw, thread) {
+  lastAt = null;
+  const turns = [], calls = new Map();
+  let codexTurn = false, codexHumanSeen = false;
   for (const row of transcriptRows(raw)) {
     const payload = row.payload || row;
     const content = payload.type === 'message' ? payload.content : row.message?.content;
     const text = unwrap(textOf(content));
-    const taskStarted = row.type === 'event_msg' && payload.type === 'task_started';
-    if (cli === 'codex' && taskStarted) {
-      codexTurn = false;
-      codexHumanSeen = false;
-      continue;
-    }
-    const turnContext = row.type === 'turn_context' || payload.type === 'turn_context';
-    if (cli === 'codex' && turnContext) {
-      codexTurn = true;
-      codexHumanSeen = false;
-      continue;
-    }
-    const claudeHuman = row.type === 'user' && row.origin?.kind === 'human';
-    const codexUser = cli === 'codex' && row.type === 'response_item'
-      && (payload.type === 'message' ? payload.role : row.message?.role) === 'user';
-    // Some rollouts omit task_started.  The next user entry then begins the next turn and
-    // must not inherit the preceding turn_context's permission to render as Collin.
-    if (codexUser && codexHumanSeen) {
-      codexTurn = false;
-      codexHumanSeen = false;
-    }
-    const human = cli === 'claude' ? claudeHuman : isCodexHuman(row, codexTurn, text);
-    if (human) {
-      turns.push({ human: text, replies: [], at: itemAt(row) });
-      if (cli === 'codex') codexHumanSeen = true;
-    }
-    else if (!foldResult(calls, row, cli)) appendReply(turns, row, cli, calls);
+    if (row.type === 'event_msg' && payload.type === 'task_started') { codexTurn = false; codexHumanSeen = false; continue; }
+    if (row.type === 'turn_context' || payload.type === 'turn_context') { codexTurn = true; codexHumanSeen = false; continue; }
+    const user = row.type === 'response_item' && (payload.type === 'message' ? payload.role : row.message?.role) === 'user';
+    if (user && codexHumanSeen) { codexTurn = false; codexHumanSeen = false; }
+    if (isCodexHuman(row, codexTurn, text)) { turns.push({ human: text, replies: [], at: itemAt(row) }); codexHumanSeen = true; }
+    else codexReply(turns, row, calls);
   }
   return turns.flatMap((turn) => renderTurn(turn, thread));
 }
-
-const PARSERS = { claude: (raw, thread) => parseTranscript('claude', raw, thread), codex: (raw, thread) => parseTranscript('codex', raw, thread) };
+const PARSERS = { claude: parseClaude, codex: parseCodex };
 function transcriptItems(cli, raw, thread) {
   const parser = Object.hasOwn(PARSERS, cli) && PARSERS[cli];
   return parser ? parser(raw, thread) : [{ type: 'notice', text: `This session's CLI (${cli}) has no transcript reader.`, at: new Date(0).toISOString() }];
@@ -212,16 +184,16 @@ async function sessionTranscript(hub, thread, session) {
 }
 
 // A reviewer's or verifier's report is the last assistant message of its turn.
+const ASSISTANT_CONTENT = {
+  claude: (row) => row.type === 'assistant' && row.message?.role === 'assistant' ? row.message.content : null,
+  codex: (row) => { const payload = row.payload || row; return row.type === 'response_item' && payload.type === 'message' && payload.role === 'assistant' ? payload.content : null; },
+};
 function lastAssistantText(cli, raw) {
-  if (!Object.hasOwn(PARSERS, cli)) return '';
+  const content = Object.hasOwn(ASSISTANT_CONTENT, cli) && ASSISTANT_CONTENT[cli];
+  if (!content) return '';
   let last = '';
   for (const row of transcriptRows(raw)) {
-    const payload = row.payload || row;
-    const assistant = cli === 'claude'
-      ? row.type === 'assistant' && row.message?.role === 'assistant'
-      : row.type === 'response_item' && payload.type === 'message' && payload.role === 'assistant';
-    if (!assistant) continue;
-    const text = unwrap(textOf(cli === 'claude' ? row.message.content : payload.content));
+    const text = unwrap(textOf(content(row)));
     if (text) last = text;
   }
   return last;

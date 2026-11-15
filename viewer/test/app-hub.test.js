@@ -498,6 +498,25 @@ test('creates an unstarted stub and opens it after a role turn ends', async () =
   });
 });
 
+test('stub lead follows lead order instead of inheriting its parent provider', async () => {
+  await withContext(async (context) => {
+    const parent = await thread(context);
+    assert.equal(parent.provider, 'gpt');
+    const result = await card(context, parent.id, parent.sessions[0].name, {
+      kind: 'stub', title: 'Follow-up', summary: 'Continue separately.', depends_on_parent: false,
+    });
+    const hub = new Hub({ stateDir: context.state });
+    const stub = await hub.thread(result.body.thread_id);
+    assert.equal(stub.provider, undefined);
+    assert.equal(stub.sessions.length, 0);
+    await api(context, '/settings/balancing', { method: 'PUT', body: { lead_order: ['claude', 'any'] } });
+    const opened = await api(context, `/threads/${stub.id}/open`, { method: 'POST', body: {} });
+    assert.equal(opened.body.provider, 'claude');
+    assert.equal(opened.body.cli, 'claude');
+    assert.equal(opened.body.sessions[0].provider, 'claude');
+  });
+});
+
 test('waits for a dependent stub until the parent merges', async () => {
   await withContext(async (context) => {
     const parent = await thread(context);
@@ -580,7 +599,7 @@ test('rechecks an approval in place and gates Start building on the fresh result
     assert.equal(stopped.body.queued, false);
     assert.equal(stopped.body.ready.ok, false);
     assert.equal(context.machine.sessions.get(made.sessions[0].name).submits, undefined);
-    assert.match(stopped.body.ready.missing[0], /gpt is not logged in/);
+    assert.match(stopped.body.ready.missing[0], /GPT is not logged in/);
   });
 });
 
@@ -965,13 +984,13 @@ test('the Ready check covers the other family and uses account login status', as
     context.machine.status.codex.logged_in = false;
     const failed = (await press()).body.ready;
     assert.equal(failed.ok, false);
-    assert.match(failed.missing[0], /gpt is not logged in/);
+    assert.match(failed.missing[0], /GPT is not logged in/);
     context.machine.status.codex.logged_in = true;
     context.machine.status.codex = { installed: false, logged_in: false };
     assert.equal((await press()).body.ready.ok, true);
     context.machine.status.codex = { installed: true, logged_in: true };
     context.machine.status.claude.logged_in = false;
-    assert.match((await press()).body.ready.missing[0], /claude is not logged in/);
+    assert.match((await press()).body.ready.missing[0], /Claude is not logged in/);
   });
 });
 
@@ -1566,5 +1585,17 @@ test('dismiss closes a lead needs card as collin and refuses a system one', asyn
     assert.ok(stored.queues[lead].some((message) => message.text === `[card ${id}] dismissed`));
     const twice = await api(context, `/threads/${made.id}/cards/${id}/dismiss`, { method: 'POST', body: {} });
     assert.equal(twice.status, 422);
+  });
+});
+
+test('restarting a failed lead answers its turn-failed card', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const old = made.sessions[0];
+    await event(context, made.id, old.name, 'turn-failed', { error: 'failed' });
+    context.machine.sessions.get(old.name).running = false;
+    const hub = new Hub({ stateDir: context.state }); await hub.pollDead();
+    assert.equal((await api(context, `/threads/${made.id}/restart`, { method: 'POST', body: {} })).status, 201);
+    assert.ok((await hub.thread(made.id)).cards.some(card => card.title === "The lead's turn failed" && card.answered));
   });
 });
