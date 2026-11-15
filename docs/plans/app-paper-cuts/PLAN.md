@@ -93,7 +93,9 @@ title in the list (not the project name).
 - The thread page's question renderer (`viewer/pages/thread.js:393-413`) adds, under the
   question text and above the options, a link "Open <doc>" to the in-app document page
   (S3) for this thread and that file. When the thread has no known slug yet, the link is
-  omitted (the card still renders).
+  omitted (the card still renders). The chat render signature
+  (`viewer/pages/thread.js:578`) gains the slug, so the link appears on the next poll once
+  the slug becomes known, without a reload.
 - `cards.md` documents the field. `lead.md` step 4.1 says to set `doc: "IDEA.md"` on the
   card that confirms IDEA.md, and to commit IDEA.md before posting that card so an
   archived thread can still open it.
@@ -101,7 +103,8 @@ title in the list (not the project name).
 **Tests:** `card.js` validation accepts `doc: "IDEA.md"` and refuses `doc: "x.md"`
 (`viewer/test/app-hub.test.js` or the card validation test that exists); the browser
 spec shows an "Open IDEA.md" link on a question with `doc` whose href is the S3 page for
-that thread, and none on a question without it.
+that thread, and none on a question without it; a question with `doc` posted before the slug is
+known gains its link once the slug appears, without a reload.
 
 ### S3. Plan documents open inside the app (D3)
 
@@ -111,8 +114,8 @@ pattern). URL: `/wheelchair/app/doc?thread=<thread id>&file=<MAP.md|IDEA.md|PLAN
 
 - The page has the app nav (`viewer/pages/nav.js`, as the other app pages inject it), a
   "← Back to the thread" link to `/wheelchair/app/thread?id=<thread id>` (use the same
-  query form the Threads list uses to link a thread), tabs or links for the three files
-  of that thread, and the rendered document.
+  query form the Threads list uses to link a thread), and the rendered document. No
+  tabs or file switcher: each file is one tap from the thread page.
 - It learns where the documents live from `GET /wheelchair/api/threads/<id>/chat` (the
   same call the thread page makes): live thread → `worktree` + `slug`, read via the
   existing `/wheelchair/doc?plan=<worktree>/docs/plans/<slug>&file=` route (the plan is
@@ -124,7 +127,13 @@ pattern). URL: `/wheelchair/app/doc?thread=<thread id>&file=<MAP.md|IDEA.md|PLAN
 - **Rendering.** Move the Markdown renderer out of `viewer/doc.js`'s IIFE into a shared
   browser script (for example `viewer/pages/markdown.js` exposing one function that takes
   a Markdown string and returns a DOM fragment, frontmatter handled as `doc.js` does
-  today). `viewer/doc.js` and the new page both use it. The old `/wheelchair/docs` page
+  today). It also takes a link resolver, so each page decides where a relative link goes:
+  `viewer/doc.js` passes today's `resolveLink` behaviour (`viewer/doc.js:277-300`, every
+  relative `.md` to `/wheelchair/docs`), unchanged. The new page resolves a relative link
+  whose resolved name is exactly `MAP.md`, `IDEA.md` or `PLAN.md` (optionally with a
+  `#fragment`, which is dropped) to `/wheelchair/app/doc?thread=<id>&file=<name>`; any
+  other relative link renders as plain text, not a live link. `http(s)` links stay
+  external (new tab, `rel="noopener"`), other schemes stay dead, as in `doc.js` today. The old `/wheelchair/docs` page
   keeps working unchanged for the graph viewer's list; `md.js` (chat) is not changed.
 - Styled with `app.css` tokens, readable on a phone (no horizontal page scroll; wide
   tables scroll inside their own box).
@@ -139,7 +148,9 @@ cookie like the other app pages. `viewer/test/app-threads.spec.js` — the test 
 that pins `/wheelchair/docs` is changed to expect the in-app URL; a new spec opens the page
 for a live thread and for an archived thread, sees the nav, the rendered heading of the
 document and a table rendered as a `<table>`, and follows "Back to the thread" to the
-thread page. `node --test` for the shared renderer if it is loadable outside a browser;
+thread page. A PLAN.md fixture containing `[the map](MAP.md)` and
+`[elsewhere](../other/PLAN.md)` renders the first as a link to the in-app MAP.md page and
+the second as plain text. `node --test` for the shared renderer if it is loadable outside a browser;
 otherwise covered by the browser spec.
 
 ### S4. Answered cards say what was picked (D4, D5, D11)
@@ -148,8 +159,14 @@ otherwise covered by the browser spec.
 card alongside `answered = true`: `card.answered_action = input.action` and
 `card.answered_value = input.value ?? null`. (Approval "Talk about this" still leaves the
 card open and stores nothing.) The thread page, for an answered `question` or `offer`,
-marks the option whose label equals `answered_value` (a "picked" class and a ✓) and
-replaces the generic "✓ Answered" tag with "You picked <label>". Cards answered before
+marks the picked option (a "picked" class and a ✓) and replaces the generic "✓ Answered"
+tag with "You picked <label>". Matching: a `question` press sends the option's `label`
+verbatim (`viewer/pages/thread.js:400`), so the option whose `label` equals
+`answered_value` exactly is the picked one. The offer's buttons send fixed lowercase
+values, so the page keeps one explicit map from value to button label —
+`take it into planning` → "Take it into planning", `keep talking first` → "Keep talking
+first" — used both to render the buttons and to mark the picked one. An unmatched value
+shows "You picked <value>" with no option marked. Cards answered before
 this change have no `answered_value` and keep the generic tag.
 
 **Answered in chat.** `resolvable` (`viewer/app/card.js:130-140`) takes the caller: a
@@ -182,8 +199,18 @@ the card says "You picked <label>" and marks that option; a resolved question sh
   offer once more later, when what he has said makes the case clearer; after that second
   offer, never again. A small fix stays possible: if the talk shows it is small, just do it.
 - Posting a second offer replaces the first in the pin (existing singleton behaviour).
+- **The hub enforces the limit**, so it survives a lead restart (the restart context holds
+  only unreplaced cards, `viewer/app/threads.js:105-112`). `acceptCard` counts every offer
+  in `thread.cards`, replaced or not (replaced cards stay in the array,
+  `viewer/app/cards.js:22-24`). A new offer is accepted only when there is none, or
+  exactly one and it was answered with `answered_value` `keep talking first`. Otherwise
+  it is refused with 422 and the reason "the offer was already asked". `cards.md` and
+  `lead.md` say so.
 
-**Tests:** `app-threads.spec.js` — the offer shows both buttons; pressing "Keep talking
+**Tests:** `app-hub.test.js` — a first offer is accepted; a second after "keep talking
+first" is accepted and replaces the pin; a second after "take it into planning", a second
+while the first is unanswered, and a third are each refused with 422.
+`app-threads.spec.js` — the offer shows both buttons; pressing "Keep talking
 first" posts `{action:'picked', value:'keep talking first'}` and leaves both buttons
 disabled with "You picked Keep talking first".
 
@@ -207,8 +234,12 @@ disabled with "You picked Keep talking first".
 **Tests:** `viewer/test/routes.test.js` — the CSP on an app page and on `/docs` includes
 `font-src 'self'`; `/wheelchair/assets/fonts/inter-400.woff2` (whatever names the
 allowlist uses) returns 200 with `font/woff2`; an unlisted name and a `..` path return 404.
-`viewer/test/app-ui.spec.js` (or a new spec) — `document.fonts.check('14px Inter')` is true
-after load in Chromium and Firefox, with no CSP violation logged.
+`viewer/test/app-ui.spec.js` (or a new spec), in Chromium and Firefox — after load and
+`await document.fonts.ready`, `document.fonts` contains a `FontFace` whose family is
+`Inter` with status `loaded` and one whose family is `JetBrains Mono` with status
+`loaded` (after rendering an element in each), the page received a 200 `font/woff2`
+response for each, and no CSP violation is logged. (Not `document.fonts.check`: it
+returns true when no `@font-face` matches, so it passes before the fix.)
 
 ### Boundaries and non-goals
 
@@ -241,6 +272,27 @@ own with `--port` and `--cache-root` (see `AGENTS.md`, Verification).
 **Lanes:** Claude (intent lens); GPT via Codex (mechanics lens); cross-family: yes.
 
 **Changed since Round 0:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent (Claude) | major | S3: links inside a rendered document still go to the old viewer | upheld — `viewer/doc.js:16-18`, `:277-300` send every relative `.md` to `/wheelchair/docs` | S3: renderer takes a link resolver; the app page links MAP/IDEA/PLAN in-app, other relative links are plain text |
+| intent (Claude) | major | S6: `document.fonts.check` passes before the fix | upheld — `check` is true when no face matches the family, which is today's state (`app.css:15`, no `@font-face`) | S6 test asserts loaded `FontFace` entries and the `font/woff2` responses |
+| intent (Claude) | minor | S3: tabs for the three files reach past the non-goal | upheld | Dropped; the back link is the way to the other files |
+| mechanics (GPT) | major | S3: renderer link context and destination undefined | upheld — same defect as the intent lane's first finding | Same S3 change |
+| mechanics (GPT) | major | S5: "never a third offer" can't survive a lead restart | upheld — restart context drops replaced cards (`viewer/app/threads.js:105-112`) | S5: the hub refuses a third offer, or a second unless the first was "keep talking first"; tests added |
+| mechanics (GPT) | minor | S4: offer values are lowercase, labels capitalised; exact match fails | upheld — `viewer/pages/thread.js:364-365` | S4: explicit value→label map for the offer; questions match label verbatim |
+| mechanics (GPT) | minor | S2: link doesn't appear when the slug arrives later | upheld — chat signature at `viewer/pages/thread.js:578` excludes slug | S2: slug added to the signature; test added |
+
+### Round 2 — 2026-11-14
+
+**Lanes:** Claude (intent lens); GPT via Codex (mechanics lens); cross-family: yes.
+
+**Changed since Round 1:**
+- S3: the shared renderer takes a link resolver; the app page links MAP/IDEA/PLAN in-app, other relative links plain text; no file tabs.
+- S6: the font test asserts loaded `FontFace` entries and `font/woff2` responses instead of `document.fonts.check`.
+- S5: the hub refuses a third offer, or a second unless the first was answered "keep talking first".
+- S4: offer value→label map; question options match by label.
+- S2: slug added to the chat render signature.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
