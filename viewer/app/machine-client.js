@@ -77,6 +77,27 @@ class MachineClient {
     return result.body;
   }
 
+  async stream(machineName, suffix, method, readable) {
+    const machine = await this.state.machine(machineName);
+    const secret = await this.secret(machine);
+    const url = new URL(this.url(machine, suffix));
+    const transport = url.protocol === 'https:' ? https : http;
+    return new Promise((resolve, reject) => {
+      const headers = { 'x-wheelchair-machine-secret': secret };
+      if (readable?.headers?.['content-length']) headers['content-length'] = readable.headers['content-length'];
+      if (readable?.headers?.['content-type']) headers['content-type'] = readable.headers['content-type'];
+      const request = transport.request(url, { method, headers }, (response) => {
+        resolve({ status: response.statusCode, headers: response.headers, body: response });
+      });
+      request.on('error', reject);
+      if (readable) {
+        readable.on('aborted', () => request.destroy());
+        readable.on('error', (error) => request.destroy(error));
+        readable.pipe(request);
+      } else request.end();
+    });
+  }
+
   async authenticates(request) {
     const supplied = request.headers['x-wheelchair-machine-secret'];
     if (typeof supplied !== 'string') return false;

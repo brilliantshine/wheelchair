@@ -104,3 +104,20 @@ not checked against the ceiling, and explicit effort overrides the pin. The tier
 Escalation preference values are `first: effort|model`, `max_effort: high|xhigh|max`,
 `max_tier: standard|heavy|critical`, and `ask_before: never|critical|any`. Partial updates
 are accepted; invalid keys, values, and non-object inputs receive 400.
+
+Diagram cards accept optional `format` (`graph`, the default, `form`, or `html`). Image
+cards are lead-only and contain `path` and `title`; stored image cards also carry `file`,
+the basename supplied by the machine. Form and HTML diagrams register their plan but do
+not enter the graph registry.
+
+`POST /threads/:id/uploads?name=...` streams a raw file of at most 25 MiB to the lead's
+machine and returns `201 {path}`. It returns 409 for an archived thread or absent live lead,
+and 413 for a missing or excessive Content-Length. `GET /threads/:id/files/:file` streams a
+machine file whose name matches `[0-9]+-[A-Za-z0-9._-]+` and preserves its content headers.
+`GET /threads/:id/graph?file=...json` reads an archived diagram as JSON;
+`GET /threads/:id/diagram-html?file=...html` reads archived HTML with the static sandbox CSP.
+Outside the API prefix, `GET /wheelchair/diagram-form?path=<absolute>` reads unchanged JSON
+(up to 2 MiB) and `GET /wheelchair/diagram-html?path=<absolute>` serves static HTML with the
+same CSP. Both require a file directly inside a registered plan's `graphs/` directory.
+Archive leaves the thread open with a system needs card if the machine reports that upload
+removal failed; its response includes `uploads_removed` and, on failure, `uploads_error`.

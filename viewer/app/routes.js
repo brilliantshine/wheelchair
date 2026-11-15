@@ -9,6 +9,10 @@ const settings = require('./settings.js');
 const usage = require('./usage.js');
 const { PROVIDERS, cliOf } = require('./providers.js');
 const threadsModule = require('./threads.js');
+const UPLOAD_LIMIT = 25 * 1024 * 1024;
+const HTML_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; sandbox";
+const HTML_HEADERS = { 'content-type': 'text/html; charset=utf-8', 'x-content-type-options': 'nosniff', 'content-security-policy': HTML_CSP };
+
 
 async function readBody(request) {
   const chunks = [];
@@ -32,6 +36,7 @@ function send(response, status, body) {
 async function handle(hub, request, response, url, machineAuthenticated) {
   const suffix = url.pathname.slice('/wheelchair/api/'.length);
   const bits = suffix.split('/').filter(Boolean);
+  if (request.method === 'POST' && bits[0] === 'threads' && bits[1] && bits[2] === 'uploads' && bits.length === 3) return upload(hub, request, response, url, bits[1]);
   const write = ['POST', 'PUT', 'DELETE'].includes(request.method);
   const body = write ? await readBody(request) : {};
   if (bits[0] === 'machine') {
@@ -56,6 +61,17 @@ async function handle(hub, request, response, url, machineAuthenticated) {
   if (bits[0] === 'accounts') return handleAccounts(hub, request, response, bits, body);
   if (bits[0] === 'sessions') return handleSessions(hub, request, response, bits, body);
   throw appError(404, 'route not found');
+}
+
+async function upload(hub, request, response, url, id) {
+  const thread = await hub.thread(id);
+  if (thread.archived || !thread.sessions.some((session) => session.role === 'lead' && session.live)) throw appError(409, 'no live lead or thread is archived');
+  const length = request.headers['content-length'];
+  if (typeof length !== 'string' || !/^\d+$/.test(length) || Number(length) > UPLOAD_LIMIT) throw appError(413, 'missing or oversized content-length');
+  const query = new URLSearchParams({ thread_id: id, name: url.searchParams.get('name') || '' });
+  const result = await hub.client.stream(thread.machine, `/v1/uploads?${query}`, 'POST', request);
+  response.writeHead(result.status, { 'content-type': result.headers['content-type'] || 'application/json' });
+  result.body.pipe(response);
 }
 
 // Spec "Hub", Routes: everything the New thread screen needs for one machine in one answer.
@@ -330,6 +346,23 @@ async function handleThreads(hub, request, response, url, bits, body) {
   }
   if (!bits[1]) throw appError(404, 'route not found');
   const id = bits[1];
+  if (request.method === 'GET' && bits[2] === 'files' && bits.length === 4) {
+    const file = bits[3];
+    if (!/^[0-9]+-[A-Za-z0-9._-]+$/.test(file)) throw appError(400, 'invalid file name');
+    const thread = await hub.thread(id);
+    const result = await hub.client.stream(thread.machine, `/v1/uploads/${encodeURIComponent(id)}/${encodeURIComponent(file)}`, 'GET');
+    const headers = {};
+    for (const key of ['content-type', 'content-disposition', 'x-content-type-options']) if (result.headers[key]) headers[key] = result.headers[key];
+    response.writeHead(result.status, headers);
+    result.body.pipe(response);
+    return;
+  }
+  if (request.method === 'GET' && bits[2] === 'diagram-html' && bits.length === 3) {
+    const html = await threadsModule.archivedHtml(hub, id, url.searchParams.get('file'));
+    response.writeHead(200, HTML_HEADERS);
+    response.end(html);
+    return;
+  }
   if (request.method === 'GET' && bits[2] === 'chat') {
     return send(response, 200, await hub.chat(id));
   }
@@ -407,4 +440,4 @@ async function handleSessions(hub, request, response, bits, body) {
   throw appError(404, 'route not found');
 }
 
-module.exports = { handle, readBody, send };
+module.exports = { handle, readBody, send, HTML_HEADERS, UPLOAD_LIMIT };

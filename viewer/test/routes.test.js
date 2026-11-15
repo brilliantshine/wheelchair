@@ -351,3 +351,22 @@ test('an anonymous JSON route returns a JSON 401 error', async () => {
     assert.equal(response.status, 401); assert.match(response.headers.get('content-type'), /^application\/json(?:;|$)/); assert.equal(typeof response.body.error, 'string');
   } finally { await ctx.stop(); }
 });
+
+test('diagram readers restrict registered graph files and preserve forms and sandbox HTML', async () => {
+  const root = await makeDir(); const plan = await makePlan(root); const graphs = path.join(plan, 'graphs');
+  await fs.mkdir(graphs); const form = path.join(graphs, 'form.json'); const html = path.join(graphs, 'picture.html');
+  await fs.writeFile(form, JSON.stringify({ form: 'timeline', unknown: { keep: true } }));
+  await fs.writeFile(html, '<p>Picture</p>');
+  const ctx = await startServer({ cacheRoot: root, port: await freePort() });
+  try {
+    await registerPlan(ctx, plan); const cookie = await remember(ctx);
+    const read = (route, file) => raw(ctx, `/${route}?path=${encodeURIComponent(file)}`, { headers: { cookie } });
+    const json = await read('diagram-form', form); assert.equal(json.status, 200); assert.deepEqual(json.body, { form: 'timeline', unknown: { keep: true } });
+    const result = await read('diagram-html', html); assert.equal(result.status, 200); assert.equal(result.body, '<p>Picture</p>');
+    assert.equal(result.headers.get('content-type'), 'text/html; charset=utf-8'); assert.equal(result.headers.get('x-content-type-options'), 'nosniff');
+    assert.equal(result.headers.get('content-security-policy'), "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; sandbox");
+    assert.equal((await read('diagram-html', form)).status, 403);
+    assert.equal((await read('diagram-html', path.join(root, 'picture.html'))).status, 403);
+    assert.equal((await read('diagram-form', path.join(root, 'form.json'))).status, 403);
+  } finally { await ctx.stop(); }
+});
