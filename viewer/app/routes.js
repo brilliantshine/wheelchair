@@ -330,6 +330,25 @@ async function handleThreads(hub, request, response, url, bits, body) {
   }
   if (!bits[1]) throw appError(404, 'route not found');
   const id = bits[1];
+  if (bits[2] === 'asides') {
+    const asides = require('./asides.js');
+    const result = await hub.withThread(id, async () => {
+      const thread = await hub.thread(id);
+      if (request.method !== 'GET' && thread.archived) throw appError(409, 'this thread is archived');
+      if (bits.length === 3 && request.method === 'POST') return { status: 201, body: asides.brief(await asides.create(hub, thread, body)) };
+      if (!bits[3]) throw appError(404, 'route not found');
+      const aside = asides.find(thread, bits[3]);
+      if (bits.length === 4 && request.method === 'GET') {
+        for (const entry of aside.history) if (entry.graph && hub.registerGraph) await hub.registerGraph(entry.graph);
+        return { status: 200, body: aside };
+      }
+      if (bits.length !== 5 || request.method !== 'POST') throw appError(404, 'route not found');
+      await asides.change(hub, thread, aside, bits[4], body);
+      return { status: bits[4] === 'messages' ? 202 : 200, body: { ok: true } };
+    });
+    if (request.method !== 'GET') await asides.pump(hub, id);
+    return send(response, result.status, result.body);
+  }
   if (request.method === 'GET' && bits[2] === 'chat') {
     return send(response, 200, await hub.chat(id));
   }

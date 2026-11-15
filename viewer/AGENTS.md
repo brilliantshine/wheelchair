@@ -17,6 +17,7 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 | `app/cards.js`, `card.js` | Hub card handling and the agent-side card validator/CLI. |
 | `app/sessions.js`, `wc.js` | Session policy, queues, lifecycle events, and the agent-side CLI. |
 | `app/settings.js` | The Settings store (`settings.json` in the hub state dir), templates and writing style, the `role_layers` text sent at session start, and the style preview; models are read and written only through `codex/model.sh`. |
+| `app/asides.js` | Aside records, prompts, turn lifecycle and graph handling. |
 | `app/chat.js`, `threads.js`, `views.js` | Transcript assembly, thread lifecycle, and view data. |
 | `app/routes.js`, `hub.js`, `API.md` | App HTTP dispatch, module composition, and the page-facing JSON contract. |
 | `app/providers.js` | Hub provider names, CLI mappings and labels. |
