@@ -365,3 +365,5 @@ Clean round: approved.
 |---|-----------|--------------------|------|-----------|------------|--------|
 
 ## Log
+
+2026-11-15 Ready check at approval: hub and machine service answer; claude and codex installed; Codex preflight passes. Every reviewer start fell back from Claude to GPT ("Could not use claude"), so the review was single-family.
