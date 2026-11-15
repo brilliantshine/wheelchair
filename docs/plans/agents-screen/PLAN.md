@@ -242,6 +242,9 @@ No findings from either lens. Clean round. (Mechanics reviewer restarted once af
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Hub: lead names (assign, serialize, backfill), `lead_names` setting + Settings box, model/effort on record, `GET /api/agents`, API.md | viewer/app/{sessions,threads,hub,settings,routes,views}.js, new viewer/app modules, API.md, pages/settings.*, viewer/AGENTS.md (new row), app-agents/app-settings/app-hub tests | GPT Standard (gpt-6.1-terra) | wc-85d38701e785-worker | node --test viewer/test/*.test.js; npm --prefix viewer run test:browser | in progress |
+| T2 | Agents page, nav, terminal page, Sessions page removal + redirect, routers | pages/agents.*, views.css, nav.js, terminal.*, features.js, sessions.* (delete), server.js, viewer/AGENTS.md, AGENTS.md, app-views/app-ui specs, app-views-setup helper | Claude Standard (claude-sonnet-5-5), after T1 | — | same | not started |
+| T3 | Threads row chip, thread page header | pages/threads.*, thread.*, app.css, app-threads spec + world helper | Claude Standard (claude-sonnet-5-5), after T1, parallel with T2 | — | same | not started |
 
 ## Log
 
