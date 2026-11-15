@@ -602,7 +602,7 @@ Round 9 is clean: no blocking or major finding upheld.
 | T2 | Machine aside-turn routes, persistence, restart recovery, `codex_thread_id` in listing (§4) | `machine/` (not the probe files), `machine/API.md`, `machine/AGENTS.md` | standard, gpt (gpt-6.1-terra) | wc-54ce860aef63-worker-3, wc-54ce860aef63-worker-6 | `bash machine/test/run.sh` | in progress (worker-3 died; restarted with --replaces) |
 | T3 | Hub: message ids, aside record, routes, turn-running rule, step-up, graph save, archive, handoff (§1, §3-§6, §8 hub side) | `viewer/app/`, `viewer/server.js` if needed, `viewer/test/app-asides.test.js` (new), `viewer/app/API.md` | standard, gpt (gpt-6.1-terra) | wc-54ce860aef63-worker-5 | `node --test viewer/test/*.test.js` | in progress |
 | T4 | Page: selection bar, panel, underlines, aside list, phone sheet, handoff link (§2, §7, §9) | `viewer/pages/`, `viewer/test/app-asides.spec.js` (new) | standard, claude | — | `npm --prefix viewer run test:browser` | waiting on T3 |
-| T5 | `protocol/app/aside.md` and the `lead.md` line (§4 aside prompt, §8) | `protocol/app/aside.md`, `protocol/app/lead.md`, `protocol/app/AGENTS.md` | light, gpt (gpt-6-luna) | wc-54ce860aef63-worker-4 | read-through against §4/§8 | in progress |
+| T5 | `protocol/app/aside.md` and the `lead.md` line (§4 aside prompt, §8) | `protocol/app/aside.md`, `protocol/app/lead.md`, `protocol/app/AGENTS.md` | light, gpt (gpt-6-luna) | wc-54ce860aef63-worker-4 | read-through against §4/§8 | done (merged) |
 
 ## Log
 
@@ -618,3 +618,4 @@ Round 9 is clean: no blocking or major finding upheld.
 - 2026-11-15 — Choice: T1, aside-probe-mcp.js: a dependency-free JSON-RPC stdio server that logs one line per start and per tool call.
 - 2026-11-15 — Sub-lead decision, closing a gap Decision 18 opened: `--system-prompt-snapshot off` drops a Claude lead's recorded system prompt, which is where Collin's writing style lives. The hub sends the current rendered style in each aside-turn POST (`style`), and the machine appends it to the aside prompt the way a lead's role prompt is layered. Codex asides get the same.
 - 2026-11-15 — T2, T3, T5 dispatched in parallel (disjoint boundaries); T4 waits for T3.
+- 2026-11-15 — T5 accepted: aside.md identical to the brief's text; lead.md and router rows as briefed. Worker reported no choices (none visible in the diff either). Sub-lead fixed "as above" to "as the next bullet says" in the lead.md line (the resolve rule sits below it).
