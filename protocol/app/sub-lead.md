@@ -71,7 +71,9 @@ looks.
   escalation, below.
 
 Start a worker with `node <root>/viewer/app/wc.js session start --role worker --cli
-<claude|codex> --tier <tier> --brief-file <path> --attempt <id>`. The tier is `light`, `standard`, `heavy`, `critical` or `top` (Heavy), for both CLIs; a tier whose
+<claude|codex> --tier <tier> --brief-file <path> --attempt <id> [--effort <e>]`. The optional
+`--effort` is for worker starts only and overrides the tier's pinned effort for that
+session. The tier is `light`, `standard`, `heavy`, `critical` or `top` (Heavy), for both CLIs; a tier whose
 cell in Settings is Not used for that CLI is refused. The old names `luna`, `terra`, `sol`, `astra`
 (any CLI) and `haiku`, `sonnet`, `opus` (Claude) are still accepted and mean the Light, Standard,
 Heavy (and Critical) slots, not fixed models: `--tier opus` runs whatever the Heavy cell holds.
@@ -121,15 +123,31 @@ A worker's `result` card is a claim, not a fact. When one arrives:
 
 ### Escalation, only on evidence
 
-The ladder is Light, Standard, Heavy, Critical on both sides, one rung at a time. A rung is bought only by a worker that already came back
+A step up is bought only by a worker that already came back
 wrong: it ignored the ownership boundary or the validation commands, claimed a completion
 the diff contradicts, or hit its fails-twice guardrail. "This task looks hard" is not
 evidence: a task you expect to be hard simply starts at Standard.
 
 Order: rewrite the brief first (a worker that failed against a vague success bar fails the
-same way with a bigger model), then change tier. Escalate in a fresh session on the
+same way with a bigger model), then step up. Escalate in a fresh session on the
 rewritten brief, not by resuming. Record the rung and the reason next to the task in the
 plan.
+
+What a step is, which kind comes first (effort or tier) and where the steps stop are the
+"Escalation rules from Settings:" block in your instructions. That block is the one source
+of escalation moves and limits. Raise effort with `wc.js session start ... --effort <e>`.
+
+The hub enforces the limits and refuses a start above them. Read the refusal:
+
+- It names "the highest tier in Settings" or "the highest effort in Settings": that kind
+  of step is used up. Take the other kind if the rules still allow it; otherwise report
+  the task as blocked. On a task's first dispatch, a tier refusal means dispatch at
+  Standard or below. That is not an escalation step.
+- Anything else (a bad value, "hub unavailable", a missing CLI, "GPT's highest effort is
+  xhigh") is not a Settings limit. Fix the request, or retry as the role file already says.
+
+When the rules say to ask first, send the lead a `message` naming the task, what failed
+and the step you propose, then wait for the answer.
 
 ## Finishing and verifying
 
