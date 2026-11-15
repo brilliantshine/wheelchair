@@ -329,3 +329,5 @@ own with `--port` and `--cache-root` (see `AGENTS.md`, Verification).
 |---|-----------|--------------------|------|-----------|------------|--------|
 
 ## Log
+
+2026-11-14, Ready check at approval: hub and machine service answer (`wc.js session list`); Claude Code 2.1.325 and codex-cli 0.169.0 installed; Codex preflight passes (token fresh). Preflight heads-up: gpt-6.1-terra is newer than the pinned gpt-5.6-terra; not acted on.
