@@ -43,10 +43,16 @@ async function mock(page, state) {
     const method = request.method();
     const body = request.postData() ? JSON.parse(request.postData()) : {};
     const json = (status, value) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) });
-    if (path === '/usage' && method === 'GET') return json(200, state.usage || usageBody());
+    if (path === '/usage' && method === 'GET') { state.usageGets = (state.usageGets || 0) + 1; return json(200, state.usage || usageBody()); }
     if (path === '/usage/alert') return json(200, { dot: state.dot !== false });
     if (path === '/usage/seen' && method === 'POST') { state.dot = false; state.calls.push([method, path]); return json(200, { ok: true }); }
     if (path === '/settings/accounts' && method === 'POST') { state.calls.push([method, path, body]); return json(201, { id: 'new-one', ...body, weight: 1, paused: false }); }
+    const acct = path.match(/^\/settings\/accounts\/([^/]+)$/);
+    if (acct && (method === 'PUT' || method === 'DELETE')) {
+      state.calls.push([method, path, body]);
+      if (state.onAccount) state.onAccount(method, acct[1], body);
+      return json(200, { ok: true });
+    }
     if (path === '/settings/balancing' && method === 'PUT') {
       state.calls.push([method, path, body]);
       return state.balancingError ? json(400, { error: state.balancingError }) : json(200, body);
@@ -253,6 +259,116 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
     });
   });
 }
+
+test.describe('accounts interface paths', () => {
+  test.use({ viewport: { width: 1280, height: 900 } });
+  const acct = (page, id) => page.locator(`.acct[data-account="${id}"]`);
+
+  test('the reported Codex plan shows beside the chosen plan only when they differ', async ({ page }) => {
+    const usage = usageBody();
+    const gpt = usage.providers.gpt.accounts[0];
+    gpt.plan = 'plus';
+    gpt.reading = { account: 'default-gpt', at: iso(-60000), five_hour: null, week: null, plan_type: 'pro' };
+    usage.providers.claude.accounts[0].reading.plan_type = 'Max5'; // matches the chosen plan's id, loosely
+    usage.providers.claude.accounts[1].plan = 'unknown';
+    usage.providers.claude.accounts[1].reading = { account: 'work', at: iso(-60000), five_hour: null, week: null, plan_type: 'pro' };
+    await mock(page, { usage });
+    await open(page, 'accounts');
+    await expect(acct(page, 'default-gpt').locator('.v-badge').first()).toHaveText('Plus · reported: pro · weight 1');
+    await expect(acct(page, 'default-claude').locator('.v-badge').first()).not.toContainText('reported');
+    await expect(acct(page, 'work').locator('.v-badge').first()).toContainText('reported: pro');
+  });
+
+  test('the sign-in card gives up after 30 seconds without a link', async ({ page }) => {
+    const state = { signin: { state: 'waiting', url: null, code: null, wantsCode: false, logged_in: false } };
+    await mock(page, state);
+    await page.clock.install();
+    await open(page, 'accounts');
+    await page.locator('.acct[data-account="default-claude"] li[data-machine="beelink"] button').click();
+    const card = page.locator('.signin-card');
+    await expect(card).toContainText('Starting sign-in on beelink');
+    await expect.poll(() => state.calls.some((c) => c[0] === 'GET')).toBe(true);
+    await expect(card).not.toContainText("Couldn't read the sign-in screen");
+    await page.clock.runFor(34000);
+    await expect(card).toContainText("Couldn't read the sign-in screen");
+    await expect(card.getByRole('link', { name: 'Open terminal' }).first()).toBeVisible();
+  });
+
+  test('Rename sends the new name and the card shows it', async ({ page }) => {
+    const usage = usageBody();
+    const state = { usage, onAccount: (m, id, body) => { if (body.name) usage.providers.claude.accounts.find((a) => a.id === id).name = body.name; } };
+    await mock(page, state);
+    await open(page, 'accounts');
+    await acct(page, 'work').getByRole('button', { name: 'Rename' }).click();
+    await acct(page, 'work').getByLabel('Account name').fill('Side job');
+    await acct(page, 'work').getByRole('button', { name: 'Save' }).click();
+    await expect(acct(page, 'work').locator('.acct-name')).toHaveText('Side job');
+    expect(state.calls.find((c) => c[0] === 'PUT' && c[1] === '/settings/accounts/work')[2]).toEqual({ name: 'Side job' });
+  });
+
+  test('Change plan sends the plan and the weight override', async ({ page }) => {
+    const usage = usageBody();
+    const state = { usage, onAccount: (m, id, body) => { Object.assign(usage.providers.claude.accounts.find((a) => a.id === id), body); } };
+    await mock(page, state);
+    await open(page, 'accounts');
+    await acct(page, 'work').getByRole('button', { name: 'Change plan' }).click();
+    await acct(page, 'work').getByLabel('Plan').selectOption('max20');
+    await acct(page, 'work').getByLabel('Weight override').fill('2.5');
+    await acct(page, 'work').getByRole('button', { name: 'Save' }).click();
+    await expect(acct(page, 'work').locator('.v-badge').first()).toContainText('weight 2.5');
+    expect(state.calls.find((c) => c[0] === 'PUT' && c[1] === '/settings/accounts/work')[2]).toEqual({ plan: 'max20', weight: 2.5 });
+    // Blank weight sends the plan alone.
+    await acct(page, 'work').getByRole('button', { name: 'Change plan' }).click();
+    await acct(page, 'work').getByLabel('Plan').selectOption('pro');
+    await acct(page, 'work').getByRole('button', { name: 'Save' }).click();
+    await expect.poll(() => state.calls.filter((c) => c[0] === 'PUT').length).toBe(2);
+    expect(state.calls.filter((c) => c[0] === 'PUT')[1][2]).toEqual({ plan: 'pro' });
+  });
+
+  test('Remove asks first, then deletes; default accounts have no Remove', async ({ page }) => {
+    const usage = usageBody();
+    const state = { usage, onAccount: (m, id) => { if (m === 'DELETE') usage.providers.claude.accounts = usage.providers.claude.accounts.filter((a) => a.id !== id); } };
+    await mock(page, state);
+    await open(page, 'accounts');
+    for (const id of ['default-claude', 'default-gpt']) await expect(acct(page, id).getByRole('button', { name: 'Remove' })).toHaveCount(0);
+    await acct(page, 'work').getByRole('button', { name: 'Remove' }).click();
+    await expect(acct(page, 'work')).toContainText('Remove Work?');
+    expect(state.calls.some((c) => c[0] === 'DELETE')).toBe(false);
+    await acct(page, 'work').getByRole('button', { name: 'Keep' }).click();
+    await expect(acct(page, 'work').getByRole('button', { name: 'Rename' })).toBeVisible();
+    await acct(page, 'work').getByRole('button', { name: 'Remove' }).click();
+    await acct(page, 'work').getByRole('button', { name: 'Remove', exact: true }).click();
+    await expect(acct(page, 'work')).toHaveCount(0);
+    expect(state.calls.filter((c) => c[0] === 'DELETE').map((c) => c[1])).toEqual(['/settings/accounts/work']);
+  });
+
+  test('usage refreshes every 30 seconds on Accounts and Usage, and stops elsewhere', async ({ page }) => {
+    const state = {};
+    await mock(page, state);
+    await page.clock.install();
+    await open(page, 'accounts');
+    await expect(page.locator('.acct')).toHaveCount(3);
+    let seen = state.usageGets;
+    await page.clock.runFor(30500);
+    await expect.poll(() => state.usageGets).toBeGreaterThan(seen);
+    // Usage keeps the same timer.
+    await page.locator('#sections a[data-section="usage"]').click();
+    await expect(page.locator('#panel h1')).toHaveText('Usage');
+    await expect.poll(() => state.usageGets).toBeGreaterThan(seen);
+    await page.waitForTimeout(300);
+    seen = state.usageGets;
+    await page.clock.runFor(30500);
+    await expect.poll(() => state.usageGets).toBeGreaterThan(seen);
+    // Another section stops it.
+    await page.locator('#sections a[data-section="models"]').click();
+    await expect(page.locator('#panel h1')).not.toHaveText('Usage');
+    await page.waitForTimeout(300);
+    seen = state.usageGets;
+    await page.clock.runFor(95000);
+    await page.waitForTimeout(500);
+    expect(state.usageGets).toBe(seen);
+  });
+});
 
 test.describe('nav dot', () => {
   test.use({ viewport: { width: 1280, height: 900 } });

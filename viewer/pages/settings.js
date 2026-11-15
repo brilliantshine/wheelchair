@@ -850,6 +850,15 @@
     return h('select', { 'aria-label': 'Plan' }, PLAN_OPTIONS[provider].map(([v, l]) => h('option', { value: v, text: l, selected: v === value })));
   }
 
+  // The plan the CLI itself reported, shown beside the chosen one when they differ.
+  function reportedPlan(a) {
+    const reported = a.reading && a.reading.plan_type;
+    if (!reported) return '';
+    const r = String(reported).trim().toLowerCase();
+    const chosen = [String(a.plan).toLowerCase(), String(planLabel(a.provider, a.plan)).toLowerCase()];
+    return a.plan !== 'unknown' && chosen.includes(r) ? '' : ` · reported: ${reported}`;
+  }
+
   function accountCard(a) {
     const isDefault = a.id === `default-${a.provider}`;
     const card = h('div', { class: 'acct', 'data-account': a.id });
@@ -858,7 +867,7 @@
     card.append(
       h('div', { class: 'acct-head' },
         h('strong', { class: 'acct-name', text: a.name }),
-        h('span', { class: 'v-badge', text: `${planLabel(a.provider, a.plan)} · weight ${a.weight}` }),
+        h('span', { class: 'v-badge', text: `${planLabel(a.provider, a.plan)}${reportedPlan(a)} · weight ${a.weight}` }),
         a.paused && h('span', { class: 'v-badge', text: 'paused' }),
         h('span', { class: 'in-use' + (a.live_sessions ? ' on' : ''), text: a.live_sessions ? `in use · ${a.live_sessions} ${a.live_sessions === 1 ? 'agent' : 'agents'}` : 'idle' })),
       machines.length && h('ul', { class: 'machines' }, machines.map(([m, st]) => h('li', { 'data-machine': m, 'data-state': st },
