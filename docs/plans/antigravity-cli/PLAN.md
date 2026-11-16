@@ -376,14 +376,16 @@ a worker with `--provider gemini` and check its `result` card arrives.
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T0 | Live check: sign `agy` in, record login, credentials, isolation, models, hooks, transcript, prompts, fork, limits | `machine/test/fixtures/agy/`, `reports/T0.md` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker (t0-a1) | fixtures listed, redaction grep empty, `agy models` signed in | done (merged; items 6 and trust screen left open, see T0b) |
 | T0b | Second live check: workspace trust, multi-line paste, hook env, tool transcript, permission prompt, plan mode, instruction file, error Stop, exit | new files in `machine/test/fixtures/agy/`, `reports/T0b.md` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-2 (t0b-a1) | redaction grep empty, still signed in, hooks.json moved away | in progress |
-| T1 | `gemini` pins in model.sh (defaults flash-low/medium/high) | `codex/model.sh`, `codex/test/run.sh` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-3 (t1-a1) | `bash codex/test/run.sh` | in progress |
-| T2 | Hub: providers registry (`asideFork`), settings defaults/migration/one-account rule, balancer, sessions, routes, asides refusal | `viewer/app/{providers,settings,balancer,sessions,routes,asides,ready}.js` + their tests | after T1 | — | `node --test viewer/test/*.test.js` | not started |
+| T1 | `gemini` pins in model.sh (defaults flash-low/medium/high) | `codex/model.sh`, `codex/test/run.sh` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-3 (t1-a1) | `bash codex/test/run.sh` | done |
+| T2 | Hub: providers registry (`asideFork`), settings defaults/migration/one-account rule, balancer, sessions, routes, asides refusal | `viewer/app/{providers,settings,balancer,sessions,routes,asides,ready}.js` + their tests | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-4 (t2-a1) | `node --test viewer/test/*.test.js` | in progress |
 | T3 | Hub: `agy` transcript parser and report extraction | `viewer/app/chat.js`, `viewer/test/app-chat.test.js` | after T0b | — | `node --test viewer/test/*.test.js` | not started |
 | T4 | Machine: `agy` adapter, global-hook fallback, hook.sh, service status/prompt polling/login | `machine/adapters/`, `machine/service.js`, `machine/hook.sh`, `machine/lib/hook-post.js`, `machine/test/` (not fixtures) | after T0b | — | `bash machine/test/run.sh` | not started |
 | T5 | Pages: Settings, thread, threads show Antigravity; browser tests | `viewer/pages/{settings,thread,threads}.js`, `viewer/test/*.spec.js` | after T2 | — | `npm --prefix viewer run test:browser` | not started |
 | T6 | Protocol, API docs, routers | `protocol/app/{lead,sub-lead}.md`, `machine/API.md`, `viewer/app/API.md`, `machine/AGENTS.md`, `viewer/AGENTS.md`, `codex/AGENTS.md` | last | — | review against tree | not started |
 
 ## Log
+
+- 2026-11-16 — T1 accepted (codex suite 91/0). Choices: none reported. `check --json` stays GPT-only (an array of discovery events); my brief's "gemini key in check --json" was wrong, and the lead told the worker so. Only `show --json` gains `gemini`.
 
 - 2026-11-16 — Lead approved T0's fallbacks (global hooks file under key `wheelchair`; `asideFork: false`; one Antigravity account per machine) and two Spec corrections (every Stop reason except `error` ends the turn; credentials are a file, DBUS irrelevant).
 - 2026-11-16 — Decision 13's concrete defaults: `gemini` light = gemini-3.8-flash-low, standard = gemini-3.8-flash-medium, heavy/critical/lead = gemini-3.8-flash-high. The other-family models `agy` lists (claude-*, gpt-oss-*) are left out.
