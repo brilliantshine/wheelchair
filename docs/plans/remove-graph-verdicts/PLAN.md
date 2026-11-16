@@ -1,6 +1,6 @@
 ---
 slug: remove-graph-verdicts
-status: planning   # planning | ready-for-review | approved | implementing | verifying | done
+status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-15
 ---
 
@@ -12,15 +12,7 @@ get buried as this file grows.
 
 ## Open Questions
 
-### Q1: Striking a worker's choice on the run picture goes too?
-- **Context:** In the `/implement` stage (`protocol/implementation.md:219-237`), a worker's
-  unplanned choice appears as a `choice` box on the run picture. Collin can strike it, and
-  before COMPLETION.md the lead turns each struck choice into a follow-up task. That strike
-  is a `rejected` verdict. The app's sub-lead flow (`protocol/app/sub-lead.md`) has no such
-  step.
-- **Options:** (a) remove it with the rest: choice boxes stay on the picture as a record,
-  and to undo one Collin tells the lead; (b) keep a strike for run-picture choices only.
-- **Recommendation:** (a). (b) keeps most of the server machinery this plan exists to delete.
+None.
 
 ## Watch List
 
@@ -38,6 +30,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 3 | The `container-orphan` and `container-unreadable-child` refusals go; the containment cycle check stays | Both refusals exist only to protect verdicts in child graphs; cycles are a separate structural check | defaulted |
 | 4 | The red colour stays for run status (needs-you) and errors, renamed off "rejected" | It has uses unrelated to verdicts (`viewer/index.html:58,145-151`) | defaulted |
 | 5 | The README screenshot is retaken without verdict styling | The current one shows approved and struck entries, which will no longer exist | defaulted |
+| 6 | Striking a worker's choice on the run picture is removed too. Choice boxes stay as a record; to undo one, Collin tells the lead | Keeping it would keep most of the verdict machinery; the app's sub-lead flow never used it | user |
 
 ## Spec
 
@@ -82,10 +75,16 @@ Remove or rewrite every passage that depends on verdicts:
   older files may carry `origin` and `was`; they are ignored and dropped on the next write.
 - `protocol/planning.md:87-98,206-211`: the rejected-entry re-read and exit gate.
 - `protocol/diagrams.md:84-90`: "rejected entries are left out" and the reason for the walk.
-- `protocol/implementation.md`: per Q1.
+- `protocol/implementation.md` (Decision 6): remove the step that collects `rejected`
+  `choice` boxes before COMPLETION.md and turns them into follow-up tasks (`:219-231`),
+  "They keep their rulings there" (`:58`), "nothing struck there is acted on unless Collin
+  asks" (`:67`), and "each struck choice ... and what replaced it" in the COMPLETION
+  deviations (`:236`). Choice boxes and the Log's `Choice:` lines stay; the end-of-run
+  message still lists the `Choice:` lines.
 - `protocol/app/lead.md:370-371`: "Proposals he approves or strikes keep using the graph page."
 - `skills/graph/SKILL.md` description: "rearrange and rule on" becomes "rearrange".
-- `README.md` "Pictures": the approve/strike text and the screenshot (Decision 5).
+- `README.md` "Pictures": the approve/strike text, the run-picture "box you can strike"
+  bullet (choices are shown, not struck), and the screenshot (Decision 5).
 - Routers: `protocol/AGENTS.md:32`, `viewer/AGENTS.md:43-46`.
 
 Leave alone: reviewer and verifier verdicts, HTTP Origin, `origin/<branch>` in git, and the
@@ -121,6 +120,15 @@ diagram card or dragging.
 |------|--------------|-------|
 
 ## Review Rounds
+
+### Round 1 — 2026-11-15
+
+**Lanes:** pending.
+
+**Changed since Round N-1:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
