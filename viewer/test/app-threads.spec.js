@@ -292,6 +292,37 @@ for (const [label, size] of SIZES) {
       await expect(page.locator('#msg')).toHaveValue('');
     });
 
+    test('progress stages render and remain pinned through remediation', async ({ page }) => {
+      await page.setViewportSize({ width: 360, height: 800 });
+      const made = await ctx.make({ cli: 'claude' });
+      const base = { kind: 'progress', machines: [], choice_waiting: false };
+      await ctx.post(made.id, { ...base, done: 2, total: 5 });
+      await open(page, made.id);
+      const pin = page.locator('#pinned');
+      const progress = pin.locator('.card-progress');
+      await expect(progress).toContainText('Building');
+      await expect(progress).toContainText('tasks done');
+      const review = { ...base, stage: 'review', pass: 2, phase: 'fixing', found: 5, fixed: 3, choice_waiting: true };
+      await ctx.post(made.id, review);
+      await expect(progress).toContainText('Reviewing plan');
+      await expect(progress).toContainText('pass 2 · 5 found, 3 resolved');
+      await expect(progress.locator('.segs')).toHaveCount(0);
+      await expect(progress).toHaveClass(/amber/);
+      expect(await pin.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+      await pin.locator('.pin-toggle').click();
+      await expect(pin).toContainText('Reviewing plan · pass 2 · 5 found, 3 resolved');
+      await expect(pin).not.toContainText('undefined');
+      await pin.locator('.pin-toggle').click();
+      await ctx.post(made.id, { ...base, stage: 'verify', pass: 1, phase: 'clean' });
+      await expect(progress).toContainText('Verified');
+      const fixing = { ...base, stage: 'verify', pass: 2, phase: 'fixing', found: 2, fixed: 0 };
+      await ctx.post(made.id, fixing);
+      await expect(progress).toContainText('2 gaps, 0 fixed');
+      await ctx.post(made.id, { ...fixing, fixed: 1 });
+      await expect(progress).toContainText('Verifying');
+      await expect(progress).toContainText('2 gaps, 1 fixed');
+    });
+
     test('cards: every kind renders and presses call the press route', async ({ page }) => {
       const made = await ctx.make({ cli: 'claude' });
       const id = made.id;

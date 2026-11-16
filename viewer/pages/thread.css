@@ -52,7 +52,7 @@ html:has(.shell.on-thread) { scroll-padding-top: calc(var(--nav-h) + var(--head-
 .card-idea .actions { margin-top: 4px; }
 .card-progress { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 9px 14px; border-radius: 10px; }
 .card-progress .progress-label { font-size: 13px; font-weight: 600; }
-.card-progress .progress-text { font-size: 12px; color: var(--dim); }
+.card-progress .progress-text { font-size: 12px; color: var(--dim); min-width: 0; overflow-wrap: anywhere; }
 .card-progress .grow { flex: 1 1 20px; }
 .card-progress .segs { display: flex; gap: 3px; width: 120px; }
 .card-progress .segs span { flex: 1; height: 5px; border-radius: 2px; background: var(--line-2); }
@@ -97,6 +97,12 @@ html:has(.shell.on-thread) { scroll-padding-top: calc(var(--nav-h) + var(--head-
   border-radius: 8px; max-width: 100%; }
 .md pre.md-code code { background: none; padding: 0; font-size: 12px; white-space: pre; }
 .md .md-head { font-size: 14px; }
+.md .md-table { overflow-x: auto; max-width: 100%; margin: 0 0 10px; border: 1px solid var(--line); border-radius: 6px; }
+.md .md-table table { border-collapse: collapse; font-size: 13px; }
+.md .md-table th, .md .md-table td { border-top: 1px solid var(--line); border-left: 1px solid var(--line);
+  padding: 6px 10px; text-align: left; vertical-align: top; line-height: 1.5; }
+.md .md-table th:first-child, .md .md-table td:first-child { border-left: none; }
+.md .md-table thead th { background: var(--panel-2); border-top: none; }
 .md a { overflow-wrap: anywhere; }
 .md.dim { color: var(--dim); }
 
@@ -269,11 +275,6 @@ body.aside-open .col-side { padding: 0; }
 /* ---- the lead is mid-turn: three dots under the chat ---- */
 .working { display: flex; gap: 5px; padding: 6px 2px 2px; }
 .working[hidden] { display: none; }
-.working span { width: 6px; height: 6px; border-radius: 50%; background: var(--dim); animation: working-bounce 1.2s ease-in-out infinite; }
-.working span:nth-child(2) { animation-delay: .15s; }
-.working span:nth-child(3) { animation-delay: .3s; }
-@keyframes working-bounce { 0%, 60%, 100% { transform: translateY(0); opacity: .4; } 30% { transform: translateY(-4px); opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .working span { animation: none; opacity: .7; } }
 
 /* Diagram forms and attachments */
 .card-diagram { container-type: inline-size; min-width: 0; }
@@ -305,3 +306,18 @@ img.card-image { display: block; max-width: 100%; height: auto; margin-top: 10px
   #composer .send-row { grid-template-columns: 1fr auto auto; grid-template-areas: 'ta attach btn'; }
   #composer #attach { width: 44px; height: 44px; min-height: 44px; }
 }
+
+/* ---- sudo cards: the command in full, never truncated ---- */
+.card-sudo { background: var(--panel); border-color: var(--warn-line); }
+.card-sudo .eyebrow.warn { color: var(--warn); }
+.sudo-command, .sudo-output { margin: 10px 0 0; padding: 10px 12px; border-radius: 8px; background: var(--code-bg);
+  font: 13px/1.5 var(--mono); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; max-width: 100%; box-sizing: border-box; }
+.sudo-output { max-height: 320px; overflow: auto; }
+.sudo-editable { margin-top: 10px; padding: 8px 12px; border-radius: 8px; background: var(--warn-bg); border: 1px solid var(--warn-line);
+  font-size: 13px; color: var(--ink-2); }
+.sudo-editable li { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
+.sudo-facts { margin-top: 10px; font-size: 13px; color: var(--ink-2); overflow-wrap: anywhere; }
+.sudo-facts .eyebrow { margin: 8px 0 2px; }
+.sudo-outcome { margin-top: 12px; font-weight: 600; font-size: 14px; }
+.sudo-outcome.bad { color: var(--bad-text); }
+.sudo-cut { font-size: 12px; margin-top: 6px; }

@@ -27,6 +27,8 @@ function stripStyleTrailer(text) {
 function cardBubble(text) {
   const match = text.match(/^\[card [^\]]+\] (.*)$/s);
   if (!match) return null;
+  // A sudo result carries the command's whole output; the bubble keeps its first line.
+  if (/^sudo ran:/.test(match[1])) return match[1].split('\n', 1)[0];
   return match[1]
     .replace(/^picked:\s*/i, 'Picked ')
     .replace(/^removed:\s*/i, 'Removed ')

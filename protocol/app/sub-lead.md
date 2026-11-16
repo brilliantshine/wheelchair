@@ -90,9 +90,13 @@ Record each task's lane in the table: the tier plus the resolved model
 
 ## While workers run
 
+- Only the lead asks Collin for sudo. If a task needs a command run as root, yours or a worker's, send the lead a `message` with the exact command (full paths, no `~`, the actual commands rather than a script an agent wrote), what it changes and why; never run `sudo` yourself.
+
 - Post a `progress` card (`done`, `total`, the machines in use, `choice_waiting` false)
   when a task is dispatched and when you accept one. The lead sets `choice_waiting` while
-  a question is with Collin; keep `done` and `total` current.
+  a question is with Collin; keep `done` and `total` current. Once `status: verifying`
+  is committed, dispatch re-posts the current `verify` line unchanged and acceptance
+  re-posts it with `fixed` + 1; never post a `build` card after `verifying`.
 - A worker that asks something the plan did not settle sends its question to the lead, not
   to you. If you hit something the plan does not settle, send the lead a `message` too.
 - On `[wc:from app] your session <name>'s turn failed: <error>`, that session is still live.
@@ -127,6 +131,9 @@ A worker's `result` card is a claim, not a fact. When one arrives:
    `wc.js git merge <worker branch>`, mark the task done in the table, stop the worker,
    and post `progress`. Then remove its worktree with `wc.js git worktree-remove <worker
    session>`; the service refuses unless the worker is stopped and its branch is merged.
+   Once `status: verifying` is committed, dispatch re-posts the current `verify` line
+   unchanged and acceptance re-posts it with `fixed` + 1; never post a `build` card after
+   `verifying`.
 4. If it does not pass, rewrite the brief and start a fresh attempt. Never resume a worker
    by feeding it its own dead ends.
 
@@ -179,10 +186,15 @@ When every task is done and the full validation passes:
    stop the second verifier at once.
    Its brief gives it `<root>/protocol/app/verifier.md`, the PLAN.md and COMPLETION.md
    paths, and says nothing of this conversation. Its report arrives as a `result`; stop it
-   then.
-4. **PASS**: send the lead a `result` (`task` `build`, `outcome` `done`, `report`
-   COMPLETION.md, `commit` the commit verified).
-5. **FAIL**: write `docs/plans/<slug>/REMEDIATION-N.md` (N is the verification attempt):
+   then. After starting attempt N's verifier(s), post `progress` with `stage: verify`,
+   `pass: N`, `phase: checking` and the machines used during the build.
+4. **PASS**: once every verifier of the attempt passes, post `phase: clean`, then send the
+   lead a `result` (`task` `build`, `outcome` `done`, `report` COMPLETION.md, `commit` the
+   commit verified).
+5. **FAIL**: post `phase: fixing` with `found` equal to the distinct gaps in the attempt's
+   reports and `fixed: 0`; re-post as `fixed` rises with each accepted remediation task.
+   With two verifiers, merge duplicate gaps before counting them. Write
+   `docs/plans/<slug>/REMEDIATION-N.md` (N is the verification attempt):
    the gap list verbatim, then one task per gap in the brief format. Route to the same
    provider that built the work, using `--provider <that provider>` from `session list`'s
    `sessions`.
@@ -192,7 +204,8 @@ When every task is done and the full validation passes:
    history, and start a fresh verifier (a new attempt).
 6. **The same gap surviving two fix attempts is a plan defect, not an implementation
    defect.** Do not try a third. Send the lead a `message` naming the gap and its
-   evidence; the lead brings it to Collin. Stop your work and wait.
+   evidence; the lead brings it to Collin. Leave the line on `fixing`; the lead sets
+   `choice_waiting` for the question. Stop your work and wait.
 
 You do not write `done`; the lead does, after your `result`. A `result` you send marks the
 build finished, and the worktree goes back to the lead.

@@ -18,6 +18,7 @@ const shown = new Set([
   'diagram',
   'image',
   'stub',
+  'sudo',
 ]);
 
 const roles = {
@@ -31,6 +32,7 @@ const roles = {
   diagram: ['lead'],
   image: ['lead'],
   stub: ['lead'],
+  sudo: ['lead'],
   title: ['lead'],
   resolve: ['lead'],
   message: ['lead', 'sub-lead', 'worker', 'mapper'],
@@ -49,6 +51,21 @@ function truncateTitle(value, limit) {
   const space = title.lastIndexOf(' ', limit);
   return `${title.slice(0, space === -1 ? limit : space)}…`;
 }
+
+// A sudo card's agent-side fields. The machine service adds request_id, url and editable from
+// the helper's answer; an agent may not send them, so only the hub's own acceptance of a
+// machine-posted card uses `sudoMachineFields`.
+const sudoFields = {
+  command: (value) => text(value) && Buffer.byteLength(value, 'utf8') <= 4096 && !value.includes('\0'),
+  does: text,
+  why: text,
+};
+const sudoMachineFields = {
+  ...sudoFields,
+  request_id: (value) => typeof value === 'string' && /^[0-9a-f]{32}$/.test(value),
+  url: (value) => typeof value === 'string' && value.startsWith('https://') && value.length > 'https://'.length,
+  editable: (value) => array(value, (item) => typeof item === 'string'),
+};
 
 const fields = {
   offer: { summary: text },
@@ -79,8 +96,13 @@ const fields = {
     ready: (value) => object(value) && typeof value.ok === 'boolean' && array(value.missing, text),
   },
   progress: {
-    done: Number.isInteger,
-    total: Number.isInteger,
+    stage: (value) => value === undefined || ['build', 'review', 'verify'].includes(value),
+    done: (value) => value === undefined || Number.isInteger(value),
+    total: (value) => value === undefined || Number.isInteger(value),
+    pass: (value) => value === undefined || (Number.isInteger(value) && value >= 1),
+    phase: (value) => value === undefined || ['checking', 'fixing', 'clean'].includes(value),
+    found: (value) => value === undefined || Number.isInteger(value),
+    fixed: (value) => value === undefined || Number.isInteger(value),
     machines: (value) => array(value, text),
     choice_waiting: (value) => typeof value === 'boolean',
   },
@@ -104,6 +126,7 @@ const fields = {
     depends_on_parent: (value) => typeof value === 'boolean',
     commits: (value) => value === undefined || array(value, text),
   },
+  sudo: sudoFields,
   title: { title: text },
   resolve: { card: text, note: text },
   message: { to: text, text },
@@ -116,17 +139,19 @@ const fields = {
   },
 };
 
-function validate(kind, card, role) {
+// `options.machine` is true only where the hub accepts a card the machine service posted.
+function validate(kind, card, role, options = {}) {
   if (!fields[kind]) return { ok: false, reason: `unknown card kind: ${kind}` };
   if (!object(card)) return { ok: false, reason: 'card must be one JSON object' };
   if (card.kind !== undefined && card.kind !== kind) {
     return { ok: false, reason: 'kind must equal the command-line kind' };
   }
-  const allowed = new Set([...Object.keys(fields[kind]), 'kind']);
+  const spec = kind === 'sudo' && options.machine ? sudoMachineFields : fields[kind];
+  const allowed = new Set([...Object.keys(spec), 'kind']);
   for (const key of Object.keys(card)) {
     if (!allowed.has(key)) return { ok: false, reason: `unknown field: ${key}` };
   }
-  for (const [key, check] of Object.entries(fields[kind])) {
+  for (const [key, check] of Object.entries(spec)) {
     if (!check(card[key])) return { ok: false, reason: `invalid or missing field: ${key}` };
   }
   if (kind === 'question' && !card.options.some((option) => option.id === card.leaning)) {
@@ -134,6 +159,28 @@ function validate(kind, card, role) {
   }
   if (kind === 'progress' && (card.done < 0 || card.total < card.done)) {
     return { ok: false, reason: 'progress counts are invalid' };
+  }
+  if (kind === 'progress') {
+    const build = card.stage === undefined || card.stage === 'build';
+    const required = build ? ['done', 'total'] : ['pass', 'phase'];
+    const forbidden = build ? ['pass', 'phase', 'found', 'fixed'] : ['done', 'total'];
+    if (!build && card.phase === 'fixing') required.push('found', 'fixed');
+    else if (!build && (card.phase === 'checking' || card.stage === 'verify')) forbidden.push('found', 'fixed');
+    else if (!build && card.phase === 'clean') {
+      if (card.found !== undefined && card.fixed === undefined) required.push('fixed');
+      if (card.fixed !== undefined && card.found === undefined) required.push('found');
+    }
+    for (const key of required) {
+      if (card[key] === undefined) return { ok: false, reason: `invalid or missing field: ${key}` };
+    }
+    for (const key of forbidden) {
+      if (card[key] !== undefined) return { ok: false, reason: `invalid or missing field: ${key}` };
+    }
+    if (card.found < 0 || card.fixed < 0 || card.fixed > card.found
+        || (card.phase === 'fixing' && card.found < 1)
+        || (card.phase === 'clean' && card.found !== undefined && card.fixed !== card.found)) {
+      return { ok: false, reason: 'progress counts are invalid' };
+    }
   }
   if (role && !roles[kind].includes(role)) {
     return { ok: false, reason: `${role} may not post ${kind}` };

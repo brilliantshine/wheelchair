@@ -44,6 +44,7 @@ Rules for every card:
 | `diagram` | yes | lead | no |
 | `image` | yes | lead | no |
 | `stub` | yes | lead | no |
+| `sudo` | yes | lead | no |
 | `title` | never | lead | no |
 | `resolve` | never | lead | no |
 | `message` | never | any session except reviewer and verifier | no |
@@ -122,14 +123,34 @@ first; if it changed, the card updates and nothing starts. When it holds, it com
 
 ### `progress`
 
-The one pinned build line.
+The one pinned progress line.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
-| `done` | integer | yes | Tasks finished |
-| `total` | integer | yes | Tasks in the build |
-| `machines` | array of strings | yes | Which machines the workers are on |
-| `choice_waiting` | boolean | yes | True turns the line amber with "choice for you", because a question card is waiting on him |
+| `stage` | `build` \| `review` \| `verify` | no | Absent means `build` |
+| `done`, `total` | integer | `build` only | Tasks finished and tasks in the build; `0 <= done <= total` |
+| `machines` | array of strings | yes, every stage | Machines in use; may be empty for `review` |
+| `choice_waiting` | boolean | yes, every stage | True turns the line amber with "choice for you" |
+| `pass` | integer >= 1 | `review`, `verify` | Review round or verification attempt number (`REMEDIATION-N.md`'s N + 1 for a re-verify); forbidden for `build` |
+| `phase` | `checking` \| `fixing` \| `clean` | `review`, `verify` | Checking is running reviewers or verifiers; fixing is triage and Spec fixes or remediation; clean means the review round met lead.md's clean test or verification passed. Forbidden for `build` |
+| `found`, `fixed` | integer | `fixing`; optional together for review `clean` | This pass only: `0 <= fixed <= found`; fixing requires `found >= 1`; clean requires `fixed == found`. Forbidden otherwise |
+
+`done` and `total` are forbidden for `review` and `verify`; `found` and `fixed` are
+forbidden with `checking` and verify `clean`. Review `clean` carries both counts or neither.
+
+| Stage / phase | Label | Text |
+|---|---|---|
+| `build` / absent | Building | Unchanged: segments + "D of T tasks done · machines" |
+| `review` / `checking` | Reviewing plan | "pass N · reviewers reading" |
+| `review` / `fixing` | Reviewing plan | "pass N · F found, X resolved" |
+| `review` / `clean` | Plan reviewed | "pass N · passed", or "pass N · passed, F resolved" when counts are present |
+| `verify` / `checking` | Verifying | "attempt N · checking" |
+| `verify` / `fixing` | Verifying | "attempt N · F gaps, X fixed" |
+| `verify` / `clean` | Verified | "attempt N · passed" |
+
+Review and verify have no segment bar; verify appends machines when non-empty. The folded
+label joins the label and text with " · ", adding ": choice for you" when waiting; the
+build folded label remains "Building D of T". Text wraps at phone widths.
 
 ### `needs`
 
@@ -241,6 +262,43 @@ New work that belongs in its own thread.
 The app adds a stub thread to the list (same project, CLI and machine) and shows the card
 in this thread with a "Go to it" button. No session starts until Collin opens it.
 
+### `sudo`
+
+A command that needs root, for Collin to run from his own device. Only a lead posts it: a worker
+or sub-lead that needs root asks the lead with a `message`.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `command` | string | yes | The exact shell command, run with `/bin/sh -c`. At most 4096 bytes, no NUL, no `~` (write the full path). Write the real commands here, never a script you or another agent wrote or can edit |
+| `does` | string | yes | Plain words: what it changes on the machine |
+| `why` | string | yes | Why the task needs it |
+
+You send those three fields and nothing else; `request_id`, `url`, `editable` or `state` in your
+file is refused. The machine service registers the request with its own root-owned sudo helper
+first and adds `request_id`, `url` (the helper's private page) and `editable` (files named in the
+command that an agent could change before it runs; the card warns Collin about them). If the
+helper is not installed, `card.js` exits non-zero with `machine refused card (503)` and
+`sudo helper not installed on <machine>; Collin installs it once with: sudo <root>/sudo-helper/install.sh`:
+tell Collin that in a reply and in a `needs` card. A helper refusal comes back as a `422`
+with its sentence (for example `Write the full path; ~ would mean /root here`).
+
+The card shows the command in full, `does` and `why`, and three controls while it is waiting:
+**Open to run** (Collin's password goes only into the helper's page, never the app), **Decline**
+and **Talk about it**. Its states are `waiting`, `running`, `ran` (exit code and output, with a
+note when the output was cut), `declined`, `expired` and `failed` (with the reason). Collin
+decides each time; do not ask twice for the same thing.
+
+What reaches you, once per card (the output follows `ran` on the next lines):
+
+- `[card <id>] sudo ran: exit <n>`
+- `[card <id>] declined`
+- `[card <id>] sudo expired`
+- `[card <id>] sudo failed: <reason>`
+- `[card <id>] talk about: sudo request`: Collin wants to discuss it. Nothing ran and the card
+  stays waiting; answer in a line and keep going.
+
+The password is never in any of these.
+
 ## The kinds never shown
 
 ### `title`
@@ -309,6 +367,7 @@ The press forms, in full:
 - `[card <id>] start building`
 - `[card <id>] start thread about: <text>`
 - `[card <id>] keep going` and `[card <id>] talk about: <needs card title>`, on your `needs` card
+- `[card <id>] sudo ran: exit <n>`, `declined`, `sudo expired`, `sudo failed: <reason>` and `talk about: sudo request`, on your `sudo` card
 
 Two consequences for a lead. Nothing you write in the reply to a `[wc:from ...]` message
 reaches Collin, so when such a message means he must decide something, post a card. And a

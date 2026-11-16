@@ -88,6 +88,8 @@ Look at the thread before you act: IDEA.md, PLAN.md and its `status:` if the pla
 directory exists, and the cards so far. After a restart (`[wc:context restart]`) these are
 the only memory you have.
 
+The step-1 small-fix verifier and step-9 after-done verifier post no progress line.
+
 ### 1. Starting: a small fix, or a feature
 
 Collin picks the project and the machine, then writes in plain words.
@@ -193,6 +195,11 @@ Risks from PLAN.md, so settled findings are not re-raised. Scope: round 1 is the
 round in depth plus one whole-Spec coherence pass. Write a short "Changed since the last
 round" list into the round's section before launching.
 
+After starting round N's reviewers, post `progress` with `stage: review`, `pass: N`,
+`phase: checking`. Number every round in the thread without resetting after a fork or a
+Spec change after approval; a round ended by a dead reviewer keeps its number and its
+restart re-posts `checking`.
+
 Triage every finding you receive, record it in the plan's Review Rounds table with a
 verdict, and act:
 
@@ -211,6 +218,16 @@ the wrong thing or could not implement it), `major` (would have to stop and ask)
 (everything else). Stop each reviewer when its `result` arrives; each round starts fresh
 reviewers.
 
+After triage, if the round is clean by the test below, resolve any counted minor or
+accepted-risk findings and post `phase: clean` with equal `found` and `fixed` (omit both
+if none counted), then proceed to approval. Otherwise post `phase: fixing`, `found: F`,
+`fixed: 0`, and re-post as `fixed` rises for each saved Spec fix, Accepted Risk or Collin
+decision. Count `upheld`, `downgraded`, `accepted-risk` and `user-decision` findings as
+found, never `declined`; a finding is resolved when its Spec fix is saved, its risk moved
+to Accepted Risks, or Collin's decision logged. While a `question` or the review budget's
+`needs` card waits on Collin, re-post the current line with `choice_waiting: true`, then
+`false` once answered.
+
 Recurring objections are sorted: a real choice for Collin becomes a `question` card, a
 vague part is rewritten, a repeat is rejected with the reason recorded.
 
@@ -221,8 +238,8 @@ whose body says in a line what each button will do. "Keep going" means: run anot
 with the budget reset, and say so in your reply. "Talk about it" means: explain the
 objections in plain words and put the fork to him as a `question` card. A
 round ended by a dead reviewer does not count and is not triaged; restart that reviewer.
-Once he settles the fork, the budget resets. No round count, summary or finding ever
-reaches the thread.
+Once he settles the fork, the budget resets. No finding, summary or reviewer detail reaches
+the thread; the progress line's pass number and counts are the only review state shown.
 
 ### 6. Approval and the Ready check
 
@@ -256,8 +273,8 @@ On `[card <id>] start building`:
 3. You stay free. The sub-lead talks only to you, through `message` cards. Answer what you
    can from the plan. Pass on to Collin, as a `question` card, only what you cannot
    answer. While a question is waiting, post the `progress` card again with
-   `choice_waiting: true` (same `done`, `total` and `machines` as the sub-lead's last
-   one), and with `false` once he answers; the sub-lead keeps `done` and `total` current.
+   `choice_waiting: true` (same fields as the sub-lead's last one), and with `false`
+   once he answers.
    A sub-lead asking to step a task up becomes a `question` card with two options, "Step
    up" and "Stop here" (the task is reported blocked); the answer goes back to the
    sub-lead as a `message`.
@@ -317,6 +334,18 @@ When Collin reports a problem, first run `gh pr view --json state`:
 No thread ever pushes to another thread's branch. Every stub starts from the default
 branch and opens its own pull request.
 
+## Asking Collin to run something as root
+
+Only you post a `sudo` card (fields and texts in `cards.md`); workers and the sub-lead ask you with a `message`, and you decide whether it goes to Collin.
+
+Ask only when the task truly needs root; use the smallest command that does the job; say plainly in `does` and `why` what it changes on the machine.
+
+Write the actual commands in `command`. Never ask to run a script or file an agent wrote or can edit: what Collin approves is the command text, and a file it runs can change after he reads it. Write full paths: no `~`, which would mean `/root` there.
+
+If `card.js` says the helper is not installed, tell Collin in a reply and post a `needs` card with the install command it printed.
+
+Act on the outcome the card brings back (`sudo ran: exit <n>` with the output, `declined`, `sudo expired`, `sudo failed: <reason>`); on `talk about: sudo request`, explain the command plainly. The card stays open, so Collin can still run it.
+
 ## Stubs
 
 Post a `stub` card when something belongs in its own thread: a new idea during a build,
@@ -367,8 +396,8 @@ graph home; use prose.
 
 Documents have their own rule: PLAN.md's Spec gets a Mermaid diagram when it is approved
 (`<root>/protocol/diagrams.md`), drawn at approval and never earlier, since a diagram
-drawn mid-churn goes stale. MAP.md and the routers stay plain text. Proposals he approves
-or strikes keep using the graph page.
+drawn mid-churn goes stale. MAP.md and the routers stay plain text. Draw proposals on
+the graph page.
 
 ## `status:` in PLAN.md
 

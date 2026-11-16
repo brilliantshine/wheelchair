@@ -28,12 +28,14 @@ It carries per-turn facts only: a confirmed wording list and, after a long quiet
 long it has been. Both are defined in `protocol/seen.md`, the canonical rules, and read
 fresh off disk on each turn rather than rendered into a file an agent's instructions load.
 
+**A third reach outside the clone, and the only one that runs as root: the sudo helper.** Collin installs it with `sudo-helper/install.sh` as a system service, from a root-owned copy agents cannot edit, so the password he types for a `sudo` card never passes through the hub, the machine service or anything an agent can read. `./install.sh` never installs or updates it.
+
 | Kind | Directory | Read by |
 |---|---|---|
 | Canonical rules | `protocol/` | an agent executing a stage |
 | Per-feature state | `docs/plans/<slug>/` | every stage, to find out where the work stands |
 | Harness adapter | `skills/`, `codex/prompts/` | Claude Code and the Codex CLI, at registration |
-| Executable | `sensitivity/`, `seen/`, `install/`, `test-support/`, `viewer/`, `machine/`, `install.sh` | run by a command, not read as guidance |
+| Executable | `sensitivity/`, `seen/`, `install/`, `test-support/`, `viewer/`, `machine/`, `sudo-helper/`, `install.sh` | run by a command, not read as guidance |
 
 Two rules follow, and between them they cover most of what can go wrong here:
 
@@ -57,6 +59,7 @@ Two rules follow, and between them they cover most of what can go wrong here:
 | `codex/` | [AGENTS.md](codex/AGENTS.md) | `prompts/`, the Codex CLI wrappers, same convention as `skills/`, one line each; `preflight.sh`, the login check that also prints the model heads-up; `model.sh`, the GPT model pins' reader and writer; and `test/`, its fixture suite |
 | `docs/` | — | `plans/<slug>/` per feature; `proposals/<name>/`, ideas written outside the workflow and waiting for `/adopt`; `known-issues.md`, failures recorded but not yet fixed. State, not rules — nothing here is a contract |
 | `machine/` | [AGENTS.md](machine/AGENTS.md) | the per-machine agent session service the app's hub drives: `service.js` (sessions in tmux, worktrees, git for agents, transcript copies, spools), `hook.sh` and `lib/hook-post.js` (the CLIs' turn-end and prompt hooks), `API.md` (its route contract), `test/run.sh`. Runs as the `wheelchair-machine` user service, never read as guidance |
+| `sudo-helper/` | [AGENTS.md](sudo-helper/AGENTS.md) | the root sudo helper behind `sudo` cards: `helper.py`, its run page in `static/`, `install.sh` (Collin runs it with sudo), and its tests |
 | `viewer/` | [AGENTS.md](viewer/AGENTS.md) | the browser graph viewer, its list and document pages, the sign-in page a browser gets before it is remembered, and the server behind them — `index.html`, `list.html`, `list.js`, `doc.html`, `doc.js`, `signin.html`, `server.js`, `playwright.config.js` — plus the app served from the hub: `app/` (the hub: state, threads, sessions, cards, the Ready check, `wc.js` and `card.js` that agents run, `API.md`), `pages/` (the Threads, thread, Features, Agents, Settings and terminal pages) and `vendor/` (xterm.js). Runs as the `wheelchair-viewer` user service or is started by an agent turn, never read as guidance |
 
 ## Files at the root
@@ -65,8 +68,8 @@ Two rules follow, and between them they cover most of what can go wrong here:
 |---|---|
 | `README.md` | What this workflow is and how to drive it, for a person arriving cold |
 | `CONTRIBUTING.md` | The conventions, source-of-truth boundaries, and validation commands for someone changing this repository |
-| `install.sh` | Renders each present harness's wrappers, substituting this clone's path for `{{WHEELCHAIR_ROOT}}`, installs the viewer's dependencies, stops any running viewer that isn't running the code just pulled, initializes the hub machine service's private state and credentials, and decides once whether this machine serves the viewer to other tailnet devices (asking only on a headless machine that hasn't decided yet). On a serving systemd machine it installs both the viewer and machine user services. It calls `seen/set.sh` to write each present harness's own hook entry and the wording script's write grant — into each harness's own settings files, **outside this tree** — and, last, warning rather than failing if it refuses, calls `sensitivity/set.sh` to render the dial's region into each present global instruction file. Idempotent, removes the `spine` skill and Codex prompt an earlier version rendered, and it **globs** `skills/*/` and `codex/prompts/*.md`, so adding a command needs no edit here |
-| `.gitignore` | `node_modules/`, `graphify-out/`, `test-results/`, which the browser suite writes, and `viewer/test/.tmp/`, where older checkouts' viewer suites wrote scratch folders (`test-support/run-dir.js` sweeps entries there over an hour old). `graphify-out/` is what lets a root router claim a graph cannot carry a contract |
+| `install.sh` | Renders each present harness's wrappers, substituting this clone's path for `{{WHEELCHAIR_ROOT}}`, installs the viewer's dependencies, stops any running viewer that isn't running the code just pulled, initializes the hub machine service's private state and credentials, and decides once whether this machine serves the viewer to other tailnet devices (asking only on a headless machine that hasn't decided yet). On a serving systemd machine it installs both the viewer and machine user services. It calls `seen/set.sh` to write each present harness's own hook entry and the wording script's write grant — into each harness's own settings files, **outside this tree** — and, last, warning rather than failing if it refuses, calls `sensitivity/set.sh` to render the dial's region into each present global instruction file. Idempotent, removes the `spine` skill and Codex prompt an earlier version rendered, and it **globs** `skills/*/` and `codex/prompts/*.md`, so adding a command needs no edit here. It prints a one-line hint when the root sudo helper is not installed, and never installs it. |
+| `.gitignore` | `node_modules/`, `graphify-out/`, `test-results/`, which the browser suite writes, `__pycache__/`, which Python test runs of `sudo-helper/test` leave behind, and `viewer/test/.tmp/`, where older checkouts' viewer suites wrote scratch folders (`test-support/run-dir.js` sweeps entries there over an hour old). `graphify-out/` is what lets a root router claim a graph cannot carry a contract |
 
 ## How to navigate (in order)
 
@@ -106,6 +109,8 @@ bash seen/test/run.sh                 # the hook and wording-list writer, exit-c
 bash codex/test/run.sh                # the GPT model pins and heads-up, exit-code gated
 bash install/test/run.sh              # presence-aware installer assertions, exit-code gated
 bash machine/test/run.sh              # the machine service, with fake tmux, CLIs and hub
+python3 -m unittest discover -s sudo-helper/test   # the root sudo helper, with shim runuser and sudo
+bash sudo-helper/test/install-test.sh              # the helper's installer, against a temp root
 node --test test-support/test/*.test.js     # the shared test run folder
 bash test-support/smoke/run.sh        # hearth only
 bash test-support/smoke/live.sh       # hearth only, costs model turns

@@ -35,6 +35,48 @@ test('accepts a valid card for its own lead', async () => {
   });
 });
 
+test('validates progress stages and their counts', () => {
+  const base = { machines: [], choice_waiting: false };
+  const build = { ...base, done: 1, total: 2 };
+  const review = { ...base, stage: 'review', pass: 2, phase: 'checking' };
+  for (const stage of ['review', 'verify']) {
+    for (const phase of ['checking', 'fixing', 'clean']) {
+      const counts = phase === 'fixing' ? { found: 2, fixed: 1 } : {};
+      assert.equal(validate('progress', { ...review, stage, phase, ...counts }).ok, true);
+    }
+  }
+  assert.equal(validate('progress', build).ok, true);
+  assert.equal(validate('progress', { ...review, phase: 'clean', found: 2, fixed: 2 }).ok, true);
+  const invalid = [
+    [{ ...build, stage: 'foo' }, 'stage'],
+    [{ ...review, pass: undefined }, 'pass'],
+    [{ ...review, pass: 0 }, 'pass'],
+    [{ ...review, done: 0 }, 'done'],
+    [{ ...review, phase: 'fixing', fixed: 0 }, 'found'],
+    [{ ...review, found: 1 }, 'found'],
+    [{ ...build, pass: 1 }, 'pass'],
+    [{ ...review, phase: 'clean', found: 1 }, 'fixed'],
+    [{ ...review, stage: 'verify', phase: 'clean', found: 0, fixed: 0 }, 'found'],
+  ];
+  for (const [value, field] of invalid) assert.equal(validate('progress', value).reason, `invalid or missing field: ${field}`);
+  for (const counts of [{ found: 1, fixed: 2 }, { found: 0, fixed: 0 }, { found: 1, fixed: -1 }]) {
+    assert.equal(validate('progress', { ...review, phase: 'fixing', ...counts }).reason, 'progress counts are invalid');
+  }
+  assert.equal(validate('progress', { ...review, phase: 'clean', found: 2, fixed: 1 }).reason, 'progress counts are invalid');
+});
+
+test('verify progress replaces build progress in the pin', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const lead = made.sessions[0];
+    await card(context, made.id, lead.name, { kind: 'progress', done: 1, total: 2, machines: [], choice_waiting: false });
+    const posted = await card(context, made.id, lead.name, { kind: 'progress', stage: 'verify', pass: 1, phase: 'checking', machines: [], choice_waiting: false });
+    assert.equal(posted.status, 202);
+    const stored = JSON.parse(await fs.readFile(path.join(context.state, 'threads', `${made.id}.json`), 'utf8'));
+    assert.equal(stored.pinned.progress.stage, 'verify');
+  });
+});
+
 test('stores an ISO timestamp on every card', async () => {
   await withContext(async (context) => {
     const made = await thread(context);

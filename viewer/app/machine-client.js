@@ -77,6 +77,24 @@ class MachineClient {
     return result.body;
   }
 
+  // Spec "Decline": one synchronous call, ten seconds overall (not merely idle) before the hub
+  // gives up. `sudoCancelTimeout` is a property so a test can shorten it.
+  async sudoCancel(machineName, requestId) {
+    const limit = this.sudoCancelTimeout || 10_000;
+    let timer;
+    const deadline = new Promise((resolve, reject) => {
+      timer = setTimeout(() => reject(new Error('machine timeout')), limit);
+    });
+    try {
+      return await Promise.race([
+        this.call(machineName, `/v1/sudo/${encodeURIComponent(requestId)}/cancel`, 'POST', {}, limit),
+        deadline,
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   async stream(machineName, suffix, method, readable) {
     const machine = await this.state.machine(machineName);
     const secret = await this.secret(machine);
