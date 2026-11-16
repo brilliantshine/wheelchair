@@ -120,3 +120,11 @@ The one failure (`viewer/test/lifecycle.test.js:420`) also fails on the pre-buil
 - Pre-existing failing tests above (lifecycle port race, arrow-through-box) remain.
 
 ## Remediation rounds
+
+### Remediation 1 (verification attempt 1 at `70668d4`: FAIL)
+
+No functional gaps. The verifier saw the font tests 404 because its worktree had no
+`viewer/node_modules`, and it saw the two failures that predate the build. The lead ruled those
+two out of scope, and they are recorded in `docs/known-issues.md` (commit `01ec327`). No code
+changed. Details are in `REMEDIATION-1.md`. Re-verification is attempt 2, with dependencies
+installed first.
