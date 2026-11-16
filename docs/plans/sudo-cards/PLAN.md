@@ -429,7 +429,7 @@ Collin chose "keep going" after three rounds without a clean one; budget reset.
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Root sudo helper: intake/page sockets, sentinel password check, run, page assets, unit tests | `sudo-helper/helper.py`, `sudo-helper/static/`, `sudo-helper/test/` (not `install*`) | standard, gpt (gpt-6.1-terra) | wc-306ee0793e11-worker (medium) | dispatched |
-| T2 | Helper installer + `--uninstall`, fixture test; root `install.sh` missing-helper hint | `sudo-helper/install.sh`, `sudo-helper/test/install-test.sh`, `sudo-helper/test/install-fixtures/`, hint lines in `install.sh`, `install/test/run.sh` | standard, gpt (gpt-6.1-terra) | wc-306ee0793e11-worker-2 (medium) | dispatched |
+| T2 | Helper installer + `--uninstall`, fixture test; root `install.sh` missing-helper hint | `sudo-helper/install.sh`, `sudo-helper/test/install-test.sh`, `sudo-helper/test/install-fixtures/`, hint lines in `install.sh`, `install/test/run.sh` | standard, gpt (gpt-6.1-terra) | wc-306ee0793e11-worker-2 (medium) | done |
 | T3 | Machine: sudo card registration, lead-only, request file, outcome delivery, cancel route | `machine/service.js`, `machine/lib/sudo.js`, `machine/test/`, `machine/API.md`, `machine/AGENTS.md` | standard, gpt (gpt-6.1-terra) | wc-306ee0793e11-worker-3 (medium) | dispatched |
 | T4 | Hub: sudo kind, `sudo-outcome`, `applySudoState`, Decline/Talk presses, thread page card; `cards.md` sudo kind | `viewer/app/{card,cards,routes,threads,machine-client,state,chat}.js`, `viewer/pages/thread.js` + card CSS, `viewer/app/API.md`, `protocol/app/cards.md`, `viewer/test/app-sudo.*` | standard, claude (claude-sonnet-5-5) | wc-306ee0793e11-worker-4 (medium) | dispatched |
 | T5 | Routers and role files: `sudo-helper/AGENTS.md`, root `AGENTS.md` rows, `lead.md`, `sub-lead.md`, `worker.md` | those files | light | | read-through against Spec | not started (after T1–T4) |
@@ -437,3 +437,6 @@ Collin chose "keep going" after three rounds without a clean one; budget reset.
 ## Log
 
 - 2026-11-15 — Sub-lead: decomposed into T1–T5; T1–T4 dispatched in parallel against a shared interface written into every brief (helper config keys, intake API shapes and error texts, machine `/v1/sudo/<id>/cancel` under the service's `/v1` prefix, `WHEELCHAIR_SUDO_INTAKE` socket override, `WHEELCHAIR_SUDO_TEST_ROOT` installer test root).
+- 2026-11-15 — Choice: T2, `sudo-helper/install.sh`: checks Tailscale status before writing any installed file.
+- 2026-11-15 — Choice: T2, `sudo-helper/install.sh`: `--uninstall` needs the same non-root `SUDO_USER` as install.
+- 2026-11-15 — Sub-lead: T2 accepted. `install/test/run.sh` "real wheelchair directory is byte-identical after suite" fails on the feature branch without T2 too (the live hub writes `$HOME/.wheelchair/accounts` while the suite runs); pre-existing, not T2's. ShellCheck reports only SC1091 (info) on the sourced guard.
