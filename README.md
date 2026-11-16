@@ -11,21 +11,25 @@ the idea, the decision log, the spec, every review round, and what got built. Yo
 mid-plan and resume a week later.
 
 The reporting is held to the same standard as the work. Leads write in the style you set, and
-draw a picture whenever the answer has a shape.
+draw a picture when the answer has a shape, as readily as you set in Settings.
 
 ## Using the app
 
 ### First time
 
-1. Run `./install.sh` on the machine that will run the agents (see "Install"). On a
-   headless machine it asks whether to serve the app to your other devices over Tailscale.
-2. Open `https://<machine>.<tailnet>.ts.net/wheelchair/app/` (or run
-   `node viewer/server.js --url` for the bookmark address). Open it once per device; the
-   browser is remembered after that.
+1. On the machine that will run the agents, run `./install.sh --serve` (see "Install").
+   Serving is what starts the app and the service that runs agent sessions. Without
+   `--serve`, a headless machine asks; a machine with a display declines without asking.
+2. Run `node viewer/server.js --url` and open the address it prints on each device. It
+   carries a token that signs the browser in; after that,
+   `https://<machine>.<tailnet>.ts.net/wheelchair/app/` works on its own.
+   `node viewer/server.js --rotate-token` signs every device out.
 3. In **Settings**:
-   - **Accounts**: sign each Claude or GPT account in on the machine. The sign-in opens in
-     the page; paste back the code it gives you.
-   - **Models and preferences**: the model for the lead and for the other agents, and
+   - **Accounts**: press **Sign in** for each Claude or GPT account. Open the link it
+     shows and sign in there. GPT shows a code to enter on that page; Claude may give you
+     a code to paste back into Settings.
+   - **Models and preferences**: the model for the lead and for the other agents;
+     **Reviewers and checkers** (both families, Claude only or GPT only); and
      **Diagrams** (ask, default or high: how readily agents draw a picture).
    - **Writing style**: how leads write to you.
    - **Default project folder** (optional): a folder holding your repos, so New thread can
@@ -45,8 +49,8 @@ draw a picture whenever the answer has a shape.
    bullet removable), asks you to confirm IDEA.md, then asks design questions one card at
    a time. Each question shows the lead's leaning; press an option or type your own answer
    under it. MAP.md, IDEA.md and PLAN.md open from the thread.
-4. **Review.** Fresh reviewers try to break the plan, from the other model family when
-   both are signed in. You only see the progress line, and a question if a real choice
+4. **Review.** Fresh reviewers that never saw the conversation try to break the plan. With
+   **Both families** set, there are two, one Claude and one GPT. You only see the progress line, and a question if a real choice
    comes up.
 5. **Approval.** The approval card lists any serious objection the lead overruled, with
    its reason (**Talk about this** to discuss one), and the Ready check: the machine is
@@ -60,20 +64,19 @@ draw a picture whenever the answer has a shape.
 
 ### Finding your way
 
-- **Needs you** (top bar): every card waiting on you, across threads. Cards are the only
-  things the lead waits on; plain replies are updates.
+- **Needs you** (top bar): open questions, approvals and other cards waiting on you,
+  across threads. The "Take it into planning?" offer and root (`sudo`) requests show only in
+  their thread. Cards are what the lead waits on; plain replies are updates.
 - **Asides**: select text in a lead's message and pick **Ask about this**, **Say it
   simpler** or **Draw it**, or press **Ask about this message**. It opens a side
-  conversation; **This changes my answer** sends what you settled back to the lead.
+  conversation. **This changes my answer** drafts what you settled; edit it and press
+  **Send** to pass it to the lead. **Done, back to …** closes the aside with nothing sent.
 - **Pictures**: the thread's right column lists every picture; **Open full size** shows
   one on its own page.
 - **Features**: every feature by stage, plus your projects and machines.
 - **Agents**: every running session; each opens in a browser terminal.
 - **Restart lead** appears if a thread's lead dies; the new one picks up from the plan
   files. **Archive** stops a thread's sessions and hides it.
-
-Review and verification run cross-family when both `claude` and `codex` are installed. With one,
-the gates still run, with a fresh reviewer that never saw the conversation.
 
 ### What a feature leaves behind
 
@@ -124,7 +127,7 @@ pin. `codex/model.sh set <tier> <model>` switches; nothing switches on its own.
 
 ## The viewer
 
-A Node server with no runtime dependencies, bound to `127.0.0.1`. It serves the graphs, a list of
+A Node server with no runtime dependencies beyond the fonts it serves, bound to `127.0.0.1`. It serves the graphs, a list of
 graphs and plans, and a document reader. By hand:
 
 ```bash
@@ -136,7 +139,7 @@ node viewer/server.js --stop
 A machine can serve the viewer to your other devices over Tailscale: run `./install.sh --serve`,
 or `--no-serve` to decline. This runs it as an always-on `systemd` user service, from this
 checkout's code, at `https://<machine>.<tailnet>.ts.net/wheelchair/`. Open the bookmark once per
-device and it's remembered. `--rotate-token` locks every device out again. Everything, including
+device and it's remembered. `node viewer/server.js --rotate-token` locks every device out again. Everything, including
 dragging boxes, works on a phone.
 
 A serving machine is also the hub for the app at `/wheelchair/app/`: threads with a lead
@@ -161,7 +164,11 @@ next. Start at the root one. `CONTRIBUTING.md` has the conventions and validatio
 
 ## Dependencies
 
-- `claude` or `codex` (v0.146+). Either one alone works, and both unlock the cross-family gates.
-  Codex sessions run through the app like any other.
+- `claude` or `codex` (v0.146+). Either one alone works; both let reviews and checks use the
+  other family. Codex sessions run through the app like any other.
+- `tmux`, which runs every agent session.
+- `git` and the GitHub CLI `gh`, signed in, so threads can push branches and open pull
+  requests.
+- Tailscale, to reach the app from other devices.
 - Node and npm, for the viewer.
 - Playwright, pinned in `viewer/package.json` and installed by `install.sh`, for the browser tests.
