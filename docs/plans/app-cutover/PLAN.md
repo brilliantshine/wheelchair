@@ -434,6 +434,8 @@ idempotence case is the in-worktree proof.
 | T5 | Remove old stage rules, port flow trigger to lead.md, reword references and routers (§1, §3 D18, §5, §6) | protocol text, routers, README, CONTRIBUTING, known-issues | claude standard (claude-sonnet-5-5) | wc-1cff24e4cc7d-worker-5 | §5 greps, protocol-rules test | done |
 | R1-1 | Remediation 1: `--json` level is null when any present file lacks a block; sensitivity.md:89 | sensitivity/set.sh, sensitivity/test/run.sh, protocol/sensitivity.md | codex standard (gpt-6.1-terra) | wc-1cff24e4cc7d-worker-6 | sensitivity, machine suites | done |
 | R1-2 | Remediation 1: retired-wrapper match requires an absolute path | install.sh:66, install/test/run.sh | codex standard (gpt-6.1-terra) | wc-1cff24e4cc7d-worker-7 | install suite | done |
+| R2-1 | Remediation 2: wrapper match is the rendered `Read` line, checkout paths with spaces allowed | install.sh:66, install/test/run.sh | codex standard (gpt-6.1-terra) | wc-1cff24e4cc7d-worker-8 | install suite | in progress |
+| R2-2 | Remediation 2: diagram-sensitivity test stops fakes when the hub fails to start | viewer/test/app-diagram-sensitivity.test.js | claude light (claude-haiku-5-5) | wc-1cff24e4cc7d-worker-9 | viewer node | in progress |
 
 ## Log
 
