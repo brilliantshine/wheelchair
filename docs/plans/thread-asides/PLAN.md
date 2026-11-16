@@ -621,6 +621,7 @@ Round 9 is clean: no blocking or major finding upheld.
 | R4-1 | Remediation 4: machine tombstones a DELETE of an unknown turn, so a late POST starts nothing (archive race, second fix) | `machine/lib/aside-turns.js`, `machine/test/aside-turns.test.js`, `machine/API.md`, one test in `viewer/test/app-asides.test.js` | standard at xhigh effort (rung 1: R3-1 was one failed try on this gap), gpt (gpt-6.1-terra) | wc-54ce860aef63-worker-13 | REMEDIATION-4.md | done (merged) |
 | R5-1 | Remediation 5 (Decision 19): never acknowledge a cancelled turn; test of verifier 5's case | `viewer/app/asides.js`, `viewer/test/app-asides.test.js` | standard, gpt (gpt-6.1-terra) | wc-54ce860aef63-worker-14 | REMEDIATION-5.md | done (merged) |
 | R6-1 | Remediation 6: never acknowledge a turn no aside holds, whatever its state (Decision 19 applied fully; corrects R5's brief) | `viewer/app/asides.js`, `viewer/test/app-asides.test.js` | standard, gpt (gpt-6.1-terra) | wc-54ce860aef63-worker-15 | REMEDIATION-6.md | done (merged) |
+| R7-1 | Remediation 7: archive saves first with `pending_cancels`, hub retries cancels on sweep and start (Decision 20); aside panel read-only when archived | `viewer/app/threads.js` (archive), `viewer/app/asides.js`, `viewer/app/hub.js` (init/timer), `viewer/pages/aside.js`, `viewer/test/app-asides.{test,spec}.js`, `viewer/app/API.md` | standard, gpt (gpt-6.1-terra) | — | REMEDIATION-7.md | in progress |
 
 ## Log
 
