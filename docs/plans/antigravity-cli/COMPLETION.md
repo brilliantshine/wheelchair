@@ -1,7 +1,7 @@
 ---
 slug: antigravity-cli
 date: 2026-11-16
-implemented-by: "standard, gpt-6.1-terra (T0, T0b, T1, T2, T3, T4, T5, T6, T9); light, gpt-6-luna (T7, T8). Sub-lead: claude-opus-5-5."
+implemented-by: "standard, gpt-6.1-terra (T0, T0b, T1, T2, T3, T4, T5, T6, T9, R1-1, R1-2, R2-1 a1; R2-1 a2 at effort high); light, gpt-6-luna (T7, T8). Sub-lead: claude-opus-5-5."
 verified-by: []   # Stage 4 appends; Stage 3 leaves this empty.
 ---
 
@@ -211,3 +211,18 @@ Appended by Stage 4 loops; never erase earlier content.
   - Restarting `agy` after a completed first run showed no first-run screen (`reports/R1-2.md`).
 - **Validation after merging R1-2:** `bash machine/test/run.sh` → `# tests 109`, `# pass 109`, `# fail 0`. Real `~/.gemini` checksums are unchanged before and after.
 - **Residual:** the R1-2 scratch HOME `/tmp/r2-agy-tegTUEUu/home` holds a second Antigravity OAuth token, left for Collin to delete as the lead asked. The first-run choices are Google's defaults except data sharing, which is turned off.
+
+### Remediation 2
+
+**Verification attempt 2** (gpt-6.1-sol, commit d4a2146): FAIL, one new gap (`REMEDIATION-2.md`). The Settings sign-in card's 30-second no-link timeout also fired after the code was pasted. That stopped the polls that drive `agy`'s first-run screens, so a normal-length sign-in failed.
+
+- **R2-1 attempt 1** (standard, gpt-6.1-terra, effort medium): correct `settings.js` change, but its new browser test raced the card's 2-second auto-close and hit the fails-twice guardrail.
+- **R2-1 attempt 2** (standard, gpt-6.1-terra, effort **high**, one escalation step; rewritten brief) applied the reviewed change and wrote stable tests:
+  - The 30-second limit applies only before the first link; after it, a 10-minute finish limit counts from the first link (`viewer/pages/settings.js:848`, `:951`).
+  - A link-less poll after the first link shows "Finishing sign-in on <machine>…" and keeps polling (`:983`).
+  - Tests: `viewer/test/app-accounts.spec.js` "Antigravity keeps polling while finishing a slow sign-in" (success is proved by the card closing itself) and "Antigravity sign-in gives up after the finish limit".
+- **Validation after merging:**
+  - `npx playwright test test/app-accounts.spec.js --repeat-each 2` → 172 passed (sub-lead re-run).
+  - `npm --prefix viewer run test:browser` → 624 passed, 2 skipped.
+  - `node --test viewer/test/*.test.js` → 447/448; the one failure is the pre-existing lifecycle test.
+  - `bash machine/test/run.sh` → 109/109.
