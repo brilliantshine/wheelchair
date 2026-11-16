@@ -605,7 +605,7 @@ Round 9 is clean: no blocking or major finding upheld.
 | T5 | `protocol/app/aside.md` and the `lead.md` line (§4 aside prompt, §8) | `protocol/app/aside.md`, `protocol/app/lead.md`, `protocol/app/AGENTS.md` | light, gpt (gpt-6-luna) | wc-54ce860aef63-worker-4 | read-through against §4/§8 | done (merged) |
 | R1-1 | Remediation 1: stranded queue after hub restart, stale waiting-on line, Think harder with Heavy off, Ask input focus | `viewer/app/{asides,hub,routes}.js`, `viewer/pages/aside.js`, `viewer/test/app-asides.{test,spec}.js`, `viewer/app/API.md` | standard, gpt (gpt-6.1-terra) | wc-54ce860aef63-worker-10 | REMEDIATION-1.md | done (merged 031dedc) |
 | R2-1 | Remediation 2: no machine call under the thread lock; one pump per thread; routes don't await the pump | `viewer/app/asides.js`, `viewer/app/hub.js` (timer), `viewer/app/routes.js` (aside block), `viewer/test/app-asides.test.js` | standard, gpt (gpt-6.1-terra) | wc-54ce860aef63-worker-11 | REMEDIATION-2.md | done (merged 7087567) |
-| R3-1 | Remediation 3: no POST after archive; cancel machine turns no aside holds | `viewer/app/asides.js`, `viewer/test/app-asides.test.js` | standard, gpt (gpt-6.1-terra) | — | REMEDIATION-3.md | in progress |
+| R3-1 | Remediation 3: no POST after archive; cancel machine turns no aside holds | `viewer/app/asides.js`, `viewer/test/app-asides.test.js` | standard, gpt (gpt-6.1-terra) | wc-54ce860aef63-worker-12 | REMEDIATION-3.md | in progress |
 
 ## Log
 
