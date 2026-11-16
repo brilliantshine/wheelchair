@@ -265,3 +265,41 @@ pumps, and discard archived results": with the machine GET held open, five timer
 one GET (max concurrency 1); `close {outcome:"done"}` answers 200 within 1 s and the aside is
 closed on disk; the route's pump causes exactly one more pass (2 GETs); a result released
 after the thread is archived adds nothing to history. The port test is the known one.
+
+### Remediation 3 — 2026-11-15
+
+Verification attempt 3 (GPT verifier, commit `fe1d2d4`) passed the Remediation 2 gap and
+failed on one new gap that Remediation 2's lock split introduced: a dispatch POST could land
+after archive and start a turn the archived thread no longer tracks. The cause was the
+Remediation 2 brief (POST on 404 without a recheck). Gap and brief: `REMEDIATION-3.md`. One
+task, R3-1, built on GPT (standard, gpt-6.1-terra), merged at the commit this section is
+committed with. Worker choices: none.
+
+| Change | Where |
+|--------|-------|
+| Before POSTing a dispatching turn, re-read the thread under the lock (no machine call inside it); POST only if not archived and the aside still holds that dispatching turn | `viewer/app/asides.js`, `call` (`const held = await hub.withThread(...)`) |
+| Apply phase: a result for a turn no aside holds (or on an archived thread) is not written; `running` → DELETE then ack on the machine, `ok`/`failed` → ack | `viewer/app/asides.js`, `pass` (`cancels`, and the loop after the lock) |
+
+Validation, run by the sub-lead on the R3-1 branch (`9fa20ec`):
+
+```
+$ node --test viewer/test/app-asides.test.js     (three runs)
+# pass 13 # fail 0
+# pass 13 # fail 0
+# pass 13 # fail 0
+$ node --test viewer/test/*.test.js
+not ok 173 - asset names outside pages/ and vendor/, or climbing out, are refused
+not ok 236 - a starter that loses the freed port registers through the new holder
+# tests 354
+# pass 352
+# fail 2
+$ node --test viewer/test/app-pages.test.js      (two runs, alone)
+# pass 8 # fail 0
+# pass 8 # fail 0
+```
+
+The port test is the known one; the asset test is in a file R3-1 didn't touch and passed alone
+twice (load average 15 at the time). New test "archive races compensate claimed turns without
+changing history" covers: archive while a dispatching GET is held → no POST; archive landing
+between recheck and POST → DELETE and ack for that turn, history unchanged; an `ok` result for
+a turn no aside holds → acked, nothing added.
