@@ -101,7 +101,7 @@ test.describe('thread page layout', () => {
       await page.evaluate(() => window.scrollTo(0, 0));
       await page.evaluate(() => window.scrollTo(0, 600));
       await expect(archive).toBeInViewport({ ratio: 1 });
-      await expect(page.locator('#head a', { hasText: 'Sessions' })).toHaveAttribute('href', '/wheelchair/app/sessions');
+      await expect(page.locator('#head a', { hasText: 'Agents' })).toHaveAttribute('href', /^\/wheelchair\/app\/agents/);
       await expect(page.locator('#head a', { hasText: 'Open in terminal' })).toHaveAttribute(
         'href', `/wheelchair/app/terminal?name=${encodeURIComponent(ctx.lead(made.id).name)}`);
       await archive.click();
