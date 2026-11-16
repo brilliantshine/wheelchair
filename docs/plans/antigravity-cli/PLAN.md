@@ -38,6 +38,11 @@ None open.
 | 10 | Turn end comes from `agy`'s `Stop` hook; the hook file is written per account (`<config>/config/hooks.json`, merged, never overwritten) and calls `machine/hook.sh agy`, which takes the session name from `WHEELCHAIR_SESSION_NAME` in the session's environment | Hooks are global per config dir, not per session; the hook already exits 0 when no session token is set, so Collin's own `agy` runs are unaffected | defaulted |
 | 11 | Model pins for `gemini` start from the live check's `agy models` list; until pinned, a slot is "not used" (`model.sh` exit 3), so nothing lands on Antigravity by accident | Models are only listed after sign-in | defaulted |
 | 12 | `review_families` keeps the stored value `both` (shown as "Mix families") and gains `gemini` as a single-family choice | Saved settings stay valid | defaulted |
+| 13 | Supersedes 11: `DEFAULTS.gemini` holds the real models Task 0 names, so Antigravity becomes eligible as soon as an account is signed in; being last in `worker_order` is what keeps it from taking work first. A slot is "not used" only when pinned `none` | `model.sh` `cell()` falls back to DEFAULTS, so an unpinned slot is never "not used" (`codex/model.sh:118-119`) | review-round-1 |
+| 14 | Supersedes 7's migration: only `worker_order` gets missing providers appended at load; `lead_order` is left as saved, and reaches Antigravity through its trailing `any` when it has one | Appending before `any` would make `any` redundant and stop it following `worker_order` (`viewer/app/balancer.js:51`) | review-round-1 |
+| 15 | `agy` permission prompts are found by watching the pane of every ready `agy` session (not by a hook, since `agy` has none for prompts) | Ready sessions are otherwise only polled once a prompt is already open (`machine/service.js:546-551`) | review-round-1 |
+| 16 | Hooks go per session first: Task 0 checks whether `agy --settings <file>` loads a `Stop` hook. If it does, the adapter writes a settings file per session (as Claude does, `machine/adapters/claude.js:18-22`) with the session name as the hook's argument, and Decision 10's global hook file, its merge, `prepare(dir)`'s hook write and `WHEELCHAIR_SESSION_NAME` are all dropped. Decision 10 is the fallback only if it doesn't | Avoids writing into Collin's own `~/.gemini/config/hooks.json` | review-round-1 |
+| 17 | Ready keeps checking only the thread's own CLI. For a Claude- or Codex-led thread, workers reach Antigravity only when placement already found a signed-in Antigravity account (`viewer/app/balancer.js` `signedIn`), so no separate Ready line is needed. The IDEA bullet means threads whose CLI is `agy` | Keeps the Ready card about what the thread itself needs | review-round-1 |
 
 ## Spec
 
@@ -63,7 +68,8 @@ to the lead, who posts a card) and records real output under
 3. Account isolation (Decision 9): try each candidate variable, check that a second
    signed-out config dir stays signed out and the first stays signed in.
 4. `agy models` output, signed in and signed out (exit code and text).
-5. An interactive run in tmux with a `Stop` hook configured: the idle-prompt screen
+5. Whether `agy --settings <file>` with a `hooks` key fires a `Stop` hook (Decision 16);
+   if not, the global hooks file instead. Then an interactive run in tmux with that hook: the idle-prompt screen
    (ready text), the hook's stdin JSON, and the transcript file at `transcriptPath`.
 6. A permission prompt screen under `--mode auto`, and confirmation that `--mode plan`
    cannot edit files (for reviewers).
@@ -102,14 +108,14 @@ after it succeeds.
   preflight: false, typesRoleMessage: true }`.
 - `settings.js`: `PLANS.gemini = { unknown: 1, pro: 1, ultra: 4 }`; defaults gain account
   `default-gemini`; `worker_order` default `['gpt', 'claude', 'gemini']`; at load, any
-  provider missing from a saved `worker_order` or `lead_order` (before a trailing `any`) is
-  appended (Decision 7). `review_families` accepts `both | claude | gpt | gemini`.
+  provider missing from a saved `worker_order` is appended at its end. `lead_order` is not
+  migrated (Decision 14). `review_families` accepts `both | claude | gpt | gemini`.
 - `balancer.js`: no logic change beyond accepting `gemini` in constraints; check that the
   `both`/single-family branch and `--not-provider` pick work for three families
   (excluding one provider leaves two; the first available in order wins).
 - `sessions.js`: effort for `gemini` uses `agy`'s set (`low…max`); propagate the bound
   conversation id (new session field `agy_conversation_id`) the way `codex_thread_id` is.
-- `ready.js`: unchanged logic; it already checks the thread's own CLI. Status must carry
+- `ready.js`: unchanged logic; it already checks the thread's own CLI (Decision 17). Status must carry
   `agy` (below).
 - `routes.js`: accept `gemini` wherever provider, effort and review-family values are
   validated (`routes.js:193-210,240-242,337-344`).
@@ -133,11 +139,15 @@ after it succeeds.
 New `machine/adapters/agy.js`, registered in `adapters/index.js` as `agy`:
 
 - `provider: 'gemini'`; `loginEnv(dir)` per Decision 9 (empty for the default account).
-- `seed(dir, id)`: common seed (links `AGENTS.md`? only if Task 0 shows `agy` reads an
-  instruction file from its config dir; otherwise none) and writes the account's
-  `hooks.json` (Decision 10). The default account's hook file at
-  `~/.gemini/config/hooks.json` is merged under one key, `wheelchair`, on every session
-  start; other keys are left untouched.
+- `seed(dir, id)`: the common seed (no instruction-file link unless Task 0 shows `agy`
+  reads one from its config dir).
+- New optional adapter hook `prepare(dir)`, called by `startNamed` and `startLogin` for
+  **every** account, the default one included (today `seed` runs only when `dir` is set,
+  `machine/service.js:464-468`). For `agy` it writes the hook file (Decision 10): the
+  account's `<config>/config/hooks.json`, or `~/.gemini/config/hooks.json` for the default
+  account, merging one top-level key `wheelchair` and leaving every other key untouched.
+  An unreadable existing file is left alone and the start fails with "Couldn't update
+  Antigravity's hooks file".
 - `command`: `agy` + model (`--model`), effort (`--effort`), access: reviewer `--mode
   plan`; otherwise `--dangerously-skip-permissions` when `permission_mode` is `bypass`,
   else `--mode auto`. The machine adds `WHEELCHAIR_SESSION_NAME=<name>` to every
@@ -145,9 +155,13 @@ New `machine/adapters/agy.js`, registered in `adapters/index.js` as `agy`:
 - `firstMessage`: Codex's form, `[wc:role] <role prompt>
 
 <brief>`.
-- `readyText`/`answerPrompts`: from Task 0's idle and permission screens. A permission
-  prompt seen in the pane is reported as a `prompt` event so the app's permission card
-  appears.
+- `readyText`/`answerPrompts`: from Task 0's idle screen and startup screens.
+- New optional adapter hook `promptText(pane)`, true when Task 0's permission-prompt screen
+  is showing. `pollReadiness` (`machine/service.js:546-551`) also checks every `ready`
+  session without `prompt_open` whose adapter has `promptText`; on a match it handles the
+  event `{ type: 'prompt', notification_type: 'permission_prompt' }` through the same path
+  a hook event takes (`service.js:820-823`), which sets `prompt_open` and shows the app's
+  permission card. The existing `checkPrompt` clears it once `readyText` is true again.
 - `onTurnEnded`: bind the first conversation whose `lastUserInput` starts with
   `[wc:role]` (as Codex does), store `agy_conversation_id` and `source_transcript` from
   `transcriptPath`; ignore other conversations.
@@ -165,19 +179,26 @@ New `machine/adapters/agy.js`, registered in `adapters/index.js` as `agy`:
   does not print "Please sign in".
 - `asideArgv`: `agy -p --output-format json --conversation <from> --model … [--effort …]`,
   plus `--mode plan` for read-only asides and `--dangerously-skip-permissions` for full
-  access. If Task 0 shows `--conversation` appends rather than forks, `aside-turns.js`
-  refuses fork-mode asides for `agy` with "Side conversations aren't available on
-  Antigravity sessions yet" (Decision 5).
+  access.
+- `machine/lib/aside-turns.js`: `validate` accepts provider `gemini` (`:38`); `run` picks
+  the adapter by provider through a map `{ claude: 'claude', gpt: 'codex', gemini: 'agy' }`
+  (`:72`), not a two-way ternary; a `gemini` branch parses `agy`'s JSON output from the
+  Task 0 fixture into `reply`, `conversation_id`, `error` and `limit`, like the Claude and
+  Codex branches (`:99-107`). If Task 0 shows `--conversation` appends rather than forks,
+  `validate` refuses `gemini` with mode `fork` with "Side conversations aren't available
+  on Antigravity sessions yet" (Decision 5). Tested on the fixture in
+  `machine/test/aside-turns.test.js`.
 - `service.js`: `status()` adds `agy: cliStatus('agy', …)`; the launch error text and
   recovery's CLI inference include `agy` (`service.js:443-444,462-463,940-954,1049`).
-- `hook.sh`: new case `agy`: payload from stdin; session name from argument 2, else
-  `WHEELCHAIR_SESSION_NAME`. `lib/hook-post.js` passes it to the `agy` adapter.
+- `hook.sh`: new case `agy`: payload from stdin; session name from argument 2 (and, only
+  under Decision 10's fallback, from `WHEELCHAIR_SESSION_NAME` when argument 2 is absent). `lib/hook-post.js` passes it to the `agy` adapter.
 
 ### Model pins (codex/model.sh)
 
 `PROVIDERS` gains `gemini`; pin lines `gemini.<slot> = <model> [@effort]` with efforts
 `low…max`; `DEFAULTS.gemini` from Task 0's `agy models` (Decision 11): light, standard,
-heavy, critical and lead each get the model Task 0 names, written into the Log. GPT's
+heavy, critical and lead each get the model Task 0 names, written into the Log (Decision
+13: these are real defaults, not `none`). GPT's
 model discovery and effort ceiling are untouched. Usage text and `check`/`show --json`
 include `gemini`.
 
@@ -215,7 +236,8 @@ bash install/test/run.sh
 ```
 Live (Task 0 machine): sign in an Antigravity account from Settings on a phone-width
 browser, start a worker with `--provider gemini`, see its turns in the thread and its
-turn end noticed; open an aside on it.
+turn end noticed; open an aside on it if Task 0 found `--conversation` can fork,
+otherwise check the aside is refused with the plain message.
 
 ## Accepted Risks
 
@@ -232,6 +254,16 @@ turn end noticed; open an aside on it.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | major | Unpinned gemini slots can't be both "not used" and defaulted | upheld | Decision 13; Model pins |
+| mechanics | major | Appending providers before `lead_order`'s `any` breaks its inheritance | upheld | Decision 14; Hub settings.js |
+| mechanics | major | Default account never gets `seed`, so no Stop hook | upheld | `prepare(dir)` for every account |
+| mechanics | major | Permission prompts during turns go unseen | upheld | Decision 15; `promptText` polling |
+| mechanics | major | Asides omit gemini validation, adapter choice and parsing | upheld | aside-turns.js bullet |
+| intent | major | Per-session `--settings` hooks not considered; global hook write may be unneeded | upheld | Decision 16; Task 0 item 5 |
+| intent | major | Decision 11 vs DEFAULTS contradiction | upheld | Same as mechanics finding; Decision 13 |
+| intent | major | Lead-order append rewrites GPT order | upheld | Same as mechanics finding; Decision 14 |
+| intent | minor | Ready meaning narrower than IDEA bullet | upheld | Decision 17 |
+| intent | minor | Live aside check can't pass if asides are refused | upheld | Validation made conditional |
 
 ## Prior Work
 
