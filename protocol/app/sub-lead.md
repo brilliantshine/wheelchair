@@ -65,7 +65,7 @@ looks.
   to keep a task cheap is good; assuming the worker will work it out is not.
 - **Which family.** Start interface, frontend and other taste-sensitive work with
   `--provider claude`. The hub holds it until Claude has room, including while Claude is
-  signed out on that machine, and sends it elsewhere only when Claude is below its margin.
+  signed out on that machine, and sends it elsewhere only when Claude is below its margin and workers are ticked as held back in Settings.
   Other work passes no provider flag.
 - Heavy and Critical are not implementation tiers. A brief reaches one only as an
   escalation, below.

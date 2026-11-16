@@ -1,0 +1,31 @@
+# Map: provider placement and usage settings
+
+Checked against: `e9aca3d5b03c91feb80903ccb6555ae98f2543ce` (origin/main)
+Files covered: `viewer/app/balancer.js`, `viewer/app/usage.js`, `viewer/app/providers.js`, `viewer/app/sessions.js`, `viewer/app/hub.js`, `viewer/app/settings.js`, `viewer/app/routes.js`, `viewer/app/API.md`, `viewer/pages/settings.js`, `protocol/app/lead.md`, `protocol/app/sub-lead.md`, `viewer/test/app-balancer.test.js`, `viewer/test/app-usage.test.js`, `viewer/test/app-accounts.spec.js`, `viewer/test/app-settings.spec.js`, `viewer/test/app-hub.test.js`, `viewer/test/app-machines.test.js`.
+
+## Flow
+
+```text
+Settings -> saved balancing and role tiers -> session start -> provider and account choice -> machine start
+                                                   | no room
+                                               waiting -> retry choice -> machine start
+usage readings and machine sign-in -> forecast and account ranking -> choice
+```
+
+1. Settings defaults to Claude then any for new leads, GPT then Claude for other roles, soonest account, 10% left for the user, 25% warning, save Claude on and margin 5%; reviewer and verifier tiers default to heavy and mapper to standard (`viewer/app/settings.js:25-27`). Loading normalizes balancing keys individually, falling back on defaults for invalid or missing values, and merges other-agent tiers with defaults (`viewer/app/settings.js:171-190`). `GET /settings` describes these values; `PUT /settings/balancing` accepts only `BALANCING` keys with valid values, including finite 0–100 numbers and a boolean checkbox; preferences separately update the three other-agent tiers (`viewer/app/routes.js:143,176-179,235-240`; `viewer/app/settings.js:199-203,256`; `viewer/app/API.md:74-80`).
+2. The Usage panel copies balancing values into a draft and saves worker order, account mode, leave, warning, checkbox and margin together; the Models panel saves lead order separately, while Other agents tier selectors save immediately through preferences (`viewer/pages/settings.js:192-205,351-356,1039-1047,1069-1077,1119-1135,1145-1151`). The usage bars show forecast and account details (`viewer/pages/settings.js:1085-1116,1136-1142`).
+3. A start checks the worker tier ceiling, then calls `choose`; leads and sub-leads use the lead model slot, reviewers/verifiers/mappers their saved role tier, and workers their requested tier (`viewer/app/sessions.js:74-83`; `viewer/app/balancer.js:11-18`). Claude maps to the Claude CLI and is the only provider marked `saveForLeads`; GPT maps to Codex (`viewer/app/providers.js:3-5`). A new lead uses lead order with `any` expanded to worker order; an existing lead or sub-lead uses the thread provider; other roles use worker order. Unused model cells are skipped (`viewer/app/balancer.js:23-29,35-41`).
+4. For each provider in that order, placement forecasts across its accounts and ranks accounts signed in on the target machine. Expired windows become empty; a paused, signed-out, currently limited or sufficiently exhausted account has no room. Ranking uses soonest refill, most weighted room with live sessions as a tie-breaker, or the last chosen eligible account (`viewer/app/usage.js:10-21,48-86`; `viewer/app/balancer.js:35-41`). The weekly forecast weights active accounts, estimates pace from the first refill and a 168-hour week, and projects remaining capacity at that refill; no refill or reading means the margin test is false (`viewer/app/usage.js:23-38`).
+5. For every role except lead and sub-lead, Claude below the shared margin is excluded; the checkbox separately moves Claude to the end of normal order. An explicit available provider is picked first unless below margin. Worker `provider` and `not_provider` are strict except that a below-margin requested Claude may fall back; reviewers and verifiers may fall back with a note. Only those three roles may pass one valid provider constraint, never both (`viewer/app/balancer.js:19-21,40-59`).
+6. If nothing can be selected, the wait estimate uses the earliest account's latest active limit or exhausted-window reset, or one minute if none is known. A strict worker request can remain pinned; waiting starts persist their original input, identity and queue (`viewer/app/balancer.js:59-72`; `viewer/app/sessions.js:83-93`). Retry reevaluates saved inputs, including on a timer, startup and new readings (`viewer/app/sessions.js:488-495`; `viewer/app/hub.js:53-56,98`). On selection, GPT preflight may cause reselection or a 409; the chosen account is recorded, model resolved, and the machine gets provider CLI and account (`viewer/app/sessions.js:95-122,129-156`).
+7. Usage summary forecasts per provider, independently compares current remaining capacity with `notify_below`, and includes ranked account details and machine status. Alerts use amber or below-notify and are acknowledged per provider and local week; the margin is not the alert threshold (`viewer/app/usage.js:88-112`; `viewer/app/API.md:82-84`).
+
+## Protocol and checks
+
+Lead guidance starts the intent reviewer with Claude preference, the mechanics reviewer avoiding the selected provider, and uses no constraint for the second reviewer if the first waits; verifiers avoid the lead's provider (`protocol/app/lead.md:99,176-180,288`). Sub-lead guidance pins critical workers to Claude with the margin exception and otherwise uses no provider flag (`protocol/app/sub-lead.md:67-75`).
+
+Placement tests cover ranking, strict versus preferred constraints, waiting, and a worker below margin versus a lead (`viewer/test/app-balancer.test.js:31-95,98`). Usage tests cover forecast, no reset, room, weighted forecast, margin boundary and validation (`viewer/test/app-usage.test.js:20-33,53-62,80-93`). Browser tests assert the exact balancing payload (`viewer/test/app-accounts.spec.js:225-235`); other-agent tier saves and provider cells are covered in `viewer/test/app-settings.spec.js:89` and `viewer/test/app-hub.test.js:928-989`. The CLI constraint forwarding is tested at `viewer/test/app-machines.test.js:129-159`.
+
+## What I did not look at
+
+The machine service's internal CLI launch and usage-reading collection, account sign-in implementation, unrelated settings panels, or tests outside the named placement, usage, settings and provider-constraint paths.
