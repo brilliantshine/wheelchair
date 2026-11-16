@@ -374,8 +374,11 @@ a worker with `--provider gemini` and check its `result` card arrives.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T0 | Live check: sign `agy` in, record login, credentials, isolation, models, hooks, transcript, prompts, fork, limits | `machine/test/fixtures/agy/`, `reports/T0.md` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker (t0-a1) | fixtures listed, redaction grep empty, `agy models` signed in | in progress |
 
 ## Log
+
+- 2026-11-16: Build started. T0 dispatched first; every other task waits on its report.
 
 - 2026-11-16: installed agy 1.5.9 (`~/.local/bin`, PATH line appended to `~/.profile`). Help shows `-p`, `--output-format stream-json`, `--conversation`, `--dangerously-skip-permissions`, `--mode`, `--model`, `--effort`, `models` and `acp` subcommands.
 
