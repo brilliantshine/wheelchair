@@ -389,6 +389,8 @@ a worker with `--provider gemini` and check its `result` card arrives.
 
 ## Log
 
+- 2026-11-16 — Verification attempt 1 started on f64fbe7: one top-tier verifier, `--not-provider gpt` (review_families `both`, every builder on gpt). Hub note: "Could not avoid gpt; using gpt." It runs as wc-9340ecf1256c-verifier on gpt-6.1-sol, so this check isn't cross-family.
+
 - 2026-11-16 — T9 accepted (app-settings 11/0; viewer unit 447/448 with only the baseline lifecycle failure; browser 620 passed, 2 skipped). Choices: none. All tasks done; COMPLETION.md written; status → verifying.
 
 - 2026-11-16 — Lead chose (b) for the worker-order removal conflict: Decision 19. T9 builds it.
