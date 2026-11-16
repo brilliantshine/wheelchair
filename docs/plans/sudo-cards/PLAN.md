@@ -322,7 +322,7 @@ Round 2, GPT lane (mechanics), reviewed the text before the intent lane's fixes:
 
 ### Round 3 — 2026-11-15
 
-**Lanes:** pending.
+**Lanes:** intent — claude; mechanics — gpt; cross-family: yes.
 
 **Changed since Round 2:**
 - Password check: `sudo -k -v` and `sudo -k -l -u root`, sentinel prompts, fail closed, `sudo -K` (Decision 19).
