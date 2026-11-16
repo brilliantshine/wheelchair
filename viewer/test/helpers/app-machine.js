@@ -202,9 +202,9 @@ function startSession(response, sessions, input) {
 }
 
 function submit(response, sessions, url, input, submitOk) {
-  if (!submitOk) return send(response, 503, { error: 'temporarily unavailable' });
   const name = decodeURIComponent(url.pathname.split('/')[3]);
   const session = sessions.get(name);
+  if (!submitOk || session.submitFail) return send(response, 503, { error: 'temporarily unavailable' });
   session.submits ||= [];
   session.submits.push(input.text);
   return send(response, 200, { ok: true });
