@@ -331,8 +331,10 @@ class MachineService {
   // of who is dead can be wrong or missing (a queued start, a lost response), so this service, which
   // sees every session, has the final say. A worker still in tmux, or tmux unknown, refuses.
   refuseSharedWorktree(worktree, sessionName) {
+    // A worker recorded as stopped still counts: a failed kill-session records stopped too, so only
+    // tmux can say it is gone.
     const others = Object.values(this.sessions).filter(other => other.role === 'worker' && other.name !== sessionName
-      && other.status !== 'stopped' && other.worktree && path.resolve(other.worktree) === worktree);
+      && other.worktree && path.resolve(other.worktree) === worktree);
     const conflict = (this.startingWorktrees.has(worktree) && 'another start') || (() => {
       if (!others.length) return null;
       const live = this.liveTmux();

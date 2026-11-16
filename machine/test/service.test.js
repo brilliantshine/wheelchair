@@ -507,6 +507,11 @@ test('a replacement worker is refused while another worker still runs in its wor
       await withEnv({ FAKE_LS_ERR: 'server exited unexpectedly' }, async () => {
         assert.equal((await replace('wc-t-worker-2')).status, 409);
       });
+      // Recorded as stopped while tmux still has it (a failed kill) is still in use.
+      env.instance.sessions[first.name].status = 'stopped';
+      await withEnv({ FAKE_SESSIONS: first.name }, async () => {
+        assert.equal((await replace('wc-t-worker-2')).status, 409);
+      });
       assert.equal((await replace('wc-t-worker-2')).status, 201);
       await withEnv({ FAKE_SESSIONS: 'wc-t-worker-2' }, async () => {
         const second = await replace('wc-t-worker-3');
