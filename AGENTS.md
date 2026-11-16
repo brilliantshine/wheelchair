@@ -55,7 +55,7 @@ Two rules follow, and between them they cover most of what can go wrong here:
 | `sensitivity/` | [AGENTS.md](sensitivity/AGENTS.md) | `set.sh`, the only writer of each present harness's global instruction file |
 | `seen/` | [AGENTS.md](seen/AGENTS.md) | `hook.sh`, the per-turn hook both harnesses call; `wording.sh`, the only writer of the wording list; `set.sh`, the installer's writer of both harnesses' hook entry |
 | `install/` | — | `guard.sh`, the canonical-clone check `install.sh`, `seen/set.sh` and `sensitivity/set.sh` source before writing (a linked worktree or anything under `~/.local/state/wheelchair/worktrees` is refused, exit 3, unless `WHEELCHAIR_ALLOW_WORKTREE=1`); `test/run.sh`, the installer fixture suite. Temp homes and command shims only; real harness and machine state stay untouched |
-| `test-support/` | — | `run-dir.js`, the shared run folder for the JavaScript test suites: every temp folder a machine or viewer test makes lives in one per-process folder, removed at exit and swept when its owner is gone; `test/`, its own suite |
+| `test-support/` | — | `run-dir.js`, the shared run folder for the JavaScript test suites: every temp folder a machine or viewer test makes lives in one per-process folder, removed at exit and swept when its owner is gone; `test/`, its own suite; `smoke/` (`harness.js`, `run.sh` free smoke suite, `live.sh` live checks) |
 | `codex/` | [AGENTS.md](codex/AGENTS.md) | `prompts/`, the Codex CLI wrappers, same convention as `skills/`, one line each; `preflight.sh`, the login check that also prints the model heads-up; `model.sh`, the GPT model pins' reader and writer; and `test/`, its fixture suite |
 | `docs/` | — | `plans/<slug>/` per feature; `proposals/<name>/`, ideas written outside the workflow and waiting for `/adopt`; `known-issues.md`, failures recorded but not yet fixed. State, not rules — nothing here is a contract |
 | `machine/` | [AGENTS.md](machine/AGENTS.md) | the per-machine agent session service the app's hub drives: `service.js` (sessions in tmux, worktrees, git for agents, transcript copies, spools), `hook.sh` and `lib/hook-post.js` (the CLIs' turn-end and prompt hooks), `API.md` (its route contract), `test/run.sh`. Runs as the `wheelchair-machine` user service, never read as guidance |
@@ -112,6 +112,8 @@ bash machine/test/run.sh              # the machine service, with fake tmux, CLI
 python3 -m unittest discover -s sudo-helper/test   # the root sudo helper, with shim runuser and sudo
 bash sudo-helper/test/install-test.sh              # the helper's installer, against a temp root
 node --test test-support/test/*.test.js     # the shared test run folder
+bash test-support/smoke/run.sh        # hearth only
+bash test-support/smoke/live.sh       # hearth only, costs model turns
 ./install.sh && ./install.sh          # canonical clone only: refused from a worktree; elsewhere, install/test/run.sh
 node --test viewer/test/*.test.js     # unquoted glob; works on Node 20 and 26
 npm --prefix viewer run test:browser  # Chromium and Firefox; fails loudly if either is missing

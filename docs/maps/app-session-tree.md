@@ -22,3 +22,5 @@ thread -> lead -> child start -> started_by recorded -> child result -> starter 
 
 - Full provider balancing, usage and retry algorithms, or CLI hook payload parsing beyond their handoff.
 - Machine archive, stopped-session retention, and session migrations beyond recovery above.
+
+> Current risk-flow recheck at `635c45f07991f31191f2ab1443b52b4ee76559d5`: see [app-risks.md](app-risks.md). The original checked commit above still applies to the rest of this map; files have changed since then.
