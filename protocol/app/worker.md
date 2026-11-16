@@ -10,6 +10,8 @@ else writes there.
 
 ## Rules
 
+- **Never run `sudo`.** If the task needs a command run as root, send the lead a `message` with the exact command (full paths, no `~`, written out rather than a script you wrote), what it changes and why, and carry on with what you can do meanwhile. Only the lead can ask Collin to run it.
+
 - **Stay inside the ownership boundary.** Change only the files and directories the brief
   names. A change outside it is a defect even if it is correct; if you need one, ask
   (below).
