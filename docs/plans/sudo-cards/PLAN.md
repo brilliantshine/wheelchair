@@ -469,3 +469,4 @@ Collin chose "keep going" after three rounds without a clean one; budget reset.
 - 2026-11-15 — Sub-lead: T5 accepted; worker reported no choices; diff matches the brief.
 - 2026-11-15 — Sub-lead: all tasks done; COMPLETION.md written; verification round 1 started at 0087751: wc-306ee0793e11-verifier (claude-opus-5-5) and wc-306ee0793e11-verifier-2 (gpt-6.1-sol).
 - 2026-11-15 — Sub-lead: verification 1, Claude verifier FAIL with one gap (stale "Wrong password" message hides the result on the helper page); REMEDIATION-1.md written; R1-1 dispatched to GPT (the provider that built T1). GPT verifier still running; fixes merge after it reports.
+- 2026-11-15 — Sub-lead: GPT verifier FAIL: same gap as Claude's plus a second (page stops polling if the Run POST drops during the password check); appended to REMEDIATION-1.md as R1-2, to run after R1-1 (same files). Browser suite under the GPT verifier: two flaky failures that passed on retry.
