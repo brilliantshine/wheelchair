@@ -1,7 +1,7 @@
 ---
 slug: antigravity-cli
 date: 2026-11-16
-implemented-by: "standard, gpt-6.1-terra (T0, T0b, T1, T2, T3, T4, T5, T6); light, gpt-6-luna (T7, T8). Sub-lead: claude-opus-5-5."
+implemented-by: "standard, gpt-6.1-terra (T0, T0b, T1, T2, T3, T4, T5, T6, T9); light, gpt-6-luna (T7, T8). Sub-lead: claude-opus-5-5."
 verified-by: []   # Stage 4 appends; Stage 3 leaves this empty.
 ---
 
@@ -38,8 +38,8 @@ Every item is `this run`; Prior Work was empty.
 | `providers.js` `gemini` entry; `asideFork` on all three | this run | `viewer/app/providers.js:3` (also `singleAccount`) | `viewer/test/app-settings.test.js`, `app-asides.test.js` |
 | `PLANS.gemini` | this run | `viewer/app/settings.js:24` | `app-settings.test.js` |
 | Default account `default-gemini` | this run | `viewer/app/settings.js:27` (from `Object.keys(PROVIDERS)`) | `app-settings.test.js` |
-| `worker_order` default `['gpt','claude','gemini']`; missing providers appended at load; `lead_order` not migrated | this run | `viewer/app/settings.js:27`, `:184` | `app-settings.test.js`; see Known gaps |
-| `review_families` accepts `gemini` | this run | `viewer/app/settings.js:193`, `viewer/app/routes.js:242` | `app-settings.test.js`, `app-usage.test.js` |
+| `worker_order` default `['gpt','claude','gemini']`; missing providers appended at load only if never seen (Decision 19, superseding 14's migration); `lead_order` not migrated | this run (T2, T9) | `viewer/app/settings.js:27`, `:184-185`, `:189` | `app-settings.test.js` (old file gets `gemini` once; a removal survives save and reload) |
+| `review_families` accepts `gemini` | this run | `viewer/app/settings.js:195`, `viewer/app/routes.js:242` | `app-settings.test.js`, `app-usage.test.js` |
 | `balancer.js` works for three families and `--not-provider` | this run (no code change needed) | `viewer/app/balancer.js` unchanged | `viewer/test/app-balancer.test.js` (three-family cases) |
 | `sessions.js` gemini effort `low…max`; `agy_conversation_id` propagated | this run | `viewer/app/sessions.js:66-73` (only codex capped), `:401`, `:561` | `app-settings.test.js` (effort `max` accepted) |
 | `ready.js` unchanged; status carries `agy` | this run | `viewer/app/ready.js` unchanged; `machine/service.js:952` | machine `service.test.js` (status has `agy`) |
@@ -112,7 +112,8 @@ All were taken on the Spec's own fallbacks or approved by the lead (PLAN.md Log,
 4. **Turn end**: a normal Stop's `terminationReason` is `NO_TOOL_CALL`, not `model_stop`. Every reason except `error` (or a non-empty `error`) ends the turn.
 5. **Reviewers**: not `--mode plan`. In plan mode `agy` turns any request into an implementation-plan artifact and asks for plan review, and without the skip flag it prompts even for `ls`. Under the lead's rule, reviewers get the same flags as other roles. See residual risks.
 6. **Workspace trust** (not in the Spec): each session's `--settings` file carries `trustedWorkspaces: [worktree]`. Without it the trust screen would block every new worktree, and the service's generic Down+Enter answer would pick "No, exit".
-7. `check --json` in `model.sh` stays a GPT-only array. My T1 brief asked for a `gemini` key, which was wrong; the lead corrected it.
+7. **Decision 19 (lead, during the build)**: settings store `worker_order_seen`, so the load-time append adds only providers a saved order has never seen. Antigravity is added once to older files, and a provider removed in Settings stays removed. This replaces Decision 14's "append every missing provider".
+8. `check --json` in `model.sh` stays a GPT-only array. My T1 brief asked for a `gemini` key, which was wrong; the lead corrected it.
 
 ## Routers
 
@@ -123,7 +124,21 @@ All were taken on the Spec's own fallbacks or approved by the lead (PLAN.md Log,
 
 ## Validation evidence
 
-Run on the merged feature branch (commit in the `result`), from the worktree root.
+Run on the merged feature branch, from the worktree root. The block below is from `4050559` (all tasks but T9). After T9 merged, the two suites it can affect were re-run:
+
+```text
+$ node --test viewer/test/*.test.js
+not ok 316 - a starter that loses the freed port registers through the new holder
+# tests 448
+# pass 447
+# fail 1
+
+$ npm --prefix viewer run test:browser
+  2 skipped
+  620 passed (2.6m)
+```
+
+Full run at `4050559`:
 
 ```text
 $ bash machine/test/run.sh
@@ -175,7 +190,6 @@ Not run: `./install.sh` (canonical clone only; refused from a worktree, so `inst
 - **First-run screens on a new machine**: sign-in ends at `agy`'s first-run screens (`loginDone` on "Welcome to Antigravity CLI!"). The data-use screen was never captured, and `answerPrompts` answers nothing. On a machine where `agy` was never onboarded, a first session could sit on those screens and be reported stuck, and Collin would finish onboarding from the terminal page. This machine is onboarded.
 - **No rate-limit format observed.** `limit-hit` relies on a regex over the Stop `error` text (`quota|rate.?limit|resource.?exhausted|429`), with no usage meter (Decision 4).
 - **`agy` self-updates.** The parsers fail soft: unknown rows are skipped, and an unreadable transcript shows the "Couldn't read" line.
-- **`worker_order` append at load undoes a Settings "Remove".** The Spec's migration (`viewer/app/settings.js:184`) appends every provider missing from a saved `worker_order`, so leaving a provider out with the order editor's Remove button doesn't survive a reload. Raised with the lead.
 - **Not live-checked yet**: signing in from Settings on a phone, an `agy`-led thread end to end, and a `--provider gemini` worker's `result`. The Spec's Live paragraph is for the verifier, or Collin, on hearth.
 - **Pre-existing test failures**, untouched by this build: `viewer/test/lifecycle.test.js` "a starter that loses the freed port registers through the new holder", `viewer/test/routes.test.js` "an app page carries font-src self…" (inter-400 font 404); `viewer/test/server.test.js` "the global write lock serializes concurrent writes…" is flaky (about 1 run in 3).
 

@@ -1,6 +1,6 @@
 ---
 slug: antigravity-cli
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-16
 ---
 
@@ -385,9 +385,11 @@ a worker with `--provider gemini` and check its `result` card arrives.
 | T6 | Protocol, API docs, routers | `protocol/app/{lead,sub-lead}.md`, `machine/API.md`, `viewer/app/API.md`, `machine/AGENTS.md`, `viewer/AGENTS.md`, `codex/AGENTS.md` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-8 (t6-a1) | protocol-rules test; grep for two-provider wording | done |
 | T7 | Graph-arrow browser test skips `form` picture files, as it skips `run` ones | `viewer/test/browser.spec.js` | light, gpt-6-luna | wc-9340ecf1256c-worker-9 (t7-a1) | the one test, both browsers | done |
 | T8 | Installer test expects the `gemini` pin lines `model.sh init` now writes | `install/test/run.sh` | light, gpt-6-luna | wc-9340ecf1256c-worker-10 (t8-a1) | `bash install/test/run.sh` | done |
-| T9 | Decision 19: `worker_order_seen`, so a removed provider stays removed | `viewer/app/settings.js`, `viewer/test/app-settings.test.js` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-11 (t9-a1) | `node --test viewer/test/*.test.js` | in progress |
+| T9 | Decision 19: `worker_order_seen`, so a removed provider stays removed | `viewer/app/settings.js`, `viewer/test/app-settings.test.js` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-11 (t9-a1) | `node --test viewer/test/*.test.js` | done |
 
 ## Log
+
+- 2026-11-16 — T9 accepted (app-settings 11/0; viewer unit 447/448 with only the baseline lifecycle failure; browser 620 passed, 2 skipped). Choices: none. All tasks done; COMPLETION.md written; status → verifying.
 
 - 2026-11-16 — Lead chose (b) for the worker-order removal conflict: Decision 19. T9 builds it.
 
