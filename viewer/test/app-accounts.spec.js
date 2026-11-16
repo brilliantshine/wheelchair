@@ -44,10 +44,14 @@ async function mock(page, state) {
     const body = request.postData() ? JSON.parse(request.postData()) : {};
     const json = (status, value) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) });
     if (path === '/settings' && method === 'GET') {
-      const response = await route.fetch();
-      const settings = await response.json();
-      delete settings.save_claude_for_leads;
-      return json(200, { ...settings, save_for_leads: true, reserved_provider: 'Claude', review_families: 'both', ...state.settings });
+      if (!state.settings) return route.fallback();
+      try {
+        const response = await route.fetch();
+        const settings = await response.json();
+        return json(200, { ...settings, ...state.settings });
+      } catch {
+        return route.abort();
+      }
     }
     if (path === '/settings/preferences' && method === 'PUT' && body.review_families) {
       state.calls.push([method, path, body]);
@@ -290,7 +294,7 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
       await page.locator('#lead-order-save').click();
       await expect.poll(() => state.calls.some((c) => c[1] === '/settings/balancing')).toBe(true);
       expect(state.calls.find((c) => c[1] === '/settings/balancing')[2]).toEqual({ lead_order: ['gpt', 'claude'] });
-      await expect(page.locator('#panel .note')).toHaveText(/Saved/);
+      await expect(page.locator('#panel .note[data-for="section"]')).toHaveText(/Saved/);
       await page.locator('[data-section="usage"]').click();
       await expect(page.locator('#bal-save-lead')).toHaveAttribute('aria-label', 'Save GPT for leads');
       await noSideScroll(page);
