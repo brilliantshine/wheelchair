@@ -62,6 +62,7 @@ async function mock(page, state) {
     if (path === '/usage/alert') return json(200, { dot: state.dot !== false });
     if (path === '/usage/seen' && method === 'POST') { state.dot = false; state.calls.push([method, path]); return json(200, { ok: true }); }
     if (path === '/settings/accounts' && method === 'POST') { state.calls.push([method, path, body]); return json(201, { id: 'new-one', ...body, weight: 1, paused: false }); }
+    if (/^\/settings\/accounts\/[^/]+\/restore$/.test(path) && method === 'POST') { state.calls.push([method, path]); return json(201, { ok: true }); }
     const acct = path.match(/^\/settings\/accounts\/([^/]+)$/);
     if (acct && (method === 'PUT' || method === 'DELETE')) {
       state.calls.push([method, path, body]);
@@ -123,7 +124,7 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
       await expect(first).toContainText('61% used');
       await expect(first).toContainText('as of');
       await expect(claude.locator('.acct[data-account="work"]')).toContainText('no reading yet');
-      await expect(first.getByRole('button', { name: 'Remove' })).toHaveCount(0);
+      await expect(first.getByRole('button', { name: 'Remove' })).toHaveCount(1);
       await expect(claude.locator('.acct[data-account="work"]').getByRole('button', { name: 'Resume' })).toBeVisible();
       await noSideScroll(page);
     });
@@ -436,12 +437,13 @@ test.describe('accounts interface paths', () => {
     expect(state.calls.filter((c) => c[0] === 'PUT')[1][2]).toEqual({ plan: 'pro' });
   });
 
-  test('Remove asks first, then deletes; default accounts have no Remove', async ({ page }) => {
+  test('Remove asks first, then deletes; default accounts can be removed and added back', async ({ page }) => {
     const usage = usageBody();
     const state = { usage, onAccount: (m, id) => { if (m === 'DELETE') usage.providers.claude.accounts = usage.providers.claude.accounts.filter((a) => a.id !== id); } };
     await mock(page, state);
     await open(page, 'accounts');
-    for (const id of ['default-claude', 'default-gpt']) await expect(acct(page, id).getByRole('button', { name: 'Remove' })).toHaveCount(0);
+    for (const id of ['default-claude', 'default-gpt']) await expect(acct(page, id).getByRole('button', { name: 'Remove' })).toHaveCount(1);
+    await expect(page.getByRole('button', { name: 'Add back the default login' })).toHaveCount(0);
     await acct(page, 'work').getByRole('button', { name: 'Remove' }).click();
     await expect(acct(page, 'work')).toContainText('Remove Work?');
     expect(state.calls.some((c) => c[0] === 'DELETE')).toBe(false);
@@ -451,6 +453,19 @@ test.describe('accounts interface paths', () => {
     await acct(page, 'work').getByRole('button', { name: 'Remove', exact: true }).click();
     await expect(acct(page, 'work')).toHaveCount(0);
     expect(state.calls.filter((c) => c[0] === 'DELETE').map((c) => c[1])).toEqual(['/settings/accounts/work']);
+  });
+
+  test('a removed default account offers Add back the default login', async ({ page }) => {
+    const usage = usageBody();
+    usage.providers.claude.accounts = usage.providers.claude.accounts.filter((a) => a.id !== 'default-claude');
+    const state = { usage, settings: { accounts: [{ id: 'work', provider: 'claude', name: 'Work', plan: 'pro', weight: 1, paused: true }, { id: 'default-gpt', provider: 'gpt', name: 'default', plan: 'unknown', weight: 1, paused: false }, { id: 'default-gemini', provider: 'gemini', name: 'default', plan: 'unknown', weight: 1, paused: false }] } };
+    await mock(page, state);
+    await open(page, 'accounts');
+    const claude = page.locator('section.prov-group[data-provider="claude"]');
+    await expect(claude.getByRole('button', { name: 'Add back the default login' })).toBeVisible();
+    await expect(page.locator('section.prov-group[data-provider="gpt"]').getByRole('button', { name: 'Add back the default login' })).toHaveCount(0);
+    await claude.getByRole('button', { name: 'Add back the default login' }).click();
+    await expect.poll(() => state.calls.filter((c) => c[0] === 'POST').map((c) => c[1])).toEqual(['/settings/accounts/default-claude/restore']);
   });
 
   test('usage refreshes every 30 seconds on Accounts and Usage, and stops elsewhere', async ({ page }) => {

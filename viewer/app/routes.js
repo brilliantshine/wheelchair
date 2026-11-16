@@ -167,13 +167,26 @@ async function handleSettings(hub, request, response, url, bits, body) {
       });
       return send(response, 201, account);
     }
+    if (bits.length === 4 && bits[3] === 'restore' && request.method === 'POST') {
+      let account;
+      await settings.update(hub, (value) => {
+        const provider = Object.keys(PROVIDERS).find((p) => bits[2] === `default-${p}`);
+        if (!provider) throw appError(404, 'account not found');
+        if (value.accounts.some((a) => a.id === bits[2])) throw appError(400, 'default account is already there');
+        if (PROVIDERS[provider].singleAccount && value.accounts.some((a) => a.provider === provider)) throw appError(400, `${PROVIDERS[provider].label} supports one account per machine`);
+        account = { id: bits[2], provider, name: 'default', plan: 'unknown', weight: settings.PLANS[provider].unknown, paused: false };
+        value.accounts.push(account);
+        value.retired_accounts = value.retired_accounts.filter((id) => id !== bits[2]);
+      });
+      return send(response, 201, account);
+    }
     if (bits.length === 3 && ['PUT', 'DELETE'].includes(request.method)) {
       let account;
       await settings.update(hub, (value) => {
         const index = value.accounts.findIndex((a) => a.id === bits[2]);
         if (index < 0) throw appError(404, 'account not found');
         account = value.accounts[index];
-        if (request.method === 'DELETE') { if (account.id === `default-${account.provider}`) throw appError(400, 'default account cannot be removed'); value.accounts.splice(index, 1); value.retired_accounts.push(account.id); return; }
+        if (request.method === 'DELETE') { value.accounts.splice(index, 1); value.retired_accounts.push(account.id); return; }
         if (body.name !== undefined && (typeof body.name !== 'string' || !body.name.trim())) throw appError(400, 'invalid name');
         if (body.plan !== undefined && !Object.hasOwn(settings.PLANS[account.provider], body.plan)) throw appError(400, 'invalid plan');
         if (body.weight !== undefined && (typeof body.weight !== 'number' || !Number.isFinite(body.weight) || body.weight <= 0)) throw appError(400, 'invalid weight');

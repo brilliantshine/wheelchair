@@ -62,7 +62,6 @@ test('account and balancing routes and usage shape', async () => {
     assert.equal(add.status, 201); assert.equal(add.body.weight, 5);
     for (const body of [{ provider: 'bad', name: 'a', plan: 'pro' }, { provider: 'gpt', name: '', plan: 'pro' }, { provider: 'gpt', name: 'x', plan: 'max5' }]) assert.equal((await api(ctx, '/settings/accounts', { method: 'POST', body })).status, 400);
     for (const body of [{ name: '' }, { plan: 'plus' }, { weight: 0 }, { paused: 'yes' }]) assert.equal((await api(ctx, `/settings/accounts/${add.body.id}`, { method: 'PUT', body })).status, 400);
-    assert.equal((await api(ctx, '/settings/accounts/default-claude', { method: 'DELETE' })).status, 400);
     for (const body of [{ lead_order: [] }, { worker_order: [] }, { lead_order: ['any', 'claude'] }, { lead_order: ['gpt', 'gpt'] }, { worker_order: ['any'] }, { worker_order: ['bad'] }, { within: 'bad' }, { leave: -1 }, { notify_below: 101 }, { margin: '5' }, { save_claude_for_leads: 1 }, { held_back: { worker: true, reviewer: true, verifier: true } }, { held_back: { worker: true, reviewer: true, verifier: true, mapper: true, extra: true } }, { held_back: { worker: true, reviewer: 'yes', verifier: true, mapper: true } }, { held_back: [] }]) assert.equal((await api(ctx, '/settings/balancing', { method: 'PUT', body })).status, 400);
     assert.equal((await api(ctx, '/settings/balancing', { method: 'PUT', body: { save_claude_for_leads: false } })).body.detail, 'invalid save_claude_for_leads');
     const renamed = await api(ctx, '/settings/balancing', { method: 'PUT', body: { save_for_leads: false, lead_order: ['gpt', 'any'] } });
@@ -312,4 +311,23 @@ test('legacy reserve value is carried over from the saved settings file', async 
   await hub.state.init();
   await fs.writeFile(path.join(hub.state.dir, 'settings.json'), JSON.stringify({ save_claude_for_leads: false }));
   assert.equal((await settings.load(hub)).save_for_leads, false);
+});
+test('a default account can be removed, stays removed, and can be added back', async () => {
+  const ctx = await setup();
+  try {
+    assert.equal((await api(ctx, '/settings/accounts/default-claude/restore', { method: 'POST' })).status, 400);
+    assert.equal((await api(ctx, '/settings/accounts/default-claude', { method: 'DELETE' })).status, 200);
+    assert.equal((await api(ctx, '/settings/accounts/default-gemini', { method: 'DELETE' })).status, 200);
+    let saved = (await api(ctx, '/settings')).body;
+    assert.equal(saved.accounts.some((a) => a.id === 'default-claude' || a.id === 'default-gemini'), false);
+    assert.ok(saved.retired_accounts === undefined || saved.retired_accounts.includes('default-claude'));
+    assert.equal((await api(ctx, '/settings/accounts', { method: 'POST', body: { provider: 'gemini', name: 'x', plan: 'pro' } })).status, 400);
+    assert.equal((await api(ctx, '/settings/accounts/default-nope/restore', { method: 'POST' })).status, 404);
+    const back = await api(ctx, '/settings/accounts/default-claude/restore', { method: 'POST' });
+    assert.equal(back.status, 201); assert.equal(back.body.name, 'default');
+    assert.equal((await api(ctx, '/settings/accounts/default-gemini/restore', { method: 'POST' })).status, 201);
+    saved = (await api(ctx, '/settings')).body;
+    assert.ok(saved.accounts.some((a) => a.id === 'default-claude'));
+    assert.ok(saved.accounts.some((a) => a.id === 'default-gemini'));
+  } finally { await close(ctx); }
 });
