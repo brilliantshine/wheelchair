@@ -89,7 +89,8 @@ async function startSession(hub, thread, input) {
     };
     Object.assign(waiting, { status: 'waiting', waiting_until: selection.wait.until, waiting_reason: selection.wait.reason, waiting_provider: selection.wait.provider, pending_start: input._waiting ? waiting.pending_start : { ...input } });
     if (!input._waiting) thread.sessions.push(waiting);
-    await hub.save(thread);
+    if (role === 'lead' && !thread.lead_name) await hub.saveWithLeadName(thread);
+    else await hub.save(thread);
     return waiting;
   }
   let cli = cliOf(selection.provider);
@@ -143,10 +144,11 @@ async function startSession(hub, thread, input) {
     ...(role === 'lead' ? { style_version: settings.style_version } : {}),
   };
   if (!input._waiting) thread.sessions.push(session);
-  Object.assign(session, { status: 'starting', cli, provider: selection.provider, account: selection.account.id, template_id: layers.template?.id || null, ...(role === 'lead' ? { style_version: settings.style_version } : {}) });
+  Object.assign(session, { model: resolved.model, effort: input.effort || resolved.effort || null, status: 'starting', cli, provider: selection.provider, account: selection.account.id, template_id: layers.template?.id || null, ...(role === 'lead' ? { style_version: settings.style_version } : {}) });
   if (selection.note) session.note = selection.note;
   delete session.pending_start; delete session.waiting_until; delete session.waiting_reason; delete session.waiting_provider;
-  await hub.save(thread);
+  if (role === 'lead' && !thread.lead_name) await hub.saveWithLeadName(thread);
+  else await hub.save(thread);
 
   let started;
   try {
@@ -182,6 +184,7 @@ async function startSession(hub, thread, input) {
   const identity = { name: session.name, attempt_id: session.attempt_id, started_by: session.started_by, queue: session.queue };
   Object.assign(session, started, {
     ...identity,
+    model: resolved.model, effort: input.effort || resolved.effort || null,
     token,
     provider: selection.provider,
     account: selection.account.id,

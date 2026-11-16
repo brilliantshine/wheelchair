@@ -342,3 +342,12 @@ test.describe('phone', () => {
     await expect(page.locator('#app-nav .seg .lbl')).toBeHidden();
   });
 });
+
+test('saves lead names in Settings', async ({ page }) => {
+  await openPage(page, context, '/app/settings#models');
+  await page.getByLabel('Lead names').fill('Ada\nGrace');
+  await page.locator('#lead-names').locator('..').getByRole('button', { name: 'Save' }).click();
+  await expect.poll(async () => (await settings(page)).lead_names).toEqual(['Ada', 'Grace']);
+  await page.reload();
+  await expect(page.getByLabel('Lead names')).toHaveValue('Ada\nGrace');
+});
