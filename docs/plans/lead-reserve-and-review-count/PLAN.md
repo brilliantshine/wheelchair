@@ -67,25 +67,33 @@ Today "Save Claude for leads" (`save_claude_for_leads`) and the margin hold-back
   key is absent. `PUT /settings/balancing` accepts only the new key (the old key is a 400,
   like any unknown key).
 - **Label.** `GET /settings` adds `reserved_provider`: the label (`Claude`/`GPT`) of the
-  first provider in the expanded lead order with any unpaused account, or `null`. The
-  Settings row reads "Save <label> for leads", or "Save the lead's provider for leads" when
-  `null`. The hint: "Sessions with no provider preference try other providers first. Does
-  not hold anyone back; the ticks below do." The checkbox `id` becomes `bal-save-lead` and
-  its `aria-label` matches the visible label.
+  first provider in the expanded lead order with an unpaused account signed in on **any**
+  configured machine (`usage.machineAccounts(hub)`, `viewer/app/usage.js:48`; the default
+  account records alone do not count), or `null`. The Settings row reads "Save <label> for
+  leads", or "Save the lead's provider for leads" when `null`. Its hint: "Sessions with no
+  provider preference try other providers first. Does not hold anyone back; the ticks below
+  do." The checkbox `id` becomes `bal-save-lead` and its `aria-label` matches the visible
+  label. The rest of the reserve's text names the same provider (`P` below is the label, or
+  "the lead's provider" when `null`; `viewer/pages/settings.js:1146-1147`): the margin hint
+  becomes "When P is projected to have less than this left at refill, ticked roles go to
+  another provider, or wait if there is none", and "Held back when Claude runs short"
+  becomes "Held back when P runs short".
 
 ### 2. One-account setups
 
 - **Ready check** (`viewer/app/ready.js:38-58`): only the thread's own CLI is required to be
   installed and logged in (or pass Codex preflight). The other CLI is no longer checked, so
   its absence or sign-out never adds to `missing`. Update the comment above the loop.
-- **Worker preference for an unusable family** (`balancer.js:48-50`): when a worker asks
-  `--provider X` and X has no unpaused account signed in on the machine (or X's model cell
-  for the slot is Not used and the request is a preference), treat it like a reviewer
-  preference: place on the normal order and return `note: "Could not use X; using Y."`.
-  When X has a signed-in account but no room (or is below its margin with the role held
-  back), behaviour is unchanged: wait, or fall through as today. The early 400 for a model
-  cell "Not used at <slot>" (`balancer.js:30-33`) stays only when X *does* have a signed-in
-  account; otherwise it falls back as above.
+- **Worker preference for a family with no account** (`balancer.js:30-33,48-50`): "signed
+  in" below means X has an unpaused account in `settings.accounts` that is signed in on the
+  thread's machine. A worker `--provider X`:
+  - X **not** signed in: place it as if it had no flag (the normal order, so the reserve
+    ordering still applies) and return `note: "Could not use X; using Y."`. The model-cell
+    check at `balancer.js:30-33` is skipped in this case. If nothing else can take it either,
+    the normal wait result applies.
+  - X signed in: exactly today's behaviour, unchanged: the 400 "<label> is not used at
+    <slot>" when X's model cell is Not used; otherwise wait for X's room, or fall through
+    when X is below its margin with workers held back.
 - `protocol/app/sub-lead.md` "Which family" bullet: add that the hub sends a Claude
   preference elsewhere, with a note, when no Claude account is signed in on the machine
   (replacing "including while Claude is signed out on that machine" at `sub-lead.md:67-68`).
@@ -106,11 +114,20 @@ Today "Save Claude for leads" (`save_claude_for_leads`) and the margin hold-back
 - **Session list.** `wc.js session list` (`sessions.js:387`) returns
   `{ sessions, review_families }`, so a lead or sub-lead reads the setting without another
   call.
-- **Hub enforcement.** When `review_families` is `claude` or `gpt`, a reviewer or verifier
-  start is placed as if it carried `--provider <that family>` (a preference, as reviewer and
-  verifier constraints already are), overriding any `--provider`/`--not-provider` it sent. If
-  that family has no room or no account, the existing preference fallback applies, with its
-  note. Worker, mapper, lead and sub-lead placement is unaffected.
+- **Hub enforcement.** When `review_families` is `F` (`claude` or `gpt`), a reviewer or
+  verifier start ignores any `--provider`/`--not-provider` it sent, and its candidate list
+  is `[F]` alone, regardless of `worker_order` (so `worker_order: ['gpt']` with
+  `review_families: 'claude'` still places reviewers on Claude). "Signed in" as in §2.
+  - F signed in and its model cell for the slot is used: place on F, or **wait** for F's
+    room (the normal wait result, `waiting_provider: F`). The reserve hold-back (Decision 9)
+    applies as for any role: if F is the reserved provider, below its margin, and the role
+    is ticked, the session waits for the reset. It never moves to the other family.
+  - F not signed in on the machine, or F's model cell for the slot is Not used: place by
+    the normal order with no constraint and return
+    `note: "Reviewers and checkers are set to F, but F is not available; using Y."` This is
+    the only way a single-family setting lands on the other family, so a misconfigured
+    setting cannot wait forever.
+  - Worker, mapper, lead and sub-lead placement is unaffected.
 - **Protocol, `protocol/app/lead.md`:**
   - Step 5: read `review_families` from `session list` before each round. `both` → today's
     two reviewers and flags (unchanged; with one family usable they both land on it, one per
@@ -140,6 +157,9 @@ bash machine/test/run.sh
 
 New or changed tests (in `viewer/test/`):
 
+- `app-balancer.test.js` (single-family): `review_families: 'claude'`, `worker_order:
+  ['gpt']`, Claude signed in with room → reviewer on Claude; Claude signed in, no room →
+  waits with `waiting_provider: 'claude'`; Claude not signed in → GPT with the note.
 - `app-balancer.test.js`: lead order `['gpt','any']` with `save_for_leads` → a worker with
   no flag gets Claude first; the margin hold-back applies to GPT, not Claude. Lead order
   `['claude','any']` → today's results. Reserved provider skips a provider with no signed-in
@@ -167,9 +187,30 @@ New or changed tests (in `viewer/test/`):
 
 ### Round 1 — 2026-11-15
 
-**Lanes:** intent lens, Claude preferred; mechanics lens, the other family; cross-family: yes when both start.
+**Lanes:** intent lens, GPT (Claude requested, held back); mechanics lens, GPT; cross-family: no.
 
 **Changed since Round N-1:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent (GPT) | blocking | Single-family setting fell back to the other family whenever the chosen one had no room, contradicting IDEA "checks from that family" | upheld (major: the Spec was explicit, but drifted from IDEA) | §3 Hub enforcement: strict, waits for room; falls back with a note only when the family has no signed-in account or no model at that tier |
+| mechanics (GPT) | major | Worker "Not used" model-cell fallback vs the retained 400 contradicted each other | upheld | §2 rewritten as two exclusive cases by sign-in |
+| mechanics (GPT) | major | Unclear whether the review family overrides `worker_order` membership | upheld | §3: candidate list is `[F]` regardless of `worker_order` |
+| mechanics (GPT) | minor | Label could name Claude on a GPT-only machine because default account records exist | upheld | §1 Label: signed in on any machine via `usage.machineAccounts` |
+| mechanics (GPT) | minor | Margin hint and "Held back when Claude runs short" still name Claude | upheld | §1 Label: all reserve text names the reserved provider |
+
+### Round 2 — 2026-11-15
+
+**Lanes:** intent lens; mechanics lens; recorded once both start.
+
+**Changed since Round 1:**
+- §1 Label: `reserved_provider` counts only accounts signed in on some machine; margin hint
+  and "Held back when … runs short" name the reserved provider.
+- §2 Worker preference: two exclusive cases by whether the asked-for family is signed in.
+- §3 Hub enforcement: a single-family setting is strict (candidate list `[F]` regardless of
+  `worker_order`, waits for room); falls back with a note only when F is not signed in or
+  has no model at that tier.
+- Validation: single-family balancer cases.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
