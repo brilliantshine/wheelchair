@@ -308,6 +308,15 @@ otherwise check the aside is refused with the plain message.
 | mechanics | major | Gemini asides get no aside instructions or style | upheld | Prompt prepended on stdin (aside-turns.js bullet) |
 | mechanics | major | Reviewer/verifier reports on `agy` never extracted | upheld | `ASSISTANT_CONTENT.agy` bullet and test |
 
+### Round 3 — 2026-11-16
+
+**Lanes:** intent, claude; mechanics, gpt; cross-family: yes.
+
+**Changed since Round 2:** Machine hooks bullets split into the `--settings` primary path and the Decision 10 fallback; `hook.sh` argument handling under the fallback; Model pins and Validation aligned with Decision 13; hub-side aside fork refusal via `asideFork`; aside instructions on stdin for gemini; `ASSISTANT_CONTENT.agy` report extraction.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
