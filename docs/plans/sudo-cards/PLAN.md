@@ -45,6 +45,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 16 | Decline is reported only after the helper confirms it; a lost race shows the run result; an unreachable machine returns the card to waiting | Review: Decline could promise nothing runs when something did | review-round-1 |
 | 17 | The helper page carries no request data in HTML; a static script sets every field with `textContent`; strict CSP with no inline script | Review: agent-controlled fields could inject script into the real password page | review-round-1 |
 | 18 | Only the command text is frozen. The lead writes the actual commands into the card, never a script it wrote; the helper flags any file named in the command that Collin's user could change, on the card and the run page. IDEA.md "What good looks like" narrowed to match | Collin picked "inline it, flag files" | idea-change |
+| 19 | Supersedes 14's check: the password is checked with `sudo -k -v` and the command's permission with `sudo -k -l`, each writing the password only after a sentinel prompt appears; a machine whose sudo asks for no password fails closed; `sudo -K` after | Review round 2: `-l` follows `listpw` (default any), so one NOPASSWD entry let any password pass | review-round-2 |
+| 20 | Intake refuses `~` in the command; the editable-file scan uses `shlex` | `~` meant Collin's home in the warning but /root at run time | review-round-2 |
 | 4 | The command is fixed when the card is posted; the run uses the stored text byte for byte and the card shows it in full, unabridged | IDEA.md: what runs is exactly what is shown | defaulted |
 
 ## Spec
@@ -117,7 +119,10 @@ helper's cancel. The helper answers with the request's actual state:
 - machine or helper unreachable: the card returns to `waiting` with a one-line note "Couldn't reach
   <machine> to decline. Try again." Nothing is reported as declined until the helper confirms it.
 The helper's own transitions are atomic under one lock: `waiting → running` on a good password,
-`waiting → declined` on cancel; whichever comes first wins.
+`waiting → declined` on cancel; whichever comes first wins. A cancel that arrives while the
+password check is still going wins, and the check's result is discarded.
+The hub's call to the machine has a 10-second timeout, treated as unreachable. When the hub
+starts, any card still in `declining` returns to `waiting` with the same "Couldn't reach" note.
 
 What reaches the lead (typed like any press, shown as a short bubble in the thread):
 - `[card <id>] sudo ran: exit <n>` followed by the output block.
@@ -132,7 +137,7 @@ row in the root `AGENTS.md` tables), but **runs only from an installed root-owne
 
 **Install** — `sudo-helper/install.sh`, run by Collin with sudo, from the canonical clone
 (refused from a worktree via `install/guard.sh`, as the other writers are):
-- Copies `helper.py` and its page template to `/usr/local/lib/wheelchair-sudo/` (root:root,
+- Copies `helper.py` and `static/` (`page.html`, `page.js`, `page.css`) to `/usr/local/lib/wheelchair-sudo/` (root:root,
   dirs 0755, files 0644).
 - Writes `/etc/wheelchair-sudo.conf` (root, 0644): `user=<SUDO_USER>`, the user whose password
   is checked and whose sudo rights apply; `url_base=https://<tailnet DNS name>:8445`.
@@ -155,7 +160,8 @@ row in the root `AGENTS.md` tables), but **runs only from an installed root-owne
 - `POST /requests/<id>/cancel` → declines a `waiting` request; answers with the request's actual state either way.
 
 **Page** (on `page.sock`):
-- `GET /r/<id>`: self-contained HTML (inline CSS and JS, nothing from the network): the
+- `GET /r/<id>`: a fixed HTML page (`static/page.html`) that loads `/static/page.js` and
+  `/static/page.css` from the helper and nothing from the network. It shows the
   helper's own copy of command, does and why; the target user name; a password box; Run.
   Run becomes a red "Confirm: run as root" for 5 seconds, then reverts. Mobile-first layout.
   An unknown or closed id shows its outcome or "No such request".
@@ -170,13 +176,23 @@ row in the root `AGENTS.md` tables), but **runs only from an installed root-owne
   `autocomplete="current-password"`.
 
 **Running** (on `run`, only while state is `waiting`; one run at a time per request):
-1. Check: run `/usr/sbin/runuser -u <user> -- /usr/bin/sudo -S -k -l -p '' -- /bin/sh -c <command>`
-   (`-l` with a command: sudo authenticates, then only reports whether that command is allowed,
-   running nothing). Write `password + "\n"` to its stdin, close stdin, wait. Exit 0 = allowed.
-   Otherwise count a wrong try; on the third the request becomes `failed`. The page says "Wrong
-   password or not allowed" and the try count. This process runs nothing, so a password sudo
-   left unread (a NOPASSWD rule) dies with the pipe. If the user's sudo policy needs no
-   password for this command, any password passes, exactly as at a terminal.
+1. Check, in two sudo calls run as the user, neither of which runs the command. Each uses a
+   prompt sentinel: `-p` set to a fresh random string per call. The helper writes the password
+   to sudo's stdin **only after** that sentinel appears on sudo's stderr, then closes stdin.
+   - a. Password: `/usr/sbin/runuser -u <user> -- /usr/bin/sudo -S -k -v -p <sentinel>`.
+     Good only if the sentinel appeared and the exit code is 0. If sudo exits without
+     prompting (every sudoers entry for the user is NOPASSWD), the request becomes `failed`
+     with "sudo on this machine asks for no password, so a sudo card can't check one". Fail
+     closed: agents could already run sudo themselves there.
+   - b. Allowed: `/usr/sbin/runuser -u <user> -- /usr/bin/sudo -S -k -l -p <sentinel> -- /bin/sh -c <command>`,
+     password written only if the sentinel appears (`-l` may not prompt under `listpw`; that is
+     fine, the password was already checked in a). Exit 0 = allowed; otherwise `failed` with
+     "Your sudo rules don't allow this command".
+   - After both: `/usr/sbin/runuser -u <user> -- /usr/bin/sudo -K` to remove any timestamp `-v`
+     left. This also clears sudo's cache in Collin's own terminals on that machine.
+   - A wrong password in a counts one try; the page says "Wrong password" and the try count; on
+     the third the request becomes `failed`. Because the password is written only after a
+     prompt, it is never left unread in a pipe.
 2. Run: the helper, already root, runs `/bin/sh -c <command>` itself as root, with stdin
    `/dev/null`, `cwd=/`, environment only `PATH=/usr/sbin:/usr/bin:/sbin:/bin`, `HOME=/root`,
    `LANG=C.UTF-8`, in a new process group. The password never reaches this process. The helper
@@ -194,9 +210,12 @@ unlocked after a run.
 and run byte for byte. Files that text runs or reads are not frozen (Decision 18). So:
 - `lead.md`: write the actual commands into `command`; never ask to run a script or file the
   agents wrote or can edit.
-- **Editable-file warning.** At intake the helper splits the command on whitespace and shell
-  operators and takes every word that starts with `/`, `~/` or `./` (`~` expanded to the user's
-  home; `./` resolved against `/`, the run directory). A path is flagged when the user, with
+- **No `~`.** Intake refuses a command in which any word (split as below) starts with `~`, with
+  "Write the full path; ~ would mean /root here". `card.js` passes the error to the lead.
+- **Editable-file warning.** At intake the helper splits the command with Python's
+  `shlex.shlex(command, posix=True, punctuation_chars=True)` (so quoting is removed) and takes
+  every word that starts with `/` or `./` (`./` resolved against `/`, the run directory).
+  A command that `shlex` can't split (unbalanced quotes) is refused at intake. A path is flagged when the user, with
   their groups, could write it or any directory above it (checked from owner, group and mode
   bits as root; a missing path is checked through its nearest existing parent). Intake returns
   `editable: [path, ...]`; the machine adds it to the card. The thread card and the helper page
@@ -265,7 +284,7 @@ response it can see.
 
 ### Round 2 — 2026-11-15
 
-**Lanes:** pending.
+**Lanes:** intent — claude; mechanics — gpt; cross-family: yes.
 
 **Changed since Round 1:**
 - Password check is `sudo -S -k -l <command>` (runs nothing); the helper runs the command itself as root with stdin `/dev/null` (Decision 14).
@@ -277,6 +296,11 @@ response it can see.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | RE-RAISE: `sudo -l` follows `listpw`; one NOPASSWD entry lets any password pass | upheld | Decision 19; the Round 1 rationale "as at a terminal" was wrong |
+| intent | major | `~` is Collin's home in the warning, /root at run time | upheld | Decision 20 |
+| mechanics | major | Page spec contradicts itself (inline JS/CSS vs CSP); installer omits static files | upheld | Page and Install bullets rewritten |
+| mechanics | minor | Quoted paths escape the editable-file scan | upheld | `shlex` split (Decision 20) |
+| mechanics | minor | A card can stick in `declining` if the hub restarts mid-call | upheld | 10 s timeout; hub start returns `declining` cards to `waiting` |
 
 ## Prior Work
 
