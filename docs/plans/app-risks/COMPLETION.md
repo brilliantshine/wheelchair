@@ -2,7 +2,19 @@
 slug: app-risks
 date: 2026-11-15
 implemented-by: "gpt standard (gpt-6.1-terra) ×7 workers: T1, T2, T3, T3b, R1-T1, R2-T1, R3-T1; sub-lead claude-opus-5-5 for the D10 seeding and the proposal wording fix"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude / claude-opus-5-5 (FAIL: startup path assertion)
+    checks: gpt standard (gpt-6.1-terra)
+  - round: 2
+    lane: claude / claude-opus-5-5 (FAIL: smoke run folder leak)
+    checks: gpt standard (gpt-6.1-terra)
+  - round: 3
+    lane: claude / claude-opus-5-5 (FAIL: same leak on the signal path)
+    checks: gpt standard (gpt-6.1-terra)
+  - round: 4
+    lane: claude / claude-opus-5-5 (PASS at 3a749c0)
+    checks: gpt standard (gpt-6.1-terra)
 ---
 
 # Completion Report: Close the app's remaining risks
@@ -217,3 +229,7 @@ Seeded session: {"name":"wc-smoke-sub-lead","role":"sub-lead","live":true,"statu
 Slow origin fetch: 8.02 s
 Run folder removed: true
 ```
+
+### Verification 4 (2026-11-15)
+
+PASS at `3a749c0` (claude / claude-opus-5-5). It re-ran SIGINT/SIGTERM/SIGHUP interruptions (no folder at +0/+5/+10 s), the smoke suite, `--check-live`, machine 98/98 and test-support 9/9. Viewer was 383/386: tests 265 and 293 as explained above, plus 336 (the global write lock), which passed 3/3 when run alone and is not in this branch's diff (`viewer/` unchanged), so it is a flake under load from other threads' tests on the machine. No new gap.

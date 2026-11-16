@@ -323,3 +323,4 @@ Budget reset: Collin chose "Keep going" after three rounds.
 - 2026-11-15 — R3-T1 accepted: sub-lead's SIGINT/SIGTERM/SIGHUP runs on the worker branch and again on the feature branch left no folder at +0/+5/+10 s; test-support 9/9; smoke 4/4.
 - 2026-11-15 — Lead: after verification 4 passes, run live.sh once on the final code (D10 mode) and record it in reports/live-run.md; a failure there is a verification gap.
 - 2026-11-15 — Verifier attempt 4: `wc-0958e89051d8-verifier-4`, claude (`--not-provider gpt`), at `3a749c0`.
+- 2026-11-15 — Verification 4: PASS at `3a749c0`. Running the final live run as the lead asked.
