@@ -240,5 +240,8 @@ New or changed tests (in `viewer/test/`):
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Hub: reserve follows the lead's provider, one-account Ready and worker preference, `review_families` setting and enforcement, session list, API.md, node tests (Spec §1-§3 hub parts) | `viewer/app/**` (incl. `API.md`), `viewer/test/*.test.js` | worker, Standard, no provider flag | — | `node --test viewer/test/*.test.js`; `bash machine/test/run.sh` | not started |
+| T2 | Protocol: lead.md steps 1, 5, 9; sub-lead.md "Which family" and verification step 3; reviewer.md both-lenses (Spec §2, §3 protocol parts) | `protocol/app/lead.md`, `protocol/app/sub-lead.md`, `protocol/app/reviewer.md` | worker, Standard, no provider flag | — | `git diff --stat` touches only those three files | not started |
+| T3 | Settings page: reserve label and hints, `bal-save-lead`, Reviewers and checkers mode group, browser tests (Spec §1 Label, §3 Settings page). After T1 | `viewer/pages/settings.js`, `viewer/test/*.spec.js` | worker, Standard, `--provider claude` | — | `npm --prefix viewer run test:browser`; `node --test viewer/test/*.test.js` | not started |
 
 ## Log
