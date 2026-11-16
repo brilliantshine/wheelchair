@@ -386,10 +386,13 @@ class MachineService {
     const thread = safeName(input.thread_id || input.threadId, 'thread id');
     let branch = input.branch || `wc/${thread}`;
     if (input.role === 'worker') {
-      // Starts now overlap while git runs, so a branch another start has named but not yet
-      // recorded is skipped too.
-      let n = Object.values(this.sessions).filter(s => s.thread_id === thread && s.role === 'worker').length + 1;
-      while (this.startingBranches.has(`wc-${thread}-w${n}`)) n += 1;
+      // Starts overlap while git runs, so the count alone can land on a branch already in use
+      // (an earlier start failed, a later one took the next number). Skip any branch a recorded
+      // worker holds or a start in progress has named.
+      const workers = Object.values(this.sessions).filter(s => s.thread_id === thread && s.role === 'worker');
+      const taken = new Set([...workers.map(s => s.branch), ...this.startingBranches]);
+      let n = workers.length + 1;
+      while (taken.has(`wc-${thread}-w${n}`)) n += 1;
       branch = `wc-${thread}-w${n}`;
     }
     safeName(branch, 'branch');
@@ -486,8 +489,9 @@ class MachineService {
     session.pending_initial = adapter.firstMessage(input, composeRolePrompt(input));
     const tmuxArgs = ['new-session', '-d', '-s', name, '-x', '200', '-y', '50', '-c', worktree, commandText];
     // systemd-run scope prevents service restarts killing tmux; installer sets KillMode=process too.
-    const scoped = command('systemd-run', ['--user', '--scope', 'tmux', ...tmuxArgs]);
-    const result = scoped.ok ? scoped : this.tmux(tmuxArgs);
+    // Both asynchronous, like the git above: a slow systemd-run must not hold up the service.
+    const scoped = await commandAsync('systemd-run', ['--user', '--scope', 'tmux', ...tmuxArgs]);
+    const result = scoped.ok ? scoped : await commandAsync('tmux', tmuxArgs);
     if (!result.ok) die(result.stderr.trim() || 'tmux session failed to start');
     this.sessions[name] = session;
     await this.persistSessions();
