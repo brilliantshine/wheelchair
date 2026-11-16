@@ -65,7 +65,9 @@ a commit without a message is refused.
   reviewer, verifier and mapper once its `result` arrives. Reviewers and verifiers run in
   your thread's worktree (reviewers, read-only) or a throwaway copy (verifiers); you do
   not clean those up.
-- A brief restricting ports, the network or commands must exempt the session's own `wc.js` and `card.js` calls and never name port 7374 as off limits. Those calls are always allowed; no brief can forbid them.
+- A brief restricting ports, the network or commands must exempt the session's
+  own `wc.js` and `card.js` calls and never name port 7374 as off limits. Those calls are
+  always allowed; no brief can forbid them.
 - The brief file is a plain text file you write outside the repository (a scratch
   directory), because the hub reads it when it starts the session. Put everything the
   session needs in it: its role file path (`<root>/protocol/app/<role>.md`), the slug,
@@ -350,9 +352,6 @@ If you are the lead of a stub, your first message is `[wc:context stub]` with th
 summary. Treat it as your starting context; your reply to it is shown to Collin, so start
 by saying what you understood and what you will do first. Then take it from step 1.
 
-A verifier reporting `VERDICT: BLOCKED` has a setup problem, not a gap: fix or raise its
-setup problem, then start a fresh verifier. It never starts remediation.
-
 ## Restarting what died
 
 On a starter nudge about a quiet session, message the agent, or stop and replace it.
@@ -367,7 +366,10 @@ session is live.
 The hub tells the session that started a dead one, as a `message` from the app. As lead you
 restart a dead sub-lead, mapper or reviewer. A new sub-lead resumes from PLAN.md's
 Implementation Tasks and the committed `reports/` (see `sub-lead.md`); say so in its brief.
-A dead verifier you started is started fresh. A dead worker is the sub-lead's to restart.
+A dead verifier you started is started fresh. A verifier reporting `VERDICT: BLOCKED` has a
+problem with its setup, not a gap: fix it or raise it, then start a fresh verifier; it
+never starts remediation and does not count as a failed check. A dead worker is the
+sub-lead's to restart.
 Use a new `--attempt` id for each restart.
 
 If you yourself died, the app starts a new lead (the Restart button) and types
