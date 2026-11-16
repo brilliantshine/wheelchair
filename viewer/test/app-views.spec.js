@@ -1,12 +1,12 @@
 'use strict';
 
-// Features, Sessions and Terminal pages against a real server (Spec "Views"), at phone and
+// Features, Agents and Terminal pages against a real server (Spec "Views"), at phone and
 // desktop width. Server and fake machine services come from helpers/app-views-setup.js.
 const { test, expect } = require('@playwright/test');
 const { closeViews, openPage, setupViews } = require('./helpers/app-views-setup.js');
 
 const VIEWPORTS = {
-  phone: { width: 390, height: 844 },
+  phone: { width: 360, height: 844 },
   desktop: { width: 1280, height: 800 },
 };
 
@@ -54,70 +54,26 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
         'href', `/wheelchair/app/thread?id=${made['review-one'].id}#card-${approval.id}`);
     });
 
-    test('sessions are grouped by machine with attach commands', async ({ page }) => {
-      await openPage(page, context, '/app/sessions');
-      const hub = page.locator('section[data-machine="hub"]');
-      const node = page.locator('section[data-machine="node-2"]');
-      await expect(hub.locator('.session:not(.unmanaged)')).toHaveCount(5);
-      await expect(node.locator('.session:not(.unmanaged)')).toHaveCount(1);
-      const hubName = context.seed.made['plan-one'].sessions[0].name;
-      const nodeName = context.seed.made['done-one'].sessions[0].name;
-      await expect(hub.locator(`[data-session="${hubName}"] code`)).toHaveText(`tmux attach -t ${hubName}`);
-      await expect(node.locator(`[data-session="${nodeName}"] code`))
-        .toHaveText(`ssh node-2 -t tmux attach -t ${nodeName}`);
-      await expect(hub.locator(`[data-session="${hubName}"] a`).first())
-        .toHaveAttribute('href', `/wheelchair/app/terminal?name=${hubName}`);
-      await expect(hub.locator(`[data-session="${hubName}"] .role`)).toHaveText('lead');
+    test('agent tree shows waits, attach commands and keeps its fold across redraws', async ({ page }) => {
+      const child = { name: 'wc-a-reviewer', role: 'reviewer', live: true, status: 'running', children: [{ name: 'wc-a-worker', role: 'worker', live: true, status: 'running', children: [], waiting_on: [] }], waiting_on: [] };
+      const lead = { name: 'wc-a-lead', role: 'lead', live: true, status: 'running', cli: 'codex', model: 'model-a', effort: null, children: [child], waiting_on: [child.name] };
+      await page.route('**/api/agents', route => route.fulfill({ json: { leads: [{ thread_id: 'a', thread_title: 'A thread', lead_name: 'Alpha', machine: 'hub', session: lead, children: [child] }], machines: [{ machine: 'hearth', hub: true, reachable: true }, { machine: 'node-3', reachable: false, last_seen: '2030-06-15T12:00:00Z' }] } }));
+      await openPage(page, context, '/app/agents#lead-a');
+      const group = page.locator('#lead-a');
+      await expect(group).toContainText('Waiting on: reviewer');
+      await expect(group.locator('[data-session="wc-a-reviewer"]')).toHaveClass(/awaited/);
+      await expect(group.locator('[data-session="wc-a-worker"]')).toBeVisible();
+      await expect(group.locator('[data-session="wc-a-lead"] code')).toHaveText('tmux attach -t wc-a-lead');
+      await expect(page.locator('#unreachable')).toContainText('node-3 unreachable, last seen');
       await noSideScroll(page);
+      await group.locator('summary').first().click();
+      await page.waitForTimeout(5500);
+      await expect(group.locator('[data-session="wc-a-reviewer"]')).toBeHidden();
     });
 
-    test('the hub gets the plain tmux attach whatever name the installer registered it under', async ({ page }) => {
-      // The installer registers the hub under the machine's hostname; the response marks it `hub: true`.
-      await page.route('**/api/sessions', (route) => route.fulfill({ json: [
-        { machine: 'hearth', hub: true, reachable: true, sessions: [{ name: 'wc-a-lead', role: 'lead', running: true }] },
-        { machine: 'node-2', hub: false, reachable: true, sessions: [{ name: 'wc-b-lead', role: 'lead', running: true }] },
-      ] }));
+    test('sessions URL redirects to Agents', async ({ page }) => {
       await openPage(page, context, '/app/sessions');
-      await expect(page.locator('section[data-machine="hearth"] [data-session="wc-a-lead"] code'))
-        .toHaveText('tmux attach -t wc-a-lead');
-      await expect(page.locator('section[data-machine="node-2"] [data-session="wc-b-lead"] code'))
-        .toHaveText('ssh node-2 -t tmux attach -t wc-b-lead');
-    });
-
-    test('stopped sessions fold under one line and stay open across a refresh', async ({ page }) => {
-      await page.route('**/api/sessions', (route) => route.fulfill({ json: [
-        { machine: 'hearth', hub: true, reachable: true, sessions: [
-          { name: 'wc-a-lead', role: 'lead', running: true },
-          { name: 'wc-a-reviewer', role: 'reviewer', running: false, status: 'stopped' },
-          { name: 'wc-a-mapper', role: 'mapper', running: false, status: 'ready' },
-        ] },
-        { machine: 'node-2', hub: false, reachable: true, sessions: [
-          { name: 'wc-b-worker', role: 'worker', running: false, status: 'stopped' },
-        ] },
-      ] }));
-      await openPage(page, context, '/app/sessions');
-      const hub = page.locator('section[data-machine="hearth"]');
-      await expect(hub.locator(':scope > .v-list [data-session="wc-a-lead"]')).toBeVisible();
-      const fold = hub.locator('details.v-stopped');
-      await expect(fold.locator('summary')).toHaveText('2 stopped');
-      await expect(fold.locator('[data-session="wc-a-reviewer"]')).toBeHidden();
-      await fold.locator('summary').click();
-      await expect(fold.locator('[data-session="wc-a-mapper"]')).toBeVisible();
-      await page.waitForTimeout(5500); // one redraw
-      await expect(hub.locator('details.v-stopped [data-session="wc-a-mapper"]')).toBeVisible();
-      const node = page.locator('section[data-machine="node-2"]');
-      await expect(node.locator('.v-empty')).toHaveText('No running sessions.');
-      await expect(node.locator('details.v-stopped summary')).toHaveText('1 stopped');
-    });
-
-    test('an unmanaged tmux session is listed read-only, with no terminal link', async ({ page }) => {
-      await openPage(page, context, '/app/sessions');
-      const other = page.locator('section[data-machine="hub"] [data-session="other-shell"]');
-      await expect(other).toHaveCount(1);
-      await expect(other).toHaveClass(/unmanaged/);
-      await expect(other).toContainText('read-only');
-      await expect(other.locator('a')).toHaveCount(0);
-      await expect(other.locator('code, button')).toHaveCount(0);
+      await expect(page).toHaveURL(/\/app\/agents$/);
     });
 
     test('the New thread screen offers found repositories and earlier projects', async ({ page }) => {
@@ -140,17 +96,6 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
           method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ default_project_folder: '' }),
         }));
       }
-    });
-
-    test('an unreachable machine is greyed and has no sessions', async ({ page }) => {
-      await openPage(page, context, '/app/sessions');
-      const dead = page.locator('section[data-machine="node-3"]');
-      await expect(dead).toHaveClass(/unreachable/);
-      await expect(dead).toContainText('unreachable');
-      await expect(dead.locator('.seen')).toContainText('last seen');
-      await expect(dead.locator('.seen')).toContainText('2030');
-      await expect(dead.locator('.session')).toHaveCount(0);
-      await expect(page.locator('section[data-machine="hub"]')).not.toHaveClass(/unreachable/);
     });
 
     test('the terminal shows the pane and sends typed keys without an extra Enter', async ({ page }) => {

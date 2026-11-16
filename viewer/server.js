@@ -5,7 +5,7 @@ Routes (all responses use Cache-Control: no-store):
   GET  /wheelchair/plan, /doc   -> plan data and raw Markdown
   GET  /wheelchair/docs         -> viewer/doc.html
   GET  /wheelchair/assets/*     -> page scripts (no token): list.js, doc.js, pages/*, vendor/*, fonts/<name>.woff2 (four allowlisted)
-  GET  /wheelchair/app/<page>   -> viewer/pages/<page>.html (threads, thread, doc, features, sessions, terminal)
+  GET  /wheelchair/app/<page>   -> viewer/pages/<page>.html (threads, thread, doc, features, agents, terminal)
   GET  /wheelchair/graph        -> { hash, graph, children }
   PUT  /wheelchair/graph, /view -> { hash }
   GET  /wheelchair/whoami       no authentication -> { start_id }.
@@ -1827,7 +1827,7 @@ async function servePage(response, name, csp = false) {
 
 // The app's pages (docs/plans/app-shell, "Views") live in viewer/pages/ and their vendored
 // libraries in viewer/vendor/; both are public assets like list.js, matched by a narrow name.
-const APP_PAGES = new Set(['threads', 'thread', 'new', 'doc', 'features', 'sessions', 'settings', 'terminal']);
+const APP_PAGES = new Set(['threads', 'thread', 'new', 'doc', 'features', 'sessions', 'agents', 'settings', 'terminal']);
 // The thread page embeds the graph page for `diagram` cards, so app pages may frame this origin.
 const APP_PAGE_CSP = `${PAGE_CSP}; frame-src 'self'`;
 // The app's fonts: served name -> file under node_modules/@fontsource (latin subset, normal style).
@@ -1876,6 +1876,7 @@ async function handleAppPage(request, response, url, state) {
     await serveSignin(response); return;
   }
   if (!validCookie) { await serveSignin(response); return; }
+  if (name === 'sessions') { response.writeHead(302, { location: `${VIEWER_PREFIX}/app/agents`, 'cache-control': 'no-store' }); response.end(); return; }
   const html = await fsp.readFile(path.join(__dirname, 'pages', `${name}.html`));
   sendFile(response, 200, html, 'text/html; charset=utf-8',
     { 'content-security-policy': APP_PAGE_CSP, 'set-cookie': rememberCookie(state) });
