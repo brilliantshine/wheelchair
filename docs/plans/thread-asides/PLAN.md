@@ -654,3 +654,4 @@ Round 9 is clean: no blocking or major finding upheld.
 - 2026-11-15 — Verifier attempt 2 (wc-54ce860aef63-verifier-2) started on 3fdc8a2; again "Could not avoid gpt; using gpt".
 - 2026-11-15 — Verification 2: FAIL, one new gap (polls pile up behind the thread lock when the machine is slow, delaying Done). The four Remediation 1 gaps passed. REMEDIATION-2.md written; task R2-1 on GPT, same rung.
 - 2026-11-15 — R2-1 accepted: claim/call/apply split with no machine call under the thread lock, one pump per thread, routes don't await the pump; new slow-machine test plus all aside tests pass (9/9 three times); unit 349/350 (known port test); aside browser spec 4/4. Worker reported no choices; none visible in the diff beyond the brief. Remediation 2 recorded in COMPLETION.md; verifier attempt 3 started.
+- 2026-11-15 — Verifier attempt 3 (wc-54ce860aef63-verifier-3) started on fe1d2d4; again "Could not avoid gpt; using gpt".
