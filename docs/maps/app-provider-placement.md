@@ -21,3 +21,5 @@ Tests cover placement and preferences, margin and waiting (`viewer/test/app-bala
 ## What I did not look at
 
 Machine CLI launch internals, account sign-in implementation, unrelated settings, and test cases outside the cited placement and settings paths.
+
+> Current risk-flow recheck at `635c45f07991f31191f2ab1443b52b4ee76559d5`: see [app-risks.md](app-risks.md). The original checked commit above still applies to the rest of this map; files have changed since then.

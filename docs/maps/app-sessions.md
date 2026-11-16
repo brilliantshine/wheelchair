@@ -22,3 +22,5 @@ The machine defaults to `~/.local/state/wheelchair`, holding `machine.json`, `se
 ## What I did not look at
 
 Account placement, session startup details, recovery and hooks beyond the turn-ended gate, and archive paths on other machines. This focused map replaces the older broad map because its covered files changed; the prior version remains in git history.
+
+> Current risk-flow recheck at `635c45f07991f31191f2ab1443b52b4ee76559d5`: see [app-risks.md](app-risks.md). The original checked commit above still applies to the rest of this map; files have changed since then.
