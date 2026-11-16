@@ -90,6 +90,8 @@ The 2 viewer failures are not from this build: `git diff 378f2fa -- viewer/` is 
 Live run 2 (`bash test-support/smoke/live.sh`, commit `b09e538`):
 
 ```
+CHECK | RESULT | DETAIL
+slow-start | PASS | request succeeded; 12.93 s; 1 start requests
 light/claude | PASS | model claude-haiku-5-5
 light/gpt | PASS | model gpt-6-luna
 standard/claude | PASS | model claude-sonnet-5-5

@@ -5,6 +5,8 @@ Run by the sub-lead on hearth with `bash test-support/smoke/live.sh` (real login
 ## Run 2: passing (commit b09e538, with D10)
 
 ```
+CHECK | RESULT | DETAIL
+slow-start | PASS | request succeeded; 12.93 s; 1 start requests
 light/claude | PASS | model claude-haiku-5-5
 light/gpt | PASS | model gpt-6-luna
 standard/claude | PASS | model claude-sonnet-5-5
