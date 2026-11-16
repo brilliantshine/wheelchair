@@ -317,6 +317,11 @@ product code changes; any cleanup run by an agent rather than the suites.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Shared helper `test-support/run-dir.js` (Spec §1–3) and its suite | `test-support/` | GPT standard (gpt-6.1-terra) | wc-25ba351f336d-worker | `node --test test-support/test/*.test.js`; TMPDIR leak check | in progress |
+| T2 | Machine suite conversion (Spec §4 machine, §5 machine/aside) | `machine/test/*.test.js` | — | — | `bash machine/test/run.sh`; TMPDIR leak check | not started (needs T1) |
+| T3 | Viewer unit suite + helpers conversion (Spec §4–5) | `viewer/test/helpers/`, `viewer/test/*.test.js` | — | — | `node --test viewer/test/*.test.js`; TMPDIR leak check | not started (needs T1) |
+| T4 | Viewer browser specs conversion (Spec §4–5) | `viewer/test/*.spec.js`, `viewer/playwright.config.js` | — | — | `npm --prefix viewer run test:browser`; TMPDIR leak check | not started (needs T1, T3) |
+| T5 | Shell traps, aside-probe cleanup, docs (Spec §6–7) | six shell suites, `machine/test/aside-probe.sh`, `AGENTS.md`, `viewer/AGENTS.md`, `machine/AGENTS.md` | GPT light (gpt-6-luna) | wc-25ba351f336d-worker-2 | `bash -n`; shell suites | in progress |
 
 ## Log
 - 2026-11-15 Ready check: hub and machine service answer (session list); claude 2.1.325 and codex 0.169.0 installed; codex preflight token fresh.
