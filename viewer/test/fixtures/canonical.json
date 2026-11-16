@@ -10,8 +10,6 @@
       "id": "decide",
       "label": "Decide",
       "kind": "decision",
-      "origin": "proposed",
-      "was": null,
       "exclusive": true,
       "ref": "docs/plan.md",
       "note": "Choose a branch.",
@@ -23,8 +21,6 @@
       "id": "finish",
       "label": "Finish",
       "kind": "note",
-      "origin": "proposed",
-      "was": null,
       "exclusive": false,
       "ref": null,
       "note": null,
@@ -36,8 +32,6 @@
       "id": "gather",
       "label": "Gather",
       "kind": "step",
-      "origin": "proposed",
-      "was": null,
       "exclusive": false,
       "ref": null,
       "note": null,
@@ -49,8 +43,6 @@
       "id": "inspect",
       "label": "Inspect",
       "kind": "step",
-      "origin": "proposed",
-      "was": null,
       "exclusive": false,
       "ref": null,
       "note": null,
@@ -62,8 +54,6 @@
       "id": "report",
       "label": "Report",
       "kind": "note",
-      "origin": "proposed",
-      "was": null,
       "exclusive": false,
       "ref": null,
       "note": null,
@@ -75,8 +65,6 @@
       "id": "store",
       "label": "Store",
       "kind": "file",
-      "origin": "proposed",
-      "was": null,
       "exclusive": false,
       "ref": null,
       "note": null,
@@ -88,8 +76,6 @@
       "id": "timeline",
       "label": "Timeline",
       "kind": "module",
-      "origin": "proposed",
-      "was": null,
       "exclusive": false,
       "ref": null,
       "note": null,
@@ -107,8 +93,6 @@
       "kind": "sequence",
       "value": null,
       "inferred": false,
-      "origin": "proposed",
-      "was": null,
       "note": null
     },
     {
@@ -119,8 +103,6 @@
       "kind": "data",
       "value": "fallback",
       "inferred": true,
-      "origin": "proposed",
-      "was": null,
       "note": "Alternative path."
     },
     {
@@ -131,8 +113,6 @@
       "kind": "sequence",
       "value": null,
       "inferred": false,
-      "origin": "proposed",
-      "was": null,
       "note": null
     },
     {
@@ -143,8 +123,6 @@
       "kind": "sequence",
       "value": null,
       "inferred": false,
-      "origin": "proposed",
-      "was": null,
       "note": null
     },
     {
@@ -155,8 +133,6 @@
       "kind": "sequence",
       "value": null,
       "inferred": false,
-      "origin": "proposed",
-      "was": null,
       "note": null
     },
     {
@@ -167,8 +143,6 @@
       "kind": "sequence",
       "value": null,
       "inferred": false,
-      "origin": "proposed",
-      "was": null,
       "note": null
     }
   ]
