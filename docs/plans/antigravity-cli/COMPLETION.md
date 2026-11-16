@@ -77,7 +77,7 @@ Every item is `this run`; Prior Work was empty.
 | `onTurnEnded` binds the first `[wc:role]` conversation | this run | `machine/adapters/agy.js:44-51` | `accounts.test.js` |
 | `hookEvent` mapping | this run | `machine/adapters/agy.js:38-43` | `accounts.test.js` (each reason) |
 | `usageFrom` null | this run | `machine/adapters/agy.js:52` | — |
-| `loginCommand`, `loginPrompt`, `parseLogin`, `loginDone`; `loginState` kills the login | this run | `machine/adapters/agy.js:53-56`; `machine/service.js:938-942` | `accounts.test.js`, `service.test.js` |
+| `loginCommand`, `loginPrompt`, `parseLogin`, `loginDone`; `loginState` kills the login | this run (T4; fixed in Remediation 1) | `machine/adapters/agy.js:54-64`; `machine/service.js:919-920`, `:939-949` | `accounts.test.js`, `service.test.js` |
 | `loginStatus` via `agy models` | this run | `machine/adapters/agy.js:57` | `accounts.test.js` |
 | `asideArgv` and `aside-turns.js` gemini branch | not built (conditional) | Task 0 found no fork, so not built (Spec: "Built only when Task 0 finds `--conversation` forks") | `reports/T0.md` §7 |
 | `service.js` status `agy`, launch errors, recovery inference | this run | `machine/service.js:952`, `:444`, `:463`, `:309` | `service.test.js` |
@@ -188,7 +188,6 @@ Not run: `./install.sh` (canonical clone only; refused from a worktree, so `inst
 - **Verification attempt 1 is same-family.** Every builder ran on GPT, and the verifier was started with `--not-provider gpt`, but the hub placed it on GPT too (`gpt-6.1-sol`; note "Could not avoid gpt; using gpt.") because Claude had no room. The lead accepted that. No other model family has checked this build.
 - **Reviewers and verifiers on `agy` are not read-only.** They run with the same flags as builders (Deviation 5). A reviewer placed on Antigravity could edit files; nothing but its brief stops it.
 - **Permission prompts under `--mode auto`**: in T0, auto mode ran `curl` and `chmod 777` without asking. The prompt detector is built from the real `accept-edits` screen, so a prompt is caught if one appears, but which commands make auto mode ask is unknown.
-- **First-run screens on a new machine**: sign-in ends at `agy`'s first-run screens (`loginDone` on "Welcome to Antigravity CLI!"). The data-use screen was never captured, and `answerPrompts` answers nothing. On a machine where `agy` was never onboarded, a first session could sit on those screens and be reported stuck, and Collin would finish onboarding from the terminal page. This machine is onboarded.
 - **No rate-limit format observed.** `limit-hit` relies on a regex over the Stop `error` text (`quota|rate.?limit|resource.?exhausted|429`), with no usage meter (Decision 4).
 - **`agy` self-updates.** The parsers fail soft: unknown rows are skipped, and an unreadable transcript shows the "Couldn't read" line.
 - **Not live-checked yet**: signing in from Settings on a phone, an `agy`-led thread end to end, and a `--provider gemini` worker's `result`. The Spec's Live paragraph is for the verifier, or Collin, on hearth.
@@ -197,3 +196,18 @@ Not run: `./install.sh` (canonical clone only; refused from a worktree, so `inst
 ## Remediation rounds
 
 Appended by Stage 4 loops; never erase earlier content.
+
+### Remediation 1
+
+**Verification attempt 1** (gpt-6.1-sol, commit f64fbe7): FAIL, one gap (`REMEDIATION-1.md`). Antigravity sign-in reported done at `agy`'s first colour-scheme screen and killed the login, so first-run setup was left unfinished and a later session could stick.
+
+- **R1-1** (standard, gpt-6.1-terra): blocked. A copied signed-in HOME didn't reproduce the first-run screens, and nothing was built (`reports/R1-1.md`). The sub-lead deleted the copy, which held a token.
+- **R1-2** (standard, gpt-6.1-terra): a fresh sign-in in an empty scratch HOME, with Collin's code via the lead, captured the real first-run screens: `machine/test/fixtures/agy/onboard-1-theme.txt`, `onboard-2-data.txt`, `onboard-3-trust.txt`. Fix:
+  - `loginPrompt` answers each screen once, as named steps: theme → default; data use → **interaction-data sharing unticked**, then Done; trust → yes (`machine/adapters/agy.js:56-62`).
+  - `loginState` sends each step's keys once (`machine/service.js:944-949`); Claude's plain-array prompt is unchanged.
+  - `loginDone` is true only at the idle prompt with no first-run screen showing (`machine/adapters/agy.js:64`). This is the lead's safety net for any uncaptured screen.
+  - `readyText` is false on every first-run screen (`:35`).
+  - The `agy` login runs in its own 0700 folder, `<stateDir>/agy-login` (`:55`, `machine/service.js:919-920`).
+  - Restarting `agy` after a completed first run showed no first-run screen (`reports/R1-2.md`).
+- **Validation after merging R1-2:** `bash machine/test/run.sh` → `# tests 109`, `# pass 109`, `# fail 0`. Real `~/.gemini` checksums are unchanged before and after.
+- **Residual:** the R1-2 scratch HOME `/tmp/r2-agy-tegTUEUu/home` holds a second Antigravity OAuth token, left for Collin to delete as the lead asked. The first-run choices are Google's defaults except data sharing, which is turned off.

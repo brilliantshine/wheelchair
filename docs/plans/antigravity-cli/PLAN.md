@@ -387,9 +387,11 @@ a worker with `--provider gemini` and check its `result` card arrives.
 | T8 | Installer test expects the `gemini` pin lines `model.sh init` now writes | `install/test/run.sh` | light, gpt-6-luna | wc-9340ecf1256c-worker-10 (t8-a1) | `bash install/test/run.sh` | done |
 | T9 | Decision 19: `worker_order_seen`, so a removed provider stays removed | `viewer/app/settings.js`, `viewer/test/app-settings.test.js` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-11 (t9-a1) | `node --test viewer/test/*.test.js` | done |
 | R1-1 | Remediation 1: finish agy's first-run screens inside sign-in; `loginDone` only at idle | `machine/adapters/agy.js`, `machine/service.js` (login), `machine/test/` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-12 (r1-1-a1) | `bash machine/test/run.sh` | blocked: screens not reproducible from a copied home; nothing built |
-| R1-2 | Remediation 1, second try: capture first-run screens by a fresh scratch-HOME sign-in; answer them in sign-in; done only at idle | as R1-1 | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-13 (r1-2-a1) | `bash machine/test/run.sh` | in progress |
+| R1-2 | Remediation 1, second try: capture first-run screens by a fresh scratch-HOME sign-in; answer them in sign-in; done only at idle | as R1-1 | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-13 (r1-2-a1) | `bash machine/test/run.sh` | done |
 
 ## Log
+
+- 2026-11-16 — R1-2 accepted (machine 109/0 re-run; real ~/.gemini unchanged). Choices: step names `method`/`theme`/`data`/`trust`; trust fixture path replaced with `/path/to/workspace`; first-run picks: default theme, interaction-data sharing unticked, trust the scratch folder. Scratch HOME holding a token left at /tmp/r2-agy-tegTUEUu/home for Collin. Remediation 1: 1 gap, 1 fixed.
 
 - 2026-11-16 — Collin chose (A) via the lead: one more code for a fresh scratch-HOME sign-in. The lead keeps (B)'s never-done-before-idle rule as the safety net. The scratch HOME holding a token is left for Collin, not deleted. R1-2 dispatched.
 
