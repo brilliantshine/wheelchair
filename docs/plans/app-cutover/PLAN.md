@@ -274,6 +274,20 @@ idempotence case is the in-worktree proof.
 | GPT mechanics | minor | Reference regex matches kept routes like `/wheelchair/graph` | upheld | §5 regex narrowed to slash commands |
 | Claude intent | minor | IDEA says the seen hook was only the old workflow's; it reaches every turn | upheld | IDEA updated (D15) |
 
+### Round 2 — 2026-11-15
+
+**Lanes:** Claude (intent); GPT (mechanics); cross-family: yes.
+
+**Changed since Round 1:**
+- IDEA.md: graph list, full size and way back added; non-goal reworded; seen hook's reach stated (D15).
+- Dial across every machine: Settings selection, per-machine note, partial-save handling, 502 body (D16, §3).
+- Seen cleanup ownership test and exact command shape (D17, §2); Accepted Risk for deleted clones.
+- Picture dedup by resolved file (§4).
+- Reference-check regex narrowed; `protocol/app/AGENTS.md` added to §5.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
