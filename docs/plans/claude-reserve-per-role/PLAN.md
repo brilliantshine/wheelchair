@@ -157,6 +157,9 @@ Clean: no findings from either lane.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | Whole Spec: held_back setting, balancer gate, settings page, API.md, sub-lead.md, three test files | viewer/app/settings.js, viewer/app/balancer.js, viewer/pages/settings.js, viewer/app/API.md, protocol/app/sub-lead.md, viewer/test/app-balancer.test.js, viewer/test/app-usage.test.js, viewer/test/app-accounts.spec.js | Standard, asked claude, placed on GPT gpt-6.1-terra (Claude below margin) | wc-ce2c2126fc85-worker | node --test viewer/test/*.test.js; npm --prefix viewer run test:browser | in progress |
+| T1 | Whole Spec: held_back setting, balancer gate, settings page, API.md, sub-lead.md, three test files | viewer/app/settings.js, viewer/app/balancer.js, viewer/pages/settings.js, viewer/app/API.md, protocol/app/sub-lead.md, viewer/test/app-balancer.test.js, viewer/test/app-usage.test.js, viewer/test/app-accounts.spec.js | Standard, asked claude, placed on GPT gpt-6.1-terra (Claude below margin) | wc-ce2c2126fc85-worker | node --test viewer/test/*.test.js; npm --prefix viewer run test:browser | done (worker reported blocked: its two runs collided on ports; sub-lead re-ran serially, only known-issues.md failures and two flakes that passed on re-run) |
 
 ## Log
+
+- 2026-11-16 — T1 accepted and merged (86fe894). Worker reported "blocked" on validation; sub-lead re-ran: node 348/349 (only the known `loses the freed port` failure, docs/known-issues.md:6), browser 572 passed, failures = the known arrow test (docs/known-issues.md:53) plus two tests that passed on re-run.
+- 2026-11-16 — Choice: T1, none reported by the worker (Choices: none).
