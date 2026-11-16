@@ -10,7 +10,7 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 | `GET /threads` | — | `{threads:[Thread]}` newest first; `?view=list` leaves out each thread's `cards`, `sent`, `delivered_ids`, `context`, `pinned`, `archive` and `queues`, and keeps only each session's `name`, `role`, `live`, `ready`, `turn_ended` and `created_at` — what the pages poll |
 | `POST /threads` | `{project,machine?,message?}` | a `Thread`, with its lead started or waiting for room. Before anything is saved the thread's machine checks `project` (`GET /v1/projects?check=`): not a usable git repository → `400 "<path> <reason> on <machine>"`, unknown machine → `404`, no answer or an older service → `502`; nothing is saved or added to `projects.json` on any of these, and the stored `project` is the path the machine returned (`~` and `~/…` expanded there). A non-empty string `message` sets `title` from its trimmed, whitespace-collapsed first line, cut at a word boundary to 60 characters plus `…` |
 | `GET /threads/:id/chat` | — | `{thread,items,cards,pinned,queued,asides}`; `items` leaves out the lead's tool steps when Settings has `tool_steps:"hide"` |
-| `POST /threads/:id/asides` | `{message_id,start,end,quote,action}` | `201` aside without history; action is `ask`, `simpler`, or `draw` |
+| `POST /threads/:id/asides` | `{message_id,start,end,quote,action}` | `201` aside without history (with `graphs`, as in chat); action is `ask`, `simpler`, or `draw` |
 | `GET /threads/:id/asides/:aside` | — | full aside including history and computed `heavy_usable` boolean (not stored); also works when archived |
 | `POST /threads/:id/asides/:aside/messages` | `{text}` | `202`, queues a message and reopens the aside |
 | `POST /threads/:id/asides/:aside/close` | `{outcome:"done"}` or `{outcome:"changed",line}` | `200`; changed sends the line to the lead |
@@ -84,7 +84,7 @@ present, is one of `MAP.md`, `IDEA.md` or `PLAN.md`. The hub accepts an `offer` 
 offer exists, or when exactly one prior offer was answered with `answered_value: "keep talking
 first"`; otherwise it returns 422, `the offer was already asked`.
 
-An aside turn records its resolved `model` and `effort` alongside `id`, `state`, and `message`; retries reuse them and history records the model actually used. Aside-changing routes return 409 when the thread is archived. Chat `asides` holds each aside without its history. Lead assistant text items have a stable `id` of `<session name>#<index>`.
+An aside turn records its resolved `model` and `effort` alongside `id`, `state`, and `message`; retries reuse them and history records the model actually used. Aside-changing routes return 409 when the thread is archived. Chat `asides` holds each aside without its history, plus `graphs: [{entry, path}]`, one per history entry that has a `graph`: `entry` is that entry's index in the aside's `history` (the `entry` the app's picture page takes) and `path` is the saved graph file. The create route returns the same shape. Lead assistant text items have a stable `id` of `<session name>#<index>`.
 
 The thread record carries `pending_cancels`: aside turn ids archive cancelled that the machine hasn't confirmed yet; the hub retries them.
 
