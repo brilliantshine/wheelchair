@@ -34,6 +34,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 7 | Shell suites add INT/TERM/HUP to their existing cleanup trap; `aside-probe.sh` removes its folder in its EXIT trap | Small hardening; EXIT alone is not guaranteed on signals (MAP) | defaulted |
 | 8 | Test temp folders live in system temp (`os.tmpdir()`, so `TMPDIR` is honoured), one run folder per test process, removed at exit; this includes the viewer helper's `makeDir`, which moves out of `viewer/test/.tmp` | Keeps tests' behaviour identical (no folder inside a git checkout); removal at exit plus the sweep stop pile-up | user |
 | 9 | The shared helper lives at a new root file `test-support/run-dir.js` (CommonJS, Node built-ins only) used by both machine and viewer suites, with its own suite `test-support/test/run-dir.test.js` | Machine must not depend on viewer code or vice versa; one mechanism, one test | defaulted |
+| 11 | Keep the legacy-prefix sweep and the `viewer/test/.tmp` sweep at one hour by age, as Spec §3 steps 2–3 say | Collin: clearing leaks from threads still on older test code outweighs the tiny risk to an hour-long test; no test runs that long | user |
 | 10 | Owner liveness = PID alive (`process.kill(pid, 0)`, EPERM counts as alive) **and**, on Linux, `/proc/<pid>/stat` start time equal to the recorded one; where start time cannot be read, a live PID counts as alive | Guards against PID reuse without ever risking a live run's folder | defaulted |
 
 ## Spec
@@ -243,8 +244,22 @@ product code changes; any cleanup run by an agent rather than the suites.
 | intent | blocking | Killing tracked children then removing does not prove every writer stopped; untracked detached descendants (`machine/lib/aside-turns.js:78`) and owner-dead sweeps ignore survivors | downgraded → minor | Removal only happens when the owning test process is ending or gone, so no running test loses its folder, which is what the constraint protects. A detached grandchild that outlives a failed test writes into a folder whose test is over; its writes fail (ENOENT) or land in a folder the next sweep removes. Spec §2 now says this and tracks the tests' own detached spawns by process group |
 | mechanics | blocking | SIGKILL then immediate removal does not confirm the child stopped | upheld | §2 now waits synchronously for each tracked child to be gone or a zombie (max 2 s) and skips removal otherwise |
 | mechanics | blocking | Sweep treats a dead owner as proof; an orphaned server or CLI may still write | upheld | Tracked children are persisted in `owner.json`; the sweep kills and confirms them (PID + start time) before removing, else leaves the folder. Untracked descendants: see the aside seam and Accepted Risks |
-| mechanics | blocking | Legacy cleanup deletes by age alone (also the existing `viewer/test/.tmp` sweep) | user-decision | Raised by both lenses; a real choice between proof of disuse and clearing old leaks. Asked Collin |
+| mechanics | blocking | Legacy cleanup deletes by age alone (also the existing `viewer/test/.tmp` sweep) | user-decision | Collin chose to keep the one-hour sweep (Decision 11); recorded in Accepted Risks |
 | mechanics | major | No seam for AsideTurns' internally spawned detached CLIs | upheld | §2 `onCleanup`; §5 aside tests kill running turns' process groups through `store.proc.kill` |
+
+### Round 2 — 2026-11-15
+
+**Lanes:** pending.
+
+**Changed since Round 1:**
+- §1: `trackChild` persists children (pid, start, group) in `owner.json`; new `onCleanup(fn)` seam.
+- §2: exit cleanup runs `onCleanup`, kills tracked children, waits synchronously (≤2 s) until each is gone or a zombie, skips removal otherwise; note on untracked descendants.
+- §3 step 1: missing `owner.json` → leave; dead owner → kill and confirm recorded children before removal.
+- §5: aside tests register an `onCleanup` killing running turns' process groups.
+- Decision 11 (user): legacy one-hour sweep kept.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
