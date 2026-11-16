@@ -335,11 +335,16 @@
     // sent now. One queued before this page loaded has no pending bubble and gets its own.
     const lead = leadSession();
     const waiting = ((lead && lead.queue) || []).filter((q) => q.source === 'collin');
-    const shown = pending.map((p) => {
-      const at = waiting.findIndex((q) => q.text === p.text);
-      return { text: p.text, queued: at >= 0 ? waiting.splice(at, 1)[0] : null };
+    // Pending ones already delivered (not queued) come first; the queue then shows in its own
+    // order, whichever tab each message was sent from.
+    const left = waiting.slice();
+    const delivered = pending.filter((p) => {
+      const at = left.findIndex((q) => q.text === p.text);
+      if (at < 0) return true;
+      left.splice(at, 1);
+      return false;
     });
-    shown.unshift(...waiting.map((q) => ({ text: q.text, queued: q })));
+    const shown = [...delivered.map((p) => ({ text: p.text, queued: null })), ...waiting.map((q) => ({ text: q.text, queued: q }))];
     const canSendNow = lead && lead.live && lead.ready && !lead.permission_open && !lead.needs_open
       && !(lead.limited_until && Date.parse(lead.limited_until) > Date.now()) && !thread().archived;
     for (const p of shown) {

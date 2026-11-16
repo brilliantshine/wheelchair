@@ -311,6 +311,22 @@ for (const [label, size] of SIZES) {
       await noSideScroll(page);
     });
 
+    test('queued bubbles keep the queue order across tabs', async ({ page }) => {
+      const made = await ctx.make({ cli: 'claude' });
+      await ctx.patch(made.id, (t) => { Object.assign(t.sessions[0], { ready: true, turn_ended: false }); });
+      await open(page, made.id);
+      for (const text of ['A one', 'B two']) {
+        await page.locator('#msg').fill(text);
+        await page.locator('#send').click();
+        await expect(page.locator('#chat .bubble.pending', { hasText: text })).toHaveCount(1);
+      }
+      // C arrives from another tab, so this page has no pending bubble for it.
+      await ctx.patch(made.id, (t) => { t.sessions[0].queue.push({ text: 'C three', source: 'collin', at: new Date().toISOString() }); t.queues = { [t.sessions[0].name]: t.sessions[0].queue }; });
+      await expect(page.locator('#chat .bubble.pending')).toHaveCount(3);
+      const order = await page.locator('#chat .bubble.pending').evaluateAll((els) => els.map((e) => e.firstChild.textContent));
+      expect(order).toEqual(['A one', 'B two', 'C three']);
+    });
+
     test('progress stages render and remain pinned through remediation', async ({ page }) => {
       await page.setViewportSize({ width: 360, height: 800 });
       const made = await ctx.make({ cli: 'claude' });
