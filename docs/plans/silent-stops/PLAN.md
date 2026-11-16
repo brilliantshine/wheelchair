@@ -42,6 +42,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 15 | Watched agents never end a turn to wait on their own background work; they wait in the foreground. The agent reminder adds a line telling an agent that did to wait in the foreground now. No exemption in the hub. | The hub cannot see a CLI's background jobs; a rule costs nothing and Codex already works this way. | user |
 | 16 | Supersedes the Terms part of 13: a child is outstanding only while it owes a reply or is still waiting to start; `finished` is not consulted. Reviewer/verifier reminder gets the background-work line. | Review round 2 intent findings, upheld. | review-round-2 |
 | 17 | Stage 3 from a quiet turn waits until the starter reminder is delivered; a starter that dies with the reminder queued sends it straight to Collin's card. | Review round 2 mechanics findings, upheld. | review-round-2 |
+| 18 | A child with a non-empty queue also counts as outstanding. | Review round 3 mechanics finding, upheld. | review-round-3 |
 
 ## Spec
 
@@ -65,8 +66,10 @@ Two parts: rule text in `protocol/app/`, and a quiet-turn detector in the hub
     `verifier` with `finished: true` is not watched (its report path is closed:
     `viewer/app/sessions.js:260`).
 - **Waiting on others:** the session has at least one child (`started_by` equals its name)
-  that is `live` and either owes a reply or is still `status: 'waiting'` to start
-  (`viewer/app/sessions.js:133`). `finished` is not consulted: a worker re-messaged after its
+  that is `live` and either owes a reply, is still `status: 'waiting'` to start
+  (`viewer/app/sessions.js:133`), or has a non-empty `queue` (work handed to it but not yet
+  submitted because it is busy or held: `viewer/app/cards.js:81-85`,
+  `viewer/app/sessions.js:312-314`). `finished` is not consulted: a worker re-messaged after its
   first result owes a reply again, and a child that has asked its starter something (a
   `message`, which clears its `owes_reply`) is waiting on the starter, so it is no reason for
   the starter to stay quiet. The Agents tab's `waiting_on`
@@ -221,6 +224,9 @@ turn ends are driven as `viewer/test/app-balancer.test.js:185-215` does (machine
     and the worker's turn ends quiet: no card until the reminder is delivered.
 17. At stage 2 with the reminder still queued, the starter is marked ended: the card appears
     with the "starter not live" body.
+18. A worker that asked its sub-lead a question is held (`needs_open`) when the sub-lead's answer
+    arrives, so the answer stays in the worker's queue; the sub-lead's turn ends with no card:
+    not nudged while the answer is queued.
 
 New `viewer/test/protocol-rules.test.js`: asserts `protocol/app/worker.md`, `mapper.md`,
 `sub-lead.md`, `lead.md` and `cards.md` each state that a session's own `wc.js` and
@@ -303,9 +309,23 @@ state or timers.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| gpt mechanics | major | A child whose new work is queued but not yet delivered neither owes a reply nor is waiting, so its starter can be nudged | upheld | Non-empty child queue counts as outstanding (Terms, Decision 18); test 18 |
 | claude intent | minor | Test 7 still phrased as "unfinished child", so it would not pin Decision 16 | upheld | Test 7 reworded, waiting-to-start case added |
 | claude intent | minor | Starter nudge says "result or message" for reviewers/verifiers, who post no cards | upheld | Role-specific wording (Texts) |
 | claude intent | minor | Test list out of order | upheld | Renumbered in order |
+
+### Round 4 — 2026-11-15
+
+**Lanes:** claude (intent); gpt (mechanics); cross-family: yes.
+
+**Changed since Round 3:**
+- Terms: an outstanding child also includes one with a non-empty queue (Decision 18).
+- Texts: starter nudge wording for reviewer/verifier.
+- Rules test: reviewer/verifier matched on "report" and "silently".
+- Tests renumbered 1–18; test 7 reworded; test 18 added.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
