@@ -436,6 +436,7 @@ Collin chose "keep going" after three rounds without a clean one; budget reset.
 | T6 | Page keeps checking after a dropped Run POST; ignore `__pycache__/` | `sudo-helper/static/page.js`, `.gitignore` | light, gpt (gpt-6-luna) | wc-306ee0793e11-worker-5 (medium) | `python3 -m unittest discover -s sudo-helper/test -v` | done |
 | R1-1 | Helper page: wrong-password message only while waiting (verification 1 gap) | `sudo-helper/helper.py`, `sudo-helper/static/page.js`, `sudo-helper/test/test_helper.py` | light, gpt (gpt-6-luna) | wc-306ee0793e11-worker-7 (medium) | `python3 -m unittest discover -s sudo-helper/test -v` | done |
 | R1-2 | Helper page keeps polling while the password is checked (verification 1 gap) | `sudo-helper/helper.py`, `sudo-helper/static/page.js`, `sudo-helper/test/test_helper.py` | light, gpt (gpt-6-luna) | wc-306ee0793e11-worker-8 (medium) | `python3 -m unittest discover -s sudo-helper/test -v` | done |
+| R2-1 | Editable scan: an owned read-only path counts as writable (verification 2 gap) | `sudo-helper/helper.py`, `sudo-helper/test/test_helper.py` | light, gpt (gpt-6-luna) | wc-306ee0793e11-worker-9 (medium) | `python3 -m unittest discover -s sudo-helper/test -v` | dispatched |
 
 ## Log
 
@@ -474,3 +475,4 @@ Collin chose "keep going" after three rounds without a clean one; budget reset.
 - 2026-11-15 — Sub-lead: R1-1 accepted (7/7 helper tests; worker reported no choices; diff matches brief). R1-2 dispatched.
 - 2026-11-15 — Sub-lead: R1-2 accepted (8/8 helper tests; worker reported no choices; diff matches brief). COMPLETION.md "Remediation 1" added; verification attempt 2 started.
 - 2026-11-15 — Sub-lead: verification attempt 2, GPT verifier (gpt-6.1-sol, wc-306ee0793e11-verifier-4) PASS at 0de3bc1. Its browser run: 606 passed, 2 skipped, 4 failures outside this build (one approval timeout that passed on retry; three `app-accounts.spec.js` tests whose fixtures cross midnight UTC; the build touches no accounts or settings code). Claude verifier still running.
+- 2026-11-15 — Sub-lead: verification attempt 2, Claude verifier FAIL (result relayed by the lead after the app dropped it): owned read-only paths not flagged by the editable scan. New gap, not a repeat of attempt 1's. REMEDIATION-2.md written; R2-1 dispatched to GPT.
