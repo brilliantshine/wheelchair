@@ -335,3 +335,4 @@ product code changes; any cleanup run by an agent rather than the suites.
 - 2026-11-15 — Choice: T4, viewer/test/pages.spec.js: one shared `stopChild` for both the startup-failure path and normal stop, so each waits for exit after the SIGKILL fallback.
 - 2026-11-15 — Choice: T4, validation: ran Playwright from the main clone's node_modules through NODE_PATH and PATH, because worktrees have none installed.
 - 2026-11-15 — T4: the worker's browser run failed twice (5 failures: app-fonts ×2, the arrow-routing test ×2, one Firefox phone approval test) and it stopped as its rules require. The sub-lead merged it and compares the full browser suite on the feature branch against a baseline whose viewer tests are unchanged.
+- 2026-11-15 — Verifier attempt 1 (GPT gpt-6.1-sol; the hub could not avoid GPT): FAIL on Spec §7, viewer/AGENTS.md router text. REMEDIATION-1.md, task R1 (GPT light).
