@@ -27,6 +27,9 @@ verified-by:
   - round: 8
     lane: gpt verifier (hub could not avoid gpt), FAIL
     checks: gpt standard (gpt-6.1-terra) build + remediations 1-7
+  - round: 9
+    lane: gpt verifier (hub could not avoid gpt), PASS
+    checks: gpt standard (gpt-6.1-terra) build + remediations 1-8
 ---
 
 # Completion Report — Asides
@@ -594,3 +597,18 @@ The "simultaneous delayed listeners" failure is in `lifecycle.test.js`, which no
 passed in both runs of that file alone. The spec asserts every listed control is disabled after
 archive, close stays enabled, Retry is disabled with a failed record, and no selection bar or
 "Ask about this message" appears.
+
+### Verification 9 — 2026-11-15: PASS
+
+Commit `3aae380593fd3402a35166e90fe210675bcf8983`. The verifier found no supported gaps against
+the Spec, Decisions 19-20 or Remediations 1-8; the earlier archive-race and editable-draft
+reproductions no longer reproduce. Machine 90/90; shell suites passed; viewer unit 358/359 and
+browser 558 passed / 2 skipped, the remaining failures being the documented port test and graph
+failures. Fresh real-CLI probes confirmed isolation.
+
+All nine verifiers ran on GPT, the same family as every builder: the hub answered "Could not
+avoid gpt" to every `--not-provider gpt` start, so no verification was cross-family.
+
+Left behind, for the lead: two unmerged worker worktrees the service won't remove,
+`wc-54ce860aef63-w3` (two workers wrote it after a false "ended" notice; abandoned) and
+`wc-54ce860aef63-w17` (a duplicate session the hub started for attempt `asides-R8-1`).
