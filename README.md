@@ -2,8 +2,8 @@
 
 Agents are good at writing code and bad at being held to a plan. This harness holds them to one.
 You talk to a lead agent in a thread, in a browser or on a phone. It maps how the code works,
-agrees what good looks like, and plans one question at a time. A **different model family** then
-tries to tear the plan apart. Workers build it, and a blind verifier tries to prove the result
+agrees what good looks like, and plans one question at a time. Fresh reviewers, from a
+**different model family** when one is signed in, then try to tear the plan apart. Workers build it, and a blind verifier tries to prove the result
 wrong.
 
 The documents are the state, not a context window. Each feature gets a directory holding the map,
@@ -17,14 +17,18 @@ draw a picture when the answer has a shape, as readily as you set in Settings.
 
 ### First time
 
-1. On the machine that will run the agents, run `./install.sh --serve` (see "Install").
-   Serving is what starts the app and the service that runs agent sessions. Without
-   `--serve`, a headless machine asks; a machine with a display declines without asking.
-2. Run `node viewer/server.js --url` and open the address it prints on each device. It
+1. On the machine that will run the agents (Linux with systemd), run
+   `./install.sh --serve` (see "Install"). Serving is what starts the app and the service
+   that runs agent sessions. Without `--serve`, a headless machine asks; a machine with a
+   display declines without asking.
+2. The installer then offers one or two `sudo tailscale serve ...` commands that publish the
+   app on your tailnet. Accept them, or run the ones it prints later; until they run, other
+   devices can't reach the app.
+3. Run `node viewer/server.js --url` and open the address it prints on each device. It
    carries a token that signs the browser in; after that,
    `https://<machine>.<tailnet>.ts.net/wheelchair/app/` works on its own.
    `node viewer/server.js --rotate-token` signs every device out.
-3. In **Settings**:
+4. In **Settings**:
    - **Accounts**: press **Sign in** for each Claude or GPT account. Open the link it
      shows and sign in there. GPT shows a code to enter on that page; Claude may give you
      a code to paste back into Settings.
@@ -37,7 +41,8 @@ draw a picture when the answer has a shape, as readily as you set in Settings.
 
 ### Doing a piece of work
 
-1. **+ New thread**. Pick the machine and the project (any git repository; save ones you
+1. **+ New thread**. Pick the machine and the project (a git repository with an `origin`
+   remote the machine can fetch; threads branch from its default branch). Save ones you
    use often under "Saved directories"). Type what you want and press **Start**.
 2. The lead answers in the thread. Each thread gets its own git worktree and branch, and
    ends in one pull request.
@@ -50,8 +55,9 @@ draw a picture when the answer has a shape, as readily as you set in Settings.
    a time. Each question shows the lead's leaning; press an option or type your own answer
    under it. MAP.md, IDEA.md and PLAN.md open from the thread.
 4. **Review.** Fresh reviewers that never saw the conversation try to break the plan. With
-   **Both families** set, there are two, one Claude and one GPT. You only see the progress line, and a question if a real choice
-   comes up.
+   **Both families** set there are two, one per family when both have an account free;
+   otherwise they share one. You only see the progress line, and a question if a real
+   choice comes up.
 5. **Approval.** The approval card lists any serious objection the lead overruled, with
    its reason (**Talk about this** to discuss one), and the Ready check: the machine is
    up and on the same version, and the logins work. Press **Start building**.
@@ -97,8 +103,9 @@ implementing → verifying → done`.
 
 ![The viewer: an explanation panel above a flow](docs/viewer.png)
 
-Ask how something works, or let a plan propose a flow, and the lead draws it and shows it in the
-thread. "Open full size" opens the picture on its own page, with a link back to the thread. The
+Once a thread is planning a feature, the lead draws each flow it proposes and shows it in
+the thread. Other answers get a picture as readily as the Diagrams setting says (ask, default
+or high). "Open full size" opens the picture on its own page, with a link back to the thread. The
 panel above the picture says what it shows and what it leaves out. You can drag boxes to
 rearrange the flow.
 
@@ -116,9 +123,10 @@ It also writes a few things outside this repo:
 - a delimited block in `~/.claude/CLAUDE.md` and/or `~/.codex/AGENTS.md`, which holds the
   diagram-sensitivity setting
 - `~/.wheelchair/models`, if Codex is present: the GPT model pinned per tier
-- `~/.local/state/wheelchair/`: the app's threads, machine registry and the machine service's
-  secret; on a serving systemd machine, the `wheelchair-viewer` and `wheelchair-machine` user
-  services
+- `~/.local/state/wheelchair/`: the app's threads, settings, machine registry and the
+  machine service's secret
+- on a serving systemd machine, the `wheelchair-viewer` and `wheelchair-machine` user
+  services, in `~/.config/systemd/user/`
 
 Only the delimited block is this repo's, so nothing else in those files is touched.
 
@@ -157,7 +165,7 @@ The Features and Agents pages, and a browser terminal, open into any session.
 | `viewer/` | The graph viewer and the app's hub: server, pages, tests |
 | `machine/` | The machine service that runs agent sessions in tmux for the app |
 | `sensitivity/`, `install/`, `codex/` | The dial writer, the installer's checks, the GPT model pins, and their test suites |
-| `docs/plans/` | One directory per feature. The only mutable state |
+| `docs/plans/` | One directory per feature: its map, idea, plan and reports. The app's own state lives in `~/.local/state/wheelchair/` |
 
 Every directory that owns a rule has an `AGENTS.md` router saying what it owns and where to go
 next. Start at the root one. `CONTRIBUTING.md` has the conventions and validation commands.
