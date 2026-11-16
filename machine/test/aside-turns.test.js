@@ -65,7 +65,42 @@ test('hub authentication, validation and aside routes', async () => {
   const server = http.createServer((req, res) => service.handle(req, res)); await new Promise(r => server.listen(0, '127.0.0.1', r));
   const request = async (method, route, body, auth = true) => { const response = await fetch(`http://127.0.0.1:${server.address().port}${route}`, { method, headers: { 'content-type': 'application/json', ...(auth ? { 'x-wheelchair-machine-secret': 'secret' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) }); return [response.status, await response.json()]; };
   try {
-    const id = uuid(); assert.equal((await request('GET', `/v1/aside-turns/${id}`, null, false))[0], 401); assert.equal((await request('POST', '/v1/aside-turns', {}))[0], 400); assert.equal((await request('GET', `/v1/aside-turns/${id}`))[0], 404); assert.equal((await request('DELETE', `/v1/aside-turns/${id}`))[0], 404); assert.equal((await request('POST', `/v1/aside-turns/${id}/ack`))[0], 404);
+    const id = uuid(); assert.equal((await request('GET', `/v1/aside-turns/${id}`, null, false))[0], 401); assert.equal((await request('POST', '/v1/aside-turns', {}))[0], 400); assert.equal((await request('GET', `/v1/aside-turns/${id}`))[0], 404); assert.equal((await request('POST', `/v1/aside-turns/${id}/ack`))[0], 404);
     service.asideTurns.turns[id] = { state: 'ok', reply: 'hello' }; assert.deepEqual((await request('GET', `/v1/aside-turns/${id}`))[1], { state: 'ok', reply: 'hello', conversation_id: null, error: null, limit: false }); assert.equal((await request('DELETE', `/v1/aside-turns/${id}`))[0], 200); assert.equal((await request('POST', `/v1/aside-turns/${id}/ack`))[0], 200); assert.equal((await request('GET', `/v1/aside-turns/${id}`))[0], 404);
   } finally { await new Promise(r => server.close(r)); }
+});
+
+test('stopping an unknown turn persists a tombstone and prevents a later start', async () => {
+  const http = require('node:http');
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'aside-tombstone-'));
+  const bin = path.join(dir, 'bin'), log = path.join(dir, 'log'), secret = path.join(dir, 'secret');
+  await fsp.mkdir(bin); await fsp.symlink(path.join(__dirname, 'fixtures/aside/cli.js'), path.join(bin, 'claude'));
+  await fsp.writeFile(log, ''); await fsp.writeFile(secret, 'secret');
+  const old = { ...process.env }; Object.assign(process.env, { PATH: bin + ':' + old.PATH, ASIDE_LOG: log, ASIDE_STORE: path.join(dir, 'aside-turns.json') });
+  let service = new MachineService({ stateDir: dir }); service.config.secret_file = secret; await service.asideTurns.load();
+  let runs = 0; const run = service.asideTurns.run.bind(service.asideTurns);
+  service.asideTurns.run = (...args) => { runs++; return run(...args); };
+  const server = http.createServer((req, res) => service.handle(req, res)); await new Promise(r => server.listen(0, '127.0.0.1', r));
+  const request = async (method, route, body) => { const response = await fetch(`http://127.0.0.1:${server.address().port}${route}`, { method, headers: { 'content-type': 'application/json', 'x-wheelchair-machine-secret': 'secret' }, ...(body ? { body: JSON.stringify(body) } : {}) }); return [response.status, await response.json()]; };
+  try {
+    const id = uuid(), route = `/v1/aside-turns/${id}`;
+    assert.equal((await request('DELETE', route))[0], 200);
+    const body = { turn_id: id, provider: 'claude', mode: 'fork', from: 'parent', new_id: uuid(), cwd: dir, model: 'test-model', prompt: 'hello', account_dir: null };
+    assert.deepEqual(await request('POST', '/v1/aside-turns', body), [200, { turn_id: id, state: 'failed' }]);
+    assert.deepEqual(await request('GET', route), [200, { state: 'failed', reply: null, conversation_id: null, error: 'stopped', limit: false }]);
+    assert.equal(runs, 0); assert.equal(await fsp.readFile(log, 'utf8'), '');
+    const tombstone = service.asideTurns.get(id);
+    assert.deepEqual(tombstone, { input: null, state: 'failed', error: 'stopped', pid: null, pid_start: null, started_at: tombstone.started_at, finished_at: tombstone.started_at, reply: null, conversation_id: null, limit: false });
+    assert.ok(!Number.isNaN(Date.parse(tombstone.started_at)));
+    service = new MachineService({ stateDir: dir }); service.config.secret_file = secret; await service.asideTurns.load();
+    const resumedRun = service.asideTurns.run.bind(service.asideTurns);
+    service.asideTurns.run = (...args) => { runs++; return resumedRun(...args); };
+    assert.deepEqual(service.asideTurns.get(id), tombstone);
+    assert.deepEqual(await request('GET', route), [200, { state: 'failed', reply: null, conversation_id: null, error: 'stopped', limit: false }]);
+    assert.deepEqual(await request('POST', '/v1/aside-turns', body), [200, { turn_id: id, state: 'failed' }]);
+    assert.equal(runs, 0); assert.equal(await fsp.readFile(log, 'utf8'), '');
+    assert.equal((await request('POST', `${route}/ack`))[0], 200);
+    assert.equal((await request('GET', route))[0], 404);
+    assert.equal((await request('DELETE', '/v1/aside-turns/not-a-uuid'))[0], 400);
+  } finally { await new Promise(r => server.close(r)); process.env = old; }
 });
