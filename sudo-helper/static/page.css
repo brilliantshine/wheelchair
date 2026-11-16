@@ -1,0 +1,8 @@
+:root { font: 16px system-ui, sans-serif; color: #202124; background: #f5f6f7; }
+body { margin: 0; }
+main { max-width: 45rem; margin: auto; padding: 1rem; }
+h1 { font-size: 1.6rem; } h2 { font-size: 1.1rem; margin-top: 1.4rem; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; background: white; padding: 1rem; border: 1px solid #ccc; }
+label, input { display: block; } input { box-sizing: border-box; width: 100%; padding: .7rem; font-size: 1rem; }
+button { padding: .8rem 1.2rem; font-size: 1rem; background: #155ac0; color: white; border: 0; border-radius: .3rem; }
+button.confirm { background: #b00020; } .warning { font-size: .9rem; } #editable-section { color: #8b2d00; }
