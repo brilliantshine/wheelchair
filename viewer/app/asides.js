@@ -176,7 +176,6 @@ async function pass(hub, id) {
   for (const cancel of cancels) {
     const base = `/v1/aside-turns/${encodeURIComponent(cancel.turnId)}`;
     await hub.call(cancel.machine, base, 'DELETE').catch(() => {});
-    await hub.call(cancel.machine, `${base}/ack`, 'POST').catch(() => {});
   }
   for (const ack of acks) await hub.call(ack.machine, `/v1/aside-turns/${encodeURIComponent(ack.turnId)}/ack`, 'POST').catch(() => {});
   return again;
