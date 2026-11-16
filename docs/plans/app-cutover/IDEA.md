@@ -1,6 +1,6 @@
 ---
 slug: app-cutover
-status: draft   # draft | confirmed
+status: confirmed
 created: 2026-11-15
 ---
 
