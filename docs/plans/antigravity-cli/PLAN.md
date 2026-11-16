@@ -378,3 +378,5 @@ a worker with `--provider gemini` and check its `result` card arrives.
 ## Log
 
 - 2026-11-16: installed agy 1.5.9 (`~/.local/bin`, PATH line appended to `~/.profile`). Help shows `-p`, `--output-format stream-json`, `--conversation`, `--dangerously-skip-permissions`, `--mode`, `--model`, `--effort`, `models` and `acp` subcommands.
+
+- 2026-11-16: Ready check at approval: hub and machine service answer (`wc.js session list`); claude, codex and agy installed; Claude logged in; Codex preflight passes. agy not signed in yet; Task 0 signs it in.
