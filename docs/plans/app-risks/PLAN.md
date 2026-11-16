@@ -277,7 +277,7 @@ Budget reset: Collin chose "Keep going" after three rounds.
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Duplicate-card fix: hub 500 on direct relay = spooled; test fails before | `machine/service.js` cards route 5xx branch; `machine/test/service.test.js` | GPT standard (gpt-6.1-terra) | wc-0958e89051d8-worker | `bash machine/test/run.sh` | done (a0bb356) |
 | T2 | Shared harness (smoke + live modes, proxy, slow origin) and free smoke suite | `test-support/smoke/` (not live.sh); isolation flags only if missing | GPT standard (gpt-6.1-terra) | wc-0958e89051d8-worker-2 | `bash test-support/smoke/run.sh`; test-support, machine, viewer suites; free live-mode check | done (3be9258) |
-| T3 | Live script (slow start, tiers, permission prompt) and docs | `test-support/smoke/live.sh` + driver; root `AGENTS.md`; `docs/proposals/app-followups/proposal.md` | GPT standard (gpt-6.1-terra) | wc-0958e89051d8-worker-3 | free suites; `live.sh --only slow-start` ≤2 runs, `--only permission` ≤1 run | dispatched |
+| T3 | Live script (slow start, tiers, permission prompt) and docs | `test-support/smoke/live.sh` + driver; root `AGENTS.md`; `docs/proposals/app-followups/proposal.md` | GPT standard (gpt-6.1-terra) | wc-0958e89051d8-worker-3 | free suites; `live.sh --only slow-start` ≤2 runs, `--only permission` ≤1 run | done (4df845c) |
 
 ## Log
 
@@ -287,3 +287,8 @@ Budget reset: Collin chose "Keep going" after three rounds.
 - 2026-11-15 — Choice: T2, harness: the seeded thread id is `smoke` and the seeded caller is `wc-smoke-sub-lead`.
 - 2026-11-15 — Choice: T2, smoke clean check: the private tmux server is checked before its socket folder is removed, so tmux cannot fall back to the default server.
 - 2026-11-15 — Note: T2 first stopped short of committing, reading the brief's 7374 ban as covering its own wc.js/card.js calls; the lead clarified the ban covers only what the harness points at, and T2 committed unchanged work.
+- 2026-11-15 — Choice: T3, `live.js`: `--only` accepts both repeated flags and comma lists.
+- 2026-11-15 — Choice: T3, `live.js`: the permission prompt is approved with Enter (the dialog's selected default is the approve option).
+- 2026-11-15 — Choice: T3, `live.js`: a model turn or permission prompt gets 180 s to appear; clearing gets the Spec's 30 s.
+- 2026-11-15 — Choice: T3, `live.js` (seen in the diff, not reported): a start that lands on a provider other than the one asked fails its tier row and the slow-start row; the logged-out check reads `accounts[].logged_in` from the machine's `/v1/status`, added after the budgeted live runs.
+- 2026-11-15 — Sub-lead fix: T3 replaced the proposal's "Risks to close" bullets with one-liners; restored the original wording and appended the closed / out-of-scope marks.
