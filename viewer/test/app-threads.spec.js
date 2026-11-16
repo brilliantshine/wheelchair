@@ -478,7 +478,7 @@ for (const [label, size] of SIZES) {
         x.cards.find((c) => c.id === needs.id).at = '2030-01-01T01:00:00.000Z';
       });
       await open(page, made.id);
-      const order = () => page.locator('#chat > *').evaluateAll((nodes) => nodes.map((n) => n.id || n.textContent));
+      const order = () => page.locator('#chat > :not(.lead-by)').evaluateAll((nodes) => nodes.map((n) => n.id || n.textContent));
       await expect.poll(order).toEqual(['first message', `card-${needs.id}`, 'later reply']);
       await expect(page.locator(`#card-${needs.id}`)).toHaveClass(/card-needs/);
       await page.goto(`${ctx.server.url}/app/thread?id=${made.id}#card-${needs.id}`);
