@@ -240,7 +240,7 @@ New or changed tests (in `viewer/test/`):
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | Hub: reserve follows the lead's provider, one-account Ready and worker preference, `review_families` setting and enforcement, session list, API.md, node tests (Spec §1-§3 hub parts) | `viewer/app/**` (incl. `API.md`), `viewer/test/*.test.js` | worker, Standard (GPT gpt-6.1-terra), no provider flag | wc-2fd7d426276c-worker | `node --test viewer/test/*.test.js`; `bash machine/test/run.sh` | in progress |
+| T1 | Hub: reserve follows the lead's provider, one-account Ready and worker preference, `review_families` setting and enforcement, session list, API.md, node tests (Spec §1-§3 hub parts) | `viewer/app/**` (incl. `API.md`), `viewer/test/*.test.js` | worker, Standard (GPT gpt-6.1-terra), no provider flag | wc-2fd7d426276c-worker | `node --test viewer/test/*.test.js`; `bash machine/test/run.sh` | done (merged) |
 | T2 | Protocol: lead.md steps 1, 5, 9; sub-lead.md "Which family" and verification step 3; reviewer.md both-lenses (Spec §2, §3 protocol parts) | `protocol/app/lead.md`, `protocol/app/sub-lead.md`, `protocol/app/reviewer.md` | worker, Standard (GPT gpt-6.1-terra), no provider flag | wc-2fd7d426276c-worker-2 | `git diff --stat` touches only those three files | done (merged) |
 | T3 | Settings page: reserve label and hints, `bal-save-lead`, Reviewers and checkers mode group, browser tests (Spec §1 Label, §3 Settings page). Parallel with T1: the browser suites mock the API | `viewer/pages/settings.js`, `viewer/test/*.spec.js` | worker, Standard, `--provider claude` → GPT gpt-6.1-terra (Claude held back by the reserve; hub note "Could not use claude; using gpt.") | wc-2fd7d426276c-worker-3 | `npm --prefix viewer run test:browser`; `node --test viewer/test/*.test.js` | in progress |
 
@@ -248,3 +248,5 @@ New or changed tests (in `viewer/test/`):
 
 - 2026-11-15 — Choice: T2, protocol/app/reviewer.md report format: every finding line carries `LENS: mechanics|intent` (also for single-lens reviewers); no code parses the app reviewer's line, so the field is free to add.
 - 2026-11-15 — Choice (sub-lead): T1 brief, §3 fallback note uses provider labels ("Claude"/"GPT") for F and Y; the §2 worker note keeps provider keys to match the existing "Could not use X; using Y." note.
+- 2026-11-15 — Choice: T1 reported none; the diff follows the brief's settled shape (signed-in helper `signedIn` in balancer.js shared by the reserve, §2 and §3; `reservedLabel` in routes.js).
+- 2026-11-15 — T1 re-validation: node suite 378/379 pass; the one failure, lifecycle.test.js "a starter that loses the freed port registers through the new holder", fails identically on the feature base before T1 and is recorded in docs/known-issues.md. machine suite passes.
