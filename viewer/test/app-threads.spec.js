@@ -97,6 +97,50 @@ for (const [label, size] of SIZES) {
       await noSideScroll(page);
     });
 
+    test('lead chips follow the newest lead and link to Agents', async ({ page }) => {
+      const live = await ctx.make({ cli: 'claude' });
+      const ended = await ctx.make({ cli: 'claude' });
+      await ctx.patch(live.id, (t) => {
+        t.title = 'Live lead';
+        t.sessions[0].created_at = '2026-01-01T00:00:00Z';
+        t.sessions[0].live = true;
+      });
+      await ctx.patch(ended.id, (t) => {
+        t.title = 'Ended lead';
+        t.sessions[0].created_at = '2026-01-01T00:00:00Z';
+        t.sessions[0].live = true;
+        t.sessions.push({ ...t.sessions[0], name: 'newer-lead', created_at: '2026-02-01T00:00:00Z', live: false });
+      });
+      await ctx.post(live.id, { kind: 'stub', title: 'Unopened chip stub', summary: 'Later.', depends_on_parent: false });
+      const stored = await (await fetch(`${ctx.server.url}/api/threads?token=${ctx.server.token}`)).json();
+      const liveName = stored.threads.find((t) => t.id === live.id).lead_name;
+      const endedName = stored.threads.find((t) => t.id === ended.id).lead_name;
+      expect(liveName).toBeTruthy(); expect(endedName).toBeTruthy();
+      await page.setViewportSize({ width: 360, height: 844 });
+      await page.goto(`${ctx.server.url}/app/threads`);
+      const liveRow = page.locator(`#list li[data-id="${live.id}"]`);
+      const endedRow = page.locator(`#list li[data-id="${ended.id}"]`);
+      const chip = liveRow.locator('a.lead-chip');
+      await expect(chip).toHaveText(liveName);
+      await expect(chip).toHaveAttribute('href', `/wheelchair/app/agents#lead-${live.id}`);
+      await expect(endedRow.locator('span.lead-chip')).toHaveText(endedName);
+      await expect(endedRow.locator('a.lead-chip')).toHaveCount(0);
+      await expect(page.locator('#list li', { hasText: 'Unopened chip stub' }).locator('.lead-chip')).toHaveCount(0);
+      await expect(page.locator('#list a a')).toHaveCount(0);
+      await noSideScroll(page);
+      await open(page, live.id);
+      await expect(page.locator('#head a.lead-chip')).toHaveText(liveName);
+      await expect(page.locator('#head a.lead-chip')).toHaveAttribute('href', `/wheelchair/app/agents#lead-${live.id}`);
+      await expect(page.locator('#head a', { hasText: 'Agents' })).toHaveAttribute('href', `/wheelchair/app/agents#lead-${live.id}`);
+      await noSideScroll(page);
+      await open(page, ended.id);
+      await expect(page.locator('#head span.lead-chip')).toHaveText(endedName);
+      await page.goto(`${ctx.server.url}/app/threads`);
+      await page.route('**/wheelchair/app/agents', (route) => route.fulfill({ status: 200, body: 'Agents' }));
+      await page.locator(`#list li[data-id="${live.id}"] a.lead-chip`).click();
+      await expect(page).toHaveURL(new RegExp(`/wheelchair/app/agents#lead-${live.id}$`));
+    });
+
     test('list: ?new=1 goes to the New thread screen', async ({ page }) => {
       await page.goto(`${ctx.server.url}/app/threads?new=1`);
       await expect(page).toHaveURL(/\/app\/new$/);
