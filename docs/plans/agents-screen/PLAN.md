@@ -244,7 +244,7 @@ No findings from either lens. Clean round. (Mechanics reviewer restarted once af
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Hub: lead names (assign, serialize, backfill), `lead_names` setting + Settings box, model/effort on record, `GET /api/agents`, API.md | viewer/app/{sessions,threads,hub,settings,routes,views}.js, new viewer/app modules, API.md, pages/settings.*, viewer/AGENTS.md (new row), app-agents/app-settings/app-hub tests | GPT Standard (gpt-6.1-terra) | wc-85d38701e785-worker | node --test viewer/test/*.test.js; npm --prefix viewer run test:browser | done (worker reported blocked on its browser gate for environment reasons; sub-lead re-ran both suites on the integrated branch: only pre-existing failures) |
 | T2 | Agents page, nav, terminal page, Sessions page removal + redirect, routers | pages/agents.*, views.css, nav.js, terminal.*, features.js, sessions.* (delete), server.js, viewer/AGENTS.md, AGENTS.md, app-views/app-ui specs, app-views-setup helper | GPT Standard (gpt-6.1-terra); asked for Claude, hub fell back to GPT | wc-85d38701e785-worker-2 | same | done (merged; nav-label spec expectations outside its boundary fixed by the sub-lead at integration) |
-| T3 | Threads row chip, thread page header | pages/threads.*, thread.*, app.css, app-threads spec + world helper | GPT Standard (gpt-6.1-terra); asked for Claude, hub fell back to GPT | wc-85d38701e785-worker-3 | same | in progress |
+| T3 | Threads row chip, thread page header | pages/threads.*, thread.*, app.css, app-threads spec + world helper | GPT Standard (gpt-6.1-terra); asked for Claude, hub fell back to GPT | wc-85d38701e785-worker-3, then wc-85d38701e785-worker-4 | same | done. Attempt 1 came back blocked: its new test fetched /api/threads without a token. Attempt 2 got a rewritten brief (rung: brief rewrite, same tier and effort) on the same branch and fixed the test |
 
 ## Log
 
@@ -260,3 +260,7 @@ No findings from either lens. Clean round. (Mechanics reviewer restarted once af
 - 2026-11-15 — Choice: T2, viewer/pages/agents.js: an unknown capacity deadline shows "unknown"; an unknown CLI shows "CLI unknown".
 - 2026-11-15 — Choice: T2, viewer/pages/views.css: awaited children are marked with the existing warning border colour.
 - 2026-11-15 — Choice (sub-lead): T3, viewer/pages/thread.js: the thread header's Sessions button becomes "Agents" linking to /wheelchair/app/agents#lead-<thread_id>.
+- 2026-11-15 — Choice: T3, viewer/pages/threads.js + app.css: the thread link is the title, stretched over the row with a ::after pseudo-element; the chip is a sibling link above it.
+- 2026-11-15 — Choice: T3, viewer/test/app-threads.spec.js: the chip test seeds through a stub card and patched lead timestamps, using the real hub's naming.
+- 2026-11-15 — Choice: T3 attempt 2, validation: also ran the focused spec with --config=viewer/playwright.config.js so both browsers ran.
+- 2026-11-15 — Integration: sub-lead updated app-threads.spec.js:32 nav label to Agents.

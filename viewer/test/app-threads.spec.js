@@ -29,7 +29,7 @@ for (const [label, size] of SIZES) {
     test('the nav stays at the top of a long thread', async ({ page }) => {
       const made = await ctx.make({ cli: 'claude' });
       await open(page, made.id);
-      await expect(page.locator('#app-nav a', { hasText: 'Sessions' })).toBeVisible();
+      await expect(page.locator('#app-nav a', { hasText: 'Agents' })).toBeVisible();
       await page.evaluate(() => {
         const tall = document.createElement('div'); tall.style.height = '5000px'; document.body.appendChild(tall);
         window.scrollTo(0, 4000);
