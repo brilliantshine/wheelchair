@@ -346,7 +346,7 @@ async function handleThreads(hub, request, response, url, bits, body) {
       await asides.change(hub, thread, aside, bits[4], body);
       return { status: bits[4] === 'messages' ? 202 : 200, body: { ok: true } };
     });
-    if (request.method !== 'GET') await asides.pump(hub, id);
+    if (request.method !== 'GET') asides.pump(hub, id).catch(() => {});
     return send(response, result.status, result.body);
   }
   if (request.method === 'GET' && bits[2] === 'chat') {
