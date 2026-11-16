@@ -391,6 +391,8 @@ a worker with `--provider gemini` and check its `result` card arrives.
 
 ## Log
 
+- 2026-11-16 — Verification attempt 2: FAIL, 1 new gap (the sign-in card's 30 s no-URL timeout fires after the code, stopping the polls that drive agy's first-run screens). Verifier stopped. REMEDIATION-2.md written; R2-1 dispatched on gpt (the T5 builder's provider).
+
 - 2026-11-16 — Verification attempt 2 started on d4a2146 (wc-9340ecf1256c-verifier-2). `--not-provider gpt` again, but the hub said "Could not avoid gpt; using gpt" and placed it on gpt-6.1-sol, so it's same-family.
 
 - 2026-11-16 — R1-2 accepted (machine 109/0 re-run; real ~/.gemini unchanged). Choices: step names `method`/`theme`/`data`/`trust`; trust fixture path replaced with `/path/to/workspace`; first-run picks: default theme, interaction-data sharing unticked, trust the scratch folder. Scratch HOME holding a token left at /tmp/r2-agy-tegTUEUu/home for Collin. Remediation 1: 1 gap, 1 fixed.
