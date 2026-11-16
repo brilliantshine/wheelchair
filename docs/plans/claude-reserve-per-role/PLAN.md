@@ -157,5 +157,6 @@ Clean: no findings from either lane.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Whole Spec: held_back setting, balancer gate, settings page, API.md, sub-lead.md, three test files | viewer/app/settings.js, viewer/app/balancer.js, viewer/pages/settings.js, viewer/app/API.md, protocol/app/sub-lead.md, viewer/test/app-balancer.test.js, viewer/test/app-usage.test.js, viewer/test/app-accounts.spec.js | Standard, asked claude, placed on GPT gpt-6.1-terra (Claude below margin) | wc-ce2c2126fc85-worker | node --test viewer/test/*.test.js; npm --prefix viewer run test:browser | in progress |
 
 ## Log
