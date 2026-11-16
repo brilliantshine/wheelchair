@@ -55,5 +55,5 @@ accepted, then accepts the resend as new.
 - The smoke suite runs on hearth and never touches the live hub, machine service, their
   ports, state folders or the user's own CLI config.
 - It uses a real `claude --version` only, never a real model turn, so it costs nothing.
-- The live checks (tiers, permission prompt) are run once and recorded. They are not an
-  automated suite.
+- The live checks (tiers, permission prompt) are a script run by hand, never part of an
+  automated suite, because they cost model turns.
