@@ -434,6 +434,7 @@ Collin chose "keep going" after three rounds without a clean one; budget reset.
 | T4 | Hub: sudo kind, `sudo-outcome`, `applySudoState`, Decline/Talk presses, thread page card; `cards.md` sudo kind | `viewer/app/{card,cards,routes,threads,machine-client,state,chat}.js`, `viewer/pages/thread.js` + card CSS, `viewer/app/API.md`, `protocol/app/cards.md`, `viewer/test/app-sudo.*` | standard, claude (claude-sonnet-5-5) | wc-306ee0793e11-worker-4 (medium) | done |
 | T5 | Routers and role files: `sudo-helper/AGENTS.md`, root `AGENTS.md` rows, `lead.md`, `sub-lead.md`, `worker.md` | `sudo-helper/AGENTS.md`, `AGENTS.md`, `CONTRIBUTING.md`, `protocol/app/{lead,sub-lead,worker}.md` | light, gpt (gpt-6-luna) | wc-306ee0793e11-worker-6 (medium) | done |
 | T6 | Page keeps checking after a dropped Run POST; ignore `__pycache__/` | `sudo-helper/static/page.js`, `.gitignore` | light, gpt (gpt-6-luna) | wc-306ee0793e11-worker-5 (medium) | `python3 -m unittest discover -s sudo-helper/test -v` | done |
+| R1-1 | Helper page: wrong-password message only while waiting (verification 1 gap) | `sudo-helper/helper.py`, `sudo-helper/static/page.js`, `sudo-helper/test/test_helper.py` | light, gpt (gpt-6-luna) | wc-306ee0793e11-worker-7 (medium) | `python3 -m unittest discover -s sudo-helper/test -v` | dispatched |
 
 ## Log
 
@@ -467,3 +468,4 @@ Collin chose "keep going" after three rounds without a clean one; budget reset.
 - 2026-11-15 — Sub-lead: T4 accepted. Re-ran: node suite 403/404, the one failure (`lifecycle.test.js` "a starter that loses the freed port registers through the new holder") fails identically on the feature branch without T4; browser suite 610 passed, 2 skipped. Decline and `sudo-outcome` both run under `hub.withThread`.
 - 2026-11-15 — Sub-lead: T5 accepted; worker reported no choices; diff matches the brief.
 - 2026-11-15 — Sub-lead: all tasks done; COMPLETION.md written; verification round 1 started at 0087751: wc-306ee0793e11-verifier (claude-opus-5-5) and wc-306ee0793e11-verifier-2 (gpt-6.1-sol).
+- 2026-11-15 — Sub-lead: verification 1, Claude verifier FAIL with one gap (stale "Wrong password" message hides the result on the helper page); REMEDIATION-1.md written; R1-1 dispatched to GPT (the provider that built T1). GPT verifier still running; fixes merge after it reports.
