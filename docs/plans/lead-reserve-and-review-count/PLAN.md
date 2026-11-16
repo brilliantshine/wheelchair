@@ -1,6 +1,6 @@
 ---
 slug: lead-reserve-and-review-count
-status: planning   # planning | ready-for-review | approved | implementing | verifying | done
+status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-15
 ---
 
@@ -12,14 +12,7 @@ get buried as this file grows. **Map:** `MAP.md`.
 
 ## Open Questions
 
-### Q3: When the reserved provider is the only family there is, are other sessions still held back?
-- **Context:** The hold-back sends workers, reviewers and so on elsewhere when the lead's
-  provider is projected to run short (`viewer/app/balancer.js:45`, `held_back`). With one
-  family there is nowhere else, so they wait until usage resets.
-- **Options:** keep holding back (leads stay protected, other work waits for the reset); or
-  skip the hold-back when no other family is usable (nothing waits, leads may run short).
-- **Recommendation:** keep holding back; the wait ends at the reset, and the ticks in
-  Settings already let him turn it off per role.
+None.
 
 ## Watch List
 
@@ -40,22 +33,130 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 6 | Scope is the app (hub, Settings page, `protocol/app/`). The CLI `/plan-review` and `/verify` stages keep their own rules. | IDEA "Not doing"; they already handle one family. | defaulted |
 | 7 | One setting, "Reviewers and checkers": Both families (default), Claude only, GPT only. A single-family choice gives one reviewer per round covering both lenses, and one checker, all from that family. | Collin picked one choice over separate count and family settings. | user |
 | 8 | With `both` chosen but only one family usable, a plan still gets two reviewers, both from that family, one per lens. The checker lands on the same family as the builder with a note. | Collin picked two independent reads; matches the CLI `/plan-review`. | user |
+| 9 | With one family, the reserve still holds back the ticked roles when it is projected to run short; they wait for the reset. | Collin kept leads protected; per-role ticks already turn it off. | user |
 
 ## Spec
 
-### Reviewers and checkers setting
+Scope: the app only (hub in `viewer/app/`, Settings page `viewer/pages/settings.js`, role
+rules in `protocol/app/`). The CLI stages (`protocol/plan-review.md`,
+`protocol/verification.md`) are unchanged. Read `MAP.md` and
+`docs/maps/app-provider-placement.md` for how placement works today.
 
-- New Settings value `review_families`: `both` (default), `claude`, `gpt`. Shown under
-  Settings → Other agents as "Reviewers and checkers" with those three choices.
-- `both`: today's behaviour (two reviewers, intent lens preferring Claude, mechanics lens
-  avoiding the first's provider; checker avoids the builder's provider).
-- `claude` / `gpt`: each review round starts one reviewer on that family, briefed to apply
-  both the intent and mechanics lenses. Every checker (small fix, sub-lead verification,
-  after-done fix) starts on that family; the sub-lead starts one checker even when both
-  families built.
-- `both` with only one family usable: two reviewers, both on that family, one per lens
-  (the hub drops the provider constraint with a note, as today). One checker, on that
-  family.
+### 1. The reserve follows the lead's provider
+
+Today "Save Claude for leads" (`save_claude_for_leads`) and the margin hold-back both key off
+`PROVIDERS.claude.saveForLeads` (`viewer/app/providers.js:3`, `viewer/app/balancer.js:39,45`).
+
+- **Reserved provider.** A new helper in `viewer/app/balancer.js` (exported for tests)
+  computes it: walk `settings.lead_order` with `any` expanded to `settings.worker_order`
+  (same expansion as `balancer.js:28`), de-duplicated; return the first provider that has an
+  unpaused account in `settings.accounts` that is signed in on the thread's machine
+  (`machines[machineName]?.accounts?.[id]`, the test `usage.rank` and the wait path already
+  use). None → `null` (nothing reserved).
+- **Ordering** (`balancer.js:45`): when `settings.save_for_leads` is true and the role is not
+  lead or sub-lead, move the reserved provider to the end of the candidate list. `null` →
+  no reordering.
+- **Margin hold-back** (`balancer.js:39`): `margin[p]` is true only when `p` is the reserved
+  provider (instead of `PROVIDERS[p].saveForLeads`); the rest of the condition is unchanged.
+  With one family this still holds back ticked roles until the reset (Decision 9).
+- Remove `saveForLeads` from `PROVIDERS` and every reader of it.
+- **Setting key.** `save_claude_for_leads` → `save_for_leads` in `BALANCING`,
+  `defaults()` (default `true`), `validBalancing`, the Settings page draft/save lists
+  (`viewer/pages/settings.js:1059,1136`), `viewer/app/API.md`, and the tests. `normalize()`
+  carries an old file's boolean `save_claude_for_leads` into `save_for_leads` when the new
+  key is absent. `PUT /settings/balancing` accepts only the new key (the old key is a 400,
+  like any unknown key).
+- **Label.** `GET /settings` adds `reserved_provider`: the label (`Claude`/`GPT`) of the
+  first provider in the expanded lead order with any unpaused account, or `null`. The
+  Settings row reads "Save <label> for leads", or "Save the lead's provider for leads" when
+  `null`. The hint: "Sessions with no provider preference try other providers first. Does
+  not hold anyone back; the ticks below do." The checkbox `id` becomes `bal-save-lead` and
+  its `aria-label` matches the visible label.
+
+### 2. One-account setups
+
+- **Ready check** (`viewer/app/ready.js:38-58`): only the thread's own CLI is required to be
+  installed and logged in (or pass Codex preflight). The other CLI is no longer checked, so
+  its absence or sign-out never adds to `missing`. Update the comment above the loop.
+- **Worker preference for an unusable family** (`balancer.js:48-50`): when a worker asks
+  `--provider X` and X has no unpaused account signed in on the machine (or X's model cell
+  for the slot is Not used and the request is a preference), treat it like a reviewer
+  preference: place on the normal order and return `note: "Could not use X; using Y."`.
+  When X has a signed-in account but no room (or is below its margin with the role held
+  back), behaviour is unchanged: wait, or fall through as today. The early 400 for a model
+  cell "Not used at <slot>" (`balancer.js:30-33`) stays only when X *does* have a signed-in
+  account; otherwise it falls back as above.
+- `protocol/app/sub-lead.md` "Which family" bullet: add that the hub sends a Claude
+  preference elsewhere, with a note, when no Claude account is signed in on the machine
+  (replacing "including while Claude is signed out on that machine" at `sub-lead.md:67-68`).
+
+### 3. Reviewers and checkers setting
+
+- **Setting.** `review_families`: `"both"` (default) | `"claude"` | `"gpt"`. Saved with the
+  other preferences: `PUT /settings/preferences` accepts `review_families`, rejects any
+  other value with 400 `review_families must be both, claude or gpt`; `GET /settings` and the
+  preferences response include it; `normalize()` falls back to `both` on a missing or bad
+  value. Document in `viewer/app/API.md`.
+- **Settings page** (Other agents section, `viewer/pages/settings.js:363-368`): a new first
+  row "Reviewers and checkers" with a three-way mode group (Both families / Claude only /
+  GPT only), saved like `tool_steps`. Hint per value: both → "Two plan reviewers from
+  different families; the checker is from the other family than the builder."; one family →
+  "One plan reviewer and the checker, both on <family>." Replace the reviewer and checker
+  row hints with "Model tier" wording that no longer claims two providers.
+- **Session list.** `wc.js session list` (`sessions.js:387`) returns
+  `{ sessions, review_families }`, so a lead or sub-lead reads the setting without another
+  call.
+- **Hub enforcement.** When `review_families` is `claude` or `gpt`, a reviewer or verifier
+  start is placed as if it carried `--provider <that family>` (a preference, as reviewer and
+  verifier constraints already are), overriding any `--provider`/`--not-provider` it sent. If
+  that family has no room or no account, the existing preference fallback applies, with its
+  note. Worker, mapper, lead and sub-lead placement is unaffected.
+- **Protocol, `protocol/app/lead.md`:**
+  - Step 5: read `review_families` from `session list` before each round. `both` → today's
+    two reviewers and flags (unchanged; with one family usable they both land on it, one per
+    lens — Decision 8). `claude`/`gpt` → start **one** reviewer, no provider flag, briefed
+    with both lenses from `reviewer.md`; the Review Rounds "Lanes" line records one lane.
+  - Steps 1 and 9 (small fix and after-done verifier): `both` → unchanged
+    (`--not-provider <lead's provider>`); single family → no provider flag.
+  - Lanes / "cross-family" wording in the Review Rounds template stays; a single-family
+    round records `cross-family: no`.
+- **Protocol, `protocol/app/sub-lead.md`** verification step 3: `both` → unchanged.
+  Single family → start exactly one verifier, no provider flag, whatever families built.
+- **Protocol, `protocol/app/reviewer.md`:** change "Review only the lens you were given" to allow a brief that assigns both
+  lenses; then apply each and label every finding with its lens.
+
+### Non-goals
+
+Forecasting, a third provider, tier choice per role, the CLI `/plan-review` and `/verify`
+stages, per-thread overrides of the new setting.
+
+### Validation
+
+```bash
+node --test viewer/test/*.test.js
+npm --prefix viewer run test:browser
+bash machine/test/run.sh
+```
+
+New or changed tests (in `viewer/test/`):
+
+- `app-balancer.test.js`: lead order `['gpt','any']` with `save_for_leads` → a worker with
+  no flag gets Claude first; the margin hold-back applies to GPT, not Claude. Lead order
+  `['claude','any']` → today's results. Reserved provider skips a provider with no signed-in
+  account. Old `save_claude_for_leads: false` on disk loads as `save_for_leads: false`.
+  GPT-only (no Claude account signed in): a worker `--provider claude` is placed on GPT with
+  a note, not waiting. Claude signed in but out of room: still waits. `review_families:
+  'gpt'`: a reviewer `--provider claude` and a verifier `--not-provider gpt` both land on
+  GPT.
+- `app-usage.test.js`: `PUT /settings/balancing` 400 for `save_claude_for_leads`, 200 for
+  `save_for_leads`; `PUT /settings/preferences` round-trips `review_families` and 400s a bad
+  value; `GET /settings` has `reserved_provider`.
+- Ready test (`app-hub.test.js` or `app-usage.test.js`, wherever the existing "is not logged in" case lives; update any case that now expects the other CLI to fail Ready): Claude thread, Codex installed but signed
+  out → `ok: true`.
+- Session list returns `review_families`.
+- `app-accounts.spec.js:237`: expected key list uses `save_for_leads`. A browser check that
+  the label reads "Save GPT for leads" when lead order starts with GPT, and that the
+  Reviewers and checkers group saves.
 
 ## Accepted Risks
 
@@ -63,6 +164,15 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 |------|--------------|-------|
 
 ## Review Rounds
+
+### Round 1 — 2026-11-15
+
+**Lanes:** intent lens, Claude preferred; mechanics lens, the other family; cross-family: yes when both start.
+
+**Changed since Round N-1:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
