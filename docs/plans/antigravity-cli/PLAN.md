@@ -383,8 +383,11 @@ a worker with `--provider gemini` and check its `result` card arrives.
 | T5 | Pages: Settings, thread, threads show Antigravity; browser tests | `viewer/pages/{settings,thread,threads}.js`, `viewer/test/*.spec.js` | standard, gpt-6.1-terra (asked for claude; hub: \"Could not use claude; using gpt\") | wc-9340ecf1256c-worker-7 (t5-a1) | `npm --prefix viewer run test:browser` | done |
 | T6 | Protocol, API docs, routers | `protocol/app/{lead,sub-lead}.md`, `machine/API.md`, `viewer/app/API.md`, `machine/AGENTS.md`, `viewer/AGENTS.md`, `codex/AGENTS.md` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-8 (t6-a1) | protocol-rules test; grep for two-provider wording | done |
 | T7 | Graph-arrow browser test skips `form` picture files, as it skips `run` ones | `viewer/test/browser.spec.js` | light, gpt-6-luna | wc-9340ecf1256c-worker-9 (t7-a1) | the one test, both browsers | in progress |
+| T8 | Installer test expects the `gemini` pin lines `model.sh init` now writes | `install/test/run.sh` | light, gpt-6-luna | wc-9340ecf1256c-worker-10 (t8-a1) | `bash install/test/run.sh` | in progress |
 
 ## Log
+
+- 2026-11-16 — Full validation on the merged branch: machine 109/0, codex 91/0, sensitivity 67/0, viewer unit 445/447 (the two baseline failures), install 179/1. The install failure (`install/test/run.sh:247`, the default model pins file) is from T1: `init` now writes `gemini.*` lines, and my T1 brief didn't list the installer suite. T8 fixes the expected text.
 
 - 2026-11-16 — T5 accepted (focused browser specs pass, per its report; diff read). Its full browser run failed only `browser.spec.js:2134` ("no drawn arrow's line passes through either box…") in both browsers. Cause: that test opens every committed `docs/plans/*/graphs/*.json` as a node graph, and this plan's `graphs/sign-in.json` (committed by the lead during planning, 9f4bb3e) is a `form: timeline` picture, the first `form` file in the repo, so the viewer never readies. Not T5's doing; T7 makes the test skip `form` files as it already skips `run` ones.
 - 2026-11-16 — Choice: T5, `viewer/pages/settings.js`: the Antigravity accounts section shows only `default-gemini`, even if usage data lists another Antigravity account.
