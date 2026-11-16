@@ -160,10 +160,16 @@ async function archive(hub, id) {
   for (const aside of thread.asides || []) {
     if (aside.status === 'open') require('./asides.js').close(aside);
     if (aside.turn) {
-      try { await hub.call(thread.machine, `/v1/aside-turns/${encodeURIComponent(aside.turn.id)}`, 'DELETE'); }
-      catch (error) { if (error.status !== 404) throw error; }
+      const pending = thread.pending_cancels ||= [];
+      if (!pending.includes(aside.turn.id)) pending.push(aside.turn.id);
     }
     aside.turn = null;
+  }
+  await hub.save(thread);
+  for (const turnId of [...(thread.pending_cancels || [])]) {
+    try { await hub.call(thread.machine, `/v1/aside-turns/${encodeURIComponent(turnId)}`, 'DELETE'); }
+    catch (error) { if (error.status !== 404) continue; }
+    thread.pending_cancels = thread.pending_cancels.filter((id) => id !== turnId);
   }
   await hub.save(thread);
   const result = await hub.call(thread.machine, '/v1/archive', 'POST', { thread_id: thread.id });

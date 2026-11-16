@@ -44,7 +44,7 @@ class Hub {
     for (const [name, machine] of Object.entries(await this.state.machines())) {
       if (machine.last_seen) this.lastSeen.set(name, machine.last_seen);
     }
-    this.asideTimer = setInterval(() => this.allThreads().then((threads) => Promise.all(threads.filter(require('./asides.js').needsPump).map((t) => require('./asides.js').pump(this, t.id, { fromTimer: true })))).catch(() => {}), 2000);
+    this.asideTimer = setInterval(() => this.allThreads().then((threads) => Promise.all([...threads.filter(require('./asides.js').needsPump).map((t) => require('./asides.js').pump(this, t.id, { fromTimer: true })), ...threads.filter((t) => t.pending_cancels?.length).map((t) => require('./asides.js').sweepCancels(this, t.id))])).catch(() => {}), 2000);
     this.asideTimer.unref();
     this.pollTimer = setInterval(() => this.pollDead().catch(() => {}), 10_000);
     this.pollTimer.unref();
@@ -56,6 +56,7 @@ class Hub {
     // wait short for someone watching, at one gh call per waiting stub.
     this.waitTimer = setInterval(() => Promise.all([this.pollWaiting(), sessions.retryWaiting(this), sessions.releaseLimits(this)]).catch(() => {}), 60_000);
     this.waitTimer.unref();
+    await this.allThreads().then((threads) => Promise.all(threads.filter((t) => t.pending_cancels?.length).map((t) => require('./asides.js').sweepCancels(this, t.id)))).catch(() => {});
     await this.pollWaiting();
     await sessions.retryWaiting(this);
   }
