@@ -45,7 +45,10 @@ A small Node module, `test-support/smoke/harness.js`, used by both scripts below
 
 1. Makes one run folder (via `test-support/run-dir.js`) holding: the hub's state folder,
    the hub's cache root, the machine's state folder, a `TMUX_TMPDIR`, a local bare git
-   origin with a seed commit, and a clone of it that is the thread's project.
+   origin with a seed commit, and a clone of it that is the thread's project. For the live
+   script, the clone also gets a local branch `wc/<thread-id>` at the seed commit, because
+   every worker start uses the thread's branch as its base (`viewer/app/sessions.js:468`,
+   `machine/service.js:383-388`).
 2. Picks three free loopback ports: hub, machine, and a counting proxy.
 3. Writes the hub's starting state **before** the hub starts, using the hub's own
    `viewer/app/state.js` so the records are valid: `machines.json` naming one machine whose
@@ -61,7 +64,14 @@ A small Node module, `test-support/smoke/harness.js`, used by both scripts below
 5. Starts the real machine service (`machine/service.js`) with its own state folder, port,
    host `127.0.0.1`, the harness's secret, and `hub_url` pointing at the harness hub, with
    `TMUX_TMPDIR` set to the run folder so every tmux call (including through
-   `systemd-run --user --scope`) talks to a private tmux server.
+   `systemd-run --user --scope`) talks to a private tmux server. `TMUX` and `TMUX_PANE`
+   are removed from every harness process's environment, since tmux follows `$TMUX` to the
+   caller's own server when it is set.
+   Environment for the three processes: the smoke suite sets a temporary `HOME` and removes
+   `CLAUDE_CONFIG_DIR`, `CODEX_HOME` and every `WHEELCHAIR_*` variable, so no CLI reads the
+   user's real config (`machine/adapters/claude.js:5`, `machine/adapters/common.js:24`).
+   The live script keeps `HOME`, `CLAUDE_CONFIG_DIR` and `CODEX_HOME` (D6) and removes
+   every `WHEELCHAIR_*` variable.
 6. Runs the counting proxy: a few lines of Node forwarding every request from hub to
    machine unchanged and counting `POST /v1/sessions` requests per session name.
 7. Exposes helpers: call a hub route; make an agent session request the way the machine
@@ -202,13 +212,26 @@ bash test-support/smoke/live.sh       # on hearth, costs model turns (9 sessions
 
 ### Round 2 — 2026-11-15
 
-**Lanes:** pending; cross-family: pending.
+**Lanes:** gpt / gpt-6.1-sol (intent); gpt / gpt-6.1-sol (mechanics); cross-family: no (Claude unavailable for reviewers).
 
 **Changed since Round 1:**
 - Harness: hub gets a mandatory `--state-dir`; hub state is seeded (machines.json pointing at a counting proxy, and for the live script a thread with a sub-lead record); session requests go to the hub's `/api/machine/session` as that sub-lead; startup assertion covers effective default paths.
 - Smoke suite: starts and stops at the machine directly (a `lead` start, branch `wc/smoke`); slow-start check removed from it.
 - Live script: slow-start check moved here, measured by the counting proxy (exactly one start request); stop asserts `live:false`/`status:stopped`.
 - Decision D9.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| mechanics | blocking | Thread branch `wc/<thread-id>` never created, so worker starts fail | upheld | Harness step 1 creates it at the seed commit (`viewer/app/sessions.js:468`, `machine/service.js:383-388`) |
+| mechanics | major | Inherited `CLAUDE_CONFIG_DIR`/`CODEX_HOME` defeat the temp HOME | upheld | Harness step 5 lists the environment per script; also strips `TMUX`/`TMUX_PANE` and `WHEELCHAIR_*` (`machine/adapters/claude.js:5`) |
+
+### Round 3 — 2026-11-15
+
+**Lanes:** gpt / gpt-6.1-sol (intent); gpt / gpt-6.1-sol (mechanics); cross-family: no (Claude unavailable for reviewers).
+
+**Changed since Round 2:**
+- Harness step 1: the live clone gets a local `wc/<thread-id>` branch at the seed commit.
+- Harness step 5: per-script environment (temp HOME and cleared CLI config overrides for smoke; real CLI config for live); `TMUX`, `TMUX_PANE` and `WHEELCHAIR_*` removed for both.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
