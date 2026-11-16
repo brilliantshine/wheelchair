@@ -143,8 +143,8 @@ Collin can supply; the escalation ladder in `lanes.md` has run out; or a lane re
 nothing, so this stage stops under its own Lanes rule below and Collin has to step
 in — `needs` then says what is needed. A failure you recover from, by a retry or an
 escalation that works, never shows. Each of these moments is also where you read the
-picture back first (`graphs.md`, "Reading a graph back"), so Collin's rulings are never
-overwritten; a `409` is handled as `graphs.md` says. Tell Collin in your own turn, too,
+picture back first (`graphs.md`, "Reading a graph back"), so the write carries the file's
+current hash; a `409` is handled as `graphs.md` says. Tell Collin in your own turn, too,
 whenever a part turns `needs-you` — the picture and its tab signal are not a substitute
 for saying so.
 
@@ -199,9 +199,9 @@ task, a plain-language label, and the worker's own words in `note`. A choice goe
 the same file as the part it affects, since edges join siblings only (`graphs.md`'s
 `from`/`to` rule, "Edges connect siblings only"). One that affects parts in two files is drawn once, in the
 file of the first part the worker named, wired to the affected parts there, with `note`
-also naming the others — so one choice always has exactly one box and one ruling, never
-two. Before drawing them, write each one to the plan's Log first, one line
-per choice in the Log's usual `- <date> — ` form, the text after the dash starting
+also naming the others — so one choice always has exactly one box, never two. Before
+drawing them, write each one to the plan's Log first, one line per choice in the Log's
+usual `- <date> — ` form, the text after the dash starting
 `Choice:`, naming the task, the part, and the choice — the Log is written first so a
 crash between the two writes never leaves a choice on the picture with no record. A
 report with no such section is not accepted as `none`: list the choices you can see

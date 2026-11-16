@@ -2170,6 +2170,7 @@ test("no drawn arrow's line passes through either box it connects, over every co
           return { x, y, w: parseFloat(rect.getAttribute('width')), h: parseFloat(rect.getAttribute('height')) };
         };
         const graph = window.__viewer.graph();
+        if (graph.run) return []; // Run pictures draw curved wires this straight-line check does not model.
         const bad = [];
         for (const e of graph.edges) {
           const line = document.querySelector(`g.edge[data-id="${e.id}"] path.edge-line`);

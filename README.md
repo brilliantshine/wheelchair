@@ -103,7 +103,7 @@ A machine can serve the viewer to your other devices over Tailscale: run `./inst
 or `--no-serve` to decline. This runs it as an always-on `systemd` user service, from this
 checkout's code, at `https://<machine>.<tailnet>.ts.net/wheelchair/`. Open the bookmark once per
 device and it's remembered. `--rotate-token` locks every device out again. Everything, including
-dragging boxes and rulings, works on a phone.
+dragging boxes, works on a phone.
 
 A serving machine is also the hub for the app at `/wheelchair/app/`: threads with a lead
 agent, from idea through planning, review, building and checking, driven from a browser or
