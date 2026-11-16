@@ -109,9 +109,16 @@ Every step ignores errors per entry (another process may be sweeping too).
    is missing or unreadable, leave the folder (it cannot be proven unused; `owner.json`
    is written inside `runDir()` immediately after `mkdtemp`, so this is only a
    crash in that instant). If it parses and the owner is alive (Decision 10), leave it.
-   If the owner is gone: for each recorded child whose PID is alive **with the same start
-   time**, SIGKILL it (its group when `group: true`) and wait as in §2; if every recorded
-   child is then confirmed stopped, remove the folder, else leave it for a later sweep.
+   If the owner is gone: for each recorded child, decide from its PID:
+   - PID not alive (`ESRCH`): stopped.
+   - PID alive, the recorded `start` is non-null **and** the live process's start time
+     reads and equals it: it is the orphan; SIGKILL it (its group when `group: true`) and
+     wait as in §2.
+   - PID alive in any other case (recorded or live start time null or unreadable, or
+     different): **never kill it**. If the start times are both readable and differ, the
+     PID was reused, so the child counts as stopped; otherwise the folder is left for a
+     later sweep.
+   Remove the folder only when every recorded child is stopped or confirmed stopped.
    This also ends servers orphaned by a force-killed test run.
 2. Legacy leftovers in `os.tmpdir()` whose name starts with one of the prefixes below and
    whose mtime is older than one hour are removed:
@@ -156,8 +163,13 @@ a test file).
   if startup fails (`waitForLine` rejects or the token read fails) the child is killed and
   awaited before the error is rethrown. `stop()` awaits the child's `exit` event in every
   path, including after SIGKILL (no resolving on the timer alone).
-- The second server starter in `pages.spec.js` (around line 82) gets the same treatment,
-  or is replaced by the shared helper if its behaviour is identical.
+- Every other test-owned spawn of a long-lived process gets the same treatment
+  (`trackChild` right after spawn; stop paths await `exit` even after SIGKILL). Known
+  sites: `pages.spec.js` (~84, ~109), `routes.test.js` (~14, ~23), `registration.test.js`
+  (~18, ~26, ~215, ~262), `lifecycle.test.js` (~15, ~26, ~39, ~67, ~233),
+  `server.test.js` (~177, ~920, ~966), `app-machines.test.js` (~145). Implementers
+  confirm with `grep -n "spawn(" viewer/test/*.js machine/test/*.js` and convert any
+  further hit that outlives a single synchronous call.
 - `machine/test/service.test.js` `service().close()` already closes the HTTP server;
   child processes spawned by the service under test (fake tmux/CLI scripts) are short-lived
   and synchronous; hook-post/statusline children (lines ~405, ~813) are awaited where the
@@ -249,7 +261,7 @@ product code changes; any cleanup run by an agent rather than the suites.
 
 ### Round 2 — 2026-11-15
 
-**Lanes:** pending.
+**Lanes:** intent: GPT; mechanics: GPT; cross-family: no.
 
 **Changed since Round 1:**
 - §1: `trackChild` persists children (pid, start, group) in `owner.json`; new `onCleanup(fn)` seam.
@@ -257,6 +269,20 @@ product code changes; any cleanup run by an agent rather than the suites.
 - §3 step 1: missing `owner.json` → leave; dead owner → kill and confirm recorded children before removal.
 - §5: aside tests register an `onCleanup` killing running turns' process groups.
 - Decision 11 (user): legacy one-hour sweep kept.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| mechanics | major | A null start time compared to null could authorize SIGKILL of a reused PID | upheld | §3: a recorded child is killed only when both start times are readable and equal; any other live PID is never killed, and the folder waits for a later sweep unless start times prove reuse |
+| mechanics | minor | Other server starters not named in the conversion list | upheld | §5 lists every known test-owned spawn and the grep to confirm |
+| intent | — | No findings | — | — |
+
+### Round 3 — 2026-11-15
+
+**Lanes:** pending.
+
+**Changed since Round 2:**
+- §3 step 1: the rule for killing a dead run's recorded children now requires both start times readable and equal; otherwise never kill.
+- §5: full list of test-owned spawns to track and await.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
