@@ -45,6 +45,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 19 | Supersedes 14's check: the password is checked with `sudo -k -v` and the command's permission with `sudo -k -l`, each writing the password only after a sentinel prompt appears; a machine whose sudo asks for no password fails closed | Review round 2: `-l` follows `listpw` (default any), so one NOPASSWD entry let any password pass | review-round-2 |
 | 20 | Intake refuses `~` in the command; the editable-file scan uses `shlex` | `~` meant Collin's home in the warning but /root at run time | review-round-2 |
 | 21 | Supersedes 16: Decline is one synchronous call; no saved `declining` state, attempt id or restart recovery. Failed calls save nothing | Review round 4: the saved state kept producing race findings; a cancel the helper didn't confirm already changes nothing | review-round-4 |
+| 22 | The machine's cancel endpoint answers with its saved terminal result when it has one, and saves any terminal helper answer before returning it | Review round 5: a helper restart could turn Decline's answer into `expired` and drop a saved `ran` | review-round-5 |
 | 4 | The command is fixed when the card is posted; the run uses the stored text byte for byte and the card shows it in full, unabridged | IDEA.md: what runs is exactly what is shown | defaulted |
 
 ## Spec
@@ -126,7 +127,10 @@ is treated as done. It:
 
 **Decline.** One synchronous call. The press handler (in `viewer/app/threads.js` `press`,
 which already awaits work) calls the machine (`POST /sudo/<request_id>/cancel` on the machine
-service API, `machine/API.md`), which calls the helper's cancel, with a 10-second timeout overall.
+service API, `machine/API.md`), with a 10-second timeout overall. The machine answers from its request file first:
+if it has a saved terminal result for that request, it returns that and does not call the helper.
+Otherwise it calls the helper's cancel; a terminal state in the helper's answer is saved to the
+request file first, under the same never-replace rule, and the machine returns what is saved.
 Nothing is saved on the card before the answer.
 - Any answer: the full status (same shape as `GET /requests/<id>`) goes to `applySudoState`.
   `declined` closes the card and tells the lead; if Run won the race, Collin sees the run result,
@@ -384,6 +388,18 @@ Collin chose "keep going" after three rounds without a clean one; budget reset.
 - `applySudoState` handles helper-reported states only; never moves a card back to `waiting`.
 - `reason` field for `failed` outcomes.
 - Decision 1 marked superseded on stdin.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | — | No findings | — | — |
+| mechanics | major | Decline's cancel answer (`expired` after helper restart) could override a saved, undelivered `ran` | upheld | Decision 22 |
+
+### Round 6 — 2026-11-15
+
+**Lanes:** intent — claude; mechanics — gpt; cross-family: yes.
+
+**Changed since Round 5:**
+- The machine's cancel endpoint answers from its saved terminal result first and saves helper answers before returning (Decision 22).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
