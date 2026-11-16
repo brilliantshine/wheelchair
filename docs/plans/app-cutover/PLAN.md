@@ -353,6 +353,19 @@ idempotence case is the in-worktree proof.
 | GPT mechanics | major | Moved trigger would demand a graph before a plan directory may exist | upheld | §3: only once the plan directory exists; prose before |
 | GPT mechanics | minor | Arrangement choices could be read as firing at `ask` | upheld | Same fix as the intent finding: §3 bullet split |
 
+### Round 4 — 2026-11-15
+
+**Lanes:** Claude (intent); GPT (mechanics); cross-family: yes. Collin chose "keep going" after round 3; budget reset.
+
+**Changed since Round 3:**
+- §3 lead.md trigger: proposed flows draw at every level once the plan directory exists; arrangement choices only above `ask`.
+- §3 separate `GET /settings/diagram-sensitivity`.
+- §4 aside graphs listed and opened on the picture page (`aside` + `entry` params).
+- §1 `skills/` and `codex/prompts/` removed outright; installer stops rendering both; root AGENTS.md loses the harness-adapter row.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
