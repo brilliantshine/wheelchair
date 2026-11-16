@@ -277,3 +277,5 @@ Budget reset: Collin chose "Keep going" after three rounds.
 |---|-----------|--------------------|------|-----------|------------|--------|
 
 ## Log
+
+- 2026-11-15 Ready check: hub and machine service answer (`wc.js session list`); Claude logged in; Codex preflight passes; tmux, git, claude, codex on PATH. Ready.
