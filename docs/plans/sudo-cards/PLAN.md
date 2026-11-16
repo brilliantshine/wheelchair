@@ -49,6 +49,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 12 | Requests live in the helper's memory only: unrun after 1 hour they expire; a helper restart expires them all; 3 wrong passwords end the request | Nothing durable to leak or replay | defaulted |
 | 13 | The sudo request runs on the machine where the lead runs | The work that needs sudo is on that machine | defaulted |
 | 14 | Supersedes 10: the password is checked by `sudo -S -k -l <command>` run as Collin (authenticates and checks the command is allowed, runs nothing); the helper then runs the command itself as root with stdin `/dev/null` | With `sudo -S` running the command, a NOPASSWD rule leaves the password unread in the command's stdin | review-round-1 |
+| 15 | `request_id` correlates card and outcomes; the machine keeps a small request file and posts outcomes only after the card is accepted; new idempotent hub route `sudo-outcome`; unknown id → 409 retry | Review: no correlation or ordering defined | review-round-1 |
+| 16 | Decline is reported only after the helper confirms it; a lost race shows the run result; an unreachable machine returns the card to waiting | Review: Decline could promise nothing runs when something did | review-round-1 |
+| 17 | The helper page carries no request data in HTML; a static script sets every field with `textContent`; strict CSP with no inline script | Review: agent-controlled fields could inject script into the real password page | review-round-1 |
 | 4 | The command is fixed when the card is posted; the run uses the stored text byte for byte and the card shows it in full, unabridged | IDEA.md: what runs is exactly what is shown | defaulted |
 
 ## Spec
@@ -84,21 +87,50 @@ Flow:
 3. The hub stores and shows the card: command in a monospace block, shown in full (wrapping, no
    truncation), `does`, `why`, and three controls: **Open to run** (a link to `url`, opening
    a new tab), **Decline**, **Talk about it**. No password field exists anywhere in the hub's pages.
-4. Card states: `waiting`, `ran` (exit code + output), `declined`, `expired`, `failed`
-   (3 wrong passwords). Once not `waiting`, the buttons are gone and the outcome shows.
+4. Card states: `waiting`, `declining`, `running`, `ran` (exit code + output), `declined`,
+   `expired`, `failed` (3 wrong passwords or not allowed). Buttons show only in `waiting`;
+   `declining` shows "Declining…"; `running` shows "Running…"; the rest show the outcome.
 
-What reaches the lead (each typed like any press, shown as a short bubble in the thread):
+**Correlation.** The helper's `request_id` is the one key. The machine service adds it to the
+card before forwarding; the hub stores it on the card and keeps a `request_id → card id` index in
+thread state. Every outcome names `request_id`; the hub never needs the machine to know card ids.
+Intake takes `{command, does, why}` only (no thread or card reference).
+
+**Outcomes, machine → hub.** New route `POST /api/machine/sudo-outcome` (machine secret,
+beside `cards` and `events` in `viewer/app/routes.js` `handleMachine`), body
+`{request_id, state, exit_code?, output?, truncated?, delivery_id}`, where `state` is `running`,
+`ran`, `declined`, `expired` or `failed`. Idempotent: a repeat or an older state than the card
+already has returns 200 and changes nothing. On the first terminal state the hub updates the card
+and queues one message to the lead (below). An unknown `request_id` returns 409, which the machine
+treats as "retry later", not as a rejection.
+
+**Ordering and durability on the machine.** The machine service keeps a small file
+`sudo-requests.json` in its state directory (0600; no password ever exists in the machine
+service): per `request_id`, whether its card has been accepted by the hub, the last state the
+helper reported and whether the hub has acknowledged it. It:
+- polls the helper every 2 seconds for each request not yet terminal-and-acknowledged;
+- posts an outcome only after that request's card has been accepted (2xx from `/api/machine/cards`);
+- retries outcome posts on 5xx, 409 or no connection until a 2xx, newest state only;
+- on restart, reloads the file and resumes. A helper that no longer knows the id answers
+  `expired`, which is posted like any outcome. Entries are dropped once a terminal state is
+  acknowledged.
+
+**Decline.** The press sets the card to `declining` and the hub calls the machine
+(`POST /sudo/<request_id>/cancel` on the machine service API, `machine/API.md`), which calls the
+helper's cancel. The helper answers with the request's actual state:
+- `declined`: the card becomes `declined`, the lead gets `[card <id>] declined`.
+- `running` or a terminal state (Run won the race): the card takes that state; the outcome follows
+  as usual; Collin sees the run result, not "declined".
+- machine or helper unreachable: the card returns to `waiting` with a one-line note "Couldn't reach
+  <machine> to decline. Try again." Nothing is reported as declined until the helper confirms it.
+The helper's own transitions are atomic under one lock: `waiting → running` on a good password,
+`waiting → declined` on cancel; whichever comes first wins.
+
+What reaches the lead (typed like any press, shown as a short bubble in the thread):
 - `[card <id>] sudo ran: exit <n>` followed by the output block.
-- `[card <id>] declined`, `[card <id>] talk about: sudo request` (nothing runs; card stays
-  `waiting` and its Open to run link still works), `[card <id>] sudo expired`,
-  `[card <id>] sudo failed: wrong password 3 times`.
-
-Decline is sent hub → machine → helper `cancel`, so the helper page refuses to run it afterwards.
-
-Outcome reporting: the machine service polls the helper (`GET` status on the intake socket,
-every 2 seconds while any request it registered is `waiting` or `running`) and posts the
-outcome to the hub through its existing callback, which updates the card and queues the message
-to the lead. A machine restart resumes polling for requests the hub still shows as `waiting`.
+- `[card <id>] declined`, `[card <id>] sudo expired`, `[card <id>] sudo failed: <reason>`.
+- `[card <id>] talk about: sudo request`: nothing runs; the card stays `waiting` and Open to run
+  still works.
 
 ### The sudo helper
 
@@ -124,10 +156,10 @@ row in the root `AGENTS.md` tables), but **runs only from an installed root-owne
 - `intake.sock`, root:<user's group> 0660: the machine service's API.
 
 **Intake API** (JSON over HTTP on `intake.sock`):
-- `POST /requests` `{command, does, why, thread, card_ref}` → `{request_id, url}`.
+- `POST /requests` `{command, does, why}` → `{request_id, url}`.
   `request_id` is 128 random bits, hex; `url` is `<url_base>/r/<request_id>`.
 - `GET /requests/<id>` → `{state, exit_code?, output?, truncated?}`.
-- `POST /requests/<id>/cancel` → declines a `waiting` request.
+- `POST /requests/<id>/cancel` → declines a `waiting` request; answers with the request's actual state either way.
 
 **Page** (on `page.sock`):
 - `GET /r/<id>`: self-contained HTML (inline CSS and JS, nothing from the network): the
@@ -136,8 +168,12 @@ row in the root `AGENTS.md` tables), but **runs only from an installed root-owne
   An unknown or closed id shows its outcome or "No such request".
 - `POST /r/<id>/run` with the password (form body). The page then shows "Running…" and polls
   `GET /r/<id>/status` until done, then shows exit code and output.
-- Headers: `Cache-Control: no-store`, `Referrer-Policy: no-referrer`, a CSP allowing only
-  inline script and style from self, `X-Frame-Options: DENY`. The password box has
+- **Rendering contract.** `command`, `does`, `why` and `output` are agent-controlled. The HTML
+  template contains no request data at all. A static script file served by the helper
+  (`/static/page.js`) fetches `GET /r/<id>/data` (JSON) and sets every field with `textContent`.
+  No inline script, no `innerHTML`, no template interpolation of request data anywhere.
+- Headers: `Cache-Control: no-store`, `Referrer-Policy: no-referrer`, a CSP of
+  `default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'`, `X-Frame-Options: DENY`. The password box has
   `autocomplete="current-password"`.
 
 **Running** (on `run`, only while state is `waiting`; one run at a time per request):
@@ -183,10 +219,11 @@ commands, an anti-phishing check (Decision 9), running on a machine other than t
 ### Validation
 
 ```bash
-python3 -m unittest discover -s sudo-helper/test      # helper: shims for runuser/sudo; wrong password x3, timeout, truncation, cancel, expiry, no password in logs or responses
+python3 -m unittest discover -s sudo-helper/test      # helper: shims for runuser/sudo; wrong password x3, NOPASSWD shim (command run with stdin /dev/null, cannot read the password), timeout, truncation, cancel vs run race, expiry, no password in logs or responses
+                                                      # rendering: command/does/why/output of `</script><script>alert(1)</script>` and `<img src=x onerror=...>` appear as text; page HTML contains no request data
 bash sudo-helper/test/install-test.sh                 # installer against a temp root, no real systemctl/tailscale (shims)
-bash machine/test/run.sh                              # sudo card registration, refusal without helper, outcome polling, non-lead refusal
-node --test viewer/test/*.test.js                     # hub: card validation, lead-only, outcome → message to lead, decline → cancel
+bash machine/test/run.sh                              # sudo card registration, refusal without helper, outcome held until card accepted, 409 retried, restart resumes, non-lead refusal
+node --test viewer/test/*.test.js                     # hub: card validation, lead-only, idempotent outcomes, unknown request 409, decline states (declined / lost race / unreachable)
 npm --prefix viewer run test:browser                  # card renders full command, three controls, outcome states
 ```
 
@@ -215,6 +252,11 @@ response it can see.
 |------|----------|---------|--------------|------------|
 | intent | blocking | Password shares stdin with the command; under NOPASSWD sudo leaves it unread for the command to read | upheld | Decision 14: check with `sudo -l`, run as root with stdin `/dev/null` |
 | intent | major | Frozen command text doesn't freeze the files it runs (`sh ~/fix.sh`) | user-decision | Q1 |
+| mechanics | major | NOPASSWD: wrong password accepted, password left on command stdin | upheld | Same as intent blocking; Decision 14. Wrong password under NOPASSWD passes, as at a terminal (Spec) |
+| mechanics | major | Agent fields could inject script into the real helper page | upheld | Decision 17 |
+| mechanics | major | No request↔card correlation or restart recovery | upheld | Decision 15 |
+| mechanics | major | Outcome can arrive before its spooled card and be lost | upheld | Decision 15 |
+| mechanics | major | Decline vs Run race, unreachable machine | upheld | Decision 16 |
 | intent | major | A browser on the agents' machine, same user, holds the password | accepted-risk | Spec "Where to open the page"; Accepted Risks |
 
 ## Prior Work
