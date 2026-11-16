@@ -12,8 +12,8 @@
     ['heavy', 'Heavy', 'Leading, planning, review, checking'],
     ['critical', 'Critical', "Can't afford to get wrong"],
   ];
-  const PROVIDERS = [['claude', 'Claude', 'Claude Code'], ['gpt', 'GPT', 'Codex']];
-  const EFFORTS = { claude: ['low', 'medium', 'high', 'xhigh', 'max'], gpt: ['low', 'medium', 'high', 'xhigh'] };
+  const PROVIDERS = [['claude', 'Claude', 'Claude Code'], ['gpt', 'GPT', 'Codex'], ['gemini', 'Antigravity', 'Antigravity CLI']];
+  const EFFORTS = { claude: ['low', 'medium', 'high', 'xhigh', 'max'], gpt: ['low', 'medium', 'high', 'xhigh'], gemini: ['low', 'medium', 'high', 'xhigh', 'max'] };
   const MODEL_VALUE = /^[a-z0-9][a-z0-9._-]*$/;
   const NONE = '__none';
   const OTHER = '__other';
@@ -167,7 +167,7 @@
     const current = cell ? cell.model : null;
     const effort = cell && cell.effort ? cell.effort : '';
     const wrap = h('div', { class: 'cell' });
-    const label = `${provider === 'claude' ? 'Claude' : 'GPT'} ${slot} model`;
+    const label = `${PROVIDER_NAME[provider]} ${slot} model`;
     const select = h('select', { 'aria-label': label, class: provider === 'claude' ? '' : 'mono' },
       optionList(provider, current, { allowNone }).map((o) => h('option', { value: o.value, text: o.label })));
     select.value = current || NONE;
@@ -218,7 +218,7 @@
     }
 
     if (withEffort) {
-      effortSelect = h('select', { class: 'effort', 'aria-label': `${provider === 'claude' ? 'Claude' : 'GPT'} ${slot} effort` },
+      effortSelect = h('select', { class: 'effort', 'aria-label': `${PROVIDER_NAME[provider]} ${slot} effort` },
         h('option', { value: '', text: 'CLI default' }),
         EFFORTS[provider].map((e) => h('option', { value: e, text: e })));
       effortSelect.value = effort;
@@ -421,7 +421,7 @@
         h('h2', { id: 'perm', text: 'Permission mode' }),
         h('div', { class: 'box rows' },
           h('div', { class: 'row-line' },
-            h('div', { class: 'what' }, h('span', { text: 'Claude sessions' })),
+            h('div', { class: 'what' }, h('span', { text: 'Claude and Antigravity sessions' })),
             claudeMode),
           h('div', { class: 'row-line' },
             h('div', { class: 'what' }, h('span', { text: 'Codex sessions' }), h('span', { class: 'hint', text: codexHint })),
@@ -443,8 +443,8 @@
         h('h2', { id: 'others', text: 'Other agents' }),
         h('div', { class: 'box rows' },
           h('div', { class: 'row-line' },
-            h('div', { class: 'what' }, h('span', { text: 'Reviewers and checkers' }), h('span', { class: 'hint', text: data.review_families === 'both' ? 'Two plan reviewers from different families; the checker is from the other family than the builder.' : `One plan reviewer and the checker, both on ${data.review_families === 'claude' ? 'Claude' : 'GPT'}.` })),
-            modeGroup('review_families', 'Reviewers and checkers', [['both', 'Both families'], ['claude', 'Claude only'], ['gpt', 'GPT only']])),
+            h('div', { class: 'what' }, h('span', { text: 'Reviewers and checkers' }), h('span', { class: 'hint', text: data.review_families === 'both' ? 'Plan reviewers from two different families; the checker from a family other than the builder\'s.' : `One plan reviewer and the checker, both on ${PROVIDER_NAME[data.review_families]}.` })),
+            modeGroup('review_families', 'Reviewers and checkers', [['both', 'Mix families'], ['claude', 'Claude'], ['gpt', 'GPT'], ['gemini', 'Antigravity']])),
           otherAgentRow('reviewer', 'Plan reviewers', 'Model tier for plan reviewers'),
           otherAgentRow('verifier', 'Checker', 'Model tier for the checker'),
           otherAgentRow('mapper', 'Code mapping', 'Maps how the existing code works before planning')),
@@ -838,9 +838,10 @@
   const PLAN_OPTIONS = {
     claude: [['unknown', 'Not sure'], ['pro', 'Pro'], ['max5', 'Max 5x'], ['max20', 'Max 20x']],
     gpt: [['unknown', 'Not sure'], ['plus', 'Plus'], ['pro', 'Pro']],
+    gemini: [['unknown', 'Not sure'], ['pro', 'AI Pro'], ['ultra', 'AI Ultra']],
   };
   const planLabel = (provider, plan) => ((PLAN_OPTIONS[provider] || []).find((p) => p[0] === plan) || [0, plan])[1];
-  const PROVIDER_NAME = { claude: 'Claude', gpt: 'GPT' };
+  const PROVIDER_NAME = { claude: 'Claude', gpt: 'GPT', gemini: 'Antigravity' };
   const WITHIN = [['soonest', 'Soonest refill first'], ['spread', 'Spread evenly'], ['one', 'Stay on one account']];
   const CLAUDE_TERMS = "Anthropic's terms say plan limits assume ordinary, individual use. Several Claude accounts behind one setup may get flagged.";
   const SIGNIN_WAIT_MS = 30000;
@@ -960,7 +961,7 @@
       if (st.url) {
         card.hadUrl = true;
         status.className = 'hint'; status.textContent = st.wantsCode ? 'Open the link, sign in, then paste the code it shows.' : 'Open the link and sign in.';
-        if (account.provider === 'claude') {
+        if (account.provider === 'claude' || account.provider === 'gemini') {
           actions.replaceChildren(h('a', { class: 'btn-link primary', href: safeHref(st.url), target: '_blank', rel: 'noopener', text: 'Open sign-in link' }));
         } else {
           actions.replaceChildren(h('a', { class: 'btn-link', href: safeHref(st.url), target: '_blank', rel: 'noopener', text: st.url }));
@@ -1098,7 +1099,7 @@
       saveAdd(form);
     } });
     const provider = h('select', { id: 'add-provider', 'aria-label': 'Provider', onchange: () => { adding.provider = provider.value; adding.plan = 'unknown'; adding.warn = false; renderPanel(); } },
-      Object.entries(PROVIDER_NAME).map(([v, l]) => h('option', { value: v, text: l, selected: v === adding.provider })));
+      Object.entries(PROVIDER_NAME).filter(([v]) => v !== 'gemini').map(([v, l]) => h('option', { value: v, text: l, selected: v === adding.provider })));
     const name = h('input', { id: 'add-name', value: adding.name, 'aria-label': 'Account name', placeholder: 'Name, e.g. Work', required: true, oninput: () => { adding.name = name.value; } });
     const plan = planSelect(adding.provider, adding.plan);
     plan.id = 'add-plan';
@@ -1124,7 +1125,8 @@
       h('div', { id: 'signin-host' }, signCard ? signCard.el : null),
       Object.entries(PROVIDER_NAME).map(([provider, label]) => h('section', { class: 'prov-group', 'data-provider': provider, 'aria-label': label },
         h('h2', { text: label }),
-        accountRows(provider).map(accountCard))),
+        provider === 'gemini' && h('p', { class: 'hint', text: 'Antigravity supports one account per machine' }),
+        accountRows(provider).filter((a) => provider !== 'gemini' || a.id === 'default-gemini').map(accountCard))),
       addForm());
   }
 

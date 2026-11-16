@@ -1,5 +1,6 @@
 (function () {
   'use strict';
+  const PROVIDER_LABEL = { claude: 'Claude', gpt: 'GPT', gemini: 'Antigravity' };
   const API = '/wheelchair/api';
   const id = new URLSearchParams(location.search).get('id') || '';
   const T = API + '/threads/' + encodeURIComponent(id);
@@ -137,7 +138,7 @@
     block.appendChild(titleLine);
     const where = slug() ? base(t.project) + ' / ' + slug() : base(t.project);
     block.appendChild(el('div', 'meta', [
-      where, lead ? 'lead' : '', t.provider === 'gpt' ? 'GPT' : t.provider === 'claude' ? 'Claude' : t.cli, lead && lead.model, t.machine, lead && 'tmux ' + lead.name,
+      where, lead ? 'lead' : '', PROVIDER_LABEL[t.provider] || t.cli, lead && lead.model, t.machine, lead && 'tmux ' + lead.name,
     ].filter(Boolean).join(' \u00b7 ')));
     headEl.appendChild(block);
 
@@ -785,9 +786,9 @@
     if (!lead) return '';
     if (lead.status === 'waiting' && lead.waiting_until) {
       // The provider the wait is pinned to, else the lead's, else the thread's; none set → room.
-      const provider = [lead.waiting_provider, lead.provider, thread().provider].find((p) => p === 'claude' || p === 'gpt');
+      const provider = [lead.waiting_provider, lead.provider, thread().provider].find((p) => PROVIDER_LABEL[p]);
       if (!provider) return 'Waiting for room, about ' + clock(lead.waiting_until);
-      const label = provider === 'gpt' ? 'GPT' : 'Claude';
+      const label = PROVIDER_LABEL[provider];
       return 'Waiting for ' + label + ' to refill, about ' + clock(lead.waiting_until);
     }
     if (lead.live && lead.limited_until && Date.parse(lead.limited_until) > Date.now()) {

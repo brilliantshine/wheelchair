@@ -30,7 +30,8 @@ function usageBody(overrides = {}) {
       machines: { hub: 'signed_in', beelink: 'signed_in', laptop: 'signed_in' }, reading: null,
       next: false, reason: 'skipped: paused', live_sessions: 0 }],
   };
-  return { providers: { claude, gpt }, ...overrides };
+  const gemini = { label: 'Antigravity', left: null, accounts: [{ id: 'default-gemini', provider: 'gemini', name: 'default', plan: 'unknown', weight: 1, paused: false, machines: { beelink: 'signed_out' }, reading: null, live_sessions: 0 }] };
+  return { providers: { claude, gpt, gemini }, ...overrides };
 }
 
 // Answers the account routes the pages call; everything else goes to the real server.
@@ -105,6 +106,11 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
       const claude = page.locator('.prov-group[data-provider="claude"]');
       await expect(claude.locator('.acct')).toHaveCount(2);
       await expect(page.locator('.prov-group[data-provider="gpt"] .acct')).toHaveCount(1);
+      const gemini = page.locator('.prov-group[data-provider="gemini"]');
+      await expect(gemini).toContainText('Antigravity supports one account per machine');
+      await expect(gemini.locator('.acct[data-account="default-gemini"]')).toHaveCount(1);
+      await page.getByRole('button', { name: 'Add account' }).click();
+      await expect(page.locator('.add-form select').first().locator('option')).not.toContainText(['Antigravity']);
       const first = claude.locator('.acct[data-account="default-claude"]');
       await expect(first).toContainText('Max 5x');
       await expect(first).toContainText('in use · 2 agents');
@@ -141,6 +147,18 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
       state.signin = { state: 'done', url: null, code: null, wantsCode: false, logged_in: true };
       await expect(card).toHaveClass(/done/, { timeout: 6000 });
       await expect(card).toHaveCount(0, { timeout: 6000 });
+    });
+
+    test('Antigravity sign-in opens Google and posts the code', async ({ page }) => {
+      const state = { signin: { state: 'waiting', url: 'https://accounts.google.com/o/oauth2/auth?x=1', wantsCode: true } };
+      await mock(page, state);
+      await open(page, 'accounts');
+      await page.locator('.acct[data-account="default-gemini"] li[data-machine="beelink"] button').click();
+      const card = page.locator('.signin-card');
+      await expect(card.getByRole('link', { name: 'Open sign-in link' })).toHaveAttribute('href', state.signin.url);
+      await card.getByPlaceholder('Paste the code here').fill('google-code');
+      await card.getByRole('button', { name: 'Send code' }).click();
+      await expect.poll(() => state.calls.find((c) => c[1] === '/accounts/default-gemini/signin/beelink/code')).toEqual(['POST', '/accounts/default-gemini/signin/beelink/code', { code: 'google-code' }]);
     });
 
     test('the Codex sign-in card shows the link and the big code with Copy', async ({ page }) => {
@@ -256,6 +274,7 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
       const state = { settings: { lead_order: ['gpt', 'any'], reserved_provider: 'GPT' }, savedProvider: 'Claude' };
       await mock(page, state);
       await open(page, 'usage');
+      await expect(page.getByRole('group', { name: 'Worker order' })).toContainText('Antigravity');
       const checkbox = page.locator('#bal-save-lead');
       await expect(checkbox).toHaveAttribute('aria-label', 'Save GPT for leads');
       await expect(checkbox.locator('..')).toContainText('Save GPT for leads');
@@ -275,10 +294,11 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
       await mock(page, state);
       await open(page, 'models');
       const group = page.getByRole('radiogroup', { name: 'Reviewers and checkers' });
-      await group.getByRole('radio', { name: 'Claude only' }).click();
-      await expect(group.getByRole('radio', { name: 'Claude only' })).toHaveAttribute('aria-checked', 'true');
-      expect(state.calls.find((c) => c[1] === '/settings/preferences')[2]).toEqual({ review_families: 'claude' });
-      await expect(group.locator('..')).toContainText('One plan reviewer and the checker, both on Claude.');
+      await expect(group.getByRole('radio')).toHaveText(['Mix families', 'Claude', 'GPT', 'Antigravity']);
+      await group.getByRole('radio', { name: 'Antigravity' }).click();
+      await expect(group.getByRole('radio', { name: 'Antigravity' })).toHaveAttribute('aria-checked', 'true');
+      expect(state.calls.find((c) => c[1] === '/settings/preferences')[2]).toEqual({ review_families: 'gemini' });
+      await expect(group.locator('..')).toContainText('One plan reviewer and the checker, both on Antigravity.');
       await noSideScroll(page);
     });
 
@@ -287,6 +307,7 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
       await mock(page, state);
       await open(page, 'models');
       const editor = page.locator('.lead-order');
+      await expect(editor.getByRole('button', { name: '+ Antigravity' })).toBeVisible();
       await expect(editor.locator('li').first()).toContainText('Claude');
       await editor.getByRole('button', { name: '+ GPT' }).click();
       await editor.getByRole('button', { name: 'Move Claude down' }).click();
@@ -396,7 +417,7 @@ test.describe('accounts interface paths', () => {
     await mock(page, state);
     await page.clock.install();
     await open(page, 'accounts');
-    await expect(page.locator('.acct')).toHaveCount(3);
+    await expect(page.locator('.acct')).toHaveCount(4);
     let seen = state.usageGets;
     await page.clock.runFor(30500);
     await expect.poll(() => state.usageGets).toBeGreaterThan(seen);
