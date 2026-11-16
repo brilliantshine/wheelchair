@@ -21,7 +21,7 @@
       const data = response.ok ? await response.json() : { leads: [] };
       let lead = (data.leads || []).find(item => item.session.name === name);
       if (!lead) {
-        const threads = await fetch('/wheelchair/api/threads');
+        const threads = await fetch('/wheelchair/api/threads?view=list');
         if (threads.ok) lead = ((await threads.json()).threads || []).find(t => (t.sessions || []).some(s => s.role === 'lead' && s.name === name));
       }
       if (lead && lead.lead_name) document.getElementById('term-name').textContent = `${lead.lead_name} · ${name}`;

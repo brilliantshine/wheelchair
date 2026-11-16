@@ -98,7 +98,7 @@
   }
   async function refresh() {
     try {
-      const [response, threadResponse] = await Promise.all([fetch('/wheelchair/api/agents'), fetch('/wheelchair/api/threads')]);
+      const [response, threadResponse] = await Promise.all([fetch('/wheelchair/api/agents'), fetch('/wheelchair/api/threads?view=list')]);
       if (!response.ok) throw new Error(`agents ${response.status}`);
       const threads = threadResponse.ok ? (await threadResponse.json()).threads || [] : [];
       render(await response.json(), threads); document.getElementById('error').hidden = true;
