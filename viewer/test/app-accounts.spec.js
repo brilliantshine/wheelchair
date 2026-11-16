@@ -43,6 +43,16 @@ async function mock(page, state) {
     const method = request.method();
     const body = request.postData() ? JSON.parse(request.postData()) : {};
     const json = (status, value) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) });
+    if (path === '/settings' && method === 'GET') {
+      const response = await route.fetch();
+      const settings = await response.json();
+      delete settings.save_claude_for_leads;
+      return json(200, { ...settings, save_for_leads: true, reserved_provider: 'Claude', review_families: 'both', ...state.settings });
+    }
+    if (path === '/settings/preferences' && method === 'PUT' && body.review_families) {
+      state.calls.push([method, path, body]);
+      return json(200, body);
+    }
     if (path === '/usage' && method === 'GET') { state.usageGets = (state.usageGets || 0) + 1; return json(200, state.usage || usageBody()); }
     if (path === '/usage/alert') return json(200, { dot: state.dot !== false });
     if (path === '/usage/seen' && method === 'POST') { state.dot = false; state.calls.push([method, path]); return json(200, { ok: true }); }
@@ -55,7 +65,7 @@ async function mock(page, state) {
     }
     if (path === '/settings/balancing' && method === 'PUT') {
       state.calls.push([method, path, body]);
-      return state.balancingError ? json(400, { error: state.balancingError }) : json(200, body);
+      return state.balancingError ? json(400, { error: state.balancingError }) : json(200, { ...body, reserved_provider: state.savedProvider === undefined ? 'Claude' : state.savedProvider });
     }
     const signin = path.match(/^\/accounts\/([^/]+)\/signin(?:\/([^/]+))?(?:\/(code|pane|keys))?$/);
     if (signin) {
@@ -234,12 +244,42 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
       await expect(page.locator('.balancing .note')).toHaveText(/Saved/);
       const sent = state.calls.filter((c) => c[1] === '/settings/balancing').pop()[2];
       expect(sent).toMatchObject({ leave: 150, within: 'spread', held_back: { worker: true, reviewer: false, verifier: true, mapper: true } });
-      expect(Object.keys(sent).sort()).toEqual(['held_back', 'leave', 'margin', 'notify_below', 'save_claude_for_leads', 'within', 'worker_order']);
+      expect(Object.keys(sent).sort()).toEqual(['held_back', 'leave', 'margin', 'notify_below', 'save_for_leads', 'within', 'worker_order']);
+      await noSideScroll(page);
+    });
+
+    test('reserve labels follow the returned provider without reloading', async ({ page }) => {
+      const state = { settings: { lead_order: ['gpt', 'any'], reserved_provider: 'GPT' }, savedProvider: 'Claude' };
+      await mock(page, state);
+      await open(page, 'usage');
+      const checkbox = page.locator('#bal-save-lead');
+      await expect(checkbox).toHaveAttribute('aria-label', 'Save GPT for leads');
+      await expect(checkbox.locator('..')).toContainText('Save GPT for leads');
+      await expect(page.locator('.balancing')).toContainText('Held back when GPT runs short');
+      await page.locator('#bal-save').click();
+      await expect(checkbox).toHaveAttribute('aria-label', 'Save Claude for leads');
+      await expect(page.locator('.balancing')).toContainText('When Claude is projected to have less than this left at refill');
+      state.settings.reserved_provider = null;
+      await page.reload();
+      await expect(checkbox).toHaveAttribute('aria-label', "Save the lead's provider for leads");
+      await expect(checkbox.locator('..')).toContainText("Save the lead's provider for leads");
+      await noSideScroll(page);
+    });
+
+    test('review family choice saves and updates its hint', async ({ page }) => {
+      const state = {};
+      await mock(page, state);
+      await open(page, 'models');
+      const group = page.getByRole('radiogroup', { name: 'Reviewers and checkers' });
+      await group.getByRole('radio', { name: 'Claude only' }).click();
+      await expect(group.getByRole('radio', { name: 'Claude only' })).toHaveAttribute('aria-checked', 'true');
+      expect(state.calls.find((c) => c[1] === '/settings/preferences')[2]).toEqual({ review_families: 'claude' });
+      await expect(group.locator('..')).toContainText('One plan reviewer and the checker, both on Claude.');
       await noSideScroll(page);
     });
 
     test('the lead order editor on Models saves through the balancing route', async ({ page }) => {
-      const state = {};
+      const state = { savedProvider: 'GPT' };
       await mock(page, state);
       await open(page, 'models');
       const editor = page.locator('.lead-order');
@@ -250,6 +290,9 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
       await page.locator('#lead-order-save').click();
       await expect.poll(() => state.calls.some((c) => c[1] === '/settings/balancing')).toBe(true);
       expect(state.calls.find((c) => c[1] === '/settings/balancing')[2]).toEqual({ lead_order: ['gpt', 'claude'] });
+      await expect(page.locator('#panel .note')).toHaveText(/Saved/);
+      await page.locator('[data-section="usage"]').click();
+      await expect(page.locator('#bal-save-lead')).toHaveAttribute('aria-label', 'Save GPT for leads');
       await noSideScroll(page);
     });
 

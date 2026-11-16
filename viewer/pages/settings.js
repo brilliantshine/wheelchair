@@ -363,8 +363,11 @@
       h('section', { 'aria-labelledby': 'others' },
         h('h2', { id: 'others', text: 'Other agents' }),
         h('div', { class: 'box rows' },
-          otherAgentRow('reviewer', 'Plan reviewers', 'Two providers when both are installed'),
-          otherAgentRow('verifier', 'Checker', 'Not the provider that built it'),
+          h('div', { class: 'row-line' },
+            h('div', { class: 'what' }, h('span', { text: 'Reviewers and checkers' }), h('span', { class: 'hint', text: data.review_families === 'both' ? 'Two plan reviewers from different families; the checker is from the other family than the builder.' : `One plan reviewer and the checker, both on ${data.review_families === 'claude' ? 'Claude' : 'GPT'}.` })),
+            modeGroup('review_families', 'Reviewers and checkers', [['both', 'Both families'], ['claude', 'Claude only'], ['gpt', 'GPT only']])),
+          otherAgentRow('reviewer', 'Plan reviewers', 'Model tier for plan reviewers'),
+          otherAgentRow('verifier', 'Checker', 'Model tier for the checker'),
           otherAgentRow('mapper', 'Code mapping', 'Maps how the existing code works before planning')),
         h('span', { class: 'hint', text: 'For threads in the app. Terminal commands keep their own rules.' })));
   }
@@ -1056,7 +1059,7 @@
   function ensureDraft() {
     if (balDraft) return;
     balDraft = {};
-    for (const k of ['lead_order', 'worker_order', 'within', 'leave', 'notify_below', 'save_claude_for_leads', 'margin', 'held_back']) balDraft[k] = structuredClone(data[k]);
+    for (const k of ['lead_order', 'worker_order', 'within', 'leave', 'notify_below', 'save_for_leads', 'margin', 'held_back']) balDraft[k] = structuredClone(data[k]);
   }
 
   // An order editor: the providers in order, up/down to move; leads may end in "then whatever's left".
@@ -1082,6 +1085,7 @@
     try {
       const res = await api('/settings/balancing', { method: 'PUT', body: balancingBody(keys) });
       for (const k of keys) data[k] = res[k] !== undefined ? res[k] : balDraft[k];
+      data.reserved_provider = res.reserved_provider;
       balDraft = null;
       inlineErr(host, '');
       renderPanel();
@@ -1131,9 +1135,11 @@
   function renderUsage() {
     ensureDraft();
     const settingsBox = h('section', { class: 'balancing', 'aria-labelledby': 'bal' });
+    const provider = data.reserved_provider || "the lead's provider";
+    const reserveLabel = `Save ${provider} for leads`;
     const within = h('select', { id: 'bal-within', 'aria-label': 'Within a provider', onchange: (ev) => { balDraft.within = ev.target.value; } },
       WITHIN.map(([v, l]) => h('option', { value: v, text: l, selected: v === balDraft.within })));
-    const save = h('button', { type: 'button', class: 'primary', id: 'bal-save', text: 'Save', onclick: () => saveBalancing(['worker_order', 'within', 'leave', 'notify_below', 'save_claude_for_leads', 'margin', 'held_back'], settingsBox) });
+    const save = h('button', { type: 'button', class: 'primary', id: 'bal-save', text: 'Save', onclick: () => saveBalancing(['worker_order', 'within', 'leave', 'notify_below', 'save_for_leads', 'margin', 'held_back'], settingsBox) });
     settingsBox.append(
       h('h2', { id: 'bal', text: 'Balancing' }),
       h('div', { class: 'box rows' },
@@ -1141,10 +1147,10 @@
         h('div', { class: 'row-line' }, h('div', { class: 'what' }, h('span', { text: 'Within a provider' }), h('span', { class: 'hint', text: 'How to pick among its accounts' })), h('div', { class: 'ctl' }, within)),
         numField('leave', 'Leave for you (%)', 'An account under this much left stays free for you', 100),
         numField('notify_below', 'Warn me below (%)', 'Shows a dot on Settings when a provider drops under this', 100),
-        h('div', { class: 'row-line' }, h('div', { class: 'what' }, h('span', { text: 'Save Claude for leads' }), h('span', { class: 'hint', text: 'Sessions with no provider preference try GPT before Claude. Does not hold anyone back; the ticks below do.' })),
-          h('input', { type: 'checkbox', id: 'bal-save-claude', checked: !!balDraft.save_claude_for_leads, 'aria-label': 'Save Claude for leads', onchange: (ev) => { balDraft.save_claude_for_leads = ev.target.checked; } })),
-        numField('margin', 'Keep for leads (%)', 'When Claude is projected to have less than this left at refill, ticked roles go to GPT', 100),
-        h('div', { class: 'row-line' }, h('div', { class: 'what' }, h('span', { text: 'Held back when Claude runs short' })),
+        h('div', { class: 'row-line' }, h('div', { class: 'what' }, h('span', { text: reserveLabel }), h('span', { class: 'hint', text: 'Sessions with no provider preference try other providers first. Does not hold anyone back; the ticks below do.' })),
+          h('input', { type: 'checkbox', id: 'bal-save-lead', checked: !!balDraft.save_for_leads, 'aria-label': reserveLabel, onchange: (ev) => { balDraft.save_for_leads = ev.target.checked; } })),
+        numField('margin', 'Keep for leads (%)', `When ${provider} is projected to have less than this left at refill, ticked roles go to another provider, or wait if there is none`, 100),
+        h('div', { class: 'row-line' }, h('div', { class: 'what' }, h('span', { text: `Held back when ${provider} runs short` })),
           h('div', { class: 'ctl' }, [['worker', 'Workers'], ['reviewer', 'Reviewers'], ['verifier', 'Verifiers'], ['mapper', 'Mappers']].map(([role, label]) =>
             h('label', { class: 'check' }, h('input', { type: 'checkbox', id: 'bal-held-' + role, checked: balDraft.held_back[role], 'aria-label': label, onchange: (ev) => { balDraft.held_back[role] = ev.target.checked; } }), h('span', { text: label })))))),
       h('div', { class: 'actions' }, save), noteEl());
