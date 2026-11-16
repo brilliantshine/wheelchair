@@ -57,7 +57,7 @@ function isCodexHuman(row, codexTurn, text) {
 // every card, and the page places cards by time.
 let lastAt = null;
 function itemAt(row) {
-  const at = row.timestamp || row.payload?.timestamp || row.message?.timestamp;
+  const at = row.timestamp || row.payload?.timestamp || row.message?.timestamp || row.created_at;
   if (at) lastAt = at;
   return at || lastAt || new Date(0).toISOString();
 }
@@ -169,7 +169,35 @@ function parseCodex(raw, thread, sessionName) {
   if (sessionName) { let n = 0; for (const turn of turns) for (const reply of turn.replies) if (reply.type === 'assistant') reply.id = `${sessionName}#${n++}`; }
   return turns.flatMap((turn) => renderTurn(turn, thread));
 }
-const PARSERS = { claude: parseClaude, codex: parseCodex };
+function parseAgy(raw, thread, sessionName) {
+  lastAt = null;
+  const turns = [], calls = [];
+  let recognised = false;
+  for (const row of transcriptRows(raw)) {
+    if (!row || !['USER_INPUT', 'PLANNER_RESPONSE', 'GENERIC'].includes(row.type)) continue;
+    recognised = true;
+    if (row.type === 'USER_INPUT') {
+      const content = typeof row.content === 'string' ? row.content : '';
+      const request = content.match(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/);
+      turns.push({ human: unwrap((request ? request[1] : content).trim()), replies: [], at: itemAt(row) });
+    } else if (turns.length && row.type === 'PLANNER_RESPONSE') {
+      const text = typeof row.content === 'string' ? unwrap(row.content) : '';
+      if (text) turns.at(-1).replies.push({ type: 'assistant', text, at: itemAt(row) });
+      for (const call of Array.isArray(row.tool_calls) ? row.tool_calls : []) {
+        const tool = { type: 'tool', text: call.name || 'tool call', at: itemAt(row), detail: toolDetail(call.args) };
+        turns.at(-1).replies.push(tool);
+        calls.push({ item: tool, input: call.args });
+      }
+    } else if (turns.length && row.type === 'GENERIC') {
+      const call = calls.shift();
+      if (call) call.item.detail = toolDetail(call.input, resultText(row.content).replace(/^(?:(?:Created At|Completed At):[^\r\n]*(?:\r?\n|$))+/, ''));
+    }
+  }
+  if (!recognised && raw.trim()) return [{ type: 'notice', text: "Couldn't read this Antigravity transcript", at: new Date(0).toISOString() }];
+  if (sessionName) { let n = 0; for (const turn of turns) for (const reply of turn.replies) if (reply.type === 'assistant') reply.id = `${sessionName}#${n++}`; }
+  return turns.flatMap((turn) => renderTurn(turn, thread));
+}
+const PARSERS = { claude: parseClaude, codex: parseCodex, agy: parseAgy };
 function transcriptItems(cli, raw, thread, sessionName) {
   const parser = Object.hasOwn(PARSERS, cli) && PARSERS[cli];
   return parser ? parser(raw, thread, sessionName) : [{ type: 'notice', text: `This session's CLI (${cli}) has no transcript reader.`, at: new Date(0).toISOString() }];
@@ -198,6 +226,7 @@ async function sessionTranscript(hub, thread, session, { keepLast = false } = {}
 const ASSISTANT_CONTENT = {
   claude: (row) => row.type === 'assistant' && row.message?.role === 'assistant' ? row.message.content : null,
   codex: (row) => { const payload = row.payload || row; return row.type === 'response_item' && payload.type === 'message' && payload.role === 'assistant' ? payload.content : null; },
+  agy: (row) => row.type === 'PLANNER_RESPONSE' && typeof row.content === 'string' ? row.content : null,
 };
 function lastAssistantText(cli, raw) {
   const content = Object.hasOwn(ASSISTANT_CONTENT, cli) && ASSISTANT_CONTENT[cli];
