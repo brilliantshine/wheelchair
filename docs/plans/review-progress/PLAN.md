@@ -242,10 +242,14 @@ past validation) render as Building.
 
 ## Prior Work
 
+None: nothing in the Spec exists yet.
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Document the progress stages and who posts them | protocol/app/cards.md, protocol/app/lead.md, protocol/app/sub-lead.md | standard (gpt-6.1-terra) | — | grep checks in brief | dispatched |
+| T2 | Validate and render the progress stages, with tests | viewer/app/card.js, viewer/pages/thread.js, viewer/pages/thread.css, viewer/test/app-hub.test.js, viewer/test/app-threads.spec.js | standard, --provider claude (claude-sonnet-5-5) | — | node --test viewer/test/*.test.js; npm --prefix viewer run test:browser | dispatched |
 
 ## Log
 
