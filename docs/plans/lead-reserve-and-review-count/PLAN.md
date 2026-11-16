@@ -1,6 +1,6 @@
 ---
 slug: lead-reserve-and-review-count
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-15
 ---
 
@@ -253,3 +253,4 @@ New or changed tests (in `viewer/test/`):
 - 2026-11-15 — T3 attempt 1 came back with the browser suite failing twice (worker hit its guardrail). Page change accepted as is (commit 286ef43). Test defects: the new GET /settings mock calls route.fetch on every test and throws ECONNREFUSED after server teardown; the lead-order test's `#panel .note` locator matches 3 elements. browser.spec.js:2395 (arrow-graph) fails on the base too. Rung: rewritten brief, same tier (Standard), attempt 2 cherry-picks 286ef43 onto a branch that has T1.
 - 2026-11-15 — Choice: T3 attempt 1 reported none; listed from the diff (1): the browser mock overrides GET /settings by fetching the real answer and merging test values.
 - 2026-11-15 — T3 attempt 2 accepted. Choice: reported none; the diff is the two briefed fixes. Re-validation: browser 580 passed, 2 failed (browser.spec.js:2395 arrow-graph, both browsers, also failing on the feature base); node 378/379 (the known lifecycle test).
+- 2026-11-15 — Full validation on 2f733ad: node 377/379 (known lifecycle test; registration port collision passes 3/3 alone), browser 580 passed with the known arrow-graph test failing, machine 96/96, install 90/90. COMPLETION.md written; status verifying.
