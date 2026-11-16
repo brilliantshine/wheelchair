@@ -22,6 +22,7 @@ for (let i = 2; i < process.argv.length; i++) {
 }
 for (const option of Object.values(options)) if (!option.selected.size) option.values.forEach(x => option.selected.add(x));
 const selected = options['--only'].selected;
+const UNPROTECTED = { held_back: { worker: false, reviewer: true, verifier: true, mapper: true }, margin: 0, leave: 0 };
 const rows = [];
 function row(name, ok, detail) { rows.push({ name, ok, detail: String(detail).replace(/\s+/g, ' ') }); }
 function files(dir) {
@@ -40,7 +41,12 @@ function transcriptModel(h, provider, id) {
 (async () => {
   let h;
   try {
-    h = await createHarness({ mode: 'live', slowOriginSeconds: 8 });
+    // Collin's choice (PLAN.md D10): this private hub alone turns off the usage protections, so each
+    // requested provider and tier is honoured even when his accounts are below their reserve.
+    // His real Settings are never touched: the harness hub has its own state folder.
+    h = await createHarness({ mode: 'live', slowOriginSeconds: 8, hubSettings: UNPROTECTED });
+    const seeded = await h.callHub('/api/settings');
+    assert(seeded.held_back.worker === false && seeded.margin === 0 && seeded.leave === 0, `harness hub settings not seeded: ${JSON.stringify({ held_back: seeded.held_back, margin: seeded.margin, leave: seeded.leave })}`);
     h.setOriginSlow(false);
     const thread = async () => (await h.callHub('/api/threads')).threads.find(t => t.id === h.threadId);
     const session = async name => (await h.agent({ action: 'list' })).sessions.find(s => s.name === name);

@@ -39,7 +39,7 @@ function request(url, method = 'GET', body, headers = {}) {
     return value;
   });
 }
-async function createHarness({ mode = 'smoke', slowOriginSeconds = 0 } = {}) {
+async function createHarness({ mode = 'smoke', slowOriginSeconds = 0, hubSettings = null } = {}) {
   assert(['smoke', 'live'].includes(mode));
   assert(Number.isInteger(slowOriginSeconds) && slowOriginSeconds >= 0);
   const dir = runDir();
@@ -83,6 +83,8 @@ async function createHarness({ mode = 'smoke', slowOriginSeconds = 0 } = {}) {
   }
   const state = new State(paths.hubState);
   await state.init();
+  // Settings for this private hub only, written before it starts; the hub fills every key not given.
+  if (hubSettings) await state.saveSettings(hubSettings);
   await atomicWrite(state.machinesPath, JSON.stringify({ harness: { name: 'harness', address: '127.0.0.1', port: proxyPort, secret_file: secretFile } }));
   if (mode === 'live') await state.save({ id: threadId, project: paths.clone, machine: 'harness', branch: `wc/${threadId}`, cli: 'claude', sessions: [{ name: sublead, token, role: 'sub-lead', live: true, status: 'ready' }], cards: [], asides: [], pinned: {}, queues: {}, sent: [], archived: false, created_at: new Date().toISOString() });
   const counts = Object.create(null), statuses = [];
