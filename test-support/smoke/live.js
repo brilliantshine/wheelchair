@@ -5,15 +5,23 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { createHarness } = require('./harness');
 
-const selected = new Set();
+const options = {
+  '--only': { values: ['slow-start', 'tiers', 'permission'], selected: new Set() },
+  '--provider': { values: ['claude', 'gpt'], selected: new Set() },
+  '--tier': { values: ['light', 'standard', 'heavy', 'critical'], selected: new Set() },
+};
 for (let i = 2; i < process.argv.length; i++) {
-  if (process.argv[i] !== '--only' || !process.argv[i + 1]) { console.error('usage: live.sh [--only slow-start|tiers|permission]'); process.exit(2); }
-  for (const name of process.argv[++i].split(',')) {
-    if (!['slow-start', 'tiers', 'permission'].includes(name)) { console.error(`unknown check: ${name}`); process.exit(2); }
-    selected.add(name);
+  const option = options[process.argv[i]];
+  if (!option || !process.argv[i + 1] || process.argv[i + 1].startsWith('--')) {
+    console.error('usage: live.sh [--only slow-start|tiers|permission] [--provider claude|gpt] [--tier light|standard|heavy|critical]'); process.exit(2);
+  }
+  for (const value of process.argv[++i].split(',')) {
+    if (!option.values.includes(value)) { console.error(`unknown ${process.argv[i - 1].slice(2)}: ${value}`); process.exit(2); }
+    option.selected.add(value);
   }
 }
-if (!selected.size) ['slow-start', 'tiers', 'permission'].forEach(x => selected.add(x));
+for (const option of Object.values(options)) if (!option.selected.size) option.values.forEach(x => option.selected.add(x));
+const selected = options['--only'].selected;
 const rows = [];
 function row(name, ok, detail) { rows.push({ name, ok, detail: String(detail).replace(/\s+/g, ' ') }); }
 function files(dir) {
@@ -41,7 +49,10 @@ function transcriptModel(h, provider, id) {
     }
     async function stop(name) {
       await h.agent({ action: 'stop', name });
-      const s = await session(name); assert(s && s.live === false && s.status === 'stopped', 'stopped session not retained');
+      const s = await session(name); assert(s && s.live === false && s.status === 'stopped', `stop ended as ${JSON.stringify(s ?? null)}`);
+    }
+    function checkWaiting(s) {
+      if (s.status === 'waiting') throw new Error(`held by the hub: ${s.waiting_reason} (until ${s.waiting_until})`);
     }
     async function tier(provider, tier, slow) {
       let result, name, startTime;
@@ -53,11 +64,27 @@ function transcriptModel(h, provider, id) {
         result = await start(provider, tier, 'Reply with the single word ok and stop.'); name = result.session.name;
         const elapsed = (Date.now() - startTime) / 1000;
         if (slow) row('slow-start', elapsed > 5 && h.counts[name] === 1 && !result.note && result.session.provider === provider, `request succeeded; ${elapsed.toFixed(2)} s; ${h.counts[name] || 0} start requests${result.note ? `; ${result.note}` : ''}`);
+        checkWaiting(result.session);
         if (result.note || result.session.provider !== provider) throw new Error(result.note || `provider ${result.session.provider}, requested ${provider}`);
         if (selected.has('tiers')) {
-          const done = await h.waitFor(async () => { const s = await session(name); return s?.turn_ended && s; }, 180000);
+          const idField = provider === 'claude' ? 'cli_session_id' : 'codex_thread_id';
+          let last;
+          let done;
+          try {
+            done = await h.waitFor(async () => { last = await session(name); return last?.turn_ended && last[idField] && last; }, 180000);
+          } catch (error) {
+            if (error.message !== 'Timed out waiting for condition') throw error;
+            throw new Error(last?.turn_ended ? `no ${idField} after turn end` : 'turn did not end');
+          }
           const expected = execFileSync('bash', [path.join(__dirname, '../../codex/model.sh'), provider, tier], { env: h.env, encoding: 'utf8' }).trim();
-          const actual = await h.waitFor(() => { try { return transcriptModel(h, provider, provider === 'claude' ? done.cli_session_id : done.codex_thread_id); } catch { return null; } }, 10000);
+          let transcriptError;
+          let actual;
+          try {
+            actual = await h.waitFor(() => { try { return transcriptModel(h, provider, done[idField]); } catch (error) { transcriptError = error; return null; } }, 10000);
+          } catch (error) {
+            if (error.message !== 'Timed out waiting for condition') throw error;
+            throw new Error(`transcript timed out: ${transcriptError?.message}`);
+          }
           assert.equal(actual, expected, `transcript model ${actual}, pin ${expected}`);
           row(`${tier}/${provider}`, true, `model ${actual}`);
         }
@@ -69,15 +96,16 @@ function transcriptModel(h, provider, id) {
       }
     }
     if (selected.has('slow-start') || selected.has('tiers')) {
-      const pairs = selected.has('tiers') ? ['light', 'standard', 'heavy', 'critical'].flatMap(t => ['claude', 'gpt'].map(p => [p, t])) : [['claude', 'light']];
-      for (const [p, t] of pairs) await tier(p, t, selected.has('slow-start') && p === 'claude' && t === 'light');
+      const pairs = selected.has('tiers') ? options['--tier'].values.filter(t => options['--tier'].selected.has(t)).flatMap(t => options['--provider'].values.filter(p => options['--provider'].selected.has(p)).map(p => [p, t])) : [['claude', 'light']];
+      for (const [index, [p, t]] of pairs.entries()) await tier(p, t, selected.has('slow-start') && index === 0);
     }
     if (selected.has('permission')) {
       let name;
       try {
         const settings = await h.callHub('/api/settings'); assert.equal(settings.permission_mode, 'auto');
         const started = await start('claude', 'light', 'Run the shell command `touch smoke-ok` and then stop.'); name = started.session.name;
-        assert(!started.note && started.session.provider === 'claude', started.note || 'wrong provider');
+        checkWaiting(started.session);
+        assert(!started.note && started.session.provider === 'claude', started.note || `provider ${started.session.provider}, requested claude`);
         const open = await h.waitFor(async () => { const t = await thread(); const s = t.sessions.find(x => x.name === name); const card = t.cards.find(c => c.id === s?.needs_card && c.kind === 'needs' && c.system && !c.answered); return s?.permission_open && card && { s, card }; }, 180000);
         const pane = h.tmux('capture-pane', '-pt', name).stdout;
         assert(/(?:Yes|Allow)/i.test(pane), 'approval option absent from pane');
