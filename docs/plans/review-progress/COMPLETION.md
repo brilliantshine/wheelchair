@@ -2,7 +2,10 @@
 slug: review-progress
 date: 2026-11-15
 implemented-by: "T1 standard (gpt-6.1-terra); T2 standard, asked for claude, landed on gpt (gpt-6.1-terra); sub-lead claude-opus-5-5"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: top (claude-opus-5-5)
+    checks: standard (gpt-6.1-terra)
 ---
 
 # Completion Report — See progress while a plan is reviewed and a build is verified

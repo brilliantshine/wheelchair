@@ -260,3 +260,4 @@ None: nothing in the Spec exists yet.
 - 2026-11-15 — Choice: T2, app-threads.spec.js: the browser cases from the Spec are one sequential test per viewport rather than separate tests.
 - 2026-11-15 — Choice: T2, card.js: a review `clean` card with one count but not the other is refused naming the missing count's field.
 - 2026-11-15 — T2 accepted and merged. Sub-lead re-ran both gates on its branch: node 387/388, the one failure the known port-race issue; browser 588 passed, 2 failed, both the known committed-graph arrow issue. The new cases passed in Chromium and Firefox at phone and desktop sizes.
+- 2026-11-15 — Verification attempt 1 (claude-opus-5-5, top): PASS on 8e2f279. The `verify`/`clean` progress card was not posted: the running hub refuses the new stages until this branch is installed.
