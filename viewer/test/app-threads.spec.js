@@ -293,6 +293,24 @@ for (const [label, size] of SIZES) {
       await expect(page.locator('#msg')).toHaveValue('');
     });
 
+    test('send now hands a queued message to a busy lead', async ({ page }) => {
+      const made = await ctx.make({ cli: 'claude' });
+      const at = new Date().toISOString();
+      await ctx.patch(made.id, (t) => {
+        Object.assign(t.sessions[0], { ready: true, turn_ended: false, queue: [{ text: 'do this now', source: 'collin', at }] });
+        t.queues = { [t.sessions[0].name]: t.sessions[0].queue };
+      });
+      await open(page, made.id);
+      const bubble = page.locator('#chat .bubble.pending', { hasText: 'do this now' });
+      await expect(bubble).toContainText('queued');
+      const request = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith(`/threads/${made.id}/send-now`));
+      await bubble.locator('button.send-now').click();
+      expect((await request).postDataJSON()).toEqual({ at });
+      await expect(bubble).toHaveCount(0);
+      expect(ctx.machine.sessions.get(made.sessions[0].name).submits).toEqual(['do this now']);
+      await noSideScroll(page);
+    });
+
     test('progress stages render and remain pinned through remediation', async ({ page }) => {
       await page.setViewportSize({ width: 360, height: 800 });
       const made = await ctx.make({ cli: 'claude' });

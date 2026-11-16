@@ -313,13 +313,17 @@ async function enqueue(hub, thread, name, text, source = 'app', first = false, {
   return target;
 }
 
-function canDeliver(target) {
-  const held = target.permission_open || target.needs_open || (target.limited_until && Date.parse(target.limited_until) > Date.now());
-  return Boolean(target.live && target.ready && target.turn_ended && !held && target.queue?.length);
+function held(target) {
+  return Boolean(target.permission_open || target.needs_open || (target.limited_until && Date.parse(target.limited_until) > Date.now()));
 }
 
-async function deliver(hub, thread, target) {
-  if (!canDeliver(target)) return false;
+// `midTurn` skips only the wait for the turn to end; a held or unready session still waits.
+function canDeliver(target, midTurn = false) {
+  return Boolean(target.live && target.ready && (target.turn_ended || midTurn) && !held(target) && target.queue?.length);
+}
+
+async function deliver(hub, thread, target, { midTurn = false } = {}) {
+  if (!canDeliver(target, midTurn)) return false;
   const next = target.queue[0];
   let submitted = next.text;
   let deliveredStyleVersion;
@@ -355,6 +359,22 @@ async function deliver(hub, thread, target) {
   await hub.appendSent(thread, trimmed);
   await hub.save(thread);
   return true;
+}
+
+// Collin's "Send now" on one of his queued messages: it goes to the lead at once instead of
+// at the turn's end. Both CLIs take input typed mid-turn and read it at their next step, so
+// the message joins the running turn rather than interrupting it.
+async function sendNow(hub, thread, at) {
+  const lead = [...thread.sessions].reverse().find((item) => item.role === 'lead' && item.live);
+  if (!lead) throw appError(409, 'no live lead');
+  const index = (lead.queue || []).findIndex((item) => item.source === 'collin' && item.at === at);
+  if (index < 0) throw appError(404, 'message is no longer queued');
+  if (!lead.ready || held(lead)) throw appError(409, 'the lead cannot take a message right now');
+  lead.queue.unshift(...lead.queue.splice(index, 1));
+  thread.queues ||= {};
+  thread.queues[lead.name] = lead.queue;
+  // A failed submit leaves it first in the queue, so it still goes when the turn ends.
+  return deliver(hub, thread, lead, { midTurn: true });
 }
 
 async function event(hub, payload) {
@@ -647,6 +667,7 @@ module.exports = {
   pollDead,
   retryQueues,
   retryWaiting,
+  sendNow,
   releaseLimits,
   publicSession,
   resolveModel,

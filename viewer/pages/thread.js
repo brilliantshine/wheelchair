@@ -29,6 +29,7 @@
   let archiveAsk = false;
   let accountNames = null;   // account id -> name, from /settings; null until fetched
   const cardErrors = {};
+  const sendingNow = {};     // queued message `at` -> true while its Send now call runs
   const declining = {};      // card id -> true while a sudo Decline call is pending
   const formCache = new Map();
   let attachments = [];
@@ -330,11 +331,34 @@
       }
     }
     cardsBefore();
-    for (const p of pending) {
+    // Pair each pending bubble with Collin's message still in the lead's queue, so it can be
+    // sent now. One queued before this page loaded has no pending bubble and gets its own.
+    const lead = leadSession();
+    const waiting = ((lead && lead.queue) || []).filter((q) => q.source === 'collin');
+    const shown = pending.map((p) => {
+      const at = waiting.findIndex((q) => q.text === p.text);
+      return { text: p.text, queued: at >= 0 ? waiting.splice(at, 1)[0] : null };
+    });
+    shown.unshift(...waiting.map((q) => ({ text: q.text, queued: q })));
+    const canSendNow = lead && lead.live && lead.ready && !lead.permission_open && !lead.needs_open
+      && !(lead.limited_until && Date.parse(lead.limited_until) > Date.now()) && !thread().archived;
+    for (const p of shown) {
       const b = el('div', 'bubble human pending', p.text);
       b.appendChild(el('span', 'tag', 'queued'));
+      if (p.queued && canSendNow) {
+        const at = p.queued.at;
+        b.appendChild(button(sendingNow[at] ? 'Sending…' : 'Send now', 'send-now', () => sendNow(at), Boolean(sendingNow[at])));
+      }
       chatEl.appendChild(b);
     }
+  }
+
+  // Hand one queued message to the lead mid-turn instead of waiting for the turn to end.
+  async function sendNow(at) {
+    sendingNow[at] = true; sigs.chat = null; render();
+    try { await post(T + '/send-now', { at }); showError(''); }
+    catch (e) { showError('Could not send it now: ' + e.message); }
+    finally { delete sendingNow[at]; sigs.chat = null; await poll(); }
   }
 
   // ---- cards ----
@@ -822,7 +846,8 @@
     sync('pinned', [data.pinned, data.cards.map((c) => [c.answered, c.answered_value]), ideaOpen, pinsFolded, cardErrors], renderPinned);
     const nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
     let changed = false;
-    sync('chat', [data.items, pending, slug(), t.archived, data.cards.filter((c) => !PINNED_KINDS.includes(c.kind)), cardErrors, declining], () => { renderChat(); changed = true; });
+    const leadNow = leadSession();
+    sync('chat', [data.items, pending, leadNow && [leadNow.queue, leadNow.ready, leadNow.permission_open, leadNow.needs_open, leadNow.limited_until], sendingNow, slug(), t.archived, data.cards.filter((c) => !PINNED_KINDS.includes(c.kind)), cardErrors, declining], () => { renderChat(); changed = true; });
     const workingEl = $('working');
     const working = leadWorking() && !t.archived;
     const workingText = (t.lead_name || 'The lead') + ' is working';
