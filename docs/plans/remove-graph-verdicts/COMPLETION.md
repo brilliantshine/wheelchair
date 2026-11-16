@@ -83,3 +83,40 @@ Worker reports with full outputs: `docs/plans/remove-graph-verdicts/reports/T1.m
 - An untracked symlink `viewer/node_modules_tmp_check`, created by the sub-lead while checking a baseline, sits in the feature worktree. It is not committed and should be removed by hand.
 
 ## Remediation rounds
+
+### Remediation 1 — 2026-11-15
+
+Gaps from verification attempt 1 (both verifiers FAIL, see `REMEDIATION-1.md`), fixed by task R1 (Light, gpt-6-luna):
+
+| Gap | Fix | Evidence |
+|-----|-----|----------|
+| `README.md:106` "dragging boxes and rulings" | now "Everything, including dragging boxes, works on a phone." | `README.md:105-106` |
+| `protocol/implementation.md:146` read-back "so Collin's rulings are never overwritten" | read-back kept; reason is now "so the write carries the file's current hash" | `protocol/implementation.md:146-147` |
+| `protocol/implementation.md:202` "one box and one ruling" | "exactly one box, never two" | `protocol/implementation.md:202` |
+| Browser suite red: `browser.spec.js:2133` fails on run pictures' curved wires (pre-existing) | the check returns no crossings for a run picture, with a comment saying why | `viewer/test/browser.spec.js:2173` |
+
+Evidence, run by the sub-lead on the feature branch after merging R1:
+
+```
+$ grep -rnEi "ruling|rule on|ruled" protocol skills README.md viewer/AGENTS.md | grep -v "protocol/seen.md\|protocol/writing.md"
+(no output)
+
+$ npm --prefix viewer run test:browser
+  2 skipped
+  578 passed (2.6m)
+
+$ node --test viewer/test/*.test.js
+not ok 72 - derives an opening title and lets only the lead rename it with title cards
+# pass 379
+# fail 1
+$ node --test viewer/test/app-hub.test.js     # twice; this file is untouched by the branch
+# pass 103
+# fail 0
+# pass 103
+# fail 0
+
+$ grep -rnE "agent-verdict|preservation-(rejected|agreed)|bad-was|bad-origin-value|bulk-not-additive|container-orphan|container-unreadable-child|applyOrigin" protocol skills codex viewer README.md AGENTS.md CONTRIBUTING.md | grep -v node_modules
+(no output, exit 1)
+```
+
+The node suite's full runs each show at most one timing failure, in a different untouched test each time (`lifecycle.test.js:423`, `server.test.js` write lock, `app-hub.test.js` title), each passing on rerun. The known-gaps item about `browser.spec.js:2133` above is resolved by this round.
