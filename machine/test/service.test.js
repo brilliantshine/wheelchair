@@ -902,7 +902,7 @@ test('login sessions start, expose state, accept code and stay out of session re
   const root = await temp(), previous = process.env.HOME; process.env.HOME = root;
   const env = await service(root); try {
     const started = await api(env, 'POST', '/v1/logins', { account: 'test', cli: 'claude', dir: '~/.wheelchair/accounts/test' }, hubHeader);
-    assert.equal(started.status, 201); const cmd = await log(env); assert.match(cmd, /CLAUDE_CONFIG_DIR=/); assert.match(cmd, /auth.*login/); assert.doesNotMatch(cmd, /WHEELCHAIR_SESSION_TOKEN/);
+    assert.equal(started.status, 201); const cmd = await log(env); assert.doesNotMatch(cmd.split('\n').find(line => line.includes('new-session') && line.includes('wc-login-test')), / -c /); assert.match(cmd, /CLAUDE_CONFIG_DIR=/); assert.match(cmd, /auth.*login/); assert.doesNotMatch(cmd, /WHEELCHAIR_SESSION_TOKEN/);
     await write(env.fake.pane, 'starting'); assert.equal((await api(env, 'GET', '/v1/logins/test', undefined, hubHeader)).body.state, 'starting');
     await write(env.fake.pane, await fs.readFile(path.join(__dirname, 'fixtures/login/claude.txt'), 'utf8'));
     assert.equal((await api(env, 'GET', '/v1/logins/test', undefined, hubHeader)).body.state, 'waiting');
@@ -915,7 +915,7 @@ test('login sessions start, expose state, accept code and stay out of session re
     assert.equal((await api(env, 'POST', '/v1/logins', { account: 'test', cli: 'claude', dir: '~/bad/test' }, hubHeader)).status, 400);
     assert.equal((await api(env, 'POST', '/v1/logins', { account: 'default-gpt', cli: 'codex', dir: null }, hubHeader)).status, 201);
     const codexCommand = (await log(env)).split('\n').find(line => line.includes('new-session') && line.includes('wc-login-default-gpt'));
-    assert.match(codexCommand, /codex.*login.*--device-auth/); assert.doesNotMatch(codexCommand, /WHEELCHAIR_SESSION_TOKEN/);
+    assert.doesNotMatch(codexCommand, / -c \/[^ ]/); assert.match(codexCommand, /codex.*login.*--device-auth/); assert.doesNotMatch(codexCommand, /WHEELCHAIR_SESSION_TOKEN/);
     assert.equal((await api(env, 'POST', '/v1/logins', { account: 'other', cli: 'codex', dir: '~/.wheelchair/accounts/other' }, hubHeader)).status, 201);
     assert.match(await log(env), /CODEX_HOME=.*accounts\/other/);
   } finally { delete process.env.FAKE_SESSIONS; delete process.env.FAKE_CLAUDE_AUTH; if (previous === undefined) delete process.env.HOME; else process.env.HOME = previous; await env.close(); }
@@ -1148,9 +1148,21 @@ test('Antigravity start, prompt polling, status and login completion', async () 
       await env.instance.pollReadiness(); assert.equal(env.instance.sessions[session.name].prompt_open, true);
       assert.ok(env.instance.status().agy);
       await env.instance.startLogin({ account: 'default-gemini', cli: 'agy' });
-      await write(env.fake.pane, await fs.readFile(path.join(__dirname, 'fixtures/agy/login-success.txt')));
+      const launch = (await log(env)).split('\n').find(line => line.includes('new-session') && line.includes('wc-login-default-gemini'));
+      assert.ok(launch.includes(` -c ${path.join(env.state, 'agy-login')} `));
+      assert.equal((await fs.stat(path.join(env.state, 'agy-login'))).mode & 0o777, 0o700);
+      const before = (await log(env)).split('\n').filter(line => line.includes('kill-session -t wc-login-default-gemini')).length;
+      for (const name of ['login-menu.txt', 'login-link-joined.txt', 'login-success.txt', 'onboard-1-theme.txt', 'onboard-2-data.txt', 'onboard-3-trust.txt']) {
+        await write(env.fake.pane, await fs.readFile(path.join(__dirname, 'fixtures/agy', name)));
+        assert.notEqual(env.instance.loginState('default-gemini').state, 'done');
+        assert.notEqual(env.instance.loginState('default-gemini').state, 'done');
+        assert.equal((await log(env)).split('\n').filter(line => line.includes('kill-session -t wc-login-default-gemini')).length, before);
+      }
+      const sends = (await log(env)).split('\n').filter(line => line.includes('send-keys -t wc-login-default-gemini ')).map(line => line.split(' ').at(-1));
+      assert.deepEqual(sends, ['Enter', 'Enter', 'Enter', 'Down', 'Right', 'Enter', 'Enter']);
+      await write(env.fake.pane, await fs.readFile(path.join(__dirname, 'fixtures/agy/idle.txt')));
       assert.equal(env.instance.loginState('default-gemini').state, 'done');
-      assert.match(await log(env), /kill-session -t wc-login-default-gemini/);
+      assert.equal((await log(env)).split('\n').filter(line => line.includes('kill-session -t wc-login-default-gemini')).length, before + 1);
     } finally { await env.close(); await hub.close(); }
   });
 });
