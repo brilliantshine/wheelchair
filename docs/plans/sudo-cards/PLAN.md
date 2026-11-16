@@ -25,7 +25,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 
 | # | Decision | Rationale | Source |
 |---|----------|-----------|--------|
-| 1 | The command runs non-interactively, stdin closed after the password, with a time limit (default 10 minutes) | IDEA.md rules out interactive commands; a hung command must not hang forever | defaulted |
+| 1 | The command runs non-interactively, stdin closed after the password, with a time limit (default 10 minutes). *Stdin part superseded by 14 and 19: the command's stdin is `/dev/null`* | IDEA.md rules out interactive commands; a hung command must not hang forever | defaulted |
 | 2 | The agent gets the exit code and output (stdout and stderr, capped in size); the card shows the same result to Collin | IDEA.md: the agent learns whether it worked | defaulted |
 | 3 | "Talk about it" sends the lead a message that Collin wants to discuss the request; nothing runs and the card stays open | IDEA.md | defaulted |
 | 5 | Isolation must hold against a hostile agent: a separate helper, running under an identity agents can't control, with root-owned code agents can't edit, serves the password box and runs the command; the password never passes through the hub, the machine service or any page they serve | Collin picked "safe from a hostile agent" | user |
@@ -44,6 +44,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 18 | Only the command text is frozen. The lead writes the actual commands into the card, never a script it wrote; the helper flags any file named in the command that Collin's user could change, on the card and the run page. IDEA.md "What good looks like" narrowed to match | Collin picked "inline it, flag files" | idea-change |
 | 19 | Supersedes 14's check: the password is checked with `sudo -k -v` and the command's permission with `sudo -k -l`, each writing the password only after a sentinel prompt appears; a machine whose sudo asks for no password fails closed | Review round 2: `-l` follows `listpw` (default any), so one NOPASSWD entry let any password pass | review-round-2 |
 | 20 | Intake refuses `~` in the command; the editable-file scan uses `shlex` | `~` meant Collin's home in the warning but /root at run time | review-round-2 |
+| 21 | Supersedes 16: Decline is one synchronous call; no saved `declining` state, attempt id or restart recovery. Failed calls save nothing | Review round 4: the saved state kept producing race findings; a cancel the helper didn't confirm already changes nothing | review-round-4 |
 | 4 | The command is fixed when the card is posted; the run uses the stored text byte for byte and the card shows it in full, unabridged | IDEA.md: what runs is exactly what is shown | defaulted |
 
 ## Spec
@@ -79,9 +80,9 @@ Flow:
 3. The hub stores and shows the card: command in a monospace block, shown in full (wrapping, no
    truncation), `does`, `why`, and three controls: **Open to run** (a link to `url`, opening
    a new tab), **Decline**, **Talk about it**. No password field exists anywhere in the hub's pages.
-4. Card states: `waiting`, `declining`, `running`, `ran` (exit code + output), `declined`,
-   `expired`, `failed` (3 wrong passwords or not allowed). Buttons show only in `waiting`;
-   `declining` shows "Declining…"; `running` shows "Running…"; the rest show the outcome.
+4. Card states: `waiting`, `running`, `ran` (exit code + output), `declined`, `expired`,
+   `failed` (with its reason). Buttons show only in `waiting`; `running` shows "Running…"; the
+   rest show the outcome.
 
 **Correlation.** The helper's `request_id` is the one key. The machine service adds it to the
 card before forwarding; the hub stores it on the card and keeps a `request_id → card id` index in
@@ -90,19 +91,20 @@ Intake takes `{command, does, why}` only (no thread or card reference).
 
 **Outcomes, machine → hub.** New route `POST /api/machine/sudo-outcome` (machine secret,
 beside `cards` and `events` in `viewer/app/routes.js` `handleMachine`), body
-`{request_id, state, exit_code?, output?, truncated?, delivery_id}`, where `state` is `running`,
+`{request_id, state, exit_code?, output?, truncated?, reason?, delivery_id}`, where `state` is `running`,
 `ran`, `declined`, `expired` or `failed`. Idempotent: a repeat or an older state than the card
 already has returns 200 and changes nothing.
 
-**One state handler in the hub.** Every sudo state change, from this route, from a cancel
-response or from hub-start recovery, goes through one function,
-`applySudoState(request_id, {state, exit_code?, output?, truncated?})`. Under the thread's
-existing save, it: ignores a state older than or equal to the card's (order `waiting`/`declining`
-< `running` < terminal); otherwise sets the card's state and result; and, on the card's first
-terminal state only, queues exactly one message to the lead (below), in the same save. A later
-call with the same or another terminal state is a no-op. So whichever path reports a result first,
-the lead hears it once and with the output. An unknown `request_id` returns 409, which the machine
-treats as "retry later", not as a rejection.
+An unknown `request_id` returns 409, which the machine treats as "retry later", not as a rejection.
+
+**One state handler in the hub.** Every sudo card state change goes through one function,
+`applySudoState(request_id, {state, exit_code?, output?, truncated?, reason?})`, called from this
+route and from the Decline press. Under the thread's existing save, it: ignores `waiting`;
+ignores a state older than or equal to the card's (order `waiting` < `running` < terminal);
+otherwise sets the card's state and result; and, on the card's first terminal state only, queues
+exactly one message to the lead (below), in the same save. A later call with the same or another
+terminal state is a no-op. So whichever path reports a result first, the lead hears it once and
+with the output. The hub never moves a card back to `waiting`.
 
 **Ordering and durability on the machine.** The machine service keeps a small file
 `sudo-requests.json` in its state directory (0600; no password ever exists in the machine
@@ -122,22 +124,20 @@ is treated as done. It:
   `expired`, which is posted like any outcome. Entries are dropped once a terminal state is
   acknowledged.
 
-**Decline.** The press sets the card to `declining` and the hub calls the machine
-(`POST /sudo/<request_id>/cancel` on the machine service API, `machine/API.md`), which calls the
-helper's cancel. The helper answers with the request's actual state:
-- any state (`declined`, `running`, `ran`, …): passed to `applySudoState` with the full status
-  (the cancel response has the same shape as `GET /requests/<id>`). If Run won the race, Collin
-  sees the run result, not "declined".
-- machine or helper unreachable, or no answer in 10 seconds: the card returns to `waiting` with
-  a one-line note "Couldn't reach <machine> to decline. Try again." Nothing is reported as
-  declined until the helper confirms it.
-Each press stores a fresh `decline_attempt` id on the card. The unreachable/timeout restore
-applies only if the card is still `declining` with that same `decline_attempt`; if any outcome has
-moved the card on, the restore does nothing.
+**Decline.** One synchronous call. The press handler (in `viewer/app/threads.js` `press`,
+which already awaits work) calls the machine (`POST /sudo/<request_id>/cancel` on the machine
+service API, `machine/API.md`), which calls the helper's cancel, with a 10-second timeout overall.
+Nothing is saved on the card before the answer.
+- Any answer: the full status (same shape as `GET /requests/<id>`) goes to `applySudoState`.
+  `declined` closes the card and tells the lead; if Run won the race, Collin sees the run result,
+  not "declined".
+- Unreachable or timed out: nothing is saved; the press returns an error and the card shows
+  "Couldn't reach <machine> to decline. Try again." beside its unchanged buttons. Nothing is
+  reported as declined until the helper confirms it.
+While the call is pending the page alone shows "Declining…" on the button.
 The helper's own transitions are atomic under one lock: `waiting → running` on a good password,
 `waiting → declined` on cancel; whichever comes first wins. A cancel that arrives while the
 password check is still going wins, and the check's result is discarded.
-When the hub starts, any card still in `declining` returns to `waiting` with the note "Decline status unknown; checking…" until the next outcome arrives.
 
 What reaches the lead (typed like any press, shown as a short bubble in the thread):
 - `[card <id>] sudo ran: exit <n>` followed by the output block.
@@ -171,7 +171,9 @@ row in the root `AGENTS.md` tables), but **runs only from an installed root-owne
 **Intake API** (JSON over HTTP on `intake.sock`):
 - `POST /requests` `{command, does, why}` → `{request_id, url, editable}`.
   `request_id` is 128 random bits, hex; `url` is `<url_base>/r/<request_id>`.
-- `GET /requests/<id>` → `{state, exit_code?, output?, truncated?}`.
+- `GET /requests/<id>` → `{state, exit_code?, output?, truncated?, reason?}`. `reason` is set for
+  `failed` (the page's plain message, e.g. "wrong password 3 times") and kept with the result on
+  the machine and on the card.
 - `POST /requests/<id>/cancel` → declines a `waiting` request; answers with the request's actual
   status either way, in the same shape as `GET /requests/<id>`.
 
@@ -364,6 +366,12 @@ Round 2, GPT lane (mechanics), reviewed the text before the intent lane's fixes:
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | major | `applySudoState` rank rule can't do the `declining → waiting` restore | upheld | Decision 21: no `declining` state at all |
+| mechanics | minor | `failed` reason has no field to travel in | upheld | `reason` added to status, outcome, handler |
+| intent | major | Same as the mechanics major above | upheld | Superseded: Decision 21 removes `declining` altogether |
+| intent | minor | Make Decline one synchronous call | upheld | Decision 21 |
+| intent | minor | "Decline status unknown; checking…" promises a check that never runs | upheld | Gone with Decision 21 |
+| intent | minor | Decision 1 still says the command's stdin carries the password | upheld | Marked superseded |
 
 ## Prior Work
 
