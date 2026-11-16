@@ -50,7 +50,7 @@ el('form').addEventListener('submit', async event => {
     } catch (_) {}
   }, 1000);
   try { await fetch(base + '/run', {method: 'POST', body}); await load(); }
-  catch (_) { el('status').textContent = 'Could not run the request.'; }
+  catch (_) { el('status').textContent = 'Lost the connection; checking…'; load(); }
   finally { clearInterval(poll); }
 });
 load();
