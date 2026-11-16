@@ -41,6 +41,7 @@ function transcriptModel(h, provider, id) {
   let h;
   try {
     h = await createHarness({ mode: 'live', slowOriginSeconds: 8 });
+    h.setOriginSlow(false);
     const thread = async () => (await h.callHub('/api/threads')).threads.find(t => t.id === h.threadId);
     const session = async name => (await h.agent({ action: 'list' })).sessions.find(s => s.name === name);
     let attempt = 0;
@@ -61,8 +62,19 @@ function transcriptModel(h, provider, id) {
         const account = status.accounts?.find(a => a.id === `default-${provider}`);
         if (account && !account.logged_in) throw new Error('skipped (not logged in)');
         startTime = Date.now();
-        result = await start(provider, tier, 'Reply with the single word ok and stop.'); name = result.session.name;
-        const elapsed = (Date.now() - startTime) / 1000;
+        let elapsed;
+        if (slow) h.setOriginSlow(true);
+        try {
+          result = await start(provider, tier, 'Reply with the single word ok and stop.');
+          elapsed = (Date.now() - startTime) / 1000;
+          name = result.session.name;
+        } finally {
+          if (slow) {
+            h.setOriginSlow(false);
+            // Let the 15-second machine-status cache expire (viewer/app/usage.js:49-50).
+            await new Promise(resolve => setTimeout(resolve, 16000));
+          }
+        }
         if (slow) row('slow-start', elapsed > 5 && h.counts[name] === 1 && !result.note && result.session.provider === provider, `request succeeded; ${elapsed.toFixed(2)} s; ${h.counts[name] || 0} start requests${result.note ? `; ${result.note}` : ''}`);
         checkWaiting(result.session);
         if (result.note || result.session.provider !== provider) throw new Error(result.note || `provider ${result.session.provider}, requested ${provider}`);
