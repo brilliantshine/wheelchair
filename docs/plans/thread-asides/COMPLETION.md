@@ -375,3 +375,39 @@ no longer tracks). Per `sub-lead.md`, a gap surviving two fix attempts is a plan
 third attempt was made; it went to the lead for Collin. Everything else the verifier checked
 passed: machine 90/90, aside unit 14/14, the shell suites, viewer unit 354/355 (known port
 test), browser 556 passed / 2 skipped / 2 known graph failures.
+
+### Remediation 5 — 2026-11-15 (Decision 19, Collin)
+
+The archive gap went to the lead as a plan defect after verification 5. Collin chose option A
+(Decision 19): the hub never acknowledges a turn it cancelled, so the machine keeps its stopped
+record until the 30-day drop and a late start with that id runs nothing. Spec §4/§5 and Accepted
+Risks were amended in PLAN.md. Brief: `REMEDIATION-5.md`. One task, R5-1, on GPT (standard,
+gpt-6.1-terra), merged at `5515fe4`. Worker choices: none.
+
+| Change | Where |
+|--------|-------|
+| The cancel loop in `pass` sends `DELETE` only; the `…/ack` after it is removed. Saved results and finished unheld turns are still acknowledged | `viewer/app/asides.js`, `pass` (`for (const cancel of cancels)`) |
+
+Validation, run by the sub-lead (R5-1 branch `26fa5f3`, then merged):
+
+```
+$ node --test viewer/test/app-asides.test.js     (three runs, branch)
+# pass 15 # fail 0
+# pass 15 # fail 0
+# pass 15 # fail 0
+$ node --test viewer/test/*.test.js               (branch)
+not ok 238 - a starter that loses the freed port registers through the new holder
+# tests 356
+# pass 355
+# fail 1
+$ bash machine/test/run.sh                         (merged)
+# pass 90 # fail 0
+$ node --test viewer/test/app-asides.test.js      (merged)
+# pass 15 # fail 0
+```
+
+New test "a cancelled turn is never acknowledged, so a late start runs nothing" reproduces
+verifier 5's case with a store-like fake: POST accepted (`starts === 1`) with its response held,
+archive DELETEs, the response is released; the hub sends no ack, the fake still holds the id as
+stopped, and the delayed original POST then starts nothing (`starts` still 1). The existing
+archive-race test now expects no ack for a cancelled turn and one for a finished unheld turn.
