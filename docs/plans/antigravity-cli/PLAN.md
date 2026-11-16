@@ -392,6 +392,8 @@ a worker with `--provider gemini` and check its `result` card arrives.
 
 ## Log
 
+- 2026-11-16 — Verification attempt 3 started on 935090a, `--not-provider gpt`: wc-9340ecf1256c-verifier-3 gpt gpt-6.1-sol | Could not avoid gpt; using gpt.
+
 - 2026-11-16 — R2-1 attempt 2 accepted: settings.js identical to the reviewed patch; accounts spec 172/0 re-run by me; browser 624 passed, unit 447/448 (baseline), machine 109/0. Choices: none. Remediation 2: 1 gap, 1 fixed. worker-14's unmerged branch wc-9340ecf1256c-w14 and its worktree are left (the service refuses removal of an unmerged branch); its useful change landed through attempt 2.
 
 - 2026-11-16 — R2-1 attempt 1 (worker-14): its `settings.js` change was correct (reviewed and kept as a patch), but its new browser test raced the card's 2 s auto-close and hit the fails-twice guardrail. Escalation: brief rewritten (apply the reviewed patch; assert success by the card closing; no `pauseAt`) and effort raised one step, medium → high, same tier and provider. Attempt 2 dispatched.
