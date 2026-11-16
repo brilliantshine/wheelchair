@@ -138,3 +138,81 @@ the evening, and the page then shows a weekday. This build changes no page code
   removes only merged worktrees, and nothing here deletes).
 
 ## Remediation rounds
+
+### Remediation 1 — 2026-11-15
+
+Verification attempt 1 (`wc-989abf66ac00-verifier`, claude-opus-5-5, on `34a33d6`): FAIL, one
+gap: test 5 did not exercise the grace (`REMEDIATION-1.md`).
+
+**Correction to the failing-first evidence above.** The "17 of 18 fail, only test 9 passes"
+figure was measured with the test file as first committed (`4b750ca`), where tests 5 and 6 still
+expected HTTP 200 instead of 202. With the final test file against the pre-build code, tests 5,
+6 and 9 passed (verifier's run). Test 6 is guarded: removing message-clearing makes it fail.
+
+**What changed**
+
+| Item | Change | Where | By |
+|------|--------|-------|----|
+| Gap: test 5 | Grace 300 ms for this test; the `result` is posted 100 ms after the turn end (several 20 ms ticks), then 500 ms with no submit and `owes_reply` false | `viewer/test/app-quiet.test.js:37` | R1-T1 (`9f7c9a9`, Light, gpt-6-luna) |
+| Tests unreliable under load (found by the sub-lead) | `until` waits up to 8 s; holds set and cleared through machine events (`stuck`, `prompt`, `prompt-cleared`); busy states from delivered messages; test 17 has the lead stop the sub-lead through the stop route | `viewer/test/app-quiet.test.js:8`, tests 12, 14, 16, 17, 18 | R1-T2 (`d279dbb`, Standard, gpt-6.1-terra effort high; first attempt at medium stopped at its guardrail) |
+| Tests that could not fail (found by the sub-lead's mutation sweep) | `feed` helper (ends turns until the starter's message is delivered and the queue is empty); tests 7, 13, 18 assert the reminder stage and that the lead got no starter reminder; test 7 waits for the lead's message to be delivered before its baseline; test 14 asserts the stage holds at 0 and the check is kept during the hold | `viewer/test/app-quiet.test.js:26-32`, `:39`, `:79`, `:80`, `:84` | sub-lead |
+
+No product code changed in this remediation (`git diff 34a33d6 HEAD -- viewer/app` is empty).
+
+**Mutation evidence.** Each rule below was removed from `viewer/app/quiet.js` (or, for the
+starter time, moved from delivery to enqueue in `quiet.js` and `sessions.js`), the named test
+run, and the file restored with `git checkout`:
+
+| Rule removed | Test | Result |
+|--------------|------|--------|
+| grace (arm at `Date.now()`) | 5 | not ok |
+| child waiting to start counts as outstanding | 7 | not ok |
+| child that owes a reply counts as outstanding | 13 | not ok |
+| child with queued work counts as outstanding | 18 | not ok |
+| `needs_open` hold | 14 | not ok |
+| `quiet_starter_at` set at delivery, not enqueue | 12 | not ok |
+| 2 → 3 waits until the starter was told | 16 | not ok |
+| queued nudges removed on reset | 11 | not ok |
+| dead-starter path | 17 | not ok |
+| timer path | 4 | not ok |
+| card answered on reset/stop | 3, 10 | not ok |
+
+Removing `s.started_by &&` or the finished-reviewer clause from `quiet.js:5` changes nothing
+observable: the lead is excluded by role as well, and a reviewer's synthesized result already
+clears `owes_reply`. These are redundant guards, not test gaps.
+
+**Validation after Remediation 1** (feature branch, test file as committed with this section):
+
+```text
+$ for r in 1 2 3; do for i in 1 2 3 4; do node --test viewer/test/app-quiet.test.js > q-$r-$i.txt 2>&1 & done; wait; done
+round 1: 0 failures, 4 of 4 logs at 18 pass
+round 2: 1 failures, 3 of 4 logs at 18 pass
+round 3: 0 failures, 4 of 4 logs at 18 pass
+```
+
+Round 2's one failure is test 5 failing in setup, before any of its steps ran:
+`server exited before ready (1): Refused to use a port held by a process it cannot identify.`
+Two concurrent copies picked the same free port in the shared helper
+(`viewer/test/helpers/server.js:54`); the fake machine that `setup()` had already started was
+then never closed, so that process hung after its last test and was stopped by hand. That run's
+other 17 tests passed. This is the shared helpers' port choice under four simultaneous copies of
+one file, the same family as the known freed-port issue, and not something this build changed.
+
+```text
+$ node --test viewer/test/*.test.js      (twice)
+not ok 285 - a starter that loses the freed port registers through the new holder # tests 421 # pass 420 # fail 1
+not ok 285 - a starter that loses the freed port registers through the new holder # tests 421 # pass 420 # fail 1
+
+$ TZ=UTC npm --prefix viewer run test:browser      (22:21 PST)
+  2 skipped
+  590 passed (2.3m)
+```
+
+**Residual risks added by this round**
+
+- Shared test helpers can collide on a port when several app test files start servers at the
+  same instant, and a failed `setup()` leaks the fake machine server, which keeps the test
+  process alive. Pre-existing, in `viewer/test/helpers/`, outside this plan.
+- Test 7 writes its waiting-to-start child into thread state directly (the hub makes one only
+  under provider limits), with a write-and-confirm helper; it is the one remaining direct state
+  write in `app-quiet.test.js`.
