@@ -2,7 +2,13 @@
 slug: agents-screen
 date: 2026-11-15
 implemented-by: "GPT Standard (gpt-6.1-terra) for T1, T2, T3 (T2 and T3 asked for Claude; the hub fell back to GPT); sub-lead Claude Opus 5.5 (integration edits only)"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: GPT top tier (hub fallback; Claude unavailable)
+    checks: GPT Standard (gpt-6.1-terra)
+  - round: 2
+    lane: GPT top tier (hub fallback; Claude unavailable)
+    checks: GPT Standard (gpt-6.1-terra)
 ---
 
 # Completion Report — Agents screen with named leads
@@ -128,3 +134,7 @@ No functional gaps. The verifier saw the font tests 404 because its worktree had
 two out of scope, and they are recorded in `docs/known-issues.md` (commit `01ec327`). No code
 changed. Details are in `REMEDIATION-1.md`. Re-verification is attempt 2, with dependencies
 installed first.
+
+### Verification attempt 2 at `e4c4c71`: PASS
+
+After `npm --prefix viewer ci`, the unit suite had 347 passed, and its only failure was the exempted lifecycle test. The browser suite had 558 passed and 2 skipped, and its only failure was the exempted arrow test, in both browsers. Extra Chromium and Firefox checks of ended ancestors, capacity-waiting controls, the 360px layout, hash highlighting and terminal lead-name headers all passed.
