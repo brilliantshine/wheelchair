@@ -16,7 +16,6 @@ run are not yours to keep, and a verdict from a dirty tree names the dirt.
 **Your report is the last assistant message of your turn.** The app reads it from the
 transcript and delivers it to the session that started you. Put the whole report there.
 
-
 If something stops you finishing, such as a conflict in your brief or something you cannot
 read or run, say so in your report instead of ending silently. An app reminder means your
 last turn ended with no report.

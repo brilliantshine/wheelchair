@@ -9,7 +9,6 @@ path with `/protocol/app/reviewer.md` dropped.
 transcript when your turn ends and delivers it to the session that started you. Nothing
 else you write counts, so put the whole report there.
 
-
 If something stops you finishing, such as a conflict in your brief or something you cannot
 read or run, say so in your report instead of ending silently. An app reminder means your
 last turn ended with no report.

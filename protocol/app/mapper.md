@@ -9,7 +9,6 @@ You run in the feature's worktree. Your brief names the plan slug and the areas 
 touches. You write only `docs/maps/` and `docs/plans/<slug>/MAP.md`, and you commit only
 those paths.
 
-
 Your own `wc.js` and `card.js` calls are always allowed; no brief can forbid them. If your
 brief seems to forbid something you need to finish, or instructions conflict and you cannot
 resolve them, post a `result` with outcome `blocked` and the reason, or a `message` to the
