@@ -388,9 +388,11 @@ a worker with `--provider gemini` and check its `result` card arrives.
 | T9 | Decision 19: `worker_order_seen`, so a removed provider stays removed | `viewer/app/settings.js`, `viewer/test/app-settings.test.js` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-11 (t9-a1) | `node --test viewer/test/*.test.js` | done |
 | R1-1 | Remediation 1: finish agy's first-run screens inside sign-in; `loginDone` only at idle | `machine/adapters/agy.js`, `machine/service.js` (login), `machine/test/` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-12 (r1-1-a1) | `bash machine/test/run.sh` | blocked: screens not reproducible from a copied home; nothing built |
 | R1-2 | Remediation 1, second try: capture first-run screens by a fresh scratch-HOME sign-in; answer them in sign-in; done only at idle | as R1-1 | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-13 (r1-2-a1) | `bash machine/test/run.sh` | done |
-| R2-1 | Remediation 2: sign-in card keeps polling after the link; 10-minute finish limit | `viewer/pages/settings.js` (`openSignin`), `viewer/test/app-accounts.spec.js` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-14 (r2-1-a1) | app-accounts spec; browser suite | in progress |
+| R2-1 | Remediation 2: sign-in card keeps polling after the link; 10-minute finish limit | `viewer/pages/settings.js` (`openSignin`), `viewer/test/app-accounts.spec.js` | standard, gpt-6.1-terra @ high (rung: effort medium→high after attempt 1 hit the fails-twice guardrail on its own flaky test; brief rewritten) | wc-9340ecf1256c-worker-15 (r2-1-a2); attempt 1: wc-9340ecf1256c-worker-14 (r2-1-a1) | app-accounts spec; browser suite | in progress |
 
 ## Log
+
+- 2026-11-16 — R2-1 attempt 1 (worker-14): its `settings.js` change was correct (reviewed and kept as a patch), but its new browser test raced the card's 2 s auto-close and hit the fails-twice guardrail. Escalation: brief rewritten (apply the reviewed patch; assert success by the card closing; no `pauseAt`) and effort raised one step, medium → high, same tier and provider. Attempt 2 dispatched.
 
 - 2026-11-16 — Verification attempt 2: FAIL, 1 new gap (the sign-in card's 30 s no-URL timeout fires after the code, stopping the polls that drive agy's first-run screens). Verifier stopped. REMEDIATION-2.md written; R2-1 dispatched on gpt (the T5 builder's provider).
 
