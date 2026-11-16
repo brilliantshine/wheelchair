@@ -39,9 +39,12 @@ async function withHub(behaviors, work) {
   const state = await makeDir('app-diagram-state-');
   const machines = Object.fromEntries(Object.entries(fakes).map(([name, fake]) => [name, { name, address: '127.0.0.1', port: fake.port, secret: SECRET }]));
   await fs.writeFile(path.join(state, 'machines.json'), JSON.stringify(machines));
-  const server = await startServer({ stateDir: state, env: { WHEELCHAIR_DIAGRAM_TIMEOUT_MS: '300' } });
-  try { await work({ server, state }, fakes); } finally {
-    await server.stop();
+  let server;
+  try {
+    server = await startServer({ stateDir: state, env: { WHEELCHAIR_DIAGRAM_TIMEOUT_MS: '300' } });
+    await work({ server, state }, fakes);
+  } finally {
+    if (server) await server.stop();
     for (const fake of Object.values(fakes)) await fake.stop();
   }
 }
