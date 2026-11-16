@@ -1,6 +1,6 @@
 ---
 slug: silent-stops
-status: planning   # planning | ready-for-review | approved | implementing | verifying | done
+status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-15
 ---
 
@@ -12,14 +12,7 @@ get buried as this file grows. **Map:** `MAP.md`.
 
 ## Open Questions
 
-### Q2: When does Collin see it?
-- **Context:** Order is fixed by decision 7: the agent is nudged, then its starter. Something must then
-  decide the starter's step "did not move it". The starter may message the agent (giving it a new turn)
-  or do nothing (a sub-lead that is itself idle, waiting).
-- **Options:** (a) after the starter is told: the agent ends another quiet turn, or 10 minutes pass with
-  no card from it; (b) timer only; (c) the agent's next quiet turn only.
-- **Recommendation:** (a): (c) alone never fires if the starter does nothing; (b) alone waits even when
-  the agent has visibly stalled again.
+(none)
 
 ## Watch List
 
@@ -39,10 +32,159 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 5 | Rules: worker.md, sub-lead.md, lead.md say a session's own `wc.js` and `card.js` calls are always allowed and no brief can forbid them; briefs restricting ports or the network must exempt them; a worker (and mapper, sub-lead) facing a conflict between its brief and finishing posts `result` `blocked` with the reason, never stops silently. cards.md gets the same one-line rule. | IDEA "What good looks like". | defaulted |
 | 6 | No Agents tab change. | Collin sees the alert in the thread (IDEA); the tab's idle state is correct. | defaulted |
 | 7 | Escalation order: on a quiet turn the app first messages the quiet agent itself (it ended without reporting; its own wc.js and card.js calls are always allowed; post a `result`, or `blocked` with the reason, or a `message` if it needs an answer). If its next turn is quiet too, the app messages the session that started it. | Fixes the common case (an agent that forgot or misread a brief) without spending the starter's turn. | user |
+| 8 | Collin sees it (a system `needs` card) once the starter has been told and then either the agent ends another quiet turn or 10 minutes pass with no `result` or `message` from it. | A timer alone is slow when the agent visibly stalls again; a second quiet turn alone never fires if the starter does nothing. | user |
+| 9 | Supersedes part of 2: `finished` does not end watching for worker, mapper, sub-lead; any delivered message makes them owe a reply again. A session waiting on its own live, unfinished children is never quiet. | A sub-lead may re-message a finished worker; a sub-lead dispatching workers legitimately ends turns with no card. | defaulted |
+| 10 | If the starter is no longer live at the starter step, go straight to Collin's card. | Nobody else can act. | defaulted |
+| 11 | The rule fix gets its failing-first test as a text check over the role files (`viewer/test/protocol-rules.test.js`). | The repo has no protocol test suite; the stub requires a test per fix. | defaulted |
+| 12 | Timers configurable through Hub options and `WHEELCHAIR_QUIET_GRACE_MS` / `WHEELCHAIR_QUIET_ESCALATE_MS`; the check runs on the queue retry timer. | Tests need short timings; the existing 5 s timer is fine-grained enough. | defaulted |
 
 ## Spec
 
-(Grows as decisions land.)
+Two parts: rule text in `protocol/app/`, and a quiet-turn detector in the hub
+(`viewer/app/`). Read `MAP.md` for how turns, deliveries and cards flow today.
+
+### Terms
+
+- **Watched session:** a live session whose role is `worker`, `mapper`, `sub-lead`,
+  `reviewer` or `verifier`, with a `started_by`. The lead is never watched.
+- **Owes a reply:** a per-session flag `owes_reply`.
+  - Set to `true` when the hub creates a watched session whose `first_message` is true (the
+    brief, or Codex's role line: `viewer/app/sessions.js:243-247`), and whenever `deliver()`
+    successfully submits a message to a watched session (`viewer/app/sessions.js:330-346`),
+    whatever its source, including the app's own nudges.
+  - Cleared (`false`) when that session posts a `result` or `message` card that the hub
+    accepts (`viewer/app/cards.js:79-95`), or when the hub synthesizes a reviewer/verifier
+    result for it (`viewer/app/sessions.js:259-280`).
+  - `finished` is not consulted for `worker`, `mapper`, `sub-lead`: a sub-lead may message a
+    worker that already posted a result, and that worker then owes a reply. A `reviewer` or
+    `verifier` with `finished: true` is not watched (its report path is closed:
+    `viewer/app/sessions.js:260`).
+- **Waiting on others:** the session has at least one child (`started_by` equals its name)
+  that is `live` and not `finished`. A sub-lead dispatching workers ends many turns with no
+  card; this is what makes those turns legitimate.
+- **Quiet:** a watched session that, at check time, owes a reply, has `turn_ended: true`, an
+  empty `queue`, no `permission_open`/`needs_open` hold, no `limited_until` in the future, and
+  is not waiting on others.
+
+### The detector
+
+State on each session (persisted with the thread, like `turn_ended`):
+`owes_reply`, `quiet_stage` (0–3, absent = 0), `quiet_check_at` (ISO time or absent),
+`quiet_starter_at` (ISO time or absent), `quiet_card` (card id or absent).
+
+1. **Arming.** On a `turn-ended` event (`viewer/app/sessions.js:386-391`) for a watched
+   session with `owes_reply` true, after `deliverReport` has run, set
+   `quiet_check_at = now + grace`. A successful `deliver()` to the session deletes
+   `quiet_check_at` (a new turn is starting).
+2. **Checking.** A new `sessions.checkQuiet(hub)` runs on the existing queue retry timer
+   (`viewer/app/hub.js:56`, every `queueRetryInterval`), per thread under
+   `hub.withThread`, skipping archived threads, catching all errors like `retryQueues`
+   (`viewer/app/sessions.js:615-629`). For each session:
+   - If `quiet_check_at` is due: delete it; if the session is quiet, advance one stage (below).
+   - Else if `quiet_stage` is 2, `quiet_starter_at + escalate` is due, and the session is
+     still `live`, owes a reply and is not waiting on others: advance to stage 3. (This path
+     does not require `turn_ended`: an agent stuck mid-turn for ten minutes after its starter
+     was told also reaches Collin.)
+3. **Stages.**
+   - 0 → 1: enqueue to the session itself (source `app`) the agent nudge text below.
+   - 1 → 2: enqueue to its starter the starter nudge text below and set
+     `quiet_starter_at = now`. If the starter is not live, skip straight to stage 3.
+   - 2 → 3: post a system `needs` card (`addCard(..., { system: true, session: name })`,
+     `viewer/app/cards.js:11-29`) and store its id in `quiet_card`.
+   - At stage 3 nothing further happens until a reset.
+4. **Reset.** When `owes_reply` is cleared (a `result` or `message` card, or a synthesized
+   result): set `quiet_stage` to 0, delete `quiet_check_at` and `quiet_starter_at`, and mark the
+   `quiet_card` card answered if open. When the session is stopped (`stopSession`,
+   `viewer/app/sessions.js:502-515`) or found ended (`pollDead`,
+   `viewer/app/sessions.js:574-576`): mark its `quiet_card` answered and delete
+   `quiet_check_at`. A delivered message does not reset the stage: after the starter is told,
+   the starter messaging the agent gives it one more turn, and if that turn is quiet too,
+   Collin sees it.
+
+Timings: grace defaults to 30 000 ms, escalate to 600 000 ms. `Hub`'s constructor takes
+`quietGraceMs` and `quietEscalateMs`, falling back to `WHEELCHAIR_QUIET_GRACE_MS` and
+`WHEELCHAIR_QUIET_ESCALATE_MS`, then the defaults, validated like `queueRetryInterval`
+(`viewer/app/hub.js:38-39`). Tests set them, and `WHEELCHAIR_QUEUE_RETRY_MS`, small.
+
+### Texts
+
+- **Agent nudge** (worker, mapper, sub-lead):
+  `[wc:from app] Your turn ended without a result or message card, and the session that started you is waiting for one. Your own wc.js and card.js commands are always allowed, whatever your brief says about ports or the network. If your task is done, post your result. If you cannot finish, post a result with outcome blocked and the reason. If you need an answer, send a message. If you already posted one, ignore this.`
+- **Agent nudge** (reviewer, verifier):
+  `[wc:from app] Your turn ended with no report. End your next turn with your report as your last message.`
+- **Starter nudge:**
+  `[wc:from app] your session <name> ended two turns without a result or message, one of them after a reminder from the app. Check on it: message it, or stop and replace it.`
+- **Collin's card:** `kind: needs`, `title: "An agent stopped without reporting"`, `body:
+  "<name> keeps ending its turns without reporting back, and reminders to it and to <starter
+  name> didn't help. Open it from the Agents tab to see what it's doing, or tell the lead."`
+
+Only the lead sees `[wc:from app]` text when it is the starter, and its reply is hidden, as
+for the existing turn-failed and ended notices (`viewer/app/sessions.js:380-382,571-573`).
+The `needs` card is a system card, so the lead's `resolve` refuses it
+(`viewer/app/card.js:171-180`) and it closes only on the resets above. The existing needs
+card rendering is reused unchanged.
+
+### Rules
+
+- `protocol/app/cards.md`, "The commands, in one place": add that a session's own `wc.js`
+  and `card.js` calls (which go to its own machine service, default port 7374) are always
+  allowed, and no brief can forbid them; and, in the markers section, that an app
+  `[wc:from app]` reminder means your turn ended without the card your starter is waiting for.
+- `protocol/app/worker.md` and `protocol/app/mapper.md`: the same rule, plus: if your brief
+  seems to forbid something you need to finish, or two instructions conflict and you cannot
+  resolve them, post a `result` with outcome `blocked` and the reason (or a `message` to the
+  lead if an answer would unblock you). Never end your work silently.
+- `protocol/app/sub-lead.md` and `protocol/app/lead.md`, where they say what a brief
+  contains: a brief that restricts ports, the network or commands must exempt the
+  session's own `wc.js` and `card.js` calls, and never names port 7374 as off limits. The
+  sub-lead gets the same blocked-not-silent rule for its own `result`, and both get one line
+  on the starter nudge: message the agent, or stop and replace it.
+
+### Tests (each fails before its fix)
+
+New `viewer/test/app-quiet.test.js`, using `viewer/test/helpers/app.js` with grace ≈ 50 ms,
+escalate ≈ 400 ms and queue retry ≈ 20 ms (env through `setup({ env })`). Sessions and
+turn ends are driven as `viewer/test/app-balancer.test.js:185-215` does (machine events and
+`machinePost` cards):
+
+1. A worker started with a brief ends its first turn with no card: after the grace, the
+   fake machine receives a submit to the worker with the agent nudge; the starter receives
+   nothing.
+2. Its next turn ends quiet: the starter receives the starter nudge.
+3. Another quiet turn: one system `needs` card titled "An agent stopped without reporting".
+   The worker then posts a `result`: the card is answered and `quiet_stage` is 0.
+4. Timer path: after the starter nudge, no further event for longer than escalate: the card
+   appears.
+5. A `result` card accepted after the `turn-ended` event but within the grace: no nudge.
+6. A `message` card from the worker clears it: no nudge.
+7. A sub-lead with a live unfinished worker child ends turns quietly: never nudged. After the
+   child posts its result and the sub-lead's next turn ends quiet, it is nudged.
+8. A reviewer whose turn ends with no assistant text is nudged with the reviewer text; one
+   whose turn has text gets a result and no nudge.
+9. The lead ends turns with no card: never nudged, no card.
+10. Stopping a session at stage 3 answers its card.
+
+New `viewer/test/protocol-rules.test.js`: asserts `protocol/app/worker.md`, `mapper.md`,
+`sub-lead.md`, `lead.md` and `cards.md` each state that a session's own `wc.js` and
+`card.js` calls are always allowed (match on the phrase "own `wc.js` and `card.js`"), and that
+`worker.md`, `mapper.md`, `sub-lead.md` say a conflict is reported as `blocked`, not by
+stopping silently (match "blocked" and "silently" in one paragraph).
+
+### Validation
+
+```bash
+node --test viewer/test/*.test.js
+npm --prefix viewer run test:browser
+```
+
+Update `viewer/app/API.md` (new session fields) and `viewer/AGENTS.md` if they list session
+state or timers.
+
+### Non-goals
+
+- No automatic restart or stop. No change to the Agents tab. The lead is not watched.
+- No change to how cards or events are spooled on the machine.
+- No rewording of briefs in other threads.
 
 ## Accepted Risks
 
@@ -50,6 +192,15 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 |------|--------------|-------|
 
 ## Review Rounds
+
+### Round 1 — 2026-11-15
+
+**Lanes:** claude (intent); gpt (mechanics); cross-family: yes.
+
+**Changed since Round N-1:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
