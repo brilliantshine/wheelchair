@@ -11,6 +11,10 @@ test('default placement, strict and preferred constraints, and invalid flags', a
     assert.equal(made.cli, 'claude');
     assert.equal(made.sessions[0].account, 'default-claude');
     const lead = made.sessions[0].name;
+    await api(c, '/settings/preferences', { method: 'PUT', body: { review_families: 'gpt' } });
+    const list = await machinePost(c, '/machine/session', { calling_session: lead, action: 'list' });
+    assert.equal(list.body.review_families, 'gpt'); assert.ok(Array.isArray(list.body.sessions));
+    await api(c, '/settings/preferences', { method: 'PUT', body: { review_families: 'both' } });
     const sub = await machinePost(c, '/machine/session', { calling_session: lead, action: 'start', role: 'sub-lead', attempt_id: 'sub' });
     assert.equal(sub.body.session.provider, 'claude');
     const worker = await machinePost(c, '/machine/session', { calling_session: sub.body.session.name, action: 'start', role: 'worker', attempt_id: 'worker' });
@@ -66,7 +70,7 @@ test('placement ranks accounts and respects provider policy', async (t) => {
   await t.test('lead any and constraint fallback', async () => {
     const hub = await fixture({ lead_order: ['claude', 'any'] }, {}, ['default-gpt']);
     assert.equal((await choose(hub, { machine: 'hub' }, 'lead')).provider, 'gpt');
-    assert.ok((await choose(hub, { machine: 'hub' }, 'worker', 'top', { provider: 'claude' })).wait);
+    assert.deepEqual((( { provider, note }) => ({ provider, note }))(await choose(hub, { machine: 'hub' }, 'worker', 'top', { provider: 'claude' })), { provider: 'gpt', note: 'Could not use claude; using gpt.' });
     assert.ok((await choose(hub, { machine: 'hub' }, 'worker', 'top', { not_provider: 'gpt' })).wait);
     for (const role of ['reviewer', 'verifier']) {
       const selection = await choose(hub, { machine: 'hub' }, role, 'top', { provider: 'claude' });
@@ -76,6 +80,31 @@ test('placement ranks accounts and respects provider policy', async (t) => {
     }
     for (const role of ['lead', 'sub-lead', 'mapper']) for (const flag of ['provider', 'not_provider']) await assert.rejects(choose(hub, { machine: 'hub' }, role, 'top', { [flag]: 'gpt' }), { status: 400 });
     await assert.rejects(choose(hub, { machine: 'hub' }, 'worker', 'top', { provider: 'gpt', not_provider: 'claude' }), { status: 400 });
+  });
+  await t.test('lead reserve follows signed-in lead order and margin', async () => {
+    const { reservedProvider } = require('../app/balancer.js');
+    const ordered = await fixture({ lead_order: ['gpt', 'any'], worker_order: ['gpt', 'claude'] });
+    assert.equal((await choose(ordered, { machine: 'hub' }, 'worker')).provider, 'claude');
+    const hub = await fixture({ lead_order: ['gpt', 'any'], worker_order: ['gpt', 'claude'], margin: 50 }, { 'default-gpt': { week: { used: 70, resets_at: future(24) } }, 'gpt-two': { week: { used: 70, resets_at: future(24) } } });
+    assert.equal((await choose(hub, { machine: 'hub' }, 'worker')).provider, 'claude');
+    assert.equal((await choose(hub, { machine: 'hub' }, 'worker', 'top', { provider: 'gpt' })).provider, 'claude');
+    const value = await settings.load(hub);
+    assert.equal(reservedProvider(value, { hub: { accounts: { 'default-claude': true } } }, 'hub'), 'claude');
+    assert.equal(reservedProvider(value, { hub: { accounts: { 'default-gpt': true } } }, null), 'gpt');
+    assert.equal(reservedProvider(value, {}, null), null);
+  });
+  await t.test('single review family overrides flags and waits or falls back', async () => {
+    const hub = await fixture({ review_families: 'claude', worker_order: ['gpt'] });
+    assert.equal((await choose(hub, { machine: 'hub' }, 'reviewer')).provider, 'claude');
+    await usage.record(hub, { account: 'default-claude', at: new Date().toISOString(), week: { used: 100, resets_at: future(24) } });
+    assert.equal((await choose(hub, { machine: 'hub' }, 'reviewer')).wait.provider, 'claude');
+    const fallback = await fixture({ review_families: 'claude', worker_order: ['gpt'] }, {}, ['default-gpt']);
+    const selection = await choose(fallback, { machine: 'hub' }, 'reviewer');
+    assert.equal(selection.provider, 'gpt');
+    assert.equal(selection.note, 'Reviewers and checkers are set to Claude, but Claude is not available; using GPT.');
+    const gpt = await fixture({ review_families: 'gpt' });
+    assert.equal((await choose(gpt, { machine: 'hub' }, 'reviewer', 'top', { provider: 'claude' })).provider, 'gpt');
+    assert.equal((await choose(gpt, { machine: 'hub' }, 'verifier', 'top', { not_provider: 'gpt' })).provider, 'gpt');
   });
   await t.test('wait estimate accounts for every exhausted window', async () => {
     const five = future(2), week = future(5);
@@ -88,9 +117,9 @@ test('placement ranks accounts and respects provider policy', async (t) => {
     for (const role of ['reviewer', 'verifier']) assert.ok((await choose(hub, { machine: 'hub' }, role, 'top', { provider: 'gpt' })).wait);
   });
   await t.test('margin skips Claude for workers but not leads', async () => {
-    const hub = await fixture({ worker_order: ['claude', 'gpt'], margin: 50, save_claude_for_leads: false }, { 'default-claude': { week: { used: 70, resets_at: future(24) } } });
+    const hub = await fixture({ worker_order: ['claude', 'gpt'], margin: 50, save_for_leads: false }, { 'default-claude': { week: { used: 70, resets_at: future(24) } } });
     for (const role of ['worker', 'reviewer', 'verifier', 'mapper']) assert.equal((await choose(hub, { machine: 'hub' }, role)).provider, 'gpt');
-    await settings.update(hub, (s) => { s.held_back.reviewer = false; s.save_claude_for_leads = false; });
+    await settings.update(hub, (s) => { s.held_back.reviewer = false; s.save_for_leads = false; });
     const reviewer = await choose(hub, { machine: 'hub' }, 'reviewer', 'top', { provider: 'claude' });
     assert.equal(reviewer.provider, 'claude'); assert.equal(reviewer.note, undefined);
     const worker = await choose(hub, { machine: 'hub' }, 'worker', 'top', { provider: 'claude' });
