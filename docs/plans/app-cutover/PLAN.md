@@ -427,7 +427,7 @@ idempotence case is the in-worktree proof.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | Installer stops rendering wrappers; removes retired wrappers and the seen hook (`install/unseen.py`); git rm skills/, codex/prompts/, seen/ (§1, §2, §7) | install.sh, install/, skills/, codex/prompts/, seen/ | codex standard (gpt-6.1-terra) | wc-1cff24e4cc7d-worker | install, codex suites | in progress |
+| T1 | Installer stops rendering wrappers; removes retired wrappers and the seen hook (`install/unseen.py`); git rm skills/, codex/prompts/, seen/ (§1, §2, §7) | install.sh, install/, skills/, codex/prompts/, seen/ | codex standard (gpt-6.1-terra) | wc-1cff24e4cc7d-worker | install, codex suites | done (attempt 1; commit blocked by staged git rm, unblocked by message, not an escalation) |
 | T2 | Dial text and machine routes GET/POST /v1/diagram-sensitivity (§3, §7) | protocol/sensitivity.md, sensitivity/, machine/ | codex standard (gpt-6.1-terra) | wc-1cff24e4cc7d-worker-2 | sensitivity, machine, test-support suites | done |
 | T3 | Hub /settings/diagram-sensitivity and Settings Diagrams section (§3, D13, D16) | viewer/app settings routes, API.md, pages/settings.js, its tests | claude standard (claude-sonnet-5-5) | wc-1cff24e4cc7d-worker-3 | viewer node + browser | in progress |
 | T4 | Thread graph list, picture page, aside graphs (§4) | viewer/pages thread/aside/picture, app/asides.js brief, server.js APP_PAGES, its tests | claude standard (claude-sonnet-5-5) | wc-1cff24e4cc7d-worker-4 | viewer node + browser | in progress |
@@ -446,3 +446,7 @@ idempotence case is the in-worktree proof.
 - 2026-11-15 — Choice: T2, sensitivity/set.sh: added `--report --json` (the plain report has no per-harness levels and exits non-zero on disagreement).
 - 2026-11-15 — Choice: T2, machine/service.js: GET runs both `--json` and `--report`; the plain report's disagreement exit counts as a successful report.
 - 2026-11-15 — Choice: T2, machine/test/sensitivity.test.js: the writer path is injected through a `sensitivityScript` service constructor option.
+- 2026-11-15 — Choice: T1, install/unseen.py: each JSON file is processed independently, so a malformed file does not stop cleanup of the other harness.
+- 2026-11-15 — Choice: T1, install/test/run.sh: Python added to the restricted PATH fixture, since the installer now runs unseen.py.
+- 2026-11-15 — Choice: T1, install/test/run.sh: the real `~/.wheelchair` guard skips `accounts/*/tmp/`, where live Codex sessions write scratch files during the run (sub-lead's direction).
+- 2026-11-15 — Choice: T1, install.sh: a failing unseen.py warns and the install continues (sub-lead's direction, Spec §2).
