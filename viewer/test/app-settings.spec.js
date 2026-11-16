@@ -35,7 +35,7 @@ test.describe('desktop', () => {
   test('the nav shows Settings and the route serves', async ({ page }) => {
     await openPage(page, context, '/app/settings');
     const links = page.locator('#app-nav .seg a');
-    await expect(links).toHaveText([/Features/, /Threads/, /Sessions/, /Settings/]);
+    await expect(links).toHaveText([/Features/, /Threads/, /Agents/, /Settings/]);
     await expect(page.locator('#app-nav .seg a[aria-current="page"]')).toHaveText('Settings');
     await expect(page.locator('#app-nav .seg .lbl')).toBeVisible();
     await expect(page.locator('#app-nav .seg .gear')).toBeHidden();

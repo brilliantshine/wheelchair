@@ -243,7 +243,7 @@ No findings from either lens. Clean round. (Mechanics reviewer restarted once af
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Hub: lead names (assign, serialize, backfill), `lead_names` setting + Settings box, model/effort on record, `GET /api/agents`, API.md | viewer/app/{sessions,threads,hub,settings,routes,views}.js, new viewer/app modules, API.md, pages/settings.*, viewer/AGENTS.md (new row), app-agents/app-settings/app-hub tests | GPT Standard (gpt-6.1-terra) | wc-85d38701e785-worker | node --test viewer/test/*.test.js; npm --prefix viewer run test:browser | done (worker reported blocked on its browser gate for environment reasons; sub-lead re-ran both suites on the integrated branch: only pre-existing failures) |
-| T2 | Agents page, nav, terminal page, Sessions page removal + redirect, routers | pages/agents.*, views.css, nav.js, terminal.*, features.js, sessions.* (delete), server.js, viewer/AGENTS.md, AGENTS.md, app-views/app-ui specs, app-views-setup helper | GPT Standard (gpt-6.1-terra); asked for Claude, hub fell back to GPT | wc-85d38701e785-worker-2 | same | in progress |
+| T2 | Agents page, nav, terminal page, Sessions page removal + redirect, routers | pages/agents.*, views.css, nav.js, terminal.*, features.js, sessions.* (delete), server.js, viewer/AGENTS.md, AGENTS.md, app-views/app-ui specs, app-views-setup helper | GPT Standard (gpt-6.1-terra); asked for Claude, hub fell back to GPT | wc-85d38701e785-worker-2 | same | done (merged; nav-label spec expectations outside its boundary fixed by the sub-lead at integration) |
 | T3 | Threads row chip, thread page header | pages/threads.*, thread.*, app.css, app-threads spec + world helper | GPT Standard (gpt-6.1-terra); asked for Claude, hub fell back to GPT | wc-85d38701e785-worker-3 | same | in progress |
 
 ## Log
@@ -256,3 +256,7 @@ No findings from either lens. Clean round. (Mechanics reviewer restarted once af
 - 2026-11-15 — Choice: T1, viewer/app/agents.js: tree builder and machine-status assembly together in one new module.
 - 2026-11-15 — Choice: T1, viewer/pages/settings.js: Lead names textarea saves with its own Save button, like other typed settings.
 - 2026-11-15 — T1 gate run by the sub-lead on the integrated branch: unit 346/347 (fail: lifecycle.test.js "a starter that loses the freed port…", also fails on the pre-T1 base 7f4c318); browser 565 passed, 3 failed: browser.spec.js:2395 arrow test in both browsers (also fails on the pre-T1 base), one Firefox app-threads approval test that passed on rerun.
+- 2026-11-15 — Choice: T2, viewer/pages/agents.js: child folds start open and keep explicit closures across polls.
+- 2026-11-15 — Choice: T2, viewer/pages/agents.js: an unknown capacity deadline shows "unknown"; an unknown CLI shows "CLI unknown".
+- 2026-11-15 — Choice: T2, viewer/pages/views.css: awaited children are marked with the existing warning border colour.
+- 2026-11-15 — Choice (sub-lead): T3, viewer/pages/thread.js: the thread header's Sessions button becomes "Agents" linking to /wheelchair/app/agents#lead-<thread_id>.
