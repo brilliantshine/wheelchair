@@ -48,10 +48,11 @@ def config(path):
     return values
 
 
+# The owner can always chmod a path, so owning it counts as being able to write it.
 def writable(st, uid, groups):
-    if uid == 0:
+    if uid == 0 or st.st_uid == uid:
         return True
-    return bool(st.st_mode & (stat.S_IWUSR if st.st_uid == uid else stat.S_IWGRP if st.st_gid in groups else stat.S_IWOTH))
+    return bool(st.st_mode & (stat.S_IWGRP if st.st_gid in groups else stat.S_IWOTH))
 
 
 def editable(command, user):

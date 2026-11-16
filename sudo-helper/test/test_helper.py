@@ -8,6 +8,7 @@ import socket
 import tempfile
 import threading
 import time
+import types
 import unittest
 from unittest import mock
 
@@ -137,6 +138,20 @@ class HelperTest(unittest.TestCase):
         for command, message in [('cat ~/x', 'Write the full path; ~ would mean /root here'), ("echo 'bad", 'The command has unbalanced quotes')]:
             status, raw, _ = self.call(False, 'POST', '/requests', json.dumps(dict(command=command, does='x', why='x')))
             self.assertEqual(status, 422); self.assertEqual(json.loads(raw)['error'], message)
+    def test_scan_flags_owned_read_only_paths(self):
+        ro_dir = pathlib.Path(self.temp.name) / 'ro'
+        ro_dir.mkdir()
+        tool = ro_dir / 'tool'
+        tool.write_text('x')
+        os.chmod(tool, 0o555)
+        os.chmod(ro_dir, 0o555)
+        self.assertIn(str(tool), helper.editable(str(tool) + ' --fix', self.cfg['user']))
+        self.assertIn(str(ro_dir / 'missing'), helper.editable(str(ro_dir / 'missing'), self.cfg['user']))
+        self.assertTrue(helper.writable(os.stat(tool), os.getuid(), set()))
+        other = types.SimpleNamespace(st_uid=os.getuid() + 1, st_gid=-1, st_mode=0o644)
+        self.assertFalse(helper.writable(other, os.getuid(), set()))
+        os.chmod(ro_dir, 0o755)
+        os.chmod(tool, 0o644)
     def test_config(self):
         path = pathlib.Path(self.temp.name) / 'config'; path.write_text('user=x\nurl_base=https://example.test\nunknown=x\n')
         with self.assertRaises(ValueError): helper.config(path)
