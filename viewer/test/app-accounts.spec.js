@@ -349,6 +349,47 @@ test.describe('accounts interface paths', () => {
     await expect(acct(page, 'work').locator('.v-badge').first()).toContainText('reported: pro');
   });
 
+  test('Antigravity keeps polling while finishing a slow sign-in', async ({ page }) => {
+    const state = { signin: { state: 'waiting', url: 'https://accounts.google.com/o/oauth2/auth?x=1', wantsCode: true } };
+    await mock(page, state);
+    await page.clock.install();
+    await open(page, 'accounts');
+    await acct(page, 'default-gemini').locator('li[data-machine="beelink"] button').click();
+    const card = page.locator('.signin-card');
+    await expect(card.getByRole('link', { name: 'Open sign-in link' })).toBeVisible();
+    await card.getByPlaceholder('Paste the code here').fill('google-code');
+    await card.getByRole('button', { name: 'Send code' }).click();
+    await expect.poll(() => state.calls.some((c) => c[1].endsWith('/code'))).toBe(true);
+    state.signin = { state: 'starting', url: null, wantsCode: false, logged_in: false };
+    await page.clock.runFor(60000);
+    await expect(card).toContainText('Finishing sign-in on beelink');
+    await expect(card).not.toContainText("Couldn't read the sign-in screen");
+    await expect(card.locator('.spinner')).toBeVisible();
+    await expect(card.getByRole('link', { name: 'Open sign-in link' })).toHaveCount(0);
+    await expect(card.getByPlaceholder('Paste the code here')).toBeHidden();
+    const polls = () => state.calls.filter((c) => c[0] === 'GET' && c[1] === '/accounts/default-gemini/signin/beelink').length;
+    const before = polls();
+    await page.clock.runFor(6000);
+    await expect.poll(polls).toBeGreaterThan(before);
+    state.signin = { state: 'done', url: null, wantsCode: false, logged_in: true };
+    await page.clock.runFor(6000);
+    await expect(page.locator('.signin-card')).toHaveCount(0);
+  });
+
+  test('Antigravity sign-in gives up after the finish limit', async ({ page }) => {
+    const state = { signin: { state: 'waiting', url: 'https://accounts.google.com/o/oauth2/auth?x=1', wantsCode: true } };
+    await mock(page, state);
+    await page.clock.install();
+    await open(page, 'accounts');
+    await acct(page, 'default-gemini').locator('li[data-machine="beelink"] button').click();
+    const card = page.locator('.signin-card');
+    await expect(card.getByRole('link', { name: 'Open sign-in link' })).toBeVisible();
+    state.signin = { state: 'starting', url: null, wantsCode: false, logged_in: false };
+    await page.clock.runFor(10 * 60 * 1000 + 5000);
+    await expect(card).toContainText("Couldn't read the sign-in screen");
+    await expect(card.getByRole('link', { name: 'Open terminal' }).first()).toBeVisible();
+  });
+
   test('the sign-in card gives up after 30 seconds without a link', async ({ page }) => {
     const state = { signin: { state: 'waiting', url: null, code: null, wantsCode: false, logged_in: false } };
     await mock(page, state);

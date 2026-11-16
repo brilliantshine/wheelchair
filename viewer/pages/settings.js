@@ -845,6 +845,7 @@
   const WITHIN = [['soonest', 'Soonest refill first'], ['spread', 'Spread evenly'], ['one', 'Stay on one account']];
   const CLAUDE_TERMS = "Anthropic's terms say plan limits assume ordinary, individual use. Several Claude accounts behind one setup may get flagged.";
   const SIGNIN_WAIT_MS = 30000;
+  const SIGNIN_FINISH_MS = 10 * 60 * 1000;
 
   let usage = null;            // GET /usage, or null until the first answer
   let usageError = '';
@@ -934,7 +935,7 @@
     const root = h('section', { class: 'box signin-card', 'aria-label': 'Sign in', 'data-account': account.id },
       h('div', { class: 'head-line' }, h('h2', { text: `Sign in ${account.name} on ${machine}` }), closeBtn),
       status, actions, codeBox, pasteWrap, h('div', { class: 'actions' }, termLink));
-    const card = { account: account.id, machine, el: root, started: Date.now(), poll: null, close: null, hadUrl: false };
+    const card = { account: account.id, machine, el: root, started: Date.now(), poll: null, close: null, hadUrl: false, firstUrl: null };
     signCard = card;
     const hostEl = document.getElementById('signin-host');
     if (hostEl) hostEl.replaceChildren(root);
@@ -947,6 +948,7 @@
       pasteWrap.hidden = true;
       clearInterval(card.poll);
     };
+    const expired = () => card.hadUrl ? Date.now() - card.firstUrl > SIGNIN_FINISH_MS : Date.now() - card.started > SIGNIN_WAIT_MS;
     const paint = (st) => {
       if (signCard !== card) return;
       if (st.state === 'done' && st.logged_in) {
@@ -958,7 +960,9 @@
         return;
       }
       if (st.state === 'failed') return fail();
+      if ((card.hadUrl || !st.url) && expired()) return fail();
       if (st.url) {
+        if (!card.hadUrl) card.firstUrl = Date.now();
         card.hadUrl = true;
         status.className = 'hint'; status.textContent = st.wantsCode ? 'Open the link, sign in, then paste the code it shows.' : 'Open the link and sign in.';
         if (account.provider === 'claude' || account.provider === 'gemini') {
@@ -974,7 +978,11 @@
             } }));
         }
         pasteWrap.hidden = !st.wantsCode;
-      } else if (Date.now() - card.started > SIGNIN_WAIT_MS) fail();
+      } else if (card.hadUrl) {
+        status.className = 'hint waiting';
+        status.replaceChildren(h('span', { class: 'spinner', 'aria-hidden': 'true' }), document.createTextNode('Finishing sign-in on ' + machine + '…'));
+        actions.replaceChildren(); codeBox.replaceChildren(); paste.value = ''; pasteWrap.hidden = true;
+      }
     };
     (async () => {
       const base = `/accounts/${encodeURIComponent(account.id)}/signin/${encodeURIComponent(machine)}`;
@@ -982,7 +990,7 @@
         await api(`/accounts/${encodeURIComponent(account.id)}/signin`, { method: 'POST', body: { machine } });
       } catch (e) { status.className = 'inline-err'; status.textContent = e.message; return; }
       const tick = async () => {
-        try { paint(await api(base)); } catch (e) { if (signCard === card && Date.now() - card.started > SIGNIN_WAIT_MS) fail(); }
+        try { paint(await api(base)); } catch (e) { if (signCard === card && expired()) fail(); }
       };
       if (signCard !== card) return;
       card.poll = setInterval(tick, 2000);
