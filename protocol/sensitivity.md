@@ -1,8 +1,7 @@
 # The diagram-sensitivity dial
 
 How readily an agent answers with a picture instead of prose alone. Three positions —
-`ask`, `default`, `high` — one setting, moved by `/diagram-sensitivity` and remembered
-afterwards.
+`ask`, `default`, `high` — one setting, moved on the app's Settings page and remembered afterwards.
 
 The dial has to be in effect *before* Collin types, because the turns it governs are
 ordinary questions where no slash command runs and nothing under `protocol/` is otherwise
@@ -23,16 +22,15 @@ nothing else reads this region or writes the installed copies.
 diagram-sensitivity: default
 
 Three levels — `ask`, `default`, `high`. This block is owned by the wheelchair repo and
-rewritten in place. Move the dial with `/diagram-sensitivity <level>`, never by editing
+rewritten in place. Move the dial on the wheelchair app's Settings page (Models, Diagrams), never by editing
 these lines: an edit here is overwritten the next time the writer runs.
 
 An answer has a **shape** when it names three or more things that relate to each other, or
 it has a branch, or the order matters. No shape, no picture — at every level, including
 `high`. A name, a number, a yes-or-no gets prose.
 
-- `ask` — draw nothing unprompted. The one carve-out: a planning turn discussing a
-  proposed flow writes or updates that flow's graph, exactly as the trigger in
-  `{{WHEELCHAIR_ROOT}}/protocol/planning.md` already has it.
+- `ask` — draw nothing unprompted. The one carve-out: a thread lead drawing a proposed flow, as
+  `{{WHEELCHAIR_ROOT}}/protocol/app/lead.md` (Diagrams) has it.
 - `default` — draw when the shape **is** the answer: the thing being explained is the
   arrangement itself.
 - `high` — draw whenever a shape is present at all, even where the arrangement is
@@ -93,18 +91,11 @@ the block; and content between the markers is this repo's, overwritten on every 
 non-zero writer would abort it mid-run and break its own idempotence check for a reason
 unrelated to what that check tests. None of the other commands depends on the block existing.
 
-## The command
+## Moving the dial
 
-`/diagram-sensitivity`, from either harness:
-
-- **With a level** — `ask`, `default` or `high` — sets it in every present file, creating the
-  block where it is absent. Run `sensitivity/set.sh <level>` and report what it says.
-- **Bare** — reports the resolved level. Run `sensitivity/set.sh --report`, which reads present
-  files, names absent harnesses, and writes neither. A disagreement between two present files is
-  reported as a disagreement, never resolved by picking one.
-- **An unrecognised level** is refused, naming the three that exist.
-
-The paths are absolute in the rendered wrapper, as every wrapper's are.
+The wheelchair app's Settings control under Models > Diagrams asks each machine's service
+to run `sensitivity/set.sh <level>`. `sensitivity/set.sh --report` still prints the current
+state without writing, including disagreements between present files.
 
 Moving the dial does not affect a session already running; it applies from the next one.
 A harness reads its global file at session start, and nothing re-reads it mid-session.
@@ -115,8 +106,6 @@ A harness reads its global file at session start, and nothing re-reads it mid-se
   the rules in `protocol/diagrams.md` — which kind of diagram each gets, and that one is
   drawn only once the document has stopped changing. This dial governs a conversation turn
   and the viewer, nothing else.
-- **`/graph`.** That command is the explicit ask, so there is nothing for a dial to make more
-  or less eager. Its wrappers point at `protocol/graphs.md` and stay pointed there.
 - **Whether a picture is invented.** The dial changes how eagerly a shape is drawn, never
   whether one exists. The floor holds at every level.
 

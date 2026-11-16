@@ -1010,6 +1010,29 @@ class MachineService {
     const pathBits = url.pathname.split('/').filter(Boolean);
     try {
       if (request.method === 'GET' && url.pathname === '/health') return send(response, 200, { ok: true });
+      if (url.pathname === '/v1/diagram-sensitivity' && ['GET', 'POST'].includes(request.method)) {
+        await this.authorize(request, 'hub');
+        const script = this.options.sensitivityScript || path.join(ROOT, 'sensitivity', 'set.sh');
+        const failure = result => ({ error: result.stderr.trim().split(/\r?\n/).filter(Boolean).pop() || `writer exited ${result.status}` });
+        if (request.method === 'GET') {
+          const data = await commandAsync(script, ['--json'], { timeout: 30000 });
+          if (!data.ok) return send(response, 422, failure(data));
+          let report;
+          try { report = JSON.parse(data.stdout); } catch { return send(response, 422, { error: 'invalid sensitivity report' }); }
+          const plain = await commandAsync(script, ['--report'], { timeout: 30000 });
+          // A disagreement is a successful structured report, but the plain report exits 1.
+          if (!plain.ok && !(report.level === null && new Set(report.files.map(f => f.level).filter(Boolean)).size > 1)) return send(response, 422, failure(plain));
+          return send(response, 200, { ...report, text: plain.stdout + plain.stderr });
+        }
+        const input = await bodyOf(request);
+        if (!['ask', 'default', 'high'].includes(input.level)) return send(response, 400, { error: 'level must be ask, default, or high' });
+        if (this.sensitivityWriting) return send(response, 409, { error: 'diagram sensitivity update already running' });
+        this.sensitivityWriting = true;
+        try {
+          const result = await commandAsync(script, [input.level], { timeout: 30000 });
+          return result.ok ? send(response, 200, { level: input.level, text: result.stdout }) : send(response, 422, failure(result));
+        } finally { this.sensitivityWriting = false; }
+      }
       if (request.method === 'GET' && url.pathname === '/v1/status') { await this.authorize(request, 'hub'); return send(response, 200, this.status()); }
       if (request.method === 'GET' && url.pathname === '/v1/projects') { await this.authorize(request, 'hub'); return send(response, 200, await this.projects(url.searchParams)); }
       if (request.method === 'POST' && url.pathname === '/v1/preflight') { await this.authorize(request, 'hub'); const input = await bodyOf(request); const dir = accountDir(input.dir); const result = command(path.join(ROOT, 'codex', 'preflight.sh'), [], dir ? { env: { ...process.env, ...adapters.codex.loginEnv(dir) } } : {}); return send(response, result.ok ? 200 : 409, result); }
