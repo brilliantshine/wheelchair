@@ -161,3 +161,31 @@ $ bash codex/test/run.sh        → RESULT 78 passed, 0 failed
 ```
 
 The viewer suites were not re-run: neither fix touches `viewer/`.
+
+### Remediation 2 — 2026-11-16
+
+Attempt 2 at `9a60588`: Claude verifier PASS, GPT verifier FAIL with one gap
+(`REMEDIATION-2.md`): a wrapper rendered from a checkout path containing a space survived.
+A new case in the same check as Remediation 1's second gap, not that gap surviving its fix.
+
+| Item | Fix | Validated by |
+|------|-----|--------------|
+| §2 gap: spaces in the checkout path | `install.sh:66` matches the line shape wheelchair rendered: `^Read`, optional backtick, an absolute path (spaces allowed), `/protocol/<file>.md`, then a backtick, whitespace or end of line (D4) | `install/test/run.sh` `spaced` and `spaced_quoted` removed for both harnesses, `mid_line` kept, `current` and `quoted` use the real Codex and Claude shapes; 180 passed (GPT standard, gpt-6.1-terra) |
+| Claude verifier's note: a failed hub start hung the node suite | `viewer/test/app-diagram-sensitivity.test.js:42-49` starts the hub inside the `try`; `finally` stops the hub if started and every fake machine | file alone 4/4 (Claude light, claude-haiku-5-5) |
+
+Re-run on the merged branch:
+
+```
+$ bash sensitivity/test/run.sh  → RESULT 67 passed, 0 failed
+$ bash codex/test/run.sh        → RESULT 78 passed, 0 failed
+$ bash install/test/run.sh      → RESULT 180 passed, 0 failed
+$ bash machine/test/run.sh      → # pass 104  # fail 0
+$ node --test test-support/test/*.test.js → # pass 9  # fail 0
+$ node --test viewer/test/*.test.js → # pass 437  # fail 2
+    not ok - a starter that loses the freed port registers through the new holder   (also fails on main)
+    not ok - the global write lock serializes concurrent writes and retry retains both changes
+$ node --test viewer/test/server.test.js → # pass 49  # fail 0   (the second failure does not repeat alone)
+```
+
+The browser suite was not re-run: no browser-facing file changed since attempt 2, where the
+Claude verifier ran it at 626 passed, 0 failed.
