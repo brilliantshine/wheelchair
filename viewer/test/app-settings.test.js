@@ -262,3 +262,13 @@ test('escalation settings, sentences, and role layers', async () => {
     assert.equal((await api(context, '/settings/preferences', { method: 'PUT', body: { escalation: { unknown: 'bad' } } })).body.detail, 'escalation.unknown is not a setting');
   });
 });
+
+test('lead name settings trim and validate names', async () => {
+  await withContext(async (context) => {
+    assert.deepEqual((await api(context, '/settings')).body.lead_names, []);
+    const save = (lead_names) => api(context, '/settings/preferences', { method: 'PUT', body: { lead_names } });
+    assert.deepEqual((await save([' Ada ', '', 'Grace'])).body.lead_names, ['Ada', 'Grace']);
+    assert.deepEqual((await api(context, '/settings')).body.lead_names, ['Ada', 'Grace']);
+    for (const names of [['Ada', 'ada'], ['x'.repeat(41)], Array.from({ length: 201 }, (_, i) => String(i)), [3], 'Ada']) assert.equal((await save(names)).status, 400);
+  });
+});

@@ -213,6 +213,17 @@
 
   // The Default project folder: typed, then saved with the button. A refusal shows under the
   // input and the typed value stays.
+  function leadNamesRow() {
+    const input = h('textarea', { id: 'lead-names', 'aria-label': 'Lead names', rows: 4, value: (data.lead_names || []).join('\n') });
+    const status = h('p', { class: 'note', role: 'status' });
+    const host = h('div', { class: 'ctl wide' }, input, h('button', { type: 'button', text: 'Save', onclick: async () => {
+      inlineErr(host, ''); status.textContent = '';
+      try { const result = await api('/settings/preferences', { method: 'PUT', body: { lead_names: input.value.split(/\r?\n/) } }); data.lead_names = result.lead_names; input.value = data.lead_names.join('\n'); status.textContent = 'Saved'; }
+      catch (error) { inlineErr(host, error.message); }
+    } }), status);
+    return h('div', { class: 'row-line' }, h('div', { class: 'what' }, h('label', { for: 'lead-names', text: 'Lead names' }), h('span', { class: 'hint', text: 'Empty uses Greek letters. New leads only.' })), host);
+  }
+
   function folderRow() {
     const saved = data.default_project_folder || '';
     const input = h('input', { type: 'text', id: 'default-folder', 'aria-label': 'Default project folder', placeholder: '~/projects', autocomplete: 'off', spellcheck: false, value: folderDraft === null ? saved : folderDraft });
@@ -321,7 +332,7 @@
           PROVIDERS.map(([provider, name]) => h('div', { class: 'row-line' },
             h('div', { class: 'what' }, h('span', { text: 'Leads and sub-leads run on' }), h('span', { class: 'hint', text: `${name} model` })),
             h('div', { class: 'ctl wide' }, modelPicker(provider, 'lead', { allowNone: false, withEffort: true }))))
-          .concat([leadOrderRow()]))),
+          .concat([leadOrderRow(), leadNamesRow()]))),
       h('section', { 'aria-labelledby': 'escalation' },
         h('h2', { id: 'escalation', text: 'Escalation' }),
         h('div', { class: 'escalation-text' },
