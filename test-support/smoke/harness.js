@@ -11,6 +11,7 @@ const { runDir, trackChild, onCleanup, cleanupNow } = require('../run-dir');
 const { State, atomicWrite } = require('../../viewer/app/state');
 const root = path.resolve(__dirname, '../..');
 const header = 'x-wheelchair-machine-secret';
+const sleeper = new Int32Array(new SharedArrayBuffer(4));
 
 async function port() {
   return new Promise((resolve, reject) => {
@@ -54,6 +55,25 @@ function runProcesses(dir, paths, proc = fs) {
         (cwd && (relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))))) pids.push(Number(entry));
   }
   return pids;
+}
+function waitForRunProcesses(dir, matchPaths, { proc = fs, now = Date.now, sleep = ms => Atomics.wait(sleeper, 0, 0, ms), kill = process.kill, timeouts = [10000, 2000, 2000] } = {}) {
+  const matches = () => runProcesses(dir, matchPaths, proc);
+  const poll = ms => {
+    const end = now() + ms;
+    let pids;
+    while ((pids = matches()).length && now() < end) sleep(Math.min(100, end - now()));
+    return pids;
+  };
+  const signal = (pids, name) => {
+    for (const pid of pids) {
+      if (!matches().includes(pid)) continue;
+      try { kill(pid, name); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+    }
+  };
+  let pids = poll(timeouts[0]);
+  if (pids.length) { signal(pids, 'SIGTERM'); pids = poll(timeouts[1]); }
+  if (pids.length) { signal(pids, 'SIGKILL'); pids = poll(timeouts[2]); }
+  return pids.length;
 }
 function effectivePaths({ hubArgv, machineArgv, env }) {
   const value = (argv, flag) => {
@@ -150,7 +170,8 @@ async function createHarness({ mode = 'smoke', slowOriginSeconds = 0, hubSetting
     child.output = () => output; children.push(child); trackChild(child); return child;
   }
   const tmux = (...args) => spawnSync('tmux', args, { env, encoding: 'utf8' });
-  onCleanup(() => { tmux('kill-server'); proxy.close(); });
+  const matchPaths = { tmux: paths.tmux, ...(mode === 'smoke' ? { home: paths.home } : {}) };
+  onCleanup(() => { tmux('kill-server'); proxy.close(); waitForRunProcesses(dir, matchPaths); });
   let teardown;
   try {
     await new Promise((resolve, reject) => { proxy.once('error', reject); proxy.listen(proxyPort, '127.0.0.1', resolve); });
@@ -168,18 +189,7 @@ async function createHarness({ mode = 'smoke', slowOriginSeconds = 0, hubSetting
       await new Promise(resolve => proxy.close(resolve));
       for (const child of children) if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
       await Promise.all(children.map(child => child.exitCode !== null || child.signalCode !== null ? null : new Promise(resolve => child.once('exit', resolve))));
-      const matchPaths = { tmux: paths.tmux, ...(mode === 'smoke' ? { home: paths.home } : {}) };
-      const poll = async ms => {
-        const end = Date.now() + ms;
-        let pids;
-        while ((pids = runProcesses(dir, matchPaths)).length && Date.now() < end) await new Promise(resolve => setTimeout(resolve, 100));
-        return pids;
-      };
-      const signal = (pids, name) => { for (const pid of pids) { if (!runProcesses(dir, matchPaths).includes(pid)) continue; try { process.kill(pid, name); } catch (error) { if (error.code !== 'ESRCH') throw error; } } };
-      let pids = await poll(10000);
-      if (pids.length) { signal(pids, 'SIGTERM'); pids = await poll(2000); }
-      if (pids.length) { signal(pids, 'SIGKILL'); await poll(2000); }
-      const leftoverProcesses = runProcesses(dir, matchPaths).length;
+      const leftoverProcesses = waitForRunProcesses(dir, matchPaths);
       cleanupNow();
       return { privateTmuxGone, runFolderGone: !fs.existsSync(dir), leftoverProcesses };
     }
@@ -193,7 +203,7 @@ async function createHarness({ mode = 'smoke', slowOriginSeconds = 0, hubSetting
     return { dir, paths, ports: { hub: hubPort, machine: machinePort, proxy: proxyPort }, env, threadId, sublead, token, counts, statuses, callHub, callMachine, agent, tmux, waitFor, teardown, git, setOriginSlow };
   } catch (error) { if (teardown) await teardown(); else cleanupNow(); throw error; }
 }
-module.exports = { createHarness, waitFor, effectivePaths, assertIsolated, runProcesses };
+module.exports = { createHarness, waitFor, effectivePaths, assertIsolated, runProcesses, waitForRunProcesses };
 
 if (require.main === module) (async () => {
   if (!process.argv.includes('--check-live')) throw new Error('Use --check-live');
