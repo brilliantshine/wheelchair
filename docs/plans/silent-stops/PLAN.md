@@ -12,16 +12,7 @@ get buried as this file grows. **Map:** `MAP.md`.
 
 ## Open Questions
 
-### Q3: Agents that end a turn on purpose while their own background work runs
-- **Context:** Review round 1 (intent, major). A Claude agent can start a background job (a long
-  test run, a subagent), end its turn, and be woken by Claude Code when the job finishes. The hub
-  sees only the turn end, so it would remind the agent, then its starter, then alert Collin, while
-  the agent works normally. Codex agents have no such mechanism.
-- **Options:** (a) rule: watched agents never end a turn to wait on their own background work, they
-  wait in the foreground; the reminder adds "if you were waiting on background work, wait for it in
-  the foreground now and report when done"; (b) the reminder says to send the starter a short
-  message saying it's still working (clears the flag, costs a starter turn); (c) both.
-- **Recommendation:** (a).
+(none)
 
 ## Watch List
 
@@ -48,6 +39,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 12 | Timers configurable through Hub options and `WHEELCHAIR_QUIET_GRACE_MS` / `WHEELCHAIR_QUIET_ESCALATE_MS`; the check runs on the queue retry timer. | Tests need short timings; the existing 5 s timer is fine-grained enough. | defaulted |
 | 13 | Review round 1: nudges are tagged and cancelled on reset; the escalation timer starts at the starter nudge's delivery; a re-messaged finished child counts as outstanding; a due check survives holds and is re-checked each tick. | Mechanics findings 1–4, upheld. | review-round-1 |
 | 14 | Collin's card wording follows the path that reached it; reviewer.md and verifier.md get the report-a-conflict rule. | Intent findings 2–4, upheld. | review-round-1 |
+| 15 | Watched agents never end a turn to wait on their own background work; they wait in the foreground. The agent reminder adds a line telling an agent that did to wait in the foreground now. No exemption in the hub. | The hub cannot see a CLI's background jobs; a rule costs nothing and Codex already works this way. | user |
 
 ## Spec
 
@@ -134,7 +126,7 @@ Timings: grace defaults to 30 000 ms, escalate to 600 000 ms. `Hub`'s constructo
 ### Texts
 
 - **Agent nudge** (worker, mapper, sub-lead):
-  `[wc:from app] Your turn ended without a result or message card, and the session that started you is waiting for one. Your own wc.js and card.js commands are always allowed, whatever your brief says about ports or the network. If your task is done, post your result. If you cannot finish, post a result with outcome blocked and the reason. If you need an answer, send a message. If you already posted one, ignore this.`
+  `[wc:from app] Your turn ended without a result or message card, and the session that started you is waiting for one. Your own wc.js and card.js commands are always allowed, whatever your brief says about ports or the network. If your task is done, post your result. If you cannot finish, post a result with outcome blocked and the reason. If you need an answer, send a message. If you ended your turn to wait on your own background work, wait for it in the foreground now and report when it is done. If you already posted one, ignore this.`
 - **Agent nudge** (reviewer, verifier):
   `[wc:from app] Your turn ended with no report. End your next turn with your report as your last message.`
 - **Starter nudge:**
@@ -173,6 +165,11 @@ card rendering is reused unchanged.
 - `protocol/app/reviewer.md` and `protocol/app/verifier.md`: if something stops you
   finishing (a conflict in your brief, something you cannot read or run), say so as your report
   rather than ending with no report; an app reminder means your last turn ended with no report.
+- Every watched role's file (worker, mapper, sub-lead, reviewer, verifier): never end a turn to
+  wait on your own background work (a background command, a subagent, a monitor); wait for it in
+  the foreground, because the app reads an ended turn with no report as having stopped. A
+  sub-lead waiting on sessions it started through `wc.js session start` is not background work:
+  the app sees those.
 
 ### Tests (each fails before its fix)
 
@@ -210,7 +207,8 @@ New `viewer/test/protocol-rules.test.js`: asserts `protocol/app/worker.md`, `map
 `sub-lead.md`, `lead.md` and `cards.md` each state that a session's own `wc.js` and
 `card.js` calls are always allowed (match on the phrase "own `wc.js` and `card.js`"), and that
 `worker.md`, `mapper.md`, `sub-lead.md`, `reviewer.md`, `verifier.md` say a conflict is reported as `blocked`, not by
-stopping silently (match "blocked" and "silently" in one paragraph).
+stopping silently (match "blocked" and "silently" in one paragraph), and that all five say to wait on background
+work in the foreground (match "background" and "foreground" in one paragraph).
 
 ### Validation
 
@@ -247,10 +245,26 @@ state or timers.
 | gpt mechanics | blocking | Escalation timer starts at enqueue, before the starter is told | upheld | `quiet_starter_at` set on successful delivery (Detector 3); test 12 |
 | gpt mechanics | blocking | `finished` never clears, so a sub-lead waiting on a re-messaged worker counts as quiet | upheld | Waiting on others includes children that owe a reply (Terms); test 13 |
 | gpt mechanics | major | A due check is deleted while a hold blocks it and never re-armed | upheld | Due check kept and re-checked each tick (Detector 2); test 14 |
-| claude intent | major | Claude agents end turns on purpose while waiting on their own background work (background tests, subagents); the hub can't see it, so they would be flagged and Collin alerted while working normally | user-decision | Question to Collin |
+| claude intent | major | Claude agents end turns on purpose while waiting on their own background work (background tests, subagents); the hub can't see it, so they would be flagged and Collin alerted while working normally | user-decision | Collin chose foreground waiting (Decision 15); Rules and agent reminder updated |
 | claude intent | minor | Card says "keeps ending its turns" on the timer path, where that may be false | upheld | Card body per path (Texts) |
 | claude intent | minor | Card names a reminder to the starter when the starter was not live | upheld | Card body per path (Texts) |
 | claude intent | minor | reviewer.md and verifier.md get no report-a-conflict rule though both roles are watched | upheld | Rules adds them; rules test covers them |
+
+### Round 2 — 2026-11-15
+
+**Lanes:** claude (intent); gpt (mechanics); cross-family: yes.
+
+**Changed since Round 1:**
+- Terms: "Waiting on others" counts a live child that owes a reply even if `finished`.
+- Detector 2: a due check survives holds, queue, limits and outstanding children; re-checked each tick.
+- Detector 3: nudges are tagged queue entries; `quiet_starter_at` set when the starter nudge is delivered.
+- Detector 4: reset and stop/end remove queued nudges.
+- Texts: Collin's card body per path (quiet turn, timer, starter not live); agent nudge adds the background-work line.
+- Rules: reviewer.md and verifier.md added; every watched role gets the foreground-waiting rule (Decision 15).
+- Tests 11–14 added; rules test extended.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
