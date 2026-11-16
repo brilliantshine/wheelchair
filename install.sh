@@ -63,7 +63,7 @@ remove_retired() {  # path, wrapper file, expected protocol file, symlink suffix
   if [[ -L $path ]]; then
     target=$(readlink "$path")
     [[ $target == *"$suffix" ]] || return 0
-  elif [[ -f $file ]] && grep -Eq "/[^[:space:]]*/protocol/${protocol}\.md([^[:alnum:]_.-]|$)" "$file"; then
+  elif [[ -f $file ]] && grep -Eq "(^|[[:space:]\`\"'(])/[^[:space:]]*/protocol/${protocol}\.md([^[:alnum:]_.-]|$)" "$file"; then
     :
   else
     return 0
