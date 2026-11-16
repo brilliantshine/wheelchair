@@ -55,8 +55,8 @@ what a lane claimed, and a lane that died mid-write may have claimed more than i
 As part of this same reconcile step — or, on a fresh start, before anything else — move
 any old run picture aside: if `run.json` or any `run-*.json` exists in `graphs/`, move
 all of them together into `graphs/before-run-<N>/` (the first `N` not already used), a
-plain file move with no server call. They keep their rulings there as a committed
-record; the viewer never opens them, since it serves only files directly in `graphs/`. A
+plain file move with no server call. The viewer never opens them, since it serves only
+files directly in `graphs/`. A
 fresh start still needs this check — a plan verification sent back to planning and
 approved again can leave an old picture behind. When this moved anything, or the Log
 already holds a `Stage 3 started` line from an earlier attempt (even one whose picture
@@ -64,9 +64,7 @@ never got drawn), the ask-at-start message below says in one sentence where the 
 run's records are: its choices are always in the Log's `Choice:` lines, and the picture
 is in `graphs/before-run-<N>/` only when the move-aside step actually moved something —
 when it moved nothing, the sentence points only at the Log's `Choice:` lines, since
-there is no picture there to name. It adds that nothing struck there is acted on unless
-Collin asks. If
-the earlier run left unfinished follow-up rows in the Implementation Tasks table, that
+there is no picture there to name. If the earlier run left unfinished follow-up rows in the Implementation Tasks table, that
 same sentence names them, since reconciling drops rows that aren't part of the Spec. You
 read nothing else back for this: if Collin asks for an old choice to be undone, that is
 an ordinary request, not a step here.
@@ -216,25 +214,13 @@ mistaken for "none".
 Then sweep the routers: in each directory the lane's diff touched since its base commit,
 update the router where the change made it stale.
 
-**Immediately before writing COMPLETION.md**, read the run picture and every child you
-can read — plain file reads of `run.json` and its children, not the viewer, so this
-still works even if the picture ended under "Never block on the picture" above — and
-collect every `choice` whose `origin` is `rejected`. A file that doesn't parse is
-skipped, and the end-of-run message names it so Collin can raise a strike by hand. Turn
-each into a new Implementation Tasks row, a follow-up task that undoes or redoes that
-choice, whose objective names the choice; every part it affected — including one in
-another file that its `note` names — gets `task` set to the follow-up and status
-`in-progress`, and the follow-up is dispatched and accepted like any other task before
-COMPLETION.md is written. The struck `choice` box stays on the picture; a replacement
-choice gets a new id. Do this once. The end-of-run message lists every `Choice:` Log
-line since this run's own `Stage 3 started` line, and says that a strike made from here
-on isn't picked up automatically — Collin can still raise one with you by hand.
+The end-of-run message lists every `Choice:` Log line since this run's own `Stage 3
+started` line.
 
 When all tasks are done and full validation is green, write
 `docs/plans/<slug>/COMPLETION.md` from `templates/COMPLETION.md`: spec-item-by-item
 coverage with file:line references and each item's origin (`this run` or `pre-existing`),
-deviations from the Spec (including each struck choice from the collection just above and
-what replaced it), pasted validation evidence, residual risks, and the implementing
+deviations from the Spec, pasted validation evidence, residual risks, and the implementing
 lanes in frontmatter (Stage 4 selects and records its verifier under
 `verification.md`). Every spec item gets a row including the pre-existing ones — coverage
 is the point, and Stage 4 verifies them

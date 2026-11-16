@@ -81,13 +81,8 @@ wants the detail opens that graph directly.
 Two independent flows — two files in `graphs/` that no `graph` field references — get one
 diagram each. No cap applies beyond the one above: two flows are two pictures.
 
-It is authored, not generated: no merge rule, no origin filter, no label escaping. A person
+It is authored, not generated: no merge rule or label escaping. A person
 is drawing a picture from a picture.
-
-`rejected` entries are left out. They are accounted for in prose instead, by the exit gate in
-`planning.md` — which is why that gate walks every graph reachable through a container even
-though the diagram itself only ever shows the top level: a rejection buried in a child graph
-still needs a sentence, even though it never appears on the canvas.
 
 A visible group in the graph is drawn in the Mermaid as a `subgraph` carrying the group's
 `label`. Containment is unaffected and still shows the top level only.

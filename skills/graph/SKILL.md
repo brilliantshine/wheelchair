@@ -1,6 +1,6 @@
 ---
 name: graph
-description: Draw a disposable node graph answering a question about how something works, start the local viewer, and print the URL. Use for a question about a codebase's flow or architecture where a picture Collin can rearrange and rule on beats prose alone, or to reopen a graph drawn earlier. Args - a question about how something works, or the slug of an existing graph to reopen.
+description: Draw a disposable node graph answering a question about how something works, start the local viewer, and print the URL. Use for a question about a codebase's flow or architecture where a picture Collin can rearrange beats prose alone, or to reopen a graph drawn earlier. Args - a question about how something works, or the slug of an existing graph to reopen.
 ---
 
 Read `{{WHEELCHAIR_ROOT}}/protocol/graphs.md` and
