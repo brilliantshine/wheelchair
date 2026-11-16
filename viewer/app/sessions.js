@@ -89,7 +89,8 @@ async function startSession(hub, thread, input) {
     };
     Object.assign(waiting, { status: 'waiting', waiting_until: selection.wait.until, waiting_reason: selection.wait.reason, waiting_provider: selection.wait.provider, pending_start: input._waiting ? waiting.pending_start : { ...input } });
     if (!input._waiting) thread.sessions.push(waiting);
-    await hub.save(thread);
+    if (role === 'lead' && !thread.lead_name) await hub.saveWithLeadName(thread);
+    else await hub.save(thread);
     return waiting;
   }
   let cli = cliOf(selection.provider);
@@ -143,10 +144,11 @@ async function startSession(hub, thread, input) {
     ...(role === 'lead' ? { style_version: settings.style_version } : {}),
   };
   if (!input._waiting) thread.sessions.push(session);
-  Object.assign(session, { status: 'starting', cli, provider: selection.provider, account: selection.account.id, template_id: layers.template?.id || null, ...(role === 'lead' ? { style_version: settings.style_version } : {}) });
+  Object.assign(session, { model: resolved.model, effort: input.effort || resolved.effort || null, status: 'starting', cli, provider: selection.provider, account: selection.account.id, template_id: layers.template?.id || null, ...(role === 'lead' ? { style_version: settings.style_version } : {}) });
   if (selection.note) session.note = selection.note;
   delete session.pending_start; delete session.waiting_until; delete session.waiting_reason; delete session.waiting_provider;
-  await hub.save(thread);
+  if (role === 'lead' && !thread.lead_name) await hub.saveWithLeadName(thread);
+  else await hub.save(thread);
 
   let started;
   try {
@@ -182,6 +184,7 @@ async function startSession(hub, thread, input) {
   const identity = { name: session.name, attempt_id: session.attempt_id, started_by: session.started_by, queue: session.queue };
   Object.assign(session, started, {
     ...identity,
+    model: resolved.model, effort: input.effort || resolved.effort || null,
     token,
     provider: selection.provider,
     account: selection.account.id,
@@ -247,6 +250,8 @@ async function enqueue(hub, thread, name, text, source = 'app', first = false, {
   target.queue ||= [];
   thread.queues ||= {};
   const message = { text, source, at: new Date().toISOString() };
+  // The thread list orders threads by when Collin last wrote in them, not by any activity.
+  if (source === 'collin') thread.collin_at = message.at;
   if (first) target.queue.unshift(message);
   else target.queue.push(message);
   thread.queues[name] = target.queue;
@@ -412,13 +417,36 @@ async function sessionRequest(hub, payload) {
     ...(['mapper', 'reviewer', 'sub-lead'].includes(payload.role) ? { worktree: thread.worktree, branch: thread.branch } : {}),
     base: payload.role === 'worker' ? thread.branch : undefined,
     verify_ref: payload.role === 'verifier' ? thread.branch : undefined,
-    ...(payload.role === 'worker' && payload.replaces ? (() => {
-      const replaced = session(thread, payload.replaces);
-      if (replaced.role !== 'worker' || replaced.live) throw appError(400, 'replacement must be a dead worker in this thread');
-      return { worktree: replaced.worktree, branch: replaced.branch };
-    })() : {}),
+    ...(payload.role === 'worker' && payload.replaces ? await replacedWorker(hub, thread, payload.replaces) : {}),
   });
   return { session: publicSession(started), ...(started.note ? { note: started.note } : {}) };
+}
+
+// A replacement worker shares the old worker's worktree, so the old one must really be gone: the
+// hub's own record can say "ended" while its tmux session still runs. Unknown counts as running.
+async function replacedWorker(hub, thread, name) {
+  const replaced = session(thread, name);
+  if (replaced.role !== 'worker' || replaced.live) throw appError(400, 'replacement must be a dead worker in this thread');
+  let listed;
+  try {
+    listed = await hub.call(thread.machine, '/v1/sessions', 'GET');
+  } catch {
+    throw appError(409, `cannot check whether ${name} is still running; try again`);
+  }
+  const running = (other) => {
+    const entry = listed.find((item) => item.name === other);
+    return Boolean(entry) && entry.running !== false;
+  };
+  if (running(name)) {
+    throw appError(409, `${name} is still running in tmux; send it a message, or stop it with session stop before replacing it`);
+  }
+  // An earlier replacement of the same worker may already be working there.
+  const occupant = thread.sessions.find((item) => (
+    item.name !== name && item.role === 'worker' && item.worktree && item.worktree === replaced.worktree
+    && (item.live || running(item.name))
+  ));
+  if (occupant) throw appError(409, `${occupant.name} is already working in that worktree`);
+  return { worktree: replaced.worktree, branch: replaced.branch };
 }
 
 async function stopSession(hub, thread, caller, name) {
@@ -436,6 +464,17 @@ async function stopSession(hub, thread, caller, name) {
   return { ok: true };
 }
 
+// tmux decides: a listed session with `running: true` is live even if recorded stopped (a failed
+// kill records stopped too). Without `running` the machine could not check tmux, so only its record
+// can say stopped.
+function liveNames(listed) {
+  return new Set(
+    listed
+      .filter((item) => item.running === true || (item.running === undefined && item.status !== 'stopped'))
+      .map((item) => item.name),
+  );
+}
+
 async function pollDead(hub) {
   const byMachine = new Map();
   for (const thread of await hub.allThreads()) {
@@ -450,11 +489,10 @@ async function pollDead(hub) {
     } catch {
       continue;
     }
-    const live = new Set(
-      listed
-        .filter((item) => item.running !== false && item.status !== 'stopped')
-        .map((item) => item.name),
-    );
+    const early = liveNames(listed);
+    const missing = (thread, live) => thread.sessions.filter((item) => (
+      item.live && item.status !== 'waiting' && !live.has(item.name)
+    ));
     for (const listedThread of threads) {
       await hub.withThread(listedThread.id, async () => {
         const thread = await hub.thread(listedThread.id);
@@ -463,7 +501,21 @@ async function pollDead(hub) {
           const remote = listed.find((item) => item.name === target.name);
           for (const key of ['cli_session_id', 'codex_thread_id']) if (remote?.[key] && remote[key] !== target[key]) { target[key] = remote[key]; changed = true; }
         }
-        for (const target of thread.sessions.filter((item) => item.live && item.status !== 'waiting' && !live.has(item.name))) {
+        if (!missing(thread, early).length) {
+          if (changed) await hub.save(thread);
+          return;
+        }
+        // The early listing was taken before this thread's lock, and the wait for the lock can
+        // be long; a session started meanwhile is absent from it. Ask again under the lock, where
+        // no start for this thread can be in flight, and act only on that answer.
+        let fresh;
+        try {
+          fresh = liveNames(await hub.call(machine, '/v1/sessions', 'GET'));
+        } catch {
+          if (changed) await hub.save(thread);
+          return;
+        }
+        for (const target of missing(thread, fresh)) {
           target.live = false;
           target.status = 'ended';
           changed = true;

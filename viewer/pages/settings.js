@@ -211,6 +211,18 @@
       h('div', { class: 'ctl' }, select));
   }
 
+  // Lead names: one per line, saved with the button; blank lines are dropped by the hub.
+  function leadNamesRow() {
+    const input = h('textarea', { id: 'lead-names', 'aria-label': 'Lead names', rows: 4, value: (data.lead_names || []).join('\n') });
+    const status = h('p', { class: 'note', role: 'status' });
+    const host = h('div', { class: 'ctl wide' }, input, h('button', { type: 'button', text: 'Save', onclick: async () => {
+      inlineErr(host, ''); status.textContent = '';
+      try { const result = await api('/settings/preferences', { method: 'PUT', body: { lead_names: input.value.split(/\r?\n/) } }); data.lead_names = result.lead_names; input.value = data.lead_names.join('\n'); status.textContent = 'Saved'; }
+      catch (error) { inlineErr(host, error.message); }
+    } }), status);
+    return h('div', { class: 'row-line' }, h('div', { class: 'what' }, h('label', { for: 'lead-names', text: 'Lead names' }), h('span', { class: 'hint', text: 'Empty uses Greek letters. New leads only.' })), host);
+  }
+
   // The Default project folder: typed, then saved with the button. A refusal shows under the
   // input and the typed value stays.
   function folderRow() {
@@ -321,7 +333,7 @@
           PROVIDERS.map(([provider, name]) => h('div', { class: 'row-line' },
             h('div', { class: 'what' }, h('span', { text: 'Leads and sub-leads run on' }), h('span', { class: 'hint', text: `${name} model` })),
             h('div', { class: 'ctl wide' }, modelPicker(provider, 'lead', { allowNone: false, withEffort: true }))))
-          .concat([leadOrderRow()]))),
+          .concat([leadOrderRow(), leadNamesRow()]))),
       h('section', { 'aria-labelledby': 'escalation' },
         h('h2', { id: 'escalation', text: 'Escalation' }),
         h('div', { class: 'escalation-text' },
@@ -1044,7 +1056,7 @@
   function ensureDraft() {
     if (balDraft) return;
     balDraft = {};
-    for (const k of ['lead_order', 'worker_order', 'within', 'leave', 'notify_below', 'save_claude_for_leads', 'margin']) balDraft[k] = structuredClone(data[k]);
+    for (const k of ['lead_order', 'worker_order', 'within', 'leave', 'notify_below', 'save_claude_for_leads', 'margin', 'held_back']) balDraft[k] = structuredClone(data[k]);
   }
 
   // An order editor: the providers in order, up/down to move; leads may end in "then whatever's left".
@@ -1121,7 +1133,7 @@
     const settingsBox = h('section', { class: 'balancing', 'aria-labelledby': 'bal' });
     const within = h('select', { id: 'bal-within', 'aria-label': 'Within a provider', onchange: (ev) => { balDraft.within = ev.target.value; } },
       WITHIN.map(([v, l]) => h('option', { value: v, text: l, selected: v === balDraft.within })));
-    const save = h('button', { type: 'button', class: 'primary', id: 'bal-save', text: 'Save', onclick: () => saveBalancing(['worker_order', 'within', 'leave', 'notify_below', 'save_claude_for_leads', 'margin'], settingsBox) });
+    const save = h('button', { type: 'button', class: 'primary', id: 'bal-save', text: 'Save', onclick: () => saveBalancing(['worker_order', 'within', 'leave', 'notify_below', 'save_claude_for_leads', 'margin', 'held_back'], settingsBox) });
     settingsBox.append(
       h('h2', { id: 'bal', text: 'Balancing' }),
       h('div', { class: 'box rows' },
@@ -1129,9 +1141,12 @@
         h('div', { class: 'row-line' }, h('div', { class: 'what' }, h('span', { text: 'Within a provider' }), h('span', { class: 'hint', text: 'How to pick among its accounts' })), h('div', { class: 'ctl' }, within)),
         numField('leave', 'Leave for you (%)', 'An account under this much left stays free for you', 100),
         numField('notify_below', 'Warn me below (%)', 'Shows a dot on Settings when a provider drops under this', 100),
-        h('div', { class: 'row-line' }, h('div', { class: 'what' }, h('span', { text: 'Save Claude for leads' }), h('span', { class: 'hint', text: 'Workers go to GPT first so Claude stays for leads' })),
+        h('div', { class: 'row-line' }, h('div', { class: 'what' }, h('span', { text: 'Save Claude for leads' }), h('span', { class: 'hint', text: 'Sessions with no provider preference try GPT before Claude. Does not hold anyone back; the ticks below do.' })),
           h('input', { type: 'checkbox', id: 'bal-save-claude', checked: !!balDraft.save_claude_for_leads, 'aria-label': 'Save Claude for leads', onchange: (ev) => { balDraft.save_claude_for_leads = ev.target.checked; } })),
-        numField('margin', 'Margin (%)', 'How early to call a week "running short"', 100)),
+        numField('margin', 'Keep for leads (%)', 'When Claude is projected to have less than this left at refill, ticked roles go to GPT', 100),
+        h('div', { class: 'row-line' }, h('div', { class: 'what' }, h('span', { text: 'Held back when Claude runs short' })),
+          h('div', { class: 'ctl' }, [['worker', 'Workers'], ['reviewer', 'Reviewers'], ['verifier', 'Verifiers'], ['mapper', 'Mappers']].map(([role, label]) =>
+            h('label', { class: 'check' }, h('input', { type: 'checkbox', id: 'bal-held-' + role, checked: balDraft.held_back[role], 'aria-label': label, onchange: (ev) => { balDraft.held_back[role] = ev.target.checked; } }), h('span', { text: label })))))),
       h('div', { class: 'actions' }, save), noteEl());
     return h('div', { class: 'models usage' },
       h('div', {}, h('h1', { text: 'Usage' }),

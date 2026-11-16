@@ -1,24 +1,20 @@
-# Map: app thread page
+# Map: thread diagrams and message composer
 
-Checked against: `e440dec486680f4bce9b4be081a848b01ac0bde2` (origin/main)
-Files covered: `viewer/app/chat.js`, `viewer/app/threads.js`, `viewer/app/cards.js`, `viewer/app/routes.js`, `viewer/pages/thread.js`, `viewer/pages/thread.html`, `viewer/pages/thread.css`, `viewer/pages/app.css`, `viewer/pages/md.js`
+Checked against: `7c380321f4556a08b63485203d613feeeae1f640` (origin/main)
+Files covered: `protocol/app/cards.md`, `viewer/app/card.js`, `viewer/app/cards.js`, `viewer/app/chat.js`, `viewer/app/routes.js`, `viewer/app/state.js`, `viewer/pages/thread.js`, `viewer/pages/thread.html`, `viewer/pages/thread.css`, `viewer/index.html`
 
 ## Flow
 
-1. The page polls `/threads/:id/chat` every two seconds (`viewer/pages/thread.js:4-6`, `:680-711`). The hub reads every lead session's transcript, parses Claude and Codex rows into turns, hides `[wc:role]` and `[wc:from ...]` turns and their replies, filters tool steps according to Settings, and returns items and non-replaced cards (`viewer/app/chat.js:94-171`, `:202-230`). Assistant items contain `type`, `text`, and `at`, with no message ID or transcript offset (`viewer/app/chat.js:94-99`, `:106-115`).
-2. On changed items or cards, `renderChat` clears `#chat`, interleaves non-pinned cards by timestamp, and creates a Markdown-rendered assistant bubble for each reply (`viewer/pages/thread.js:255-281`, `:658-671`). The renderer constructs DOM nodes, including nested inline formatting and links, from the Markdown (`viewer/pages/md.js:4-11`, `:39-77`, `:87`). The page's `#chat` is inside `.col-main`, and its current right-hand aside is for files (`viewer/pages/thread.html:20-30`, `:45-48`).
-3. A question card carries an ID and `answered` flag from the hub (`viewer/app/cards.js:11-20`); chat returns non-replaced cards (`viewer/app/chat.js:224-228`). The page displays the question, options and answer state (`viewer/pages/thread.js:325-337`, `:394-419`). A press marks the card answered and queues a marked message to the latest live lead (`viewer/app/threads.js:212-257`).
-4. The composer posts ordinary text to `/messages`; the hub chooses the latest live lead and enqueues it as `collin` (`viewer/pages/thread.js:693-705`, `viewer/app/routes.js:343-350`).
+1. A lead writes a graph and posts a `diagram` with nonempty `plan`, `graph`, `title` (`protocol/app/cards.md:184-195`). The CLI rejects unknown fields; the hub repeats validation with the session role, allowing only leads (`viewer/app/card.js:21-30,96,115-137,180-196`; `viewer/app/cards.js:38-48`).
+2. The hub registers the plan and graph before storing the card with an id and timestamp in the thread (`viewer/app/cards.js:11-28,50-55,79`; `viewer/app/state.js:122-130`). `/chat` returns unreplaced cards alongside lead transcript items (`viewer/app/chat.js:202-229`); the page polls and renders them (`viewer/pages/thread.js:720-728,748-750`).
+3. The card renders a full-screen link and iframe. Live graphs point to the thread worktree; archived graphs use the archive route (`viewer/pages/thread.js:166-170,571-581`). The graph page fetches its graph, with archived data read-only (`viewer/index.html:320-322,462-479,513`). The iframe has no `sandbox` attribute (`viewer/pages/thread.js:580`). It is 100% wide and 340px high; at widths up to 899px, cards can occupy the chat width and the composer reflows (`viewer/pages/thread.css:176-182,204-225`).
+4. The composer has a textarea and send button (`viewer/pages/thread.html:33-42`). On submit it trims text, ignores empty input and posts `{text}`; it clears the textarea after success (`viewer/pages/thread.js:732-745`). The route selects the most recent live lead and enqueues the text (`viewer/app/routes.js:343-350`).
 
+```text
+lead -> graph file + diagram card -> validate -> register -> store -> /chat -> iframe graph
+textarea -> POST messages -> latest live lead queue
 ```
-poll /chat -> read lead transcripts -> parse turns -> items and cards
-    -> rebuild #chat -> Markdown DOM and question cards
-composer / card press -> lead queue -> lead transcript -> next poll
-```
-
-At widths up to 899px, the thread hides both list and files columns; the header exposes plan files, chat padding shrinks, and the composer changes layout (`viewer/pages/app.css:141-150`, `viewer/pages/thread.js:167-172`, `viewer/pages/thread.css:200-222`). No existing aside panel or selection toolbar is present in the thread markup (`viewer/pages/thread.html:20-48`). A selection attached only to current DOM nodes would be lost when chat is rebuilt; rendered selections can span nested Markdown nodes (`viewer/pages/thread.js:255-257`, `viewer/pages/md.js:39-77`).
 
 ## What I did not look at
 
-- Browser selection behavior across platforms, exact CSS layout measurements, and automated browser tests.
-- Other app pages, archived graph serving and the full Markdown grammar.
+Other card kinds, button presses, transcript parsing, thread list, graph drawing internals and browser tests. This replaces the older broad map because its covered files changed; its prior version remains in git history.

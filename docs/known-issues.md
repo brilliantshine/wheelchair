@@ -50,6 +50,10 @@ other way, or the `delay-listen-retry` hook no longer writes `delayed` on the pa
   The test was last changed in `aa84b57` ("make the lost-freed-port race test wait for its hook
   to arm") and made deterministic in `dc7217c`.
 
+Still failing on 2026-11-15: reproduced identically on `7f4c318`, the base of the agents-screen
+build (same assertion, `actual: "first\n"`), and on that build's branch. Treated as out of scope
+for that build.
+
 ## Viewer: "no drawn arrow's line passes through either box it connects, over every committed graph" fails
 
 Found 2026-11-14 while building the app-shell plan. It is not caused by that work: it fails the
@@ -66,6 +70,9 @@ npm --prefix viewer run test:browser -- browser.spec.js -g "no drawn arrow" --pr
 Both browsers fail with `page.evaluate: TypeError: Cannot read properties of null (reading 'map')`,
 so one committed graph renders without something the test's in-page code expects. Which graph
 was not narrowed down.
+
+Still failing on 2026-11-15: reproduced identically in both browsers on `7f4c318`, the base of
+the agents-screen build, and on that build's branch. Treated as out of scope for that build.
 
 ## Viewer: "the global write lock serializes concurrent writes and retry retains both changes" fails sometimes
 

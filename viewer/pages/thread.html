@@ -29,14 +29,19 @@
     <div class="chat-wrap">
       <section id="chat" aria-label="Chat"></section>
       <section id="cards"></section>
+      <div id="working" class="working" role="status" aria-label="The lead is working" hidden><span></span><span></span><span></span></div>
     </div>
     <form id="composer">
       <div class="composer-box">
         <div id="queued-note" class="dim" hidden></div>
+        <div id="attachments" class="attachments"></div>
+        <div id="attachment-error" class="card-error" role="status"></div>
+        <input id="attachment-input" type="file" multiple hidden>
         <div class="send-row">
           <label for="msg" class="sr-only">Message the lead</label>
           <textarea id="msg" rows="2" placeholder="Message the lead"></textarea>
           <span class="hint">The lead decides whether this needs a plan.</span>
+          <button type="button" id="attach" aria-label="Attach files" title="Attach files"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M21 11.5 12.5 20a6 6 0 0 1-8.5-8.5L13 2.5a4 4 0 0 1 5.7 5.7l-9 9a2 2 0 0 1-2.8-2.8l8-8"/></svg></button>
           <button type="submit" class="primary" id="send" aria-label="Send">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
           </button>

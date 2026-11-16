@@ -35,7 +35,7 @@ test.describe('desktop', () => {
   test('the nav shows Settings and the route serves', async ({ page }) => {
     await openPage(page, context, '/app/settings');
     const links = page.locator('#app-nav .seg a');
-    await expect(links).toHaveText([/Features/, /Threads/, /Sessions/, /Settings/]);
+    await expect(links).toHaveText([/Features/, /Threads/, /Agents/, /Settings/]);
     await expect(page.locator('#app-nav .seg a[aria-current="page"]')).toHaveText('Settings');
     await expect(page.locator('#app-nav .seg .lbl')).toBeVisible();
     await expect(page.locator('#app-nav .seg .gear')).toBeHidden();
@@ -341,4 +341,13 @@ test.describe('phone', () => {
     await expect(page.getByRole('link', { name: 'Settings', exact: true })).toBeVisible();
     await expect(page.locator('#app-nav .seg .lbl')).toBeHidden();
   });
+});
+
+test('saves lead names in Settings', async ({ page }) => {
+  await openPage(page, context, '/app/settings#models');
+  await page.getByLabel('Lead names').fill('Ada\nGrace');
+  await page.locator('#lead-names').locator('..').getByRole('button', { name: 'Save' }).click();
+  await expect.poll(async () => (await settings(page)).lead_names).toEqual(['Ada', 'Grace']);
+  await page.reload();
+  await expect(page.getByLabel('Lead names')).toHaveValue('Ada\nGrace');
 });

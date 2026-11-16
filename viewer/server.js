@@ -5,7 +5,7 @@ Routes (all responses use Cache-Control: no-store):
   GET  /wheelchair/plan, /doc   -> plan data and raw Markdown
   GET  /wheelchair/docs         -> viewer/doc.html
   GET  /wheelchair/assets/*     -> page scripts (no token): list.js, doc.js, pages/*, vendor/*, fonts/<name>.woff2 (four allowlisted)
-  GET  /wheelchair/app/<page>   -> viewer/pages/<page>.html (threads, thread, doc, features, sessions, terminal)
+  GET  /wheelchair/app/<page>   -> viewer/pages/<page>.html (threads, thread, doc, features, agents, terminal)
   GET  /wheelchair/graph        -> { hash, graph, children }
   PUT  /wheelchair/graph, /view -> { hash }
   GET  /wheelchair/whoami       no authentication -> { start_id }.
@@ -1822,6 +1822,33 @@ async function handleDoc(request, response, url, state) {
   catch { fail(404, 'not-found', 'The document file does not exist.'); }
 }
 
+async function handleDiagramFile(request, response, url, state, format) {
+  requireReadAuth(request, url, state);
+  const value = url.searchParams.get('path');
+  const extension = format === 'html' ? '.html' : '.json';
+  if (typeof value !== 'string' || !path.isAbsolute(value) || path.extname(value) !== extension || path.basename(path.dirname(value)) !== 'graphs') fail(403, 'not-registered', 'This diagram path is not registered.');
+  const plan = await registeredPlanPath(state.config, path.dirname(path.dirname(value)));
+  let actual;
+  try { actual = await fsp.realpath(value); } catch { fail(404, 'not-found', 'The diagram file does not exist.'); }
+  if (path.dirname(actual) !== path.join(plan, 'graphs')) fail(403, 'not-registered', 'This diagram path is not registered.');
+  let bytes;
+  try {
+    const stat = await fsp.stat(actual);
+    if (!stat.isFile()) fail(404, 'not-found', 'The diagram file does not exist.');
+    if (format === 'form' && stat.size > 2 * 1024 * 1024) fail(413, 'too-large', 'The diagram file is too large.');
+    bytes = await fsp.readFile(actual);
+    if (format === 'form' && bytes.length > 2 * 1024 * 1024) fail(413, 'too-large', 'The diagram file is too large.');
+  } catch (error) { if (error.status) throw error; fail(404, 'not-found', 'The diagram file does not exist.'); }
+  if (format === 'html') {
+    response.writeHead(200, require('./app/routes.js').HTML_HEADERS);
+    response.end(bytes);
+  } else {
+    let value;
+    try { value = JSON.parse(bytes.toString('utf8')); } catch { fail(422, 'invalid-json', 'The diagram file is not valid JSON.'); }
+    sendJson(response, 200, value);
+  }
+}
+
 async function servePage(response, name, csp = false) {
   const html = await fsp.readFile(path.join(__dirname, name));
   sendFile(response, 200, html, 'text/html; charset=utf-8', csp ? { 'content-security-policy': PAGE_CSP } : {});
@@ -1829,7 +1856,7 @@ async function servePage(response, name, csp = false) {
 
 // The app's pages (docs/plans/app-shell, "Views") live in viewer/pages/ and their vendored
 // libraries in viewer/vendor/; both are public assets like list.js, matched by a narrow name.
-const APP_PAGES = new Set(['threads', 'thread', 'new', 'doc', 'features', 'sessions', 'settings', 'terminal']);
+const APP_PAGES = new Set(['threads', 'thread', 'new', 'doc', 'features', 'sessions', 'agents', 'settings', 'terminal']);
 // The thread page embeds the graph page for `diagram` cards, so app pages may frame this origin.
 const APP_PAGE_CSP = `${PAGE_CSP}; frame-src 'self'`;
 // The app's fonts: served name -> file under node_modules/@fontsource (latin subset, normal style).
@@ -1878,6 +1905,7 @@ async function handleAppPage(request, response, url, state) {
     await serveSignin(response); return;
   }
   if (!validCookie) { await serveSignin(response); return; }
+  if (name === 'sessions') { response.writeHead(302, { location: `${VIEWER_PREFIX}/app/agents`, 'cache-control': 'no-store' }); response.end(); return; }
   const html = await fsp.readFile(path.join(__dirname, 'pages', `${name}.html`));
   sendFile(response, 200, html, 'text/html; charset=utf-8',
     { 'content-security-policy': APP_PAGE_CSP, 'set-cookie': rememberCookie(state) });
@@ -2239,6 +2267,8 @@ async function startServer(config) {
       if (request.method === 'GET' && url.pathname === `${VIEWER_PREFIX}/list`) { await handleList(request, response, url, state); return; }
       if (request.method === 'GET' && url.pathname === `${VIEWER_PREFIX}/plan`) { await handlePlan(request, response, url, state); return; }
       if (request.method === 'GET' && url.pathname === `${VIEWER_PREFIX}/docs`) { await handleDocs(request, response, url, state); return; }
+      if (request.method === 'GET' && url.pathname === `${VIEWER_PREFIX}/diagram-form`) { await handleDiagramFile(request, response, url, state, 'form'); return; }
+      if (request.method === 'GET' && url.pathname === `${VIEWER_PREFIX}/diagram-html`) { await handleDiagramFile(request, response, url, state, 'html'); return; }
       if (request.method === 'GET' && url.pathname === `${VIEWER_PREFIX}/doc`) { await handleDoc(request, response, url, state); return; }
       if (request.method === 'GET' && url.pathname === `${VIEWER_PREFIX}/watching`) {
         const timestamp = request.headers['x-graph-timestamp'];

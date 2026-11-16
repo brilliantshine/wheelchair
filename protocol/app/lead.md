@@ -155,7 +155,10 @@ against. The mapper checks that; you only rely on MAP.md once the `result` arriv
    When the answer arrives, append the decision to the Decision Log (append-only), remove
    the question, fold the consequence into the Spec, and cascade. Save the file before you
    ask the next question. When he answers by typing instead of pressing, resolve the question
-   with a one-line note of his answer, then carry on as if he had pressed. Anything noticed
+   with a one-line note of his answer, then carry on as if he had pressed. An answer typed
+   into the card's own box (`[card <id>] answered: <text>`) already closes the card: log it
+   as his decision, in his words; if it does not settle the question, ask a follow-up
+   question card. Anything noticed
    that is not yet a decision goes on the Watch List; it is empty before planning ends.
 5. Links to MAP.md, IDEA.md and PLAN.md are always one click from the thread through the
    document page; you do not need to paste them.
@@ -343,6 +346,9 @@ you are back and where things stand. Run `session list` and `session stop` any s
 whose purpose is gone.
 
 ## Diagrams
+
+See the `diagram` section of `cards.md` for the forms and how to pick one. Show an image
+with an `image` card.
 
 Follow the diagram-sensitivity dial in your global instructions. When an answer earns a
 picture, write the graph with `<root>/protocol/graphs.md`: its schema, where graph files

@@ -1,26 +1,24 @@
-# Map: app sessions, delivery and transcripts
+# Map: message delivery and machine archive
 
-Checked against: `e440dec486680f4bce9b4be081a848b01ac0bde2` (origin/main)
-Files covered: `viewer/app/sessions.js`, `viewer/app/balancer.js`, `viewer/app/threads.js`, `viewer/app/cards.js`, `viewer/app/card.js`, `viewer/app/routes.js`, `viewer/app/chat.js`, `machine/service.js`, `machine/adapters/claude.js`, `machine/adapters/codex.js`, `machine/hook.sh`, `machine/lib/hook-post.js`
+Checked against: `7c380321f4556a08b63485203d613feeeae1f640` (origin/main)
+Files covered: `viewer/app/routes.js`, `viewer/app/sessions.js`, `viewer/app/threads.js`, `viewer/app/state.js`, `viewer/app/machine-client.js`, `machine/service.js`
 
 ## Flow
 
-1. Creating a thread calls `startSession` for a lead (`viewer/app/threads.js:56-74`). The hub recognizes lead, sub-lead, mapper, worker, reviewer and verifier; a lead may start mapper, reviewer, sub-lead or verifier, and a sub-lead may start worker or verifier (`viewer/app/sessions.js:34-46`, `:380-387`). The balancer selects provider and account: the lead is pinned to its thread provider after its first selection, while other roles use the worker order; explicit provider constraints are restricted to worker, reviewer and verifier (`viewer/app/balancer.js:19-30`, `:43-58`). Start resolves model, mints a session token and sends account, worktree, prompt layers and modes to the machine (`viewer/app/sessions.js:120-171`).
-2. Machine `start` persists the session, including a generated `cli_session_id` and account directory, and launches tmux with the token and provider's account environment (`machine/service.js:284-317`). `commandFor` delegates to adapters: Claude passes `--session-id` and system prompt, Codex starts a fresh `codex` with its notify hook and sends `[wc:role]` as its first message; neither command has resume or fork handling (`machine/service.js:278-281`, `machine/adapters/claude.js:16-24`, `machine/adapters/codex.js:30-32`). Readiness is scraped from each CLI's pane (`machine/service.js:320-356`, `machine/adapters/claude.js:24-25`, `machine/adapters/codex.js:32`).
-3. The hub stores a per-session queue; delivery requires a live, ready, idle session with no permission, needs or rate-limit hold. It submits the first message to the machine and removes it only after acknowledgement (`viewer/app/sessions.js:245-290`). Turn-end hooks bind transcripts and release the queue (`machine/service.js:588-603`, `viewer/app/sessions.js:338-341`, `:367-374`). The machine copies transcript lines to its own session file and the hub reads them through the machine transcript route (`machine/service.js:480-528`, `viewer/app/chat.js:174-183`).
-4. Claude finds a transcript by `cli_session_id` within the selected account's projects directory, or receives its path from a hook (`machine/adapters/claude.js:26-27`, `machine/service.js:591`). Codex binds `codex_thread_id` from a turn-end event only when its first input starts `[wc:role]` and the account's transcript can be found; it rejects events for a different ID (`machine/adapters/codex.js:11-21`, `:33`). Machine sessions are persisted to `sessions.json` (`machine/service.js:132-136`, `:315-316`, `:602`). The hub's start payload has no parent CLI ID or fork argument (`viewer/app/sessions.js:151-175`).
+1. A browser message selects the latest live lead (`viewer/app/routes.js:343-350`). The hub appends it to the lead's persisted queue and attempts delivery; delivery waits for live, ready, turn-ended, unheld state (`viewer/app/sessions.js:245-266,335-341`). A failed machine call keeps the message queued; a successful submit removes it and records sent history (`viewer/app/sessions.js:278-297`).
+2. Session start and delivery both address `thread.machine` (`viewer/app/sessions.js:151-157,280-281`); it comes from the thread's requested machine, defaulting to `hub` (`viewer/app/threads.js:16-24,60-62`). `hub` can resolve to the uniquely matching local machine record (`viewer/app/state.js:152-168`). The machine client reads that machine's secret or secret file and sends `x-wheelchair-machine-secret` (`viewer/app/machine-client.js:53-70`); the service checks it for hub routes, while agent routes use a session token (`machine/service.js:192-209,829-834`).
+3. Machine `/submit` requires a ready managed session, loads a tmux buffer, pastes with `-p`, and presses Enter (`machine/service.js:385-393,829-834`). Both the hub JSON reader and machine JSON reader accumulate all chunks without an application-level size check (`viewer/app/routes.js:13-21,32-36`; `machine/service.js:99-108`).
+4. Archive calls the thread's machine `/v1/archive` (`viewer/app/threads.js:157-160`; `machine/service.js:828`). The service stops sessions, commits dirty service-created non-verifier worktrees where possible, and removes clean ones with `git worktree remove`. It retains worktrees on rebase or other failures and keeps their session records as `archived_pending` (`machine/service.js:430-486`). The hub leaves the thread unarchived for a retained rebase, but marks it archived for other kept reasons (`viewer/app/threads.js:161-174`).
 
+```text
+message -> persisted queue -> ready and idle -> machine /submit -> tmux paste -> Enter
+archive -> thread machine -> stop sessions -> commit if needed -> remove or retain worktree -> hub records result
 ```
-thread / authorized caller -> hub chooses provider + account + model -> machine starts CLI
-    -> ready pane -> queue submits -> CLI turn-end hook -> transcript copy
-    -> hub reads transcript -> page polls
-```
 
-## Boundaries
+## State layout
 
-A session token authenticates the caller to machine agent routes for cards, git and session requests (`machine/service.js:196-214`, `:837-859`). The service supplies the caller identity; the hub checks the stored role for card kinds and session starts (`machine/service.js:843-847`, `:663`, `viewer/app/cards.js:38-48`, `viewer/app/card.js:21-34`, `:115-135`, `viewer/app/sessions.js:380-387`). A token belonging to a lead therefore has lead card and session-start authority regardless of what the copied conversation is instructed to do; an aside needs an independently checked role and permissions. A `message` card is queued as `[wc:from ...]`, whose whole reply is hidden from the main chat (`viewer/app/cards.js:79-85`, `viewer/app/chat.js:123-125`).
+The machine defaults to `~/.local/state/wheelchair`, holding `machine.json`, `sessions.json`, `spool/cards`, `spool/events`, `worktrees/<project>/<branch>` and `transcripts/<thread>/<session>.jsonl` (`machine/service.js:24,130-160,250-256,502-507`). The hub defaults to the same directory on its own host and holds thread records, machine, project and settings files (`viewer/app/state.js:9,41-47,107-117`). Archive retains transcript copies (`machine/service.js:516-519`).
 
 ## What I did not look at
 
-- Installed CLI fork syntax or behavior, fork transcript format, and whether a changed system prompt applies to a fork.
-- Account migration, all machine restart/recovery cases, and full Git permissions or provider quota calculations.
+Account placement, session startup details, recovery and hooks beyond the turn-ended gate, and archive paths on other machines. This focused map replaces the older broad map because its covered files changed; the prior version remains in git history.

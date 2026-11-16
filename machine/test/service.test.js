@@ -23,7 +23,7 @@ set -eu
 echo "$(basename \"$0\") $*" >> "$FAKE_LOG"
 case "$(basename \"$0\"):$1" in
   tmux:capture-pane) cat "$FAKE_PANE" ;;
-  tmux:list-sessions) printf '%s\\n' \${FAKE_SESSIONS:-} ;;
+  tmux:list-sessions) if [ -n "\${FAKE_LS_ERR:-}" ]; then printf '%s\\n' "$FAKE_LS_ERR" >&2; exit 1; fi; printf '%s\\n' \${FAKE_SESSIONS:-} ;;
   tmux:load-buffer) cat >> "$FAKE_LOG" ;;
   systemd-run:*) exit 1 ;;
   git:*) if [[ " $* " == *" rev-parse "* ]]; then echo "\${FAKE_GIT_VERSION:-deadbeef}"; fi ;;
@@ -157,7 +157,10 @@ test('archive keeps and reports a worktree mid-rebase', async () => {
     await write(path.join(repo, 'rebase.txt'), 'main\n');
     git(['-C', repo, 'add', 'rebase.txt']); git(['-C', repo, 'commit', '-m', 'main change']);
     assert.equal(git(['-C', worktree, 'rebase', 'main'], { allowFailure: true }).status, 1);
+    await write(path.join(env.state, 'uploads', 'archive-rebase', '1-file'), 'saved');
     const result = await api(env, 'POST', '/v1/archive', { thread_id: 'archive-rebase' }, hubHeader);
+    assert.equal(result.body.uploads_removed, null);
+    assert.equal(await fs.readFile(path.join(env.state, 'uploads', 'archive-rebase', '1-file'), 'utf8'), 'saved');
     assert.equal(result.status, 200); assert.deepEqual(result.body.removed, []);
     assert.deepEqual(result.body.kept, [{ worktree, reason: 'rebase in progress' }]);
     await fs.access(worktree);
@@ -469,6 +472,56 @@ test('the spool is retried on a timer until the hub acknowledges', async () => {
       for (let i = 0; i < 50 && (await fs.readdir(path.join(env.state, 'spool', 'cards'))).length; i += 1) await new Promise(resolve => setTimeout(resolve, 20));
       assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 0);
     } finally { await env.close(); await hub.close(); }
+  });
+});
+test('a failed tmux listing reports running as unknown, and "no server" as not running', async () => {
+  await withEnv({ FAKE_SESSIONS: 'wc-t-lead scratch' }, async () => {
+    const env = await service(await temp()); try {
+      await start(env);
+      const listed = async () => (await api(env, 'GET', '/v1/sessions', undefined, hubHeader)).body;
+      assert.equal((await listed()).find(s => s.name === 'wc-t-lead').running, true);
+      await withEnv({ FAKE_LS_ERR: 'server exited unexpectedly' }, async () => {
+        const sessions = await listed();
+        assert.equal('running' in sessions.find(s => s.name === 'wc-t-lead'), false);
+        assert.equal(sessions.some(s => s.name === 'scratch'), false);
+      });
+      await withEnv({ FAKE_LS_ERR: 'no server running on /tmp/tmux-1000/default' }, async () => {
+        assert.equal((await listed()).find(s => s.name === 'wc-t-lead').running, false);
+      });
+      await withEnv({ FAKE_LS_ERR: 'error connecting to /tmp/tmux-1000/default (Permission denied)' }, async () => {
+        assert.equal('running' in (await listed()).find(s => s.name === 'wc-t-lead'), false);
+      });
+    } finally { await env.close(); }
+  });
+});
+test('a replacement worker is refused while another worker still runs in its worktree', async () => {
+  await withEnv({ FAKE_GIT_VERSION: 'wc-t-w1' }, async () => {
+    const env = await service(await temp()); try {
+      const worktree = path.join(path.dirname(env.state), 'work-shared');
+      const first = await start(env, { role: 'worker', cli: 'codex', name: 'wc-t-worker', worktree, branch: 'wc-t-w1' });
+      const replace = (name) => api(env, 'POST', '/v1/sessions', { role: 'worker', cli: 'codex', thread_id: 't', token: 'beta', name, worktree, branch: 'wc-t-w1' }, hubHeader);
+      await withEnv({ FAKE_SESSIONS: first.name }, async () => {
+        const refused = await replace('wc-t-worker-2');
+        assert.equal(refused.status, 409); assert.match(refused.body.error, /in use \(wc-t-worker\)/);
+      });
+      await withEnv({ FAKE_LS_ERR: 'server exited unexpectedly' }, async () => {
+        assert.equal((await replace('wc-t-worker-2')).status, 409);
+      });
+      // Recorded as stopped while tmux still has it (a failed kill) is still in use.
+      env.instance.sessions[first.name].status = 'stopped';
+      await withEnv({ FAKE_SESSIONS: first.name }, async () => {
+        assert.equal((await replace('wc-t-worker-2')).status, 409);
+      });
+      assert.equal((await replace('wc-t-worker-2')).status, 201);
+      await withEnv({ FAKE_SESSIONS: 'wc-t-worker-2' }, async () => {
+        const second = await replace('wc-t-worker-3');
+        assert.equal(second.status, 409); assert.match(second.body.error, /wc-t-worker-2/);
+      });
+      await withEnv({ FAKE_SESSIONS: 'wc-t-worker-2' }, async () => {
+        const noBranch = await api(env, 'POST', '/v1/sessions', { role: 'worker', cli: 'codex', thread_id: 't', token: 'gamma', name: 'wc-t-worker-4', worktree }, hubHeader);
+        assert.equal(noBranch.status, 409);
+      });
+    } finally { await env.close(); }
   });
 });
 test('status lists other tmux sessions read-only and typing into them is refused', async () => {
@@ -929,5 +982,80 @@ test('/v1/projects lists git folders, expands ~, and checks paths', async () => 
       assert.ok(both.found && both.checked.ok);
       assert.equal('checked' in listed.body, false);
     });
+  } finally { await env.close(); }
+});
+
+test('uploads sanitize, stream, serve, and enforce admission and size', async () => {
+  const env = await service(await temp());
+  const upload = async (name, body = 'hello') => fetch(`${env.base}/v1/uploads?thread_id=t&name=${encodeURIComponent(name)}`, { method: 'POST', headers: hubHeader, body });
+  try {
+    assert.equal((await upload('x')).status, 409);
+    await start(env);
+    for (const [name, expected] of [['name', '1-name'], ['name', '2-name'], ['...é x.txt', '3---x.txt'], ['...', '4-file'], ['a'.repeat(116) + '.png', `5-${'a'.repeat(96)}.png`]]) {
+      const r = await upload(name); assert.equal(r.status, 201); assert.equal(path.basename((await r.json()).path), expected);
+    }
+    const dir = path.join(env.state, 'uploads', 't');
+    const over = await upload('huge', Buffer.alloc(25 * 1024 * 1024 + 1)); assert.equal(over.status, 413);
+    assert.equal((await fs.readdir(dir)).length, 5);
+    await write(path.join(dir, '6-image.png'), 'png');
+    let r = await fetch(`${env.base}/v1/uploads/t/6-image.png`, { headers: hubHeader });
+    assert.equal(r.status, 200); assert.equal(r.headers.get('content-type'), 'image/png'); assert.equal(r.headers.get('x-content-type-options'), 'nosniff'); assert.equal(await r.text(), 'png');
+    r = await fetch(`${env.base}/v1/uploads/t/3---x.txt`, { headers: hubHeader }); assert.equal(r.headers.get('content-type'), 'application/octet-stream'); assert.equal(r.headers.get('content-disposition'), 'attachment'); await r.text();
+    assert.equal((await fetch(`${env.base}/v1/uploads/t/1-missing`, { headers: hubHeader })).status, 404);
+    assert.equal((await fetch(`${env.base}/v1/uploads/t/bad`, { headers: hubHeader })).status, 400);
+    env.instance.sessions['wc-t-lead'].archived_pending = true; assert.equal((await upload('x')).status, 409);
+    env.instance.sessions['wc-t-lead'].archived_pending = false; env.instance.sessions['wc-t-lead'].status = 'stopped'; assert.equal((await upload('x')).status, 409);
+    const archived = await api(env, 'POST', '/v1/archive', { thread_id: 't' }, hubHeader); assert.equal(archived.body.uploads_removed, true); await assert.rejects(fs.stat(dir), { code: 'ENOENT' });
+  } finally { await env.close(); }
+});
+
+test('image cards are validated and copied before spooling, including archive ordering', async () => {
+  const root = await temp(); const env = await service(root); const headers = { 'x-wheelchair-session-token': 'alpha' };
+  try {
+    await start(env); const png = path.join(root, 'picture.PNG'); await write(png, 'image'); const txt = path.join(root, 'picture.txt'); await write(txt, 'text');
+    const relative = await api(env, 'POST', '/v1/agent/cards', { kind: 'image', path: 'shot.png', title: 'x' }, headers);
+    assert.equal(relative.status, 422); assert.match(JSON.stringify(relative.body), /image path must be absolute/);
+    assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 0);
+    await assert.rejects(fs.stat(path.join(env.state, 'uploads', 't')), { code: 'ENOENT' });
+    assert.equal((await api(env, 'POST', '/v1/agent/cards', { kind: 'image', path: txt, title: 'x' }, headers)).status, 422);
+    assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 0);
+    assert.equal((await api(env, 'POST', '/v1/agent/cards', { kind: 'image', path: png, title: 'x' }, headers)).status, 202);
+    const spool = await fs.readdir(path.join(env.state, 'spool', 'cards')); const card = JSON.parse(await fs.readFile(path.join(env.state, 'spool', 'cards', spool[0]), 'utf8'));
+    assert.equal(await fs.readFile(card.path, 'utf8'), 'image'); assert.notEqual(card.path, png);
+    let release, entered; const gate = new Promise(r => { release = r; }); const started = new Promise(r => { entered = r; });
+    env.instance.options.beforeImageLock = async () => { entered(); await gate; };
+    const late = api(env, 'POST', '/v1/agent/cards', { kind: 'image', path: png, title: 'late' }, headers); await started;
+    assert.equal((await api(env, 'POST', '/v1/archive', { thread_id: 't' }, hubHeader)).body.uploads_removed, true); release(); assert.equal((await late).status, 409);
+    await assert.rejects(fs.stat(path.join(env.state, 'uploads', 't')), { code: 'ENOENT' });
+  } finally { await env.close(); }
+});
+
+test('archive cancels a paused upload before acquiring the lock', async () => {
+  const env = await service(await temp()); try {
+    await start(env); let began; const started = new Promise(r => { began = r; });
+    const upload = new Promise(resolve => {
+      const req = http.request(`${env.base}/v1/uploads?thread_id=t&name=slow`, { method: 'POST', headers: hubHeader }, res => { res.resume(); res.on('end', () => resolve(res.statusCode)); });
+      req.on('error', () => resolve('dropped')); req.write('partial');
+      const poll = setInterval(() => { if (env.instance.uploadRequests.get('t')?.size) { clearInterval(poll); began(); } }, 5);
+    });
+    await started; const at = Date.now(); const result = await api(env, 'POST', '/v1/archive', { thread_id: 't' }, hubHeader);
+    assert.ok(Date.now() - at < 5000); assert.equal(result.body.uploads_removed, true); assert.ok([409, 'dropped'].includes(await upload));
+    await assert.rejects(fs.stat(path.join(env.state, 'uploads', 't')), { code: 'ENOENT' });
+  } finally { await env.close(); }
+});
+
+
+test('a retained non-rebase session cannot post an image after archive', async () => {
+  const root = await temp(); const env = await service(root); try {
+    const session = await start(env); const record = env.instance.sessions[session.name];
+    record.created_worktree = true; env.instance.mergeInProgress = () => false; env.instance.rebaseInProgress = () => false;
+    // Force a non-rebase retention without relying on a real checkout.
+    env.instance.archiveCommit = () => ({ ok: false, reason: 'cannot commit' });
+    env.instance.mergeInProgress = () => true;
+    const image = path.join(root, 'image.png'); await write(image, 'image');
+    const result = await api(env, 'POST', '/v1/archive', { thread_id: 't' }, hubHeader);
+    assert.equal(result.body.kept[0].reason, 'cannot commit'); assert.equal(result.body.uploads_removed, true);
+    assert.equal((await api(env, 'POST', '/v1/agent/cards', { kind: 'image', path: image, title: 'x' }, { 'x-wheelchair-session-token': 'alpha' })).status, 409);
+    assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 0);
   } finally { await env.close(); }
 });

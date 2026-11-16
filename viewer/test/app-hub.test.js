@@ -167,6 +167,21 @@ test('records a press and lets a lead resolve an open question only in its threa
     assert.equal(pressedCard.answered_action, 'picked');
     assert.equal(pressedCard.answered_value, 'A');
 
+    const typedQuestion = await card(context, made.id, lead.name, question);
+    const typedUrl = `/threads/${made.id}/cards/${typedQuestion.body.id}/press`;
+    assert.equal((await api(context, typedUrl, { method: 'POST', body: { action: 'answered', value: '   ' } })).status, 400);
+    const typed = await api(context, typedUrl, { method: 'POST', body: { action: 'answered', value: ' B, but only on Linux ' } });
+    assert.equal(typed.status, 202);
+    assert.equal(typed.body.text, 'answered: B, but only on Linux');
+    const typedCard = (await api(context, `/threads/${made.id}/chat`)).body.cards.find((item) => item.id === typedQuestion.body.id);
+    assert.equal(typedCard.answered_action, 'answered');
+    assert.equal(typedCard.answered_value, 'B, but only on Linux');
+    assert.equal((await api(context, typedUrl, { method: 'POST', body: { action: 'answered', value: 'Again' } })).status, 422);
+    const idea = await card(context, made.id, lead.name, { kind: 'idea', bullets: [{ id: 'one', text: 'First.' }] });
+    assert.equal((await api(context, `/threads/${made.id}/cards/${idea.body.id}/press`, {
+      method: 'POST', body: { action: 'answered', value: 'Text' },
+    })).status, 400);
+
     const openQuestion = await card(context, made.id, lead.name, question);
     const resolved = await card(context, made.id, lead.name, {
       kind: 'resolve', card: openQuestion.body.id, note: 'Collin chose A in chat.',
@@ -284,6 +299,20 @@ test('holds a queued message until both readiness and a turn end', async () => {
     assert.deepEqual(context.machine.sessions.get(made.sessions[0].name).submits, [
       'Hello from Collin.',
     ]);
+  });
+});
+
+test('stamps when Collin last wrote in a thread, and only for his messages', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    // Read through the same list route the Threads page polls.
+    const stampOf = async () => (await api(context, '/threads')).body.threads.find((t) => t.id === made.id).collin_at;
+    const before = await stampOf();
+    await api(context, `/threads/${made.id}/messages`, { method: 'POST', body: { text: 'Sort me up.' } });
+    const stamped = await stampOf();
+    assert.ok(stamped && stamped !== before);
+    await event(context, made.id, made.sessions[0].name, 'turn-ended');
+    assert.equal(await stampOf(), stamped);
   });
 });
 
@@ -420,6 +449,7 @@ test('starts a replacement lead after the old lead ends', async () => {
     assert.equal(started.worktree, `/tmp/${oldLead.name}`);
     assert.equal(started.branch, `wc/${made.id}`);
     const after = await hub.thread(made.id);
+    assert.equal(after.lead_name, made.lead_name);
     assert.ok(after.cards.filter((item) => item.title === 'Sessions ended').every((item) => item.answered));
     // The queued message moves once; the old lead keeps no copy.
     const lead = after.sessions.find((item) => item.name === restarted.body.name);
@@ -488,7 +518,10 @@ test('creates an unstarted stub and opens it after a role turn ends', async () =
       depends_on_parent: false,
     });
     const stubId = result.body.thread_id;
+    const before = (await api(context, '/threads')).body.threads.find((item) => item.id === stubId);
+    assert.equal(before.lead_name, undefined);
     const opened = await api(context, `/threads/${stubId}/open`, { method: 'POST', body: {} });
+    assert.ok(opened.body.lead_name);
     const stubLead = opened.body.sessions[0];
     assert.equal(context.machine.sessions.get(stubLead.name).submits, undefined);
     await event(context, stubId, stubLead.name, 'turn-ended');
@@ -1240,6 +1273,8 @@ test('runs Codex preflight before a lead start and records its failure as a need
     assert.equal(result.status, 409);
     const [stored] = await (new Hub({ stateDir: context.state })).allThreads();
     assert.equal(stored.cards.at(-1).title, 'Codex preflight failed');
+    assert.equal(stored.lead_name, undefined);
+    assert.equal(stored.sessions.length, 0);
     assert.ok(context.machine.calls.some((call) => call.path === '/v1/preflight'));
   });
 });
@@ -1470,6 +1505,8 @@ test('worker replacement reuses a dead worker worktree and branch only', async (
     const old = stored.sessions.find((session) => session.name === worker.name);
     Object.assign(old, { live: false, worktree: '/tmp/reused-worker', branch: 'wc/reused-worker' });
     await fs.writeFile(file, JSON.stringify(stored));
+    // Its tmux session is gone too: a replacement is refused while that still runs.
+    context.machine.sessions.get(worker.name).running = false;
     const replacement = await machinePost(context, '/machine/session', {
       calling_session: sublead.name, action: 'start', role: 'worker', cli: 'codex', attempt_id: 'replacement', replaces: worker.name,
     });
@@ -1686,4 +1723,127 @@ test('restarting a failed lead answers its turn-failed card', async () => {
     assert.equal((await api(context, `/threads/${made.id}/restart`, { method: 'POST', body: {} })).status, 201);
     assert.ok((await hub.thread(made.id)).cards.some(card => card.title === "The lead's turn failed" && card.answered));
   });
+});
+
+test('concurrent threads get distinct persisted names and session model', async () => {
+  await withContext(async (context) => {
+    const made = await Promise.all([thread(context), thread(context)]);
+    assert.equal(new Set(made.map((t) => t.lead_name)).size, 2);
+    for (const t of made) {
+      const stored = (await api(context, '/threads')).body.threads.find((item) => item.id === t.id);
+      assert.equal(stored.lead_name, t.lead_name);
+      assert.ok(stored.sessions[0].model);
+      assert.ok(Object.hasOwn(stored.sessions[0], 'effort'));
+    }
+  });
+});
+
+test('hub startup backfills existing unnamed leads oldest first', async () => {
+  await withContext(async (context) => {
+    const first = await thread(context);
+    const second = await thread(context);
+    for (const [i, made] of [first, second].entries()) {
+      const file = path.join(context.state, 'threads', `${made.id}.json`);
+      const value = JSON.parse(await fs.readFile(file, 'utf8'));
+      delete value.lead_name; value.created_at = `2020-01-0${i + 1}T00:00:00Z`;
+      await fs.writeFile(file, JSON.stringify(value));
+    }
+    const hub = new Hub({ stateDir: context.state });
+    await hub.init();
+    assert.equal((await hub.thread(first.id)).lead_name, 'Alpha');
+    assert.equal((await hub.thread(second.id)).lead_name, 'Beta');
+  });
+});
+
+test('diagram formats and lead-only image cards validate and persist', async () => {
+  const diagram = { plan: 'demo', graph: 'flow', title: 'Flow' };
+  for (const format of [undefined, 'graph', 'form', 'html']) assert.equal(validate('diagram', { ...diagram, format }, 'lead').ok, true);
+  assert.equal(validate('diagram', { ...diagram, format: 'other' }, 'lead').ok, false);
+  for (const value of [{ path: '/tmp/a.png' }, { title: 'Image' }]) assert.equal(validate('image', value, 'lead').ok, false);
+  for (const imagePath of ['shot.png', './shot.png']) assert.equal(validate('image', { kind: 'image', path: imagePath, title: 'x' }, 'lead').ok, false);
+  assert.equal(validate('image', { kind: 'image', path: '/tmp/shot.png', title: 'x' }, 'lead').ok, true);
+  assert.equal(validate('image', { path: '/tmp/a.png', title: 'Image' }, 'worker').ok, false);
+  await withContext(async (context) => {
+    const made = await thread(context); const graphs = [];
+    const hub = new Hub({ stateDir: context.state, registerPlan: async () => {}, registerGraph: async (graph) => graphs.push(graph) });
+    await hub.init();
+    for (const format of ['form', 'html']) await hub.acceptCard({ thread_id: made.id, session: made.sessions[0].name, kind: 'diagram', ...diagram, format });
+    assert.deepEqual(graphs, []);
+    await hub.acceptCard({ thread_id: made.id, session: made.sessions[0].name, kind: 'image', path: '/uploads/1-a.png', title: 'Image' });
+    const saved = await hub.thread(made.id);
+    assert.equal(saved.cards.find((item) => item.kind === 'image').file, '1-a.png');
+    assert.deepEqual(saved.cards.filter((item) => item.kind === 'diagram').map((item) => item.format), ['form', 'html']);
+  });
+});
+
+test('uploads and files stream through the hub and enforce admission', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context); const base = `${context.server.url}/api/threads/${made.id}`;
+    const headers = { 'x-graph-token': context.server.token, origin: new URL(base).origin, 'content-type': 'image/png' };
+    const uploaded = await fetch(`${base}/uploads?name=a.png`, { method: 'POST', headers, body: Buffer.from('picture') });
+    assert.equal(uploaded.status, 201); assert.equal((await uploaded.json()).path, `/fake/uploads/${made.id}/1-a.png`);
+    const file = await fetch(`${base}/files/1-a.png?token=${context.server.token}`);
+    assert.equal(file.status, 200); assert.equal(file.headers.get('content-type'), 'image/png'); assert.equal(file.headers.get('x-content-type-options'), 'nosniff'); assert.equal(await file.text(), 'picture');
+    assert.equal((await api(context, `/threads/${made.id}/files/bad`)).status, 400);
+    const http = require('node:http');
+    const raw = (extra) => new Promise((resolve, reject) => {
+      const req = http.request(`${base}/uploads?name=a`, { method: 'POST', headers: { ...headers, ...extra } }, (res) => { res.resume(); res.on('end', () => resolve(res.statusCode)); });
+      req.on('error', reject); req.end();
+    });
+    assert.equal(await raw({ 'transfer-encoding': 'chunked' }), 413);
+    assert.equal(await raw({ 'content-length': String(25 * 1024 * 1024 + 1) }), 413);
+    const hub = new Hub({ stateDir: context.state }); const saved = await hub.thread(made.id); saved.sessions[0].live = false; await hub.save(saved);
+    assert.equal((await fetch(`${base}/uploads?name=a`, { method: 'POST', headers, body: 'x' })).status, 409);
+    saved.archived = true; saved.sessions[0].live = true; await hub.save(saved);
+    assert.equal((await fetch(`${base}/uploads?name=a`, { method: 'POST', headers, body: 'x' })).status, 409);
+  });
+});
+
+test('a machine reset during an upload returns 409', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    context.machine.resetUpload = true;
+    const base = `${context.server.url}/api/threads/${made.id}/uploads?name=a`;
+    const http = require('node:http');
+    const result = await new Promise((resolve, reject) => {
+      const req = http.request(base, { method: 'POST', headers: {
+        'x-graph-token': context.server.token, origin: new URL(base).origin, 'content-length': '100',
+      } }, (res) => {
+        let body = '';
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(body) }));
+      });
+      req.on('error', reject);
+      req.write('partial');
+    });
+    assert.deepEqual(result, { status: 409, body: { error: 'upload cancelled by the machine' } });
+  });
+});
+
+test('archive keeps thread open on upload removal failure and archives after success', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context); context.machine.uploadsRemoved = false;
+    await api(context, `/threads/${made.id}/archive`, { method: 'POST', body: {} });
+    const hub = new Hub({ stateDir: context.state }); const saved = await hub.thread(made.id);
+    assert.equal(saved.archived, false);
+    const need = saved.cards.find((item) => item.title === 'Uploads could not be removed');
+    assert.equal(need.system, true); assert.match(need.body, new RegExp(made.id)); assert.match(need.body, /permission denied/);
+    context.machine.uploadsRemoved = true;
+    await api(context, `/threads/${made.id}/archive`, { method: 'POST', body: {} });
+    assert.equal((await hub.thread(made.id)).archived, true);
+  });
+});
+
+test('archived HTML route sends the static sandbox headers', async () => {
+  const routes = require('../app/routes.js'); const threads = require('../app/threads.js');
+  const original = threads.archivedHtml;
+  threads.archivedHtml = async (_hub, id, file) => { assert.equal(id, '123'); assert.equal(file, 'picture.html'); return '<p>Archived</p>'; };
+  try {
+    const response = { writeHead(status, headers) { this.status = status; this.headers = headers; }, end(body) { this.body = body; } };
+    await routes.handle({}, { method: 'GET' }, response, new URL('http://local/wheelchair/api/threads/123/diagram-html?file=picture.html'), false);
+    assert.equal(response.status, 200); assert.equal(response.body, '<p>Archived</p>');
+    assert.equal(response.headers['content-type'], 'text/html; charset=utf-8');
+    assert.equal(response.headers['x-content-type-options'], 'nosniff');
+    assert.equal(response.headers['content-security-policy'], "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; sandbox");
+  } finally { threads.archivedHtml = original; }
 });

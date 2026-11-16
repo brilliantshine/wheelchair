@@ -5,6 +5,7 @@
 const fs = require('node:fs');
 const http = require('node:http');
 const https = require('node:https');
+const path = require('node:path');
 
 const shown = new Set([
   'offer',
@@ -15,6 +16,7 @@ const shown = new Set([
   'needs',
   'done',
   'diagram',
+  'image',
   'stub',
 ]);
 
@@ -27,6 +29,7 @@ const roles = {
   needs: ['lead'],
   done: ['lead'],
   diagram: ['lead'],
+  image: ['lead'],
   stub: ['lead'],
   title: ['lead'],
   resolve: ['lead'],
@@ -93,7 +96,8 @@ const fields = {
     pr_url: text,
     note: (value) => value === undefined || text(value),
   },
-  diagram: { plan: text, graph: text, title: text },
+  diagram: { plan: text, graph: text, title: text, format: (value) => value === undefined || ['graph', 'form', 'html'].includes(value) },
+  image: { path: (value) => text(value) && path.isAbsolute(value), title: text },
   stub: {
     title: text,
     summary: text,

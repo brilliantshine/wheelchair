@@ -98,6 +98,11 @@ label { display: block; font-size: 12px; color: var(--dim); margin-bottom: 4px; 
 .dotmark.amber { background: var(--warn); }
 .dotmark.blue { background: var(--accent); }
 .dotmark.green { background: var(--good); }
+/* A thread whose lead is mid-turn: the dot pulses. */
+.dotmark.working { animation: dot-pulse 1.4s ease-in-out infinite; }
+.dotmark.working:not(.amber):not(.green) { background: var(--accent); }
+@keyframes dot-pulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent); } 70% { box-shadow: 0 0 0 5px transparent; } }
+@media (prefers-reduced-motion: reduce) { .dotmark.working { animation: none; } }
 
 /* ---- the Threads shell: thread list | main | side, used by the Threads and thread pages ---- */
 .shell { display: grid; grid-template-columns: minmax(220px, 280px) minmax(0, 1fr) minmax(250px, 320px);
@@ -119,11 +124,16 @@ ul#list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction
 ul#list li.group-label { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
   color: var(--dim); padding: 14px 10px 6px; overflow-wrap: anywhere; }
 ul#list li.group-label:first-child { padding-top: 6px; }
-ul#list li.row { border-radius: 8px; }
-ul#list li.row a.row-link { display: flex; flex-direction: column; gap: 3px; padding: 10px; border-radius: 8px;
-  color: var(--ink-2); text-decoration: none; }
-ul#list li.row a.row-link:hover { background: var(--panel); }
-ul#list li.row.current a.row-link, ul#list li.row.current a.row-link:hover { background: var(--panel-2); color: var(--ink); }
+ul#list li.row { position: relative; display: flex; flex-direction: column; gap: 3px; padding: 10px;
+  border-radius: 8px; color: var(--ink-2); }
+ul#list li.row:hover { background: var(--panel); }
+ul#list li.row.current, ul#list li.row.current:hover { background: var(--panel-2); color: var(--ink); }
+ul#list li.row a.row-link { color: inherit; text-decoration: none; }
+ul#list li.row a.row-link::after { content: ''; position: absolute; inset: 0; border-radius: 8px; }
+.lead-chip { display: inline-block; max-width: 100%; padding: 1px 6px; border: 1px solid var(--line);
+  border-radius: 999px; color: var(--accent); font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
+a.lead-chip { position: relative; z-index: 1; text-decoration: none; }
+a.lead-chip:hover { text-decoration: underline; }
 ul#list li.row.current .title { font-weight: 600; }
 .row .top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 /* A real basis, so the badges wrap under a title that would drop below it rather than

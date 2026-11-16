@@ -8,6 +8,7 @@
 .thread-head .back { display: none; min-width: 36px; min-height: 36px; align-items: center; justify-content: center;
   font-size: 24px; line-height: 1; color: var(--ink-2); text-decoration: none; }
 .thread-head .title-block { flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.thread-title-line { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; }
 .thread-head h1 { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
 .thread-head .meta { font-family: var(--mono); font-size: 11px; color: var(--dim); overflow-wrap: anywhere; }
 .head-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
@@ -127,6 +128,10 @@ html:has(.shell.on-thread) { scroll-padding-top: calc(var(--nav-h) + var(--head-
 .card-needs.is-answered { opacity: 0.6; border-color: var(--line); }
 .card-question.is-resolved { opacity: 0.6; }
 .doc-link { display: inline-block; margin-top: 8px; font-size: 13px; }
+.own-words { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; margin-top: 10px; }
+.own-words textarea { width: 100%; min-width: 0; box-sizing: border-box; resize: vertical; font: inherit; font-size: 14px;
+  color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+.own-words textarea:focus { outline: none; border-color: var(--accent-line); }
 .opt.picked { border-color: var(--good-line); background: var(--good-soft); }
 button.picked { border-color: var(--good-line); }
 .card-needs.is-answered .eyebrow { color: var(--dim); }
@@ -253,4 +258,44 @@ body.aside-open .col-side { padding: 0; }
   body.aside-open .shell.on-thread .col-side { display: block; position: fixed; inset: 0; z-index: 50; height: 100dvh; overflow: auto; background: var(--bg); padding: 0; }
   #aside-panel:not([hidden]) { min-height: 100dvh; }
   .aside-back { display: inline-flex; }
+}
+
+/* ---- the lead is mid-turn: three dots under the chat ---- */
+.working { display: flex; gap: 5px; padding: 6px 2px 2px; }
+.working[hidden] { display: none; }
+.working span { width: 6px; height: 6px; border-radius: 50%; background: var(--dim); animation: working-bounce 1.2s ease-in-out infinite; }
+.working span:nth-child(2) { animation-delay: .15s; }
+.working span:nth-child(3) { animation-delay: .3s; }
+@keyframes working-bounce { 0%, 60%, 100% { transform: translateY(0); opacity: .4; } 30% { transform: translateY(-4px); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .working span { animation: none; opacity: .7; } }
+
+/* Diagram forms and attachments */
+.card-diagram { container-type: inline-size; min-width: 0; }
+.diagram-form, .form-content { overflow-wrap: anywhere; min-width: 0; }
+.diagram-form { padding: 16px; }
+.form-content > .form-detail, .form-content > strong { display: block; margin: 12px 16px; }
+.form-explanation { margin-bottom: 14px !important; color: var(--ink-2); }
+.form-body { display: grid; gap: 10px; }
+.form-timeline { gap: 0; padding-left: 10px; }
+.form-event { border-left: 2px solid var(--accent-line); padding: 0 0 16px 18px; position: relative; }
+.form-event::before { content: ''; position: absolute; left: -6px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
+.form-when, .form-detail { color: var(--dim); font-size: 12px; }
+.form-layer, .form-column { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; min-width: 0; }
+.form-before-after, .form-side-by-side { display: flex; align-items: stretch; }
+.form-column { flex: 1 1 0; }
+.form-arrow { display: none; }
+img.card-image { display: block; max-width: 100%; height: auto; margin-top: 10px; }
+.attachments { display: flex; flex-wrap: wrap; gap: 6px; }
+.attachments:not(:empty) { margin-bottom: 8px; }
+.attachment-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 3px 8px; border: 1px solid var(--line); border-radius: 8px; font-size: 12px; overflow-wrap: anywhere; }
+.attachment-remove { padding: 0; min-height: 24px; border: 0; background: transparent; font-size: 18px; }
+#composer .send-row { grid-template-columns: 1fr auto auto; grid-template-areas: 'ta ta ta' 'hint attach btn'; }
+#composer #attach { grid-area: attach; width: 36px; height: 36px; min-height: 36px; padding: 0; }
+@container (max-width: 599px) {
+  .form-before-after, .form-side-by-side { flex-direction: column; }
+  .form-arrow { display: block; text-align: center; color: var(--dim); }
+}
+@media (max-width: 899px) {
+  #composer .send-row { grid-template-columns: 1fr auto auto; grid-template-areas: 'ta attach btn'; }
+  #composer #attach { width: 44px; height: 44px; min-height: 44px; }
 }

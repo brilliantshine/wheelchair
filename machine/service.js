@@ -17,6 +17,7 @@ const fsp = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync, spawn } = require('node:child_process');
+const { pipeline } = require('node:stream/promises');
 const adapters = require('./adapters');
 const { limitedUntil } = require('./lib/limits');
 const { AsideTurns } = require('./lib/aside-turns');
@@ -25,6 +26,16 @@ const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_STATE = path.join(os.homedir(), '.local', 'state', 'wheelchair');
 const HUB_HEADER = 'x-wheelchair-machine-secret';
 const TOKEN_HEADER = 'x-wheelchair-session-token';
+const UPLOAD_LIMIT = 25 * 1024 * 1024;
+const IMAGE_TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
+function threadName(id) { if (typeof id !== 'string' || !/^[A-Za-z0-9._-]+$/.test(id) || id.includes('..')) die('invalid thread id'); return id; }
+function uploadName(name) {
+  const clean = String(name || '').replace(/[^A-Za-z0-9._-]/g, '-').replace(/^\.+/, '');
+  const match = /^(.*)(\.[^.]{1,10})$/.exec(clean);
+  const ext = match ? match[2] : '';
+  const stem = (match ? match[1] : clean).slice(0, 100 - ext.length) || 'file';
+  return stem + ext;
+}
 
 // A refusal of the request itself: 400, so the hub and agents report it rather than retry.
 function die(message) { throw Object.assign(new Error(message), { status: 400 }); }
@@ -136,6 +147,7 @@ class MachineService {
     this.config = {};
     this.asideTurns = new AsideTurns(this.stateDir, atomicWrite, accountDir);
     this.sessions = {};
+    this.startingWorktrees = new Set();
     this.logins = {};
     this.server = null;
     this.retryWindow = Number(process.env.WHEELCHAIR_RETRY_WINDOW_MS || 90_000);
@@ -146,9 +158,92 @@ class MachineService {
     // the JavaScript this service is executing.
     this.version = command('git', ['-C', ROOT, 'rev-parse', 'HEAD']).stdout.trim();
     this.drains = new Map();
+    this.threadLocks = new Map();
+    this.closingThreads = new Map();
+    this.uploadRequests = new Map();
     this.options = options;
   }
 
+  async withThreadLock(id, fn) {
+    const previous = this.threadLocks.get(id) || Promise.resolve();
+    let release;
+    const current = new Promise(resolve => { release = resolve; });
+    this.threadLocks.set(id, current);
+    await previous;
+    try { return await fn(); } finally {
+      release();
+      if (this.threadLocks.get(id) === current) this.threadLocks.delete(id);
+    }
+  }
+  async reserveUpload(id, name) {
+    const dir = path.join(this.stateDir, 'uploads', threadName(id));
+    await mkdir(dir);
+    const entries = await fsp.readdir(dir);
+    let n = entries.reduce((max, entry) => Math.max(max, Number(/^(\d+)-/.exec(entry)?.[1] || 0)), 0) + 1;
+    for (;;) {
+      const target = path.join(dir, `${n}-${uploadName(name)}`);
+      try {
+        // Reserve both the final name and its temporary name against existing files.
+        const file = await fsp.open(`${target}.part`, 'wx', 0o600);
+        try { await fsp.access(target); await file.close(); await fsp.unlink(`${target}.part`); n++; continue; }
+        catch (error) { if (error.code !== 'ENOENT') { await file.close(); await fsp.unlink(`${target}.part`); throw error; } }
+        return { target, file };
+      } catch (error) { if (error.code !== 'EEXIST') throw error; n++; }
+    }
+  }
+  async upload(id, name, request) {
+    threadName(id);
+    const requests = this.uploadRequests.get(id) || new Set();
+    this.uploadRequests.set(id, requests);
+    requests.add(request);
+    try {
+      return await this.withThreadLock(id, async () => {
+        if (this.closingThreads.has(id) || !Object.values(this.sessions).some(s => s.thread_id === id && s.role === 'lead' && !s.archived_pending && s.status !== 'stopped')) throw Object.assign(new Error('thread is not writable'), { status: 409 });
+        const { target, file } = await this.reserveUpload(id, name);
+        try {
+          let size = 0;
+          for await (const chunk of request.iterator({ destroyOnReturn: false })) {
+            if (this.closingThreads.has(id)) throw Object.assign(new Error('thread is closing'), { status: 409 });
+            size += chunk.length;
+            if (size > UPLOAD_LIMIT) { request.pause(); throw Object.assign(new Error('file exceeds 25 MB'), { status: 413 }); }
+            await file.writeFile(chunk);
+          }
+          if (this.closingThreads.has(id)) throw Object.assign(new Error('thread is closing'), { status: 409 });
+          await file.close();
+          await fsp.rename(`${target}.part`, target);
+          return target;
+        } catch (error) {
+          await file.close().catch(() => {});
+          await fsp.unlink(`${target}.part`).catch(() => {});
+          if (this.closingThreads.has(id)) throw Object.assign(new Error('thread is closing'), { status: 409 });
+          throw error;
+        }
+      });
+    } finally {
+      requests.delete(request);
+      if (!requests.size) this.uploadRequests.delete(id);
+    }
+  }
+  async copyImage(agent, input) {
+    if (this.options.beforeImageLock) await this.options.beforeImageLock();
+    return this.withThreadLock(agent.thread_id, async () => {
+      const current = this.sessions[agent.name];
+      if (!current || current.archived_pending || current.status === 'stopped') throw Object.assign(new Error('session is not writable'), { status: 409 });
+      if (typeof input.path !== 'string' || !path.isAbsolute(input.path)) throw Object.assign(new Error('image path must be absolute'), { status: 422 });
+      const ext = path.extname(typeof input.path === 'string' ? input.path : '').toLowerCase();
+      if (!IMAGE_TYPES[ext]) throw Object.assign(new Error('unsupported image extension'), { status: 422 });
+      let stat;
+      try { stat = await fsp.stat(input.path); } catch { throw Object.assign(new Error('image does not exist'), { status: 422 }); }
+      if (!stat.isFile()) throw Object.assign(new Error('image is not a regular file'), { status: 422 });
+      if (stat.size > UPLOAD_LIMIT) throw Object.assign(new Error('image exceeds 25 MB'), { status: 422 });
+      const { target, file } = await this.reserveUpload(agent.thread_id, path.basename(input.path));
+      try {
+        await pipeline(fs.createReadStream(input.path), file.createWriteStream());
+      } catch (error) { await file.close().catch(() => {}); await fsp.unlink(`${target}.part`).catch(() => {}); throw error; }
+      await fsp.rename(`${target}.part`, target);
+      return { ...input, path: target };
+    });
+  }
   async init() {
     await mkdir(this.stateDir);
     this.config = await readJson(this.configPath, {});
@@ -169,15 +264,20 @@ class MachineService {
     this.trustTimer = setInterval(() => this.pollTrust().catch(error => this.log(error)), 500);
     this.trustTimer.unref();
   }
+  // The names of the running tmux sessions, or null when tmux could not be asked. "No server" is
+  // a real empty answer; any other failure is unknown, and must not read as "every session ended".
   liveTmux() {
     const ls = this.tmux(['list-sessions', '-F', '#S']);
-    return new Set(ls.ok ? ls.stdout.trim().split('\n').filter(Boolean) : []);
+    if (ls.ok) return new Set(ls.stdout.trim().split('\n').filter(Boolean));
+    if (/no server running|error connecting to .*\(No such file or directory\)/.test(ls.stderr)) return new Set();
+    this.log(`tmux list-sessions failed: ${ls.stderr.trim() || `exit ${ls.status}`}`);
+    return null;
   }
   // Spec "Machine service on the hub": a live wc-* tmux session missing from sessions.json (a lost or
   // stale file) is adopted again, so it can still be read, typed into and stopped.  It has no token.
   async recoverFromTmux() {
     let changed = false;
-    for (const name of this.liveTmux()) {
+    for (const name of this.liveTmux() || []) {
       if (!name.startsWith('wc-') || name.startsWith('wc-login-') || this.sessions[name]) continue;
       const parsed = /^wc-(.+?)-(sub-lead|lead|worker|reviewer|verifier|[a-z]+)(?:-\d+)?$/.exec(name);
       if (!parsed) continue;
@@ -229,6 +329,23 @@ class MachineService {
     let n = 1; let candidate = base;
     while (this.sessions[candidate]) candidate = `${base}-${++n}`;
     return candidate;
+  }
+  // A replacement worker reuses a dead worker's worktree. It must be alone there: the hub's record
+  // of who is dead can be wrong or missing (a queued start, a lost response), so this service, which
+  // sees every session, has the final say. A worker still in tmux, or tmux unknown, refuses.
+  refuseSharedWorktree(worktree, sessionName) {
+    // A worker recorded as stopped still counts: a failed kill-session records stopped too, so only
+    // tmux can say it is gone.
+    const others = Object.values(this.sessions).filter(other => other.role === 'worker' && other.name !== sessionName
+      && other.worktree && path.resolve(other.worktree) === worktree);
+    const conflict = (this.startingWorktrees.has(worktree) && 'another start') || (() => {
+      if (!others.length) return null;
+      const live = this.liveTmux();
+      if (!live) return 'tmux could not be checked';
+      return others.find(other => live.has(other.name))?.name || null;
+    })();
+    if (conflict) throw Object.assign(new Error(`worker worktree is in use (${conflict}): ${worktree}`), { status: 409 });
+    this.startingWorktrees.add(worktree); // released by start() once this session is recorded or failed
   }
   async createWorktree(input, sessionName) {
     if (input.worktree) {
@@ -299,7 +416,14 @@ class MachineService {
     if (dir) adapter.seed(dir, account.id);
     const options = startOptions(input);
     const createdWorktree = !input.worktree;
-    const created = await this.createWorktree(input, name);
+    const reserved = input.role === 'worker' && input.worktree ? path.resolve(input.worktree) : null;
+    if (reserved) this.refuseSharedWorktree(reserved, name);
+    try {
+      const created = await this.createWorktree(input, name);
+      return await this.startIn(input, name, adapter, account, dir, options, createdWorktree, created);
+    } finally { if (reserved) this.startingWorktrees.delete(reserved); }
+  }
+  async startIn(input, name, adapter, account, dir, options, createdWorktree, created) {
     const worktree = created.worktree;
     const session = { name, role: input.role, cli: input.cli, account: account.id, account_dir: dir, permission_mode: options.permission_mode, codex_mode: options.codex_mode, effort: options.effort, thread_id: input.thread_id, token: input.token,
       worktree, created_worktree: createdWorktree, attempt_id: input.attempt_id || null, started_by: input.started_by || null,
@@ -432,7 +556,10 @@ class MachineService {
   }
   async archive(threadId) {
     if (typeof threadId !== 'string' || !threadId) throw Object.assign(new Error('thread_id required'), { status: 400 });
-    safeName(threadId, 'thread id');
+    threadName(threadId);
+    this.closingThreads.set(threadId, (this.closingThreads.get(threadId) || 0) + 1);
+    for (const request of this.uploadRequests.get(threadId) || []) request.destroy();
+    try { return await this.withThreadLock(threadId, async () => {
     const sessions = Object.values(this.sessions).filter(session => !session.name.startsWith('wc-login-') && session.thread_id === threadId);
     const stopped = [];
     for (const session of sessions) {
@@ -486,7 +613,16 @@ class MachineService {
       }
     }
     await this.persistSessions();
-    return { stopped, committed, removed, kept };
+    let uploads_removed = null; let uploads_error;
+    if (!kept.some(item => item.reason === 'rebase in progress')) {
+      try { await fsp.rm(path.join(this.stateDir, 'uploads', threadId), { recursive: true, force: true }); uploads_removed = true; }
+      catch (error) { uploads_removed = false; uploads_error = error.message; }
+    }
+    return { stopped, committed, removed, kept, uploads_removed, ...(uploads_error ? { uploads_error } : {}) };
+    }); } finally {
+      const remaining = this.closingThreads.get(threadId) - 1;
+      if (remaining) this.closingThreads.set(threadId, remaining); else this.closingThreads.delete(threadId);
+    }
   }
   async copyTranscript(session, source) {
     if (!source) return { offset: 0, lines: [] };
@@ -626,7 +762,9 @@ class MachineService {
     const worker = this.sessions[workerName];
     if (!worker || worker.role !== 'worker' || worker.thread_id !== caller.thread_id) die('args[0] must name a worker session of this thread');
     if (!worker.created_worktree || worker.worktree_removed) die('worker has no removable worktree');
-    if (worker.status !== 'stopped' && this.liveTmux().has(worker.name)) die('worker is still running');
+    const live = worker.status === 'stopped' ? new Set() : this.liveTmux();
+    if (!live) die('tmux could not be checked; try again');
+    if (live.has(worker.name)) die('worker is still running');
     const branch = command('git', ['-C', worker.worktree, 'rev-parse', '--abbrev-ref', 'HEAD']);
     if (!branch.ok || !branch.stdout.trim() || branch.stdout.trim() === 'HEAD') die('worker branch cannot be determined');
     if (!command('git', ['merge-base', '--is-ancestor', branch.stdout.trim(), 'HEAD'], { cwd }).ok) die('worker branch is not fully merged into yours');
@@ -681,7 +819,7 @@ class MachineService {
   loginRecord(account) {
     if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(account)) die('invalid account');
     let record = this.logins[account];
-    if (!record && this.liveTmux().has(`wc-login-${account}`)) {
+    if (!record && this.liveTmux()?.has(`wc-login-${account}`)) {
       const defaultEntry = Object.entries(adapters).find(([, adapter]) => account === `default-${adapter.provider}`);
       if (defaultEntry) record = { cli: defaultEntry[0], dir: null };
       else {
@@ -729,7 +867,7 @@ class MachineService {
   }
   status() {
     const live = this.liveTmux();
-    const others = [...live].filter(name => !name.startsWith('wc-login-') && !this.sessions[name]).map(name => ({ name, managed: false, running: true }));
+    const others = [...(live || [])].filter(name => !name.startsWith('wc-login-') && !this.sessions[name]).map(name => ({ name, managed: false, running: true }));
     const defaults = Object.fromEntries(Object.entries(adapters).map(([cli, adapter]) => [cli, adapter.loginStatus(null)]));
     const claude = this.cliStatus('claude', defaults.claude), codex = this.cliStatus('codex', defaults.codex);
     const accounts = Object.entries(adapters).map(([cli, adapter]) => ({ id: `default-${adapter.provider}`, cli, ...defaults[cli] }));
@@ -738,7 +876,7 @@ class MachineService {
     for (const folder of folders.filter(e => e.isDirectory())) {
       try { const record = JSON.parse(fs.readFileSync(path.join(root, folder.name, 'wheelchair-account.json'), 'utf8')); if (record.id !== folder.name || !adapters[record.cli] || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(record.id)) continue; accounts.push({ id: record.id, cli: record.cli, ...adapters[record.cli].loginStatus(path.join(root, folder.name)) }); } catch {}
     }
-    return { version: this.version, claude, codex, accounts, sessions: [...Object.values(this.sessions).filter(s => !s.name.startsWith('wc-login-')).map(s => ({ ...s, codex_thread_id: s.codex_thread_id || null, managed: true, running: live.has(s.name) })), ...others] };
+    return { version: this.version, claude, codex, accounts, sessions: [...Object.values(this.sessions).filter(s => !s.name.startsWith('wc-login-')).map(s => ({ ...s, codex_thread_id: s.codex_thread_id || null, managed: true, ...(live ? { running: live.has(s.name) } : {}) })), ...others] };
   }
   cliStatus(cli, login = adapters[cli].loginStatus(null)) {
     const version = command('sh', ['-c', `command -v ${cli}`]);
@@ -835,6 +973,21 @@ class MachineService {
       }
       if (request.method === 'POST' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); return send(response, 201, await this.start(await bodyOf(request))); }
       if (request.method === 'GET' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); return send(response, 200, this.status().sessions); }
+      if (request.method === 'POST' && url.pathname === '/v1/uploads') {
+        await this.authorize(request, 'hub');
+        const stored = await this.upload(url.searchParams.get('thread_id'), url.searchParams.get('name'), request);
+        return send(response, 201, { path: stored });
+      }
+      if (request.method === 'GET' && pathBits[0] === 'v1' && pathBits[1] === 'uploads' && pathBits.length === 4) {
+        await this.authorize(request, 'hub');
+        const id = threadName(decodeURIComponent(pathBits[2])); const name = decodeURIComponent(pathBits[3]);
+        if (!/^[0-9]+-[A-Za-z0-9._-]+$/.test(name)) die('invalid file name');
+        const target = path.join(this.stateDir, 'uploads', id, name);
+        let file; try { file = await fsp.open(target, 'r'); } catch (error) { if (error.code === 'ENOENT') throw Object.assign(new Error('not found'), { status: 404 }); throw error; }
+        const type = IMAGE_TYPES[path.extname(name).toLowerCase()];
+        response.writeHead(200, { 'content-type': type || 'application/octet-stream', 'x-content-type-options': 'nosniff', ...(!type ? { 'content-disposition': 'attachment' } : {}) });
+        file.createReadStream().on('error', () => response.destroy()).pipe(response); return;
+      }
       if (request.method === 'POST' && url.pathname === '/v1/archive') { await this.authorize(request, 'hub'); return send(response, 200, await this.archive((await bodyOf(request)).thread_id)); }
       if (pathBits[0] === 'v1' && pathBits[1] === 'sessions' && pathBits[2]) {
         const name = decodeURIComponent(pathBits[2]); await this.authorize(request, 'hub');
@@ -846,12 +999,14 @@ class MachineService {
       }
       if (request.method === 'POST' && url.pathname === '/v1/agent/cards') {
         const agent = await this.authorize(request, 'agent');
+        let input = await bodyOf(request);
+        if (input.kind === 'image') input = await this.copyImage(agent, input);
         // Cards keep their order: anything still spooled from a hub outage goes first.
         const waiting = (await fsp.readdir(path.join(this.stateDir, 'spool', 'cards')).catch(() => [])).filter(f => f.endsWith('.json'));
         if (waiting.length && this.config.hub_url) await this.drainSpool('cards');
         const behind = (await fsp.readdir(path.join(this.stateDir, 'spool', 'cards')).catch(() => [])).some(f => f.endsWith('.json'));
-        if (behind) { await this.spool('cards', { ...(await bodyOf(request)), session: agent.name, thread_id: agent.thread_id }); return send(response, 202, { ok: true, spooled: true }); }
-        const queued = await this.spool('cards', { ...(await bodyOf(request)), session: agent.name, thread_id: agent.thread_id });
+        if (behind) { await this.spool('cards', { ...input, session: agent.name, thread_id: agent.thread_id }); return send(response, 202, { ok: true, spooled: true }); }
+        const queued = await this.spool('cards', { ...input, session: agent.name, thread_id: agent.thread_id });
         if (!this.config.hub_url) return send(response, 202, { ok: true, spooled: true });
         try {
           const relay = await requestJson(`${this.config.hub_url.replace(/\/$/, '')}/api/machine/cards`, 'POST', { [HUB_HEADER]: await this.secret() }, queued.payload);
@@ -868,7 +1023,7 @@ class MachineService {
       if (request.method === 'POST' && url.pathname === '/v1/agent/git') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.git(agent, await bodyOf(request))); }
       if (request.method === 'POST' && url.pathname === '/v1/agent/session') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.forwardSession(agent, await bodyOf(request))); }
       throw Object.assign(new Error('not found'), { status: 404 });
-    } catch (error) { send(response, error.status || 500, { error: error.message || String(error) }); }
+    } catch (error) { if (!response.destroyed && !response.headersSent) send(response, error.status || 500, { error: error.message || String(error) }); }
   }
   async listen() {
     await this.init();

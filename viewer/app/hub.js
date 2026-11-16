@@ -35,6 +35,7 @@ class Hub {
     this.threadsDir = this.state.threadsDir;
     this.lastSeen = new Map();
     this.threadLocks = new Map();
+    this.nameQueue = Promise.resolve();
     const configuredRetry = Number(queueRetryInterval ?? process.env.WHEELCHAIR_QUEUE_RETRY_MS ?? 5_000);
     this.queueRetryInterval = Number.isFinite(configuredRetry) && configuredRetry > 0 ? configuredRetry : 5_000;
   }
@@ -44,6 +45,8 @@ class Hub {
     for (const [name, machine] of Object.entries(await this.state.machines())) {
       if (machine.last_seen) this.lastSeen.set(name, machine.last_seen);
     }
+    const existing = (await this.allThreads()).filter((t) => !t.archived && !t.lead_name && t.sessions?.some((s) => s.role === 'lead')).sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')));
+    for (const thread of existing) await this.saveWithLeadName(thread);
     this.asideTimer = setInterval(() => this.allThreads().then((threads) => Promise.all([...threads.filter(require('./asides.js').needsPump).map((t) => require('./asides.js').pump(this, t.id, { fromTimer: true })), ...threads.filter((t) => t.pending_cancels?.length).map((t) => require('./asides.js').sweepCancels(this, t.id))])).catch(() => {}), 2000);
     this.asideTimer.unref();
     this.pollTimer = setInterval(() => this.pollDead().catch(() => {}), 10_000);
@@ -86,6 +89,17 @@ class Hub {
     this.threadLocks.set(id, retained);
     return work;
   }
+  saveWithLeadName(thread) {
+    const work = this.nameQueue.catch(() => {}).then(async () => {
+      if (!thread.lead_name) {
+        const names = (await require('./settings.js').load(this)).lead_names;
+        thread.lead_name = require('./names.js').chooseName(await this.allThreads(), names);
+      }
+      await this.save(thread);
+    });
+    this.nameQueue = work.catch(() => {});
+    return work;
+  }
   allThreads() { return this.state.allThreads(); }
   async call(machine, ...args) {
     const result = await this.client.call(machine, ...args);
@@ -105,7 +119,11 @@ class Hub {
     const thread = await threads.threadBySession(this, payload.calling_session);
     return this.withThread(thread.id, () => sessions.sessionRequest(this, payload));
   }
-  pollDead() { return sessions.pollDead(this); }
+  // One poll at a time: an overlapping poll would act on a listing older than the one before it.
+  pollDead() {
+    if (!this.polling) this.polling = sessions.pollDead(this).finally(() => { this.polling = null; });
+    return this.polling;
+  }
   retryQueues() { return sessions.retryQueues(this); }
   acceptCard(payload) { return this.withThread(payload.thread_id, () => cards.acceptCard(this, payload)); }
   createThread(input) { return threads.createThread(this, input); }

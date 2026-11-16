@@ -88,9 +88,13 @@ test('placement ranks accounts and respects provider policy', async (t) => {
     for (const role of ['reviewer', 'verifier']) assert.ok((await choose(hub, { machine: 'hub' }, role, 'top', { provider: 'gpt' })).wait);
   });
   await t.test('margin skips Claude for workers but not leads', async () => {
-    const hub = await fixture({ worker_order: ['claude', 'gpt'], margin: 50 }, { 'default-claude': { week: { used: 70, resets_at: future(24) } } });
-    const selection = await choose(hub, { machine: 'hub' }, 'worker', 'top', { provider: 'claude' });
-    assert.equal(selection.provider, 'gpt'); assert.match(selection.note, /claude.*gpt/);
+    const hub = await fixture({ worker_order: ['claude', 'gpt'], margin: 50, save_claude_for_leads: false }, { 'default-claude': { week: { used: 70, resets_at: future(24) } } });
+    for (const role of ['worker', 'reviewer', 'verifier', 'mapper']) assert.equal((await choose(hub, { machine: 'hub' }, role)).provider, 'gpt');
+    await settings.update(hub, (s) => { s.held_back.reviewer = false; s.save_claude_for_leads = false; });
+    const reviewer = await choose(hub, { machine: 'hub' }, 'reviewer', 'top', { provider: 'claude' });
+    assert.equal(reviewer.provider, 'claude'); assert.equal(reviewer.note, undefined);
+    const worker = await choose(hub, { machine: 'hub' }, 'worker', 'top', { provider: 'claude' });
+    assert.equal(worker.provider, 'gpt'); assert.match(worker.note, /claude.*gpt/);
     assert.equal((await choose(hub, { machine: 'hub' }, 'lead')).provider, 'claude');
   });
 });

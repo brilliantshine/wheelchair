@@ -52,7 +52,7 @@ for (const [label, size] of SIZES) {
     test('a live thread: nav, rendered heading, a table, and Back to the thread', async ({ page }) => {
       const made = await liveThread();
       await page.goto(docUrl(made.id, 'PLAN.md'));
-      await expect(page.locator('#app-nav a', { hasText: 'Sessions' })).toBeVisible();
+      await expect(page.locator('#app-nav a', { hasText: 'Agents' })).toBeVisible();
       await expect(page.locator('#content h1')).toHaveText('Dark mode plan');
       await expect(page.locator('#content table')).toHaveCount(1);
       await expect(page.locator('#content table td', { hasText: 'Sonnet' })).toBeVisible();
@@ -83,7 +83,7 @@ for (const [label, size] of SIZES) {
       git(repo, 'branch', '-M', 'feature');
       await ctx.patch(made.id, (x) => { x.archived = true; x.branch = 'feature'; x.slug = 'dark'; x.project = repo; });
       await page.goto(docUrl(made.id, 'IDEA.md'));
-      await expect(page.locator('#app-nav a', { hasText: 'Sessions' })).toBeVisible();
+      await expect(page.locator('#app-nav a', { hasText: 'Agents' })).toBeVisible();
       await expect(page.locator('#content h1')).toHaveText('The idea');
       await page.goto(docUrl(made.id, 'PLAN.md'));
       await expect(page.locator('#content table')).toHaveCount(1);

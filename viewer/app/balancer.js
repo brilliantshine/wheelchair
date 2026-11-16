@@ -37,7 +37,7 @@ async function choose(hub, thread, role, tier, constraints = {}) {
   for (const p of order) {
     try { await exec(path.join(hub.root, 'codex', 'model.sh'), [p, slot]); } catch (e) { if (e.code === 3) continue; throw e; }
     const accounts = settings.accounts.filter((a) => a.provider === p).map((a) => ({ ...a, live_sessions: threads.reduce((n, t) => n + t.sessions.filter((s) => s.live && s.account === a.id).length, 0) }));
-    margin[p] = PROVIDERS[p].saveForLeads && !['lead', 'sub-lead'].includes(role) && usage.belowMargin(usage.forecast(accounts, readings, now), settings.margin, now);
+    margin[p] = PROVIDERS[p].saveForLeads && !['lead', 'sub-lead'].includes(role) && settings.held_back[role] === true && usage.belowMargin(usage.forecast(accounts, readings, now), settings.margin, now);
     available[p] = usage.rank(accounts, readings, machines, settings, machineName, now, last).find((a) => a.next);
   }
   const normal = (exclude) => {
