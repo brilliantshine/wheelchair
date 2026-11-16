@@ -6,6 +6,7 @@ const { appError } = require('./state.js');
 const { publicSession } = require('./sessions.js');
 const { findSlug } = require('./views.js');
 const settings = require('./settings.js');
+const diagramSensitivity = require('./diagram-sensitivity.js');
 const usage = require('./usage.js');
 const balancer = require('./balancer.js');
 const { PROVIDERS, cliOf } = require('./providers.js');
@@ -147,6 +148,10 @@ async function reservedLabel(hub, value) {
 }
 
 async function handleSettings(hub, request, response, url, bits, body) {
+  if (bits[1] === 'diagram-sensitivity' && bits.length === 2) {
+    if (request.method === 'GET') return send(response, 200, await diagramSensitivity.read(hub));
+    if (request.method === 'POST') { const result = await diagramSensitivity.write(hub, body); return send(response, result.status, result.body); }
+  }
   if (bits.length === 1 && request.method === 'GET') return send(response, 200, { ...await settings.describe(hub), reserved_provider: await reservedLabel(hub, await settings.load(hub)) });
   if (bits[1] === 'accounts') {
     if (bits.length === 2 && request.method === 'POST') {
