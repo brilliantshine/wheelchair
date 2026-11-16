@@ -4,8 +4,8 @@
 // desktop width against a real viewer server, a real git checkout for the live thread's plan and a
 // real branch for the archived thread's.
 const fs = require('node:fs/promises');
-const os = require('node:os');
 const path = require('node:path');
+const { makeTemp } = require('../../test-support/run-dir');
 const { execFileSync } = require('node:child_process');
 const { test, expect } = require('@playwright/test');
 const { startWorld, signIn } = require('./helpers/app-threads-world');
@@ -19,7 +19,7 @@ const SIZES = [
 const git = (cwd, ...args) => execFileSync('git', ['-C', cwd, ...args], { stdio: 'pipe' });
 
 async function planRepo(slug, files) {
-  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'wc-doc-'));
+  const repo = await makeTemp('wc-doc-');
   git(repo, 'init', '-q');
   const dir = path.join(repo, 'docs', 'plans', slug);
   await fs.mkdir(dir, { recursive: true });
