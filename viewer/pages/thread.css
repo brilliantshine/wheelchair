@@ -275,6 +275,12 @@ body.aside-open .col-side { padding: 0; }
 /* ---- the lead is mid-turn: three dots under the chat ---- */
 .working { display: flex; gap: 5px; padding: 6px 2px 2px; }
 .working[hidden] { display: none; }
+/* Beside the spinner: who is working. The wheelchair rocks gently side to side. */
+.working { align-items: center; gap: 8px; }
+.working-label { color: var(--dim); font-size: 13px; }
+.working .spinner { animation: wc-rock 2.4s ease-in-out infinite; }
+@keyframes wc-rock { 0%, 100% { transform: translateX(-2px); } 50% { transform: translateX(2px); } }
+@media (prefers-reduced-motion: reduce) { .working .spinner { animation: none; } }
 
 /* Diagram forms and attachments */
 .card-diagram { container-type: inline-size; min-width: 0; }
