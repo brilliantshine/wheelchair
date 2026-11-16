@@ -38,6 +38,7 @@ None.
 | D15 | IDEA.md updated with D9's outcome (graph list, full size, way back), its non-goal reworded to allow it, and the seen hook's real reach stated (terminal agents lose the wording list and gap notice). | Collin's D9 words, written into the north star; review round 1 | idea-change |
 | D16 | The dial applies to every machine the hub knows. Settings shows one selected level when every machine and file agrees; otherwise none is selected and a note lists each machine's level (or "files disagree", or "did not answer"). A save that fails on some machines keeps the ones that worked and names the rest in the error note; pressing the level again retries. Supersedes the single-machine wording of D13. | D2 means every place Collin runs agents; the hub already has a machine registry (`viewer/app/state.js:146-150`) | review-round-1 |
 | D17 | D5 amended: a seen handler or wording permission is wheelchair's only with ownership evidence (this root, a checkout holding `protocol/seen.md` or `protocol/app/lead.md`, or a path under the app's worktrees) and the exact command shape `seen/set.sh` writes. A stale entry from a deleted clone outside the worktrees stays (Accepted Risks). | Path suffix alone would delete another project's `seen/hook.sh`; `seen/set.sh:84-99` already refuses that | review-round-1 |
+| D18 | The proposed-flow drawing trigger moves from `protocol/planning.md` into `protocol/app/lead.md` (Diagrams), adapted to the `diagram` card, before `planning.md` is removed. | The dial's `ask` carve-out points at it; without it leads lose a rule they rely on (IDEA: no role loses a rule it still uses) | review-round-2 |
 
 ## Spec
 
@@ -57,7 +58,7 @@ Source files removed (`git rm`):
 
 Kept: `protocol/graphs.md`, `protocol/diagrams.md`, `protocol/sensitivity.md`,
 `sensitivity/`, `codex/model.sh`, `codex/preflight.sh`, `protocol/app/`,
-`protocol/templates/{IDEA,PLAN}.md`, the graph viewer (`viewer/index.html`, `list.html`).
+every other file in `protocol/templates/` (IDEA, PLAN, MAP, COMPLETION), the graph viewer (`viewer/index.html`, `list.html`).
 `docs/plans/`, `docs/proposals/` and `docs/maps/` are history and are not edited, except
 this plan.
 
@@ -113,6 +114,12 @@ this plan.
   wheelchair app's Settings page (Models, Diagrams)".
 - The `ask` carve-out: "a thread lead drawing a proposed flow, as
   `{{WHEELCHAIR_ROOT}}/protocol/app/lead.md` (Diagrams) has it".
+- `protocol/app/lead.md`, Diagrams, gains the proposed-flow trigger that
+  `protocol/planning.md:132-150` owns today (D18): when a lead's turn discusses a proposed
+  flow (a design, not a fact about current code), it writes or updates that flow's graph
+  under `docs/plans/<slug>/graphs/` and posts a `diagram` card; a turn choosing between two
+  arrangements writes its own graph file. This fires at every dial level, `ask`
+  included; above `ask` the dial's shape test applies as to any turn.
 - The rest of the file: "The command" section is replaced by "Moving the dial" describing
   the Settings control and that it runs `sensitivity/set.sh <level>`; the `/graph` bullet
   under "What the dial does not govern" goes. The level line, writer's contract and
@@ -141,23 +148,34 @@ Settings (Models > Diagrams) --GET /settings--> hub --GET /v1/diagram-sensitivit
 - Hub: `GET /settings` gains `diagram_sensitivity: {machines: {<machine>: {level, files} |
   {error}}}`; `POST /settings/diagram-sensitivity {level}` forwards to every configured
   machine, returns `{machines: {<machine>: {level} | {error}}}`, `200` if all succeeded,
-  `207`-style `200 {partial:true}` is not used: return `502` with the per-machine map when
-  any failed. Documented in `viewer/app/API.md`. The hub stores nothing; the machines'
+  return `502` with the per-machine map when any failed. Each machine call has a 5 s
+  timeout; a machine that times out or refuses the connection is `{error: "did not
+  answer"}`, on GET and POST alike, so one offline machine never stalls Settings. Documented in `viewer/app/API.md`. The hub stores nothing; the machines'
   files are the truth.
 - Settings page: a "Diagrams" section after "Threads" on the Models tab. Three radio
   choices with one line each: ask "Only when you ask, or a lead draws a proposed flow";
-  default "When the arrangement is the answer"; high "Whenever there is a shape". The
-  current level is selected; when files disagree, none is selected and a note says which
-  CLI holds which level. Choosing one saves at once and shows the existing section note
-  (`setNote`) "Applies from each agent's next session". An error shows the machine's reason
-  in plain words via `setNote(..., true)`.
+  default "When the arrangement is the answer"; high "Whenever there is a shape".
+  - **Selection** (D16): a level is selected only when every machine answered and every
+    machine's files agree on it. Otherwise none is selected, and a note under the choices
+    has one line per machine: "<machine>: <level>", "<machine>: its CLIs' files disagree
+    (<cli> <level>, <cli> <level>)", or "<machine>: did not answer".
+  - **Saving**: choosing a level saves at once. Success shows the section note (`setNote`)
+    "Applies from each agent's next session". On a `502` the page shows, via
+    `setNote(..., true)`, one line per failed machine with its reason; machines that
+    succeeded keep the new level; choosing the level again retries all machines. Then it
+    re-reads `GET /settings` so the selection and note show what each machine now holds.
+  - The page's `api()` helper (`viewer/pages/settings.js:58-65`) only reads `error`,
+    `detail` or `message` from a failed body: extend it to attach the parsed body to the
+    thrown error, so the per-machine map reaches the page.
 
 ### 4. Graphs in the thread (D9-D12)
 
 - The right column's "This thread's files" list keeps its pictures entry (already there,
   `viewer/pages/thread.js:198-206`), one per `diagram` card, now deduplicated by the
-  picture's resolved file (`diagramSource(card)`, so `flow.json` and `flow.html` stay
-  separate; the latest card for that file wins, and its title and card id are used), and each link goes to the picture page in the
+  picture's file: `plan` + `/` + `graph` + (`.html` for `format: html`, else `.json`), so
+  `flow.json` and `flow.html` stay separate and a graph card and a form card naming the
+  same `flow.json` count once; the latest card for that file wins, and its title, format
+  and card id are used, and each link goes to the picture page in the
   same tab (no `target=_blank`).
 - The `diagram` card keeps its inline picture. Its "Open full screen" link becomes "Open
   full size", goes to the picture page in the same tab, and is shown for all three formats
@@ -189,10 +207,16 @@ ordinary turn under the dial; lanes/planning/implementation references go),
 `CONTRIBUTING.md`, `docs/known-issues.md` (a lane issue whose code is gone is deleted;
 otherwise reworded). `install.sh`'s header comment and output lines.
 
-Check: `git grep -nE 'protocol/(planning|adopt|plan-review|implementation|verification|lanes|map|writing|seen)\.md|seen/(hook|set|wording)\.sh|wording hook|(^|[^A-Za-z0-9_./-])/(plan|adopt|plan-review|implement|verify|graph|diagram-sensitivity)([^A-Za-z0-9_/-]|$)' -- ':!docs/plans' ':!docs/proposals' ':!docs/maps'`
-(the last group matches a slash command, not a route such as `/wheelchair/graph`)
-returns only deliberate mentions in `install.sh`, `install/unseen.py`, `install/test/` and
-this list's retired-name table; each remaining hit is justified in the completion report.
+Two checks:
+
+1. File references, which must return only deliberate mentions in `install.sh`,
+   `install/unseen.py` and `install/test/`:
+   `git grep -nE 'protocol/(planning|adopt|plan-review|implementation|verification|lanes|map|writing|seen)\.md|seen/(hook|set|wording)\.sh|wording hook' -- ':!docs/plans' ':!docs/proposals' ':!docs/maps'`
+2. Slash commands in prose, which is advisory because HTTP routes such as `GET /graph`
+   share the spelling:
+   `git grep -nE '(^|[[:space:](\x60"])/(plan|adopt|plan-review|implement|verify|graph|diagram-sensitivity)([^A-Za-z0-9_/?-]|$)' -- '*.md' ':!docs/plans' ':!docs/proposals' ':!docs/maps'`
+   Each hit is either reworded or is a kept route; the completion report lists the kept
+   routes. Code and tests are not checked this way.
 
 ### 6. Routers
 
@@ -287,6 +311,14 @@ idempotence case is the in-worktree proof.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| Claude intent | major | D16 never written into §3's Settings bullet; `api()` drops the 502 map | upheld | §3 Settings bullet rewritten |
+| Claude intent | major | §5 regex still matches kept `/graph` routes in code and tests | upheld | §5 split: file-reference check gates; slash-command check is markdown-only and advisory |
+| Claude intent | minor | IDEA says "the machine", D16 says every machine | declined | The app knows one machine today (`machines.json` holds only this one), so IDEA holds as written; D16 only says what happens when worker machines are added |
+| Claude intent | minor | No timeout on per-machine calls | upheld | §3: 5 s timeout, "did not answer" |
+| Claude intent | minor | Kept list omits MAP and COMPLETION templates | upheld | §1 Kept list |
+| GPT mechanics | major | `ask` carve-out points at a lead.md trigger that does not exist; `planning.md:132-150` owns it | upheld | D18; §3 lead.md bullet |
+| GPT mechanics | major | Dedup key `diagramSource(card)` splits graph and form cards for the same `flow.json` | upheld | §4 key is plan + file name |
+| GPT mechanics | minor (RE-RAISE) | Reference regex still matches kept routes in tests | declined | Already resolved this round: §5's slash-command check is markdown-only and advisory, and kept routes are allowed by name |
 
 ## Implementation Tasks
 
