@@ -839,7 +839,7 @@
   function openSignin(account, machine) {
     closeSignin();
     const terminal = `/wheelchair/app/terminal?login=${encodeURIComponent(account.id)}&machine=${encodeURIComponent(machine)}`;
-    const status = h('p', { class: 'hint', role: 'status', text: 'Starting sign-in on ' + machine + '…' });
+    const status = h('p', { class: 'hint waiting', role: 'status' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }), document.createTextNode('Starting sign-in on ' + machine + '…'));
     const actions = h('div', { class: 'actions signin-actions' });
     const codeBox = h('div', { class: 'signin-code' });
     const paste = h('textarea', { rows: 2, 'aria-label': 'Paste the code from the sign-in page', placeholder: 'Paste the code here' });
