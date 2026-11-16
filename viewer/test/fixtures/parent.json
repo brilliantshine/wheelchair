@@ -5,8 +5,8 @@
   "source_detail": null,
   "explanation": null,
   "nodes": [
-    {"id":"child-box","label":"Child","kind":"module","origin":"proposed","was":null,"exclusive":false,"ref":null,"note":null,"graph":"child","x":0,"y":0},
-    {"id":"plain","label":"Plain","kind":"note","origin":"proposed","was":null,"exclusive":false,"ref":null,"note":null,"graph":null,"x":240,"y":0}
+    {"id":"child-box","label":"Child","kind":"module","exclusive":false,"ref":null,"note":null,"graph":"child","x":0,"y":0},
+    {"id":"plain","label":"Plain","kind":"note","exclusive":false,"ref":null,"note":null,"graph":null,"x":240,"y":0}
   ],
   "edges": []
 }

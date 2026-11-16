@@ -46,7 +46,7 @@ function assertNoOverlap(graph) {
 const GROUP_PAD = 24;
 const GROUP_HEADER = 38;
 function node(id) {
-  return { id, label: id, kind: 'note', origin: 'proposed', was: null, exclusive: false,
+  return { id, label: id, kind: 'note', exclusive: false,
     ref: null, note: null, graph: null, x: 0, y: 0 };
 }
 function visibleGroup(id, nodes) {
@@ -55,7 +55,7 @@ function visibleGroup(id, nodes) {
 function inlineGraph(ids, groups = [], edges = []) {
   return { schema: 1, title: 'placement', source: 'router', source_detail: null, explanation: null,
     groups, nodes: ids.map(node), edges: edges.map(([from, to], index) => ({ id: `${from}-${to}-${index}`,
-      from, to, label: '', kind: 'sequence', value: null, inferred: false, origin: 'proposed', was: null, note: null })) };
+      from, to, label: '', kind: 'sequence', value: null, inferred: false, note: null })) };
 }
 function position(graph, id) { return entry(graph, id); }
 function groupBox(graph, group) {
@@ -185,6 +185,26 @@ function spawnHookedServer({ root, graphPath, port, hookPath, marker, mode }) {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 }
+
+test('legacy verdict fields load and disappear after an agent removes an entry', async () => {
+  await withFixture('canonical.json', async (ctx) => {
+    const disk = JSON.parse(await fs.readFile(ctx.graphPath, 'utf8'));
+    Object.assign(disk.nodes[0], { origin: 'rejected', was: 'agreed' });
+    await fs.writeFile(ctx.graphPath, JSON.stringify(disk));
+    const state = await getGraph(ctx);
+    assert.equal(Object.hasOwn(state.graph.nodes[0], 'origin'), false);
+    assert.equal(Object.hasOwn(state.graph.nodes[0], 'was'), false);
+    const graph = copy(state.graph); const id = graph.nodes[0].id;
+    graph.nodes = graph.nodes.filter((item) => item.id !== id);
+    graph.edges = graph.edges.filter((item) => item.from !== id && item.to !== id);
+    expect(await graphPut(ctx, graph, state.hash), 200);
+    const written = JSON.parse(await fs.readFile(ctx.graphPath, 'utf8'));
+    for (const item of [...written.nodes, ...written.edges]) {
+      assert.equal(Object.hasOwn(item, 'origin'), false);
+      assert.equal(Object.hasOwn(item, 'was'), false);
+    }
+  });
+});
 
 test('canonical round-trip canonicalizes byte-for-byte', async () => {
   await withFixture('canonical.json', async (ctx) => {
@@ -439,7 +459,7 @@ test('self edges are refused after missing endpoints', async () => {
 test('both write routes enforce their distinct authority', async () => {
   await withFixture('canonical.json', async (ctx) => {
     let state = await getGraph(ctx);
-    const view = copy(state.graph); entry(view, 'gather').x = 99.6; entry(view, 'gather').y = -0.5; entry(view, 'gather').origin = 'agreed';
+    const view = copy(state.graph); entry(view, 'gather').x = 99.6; entry(view, 'gather').y = -0.5;
     expect(await viewPut(ctx, view, state.hash), 200);
     state = await getGraph(ctx);
     assert.equal(entry(state.graph, 'gather').x, 100);
@@ -453,8 +473,6 @@ test('both write routes enforce their distinct authority', async () => {
       const changed = copy(state.graph); mutate(changed);
       expect(await viewPut(ctx, changed, state.hash), 422, 'structural-difference');
     }
-    const badOrigin = copy(state.graph); entry(badOrigin, 'inspect').origin = 'mine';
-    expect(await viewPut(ctx, badOrigin, state.hash), 422, 'bad-origin-value');
     const agent = copy(state.graph); entry(agent, 'inspect').x = 999; entry(agent, 'inspect').y = 888;
     expect(await graphPut(ctx, agent, state.hash), 200);
     const after = await getGraph(ctx);
@@ -506,19 +524,6 @@ test('optimistic concurrency returns and accepts the current hash, including cre
   } finally { await ctx.stop(); }
 });
 
-test('an agent create cannot pre-rule entries or claim a reset record', async () => {
-  const root = await makeDir(); const graphDir = path.join(root, 'graphs'); await fs.mkdir(graphDir, { recursive: true });
-  const missing = path.join(graphDir, 'new.json'); const ctx = await startServer({ cacheRoot: root, open: missing });
-  try {
-    const graph = await readFixtureGraph('cycle-layout.json');
-    const verdict = copy(graph); verdict.nodes[0].origin = 'agreed';
-    expect(await graphPut(ctx, verdict, ''), 422, 'agent-verdict');
-    const reset = copy(graph); reset.edges[0].was = 'agreed';
-    expect(await graphPut(ctx, reset, ''), 422, 'bad-was');
-    expect(await graphPut(ctx, graph, ''), 200);
-  } finally { await ctx.stop(); }
-});
-
 test('node and edge kinds are closed sets while omitted kinds default', async () => {
   await withFixture('canonical.json', async (ctx) => {
     const state = await getGraph(ctx);
@@ -561,34 +566,11 @@ test('the global write lock serializes concurrent writes and retry retains both 
   });
 });
 
-// Removing a node means removing the edges that named it: a graph that keeps them is malformed for
-// a more basic reason, and the server refuses `edge-missing-node` before it reaches preservation.
-function drop(graph, id) {
-  graph.nodes = graph.nodes.filter((node) => node.id !== id);
-  graph.edges = graph.edges.filter((edge) => edge.from !== id && edge.to !== id);
-}
-
-test('agent preservation protects agreed and rejected entries', async () => {
-  await withFixture('verdicts.json', async (ctx) => {
-    const state = await getGraph(ctx);
-    for (const [id, code, change] of [
-      ['agree', 'preservation-agreed', (g) => { drop(g, 'agree'); }],
-      ['reject', 'preservation-rejected', (g) => { drop(g, 'reject'); }],
-      ['reject', 'preservation-rejected', (g) => { entry(g, 'reject').origin = 'proposed'; }],
-    ]) {
-      const graph = copy(state.graph); change(graph); const result = await graphPut(ctx, graph, state.hash);
-      expect(result, 422, code); assert.deepEqual(result.body.ids, [id]);
-    }
-    const allowed = copy(state.graph); entry(allowed, 'propose').note = 'agent may rewrite this';
-    expect(await graphPut(ctx, allowed, state.hash), 200);
-  });
-});
-
 test('PUT /graph ignores every supplied position and lays every node out again', async () => {
   await withFixture('canonical.json', async (ctx) => {
     const state = await getGraph(ctx); const graph = copy(state.graph);
     entry(graph, 'gather').x = 12345; entry(graph, 'gather').y = -99;
-    graph.nodes.push({ id: 'new', label: 'New', kind: 'note', origin: 'proposed', was: null, exclusive: false, ref: null, note: null, graph: null, x: 8, y: 9 });
+    graph.nodes.push({ id: 'new', label: 'New', kind: 'note', exclusive: false, ref: null, note: null, graph: null, x: 8, y: 9 });
     expect(await graphPut(ctx, graph, state.hash), 200);
     const stored = await getGraph(ctx);
     assert.notDeepEqual({ x: entry(stored.graph, 'gather').x, y: entry(stored.graph, 'gather').y }, { x: 12345, y: -99 });
@@ -803,63 +785,6 @@ test('the third pass leaves a group rectangle and member rows at their first-pas
   } finally { await after.ctx.stop(); await before.ctx.stop(); }
 });
 
-test('verdict reversal is page-only and agents reset agreed entries explicitly', async () => {
-  await withFixture('verdicts.json', async (ctx) => {
-    let state = await getGraph(ctx);
-    const rejectedChange = copy(state.graph); entry(rejectedChange, 'reject').note = 'agent edit';
-    expect(await graphPut(ctx, rejectedChange, state.hash), 422, 'preservation-rejected');
-    const agreedChange = copy(state.graph); entry(agreedChange, 'agree').note = 'agent edit';
-    expect(await graphPut(ctx, agreedChange, state.hash), 422, 'preservation-agreed');
-    const reset = copy(state.graph); Object.assign(entry(reset, 'agree'), { origin: 'proposed', was: 'agreed', note: 'replacement' });
-    expect(await graphPut(ctx, reset, state.hash), 200);
-    // Only a person reverses a verdict, and only through the page's own route. Do it last: once
-    // `reject` is agreed, an agent altering it is refused `preservation-agreed`, not
-    // `preservation-rejected`, and asserting that first is what the reversal would invalidate.
-    state = await getGraph(ctx); const page = copy(state.graph); entry(page, 'reject').origin = 'agreed';
-    expect(await viewPut(ctx, page, state.hash), 200);
-    assert.equal(entry((await getGraph(ctx)).graph, 'reject').origin, 'agreed');
-  });
-});
-
-test('bulk verdicts are additive and one reversal is permitted', async () => {
-  await withFixture('verdicts.json', async (ctx) => {
-    let state = await getGraph(ctx); const approve = copy(state.graph);
-    for (const item of [...approve.nodes, ...approve.edges]) if (item.origin === 'proposed') item.origin = 'agreed';
-    expect(await viewPut(ctx, approve, state.hash), 200);
-    state = await getGraph(ctx); const two = copy(state.graph);
-    entry(two, 'agree').origin = 'rejected'; entry(two, 'reject').origin = 'agreed';
-    expect(await viewPut(ctx, two, state.hash), 422, 'bulk-not-additive');
-    const one = copy(state.graph); entry(one, 'agree').origin = 'rejected';
-    expect(await viewPut(ctx, one, state.hash), 200);
-  });
-});
-
-test('retargeting and dropping a container preserve verdict-bearing children', async () => {
-  await withFixture('parent.json', async (ctx) => {
-    await stage(ctx, 'child.json'); await stage(ctx, 'grandchild.json');
-    const state = await getGraph(ctx); const other = copy(state.graph); entry(other, 'child-box').graph = 'other';
-    expect(await graphPut(ctx, other, state.hash), 422, 'container-orphan');
-    const none = copy(state.graph); entry(none, 'child-box').graph = null;
-    expect(await graphPut(ctx, none, state.hash), 422, 'container-orphan');
-    const dropped = copy(state.graph); dropped.nodes = dropped.nodes.filter((node) => node.id !== 'child-box');
-    expect(await graphPut(ctx, dropped, state.hash), 422, 'container-orphan');
-  });
-});
-
-test('container removal accepts proposed-only child and recursively finds grandchild verdicts', async () => {
-  await withFixture('parent.json', async (ctx) => {
-    const child = await readFixtureGraph('child.json'); child.nodes[0].graph = null;
-    await fs.writeFile(path.join(ctx.graphDir, 'child.json'), JSON.stringify(child));
-    let state = await getGraph(ctx); const drop = copy(state.graph); drop.nodes = drop.nodes.filter((node) => node.id !== 'child-box');
-    expect(await graphPut(ctx, drop, state.hash), 200);
-  });
-  await withFixture('parent.json', async (ctx) => {
-    await stage(ctx, 'child.json'); await stage(ctx, 'grandchild.json');
-    const state = await getGraph(ctx); const drop = copy(state.graph); drop.nodes = drop.nodes.filter((node) => node.id !== 'child-box');
-    expect(await graphPut(ctx, drop, state.hash), 422, 'container-orphan');
-  });
-});
-
 test('all containment retarget cases, cycles, deep acyclic writes, and missing children follow the contract', async () => {
   await withFixture('parent.json', async (ctx) => {
     let state = await getGraph(ctx); const missing = copy(state.graph); entry(missing, 'child-box').graph = 'ghost';
@@ -887,17 +812,12 @@ test('all containment retarget cases, cycles, deep acyclic writes, and missing c
   });
 });
 
-test('retargeting away unregisters a derivable child and unreadable children block removal', async () => {
+test('retargeting away unregisters a derivable child', async () => {
   await withFixture('parent.json', async (ctx) => {
     const childPath = await stage(ctx, 'child.json'); const child = await getGraph(ctx, childPath); assert.ok(child.hash);
     let parent = await getGraph(ctx); const graph = copy(parent.graph); entry(graph, 'child-box').graph = null;
     expect(await graphPut(ctx, graph, parent.hash), 200);
     expect(await viewPut(ctx, child.graph, child.hash, childPath), 403, 'not-registered');
-  });
-  await withFixture('parent.json', async (ctx) => {
-    await stage(ctx, 'child.json'); await fs.writeFile(path.join(ctx.graphDir, 'child.json'), '{ broken');
-    const parent = await getGraph(ctx); const graph = copy(parent.graph); entry(graph, 'child-box').graph = null;
-    expect(await graphPut(ctx, graph, parent.hash), 422, 'container-unreadable-child');
   });
 });
 
@@ -1030,7 +950,7 @@ test('GET change detection exposes agent hashes and preserves the page write has
     let state = await getGraph(ctx); const agent = copy(state.graph); entry(agent, 'gather').note = 'agent';
     const agentWrite = await graphPut(ctx, agent, state.hash); expect(agentWrite, 200);
     state = await getGraph(ctx); assert.equal(state.hash, agentWrite.body.hash);
-    const page = copy(state.graph); entry(page, 'inspect').origin = 'agreed';
+    const page = copy(state.graph); entry(page, 'inspect').x += 1;
     const pageWrite = await viewPut(ctx, page, state.hash); expect(pageWrite, 200);
     assert.equal((await getGraph(ctx)).hash, pageWrite.body.hash);
   });
@@ -1088,17 +1008,6 @@ test('registered paths are pruned by age at startup', async () => {
   await fs.writeFile(path.join(root, '.registered'), JSON.stringify({ [old]: { added: Date.now() - 31 * 86400000, opened: false }, [recent]: { added: Date.now(), opened: false } }));
   const ctx = await startServer({ cacheRoot: root, open: opened });
   try { const entries = JSON.parse(await fs.readFile(path.join(root, '.registered'))); assert.equal(entries[old], undefined); assert.ok(entries[recent]); } finally { await ctx.stop(); }
-});
-
-test('agent reset records are durable and page verdicts clear them only while changing origin', async () => {
-  await withFixture('verdicts.json', async (ctx) => {
-    let state = await getGraph(ctx); const reset = copy(state.graph); Object.assign(entry(reset, 'agree'), { origin: 'proposed', was: 'agreed' });
-    expect(await graphPut(ctx, reset, state.hash), 200); state = await getGraph(ctx); assert.equal(entry(state.graph, 'agree').was, 'agreed');
-    const badSet = copy(state.graph); entry(badSet, 'propose').was = 'agreed'; expect(await viewPut(ctx, badSet, state.hash), 422, 'bad-was');
-    const badClear = copy(state.graph); entry(badClear, 'agree').was = null; expect(await viewPut(ctx, badClear, state.hash), 422, 'bad-was');
-    const person = copy(state.graph); Object.assign(entry(person, 'agree'), { origin: 'agreed', was: null }); expect(await viewPut(ctx, person, state.hash), 200);
-    assert.equal(entry((await getGraph(ctx)).graph, 'agree').was, null);
-  });
 });
 
 test('malformed on-disk graphs refuse without repair', async () => {
