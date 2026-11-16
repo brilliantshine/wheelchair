@@ -622,7 +622,7 @@ Round 9 is clean: no blocking or major finding upheld.
 | R5-1 | Remediation 5 (Decision 19): never acknowledge a cancelled turn; test of verifier 5's case | `viewer/app/asides.js`, `viewer/test/app-asides.test.js` | standard, gpt (gpt-6.1-terra) | wc-54ce860aef63-worker-14 | REMEDIATION-5.md | done (merged) |
 | R6-1 | Remediation 6: never acknowledge a turn no aside holds, whatever its state (Decision 19 applied fully; corrects R5's brief) | `viewer/app/asides.js`, `viewer/test/app-asides.test.js` | standard, gpt (gpt-6.1-terra) | wc-54ce860aef63-worker-15 | REMEDIATION-6.md | done (merged) |
 | R7-1 | Remediation 7: archive saves first with `pending_cancels`, hub retries cancels on sweep and start (Decision 20); aside panel read-only when archived | `viewer/app/threads.js` (archive), `viewer/app/asides.js`, `viewer/app/hub.js` (init/timer), `viewer/pages/aside.js`, `viewer/test/app-asides.{test,spec}.js`, `viewer/app/API.md` | standard, gpt (gpt-6.1-terra) | wc-54ce860aef63-worker-16 | REMEDIATION-7.md | done (merged) |
-| R8-1 | Remediation 8: one read-only guard for every panel control that changes anything when archived; no new-aside controls on an archived thread | `viewer/pages/aside.js`, `viewer/test/app-asides.spec.js` | standard, gpt (gpt-6.1-terra) | — | REMEDIATION-8.md | in progress |
+| R8-1 | Remediation 8: one read-only guard for every panel control that changes anything when archived; no new-aside controls on an archived thread | `viewer/pages/aside.js`, `viewer/test/app-asides.spec.js` | standard, gpt (gpt-6.1-terra) | wc-54ce860aef63-worker-18 | REMEDIATION-8.md | in progress |
 
 ## Log
 
