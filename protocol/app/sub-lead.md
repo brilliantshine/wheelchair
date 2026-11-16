@@ -186,11 +186,13 @@ When every task is done and the full validation passes:
    paths, and says nothing of this conversation. Its report arrives as a `result`; stop it
    then. After starting attempt N's verifier(s), post `progress` with `stage: verify`,
    `pass: N`, `phase: checking` and the machines used during the build.
-4. **PASS**: Once every verifier for the attempt passes, post `phase: clean`, then send the lead a `result` (`task` `build`, `outcome` `done`, `report`
-   COMPLETION.md, `commit` the commit verified).
-5. **FAIL**: Post `phase: fixing` with `found` equal to the distinct gaps in the attempt's
+4. **PASS**: once every verifier of the attempt passes, post `phase: clean`, then send the
+   lead a `result` (`task` `build`, `outcome` `done`, `report` COMPLETION.md, `commit` the
+   commit verified).
+5. **FAIL**: post `phase: fixing` with `found` equal to the distinct gaps in the attempt's
    reports and `fixed: 0`; re-post as `fixed` rises with each accepted remediation task.
-   With two verifiers, merge duplicate gaps before counting them. Write `docs/plans/<slug>/REMEDIATION-N.md` (N is the verification attempt):
+   With two verifiers, merge duplicate gaps before counting them. Write
+   `docs/plans/<slug>/REMEDIATION-N.md` (N is the verification attempt):
    the gap list verbatim, then one task per gap in the brief format. Route to the same
    provider that built the work, using `--provider <that provider>` from `session list`'s
    `sessions`.

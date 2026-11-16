@@ -248,9 +248,11 @@ None: nothing in the Spec exists yet.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | Document the progress stages and who posts them | protocol/app/cards.md, protocol/app/lead.md, protocol/app/sub-lead.md | standard (gpt-6.1-terra) | — | grep checks in brief | dispatched |
-| T2 | Validate and render the progress stages, with tests | viewer/app/card.js, viewer/pages/thread.js, viewer/pages/thread.css, viewer/test/app-hub.test.js, viewer/test/app-threads.spec.js | standard, --provider claude (claude-sonnet-5-5) | — | node --test viewer/test/*.test.js; npm --prefix viewer run test:browser | dispatched |
+| T1 | Document the progress stages and who posts them | protocol/app/cards.md, protocol/app/lead.md, protocol/app/sub-lead.md | standard (gpt-6.1-terra) | wc-b0af7b178215-worker | grep checks in brief | done |
+| T2 | Validate and render the progress stages, with tests | viewer/app/card.js, viewer/pages/thread.js, viewer/pages/thread.css, viewer/test/app-hub.test.js, viewer/test/app-threads.spec.js | standard, --provider claude; landed on gpt (gpt-6.1-terra): claude unavailable | wc-b0af7b178215-worker-2 | node --test viewer/test/*.test.js; npm --prefix viewer run test:browser | dispatched |
 
 ## Log
 
 - 2026-11-15 — Ready check: hub and machine service answer (session list), claude and codex CLIs installed, codex preflight passes (token fresh). Both review rounds landed on GPT only: claude was unavailable to other-agent starts.
+- 2026-11-15 — Choice: T1, lead.md: the line saying the step-1 and step-9 verifiers post no progress line sits once above step 1, not inside each step. (Worker reported none; I listed 1.)
+- 2026-11-15 — T1 accepted and merged; sub-lead rewrapped two long lines in sub-lead.md's PASS and FAIL steps.
