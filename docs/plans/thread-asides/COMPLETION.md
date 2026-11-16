@@ -21,6 +21,9 @@ verified-by:
   - round: 6
     lane: gpt verifier (hub could not avoid gpt), FAIL
     checks: gpt standard (gpt-6.1-terra) build + remediations 1-5
+  - round: 7
+    lane: gpt verifier (hub could not avoid gpt), FAIL
+    checks: gpt standard (gpt-6.1-terra) build + remediations 1-6
 ---
 
 # Completion Report — Asides
@@ -470,3 +473,13 @@ serializes concurrent writes and retry retains both changes" has failed in two f
 PUT path that T3 refactored into the shared `writeGraph` (`viewer/server.js:1578`); the
 sub-lead re-read that refactor and found the PUT steps moved verbatim under the same
 `withMutex`. Not shown to be caused by this build, but not shown otherwise either.
+
+### Verification 7 — 2026-11-15: FAIL, two gaps
+
+```
+GAP: Decision 19 / Spec §4–§5 / Remediation 6 — A partially failed archive still acknowledges a cancelled turn. If the first aside's DELETE succeeds but the second times out, archive exits before saving (`viewer/app/threads.js:163`, `:168`). The next pump acknowledges the stopped result (`viewer/app/asides.js:170`, `:179`), deleting its tombstone. After archive is retried, a delayed POST starts an untracked turn. `node /tmp/wc-v7-partial-archive.js`, using the real hub and turn store with CLI launch stubbed, printed `acks:1,machineHasTurn:false`, then `archived:true,hubTurn:null,status:202,machineState:"running",starts:1`.
+GAP: Spec §5 archived panel read-only — An already-closed aside displayed during archive retains enabled input and Send controls because the panel's change signature omits `thread.archived` (`viewer/pages/aside.js:95`). `node /tmp/wc-v7-panel-probe.js` printed `mainDisabled:true,asideDisabled:false,asideSendDisabled:false`.
+```
+
+The first is the archive gap again; per the lead's instruction it went to the lead before any
+fix. The flagged write-lock test passed in both the verifier's full and focused runs.
