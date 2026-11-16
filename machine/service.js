@@ -916,7 +916,8 @@ class MachineService {
     this.tmux(['kill-session', '-t', name]);
     const cmd = ['env', ...Object.entries(adapter.loginEnv(dir)).map(([k, v]) => `${k}=${v}`), ...adapter.loginCommand(dir)].map(shellQuote).join(' ');
     const script = `${cmd}; printf '\n__wc_login_exit %s\n' "$?"; sleep 600`;
-    const result = this.tmux(['new-session', '-d', '-s', name, '-x', '200', '-y', '50', ['sh', '-c', script].map(shellQuote).join(' ')]);
+    const cwd = adapter.loginCwd?.(this.stateDir);
+    const result = this.tmux(['new-session', '-d', '-s', name, '-x', '200', '-y', '50', ...(cwd ? ['-c', cwd] : []), ['sh', '-c', script].map(shellQuote).join(' ')]);
     if (!result.ok) die(result.stderr.trim() || 'login session failed to start');
     this.logins[account] = { cli, dir };
     return { state: 'starting' };
@@ -940,8 +941,12 @@ class MachineService {
       const logged_in = adapter.loginStatus(record.dir).logged_in;
       return { state: logged_in ? 'done' : 'failed', url: null, code: null, wantsCode: false, logged_in };
     }
-    const keys = adapter.loginPrompt?.(pane);
-    if (keys && !record.answered) { for (const key of keys) this.tmux(['send-keys', '-t', `wc-login-${account}`, key]); record.answered = true; }
+    const prompt = adapter.loginPrompt?.(pane);
+    if (prompt) {
+      const { step, keys } = Array.isArray(prompt) ? { step: 'default', keys: prompt } : prompt;
+      record.answered_steps ||= new Set();
+      if (!record.answered_steps.has(step)) { for (const key of keys) this.tmux(['send-keys', '-t', `wc-login-${account}`, key]); record.answered_steps.add(step); }
+    }
     const parsed = adapter.parseLogin(pane);
     return { state: parsed ? 'waiting' : 'starting', url: parsed?.url || null, code: parsed?.code || null, wantsCode: parsed?.wantsCode || false, logged_in: false };
   }

@@ -80,11 +80,17 @@ test('Antigravity screens, hooks, binding and command', () => {
     const sample = `${pane}\npaste the authorization code below`;
     const parsed = a.parseLogin(sample); assert.match(parsed.url, /^https:\/\/accounts\.google\.com\//); assert.equal(parsed.wantsCode, true);
   }
-  assert.deepEqual(a.loginPrompt(fixture('login-menu.txt')), ['Enter']); assert.equal(a.loginPrompt(fixture('idle.txt')), null);
-  for (const name of ['login-success.txt', 'idle.txt']) assert.equal(a.loginDone(fixture(name)), true);
+  const steps = { 'login-menu.txt': ['method', ['Enter']], 'onboard-1-theme.txt': ['theme', ['Enter']], 'onboard-2-data.txt': ['data', ['Enter', 'Down', 'Right', 'Enter']], 'onboard-3-trust.txt': ['trust', ['Enter']] };
+  for (const [name, [step, keys]] of Object.entries(steps)) assert.deepEqual(a.loginPrompt(fixture(name)), { step, keys });
+  for (const name of ['idle.txt', 'login-link-joined.txt']) assert.equal(a.loginPrompt(fixture(name)), null);
+  for (const name of ['login-success.txt', 'onboard-1-theme.txt', 'onboard-2-data.txt', 'onboard-3-trust.txt']) {
+    assert.equal(a.loginDone(fixture(name)), false); assert.equal(a.readyText({}, fixture(name)), false);
+    assert.equal(a.loginDone(fixture(name) + '\n? for shortcuts'), false); assert.equal(a.readyText({}, fixture(name) + '\n? for shortcuts'), false);
+  }
+  assert.equal(a.loginDone(fixture('idle.txt')), true);
   assert.equal(a.loginDone(fixture('login-link-joined.txt')), false);
   assert.equal(a.readyText({}, fixture('idle.txt')), true);
-  for (const name of ['permission-prompt.txt', 'trust-prompt.txt', 'login-success.txt']) assert.equal(a.readyText({}, fixture(name)), false);
+  for (const name of ['permission-prompt.txt', 'trust-prompt.txt']) assert.equal(a.readyText({}, fixture(name)), false);
   assert.equal(a.promptText(fixture('permission-prompt.txt')), true); assert.equal(a.promptText(fixture('idle.txt')), false);
   const raw = name => JSON.parse(fixture(name));
   for (const name of ['stop.json', 'stop-tools.json']) assert.equal(a.hookEvent(raw(name)).type, 'turn-ended');
