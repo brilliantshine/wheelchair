@@ -9,7 +9,7 @@ The choice is made by where the document is read, not by preference.
 
 | Document | Diagram |
 |---|---|
-| `MAP.md` | Plain-text arrow chain. **No Mermaid** — see `map.md` |
+| `MAP.md` | Plain-text arrow chain. **No Mermaid**: it is read in a terminal |
 | `IDEA.md` | None. Plain language, no design detail to draw |
 | Routers (`AGENTS.md`/`CLAUDE.md`) | Plain-text arrow chain. No Mermaid |
 | `PLAN.md` | Mermaid, in the Spec section, drawn at approval |
@@ -46,8 +46,8 @@ only constraint is the two rules above — which is a constraint on upkeep, not 
 ## Writing one
 
 Keep it to the shape of the flow: what happens, in order, with the branches that matter. Boxes
-and arrows. If it needs a legend it is too complicated — split it, the same way `map.md` says to
-split a plain-text one.
+and arrows. If it needs a legend it is too complicated — split it, the same way a plain-text
+chain is split.
 
 Label a node with **what happens, in plain language** — not with the system's own vocabulary. A
 diagram whose boxes read `ServiceImpl` and `HandlerFactory` tells a reader nothing the file list

@@ -101,18 +101,6 @@ re-sends a change that is already there, `left`'s note is never written, and `:5
 `expected 'left', actual undefined`. The fix is for the retry to re-apply whichever write was
 refused.
 
-## `codex exec resume` runs in the current directory, not the recorded one
-
-`protocol/lanes.md` says a resume "inherits the sandbox mode and working directory from the
-recorded session". On Codex CLI 0.169.0 it does not take the working directory. A lane
-dispatched with `-C <worktree>` and later resumed from the main checkout logged `workdir:
-<main checkout>`, and its sandbox could write only there. Found 2026-11-14 in app-shell
-remediation 1. Two resumes started from the wrong place: one stopped on its own because it
-couldn't find its work, and the lead killed the other before it edited anything.
-
-**What to do until lanes.md is fixed:** `cd` into the lane's directory before `codex exec
-resume`, then check the log's `workdir:` line.
-
 ## Viewer: "approval: Start building enabled when Ready and presses; offer press" times out sometimes (Firefox, phone)
 
 Seen once, in the app-shell final verification at 42de2e4

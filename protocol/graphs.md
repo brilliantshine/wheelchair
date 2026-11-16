@@ -1,11 +1,10 @@
 # The graph format
 
 A graph is what an agent draws when Collin asks how something works, or when a plan
-proposes a flow worth seeing rather than just reading. Three things send an agent here,
-and this file is the only thing any of them reads before that first write: `/graph` in
-either harness, a planning turn drawing a flow, and — with nobody asking for a picture —
-an ordinary turn whose answer earned one under the diagram-sensitivity dial
-(`protocol/sensitivity.md`). It has to be enough on its own: get the schema wrong and the
+proposes a flow worth seeing rather than just reading. Two things send an agent here,
+and this file is the only thing either reads before that first write: a thread lead's
+`diagram` card (`protocol/app/lead.md`, "Diagrams"), and an ordinary turn whose answer
+earned a picture under the diagram-sensitivity dial (`protocol/sensitivity.md`). It has to be enough on its own: get the schema wrong and the
 server refuses the file; get the producer sequence wrong and nothing ever reaches a
 screen.
 
@@ -126,7 +125,7 @@ Field by field:
 
   A reference is written `[the retry path](#retry-path)`: the bracketed phrase is what
   the reader sees and can point at, the target is `#` followed by a group's `id`. Only a
-  `#`-prefixed target is a reference — `[the lanes rules](protocol/lanes.md)` and
+  `#`-prefixed target is a reference — `[the router](AGENTS.md)` and
   `[here](https://example.com)` are ordinary text, which is what keeps everyday prose from
   turning into a write refusal. The grammar is exactly one regular expression, stated here
   once and used verbatim by the server and the page, since the two files share no code:
@@ -411,14 +410,13 @@ always named `main.json` — `<slug>/main.json` — because a question, unlike a
 no other name for its own top-level file to be found by.
 
 A plan's slug already exists — it's the plan's own. A question has none yet, so whichever
-producer answers it — `/graph`, or an unprompted turn drawing under the dial — derives one
+producer answers it — an ordinary turn drawing under the dial — derives one
 from the question text the same way: lowercase it, collapse every run of
 non-alphanumeric characters to a single hyphen, trim leading and trailing hyphens,
 truncate to 40 characters, then trim a trailing hyphen the truncation may have left.
 "How does the timeline admission gate decide what to keep?" becomes
-`how-does-the-timeline-admission-gate-dec`. `planning.md` asks only for "a
-short kebab-case slug" for a plan; this is the concrete rule for a question, stated here
-because the question path never goes through `planning.md` at all.
+`how-does-the-timeline-admission-gate-dec`. A plan's slug is chosen by its lead; this is
+the concrete rule for a question, which has no plan.
 
 `<repo-key>` is the repo's directory basename plus a hyphen plus the first eight hex
 characters of a SHA-256 hash of the absolute repo path — a repo called `orchard` at
@@ -612,9 +610,8 @@ accepted; a write that would close a loop is not, regardless of depth.
 ## Run pictures
 
 A **run picture** is a plan graph with one new top-level switch turned on: `run: true`.
-The implementation lead draws it at the start of Stage 3 and keeps it current through
-the run — `protocol/implementation.md` says when and how. This section is the format
-those writes and reads obey. Only a graph with `run: true` uses any of what follows;
+A run picture is the build's progress graph; this section is the format its writes and
+reads obey. Only a graph with `run: true` uses any of what follows;
 every other graph, including every graph already on disk, renders and canonicalizes
 byte-identically to before this section existed.
 
