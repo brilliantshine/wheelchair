@@ -248,3 +248,5 @@ past validation) render as Building.
 |---|-----------|--------------------|------|-----------|------------|--------|
 
 ## Log
+
+- 2026-11-15 — Ready check: hub and machine service answer (session list), claude and codex CLIs installed, codex preflight passes (token fresh). Both review rounds landed on GPT only: claude was unavailable to other-agent starts.
