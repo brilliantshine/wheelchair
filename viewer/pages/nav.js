@@ -1,7 +1,7 @@
 (function () {
   'use strict';
-  // The header every app page shares: logo, hub line, the Features / Threads / Sessions control
-  // with the session count and the Needs you count.
+  // The header every app page shares: logo, hub line, the Features / Threads / Agents control
+  // with the live agent count and the Needs you count.
   const host = document.getElementById('app-nav');
   if (!host) return;
   const current = host.getAttribute('data-current');
@@ -38,7 +38,7 @@
   const links = [
     ['features', 'Features', '/wheelchair/app/features'],
     ['threads', 'Threads', '/wheelchair/app/threads'],
-    ['sessions', 'Sessions', '/wheelchair/app/sessions'],
+    ['agents', 'Agents', '/wheelchair/app/agents'],
     ['settings', 'Settings', '/wheelchair/app/settings'],
   ];
   let sessionCount = null;
@@ -65,7 +65,7 @@
     } else {
       a.textContent = label;
     }
-    if (key === 'sessions') {
+    if (key === 'agents') {
       sessionCount = el('span', 'count', '');
       sessionCount.hidden = true;
       a.append(sessionCount);
@@ -118,8 +118,11 @@
         hubName.textContent = hubGroup.machine;
         hubText.textContent = 'hub · ' + workers + (workers === 1 ? ' worker' : ' workers') + ' online';
       }
-      let total = 0;
-      for (const g of groups) total += (g.sessions || []).filter((s) => s.managed !== false).length;
+      const agentsResponse = await fetch(API + '/agents');
+      if (!agentsResponse.ok) return;
+      const agents = await agentsResponse.json();
+      function count(node) { return (node.live === true ? 1 : 0) + (node.children || []).reduce((n, child) => n + count(child), 0); }
+      const total = (agents.leads || []).reduce((n, lead) => n + count(lead.session), 0);
       sessionCount.textContent = String(total);
       sessionCount.hidden = false;
     } catch (e) { /* keep the last line */ }

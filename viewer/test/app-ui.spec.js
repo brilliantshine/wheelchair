@@ -147,13 +147,13 @@ test.describe('thread page layout', () => {
   });
 });
 
-test.describe('Threads, Features and Sessions at phone width', () => {
+test.describe('Threads, Features and Agents at phone width', () => {
   let context;
   test.beforeAll(async () => { context = await setupViews(); });
   test.afterAll(async () => { await closeViews(context); });
   test.use({ viewport: { width: 390, height: 844 } });
 
-  for (const route of ['/app/features', '/app/threads', '/app/sessions']) {
+  for (const route of ['/app/features', '/app/threads', '/app/agents']) {
     test(`${route} is one column with no sideways scroll`, async ({ page }) => {
       await openPage(page, context, route);
       await expect(page.locator('#app-nav .seg')).toBeVisible();
@@ -175,7 +175,7 @@ test.describe('Threads, Features and Sessions at phone width', () => {
   });
 });
 
-test.describe('Features and Sessions at desktop width', () => {
+test.describe('Features and Agents at desktop width', () => {
   let context;
   test.beforeAll(async () => { context = await setupViews(); });
   test.afterAll(async () => { await closeViews(context); });
@@ -188,16 +188,15 @@ test.describe('Features and Sessions at desktop width', () => {
     await expect(page.locator('#side-machines .side-row', { hasText: 'hub' })).toBeVisible();
     await expect(page.locator('#side-machines .side-row.down', { hasText: 'node-3' })).toBeVisible();
     await expect(page.locator('#app-nav .hubline')).toContainText('hub');
-    await expect(page.locator('#app-nav .seg a', { hasText: 'Sessions' }).locator('.count')).toHaveText(/\d+/);
+    await expect(page.locator('#app-nav .seg a', { hasText: 'Agents' }).locator('.count')).toHaveText(/\d+/);
     await expect(page.locator('#app-nav .needs-count')).toContainText('2');
     await noSideScroll(page);
   });
 
-  test('Sessions: cards by machine with a copyable attach command, unreachable dimmed', async ({ page }) => {
-    await openPage(page, context, '/app/sessions');
-    const hub = page.locator('section[data-machine="hub"]');
-    await expect(hub.locator('.session:not(.unmanaged)').first().getByRole('button', { name: 'Copy' })).toBeVisible();
-    await expect(page.locator('section[data-machine="node-3"]')).toHaveCSS('opacity', '0.5');
+  test('Agents: cards have a copyable attach command and unreachable banner', async ({ page }) => {
+    await openPage(page, context, '/app/agents');
+    await expect(page.locator('.agent-card').first().getByRole('button', { name: 'Copy' })).toBeVisible();
+    await expect(page.locator('#unreachable')).toContainText('node-3 unreachable');
     await noSideScroll(page);
   });
 });

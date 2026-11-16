@@ -5,7 +5,7 @@
 (() => {
   const params = new URLSearchParams(location.search);
   // Login mode: ?login=<account id>&machine=<m> drives that sign-in's tmux pane through the
-  // account routes; the Sessions page never lists it.
+  // account routes; the Agents page never lists it.
   const login = params.get('login') || '';
   const loginMachine = params.get('machine') || '';
   const name = login ? `sign-in ${login} on ${loginMachine}` : (params.get('name') || '');
@@ -14,6 +14,20 @@
     : `/wheelchair/api/sessions/${encodeURIComponent(name)}`;
   const status = document.getElementById('term-status');
   document.getElementById('term-name').textContent = name;
+  async function leadName() {
+    if (login || !name) return;
+    try {
+      const response = await fetch('/wheelchair/api/agents');
+      const data = response.ok ? await response.json() : { leads: [] };
+      let lead = (data.leads || []).find(item => item.session.name === name);
+      if (!lead) {
+        const threads = await fetch('/wheelchair/api/threads');
+        if (threads.ok) lead = ((await threads.json()).threads || []).find(t => (t.sessions || []).some(s => s.role === 'lead' && s.name === name));
+      }
+      if (lead && lead.lead_name) document.getElementById('term-name').textContent = `${lead.lead_name} · ${name}`;
+    } catch { /* retain session name */ }
+  }
+  leadName();
 
   const SEQUENCES = {
     '\r': 'Enter',
