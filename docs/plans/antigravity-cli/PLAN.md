@@ -378,12 +378,15 @@ a worker with `--provider gemini` and check its `result` card arrives.
 | T0b | Second live check: workspace trust, multi-line paste, hook env, tool transcript, permission prompt, plan mode, instruction file, error Stop, exit | new files in `machine/test/fixtures/agy/`, `reports/T0b.md` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-2 (t0b-a1) | redaction grep empty, still signed in, hooks.json moved away | done |
 | T1 | `gemini` pins in model.sh (defaults flash-low/medium/high) | `codex/model.sh`, `codex/test/run.sh` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-3 (t1-a1) | `bash codex/test/run.sh` | done |
 | T2 | Hub: providers registry (`asideFork`), settings defaults/migration/one-account rule, balancer, sessions, routes, asides refusal | `viewer/app/{providers,settings,balancer,sessions,routes,asides,ready}.js` + their tests | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-4 (t2-a1) | `node --test viewer/test/*.test.js` | done |
-| T3 | Hub: `agy` transcript parser and report extraction | `viewer/app/chat.js`, `viewer/test/app-chat.test.js` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-5 (t3-a1) | `node --test viewer/test/*.test.js` | in progress |
+| T3 | Hub: `agy` transcript parser and report extraction | `viewer/app/chat.js`, `viewer/test/app-chat.test.js` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-5 (t3-a1) | `node --test viewer/test/*.test.js` | done |
 | T4 | Machine: `agy` adapter, global-hook fallback, hook.sh, service status/prompt polling/login | `machine/adapters/`, `machine/service.js`, `machine/hook.sh`, `machine/lib/hook-post.js`, `machine/test/` (not fixtures) | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-6 (t4-a1) | `bash machine/test/run.sh` | in progress |
 | T5 | Pages: Settings, thread, threads show Antigravity; browser tests | `viewer/pages/{settings,thread,threads}.js`, `viewer/test/*.spec.js` | standard, gpt-6.1-terra (asked for claude; hub: \"Could not use claude; using gpt\") | wc-9340ecf1256c-worker-7 (t5-a1) | `npm --prefix viewer run test:browser` | in progress |
 | T6 | Protocol, API docs, routers | `protocol/app/{lead,sub-lead}.md`, `machine/API.md`, `viewer/app/API.md`, `machine/AGENTS.md`, `viewer/AGENTS.md`, `codex/AGENTS.md` | last | — | review against tree | not started |
 
 ## Log
+
+- 2026-11-16 — T3 accepted; after merging T2 and T3 the viewer unit suite is 445/447 (only the two baseline failures); app-chat 20/0.
+- 2026-11-16 — Choice: T3, `viewer/app/chat.js`: recognised agy rows before the first user turn count toward "transcript is readable" (so no notice), though their content is skipped.
 
 - 2026-11-16 — T2 accepted (viewer unit suite 440/443 on its branch; failures are the two baseline ones plus `server.test.js` "the global write lock serializes concurrent writes…", which fails about 1 run in 3 on its own and isn't touched by T2). Choices: none reported; the diff matches the brief (one existing assertion in `app-usage.test.js` updated for the new review-families message, as the brief allowed).
 
