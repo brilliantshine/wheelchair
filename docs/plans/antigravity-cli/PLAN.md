@@ -381,9 +381,11 @@ a worker with `--provider gemini` and check its `result` card arrives.
 | T3 | Hub: `agy` transcript parser and report extraction | `viewer/app/chat.js`, `viewer/test/app-chat.test.js` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-5 (t3-a1) | `node --test viewer/test/*.test.js` | done |
 | T4 | Machine: `agy` adapter, global-hook fallback, hook.sh, service status/prompt polling/login | `machine/adapters/`, `machine/service.js`, `machine/hook.sh`, `machine/lib/hook-post.js`, `machine/test/` (not fixtures) | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-6 (t4-a1) | `bash machine/test/run.sh` | done |
 | T5 | Pages: Settings, thread, threads show Antigravity; browser tests | `viewer/pages/{settings,thread,threads}.js`, `viewer/test/*.spec.js` | standard, gpt-6.1-terra (asked for claude; hub: \"Could not use claude; using gpt\") | wc-9340ecf1256c-worker-7 (t5-a1) | `npm --prefix viewer run test:browser` | in progress |
-| T6 | Protocol, API docs, routers | `protocol/app/{lead,sub-lead}.md`, `machine/API.md`, `viewer/app/API.md`, `machine/AGENTS.md`, `viewer/AGENTS.md`, `codex/AGENTS.md` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-8 (t6-a1) | protocol-rules test; grep for two-provider wording | in progress |
+| T6 | Protocol, API docs, routers | `protocol/app/{lead,sub-lead}.md`, `machine/API.md`, `viewer/app/API.md`, `machine/AGENTS.md`, `viewer/AGENTS.md`, `codex/AGENTS.md` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-8 (t6-a1) | protocol-rules test; grep for two-provider wording | done |
 
 ## Log
+
+- 2026-11-16 — T6 accepted (protocol-rules 15/0). Choices: none reported; the diff also updates two README lines naming the CLIs, as the brief allowed. README sentences about page behaviour were left for T5's outcome.
 
 - 2026-11-16 — T4 accepted (machine suite 109/109 re-run by me; real `~/.gemini/config/` still has no hooks.json).
 - 2026-11-16 — Choice: T4, `machine/test/accounts.test.js`: the wrapped-login test appends the "paste the authorization code" line to `login-link-wrapped.txt`, because that visible-pane capture ends before the prompt.
