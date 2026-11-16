@@ -429,3 +429,5 @@ idempotence case is the in-worktree proof.
 |---|-----------|--------------------|------|-----------|------------|--------|
 
 ## Log
+
+- 2026-11-15 Ready check: hub and machine service answer (`wc.js session list`), review families both, Codex preflight passes (token fresh).
