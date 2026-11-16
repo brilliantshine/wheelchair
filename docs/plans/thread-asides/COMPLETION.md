@@ -24,6 +24,9 @@ verified-by:
   - round: 7
     lane: gpt verifier (hub could not avoid gpt), FAIL
     checks: gpt standard (gpt-6.1-terra) build + remediations 1-6
+  - round: 8
+    lane: gpt verifier (hub could not avoid gpt), FAIL
+    checks: gpt standard (gpt-6.1-terra) build + remediations 1-7
 ---
 
 # Completion Report — Asides
@@ -536,3 +539,15 @@ second times out; thread saved archived with the second id pending, no ack ever 
 cancels it and empties the list; a delayed POST then starts nothing); a fresh Hub sends a
 pending cancel on `init()`; the spec checks the open panel's input and Send are disabled within
 one poll of `thread.archived` turning true.
+
+### Verification 8 — 2026-11-15: FAIL, one gap (read-only panel, draft box)
+
+```
+GAP: Spec §5 archived panel read-only / Remediation 7 — An existing "This changes my answer" draft remains editable, with Send enabled, after archive. `viewer/pages/aside.js:61` applies no archive guard to these controls. `node /tmp/wc-v8-panel-probe.js` printed `mainDisabled:true,asideDisabled:true,draftDisabled:false,draftSendDisabled:false`; editing the draft after archive succeeded.
+```
+
+No archive-race gap was found: the verifier's checks of Decisions 19 and 20 passed. This is the
+read-only-panel gap from verification 7 surviving its first fix, for the draft box. Sent to the
+lead before any fix. Everything else passed: machine 90/90, the shell suites, viewer unit 357/359
+(known port test plus a port collision whose file passed 13/13 alone), browser 556 passed with
+only the known graph failures.

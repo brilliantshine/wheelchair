@@ -690,3 +690,4 @@ Round 9 is clean: no blocking or major finding upheld.
 - 2026-11-15 — R7-1 accepted: archive saves first with pending_cancels, hub sweeps them on the timer and at start, panel read-only on archive, all as briefed; aside unit 18/18 three times.
 - 2026-11-15 — Choice: R7-1, app-asides.spec.js: waits for the intercepted request before asserting its body.
 - 2026-11-15 — Sub-lead test fix after merge: app-asides.spec.js teardown unroutes before closing the server (flaky ECONNREFUSED from the page's /chat poll after shutdown); spec 10/10 after. Merged: machine 90/90, unit 358/359 (known port test), browser 556 passed with only the known graph failures. Verifier attempt 8 started.
+- 2026-11-15 — Verification 8: FAIL, one gap: the "This changes my answer" draft box and its Send stay enabled after archive (read-only-panel gap from verification 7, first fix missed the draft). No archive-race gap. Sent to the lead before fixing, as instructed.
