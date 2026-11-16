@@ -385,6 +385,10 @@ a worker with `--provider gemini` and check its `result` card arrives.
 
 ## Log
 
+- 2026-11-16 — Lead approved T0's fallbacks (global hooks file under key `wheelchair`; `asideFork: false`; one Antigravity account per machine) and two Spec corrections (every Stop reason except `error` ends the turn; credentials are a file, DBUS irrelevant).
+- 2026-11-16 — Decision 13's concrete defaults: `gemini` light = gemini-3.8-flash-low, standard = gemini-3.8-flash-medium, heavy/critical/lead = gemini-3.8-flash-high. The other-family models `agy` lists (claude-*, gpt-oss-*) are left out.
+- 2026-11-16 — Lead: if plan mode can't be shown to block edits, reviewers on `agy` use the same flags as other roles, recorded as a residual risk; no permission-prompt screen is built from a guess.
+
 - 2026-11-16 — T0 accepted. Findings that pick the Spec's fallbacks: `--settings` refuses a `hooks` key, so hooks use Decision 10's global file (`~/.gemini/config/hooks.json`, top-level key `wheelchair` confirmed to fire); `--conversation` reuses the same conversation id (no fork), so `asideFork: false`; no isolation variable works, so one Antigravity account per machine. Stop's `terminationReason` on a normal turn is `NO_TOOL_CALL`, not `model_stop`. Credentials: `~/.gemini/antigravity-cli/antigravity-oauth-token` (file, mode 600; DBUS irrelevant). Models: gemini-3.8-flash-{high,medium,low}.
 - 2026-11-16 — Choice: T0, fixtures: the whole OAuth URL was removed from screen fixtures, not just its query values.
 - 2026-11-16 — Choice: T0, item 3: two extra binary strings (`ANTIGRAVITY_APP_DATA_DIR`, `ANTIGRAVITY_GEMINI_DIR`) were tried as isolation candidates.
