@@ -381,6 +381,15 @@ test('transcript copies wait for a complete JSONL line before advancing their of
     assert.deepEqual((await fs.readFile(session.transcript_path, 'utf8')).trim().split('\n').map(JSON.parse), [{ one: 1 }, { two: 2 }]);
   } finally { await env.close(); }
 });
+test('overlapping transcript copies append each new line once', async () => {
+  const env = await service(await temp()); try {
+    await start(env); const session = env.instance.sessions['wc-t-lead']; const source = path.join(path.dirname(env.state), 'busy.jsonl');
+    await write(source, '{"one":1}\n{"two":2}\n');
+    await Promise.all(Array.from({ length: 8 }, () => env.instance.copyTranscript(session, source)));
+    assert.deepEqual((await fs.readFile(session.transcript_path, 'utf8')).trim().split('\n').map(JSON.parse), [{ one: 1 }, { two: 2 }]);
+  } finally { await env.close(); }
+});
+
 test('a live session serves its kept transcript copy after the source transcript disappears', async () => {
   const env = await service(await temp()); try {
     await start(env); const session = env.instance.sessions['wc-t-lead']; const source = path.join(path.dirname(env.state), 'gone.jsonl');

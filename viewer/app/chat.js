@@ -178,11 +178,18 @@ function transcriptItems(cli, raw, thread, sessionName) {
 // The machine service keeps each session's transcript copy (a Claude Stop hook or a bound
 // Codex rollout tells it where the source is), so the hub reads it from there; the hub's own
 // record never learns the path.
-async function sessionTranscript(hub, thread, session) {
+// With `keepLast` (the chat page), a read that fails or times out, as when the service is busy
+// while the agent works, falls back to the last copy this hub read, so the chat never empties
+// for one poll and refills on the next. A report reader passes nothing: a stale copy could
+// hand it an earlier message as the report.
+async function sessionTranscript(hub, thread, session, { keepLast = false } = {}) {
+  hub.transcriptCache ??= new Map();
+  const key = `${thread.machine}/${session.name}`;
   try {
     const result = await hub.call(thread.machine, `/v1/sessions/${encodeURIComponent(session.name)}/transcript`, 'GET');
-    if (result?.data) return result.data;
+    if (result?.data) { hub.transcriptCache.set(key, result.data); return result.data; }
   } catch { /* the service may be down or the session unknown to it: fall back below */ }
+  if (keepLast && hub.transcriptCache.has(key)) return hub.transcriptCache.get(key);
   if (!session.transcript_path) return '';
   return fs.readFile(session.transcript_path, 'utf8').catch(() => '');
 }
@@ -208,7 +215,7 @@ async function chat(hub, id) {
   await require('./views.js').findSlug(hub, thread);
   const items = [];
   for (const session of thread.sessions.filter((item) => item.role === 'lead')) {
-    const raw = await sessionTranscript(hub, thread, session);
+    const raw = await sessionTranscript(hub, thread, session, { keepLast: true });
     if (!raw && Object.hasOwn(PARSERS, session.cli)) continue;
     items.push(...transcriptItems(session.cli, raw, thread, session.name));
   }

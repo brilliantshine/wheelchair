@@ -681,7 +681,18 @@ class MachineService {
       if (remaining) this.closingThreads.set(threadId, remaining); else this.closingThreads.delete(threadId);
     }
   }
-  async copyTranscript(session, source) {
+  // One copy at a time per session: two overlapping copies read the same offset and the
+  // same copied file, so both would append the same new lines.
+  copyTranscript(session, source) {
+    this.copying ??= new Map();
+    const before = this.copying.get(session.name) || Promise.resolve();
+    const run = before.catch(() => {}).then(() => this.copyTranscriptNow(session, source));
+    const settled = run.catch(() => {});
+    this.copying.set(session.name, settled);
+    settled.then(() => { if (this.copying.get(session.name) === settled) this.copying.delete(session.name); });
+    return run;
+  }
+  async copyTranscriptNow(session, source) {
     if (!source) return { offset: 0, lines: [] };
     const stat = await fsp.stat(source);
     const current = session.transcript_source;
