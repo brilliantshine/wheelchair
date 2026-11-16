@@ -76,7 +76,7 @@ test('asset names outside pages/ and vendor/, or climbing out, are refused', asy
 
 test('the existing page scripts are still served', async () => {
   await withServer({}, async (ctx) => {
-    const response = await fetch(`${ctx.url}/assets/list.js`);
+    const response = await fetch(`${ctx.url}/assets/doc.js`);
     assert.equal(response.status, 200);
   });
 });

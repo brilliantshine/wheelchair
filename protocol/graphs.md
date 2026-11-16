@@ -751,12 +751,12 @@ adding a named one of its own.
 The page's `PUT /view` may not change `task`, `status`, `needs`, or `run`; such a
 change is a `structural-difference`, as is any unexpected content change.
 
-### The list page
+### The list route
 
 `GET /wheelchair/list` adds `run` to each plan entry: the absolute path of
 `graphs/run.json` when that file exists and parses with `run: true`, and `null`
-otherwise. `viewer/list.js` shows a "run picture" link on a plan's entry when `run` is
-non-null.
+otherwise. No page reads it any more: `/wheelchair/` with no graph path redirects to the
+app's Threads page.
 
 ## What the server refuses
 
