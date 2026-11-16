@@ -126,10 +126,6 @@ proof.
 
 - Accepted risk (plan): a seen hook entry from a wheelchair clone deleted from outside the
   app's worktrees folder is not removed.
-- Retired-wrapper detection (`install.sh:66`) matches any line with
-  `/<something>/protocol/<file>.md`, a little wider than "an absolute path" (a relative
-  path with two or more segments also matches). Only same-named wrappers under
-  `skills/<name>` or `prompts/<name>.md` are ever considered.
 - `install/unseen.py:18` keeps an unused `canonical_group` copied from seen/set.sh, as a
   record of the command shape.
 - A picture page for an aside graph in an archived thread points the viewer at the
@@ -142,3 +138,26 @@ proof.
   they were run through a symlink to the main clone's (untracked).
 
 ## Remediation rounds
+
+### Remediation 1 — 2026-11-15
+
+Attempt 1 at `70f4b99`: Claude verifier PASS, GPT verifier FAIL with two gaps
+(`REMEDIATION-1.md`). Both fixed on GPT standard (gpt-6.1-terra), the provider that built them.
+
+| Gap | Fix | Validated by |
+|-----|-----|--------------|
+| §3: `--json` reported a shared level while one present file had no block, so Settings selected it | `sensitivity/set.sh:128-129` (a present file without a valid block sets `disagree`, so `level` is null); `protocol/sensitivity.md:89` no longer says "after the wrappers" | `sensitivity/test/run.sh` new case (Claude `ask`, Codex no block → `level:null`); 67 passed |
+| §2: retired-wrapper match accepted a relative path | `install.sh:66` requires the path's leading `/` at line start or after whitespace, a backtick, a quote or `(` | `install/test/run.sh` relative-path wrapper kept and quoted absolute path removed, both harnesses; 156 passed |
+
+The residual-risk line about relative paths above was removed: that gap is fixed.
+
+Re-run on the merged branch:
+
+```
+$ bash sensitivity/test/run.sh  → RESULT 67 passed, 0 failed
+$ bash install/test/run.sh      → RESULT 156 passed, 0 failed
+$ bash machine/test/run.sh      → # pass 104  # fail 0
+$ bash codex/test/run.sh        → RESULT 78 passed, 0 failed
+```
+
+The viewer suites were not re-run: neither fix touches `viewer/`.

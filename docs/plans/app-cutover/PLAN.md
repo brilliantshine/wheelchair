@@ -432,7 +432,7 @@ idempotence case is the in-worktree proof.
 | T3 | Hub /settings/diagram-sensitivity and Settings Diagrams section (§3, D13, D16) | viewer/app settings routes, API.md, pages/settings.js, its tests | claude standard (claude-sonnet-5-5) | wc-1cff24e4cc7d-worker-3 | viewer node + browser | done |
 | T4 | Thread graph list, picture page, aside graphs (§4) | viewer/pages thread/aside/picture, app/asides.js brief, server.js APP_PAGES, its tests | claude standard (claude-sonnet-5-5) | wc-1cff24e4cc7d-worker-4 | viewer node + browser | done |
 | T5 | Remove old stage rules, port flow trigger to lead.md, reword references and routers (§1, §3 D18, §5, §6) | protocol text, routers, README, CONTRIBUTING, known-issues | claude standard (claude-sonnet-5-5) | wc-1cff24e4cc7d-worker-5 | §5 greps, protocol-rules test | done |
-| R1-1 | Remediation 1: `--json` level is null when any present file lacks a block; sensitivity.md:89 | sensitivity/set.sh, sensitivity/test/run.sh, protocol/sensitivity.md | codex standard (gpt-6.1-terra) | (see session list) | sensitivity, machine suites | in progress |
+| R1-1 | Remediation 1: `--json` level is null when any present file lacks a block; sensitivity.md:89 | sensitivity/set.sh, sensitivity/test/run.sh, protocol/sensitivity.md | codex standard (gpt-6.1-terra) | wc-1cff24e4cc7d-worker-6 | sensitivity, machine suites | done |
 | R1-2 | Remediation 1: retired-wrapper match requires an absolute path | install.sh:66, install/test/run.sh | codex standard (gpt-6.1-terra) | wc-1cff24e4cc7d-worker-7 | install suite | done |
 
 ## Log
@@ -468,3 +468,4 @@ idempotence case is the in-worktree proof.
 - 2026-11-15 — Choice: T3, viewer/test/app-diagram-sensitivity.spec.js: browser specs stub the hub route; the real fan-out is covered by node tests.
 - 2026-11-15 — Integration: viewer/app/API.md gained T4's sentence on aside `graphs` (sub-lead).
 - 2026-11-15 — Choice: R1-2: worker reported none; diff matches the brief (install.sh:66 regex, install/test/run.sh relative and quoted cases).
+- 2026-11-15 — Choice: R1-1: worker reported none; diff matches the brief (sensitivity/set.sh json `disagree=1` for a present file without a block; one new test; sensitivity.md:89 wording).
