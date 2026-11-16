@@ -1,6 +1,6 @@
 ---
 slug: app-cutover
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-15
 ---
 
@@ -42,6 +42,26 @@ None.
 
 ## Spec
 
+How the diagram setting moves, and how a thread's graphs open. Picking a level on Settings
+asks every machine to rewrite its CLIs' global instructions; a machine that fails or does
+not answer is named, and the rest keep the new level. A graph in a thread, from a card or
+an aside, opens full size on a page with a way back.
+
+```mermaid
+flowchart TD
+  A[Collin picks ask, default or high on Settings] --> B[the hub asks every machine]
+  B --> C{machine answers?}
+  C -- no --> D[named as 'did not answer']
+  C -- yes --> E[it rewrites Claude's and Codex's global instructions]
+  E --> F[every new agent session follows the level, in the app or a terminal]
+  G[a graph posted in a thread, by the lead or an aside] --> H[listed in the thread's right column]
+  H --> I[clicked: opens full size in the app]
+  I --> J[Back to thread]
+```
+
+The installer, separately, removes the old commands and the seen hook from a machine that
+had them, touching nothing it cannot show is wheelchair's.
+
 ### 1. What goes
 
 Source files removed (`git rm`):
@@ -67,7 +87,7 @@ this plan.
 
 ### 2. The installer removes what it rendered before (D4, D5)
 
-`install.sh`, for each present harness, before rendering anything:
+`install.sh`, for each present harness:
 
 - **Retired wrappers.** The retired list is `spine plan adopt plan-review implement verify
   graph diagram-sensitivity`. For each name: a Claude `skills/<name>/SKILL.md` or a Codex
@@ -232,7 +252,9 @@ otherwise reworded). `install.sh`'s header comment and output lines.
 Two checks:
 
 1. File references, which must return only deliberate mentions in `install.sh`,
-   `install/unseen.py` and `install/test/`:
+   `install/unseen.py`, `install/test/`, and router or protocol text that says a removed
+   thing is gone or that the installer removes it (each such hit listed in the completion
+   report):
    `git grep -nE 'protocol/(planning|adopt|plan-review|implementation|verification|lanes|map|writing|seen)\.md|seen/(hook|set|wording)\.sh|wording hook|skills/|codex/prompts' -- ':!docs/plans' ':!docs/proposals' ':!docs/maps'`
 2. Slash commands in prose, which is advisory because HTTP routes such as `GET /graph`
    share the spelling:
@@ -398,6 +420,8 @@ idempotence case is the in-worktree proof.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| Claude intent | minor | Gating check would flag the requested "hook is gone" wording and the `install/` router row | upheld | §5 allows text stating removal, listed in the report |
+| Claude intent | minor | §2 orders against a rendering step that no longer exists | upheld | §2 wording |
 
 ## Implementation Tasks
 
