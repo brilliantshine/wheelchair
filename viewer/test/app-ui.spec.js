@@ -132,6 +132,24 @@ test.describe('thread page layout', () => {
     // The card is older than the messages, so it comes first and gets its own row.
     await expect(rows).toHaveCount(3);
     expect(await page.locator('#chat > .card').evaluate((n) => n.previousElementSibling.className)).toBe('lead-by');
+
+  });
+
+  test('on a phone the ask button stays one line on the name row, clear of the avatar and the text', async ({ page }) => {
+    const made = await ctx.make({ cli: 'claude' });
+    await ctx.patch(made.id, (t) => { t.lead_name = 'Beta'; });
+    await ctx.timedTranscript(made.id, [['human', 'hi', '2030-01-01T00:00:00.000Z'], ['assistant', 'OK.', '2030-01-01T00:01:00.000Z']]);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`${ctx.server.url}/app/thread?id=${made.id}`);
+    const short = page.locator('#chat .bubble.assistant');
+    const ask = short.locator('.lead-aside-head');
+    await expect(ask).toBeVisible();
+    const a = await ask.boundingBox(); const text = await short.locator('p').boundingBox();
+    const avatar = await page.locator('#chat .lead-avatar').boundingBox();
+    expect(a.height).toBeLessThan(32);
+    expect(a.y + a.height).toBeLessThanOrEqual(text.y);
+    expect(a.x).toBeGreaterThan(avatar.x + avatar.width);
+    await noSideScroll(page);
   });
 
   test('the lead\'s messages and card bodies render Markdown and stay inert', async ({ page }) => {

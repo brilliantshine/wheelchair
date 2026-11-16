@@ -234,8 +234,12 @@ iframe.diagram { display: block; width: 100%; height: 340px; border: 0; backgrou
 
 /* Asides */
 .bubble.assistant[data-message-id] { position: relative; }
-/* The ask button sits on the name row above the message, not over its first line. */
-#chat .lead-aside-head { top: -30px; }
+/* The ask button sits on the name row above the message, not over its first line. A lead message
+   takes its full width even when short, and the button never wraps, so it cannot grow into a
+   column over the text; a long name is cut short before it reaches the button. */
+#chat .bubble.assistant[data-message-id] { width: 90%; }
+#chat .lead-aside-head { top: -30px; white-space: nowrap; }
+.lead-by-name { min-width: 0; max-width: calc(90% - 190px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (pointer: fine) { .lead-aside-head { opacity: 0; } .bubble.assistant:hover .lead-aside-head, .lead-aside-head:focus-within { opacity: 1; } }
 .aside-selection { z-index: 30; display: flex; gap: 2px; padding: 4px; border: 1px solid var(--line-2); border-radius: 9px; background: var(--panel); box-shadow: 0 6px 20px #0005; }
 .aside-selection[hidden] { display: none; }
