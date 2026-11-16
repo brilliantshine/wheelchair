@@ -1,0 +1,119 @@
+---
+slug: app-risks
+date: 2026-11-15
+implemented-by: "gpt standard (gpt-6.1-terra) ×4 workers: T1, T2, T3, T3b; sub-lead claude-opus-5-5 for the D10 seeding and the proposal wording fix"
+verified-by: []
+---
+
+# Completion Report: Close the app's remaining risks
+
+Written for a hostile reviewer: every claim checkable, no claim without evidence. The plan has no Prior Work rows, so every item is `this run`. Line numbers are at commit `f78b487`.
+
+## Spec coverage
+
+| Spec item | Origin | Implemented at (file:line) | Validated by |
+|-----------|--------|----------------------------|--------------|
+| Harness 1: one run folder (hub state, cache, machine state, `TMUX_TMPDIR`, bare origin with seed commit, clone; live mode also has local `wc/<thread>`) | this run | `test-support/smoke/harness.js:42-73` | smoke suite; `--check-live` |
+| Harness 2: three free loopback ports | this run | `harness.js:48-50` | smoke suite |
+| Harness 3: hub state written with `viewer/app/state.js` before the hub starts: `machines.json` pointing at the proxy; live thread + sub-lead record | this run | `harness.js:85-89` | `--check-live` prints the seeded sub-lead through the hub |
+| Harness 4: real hub with `--port --cache-root --state-dir`, `WHEELCHAIR_NO_BROWSER=1` | this run | `harness.js:116` | smoke check "readiness through hub" |
+| Harness 5: real machine service with own state, port, host 127.0.0.1, secret, hub URL; `TMUX`/`TMUX_PANE`/`WHEELCHAIR_*` removed; smoke: temp HOME, no `CLAUDE_CONFIG_DIR`/`CODEX_HOME`; live keeps them | this run | `harness.js:51-53,117` | smoke suite (private tmux lists the session) |
+| Harness 6: counting proxy, `POST /v1/sessions` per name | this run | `harness.js:91-106` | live run 2 slow-start row "1 start requests"; run with 5 s timeout counted 2 (`reports/T3.md`) |
+| Harness 7: helpers (hub route, agent session request as sub-lead, machine routes, tmux, wait) | this run | `harness.js:119-123,111-112,21-29` | used by smoke.js and live.js |
+| Harness 8: teardown on pass/fail/signal; private tmux only; run folder removed | this run | `harness.js:113,124-133`; `test-support/run-dir.js` | smoke check "clean" |
+| Harness startup assertion: no 7373/7374; every state/cache/spool path inside the run folder | this run | `harness.js:54-57` | code reading (see Deviations) |
+| No new flags needed for isolation | this run | the existing hub and machine flags were used (`viewer/server.js:1075-1085`, `machine/service.js:102-110,249-255`) | n/a |
+| Smoke suite: exit 2 naming a missing tool | this run | `test-support/smoke/run.sh:3-8` | code reading |
+| Smoke check 1, readiness through hub | this run | `test-support/smoke/smoke.js:14-22` | smoke output |
+| Smoke check 2, start (`lead`, `wc/smoke`, real `claude`, private tmux) | this run | `smoke.js:23-30` | smoke output |
+| Smoke check 3, stop | this run | `smoke.js:31-36` | smoke output |
+| Smoke check 4, clean | this run | `smoke.js:39-44` | smoke output |
+| Live: tools check, `--only`/`--provider`/`--tier`, table, exit code | this run | `test-support/smoke/live.sh:3-9`; `live.js:8-24,139-141` | `live.sh --only bogus` exits 2 (sub-lead) |
+| Live: every start/stop via the seeded sub-lead | this run | `live.js:54-60` | live run 2 |
+| Live slow start (D3): `ext::` origin with 8 s sleep, `protocol.ext.allow` in the clone only; >5 s and exactly 1 start request | this run | `harness.js:75-83`; `live.js:72-84` | run 2: PASS 12.93 s, 1 request. Failing-before with `START_TIMEOUT_MS=5000`: FAIL, 9.17 s, 2 start requests (`reports/T3.md`) |
+| Live model tiers (D7): 4 tiers × 2 providers, model from the CLI's own transcript under the effective config folder, compared with `codex/model.sh` | this run | `live.js:32-40,87-108` | run 2: all 8 rows PASS (`reports/live-run.md`) |
+| Live: not logged in → `skipped (not logged in)`, fails the run | this run | `live.js:69,111` | code reading |
+| Live: stopped session stays listed `live:false`, `status:stopped` | this run | `live.js:57-60` | run 2 (a failed stop would add a FAIL row) |
+| Live permission prompt (D8): seed `.claude/settings.json` ask rule; `permission_mode: auto`; open card → Enter on the private pane → cleared within 30 s → `smoke-ok` exists | this run | `harness.js:65-67`; `live.js:120-136` | run 2: PASS; T3's single permission run: PASS |
+| Duplicate cards (D2): hub 500 on direct relay = spooled 202, redelivered with the same id; 4xx unchanged | this run | `machine/service.js:1026` | `machine/test/service.test.js:252-266`; failing-before `500 !== 202` (`reports/T1.md`) |
+| Docs: AGENTS.md Verification (two commands, hearth only / costs model turns); `test-support/` row | this run | `AGENTS.md:56,110-111` | diff |
+| Docs: proposal "Risks to close" each marked closed or out of scope | this run | `docs/proposals/app-followups/proposal.md:42-57` | diff |
+| D10 (user): the live script's private hub alone turns usage protections off | this run | `harness.js:86-87`; `live.js:25,44-49` | the free seeded-settings check reported `held_back.worker:false, margin:0, leave:0`; run 2 honoured every provider |
+
+## Deviations from plan
+
+- **Slow origin only for the slow-start start.** The Spec says "every worker start's fetch takes over 8 s". In live run 1 that froze the machine service, because a start's `git fetch` runs synchronously (`machine/service.js:380`). The hub's 3 s status call timed out (`viewer/app/usage.js:48-62`) and the hub put later starts on hold. The origin is now slow only around the slow-start request, followed by a 16 s wait for the hub's 15 s machine-status cache (`live.js:72-82`). The slow-start check itself is unchanged.
+- **D10 added** (source: user) after live run 1. The test hub's Settings have workers not held back, margin 0 and leave 0, so each requested provider/tier is honoured. Collin's real Settings are untouched (separate `--state-dir`).
+- **Startup path assertion covers the paths the harness passes**, not each process's computed defaults. Every default (hub state, cache root, machine state and its spool) is overridden by an explicit flag (`harness.js:116-117`), so no process falls back to a default. This is weaker than the Spec's wording.
+- **Smoke readiness reads the Claude version from the machine's `/v1/status` answer as the proxy relays it to the hub** (`smoke.js:17-21`). The hub's agents route reports reachability, not the version.
+- **The proposal edit**: T3 replaced the bullets; the sub-lead restored the original wording and appended the marks.
+
+## Routers
+
+Root `AGENTS.md`: the `test-support/` row now names `smoke/` (harness.js, run.sh, live.sh), and Verification lists `bash test-support/smoke/run.sh` (hearth only) and `bash test-support/smoke/live.sh` (hearth only, costs model turns). No ownership moved.
+
+## Validation evidence
+
+Free suites at `f78b487`:
+
+```
+$ bash machine/test/run.sh
+# tests 98
+# pass 98
+# fail 0
+$ node --test viewer/test/*.test.js
+not ok 265 - a starter that loses the freed port registers through the new holder
+not ok 293 - an app page carries font-src self and the font route serves only the allowlist
+# tests 386
+# pass 384
+# fail 2
+$ node --test test-support/test/*.test.js
+# tests 6
+# pass 6
+# fail 0
+$ bash test-support/smoke/run.sh
+PASS readiness through hub
+PASS start
+PASS stop
+  removed run folder: /tmp/wheelchair-test-run-683141-bBhrSg; private tmux server gone
+PASS clean
+exit 0
+$ node test-support/smoke/harness.js --check-live
+Seeded session: {"name":"wc-smoke-sub-lead","role":"sub-lead","live":true,"status":"ready"}
+Slow origin fetch: 8.02 s
+Run folder removed: true
+exit 0
+```
+
+The 2 viewer failures are not from this build: `git diff 378f2fa -- viewer/` is empty. Test 265 is recorded in `docs/known-issues.md`. Test 293 needs `viewer/node_modules/@fontsource` (`viewer/server.js:1862-1865`), which this worktree does not have; `install.sh` installs it in the clone.
+
+Live run 2 (`bash test-support/smoke/live.sh`, commit `b09e538`):
+
+```
+light/claude | PASS | model claude-haiku-5-5
+light/gpt | PASS | model gpt-6-luna
+standard/claude | PASS | model claude-sonnet-5-5
+standard/gpt | PASS | model gpt-6.1-terra
+heavy/claude | PASS | model claude-opus-5-5
+heavy/gpt | PASS | model gpt-6.1-sol
+critical/claude | PASS | model claude-fable-5-2
+critical/gpt | PASS | model gpt-6-astra
+permission | PASS | prompt opened, Enter approved, card answered, smoke-ok exists
+
+real	2m49.696s
+user	0m41.150s
+sys	0m15.939s
+exit=0
+```
+
+Failing-before evidence: `docs/plans/app-risks/reports/T1.md` (card fix: `500 !== 202`) and `reports/T3.md` (slow start at a 5 s timeout: `slow-start | FAIL | request succeeded; 9.17 s; 2 start requests`). Live run 1 (failing) is kept in `reports/live-run.md`.
+
+## Known gaps / residual risks
+
+- **Machine service freezes during a slow `git fetch`:** handed to its own thread (Collin's choice; the lead posted the stub). A session start's fetch runs synchronously (`machine/service.js:380`, `command()` = `spawnSync` at `:67-73`). Measured: `/v1/status` took 6789 ms during an 8 s fetch, against 0.39 s with a fast origin. On a slow network the live service stalls status, cards and hooks for the length of the fetch. A start in that window can then be held with a misleading "no account has room". This plan does not touch it.
+- `live.sh` costs model turns (about 9 one-word turns plus a short permission turn) and spends past Collin's usage reserve on the private hub (D10). It is never run by another suite.
+- The permission check approves with Enter, relying on the Claude dialog's default option being approve. A future Claude CLI that changes the default would make the check fail rather than pass falsely, because it also requires `smoke-ok` to exist.
+- The startup path assertion is weaker than the Spec's wording (see Deviations).
+
+## Remediation rounds
+
