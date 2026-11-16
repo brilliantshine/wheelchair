@@ -2,7 +2,25 @@
 slug: sudo-cards
 date: 2026-11-15
 implemented-by: "standard gpt-6.1-terra (T1 helper, T2 installer, T3 machine); standard claude-sonnet-5-5 (T4 hub and page); light gpt-6-luna (T5 routers, T6 page fix); sub-lead claude-opus-5-5"
-verified-by: []   # Stage 4 appends; Stage 3 leaves this empty.
+verified-by:
+  - round: 1
+    lane: claude-opus-5-5 (FAIL)
+    checks: gpt-6.1-terra, claude-sonnet-5-5, gpt-6-luna
+  - round: 1
+    lane: gpt-6.1-sol (FAIL)
+    checks: gpt-6.1-terra, claude-sonnet-5-5, gpt-6-luna
+  - round: 2
+    lane: claude-opus-5-5 (FAIL)
+    checks: gpt-6.1-terra, claude-sonnet-5-5, gpt-6-luna
+  - round: 2
+    lane: gpt-6.1-sol (PASS)
+    checks: gpt-6.1-terra, claude-sonnet-5-5, gpt-6-luna
+  - round: 3
+    lane: claude-opus-5-5 (PASS)
+    checks: gpt-6.1-terra, claude-sonnet-5-5, gpt-6-luna
+  - round: 3
+    lane: gpt-6.1-sol (PASS)
+    checks: gpt-6.1-terra, claude-sonnet-5-5, gpt-6-luna
 ---
 
 # Completion Report — Run sudo commands from a card
@@ -183,3 +201,12 @@ PASS helper installer, idempotence, uninstall and refusals
 ```
 
 Only `sudo-helper/helper.py` and its test changed.
+
+### Verification attempt 3 — 2026-11-15
+
+At `b6ca8c1`: Claude verifier (claude-opus-5-5) PASS, GPT verifier (gpt-6.1-sol) PASS. Non-gap notes from the Claude verifier, recorded as residual risks:
+- The editable-file warning follows the Spec's `shlex` rule exactly and so misses paths inside a quoted nested command (`sh -c "bash /home/<user>/x.sh"` is one word not starting with `/`), `--opt=/path` arguments, and a symlink whose target sits in a user-writable directory. The Spec calls it best-effort; `lead.md` tells the lead never to send scripts.
+- `viewer/test/app-sudo.spec.js` has no test-password tripwire; no password passes through the hub pages, and `viewer/test/app-sudo.test.js` plus the spec's "no password field" assertion cover it.
+- `tailscale serve ... unix:<path>` was checked only against the installed binary's help text.
+- The real `sudo -S -k -v/-l -p` path remains exercised only through shims; first real install should run `command: id` and one wrong password.
+
