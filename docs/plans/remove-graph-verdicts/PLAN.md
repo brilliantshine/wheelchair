@@ -1,6 +1,6 @@
 ---
 slug: remove-graph-verdicts
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-15
 ---
 
@@ -38,6 +38,18 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 
 A graph's nodes and edges have no `origin` or `was`. Nothing marks an entry agreed or
 rejected, and nothing refuses a write for changing or dropping an entry.
+
+```mermaid
+flowchart TD
+  A[Agent saves a graph] --> B{Valid drawing?<br/>shape, cycles, run fields}
+  B -- no --> R[Refused with the reason]
+  B -- yes --> W[Laid out and written<br/>no agree/reject fields]
+  P[Person drags boxes] --> V{Only positions changed?}
+  V -- no --> R
+  V -- yes --> W
+  O[Old file with agree/reject fields] --> L[Opens normally<br/>fields ignored]
+  L -. next save .-> W
+```
 
 ### Server (`viewer/server.js`)
 
@@ -93,7 +105,10 @@ Leave alone: reviewer and verifier verdicts, HTTP Origin, `origin/<branch>` in g
 ### Tests
 
 Delete tests whose subject is verdicts (`viewer/test/server.test.js`, `run.test.js`,
-`browser.spec.js`; the map lists the ranges). Strip `origin`/`was` from fixtures that carry
+`browser.spec.js`; the map lists the ranges). A test that also checks preserved behavior is
+trimmed, not deleted: keep its non-verdict assertions. Examples: `run.test.js:64-76` also
+checks that the page cannot edit run status; `browser.spec.js:620-663` also checks that
+dragging several nodes issues exactly one write. Strip `origin`/`was` from fixtures that carry
 them incidentally. Add:
 
 - A server test: a graph file on disk carrying `origin: "rejected"` and `was: "agreed"` loads
@@ -123,12 +138,14 @@ diagram card or dragging.
 
 ### Round 1 — 2026-11-15
 
-**Lanes:** pending.
+**Lanes:** gpt / gpt-6.1-terra (intent); gpt / gpt-6.1-terra (mechanics); cross-family: no (Claude unavailable to the hub at start).
 
 **Changed since Round N-1:** n/a (first round — whole Spec in scope)
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | — | No findings | — | — |
+| mechanics | minor | Mixed-purpose tests could be deleted wholesale, losing coverage of preserved behavior | upheld | Tests section now says trim, keep non-verdict assertions, with the two examples |
 
 ## Prior Work
 
