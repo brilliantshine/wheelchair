@@ -1,6 +1,6 @@
 ---
 slug: sudo-cards
-status: planning   # planning | ready-for-review | approved | implementing | verifying | done
+status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-15
 ---
 
@@ -12,13 +12,7 @@ get buried as this file grows.
 
 ## Open Questions
 
-### Q4: How does Collin know he is typing into the real password box?
-- **Context:** Q1 assumes a hostile agent. Such an agent can edit the thread page and show a
-  lookalike password box. The real box lives on the helper's own address, which agents can't change.
-- **Options:** (a) the thread card only links out to the helper's page, and Collin checks the
-  address; (b) as (a), plus a secret word Collin picks at install, which only the helper knows
-  and shows above the real box; (c) accept the risk.
-- **Recommendation:** (b). On a phone the address bar is easy to miss; a missing word is not.
+None.
 
 ## Watch List
 
@@ -41,44 +35,162 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 6 | The helper runs as a root system service (installed once with sudo), checks Collin's password against his account via PAM and that he may use sudo, then runs the command as root. It is reachable only through Tailscale HTTPS on its own port | sudo authenticates the invoking user, so a separate unprivileged user can't use Collin's password; PAM keeps the check as strict as sudo's | defaulted |
 | 7 | Only a lead may post a sudo request; other sessions ask the lead with a `message`, and the lead decides whether to bring it to Collin. The hub refuses the card from any other role | Collin picked "only the lead" | user |
 | 8 | Confirm is two presses: Run, then a red "Confirm: run as root" button replaces it for 5 seconds; letting it lapse returns to Run. This lives on the helper's page, beside the password box | Collin picked "press, then confirm" | user |
+| 9 | No secret word or other anti-phishing check; a lookalike password page built by a hostile agent is an accepted risk | Collin picked "accept the risk" | user |
+| 10 | Supersedes 6: the helper is a root system service that checks the password by running Collin's own `sudo` with `-k` (through `runuser`), so his sudoers rules, logging and password policy apply unchanged; no separate PAM code | Reuses sudo's own check instead of reimplementing it; `runuser` + setuid `sudo` keeps every process holding the password out of reach of Collin's user | defaulted |
+| 11 | The helper is Python 3 standard library only, served through `tailscale serve` from a root-only Unix socket; the machine service reaches it through a second socket | `/usr/bin/python3` ships with Debian, with nothing to install; a root-only socket can't be taken over by an agent the way a TCP port could | defaulted |
+| 12 | Requests live in the helper's memory only: unrun after 1 hour they expire; a helper restart expires them all; 3 wrong passwords end the request | Nothing durable to leak or replay | defaulted |
+| 13 | The sudo request runs on the machine where the lead runs | The work that needs sudo is on that machine | defaulted |
 | 4 | The command is fixed when the card is posted; the run uses the stored text byte for byte and the card shows it in full, unabridged | IDEA.md: what runs is exactly what is shown | defaulted |
 
 ## Spec
 
+### Summary
+
+A lead that needs a command run as root posts a `sudo` card. Collin sees the command, what it
+does and why, and can Decline, Talk about it, or open a page served by a separate root-owned
+**sudo helper** on the lead's machine, type his password there, press Run then Confirm, and
+have the helper run the command. The lead gets the exit code and output, never the password.
+
 ### Who may ask
 
-- Only a lead posts a sudo request card. The hub refuses it from any other role. Workers and
-  sub-leads ask the lead by `message`; the role files (`protocol/app/*.md`, `cards.md`) say so.
+- Only a lead posts a `sudo` card. The hub and the machine service both refuse it from any
+  other role. Workers and sub-leads ask the lead by `message`; `lead.md`, `sub-lead.md`,
+  `worker.md` and `cards.md` say so.
+- `lead.md` adds: ask for sudo only when the task truly needs root, use the smallest command
+  that does the job, and say plainly in `does` and `why` what it changes on the machine.
 
-### What Collin sees
+### The `sudo` card (lead → app)
 
-- **In the thread:** a sudo card showing the command in full, what it does and why the lead
-  needs it, with three buttons: "Open to run" (a link to the helper's page for this request),
-  Decline, and Talk about it. No password field is ever in the thread page.
-- **On the helper's page:** the same command and reason (from the helper's own copy), a
-  password box, and Run. Pressing Run turns it into a red "Confirm: run as root" button for 5
-  seconds; pressing that sends the password and runs. Letting it lapse returns to Run.
-- After the run, both the helper page and the thread card show exit code and output.
+Fields, all required strings: `command` (the exact shell command, run with `/bin/sh -c`,
+at most 4096 bytes, no NUL), `does` (plain words: what it changes), `why` (why the task needs it).
 
-### Isolation boundary
+Flow:
+1. `card.js sudo <file>` validates and posts to the machine service as any card.
+2. The machine service, for kind `sudo` only, first registers the request with its local
+   helper through the intake socket (below) and gets back `request_id` and `url`. It adds both
+   to the card and forwards it to the hub as usual (spool, retry). If the helper is not installed
+   or not answering, the post fails and `card.js` exits non-zero with: `sudo helper not
+   installed on <machine>; Collin installs it once with: sudo <root>/sudo-helper/install.sh`.
+   The lead then tells Collin that in a reply (and with a `needs` card).
+3. The hub stores and shows the card: command in a monospace block, shown in full (wrapping, no
+   truncation), `does`, `why`, and three controls: **Open to run** (a link to `url`, opening
+   a new tab), **Decline**, **Talk about it**. No password field exists anywhere in the hub's pages.
+4. Card states: `waiting`, `ran` (exit code + output), `declined`, `expired`, `failed`
+   (3 wrong passwords). Once not `waiting`, the buttons are gone and the outcome shows.
 
-- A separate **sudo helper**: root system service, code installed root-owned outside the clone
-  (for example `/usr/local/lib/wheelchair-sudo/`), not editable by Collin's user. Installed once
-  by a command Collin runs with sudo.
-- The helper serves the password page itself, on its own Tailscale HTTPS port. The hub, the machine
-  service and every page they serve never receive, relay or render the password.
-- The hub hands the helper only the request (command, reason, which thread). The helper keeps the
-  command text from that moment and runs exactly it.
-- The helper checks the password with PAM against Collin's account and his sudo rights, runs the
-  command as root, keeps nothing (no disk, no log line with the password), and reports exit code
-  and output back to the hub.
+What reaches the lead (each typed like any press, shown as a short bubble in the thread):
+- `[card <id>] sudo ran: exit <n>` followed by the output block.
+- `[card <id>] declined`, `[card <id>] talk about: sudo request` (nothing runs; card stays
+  `waiting` and its Open to run link still works), `[card <id>] sudo expired`,
+  `[card <id>] sudo failed: wrong password 3 times`.
+
+Decline is sent hub → machine → helper `cancel`, so the helper page refuses to run it afterwards.
+
+Outcome reporting: the machine service polls the helper (`GET` status on the intake socket,
+every 2 seconds while any request it registered is `waiting` or `running`) and posts the
+outcome to the hub through its existing callback, which updates the card and queues the message
+to the lead. A machine restart resumes polling for requests the hub still shows as `waiting`.
+
+### The sudo helper
+
+Lives in the clone at `sudo-helper/` (new top-level directory, with an `AGENTS.md` router and a
+row in the root `AGENTS.md` tables), but **runs only from an installed root-owned copy**.
+
+**Install** — `sudo-helper/install.sh`, run by Collin with sudo, from the canonical clone
+(refused from a worktree via `install/guard.sh`, as the other writers are):
+- Copies `helper.py` and its page template to `/usr/local/lib/wheelchair-sudo/` (root:root,
+  dirs 0755, files 0644).
+- Writes `/etc/wheelchair-sudo.conf` (root, 0644): `user=<SUDO_USER>`, the user whose password
+  is checked and whose sudo rights apply; `url_base=https://<tailnet DNS name>:8445`.
+- Writes and enables `wheelchair-sudo.service` (systemd system unit, `User=root`,
+  `RuntimeDirectory=wheelchair-sudo`, `Restart=on-failure`).
+- Runs `tailscale serve --bg --https=8445 unix:/run/wheelchair-sudo/page.sock`.
+- Idempotent; re-running is also how Collin updates the helper. `./install.sh` (the user-level
+  installer) never touches it; it only prints a one-line hint when the helper is missing.
+- `sudo-helper/install.sh --uninstall` removes the unit, the installed files, the config and
+  the serve entry.
+
+**Sockets** (in `/run/wheelchair-sudo/`, dir root 0755):
+- `page.sock`, root:root 0600: the browser page, reachable only via `tailscale serve`.
+- `intake.sock`, root:<user's group> 0660: the machine service's API.
+
+**Intake API** (JSON over HTTP on `intake.sock`):
+- `POST /requests` `{command, does, why, thread, card_ref}` → `{request_id, url}`.
+  `request_id` is 128 random bits, hex; `url` is `<url_base>/r/<request_id>`.
+- `GET /requests/<id>` → `{state, exit_code?, output?, truncated?}`.
+- `POST /requests/<id>/cancel` → declines a `waiting` request.
+
+**Page** (on `page.sock`):
+- `GET /r/<id>`: self-contained HTML (inline CSS and JS, nothing from the network): the
+  helper's own copy of command, does and why; the target user name; a password box; Run.
+  Run becomes a red "Confirm: run as root" for 5 seconds, then reverts. Mobile-first layout.
+  An unknown or closed id shows its outcome or "No such request".
+- `POST /r/<id>/run` with the password (form body). The page then shows "Running…" and polls
+  `GET /r/<id>/status` until done, then shows exit code and output.
+- Headers: `Cache-Control: no-store`, `Referrer-Policy: no-referrer`, a CSP allowing only
+  inline script and style from self, `X-Frame-Options: DENY`. The password box has
+  `autocomplete="current-password"`.
+
+**Running** (on `run`, only while state is `waiting`; one run at a time per request):
+1. Verify: run `/usr/sbin/runuser -u <user> -- /usr/bin/sudo -S -k -p '' -- /bin/true`, write
+   `password + "\n"` to its stdin, close stdin. Exit 0 = password good. Otherwise count a wrong
+   try; on the third the request becomes `failed`. The page says "Wrong password" and the try count.
+2. Run: `/usr/sbin/runuser -u <user> -- /usr/bin/sudo -S -k -p '' -- /bin/sh -c <command>`,
+   password on stdin then stdin closed, `cwd=/`, environment only `PATH=/usr/sbin:/usr/bin:/sbin:/bin`
+   and `LANG=C.UTF-8` (sudo applies its own env reset). New process group.
+3. Time limit 10 minutes: SIGTERM to the group, SIGKILL 10 seconds later; output notes the timeout.
+4. Output: stdout and stderr merged in order, the first 32 KiB and last 32 KiB kept, with a
+   `[… N bytes cut …]` line between when longer.
+5. State becomes `ran` with exit code and output. The password is dropped right after writing it;
+   it is never stored, logged, echoed or included in any response or error.
+
+`-k` with a command means sudo neither uses nor updates a cached ticket, so nothing stays
+unlocked after a run. All paths (`runuser`, `sudo`, `sh`) are absolute and configurable only in
+the root-owned config, so tests can point them at shims.
+
+**Logging:** request lines only (method and path), never bodies. Errors never include the body.
+
+**Lifetime:** requests live in memory only. `waiting` requests expire after 1 hour; a helper
+restart loses all of them, and status lookups then answer `expired`. Closed requests are kept in
+memory for 24 hours so their page and status still answer, then dropped.
+
+### Not in scope
+
+Remembered passwords, passwordless sudo, approving a command for reuse, batching, interactive
+commands, an anti-phishing check (Decision 9), running on a machine other than the lead's.
+
+### Validation
+
+```bash
+python3 -m unittest discover -s sudo-helper/test      # helper: shims for runuser/sudo; wrong password x3, timeout, truncation, cancel, expiry, no password in logs or responses
+bash sudo-helper/test/install-test.sh                 # installer against a temp root, no real systemctl/tailscale (shims)
+bash machine/test/run.sh                              # sudo card registration, refusal without helper, outcome polling, non-lead refusal
+node --test viewer/test/*.test.js                     # hub: card validation, lead-only, outcome → message to lead, decline → cancel
+npm --prefix viewer run test:browser                  # card renders full command, three controls, outcome states
+```
+
+Each suite also asserts that a test password string never appears in any file, log or HTTP
+response it can see.
 
 ## Accepted Risks
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A hostile agent can edit the thread page to show a lookalike password box and capture the password | Collin's choice (Decision 9) | planning |
+| A hostile agent can post its own requests to the intake socket, bypassing the lead-only rule | Each still needs Collin to open it, read it and type his password | planning |
+| Anyone on Collin's tailnet who has a request URL can see its command and output | 128-bit id; tailnet is Collin's own devices | planning |
+| A hostile agent can tamper with the clone before Collin runs the helper's installer | Installer runs only from the canonical clone, after review; Collin runs it himself | planning |
 
 ## Review Rounds
+
+### Round 1 — 2026-11-15
+
+**Lanes:** intent (pending); mechanics (pending); cross-family: pending.
+
+**Changed since Round N-1:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
