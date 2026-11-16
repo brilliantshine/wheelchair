@@ -483,3 +483,56 @@ GAP: Spec §5 archived panel read-only — An already-closed aside displayed dur
 
 The first is the archive gap again; per the lead's instruction it went to the lead before any
 fix. The flagged write-lock test passed in both the verifier's full and focused runs.
+
+### Remediation 7 — 2026-11-15 (Decision 20, lead)
+
+Both verification 7 gaps went to the lead before any fix; the lead approved both, adding the
+rule that the hub itself retries pending cancels (Decision 20, Spec §5 amended). Brief:
+`REMEDIATION-7.md`. One task, R7-1, on GPT (standard, gpt-6.1-terra), merged at `75ee8cc`.
+Worker choice: the browser spec waits for the intercepted request before asserting its body.
+
+| Change | Where |
+|--------|-------|
+| Archive clears every aside's turn into `thread.pending_cancels` and **saves first**; then DELETEs each; 2xx/404 removes the id, other errors leave it pending and archive carries on | `viewer/app/threads.js`, `archive` |
+| `sweepCancels`: one per thread; reads the list under the lock, DELETEs outside it, removes confirmed ids under the lock | `viewer/app/asides.js`, `sweepCancels` |
+| Sweep runs on the 2-second timer for every thread with pending cancels (archived or not) and once in `Hub.init` | `viewer/app/hub.js`, `init` |
+| Aside panel redraws (input and Send disabled) when `thread.archived` changes | `viewer/pages/aside.js`, `panelChatSig` |
+| `pending_cancels` documented | `viewer/app/API.md` |
+
+Sub-lead fix after merge: `viewer/test/app-asides.spec.js` teardown now calls
+`page.unrouteAll({ behavior: 'ignoreErrors' })` before closing the test server. Without it the
+page's 2-second `/chat` poll could reach the route handler after the server closed
+(`route.fetch: connect ECONNREFUSED`), failing about 1 run in 3 in Chromium at load average
+0.9. The R1-1 worker hit the same error.
+
+Validation, run by the sub-lead:
+
+```
+# R7-1 branch (64462e1)
+$ node --test viewer/test/app-asides.test.js     (three runs)
+# pass 18 # fail 0
+# pass 18 # fail 0
+# pass 18 # fail 0
+# merged branch, with the teardown fix
+$ (cd viewer && npx playwright test test/app-asides.spec.js --repeat-each=5)
+  10 passed (20.9s)
+$ bash machine/test/run.sh
+# pass 90 # fail 0
+$ node --test viewer/test/*.test.js
+not ok 241 - a starter that loses the freed port registers through the new holder
+# tests 359
+# pass 358
+# fail 1
+$ npm --prefix viewer run test:browser
+  2 failed
+    [chromium] › test/browser.spec.js:2395:1 › no drawn arrow's line passes through either box it connects, over every committed graph
+    [firefox] › test/browser.spec.js:2395:1 › no drawn arrow's line passes through either box it connects, over every committed graph
+  2 skipped
+  556 passed (1.7m)
+```
+
+New tests: "a partly failed archive saves first and the hub retries the cancel" (first DELETE ok,
+second times out; thread saved archived with the second id pending, no ack ever sent; one sweep
+cancels it and empties the list; a delayed POST then starts nothing); a fresh Hub sends a
+pending cancel on `init()`; the spec checks the open panel's input and Send are disabled within
+one poll of `thread.archived` turning true.

@@ -41,5 +41,5 @@ test('selection, aside links, rebuilding and finishing', async ({ page }) => {
     await page.getByRole('button', { name: 'Done, back to your question' }).click(); await expect.poll(() => closed).toEqual({ outcome: 'done' });
     await page.setViewportSize({ width: 390, height: 844 }); await page.locator('.aside-handoff').click(); await expect(page.locator('#aside-panel')).toBeVisible(); await expect(page.getByRole('button', { name: 'Back', exact: true })).toBeVisible();
     const box = await page.locator('.col-side').boundingBox(); expect(box.width).toBe(390); expect(box.height).toBe(844);
-  } finally { await ctx.close(); }
+  } finally { await page.unrouteAll({ behavior: 'ignoreErrors' }); await ctx.close(); }
 });
