@@ -320,6 +320,20 @@ idempotence case is the in-worktree proof.
 | GPT mechanics | major | Dedup key `diagramSource(card)` splits graph and form cards for the same `flow.json` | upheld | §4 key is plan + file name |
 | GPT mechanics | minor (RE-RAISE) | Reference regex still matches kept routes in tests | declined | Already resolved this round: §5's slash-command check is markdown-only and advisory, and kept routes are allowed by name |
 
+### Round 3 — 2026-11-15
+
+**Lanes:** Claude (intent); GPT (mechanics); cross-family: yes.
+
+**Changed since Round 2:**
+- §3 Settings bullet rewritten for every machine (selection, per-machine note, partial save, `api()` body); per-machine 5 s timeout.
+- §5 reference checks split: file references gate; slash commands markdown-only and advisory.
+- §1 Kept list covers every template.
+- D18: proposed-flow drawing trigger moves into `protocol/app/lead.md`.
+- §4 picture dedup key is plan + file name.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
