@@ -120,10 +120,12 @@
       if (pane !== previous) {
         previous = pane;
         const lines = String(pane).replace(/\n$/, '').split('\n');
-        const cols = Math.max(80, ...lines.map((line) => line.length));
+        // The pane carries color escape codes; measure the visible width without them.
+        const visible = (line) => line.replace(/\x1b\[[0-9;:]*[A-Za-z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '');
+        const cols = Math.max(80, ...lines.map((line) => visible(line).length));
         const rows = Math.max(24, lines.length);
         if (cols !== term.cols || rows !== term.rows) term.resize(cols, rows);
-        term.write(`\x1b[2J\x1b[H${lines.join('\r\n')}`);
+        term.write(`\x1b[0m\x1b[2J\x1b[H${lines.join('\r\n')}\x1b[0m`);
       }
     } catch (failure) {
       setStatus(`unreachable: ${failure.message}`, false);

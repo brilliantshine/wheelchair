@@ -318,9 +318,11 @@ class MachineService {
     if (!session || !name.startsWith('wc-')) throw Object.assign(new Error('unknown managed session'), { status: 404 });
     return session;
   }
-  pane(name) {
+  // `color` keeps the escape codes (capture-pane -e) for the terminal page; the internal
+  // checks that match pane text read it plain.
+  pane(name, color = false) {
     this.managed(name);
-    const result = this.tmux(['capture-pane', '-p', '-t', name]);
+    const result = this.tmux(['capture-pane', '-p', ...(color ? ['-e'] : []), '-t', name]);
     if (!result.ok) throw Object.assign(new Error(result.stderr.trim() || 'tmux pane unavailable'), { status: 409 });
     return result.stdout;
   }
@@ -857,7 +859,7 @@ class MachineService {
   }
   loginPane(account) {
     this.loginRecord(account);
-    const result = this.tmux(['capture-pane', '-p', '-t', `wc-login-${account}`]);
+    const result = this.tmux(['capture-pane', '-p', '-e', '-t', `wc-login-${account}`]);
     if (!result.ok) throw Object.assign(new Error('login pane unavailable'), { status: 409 });
     return result.stdout;
   }
@@ -1001,7 +1003,7 @@ class MachineService {
       if (pathBits[0] === 'v1' && pathBits[1] === 'sessions' && pathBits[2]) {
         const name = decodeURIComponent(pathBits[2]); await this.authorize(request, 'hub');
         if (request.method === 'DELETE' && pathBits.length === 3) { await this.stop(name); return send(response, 200, { ok: true }); }
-        if (request.method === 'GET' && pathBits[3] === 'pane') return send(response, 200, { pane: this.pane(name) });
+        if (request.method === 'GET' && pathBits[3] === 'pane') return send(response, 200, { pane: this.pane(name, true) });
         if (request.method === 'GET' && pathBits[3] === 'transcript') return send(response, 200, await this.transcript(name, url.searchParams.get('offset') || 0));
         if (request.method === 'POST' && pathBits[3] === 'submit') { const input = await bodyOf(request); await this.submit(name, String(input.text || '')); return send(response, 200, { ok: true }); }
         if (request.method === 'POST' && pathBits[3] === 'keys') { const input = await bodyOf(request); this.raw(name, String(input.keys || '')); return send(response, 200, { ok: true }); }
