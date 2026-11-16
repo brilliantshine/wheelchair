@@ -650,3 +650,4 @@ Round 9 is clean: no blocking or major finding upheld.
 - 2026-11-15 — Choice: R1-1, pages/aside.js: the provisional Ask input accepts typing before the hub answers (Send stays disabled), so focus lands immediately.
 - 2026-11-15 — Choice: R1-1, pages/aside.js: the selection range in the input and draft boxes is kept across panel re-renders.
 - 2026-11-15 — Remediation 1 recorded in COMPLETION.md; verifier attempt 2 started.
+- 2026-11-15 — Verifier attempt 2 (wc-54ce860aef63-verifier-2) started on 3fdc8a2; again "Could not avoid gpt; using gpt".

@@ -2,7 +2,10 @@
 slug: thread-asides
 date: 2026-11-15
 implemented-by: "gpt standard (gpt-6.1-terra) for T1-T4, T1 attempt 2 at xhigh effort; gpt light (gpt-6-luna) for T5; sub-lead: claude (claude-opus-5-5)"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: gpt verifier (hub could not avoid gpt), FAIL
+    checks: gpt standard (gpt-6.1-terra) build
 ---
 
 # Completion Report — Asides
