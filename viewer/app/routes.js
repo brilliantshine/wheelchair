@@ -346,6 +346,9 @@ async function handleMachine(hub, request, response, bits, body, authenticated) 
     const result = await hub.event(body);
     return send(response, result.duplicate ? 200 : 202, result);
   }
+  if (bits[1] === 'sudo-outcome' && request.method === 'POST') {
+    return send(response, 200, await require('./cards.js').sudoOutcome(hub, body));
+  }
   if (bits[1] === 'session' && request.method === 'POST') {
     return send(response, 200, await hub.sessionRequest(body));
   }
@@ -365,7 +368,7 @@ async function handleThreads(hub, request, response, url, bits, body) {
     const lean = url.searchParams.get('view') === 'list';
     const threads = all.map((thread) => {
       if (!lean) return { ...thread, sessions: thread.sessions.map(publicSession) };
-      const { cards, sent, delivered_ids, context, pinned, archive, queues, ...summary } = thread;
+      const { cards, sent, delivered_ids, context, pinned, archive, queues, sudo_index, ...summary } = thread;
       return { ...summary, sessions: thread.sessions.map(({ name, role, live, ready, turn_ended, created_at }) => ({ name, role, live, ready, turn_ended, created_at })) };
     });
     return send(response, 200, { threads });
