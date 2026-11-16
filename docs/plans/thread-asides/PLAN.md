@@ -658,3 +658,4 @@ Round 9 is clean: no blocking or major finding upheld.
 - 2026-11-15 — Verifier attempt 3 (wc-54ce860aef63-verifier-3) started on fe1d2d4; again "Could not avoid gpt; using gpt".
 - 2026-11-15 — Verification 3: FAIL, one new gap: after Remediation 2's lock split, a dispatch POST can land after archive and start an untracked turn. The Remediation 2 gap passed. Cause: my R2 brief told the worker to POST on 404 without a recheck. REMEDIATION-3.md written; task R3-1 on GPT, same rung, sharpened brief (recheck before POST, plus cancel any turn no aside holds).
 - 2026-11-15 — R3-1 accepted: recheck before POST and cancel/ack for turns no aside holds, exactly as briefed; aside tests 13/13 three times; unit 352/354 (known port test, plus an app-pages asset test that passed alone twice under load). No worker choices. Remediation 3 recorded in COMPLETION.md; verifier attempt 4 started.
+- 2026-11-15 — Verifier attempt 4 started on de3a495.
