@@ -8,29 +8,28 @@ created: 2026-11-15
 
 ## What we're building
 
-When this week's Claude usage is projected to run short, the app holds Claude back from
-everything except leads. Today one setting decides that for every other session at once.
-We split it, so workers and reviewers each have their own setting for when Claude is held
-back.
+When this week's Claude usage is projected to run short, the app keeps Claude for leads
+and sends every other session to GPT, reviewers included. We change that so reviewers can
+keep using Claude, with separate settings for workers and reviewers.
 
 ## Why — the problem
 
-- Holding Claude back from workers saves the most usage, since they do the bulk of the
-  work. But the same rule also takes Claude away from reviewers.
-- Reviews are meant to pair one Claude reviewer with one GPT reviewer, each checking the
-  plan from a different side. With Claude held back, both reviewers end up on GPT and the
-  pairing is lost.
-- Unticking "Save Claude for leads" looks like it should turn the reserve off, but it
-  doesn't. The two settings interact in a way the Settings page doesn't show.
+- The reserve exists so leads never run out of Claude. But leads use little Claude.
+- So when a reviewer is turned away to protect that reserve, the Claude it would have used
+  mostly goes unused: far more is being held back than leads will ever need.
+- Reviewers are forced onto GPT for nothing, and the pairing of one Claude reviewer with
+  one GPT reviewer is lost.
+- Separately, unticking "Save Claude for leads" doesn't turn the reserve off, though it
+  looks like it should.
 
 ## What good looks like
 
-- On Settings → Usage, you can set how workers behave and how reviewers behave when
-  Claude is running short, independently.
-- With workers held back and reviewers not, a plan review still gets one Claude reviewer
-  and one GPT reviewer while workers go to GPT.
-- Each setting does what its label says. Turning a reserve off actually turns it off.
-- Leads and sub-leads keep getting Claude as they do now.
+- When Claude is projected to run short, reviewers still get Claude, while workers can be
+  held back on their own setting.
+- A plan review keeps one Claude reviewer and one GPT reviewer in that situation.
+- Leads still don't run out of Claude.
+- Each setting on Settings → Usage does what its label says. Turning a reserve off
+  actually turns it off.
 
 ## Not doing
 
