@@ -79,8 +79,13 @@ const fields = {
     ready: (value) => object(value) && typeof value.ok === 'boolean' && array(value.missing, text),
   },
   progress: {
-    done: Number.isInteger,
-    total: Number.isInteger,
+    stage: (value) => value === undefined || ['build', 'review', 'verify'].includes(value),
+    done: (value) => value === undefined || Number.isInteger(value),
+    total: (value) => value === undefined || Number.isInteger(value),
+    pass: (value) => value === undefined || (Number.isInteger(value) && value >= 1),
+    phase: (value) => value === undefined || ['checking', 'fixing', 'clean'].includes(value),
+    found: (value) => value === undefined || Number.isInteger(value),
+    fixed: (value) => value === undefined || Number.isInteger(value),
     machines: (value) => array(value, text),
     choice_waiting: (value) => typeof value === 'boolean',
   },
@@ -134,6 +139,28 @@ function validate(kind, card, role) {
   }
   if (kind === 'progress' && (card.done < 0 || card.total < card.done)) {
     return { ok: false, reason: 'progress counts are invalid' };
+  }
+  if (kind === 'progress') {
+    const build = card.stage === undefined || card.stage === 'build';
+    const required = build ? ['done', 'total'] : ['pass', 'phase'];
+    const forbidden = build ? ['pass', 'phase', 'found', 'fixed'] : ['done', 'total'];
+    if (!build && card.phase === 'fixing') required.push('found', 'fixed');
+    else if (!build && (card.phase === 'checking' || card.stage === 'verify')) forbidden.push('found', 'fixed');
+    else if (!build && card.phase === 'clean') {
+      if (card.found !== undefined && card.fixed === undefined) required.push('fixed');
+      if (card.fixed !== undefined && card.found === undefined) required.push('found');
+    }
+    for (const key of required) {
+      if (card[key] === undefined) return { ok: false, reason: `invalid or missing field: ${key}` };
+    }
+    for (const key of forbidden) {
+      if (card[key] !== undefined) return { ok: false, reason: `invalid or missing field: ${key}` };
+    }
+    if (card.found < 0 || card.fixed < 0 || card.fixed > card.found
+        || (card.phase === 'fixing' && card.found < 1)
+        || (card.phase === 'clean' && card.found !== undefined && card.fixed !== card.found)) {
+      return { ok: false, reason: 'progress counts are invalid' };
+    }
   }
   if (role && !roles[kind].includes(role)) {
     return { ok: false, reason: `${role} may not post ${kind}` };
