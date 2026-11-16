@@ -1,59 +1,39 @@
 # `protocol/` — the stage definitions
 
-Owned by [the repo root](../AGENTS.md). Every rule this workflow runs on is a markdown
-file here. The wrappers in `skills/` and `codex/prompts/` only point at one.
+Owned by [the repo root](../AGENTS.md). Every rule the app's agents run on is a markdown
+file here.
 
 The organizing idea: **a document here is read by an agent mid-task, so it states the
 failure it exists against rather than describing a process.** A rule whose reason is
 missing gets optimized away by the next agent that finds it inconvenient.
 
-## Stage order
-
-```
-map.md → planning.md → plan-review.md → implementation.md → verification.md
-MAP.md    IDEA.md +      approved         COMPLETION.md      REMEDIATION-N.md
-          PLAN.md
-```
-
-`adopt.md` is the side door: a plan written outside this workflow enters through it and
-lands at one of the statuses the machine already has.
-
 | File | Role |
 |---|---|
-| `planning.md` | Stage 1. Map the code before the idea; one question at a time, the queue lives in the doc |
-| `plan-review.md` | Stage 2. Two independent adversarial reviewers; the lead adjudicates every finding |
-| `implementation.md` | Stage 3. The lead briefs and integrates, draws and keeps current the run picture, cheap lanes implement |
-| `verification.md` | Stage 4. A fresh verifier tries to falsify the completion claims |
-| `adopt.md` | The on-ramp for a plan document written elsewhere |
-| `lanes.md` | How every stage spawns a subagent. **The only place invocations live** |
-| `writing.md` | How anything a person reads is written. Governs messages, not documents |
-| `map.md` | How to explain existing code: flow first, grounded in `file:line`, no filler |
+| `app/` | The app's role protocol, one file per agent role plus the card formats; [its router](app/AGENTS.md). Every session the app starts reads its role file from here |
 | `diagrams.md` | Which diagram a document gets, and what keeps it from lying |
-| `graphs.md` | The graph format read by both harnesses — schema, how the viewer starts, the run-picture switch |
+| `graphs.md` | The graph format: schema, how the viewer starts, the run-picture switch |
 | `sensitivity.md` | The diagram-sensitivity dial: the region rendered into present harnesses' always-on files, and what each level draws |
-| `seen.md` | What the reader has seen: the plan record `docs/plans/<slug>/SEEN.md`, the wording list, and the hook that carries the wording list and a gap notice into every turn |
-| `app/` | The app's role protocol, one file per agent role plus the card formats; [its router](app/AGENTS.md). Replaces the stage files for sessions the app starts; the stage files above stay until a later feature retires them |
-| `templates/` | The skeletons a stage writes from: `MAP.md`, `IDEA.md`, `PLAN.md`, `COMPLETION.md`, `SEEN.md` |
+| `templates/` | The skeletons a plan is written from: `MAP.md`, `IDEA.md`, `PLAN.md`, `COMPLETION.md` |
+
+The old stage files (`planning.md`, `plan-review.md`, `implementation.md`, `verification.md`,
+`adopt.md`, `lanes.md`, `map.md`, `writing.md`, `seen.md`) and the `SEEN.md` template are
+gone. The role files in `app/` replace them.
 
 ## Boundaries
 
-- **A stage document never restates a lane invocation.** `lanes.md` owns those. A copied
-  invocation drifts, and a stale one silently spends the wrong model or races the single
-  account's one-shot credential.
 - **Never add a second gate for a rule that already has one.** Two overlapping
   instructions with neither marked authoritative is worse than one in an imperfect place.
-  The router-spine plan's own review caught this twice.
-- **A template edit is a contract change.** Stage 3 tells lanes to write COMPLETION.md
-  from `templates/COMPLETION.md`, so a rule added to the prose and not the template
-  reaches nobody.
-- Nothing here is per-feature state. That lives in `docs/plans/<slug>/`, and editing a
-  stage's rules is not the same act as editing a plan.
+- **A template edit is a contract change.** The sub-lead briefs workers to write
+  COMPLETION.md from `templates/COMPLETION.md`, so a rule added to the prose and not the
+  template reaches nobody.
+- Nothing here is per-feature state. That lives in `docs/plans/<slug>/`, and editing the
+  rules is not the same act as editing a plan.
 
 ## Tests
 
-None — these are documents. The check that they work is that a stage run from either
-harness produces the same artifacts, and that a rendered wrapper points back into this
-working tree, so an edit here takes effect immediately in every rendered harness.
+`viewer/test/protocol-rules.test.js` checks some of these documents. The rest have no test;
+the check that they work is that a thread run through the app produces the artifacts the
+next role reads.
 
 `sensitivity.md` is the one file here that does not: its delimited region is rendered into
 each present harness's global instruction file, so editing inside the markers needs

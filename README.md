@@ -1,31 +1,27 @@
 # wheelchair
 
 Agents are good at writing code and bad at being held to a plan. This harness holds them to one.
-It maps how the code works, agrees what good looks like, and plans one question at a time. A
-**different model family** then tries to tear the plan apart. Cheap worker lanes build it, and a
-blind verifier tries to prove the result wrong.
+You talk to a lead agent in a thread, in a browser or on a phone. It maps how the code works,
+agrees what good looks like, and plans one question at a time. A **different model family** then
+tries to tear the plan apart. Workers build it, and a blind verifier tries to prove the result
+wrong.
 
 The documents are the state, not a context window. Each feature gets a directory holding the map,
-the idea, the decision log, the spec, every review round, and what got built. Each stage refuses
-to run out of order, so you can stop mid-plan and resume a week later.
+the idea, the decision log, the spec, every review round, and what got built. You can stop
+mid-plan and resume a week later.
 
-The reporting is held to the same standard as the work. There are rules for how anything you read
-gets written, and a picture whenever the answer has a shape. It runs the same from Claude Code and
-from the Codex CLI.
+The reporting is held to the same standard as the work. Leads write in the style you set, and
+draw a picture whenever the answer has a shape.
 
 ## Usage
 
-From either harness, in the target project:
+Open the app at `/wheelchair/app/` on a machine that serves it (see "The viewer"). Start a thread
+and say what you want. The lead takes it from there:
 
-```
-/plan <slug or description>   # map the code, confirm the idea, then one question at a time
-/plan-review <slug>           # adversarial review rounds until approved
-/implement <slug>             # lead + cheap workers, with a live run picture; ends with COMPLETION.md
-/verify <slug>                # blind verification; remediate until PASS
-/adopt path/to/plan.md        # bring in a plan written elsewhere
-/graph <question>             # answer a question with a picture
-/diagram-sensitivity [level]  # how eagerly pictures appear: ask, default, high
-```
+- A small fix, it makes. Anything bigger, it offers to take into planning.
+- It shows you cards: one question at a time, the plan approval, progress, pictures.
+- Settings holds your writing style, the model for each role and how eagerly pictures appear
+  (the Diagrams section on the Models tab: ask, default or high).
 
 Review and verification run cross-family when both `claude` and `codex` are installed. With one,
 the gates still run, with a fresh reviewer that never saw the conversation.
@@ -37,9 +33,8 @@ Each feature lives in `docs/plans/<slug>/`:
 | `MAP.md` | How the code works today, every claim with `file:line`, plus what wasn't checked |
 | `IDEA.md` | The plain-language goal and non-goals, confirmed before any design question |
 | `PLAN.md` | Question queue, decision log, spec, review rounds, implementation tasks |
-| `graphs/` | Pictures drawn while planning, and `run.json`, the live picture of an implementation run |
+| `graphs/` | Pictures drawn while planning |
 | `COMPLETION.md`, `REMEDIATION-N.md` | What got built, with evidence, and each verification loop |
-| `SEEN.md` | What you've been shown, so an agent re-explains anything you haven't seen |
 
 `status:` in `PLAN.md` is the state machine: `planning → ready-for-review → approved →
 implementing → verifying → done`.
@@ -48,18 +43,10 @@ implementing → verifying → done`.
 
 ![The viewer: an explanation panel above a flow](docs/viewer.png)
 
-Ask how something works, or let a plan propose a flow, and the agent draws it in a browser viewer.
-The panel above the picture says what it shows and what it leaves out. You can drag boxes
-to rearrange the flow.
-
-**The run picture.** During `/implement`, the lead keeps a left-to-right picture of the change:
-- Each piece of the design is a box, wired to what it feeds and to the stores it touches.
-- Every piece shows *not started*, *in progress*, *done* or *needs you*.
-- When a worker makes a choice its brief didn't settle, that choice appears as a box.
-- When a part needs you, the tab title changes and a browser notification fires.
-
-Before any worker starts, the lead asks you once for everything the run needs, such as logins and
-installs.
+Ask how something works, or let a plan propose a flow, and the lead draws it and shows it in the
+thread. "Open full size" opens the picture on its own page, with a link back to the thread. The
+panel above the picture says what it shows and what it leaves out. You can drag boxes to
+rearrange the flow.
 
 ## Install
 
@@ -67,31 +54,27 @@ installs.
 ./install.sh
 ```
 
-This renders the wrappers for whichever harness is installed, and installs the viewer's
-dependencies, including Chromium and Firefox for its tests. It is idempotent. Re-run it after
-pulling a change to a wrapper or under `viewer/`, and restart open sessions to pick up new
-commands.
+This installs the viewer's dependencies, including Chromium and Firefox for its tests. It
+also removes the skill and prompt wrappers and the per-turn hook that earlier versions put in
+the harness homes. It is idempotent. Re-run it after pulling a change under `viewer/`.
 
 It also writes a few things outside this repo:
 - a delimited block in `~/.claude/CLAUDE.md` and/or `~/.codex/AGENTS.md`, which holds the
   diagram-sensitivity setting
-- a per-turn hook and its write grant, in each harness's settings
 - `~/.wheelchair/models`, if Codex is present: the GPT model pinned per tier
 - `~/.local/state/wheelchair/`: the app's threads, machine registry and the machine service's
   secret; on a serving systemd machine, the `wheelchair-viewer` and `wheelchair-machine` user
   services
 
-The hook carries your wording list, which holds phrases you've asked agents to stop using. After a
-long break, it also tells the agent how long you've been away. Only the delimited block and the
-hook's own entry are this repo's, so nothing else in those files is touched.
+Only the delimited block is this repo's, so nothing else in those files is touched.
 
-A heads-up line appears before a GPT lane runs when Codex knows a newer model than a tier's
+A heads-up line appears before a GPT session runs when Codex knows a newer model than a tier's
 pin. `codex/model.sh set <tier> <model>` switches; nothing switches on its own.
 
 ## The viewer
 
 A Node server with no runtime dependencies, bound to `127.0.0.1`. It serves the graphs, a list of
-graphs and plans, and a document reader. Agents start it themselves. By hand:
+graphs and plans, and a document reader. By hand:
 
 ```bash
 node viewer/server.js --show path/to/graph.json   # open a graph in the browser
@@ -108,7 +91,7 @@ dragging boxes, works on a phone.
 A serving machine is also the hub for the app at `/wheelchair/app/`: threads with a lead
 agent, from idea through planning, review, building and checking, driven from a browser or
 phone. Each thread's agents run in tmux sessions, started by the machine service (`machine/`).
-The Features and Sessions pages, and a browser terminal, open into any session.
+The Features and Agents pages, and a browser terminal, open into any session.
 
 `protocol/graphs.md` has the full format.
 
@@ -117,10 +100,9 @@ The Features and Sessions pages, and a browser terminal, open into any session.
 | Directory | What's there |
 |---|---|
 | `protocol/` | The rules every stage follows. The single source of truth |
-| `skills/`, `codex/prompts/` | One-line wrappers for each harness, pointing into `protocol/` |
 | `viewer/` | The graph viewer and the app's hub: server, pages, tests |
 | `machine/` | The machine service that runs agent sessions in tmux for the app |
-| `sensitivity/`, `seen/`, `install/` | The dial writer, the per-turn hook, and their test suites |
+| `sensitivity/`, `install/`, `codex/` | The dial writer, the installer's checks, the GPT model pins, and their test suites |
 | `docs/plans/` | One directory per feature. The only mutable state |
 
 Every directory that owns a rule has an `AGENTS.md` router saying what it owns and where to go
@@ -129,6 +111,6 @@ next. Start at the root one. `CONTRIBUTING.md` has the conventions and validatio
 ## Dependencies
 
 - `claude` or `codex` (v0.146+). Either one alone works, and both unlock the cross-family gates.
-  GPT lanes run through headless `codex exec` (`protocol/lanes.md`).
+  Codex sessions run through the app like any other.
 - Node and npm, for the viewer.
 - Playwright, pinned in `viewer/package.json` and installed by `install.sh`, for the browser tests.

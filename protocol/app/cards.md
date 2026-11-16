@@ -215,8 +215,9 @@ A picture shown inside the thread.
 | `format` | string | no | `graph` (default), `form` or `html` |
 
 `graph` and `form` load `graphs/<graph>.json`; `html` loads `graphs/<graph>.html`.
-Write the file first (see `lead.md`, "Diagrams"); the card only points at it. Graphs and
-HTML have an Open full screen link.
+Write the file first (see `lead.md`, "Diagrams"); the card only points at it. The card's
+link reads "Open full size", for every format including forms. It opens the app's picture
+page, which has a Back to thread link.
 
 A `form` file has a top-level `form` and a required string `explanation`, shown above the
 picture. Strings are shown as text, never as HTML.
