@@ -36,12 +36,14 @@ const { createHarness } = require('./harness');
     });
   } catch (error) { failed = true; console.log(`FAIL setup: ${error.stack}`); }
   if (h) {
-    await check('clean', async () => {
+    try {
       const result = await h.teardown();
+      await new Promise(resolve => setTimeout(resolve, 5000));
       assert(result.runFolderGone && !fs.existsSync(h.dir), `run folder remains: ${h.dir}`);
       assert(result.privateTmuxGone, 'private tmux server remains');
-      console.log(`  removed run folder: ${h.dir}; private tmux server gone`);
-    });
+      assert.equal(result.leftoverProcesses, 0, 'run processes remain');
+      console.log(`PASS clean: run folder absent after 5s: ${h.dir}; leftover processes: ${result.leftoverProcesses}; private tmux server gone`);
+    } catch (error) { failed = true; console.log(`FAIL clean: ${error.message}`); }
   } else console.log('FAIL clean: setup did not complete');
   process.exitCode = failed ? 1 : 0;
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

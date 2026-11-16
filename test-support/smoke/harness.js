@@ -39,6 +39,22 @@ function request(url, method = 'GET', body, headers = {}) {
     return value;
   });
 }
+function runProcesses(dir, paths, proc = fs) {
+  const uid = process.getuid();
+  const pids = [];
+  for (const entry of proc.readdirSync('/proc')) {
+    if (!/^\d+$/.test(entry)) continue;
+    const base = `/proc/${entry}`;
+    try { if (proc.statSync(base).uid !== uid) continue; } catch { continue; }
+    let env = [], cwd;
+    try { env = proc.readFileSync(`${base}/environ`, 'utf8').split('\0'); } catch {}
+    try { cwd = proc.readlinkSync(`${base}/cwd`); } catch {}
+    const relative = cwd && path.relative(dir, cwd);
+    if ((paths.home && env.includes(`HOME=${paths.home}`)) || env.includes(`TMUX_TMPDIR=${paths.tmux}`) ||
+        (cwd && (relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))))) pids.push(Number(entry));
+  }
+  return pids;
+}
 function effectivePaths({ hubArgv, machineArgv, env }) {
   const value = (argv, flag) => {
     const index = argv.lastIndexOf(flag);
@@ -152,8 +168,20 @@ async function createHarness({ mode = 'smoke', slowOriginSeconds = 0, hubSetting
       await new Promise(resolve => proxy.close(resolve));
       for (const child of children) if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
       await Promise.all(children.map(child => child.exitCode !== null || child.signalCode !== null ? null : new Promise(resolve => child.once('exit', resolve))));
+      const matchPaths = { tmux: paths.tmux, ...(mode === 'smoke' ? { home: paths.home } : {}) };
+      const poll = async ms => {
+        const end = Date.now() + ms;
+        let pids;
+        while ((pids = runProcesses(dir, matchPaths)).length && Date.now() < end) await new Promise(resolve => setTimeout(resolve, 100));
+        return pids;
+      };
+      const signal = (pids, name) => { for (const pid of pids) { if (!runProcesses(dir, matchPaths).includes(pid)) continue; try { process.kill(pid, name); } catch (error) { if (error.code !== 'ESRCH') throw error; } } };
+      let pids = await poll(10000);
+      if (pids.length) { signal(pids, 'SIGTERM'); pids = await poll(2000); }
+      if (pids.length) { signal(pids, 'SIGKILL'); await poll(2000); }
+      const leftoverProcesses = runProcesses(dir, matchPaths).length;
       cleanupNow();
-      return { privateTmuxGone, runFolderGone: !fs.existsSync(dir) };
+      return { privateTmuxGone, runFolderGone: !fs.existsSync(dir), leftoverProcesses };
     }
     const config = JSON.parse(await fsp.readFile(path.join(resolved.paths.machineState, 'machine.json'), 'utf8'));
     assert.equal(config.port, resolved.ports.machine, `machine.json port: expected ${resolved.ports.machine}, got ${config.port}`);
@@ -165,7 +193,7 @@ async function createHarness({ mode = 'smoke', slowOriginSeconds = 0, hubSetting
     return { dir, paths, ports: { hub: hubPort, machine: machinePort, proxy: proxyPort }, env, threadId, sublead, token, counts, statuses, callHub, callMachine, agent, tmux, waitFor, teardown, git, setOriginSlow };
   } catch (error) { if (teardown) await teardown(); else cleanupNow(); throw error; }
 }
-module.exports = { createHarness, waitFor, effectivePaths, assertIsolated };
+module.exports = { createHarness, waitFor, effectivePaths, assertIsolated, runProcesses };
 
 if (require.main === module) (async () => {
   if (!process.argv.includes('--check-live')) throw new Error('Use --check-live');
