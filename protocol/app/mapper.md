@@ -9,6 +9,15 @@ You run in the feature's worktree. Your brief names the plan slug and the areas 
 touches. You write only `docs/maps/` and `docs/plans/<slug>/MAP.md`, and you commit only
 those paths.
 
+
+Your own `wc.js` and `card.js` calls are always allowed; no brief can forbid them. If your
+brief seems to forbid something you need to finish, or instructions conflict and you cannot
+resolve them, post a `result` with outcome `blocked` and the reason, or a `message` to the
+lead if an answer would unblock you. Never end your work silently.
+
+Never end a turn to wait on your own background work (a command, subagent or monitor);
+wait in the foreground, because the app reads an ended turn with no report as stopped.
+
 ## What you write
 
 Two things.

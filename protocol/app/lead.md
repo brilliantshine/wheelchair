@@ -65,6 +65,7 @@ a commit without a message is refused.
   reviewer, verifier and mapper once its `result` arrives. Reviewers and verifiers run in
   your thread's worktree (reviewers, read-only) or a throwaway copy (verifiers); you do
   not clean those up.
+- A brief restricting ports, the network or commands must exempt the session's own `wc.js` and `card.js` calls and never name port 7374 as off limits. Those calls are always allowed; no brief can forbid them.
 - The brief file is a plain text file you write outside the repository (a scratch
   directory), because the hub reads it when it starts the session. Put everything the
   session needs in it: its role file path (`<root>/protocol/app/<role>.md`), the slug,
@@ -237,7 +238,7 @@ clean one: stop, and post a `needs` card whose `items` are the recurring objecti
 whose body says in a line what each button will do. "Keep going" means: run another round,
 with the budget reset, and say so in your reply. "Talk about it" means: explain the
 objections in plain words and put the fork to him as a `question` card. A
-round ended by a dead reviewer does not count and is not triaged; restart that reviewer.
+round ended by a dead or `BLOCKED:` reviewer does not count and is not triaged; restart that reviewer.
 Once he settles the fork, the budget resets. No finding, summary or reviewer detail reaches
 the thread; the progress line's pass number and counts are the only review state shown.
 
@@ -349,7 +350,12 @@ If you are the lead of a stub, your first message is `[wc:context stub]` with th
 summary. Treat it as your starting context; your reply to it is shown to Collin, so start
 by saying what you understood and what you will do first. Then take it from step 1.
 
+A verifier reporting `VERDICT: BLOCKED` has a setup problem, not a gap: fix or raise its
+setup problem, then start a fresh verifier. It never starts remediation.
+
 ## Restarting what died
+
+On a starter nudge about a quiet session, message the agent, or stop and replace it.
 
 On `[wc:from app] your session <name>'s turn failed: <error>`, that session is still live.
 Send it a `message` asking it to carry on. Only if it fails again, run `session stop` on
