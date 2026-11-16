@@ -444,3 +444,48 @@ test('archive tombstones a delayed POST whose response is lost', async () => {
     assert.equal(archived.archived, true); assert.deepEqual(archived.asides[0].history, history);
   } finally { release(); await pumping; }
 });
+
+test('a partly failed archive saves first and the hub retries the cancel', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'wc-asides-retry-'));
+  const hub = new Hub({ stateDir: dir }); await hub.state.init();
+  const id = 'partial-archive', ids = ['first-turn', 'second-turn'];
+  const aside = (turnId) => ({ id: turnId, status: 'open', pending: [], history: [], turn: { id: turnId, state: 'running' } });
+  await hub.save({ id, machine: 'hub', sessions: [], asides: ids.map(aside), cards: [], queues: {}, archived: false });
+  const known = new Map(ids.map(turnId => [turnId, { state: 'running' }])), calls = []; let starts = 0, timeout = true;
+  const machine = async (_, route, method, body) => {
+    calls.push({ route, method });
+    if (method === 'DELETE') {
+      const saved = await hub.thread(id);
+      assert.deepEqual(saved.asides.map(a => a.turn), [null, null]);
+      const turnId = decodeURIComponent(route.split('/')[3]);
+      if (turnId === ids[1] && timeout) { timeout = false; throw new Error('timeout'); }
+      known.set(turnId, { state: 'failed', error: 'stopped' }); return {};
+    }
+    if (route.endsWith('/ack')) { known.delete(route.split('/')[3]); return {}; }
+    if (route === '/v1/aside-turns' && method === 'POST') { if (!known.has(body.turn_id)) { starts++; known.set(body.turn_id, { state: 'running' }); } return {}; }
+    if (route === '/v1/archive') return { kept: [] };
+    throw new Error(`unexpected ${method} ${route}`);
+  };
+  hub.call = machine;
+  await hub.withThread(id, () => require('../app/threads.js').archive(hub, id));
+  let saved = await hub.thread(id);
+  assert.equal(saved.archived, true); assert.deepEqual(saved.asides.map(a => a.turn), [null, null]); assert.deepEqual(saved.pending_cancels, [ids[1]]);
+  await asides.pump(hub, id);
+  await asides.sweepCancels(hub, id);
+  saved = await hub.thread(id); assert.deepEqual(saved.pending_cancels, []);
+  assert.equal(calls.filter(c => c.route.endsWith('/ack')).length, 0);
+  assert.equal(calls.filter(c => c.method === 'DELETE' && c.route.endsWith(ids[1])).length, 2);
+  await machine('hub', '/v1/aside-turns', 'POST', { turn_id: ids[1] });
+  assert.equal(starts, 0); assert.deepEqual(known.get(ids[1]), { state: 'failed', error: 'stopped' });
+});
+
+test('a fresh hub retries pending cancels on init', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'wc-asides-init-cancel-'));
+  const first = new Hub({ stateDir: dir }); await first.state.init();
+  await first.save({ id: 'pending-init', machine: 'hub', pending_cancels: ['turn'], archived: true, sessions: [], asides: [], cards: [], queues: {} });
+  const fresh = new Hub({ stateDir: dir }); const calls = [];
+  fresh.call = async (machine, route, method) => { calls.push({ machine, route, method }); return {}; };
+  await fresh.init();
+  assert.deepEqual(calls, [{ machine: 'hub', route: '/v1/aside-turns/turn', method: 'DELETE' }]);
+  assert.deepEqual((await fresh.thread('pending-init')).pending_cancels, []);
+});

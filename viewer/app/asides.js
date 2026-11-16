@@ -194,4 +194,28 @@ function pump(hub, id, { fromTimer = false } = {}) {
   return entry.promise;
 }
 function needsPump(thread) { return !thread.archived && (thread.asides || []).some((aside) => aside.turn || (aside.status === 'open' && aside.pending?.length && aside.failed == null)); }
-module.exports = { brief, change, close, create, find, model, needsPump, pump };
+const cancelSweeps = new Set();
+async function sweepCancels(hub, id) {
+  if (cancelSweeps.has(id)) return;
+  cancelSweeps.add(id);
+  try {
+    const { machine, pending } = await hub.withThread(id, async () => {
+      const thread = await hub.thread(id);
+      return { machine: thread.machine, pending: [...(thread.pending_cancels || [])] };
+    });
+    if (!pending.length) return;
+    const confirmed = [];
+    for (const turnId of pending) {
+      try { await hub.call(machine, `/v1/aside-turns/${encodeURIComponent(turnId)}`, 'DELETE'); }
+      catch (error) { if (error.status !== 404) continue; }
+      confirmed.push(turnId);
+    }
+    if (!confirmed.length) return;
+    await hub.withThread(id, async () => {
+      const thread = await hub.thread(id);
+      thread.pending_cancels = (thread.pending_cancels || []).filter((turnId) => !confirmed.includes(turnId));
+      await hub.save(thread);
+    });
+  } finally { cancelSweeps.delete(id); }
+}
+module.exports = { brief, change, close, create, find, model, needsPump, pump, sweepCancels };

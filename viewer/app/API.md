@@ -63,6 +63,8 @@ first"`; otherwise it returns 422, `the offer was already asked`.
 
 An aside turn records its resolved `model` and `effort` alongside `id`, `state`, and `message`; retries reuse them and history records the model actually used. Aside-changing routes return 409 when the thread is archived. Chat `asides` holds each aside without its history. Lead assistant text items have a stable `id` of `<session name>#<index>`.
 
+The thread record carries `pending_cancels`: aside turn ids archive cancelled that the machine hasn't confirmed yet; the hub retries them.
+
 Chat `items` are `{type:"human"|"assistant"|"tool"|"context",text,at}`. `at` is the
 ISO timestamp on that transcript line, so pages can interleave chat and cards in time order.
 `human` card presses include `card:true`; context items include `context:"stub"|"restart"`.

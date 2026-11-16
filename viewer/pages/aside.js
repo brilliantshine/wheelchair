@@ -92,6 +92,6 @@
   }
   for (const [label, action] of [['Ask about this', 'ask'], ['Say it simpler', 'simpler'], ['Draw it', 'draw']]) { const b = button(label, 'small', () => { if (selection) create(selection, action); }); b.addEventListener('mousedown', e => e.preventDefault()); bar.appendChild(b); }
   for (const event of ['selectionchange', 'mouseup', 'touchend']) document.addEventListener(event, selected);
-  function panelChatSig(value) { if (!value) return ''; const card = (value.cards || []).find(c => ['question', 'needs', 'approval'].includes(c.kind) && !c.answered); const leads = (value.thread.sessions || []).filter(s => s.role === 'lead'); return JSON.stringify([card && [card.id, card.kind, card.question, card.title, card.answered], leads.at(-1)?.turn_ended]); }
+  function panelChatSig(value) { if (!value) return ''; const card = (value.cards || []).find(c => ['question', 'needs', 'approval'].includes(c.kind) && !c.answered); const leads = (value.thread.sessions || []).filter(s => s.role === 'lead'); return JSON.stringify([card && [card.id, card.kind, card.question, card.title, card.answered], leads.at(-1)?.turn_ended, value.thread.archived]); }
   window.WCAside = { update(next, rebuilt) { const panelChanged = panelChatSig(data) !== panelChatSig(next); data = next; const sig = JSON.stringify(data.asides || []); if (rebuilt || sig !== marksSig) { decorate(); marksSig = sig; } renderChip(); if (current) { files.hidden = true; if (panelChanged) renderPanel(); } } };
 })();
