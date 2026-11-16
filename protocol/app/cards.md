@@ -122,14 +122,34 @@ first; if it changed, the card updates and nothing starts. When it holds, it com
 
 ### `progress`
 
-The one pinned build line.
+The one pinned progress line.
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
-| `done` | integer | yes | Tasks finished |
-| `total` | integer | yes | Tasks in the build |
-| `machines` | array of strings | yes | Which machines the workers are on |
-| `choice_waiting` | boolean | yes | True turns the line amber with "choice for you", because a question card is waiting on him |
+| `stage` | `build` \| `review` \| `verify` | no | Absent means `build` |
+| `done`, `total` | integer | `build` only | Tasks finished and tasks in the build; `0 <= done <= total` |
+| `machines` | array of strings | yes, every stage | Machines in use; may be empty for `review` |
+| `choice_waiting` | boolean | yes, every stage | True turns the line amber with "choice for you" |
+| `pass` | integer >= 1 | `review`, `verify` | Review round or verification attempt number (`REMEDIATION-N.md`'s N + 1 for a re-verify); forbidden for `build` |
+| `phase` | `checking` \| `fixing` \| `clean` | `review`, `verify` | Checking is running reviewers or verifiers; fixing is triage and Spec fixes or remediation; clean means the review round met lead.md's clean test or verification passed. Forbidden for `build` |
+| `found`, `fixed` | integer | `fixing`; optional together for review `clean` | This pass only: `0 <= fixed <= found`; fixing requires `found >= 1`; clean requires `fixed == found`. Forbidden otherwise |
+
+`done` and `total` are forbidden for `review` and `verify`; `found` and `fixed` are
+forbidden with `checking` and verify `clean`. Review `clean` carries both counts or neither.
+
+| Stage / phase | Label | Text |
+|---|---|---|
+| `build` / absent | Building | Unchanged: segments + "D of T tasks done · machines" |
+| `review` / `checking` | Reviewing plan | "pass N · reviewers reading" |
+| `review` / `fixing` | Reviewing plan | "pass N · F found, X resolved" |
+| `review` / `clean` | Plan reviewed | "pass N · passed", or "pass N · passed, F resolved" when counts are present |
+| `verify` / `checking` | Verifying | "attempt N · checking" |
+| `verify` / `fixing` | Verifying | "attempt N · F gaps, X fixed" |
+| `verify` / `clean` | Verified | "attempt N · passed" |
+
+Review and verify have no segment bar; verify appends machines when non-empty. The folded
+label joins the label and text with " · ", adding ": choice for you" when waiting; the
+build folded label remains "Building D of T". Text wraps at phone widths.
 
 ### `needs`
 
