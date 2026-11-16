@@ -321,9 +321,10 @@ product code changes; any cleanup run by an agent rather than the suites.
 | T2 | Machine suite conversion (Spec §4 machine, §5 machine/aside) | `machine/test/*.test.js` | GPT standard (gpt-6.1-terra) | wc-25ba351f336d-worker-5 | `bash machine/test/run.sh`; TMPDIR leak check | in progress |
 | T3 | Viewer unit suite + helpers conversion (Spec §4–5) | `viewer/test/helpers/`, `viewer/test/*.test.js` | GPT standard (gpt-6.1-terra) | wc-25ba351f336d-worker-6 | `node --test viewer/test/*.test.js`; TMPDIR leak check | in progress |
 | T4 | Viewer browser specs conversion (Spec §4–5) | `viewer/test/*.spec.js`, `viewer/playwright.config.js` | GPT standard (gpt-6.1-terra) | wc-25ba351f336d-worker-7 | `npm --prefix viewer run test:browser`; TMPDIR leak check | in progress |
-| T5 | Shell traps, aside-probe cleanup, docs (Spec §6–7) | six shell suites, `machine/test/aside-probe.sh`, `AGENTS.md`, `viewer/AGENTS.md`, `machine/AGENTS.md` | GPT light (gpt-6-luna) | wc-25ba351f336d-worker-2 | `bash -n`; shell suites | in progress |
+| T5 | Shell traps, aside-probe cleanup, docs (Spec §6–7) | six shell suites, `machine/test/aside-probe.sh`, `AGENTS.md`, `viewer/AGENTS.md`, `machine/AGENTS.md` | GPT light (gpt-6-luna) | wc-25ba351f336d-worker-2 | `bash -n`; shell suites | done |
 
 ## Log
 - 2026-11-15 Ready check: hub and machine service answer (session list); claude 2.1.325 and codex 0.169.0 installed; codex preflight token fresh.
 - 2026-11-15 — Choice: T1, test-support/test/run-dir.test.js: inline child scripts and helper-owned per-case folders, no fixture files.
 - 2026-11-15 — Choice: T1, test-support/run-dir.js: malformed owner.json or child records leave the folder (conservative).
+- 2026-11-15 — Choice: T5, viewer/AGENTS.md and machine/AGENTS.md: the temp-folder sentence sits right after each router's test commands.
