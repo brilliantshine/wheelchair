@@ -46,20 +46,16 @@ implementing → verifying → done`.
 
 ## Pictures
 
-![The viewer: an explanation panel above a flow with approved, unruled and struck entries](docs/viewer.png)
+![The viewer: an explanation panel above a flow](docs/viewer.png)
 
 Ask how something works, or let a plan propose a flow, and the agent draws it in a browser viewer.
-The panel above the picture says what it shows and what it leaves out. Drag boxes, then **approve
-or strike in bulk**:
-- Green is approved, dashed red is struck, grey is not ruled on yet.
-- An agent can never change what you struck or mark its own work approved.
-- Planning has to account for everything you struck before the plan can leave Stage 1.
+The panel above the picture says what it shows and what it leaves out. You can drag boxes
+to rearrange the flow.
 
 **The run picture.** During `/implement`, the lead keeps a left-to-right picture of the change:
 - Each piece of the design is a box, wired to what it feeds and to the stores it touches.
 - Every piece shows *not started*, *in progress*, *done* or *needs you*.
-- When a worker makes a choice its brief didn't settle, that choice appears as a box you can
-  strike. The lead turns each strike into a follow-up task before the write-up.
+- When a worker makes a choice its brief didn't settle, that choice appears as a box.
 - When a part needs you, the tab title changes and a browser notification fires.
 
 Before any worker starts, the lead asks you once for everything the run needs, such as logins and

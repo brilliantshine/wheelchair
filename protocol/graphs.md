@@ -7,8 +7,7 @@ either harness, a planning turn drawing a flow, and — with nobody asking for a
 an ordinary turn whose answer earned one under the diagram-sensitivity dial
 (`protocol/sensitivity.md`). It has to be enough on its own: get the schema wrong and the
 server refuses the file; get the producer sequence wrong and nothing ever reaches a
-screen; get the verdict rules wrong and an agent silently erases something Collin already
-ruled on.
+screen.
 
 ## What a graph is, and isn't
 
@@ -59,26 +58,26 @@ A graph is one JSON file:
   ],
   "nodes": [
     { "id": "gate", "label": "accept it as a real measurement, or refuse",
-      "kind": "decision", "origin": "proposed", "was": null, "exclusive": true,
+      "kind": "decision", "exclusive": true,
       "ref": "src/.../admission.py", "note": "Admission is a gate, not a coercion.",
       "graph": null, "x": 780, "y": 200 },
     { "id": "refuse", "label": "left as words — no number is invented", "kind": "note",
-      "origin": "proposed", "was": null, "exclusive": false, "ref": null, "note": null,
+      "exclusive": false, "ref": null, "note": null,
       "graph": null, "x": 780, "y": 60 },
     { "id": "store", "label": "write it down, append-only", "kind": "step",
-      "origin": "proposed", "was": null, "exclusive": false, "ref": "src/.../repository.py",
+      "exclusive": false, "ref": "src/.../repository.py",
       "note": null, "graph": null, "x": 1020, "y": 200 },
     { "id": "time", "label": "work out when it happened", "kind": "step",
-      "origin": "proposed", "was": null, "exclusive": false, "ref": "src/.../timeline/AGENTS.md",
+      "exclusive": false, "ref": "src/.../timeline/AGENTS.md",
       "note": null, "graph": "timeline", "x": 1260, "y": 200 }
   ],
   "edges": [
     { "id": "gate->store", "from": "gate", "to": "store", "label": "accepted",
       "kind": "data", "value": "an admitted temporal record", "inferred": false,
-      "origin": "proposed", "was": null, "note": null },
+      "note": null },
     { "id": "gate->refuse", "from": "gate", "to": "refuse", "label": "refused",
       "kind": "sequence", "value": null, "inferred": false,
-      "origin": "proposed", "was": null, "note": null }
+      "note": null }
   ]
 }
 ```
@@ -113,12 +112,6 @@ Field by field:
   by looking: which arrow is the interesting one, what the drawing is arguing, what was
   deliberately left off it.
 
-  It carries **no verdict** and is outside the preservation contract below entirely, and
-  `groups` — the next field — sits outside it on the same terms. Both are the agent's own
-  claim about its picture, rewritten freely on every redraw exactly as it redraws an
-  unruled box, because an approved wording, or a region an agent may not touch, goes
-  stale the moment the picture moves underneath it. Verdicts stay on the nodes and edges,
-  which are what make claims about the code.
 - **`groups`** — an array of `{id, label, note, visible, nodes}`, each naming a set of
   node ids in this file, sorted by `id` like `nodes` and `edges`. Defaults to `[]` when
   omitted.
@@ -186,12 +179,6 @@ Field by field:
   it is self-evidently not silent — a phrase may still reference one, and it behaves
   exactly as it does today when it does.
 
-  A group still carries no verdict — no `origin`, no `was`, none of it covered by the
-  preservation contract below, rewritten freely by an agent on every redraw. A drawn
-  boundary strengthens that reasoning rather than weakening it: the box is derived from
-  wherever its members currently sit, nothing keeps it honest once they're dragged, and a
-  verdict on it would be a verdict on a shape a drag can invalidate.
-
   A node inside a group may still carry its own child graph — the two mechanisms are
   orthogonal. A box can be a member of a drawn system and an open door to a deeper
   picture at the same time. A group itself never holds one: it names boxes in this same
@@ -255,9 +242,8 @@ Field by field:
   See "What the server refuses" below for what an entry that's missing, malformed,
   unreferenced, or drawn wrong draws.
 - **`id`** (node and edge) — non-empty and unique within its own collection (nodes and
-  edges are separate namespaces). Missing, empty, or duplicated draws `bad-id`. Ids are
-  permanent once a verdict lands on them — see Verdicts below — so pick one you'd be
-  fine seeing again in six months, not `n1`.
+  edges are separate namespaces). Missing, empty, or duplicated draws `bad-id`. Pick a
+  descriptive id rather than `n1`.
 - **`label`** — plain-language behavior, per "What a graph is" above. The one field with
   **no default**. Omit it and the server refuses the whole write with `missing-label`,
   naming the offending id — a missing label is a refusal, never a silent repair. A box
@@ -272,11 +258,6 @@ Field by field:
   naming the offending id — a typo here is a write-time failure, not just a worse tag.
   Omitting `kind` is not a typo: it still defaults to `note`, same as before. `choice` is
   also a legal kind, but only on a run picture (`run: true`) — see "Run pictures" below.
-- **`origin`** — one of `proposed`, `agreed`, `rejected`, checked against exactly that
-  set (`bad-origin-value` otherwise). See Verdicts below; an agent never sends anything
-  but `proposed` for content it is introducing.
-- **`was`** — `null` on every entry except one an agent has just reset from `agreed`,
-  where it is the string `"agreed"`. Also covered under Verdicts.
 - **`exclusive`** (node only) — `true` means exactly one outgoing edge is taken, and the
   node renders as a fork: each outgoing edge labels itself `if <label>`, plus its
   payload where it has one. `false` (the default) means every outgoing edge fires.
@@ -302,8 +283,7 @@ Field by field:
   checked at this point. This is the only join between a name and a path anywhere in
   the format; every route the server exposes is keyed by full path, precisely because
   one server serves graphs from many repos and a bare name like `main` is ambiguous on
-  its own. See "Containment across files" below for what a container node may and may
-  not do.
+  its own. Containment cycles are refused.
 - **`kind`** (edge) — `data` when something moves along the edge, `sequence` when it's
   only ordering. Default `sequence`, the weaker claim, for the same reason `exclusive`
   defaults to `false`: an agent that cannot tell which kind an edge is should not assert
@@ -312,9 +292,8 @@ Field by field:
 - **`value`** (edge) — names what a `data` edge carries. `null` for a `sequence` edge or
   a `data` edge with nothing worth naming yet.
 - **`inferred`** (edge) — `true` when `value` was reconstructed rather than read
-  verbatim from the source. Once a person confirms what an edge carries, the entry
-  responsible for that is `origin`, not `inferred` — this flag only ever describes
-  whether the *agent* stated or guessed the payload.
+  verbatim from the source. This flag describes whether the agent stated or guessed
+  the payload.
 - **`from` / `to`** (edge) — must each name a node's `id` present in the same file. A
   dangling reference draws `edge-missing-node`. **Edges connect siblings only**: a
   relationship that spans two levels of containment is drawn at whichever level both
@@ -331,9 +310,8 @@ crowding one graph past the point Collin can read it.
 The file on disk is byte-canonical, always. Top-level keys, in this exact order:
 `schema`, `title`, `source`, `source_detail`, `explanation`, `run`, `groups`, `nodes`,
 `edges`. Group keys: `id`, `label`, `note`, `visible`, `nodes`. Node keys: `id`,
-`label`, `kind`, `origin`, `was`, `exclusive`, `ref`, `note`, `graph`, `task`, `status`,
-`needs`, `x`, `y`. Edge keys: `id`, `from`, `to`, `label`, `kind`, `value`, `inferred`,
-`origin`, `was`, `note`.
+`label`, `kind`, `exclusive`, `ref`, `note`, `graph`, `task`, `status`,
+`needs`, `x`, `y`. Edge keys: `id`, `from`, `to`, `label`, `kind`, `value`, `inferred`, `note`.
 
 **Every key is present on every entry**, `null` or `false` where it doesn't apply. An
 omitted key and a null one would serialize identically otherwise, and byte-identity —
@@ -360,11 +338,11 @@ Defaults applied when canonicalizing a body that omits a key: top-level `run` �
 `explanation` → `null`, `groups` → `[]`. Group `visible` → `false` when the key is **absent** — an explicit
 `visible: null` is a non-boolean and draws `group-bad-shape`, the one key here where a null and a
 missing key differ. Group `label`/`note` → `null`. Node `kind` → `"note"`,
-`origin` → `"proposed"`, `was` → `null`, `exclusive` → `false`, `ref`/`note`/`graph` →
+`exclusive` → `false`, `ref`/`note`/`graph` →
 `null`, `task`/`status`/`needs` → `null`. Edge `kind` → `"sequence"`, `value` → `null`,
-`inferred` → `false`, `origin` →
-`"proposed"`, `was` → `null`, `note` → `null`. **`label` has no default** — omit it and
-the write is refused, not repaired.
+`inferred` → `false`, `note` → `null`. **`label` has no default** — omit it and
+the write is refused, not repaired. Older files may carry `origin` and `was`; they are
+ignored and dropped on the next write.
 
 Given that, the minimal legal node you can send is just `{"id": "gate", "label":
 "accept it as a real measurement, or refuse"}` — everything else defaults. The same
@@ -448,11 +426,8 @@ characters of a SHA-256 hash of the absolute repo path — a repo called `orchar
 repo share a basename; without it, a question asked from one worktree could collide with
 one asked from another.
 
-If a question's slug already names an existing file, and that file holds only
-`proposed` entries, overwrite it — question graphs are disposable, and a rerun of a
-similar-sounding question is not required to reuse anything. If it holds any `agreed` or
-`rejected` entry, the write fails exactly like any other write that would drop a
-verdict; pick a different slug rather than fighting the refusal.
+If a question's slug already names an existing file, overwrite it — question graphs are
+disposable, and a rerun of a similar-sounding question is not required to reuse anything.
 
 ## Writing a graph
 
@@ -587,22 +562,11 @@ convenience, not the record.
 headless box or an SSH session. The launch is best-effort either way: a machine with no handler
 prints the URL and carries on, and never fails a write that already succeeded.
 
-**Every node and edge you introduce must carry `origin: "proposed"`** (or omit it,
-since that's the default). The server checks this on every write — any id that's new,
-or that was `proposed` on disk, must arrive `proposed` — and refuses with
-`agent-verdict` otherwise. An agent proposes; only a person, dragging in the browser,
-promotes something to `agreed` or `rejected`.
-
 **A `409` response means disk moved since the hash you sent.** Its body carries the
 current hash. `GET` the graph again (see below), recompute whatever change you were
 making against that fresh copy, and `PUT` again with the hash it just gave you. Never
 retry by resending the same stale body with a corrected hash — the graph itself may
 need to change too, if the entries you were touching moved underneath you.
-
-Rewriting an existing graph — not creating one — is otherwise the same `PUT`, with two
-constraints described fully under Verdicts below: every `rejected` entry must reappear
-byte-identical (aside from position), and every `agreed` entry must reappear
-byte-identical or be reset to `proposed` with `was: "agreed"`.
 
 **Writing a child graph needs no separate `--open`.** Once a node's `graph` field names
 a child inside a parent that's already registered, the child's own path becomes
@@ -621,72 +585,6 @@ returns `{"hash": "...", "graph": {...}, "children": {"timeline": true}}`. `chil
 maps every non-null `graph` value found in the file to whether that child's file
 currently exists — it's computed for the page's benefit and is never itself written to
 disk.
-
-**Whichever producer wrote a graph reads it back before its next turn on the same
-subject.** For a plan, that's the re-read `protocol/planning.md` requires before
-composing each question. For a question, the producer records the file it wrote and the
-next turn on that question reads it first — the same rule whether `/graph` wrote it or an
-unprompted turn did, because Collin's verdicts are on the file, not on how it got there.
-This rule lives here, not in `planning.md`, because the question path never goes through
-`planning.md` at all — stating it only in the planning stage document would leave the
-question path with no read-back rule whatsoever.
-
-## Verdicts and the preservation contract
-
-Every node and edge carries `origin`, one of three values:
-
-| Value | Meaning |
-|---|---|
-| `proposed` | An agent drew it; nobody has ruled on it |
-| `agreed` | Collin confirmed it |
-| `rejected` | Collin struck it |
-
-**`agreed` is a verdict at a point in time, not a lock.** An agent may alter an entry
-Collin approved when the flow it describes has genuinely changed — doing so resets that
-entry's `origin` to `proposed` and sets `was: "agreed"` on it, and the turn that made
-the change names every entry it reset and why. The `was` field is what makes the reset
-durable: the graph file is the state and the conversation is disposable, so a report
-that lives only in the turn leaves a session that resumes later with no way to tell a
-freshly reset entry from one nobody has ever ruled on. A person ruling on it again — in
-the browser — clears `was` back to `null`.
-
-Without this, a graph freezes solid. Bulk-approving everything on screen is the normal
-gesture, so after one select-all every entry is `agreed`; with no reset path, a flow
-that gets superseded ten questions later could be neither corrected nor removed, and the
-picture would just go quietly wrong with no way back.
-
-**`rejected` is absolute.** An agent may never alter a rejected entry, never delete one,
-and never reuse its id for a new proposal — "previously rejected" is decided by **id**,
-never by resemblance, because ids are stable from creation and a genuinely different
-proposal earns a genuinely different id. A rejected entry stays in the file, rendered
-struck through on the page, forever: deleting it gives the next agent no record, and the
-same thing gets proposed again next turn.
-
-**An `agreed` entry may be removed only after its reset has landed** — that is, only once
-it already carries `origin: "proposed", was: "agreed"` on disk. Trying to drop an
-`agreed` entry outright, without that intermediate step ever having landed, is refused
-(`preservation-agreed`); trying to alter it without resetting it is refused the same way.
-Trying to drop or alter a `rejected` entry is refused as `preservation-rejected`. This
-makes a superseded flow disappear in two visible writes rather than one invisible one —
-the reset is a fact Collin (or the next agent) can see before the entry is finally gone.
-
-None of this touches `proposed` entries: an agent may add, change, or remove those
-freely, since nobody has ruled on them yet.
-
-## Containment across files
-
-A node's `graph` field names a child, and everything above about preservation extends
-across that boundary: an agent may not remove a container node whose child holds any
-`agreed` or `rejected` entry **anywhere in its subtree** — not just directly inside the
-child, but in any graph reachable from it — nor retarget that node's `graph` field away
-from that child to something else or to `null`. A one-level check would let removing a
-container silently orphan a grandchild's verdicts; the check is recursive precisely so
-that can't happen.
-
-The exception is `null` → a name: always allowed, because there's no old subtree to
-orphan when there wasn't one before. Likewise, a container currently naming a **missing**
-child — the file that `graph` points at doesn't exist — may be retargeted freely, since
-pointing away from a file that isn't there orphans nothing.
 
 ## Choosing a group or a container node
 
@@ -854,16 +752,8 @@ keeps its `if <label>` wording. The face-slotting a plain graph uses for its arr
 while building this", so it lands on that part's unnamed input socket rather than
 adding a named one of its own.
 
-### The preservation exemption
-
-**`task`, `status`, and `needs` join `x`/`y`** as fields `sameExceptPosition`
-(`viewer/server.js:369`) ignores — see "Verdicts and the preservation contract" above.
-An agent may change any of the three on an `agreed` or `rejected` entry without
-resetting it; that's what lets the lead mark an accepted task's boxes `done` without
-wiping Collin's ruling. The page's `PUT /view` may never change any of the three,
-though, so a difference in any of them there is a `structural-difference`
-(`checkViewChanges`, `viewer/server.js:1511`) exactly as an unexpected content change is
-today. `run` itself is compared like `title`: the page never changes it either.
+The page's `PUT /view` may not change `task`, `status`, `needs`, or `run`; such a
+change is a `structural-difference`, as is any unexpected content change.
 
 ### The list page
 
@@ -908,13 +798,8 @@ them:
 | 422 | `self-edge` | an edge whose `from` and `to` are the same node |
 | 422 | `explanation-missing-group` | the explanation carries a `#`-prefixed reference to a group not in `groups` |
 | 422 | `group-unreferenced` | an invisible group in `groups` that the explanation never references |
-| 422 | `bad-origin-value` | an `origin` outside `proposed`/`agreed`/`rejected` |
 | 422 | `container-bad-name` | a `graph` value that isn't `null` and isn't `^[a-z0-9_-]+$` |
 | 422 | `positional-claim` | the `explanation`, or a group's `label` or `note`, says where something sits. Text inside backticks or double quotes is exempt, so a graph about this rule can quote the phrase it forbids. A node's or edge's own prose is not read |
-| 422 | `agent-verdict` | you set `agreed`/`rejected` on an entry that's new or was `proposed` on disk |
-| 422 | `preservation-rejected` | a `rejected` entry was dropped, altered, or its id reused |
-| 422 | `preservation-agreed` | an `agreed` entry was dropped without a landed reset, or altered without resetting |
-| 422 | `bad-was` | `was` carries a value this write isn't allowed to set |
 | 422 | `run-field` | `run` is `false` and some node has non-null `task`, `status` or `needs`, or has kind `choice` |
 | 422 | `run-field-shape` | `task` or `needs` is neither a non-empty string nor `null` |
 | 422 | `bad-status` | `status` outside the four values and `null` |
@@ -926,8 +811,6 @@ them:
 | 422 | `run-name` | a file named `run.json` or `run-*.json` in a plan's `graphs/` directory is written with `run: false`. The names are reserved for run pictures |
 | 422 | `run-nesting` | a run picture whose file isn't named `run.json` contains a container node, or a container on `run.json` names a child that doesn't match `run-[a-z0-9_-]+` |
 | 422 | `container-cycle` | this write would make some file reachable from itself through `graph` fields |
-| 422 | `container-orphan` | removing or retargeting a container would strand a subtree holding a verdict |
-| 422 | `container-unreadable-child` | that subtree walk hit a child file that doesn't parse, so it can't be shown to hold no verdicts. Repair the child by hand; the server never repairs one |
 | 500 | `internal` | anything unhandled |
 
 Two of those refuse things that look harmless rather than obviously broken: an empty
@@ -937,11 +820,11 @@ that highlights nothing — the silent failure the whole feature exists against.
 group is exempt from the second: drawn on the canvas, it is never silent, so nothing
 requires the explanation to name it too.
 
-Four codes exist that a `PUT /graph` will never produce: `not-found` and `no-route`
+Three codes exist that a `PUT /graph` will never produce: `not-found` and `no-route`
 belong to reads and to unknown routes (this route can create, so a missing file is
-never an error here); `structural-difference` and `bulk-not-additive` police the page's
-own write route, `PUT /view`, which no agent ever calls. `invalid-json` is a serving
+never an error here); `structural-difference` polices the page's own write route,
+`PUT /view`, which no agent ever calls. `invalid-json` is a serving
 refusal — it fires when a `GET` finds a file on disk that some hand-edit broke — and
-matters to the read-back rule above, not to writing: if your read-back hits it, the
+matters when reading back, not writing: if your read-back hits it, the
 file is corrupt independent of anything you wrote, and no `PUT` will fix it. Report it
 rather than trying to repair it.

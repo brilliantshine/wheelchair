@@ -40,10 +40,8 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 - **A graph path is accepted only inside a plan's `graphs/` directory or the cache root.**
   `server.js` resolves symlinks before checking, so a path that merely looks like one of
   those is refused. A change to path handling is a change to what the server will write.
-- **An agent's `PUT /graph` may not grant a verdict, drop or alter a rejected entry, claim a
-  position, or clear a landed reset.** That contract sits in `checkAgentWrite`, not in
-  `validateGraph`, which also runs on every read: refusing a committed graph there would
-  make it unopenable.
+- **An agent's `PUT /graph` may not claim a position and must follow the run-field
+  rules.** That contract sits in `checkAgentWrite` and graph validation.
 - **Layout constants exist twice and must change together.** `server.js` and `index.html`
   share no module, and both copy `protocol/graphs.md`. The browser suite is what catches
   them drifting, so a change to one side runs it.
