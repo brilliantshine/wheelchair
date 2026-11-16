@@ -424,3 +424,49 @@ GAP: Decision 19 / Spec §4–§5 / Remediation 5 — A poll returning `failed: 
 Cause: the Remediation 5 brief kept acknowledging an `ok`/`failed` result for a turn no aside
 holds, on the reasoning that the hub never cancelled it. After archive, a cancelled turn polls
 back as `failed`/"stopped", so it was acknowledged. Sent to the lead before any further fix.
+
+### Remediation 6 — 2026-11-15 (Decision 19 applied fully; corrects Remediation 5's brief)
+
+The lead approved applying Decision 19 fully: the hub never acknowledges a turn no aside holds,
+whatever its state; it still cancels a running one and acknowledges only results saved into an
+aside. Brief: `REMEDIATION-6.md`. One task, R6-1, on GPT (standard, gpt-6.1-terra), merged at
+`9c5623b`. Worker choices: none.
+
+| Change | Where |
+|--------|-------|
+| The unheld-turn branch of `pass` no longer queues an ack for `ok`/`failed`; it only queues a cancel for `running` | `viewer/app/asides.js`, `pass` |
+
+Validation, run by the sub-lead (R6-1 branch `d3a5dbf`, then merged):
+
+```
+$ node --test viewer/test/app-asides.test.js     (three runs, branch)
+# pass 16 # fail 0
+# pass 16 # fail 0
+# pass 16 # fail 0
+$ node --test viewer/test/*.test.js               (branch)
+not ok 239 - a starter that loses the freed port registers through the new holder
+not ok 309 - the global write lock serializes concurrent writes and retry retains both changes
+# tests 357
+# pass 355
+# fail 2
+$ node --test viewer/test/server.test.js          (three runs, alone)
+# pass 55 # fail 0
+# pass 55 # fail 0
+# pass 55 # fail 0
+$ bash machine/test/run.sh                         (merged)
+# pass 90 # fail 0
+$ node --test viewer/test/app-asides.test.js      (merged)
+# pass 16 # fail 0
+```
+
+New test "a stopped result after archive is never acknowledged, so a late start runs nothing":
+the pass's POST is accepted (`starts === 1`), the next poll's GET is held, archive DELETEs,
+the GET then returns `failed`/"stopped" for a turn no aside holds; no ack is sent, the fake
+still holds the id as stopped, and a delayed duplicate POST starts nothing.
+
+**Intermittent, flagged for the verifier:** `viewer/test/server.test.js` "the global write lock
+serializes concurrent writes and retry retains both changes" has failed in two full-suite runs
+(the R1-1 worker's and this one) and passed every time alone (3/3 here). It exercises the graph
+PUT path that T3 refactored into the shared `writeGraph` (`viewer/server.js:1578`); the
+sub-lead re-read that refactor and found the PUT steps moved verbatim under the same
+`withMutex`. Not shown to be caused by this build, but not shown otherwise either.
