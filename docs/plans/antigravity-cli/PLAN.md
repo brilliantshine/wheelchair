@@ -382,10 +382,12 @@ a worker with `--provider gemini` and check its `result` card arrives.
 | T4 | Machine: `agy` adapter, global-hook fallback, hook.sh, service status/prompt polling/login | `machine/adapters/`, `machine/service.js`, `machine/hook.sh`, `machine/lib/hook-post.js`, `machine/test/` (not fixtures) | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-6 (t4-a1) | `bash machine/test/run.sh` | done |
 | T5 | Pages: Settings, thread, threads show Antigravity; browser tests | `viewer/pages/{settings,thread,threads}.js`, `viewer/test/*.spec.js` | standard, gpt-6.1-terra (asked for claude; hub: \"Could not use claude; using gpt\") | wc-9340ecf1256c-worker-7 (t5-a1) | `npm --prefix viewer run test:browser` | done |
 | T6 | Protocol, API docs, routers | `protocol/app/{lead,sub-lead}.md`, `machine/API.md`, `viewer/app/API.md`, `machine/AGENTS.md`, `viewer/AGENTS.md`, `codex/AGENTS.md` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-8 (t6-a1) | protocol-rules test; grep for two-provider wording | done |
-| T7 | Graph-arrow browser test skips `form` picture files, as it skips `run` ones | `viewer/test/browser.spec.js` | light, gpt-6-luna | wc-9340ecf1256c-worker-9 (t7-a1) | the one test, both browsers | in progress |
+| T7 | Graph-arrow browser test skips `form` picture files, as it skips `run` ones | `viewer/test/browser.spec.js` | light, gpt-6-luna | wc-9340ecf1256c-worker-9 (t7-a1) | the one test, both browsers | done |
 | T8 | Installer test expects the `gemini` pin lines `model.sh init` now writes | `install/test/run.sh` | light, gpt-6-luna | wc-9340ecf1256c-worker-10 (t8-a1) | `bash install/test/run.sh` | in progress |
 
 ## Log
+
+- 2026-11-16 — T7 accepted (diff read; the full browser run on the merged branch re-checks it). Choices: none.
 
 - 2026-11-16 — Full validation on the merged branch: machine 109/0, codex 91/0, sensitivity 67/0, viewer unit 445/447 (the two baseline failures), install 179/1. The install failure (`install/test/run.sh:247`, the default model pins file) is from T1: `init` now writes `gemini.*` lines, and my T1 brief didn't list the installer suite. T8 fixes the expected text.
 
