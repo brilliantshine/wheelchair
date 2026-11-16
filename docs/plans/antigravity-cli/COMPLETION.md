@@ -185,6 +185,7 @@ Not run: `./install.sh` (canonical clone only; refused from a worktree, so `inst
 
 ## Known gaps / residual risks
 
+- **Verification attempt 1 is same-family.** Every builder ran on GPT, and the verifier was started with `--not-provider gpt`, but the hub placed it on GPT too (`gpt-6.1-sol`; note "Could not avoid gpt; using gpt.") because Claude had no room. The lead accepted that. No other model family has checked this build.
 - **Reviewers and verifiers on `agy` are not read-only.** They run with the same flags as builders (Deviation 5). A reviewer placed on Antigravity could edit files; nothing but its brief stops it.
 - **Permission prompts under `--mode auto`**: in T0, auto mode ran `curl` and `chmod 777` without asking. The prompt detector is built from the real `accept-edits` screen, so a prompt is caught if one appears, but which commands make auto mode ask is unknown.
 - **First-run screens on a new machine**: sign-in ends at `agy`'s first-run screens (`loginDone` on "Welcome to Antigravity CLI!"). The data-use screen was never captured, and `answerPrompts` answers nothing. On a machine where `agy` was never onboarded, a first session could sit on those screens and be reported stuck, and Collin would finish onboarding from the terminal page. This machine is onboarded.
