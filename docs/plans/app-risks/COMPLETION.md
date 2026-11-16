@@ -1,7 +1,7 @@
 ---
 slug: app-risks
 date: 2026-11-15
-implemented-by: "gpt standard (gpt-6.1-terra) ×5 workers: T1, T2, T3, T3b, R1-T1; sub-lead claude-opus-5-5 for the D10 seeding and the proposal wording fix"
+implemented-by: "gpt standard (gpt-6.1-terra) ×6 workers: T1, T2, T3, T3b, R1-T1, R2-T1; sub-lead claude-opus-5-5 for the D10 seeding and the proposal wording fix"
 verified-by: []
 ---
 
@@ -148,4 +148,38 @@ PASS stop
   removed run folder: /tmp/wheelchair-test-run-861862-cil1Mg; private tmux server gone
 PASS clean
 exit 0
+```
+
+### Remediation 2 (2026-11-15)
+
+Verification 2 (claude / claude-opus-5-5 at `c40302f`) confirmed remediation 1's gap closed and failed a new gap: every smoke run leaked its run folder. The real `claude` in the smoke start wrote `home/.claude.json` into the temporary HOME after teardown had removed the folder, and the clean check looked too early. See `REMEDIATION-2.md`, which lists the 10 folders this build leaked. They were not deleted (no-delete rule) and Collin decides.
+
+Fix, R2-T1 (gpt / gpt-6.1-terra, `wc-0958e89051d8-worker-6`, commit `275b0d9`):
+- `test-support/smoke/harness.js:42-57` `runProcesses(dir, paths)` matches only this run's processes owned by the current uid: environment `HOME=<temp home>` (smoke mode only), `TMUX_TMPDIR=<private tmux folder>`, or a cwd inside the run folder. It never matches the real HOME.
+- `harness.js:171-184`: teardown waits up to 10 s for those processes after the tmux server is killed, then SIGTERM (2 s), then SIGKILL, and only then calls `cleanupNow()`. It returns `leftoverProcesses`.
+- `test-support/smoke/smoke.js:38-47`: the clean check waits 5 s after teardown, then requires the folder still absent and `leftoverProcesses === 0`.
+- `test-support/test/smoke-harness.test.js`: a matcher test over an injected `/proc` (uid filter, exact env match, directory boundary).
+
+Failing-before (`reports/R2-T1.md`): unfixed code, run then 5 s wait: `/tmp/wheelchair-test-run-903082-g6WoX3/home` exists again. That folder is the 11th leak and was not deleted.
+
+Sub-lead check after the merge: one smoke run, then 10 s, then a diff of `/tmp/wheelchair-test-run-*`. The only new folder belonged to a concurrently running test process from another thread, with a live `owner.json` the sweep handles, not to the smoke run. Separately, three smoke runs on the worker's branch left none of their own folders.
+
+```
+$ bash test-support/smoke/run.sh
+PASS readiness through hub
+PASS start
+PASS stop
+PASS clean: run folder absent after 5s: /tmp/wheelchair-test-run-943100-Z1WEl5; leftover processes: 0; private tmux server gone
+exit 0
+new /tmp/wheelchair-test-run-* folders 10 s after the run:
+/tmp/wheelchair-test-run-943871-IpGp5k owner: {"pid":943871,"start":"16676003","children":[{"pid":945379,"start":"16677463","group":false},{"pid":945391,"start":"16677497","group":false}]}
+(end)
+$ node --test test-support/test/*.test.js
+# tests 8
+# pass 8
+# fail 0
+$ node test-support/smoke/harness.js --check-live
+Seeded session: {"name":"wc-smoke-sub-lead","role":"sub-lead","live":true,"status":"ready"}
+Slow origin fetch: 8.01 s
+Run folder removed: true
 ```
