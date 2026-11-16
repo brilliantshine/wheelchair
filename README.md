@@ -45,21 +45,26 @@ Run it inside WSL2, which is a real Linux system, so the steps above apply uncha
 route is untested. Docker is a poor fit: the agents need your real repos and sign-ins, and
 the sudo helper is meant to act on your machine, not on a container.
 
-1. Install WSL2 with Ubuntu or Debian: `wsl --install`.
+1. In an administrator PowerShell, run `wsl --install` (Ubuntu) or
+   `wsl --install -d Debian`, then restart Windows.
 2. Turn on systemd: put this in `/etc/wsl.conf`, then run `wsl --shutdown` from Windows.
    ```
    [boot]
    systemd=true
    ```
 3. Inside WSL, install the [dependencies](#dependencies) and sign in to `gh` and `claude` or
-   `codex`. Install Tailscale inside WSL too, not only on Windows, so `tailscale serve` can
-   publish the app.
+   `codex`. Install Tailscale inside WSL, since the installer runs `tailscale serve` there,
+   and quit it on Windows: Tailscale traffic breaks when both run at once.
 4. Clone wheelchair and your projects under the Linux home folder (`~/...`), never under
    `/mnt/c`. Windows drives are slow from WSL, and git and file permissions misbehave there.
 5. Follow "First time" above.
 
-WSL shuts down when idle, which stops the app and every agent session. Raise
-`vmIdleTimeout` in `%UserProfile%\.wslconfig`, or keep a WSL terminal open.
+WSL shuts down an idle distribution after 15 seconds, which stops the app and every agent
+session. Turn that off in `%UserProfile%\.wslconfig`, then run `wsl --shutdown`:
+```
+[general]
+instanceIdleTimeout=-1
+```
 
 ### Doing a piece of work
 
