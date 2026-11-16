@@ -392,6 +392,8 @@ a worker with `--provider gemini` and check its `result` card arrives.
 
 ## Log
 
+- 2026-11-16 — Lead: verification passes on the automated evidence (attempt 3, no gap). The live checks run after merge and `./install.sh` in the canonical clone, recorded in COMPLETION.md. All three verifications were same-family. Build result sent to the lead.
+
 - 2026-11-16 — Verification attempt 3: BLOCKED, no gap. The Spec's live checks need Collin, the lead and the code installed in the live services (canonical clone, after merge). All automated suites pass. Raised to the lead with a proposal: pass on the automated evidence and run the live checks after merge and install.
 
 - 2026-11-16 — Verification attempt 3 started on 935090a, `--not-provider gpt`: wc-9340ecf1256c-verifier-3 gpt gpt-6.1-sol | Could not avoid gpt; using gpt.

@@ -2,7 +2,16 @@
 slug: antigravity-cli
 date: 2026-11-16
 implemented-by: "standard, gpt-6.1-terra (T0, T0b, T1, T2, T3, T4, T5, T6, T9, R1-1, R1-2, R2-1 a1; R2-1 a2 at effort high); light, gpt-6-luna (T7, T8). Sub-lead: claude-opus-5-5."
-verified-by: []   # Stage 4 appends; Stage 3 leaves this empty.
+verified-by:
+  - round: 1
+    lane: gpt-6.1-sol (same-family; Claude had no room)
+    checks: gpt-6.1-terra / gpt-6-luna builders
+  - round: 2
+    lane: gpt-6.1-sol (same-family; Claude had no room)
+    checks: gpt-6.1-terra builders (incl. R1-1, R1-2)
+  - round: 3
+    lane: gpt-6.1-sol (same-family; Claude had no room)
+    checks: gpt-6.1-terra builders (incl. R2-1)
 ---
 
 # Completion Report — Antigravity CLI as a third agent provider
@@ -190,7 +199,10 @@ Not run: `./install.sh` (canonical clone only; refused from a worktree, so `inst
 - **Permission prompts under `--mode auto`**: in T0, auto mode ran `curl` and `chmod 777` without asking. The prompt detector is built from the real `accept-edits` screen, so a prompt is caught if one appears, but which commands make auto mode ask is unknown.
 - **No rate-limit format observed.** `limit-hit` relies on a regex over the Stop `error` text (`quota|rate.?limit|resource.?exhausted|429`), with no usage meter (Decision 4).
 - **`agy` self-updates.** The parsers fail soft: unknown rows are skipped, and an unreadable transcript shows the "Couldn't read" line.
-- **Not live-checked yet**: signing in from Settings on a phone, an `agy`-led thread end to end, and a `--provider gemini` worker's `result`. The Spec's Live paragraph is for the verifier, or Collin, on hearth.
+- **Live checks are a post-merge step.** The Spec's three live checks run after the branch is merged and `./install.sh` is run in the canonical clone, because the live hub and machine services run that clone's code. The lead runs them with Collin:
+  1. Sign in the Antigravity account from Settings on a phone-width browser.
+  2. Start a thread whose CLI is `agy` (put Antigravity first in the lead order). Its lead's turns appear in the thread and its turn end is noticed, and an aside on it is refused with "Side conversations aren't available on Antigravity sessions yet".
+  3. From a Claude-led thread, start a worker with `--provider gemini` and check its `result` card arrives.
 - **Pre-existing test failures**, untouched by this build: `viewer/test/lifecycle.test.js` "a starter that loses the freed port registers through the new holder", `viewer/test/routes.test.js` "an app page carries font-src self…" (inter-400 font 404); `viewer/test/server.test.js` "the global write lock serializes concurrent writes…" is flaky (about 1 run in 3).
 
 ## Remediation rounds
@@ -226,3 +238,7 @@ Appended by Stage 4 loops; never erase earlier content.
   - `npm --prefix viewer run test:browser` → 624 passed, 2 skipped.
   - `node --test viewer/test/*.test.js` → 447/448; the one failure is the pre-existing lifecycle test.
   - `bash machine/test/run.sh` → 109/109.
+
+### Verification attempt 3
+
+Verifier `wc-9340ecf1256c-verifier-3` (gpt-6.1-sol, same-family) on 935090a: **BLOCKED, no gap found**. Automated: browser 624 passed, 2 skipped; machine 109/109; model pins 91/91; installer 180/180; sensitivity 67/67; viewer unit 447/448 (the pre-existing lifecycle failure only); both sign-in remediations pass in Chromium and Firefox. It was blocked only on the Spec's live checks, which need Collin and the code installed in the live services. The lead ruled: verification passes on the automated evidence, and the live checks run after merge and install (Known gaps). All three verification rounds were same-family (GPT checking GPT), because Claude had no room each time.
