@@ -1,6 +1,6 @@
 ---
 slug: antigravity-cli
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-16
 ---
 
@@ -46,6 +46,25 @@ None open.
 | 18 | Verification stays at most two verifiers. With `review_families` `both`: one family built → one verifier `--not-provider <it>`; two or more families built → one verifier on each of two families that built, chosen in the order claude, gpt, gemini (so all three building gives claude + gpt). Single-family settings are unchanged: one verifier, no flag | Each verifier checks the whole build, so a third adds cost without new coverage | review-round-3 |
 
 ## Spec
+
+### The flow at a glance
+
+```mermaid
+flowchart TD
+  A[Live check: sign agy in once, save real screens and output] --> B[Add Antigravity everywhere Claude and Codex appear]
+  B --> C[Settings: Add account shows Google link and code box]
+  C --> D[Machine types the code into agy and confirms sign-in]
+  D --> E{Claude and Codex busy or limited?}
+  E -- yes --> F[Work is placed on Antigravity]
+  E -- no --> G[Work stays on Claude or Codex]
+  F --> H[agy runs in tmux; its Stop hook says the turn ended]
+  H --> I[Transcript read into the thread; reports delivered]
+```
+
+A one-time live check comes first. Then Antigravity is added beside Claude and Codex. An
+account is signed in from Settings by opening a Google link and pasting the code back.
+Work lands on Antigravity only when it is next in line, last by default. Its turns end
+through a `Stop` hook, and its transcript feeds the thread and reviewer reports.
 
 ### What changes, in one paragraph
 
@@ -129,7 +148,11 @@ after it succeeds.
   aside on a `gemini` session with 400 and "Side conversations aren't available on
   Antigravity sessions yet", shown where any aside error is shown. Every aside's first turn
   is a fork (`viewer/app/asides.js:33-40`), so `create` is the place; `claim` has no request
-  to fail. When true, the parent id for `agy` sessions is `agy_conversation_id`.
+  to fail. The `asideFork` check runs first in `create`, before the `parent` lookup and
+  the 409 "the lead isn't ready yet" (`viewer/app/asides.js:37-39`), whose two-way ternary
+  becomes a map by provider. When true, the parent id for `agy` sessions is
+  `agy_conversation_id`. Tested in `viewer/test/`: `create` on a `gemini` lead with
+  `asideFork: false` returns 400 with that message.
 - `chat.js` report extraction: add `ASSISTANT_CONTENT.agy` (`viewer/app/chat.js:198-204`)
   from the Task 0 transcript fixture, so a reviewer or verifier running on `agy` has its
   report delivered by `deliverReport` (`viewer/app/sessions.js:262-267`); the `Stop`
@@ -269,9 +292,12 @@ npm --prefix viewer run test:browser  # Settings shows Antigravity, sign-in card
 bash install/test/run.sh
 ```
 Live (Task 0 machine): sign in an Antigravity account from Settings on a phone-width
-browser, start a worker with `--provider gemini`, see its turns in the thread and its
-turn end noticed; open an aside on it if Task 0 found `--conversation` can fork,
-otherwise check the aside is refused with the plain message.
+browser. Then start a thread whose CLI is `agy` (its lead runs on Antigravity, so its
+turns appear in thread chat, `viewer/app/chat.js:217`, and an aside targets it,
+`viewer/app/asides.js:37-39`): see the lead's turns in the thread and its turn end
+noticed; open an aside on it if Task 0 found `--conversation` can fork, otherwise check
+the aside is refused with the plain message. Separately, from a Claude-led thread, start
+a worker with `--provider gemini` and check its `result` card arrives.
 
 ## Accepted Risks
 
@@ -336,6 +362,8 @@ otherwise check the aside is refused with the plain message.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | `asideFork` check must precede the parent/409 checks in `create`; no test named | upheld | asides.js bullet orders the checks and names the test |
+| mechanics | minor | Live check needs an `agy`-led thread to exercise chat and asides | upheld | Validation's live paragraph rewritten |
 
 ## Prior Work
 
