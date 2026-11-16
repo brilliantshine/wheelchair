@@ -594,9 +594,8 @@ matter but would bury the outer picture.
 
 ## Depth and cycles
 
-**Traversal — the re-read before each question, the exit-gate walk, this format's own
-read-back — is depth-bounded at 5 and reports rather than recurses if it hits that
-bound.** A hand-edited graph file can contain a containment cycle the server's own
+**Any walk through containers is depth-bounded at 5 and reports rather than recurses if
+it hits that bound.** A hand-edited graph file can contain a containment cycle the server's own
 write-time check never saw, since nothing stops someone editing JSON by hand; a
 traversal that didn't stop somewhere would spin forever on that file. Five is generous
 for anything this format is meant to hold — a graph nesting five levels deep is already
@@ -825,6 +824,5 @@ belong to reads and to unknown routes (this route can create, so a missing file 
 never an error here); `structural-difference` polices the page's own write route,
 `PUT /view`, which no agent ever calls. `invalid-json` is a serving
 refusal — it fires when a `GET` finds a file on disk that some hand-edit broke — and
-matters when reading back, not writing: if your read-back hits it, the
-file is corrupt independent of anything you wrote, and no `PUT` will fix it. Report it
+matters when reading, not writing: if a `GET` hits it, the file is corrupt independent of anything you wrote, and no `PUT` will fix it. Report it
 rather than trying to repair it.

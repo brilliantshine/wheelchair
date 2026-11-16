@@ -64,8 +64,8 @@ never got drawn), the ask-at-start message below says in one sentence where the 
 run's records are: its choices are always in the Log's `Choice:` lines, and the picture
 is in `graphs/before-run-<N>/` only when the move-aside step actually moved something —
 when it moved nothing, the sentence points only at the Log's `Choice:` lines, since
-there is no picture there to name. If the earlier run left unfinished follow-up rows in the Implementation Tasks table, that
-same sentence names them, since reconciling drops rows that aren't part of the Spec. You
+there is no picture there to name. If the earlier run left unfinished follow-up rows in
+the Implementation Tasks table, that same sentence names them, since reconciling drops rows that aren't part of the Spec. You
 read nothing else back for this: if Collin asks for an old choice to be undone, that is
 an ordinary request, not a step here.
 
