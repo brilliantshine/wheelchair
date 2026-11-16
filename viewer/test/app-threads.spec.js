@@ -112,7 +112,7 @@ for (const [label, size] of SIZES) {
         t.sessions.push({ ...t.sessions[0], name: 'newer-lead', created_at: '2026-02-01T00:00:00Z', live: false });
       });
       await ctx.post(live.id, { kind: 'stub', title: 'Unopened chip stub', summary: 'Later.', depends_on_parent: false });
-      const stored = await (await page.request.get(`${ctx.server.url}/api/threads`)).json();
+      const stored = await (await fetch(`${ctx.server.url}/api/threads?token=${ctx.server.token}`)).json();
       const liveName = stored.threads.find((t) => t.id === live.id).lead_name;
       const endedName = stored.threads.find((t) => t.id === ended.id).lead_name;
       expect(liveName).toBeTruthy(); expect(endedName).toBeTruthy();
