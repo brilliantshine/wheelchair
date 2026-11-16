@@ -1,0 +1,34 @@
+'use strict';
+const { test, expect } = require('@playwright/test');
+const { startWorld, signIn } = require('./helpers/app-threads-world');
+
+test('selection, aside links, rebuilding and finishing', async ({ page }) => {
+  const ctx = await startWorld();
+  try {
+    const made = await ctx.make({ cli: 'claude' });
+    const now = new Date().toISOString();
+    await ctx.timedTranscript(made.id, [['human', 'Hello', now], ['assistant', 'First **important words** here.', now], ['assistant', 'Second message.', now], ['human', 'I agree (from aside 1 on: "important words")', now]]);
+    await ctx.patch(made.id, t => { t.cards.push({ id: 'q1', kind: 'question', question: 'Which option?', options: [], at: now, answered: false }); });
+    let aside = null, posted, closed, rebuild = false;
+    await page.route('**/api/threads/*/chat', async route => { const response = await route.fetch(); const json = await response.json(); json.asides = aside ? [aside] : []; if (rebuild) json.items.push({ type: 'human', text: 'New message', at: now }); await route.fulfill({ response, json }); });
+    await page.route('**/api/threads/*/asides**', async route => {
+      const req = route.request(); const url = new URL(req.url());
+      if (req.method() === 'POST' && url.pathname.endsWith('/asides')) { posted = req.postDataJSON(); aside = { id: 'a1', number: 1, anchor: { message_id: posted.message_id, start: posted.start, end: posted.end, quote: posted.quote }, created_at: now, status: 'open', slot: 'standard', cli_id: 'cli', history: [], turn: null, failed: null }; await route.fulfill({ status: 201, json: aside }); }
+      else if (url.pathname.endsWith('/close')) { closed = req.postDataJSON(); aside.status = 'closed'; aside.outcome = closed.outcome; await route.fulfill({ json: { ok: true } }); }
+      else await route.fulfill({ json: aside });
+    });
+    await signIn(page, ctx); await page.goto(`${ctx.server.url}/app/thread?id=${made.id}`);
+    const bubbles = page.locator('.bubble.assistant[data-message-id]'); await expect(bubbles).toHaveCount(2);
+    await page.evaluate(() => { const bs = document.querySelectorAll('.bubble.assistant'); const r = document.createRange(); r.setStart(bs[0].querySelector('p').firstChild, 0); r.setEnd(bs[1].querySelector('p').firstChild, 3); const s = getSelection(); s.removeAllRanges(); s.addRange(r); document.dispatchEvent(new Event('selectionchange')); });
+    await expect(page.locator('.aside-selection')).toBeHidden();
+    await page.evaluate(() => { const b = document.querySelector('.bubble.assistant'); const node = b.querySelector('strong').firstChild; const r = document.createRange(); r.selectNodeContents(node); const s = getSelection(); s.removeAllRanges(); s.addRange(r); document.dispatchEvent(new Event('selectionchange')); });
+    await expect(page.locator('.aside-selection')).toBeVisible(); await page.getByRole('button', { name: 'Ask about this', exact: true }).click();
+    expect(posted).toEqual({ message_id: await bubbles.first().getAttribute('data-message-id'), start: 6, end: 21, quote: 'important words', action: 'ask' });
+    await expect(page.locator('#aside-panel')).toContainText('important words'); await expect(page.locator('#aside-panel')).toContainText('Waiting on: Which option?');
+    await page.getByRole('button', { name: 'Close aside' }).click(); rebuild = true;
+    await expect(page.locator('.aside-mark')).toHaveText('important words', { timeout: 7000 }); await page.locator('.aside-mark').click(); await expect(page.locator('#aside-panel')).toBeVisible();
+    await page.getByRole('button', { name: 'Done, back to your question' }).click(); expect(closed).toEqual({ outcome: 'done' });
+    await page.setViewportSize({ width: 390, height: 844 }); await page.locator('.aside-handoff').click(); await expect(page.locator('#aside-panel')).toBeVisible(); await expect(page.getByRole('button', { name: 'Back', exact: true })).toBeVisible();
+    const box = await page.locator('.col-side').boundingBox(); expect(box.width).toBe(390); expect(box.height).toBe(844);
+  } finally { await ctx.close(); }
+});
