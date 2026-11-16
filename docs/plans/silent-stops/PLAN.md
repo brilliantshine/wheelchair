@@ -1,6 +1,6 @@
 ---
 slug: silent-stops
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: planning   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-15
 ---
 
@@ -12,7 +12,16 @@ get buried as this file grows. **Map:** `MAP.md`.
 
 ## Open Questions
 
-(none)
+### Q3: Agents that end a turn on purpose while their own background work runs
+- **Context:** Review round 1 (intent, major). A Claude agent can start a background job (a long
+  test run, a subagent), end its turn, and be woken by Claude Code when the job finishes. The hub
+  sees only the turn end, so it would remind the agent, then its starter, then alert Collin, while
+  the agent works normally. Codex agents have no such mechanism.
+- **Options:** (a) rule: watched agents never end a turn to wait on their own background work, they
+  wait in the foreground; the reminder adds "if you were waiting on background work, wait for it in
+  the foreground now and report when done"; (b) the reminder says to send the starter a short
+  message saying it's still working (clears the flag, costs a starter turn); (c) both.
+- **Recommendation:** (a).
 
 ## Watch List
 
@@ -38,6 +47,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 11 | The rule fix gets its failing-first test as a text check over the role files (`viewer/test/protocol-rules.test.js`). | The repo has no protocol test suite; the stub requires a test per fix. | defaulted |
 | 12 | Timers configurable through Hub options and `WHEELCHAIR_QUIET_GRACE_MS` / `WHEELCHAIR_QUIET_ESCALATE_MS`; the check runs on the queue retry timer. | Tests need short timings; the existing 5 s timer is fine-grained enough. | defaulted |
 | 13 | Review round 1: nudges are tagged and cancelled on reset; the escalation timer starts at the starter nudge's delivery; a re-messaged finished child counts as outstanding; a due check survives holds and is re-checked each tick. | Mechanics findings 1–4, upheld. | review-round-1 |
+| 14 | Collin's card wording follows the path that reached it; reviewer.md and verifier.md get the report-a-conflict rule. | Intent findings 2–4, upheld. | review-round-1 |
 
 ## Spec
 
@@ -129,9 +139,15 @@ Timings: grace defaults to 30 000 ms, escalate to 600 000 ms. `Hub`'s constructo
   `[wc:from app] Your turn ended with no report. End your next turn with your report as your last message.`
 - **Starter nudge:**
   `[wc:from app] your session <name> ended two turns without a result or message, one of them after a reminder from the app. Check on it: message it, or stop and replace it.`
-- **Collin's card:** `kind: needs`, `title: "An agent stopped without reporting"`, `body:
-  "<name> keeps ending its turns without reporting back, and reminders to it and to <starter
-  name> didn't help. Open it from the Agents tab to see what it's doing, or tell the lead."`
+- **Collin's card:** `kind: needs`, `title: "An agent stopped without reporting"`. The body
+  depends on how stage 3 was reached, and ends with "Open it from the Agents tab to see what
+  it's doing, or tell the lead.":
+  - another quiet turn: "<name> keeps ending its turns without reporting back; reminders to it
+    and to <starter name> didn't help."
+  - the timer: "<name> hasn't reported back in the 10 minutes since <starter name> was told it
+    had gone quiet." (the minutes are the escalate setting, rounded)
+  - starter not live: "<name> ended its turns without reporting back, and a reminder to it
+    didn't help. <starter name>, which started it, is no longer running."
 
 Only the lead sees `[wc:from app]` text when it is the starter, and its reply is hidden, as
 for the existing turn-failed and ended notices (`viewer/app/sessions.js:380-382,571-573`).
@@ -154,6 +170,9 @@ card rendering is reused unchanged.
   session's own `wc.js` and `card.js` calls, and never names port 7374 as off limits. The
   sub-lead gets the same blocked-not-silent rule for its own `result`, and both get one line
   on the starter nudge: message the agent, or stop and replace it.
+- `protocol/app/reviewer.md` and `protocol/app/verifier.md`: if something stops you
+  finishing (a conflict in your brief, something you cannot read or run), say so as your report
+  rather than ending with no report; an app reminder means your last turn ended with no report.
 
 ### Tests (each fails before its fix)
 
@@ -190,7 +209,7 @@ turn ends are driven as `viewer/test/app-balancer.test.js:185-215` does (machine
 New `viewer/test/protocol-rules.test.js`: asserts `protocol/app/worker.md`, `mapper.md`,
 `sub-lead.md`, `lead.md` and `cards.md` each state that a session's own `wc.js` and
 `card.js` calls are always allowed (match on the phrase "own `wc.js` and `card.js`"), and that
-`worker.md`, `mapper.md`, `sub-lead.md` say a conflict is reported as `blocked`, not by
+`worker.md`, `mapper.md`, `sub-lead.md`, `reviewer.md`, `verifier.md` say a conflict is reported as `blocked`, not by
 stopping silently (match "blocked" and "silently" in one paragraph).
 
 ### Validation
@@ -228,6 +247,10 @@ state or timers.
 | gpt mechanics | blocking | Escalation timer starts at enqueue, before the starter is told | upheld | `quiet_starter_at` set on successful delivery (Detector 3); test 12 |
 | gpt mechanics | blocking | `finished` never clears, so a sub-lead waiting on a re-messaged worker counts as quiet | upheld | Waiting on others includes children that owe a reply (Terms); test 13 |
 | gpt mechanics | major | A due check is deleted while a hold blocks it and never re-armed | upheld | Due check kept and re-checked each tick (Detector 2); test 14 |
+| claude intent | major | Claude agents end turns on purpose while waiting on their own background work (background tests, subagents); the hub can't see it, so they would be flagged and Collin alerted while working normally | user-decision | Question to Collin |
+| claude intent | minor | Card says "keeps ending its turns" on the timer path, where that may be false | upheld | Card body per path (Texts) |
+| claude intent | minor | Card names a reminder to the starter when the starter was not live | upheld | Card body per path (Texts) |
+| claude intent | minor | reviewer.md and verifier.md get no report-a-conflict rule though both roles are watched | upheld | Rules adds them; rules test covers them |
 
 ## Prior Work
 
