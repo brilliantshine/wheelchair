@@ -47,6 +47,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 16 | Supersedes 2 and 4 on mechanism: an aside is not a session. Each message runs as one headless CLI turn (fork for the first, resume after), with no tmux, token or stop | Rounds 2-5 kept finding races in starting, stopping and restarting long-lived aside sessions; one-shot turns have none of that state, and with no token an aside can't post cards or use git | review-round-5 |
 | 17 | Supersedes 3: the copy is made at the aside's first turn, from the lead conversation recorded when the aside was opened. It may include lead turns from between opening and the first message; it never sees later ones | Forking needs a message to run; recording the parent at opening keeps a lead restart from losing context | review-round-5 |
 | 18 | Adds to 16 on mechanism: Claude fork and resume pass `--system-prompt-snapshot off`; Codex fork and resume pass `--disable apps` before the subcommand. No behaviour change: these make the read-only aside prompt and tool limits actually apply | T1 attempt 1 found Claude reusing the lead's recorded system prompt on a fork, and Codex forks keeping ChatGPT apps tools that the per-server flags miss; the lead checked both flags exist in the installed CLIs | implementation-T1 |
+| 19 | A turn the hub cancelled is never acknowledged: the hub sends `DELETE` but never `…/ack` for it, so the machine keeps its stopped record (or the stopped tombstone a `DELETE` of an unknown id creates) until the 30-day drop, and a late POST with that id starts nothing. Turns whose result the hub saved are acknowledged as before. Rejected: (B) machine turns record their thread and the machine's archive kills and refuses every aside turn of that thread — closes it at the source but changes the machine route and contract; (C) accept the race as a known risk | Verification 5: after archive, the hub's cleanup acknowledged the cancelled turn, erasing its tombstone, and a delayed, timed-out POST then started it again (the archive gap surviving Remediations 3 and 4). A is the smallest change that keeps a cancelled id cancelled | Collin, 2026-11-15 |
 
 ## Spec
 
@@ -154,7 +155,10 @@ so the main chat, the queued count and the app's session notices never see it.
   machine writes each turn to its state directory (beside `sessions.json`) when it accepts
   the POST, before spawning, and keeps it until the hub acknowledges the result (at most 30 days, see Accepted Risks)
   (`POST /v1/aside-turns/:turn_id/ack`, sent after the hub has saved it), so a 404 means
-  the machine never accepted that `turn_id`. The CLI is spawned in its own process group,
+  the machine never accepted that `turn_id`. A `DELETE` of an id the machine doesn't know
+  records it as stopped, so a later POST with that id starts nothing. The hub never
+  acknowledges a turn it cancelled (Decision 19): its stopped record stays until the 30-day
+  drop, so that id can't start again. The CLI is spawned in its own process group,
   and the turn records its pid and process start time. The service runs with
   `KillMode=process` (`install.sh:336`), so children outlive a service restart: on start,
   for each turn still `running`, the machine kills that process group if the pid still
@@ -257,7 +261,8 @@ One rule, run after every change to an aside and on each poll:
   usable, no turn is running, `failed` is null and `history` holds at least one `start` or `ask` entry. It sets `slot: heavy` and puts the last `start` or `ask`
   message in `history` back into `pending`.
 - **Archiving** the thread closes every aside (as above) and `DELETE`s any running turn
-  before the worktree goes. After that every aside route that changes something (create,
+  before the worktree goes; it never acknowledges those turns, and neither does the hub's
+  cleanup of a turn no aside holds (Decision 19). After that every aside route that changes something (create,
   messages, close, retry, Think harder) returns 409 "this thread is archived"; `GET` of an
   aside still works, so the panel shows its history read-only.
 
@@ -403,6 +408,7 @@ bash machine/test/aside-probe.sh      # T1, by hand, real CLIs
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | The machine keeps unacknowledged aside turns for 30 days, then drops them; a hub gone that long could re-run one turn after a 404 | A hub down for a month has bigger problems; the cost is one repeated answer | 8 |
+| A cancelled turn's stopped record also lasts 30 days (Decision 19); a start request delayed past that could still run once | The same 30-day window already accepted above; a request that late is not realistic, and the cost is one read-only turn whose answer is discarded | verification 5 |
 
 ## Review Rounds
 
@@ -665,3 +671,4 @@ Round 9 is clean: no blocking or major finding upheld.
 - 2026-11-15 — Blocked by the machine: /tmp (tmpfs) is out of inodes (1,048,576/1,048,576), mostly about 12,700 leftover /tmp/wheelchair-machine-test-* folders from every thread's machine test runs, so any test that makes a temp dir fails. Post-merge checks on c5afb55 failed for that reason only. Nothing deleted; reported to the lead for Collin. Verifier attempt 5 waits until /tmp has room.
 - 2026-11-15 — Collin approved the /tmp cleanup and the lead cleared the old test folders (inodes now 44% used). Merged checks pass: machine 90/90, aside 14/14, unit 354/355 (known port test). The suites still leave those folders behind; per the lead, that gets its own thread and is not fixed here. Verifier attempt 5 started.
 - 2026-11-15 — Verification 5: FAIL. The archive gap survives its second fix (Remediation 4): the hub's cleanup acks the tombstone, and a delayed, timed-out POST arriving later starts the turn again. Plan defect per sub-lead.md step 6: no third attempt; sent to the lead with options; work stopped.
+- 2026-11-15 — Collin picked option A for the archive gap (Decision 19): the hub never acknowledges a turn it cancelled. Spec §4/§5 and Accepted Risks amended. Remediation 5 follows.
