@@ -91,19 +91,34 @@
     }
   }
 
+  // The last list this tab saw, drawn at once on the next page load so switching threads
+  // never shows an empty sidebar while the fresh list is fetched. Storage may throw; then skip it.
+  const CACHE_KEY = 'wheelchair.threadList';
+  function apply(list, features) {
+    threads = list;
+    stages = {}; waiting = {};
+    for (const key of Object.keys(STAGE)) for (const f of features[key] || []) stages[f.id] = STAGE[key];
+    for (const n of features.needs || []) waiting[n.thread_id] = (waiting[n.thread_id] || 0) + 1;
+    titles = {};
+    for (const t of threads) titles[t.id] = nameOf(t);
+    render();
+  }
+  try {
+    const cached = JSON.parse(sessionStorage.getItem(CACHE_KEY) || 'null');
+    if (cached && Array.isArray(cached.threads)) apply(cached.threads, cached.features || {});
+  } catch (e) { /* draw on the first fetch instead */ }
+
   async function poll() {
     try {
-      const res = await fetch(API + '/threads');
+      const [res, features] = await Promise.all([
+        fetch(API + '/threads?view=list'),
+        fetch(API + '/features').then((r) => (r.ok ? r.json() : {})).catch(() => ({})),
+      ]);
       if (!res.ok) throw new Error('http ' + res.status);
-      threads = (await res.json()).threads || [];
-      const features = await fetch(API + '/features').then((r) => (r.ok ? r.json() : {})).catch(() => ({}));
-      stages = {}; waiting = {};
-      for (const key of Object.keys(STAGE)) for (const f of features[key] || []) stages[f.id] = STAGE[key];
-      for (const n of features.needs || []) waiting[n.thread_id] = (waiting[n.thread_id] || 0) + 1;
-      titles = {};
-      for (const t of threads) titles[t.id] = nameOf(t);
+      const list = (await res.json()).threads || [];
       errorEl.hidden = true;
-      render();
+      apply(list, features);
+      try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ threads: list, features })); } catch (e) { /* no cache */ }
     } catch (e) {
       errorEl.hidden = false;
       errorEl.textContent = 'Could not refresh threads.';

@@ -350,10 +350,14 @@ async function handleThreads(hub, request, response, url, bits, body) {
       await findSlug(hub, current);
       Object.assign(thread, current);
     })));
-    const threads = all.map((thread) => ({
-      ...thread,
-      sessions: thread.sessions.map(publicSession),
-    }));
+    // `?view=list` is what the pages poll: each thread's summary without its history
+    // (cards, sent messages, briefs), which is most of the bytes and none of the list.
+    const lean = url.searchParams.get('view') === 'list';
+    const threads = all.map((thread) => {
+      if (!lean) return { ...thread, sessions: thread.sessions.map(publicSession) };
+      const { cards, sent, delivered_ids, context, pinned, archive, queues, ...summary } = thread;
+      return { ...summary, sessions: thread.sessions.map(({ name, role, live, ready, turn_ended, created_at }) => ({ name, role, live, ready, turn_ended, created_at })) };
+    });
     return send(response, 200, { threads });
   }
   if (bits.length === 1 && request.method === 'POST') {

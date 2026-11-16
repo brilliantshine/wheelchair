@@ -7,7 +7,7 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 
 | Route | Request | Response |
 |---|---|---|
-| `GET /threads` | — | `{threads:[Thread]}` newest first |
+| `GET /threads` | — | `{threads:[Thread]}` newest first; `?view=list` leaves out each thread's `cards`, `sent`, `delivered_ids`, `context`, `pinned`, `archive` and `queues`, and keeps only each session's `name`, `role`, `live`, `ready`, `turn_ended` and `created_at` — what the pages poll |
 | `POST /threads` | `{project,machine?,message?}` | a `Thread`, with its lead started or waiting for room. Before anything is saved the thread's machine checks `project` (`GET /v1/projects?check=`): not a usable git repository → `400 "<path> <reason> on <machine>"`, unknown machine → `404`, no answer or an older service → `502`; nothing is saved or added to `projects.json` on any of these, and the stored `project` is the path the machine returned (`~` and `~/…` expanded there). A non-empty string `message` sets `title` from its trimmed, whitespace-collapsed first line, cut at a word boundary to 60 characters plus `…` |
 | `GET /threads/:id/chat` | — | `{thread,items,cards,pinned,queued,asides}`; `items` leaves out the lead's tool steps when Settings has `tool_steps:"hide"` |
 | `POST /threads/:id/asides` | `{message_id,start,end,quote,action}` | `201` aside without history; action is `ask`, `simpler`, or `draw` |
