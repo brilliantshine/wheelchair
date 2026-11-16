@@ -435,7 +435,7 @@ idempotence case is the in-worktree proof.
 | R1-1 | Remediation 1: `--json` level is null when any present file lacks a block; sensitivity.md:89 | sensitivity/set.sh, sensitivity/test/run.sh, protocol/sensitivity.md | codex standard (gpt-6.1-terra) | wc-1cff24e4cc7d-worker-6 | sensitivity, machine suites | done |
 | R1-2 | Remediation 1: retired-wrapper match requires an absolute path | install.sh:66, install/test/run.sh | codex standard (gpt-6.1-terra) | wc-1cff24e4cc7d-worker-7 | install suite | done |
 | R2-1 | Remediation 2: wrapper match is the rendered `Read` line, checkout paths with spaces allowed | install.sh:66, install/test/run.sh | codex standard (gpt-6.1-terra) | wc-1cff24e4cc7d-worker-8 | install suite | done |
-| R2-2 | Remediation 2: diagram-sensitivity test stops fakes when the hub fails to start | viewer/test/app-diagram-sensitivity.test.js | claude light (claude-haiku-5-5) | wc-1cff24e4cc7d-worker-9 | viewer node | in progress |
+| R2-2 | Remediation 2: diagram-sensitivity test stops fakes when the hub fails to start | viewer/test/app-diagram-sensitivity.test.js | claude light (claude-haiku-5-5) | wc-1cff24e4cc7d-worker-9 | viewer node | done |
 
 ## Log
 
@@ -472,3 +472,4 @@ idempotence case is the in-worktree proof.
 - 2026-11-15 — Choice: R1-2: worker reported none; diff matches the brief (install.sh:66 regex, install/test/run.sh relative and quoted cases).
 - 2026-11-15 — Choice: R1-1: worker reported none; diff matches the brief (sensitivity/set.sh json `disagree=1` for a present file without a block; one new test; sensitivity.md:89 wording).
 - 2026-11-16 — Choice: R2-1: worker reported none; diff matches the brief (install.sh:66 rendered-line pattern; spaced, spaced_quoted and mid_line cases).
+- 2026-11-16 — Choice: R2-2, viewer/test/app-diagram-sensitivity.test.js: `server` declared with `let` and assigned inside the `try`, guarded in `finally` (as the brief's snippet implied).
