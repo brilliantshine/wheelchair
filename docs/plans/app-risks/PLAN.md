@@ -239,6 +239,18 @@ bash test-support/smoke/live.sh       # on hearth, costs model turns (9 sessions
 |------|----------|---------|--------------|------------|
 | mechanics | major | Claude transcript lookup ignores a retained `CLAUDE_CONFIG_DIR` | upheld | Lookup now uses the effective config folder for both CLIs (`machine/adapters/claude.js:5`) |
 
+### Round 4 — 2026-11-15
+
+**Lanes:** gpt / gpt-6.1-sol (intent); gpt / gpt-6.1-sol (mechanics); cross-family: no (Claude unavailable for reviewers).
+
+Budget reset: Collin chose "Keep going" after three rounds.
+
+**Changed since Round 3:**
+- Live model check: transcripts are looked up under the effective config folder (`$CLAUDE_CONFIG_DIR` / `$CODEX_HOME`, else the defaults).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
