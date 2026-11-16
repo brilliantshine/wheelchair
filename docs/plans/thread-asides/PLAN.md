@@ -48,6 +48,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 17 | Supersedes 3: the copy is made at the aside's first turn, from the lead conversation recorded when the aside was opened. It may include lead turns from between opening and the first message; it never sees later ones | Forking needs a message to run; recording the parent at opening keeps a lead restart from losing context | review-round-5 |
 | 18 | Adds to 16 on mechanism: Claude fork and resume pass `--system-prompt-snapshot off`; Codex fork and resume pass `--disable apps` before the subcommand. No behaviour change: these make the read-only aside prompt and tool limits actually apply | T1 attempt 1 found Claude reusing the lead's recorded system prompt on a fork, and Codex forks keeping ChatGPT apps tools that the per-server flags miss; the lead checked both flags exist in the installed CLIs | implementation-T1 |
 | 19 | A turn the hub cancelled is never acknowledged: the hub sends `DELETE` but never `…/ack` for it, so the machine keeps its stopped record (or the stopped tombstone a `DELETE` of an unknown id creates) until the 30-day drop, and a late POST with that id starts nothing. Turns whose result the hub saved are acknowledged as before. Rejected: (B) machine turns record their thread and the machine's archive kills and refuses every aside turn of that thread — closes it at the source but changes the machine route and contract; (C) accept the race as a known risk | Verification 5: after archive, the hub's cleanup acknowledged the cancelled turn, erasing its tombstone, and a delayed, timed-out POST then started it again (the archive gap surviving Remediations 3 and 4). A is the smallest change that keeps a cancelled id cancelled | Collin, 2026-11-15 |
+| 20 | Archive saves first, then cancels: it clears every aside's turn and saves the thread with the turn ids in `pending_cancels` before sending any `DELETE`; failed cancels stay pending, and the hub retries them on every sweep and at hub start until the machine confirms each, then drops it. Archive doesn't stop on a failed cancel | Verification 7: a partly failed archive exited before saving, so an aside still held a cancelled turn and the next poll saved and acknowledged it, erasing its tombstone. The lead added the retry rule because a thread saved as archived may not let Archive run again | lead, 2026-11-15 |
 
 ## Spec
 
@@ -262,7 +263,12 @@ One rule, run after every change to an aside and on each poll:
   message in `history` back into `pending`.
 - **Archiving** the thread closes every aside (as above) and `DELETE`s any running turn
   before the worktree goes; it never acknowledges those turns, and neither does the hub's
-  cleanup of a turn no aside holds (Decision 19). After that every aside route that changes something (create,
+  cleanup of a turn no aside holds (Decision 19). Archive first clears every aside's turn and
+  saves the thread with those turn ids in `pending_cancels`, then sends the `DELETE`s. A
+  cancel that fails stays in `pending_cancels`, and archive carries on. The hub retries every
+  pending cancel on its 2-second sweep and when it starts, until the machine confirms it,
+  then drops that id. So a cancel never depends on Collin pressing Archive again, and a
+  cancelled turn is never held by an aside (Decision 20). After that every aside route that changes something (create,
   messages, close, retry, Think harder) returns 409 "this thread is archived"; `GET` of an
   aside still works, so the panel shows its history read-only.
 
@@ -679,3 +685,4 @@ Round 9 is clean: no blocking or major finding upheld.
 - 2026-11-15 — Lead approved applying Decision 19 fully: the hub never acknowledges a turn no aside holds, whatever its state. Remediation 6 corrects Remediation 5's brief, which had kept acknowledging finished unheld turns. If verification 7 still finds this gap, stop and tell the lead before any further fix.
 - 2026-11-15 — R6-1 accepted: the one line removed as briefed; aside tests 16/16 three times; merged machine 90/90, aside 16/16. The server.test.js write-lock test failed in a full run (second time overall) and passed 3/3 alone; flagged in COMPLETION.md for the verifier. No worker choices. Verifier attempt 7 started.
 - 2026-11-15 — Verification 7: FAIL. (1) The archive gap again: a partly failed archive (one DELETE succeeds, a later one times out) exits before saving, so the aside still holds the cancelled turn and the next pump saves and acks it. (2) New: an aside panel shown during archive keeps its input enabled (panel change signature omits thread.archived). Sent both to the lead with proposed fixes; stopped, per the lead's instruction.
+- 2026-11-15 — Lead approved Remediation 7: (1) archive saves first with `pending_cancels`, which the hub retries itself on each sweep and at start until the machine confirms (Decision 20, Spec §5 amended); (2) the aside panel's redraw check includes `thread.archived`, so an open panel turns read-only when the thread is archived. If verification 8 finds any archive gap again, stop and tell the lead: that goes to Collin.
