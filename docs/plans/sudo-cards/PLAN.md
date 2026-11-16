@@ -466,3 +466,4 @@ Collin chose "keep going" after three rounds without a clean one; budget reset.
 - 2026-11-15 — Choice: T4, `viewer/test/app-sudo.*`: tests front the fake machine with their own proxy for `/v1/sudo/`, leaving `helpers/app-machine.js` untouched.
 - 2026-11-15 — Sub-lead: T4 accepted. Re-ran: node suite 403/404, the one failure (`lifecycle.test.js` "a starter that loses the freed port registers through the new holder") fails identically on the feature branch without T4; browser suite 610 passed, 2 skipped. Decline and `sudo-outcome` both run under `hub.withThread`.
 - 2026-11-15 — Sub-lead: T5 accepted; worker reported no choices; diff matches the brief.
+- 2026-11-15 — Sub-lead: all tasks done; COMPLETION.md written; verification round 1 started at 0087751: wc-306ee0793e11-verifier (claude-opus-5-5) and wc-306ee0793e11-verifier-2 (gpt-6.1-sol).
