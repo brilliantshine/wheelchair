@@ -319,7 +319,7 @@ product code changes; any cleanup run by an agent rather than the suites.
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Shared helper `test-support/run-dir.js` (Spec §1–3) and its suite | `test-support/` | GPT standard (gpt-6.1-terra) | wc-25ba351f336d-worker | `node --test test-support/test/*.test.js`; TMPDIR leak check | done |
 | T2 | Machine suite conversion (Spec §4 machine, §5 machine/aside) | `machine/test/*.test.js` | GPT standard (gpt-6.1-terra) | wc-25ba351f336d-worker-4 (hub also started duplicates worker-3, worker-5 on attempt T2-a1; stopped unmerged) | `bash machine/test/run.sh`; TMPDIR leak check | done |
-| T3 | Viewer unit suite + helpers conversion (Spec §4–5) | `viewer/test/helpers/`, `viewer/test/*.test.js` | GPT standard (gpt-6.1-terra) | wc-25ba351f336d-worker-6 | `node --test viewer/test/*.test.js`; TMPDIR leak check | in progress |
+| T3 | Viewer unit suite + helpers conversion (Spec §4–5) | `viewer/test/helpers/`, `viewer/test/*.test.js` | GPT standard (gpt-6.1-terra) | wc-25ba351f336d-worker-6 | `node --test viewer/test/*.test.js`; TMPDIR leak check | done |
 | T4 | Viewer browser specs conversion (Spec §4–5) | `viewer/test/*.spec.js`, `viewer/playwright.config.js` | GPT standard (gpt-6.1-terra) | wc-25ba351f336d-worker-7 | `npm --prefix viewer run test:browser`; TMPDIR leak check | in progress |
 | T5 | Shell traps, aside-probe cleanup, docs (Spec §6–7) | six shell suites, `machine/test/aside-probe.sh`, `AGENTS.md`, `viewer/AGENTS.md`, `machine/AGENTS.md` | GPT light (gpt-6-luna) | wc-25ba351f336d-worker-2 | `bash -n`; shell suites | done |
 
@@ -330,3 +330,5 @@ product code changes; any cleanup run by an agent rather than the suites.
 - 2026-11-15 — Choice: T5, viewer/AGENTS.md and machine/AGENTS.md: the temp-folder sentence sits right after each router's test commands.
 - 2026-11-15 — Choice: T2, machine/test/aside-turns.test.js: each tombstone-test store is captured in its own constant so its onCleanup still targets it after the service is replaced.
 - 2026-11-15 — Hub started T2 three times on one attempt id after a "machine timeout" (worker-3, -4, -5); merged worker-4, stopped the other two, left their branches wc-25ba351f336d-w3 and -w5 unmerged.
+- 2026-11-15 — Choice: T3, viewer/test/lifecycle.test.js, routes.test.js, registration.test.js and similar: a local `trackedSpawn` wrapper spawns and tracks in one call, keeping the existing expressions.
+- 2026-11-15 — T3 accepted with two failures not caused by it: "an app page carries font-src self…" fails because worktrees have no viewer/node_modules (the font packages are missing); "a starter that loses the freed port registers through the new holder" (lifecycle.test.js) fails on the feature branch before T3 too, every run of that file on its own. "run validation refuses each new schema violation" failed once on the baseline only, so it fails only some of the time.
