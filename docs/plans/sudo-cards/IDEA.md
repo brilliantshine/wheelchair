@@ -23,7 +23,10 @@ and run the command himself. He is often on his phone, so that is slow and awkwa
 
 - A sudo card says, in plain words, what the command does and why it is needed, and shows
   the exact command that will run.
-- What runs is exactly the command shown. Nothing can be changed after Collin reads it.
+- What runs is exactly the command text shown. Nothing in that text can be changed after
+  Collin reads it. Files the command uses are not frozen, so the agent writes the actual
+  commands into the card rather than pointing at a script, and Collin is warned about any file
+  in the command that an agent could edit.
 - Run needs the password and a deliberate double-click, so a stray tap can't trigger it.
 - Decline tells the agent no. "Talk about it" opens a conversation, and nothing runs.
 - The agent learns whether the command worked and sees its output. It never gets the password.

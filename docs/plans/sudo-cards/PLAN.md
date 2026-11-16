@@ -12,15 +12,7 @@ get buried as this file grows.
 
 ## Open Questions
 
-### Q1: The command text is frozen, but not files it runs
-- **Context:** Round 1 review. `sh /home/collin/fix.sh` runs whatever that file holds at run
-  time, and an agent can edit it after Collin reads the card. IDEA.md promises "nothing can be
-  changed after Collin reads it".
-- **Options:** (a) narrow the promise to the command text, and make the lead put the actual
-  commands in the card rather than pointing at a script it wrote; the helper page flags any
-  command that names a file Collin's user can write. (b) Freeze referenced files: the helper
-  copies them when the card is posted. Only works for files it can spot, and is much more work.
-- **Recommendation:** (a).
+None.
 
 ## Watch List
 
@@ -52,6 +44,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 15 | `request_id` correlates card and outcomes; the machine keeps a small request file and posts outcomes only after the card is accepted; new idempotent hub route `sudo-outcome`; unknown id → 409 retry | Review: no correlation or ordering defined | review-round-1 |
 | 16 | Decline is reported only after the helper confirms it; a lost race shows the run result; an unreachable machine returns the card to waiting | Review: Decline could promise nothing runs when something did | review-round-1 |
 | 17 | The helper page carries no request data in HTML; a static script sets every field with `textContent`; strict CSP with no inline script | Review: agent-controlled fields could inject script into the real password page | review-round-1 |
+| 18 | Only the command text is frozen. The lead writes the actual commands into the card, never a script it wrote; the helper flags any file named in the command that Collin's user could change, on the card and the run page. IDEA.md "What good looks like" narrowed to match | Collin picked "inline it, flag files" | idea-change |
 | 4 | The command is fixed when the card is posted; the run uses the stored text byte for byte and the card shows it in full, unabridged | IDEA.md: what runs is exactly what is shown | defaulted |
 
 ## Spec
@@ -156,7 +149,7 @@ row in the root `AGENTS.md` tables), but **runs only from an installed root-owne
 - `intake.sock`, root:<user's group> 0660: the machine service's API.
 
 **Intake API** (JSON over HTTP on `intake.sock`):
-- `POST /requests` `{command, does, why}` → `{request_id, url}`.
+- `POST /requests` `{command, does, why}` → `{request_id, url, editable}`.
   `request_id` is 128 random bits, hex; `url` is `<url_base>/r/<request_id>`.
 - `GET /requests/<id>` → `{state, exit_code?, output?, truncated?}`.
 - `POST /requests/<id>/cancel` → declines a `waiting` request; answers with the request's actual state either way.
@@ -198,7 +191,18 @@ row in the root `AGENTS.md` tables), but **runs only from an installed root-owne
 unlocked after a run.
 
 **What "exactly the command shown" covers:** the command text is frozen when the card is posted
-and run byte for byte. Files that text runs or reads are not frozen (see Q1 / the Decision Log).
+and run byte for byte. Files that text runs or reads are not frozen (Decision 18). So:
+- `lead.md`: write the actual commands into `command`; never ask to run a script or file the
+  agents wrote or can edit.
+- **Editable-file warning.** At intake the helper splits the command on whitespace and shell
+  operators and takes every word that starts with `/`, `~/` or `./` (`~` expanded to the user's
+  home; `./` resolved against `/`, the run directory). A path is flagged when the user, with
+  their groups, could write it or any directory above it (checked from owner, group and mode
+  bits as root; a missing path is checked through its nearest existing parent). Intake returns
+  `editable: [path, ...]`; the machine adds it to the card. The thread card and the helper page
+  both show, above the command, "An agent could change these files before this runs:" and the
+  list. This is a best-effort warning, not a guarantee: paths built at run time (variables,
+  globs) are not seen.
 
 **Where to open the page:** on a device other than the agents' machine, such as Collin's phone.
 A browser running on the agents' machine as Collin's user holds the password in memory an agent
@@ -219,7 +223,7 @@ commands, an anti-phishing check (Decision 9), running on a machine other than t
 ### Validation
 
 ```bash
-python3 -m unittest discover -s sudo-helper/test      # helper: shims for runuser/sudo; wrong password x3, NOPASSWD shim (command run with stdin /dev/null, cannot read the password), timeout, truncation, cancel vs run race, expiry, no password in logs or responses
+python3 -m unittest discover -s sudo-helper/test      # helper: editable-file flags (user-owned file, user-writable parent, root-owned file not flagged, `~/` and `./`); shims for runuser/sudo; wrong password x3, NOPASSWD shim (command run with stdin /dev/null, cannot read the password), timeout, truncation, cancel vs run race, expiry, no password in logs or responses
                                                       # rendering: command/does/why/output of `</script><script>alert(1)</script>` and `<img src=x onerror=...>` appear as text; page HTML contains no request data
 bash sudo-helper/test/install-test.sh                 # installer against a temp root, no real systemctl/tailscale (shims)
 bash machine/test/run.sh                              # sudo card registration, refusal without helper, outcome held until card accepted, 409 retried, restart resumes, non-lead refusal
@@ -251,13 +255,28 @@ response it can see.
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
 | intent | blocking | Password shares stdin with the command; under NOPASSWD sudo leaves it unread for the command to read | upheld | Decision 14: check with `sudo -l`, run as root with stdin `/dev/null` |
-| intent | major | Frozen command text doesn't freeze the files it runs (`sh ~/fix.sh`) | user-decision | Q1 |
+| intent | major | Frozen command text doesn't freeze the files it runs (`sh ~/fix.sh`) | user-decision | Decision 18 |
 | mechanics | major | NOPASSWD: wrong password accepted, password left on command stdin | upheld | Same as intent blocking; Decision 14. Wrong password under NOPASSWD passes, as at a terminal (Spec) |
 | mechanics | major | Agent fields could inject script into the real helper page | upheld | Decision 17 |
 | mechanics | major | No request↔card correlation or restart recovery | upheld | Decision 15 |
 | mechanics | major | Outcome can arrive before its spooled card and be lost | upheld | Decision 15 |
 | mechanics | major | Decline vs Run race, unreachable machine | upheld | Decision 16 |
 | intent | major | A browser on the agents' machine, same user, holds the password | accepted-risk | Spec "Where to open the page"; Accepted Risks |
+
+### Round 2 — 2026-11-15
+
+**Lanes:** pending.
+
+**Changed since Round 1:**
+- Password check is `sudo -S -k -l <command>` (runs nothing); the helper runs the command itself as root with stdin `/dev/null` (Decision 14).
+- `request_id` correlation, machine request file, outcome ordering, new `sudo-outcome` hub route (Decision 15).
+- Decline confirmed by the helper; race and unreachable handling; new `declining` and `running` states (Decision 16).
+- Helper page rendering contract and strict CSP (Decision 17).
+- Editable-file warning; IDEA.md narrowed to the command text (Decision 18).
+- "Where to open the page" and its accepted risk.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
