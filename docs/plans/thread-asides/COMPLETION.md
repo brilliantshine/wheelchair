@@ -551,3 +551,46 @@ read-only-panel gap from verification 7 surviving its first fix, for the draft b
 lead before any fix. Everything else passed: machine 90/90, the shell suites, viewer unit 357/359
 (known port test plus a port collision whose file passed 13/13 alone), browser 556 passed with
 only the known graph failures.
+
+### Remediation 8 — 2026-11-15
+
+The lead approved fixing the read-only-panel gap once for every control. Brief:
+`REMEDIATION-8.md`. One task, R8-1, on GPT (standard, gpt-6.1-terra), merged at `0dffc3b`.
+Worker choices: none. (The hub started a duplicate session, worker-17, for the same attempt id;
+it was stopped, and worker-18 did the work.)
+
+| Change | Where |
+|--------|-------|
+| One `readOnly = !!data.thread.archived` in `renderPanel` disables the main input and Send, the draft box with its Send and Cancel, Think harder, Done, This changes my answer and Retry; close/back, links and reading stay | `viewer/pages/aside.js`, `renderPanel` |
+| On an archived thread the selection bar never shows and no "Ask about this message" control is added (create is refused there) | `viewer/pages/aside.js`, `selected`, `decorate`, `WCAside.update` |
+
+Validation, run by the sub-lead:
+
+```
+# R8-1 branch (33d42fc)
+$ (cd viewer && npx playwright test test/app-asides.spec.js --repeat-each=4)
+  16 passed (16.5s)
+# merged (0dffc3b)
+$ bash machine/test/run.sh
+# pass 90 # fail 0
+$ node --test viewer/test/*.test.js
+not ok 216 - simultaneous delayed listeners elect one server and print one token
+not ok 241 - a starter that loses the freed port registers through the new holder
+# tests 359
+# pass 357
+# fail 2
+$ node --test viewer/test/lifecycle.test.js        (two runs, alone)
+not ok 31 - a starter that loses the freed port registers through the new holder # pass 30 # fail 1
+not ok 31 - a starter that loses the freed port registers through the new holder # pass 30 # fail 1
+$ npm --prefix viewer run test:browser
+  2 failed
+    [chromium] › test/browser.spec.js:2395:1 › no drawn arrow's line passes through either box it connects, over every committed graph
+    [firefox] › test/browser.spec.js:2395:1 › no drawn arrow's line passes through either box it connects, over every committed graph
+  2 skipped
+  558 passed (1.8m)
+```
+
+The "simultaneous delayed listeners" failure is in `lifecycle.test.js`, which no task touched; it
+passed in both runs of that file alone. The spec asserts every listed control is disabled after
+archive, close stays enabled, Retry is disabled with a failed record, and no selection bar or
+"Ask about this message" appears.
