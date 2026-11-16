@@ -132,8 +132,10 @@ output in the build report; do not commit that change.
 in claude, gpt: start a worker with `tier: <tier>` and `provider: <p>` and the brief "Reply
 with the single word ok and stop." Wait for its turn to end (the hub's session status), then
 read the model the CLI actually used from its own transcript. Claude: the `model` field of
-the assistant message in the session's JSONL under `~/.claude/projects/`, found by its
-`cli_session_id`. Codex: the model in the rollout file for its thread id. Compare with the
+the assistant message in the session's JSONL under the effective Claude config folder
+(`$CLAUDE_CONFIG_DIR`, else `~/.claude`; `machine/adapters/claude.js:5`) in `projects/`,
+found by its `cli_session_id`. Codex: the model in the rollout file for its thread id under
+the effective Codex home (`$CODEX_HOME`, else `~/.codex`) in `sessions/`. Compare with the
 pin `codex/model.sh <provider> <tier>` returns. A provider whose CLI is not logged in is
 reported `skipped (not logged in)` and fails the run. Stop each session afterwards; a
 stopped session stays in the hub's list with `live: false` and `status: stopped`
@@ -235,6 +237,7 @@ bash test-support/smoke/live.sh       # on hearth, costs model turns (9 sessions
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | major | Claude transcript lookup ignores a retained `CLAUDE_CONFIG_DIR` | upheld | Lookup now uses the effective config folder for both CLIs (`machine/adapters/claude.js:5`) |
 
 ## Prior Work
 
