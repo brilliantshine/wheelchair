@@ -12,6 +12,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const { trackChild } = require('../../test-support/run-dir');
 const { test, expect } = require('@playwright/test');
 const { ROOT, makeDir, freePort } = require('./helpers/server');
 
@@ -82,22 +83,34 @@ function waitForUrl(child) {
 async function startServerEnv({ root, port, env }) {
   const args = ['viewer/server.js', '--port', String(port), '--cache-root', root];
   const child = spawn(process.execPath, args, { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
-  await waitForUrl(child);
+  trackChild(child);
+  let token;
+  try {
+    await waitForUrl(child);
   // A bare start (no --open) prints only the base origin, with no token (server.js's viewerUrl) —
   // read the token it wrote to disk instead of parsing the printed line.
-  const token = (await fs.readFile(path.join(root, '.token'), 'utf8')).trim();
-  assert.ok(token, 'server wrote a token file');
+    token = (await fs.readFile(path.join(root, '.token'), 'utf8')).trim();
+    assert.ok(token, 'server wrote a token file');
+  } catch (error) {
+    await stopChild(child);
+    throw error;
+  }
   return {
     root, port, token, url: `http://127.0.0.1:${port}/wheelchair`, child,
     async stop() {
-      if (!child.killed) child.kill('SIGTERM');
-      await new Promise((resolve) => {
-        const timer = setTimeout(() => { child.kill('SIGKILL'); resolve(); }, 1500);
-        child.once('exit', () => { clearTimeout(timer); resolve(); });
-      });
+      await stopChild(child);
       await fs.unlink(path.join(root, '.server')).catch(() => {});
     },
   };
+}
+
+async function stopChild(child) {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  await new Promise((resolve) => {
+    const timer = setTimeout(() => child.kill('SIGKILL'), 1500);
+    child.once('exit', () => { clearTimeout(timer); resolve(); });
+    child.kill('SIGTERM');
+  });
 }
 
 function run(args, env) {
@@ -107,6 +120,7 @@ function run(args, env) {
 function runExec(execPath, args, env) {
   return new Promise((resolve, reject) => {
     const child = spawn(execPath, args, { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    trackChild(child);
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (chunk) => { stdout += chunk; });
