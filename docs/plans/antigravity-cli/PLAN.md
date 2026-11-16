@@ -328,6 +328,15 @@ otherwise check the aside is refused with the plain message.
 | intent | minor | "Stop payload carries no last message" stated as fact before Task 0 | upheld | Reworded as conditional |
 | mechanics | major | Verifier selection undefined when Gemini builds alongside other families | upheld | Decision 18; Protocol sub-lead.md bullet |
 
+### Round 4 — 2026-11-16
+
+**Lanes:** intent, claude; mechanics, gpt; cross-family: yes.
+
+**Changed since Round 3:** Task 0 item 7 (fork test against a live interactive `agy`); aside refusal moved to the hub's `create`, gemini aside path built only when `asideFork` is true, machine backstop dropped; Stop-payload last message made conditional; Decision 18 and the `sub-lead.md` verifier rule for three families. Budget reset by Collin ("keep going").
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
