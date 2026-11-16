@@ -19,13 +19,11 @@ Errors:
   422 invalid-json (position), unknown-schema (schema), missing-label, bad-id, bad-kind (ids),
       edge-missing-node, self-edge (ids), group-bad-name, group-missing-node, group-bad-shape (ids),
       group-missing-label (ids), group-missing-note (ids), group-hidden-text (ids),
-      group-overlap (ids), explanation-missing-group, group-unreferenced, bad-origin-value,
-      bad-was, container-bad-name, positional-claim, run-field, run-field-shape, bad-status,
+      group-overlap (ids), explanation-missing-group, group-unreferenced,
+      container-bad-name, positional-claim, run-field, run-field-shape, bad-status,
       status-without-task, needs-missing, needs-hidden, choice-shape, container-status,
       run-name, run-nesting,
-      container-cycle, container-orphan, container-unreadable-child, preservation-rejected,
-      preservation-agreed, agent-verdict, structural-difference (ids),
-      bulk-not-additive
+      container-cycle, structural-difference (ids)
   500 internal
 */
 
@@ -56,7 +54,6 @@ const LAUNCH_WAIT_MS = 15000;
 const STARTUP_GRACE_ATTEMPTS = 20;
 const STARTUP_GRACE_INTERVAL_MS = 100;
 const STOP_WAIT_MS = 5000;
-const ORIGINS = new Set(['proposed', 'agreed', 'rejected']);
 const SOURCES = new Set(['router', 'code-read', 'plan-proposal']);
 const NODE_KINDS = new Set(['file', 'module', 'step', 'decision', 'external', 'note', 'store', 'choice']);
 const EDGE_KINDS = new Set(['data', 'sequence']);
@@ -105,8 +102,7 @@ function hashBytes(bytes) {
 
 function orderedNode(node, includeRunFields = false) {
   const result = {
-    id: node.id, label: node.label, kind: node.kind, origin: node.origin,
-    was: node.was, exclusive: node.exclusive, ref: node.ref, note: node.note,
+    id: node.id, label: node.label, kind: node.kind, exclusive: node.exclusive, ref: node.ref, note: node.note,
     graph: node.graph,
   };
   if (includeRunFields || node.task !== null || node.status !== null || node.needs !== null) {
@@ -120,7 +116,7 @@ function orderedEdge(edge) {
   return {
     id: edge.id, from: edge.from, to: edge.to, label: edge.label,
     kind: edge.kind, value: edge.value, inferred: edge.inferred,
-    origin: edge.origin, was: edge.was, note: edge.note,
+    note: edge.note,
   };
 }
 
@@ -155,9 +151,8 @@ function rounded(value) {
   return Math.round(Number.isFinite(number) ? number : 0);
 }
 
-// Canonicalization intentionally drops unknown keys.  checkOrigin is delayed by /view
-// because its structural-identity check is contractually earlier.
-function validateGraph(input, { checkOrigin = true } = {}) {
+// Canonicalization intentionally drops unknown keys.
+function validateGraph(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     fail(400, 'bad-body', 'The request body must contain a graph object.');
   }
@@ -190,8 +185,6 @@ function validateGraph(input, { checkOrigin = true } = {}) {
       id: raw.id,
       label: raw.label,
       kind: raw.kind ?? 'note',
-      origin: raw.origin ?? 'proposed',
-      was: raw.was ?? null,
       exclusive: raw.exclusive ?? false,
       ref: raw.ref ?? null,
       note: raw.note ?? null,
@@ -204,9 +197,6 @@ function validateGraph(input, { checkOrigin = true } = {}) {
     };
     if (!NODE_KINDS.has(node.kind)) {
       fail(422, 'bad-kind', 'A node kind is outside the allowed set.', { ids: [node.id] });
-    }
-    if (checkOrigin && !ORIGINS.has(node.origin)) {
-      fail(422, 'bad-origin-value', 'An origin is outside the allowed set.');
     }
     if (node.graph !== null && (typeof node.graph !== 'string' || !BARE_NAME.test(node.graph))) {
       fail(422, 'container-bad-name', 'A container graph name is not a bare valid name.');
@@ -307,15 +297,10 @@ function validateGraph(input, { checkOrigin = true } = {}) {
       kind: raw.kind ?? 'sequence',
       value: raw.value ?? null,
       inferred: raw.inferred ?? false,
-      origin: raw.origin ?? 'proposed',
-      was: raw.was ?? null,
       note: raw.note ?? null,
     };
     if (!EDGE_KINDS.has(edge.kind)) {
       fail(422, 'bad-kind', 'An edge kind is outside the allowed set.', { ids: [edge.id] });
-    }
-    if (checkOrigin && !ORIGINS.has(edge.origin)) {
-      fail(422, 'bad-origin-value', 'An origin is outside the allowed set.');
     }
     return edge;
   });
@@ -354,29 +339,6 @@ function validateGraph(input, { checkOrigin = true } = {}) {
     schema: 1, title: input.title, source: input.source,
     source_detail: input.source_detail, explanation: input.explanation ?? null, run, groups, nodes, edges,
   };
-}
-
-function entryWithoutPosition(entry, isNode) {
-  const clone = { ...entry };
-  if (isNode) {
-    delete clone.x;
-    delete clone.y;
-  }
-  return JSON.stringify(isNode ? orderedNode({ ...clone, x: 0, y: 0 }) : orderedEdge(clone),
-    isNode ? ['id', 'label', 'kind', 'origin', 'was', 'exclusive', 'ref', 'note', 'graph'] :
-      ['id', 'from', 'to', 'label', 'kind', 'value', 'inferred', 'origin', 'was', 'note']);
-}
-
-function sameExceptPosition(left, right, isNode) {
-  if (isNode) {
-    const a = { ...left }; const b = { ...right };
-    delete a.x; delete a.y; delete b.x; delete b.y;
-    delete a.task; delete a.status; delete a.needs;
-    delete b.task; delete b.status; delete b.needs;
-    return JSON.stringify(orderedNode({ ...a, x: 0, y: 0 })) ===
-      JSON.stringify(orderedNode({ ...b, x: 0, y: 0 }));
-  }
-  return JSON.stringify(orderedEdge(left)) === JSON.stringify(orderedEdge(right));
 }
 
 function parseJson(bytes) {
@@ -507,64 +469,6 @@ function checkAgentProse(incoming) {
   }
 }
 
-// Agent preservation is deliberately outside HTTP handling: this is the format contract.
-// Everything an agent's PUT /graph is forbidden to do, in one place:
-//   - it may not grant itself a verdict (agent-verdict),
-//   - it must preserve every rejected entry verbatim and every agreed entry either verbatim or
-//     reset to proposed with was: "agreed" (preservation-rejected, preservation-agreed),
-//   - it may write `was` only as part of a reset, and may never clear a landed one (bad-was),
-//   - it may not claim where anything sits (positional-claim, above).
-// Removing an entry already reset to proposed is allowed: that is the second of the two visible
-// steps a superseded flow takes, instead of vanishing in one.
-//
-// The prose check belongs here and never in validateGraph, which parseDisk runs on every read:
-// nine committed graphs already carry a position word, and refusing them there would make them
-// unopenable, undraggable and unusable as containment parents.
-function checkAgentWrite(current, incoming) {
-  checkAgentProse(incoming);
-  for (const [oldEntries, newEntries, isNode] of [
-    [current.nodes, incoming.nodes, true], [current.edges, incoming.edges, false],
-  ]) {
-    const oldById = mapById(oldEntries);
-    const newById = mapById(newEntries);
-    for (const entry of newEntries) {
-      const old = oldById.get(entry.id);
-      if (!old || old.origin === 'proposed') {
-        if (entry.origin !== 'proposed') {
-          fail(422, 'agent-verdict', 'An agent may not set a verdict on a new or proposed entry.',
-            { ids: [entry.id] });
-        }
-      }
-    }
-    for (const old of oldEntries) {
-      const entry = newById.get(old.id);
-      if (old.origin === 'rejected' && (!entry || !sameExceptPosition(old, entry, isNode))) {
-        fail(422, 'preservation-rejected', 'A rejected entry must be preserved unchanged.',
-          { ids: [old.id] });
-      }
-      if (old.origin === 'agreed') {
-        const reset = entry && entry.origin === 'proposed' && entry.was === 'agreed';
-        if (!entry || (!sameExceptPosition(old, entry, isNode) && !reset)) {
-          fail(422, 'preservation-agreed', 'An agreed entry must be preserved or reset.',
-            { ids: [old.id] });
-        }
-      }
-    }
-    for (const entry of newEntries) {
-      const old = oldById.get(entry.id);
-      const resetNow = old && old.origin === 'agreed' && entry.origin === 'proposed';
-      const landedReset = old && old.origin === 'proposed' && old.was === 'agreed';
-      if (entry.was === null) {
-        if (landedReset) {
-          fail(422, 'bad-was', 'An agent may not clear a landed reset record.', { ids: [entry.id] });
-        }
-      } else if (!(entry.was === 'agreed' && (resetNow || landedReset))) {
-        fail(422, 'bad-was', 'An agent wrote a was value it is not allowed to write.', { ids: [entry.id] });
-      }
-    }
-  }
-}
-
 async function hasContainmentCycle(rootPath, incoming, config) {
   const visiting = new Set();
   const seen = new Set();
@@ -583,47 +487,6 @@ async function hasContainmentCycle(rootPath, incoming, config) {
     return false;
   }
   return walk(rootPath);
-}
-
-async function subtreeHasVerdict(rootPath, config) {
-  const seen = new Set();
-  async function walk(filePath) {
-    if (seen.has(filePath)) return false;
-    seen.add(filePath);
-    const safePath = await validGraphPath(config, filePath);
-    const raw = await readRaw(safePath);
-    if (!raw.exists) return false;
-    let graph;
-    try {
-      graph = parseDisk(raw);
-    } catch {
-      // A child that will not parse cannot be shown to hold no verdicts, and this walk exists to
-      // stop verdict loss. Surface the corruption where it matters rather than orphaning the file.
-      fail(422, 'container-unreadable-child',
-        `The child graph ${safePath} does not parse, so its verdicts cannot be checked.`);
-    }
-    if ([...graph.nodes, ...graph.edges].some((entry) =>
-      entry.origin === 'agreed' || entry.origin === 'rejected')) return true;
-    for (const node of graph.nodes) {
-      if (node.graph && await walk(childPath(safePath, node.graph))) return true;
-    }
-    return false;
-  }
-  return walk(rootPath);
-}
-
-async function checkOrphans(graphPath, current, incoming, config) {
-  const nextById = mapById(incoming.nodes);
-  for (const oldNode of current.nodes) {
-    if (!oldNode.graph) continue;
-    const next = nextById.get(oldNode.id);
-    if (!next || next.graph !== oldNode.graph) {
-      if (await subtreeHasVerdict(childPath(graphPath, oldNode.graph), config)) {
-        fail(422, 'container-orphan', 'Removing or retargeting this container would orphan a verdict.',
-          { ids: [oldNode.id] });
-      }
-    }
-  }
 }
 
 // The first render is the one Collin reads before he has dragged anything, so the layout is worth
@@ -1523,21 +1386,6 @@ function checkViewChanges(current, incoming) {
       current.explanation !== incoming.explanation || !sameGroups) {
     fail(422, 'structural-difference', 'The page changed graph structure.', { ids: bad });
   }
-  let reversals = 0;
-  for (const [oldEntries, newEntries] of [[current.nodes, incoming.nodes], [current.edges, incoming.edges]]) {
-    const oldById = mapById(oldEntries);
-    for (const entry of newEntries) {
-      const old = oldById.get(entry.id);
-      if (!ORIGINS.has(entry.origin)) fail(422, 'bad-origin-value', 'An origin is outside the allowed set.');
-      const clearsWas = old.was !== null && entry.was === null;
-      const keepsWas = entry.was === old.was;
-      if (!(keepsWas || (clearsWas && entry.origin !== old.origin))) {
-        fail(422, 'bad-was', 'The page may only clear was while changing origin.', { ids: [entry.id] });
-      }
-      if (entry.origin !== old.origin && old.origin !== 'proposed') reversals += 1;
-    }
-  }
-  if (reversals > 1) fail(422, 'bulk-not-additive', 'A bulk verdict may reverse at most one existing verdict.');
 }
 
 function checkRunName(graphPath, graph) {
@@ -1582,16 +1430,9 @@ async function writeGraph(graphPath, body, state) {
     const incoming = validateGraph(body.graph);
     checkRunName(graphPath, incoming);
     const current = raw.exists ? parseDisk(raw) : null;
-    checkAgentWrite(current || { nodes: [], edges: [] }, incoming);
-    if (current) {
-      if (await hasContainmentCycle(graphPath, incoming, state.config)) {
-        fail(422, 'container-cycle', 'The write would create a containment cycle.');
-      }
-      await checkOrphans(graphPath, current, incoming, state.config);
-    } else {
-      if (await hasContainmentCycle(graphPath, incoming, state.config)) {
-        fail(422, 'container-cycle', 'The write would create a containment cycle.');
-      }
+    checkAgentProse(incoming);
+    if (await hasContainmentCycle(graphPath, incoming, state.config)) {
+      fail(422, 'container-cycle', 'The write would create a containment cycle.');
     }
     if (current?.run && incoming.run && sameRunLayoutInputs(current, incoming)) preserveRunPositions(current, incoming);
     else positionGraph(incoming);
@@ -1622,7 +1463,7 @@ async function handleViewPut(request, response, url, state) {
     if (!raw.exists) fail(404, 'not-found', 'The graph file does not exist.');
     if (body.hash !== raw.hash) fail(409, 'stale', 'The graph changed since it was read.', { hash: raw.hash });
     const current = parseDisk(raw);
-    const incoming = validateGraph(body.graph, { checkOrigin: false });
+    const incoming = validateGraph(body.graph);
     checkViewChanges(current, incoming);
     const bytes = canonicalBytes(incoming);
     // Swept here and not inside atomicWrite: this is the only write path the global mutex

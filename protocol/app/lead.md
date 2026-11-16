@@ -384,8 +384,8 @@ graph home; use prose.
 
 Documents have their own rule: PLAN.md's Spec gets a Mermaid diagram when it is approved
 (`<root>/protocol/diagrams.md`), drawn at approval and never earlier, since a diagram
-drawn mid-churn goes stale. MAP.md and the routers stay plain text. Proposals he approves
-or strikes keep using the graph page.
+drawn mid-churn goes stale. MAP.md and the routers stay plain text. Draw proposals on
+the graph page.
 
 ## `status:` in PLAN.md
 

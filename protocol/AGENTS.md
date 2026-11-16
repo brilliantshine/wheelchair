@@ -29,7 +29,7 @@ lands at one of the statuses the machine already has.
 | `writing.md` | How anything a person reads is written. Governs messages, not documents |
 | `map.md` | How to explain existing code: flow first, grounded in `file:line`, no filler |
 | `diagrams.md` | Which diagram a document gets, and what keeps it from lying |
-| `graphs.md` | The graph format read by both harnesses — schema, verdicts, preservation, how the viewer starts, the run-picture switch |
+| `graphs.md` | The graph format read by both harnesses — schema, how the viewer starts, the run-picture switch |
 | `sensitivity.md` | The diagram-sensitivity dial: the region rendered into present harnesses' always-on files, and what each level draws |
 | `seen.md` | What the reader has seen: the plan record `docs/plans/<slug>/SEEN.md`, the wording list, and the hook that carries the wording list and a gap notice into every turn |
 | `app/` | The app's role protocol, one file per agent role plus the card formats; [its router](app/AGENTS.md). Replaces the stage files for sessions the app starts; the stage files above stay until a later feature retires them |
