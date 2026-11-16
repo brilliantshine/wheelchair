@@ -383,9 +383,11 @@ a worker with `--provider gemini` and check its `result` card arrives.
 | T5 | Pages: Settings, thread, threads show Antigravity; browser tests | `viewer/pages/{settings,thread,threads}.js`, `viewer/test/*.spec.js` | standard, gpt-6.1-terra (asked for claude; hub: \"Could not use claude; using gpt\") | wc-9340ecf1256c-worker-7 (t5-a1) | `npm --prefix viewer run test:browser` | done |
 | T6 | Protocol, API docs, routers | `protocol/app/{lead,sub-lead}.md`, `machine/API.md`, `viewer/app/API.md`, `machine/AGENTS.md`, `viewer/AGENTS.md`, `codex/AGENTS.md` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-8 (t6-a1) | protocol-rules test; grep for two-provider wording | done |
 | T7 | Graph-arrow browser test skips `form` picture files, as it skips `run` ones | `viewer/test/browser.spec.js` | light, gpt-6-luna | wc-9340ecf1256c-worker-9 (t7-a1) | the one test, both browsers | done |
-| T8 | Installer test expects the `gemini` pin lines `model.sh init` now writes | `install/test/run.sh` | light, gpt-6-luna | wc-9340ecf1256c-worker-10 (t8-a1) | `bash install/test/run.sh` | in progress |
+| T8 | Installer test expects the `gemini` pin lines `model.sh init` now writes | `install/test/run.sh` | light, gpt-6-luna | wc-9340ecf1256c-worker-10 (t8-a1) | `bash install/test/run.sh` | done |
 
 ## Log
+
+- 2026-11-16 — T8 accepted (installer suite 180/0, re-run by me). Choices: none.
 
 - 2026-11-16 — T7 accepted (diff read; the full browser run on the merged branch re-checks it). Choices: none.
 
