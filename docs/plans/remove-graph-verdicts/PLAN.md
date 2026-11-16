@@ -1,6 +1,6 @@
 ---
 slug: remove-graph-verdicts
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-15
 ---
 
@@ -169,3 +169,5 @@ diagram card or dragging.
 - 2026-11-15 — Choice: T2, viewer/index.html: the neutral grey that verdicts shared is renamed `--graph-stroke`, and the run-done green `--success`.
 - 2026-11-15 — Choice: T2, viewer/test/browser.spec.js: the legacy-render test injects `origin`/`was` into the GET response, since the new server drops them before the page sees them.
 - 2026-11-15 — T2 accepted: its one failing browser test ("no drawn arrow's line passes through either box it connects, over every committed graph", browser.spec.js:2133, both engines) fails identically with the pre-change index.html and spec; it chokes on the curved wires of committed run pictures (app-shell, model-pins run.json). Pre-existing and outside this plan.
+- 2026-11-15 — Choice: T4, docs/viewer.png: used docs/plans/app-shell/graphs/hub-to-machines.json; the capture is the opening viewport, so the bottom of the flow is cut off at the edge.
+- 2026-11-15 — All four tasks merged; COMPLETION.md written; status verifying.
