@@ -427,6 +427,11 @@ idempotence case is the in-worktree proof.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Installer stops rendering wrappers; removes retired wrappers and the seen hook (`install/unseen.py`); git rm skills/, codex/prompts/, seen/ (§1, §2, §7) | install.sh, install/, skills/, codex/prompts/, seen/ | codex standard (gpt-6.1-terra) | wc-1cff24e4cc7d-worker | install, codex suites | in progress |
+| T2 | Dial text and machine routes GET/POST /v1/diagram-sensitivity (§3, §7) | protocol/sensitivity.md, sensitivity/, machine/ | codex standard (gpt-6.1-terra) | wc-1cff24e4cc7d-worker-2 | sensitivity, machine, test-support suites | in progress |
+| T3 | Hub /settings/diagram-sensitivity and Settings Diagrams section (§3, D13, D16) | viewer/app settings routes, API.md, pages/settings.js, its tests | claude standard (claude-sonnet-5-5) | wc-1cff24e4cc7d-worker-3 | viewer node + browser | in progress |
+| T4 | Thread graph list, picture page, aside graphs (§4) | viewer/pages thread/aside/picture, app/asides.js brief, server.js APP_PAGES, its tests | claude standard (claude-sonnet-5-5) | wc-1cff24e4cc7d-worker-4 | viewer node + browser | in progress |
+| T5 | Remove old stage rules, port flow trigger to lead.md, reword references and routers (§1, §3 D18, §5, §6) | protocol text, routers, README, CONTRIBUTING, known-issues | claude standard (claude-sonnet-5-5) | wc-1cff24e4cc7d-worker-5 | §5 greps, protocol-rules test | in progress |
 
 ## Log
 
