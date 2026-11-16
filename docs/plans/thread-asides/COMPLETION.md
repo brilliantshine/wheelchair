@@ -306,3 +306,42 @@ twice (load average 15 at the time). New test "archive races compensate claimed 
 changing history" covers: archive while a dispatching GET is held → no POST; archive landing
 between recheck and POST → DELETE and ack for that turn, history unchanged; an `ok` result for
 a turn no aside holds → acked, nothing added.
+
+### Remediation 4 — 2026-11-15
+
+Verification attempt 4 (GPT verifier, commit `de3a495`) failed on the Remediation 3 gap in a
+new form: with a POST whose response is lost, archive's DELETE can reach the machine before
+the POST, which then starts a turn nothing tracks. This was that gap's second fix attempt.
+Gap, root cause and brief: `REMEDIATION-4.md`. One task, R4-1, built on GPT (standard,
+gpt-6.1-terra, **xhigh effort**: escalation rung 1 after R3-1's failed try), merged at `c5afb55`.
+Worker choices: none.
+
+| Change | Where |
+|--------|-------|
+| DELETE of an unknown, valid `turn_id` stores a stopped tombstone (`state: "failed"`, `error: "stopped"`); a later POST with that id hits the existing idempotency rule and spawns nothing; non-UUID → 400 | `machine/lib/aside-turns.js`, `stop(id)` |
+| Contract | `machine/API.md`, DELETE row |
+
+Because archive DELETEs every turn an aside holds, dispatching included
+(`viewer/app/threads.js:161-164`), both orderings are covered: POST first → DELETE kills it;
+DELETE first → tombstone → POST starts nothing.
+
+Validation, run by the sub-lead on the R4-1 branch (`4cab17f`):
+
+```
+$ bash machine/test/run.sh
+# pass 90 # fail 0
+$ node --test viewer/test/app-asides.test.js     (three runs)
+# pass 14 # fail 0
+# pass 14 # fail 0
+# pass 14 # fail 0
+$ node --test viewer/test/*.test.js
+not ok 237 - a starter that loses the freed port registers through the new holder
+# tests 355
+# pass 354
+# fail 1
+```
+
+New tests: machine "DELETE unknown → tombstone; POST of that id → 200 failed, CLI never run;
+survives restart; ack forgets; non-UUID → 400"; hub "archive tombstones a delayed POST whose
+response is lost" (store-like fake: DELETE reaches it first, the POST's response is lost,
+`starts === 0`, history unchanged). The port test is the known one.
