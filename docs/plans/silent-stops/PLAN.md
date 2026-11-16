@@ -40,6 +40,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 13 | Review round 1: nudges are tagged and cancelled on reset; the escalation timer starts at the starter nudge's delivery; a re-messaged finished child counts as outstanding; a due check survives holds and is re-checked each tick. | Mechanics findings 1–4, upheld. | review-round-1 |
 | 14 | Collin's card wording follows the path that reached it; reviewer.md and verifier.md get the report-a-conflict rule. | Intent findings 2–4, upheld. | review-round-1 |
 | 15 | Watched agents never end a turn to wait on their own background work; they wait in the foreground. The agent reminder adds a line telling an agent that did to wait in the foreground now. No exemption in the hub. | The hub cannot see a CLI's background jobs; a rule costs nothing and Codex already works this way. | user |
+| 16 | Supersedes the Terms part of 13: a child is outstanding only while it owes a reply or is still waiting to start; `finished` is not consulted. Reviewer/verifier reminder gets the background-work line. | Review round 2 intent findings, upheld. | review-round-2 |
 
 ## Spec
 
@@ -63,8 +64,11 @@ Two parts: rule text in `protocol/app/`, and a quiet-turn detector in the hub
     `verifier` with `finished: true` is not watched (its report path is closed:
     `viewer/app/sessions.js:260`).
 - **Waiting on others:** the session has at least one child (`started_by` equals its name)
-  that is `live` and either not `finished` or `owes_reply` true (a worker re-messaged after its
-  first result owes its starter another one). The Agents tab's `waiting_on`
+  that is `live` and either owes a reply or is still `status: 'waiting'` to start
+  (`viewer/app/sessions.js:133`). `finished` is not consulted: a worker re-messaged after its
+  first result owes a reply again, and a child that has asked its starter something (a
+  `message`, which clears its `owes_reply`) is waiting on the starter, so it is no reason for
+  the starter to stay quiet. The Agents tab's `waiting_on`
   (`viewer/app/agents.js:13`) is not changed. A sub-lead dispatching workers ends many turns with no
   card; this is what makes those turns legitimate.
 - **Quiet:** a watched session that, at check time, owes a reply, has `turn_ended: true`, an
@@ -128,7 +132,7 @@ Timings: grace defaults to 30 000 ms, escalate to 600 000 ms. `Hub`'s constructo
 - **Agent nudge** (worker, mapper, sub-lead):
   `[wc:from app] Your turn ended without a result or message card, and the session that started you is waiting for one. Your own wc.js and card.js commands are always allowed, whatever your brief says about ports or the network. If your task is done, post your result. If you cannot finish, post a result with outcome blocked and the reason. If you need an answer, send a message. If you ended your turn to wait on your own background work, wait for it in the foreground now and report when it is done. If you already posted one, ignore this.`
 - **Agent nudge** (reviewer, verifier):
-  `[wc:from app] Your turn ended with no report. End your next turn with your report as your last message.`
+  `[wc:from app] Your turn ended with no report. If you ended it to wait on your own background work, wait for it in the foreground now. End your next turn with your report as your last message.`
 - **Starter nudge:**
   `[wc:from app] your session <name> ended two turns without a result or message, one of them after a reminder from the app. Check on it: message it, or stop and replace it.`
 - **Collin's card:** `kind: needs`, `title: "An agent stopped without reporting"`. The body
@@ -200,6 +204,8 @@ turn ends are driven as `viewer/test/app-balancer.test.js:185-215` does (machine
     escalate; once the hold clears and the nudge is delivered, the card appears escalate later.
 13. A worker that already posted a result is re-messaged by its sub-lead: while it owes a
     reply, the sub-lead's quiet turns are not nudged.
+15. A worker sends its sub-lead a `message` (a question); the sub-lead's turn ends with no card:
+    the sub-lead is nudged, although the worker is live and not finished.
 14. A worker whose grace expires while it holds `needs_open`: once the hold clears, it is
     nudged without any new turn.
 
@@ -265,6 +271,8 @@ state or timers.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| claude intent | major | A child that asked its starter a question stays unfinished, exempting a starter that never answers | upheld | Outstanding child = owes a reply or waiting to start (Terms, Decision 16); test 15 |
+| claude intent | minor | Reviewer/verifier reminder lacks Decision 15's background-work line | upheld | Line added (Texts) |
 
 ## Prior Work
 
