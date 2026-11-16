@@ -129,3 +129,19 @@ Validation 6: `viewer/test/.tmp` had 696 entries before and after the full unit 
 - The hub started T2 three times on one attempt id (worker-3, -4, -5). Branches `wc-25ba351f336d-w3` and `-w5` and their worktrees remain unmerged; nothing was deleted.
 
 ## Remediation rounds
+
+### Remediation 1 — 2026-11-15
+
+Verifier attempt 1 (GPT `gpt-6.1-sol`, on `db1dc52`): FAIL. The one gap was Spec §7: `viewer/AGENTS.md` placed the temp-folder sentence inside the Tests bash fence (`bash -n` of the block exited 2), and its `test/` row still said cache roots live under `test/.tmp/`. The sub-lead added the same staleness at root `AGENTS.md`'s `.gitignore` row. Plan: `REMEDIATION-1.md`.
+
+Fixed by task R1 (GPT light `gpt-6-luna`, worker-8; worker reported no choices), merged at `daa8d95`:
+- `viewer/AGENTS.md:65`: the `test/` row now says the cache root is a folder from `test-support/run-dir.js` under system temp.
+- `viewer/AGENTS.md` Tests: the fence closes after the two commands, and the sentence is prose below it.
+- `AGENTS.md:69`: the `.gitignore` row says `viewer/test/.tmp/` is where older checkouts wrote scratch, swept after an hour by `test-support/run-dir.js`.
+
+Evidence (sub-lead, on the feature branch after the merge):
+```
+$ awk '/^```bash$/{f=1;next} /^```$/{f=0} f' viewer/AGENTS.md | bash -n && echo bash-blocks-ok
+bash-blocks-ok
+```
+No code changed, so the suite evidence above still stands.
