@@ -6,6 +6,7 @@ repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 writer=${SEEN_SET:-"$repo/seen/set.sh"}
 fixture=$(mktemp -d)
 trap 'rm -rf "$fixture"' EXIT
+trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP
 passes=0 failures=0
 pass() { printf 'PASS %s\n' "$1"; passes=$((passes + 1)); }
 fail() { printf 'FAIL %s\n' "$1"; failures=$((failures + 1)); }

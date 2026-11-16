@@ -69,4 +69,6 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 ```bash
 node --test viewer/test/*.test.js     # unquoted glob, as the root router explains
 npm --prefix viewer run test:browser  # Chromium and Firefox
+
+Test temp folders come from `test-support/run-dir.js` (`makeTemp`/`makeTempSync`), which removes them when the test process ends; never allocate from `os.tmpdir()` directly in a test.
 ```
