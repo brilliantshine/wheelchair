@@ -18,6 +18,9 @@ verified-by:
   - round: 5
     lane: gpt verifier (hub could not avoid gpt), FAIL
     checks: gpt standard (gpt-6.1-terra) build + remediations 1-4
+  - round: 6
+    lane: gpt verifier (hub could not avoid gpt), FAIL
+    checks: gpt standard (gpt-6.1-terra) build + remediations 1-5
 ---
 
 # Completion Report — Asides
@@ -411,3 +414,13 @@ verifier 5's case with a store-like fake: POST accepted (`starts === 1`) with it
 archive DELETEs, the response is released; the hub sends no ack, the fake still holds the id as
 stopped, and the delayed original POST then starts nothing (`starts` still 1). The existing
 archive-race test now expects no ack for a cancelled turn and one for a finished unheld turn.
+
+### Verification 6 — 2026-11-15: FAIL, Decision 19 only partly implemented
+
+```
+GAP: Decision 19 / Spec §4–§5 / Remediation 5 — A poll returning `failed: stopped` after archive still triggers acknowledgement (`viewer/app/asides.js:164,180`), deleting the cancellation record (`machine/lib/aside-turns.js:69`). A delayed POST can then restart that untracked turn. `node /tmp/wc-verifier-6-race.js`, using the real hub and turn store with CLI launch stubbed, printed `archived:true, hubTurn:null, machineHasTurn:false, acks:1`, followed by `status:202, machineState:"running", starts:2`.
+```
+
+Cause: the Remediation 5 brief kept acknowledging an `ok`/`failed` result for a turn no aside
+holds, on the reasoning that the hub never cancelled it. After archive, a cancelled turn polls
+back as `failed`/"stopped", so it was acknowledged. Sent to the lead before any further fix.
