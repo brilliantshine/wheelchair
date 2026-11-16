@@ -6,7 +6,7 @@
   :root {
     --bg: #14161a; --panel: #1c1f25; --panel-2: #23262d; --line: #2a2f38;
     --ink: #e6e8ec; --dim: #8b929e;
-    --proposed: #6b7280; --agreed: #4ea87b; --rejected: #c4645f; --accent: #5b9dd9;
+    --danger: #c4645f; --accent: #5b9dd9;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--ink);
@@ -39,7 +39,7 @@
   main#doc { flex: 1; min-width: 0; width: 100%; }
 
   #error-banner { margin-bottom: 14px; padding: 8px 12px; border-radius: 6px; font-size: 12px;
-    background: #3a1f1f; border: 1px solid var(--rejected); color: #f2d4d1; }
+    background: #3a1f1f; border: 1px solid var(--danger); color: #f2d4d1; }
 
   #frontmatter { background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
     padding: 10px 14px; margin-bottom: 18px; font-size: 12px; }

@@ -6,7 +6,7 @@
   :root {
     --bg: #14161a; --panel: #1c1f25; --panel-2: #23262d; --line: #2a2f38;
     --ink: #e6e8ec; --dim: #8b929e;
-    --proposed: #6b7280; --agreed: #4ea87b; --rejected: #c4645f; --accent: #5b9dd9;
+    --graph-stroke: #6b7280; --success: #4ea87b; --danger: #c4645f; --accent: #5b9dd9;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; overflow-x: hidden; background: var(--bg); color: var(--ink);
@@ -24,9 +24,6 @@
   #breadcrumb .crumb + .crumb::before { content: '\203a'; margin-right: 6px; color: var(--dim); }
   #source { color: var(--dim); font-size: 12px; white-space: nowrap; overflow: hidden;
     text-overflow: ellipsis; }
-  #legend { display: flex; align-items: center; gap: 6px; color: var(--dim); font-size: 11px;
-    white-space: nowrap; }
-  #legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
   #controls { margin-left: auto; display: flex; gap: 8px; flex-shrink: 0; }
   #controls button { background: var(--panel-2); border: 1px solid var(--line); color: var(--ink);
     border-radius: 4px; padding: 5px 10px; font: inherit; font-size: 12px; cursor: pointer; }
@@ -37,14 +34,14 @@
      half of Decision Log #30. `hidden` is the resting state; JS clears it. */
   #select-toggle.active { background: var(--accent); color: var(--bg); border-color: var(--accent); }
 
-  /* Decision Log #35: below 600px the legend and source are dropped rather than squeezed, and the
+  /* Decision Log #35: below 600px the source is dropped rather than squeezed, and the
      controls become the one thing in the bar that scrolls — sideways, inside the bar's own fixed
      48px, never the page. `min-width: 0` is what lets a flex item shrink past its content's natural
      width in the first place; without it #controls would keep its full six-button width and spill
      past the bar for #topbar's `overflow: hidden` (above) to silently swallow, exactly the
      "clipped and unreachable" bug this rule exists to avoid. */
   @media (max-width: 599px) {
-    #legend, #source { display: none; }
+    #source { display: none; }
     #breadcrumb { min-width: 0; }
     /* flex-shrink:0 (above) is what keeps #controls at its full six/seven-button width on a wide
        bar; here that has to give — shrink it to whatever room #breadcrumb leaves, and let its own
@@ -55,7 +52,7 @@
 
   #error-banner { position: fixed; left: 14px; right: 14px; top: 56px; z-index: 6;
     padding: 8px 12px; border-radius: 6px; font-size: 12px; background: #3a1f1f;
-    border: 1px solid var(--rejected); color: #f2d4d1; }
+    border: 1px solid var(--danger); color: #f2d4d1; }
   #poll-status { position: fixed; left: 14px; bottom: 14px; z-index: 6; padding: 6px 10px;
     border-radius: 6px; font-size: 12px; background: #2a2a1f; border: 1px solid #8a8a4a;
     color: #e6e4c8; }
@@ -104,23 +101,18 @@
     display: block; background: var(--bg); }
   svg#canvas.panning { cursor: grabbing; }
 
-  .node .node-box { fill: #21252c; stroke: var(--proposed); stroke-width: 1.5; }
+  .node .node-box { fill: #21252c; stroke: var(--graph-stroke); stroke-width: 1.5; }
   .node .node-label { fill: var(--ink); font-size: 12.5px; pointer-events: none; }
   .node .node-kind { fill: var(--dim); font-size: 9.5px; letter-spacing: .03em;
     pointer-events: none; text-transform: uppercase; }
   .node .node-fork { fill: #d8b45f; font-size: 9.5px; pointer-events: none;
     text-transform: uppercase; letter-spacing: .03em; }
   .node.selected .node-box { fill: #2b3140; stroke: var(--accent); stroke-width: 2.5; }
-  .node.agreed .node-box { stroke: var(--agreed); }
-  .node.rejected .node-box { stroke: var(--rejected); stroke-dasharray: 4 3; }
-  .node.rejected { opacity: .5; }
-  .node.rejected .node-label { text-decoration: line-through; }
   .node { cursor: move; }
 
   /* Quiet, not alarming: this is information ("an agent reset this"), not an error.
      Same amber as the fork tag and the inferred-edge note — the page's existing
      colour for "worth a second look", not a new warning colour. */
-  .was-mark { fill: #d8b45f; opacity: .8; pointer-events: none; }
 
   .open-child { cursor: pointer; }
   .open-child .open-child-bg { fill: #2c3340; stroke: var(--accent); stroke-width: 1; }
@@ -129,26 +121,18 @@
   .open-child.disabled .open-child-bg { stroke: var(--dim); stroke-dasharray: 2 2; }
   .open-child.disabled .open-child-label { fill: var(--dim); }
 
-  /* Run-picture box content: a top line (status tag, kind tag), the label (existing wrap rule
-     above), an optional needs line, and one row per socket — see runLayout()/renderRunNode() below. Border
-     treatment differs per status by shape (dash pattern and stroke width), not colour alone
-     (Spec, "Statuses and needs-you on the page"). Declared after .node.agreed/.node.rejected, so
-     these rules win the border on equal specificity: a run box Collin has ruled on keeps its
-     opacity and (for a strike) its label's line-through from those rules untouched, but its
-     border reads its progress status rather than its verdict. Collin's own ruling on an ordinary
-     run box is visible but has no effect on the run (Spec, Edge cases) — only a struck `choice`
-     is ever collected — so this is a deliberate trade, not an oversight. */
+  /* Run-picture content and status styling. */
   .status-tag { font-size: 10.5px; letter-spacing: .02em; pointer-events: none; }
   .status-tag.status-not-started { fill: var(--dim); }
   .status-tag.status-in-progress { fill: var(--accent); }
-  .status-tag.status-done { fill: var(--agreed); }
-  .status-tag.status-needs-you { fill: var(--rejected); font-weight: 600; }
-  .needs-text { fill: var(--rejected); font-size: 11px; pointer-events: none; }
+  .status-tag.status-done { fill: var(--success); }
+  .status-tag.status-needs-you { fill: var(--danger); font-weight: 600; }
+  .needs-text { fill: var(--danger); font-size: 11px; pointer-events: none; }
   .socket-name { fill: var(--dim); font-size: 10px; pointer-events: none; }
   .socket-dot { fill: var(--dim); }
   .node.run-status-in-progress .node-box { stroke: var(--accent); stroke-dasharray: 6 3; }
-  .node.run-status-done .node-box { stroke: var(--agreed); stroke-width: 2; }
-  .node.run-status-needs-you .node-box { stroke: var(--rejected); stroke-width: 2.5; stroke-dasharray: 2 2; }
+  .node.run-status-done .node-box { stroke: var(--success); stroke-width: 2; }
+  .node.run-status-needs-you .node-box { stroke: var(--danger); stroke-width: 2.5; stroke-dasharray: 2 2; }
 
   #notify-banner { position: fixed; right: 14px; left: auto; top: 56px; z-index: 6; max-width: 360px;
     padding: 8px 12px; border-radius: 6px; font-size: 12px; background: var(--panel-2);
@@ -157,10 +141,10 @@
   #notify-banner button { background: var(--panel); border: 1px solid var(--line); color: var(--ink);
     border-radius: 4px; padding: 3px 8px; font: inherit; font-size: 12px; cursor: pointer; }
 
-  .edge .edge-line { fill: none; stroke: var(--proposed); stroke-width: 1.5; }
+  .edge .edge-line { fill: none; stroke: var(--graph-stroke); stroke-width: 1.5; }
   .edge[data-kind="sequence"] .edge-line { stroke-dasharray: 3 3; opacity: .85; }
   .edge .edge-band { stroke: transparent; fill: none; cursor: pointer; }
-  .edge .edge-handle { fill: var(--proposed); opacity: 0; cursor: pointer; }
+  .edge .edge-handle { fill: var(--graph-stroke); opacity: 0; cursor: pointer; }
   /* The label used to be one of the three ways an edge is reachable through a plain CSS
      descendant selector — hovering it triggered .edge:hover for free because it lived inside
      g.edge. It's in its own layer now (the label-layer <g> built in render(), appended after
@@ -171,20 +155,15 @@
   .edge:hover .edge-handle, .edge.selected .edge-handle, .edge.label-hover .edge-handle { opacity: .9; }
   .edge.selected .edge-line { stroke: var(--accent); stroke-width: 3; }
   .edge.selected .edge-handle { fill: var(--accent); }
-  .edge.agreed .edge-line { stroke: var(--agreed); }
-  .edge.agreed .edge-handle { fill: var(--agreed); }
-  .edge.rejected .edge-line { stroke: var(--rejected); stroke-dasharray: 4 3; opacity: .5; }
-  .edge.rejected .edge-handle { fill: var(--rejected); }
 
   /* One of the three ways an edge is reachable is its label; pointer-events:none here would
      silently remove that again — a click on the label would fall through to the canvas and start
      a box-select instead, the original bug this rule exists to head off. Standalone rather than
      descendants of .edge because the label no longer lives inside g.edge (see render()), which
-     is also why renderEdgeGroup sets verdict and selection state onto the label's own class list
+     is also why renderEdgeGroup sets selection state onto the label's own class list
      rather than letting it inherit from an ancestor. */
   .edge-label, .label-metric { font-size: 11px; }
   .edge-label { fill: var(--dim); cursor: pointer; text-anchor: middle; }
-  .edge-label.rejected { text-decoration: line-through; }
   .edge-label-bg { fill: #14161a; stroke: var(--line); stroke-width: 1; cursor: pointer; }
 
   /* The one hidden element that measures real glyph widths (see measureLabelWidth) instead of
@@ -194,25 +173,15 @@
      background-rect assertion below, which it would fail for having no background of its own. */
   .label-metric { visibility: hidden; }
 
-  /* Dashed and carries the edge's own verdict colour, same vocabulary as detail-leader further
+  /* Dashed, like detail-leader further
      down, so a leader reads as belonging to its edge rather than as new chrome. Drawn before the
      label's opaque background in renderEdgeGroup so its dashes never cross the text. */
-  .edge-leader { fill: none; stroke: var(--proposed); stroke-width: 1.5; stroke-dasharray: 3 3;
+  .edge-leader { fill: none; stroke: var(--graph-stroke); stroke-width: 1.5; stroke-dasharray: 3 3;
     opacity: .6; pointer-events: none; }
-  .edge-leader.agreed { stroke: var(--agreed); }
-  .edge-leader.rejected { stroke: var(--rejected); }
 
-  /* Hovering a marked phrase must never look like a selection — `.selected` (above) is an accent
-     stroke and fill meaning "this is what approve/reject would rule," and a hover that read the
-     same while the buttons stayed disabled would be a worse lie than no highlight at all. So the
-     hover treatment is entirely this one class, applied only to what falls *outside* the hovered
-     group: everything in it is left plain (which is what reads as "lit" against the rest), and
-     placed after .rejected/.agreed above so it wins on equal specificity — an already-ruled item
-     dims like anything else here when it isn't in the hovered group. Reaches the label layer's own
-     elements too (edge-label, edge-label-bg, edge-leader), since they no longer live inside g.edge
-     and a plain `.edge` descendant rule can't reach them (see render()'s label-layer comment). */
+  /* Dim elements outside a hovered marked group without changing selection. */
   .node.group-dim, .edge.group-dim, .edge-label.group-dim, .edge-label-bg.group-dim,
-  .edge-leader.group-dim, .was-mark.group-dim, .group-region.group-dim,
+  .edge-leader.group-dim, .group-region.group-dim,
   .group-header.group-dim { opacity: .2; }
 
   /* A visible group's boundary: fill-opacity, not opacity — the shared .group-dim rule above sets
@@ -254,16 +223,10 @@
   <nav id="breadcrumb"></nav>
   <span id="source"></span>
   <span id="run-age" hidden></span>
-  <span id="legend">
-    <i style="background:var(--agreed)"></i>agreed
-    <i style="background:var(--rejected)"></i>rejected
-  </span>
   <div id="controls">
     <button id="select-toggle" hidden aria-pressed="false" title="One-finger drag box-selects; tap a node or edge to add or remove it">select</button>
     <button id="select-all">select all</button>
     <button id="clear-selection" disabled>clear</button>
-    <button id="approve" disabled>approve</button>
-    <button id="reject" disabled>reject</button>
     <button id="zoom-out">&minus;</button>
     <button id="zoom-in">+</button>
   </div>
@@ -333,8 +296,6 @@
   const notifyYesBtn = document.getElementById('notify-yes');
   const notifyNoBtn = document.getElementById('notify-no');
   const fatalEl = document.getElementById('fatal');
-  const approveBtn = document.getElementById('approve');
-  const rejectBtn = document.getElementById('reject');
   const clearBtn = document.getElementById('clear-selection');
   const selectToggleBtn = document.getElementById('select-toggle');
 
@@ -495,14 +456,10 @@
     };
   }
 
-  // `mutateFn` expresses the *intent* of a write (a bulk verdict, or a set of
-  // final drag positions) against whatever graph object it is handed. On a 409
-  // we re-read the current graph and call it again against the fresh base —
-  // that is "re-apply pending verdicts to the new base" without ever resending
-  // the stale payload the structural check would refuse.
+  // Reapply final drag positions to a fresh graph after a 409.
   //
   // A write started while one is already in flight cannot just be dropped: the
-  // page would go on showing the moved position (or the applied verdict) while
+  // page would go on showing the moved position while
   // it was never sent, so the person sees a change that isn't on disk. Instead
   // each call is queued and drains one at a time — every call still produces
   // exactly one PUT /view for its own mutateFn, never more, but a second call
@@ -682,8 +639,7 @@
   }
 
   // ---- selection ---------------------------------------------------------------
-  // Selecting both endpoints of an edge selects the edge (decision 63) so a
-  // bulk verdict over a region covers the arrows inside it. Shift-clicking such
+  // Selecting both endpoints of an edge selects the edge. Shift-clicking such
   // an implied edge removes it from the selection, and it stays removed only
   // for as long as both endpoints stay selected — the moment either endpoint
   // drops out, the suppression is meaningless and this clears it.
@@ -800,7 +756,7 @@
 
   // New entry point for a marked-phrase click, not `pick`: a click here always replaces the
   // selection with the whole group, matching what `pick` does on a non-additive click — never
-  // additive, never a toggle, so pressing approve or reject covers the whole option in one press.
+  // additive, never a toggle.
   function selectGroup(id) {
     if (!graph) return;
     const group = graph.groups.find((g) => g.id === id);
@@ -828,41 +784,6 @@
     view.x = svg.clientWidth / 2 - cx * k;
     view.y = svg.clientHeight / 2 - cy * k;
   }
-
-  // ---- verdicts ------------------------------------------------------------------
-  // §6: "A bulk verdict is additive only" — any number of entries may move *from*
-  // `proposed`, and at most one may move *away from* an existing verdict, and the
-  // server enforces that by diffing the write. A selection of two or more is always
-  // a bulk gesture here, so it only ever touches unruled entries — an already-ruled
-  // one sitting inside a select-all stays exactly as it was. A selection of exactly
-  // one is the deliberate single reversal §6 carves out: it applies regardless of
-  // what the item already carried, agreed/rejected included.
-  function applyOrigin(g, ids, verdict) {
-    const bulk = ids.length > 1;
-    for (const id of ids) {
-      const item = findNode(g, id) || findEdge(g, id);
-      if (!item) continue;
-      if (bulk && item.origin !== 'proposed') continue;
-      if (item.origin !== verdict) {
-        item.origin = verdict;
-        // The page may only *clear* a `was`, and only in the same write that
-        // changes that entry's origin — never set one, never touch it when
-        // the origin does not change.
-        item.was = null;
-      }
-    }
-  }
-
-  approveBtn.addEventListener('click', () => {
-    const ids = [...effectiveSelectionIds()];
-    if (!ids.length) return;
-    putView((g) => applyOrigin(g, ids, 'agreed'));
-  });
-  rejectBtn.addEventListener('click', () => {
-    const ids = [...effectiveSelectionIds()];
-    if (!ids.length) return;
-    putView((g) => applyOrigin(g, ids, 'rejected'));
-  });
 
   function commitDrag(positions) {
     putView((g) => {
@@ -1029,11 +950,7 @@
   // Splits the explanation on GROUP_REFERENCE_RE and rebuilds `explainBody` from scratch: plain
   // text between matches as text nodes, each match as a <span> carrying only the phrase and the
   // group id. Built with createElement/textContent, never innerHTML — the explanation is
-  // agent-written and this page can write verdicts (the browser's own cookie authenticates that
-  // write), so turning that string into HTML would let an agent's prose execute script inside the
-  // one surface enforcing "an agent proposes, only a person rules." `explainBody.textContent = text`
-  // was that barrier before groups existed; this keeps it, just per-segment instead of for the
-  // whole string.
+  // agent-written, so treating it as HTML could execute script. Text nodes keep it inert.
   function buildExplainBody(text) {
     while (explainBody.firstChild) explainBody.removeChild(explainBody.firstChild);
     let last = 0;
@@ -1331,15 +1248,12 @@
 
   function buildMarkerDefs() {
     const defs = el('defs');
-    for (const origin of ['proposed', 'agreed', 'rejected']) {
-      const marker = el('marker', {
-        id: 'arrow-' + origin, viewBox: '0 0 10 10', refX: 9, refY: 5,
-        markerWidth: 6, markerHeight: 6, orient: 'auto-start-reverse',
-      });
-      const colorVar = { proposed: 'var(--proposed)', agreed: 'var(--agreed)', rejected: 'var(--rejected)' }[origin];
-      marker.appendChild(el('path', { d: 'M0,0 L10,5 L0,10 Z', fill: colorVar }));
-      defs.appendChild(marker);
-    }
+    const marker = el('marker', {
+      id: 'arrow', viewBox: '0 0 10 10', refX: 9, refY: 5,
+      markerWidth: 6, markerHeight: 6, orient: 'auto-start-reverse',
+    });
+    marker.appendChild(el('path', { d: 'M0,0 L10,5 L0,10 Z', fill: 'var(--graph-stroke)' }));
+    defs.appendChild(marker);
     return defs;
   }
 
@@ -1510,24 +1424,20 @@
     const selected = effSel.has(n.id);
     const cls = ['node'];
     if (selected) cls.push('selected');
-    if (n.origin === 'rejected') cls.push('rejected');
-    if (n.origin === 'agreed') cls.push('agreed');
     if (isRun && rl.status !== null) cls.push('run-status-' + rl.status);
     // Never `.selected` for this: that class is an accent stroke and fill meaning "this is the
-    // selection," and a hover that looked identical while the approve button stayed disabled would
-    // be a worse lie than no highlight at all. `group-dim` is the hover treatment's own class,
+    // selection. `group-dim` is the hover treatment's own class,
     // applied only to what falls outside the hovered group — nothing in it changes appearance,
     // which is the "lit" half of the effect; everything else visibly recedes.
     if (hoverLit && !hoverLit.nodeIds.has(n.id)) cls.push('group-dim');
     const attrs = {
-      class: cls.join(' '), 'data-id': n.id, 'data-origin': n.origin, 'data-kind': n.kind,
+      class: cls.join(' '), 'data-id': n.id, 'data-kind': n.kind,
       transform: 'translate(' + n.x + ',' + n.y + ')',
     };
     if (isRun) attrs['data-run-status'] = rl.status === null ? '' : rl.status;
     if (n.exclusive) attrs['data-exclusive'] = 'true';
     const missing = n.graph !== null && childrenMap[n.graph] === false;
     if (missing) attrs['data-child-missing'] = 'true';
-    if (n.was) attrs['data-was'] = n.was;
     const g = el('g', attrs);
 
     const h = isRun ? rl.height : nodeHeight(n);
@@ -1543,20 +1453,6 @@
     }
 
     g.appendChild(el('rect', { class: 'node-box', width: NODE_W, height: h, rx: 6 }));
-
-    // §6: an agent may reset an entry Collin approved back to `proposed`,
-    // recording `was` on it. Rendered identically to a never-ruled entry it is
-    // indistinguishable from one nobody has looked at — this quiet dot in the
-    // corner opposite the open-child badge is the only place a person can see
-    // the difference. It disappears the moment the person rules again, which
-    // already clears `was` (see applyOrigin).
-    if (n.was) {
-      const mark = el('circle', { class: 'was-mark', cx: 8, cy: 8, r: 3 });
-      const tip = el('title');
-      tip.textContent = 'Reset by an agent — was ' + n.was;
-      mark.appendChild(tip);
-      g.appendChild(mark);
-    }
 
     if (isRun) {
       renderRunNodeContent(g, n, rl);
@@ -1636,14 +1532,11 @@
     const selected = effSel.has(e.id);
     const cls = ['edge'];
     if (selected) cls.push('selected');
-    if (e.origin === 'rejected') cls.push('rejected');
-    if (e.origin === 'agreed') cls.push('agreed');
     // Same not-.selected treatment as a node's (see renderNodeGroup): dimming is the whole effect,
     // and it applies to an edge only when it is outside the hovered group — an edge with just one
     // end inside does not qualify, matching groupLitSet's both-ends rule.
     if (hoverLit && !hoverLit.edgeIds.has(e.id)) cls.push('group-dim');
-    const attrs = { class: cls.join(' '), 'data-id': e.id, 'data-origin': e.origin, 'data-kind': e.kind };
-    if (e.was) attrs['data-was'] = e.was;
+    const attrs = { class: cls.join(' '), 'data-id': e.id, 'data-kind': e.kind };
     const g = el('g', attrs);
 
     // render()'s pre-pass (see chooseFaces and the bundling loop there) has already picked this
@@ -1676,7 +1569,7 @@
     const d = (graph && graph.run)
       ? wirePath(ax, ay, bx, by, a.y + nodeHeight(a), b.y + nodeHeight(b))
       : ('M' + ax + ',' + ay + ' L' + bx + ',' + by);
-    g.appendChild(el('path', { class: 'edge-line', d, 'marker-end': 'url(#arrow-' + e.origin + ')' }));
+    g.appendChild(el('path', { class: 'edge-line', d, 'marker-end': 'url(#arrow)' }));
 
     // The label ladder below derives its perpendicular from this — the anchor-to-anchor line,
     // the one actually drawn — not from the two boxes' centres. A face pair rarely sits on the
@@ -1778,8 +1671,6 @@
 
     const labelClass = ['edge-label'];
     if (selected) labelClass.push('selected');
-    if (e.origin === 'rejected') labelClass.push('rejected');
-    if (e.origin === 'agreed') labelClass.push('agreed');
     // The label moved out of g.edge into its own layer (see render()), so an ancestor `.edge`
     // rule can no longer reach it — this class has to be set on the label itself or half the
     // dimmed picture (the boxes and lines) reads correctly while the other half (the words on
@@ -1794,8 +1685,6 @@
     if (!rectIntersectsSegment(labelRect, ax, ay, bx, by)) {
       const [lx, ly] = closestPointOnSegment(mx, my, ax, ay, bx, by);
       const leaderClass = ['edge-leader'];
-      if (e.origin === 'rejected') leaderClass.push('rejected');
-      if (e.origin === 'agreed') leaderClass.push('agreed');
       if (dimmed) leaderClass.push('group-dim');
       labelLayer.appendChild(el('line', {
         class: leaderClass.join(' '), 'data-id': e.id, x1: mx, y1: my, x2: lx, y2: ly,
@@ -1821,24 +1710,7 @@
     labelLayer.appendChild(labelBg);
     labelLayer.appendChild(label);
 
-    // Same quiet marker as a node's (see renderNodeGroup): a dot at the label's
-    // corner, present only while `was` is set, gone the moment the edge is
-    // ruled on again. It comes into the label layer with everything else drawn
-    // from this label's geometry: left behind in g.edge it would go from
-    // painted-last to buried under any later edge's line, and it is the only
-    // place a reader can see that an agent reset an edge.
-    if (e.was) {
-      // Dimmed with the rest of its edge: an edge group's was-mark lives in the label layer, not
-      // inside g.edge, so it is the one piece of a dimmed edge that would otherwise stay at full
-      // brightness — an amber dot burning through a dimmed picture, pointing at nothing the
-      // reader asked about.
-      const markClass = dimmed ? 'was-mark group-dim' : 'was-mark';
-      const mark = el('circle', { class: markClass, 'data-id': e.id, cx: mx - width / 2, cy: my - 15, r: 3 });
-      const tip = el('title');
-      tip.textContent = 'Reset by an agent — was ' + e.was;
-      mark.appendChild(tip);
-      labelLayer.appendChild(mark);
-    }
+
   }
 
   function renderDetail(root, id, nodeById) {
@@ -1985,25 +1857,7 @@
 
   function renderControlsState(effSel) {
     const has = effSel.size > 0;
-    approveBtn.disabled = !has;
-    rejectBtn.disabled = !has;
     clearBtn.disabled = !has;
-
-    // A bulk selection (two or more) only rules on the unruled — an already-ruled
-    // entry caught inside a select-all is left exactly as it was. Say so on the
-    // button, but only when it's actually true of the current selection, so a
-    // plain single or all-unruled selection isn't cluttered with a caveat that
-    // doesn't apply to it.
-    let hint = '';
-    if (effSel.size > 1 && graph) {
-      const alreadyRuled = [...effSel].some((id) => {
-        const item = findItem(graph, id);
-        return item && item.origin !== 'proposed';
-      });
-      if (alreadyRuled) hint = 'Applies only to unruled items — existing verdicts are left alone.';
-    }
-    approveBtn.title = hint;
-    rejectBtn.title = hint;
   }
 
   function resizeCanvas() {
@@ -2229,7 +2083,7 @@
       renderGroupHeader(headerLayer, group, box, groupRegionEls.get(group.id), hoverGroup, labelRects);
     }
 
-    // Every label's own geometry — its text, background, was-mark and leader line — is appended
+    // Every label's own geometry — its text, background and leader line — is appended
     // here instead of into each edge's own g.edge, and this single <g> is appended once, after
     // every edge group below, rather than interleaved with them: appending a label right after its
     // own edge would still leave it under whichever *later* edge's g.edge the DOM happens to place
