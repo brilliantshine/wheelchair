@@ -233,3 +233,28 @@ Run folder removed: true
 ### Verification 4 (2026-11-15)
 
 PASS at `3a749c0` (claude / claude-opus-5-5). It re-ran SIGINT/SIGTERM/SIGHUP interruptions (no folder at +0/+5/+10 s), the smoke suite, `--check-live`, machine 98/98 and test-support 9/9. Viewer was 383/386: tests 265 and 293 as explained above, plus 336 (the global write lock), which passed 3/3 when run alone and is not in this branch's diff (`viewer/` unchanged), so it is a flake under load from other threads' tests on the machine. No new gap.
+
+### Final live run (2026-11-15)
+
+`bash test-support/smoke/live.sh` on the final code (commit `0c08e45`; no code change since the verified `3a749c0`), in D10 mode, run by the sub-lead as the lead asked:
+
+```
+CHECK | RESULT | DETAIL
+slow-start | PASS | request succeeded; 10.36 s; 1 start requests
+light/claude | PASS | model claude-haiku-5-5
+light/gpt | PASS | model gpt-6-luna
+standard/claude | PASS | model claude-sonnet-5-5
+standard/gpt | PASS | model gpt-6.1-terra
+heavy/claude | PASS | model claude-opus-5-5
+heavy/gpt | PASS | model gpt-6.1-sol
+critical/claude | PASS | model claude-fable-5-2
+critical/gpt | PASS | model gpt-6-astra
+permission | PASS | prompt opened, Enter approved, card answered, smoke-ok exists
+
+real	2m16.447s
+user	0m33.193s
+sys	0m13.099s
+exit=0
+```
+
+All 10 rows pass on the remediated harness. Also in `reports/live-run.md` (run 3).

@@ -324,3 +324,4 @@ Budget reset: Collin chose "Keep going" after three rounds.
 - 2026-11-15 — Lead: after verification 4 passes, run live.sh once on the final code (D10 mode) and record it in reports/live-run.md; a failure there is a verification gap.
 - 2026-11-15 — Verifier attempt 4: `wc-0958e89051d8-verifier-4`, claude (`--not-provider gpt`), at `3a749c0`.
 - 2026-11-15 — Verification 4: PASS at `3a749c0`. Running the final live run as the lead asked.
+- 2026-11-15 — Final live run on the verified code (commit `0c08e45`, 2m16s): all 10 rows PASS (slow-start 10.36 s, 1 start request; 8 tier rows matching their pins; permission). Recorded in `reports/live-run.md` run 3 and COMPLETION.md.
