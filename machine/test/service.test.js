@@ -33,7 +33,7 @@ case "$(basename \"$0\"):$1" in
   codex:--version) echo codex-test ;;
 esac
 `;
-  for (const name of ['tmux', 'systemd-run', ...(realGit ? [] : ['git']), 'gh', 'claude', 'codex', 'tailscale', 'sh']) await write(path.join(bin, name), script, 0o755);
+  for (const name of ['tmux', 'systemd-run', ...(realGit ? [] : ['git']), 'gh', 'claude', 'codex', 'agy', 'tailscale', 'sh']) await write(path.join(bin, name), script, 0o755);
   await write(pane, paneText);
   return { bin, log, pane };
 }
@@ -856,7 +856,7 @@ test('account starts bind the CLI environment, validate directories, and report 
     const invalid = await api(env, 'POST', '/v1/sessions', { role: 'lead', cli: 'claude', thread_id: 'bad', token: 'x', worktree: root, account: { id: 'bad', dir: '~/elsewhere/bad' } }, hubHeader);
     assert.equal(invalid.status, 400);
     const status = await api(env, 'GET', '/v1/status', undefined, hubHeader);
-    assert.deepEqual(status.body.accounts.map(a => a.id).sort(), ['default-claude', 'default-gpt', 'one', 'two']);
+    assert.deepEqual(status.body.accounts.map(a => a.id).sort(), ['default-claude', 'default-gemini', 'default-gpt', 'one', 'two']);
     const preflight = await api(env, 'POST', '/v1/preflight', { dir: '~/elsewhere/bad' }, hubHeader); assert.equal(preflight.status, 400);
   } finally { await env.close(); process.env.HOME = oldHome; }
 });
@@ -1132,4 +1132,25 @@ test('a retained non-rebase session cannot post an image after archive', async (
     assert.equal((await api(env, 'POST', '/v1/agent/cards', { kind: 'image', path: image, title: 'x' }, { 'x-wheelchair-session-token': 'alpha' })).status, 409);
     assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 0);
   } finally { await env.close(); }
+});
+
+
+test('Antigravity start, prompt polling, status and login completion', async () => {
+  const root = await temp();
+  await withEnv({ HOME: root }, async () => {
+    const hub = await hubServer(); const env = await service(root, { pane: '? for shortcuts', config: { hub_url: hub.url } });
+    try {
+      const session = await start(env, { cli: 'agy' });
+      assert.deepEqual(JSON.parse(await fs.readFile(path.join(env.state, 'settings', `${session.name}.json`))), { trustedWorkspaces: [session.worktree] });
+      assert.match(await log(env), /WHEELCHAIR_SESSION_NAME=wc-t-lead/);
+      assert.ok(JSON.parse(await fs.readFile(path.join(root, '.gemini/config/hooks.json'))).wheelchair);
+      await write(env.fake.pane, await fs.readFile(path.join(__dirname, 'fixtures/agy/permission-prompt.txt')));
+      await env.instance.pollReadiness(); assert.equal(env.instance.sessions[session.name].prompt_open, true);
+      assert.ok(env.instance.status().agy);
+      await env.instance.startLogin({ account: 'default-gemini', cli: 'agy' });
+      await write(env.fake.pane, await fs.readFile(path.join(__dirname, 'fixtures/agy/login-success.txt')));
+      assert.equal(env.instance.loginState('default-gemini').state, 'done');
+      assert.match(await log(env), /kill-session -t wc-login-default-gemini/);
+    } finally { await env.close(); await hub.close(); }
+  });
 });
