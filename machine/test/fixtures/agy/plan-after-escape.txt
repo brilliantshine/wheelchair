@@ -1,0 +1,50 @@
+
+
+      ▄▀▀▄        Antigravity CLI 1.5.9
+     ▀▀▀▀▀▀       user@example.com (Google AI Pro)
+    ▀▀▀▀▀▀▀▀      Gemini 3.8 Flash (High)
+   ▄▀▀    ▀▀▄     /tmp/t0b-agy/plan
+  ▄▀▀      ▀▀▄
+
+────────────────────────────────────────────────────────────
+> /plan create a file named y.txt containing hi
+
+○ Thought for 4.0s (Initial plan: `/plan` requires creating a plan artifact to define the file creation task. This artifact will outline the strategy for writing "hi" to `y.txt`. The plan will re...) 
+● Ran (ls -la /tmp/t0b-agy/plan) (ctrl+o to expand)                                                                                                                                                     
+
+  ⎿  Interrupted · What should Antigravity CLI do instead?                                                                                                                                              
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+>
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+? for shortcuts                                                                                                                                                           plan · Gemini 3.8 Flash · high
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
