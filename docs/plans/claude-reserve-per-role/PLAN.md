@@ -1,6 +1,6 @@
 ---
 slug: claude-reserve-per-role
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-15
 ---
 
@@ -38,6 +38,17 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 ## Spec
 
 ### Behaviour
+
+```mermaid
+flowchart TD
+  A[a session asks to start] --> B{lead or sub-lead?}
+  B -- yes --> P[pick a provider as today]
+  B -- no --> C{Claude projected below the keep-for-leads margin?}
+  C -- no --> P
+  C -- yes --> D{is this role ticked as held back?}
+  D -- no --> P
+  D -- yes --> E[Claude is off the table; pick from the rest]
+```
 
 When the week's Claude forecast says the share left at the next refill will be under the
 margin (unchanged `usage.belowMargin`), Claude is excluded **only for roles whose tick is
@@ -128,7 +139,9 @@ npm --prefix viewer run test:browser
 
 ### Round 1 — 2026-11-15
 
-**Lanes:** intent: TBD; mechanics: TBD.
+**Lanes:** intent: GPT; mechanics: GPT; cross-family: no (Claude was held back from reviewers by the rule this plan changes).
+
+Clean: no findings from either lane.
 
 **Changed since Round N-1:** n/a (first round — whole Spec in scope)
 
