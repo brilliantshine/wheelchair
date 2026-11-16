@@ -226,7 +226,7 @@ turn end noticed; open an aside on it.
 
 ### Round 1 — 2026-11-16
 
-**Lanes:** intent (pending); mechanics (pending); cross-family: yes.
+**Lanes:** intent, claude; mechanics, gpt; cross-family: yes.
 
 **Changed since Round 0:** n/a (first round — whole Spec in scope)
 
