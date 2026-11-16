@@ -161,7 +161,6 @@ async function pass(hub, id) {
       if (!item.result) continue;
       if (thread.archived || !aside?.turn || aside.turn.id !== item.turnId) {
         if (item.result.state === 'running') cancels.push({ machine: item.machine, turnId: item.turnId });
-        else if (['ok', 'failed'].includes(item.result.state)) acks.push({ machine: item.machine, turnId: item.turnId });
         continue;
       }
       if (item.result.state === 'running') {

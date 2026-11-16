@@ -306,7 +306,7 @@ test('archive races compensate claimed turns without changing history', async (t
         const deletes = calls.filter((c) => c.route === '/v1/aside-turns/turn' && c.method === 'DELETE');
         assert.equal(deletes.length, scenario === 'before post response' ? 2 : 1);
         const acks = calls.filter((c) => c.route === '/v1/aside-turns/turn/ack' && c.method === 'POST');
-        assert.equal(acks.length, scenario === 'finished unheld' ? 1 : 0);
+        assert.equal(acks.length, 0);
         assert.deepEqual((await hub.thread(id)).asides[0].history, [{ kind: 'note', text: 'existing' }]);
       } finally { release(); await pumping; }
     });
@@ -355,6 +355,52 @@ test('a cancelled turn is never acknowledged, so a late start runs nothing', asy
     await machine('hub', '/v1/aside-turns', 'POST', postBody);
     assert.equal(starts, 1); assert.deepEqual(known.get(turn.id), { state: 'failed', error: 'stopped' });
     const archived = await hub.thread('cancelled-race');
+    assert.equal(archived.archived, true); assert.deepEqual(archived.asides[0].history, history);
+  } finally { release(); await pumping; }
+});
+
+test('a stopped result after archive is never acknowledged, so a late start runs nothing', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'wc-asides-stopped-race-'));
+  const hub = new Hub({ stateDir: dir }); await hub.state.init();
+  const turn = { id: require('node:crypto').randomUUID(), state: 'dispatching', message: { kind: 'ask', text: 'question' }, model: 'model' };
+  const history = [{ kind: 'note', text: 'existing' }];
+  const aside = { id: 'a', status: 'open', provider: 'gpt', account: 'default-gpt', fork_parent: 'parent', slot: 'standard', pending: [], failed: null, history, turn };
+  const id = 'stopped-race';
+  await hub.save({ id, project: '/tmp/repo', worktree: '/tmp/repo', machine: 'hub', sessions: [], asides: [aside], cards: [], pinned: {}, queues: {}, sent: [], archived: false });
+  const known = new Map(), calls = []; let starts = 0, release, entered, postBody, holdGet = false;
+  const held = new Promise(resolve => { release = resolve; });
+  const polling = new Promise(resolve => { entered = resolve; });
+  const machine = async (_, route, method, body) => {
+    calls.push({ route, method });
+    if (route === `/v1/aside-turns/${turn.id}` && method === 'GET') {
+      if (holdGet) { entered(); await held; }
+      if (known.has(turn.id)) return known.get(turn.id);
+      const error = new Error('missing'); error.status = 404; throw error;
+    }
+    if (route === `/v1/aside-turns/${turn.id}` && method === 'DELETE') { known.set(turn.id, { state: 'failed', error: 'stopped' }); return {}; }
+    if (route === `/v1/aside-turns/${turn.id}/ack` && method === 'POST') { known.delete(turn.id); return {}; }
+    if (route === '/v1/aside-turns' && method === 'POST') {
+      postBody = body;
+      if (!known.has(body.turn_id)) { starts++; known.set(body.turn_id, { state: 'running' }); }
+      return {};
+    }
+    if (route === '/v1/archive') return { kept: [] };
+    throw new Error(`unexpected ${method} ${route}`);
+  };
+  hub.call = machine;
+  await asides.pump(hub, id);
+  assert.equal(starts, 1); assert.deepEqual(known.get(turn.id), { state: 'running' });
+  holdGet = true;
+  const pumping = asides.pump(hub, id); await polling;
+  try {
+    await hub.withThread(id, () => require('../app/threads.js').archive(hub, id));
+    assert.deepEqual(known.get(turn.id), { state: 'failed', error: 'stopped' });
+    release(); await pumping;
+    assert.equal(calls.filter(c => c.route === `/v1/aside-turns/${turn.id}/ack` && c.method === 'POST').length, 0);
+    assert.deepEqual(known.get(turn.id), { state: 'failed', error: 'stopped' });
+    await machine('hub', '/v1/aside-turns', 'POST', postBody);
+    assert.equal(starts, 1); assert.deepEqual(known.get(turn.id), { state: 'failed', error: 'stopped' });
+    const archived = await hub.thread(id);
     assert.equal(archived.archived, true); assert.deepEqual(archived.asides[0].history, history);
   } finally { release(); await pumping; }
 });
