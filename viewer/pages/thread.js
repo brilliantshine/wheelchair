@@ -29,6 +29,7 @@
   let archiveAsk = false;
   let accountNames = null;   // account id -> name, from /settings; null until fetched
   const cardErrors = {};
+  const declining = {};      // card id -> true while a sudo Decline call is pending
   const formCache = new Map();
   let attachments = [];
   let uploading = false;
@@ -338,6 +339,23 @@
   }
 
   // ---- cards ----
+  // A sudo card's Decline and Talk about it. The card never becomes `answered` here: Decline
+  // changes it only when the hub reports the helper's answer, and Talk about it leaves it open.
+  async function sudoPress(card, action, value) {
+    if (action === 'decline') declining[card.id] = true;
+    delete cardErrors[card.id];
+    sigs.chat = null; render();
+    try {
+      await post(T + '/cards/' + encodeURIComponent(card.id) + '/press',
+        value === undefined ? { action } : { action, value });
+      delete declining[card.id];
+      await poll(true);
+    } catch (e) {
+      delete declining[card.id];
+      cardErrors[card.id] = e.message;
+    }
+    sigs.chat = null; render();
+  }
   async function press(card, action, value, node) {
     try {
       await post(T + '/cards/' + encodeURIComponent(card.id) + '/press',
@@ -673,13 +691,61 @@
         a.appendChild(link); box.appendChild(a);
         break;
       }
+      case 'sudo': {
+        const state = card.state || 'waiting';
+        box.dataset.state = state;
+        head(box, 'Run a command as root', state === 'waiting' ? 'warn' : '');
+        if ((card.editable || []).length) {
+          const warn = el('div', 'sudo-editable');
+          warn.appendChild(el('p', '', 'An agent could change these files before this runs:'));
+          const ul = el('ul');
+          for (const f of card.editable) ul.appendChild(el('li', '', f));
+          warn.appendChild(ul); box.appendChild(warn);
+        }
+        box.appendChild(el('pre', 'sudo-command', card.command));
+        const facts = el('div', 'sudo-facts');
+        facts.appendChild(el('div', 'eyebrow', 'What it does'));
+        facts.appendChild(el('p', '', card.does));
+        facts.appendChild(el('div', 'eyebrow', 'Why'));
+        facts.appendChild(el('p', '', card.why));
+        box.appendChild(facts);
+        if (state === 'waiting') {
+          const actions = el('div', 'actions');
+          if (/^https:\/\//.test(String(card.url))) {
+            const open = el('a', 'btn primary', 'Open to run');
+            open.href = card.url; open.target = '_blank'; open.rel = 'noopener noreferrer';
+            actions.appendChild(open);
+          }
+          const pending = Boolean(declining[card.id]);
+          actions.appendChild(button(pending ? 'Declining…' : 'Decline', 'danger', () => sudoPress(card, 'decline'), pending || thread().archived));
+          actions.appendChild(button('Talk about it', '', () => sudoPress(card, 'talk', 'sudo request'), pending || thread().archived));
+          box.appendChild(actions);
+        } else if (state === 'running') {
+          box.appendChild(el('p', 'sudo-outcome', 'Running…'));
+        } else {
+          const result = el('div', 'sudo-result sudo-' + state);
+          if (state === 'ran') {
+            result.appendChild(el('p', 'sudo-outcome' + (card.exit_code === 0 ? '' : ' bad'), 'Ran: exit ' + card.exit_code));
+            if (card.output) result.appendChild(el('pre', 'sudo-output', card.output));
+            if (card.truncated) result.appendChild(el('p', 'dim sudo-cut', 'Output cut'));
+          } else if (state === 'declined') {
+            result.appendChild(el('p', 'sudo-outcome', 'Declined'));
+          } else if (state === 'expired') {
+            result.appendChild(el('p', 'sudo-outcome', 'Expired'));
+          } else {
+            result.appendChild(el('p', 'sudo-outcome bad', 'Failed: ' + (card.reason || 'no reason given')));
+          }
+          box.appendChild(result);
+        }
+        break;
+      }
       default:
         return null;
     }
     if (['offer', 'question', 'approval'].includes(card.kind) || (card.kind === 'needs' && card.resolved_by)) {
       const t = answeredTag(card); if (t) box.appendChild(t);
     }
-    if (cardErrors[card.id]) box.appendChild(el('div', 'card-error', 'Could not send: ' + cardErrors[card.id]));
+    if (cardErrors[card.id]) box.appendChild(el('div', 'card-error', (card.kind === 'sudo' ? '' : 'Could not send: ') + cardErrors[card.id]));
     return box;
   }
 
@@ -804,7 +870,7 @@
     sync('pinned', [data.pinned, data.cards.map((c) => [c.answered, c.answered_value]), ideaOpen, pinsFolded, cardErrors], renderPinned);
     const nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
     let changed = false;
-    sync('chat', [data.items, pending, slug(), t.archived, data.cards.filter((c) => !PINNED_KINDS.includes(c.kind)), cardErrors], () => { renderChat(); changed = true; });
+    sync('chat', [data.items, pending, slug(), t.archived, data.cards.filter((c) => !PINNED_KINDS.includes(c.kind)), cardErrors, declining], () => { renderChat(); changed = true; });
     const workingEl = $('working');
     const working = leadWorking() && !t.archived;
     if (workingEl.hidden === working) { workingEl.hidden = !working; if (working && nearBottom) changed = true; }

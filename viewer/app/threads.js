@@ -238,10 +238,36 @@ async function archivedHtml(hub, id, file) {
   } catch { throw appError(404, 'archived diagram not found'); }
 }
 
+// Spec "Decline" and "What reaches the lead": a sudo card has two presses. Talk about it tells
+// the lead and leaves the card waiting and open (nothing runs). Decline is one synchronous call
+// to the lead's machine; nothing is saved on the card until the machine answers, and the card's
+// state then moves only through applySudoState, which tells the lead.
+async function pressSudo(hub, thread, card, input) {
+  if (!['talk', 'decline'].includes(input.action)) throw appError(400, 'unknown card press');
+  if (card.state !== 'waiting') throw appError(409, 'this sudo request is no longer waiting');
+  if (input.action === 'talk') {
+    const lead = [...thread.sessions].reverse().find((item) => item.role === 'lead' && item.live);
+    if (!lead) throw appError(409, 'no live lead');
+    await hub.enqueue(thread, lead.name, `[card ${card.id}] talk about: sudo request`, 'card');
+    return { queued: true, text: 'talk about: sudo request' };
+  }
+  const failure = () => appError(502, `Couldn't reach ${thread.machine} to decline. Try again.`);
+  let status;
+  try {
+    status = await hub.client.sudoCancel(thread.machine, card.request_id);
+  } catch {
+    throw failure();
+  }
+  if (!require('./cards.js').validSudoStatus(status)) throw failure();
+  await require('./cards.js').applySudoState(hub, thread, card.request_id, status);
+  return { queued: false, state: card.state };
+}
+
 async function press(hub, id, cardId, input) {
   const thread = await hub.thread(id);
   const card = thread.cards.find((item) => item.id === cardId && !item.replaced);
   if (!card) throw appError(404, 'card not found');
+  if (card.kind === 'sudo') return pressSudo(hub, thread, card, input);
   if (input.action === 'recheck') {
     if (card.kind !== 'approval') throw appError(400, 're-check requires an approval card');
     card.ready = await readyCheck(hub, thread);

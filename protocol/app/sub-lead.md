@@ -103,6 +103,8 @@ Record each task's lane in the table: the tier plus the resolved model
 
 ## While workers run
 
+- Only the lead asks Collin for sudo. If a task needs a command run as root, yours or a worker's, send the lead a `message` with the exact command (full paths, no `~`, the actual commands rather than a script an agent wrote), what it changes and why; never run `sudo` yourself.
+
 - Post a `progress` card (`done`, `total`, the machines in use, `choice_waiting` false)
   when a task is dispatched and when you accept one. The lead sets `choice_waiting` while
   a question is with Collin; keep `done` and `total` current. Once `status: verifying`

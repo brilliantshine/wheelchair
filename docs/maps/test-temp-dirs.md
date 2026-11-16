@@ -36,3 +36,5 @@ later viewer allocation -> sweep old viewer scratch
 - On successful tests and ordinary assertion failures/throws, roots without removal remain; finally and test hooks can close processes, but do not remove those roots. Abrupt SIGINT/SIGTERM or timeout killing a Node/Playwright worker can bypass JavaScript teardown; no inspected harness installs a general signal cleanup. Playwright hooks may run on ordinary failures and runner-managed timeouts, but that is not a guarantee after forced termination (`viewer/test/app-doc.spec.js:38`, `viewer/test/app-doc.spec.js:39`).
 
 Not looked at: product-internal temporary files created indirectly by code under test or external tools; operating system and runner implementation details beyond the checked harness code; actual historical directory contents or runtime counts. No tests were run.
+
+> Current risk-flow recheck at `635c45f07991f31191f2ab1443b52b4ee76559d5`: see [app-risks.md](app-risks.md). The original checked commit above still applies to the rest of this map; files have changed since then.

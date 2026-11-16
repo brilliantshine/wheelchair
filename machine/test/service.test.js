@@ -25,8 +25,8 @@ case "$(basename \"$0\"):$1" in
   tmux:capture-pane) cat "$FAKE_PANE" ;;
   tmux:list-sessions) if [ -n "\${FAKE_LS_ERR:-}" ]; then printf '%s\\n' "$FAKE_LS_ERR" >&2; exit 1; fi; printf '%s\\n' \${FAKE_SESSIONS:-} ;;
   tmux:load-buffer) cat >> "$FAKE_LOG" ;;
-  systemd-run:*) exit 1 ;;
-  git:*) if [[ " $* " == *" rev-parse "* ]]; then echo "\${FAKE_GIT_VERSION:-deadbeef}"; fi ;;
+  systemd-run:*) [ -z "\${FAKE_SCOPE_SLEEP:-}" ] || sleep "$FAKE_SCOPE_SLEEP"; exit 1 ;;
+  git:*) if [[ " $* " == *" rev-parse "* ]]; then echo "\${FAKE_GIT_VERSION:-deadbeef}"; fi; if [[ " $* " == *" fetch "* && -n "\${FAKE_FETCH_SLEEP:-}" ]]; then sleep "$FAKE_FETCH_SLEEP"; fi; if [[ " $* " == *" fetch "* && -n "\${FAKE_FETCH_FAIL_ONCE:-}" && ! -e "$FAKE_FETCH_FAIL_ONCE" ]]; then touch "$FAKE_FETCH_FAIL_ONCE"; echo 'fetch failed' >&2; exit 1; fi ;;
   claude:-p) cat > "$FAKE_LOG.stdin"; echo "lane=\${WHEELCHAIR_LANE:-}" >> "$FAKE_LOG"; [ -z "\${FAKE_PREVIEW_SLEEP:-}" ] || sleep "$FAKE_PREVIEW_SLEEP"; [ -z "\${FAKE_PREVIEW_ERR:-}" ] || printf '%s\\n' "$FAKE_PREVIEW_ERR" >&2; [ -z "\${FAKE_PREVIEW_OUT:-}" ] || printf '%s\\n' "$FAKE_PREVIEW_OUT"; exit "\${FAKE_PREVIEW_EXIT:-0}" ;;
   claude:--version) echo claude-test ;;
   claude:auth) printf '%s\\n' "\${FAKE_CLAUDE_AUTH:-{\\"loggedIn\\":true}}" ;;
@@ -37,7 +37,7 @@ esac
   await write(pane, paneText);
   return { bin, log, pane };
 }
-async function hubServer(status = 200) {
+async function hubServer(status = 200, { failAfterStore = false } = {}) {
   const calls = []; let current = status; const delivered = new Set();
   const allowed = { idea: ['lead'], done: ['lead'], message: ['lead', 'sub-lead', 'worker', 'mapper'], result: ['worker', 'mapper', 'sub-lead'] };
   const server = http.createServer((request, response) => { let body = ''; request.on('data', c => { body += c; }); request.on('end', () => {
@@ -49,11 +49,12 @@ async function hubServer(status = 200) {
       if (!allowed[payload.kind]?.includes(role)) { code = 422; answer = { error: `${role || 'unknown'} may not post ${payload.kind || 'that card'}` }; }
       else if (payload.delivery_id && delivered.has(`${payload.thread_id}:${payload.delivery_id}`)) answer = { ok: true, duplicate: true };
       else if (payload.delivery_id) delivered.add(`${payload.thread_id}:${payload.delivery_id}`);
+      if (failAfterStore && code === 200 && !answer.duplicate) { code = 500; failAfterStore = false; }
     }
     calls.push({ path: request.url, body, status: code }); response.writeHead(code, { 'content-type': 'application/json' }); response.end(JSON.stringify(answer));
   }); });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  return { url: `http://127.0.0.1:${server.address().port}`, calls, setStatus: value => { current = value; }, close: () => new Promise(resolve => server.close(resolve)) };
+  return { url: `http://127.0.0.1:${server.address().port}`, calls, delivered, setStatus: value => { current = value; }, close: () => new Promise(resolve => server.close(resolve)) };
 }
 async function service(root, options = {}) {
   const fake = await fakeBin(root, options.pane || readyClaude, options.realGit); const state = path.join(root, 'state'); const secret = path.join(root, 'secret'); const listen = await port();
@@ -248,6 +249,21 @@ test('transcript copy dedupes content after source shrinks', async () => {
 test('card spool keeps order and retries until acknowledged', async () => {
   const hub = await hubServer(503); const env = await service(await temp(), { config: { hub_url: hub.url } }); try { await start(env); await api(env, 'POST', '/v1/agent/cards', { kind: 'idea', bullets: [{ id: 'one', text: 'one' }] }, { 'x-wheelchair-session-token': 'alpha' }); await api(env, 'POST', '/v1/agent/cards', { kind: 'idea', bullets: [{ id: 'two', text: 'two' }] }, { 'x-wheelchair-session-token': 'alpha' }); assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 2); hub.setStatus(200); await env.instance.drainSpool('cards'); assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 0); const cards = hub.calls.filter(call => call.path.endsWith('/cards')); assert.match(cards.at(-2).body, /"id":"one"/); assert.match(cards.at(-1).body, /"id":"two"/); } finally { await env.close(); await hub.close(); }
 });
+test('a card stored before a hub 500 is queued and deduplicated on drain', async () => {
+  const hub = await hubServer(200, { failAfterStore: true }); const env = await service(await temp(), { config: { hub_url: hub.url } }); try {
+    await start(env);
+    const result = await api(env, 'POST', '/v1/agent/cards', { kind: 'idea', bullets: [{ id: 'one', text: 'one' }] }, { 'x-wheelchair-session-token': 'alpha' });
+    assert.equal(result.status, 202);
+    assert.equal(result.body.spooled, true);
+    await env.instance.drainSpool('cards');
+    assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 0);
+    assert.equal(hub.delivered.size, 1);
+    const cards = hub.calls.filter(call => call.path.endsWith('/cards')).map(call => JSON.parse(call.body));
+    assert.equal(cards.length, 2);
+    assert.ok(cards[0].delivery_id);
+    assert.equal(cards[0].delivery_id, cards[1].delivery_id);
+  } finally { await env.close(); await hub.close(); }
+});
 test('a refused card is returned to its worker, retained as rejected, and does not stop a following result', async () => {
   const hub = await hubServer(); const env = await service(await temp(), { config: { hub_url: hub.url } }); try {
     await start(env); await start(env, { role: 'worker', token: 'worker-token' });
@@ -306,6 +322,43 @@ test('a worktree starts from origin trunk and records trunk as its default branc
     assert.equal(session.default_branch, 'trunk');
     assert.equal(git(['-C', repo, 'merge-base', '--is-ancestor', 'origin/trunk', session.branch]).status, 0);
   } finally { await env.close(); }
+});
+for (const [what, variable] of [['git fetch', 'FAKE_FETCH_SLEEP'], ['systemd-run', 'FAKE_SCOPE_SLEEP']]) test(`a slow ${what} in a session start does not hold up a status check`, async () => {
+  const root = await temp(); const env = await service(root); process.env[variable] = '3'; try {
+    const repo = path.join(root, 'project'); await fs.mkdir(repo, { recursive: true });
+    // The status check runs in its own process: a service that blocks would also freeze a timer
+    // in this one, and the check would then only begin once the fetch was over.
+    const probe = `setTimeout(async () => { const began = Date.now(); const r = await fetch(${JSON.stringify(`${env.base}/v1/status`)}, { headers: ${JSON.stringify(hubHeader)} }); await r.text(); console.log(JSON.stringify({ status: r.status, waited: Date.now() - began })); }, 500);`;
+    const checked = new Promise((resolve, reject) => { let out = ''; const child = spawn(process.execPath, ['-e', probe]); child.stdout.on('data', c => { out += c; }); child.on('error', reject); child.on('close', () => resolve(out)); });
+    const starting = start(env, { thread_id: 'slow', token: 'slow-token', project_dir: repo, project: 'project', serviceWorktree: true });
+    const { status, waited } = JSON.parse(await checked);
+    assert.equal(status, 200);
+    assert.ok(waited < 1000, `status took ${waited} ms while it ran`);
+    assert.equal((await starting).name, 'wc-slow-lead');
+  } finally { delete process.env[variable]; await env.close(); }
+});
+test('a worker start after an overlapping failed one skips the branch the other took', async () => {
+  const root = await temp(); const env = await service(root); try {
+    const repo = path.join(root, 'project'); await fs.mkdir(repo, { recursive: true });
+    const input = (n) => ({ role: 'worker', thread_id: 'gap', token: `gap-${n}`, name: `wc-gap-worker-${n}`, project_dir: repo, project: 'project', serviceWorktree: true });
+    process.env.FAKE_FETCH_FAIL_ONCE = path.join(root, 'fetch-failed');
+    const [failed, second] = await Promise.all([
+      api(env, 'POST', '/v1/sessions', { cli: 'claude', ...input(1) }, hubHeader),
+      start(env, input(2)),
+    ]);
+    assert.notEqual(failed.status, 201);
+    assert.equal(second.branch, 'wc-gap-w2');
+    assert.equal((await start(env, input(3))).branch, 'wc-gap-w3');
+  } finally { delete process.env.FAKE_FETCH_FAIL_ONCE; await env.close(); }
+});
+test('two worker starts in one thread overlapping in git get different branches', async () => {
+  const root = await temp(); const env = await service(root); process.env.FAKE_FETCH_SLEEP = '1'; try {
+    const repo = path.join(root, 'project'); await fs.mkdir(repo, { recursive: true });
+    const input = (n) => ({ role: 'worker', thread_id: 'pair', token: `pair-${n}`, name: `wc-pair-worker-${n}`, project_dir: repo, project: 'project', serviceWorktree: true });
+    const [first, second] = await Promise.all([start(env, input(1)), start(env, input(2))]);
+    assert.notEqual(first.branch, second.branch);
+    assert.deepEqual([first.branch, second.branch].sort(), ['wc-pair-w1', 'wc-pair-w2']);
+  } finally { delete process.env.FAKE_FETCH_SLEEP; await env.close(); }
 });
 test('a worker restart reuses its worktree and branch, while a missing worktree is refused', async () => {
   const root = await temp(); const env = await service(root, { realGit: true }); try {

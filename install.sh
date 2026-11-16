@@ -66,6 +66,9 @@ esac
 
 (( claude_present )) && printf 'harness found: claude\n'
 (( codex_present )) && printf 'harness found: codex\n'
+if [[ ! -f ${WHEELCHAIR_SUDO_TEST_ROOT:-}/etc/systemd/system/wheelchair-sudo.service || ! -f ${WHEELCHAIR_SUDO_TEST_ROOT:-}/usr/local/lib/wheelchair-sudo/helper.py ]]; then
+  printf 'sudo helper not installed; to let agents ask for sudo from a card, run: sudo %s/sudo-helper/install.sh\n' "$ROOT"
+fi
 
 render() {  # render <source> <destination>
   sed "s|{{WHEELCHAIR_ROOT}}|$ROOT|g" "$1" > "$2"

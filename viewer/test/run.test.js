@@ -61,17 +61,9 @@ test('run validation refuses each new schema violation', async () => {
   });
 });
 
-test('agent progress preserves ruled entries and the page may not change it', async () => {
+test('the page may not change run status', async () => {
   await withRun(async (ctx) => {
-    let state = await getGraph(ctx); let page = copy(state.graph); node(page, 'a').origin = 'agreed';
-    assert.equal((await viewPut(ctx, page, state.hash)).status, 200);
-    state = await getGraph(ctx); let agent = copy(state.graph); node(agent, 'a').status = 'done';
-    assert.equal((await graphPut(ctx, agent, state.hash)).status, 200);
-    state = await getGraph(ctx); page = copy(state.graph); node(page, 'b').origin = 'rejected';
-    assert.equal((await viewPut(ctx, page, state.hash)).status, 200);
-    state = await getGraph(ctx); agent = copy(state.graph); node(agent, 'b').status = 'in-progress';
-    assert.equal((await graphPut(ctx, agent, state.hash)).status, 200);
-    state = await getGraph(ctx); page = copy(state.graph); node(page, 'a').status = 'in-progress';
+    const state = await getGraph(ctx); const page = copy(state.graph); node(page, 'a').status = 'in-progress';
     expect(await viewPut(ctx, page, state.hash), 'structural-difference');
   });
 });
@@ -127,7 +119,7 @@ test('a progress-only write keeps a dragged position, and an added edge lays the
     state = await getGraph(ctx); const progress = copy(state.graph); Object.assign(node(progress, 'a'), { label: 'start after login', status: 'needs-you', needs: 'log in again' });
     assert.equal((await graphPut(ctx, progress, state.hash)).status, 200);
     state = await getGraph(ctx); assert.deepEqual({ x: node(state.graph, 'a').x, y: node(state.graph, 'a').y }, { x: 901, y: 337 });
-    const relayout = copy(state.graph); relayout.edges.push({ id: 'b-a', from: 'b', to: 'a', label: '', kind: 'sequence', value: null, inferred: false, origin: 'proposed', was: null, note: null });
+    const relayout = copy(state.graph); relayout.edges.push({ id: 'b-a', from: 'b', to: 'a', label: '', kind: 'sequence', value: null, inferred: false, note: null });
     assert.equal((await graphPut(ctx, relayout, state.hash)).status, 200);
     state = await getGraph(ctx); assert.notDeepEqual({ x: node(state.graph, 'a').x, y: node(state.graph, 'a').y }, { x: 901, y: 337 });
   });
