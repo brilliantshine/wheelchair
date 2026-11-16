@@ -398,7 +398,7 @@ async function event(hub, payload) {
   }
   if (['turn-ended', 'turn_ended', 'turn ended'].includes(type)) {
     target.turn_ended = true;
-    for (const key of ['cli_session_id', 'codex_thread_id']) if (payload[key]) target[key] = payload[key];
+    for (const key of ['cli_session_id', 'codex_thread_id', 'agy_conversation_id']) if (payload[key]) target[key] = payload[key];
     if (target.role === 'lead') for (const card of thread.cards) if (card.kind === 'needs' && card.title === "The lead's turn failed" && !card.answered) card.answered = true;
     const reportTarget = limitEnded || Date.parse(target.limited_until) > Date.now() ? null : await deliverReport(hub, thread, target, payload);
     if (reportTarget) deliveryTargets.add(reportTarget.name);
@@ -558,7 +558,7 @@ async function pollDead(hub) {
         let changed = false;
         for (const target of thread.sessions) {
           const remote = listed.find((item) => item.name === target.name);
-          for (const key of ['cli_session_id', 'codex_thread_id']) if (remote?.[key] && remote[key] !== target[key]) { target[key] = remote[key]; changed = true; }
+          for (const key of ['cli_session_id', 'codex_thread_id', 'agy_conversation_id']) if (remote?.[key] && remote[key] !== target[key]) { target[key] = remote[key]; changed = true; }
         }
         if (!missing(thread, early).length) {
           if (changed) await hub.save(thread);

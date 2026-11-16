@@ -69,7 +69,7 @@ test('account and balancing routes and usage shape', async () => {
     assert.equal(renamed.status, 200); assert.equal(renamed.body.save_for_leads, false); assert.equal(renamed.body.reserved_provider, 'GPT');
     const preferences = await api(ctx, '/settings/preferences', { method: 'PUT', body: { review_families: 'gpt' } });
     assert.equal(preferences.body.review_families, 'gpt');
-    assert.equal((await api(ctx, '/settings/preferences', { method: 'PUT', body: { review_families: 'bad' } })).body.detail, 'review_families must be both, claude or gpt');
+    assert.equal((await api(ctx, '/settings/preferences', { method: 'PUT', body: { review_families: 'bad' } })).body.detail, 'review_families must be both, claude, gpt or gemini');
     const described = (await api(ctx, '/settings')).body; assert.equal(described.review_families, 'gpt'); assert.equal(described.reserved_provider, 'GPT');
     const held = { worker: true, reviewer: false, verifier: true, mapper: true };
     const saved = await api(ctx, '/settings/balancing', { method: 'PUT', body: { held_back: held } });
