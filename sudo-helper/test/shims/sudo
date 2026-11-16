@@ -1,0 +1,14 @@
+#!/usr/bin/python3
+import os, sys, time
+args = sys.argv[1:]
+mode = os.environ.get('SHIM_MODE', 'good')
+if mode == 'nopass':
+    sys.exit(0)
+if mode == 'slow':
+    time.sleep(.3)
+sys.stderr.write(args[args.index('-p') + 1]); sys.stderr.flush()
+pw = sys.stdin.readline().strip()
+if pw != 'hunter2-TESTPW-9f3a' or mode == 'wrong':
+    sys.exit(1)
+if '-l' in args and mode == 'denied':
+    sys.exit(1)
