@@ -373,6 +373,21 @@ Round 2, GPT lane (mechanics), reviewed the text before the intent lane's fixes:
 | intent | minor | "Decline status unknown; checking…" promises a check that never runs | upheld | Gone with Decision 21 |
 | intent | minor | Decision 1 still says the command's stdin carries the password | upheld | Marked superseded |
 
+### Round 5 — 2026-11-15
+
+Collin chose "keep going" after three rounds without a clean one; budget reset.
+
+**Lanes:** intent — claude; mechanics — gpt; cross-family: yes.
+
+**Changed since Round 4:**
+- Decline is one synchronous call; no saved `declining` state (Decision 21).
+- `applySudoState` handles helper-reported states only; never moves a card back to `waiting`.
+- `reason` field for `failed` outcomes.
+- Decision 1 marked superseded on stdin.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
