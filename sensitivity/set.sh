@@ -39,6 +39,7 @@ case $# in
     case $1 in
       ask|default|high) requested=$1 ;;
       --report) mode=report ;;
+      --json) mode=json ;;
       *) usage_refusal "$1" ;;
     esac
     ;;
@@ -111,6 +112,28 @@ describe_malformed() {
 for target in "${targets[@]}"; do
   inspect "$target"
 done
+
+if [[ $mode == json ]]; then
+  for target in "${targets[@]}"; do
+    if [[ ${state[$target]} == malformed ]]; then describe_malformed "$target"; exit 1; fi
+  done
+  agreed=''; disagree=0; entries=''
+  for target in "${targets[@]}"; do
+    harness=claude; [[ $target == "$codex_target" ]] && harness=codex
+    value=null
+    if [[ ${state[$target]} == valid ]]; then
+      value="\"${levels[$target]}\""
+      if [[ -n $agreed && $agreed != "${levels[$target]}" ]]; then disagree=1; fi
+      agreed=${levels[$target]}
+    fi
+    [[ -z $entries ]] || entries+=','
+    entries+="{\"harness\":\"$harness\",\"level\":$value}"
+  done
+  value=null
+  [[ -z $agreed || $disagree == 1 ]] || value="\"$agreed\""
+  printf '{"level":%s,"files":[%s]}\n' "$value" "$entries"
+  exit 0
+fi
 
 if [[ $mode == report ]]; then
   (( claude_present )) || printf 'diagram-sensitivity: claude is not on this machine\n'
