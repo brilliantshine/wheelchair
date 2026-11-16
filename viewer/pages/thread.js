@@ -573,15 +573,17 @@
       case 'progress': {
         box.classList.toggle('amber', Boolean(card.choice_waiting));
         box.appendChild(el('span', 'dotmark blue'));
-        box.appendChild(el('strong', 'progress-label', 'Building'));
+        const staged = card.stage === 'review' || card.stage === 'verify';
+        const words = staged ? progressWords(card) : null;
+        box.appendChild(el('strong', 'progress-label', staged ? words.label : 'Building'));
         const total = Math.max(0, Number(card.total) || 0);
         const done = Math.max(0, Math.min(total, Number(card.done) || 0));
-        if (total && total <= 24) {
+        if (!staged && total && total <= 24) {
           const bar = el('div', 'segs');
           for (let i = 0; i < total; i += 1) bar.appendChild(el('span', i < done ? 'on' : ''));
           box.appendChild(bar);
         }
-        box.appendChild(el('span', 'progress-text', card.done + ' of ' + card.total + ' tasks done'
+        box.appendChild(el('span', 'progress-text', staged ? words.text : card.done + ' of ' + card.total + ' tasks done'
           + ((card.machines || []).length ? ' · ' + card.machines.join(', ') : '')));
         box.appendChild(el('span', 'grow'));
         if (card.choice_waiting) box.appendChild(el('span', 'ready-no choice-pill', 'choice for you'));
@@ -681,6 +683,20 @@
     return box;
   }
 
+  function progressWords(card) {
+    const review = card.stage === 'review';
+    const label = review ? (card.phase === 'clean' ? 'Plan reviewed' : 'Reviewing plan')
+      : (card.phase === 'clean' ? 'Verified' : 'Verifying');
+    let text = (review ? 'pass ' : 'attempt ') + card.pass + ' · ';
+    if (card.phase === 'checking') text += review ? 'reviewers reading' : 'checking';
+    else if (card.phase === 'fixing') text += review
+      ? card.found + ' found, ' + card.fixed + ' resolved'
+      : card.found + ' gaps, ' + card.fixed + ' fixed';
+    else text += 'passed' + (review && card.found !== undefined ? ', ' + card.found + ' resolved' : '');
+    if (!review && (card.machines || []).length) text += ' · ' + card.machines.join(', ');
+    return { label, text };
+  }
+
   // One short label per pin, for the folded strip.
   function pinLabel(card) {
     if (card.kind === 'offer') return card.answered ? 'Planning offer' : 'Planning offer: needs you';
@@ -689,6 +705,10 @@
       return 'Your idea · ' + n + (n === 1 ? ' thing' : ' things');
     }
     if (card.kind === 'progress') {
+      if (card.stage === 'review' || card.stage === 'verify') {
+        const words = progressWords(card);
+        return words.label + ' · ' + words.text + (card.choice_waiting ? ': choice for you' : '');
+      }
       return 'Building ' + card.done + ' of ' + card.total + (card.choice_waiting ? ': choice for you' : '');
     }
     return card.kind;
