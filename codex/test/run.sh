@@ -7,6 +7,7 @@ model=${MODEL_SH:-"$repo/codex/model.sh"}
 preflight=${PREFLIGHT_SH:-"$repo/codex/preflight.sh"}
 fixture=$(mktemp -d)
 trap 'rm -rf "$fixture"' EXIT
+trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP
 passes=0
 failures=0
 pass() { printf 'PASS %s\n' "$1"; passes=$((passes + 1)); }

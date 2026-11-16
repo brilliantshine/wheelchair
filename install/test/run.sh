@@ -7,6 +7,7 @@ installer=${INSTALL_SH:-"$repo/install.sh"}
 real_node=$(command -v node)
 fixture=$(mktemp -d)
 trap 'rm -rf "$fixture"' EXIT
+trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP
 
 passes=0
 failures=0

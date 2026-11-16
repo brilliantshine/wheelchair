@@ -3,6 +3,7 @@ set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 writer=${SEEN_WORDING:-"$repo/seen/wording.sh"}
 fixture=$(mktemp -d); trap 'rm -rf "$fixture"' EXIT
+trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP
 real_wording="$HOME/.wheelchair/wording.md"; real_state="$HOME/.cache/wheelchair"
 fingerprint() { if [[ -f $1 ]]; then sha256sum "$1" | awk '{print $1}'; elif [[ -e $1 ]]; then find "$1" -maxdepth 2 -printf '%P %y %s\n' | sha256sum | awk '{print $1}'; else printf absent; fi; }
 old_wording=$(fingerprint "$real_wording"); old_state=$(fingerprint "$real_state")

@@ -15,8 +15,9 @@ server="$root/machine/test/aside-probe-mcp.js"
 log="$dir/probe.log"
 fail=0
 printf 'temp directory: %s\nsession: %s\ncode word: %s\n' "$dir" "$session" "$word"
-cleanup() { tmux kill-session -t "$session" 2>/dev/null || :; }
+cleanup() { tmux kill-session -t "$session" 2>/dev/null || :; rm -rf -- "$dir"; }
 trap cleanup EXIT
+trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP
 check() { if "$@"; then printf 'PASS %s\n' "$label"; else printf 'FAIL %s\n' "$label"; fail=1; fi; }
 showargv() { printf '%s argv: ' "$1"; shift; printf '%q ' "$@"; printf '\n'; }
 countlog() { if test -f "$log"; then wc -l < "$log"; else printf '0\n'; fi; }
