@@ -242,7 +242,7 @@ No findings from either lens. Clean round. (Mechanics reviewer restarted once af
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | Hub: lead names (assign, serialize, backfill), `lead_names` setting + Settings box, model/effort on record, `GET /api/agents`, API.md | viewer/app/{sessions,threads,hub,settings,routes,views}.js, new viewer/app modules, API.md, pages/settings.*, viewer/AGENTS.md (new row), app-agents/app-settings/app-hub tests | GPT Standard (gpt-6.1-terra) | wc-85d38701e785-worker | node --test viewer/test/*.test.js; npm --prefix viewer run test:browser | in progress |
+| T1 | Hub: lead names (assign, serialize, backfill), `lead_names` setting + Settings box, model/effort on record, `GET /api/agents`, API.md | viewer/app/{sessions,threads,hub,settings,routes,views}.js, new viewer/app modules, API.md, pages/settings.*, viewer/AGENTS.md (new row), app-agents/app-settings/app-hub tests | GPT Standard (gpt-6.1-terra) | wc-85d38701e785-worker | node --test viewer/test/*.test.js; npm --prefix viewer run test:browser | done (worker reported blocked on its browser gate for environment reasons; sub-lead re-ran both suites on the integrated branch: only pre-existing failures) |
 | T2 | Agents page, nav, terminal page, Sessions page removal + redirect, routers | pages/agents.*, views.css, nav.js, terminal.*, features.js, sessions.* (delete), server.js, viewer/AGENTS.md, AGENTS.md, app-views/app-ui specs, app-views-setup helper | Claude Standard (claude-sonnet-5-5), after T1 | — | same | not started |
 | T3 | Threads row chip, thread page header | pages/threads.*, thread.*, app.css, app-threads spec + world helper | Claude Standard (claude-sonnet-5-5), after T1, parallel with T2 | — | same | not started |
 
@@ -252,3 +252,7 @@ No findings from either lens. Clean round. (Mechanics reviewer restarted once af
 - Noticed, out of scope: a `result` sent to a lead that has since died sits in the dead
   lead's queue and is never delivered (`viewer/app/cards.js:90`; `restartLead` moves queues
   only at restart time). Not this feature's to fix; raise to Collin as a possible stub.
+- 2026-11-15 — Choice: T1, viewer/app/names.js: pure name choice lives in its own module.
+- 2026-11-15 — Choice: T1, viewer/app/agents.js: tree builder and machine-status assembly together in one new module.
+- 2026-11-15 — Choice: T1, viewer/pages/settings.js: Lead names textarea saves with its own Save button, like other typed settings.
+- 2026-11-15 — T1 gate run by the sub-lead on the integrated branch: unit 346/347 (fail: lifecycle.test.js "a starter that loses the freed port…", also fails on the pre-T1 base 7f4c318); browser 565 passed, 3 failed: browser.spec.js:2395 arrow test in both browsers (also fails on the pre-T1 base), one Firefox app-threads approval test that passed on rerun.

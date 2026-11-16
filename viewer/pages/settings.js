@@ -211,8 +211,7 @@
       h('div', { class: 'ctl' }, select));
   }
 
-  // The Default project folder: typed, then saved with the button. A refusal shows under the
-  // input and the typed value stays.
+  // Lead names: one per line, saved with the button; blank lines are dropped by the hub.
   function leadNamesRow() {
     const input = h('textarea', { id: 'lead-names', 'aria-label': 'Lead names', rows: 4, value: (data.lead_names || []).join('\n') });
     const status = h('p', { class: 'note', role: 'status' });
@@ -224,6 +223,8 @@
     return h('div', { class: 'row-line' }, h('div', { class: 'what' }, h('label', { for: 'lead-names', text: 'Lead names' }), h('span', { class: 'hint', text: 'Empty uses Greek letters. New leads only.' })), host);
   }
 
+  // The Default project folder: typed, then saved with the button. A refusal shows under the
+  // input and the typed value stays.
   function folderRow() {
     const saved = data.default_project_folder || '';
     const input = h('input', { type: 'text', id: 'default-folder', 'aria-label': 'Default project folder', placeholder: '~/projects', autocomplete: 'off', spellcheck: false, value: folderDraft === null ? saved : folderDraft });
