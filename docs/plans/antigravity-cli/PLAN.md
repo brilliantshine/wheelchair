@@ -374,9 +374,21 @@ a worker with `--provider gemini` and check its `result` card arrives.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T0 | Live check: sign `agy` in, record login, credentials, isolation, models, hooks, transcript, prompts, fork, limits | `machine/test/fixtures/agy/`, `reports/T0.md` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker (t0-a1) | fixtures listed, redaction grep empty, `agy models` signed in | in progress |
+| T0 | Live check: sign `agy` in, record login, credentials, isolation, models, hooks, transcript, prompts, fork, limits | `machine/test/fixtures/agy/`, `reports/T0.md` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker (t0-a1) | fixtures listed, redaction grep empty, `agy models` signed in | done (merged; items 6 and trust screen left open, see T0b) |
+| T0b | Second live check: workspace trust, multi-line paste, hook env, tool transcript, permission prompt, plan mode, instruction file, error Stop, exit | new files in `machine/test/fixtures/agy/`, `reports/T0b.md` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-2 (t0b-a1) | redaction grep empty, still signed in, hooks.json moved away | in progress |
+| T1 | `gemini` pins in model.sh (defaults flash-low/medium/high) | `codex/model.sh`, `codex/test/run.sh` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-3 (t1-a1) | `bash codex/test/run.sh` | in progress |
+| T2 | Hub: providers registry (`asideFork`), settings defaults/migration/one-account rule, balancer, sessions, routes, asides refusal | `viewer/app/{providers,settings,balancer,sessions,routes,asides,ready}.js` + their tests | after T1 | — | `node --test viewer/test/*.test.js` | not started |
+| T3 | Hub: `agy` transcript parser and report extraction | `viewer/app/chat.js`, `viewer/test/app-chat.test.js` | after T0b | — | `node --test viewer/test/*.test.js` | not started |
+| T4 | Machine: `agy` adapter, global-hook fallback, hook.sh, service status/prompt polling/login | `machine/adapters/`, `machine/service.js`, `machine/hook.sh`, `machine/lib/hook-post.js`, `machine/test/` (not fixtures) | after T0b | — | `bash machine/test/run.sh` | not started |
+| T5 | Pages: Settings, thread, threads show Antigravity; browser tests | `viewer/pages/{settings,thread,threads}.js`, `viewer/test/*.spec.js` | after T2 | — | `npm --prefix viewer run test:browser` | not started |
+| T6 | Protocol, API docs, routers | `protocol/app/{lead,sub-lead}.md`, `machine/API.md`, `viewer/app/API.md`, `machine/AGENTS.md`, `viewer/AGENTS.md`, `codex/AGENTS.md` | last | — | review against tree | not started |
 
 ## Log
+
+- 2026-11-16 — T0 accepted. Findings that pick the Spec's fallbacks: `--settings` refuses a `hooks` key, so hooks use Decision 10's global file (`~/.gemini/config/hooks.json`, top-level key `wheelchair` confirmed to fire); `--conversation` reuses the same conversation id (no fork), so `asideFork: false`; no isolation variable works, so one Antigravity account per machine. Stop's `terminationReason` on a normal turn is `NO_TOOL_CALL`, not `model_stop`. Credentials: `~/.gemini/antigravity-cli/antigravity-oauth-token` (file, mode 600; DBUS irrelevant). Models: gemini-3.8-flash-{high,medium,low}.
+- 2026-11-16 — Choice: T0, fixtures: the whole OAuth URL was removed from screen fixtures, not just its query values.
+- 2026-11-16 — Choice: T0, item 3: two extra binary strings (`ANTIGRAVITY_APP_DATA_DIR`, `ANTIGRAVITY_GEMINI_DIR`) were tried as isolation candidates.
+- 2026-11-16 — Choice: T0, onboarding: opted out of optional interaction-data collection when signing in.
 
 - 2026-11-16: Build started. T0 dispatched first; every other task waits on its report.
 
