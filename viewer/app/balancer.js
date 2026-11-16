@@ -16,8 +16,16 @@ async function slotFor(hub, role, requestedTier = 'top') {
   try { const slot = settingsStore.tier(tier, 'tier', true); return slot === 'top' ? 'heavy' : slot; }
   catch { throw appError(400, `unknown tier "${requestedTier}"; use light, standard, heavy, critical, or top`); }
 }
+function signedIn(settings, machines, machineName, provider) {
+  const states = machineName == null ? Object.values(machines) : [machines[machineName]];
+  return settings.accounts.some((a) => a.provider === provider && !a.paused && states.some((m) => m?.accounts?.[a.id]));
+}
+function reservedProvider(settings, machines, machineName) {
+  const order = [...new Set(settings.lead_order.flatMap((p) => p === 'any' ? settings.worker_order : [p]))];
+  return order.find((p) => signedIn(settings, machines, machineName, p)) || null;
+}
 async function choose(hub, thread, role, tier, constraints = {}) {
-  const { provider, not_provider: excluded } = constraints;
+  let { provider, not_provider: excluded } = constraints;
   if ((provider || excluded) && (!['worker', 'reviewer', 'verifier'].includes(role) || (provider && excluded) || (provider && !Object.hasOwn(PROVIDERS, provider)) || (excluded && !Object.hasOwn(PROVIDERS, excluded)))) throw appError(400, 'invalid provider constraint');
   const slot = await slotFor(hub, role, tier);
   const [settings, readings, machines, last, threads] = await Promise.all([settingsStore.load(hub), usage.readings(hub), usage.machineAccounts(hub), usage.lastChosen(hub), hub.allThreads()]);
@@ -25,9 +33,22 @@ async function choose(hub, thread, role, tier, constraints = {}) {
   const configured = await hub.machines();
   const resolvedMachine = await hub.state.resolveMachine(configured, thread.machine);
   const machineName = Object.keys(configured).find((name) => configured[name] === resolvedMachine || configured[name].name === resolvedMachine?.name) || thread.machine;
+  const reserved = reservedProvider(settings, machines, machineName);
+  let fallbackReview = null, droppedProvider = null, strictReview = null;
+  if (['reviewer', 'verifier'].includes(role) && settings.review_families !== 'both') {
+    const family = settings.review_families;
+    let used = signedIn(settings, machines, machineName, family);
+    if (used) {
+      try { await exec(path.join(hub.root, 'codex', 'model.sh'), [family, slot]); }
+      catch (e) { if (e.code === 3) used = false; else throw e; }
+    }
+    provider = undefined; excluded = undefined;
+    if (used) strictReview = family; else fallbackReview = family;
+  }
+  if (role === 'worker' && provider && !signedIn(settings, machines, machineName, provider)) { droppedProvider = provider; provider = undefined; }
   if (!thread.provider && thread.cli && thread.sessions?.length) thread.provider = providerOf(thread.cli);
   let order = role === 'lead' && !thread.provider ? settings.lead_order.flatMap((p) => p === 'any' ? settings.worker_order : [p]) : ['lead', 'sub-lead'].includes(role) ? [thread.provider] : [...settings.worker_order];
-  order = [...new Set(order.filter(Boolean))];
+  order = strictReview ? [strictReview] : [...new Set(order.filter(Boolean))];
   if (provider && role === 'worker') {
     try { await exec(path.join(hub.root, 'codex', 'model.sh'), [provider, slot]); }
     catch (e) { if (e.code === 3) throw appError(400, `${PROVIDERS[provider].label} is not used at ${slot}`); throw e; }
@@ -37,12 +58,12 @@ async function choose(hub, thread, role, tier, constraints = {}) {
   for (const p of order) {
     try { await exec(path.join(hub.root, 'codex', 'model.sh'), [p, slot]); } catch (e) { if (e.code === 3) continue; throw e; }
     const accounts = settings.accounts.filter((a) => a.provider === p).map((a) => ({ ...a, live_sessions: threads.reduce((n, t) => n + t.sessions.filter((s) => s.live && s.account === a.id).length, 0) }));
-    margin[p] = PROVIDERS[p].saveForLeads && !['lead', 'sub-lead'].includes(role) && settings.held_back[role] === true && usage.belowMargin(usage.forecast(accounts, readings, now), settings.margin, now);
+    margin[p] = p === reserved && !['lead', 'sub-lead'].includes(role) && settings.held_back[role] === true && usage.belowMargin(usage.forecast(accounts, readings, now), settings.margin, now);
     available[p] = usage.rank(accounts, readings, machines, settings, machineName, now, last).find((a) => a.next);
   }
   const normal = (exclude) => {
     let list = order.filter((p) => p !== exclude && !margin[p]);
-    if (settings.save_claude_for_leads && !['lead', 'sub-lead'].includes(role)) list = [...list.filter((p) => !PROVIDERS[p].saveForLeads), ...list.filter((p) => PROVIDERS[p].saveForLeads)];
+    if (settings.save_for_leads && !['lead', 'sub-lead'].includes(role)) list = [...list.filter((p) => p !== reserved), ...list.filter((p) => p === reserved)];
     return list.find((p) => available[p]);
   };
   let picked, note;
@@ -55,6 +76,8 @@ async function choose(hub, thread, role, tier, constraints = {}) {
     picked = normal();
     if (provider && picked) note = `Could not use ${provider}; using ${picked}.`;
   }
+  if (picked && droppedProvider) note = `Could not use ${droppedProvider}; using ${picked}.`;
+  if (picked && fallbackReview) note = `Reviewers and checkers are set to ${PROVIDERS[fallbackReview].label}, but ${PROVIDERS[fallbackReview].label} is not available; using ${PROVIDERS[picked].label}.`;
   if (picked) return { provider: picked, account: available[picked], ...(note ? { note } : {}) };
   const relevant = provider && role === 'worker' && !margin[provider] ? [provider] : excluded && role === 'worker' ? order.filter((p) => p !== excluded) : order;
   const resets = settings.accounts.filter((a) => relevant.includes(a.provider) && !a.paused && machines[machineName]?.accounts?.[a.id]).flatMap((a) => {
@@ -68,7 +91,7 @@ async function choose(hub, thread, role, tier, constraints = {}) {
     }
     return blockers.length ? [new Date(Math.max(...blockers)).toISOString()] : [];
   }).sort();
-  const waitingProvider = ['lead', 'sub-lead'].includes(role) && thread.provider ? thread.provider : role === 'worker' && provider && !margin[provider] ? provider : role === 'lead' ? settings.lead_order.find((p) => p !== 'any') || null : null;
+  const waitingProvider = strictReview || (['lead', 'sub-lead'].includes(role) && thread.provider ? thread.provider : role === 'worker' && provider && !margin[provider] ? provider : role === 'lead' ? settings.lead_order.find((p) => p !== 'any') || null : null);
   return { wait: { provider: waitingProvider, until: resets[0] || new Date(now + 60000).toISOString(), reason: `no ${relevant.length === 1 ? relevant[0] + ' account' : 'account'} has room` } };
 }
-module.exports = { choose, slotFor };
+module.exports = { choose, slotFor, reservedProvider };

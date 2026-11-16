@@ -36,12 +36,10 @@ async function check(hub, thread) {
   }
 
   if (await outOfDate(hub, status)) absent.push(missing(thread.machine, 'service out of date'));
-  // The thread's own family is required. The other family, when installed, serves the cross-family
-  // reviewers and verifier, so it has to be logged in too; absent, the thread just runs on one family.
-  const other = Object.values(PROVIDERS).map((p) => p.cli).find((cli) => cli !== thread.cli);
+  // Only the thread's own CLI is checked for installation and login.
   const accounts = hub.state ? (await settings.load(hub)).accounts : settings.defaults().accounts;
   let preflight = null;
-  for (const cli of [thread.cli, other]) {
+  for (const cli of [thread.cli]) {
     const provider = PROVIDERS[providerOf(cli)];
     const state = status[cli] || {};
     if (!state.installed) {
