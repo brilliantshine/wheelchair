@@ -105,7 +105,7 @@ after it succeeds.
 ### Hub (viewer/app)
 
 - `providers.js`: add `gemini: { cli: 'agy', label: 'Antigravity', effort: true,
-  preflight: false, typesRoleMessage: true }`.
+  preflight: false, typesRoleMessage: true, asideFork: <per Task 0> }`; Claude and GPT get `asideFork: true`.
 - `settings.js`: `PLANS.gemini = { unknown: 1, pro: 1, ultra: 4 }`; defaults gain account
   `default-gemini`; `worker_order` default `['gpt', 'claude', 'gemini']`; at load, any
   provider missing from a saved `worker_order` is appended at its end. `lead_order` is not
@@ -122,7 +122,19 @@ after it succeeds.
 - `chat.js`: an `agy` transcript parser from the Task 0 fixture, producing the same
   message shape as the others. Unknown row types are skipped; a file with no row it can
   read shows "Couldn't read this Antigravity transcript" instead of an empty chat.
-- `asides.js`: parent id for `agy` sessions is `agy_conversation_id`.
+- `asides.js`: parent id for `agy` sessions is `agy_conversation_id`. The fork refusal
+  (Decision 5) happens here, in the hub, before anything is sent to the machine: a new
+  registry flag `asideFork` on `PROVIDERS.gemini` (true or false per Task 0) makes the
+  aside request for a fork on a `gemini` session fail with 400 and the plain message
+  "Side conversations aren't available on Antigravity sessions yet", shown where any
+  aside error is shown. The machine's own `validate` check stays as a backstop only; the
+  hub's retry path swallows machine POST errors (`viewer/app/asides.js:128-129`), so it
+  must never be the place the user's message comes from.
+- `chat.js` report extraction: add `ASSISTANT_CONTENT.agy` (`viewer/app/chat.js:198-204`)
+  from the Task 0 transcript fixture, so a reviewer or verifier running on `agy` has its
+  report delivered by `deliverReport` (`viewer/app/sessions.js:262-267`); the `Stop`
+  hook payload carries no last message, so this transcript path is the only one. Tested:
+  `lastAssistantText('agy', fixture)` returns the fixture's last assistant text.
 
 ### Pages (viewer/pages)
 
@@ -141,17 +153,28 @@ New `machine/adapters/agy.js`, registered in `adapters/index.js` as `agy`:
 - `provider: 'gemini'`; `loginEnv(dir)` per Decision 9 (empty for the default account).
 - `seed(dir, id)`: the common seed (no instruction-file link unless Task 0 shows `agy`
   reads one from its config dir).
-- New optional adapter hook `prepare(dir)`, called by `startNamed` and `startLogin` for
-  **every** account, the default one included (today `seed` runs only when `dir` is set,
-  `machine/service.js:464-468`). For `agy` it writes the hook file (Decision 10): the
+- **Hooks, primary path (Decision 16)**: `command` writes a per-session settings file and
+  returns `{ settingsPath, settings, argv }` exactly as `claude.js` does
+  (`machine/adapters/claude.js:18-22`; the service writes it, `machine/service.js:489`):
+  `settingsPath` is `<stateDir>/settings/<session name>.json`, `settings` is
+  `{ hooks: { Stop: [{ hooks: [{ type: 'command', command: '<root>/machine/hook.sh agy
+  <session name>' }] }] } }` in the shape Task 0 confirms, and `argv` carries `--settings
+  <settingsPath>`. No global file is written and no new environment variable is added.
+- **Hooks, fallback only (Decision 10), built only if Task 0 shows `--settings` does not
+  load hooks**: a new optional adapter hook `prepare(dir)`, called by `startNamed` and
+  `startLogin` for **every** account, the default one included (today `seed` runs only
+  when `dir` is set, `machine/service.js:464-468`). For `agy` it writes the hook file: the
   account's `<config>/config/hooks.json`, or `~/.gemini/config/hooks.json` for the default
   account, merging one top-level key `wheelchair` and leaving every other key untouched.
   An unreadable existing file is left alone and the start fails with "Couldn't update
   Antigravity's hooks file".
 - `command`: `agy` + model (`--model`), effort (`--effort`), access: reviewer `--mode
   plan`; otherwise `--dangerously-skip-permissions` when `permission_mode` is `bypass`,
-  else `--mode auto`. The machine adds `WHEELCHAIR_SESSION_NAME=<name>` to every
-  session's env line (`service.js:490`).
+  else `--mode auto`; plus `--settings <settingsPath>` on the primary hooks path. Under
+  the fallback only, the machine adds `WHEELCHAIR_SESSION_NAME=<name>` to `agy` sessions'
+  env line (`service.js:490`), because the global hook command cannot carry a per-session
+  name and a spooled event needs one to be replayed (`machine/lib/hook-post.js` writes
+  `session` into the spool file).
 - `firstMessage`: Codex's form, `[wc:role] <role prompt>
 
 <brief>`.
@@ -184,19 +207,24 @@ New `machine/adapters/agy.js`, registered in `adapters/index.js` as `agy`:
   the adapter by provider through a map `{ claude: 'claude', gpt: 'codex', gemini: 'agy' }`
   (`:72`), not a two-way ternary; a `gemini` branch parses `agy`'s JSON output from the
   Task 0 fixture into `reply`, `conversation_id`, `error` and `limit`, like the Claude and
-  Codex branches (`:99-107`). If Task 0 shows `--conversation` appends rather than forks,
+  Codex branches (`:99-107`). Role instructions and style reach a `gemini` aside the way
+  they reach a GPT fork: stdin is `${prompt}\n\n${message}` (`:97`), for both fork and
+  resume, since `agy -p` has no system-prompt flag; without this the aside would inherit
+  the lead's instructions. If Task 0 shows `--conversation` appends rather than forks,
   `validate` refuses `gemini` with mode `fork` with "Side conversations aren't available
   on Antigravity sessions yet" (Decision 5). Tested on the fixture in
   `machine/test/aside-turns.test.js`.
 - `service.js`: `status()` adds `agy: cliStatus('agy', …)`; the launch error text and
   recovery's CLI inference include `agy` (`service.js:443-444,462-463,940-954,1049`).
-- `hook.sh`: new case `agy`: payload from stdin; session name from argument 2 (and, only
-  under Decision 10's fallback, from `WHEELCHAIR_SESSION_NAME` when argument 2 is absent). `lib/hook-post.js` passes it to the `agy` adapter.
+- `hook.sh`: new case `agy`: payload from stdin; session name from argument 2. Under the
+  fallback only, argument 2 may be absent and the name comes from `WHEELCHAIR_SESSION_NAME`;
+  that needs the top-level `session=${2:?…}` check (`machine/hook.sh:7`) moved into the
+  `claude` and `codex` cases, with the `agy` case exiting 0 when neither is set. `lib/hook-post.js` passes it to the `agy` adapter.
 
 ### Model pins (codex/model.sh)
 
 `PROVIDERS` gains `gemini`; pin lines `gemini.<slot> = <model> [@effort]` with efforts
-`low…max`; `DEFAULTS.gemini` from Task 0's `agy models` (Decision 11): light, standard,
+`low…max`; `DEFAULTS.gemini` from Task 0's `agy models` (Decision 13): light, standard,
 heavy, critical and lead each get the model Task 0 names, written into the Log (Decision
 13: these are real defaults, not `none`). GPT's
 model discovery and effort ceiling are untouched. Usage text and `check`/`show --json`
@@ -229,7 +257,7 @@ a usage meter; changing Claude or Codex behaviour.
 
 ```bash
 bash machine/test/run.sh            # adds agy adapter tests: parseLogin on the fixture (wrapped and joined), loginPrompt, loginDone, hookEvent for each terminationReason, onTurnEnded binding
-bash codex/test/run.sh              # gemini pins parse, defaults, effort set, exit 3 for unpinned slots
+bash codex/test/run.sh              # gemini pins parse, unpinned slots return DEFAULTS.gemini, effort set low…max, exit 3 only for a slot pinned `none`
 node --test viewer/test/*.test.js   # providers, settings normalize (append missing provider; review_families gemini), balancer with three families and --not-provider, chat agy parser on the fixture
 npm --prefix viewer run test:browser  # Settings shows Antigravity, sign-in card link + code
 bash install/test/run.sh
@@ -273,6 +301,12 @@ otherwise check the aside is refused with the plain message.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Machine bullets still describe the global-hooks fallback as the design; `--settings` path unspecified | upheld | Hooks primary/fallback bullets rewritten |
+| intent | major | Validation still asserts exit 3 for unpinned gemini slots | upheld | Validation and Model pins fixed |
+| intent | minor | `WHEELCHAIR_SESSION_NAME` unneeded; `hook.sh:7` exits before the case | upheld | The `hook.sh:7` point is specified; the variable stays under the fallback only, since the name is needed for spooled events (`hook-post.js` writes `session` into the spool) |
+| mechanics | major | Machine-side aside refusal never reaches the user | upheld | Hub-side refusal via `asideFork` flag (asides.js bullet) |
+| mechanics | major | Gemini asides get no aside instructions or style | upheld | Prompt prepended on stdin (aside-turns.js bullet) |
+| mechanics | major | Reviewer/verifier reports on `agy` never extracted | upheld | `ASSISTANT_CONTENT.agy` bullet and test |
 
 ## Prior Work
 
