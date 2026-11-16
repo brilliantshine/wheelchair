@@ -141,6 +141,7 @@ Timings: grace defaults to 30 000 ms, escalate to 600 000 ms. `Hub`'s constructo
   `[wc:from app] Your turn ended with no report. If you ended it to wait on your own background work, wait for it in the foreground now. End your next turn with your report as your last message.`
 - **Starter nudge:**
   `[wc:from app] your session <name> ended two turns without a result or message, one of them after a reminder from the app. Check on it: message it, or stop and replace it.`
+  For a reviewer or verifier, "without a result or message" reads "with no report".
 - **Collin's card:** `kind: needs`, `title: "An agent stopped without reporting"`. The body
   depends on how stage 3 was reached, and ends with "Open it from the Agents tab to see what
   it's doing, or tell the lead.":
@@ -174,7 +175,7 @@ card rendering is reused unchanged.
   on the starter nudge: message the agent, or stop and replace it.
 - `protocol/app/reviewer.md` and `protocol/app/verifier.md`: if something stops you
   finishing (a conflict in your brief, something you cannot read or run), say so as your report
-  rather than ending with no report; an app reminder means your last turn ended with no report.
+  rather than ending silently with no report; an app reminder means your last turn ended with no report.
 - Every watched role's file (worker, mapper, sub-lead, reviewer, verifier): never end a turn to
   wait on your own background work (a background command, a subagent, a monitor); wait for it in
   the foreground, because the app reads an ended turn with no report as having stopped. A
@@ -198,8 +199,10 @@ turn ends are driven as `viewer/test/app-balancer.test.js:185-215` does (machine
    appears.
 5. A `result` card accepted after the `turn-ended` event but within the grace: no nudge.
 6. A `message` card from the worker clears it: no nudge.
-7. A sub-lead with a live unfinished worker child ends turns quietly: never nudged. After the
-   child posts its result and the sub-lead's next turn ends quiet, it is nudged.
+7. A sub-lead with a live worker child that owes a reply (it has its brief and has posted no
+   card) ends turns quietly: never nudged. After the child posts its result and the sub-lead's
+   next turn ends quiet, it is nudged. A second sub-lead whose only child is still `status:
+   'waiting'` to start is not nudged either.
 8. A reviewer whose turn ends with no assistant text is nudged with the reviewer text; one
    whose turn has text gets a result and no nudge.
 9. The lead ends turns with no card: never nudged, no card.
@@ -210,20 +213,22 @@ turn ends are driven as `viewer/test/app-balancer.test.js:185-215` does (machine
     escalate; once the hold clears and the nudge is delivered, the card appears escalate later.
 13. A worker that already posted a result is re-messaged by its sub-lead: while it owes a
     reply, the sub-lead's quiet turns are not nudged.
+14. A worker whose grace expires while it holds `needs_open`: once the hold clears, it is
+    nudged without any new turn.
+15. A worker sends its sub-lead a `message` (a question); the sub-lead's turn ends with no card:
+    the sub-lead is nudged, although the worker is live and not finished.
 16. At stage 2 with the starter busy (reminder still queued), the starter messages the worker
     and the worker's turn ends quiet: no card until the reminder is delivered.
 17. At stage 2 with the reminder still queued, the starter is marked ended: the card appears
     with the "starter not live" body.
-15. A worker sends its sub-lead a `message` (a question); the sub-lead's turn ends with no card:
-    the sub-lead is nudged, although the worker is live and not finished.
-14. A worker whose grace expires while it holds `needs_open`: once the hold clears, it is
-    nudged without any new turn.
 
 New `viewer/test/protocol-rules.test.js`: asserts `protocol/app/worker.md`, `mapper.md`,
 `sub-lead.md`, `lead.md` and `cards.md` each state that a session's own `wc.js` and
 `card.js` calls are always allowed (match on the phrase "own `wc.js` and `card.js`"), and that
-`worker.md`, `mapper.md`, `sub-lead.md`, `reviewer.md`, `verifier.md` say a conflict is reported as `blocked`, not by
-stopping silently (match "blocked" and "silently" in one paragraph), and that all five say to wait on background
+`worker.md`, `mapper.md`, `sub-lead.md` say a conflict is reported as `blocked`, not by
+stopping silently (match "blocked" and "silently" in one paragraph), that `reviewer.md` and `verifier.md` say
+it goes in the report instead of ending silently (match "report" and "silently" in one
+paragraph), and that all five say to wait on background
 work in the foreground (match "background" and "foreground" in one paragraph).
 
 ### Validation
@@ -298,6 +303,9 @@ state or timers.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| claude intent | minor | Test 7 still phrased as "unfinished child", so it would not pin Decision 16 | upheld | Test 7 reworded, waiting-to-start case added |
+| claude intent | minor | Starter nudge says "result or message" for reviewers/verifiers, who post no cards | upheld | Role-specific wording (Texts) |
+| claude intent | minor | Test list out of order | upheld | Renumbered in order |
 
 ## Prior Work
 
