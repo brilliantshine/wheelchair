@@ -35,6 +35,9 @@ None.
 | D12 | Graphs a terminal agent draws keep working as today (the dial sends it to `protocol/graphs.md`, which writes under the cache root and opens the viewer); they are not listed in the app. | D9 scopes the app to the thread's graphs; terminal drawing must survive D2 | defaulted |
 | D13 | The Settings control is a "Diagrams" section on the Models tab, after "Threads": three choices (ask, default, high) with one line each, showing the level the machine's files hold. | The app-settings redesign can move it; one control is all D1 needs | defaulted |
 | D14 | D5 amended: the `~/.wheelchair` write grants stay. `seen/set.sh` granted `~/.wheelchair` (`seen/set.sh:49-52`), which also holds the model pins (`codex/model.sh`), so it is shared wheelchair state, not seen's alone, and may predate the hook. | Removing it could break other wheelchair writes; leaving a grant to wheelchair's own folder costs nothing | defaulted |
+| D15 | IDEA.md updated with D9's outcome (graph list, full size, way back), its non-goal reworded to allow it, and the seen hook's real reach stated (terminal agents lose the wording list and gap notice). | Collin's D9 words, written into the north star; review round 1 | idea-change |
+| D16 | The dial applies to every machine the hub knows. Settings shows one selected level when every machine and file agrees; otherwise none is selected and a note lists each machine's level (or "files disagree", or "did not answer"). A save that fails on some machines keeps the ones that worked and names the rest in the error note; pressing the level again retries. Supersedes the single-machine wording of D13. | D2 means every place Collin runs agents; the hub already has a machine registry (`viewer/app/state.js:146-150`) | review-round-1 |
+| D17 | D5 amended: a seen handler or wording permission is wheelchair's only with ownership evidence (this root, a checkout holding `protocol/seen.md` or `protocol/app/lead.md`, or a path under the app's worktrees) and the exact command shape `seen/set.sh` writes. A stale entry from a deleted clone outside the worktrees stays (Accepted Risks). | Path suffix alone would delete another project's `seen/hook.sh`; `seen/set.sh:84-99` already refuses that | review-round-1 |
 
 ## Spec
 
@@ -74,12 +77,20 @@ this plan.
   wheelchair checkout (target path ends in `/skills/<name>` or `/codex/prompts/<name>.md`).
 - **The seen hook**, by a small script `install/unseen.py` (Python 3, stdlib only), run
   with the Claude home and Codex home of present harnesses:
-  - Claude `settings.json`: in `hooks.UserPromptSubmit`, drop each handler whose `command`,
-    split shell-style, has a first word ending in `/seen/hook.sh`; drop a group whose
-    `hooks` list becomes empty; drop `UserPromptSubmit` if it becomes empty, and `hooks` if
-    that becomes empty. In `permissions.allow`, drop entries matching
-    `Bash(<path>/seen/wording.sh:*)`. Emptied lists stay as `[]`; containers are never
-    dropped except the hook ones above.
+  - **Which handlers are wheelchair's** (D17). A handler's `command`, split shell-style,
+    must be exactly `<path>/seen/hook.sh <harness> <notice-arg>` as `seen/set.sh` writes it
+    (`canonical_group`, `seen/set.sh:80-82`; copy its `NOTICE` values before deleting it),
+    and `<path>` must be a wheelchair script: `<this root>/seen/hook.sh`; or a path whose
+    checkout (the part before `/seen/hook.sh`) holds `protocol/seen.md` or
+    `protocol/app/lead.md`; or whose checkout's real path is under
+    `~/.local/state/wheelchair/worktrees/`. The same test, with `wording.sh`, decides a
+    `Bash(<path>/seen/wording.sh:*)` permission. Another project's `seen/hook.sh` or
+    `wording.sh` is never touched.
+  - Claude `settings.json`: in `hooks.UserPromptSubmit`, drop each wheelchair handler; drop
+    a group whose `hooks` list becomes empty; drop `UserPromptSubmit` if it becomes empty,
+    and `hooks` if that becomes empty. In `permissions.allow`, drop wheelchair
+    `Bash(<path>/seen/wording.sh:*)` entries. Emptied lists stay as `[]`; containers are
+    never dropped except the hook ones above.
   - Write grants for `~/.wheelchair` (Claude `sandbox.filesystem.allowWrite`, Codex
     `writable_roots`) are **kept** (D14).
   - Codex `hooks.json`: the same handler and group rule.
@@ -144,8 +155,9 @@ Settings (Models > Diagrams) --GET /settings--> hub --GET /v1/diagram-sensitivit
 ### 4. Graphs in the thread (D9-D12)
 
 - The right column's "This thread's files" list keeps its pictures entry (already there,
-  `viewer/pages/thread.js:198-206`), one per `diagram` card, now deduplicated by
-  `plan`+`graph` (latest card's title wins), and each link goes to the picture page in the
+  `viewer/pages/thread.js:198-206`), one per `diagram` card, now deduplicated by the
+  picture's resolved file (`diagramSource(card)`, so `flow.json` and `flow.html` stay
+  separate; the latest card for that file wins, and its title and card id are used), and each link goes to the picture page in the
   same tab (no `target=_blank`).
 - The `diagram` card keeps its inline picture. Its "Open full screen" link becomes "Open
   full size", goes to the picture page in the same tab, and is shown for all three formats
@@ -166,7 +178,8 @@ Settings (Models > Diagrams) --GET /settings--> hub --GET /v1/diagram-sensitivit
 
 Every reference outside `docs/plans/`, `docs/proposals/` and `docs/maps/` to a removed file
 or command is removed or reworded (MAP.md "References to resolve" lists them):
-`AGENTS.md` (root; Executable row loses `seen/`, the "second reach" paragraph goes, the
+`protocol/app/AGENTS.md` (the Boundaries bullet about the wording hook: say the hook is
+gone and leads follow the Settings style), `AGENTS.md` (root; Executable row loses `seen/`, the "second reach" paragraph goes, the
 Where-to-go rows for `seen/` and `skills/`/`codex/` updated, verification commands lose
 `seen/test/run.sh`), `protocol/AGENTS.md`, `skills/AGENTS.md`, `codex/AGENTS.md`,
 `protocol/graphs.md` (its three triggers become two: a thread lead's diagram, and an
@@ -176,7 +189,8 @@ ordinary turn under the dial; lanes/planning/implementation references go),
 `CONTRIBUTING.md`, `docs/known-issues.md` (a lane issue whose code is gone is deleted;
 otherwise reworded). `install.sh`'s header comment and output lines.
 
-Check: `git grep -nE 'protocol/(planning|adopt|plan-review|implementation|verification|lanes|map|writing|seen)\.md|seen/(hook|set|wording)\.sh|/(plan|adopt|plan-review|implement|verify|graph|diagram-sensitivity)\b' -- ':!docs/plans' ':!docs/proposals' ':!docs/maps'`
+Check: `git grep -nE 'protocol/(planning|adopt|plan-review|implementation|verification|lanes|map|writing|seen)\.md|seen/(hook|set|wording)\.sh|wording hook|(^|[^A-Za-z0-9_./-])/(plan|adopt|plan-review|implement|verify|graph|diagram-sensitivity)([^A-Za-z0-9_/-]|$)' -- ':!docs/plans' ':!docs/proposals' ':!docs/maps'`
+(the last group matches a slash command, not a route such as `/wheelchair/graph`)
 returns only deliberate mentions in `install.sh`, `install/unseen.py`, `install/test/` and
 this list's retired-name table; each remaining hit is justified in the completion report.
 
@@ -238,6 +252,7 @@ idempotence case is the in-worktree proof.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A seen hook entry left by a wheelchair clone that was deleted from outside the app's worktree folder is not removed | No evidence it is wheelchair's survives; `seen/set.sh` had the same limit. Collin can delete it by hand | 1 |
 
 ## Review Rounds
 
@@ -249,6 +264,15 @@ idempotence case is the in-worktree proof.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| Claude intent | major | IDEA.md not updated for D9/D10; its non-goal rules out §4 | upheld | IDEA updated (D15) |
+| Claude intent | major | Dial backend is multi-machine, Settings UI single-machine | upheld | D16; §3 Settings bullet |
+| Claude intent | minor | Forms gaining a full-size view was not asked for | declined | The right column needs a target for every picture, forms included; one page covering all formats is simpler than per-format exceptions |
+| Claude intent | minor | `protocol/app/AGENTS.md:24-27` still describes the wording hook; not in §5 | upheld | Added to §5 |
+| GPT mechanics | blocking | Path-suffix match would delete another project's `seen/hook.sh` and wording permission | upheld | D17; §2 ownership bullet; Accepted Risk for deleted clones |
+| GPT mechanics | major | Radio group undefined for differing machines or partial save; `post` helper drops the 502 body | upheld | D16; §3 Settings bullet |
+| GPT mechanics | major | Dedup by plan+graph merges `flow.json` and `flow.html` | upheld | §4 dedup by resolved file |
+| GPT mechanics | minor | Reference regex matches kept routes like `/wheelchair/graph` | upheld | §5 regex narrowed to slash commands |
+| Claude intent | minor | IDEA says the seen hook was only the old workflow's; it reaches every turn | upheld | IDEA updated (D15) |
 
 ## Implementation Tasks
 
