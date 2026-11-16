@@ -2,7 +2,10 @@
 slug: lead-reserve-and-review-count
 date: 2026-11-15
 implemented-by: "worker Standard GPT gpt-6.1-terra x4 (T1, T2, T3 attempts 1-2); sub-lead claude-opus-5-5"
-verified-by: []   # Stage 4 appends; Stage 3 leaves this empty.
+verified-by:
+  - round: 1
+    lane: verifier, top tier, GPT gpt-6.1-sol (asked --not-provider gpt; Claude held back)
+    checks: worker Standard GPT gpt-6.1-terra
 ---
 
 # Completion Report — Reserve the lead's provider, and one-family review
