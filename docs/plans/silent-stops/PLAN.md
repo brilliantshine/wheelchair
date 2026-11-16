@@ -371,3 +371,5 @@ state or timers.
 |---|-----------|--------------------|------|-----------|------------|--------|
 
 ## Log
+
+- 2026-11-15 Ready check: hub and machine answer (session list ok); review_families both; Codex preflight ok (token fresh). The canonical clone is at 635c45f (#53), behind main: the running app predates the review progress line, so progress cards with `stage` are refused (seen in round 1). Not a build blocker.
