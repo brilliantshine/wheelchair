@@ -30,6 +30,7 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 | `GET /sessions/:name/pane` | — | `{pane}` |
 | `POST /sessions/:name/keys` | `{keys}` | `{ok:true}` |
 | `POST /machine/cards` | service envelope `{thread_id,session,...card}` | accepted card, `202` |
+| `POST /machine/sudo-outcome` | `{request_id,state,exit_code?,output?,truncated?,reason?,delivery_id}`; `state` is `running`, `ran` (needs an integer `exit_code`), `declined`, `expired` or `failed` | `200 {ok:true,changed}`. Finds the thread by `request_id` (its `sudo_index`) and calls `applySudoState`; a repeat, an older or equal state changes nothing and is still `200`. `409` for an unknown `request_id` (the machine retries later), `400` for a bad body, `401` without the machine secret |
 | `POST /machine/events` | `{thread_id,session,type,...}` | `{ok:true}`, `202` |
 | `POST /machine/session` | `{calling_session,action,...}` | the hub-authorized session result |
 | `GET /settings` | — | `{models,model_options,heads_up,permission_mode,codex_mode,tool_steps,review_families,reserved_provider,other_agents,escalation,escalation_text,templates,in_use,style,style_version,projects,default_project_folder,saved_dirs}`; `projects` is `projects.json` plus every saved directory's path; templates include `in_use`, `live_sessions`, and `scope_missing` when a saved project is no longer listed |
@@ -54,6 +55,26 @@ A closed `needs` card, or a question the lead resolved after an answer in chat, 
 `resolved_by` (a lead's session name, or `collin` for a needs dismissal), `resolved_note` and
 `resolved_at`; a lead closes one by posting a `resolve` card (`{card,note}`, never stored).
 Collin's dismiss remains needs-only. `at` is the ISO time the hub stored the card.
+
+A `sudo` card (lead only) is posted by an agent with `command`, `does` and `why` alone; the
+machine service adds `request_id` (32 hex), `url` (`https://…`) and `editable` (array of strings)
+before it reaches `POST /machine/cards`, and the hub requires all six, refusing a non-lead
+poster, a repeated `request_id` or any other field (422). The stored card has `state`
+(`waiting` on arrival; then `running`, `ran`, `declined`, `expired` or `failed`) and, once set,
+`exit_code`, `output`, `truncated` and `reason`. The thread carries `sudo_index`, `{request_id:
+card id}`, written in the same save as the card (`?view=list` leaves it out). Every state
+change goes through one function, `applySudoState` (`app/cards.js`): ranks `waiting` <
+`running` < terminal, ignores `waiting` and any state not newer than the card's, and on the
+first terminal state queues exactly one message to the lead in the same save (`[card <id>] sudo
+ran: exit <n>` and the output, `declined`, `sudo expired`, `sudo failed: <reason>`). Presses on
+a sudo card: `talk` (value `sudo request`) tells the lead `[card <id>] talk about: sudo
+request` and leaves the card `waiting` and unanswered; `decline` is one synchronous call to the
+thread's machine, `POST /v1/sudo/<request_id>/cancel`, ten seconds overall, whose answer (the
+helper's status shape) goes to `applySudoState`: `declined` closes the card, a run result is
+shown instead if Run won, `running` leaves it running. Nothing is saved before the answer; an
+unreachable, timed-out, non-2xx or malformed answer is `502 "Couldn't reach <machine> to
+decline. Try again."` with the card unchanged. Both presses are `409` once the card is no longer
+`waiting`; any other action on a sudo card is `400`.
 
 Accepted agent cards include a lead-only `title` card: it trims and word-cuts its `title`
 field to 80 characters, renames the thread, and is never stored. `question.doc`, when

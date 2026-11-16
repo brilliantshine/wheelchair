@@ -18,6 +18,7 @@ const shown = new Set([
   'diagram',
   'image',
   'stub',
+  'sudo',
 ]);
 
 const roles = {
@@ -31,6 +32,7 @@ const roles = {
   diagram: ['lead'],
   image: ['lead'],
   stub: ['lead'],
+  sudo: ['lead'],
   title: ['lead'],
   resolve: ['lead'],
   message: ['lead', 'sub-lead', 'worker', 'mapper'],
@@ -49,6 +51,21 @@ function truncateTitle(value, limit) {
   const space = title.lastIndexOf(' ', limit);
   return `${title.slice(0, space === -1 ? limit : space)}…`;
 }
+
+// A sudo card's agent-side fields. The machine service adds request_id, url and editable from
+// the helper's answer; an agent may not send them, so only the hub's own acceptance of a
+// machine-posted card uses `sudoMachineFields`.
+const sudoFields = {
+  command: (value) => text(value) && Buffer.byteLength(value, 'utf8') <= 4096 && !value.includes('\0'),
+  does: text,
+  why: text,
+};
+const sudoMachineFields = {
+  ...sudoFields,
+  request_id: (value) => typeof value === 'string' && /^[0-9a-f]{32}$/.test(value),
+  url: (value) => typeof value === 'string' && value.startsWith('https://') && value.length > 'https://'.length,
+  editable: (value) => array(value, (item) => typeof item === 'string'),
+};
 
 const fields = {
   offer: { summary: text },
@@ -109,6 +126,7 @@ const fields = {
     depends_on_parent: (value) => typeof value === 'boolean',
     commits: (value) => value === undefined || array(value, text),
   },
+  sudo: sudoFields,
   title: { title: text },
   resolve: { card: text, note: text },
   message: { to: text, text },
@@ -121,17 +139,19 @@ const fields = {
   },
 };
 
-function validate(kind, card, role) {
+// `options.machine` is true only where the hub accepts a card the machine service posted.
+function validate(kind, card, role, options = {}) {
   if (!fields[kind]) return { ok: false, reason: `unknown card kind: ${kind}` };
   if (!object(card)) return { ok: false, reason: 'card must be one JSON object' };
   if (card.kind !== undefined && card.kind !== kind) {
     return { ok: false, reason: 'kind must equal the command-line kind' };
   }
-  const allowed = new Set([...Object.keys(fields[kind]), 'kind']);
+  const spec = kind === 'sudo' && options.machine ? sudoMachineFields : fields[kind];
+  const allowed = new Set([...Object.keys(spec), 'kind']);
   for (const key of Object.keys(card)) {
     if (!allowed.has(key)) return { ok: false, reason: `unknown field: ${key}` };
   }
-  for (const [key, check] of Object.entries(fields[kind])) {
+  for (const [key, check] of Object.entries(spec)) {
     if (!check(card[key])) return { ok: false, reason: `invalid or missing field: ${key}` };
   }
   if (kind === 'question' && !card.options.some((option) => option.id === card.leaning)) {

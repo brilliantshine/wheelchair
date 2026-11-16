@@ -85,6 +85,8 @@ bash sensitivity/test/run.sh
 bash codex/test/run.sh
 bash install/test/run.sh
 bash machine/test/run.sh
+python3 -m unittest discover -s sudo-helper/test   # the root sudo helper, with shim runuser and sudo
+bash sudo-helper/test/install-test.sh              # the helper's installer, against a temp root
 ./install.sh && ./install.sh   # canonical clone only; refused from a worktree
 node --test viewer/test/*.test.js
 npm --prefix viewer run test:browser

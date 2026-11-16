@@ -21,6 +21,7 @@ const { pipeline } = require('node:stream/promises');
 const adapters = require('./adapters');
 const { limitedUntil } = require('./lib/limits');
 const { AsideTurns } = require('./lib/aside-turns');
+const { SudoRequests } = require('./lib/sudo');
 
 const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_STATE = path.join(os.homedir(), '.local', 'state', 'wheelchair');
@@ -181,6 +182,7 @@ class MachineService {
     this.closingThreads = new Map();
     this.uploadRequests = new Map();
     this.options = options;
+    this.sudo = new SudoRequests(this, atomicWrite, readJson, requestJson);
   }
 
   async withThreadLock(id, fn) {
@@ -272,6 +274,7 @@ class MachineService {
     if (this.options.secretFile) this.config.secret_file = this.options.secretFile;
     await atomicWrite(this.configPath, `${json(this.config)}\n`);
     await this.asideTurns.load();
+    await this.sudo.load();
     this.sessions = await readJson(this.sessionsPath, {});
     await this.recoverFromTmux();
     await mkdir(path.join(this.stateDir, 'spool', 'cards'));
@@ -767,10 +770,11 @@ class MachineService {
       try {
         const { prepared: ignoredPrepared, ...eventBody } = payload;
         const response = await requestJson(`${this.config.hub_url.replace(/\/$/, '')}/api/machine/${kind}`, 'POST', { [HUB_HEADER]: await this.secret() }, kind === 'events' ? eventBody : payload);
-        if (response.status >= 200 && response.status < 300) { await fsp.unlink(path.join(dir, file)); continue; }
+        if (response.status >= 200 && response.status < 300) { if (kind === 'cards') await this.sudo.accepted(payload); await fsp.unlink(path.join(dir, file)); continue; }
         if (response.status >= 400 && response.status < 500) {
           let reason = `hub refused (${response.status})`;
           try { reason = JSON.parse(response.body || '{}').error || reason; } catch { /* keep status */ }
+          if (kind === 'cards') await this.sudo.dropped(payload);
           await this.rejectSpool(kind, file, reason);
           continue;
         }
@@ -1051,10 +1055,23 @@ class MachineService {
         if (request.method === 'POST' && pathBits[3] === 'submit') { const input = await bodyOf(request); await this.submit(name, String(input.text || '')); return send(response, 200, { ok: true }); }
         if (request.method === 'POST' && pathBits[3] === 'keys') { const input = await bodyOf(request); this.raw(name, String(input.keys || '')); return send(response, 200, { ok: true }); }
       }
+      if (request.method === 'POST' && pathBits[0] === 'v1' && pathBits[1] === 'sudo' && pathBits.length === 4 && pathBits[3] === 'cancel' && /^[0-9a-f]{32}$/.test(pathBits[2])) {
+        await this.authorize(request, 'hub');
+        try { return send(response, 200, await this.sudo.cancel(pathBits[2])); }
+        catch (error) { if (!error.status) throw Object.assign(new Error('sudo helper unavailable'), { status: 503 }); throw error; }
+      }
       if (request.method === 'POST' && url.pathname === '/v1/agent/cards') {
         const agent = await this.authorize(request, 'agent');
         let input = await bodyOf(request);
         if (input.kind === 'image') input = await this.copyImage(agent, input);
+        if (input.kind === 'sudo') {
+          if (agent.role !== 'lead') throw Object.assign(new Error('only a lead may post a sudo card'), { status: 403 });
+          try { input = { ...input, ...await this.sudo.register(input) }; }
+          catch (error) {
+            if (error.status) throw error;
+            throw Object.assign(new Error(`sudo helper not installed on ${os.hostname()}; Collin installs it once with: sudo ${ROOT}/sudo-helper/install.sh`), { status: 503 });
+          }
+        }
         // Cards keep their order: anything still spooled from a hub outage goes first.
         const waiting = (await fsp.readdir(path.join(this.stateDir, 'spool', 'cards')).catch(() => [])).filter(f => f.endsWith('.json'));
         if (waiting.length && this.config.hub_url) await this.drainSpool('cards');
@@ -1065,9 +1082,9 @@ class MachineService {
         try {
           const relay = await requestJson(`${this.config.hub_url.replace(/\/$/, '')}/api/machine/cards`, 'POST', { [HUB_HEADER]: await this.secret() }, queued.payload);
           let body; try { body = JSON.parse(relay.body || '{}'); } catch { body = { error: relay.body || 'hub returned invalid JSON' }; }
-          if (relay.status >= 200 && relay.status < 300) { await fsp.unlink(queued.file); return send(response, relay.status, body); }
+          if (relay.status >= 200 && relay.status < 300) { await this.sudo.accepted(queued.payload); await fsp.unlink(queued.file); return send(response, relay.status, body); }
           if ([502, 503, 504].includes(relay.status)) return send(response, 202, { ok: true, spooled: true });
-          if (relay.status >= 400 && relay.status < 500) await this.rejectSpool('cards', path.basename(queued.file), body.error || `hub refused (${relay.status})`);
+          if (relay.status >= 400 && relay.status < 500) { await this.sudo.dropped(queued.payload); await this.rejectSpool('cards', path.basename(queued.file), body.error || `hub refused (${relay.status})`); }
           return send(response, relay.status, body);
         } catch {
           return send(response, 202, { ok: true, spooled: true });
@@ -1086,7 +1103,9 @@ class MachineService {
     // Spec "Machine service on the hub": spools are retried until the hub acknowledges them.
     this.spoolTimer = setInterval(() => { for (const kind of ['events', 'cards']) this.drainSpool(kind).catch(error => this.log(error)); }, this.spoolInterval);
     this.spoolTimer.unref();
-    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.pollTimer); clearInterval(this.trustTimer); });
+    this.sudoTimer = setInterval(() => this.sudo.tick().catch(error => this.log(error)), Number(process.env.WHEELCHAIR_SUDO_POLL_MS || 2000));
+    this.sudoTimer.unref();
+    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.pollTimer); clearInterval(this.trustTimer); clearInterval(this.sudoTimer); });
     process.stdout.write(`machine service listening on ${this.config.host}:${this.config.port}\n`);
     await this.drainSpool('events'); await this.drainSpool('cards');
   }

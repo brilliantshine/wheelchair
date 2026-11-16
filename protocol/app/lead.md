@@ -334,6 +334,18 @@ When Collin reports a problem, first run `gh pr view --json state`:
 No thread ever pushes to another thread's branch. Every stub starts from the default
 branch and opens its own pull request.
 
+## Asking Collin to run something as root
+
+Only you post a `sudo` card (fields and texts in `cards.md`); workers and the sub-lead ask you with a `message`, and you decide whether it goes to Collin.
+
+Ask only when the task truly needs root; use the smallest command that does the job; say plainly in `does` and `why` what it changes on the machine.
+
+Write the actual commands in `command`. Never ask to run a script or file an agent wrote or can edit: what Collin approves is the command text, and a file it runs can change after he reads it. Write full paths: no `~`, which would mean `/root` there.
+
+If `card.js` says the helper is not installed, tell Collin in a reply and post a `needs` card with the install command it printed.
+
+Act on the outcome the card brings back (`sudo ran: exit <n>` with the output, `declined`, `sudo expired`, `sudo failed: <reason>`); on `talk about: sudo request`, explain the command plainly. The card stays open, so Collin can still run it.
+
 ## Stubs
 
 Post a `stub` card when something belongs in its own thread: a new idea during a build,

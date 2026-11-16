@@ -165,6 +165,7 @@ run_case() {
     "HOME=${home[$name]}" "USER=fixture-user" "PATH=${shim[$name]}:$command_path"
     "WHEELCHAIR_SHIM_LOG=${home[$name]}/commands.log"
     "WHEELCHAIR_PRESENT=${present[$name]}" WHEELCHAIR_SKIP_DEPS=1
+    "WHEELCHAIR_SUDO_TEST_ROOT=$fixture/$name/sudo-root"
     "WHEELCHAIR_ALLOW_WORKTREE=${allow[$name]}"
     "WHEELCHAIR_CLAUDE_HOME=${claude[$name]}" "WHEELCHAIR_CODEX_HOME=${codex[$name]}"
     "WHEELCHAIR_WORDING=${home[$name]}/wheelchair/wording.md"
@@ -544,6 +545,12 @@ assert 'real Claude settings are byte-identical after suite' bash -c '[[ $1 == "
 assert 'real Codex hooks are byte-identical after suite' bash -c '[[ $1 == "$2" ]]' _ "$real_seen_hooks_before" "$(file_state "$HOME/.codex/hooks.json")"
 assert 'real Codex config is byte-identical after suite' bash -c '[[ $1 == "$2" ]]' _ "$real_seen_config_before" "$(file_state "$HOME/.codex/config.toml")"
 assert 'real wheelchair directory is byte-identical after suite' bash -c '[[ $1 == "$2" ]]' _ "$real_wheelchair_before" "$(tree_state "$HOME/.wheelchair")"
+
+new_case sudo_hint
+run_case sudo_hint
+assert 'missing sudo helper prints install hint and no test password' bash -c '[[ $1 == *"sudo helper not installed; to let agents ask for sudo from a card, run: sudo $2/sudo-helper/install.sh"* ]] && [[ $1 != *hunter2-TESTPW-9f3a* ]]' _ "${output[sudo_hint]}" "$repo"
+for captured in "${output[@]}"; do [[ $captured != *hunter2-TESTPW-9f3a* ]] || fail "test password appeared in output"; done
+if grep -R -F -q "hunter2-TESTPW-9f3a" "$fixture"; then fail "test password appeared in fixture"; fi
 
 printf 'RESULT %d passed, %d failed\n' "$passes" "$failures"
 (( failures == 0 ))
