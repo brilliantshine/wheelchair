@@ -37,6 +37,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 10 | If the starter is no longer live at the starter step, go straight to Collin's card. | Nobody else can act. | defaulted |
 | 11 | The rule fix gets its failing-first test as a text check over the role files (`viewer/test/protocol-rules.test.js`). | The repo has no protocol test suite; the stub requires a test per fix. | defaulted |
 | 12 | Timers configurable through Hub options and `WHEELCHAIR_QUIET_GRACE_MS` / `WHEELCHAIR_QUIET_ESCALATE_MS`; the check runs on the queue retry timer. | Tests need short timings; the existing 5 s timer is fine-grained enough. | defaulted |
+| 13 | Review round 1: nudges are tagged and cancelled on reset; the escalation timer starts at the starter nudge's delivery; a re-messaged finished child counts as outstanding; a due check survives holds and is re-checked each tick. | Mechanics findings 1–4, upheld. | review-round-1 |
 
 ## Spec
 
@@ -60,7 +61,9 @@ Two parts: rule text in `protocol/app/`, and a quiet-turn detector in the hub
     `verifier` with `finished: true` is not watched (its report path is closed:
     `viewer/app/sessions.js:260`).
 - **Waiting on others:** the session has at least one child (`started_by` equals its name)
-  that is `live` and not `finished`. A sub-lead dispatching workers ends many turns with no
+  that is `live` and either not `finished` or `owes_reply` true (a worker re-messaged after its
+  first result owes its starter another one). The Agents tab's `waiting_on`
+  (`viewer/app/agents.js:13`) is not changed. A sub-lead dispatching workers ends many turns with no
   card; this is what makes those turns legitimate.
 - **Quiet:** a watched session that, at check time, owes a reply, has `turn_ended: true`, an
   empty `queue`, no `permission_open`/`needs_open` hold, no `limited_until` in the future, and
@@ -80,24 +83,36 @@ State on each session (persisted with the thread, like `turn_ended`):
    (`viewer/app/hub.js:56`, every `queueRetryInterval`), per thread under
    `hub.withThread`, skipping archived threads, catching all errors like `retryQueues`
    (`viewer/app/sessions.js:615-629`). For each session:
-   - If `quiet_check_at` is due: delete it; if the session is quiet, advance one stage (below).
-   - Else if `quiet_stage` is 2, `quiet_starter_at + escalate` is due, and the session is
+   - If `quiet_check_at` is due and the session is quiet: delete it and advance one stage
+     (below). If it is due but the session is not quiet only because of a hold, a future
+     `limited_until`, a non-empty queue or waiting on others, keep it: it is re-checked on every
+     tick, so a hold that clears or a child that finishes after the grace still gets the session
+     checked. It is deleted without advancing when `owes_reply` is false, the session is not
+     live, or a delivery starts a new turn (step 1).
+   - Else if `quiet_stage` is 2, `quiet_starter_at` is set, `quiet_starter_at + escalate` is due, and the session is
      still `live`, owes a reply and is not waiting on others: advance to stage 3. (This path
      does not require `turn_ended`: an agent stuck mid-turn for ten minutes after its starter
      was told also reaches Collin.)
 3. **Stages.**
-   - 0 → 1: enqueue to the session itself (source `app`) the agent nudge text below.
-   - 1 → 2: enqueue to its starter the starter nudge text below and set
-     `quiet_starter_at = now`. If the starter is not live, skip straight to stage 3.
+   - 0 → 1: enqueue to the session itself the agent nudge text below, as a queue entry with
+     `source: 'app'` and `quiet: 'agent'`.
+   - 1 → 2: enqueue to its starter the starter nudge text below, as a queue entry with
+     `quiet: 'starter'` and `about: <session name>`. `quiet_starter_at` is set only when
+     `deliver()` successfully submits that entry (the starter has then been told), to the
+     submit time. If the starter is not live, skip straight to stage 3.
    - 2 → 3: post a system `needs` card (`addCard(..., { system: true, session: name })`,
      `viewer/app/cards.js:11-29`) and store its id in `quiet_card`.
    - At stage 3 nothing further happens until a reset.
 4. **Reset.** When `owes_reply` is cleared (a `result` or `message` card, or a synthesized
-   result): set `quiet_stage` to 0, delete `quiet_check_at` and `quiet_starter_at`, and mark the
-   `quiet_card` card answered if open. When the session is stopped (`stopSession`,
+   result): set `quiet_stage` to 0, delete `quiet_check_at` and `quiet_starter_at`, mark the
+   `quiet_card` card answered if open, and remove still-queued nudges about it: entries with
+   `quiet: 'agent'` from its own queue, and entries with `quiet: 'starter'` and `about` equal
+   to its name from its starter's queue (keeping `thread.queues` in step). A failed submit
+   leaves a nudge queued (`viewer/app/sessions.js:333-339`), and delivering it after a valid
+   result would make the agent owe a reply again and raise a false alarm. When the session is stopped (`stopSession`,
    `viewer/app/sessions.js:502-515`) or found ended (`pollDead`,
    `viewer/app/sessions.js:574-576`): mark its `quiet_card` answered and delete
-   `quiet_check_at`. A delivered message does not reset the stage: after the starter is told,
+   `quiet_check_at`, and remove its queued nudges as above. A delivered message does not reset the stage: after the starter is told,
    the starter messaging the agent gives it one more turn, and if that turn is quiet too,
    Collin sees it.
 
@@ -163,6 +178,14 @@ turn ends are driven as `viewer/test/app-balancer.test.js:185-215` does (machine
    whose turn has text gets a result and no nudge.
 9. The lead ends turns with no card: never nudged, no card.
 10. Stopping a session at stage 3 answers its card.
+11. The fake machine fails submits to the worker, the worker's nudge stays queued, then the
+    worker posts a `result`: the nudge is removed from its queue and never delivered.
+12. The starter is held (`permission_open`) when the starter nudge is enqueued: no card after
+    escalate; once the hold clears and the nudge is delivered, the card appears escalate later.
+13. A worker that already posted a result is re-messaged by its sub-lead: while it owes a
+    reply, the sub-lead's quiet turns are not nudged.
+14. A worker whose grace expires while it holds `needs_open`: once the hold clears, it is
+    nudged without any new turn.
 
 New `viewer/test/protocol-rules.test.js`: asserts `protocol/app/worker.md`, `mapper.md`,
 `sub-lead.md`, `lead.md` and `cards.md` each state that a session's own `wc.js` and
@@ -201,6 +224,10 @@ state or timers.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| gpt mechanics | blocking | Reset leaves a failed-submit nudge queued; delivered later it re-arms `owes_reply` and raises a false alarm | upheld | Nudges tagged `quiet`, removed on reset (Spec Detector 4); test 11 |
+| gpt mechanics | blocking | Escalation timer starts at enqueue, before the starter is told | upheld | `quiet_starter_at` set on successful delivery (Detector 3); test 12 |
+| gpt mechanics | blocking | `finished` never clears, so a sub-lead waiting on a re-messaged worker counts as quiet | upheld | Waiting on others includes children that owe a reply (Terms); test 13 |
+| gpt mechanics | major | A due check is deleted while a hold blocks it and never re-armed | upheld | Due check kept and re-checked each tick (Detector 2); test 14 |
 
 ## Prior Work
 
