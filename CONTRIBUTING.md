@@ -51,8 +51,7 @@ workflow.
   `~/.codex/AGENTS.md`. `sensitivity/set.sh` is its only writer, and the next run
   overwrites that block.
 - When ownership moves between directories, update the routers on both sides in the
-  same change. Routers are made and kept true by highways (`/highways create`,
-  `/highways sweep`); never reformat an existing one.
+  same change. Never reformat an existing router.
 - Keep human-facing prose direct and grounded. Specific claims carry `file:line`, and
   anything not checked is named as unchecked rather than inferred. The full rules are
   in [protocol/writing.md](protocol/writing.md).

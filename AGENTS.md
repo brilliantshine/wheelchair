@@ -65,12 +65,10 @@ Two rules follow, and between them they cover most of what can go wrong here:
 |---|---|
 | `README.md` | What this workflow is and how to drive it, for a person arriving cold |
 | `CONTRIBUTING.md` | The conventions, source-of-truth boundaries, and validation commands for someone changing this repository |
-| `install.sh` | Renders each present harness's wrappers, substituting this clone's path for `{{WHEELCHAIR_ROOT}}`, installs the viewer's dependencies, stops any running viewer that isn't running the code just pulled, initializes the hub machine service's private state and credentials, and decides once whether this machine serves the viewer to other tailnet devices (asking only on a headless machine that hasn't decided yet). On a serving systemd machine it installs both the viewer and machine user services. It calls `seen/set.sh` to write each present harness's own hook entry and the wording script's write grant — into each harness's own settings files, **outside this tree** — and, last, warning rather than failing if it refuses, calls `sensitivity/set.sh` to render the dial's region into each present global instruction file. Idempotent, removes the `spine` skill and Codex prompt an earlier version rendered (the command moved to highways), and it **globs** `skills/*/` and `codex/prompts/*.md`, so adding a command needs no edit here |
+| `install.sh` | Renders each present harness's wrappers, substituting this clone's path for `{{WHEELCHAIR_ROOT}}`, installs the viewer's dependencies, stops any running viewer that isn't running the code just pulled, initializes the hub machine service's private state and credentials, and decides once whether this machine serves the viewer to other tailnet devices (asking only on a headless machine that hasn't decided yet). On a serving systemd machine it installs both the viewer and machine user services. It calls `seen/set.sh` to write each present harness's own hook entry and the wording script's write grant — into each harness's own settings files, **outside this tree** — and, last, warning rather than failing if it refuses, calls `sensitivity/set.sh` to render the dial's region into each present global instruction file. Idempotent, removes the `spine` skill and Codex prompt an earlier version rendered, and it **globs** `skills/*/` and `codex/prompts/*.md`, so adding a command needs no edit here |
 | `.gitignore` | `node_modules/`, `graphify-out/`, `test-results/`, which the browser suite writes, and `viewer/test/.tmp/`, where older checkouts' viewer suites wrote scratch folders (`test-support/run-dir.js` sweeps entries there over an hour old). `graphify-out/` is what lets a root router claim a graph cannot carry a contract |
 
 ## How to navigate (in order)
-
-If `highways` is installed, run `highways search "<what you're looking for>"` before reading code to find where something lives.
 
 1. **Read the router** for the directory you are touching.
 2. **Grep** for the phrase. Every rule here is prose in a markdown file, so the words a
@@ -144,8 +142,5 @@ stage refuses to run out of order and every stage's output is the next stage's i
 
 ## Maintaining these routers
 
-A router that lies is worse than no router. Routers are created and kept true by
-highways, a separate tool (`/highways create`, `/highways sweep`). Moving ownership between
-directories updates the routers on both sides as part of that change, not afterwards —
-the rule lives in highways' `protocol/sweep.md`, which Stage 3's after-lane sweep applies when
-highways is installed.
+A router that lies is worse than no router. Moving ownership between directories updates
+the routers on both sides as part of that change, not afterwards.
