@@ -125,6 +125,8 @@ if [[ $mode == json ]]; then
       value="\"${levels[$target]}\""
       if [[ -n $agreed && $agreed != "${levels[$target]}" ]]; then disagree=1; fi
       agreed=${levels[$target]}
+    else
+      disagree=1
     fi
     [[ -z $entries ]] || entries+=','
     entries+="{\"harness\":\"$harness\",\"level\":$value}"

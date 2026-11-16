@@ -310,6 +310,11 @@ assert 'real AGENTS.md is byte-identical after suite' bash -c '[[ $1 == "$2" ]]'
 
 run_case report_diverged --json
 assert 'structured report preserves divergent levels' bash -c '[[ $1 == 0 ]] && node -e "const x=JSON.parse(process.argv[1]); if(x.level!==null || x.files[0].level!==\"ask\" || x.files[1].level!==\"high\") process.exit(1)" "$2"' _ "${status[report_diverged]}" "${output[report_diverged]}"
+new_case report_partial
+run_case report_partial ask
+sed -i '/<!-- wheelchair:diagram-sensitivity start -->/,/<!-- wheelchair:diagram-sensitivity end -->/d' "$(target_codex report_partial)"
+run_case report_partial --json
+assert 'structured report requires a block in every present file' bash -c '[[ $1 == 0 ]] && node -e "const x=JSON.parse(process.argv[1]); if(x.level!==null || x.files.length!==2 || x.files[0].harness!==\"claude\" || x.files[0].level!==\"ask\" || x.files[1].harness!==\"codex\" || x.files[1].level!==null) process.exit(1)" "$2"' _ "${status[report_partial]}" "${output[report_partial]}"
 run_case report_absent --json
 assert 'structured report names absent blocks' bash -c '[[ $1 == 0 ]] && node -e "const x=JSON.parse(process.argv[1]); if(x.level!==null || x.files.length!==2 || x.files.some(f=>f.level!==null)) process.exit(1)" "$2"' _ "${status[report_absent]}" "${output[report_absent]}"
 
