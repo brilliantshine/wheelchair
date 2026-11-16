@@ -1,6 +1,7 @@
 (function () {
   'use strict';
-  const T = '/wheelchair/api/threads/' + encodeURIComponent(new URLSearchParams(location.search).get('id') || '');
+  const threadId = new URLSearchParams(location.search).get('id') || '';
+  const T = '/wheelchair/api/threads/' + encodeURIComponent(threadId);
   const panel = document.getElementById('aside-panel');
   const files = document.getElementById('files');
   const bar = document.createElement('div'); bar.className = 'aside-selection'; bar.hidden = true; document.body.appendChild(bar);
@@ -53,7 +54,7 @@
       if (h.kind === 'note') { body.appendChild(el('div', 'dim', h.text || '')); continue; }
       if (h.text) body.appendChild(el('div', 'bubble human aside-human', h.text));
       if (h.reply) { const reply = el('div', 'md aside-reply'); window.WCMarkdown.render(h.reply, reply); body.appendChild(reply); }
-      if (h.graph) { const src = '/wheelchair/?path=' + encodeURIComponent(h.graph); const link = el('a', 'btn small', 'Open full screen'); link.href = src; link.target = '_blank'; link.rel = 'noopener'; body.appendChild(link); const frame = el('iframe', 'diagram'); frame.src = src; frame.title = 'Aside diagram'; body.appendChild(frame); }
+      if (h.graph) { const src = '/wheelchair/?path=' + encodeURIComponent(h.graph); const link = el('a', 'btn small', 'Open full size'); link.href = '/wheelchair/app/picture?thread=' + encodeURIComponent(threadId) + '&aside=' + encodeURIComponent(current.id) + '&entry=' + (current.history || []).indexOf(h); body.appendChild(link); const frame = el('iframe', 'diagram'); frame.src = src; frame.title = 'Aside diagram'; body.appendChild(frame); }
       if (h.graph_error) body.appendChild(el('div', 'dim', h.graph_error));
     }
     if (current.turn) { const w = el('div', 'dim waiting'); w.append(el('span', 'spinner'), el('span', '', 'Thinking…')); body.appendChild(w); }

@@ -96,3 +96,19 @@ test('the old Sessions page redirects to Agents', async () => {
     assert.equal(response.headers.get('location'), '/wheelchair/app/agents');
   });
 });
+
+test('the picture page is served behind the remember cookie with its assets', async () => {
+  await withServer({}, async (ctx) => {
+    const url = `${ctx.url}/app/picture?thread=t1&card=c1`;
+    assert.equal((await fetch(url)).status, 401);
+    const signin = await fetch(`${url}&token=${ctx.token}`, { redirect: 'manual' });
+    assert.equal(signin.status, 303);
+    const cookie = signin.headers.get('set-cookie').split(';')[0];
+    const page = await fetch(url, { headers: { cookie } });
+    assert.equal(page.status, 200);
+    assert.match(await page.text(), /Back to thread/);
+    for (const asset of ['pages/picture.js', 'pages/picture.css', 'pages/diagram.js']) {
+      assert.equal((await fetch(`${ctx.url}/assets/${asset}`)).status, 200, asset);
+    }
+  });
+});
