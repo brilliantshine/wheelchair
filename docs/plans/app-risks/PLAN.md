@@ -309,3 +309,4 @@ Budget reset: Collin chose "Keep going" after three rounds.
 - 2026-11-15 — Choice: R1-T1, `harness.js`: the resolved state and cache paths must also equal the intended ones, because in smoke mode HOME is inside the run folder and a dropped flag would otherwise still pass.
 - 2026-11-15 — Choice: R1-T1, `harness.js`: an omitted port resolves to the service default (7373 hub, 7374 machine), so the assertion rejects it.
 - 2026-11-15 — Choice: R1-T1, `harness.js` (seen in the diff, not reported): a failure after teardown is defined now runs the full teardown instead of only `cleanupNow()`.
+- 2026-11-15 — Verifier attempt 2: `wc-0958e89051d8-verifier-2`, claude / claude-opus-5-5 (`--not-provider gpt`), at `c40302f`.
