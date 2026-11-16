@@ -413,13 +413,36 @@ async function sessionRequest(hub, payload) {
     ...(['mapper', 'reviewer', 'sub-lead'].includes(payload.role) ? { worktree: thread.worktree, branch: thread.branch } : {}),
     base: payload.role === 'worker' ? thread.branch : undefined,
     verify_ref: payload.role === 'verifier' ? thread.branch : undefined,
-    ...(payload.role === 'worker' && payload.replaces ? (() => {
-      const replaced = session(thread, payload.replaces);
-      if (replaced.role !== 'worker' || replaced.live) throw appError(400, 'replacement must be a dead worker in this thread');
-      return { worktree: replaced.worktree, branch: replaced.branch };
-    })() : {}),
+    ...(payload.role === 'worker' && payload.replaces ? await replacedWorker(hub, thread, payload.replaces) : {}),
   });
   return { session: publicSession(started), ...(started.note ? { note: started.note } : {}) };
+}
+
+// A replacement worker shares the old worker's worktree, so the old one must really be gone: the
+// hub's own record can say "ended" while its tmux session still runs. Unknown counts as running.
+async function replacedWorker(hub, thread, name) {
+  const replaced = session(thread, name);
+  if (replaced.role !== 'worker' || replaced.live) throw appError(400, 'replacement must be a dead worker in this thread');
+  let listed;
+  try {
+    listed = await hub.call(thread.machine, '/v1/sessions', 'GET');
+  } catch {
+    throw appError(409, `cannot check whether ${name} is still running; try again`);
+  }
+  const running = (other) => {
+    const entry = listed.find((item) => item.name === other);
+    return Boolean(entry) && entry.running !== false;
+  };
+  if (running(name)) {
+    throw appError(409, `${name} is still running in tmux; send it a message, or stop it with session stop before replacing it`);
+  }
+  // An earlier replacement of the same worker may already be working there.
+  const occupant = thread.sessions.find((item) => (
+    item.name !== name && item.role === 'worker' && item.worktree && item.worktree === replaced.worktree
+    && (item.live || running(item.name))
+  ));
+  if (occupant) throw appError(409, `${occupant.name} is already working in that worktree`);
+  return { worktree: replaced.worktree, branch: replaced.branch };
 }
 
 async function stopSession(hub, thread, caller, name) {
@@ -437,6 +460,17 @@ async function stopSession(hub, thread, caller, name) {
   return { ok: true };
 }
 
+// tmux decides: a listed session with `running: true` is live even if recorded stopped (a failed
+// kill records stopped too). Without `running` the machine could not check tmux, so only its record
+// can say stopped.
+function liveNames(listed) {
+  return new Set(
+    listed
+      .filter((item) => item.running === true || (item.running === undefined && item.status !== 'stopped'))
+      .map((item) => item.name),
+  );
+}
+
 async function pollDead(hub) {
   const byMachine = new Map();
   for (const thread of await hub.allThreads()) {
@@ -451,16 +485,25 @@ async function pollDead(hub) {
     } catch {
       continue;
     }
-    const live = new Set(
-      listed
-        .filter((item) => item.running !== false && item.status !== 'stopped')
-        .map((item) => item.name),
-    );
+    const early = liveNames(listed);
+    const missing = (thread, live) => thread.sessions.filter((item) => (
+      item.live && item.status !== 'waiting' && !live.has(item.name)
+    ));
     for (const listedThread of threads) {
       await hub.withThread(listedThread.id, async () => {
         const thread = await hub.thread(listedThread.id);
+        if (!missing(thread, early).length) return;
+        // The early listing was taken before this thread's lock, and the wait for the lock can
+        // be long; a session started meanwhile is absent from it. Ask again under the lock, where
+        // no start for this thread can be in flight, and act only on that answer.
+        let fresh;
+        try {
+          fresh = liveNames(await hub.call(machine, '/v1/sessions', 'GET'));
+        } catch {
+          return;
+        }
         let changed = false;
-        for (const target of thread.sessions.filter((item) => item.live && item.status !== 'waiting' && !live.has(item.name))) {
+        for (const target of missing(thread, fresh)) {
           target.live = false;
           target.status = 'ended';
           changed = true;

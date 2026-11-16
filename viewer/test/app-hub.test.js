@@ -1499,6 +1499,8 @@ test('worker replacement reuses a dead worker worktree and branch only', async (
     const old = stored.sessions.find((session) => session.name === worker.name);
     Object.assign(old, { live: false, worktree: '/tmp/reused-worker', branch: 'wc/reused-worker' });
     await fs.writeFile(file, JSON.stringify(stored));
+    // Its tmux session is gone too: a replacement is refused while that still runs.
+    context.machine.sessions.get(worker.name).running = false;
     const replacement = await machinePost(context, '/machine/session', {
       calling_session: sublead.name, action: 'start', role: 'worker', cli: 'codex', attempt_id: 'replacement', replaces: worker.name,
     });
