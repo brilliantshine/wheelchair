@@ -271,3 +271,45 @@ test('slow machine calls leave routes free, coalesce pumps, and discard archived
     } finally { release({ state: 'running' }); await second; }
   } finally { release({ state: 'running' }); await first; }
 });
+
+test('archive races compensate claimed turns without changing history', async (t) => {
+  for (const scenario of ['before recheck', 'before post response', 'finished unheld']) {
+    await t.test(scenario, async () => {
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'wc-asides-archive-'));
+      const hub = new Hub({ stateDir: dir }); await hub.state.init();
+      const turn = { id: 'turn', state: scenario === 'finished unheld' ? 'running' : 'dispatching', message: { kind: 'ask', text: 'question' }, model: 'model' };
+      const aside = { id: 'a', status: 'open', provider: 'gpt', account: 'default-gpt', fork_parent: 'parent', slot: 'standard', pending: [], failed: null, history: [{ kind: 'note', text: 'existing' }], turn };
+      const id = `race-${scenario.replaceAll(' ', '-')}`;
+      await hub.save({ id, project: '/tmp/repo', worktree: '/tmp/repo', machine: 'hub', sessions: [], asides: [aside], cards: [], pinned: {}, queues: {}, sent: [], archived: false });
+      const calls = [];
+      let release, entered;
+      const held = new Promise((resolve) => { release = resolve; });
+      const started = new Promise((resolve) => { entered = resolve; });
+      const archive = () => hub.withThread(id, () => require('../app/threads.js').archive(hub, id));
+      hub.call = async (_, route, method) => {
+        calls.push({ route, method });
+        if (route === '/v1/aside-turns/turn' && method === 'GET') {
+          entered(); await held;
+          if (scenario === 'finished unheld') return { state: 'ok', reply: 'late', conversation_id: 'fork' };
+          const error = new Error('missing'); error.status = 404; throw error;
+        }
+        if (route === '/v1/aside-turns' && method === 'POST' && scenario === 'before post response') await archive();
+        if (route === '/v1/archive') return { kept: [] };
+        return {};
+      };
+      const pumping = asides.pump(hub, id); await started;
+      try {
+        if (scenario !== 'before post response') await archive();
+        release(); await pumping;
+        const post = calls.filter((c) => c.route === '/v1/aside-turns' && c.method === 'POST');
+        assert.equal(post.length, scenario === 'before post response' ? 1 : 0);
+        const deletes = calls.filter((c) => c.route === '/v1/aside-turns/turn' && c.method === 'DELETE');
+        assert.equal(deletes.length, scenario === 'before post response' ? 2 : 1);
+        const acks = calls.filter((c) => c.route === '/v1/aside-turns/turn/ack' && c.method === 'POST');
+        assert.equal(acks.length, scenario === 'before recheck' ? 0 : 1);
+        if (scenario === 'before post response') assert.ok(calls.indexOf(acks[0]) > calls.indexOf(deletes[1]));
+        assert.deepEqual((await hub.thread(id)).asides[0].history, [{ kind: 'note', text: 'existing' }]);
+      } finally { release(); await pumping; }
+    });
+  }
+});

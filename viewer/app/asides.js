@@ -107,12 +107,18 @@ async function claim(hub, id) {
     return items;
   });
 }
-async function call(hub, item) {
+async function call(hub, id, item) {
   const base = `/v1/aside-turns/${encodeURIComponent(item.turnId)}`;
   try { return await hub.call(item.machine, base, 'GET'); }
   catch (error) {
     if (error.status !== 404) return null;
     if (item.state === 'running') return { state: 'failed', error: 'the machine lost this turn' };
+    const held = await hub.withThread(id, async () => {
+      const thread = await hub.thread(id);
+      const aside = (thread.asides || []).find((a) => a.id === item.asideId);
+      return !thread.archived && aside?.turn?.id === item.turnId && aside.turn.state === 'dispatching';
+    });
+    if (!held) return null;
     try { await hub.call(item.machine, '/v1/aside-turns', 'POST', item.body); return { state: 'running' }; }
     catch { return null; }
   }
@@ -146,13 +152,18 @@ async function applyResult(hub, thread, aside, result) {
 }
 async function pass(hub, id) {
   const items = await claim(hub, id);
-  for (const item of items) item.result = await call(hub, item);
-  const { acks, again } = await hub.withThread(id, async () => {
-    const thread = await hub.thread(id), acks = [];
+  for (const item of items) item.result = await call(hub, id, item);
+  const { acks, cancels, again } = await hub.withThread(id, async () => {
+    const thread = await hub.thread(id), acks = [], cancels = [];
     let changed = false;
     for (const item of items) {
       const aside = (thread.asides || []).find((a) => a.id === item.asideId);
-      if (!aside?.turn || aside.turn.id !== item.turnId || !item.result) continue;
+      if (!item.result) continue;
+      if (thread.archived || !aside?.turn || aside.turn.id !== item.turnId) {
+        if (item.result.state === 'running') cancels.push({ machine: item.machine, turnId: item.turnId });
+        else if (['ok', 'failed'].includes(item.result.state)) acks.push({ machine: item.machine, turnId: item.turnId });
+        continue;
+      }
       if (item.result.state === 'running') {
         if (aside.turn.state === 'dispatching') { aside.turn.state = 'running'; await hub.save(thread); }
       } else {
@@ -160,8 +171,13 @@ async function pass(hub, id) {
         acks.push({ machine: item.machine, turnId: item.turnId }); changed = true;
       }
     }
-    return { acks, again: changed && !thread.archived && (thread.asides || []).some((a) => a.status === 'open' && a.pending.length && !a.failed && !a.turn) };
+    return { acks, cancels, again: changed && !thread.archived && (thread.asides || []).some((a) => a.status === 'open' && a.pending.length && !a.failed && !a.turn) };
   });
+  for (const cancel of cancels) {
+    const base = `/v1/aside-turns/${encodeURIComponent(cancel.turnId)}`;
+    await hub.call(cancel.machine, base, 'DELETE').catch(() => {});
+    await hub.call(cancel.machine, `${base}/ack`, 'POST').catch(() => {});
+  }
   for (const ack of acks) await hub.call(ack.machine, `/v1/aside-turns/${encodeURIComponent(ack.turnId)}/ack`, 'POST').catch(() => {});
   return again;
 }
