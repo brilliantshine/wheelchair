@@ -2,7 +2,13 @@
 slug: silent-stops
 date: 2026-11-15
 implemented-by: "standard: codex gpt-6.1-terra (T2 effort medium; T1 attempt 2 effort high, after attempt 1 at medium came back unfinished); integration by the sub-lead (claude-opus-5-5)"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude-opus-5-5 (wc-989abf66ac00-verifier), FAIL on 34a33d6
+    checks: codex gpt-6.1-terra (T1, T2)
+  - round: 2
+    lane: claude-opus-5-5 (wc-989abf66ac00-verifier-2), PASS on 90addd8
+    checks: codex gpt-6.1-terra (T1, T2, R1-T2), gpt-6-luna (R1-T1), sub-lead test fixes
 ---
 
 # Completion Report — Catch agents that stop silently
