@@ -61,7 +61,8 @@ Node 20 and 26. Exports:
 - `makeTemp(prefix = 'tmp-')` → `Promise<string>`: `fs.promises.mkdtemp(path.join(runDir(), prefix))`.
   `makeTempSync(prefix)` is the synchronous twin. Prefixes stay as today's (e.g.
   `wheelchair-machine-test-`, `wc-doc-`), so a leftover is still recognisable.
-- `trackChild(child)`: records a `ChildProcess`; it drops itself from the set on `exit`.
+- `trackChild(child, { group = false } = {})`: records a `ChildProcess`; it drops itself from the set on `exit`. With `group: true` (a child spawned `detached`), cleanup kills its whole process group (`process.kill(-pid, 'SIGKILL')`). Each change to the tracked set rewrites `owner.json`'s `children` list (`[{ pid, start, group }]`, written to a temp name and renamed), so a later sweep knows them.
+- `onCleanup(fn)`: registers a synchronous function run at cleanup before any kill or removal. It is the seam for processes the test did not spawn itself (§5).
   Used by every test helper that spawns a long-lived child (servers, fake machines,
   aside stores' CLIs where the test owns the spawn).
 - `cleanupNow()`: the same removal the exit handler does; exported for the helper's own
@@ -72,10 +73,22 @@ Node 20 and 26. Exports:
 
 ### 2. Removal at exit
 
-- `process.on('exit')`: SIGKILL every tracked child still running, then
-  `fs.rmSync(runDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })`.
+- `process.on('exit')`, in order: run every `onCleanup` function (errors swallowed);
+  SIGKILL every tracked child still running (its group when `group: true`); **wait,
+  synchronously, until each is confirmed stopped**: `/proc/<pid>/stat` is gone or shows
+  state `Z` (a zombie runs no code and writes nothing), polled every 10 ms with
+  `Atomics.wait` on a `SharedArrayBuffer` as the sleep, for at most 2 s. Where `/proc` is
+  absent, `process.kill(pid, 0)` throwing `ESRCH` is the test. If any child is still not
+  confirmed stopped after 2 s, **skip the removal** (the next sweep handles the folder).
+  Otherwise `fs.rmSync(runDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })`.
   Errors are swallowed (a leftover is caught by the next sweep); nothing is printed on
   success.
+- Removal happens only when the owning process is ending (here) or gone (§3), never while
+  its tests run. A detached process started by code under test, not by the test itself
+  (e.g. aside CLI children, `machine/lib/aside-turns.js:78`), is not tracked; if a failed
+  test leaves one running, the folder may be removed under it (Accepted Risks).
+- Tests that spawn detached children themselves (`aside-turns.test.js` "real detached
+  groups") call `trackChild(child, { group: true })` in addition to their `finally` kills.
 - `SIGINT`, `SIGTERM`, `SIGHUP`: a handler runs the same cleanup synchronously, removes
   its own listeners, and re-raises the signal with `process.kill(process.pid, signal)`,
   so the process still dies of that signal (exit status unchanged for the runner).
@@ -92,8 +105,13 @@ Runs once per process, inside the first `runDir()` call, before creating the new
 Every step ignores errors per entry (another process may be sweeping too).
 
 1. For each entry in `os.tmpdir()` named `wheelchair-test-run-*`: read `owner.json`. If it
-   is missing or unreadable and the folder's mtime is older than one hour, remove it. If
-   it parses and the owner is not alive (Decision 10), remove it. Otherwise leave it.
+   is missing or unreadable, leave the folder (it cannot be proven unused; `owner.json`
+   is written inside `runDir()` immediately after `mkdtemp`, so this is only a
+   crash in that instant). If it parses and the owner is alive (Decision 10), leave it.
+   If the owner is gone: for each recorded child whose PID is alive **with the same start
+   time**, SIGKILL it (its group when `group: true`) and wait as in §2; if every recorded
+   child is then confirmed stopped, remove the folder, else leave it for a later sweep.
+   This also ends servers orphaned by a force-killed test run.
 2. Legacy leftovers in `os.tmpdir()` whose name starts with one of the prefixes below and
    whose mtime is older than one hour are removed:
    `wheelchair-machine-test-`, `wc-accounts-`, `wc-statusline-`, `wc-seed-`, `aside-test-`,
@@ -143,7 +161,12 @@ a test file).
   child processes spawned by the service under test (fake tmux/CLI scripts) are short-lived
   and synchronous; hook-post/statusline children (lines ~405, ~813) are awaited where the
   test spawns them. No product code changes.
-- `aside-turns.test.js` keeps its `finally` process-group kills.
+- `aside-turns.test.js` keeps its `finally` process-group kills. Every test there that
+  holds an `AsideTurns` store whose turns spawn real (fake-CLI) children registers
+  `onCleanup(() => { for (const t of Object.values(store.turns)) if (t.state === 'running' && t.pid) store.proc.kill(t.pid); })`
+  right after creating the store. `store.proc.kill` already kills the turn's whole
+  process group (`machine/lib/aside-turns.js:14`). No product change. Viewer
+  `app-asides.test.js` talks to a fake machine and spawns no CLI, so it needs nothing.
 
 ### 6. Shell suites
 
@@ -203,17 +226,25 @@ product code changes; any cleanup run by an agent rather than the suites.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| The legacy-prefix sweep could remove a folder an older checkout's test still uses if that test created it over an hour ago and added nothing to it since | No test runs near an hour; same rule as the existing viewer sweep; the alternative leaves old leaks in /tmp until reboot | 1 |
+| A detached process started by code under test (not by the test) can outlive a failed test and the folder can be removed under it | The test is already over; its writes fail or leave files the next sweep removes | 1 |
 
 ## Review Rounds
 
 ### Round 1 — 2026-11-15
 
-**Lanes:** pending.
+**Lanes:** intent: GPT; mechanics: GPT; cross-family: no (Claude unavailable at start).
 
 **Changed since Round 0:** n/a (first round — whole Spec in scope)
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | blocking | Legacy sweep may delete an hour-old folder that an older checkout's run still uses | downgraded → minor, accepted-risk | A folder's mtime is at least its creation time, so only a folder that a run created over an hour ago and has added nothing to since is at risk; no test in these suites runs an hour (node --test and Playwright per-test timeouts are far below that). The rule matches the existing viewer sweep (`viewer/test/helpers/server.js:26-44`). Moved to Accepted Risks |
+| intent | blocking | Killing tracked children then removing does not prove every writer stopped; untracked detached descendants (`machine/lib/aside-turns.js:78`) and owner-dead sweeps ignore survivors | downgraded → minor | Removal only happens when the owning test process is ending or gone, so no running test loses its folder, which is what the constraint protects. A detached grandchild that outlives a failed test writes into a folder whose test is over; its writes fail (ENOENT) or land in a folder the next sweep removes. Spec §2 now says this and tracks the tests' own detached spawns by process group |
+| mechanics | blocking | SIGKILL then immediate removal does not confirm the child stopped | upheld | §2 now waits synchronously for each tracked child to be gone or a zombie (max 2 s) and skips removal otherwise |
+| mechanics | blocking | Sweep treats a dead owner as proof; an orphaned server or CLI may still write | upheld | Tracked children are persisted in `owner.json`; the sweep kills and confirms them (PID + start time) before removing, else leaves the folder. Untracked descendants: see the aside seam and Accepted Risks |
+| mechanics | blocking | Legacy cleanup deletes by age alone (also the existing `viewer/test/.tmp` sweep) | user-decision | Raised by both lenses; a real choice between proof of disuse and clearing old leaks. Asked Collin |
+| mechanics | major | No seam for AsideTurns' internally spawned detached CLIs | upheld | §2 `onCleanup`; §5 aside tests kill running turns' process groups through `store.proc.kill` |
 
 ## Prior Work
 
