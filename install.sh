@@ -1,19 +1,6 @@
 #!/usr/bin/env bash
-# Render workflow entry points into present harnesses, install the viewer's deps, and optionally
-# make the viewer a persistent, tailnet-only service. Idempotent.
-#
-# The wrappers are rendered rather than symlinked because a wrapper has to name an ABSOLUTE path: a
-# command runs with some other repo as its working directory, so a relative path resolves nowhere.
-# The repo therefore cannot contain a real path — it carries the {{WHEELCHAIR_ROOT}} placeholder and
-# this script substitutes wherever the clone actually is. Editing anything under protocol/ still
-# takes effect immediately in each rendered harness, because the wrapper points back into this
-# working tree. Editing a wrapper itself needs a re-run.
-#
-# One thing here is rendered rather than pointed at, so editing it DOES need a re-run: the
-# delimited region of protocol/sensitivity.md that the last normal-install step writes into each
-# present global harness file. Those files sit outside this tree; only the bytes between the markers
-# are this repo's, and only they are overwritten. /diagram-sensitivity drives the same writer, so a
-# re-run of this script is not the only way to move the dial.
+# Remove retired harness entries, render diagram sensitivity, install viewer dependencies,
+# and optionally make the viewer a persistent, tailnet-only service. Idempotent.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -48,7 +35,7 @@ if (( ! claude_present && ! codex_present )); then
 fi
 
 # This comes before every install action. The command succeeds when there is no viewer, and a
-# failure must not prevent wrapper installation or a service upgrade.
+# failure must not prevent installation or a service upgrade.
 node "$ROOT/viewer/server.js" --stop --if-stale || echo "viewer: warning — could not stop the running viewer" >&2
 
 serve_flag=''
@@ -70,40 +57,37 @@ if [[ ! -f ${WHEELCHAIR_SUDO_TEST_ROOT:-}/etc/systemd/system/wheelchair-sudo.ser
   printf 'sudo helper not installed; to let agents ask for sudo from a card, run: sudo %s/sudo-helper/install.sh\n' "$ROOT"
 fi
 
-render() {  # render <source> <destination>
-  sed "s|{{WHEELCHAIR_ROOT}}|$ROOT|g" "$1" > "$2"
+# Remove only retired wrappers that name their old protocol file or point to its wrapper.
+remove_retired() {  # path, wrapper file, expected protocol file, symlink suffix
+  local path=$1 file=$2 protocol=$3 suffix=$4 target
+  if [[ -L $path ]]; then
+    target=$(readlink "$path")
+    [[ $target == *"$suffix" ]] || return 0
+  elif [[ -f $file ]] && grep -Eq "/[^[:space:]]*/protocol/${protocol}\.md([^[:alnum:]_.-]|$)" "$file"; then
+    :
+  else
+    return 0
+  fi
+  rm -rf "$path"
+  echo "removed old wrapper: $path"
 }
 
-# The spine command was retired. The globs below only add, so a wrapper this script rendered
-# for it in an earlier version would stay installed; remove it. Only a copy that names this checkout's
-# own removed protocol file is ours to remove, so a same-named skill someone else installed is left alone.
-retired=spine
-remove_rendered_retired() {  # remove_rendered_retired <rendered wrapper file> <path to remove>
-  if [[ -f $1 ]] && grep -qF "$ROOT/protocol/$retired.md" "$1"; then rm -rf "$2"; echo "removed old wrapper: $2"; fi
-}
-
-if (( claude_present )); then
-  remove_rendered_retired "$claude_home/skills/$retired/SKILL.md" "$claude_home/skills/$retired"
-  mkdir -p "$claude_home/skills"
-  for s in "$ROOT"/skills/*/; do
-    name="$(basename "$s")"
-    # An earlier version symlinked these. Clear the link before writing a real directory.
-    [ -L "$claude_home/skills/$name" ] && rm "$claude_home/skills/$name"
-    mkdir -p "$claude_home/skills/$name"
-    render "$s/SKILL.md" "$claude_home/skills/$name/SKILL.md"
-    echo "claude skill: /$name"
-  done
-fi
+retired_names=(spine plan adopt plan-review implement verify graph diagram-sensitivity)
+retired_files=(spine planning adopt plan-review implementation verification graphs sensitivity)
+for i in "${!retired_names[@]}"; do
+  name=${retired_names[$i]}
+  protocol=${retired_files[$i]}
+  if (( claude_present )); then
+    path="$claude_home/skills/$name"
+    remove_retired "$path" "$path/SKILL.md" "$protocol" "/skills/$name"
+  fi
+  if (( codex_present )); then
+    path="$codex_home/prompts/$name.md"
+    remove_retired "$path" "$path" "$protocol" "/codex/prompts/$name.md"
+  fi
+done
 
 if (( codex_present )); then
-  remove_rendered_retired "$codex_home/prompts/$retired.md" "$codex_home/prompts/$retired.md"
-  mkdir -p "$codex_home/prompts"
-  for p in "$ROOT"/codex/prompts/*.md; do
-    name="$(basename "$p")"
-    [ -L "$codex_home/prompts/$name" ] && rm "$codex_home/prompts/$name"
-    render "$p" "$codex_home/prompts/$name"
-    echo "codex prompt: /$(basename "$name" .md)"
-  done
   if "$ROOT/codex/model.sh" init; then
     echo "codex models: initialized"
   else
@@ -123,11 +107,10 @@ else
   echo "viewer chromium: installed"
 fi
 
-if "$ROOT/seen/set.sh"; then
-  echo "seen hook: installed"
-else
-  echo "seen hook: warning — not installed" >&2
-fi
+present=''
+(( claude_present )) && present+=claude,
+(( codex_present )) && present+=codex,
+python3 -I "$ROOT/install/unseen.py" "$ROOT" "$claude_home" "$codex_home" "$present" || echo "seen hook: warning — cleanup failed" >&2
 
 if "$ROOT/sensitivity/set.sh"; then
   echo "diagram sensitivity: installed"
