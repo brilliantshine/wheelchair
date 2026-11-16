@@ -2,7 +2,13 @@
 slug: test-temp-cleanup
 date: 2026-11-15
 implemented-by: "GPT standard (gpt-6.1-terra): T1, T2, T3, T4; GPT light (gpt-6-luna): T5; sub-lead: Claude opus-5-5"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: GPT gpt-6.1-sol (FAIL, Spec §7 router text)
+    checks: GPT gpt-6.1-terra / gpt-6-luna
+  - round: 2
+    lane: GPT gpt-6.1-sol (PASS)
+    checks: GPT gpt-6.1-terra / gpt-6-luna
 ---
 
 # Completion Report — Tests clean up their temp folders

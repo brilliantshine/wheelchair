@@ -337,3 +337,4 @@ product code changes; any cleanup run by an agent rather than the suites.
 - 2026-11-15 — T4: the worker's browser run failed twice (5 failures: app-fonts ×2, the arrow-routing test ×2, one Firefox phone approval test) and it stopped as its rules require. The sub-lead merged it and compares the full browser suite on the feature branch against a baseline whose viewer tests are unchanged.
 - 2026-11-15 — Verifier attempt 1 (GPT gpt-6.1-sol; the hub could not avoid GPT): FAIL on Spec §7, viewer/AGENTS.md router text. REMEDIATION-1.md, task R1 (GPT light).
 - 2026-11-15 — R1 merged (daa8d95); worker reported no choices. Fresh verifier, attempt 2.
+- 2026-11-15 — Verifier attempt 2 (GPT gpt-6.1-sol; the hub could not avoid GPT) on eac3c96: PASS.
