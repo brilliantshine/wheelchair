@@ -105,6 +105,14 @@ class HelperTest(unittest.TestCase):
         self.assertEqual(data['state'], 'failed')
         self.assertEqual(data['reason'], 'wrong password 3 times')
         self.assertNotIn('message', data)
+    def test_data_reports_checking_during_password_check(self):
+        with mock.patch.dict(os.environ, SHIM_MODE='slow'):
+            rid = self.create(); thread = threading.Thread(target=self.run_request, args=(rid,)); thread.start(); time.sleep(.1)
+            data = json.loads(self.call(True, 'GET', '/r/' + rid + '/data')[1])
+            self.assertEqual(data['state'], 'waiting'); self.assertIs(data['checking'], True)
+            thread.join()
+            data = json.loads(self.call(True, 'GET', '/r/' + rid + '/data')[1])
+            self.assertEqual(data['state'], 'ran'); self.assertIs(data['checking'], False)
     def test_cancel_race_and_expiry(self):
         with mock.patch.dict(os.environ, SHIM_MODE='slow'):
             rid = self.create(); thread = threading.Thread(target=self.run_request, args=(rid,)); thread.start(); time.sleep(.1)

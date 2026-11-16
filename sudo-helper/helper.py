@@ -282,6 +282,7 @@ class Handler(BaseHTTPRequestHandler):
             if request and self.server.page and match.group(2) == 'data':
                 data.update({k: request[k] for k in ('command', 'does', 'why', 'editable', 'tries_left')})
                 data['user'] = state.cfg['user']
+                data['checking'] = bool(request.get('checking')) and request['state'] == 'waiting'
                 if 'message' in request and request['state'] == 'waiting':
                     data['message'] = request['message']
         self.reply(200, data)
