@@ -11,7 +11,7 @@ import re
 import sys
 import tempfile
 
-PROVIDERS = ("claude", "gpt")
+PROVIDERS = ("claude", "gpt", "gemini")
 SLOTS = ("light", "standard", "heavy", "critical", "lead")
 WORK_TIERS = SLOTS[:-1]
 DEFAULTS = {
@@ -25,6 +25,11 @@ DEFAULTS = {
         "heavy": ("gpt-6.1-sol", None), "critical": ("gpt-6-astra", None),
         "lead": ("gpt-6.1-sol", None),
     },
+    "gemini": {
+        "light": ("gemini-3.8-flash-low", None), "standard": ("gemini-3.8-flash-medium", None),
+        "heavy": ("gemini-3.8-flash-high", None), "critical": ("gemini-3.8-flash-high", None),
+        "lead": ("gemini-3.8-flash-high", None),
+    },
 }
 ALIASES = {"luna": "light", "terra": "standard", "sol": "heavy", "astra": "critical"}
 CLAUDE_ALIASES = {"haiku": "light", "sonnet": "standard", "opus": "heavy"}
@@ -32,8 +37,8 @@ EFFORTS = {"low", "medium", "high", "xhigh", "max"}
 GPT_EFFORTS = {"low", "medium", "high", "xhigh"}
 VALUE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 MODEL = re.compile(r"^gpt-(\d+(?:\.\d+)*)-([a-z]+)$")
-USAGE = ("usage: model.sh <light|standard|heavy|critical> | <claude|gpt> <slot> | "
-         "effort <claude|gpt> <slot> | family claude <slot> | "
+USAGE = ("usage: model.sh <light|standard|heavy|critical> | <claude|gpt|gemini> <slot> | "
+         "effort <claude|gpt|gemini> <slot> | family claude <slot> | "
          "set [<provider> <slot> | <tier>] <model|none> [effort] | "
          "skip <model> | init | reset | check [--json] | show --json")
 
@@ -72,7 +77,7 @@ def parse_pins(text):
             skipped.append(skip.group(1))
             continue
         entry = re.fullmatch(
-            r"(claude|gpt)\.([a-z]+)\s*=\s*([a-z0-9][a-z0-9._-]*)(?:\s+@([a-z]+))?", line)
+            r"(claude|gpt|gemini)\.([a-z]+)\s*=\s*([a-z0-9][a-z0-9._-]*)(?:\s+@([a-z]+))?", line)
         if entry is not None:
             provider, raw_slot, model, effort = entry.groups()
             slot = slot_for(provider, raw_slot)
@@ -81,7 +86,7 @@ def parse_pins(text):
             if model == "none":
                 if effort is not None:
                     return None
-            elif effort is not None and effort not in (EFFORTS if provider == "claude" else GPT_EFFORTS):
+            elif effort is not None and effort not in (GPT_EFFORTS if provider == "gpt" else EFFORTS):
                 return None
             key = provider, slot
             if key in seen:
@@ -375,7 +380,7 @@ def main(root, argv):
             die_usage()
         if (slot is None or not VALUE.match(model)
                 or (model == "none" and effort is not None)
-                or (effort is not None and effort not in (EFFORTS if provider == "claude" else GPT_EFFORTS))):
+                or (effort is not None and effort not in (GPT_EFFORTS if provider == "gpt" else EFFORTS))):
             die_usage()
         write_pin(pin_path, provider, slot, model, effort)
         return

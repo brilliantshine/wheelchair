@@ -158,6 +158,7 @@ async function handleSettings(hub, request, response, url, bits, body) {
       let account;
       await settings.update(hub, (value) => {
         if (!Object.hasOwn(PROVIDERS, body.provider) || typeof body.name !== 'string' || !body.name.trim() || !Object.hasOwn(settings.PLANS[body.provider], body.plan)) throw appError(400, 'invalid account');
+        if (PROVIDERS[body.provider].singleAccount) throw appError(400, `${PROVIDERS[body.provider].label} supports one account per machine`);
         const base = body.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '') || 'account';
         let id = base, n = 2;
         while (id.startsWith('default-') || (value.accounts.some((a) => a.id === id) || value.retired_accounts.includes(id))) { const suffix = `-${n++}`; id = base.slice(0, 40 - suffix.length) + suffix; if (id.startsWith('default-')) id = `account${suffix}`; }
@@ -190,13 +191,13 @@ async function handleSettings(hub, request, response, url, bits, body) {
     return send(response, 200, { ...Object.fromEntries(settings.BALANCING.map((key) => [key, value[key]])), reserved_provider: await reservedLabel(hub, value) });
   }
   if (bits[1] === 'models' && request.method === 'PUT') {
-    if (!Object.hasOwn(PROVIDERS, body.provider)) throw appError(400, 'provider must be claude or gpt');
+    if (!Object.hasOwn(PROVIDERS, body.provider)) throw appError(400, 'provider must be claude, gpt or gemini');
     let slot = settings.TIER_ALIASES[body.slot] || body.slot;
     if (body.provider === 'claude') slot = ({ haiku: 'light', sonnet: 'standard', opus: 'heavy' })[slot] || slot;
     if (!['light', 'standard', 'heavy', 'critical', 'lead'].includes(slot)) throw appError(400, 'slot is invalid');
     if (body.model !== null && (typeof body.model !== 'string' || !/^[a-z0-9][a-z0-9._-]*$/.test(body.model))) throw appError(400, 'model is invalid');
     if (body.provider === 'gpt' && body.effort !== undefined && !['low', 'medium', 'high', 'xhigh'].includes(body.effort)) throw appError(400, 'effort for GPT must be one of low, medium, high, xhigh');
-    if (body.provider === 'claude' && body.effort !== undefined && !['low', 'medium', 'high', 'xhigh', 'max'].includes(body.effort)) throw appError(400, 'effort is invalid');
+    if (['claude', 'gemini'].includes(body.provider) && body.effort !== undefined && !['low', 'medium', 'high', 'xhigh', 'max'].includes(body.effort)) throw appError(400, 'effort is invalid');
     try { await settings.modelCommand(hub, ['set', body.provider, slot, body.model || 'none', ...(body.effort ? [body.effort] : [])]); }
     catch (error) { throw appError(400, (error.stderr || error.message).trim()); }
     return send(response, 200, { models: await settings.models(hub) });
@@ -238,7 +239,7 @@ async function handleSettings(hub, request, response, url, bits, body) {
         value.aside_access = body.aside_access;
       }
       if (body.review_families !== undefined) {
-        if (!['both', 'claude', 'gpt'].includes(body.review_families)) throw appError(400, 'review_families must be both, claude or gpt');
+        if (!['both', 'claude', 'gpt', 'gemini'].includes(body.review_families)) throw appError(400, 'review_families must be both, claude, gpt or gemini');
         value.review_families = body.review_families;
       }
       if (body.tool_steps !== undefined) {

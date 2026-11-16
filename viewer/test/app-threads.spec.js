@@ -27,6 +27,13 @@ for (const [label, size] of SIZES) {
 
     const open = (page, id) => page.goto(`${ctx.server.url}/app/thread?id=${id}`);
 
+    test('the header labels an Antigravity thread', async ({ page }) => {
+      const made = await ctx.make({ cli: 'claude' });
+      await ctx.patch(made.id, (x) => { x.provider = 'gemini'; x.cli = 'agy'; });
+      await open(page, made.id);
+      await expect(page.locator('#head')).toContainText('Antigravity');
+    });
+
     test('the nav stays at the top of a long thread', async ({ page }) => {
       const made = await ctx.make({ cli: 'claude' });
       await open(page, made.id);

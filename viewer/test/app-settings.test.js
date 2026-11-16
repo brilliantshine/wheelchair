@@ -23,6 +23,8 @@ test('settings defaults, templates, prompt composition, counts, and validation',
     await fs.writeFile(path.join(context.state, 'projects.json'), JSON.stringify(['/tmp/project']));
     const initial = await api(context, '/settings');
     assert.equal(initial.status, 200);
+    assert.ok(initial.body.accounts.some((account) => account.id === 'default-gemini'));
+    assert.deepEqual(initial.body.worker_order, ['gpt', 'claude', 'gemini']);
     assert.deepEqual(initial.body.other_agents, { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard' });
     assert.equal(initial.body.permission_mode, 'auto');
     assert.equal(initial.body.codex_mode, 'sandboxed');
@@ -274,5 +276,40 @@ test('lead name settings trim and validate names', async () => {
     assert.deepEqual((await save([' Ada ', '', 'Grace'])).body.lead_names, ['Ada', 'Grace']);
     assert.deepEqual((await api(context, '/settings')).body.lead_names, ['Ada', 'Grace']);
     for (const names of [['Ada', 'ada'], ['x'.repeat(41)], Array.from({ length: 201 }, (_, i) => String(i)), [3], 'Ada']) assert.equal((await save(names)).status, 400);
+  });
+});
+
+
+test('gemini settings migrate and enforce account and model rules', async () => {
+  const saved = settings.normalize({ worker_order: ['claude', 'gpt'], lead_order: ['gpt', 'any'], review_families: 'gemini', accounts: [] });
+  assert.deepEqual(saved.worker_order, ['claude', 'gpt', 'gemini']);
+  assert.deepEqual(saved.worker_order_seen, ['claude', 'gpt', 'gemini']);
+  assert.deepEqual(settings.normalize(saved).worker_order, saved.worker_order);
+  assert.deepEqual(settings.defaults().worker_order_seen, ['claude', 'gpt', 'gemini']);
+  assert.deepEqual(saved.lead_order, ['gpt', 'any']);
+  assert.ok(saved.accounts.some((account) => account.id === 'default-gemini'));
+  assert.equal(saved.review_families, 'gemini');
+  assert.equal(settings.normalize({ review_families: 'bogus' }).review_families, 'both');
+  await withContext(async (context) => {
+    const account = await api(context, '/settings/accounts', { method: 'POST', body: { provider: 'gemini', name: 'another', plan: 'pro' } });
+    assert.equal(account.status, 400);
+    assert.equal(account.body.detail, 'Antigravity supports one account per machine');
+    const model = await api(context, '/settings/models', { method: 'PUT', body: { provider: 'gemini', slot: 'heavy', model: 'gemini-3.8-flash-high', effort: 'max' } });
+    assert.equal(model.status, 200);
+    assert.equal(model.body.models.gemini.heavy.effort, 'max');
+    assert.equal((await api(context, '/settings/preferences', { method: 'PUT', body: { review_families: 'gemini' } })).body.review_families, 'gemini');
+  });
+});
+
+
+test('removed worker providers stay removed after saving', async () => {
+  await withContext(async (context) => {
+    for (const worker_order of [['claude', 'gemini'], ['gpt', 'claude']]) {
+      const saved = await api(context, '/settings/balancing', { method: 'PUT', body: { worker_order } });
+      assert.equal(saved.status, 200);
+      assert.deepEqual((await api(context, '/settings')).body.worker_order, worker_order);
+      const stored = JSON.parse(await fs.readFile(path.join(context.state, 'settings.json'), 'utf8'));
+      assert.deepEqual(stored.worker_order_seen, ['claude', 'gpt', 'gemini']);
+    }
   });
 });

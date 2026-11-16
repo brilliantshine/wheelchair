@@ -10,7 +10,7 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 | `GET /threads` | — | `{threads:[Thread]}` newest first; `?view=list` leaves out each thread's `cards`, `sent`, `delivered_ids`, `context`, `pinned`, `archive` and `queues`, and keeps only each session's `name`, `role`, `live`, `ready`, `turn_ended` and `created_at` — what the pages poll |
 | `POST /threads` | `{project,machine?,message?}` | a `Thread`, with its lead started or waiting for room. Before anything is saved the thread's machine checks `project` (`GET /v1/projects?check=`): not a usable git repository → `400 "<path> <reason> on <machine>"`, unknown machine → `404`, no answer or an older service → `502`; nothing is saved or added to `projects.json` on any of these, and the stored `project` is the path the machine returned (`~` and `~/…` expanded there). A non-empty string `message` sets `title` from its trimmed, whitespace-collapsed first line, cut at a word boundary to 60 characters plus `…` |
 | `GET /threads/:id/chat` | — | `{thread,items,cards,pinned,queued,asides}`; `items` leaves out the lead's tool steps when Settings has `tool_steps:"hide"` |
-| `POST /threads/:id/asides` | `{message_id,start,end,quote,action}` | `201` aside without history (with `graphs`, as in chat); action is `ask`, `simpler`, or `draw` |
+| `POST /threads/:id/asides` | `{message_id,start,end,quote,action}` | `201` aside without history (with `graphs`, as in chat); action is `ask`, `simpler`, or `draw`; Antigravity sessions return `400` |
 | `GET /threads/:id/asides/:aside` | — | full aside including history and computed `heavy_usable` boolean (not stored); also works when archived |
 | `POST /threads/:id/asides/:aside/messages` | `{text}` | `202`, queues a message and reopens the aside |
 | `POST /threads/:id/asides/:aside/close` | `{outcome:"done"}` or `{outcome:"changed",line}` | `200`; changed sends the line to the lead |
@@ -34,9 +34,9 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 | `POST /machine/events` | `{thread_id,session,type,...}` | `{ok:true}`, `202` |
 | `POST /machine/session` | `{calling_session,action,...}` | the hub-authorized session result |
 | `GET /settings` | — | `{models,model_options,heads_up,permission_mode,codex_mode,aside_access,tool_steps,review_families,reserved_provider,other_agents,escalation,escalation_text,templates,in_use,style,style_version,projects,default_project_folder,saved_dirs}`; `projects` is `projects.json` plus every saved directory's path; templates include `in_use`, `live_sessions`, and `scope_missing` when a saved project is no longer listed |
-| `PUT /settings/models` | `{provider:"claude"|"gpt",slot,model|null,effort?}` | `{models}`; `slot` is `light`, `standard`, `heavy`, `critical`, or `lead`; effort is `low`, `medium`, `high`, `xhigh`, and for Claude also `max`; omission clears it |
+| `PUT /settings/models` | `{provider:"claude"|"gpt"|"gemini",slot,model|null,effort?}` | `{models}`; `slot` is `light`, `standard`, `heavy`, `critical`, or `lead`; effort is `low`, `medium`, `high`, `xhigh`, and for Claude and Gemini also `max`; omission clears it |
 | `POST /settings/models/heads-up` | `{action:"switch",tier,model}`, `{action:"skip",model}`, or `{action:"reset"}` | `{models,heads_up}` |
-| `PUT /settings/preferences` | `{permission_mode?:"auto"|"bypass",codex_mode?:"sandboxed"|"unrestricted",aside_access?:"read-only"|"full",tool_steps?:"show"|"hide",review_families?:"both"|"claude"|"gpt",lead_names?:string[],other_agents?:{reviewer?,verifier?,mapper?},default_project_folder?:string,escalation?:{first?,max_effort?,max_tier?,ask_before?}}` | saved preference values, including `default_project_folder`, `escalation` and `escalation_text`; that field is trimmed, `""` clears it, otherwise it must be absolute, exactly `~`, or start with `~/` (`~user` → `400`); it is not checked against a machine |
+| `PUT /settings/preferences` | `{permission_mode?:"auto"|"bypass",codex_mode?:"sandboxed"|"unrestricted",aside_access?:"read-only"|"full",tool_steps?:"show"|"hide",review_families?:"both"|"claude"|"gpt"|"gemini",lead_names?:string[],other_agents?:{reviewer?,verifier?,mapper?},default_project_folder?:string,escalation?:{first?,max_effort?,max_tier?,ask_before?}}` | saved preference values, including `default_project_folder`, `escalation` and `escalation_text`; that field is trimmed, `""` clears it, otherwise it must be absolute, exactly `~`, or start with `~/` (`~user` → `400`); it is not checked against a machine |
 | `GET /new-thread?machine=` | — | `{machines,machine,default_folder,saved,found,found_error?,previous}` for `machine` (default `hub`; unknown → `404`). `machines`: `hub` first, then the names in `machines.json` except the hub's own hostname entry. `saved`: `saved_dirs` entries of that machine. `found`: that machine's `/v1/projects?folder=` when a default folder is set, else `[]`; its `folder_error` becomes `found_error`, and an unreachable or older machine gives `found: []` with `found_error` `"<machine> is not reachable"` or `"<machine> needs updating"`, still `200`. `previous`: distinct `project` paths of threads on that machine (a thread stored under the hub's hostname counts as `hub`), newest first |
 | `POST /settings/saved-dirs` | `{name,path,machine}` | `201 {saved}` (that machine's entries). `path` is checked on `machine` and stored as the expanded path the machine returned. `400` for a field error (a `name` of `.` or `..` is refused) or the check's reason (`"<path> <reason> on <machine>"`), `404` for an unknown machine, `409` when the name exists for that machine, `502` when the machine does not answer |
 | `DELETE /settings/saved-dirs/:name?machine=` | — | `{saved}` for that machine (default `hub`); `404` for an unknown name; changes no thread |
@@ -107,12 +107,12 @@ Worker restart (`wc.js session start --role worker ... --replaces <session>`): t
 
 ### Accounts and usage
 
-`GET /settings` includes `reserved_provider` (the label Claude or GPT, or null, based on accounts signed in on any machine), `review_families`, `accounts`, `lead_order`, `worker_order`, `within`, `leave`,
+`GET /settings` includes `reserved_provider` (the provider label or null, based on accounts signed in on any machine), `review_families`, `accounts`, `lead_order`, `worker_order`, `within`, `leave`,
 `notify_below`, `save_for_leads`, `margin`, and `held_back` (an object with boolean
 `worker`, `reviewer`, `verifier`, and `mapper` keys, all defaulting to true). `POST /settings/accounts` accepts
-`{provider, name, plan}`; `PUT /settings/accounts/:id` accepts `{name?, plan?, weight?, paused?}`;
+`{provider, name, plan}`; a second Antigravity account is refused with 400; `PUT /settings/accounts/:id` accepts `{name?, plan?, weight?, paused?}`;
 `DELETE /settings/accounts/:id` removes a non-default account. `PUT /settings/balancing`
-updates the balancing keys and returns `reserved_provider`; an old saved file’s boolean `save_claude_for_leads` carries over to `save_for_leads`. `PUT /settings/preferences` accepts `review_families` as `both`, `claude`, or `gpt` and returns it. Invalid values and attempts to remove a default return 400.
+updates the balancing keys and returns `reserved_provider`; an old saved file’s boolean `save_claude_for_leads` carries over to `save_for_leads`. `PUT /settings/preferences` accepts `review_families` as `both`, `claude`, `gpt`, or `gemini` and returns it. Invalid values and attempts to remove a default return 400.
 
 `GET /usage` returns `{providers}` with each provider's forecast and account readings,
 machine sign-in states, placement reason and live session count. `GET /usage/alert` returns
@@ -122,7 +122,7 @@ machine sign-in states, placement reason and live session count. `GET /usage/ale
 `GET .../pane` and `POST .../keys` provide the login terminal. Unknown accounts or machines
 return 404.
 
-Session starts through `POST /machine/session` accept `role`, `tier`, `brief`, `attempt_id`, and optional `provider` or `not_provider` (`claude` or `gpt`) for workers, reviewers and verifiers. The flags are mutually exclusive; the reserve follows the first signed-in provider in lead order. A worker preference for a provider with no signed-in account is dropped with a note; a signed-in preference remains strict, subject to the reserve margin. Reviewer and verifier constraints are preferences when `review_families` is `both`. For a single-family setting, those flags are ignored and the chosen family is used or waited for; if it is signed out or its model is unused, normal placement applies with a note. The obsolete `cli` field is ignored. The response has `session` and may have a `note`. Sessions carry `provider` and `account`; a waiting session has `status: "waiting"`, `waiting_until`, `waiting_reason`, `waiting_provider` (the pinned provider, the first explicit lead-order provider for a new lead, or null), and `pending_start`. Its identity and queue survive promotion.
+Session starts through `POST /machine/session` accept `role`, `tier`, `brief`, `attempt_id`, and optional `provider` or `not_provider` (`claude`, `gpt`, or `gemini`) for workers, reviewers and verifiers. The flags are mutually exclusive; the reserve follows the first signed-in provider in lead order. A worker preference for a provider with no signed-in account is dropped with a note; a signed-in preference remains strict, subject to the reserve margin. Reviewer and verifier constraints are preferences when `review_families` is `both`. For a single-family setting, those flags are ignored and the chosen family is used or waited for; if it is signed out or its model is unused, normal placement applies with a note. The obsolete `cli` field is ignored. The response has `session` and may have a `note`. Sessions carry `provider` and `account`; a waiting session has `status: "waiting"`, `waiting_until`, `waiting_reason`, `waiting_provider` (the pinned provider, the first explicit lead-order provider for a new lead, or null), and `pending_start`. Its identity and queue survive promotion.
 
 `POST /machine/session` with action `list` (and `wc.js session list`) returns `{sessions, review_families}`.
 
@@ -130,7 +130,7 @@ Machine events may carry a `reading`, including Codex `turn-ended` events; they 
 
 A sub-lead starting a worker may pass `--effort <e>` to `wc.js session start`; the
 `POST /machine/session` start body carries it as `effort`. Other starts with effort receive
-400 `effort can only be set for a worker`. Claude accepts low, medium, high, xhigh, max;
+400 `effort can only be set for a worker`. Claude and Gemini accept low, medium, high, xhigh, max;
 a GPT worker accepts low, medium, high, xhigh and refuses max with 400 `GPT's highest effort is xhigh`.
 Other invalid values receive 400 `effort must be one of …`. Worker tiers above Settings'
 `max_tier` receive 400 `tier <t> is above the highest tier in Settings (<max>)`; requested
