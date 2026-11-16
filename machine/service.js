@@ -71,6 +71,22 @@ function command(program, args, options = {}) {
   if (result.error) return { ok: false, status: result.status ?? 127, stdout: result.stdout || '', stderr: result.stderr || result.error.message };
   return { ok: result.status === 0, status: result.status, stdout: result.stdout || '', stderr: result.stderr || '' };
 }
+// The same result as command(), without blocking the event loop: for anything slow (a git
+// fetch can take many seconds), so /v1/status, hooks and other sessions keep being answered.
+function commandAsync(program, args, options = {}) {
+  return new Promise((resolve) => {
+    let stdout = ''; let stderr = ''; let settled = false;
+    const finish = (value) => { if (!settled) { settled = true; resolve(value); } };
+    let child;
+    try { child = spawn(program, args, { ...options, stdio: ['ignore', 'pipe', 'pipe'] }); }
+    catch (error) { return finish({ ok: false, status: 127, stdout: '', stderr: error.message }); }
+    child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => { stdout += chunk; });
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    child.on('error', (error) => finish({ ok: false, status: 127, stdout, stderr: stderr || error.message }));
+    child.on('close', (status) => finish({ ok: status === 0, status, stdout, stderr }));
+  });
+}
 const PERMISSION_MODES = { auto: 'auto', bypass: 'bypassPermissions' };
 const CODEX_MODES = ['sandboxed', 'unrestricted'];
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
@@ -149,6 +165,8 @@ class MachineService {
     this.sessions = {};
     this.startingWorktrees = new Set();
     this.startingNames = new Map(); // name -> the start in progress, so a repeated start joins it
+    this.startingBranches = new Set(); // worker branches named by a start not yet recorded
+    this.repoQueues = new Map(); // repo -> tail of its fetch-and-add chain; one git writer per repo at a time
     this.logins = {};
     this.server = null;
     this.retryWindow = Number(process.env.WHEELCHAIR_RETRY_WINDOW_MS || 90_000);
@@ -357,7 +375,7 @@ class MachineService {
         let stat;
         try { stat = await fsp.stat(worktree); } catch { die(`worker worktree does not exist: ${worktree}`); }
         if (!stat.isDirectory()) die(`worker worktree is not a directory: ${worktree}`);
-        const current = command('git', ['-C', worktree, 'rev-parse', '--abbrev-ref', 'HEAD']);
+        const current = await commandAsync('git', ['-C', worktree, 'rev-parse', '--abbrev-ref', 'HEAD']);
         if (!current.ok || current.stdout.trim() !== input.branch) die(`worker worktree is not on branch ${input.branch}`);
       }
       return { worktree, defaultBranch: input.default_branch || input.defaultBranch || null, branch: input.branch || null };
@@ -368,33 +386,53 @@ class MachineService {
     const thread = safeName(input.thread_id || input.threadId, 'thread id');
     let branch = input.branch || `wc/${thread}`;
     if (input.role === 'worker') {
-      const workers = Object.values(this.sessions).filter(s => s.thread_id === thread && s.role === 'worker').length + 1;
-      branch = `wc-${thread}-w${workers}`;
+      // Starts overlap while git runs, so the count alone can land on a branch already in use
+      // (an earlier start failed, a later one took the next number). Skip any branch a recorded
+      // worker holds or a start in progress has named.
+      const workers = Object.values(this.sessions).filter(s => s.thread_id === thread && s.role === 'worker');
+      const taken = new Set([...workers.map(s => s.branch), ...this.startingBranches]);
+      let n = workers.length + 1;
+      while (taken.has(`wc-${thread}-w${n}`)) n += 1;
+      branch = `wc-${thread}-w${n}`;
     }
     safeName(branch, 'branch');
+    if (input.role === 'worker') this.startingBranches.add(branch); // released by startNamed
     // A verifier checks out the thread's branch detached, so it needs a directory of its own
     // rather than the branch's, which the lead's worktree already holds.
     const destination = input.role === 'verifier'
       ? path.join(this.stateDir, 'worktrees', project, safeName(sessionName, 'session name'))
       : path.join(this.stateDir, 'worktrees', project, branch);
-    const fetch = command('git', ['-C', repo, 'fetch', 'origin']);
-    if (!fetch.ok) die(fetch.stderr.trim() || 'git fetch failed');
-    const defaultBranch = this.defaultBranch(repo);
-    const base = input.base || `origin/${defaultBranch}`;
-    const args = input.role === 'verifier'
-      ? ['-C', repo, 'worktree', 'add', '--detach', destination, input.verify_ref || base]
-      // --no-track: a branch made from origin/main would otherwise track main, and a plain
-      // push of the thread's branch is then refused.
-      : ['-C', repo, 'worktree', 'add', '--no-track', '-b', branch, destination, base];
-    const added = command('git', args);
-    if (!added.ok) die(added.stderr.trim() || 'git worktree add failed');
-    return { worktree: destination, defaultBranch, branch };
+    // Two fetches into one repo at once can fail on ref locks, so starts in the same repo take
+    // turns here; starts in other repos, and every other request, carry on meanwhile.
+    const queued = this.inRepoQueue(path.resolve(repo), async () => {
+      const fetch = await commandAsync('git', ['-C', repo, 'fetch', 'origin']);
+      if (!fetch.ok) die(fetch.stderr.trim() || 'git fetch failed');
+      const defaultBranch = await this.defaultBranch(repo);
+      const base = input.base || `origin/${defaultBranch}`;
+      const args = input.role === 'verifier'
+        ? ['-C', repo, 'worktree', 'add', '--detach', destination, input.verify_ref || base]
+        // --no-track: a branch made from origin/main would otherwise track main, and a plain
+        // push of the thread's branch is then refused.
+        : ['-C', repo, 'worktree', 'add', '--no-track', '-b', branch, destination, base];
+      const added = await commandAsync('git', args);
+      if (!added.ok) die(added.stderr.trim() || 'git worktree add failed');
+      return { worktree: destination, defaultBranch, branch };
+    });
+    // A failed start never reaches startNamed's release, so it lets its branch name go here.
+    return queued.catch((error) => { if (input.role === 'worker') this.startingBranches.delete(branch); throw error; });
   }
-  defaultBranch(repo) {
-    const symbolic = command('git', ['-C', repo, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD']);
+  async inRepoQueue(repo, work) {
+    const previous = this.repoQueues.get(repo) || Promise.resolve();
+    const run = previous.then(work, work);
+    const tail = run.catch(() => {});
+    this.repoQueues.set(repo, tail);
+    try { return await run; } finally { if (this.repoQueues.get(repo) === tail) this.repoQueues.delete(repo); }
+  }
+  async defaultBranch(repo) {
+    const symbolic = await commandAsync('git', ['-C', repo, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD']);
     const remote = symbolic.stdout.trim();
     if (symbolic.ok && remote.startsWith('origin/') && remote.length > 'origin/'.length) return remote.slice('origin/'.length);
-    const shown = command('git', ['-C', repo, 'remote', 'show', 'origin']);
+    const shown = await commandAsync('git', ['-C', repo, 'remote', 'show', 'origin']);
     const match = shown.stdout.match(/^\s*HEAD branch:\s*(\S+)\s*$/m);
     return match ? match[1] : 'main';
   }
@@ -429,10 +467,14 @@ class MachineService {
     const createdWorktree = !input.worktree;
     const reserved = input.role === 'worker' && input.worktree ? path.resolve(input.worktree) : null;
     if (reserved) this.refuseSharedWorktree(reserved, name);
+    let created = null;
     try {
-      const created = await this.createWorktree(input, name);
+      created = await this.createWorktree(input, name);
       return await this.startIn(input, name, adapter, account, dir, options, createdWorktree, created);
-    } finally { if (reserved) this.startingWorktrees.delete(reserved); }
+    } finally {
+      if (reserved) this.startingWorktrees.delete(reserved);
+      if (created?.branch && input.role === 'worker') this.startingBranches.delete(created.branch);
+    }
   }
   async startIn(input, name, adapter, account, dir, options, createdWorktree, created) {
     const worktree = created.worktree;
@@ -447,8 +489,9 @@ class MachineService {
     session.pending_initial = adapter.firstMessage(input, composeRolePrompt(input));
     const tmuxArgs = ['new-session', '-d', '-s', name, '-x', '200', '-y', '50', '-c', worktree, commandText];
     // systemd-run scope prevents service restarts killing tmux; installer sets KillMode=process too.
-    const scoped = command('systemd-run', ['--user', '--scope', 'tmux', ...tmuxArgs]);
-    const result = scoped.ok ? scoped : this.tmux(tmuxArgs);
+    // Both asynchronous, like the git above: a slow systemd-run must not hold up the service.
+    const scoped = await commandAsync('systemd-run', ['--user', '--scope', 'tmux', ...tmuxArgs]);
+    const result = scoped.ok ? scoped : await commandAsync('tmux', tmuxArgs);
     if (!result.ok) die(result.stderr.trim() || 'tmux session failed to start');
     this.sessions[name] = session;
     await this.persistSessions();
