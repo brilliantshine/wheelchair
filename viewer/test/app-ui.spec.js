@@ -110,6 +110,30 @@ test.describe('thread page layout', () => {
     }
   });
 
+  test('each lead message starts with the lead\'s initial and name, outside the message text', async ({ page }) => {
+    const made = await ctx.make({ cli: 'claude' });
+    await ctx.patch(made.id, (t) => { t.lead_name = 'Beta'; });
+    await ctx.timedTranscript(made.id, [
+      ['human', 'hi', '2030-01-01T00:00:00.000Z'],
+      ['assistant', 'First message.', '2030-01-01T00:01:00.000Z'],
+      ['assistant', 'Second message.', '2030-01-01T00:02:00.000Z'],
+    ]);
+    await ctx.post(made.id, { kind: 'needs', title: 'Sign in', body: 'Codex is signed out.' });
+    await page.goto(`${ctx.server.url}/app/thread?id=${made.id}`);
+    const bubbles = page.locator('#chat .bubble.assistant');
+    await expect(bubbles).toHaveCount(2);
+    const rows = page.locator('#chat > .lead-by');
+    await expect(rows.first().locator('.lead-avatar')).toHaveText('B');
+    await expect(rows.first().locator('.lead-by-name')).toHaveText('Beta');
+    for (const b of await bubbles.all()) {
+      expect(await b.evaluate((n) => n.previousElementSibling.className)).toBe('lead-by');
+      await expect(b).not.toContainText('Beta');
+    }
+    // The card is older than the messages, so it comes first and gets its own row.
+    await expect(rows).toHaveCount(3);
+    expect(await page.locator('#chat > .card').evaluate((n) => n.previousElementSibling.className)).toBe('lead-by');
+  });
+
   test('the lead\'s messages and card bodies render Markdown and stay inert', async ({ page }) => {
     const made = await ctx.make({ cli: 'claude' });
     await ctx.timedTranscript(made.id, [

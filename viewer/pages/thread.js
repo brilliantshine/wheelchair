@@ -290,8 +290,20 @@
       while (next < cards.length) {
         const cardAt = Date.parse(cards[next].at);
         if (when !== undefined && !(cardAt < when)) break;
-        const n = renderCard(cards[next++]); if (n) chatEl.appendChild(n);
+        const n = renderCard(cards[next++]);
+        if (!n) continue;
+        const prev = chatEl.lastElementChild;
+        if (!(prev && prev.classList.contains('assistant'))) chatEl.appendChild(leadBy());
+        chatEl.appendChild(n);
       }
+    };
+    // Who wrote the next message: the lead's first letter in a circle, then its name.
+    // A sibling, not inside the bubble: asides measure offsets in the bubble's text.
+    const leadBy = () => {
+      const name = thread().lead_name || 'Lead';
+      const row = el('div', 'lead-by');
+      row.append(el('span', 'lead-avatar', Array.from(name)[0].toUpperCase()), el('span', 'lead-by-name', name));
+      return row;
     };
     for (const it of items) {
       cardsBefore(Date.parse(it.at));
@@ -302,7 +314,7 @@
         const lead = el('div', 'bubble assistant md');
         if (it.id) lead.dataset.messageId = it.id;
         window.WCMarkdown.render(it.text, lead);
-        chatEl.appendChild(lead);
+        chatEl.append(leadBy(), lead);
       } else if (it.type === 'tool') {
         const d = el('details', 'tool'); d.appendChild(el('summary', '', it.text));
         d.appendChild(el('pre', 'tool-detail', it.detail || 'No details recorded.'));
