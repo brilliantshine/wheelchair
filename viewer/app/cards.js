@@ -85,6 +85,7 @@ async function acceptCard(hub, payload) {
     const stored = checked.card.kind === 'image' ? { ...checked.card, file: path.basename(checked.card.path) } : checked.card;
     const card = addCard(thread, checked.card.kind === 'sudo' ? { ...stored, state: 'waiting' } : stored, { session: session.name });
     if (card.kind === 'sudo') thread.sudo_index[card.request_id] = card.id;
+    if (card.kind === 'message' || card.kind === 'result') { session.owes_reply = false; require('./quiet.js').reset(thread, session); }
     if (card.kind === 'message') {
       const target = hub.session(thread, card.to);
       target.queue ||= [];

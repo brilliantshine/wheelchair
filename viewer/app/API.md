@@ -163,3 +163,8 @@ Outside the API prefix, `GET /wheelchair/diagram-form?path=<absolute>` reads unc
 same CSP. Both require a file directly inside a registered plan's `graphs/` directory.
 Archive leaves the thread open with a system needs card if the machine reports that upload
 removal failed; its response includes `uploads_removed` and, on failure, `uploads_error`.
+
+Quiet-turn detection persists `owes_reply`, `quiet_stage`, `quiet_check_at`,
+`quiet_starter_at`, and `quiet_card` on sessions. The hub options `quietGraceMs` and
+`quietEscalateMs` (or `WHEELCHAIR_QUIET_GRACE_MS` and `WHEELCHAIR_QUIET_ESCALATE_MS`)
+set the grace and escalation intervals in milliseconds; defaults are 30000 and 600000.

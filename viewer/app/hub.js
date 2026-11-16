@@ -13,7 +13,7 @@ const views = require('./views.js');
 const { handle } = require('./routes.js');
 
 class Hub {
-  constructor({ stateDir = DEFAULT_STATE, root, codeVersion, registerPlan = null, registerGraph = null, graphCacheRoot = null, saveGraph = null, queueRetryInterval } = {}) {
+  constructor({ stateDir = DEFAULT_STATE, root, codeVersion, registerPlan = null, registerGraph = null, graphCacheRoot = null, saveGraph = null, queueRetryInterval, quietGraceMs, quietEscalateMs } = {}) {
     this.root = root || path.resolve(__dirname, '..', '..');
     // The server supplies the commit it read at its own boot.  Direct Hub tests still read
     // their supplied root once, but a pull under a running viewer never changes this value.
@@ -38,6 +38,10 @@ class Hub {
     this.nameQueue = Promise.resolve();
     const configuredRetry = Number(queueRetryInterval ?? process.env.WHEELCHAIR_QUEUE_RETRY_MS ?? 5_000);
     this.queueRetryInterval = Number.isFinite(configuredRetry) && configuredRetry > 0 ? configuredRetry : 5_000;
+    const grace = Number(quietGraceMs ?? process.env.WHEELCHAIR_QUIET_GRACE_MS ?? 30_000);
+    const escalate = Number(quietEscalateMs ?? process.env.WHEELCHAIR_QUIET_ESCALATE_MS ?? 600_000);
+    this.quietGraceMs = Number.isFinite(grace) && grace > 0 ? grace : 30_000;
+    this.quietEscalateMs = Number.isFinite(escalate) && escalate > 0 ? escalate : 600_000;
   }
 
   async init() {
@@ -53,7 +57,7 @@ class Hub {
     this.pollTimer.unref();
     // A transient tmux/service failure leaves the message at the front of its queue. Retry
     // independently of the hook or card that originally queued it.
-    this.queueRetryTimer = setInterval(() => this.retryQueues().catch(() => {}), this.queueRetryInterval);
+    this.queueRetryTimer = setInterval(() => this.retryQueues().then(() => require('./quiet.js').checkQuiet(this)).catch(() => {}), this.queueRetryInterval);
     this.queueRetryTimer.unref();
     // Spec: a waiting stub shows ready within ten minutes of the merge; a minute keeps the
     // wait short for someone watching, at one gh call per waiting stub.

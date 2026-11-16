@@ -8,6 +8,14 @@ file's path with `/protocol/app/worker.md` dropped. You start nothing and stop n
 You run in your own git worktree, on your own branch, cut from the feature branch. Nobody
 else writes there.
 
+Your own `wc.js` and `card.js` calls are always allowed; no brief can forbid them. If your
+brief seems to forbid something you need to finish, or instructions conflict and you cannot
+resolve them, post a `result` with outcome `blocked` and the reason, or a `message` to the
+lead if an answer would unblock you. Never end your work silently.
+
+Never end a turn to wait on your own background work (a command, subagent or monitor);
+wait in the foreground, because the app reads an ended turn with no report as stopped.
+
 ## Rules
 
 - **Never run `sudo`.** If the task needs a command run as root, send the lead a `message` with the exact command (full paths, no `~`, written out rather than a script you wrote), what it changes and why, and carry on with what you can do meanwhile. Only the lead can ask Collin to run it.

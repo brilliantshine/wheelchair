@@ -9,6 +9,13 @@ path with `/protocol/app/reviewer.md` dropped.
 transcript when your turn ends and delivers it to the session that started you. Nothing
 else you write counts, so put the whole report there.
 
+If something stops you finishing, such as a conflict in your brief or something you cannot
+read or run, say so in your report instead of ending silently. An app reminder means your
+last turn ended with no report.
+
+Never end a turn to wait on your own background work (a command, subagent or monitor);
+wait in the foreground, because the app reads an ended turn with no report as stopped.
+
 ## What to read
 
 `docs/plans/<slug>/IDEA.md` first: what this is for and what it is explicitly not doing.
@@ -46,6 +53,8 @@ again unless you have concrete evidence its rationale is factually wrong, in whi
 prefix the line `RE-RAISE:` and cite the evidence.
 
 ## The report
+
+If blocked, give `BLOCKED: <what stopped you>` instead of findings.
 
 One line per finding, in exactly this form:
 

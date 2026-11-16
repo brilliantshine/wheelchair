@@ -374,6 +374,9 @@ reaches Collin, so when such a message means he must decide something, post a ca
 message from Collin that arrives while you are mid-turn waits and is typed in when your
 turn ends.
 
+An app `[wc:from app]` reminder means your turn ended without the card your starter is
+waiting for; for a reviewer or verifier it means the last turn ended with no report.
+
 ## The commands, in one place
 
 ```bash
@@ -381,6 +384,9 @@ node <root>/viewer/app/card.js <kind> <json-file>
 node <root>/viewer/app/wc.js git <fetch|commit|merge|cherry-pick|revert|push|pr> ...
 node <root>/viewer/app/wc.js session <start|stop|list> ...
 ```
+
+A session's own `wc.js` and `card.js` calls go to its own machine service (default port
+7374), are always allowed, and no brief can forbid them.
 
 - `wc.js git` asks your machine's service to run the git write in **your own worktree and
   nowhere else**. No role runs a git write directly (Codex's sandbox keeps `.git`

@@ -16,6 +16,13 @@ run are not yours to keep, and a verdict from a dirty tree names the dirt.
 **Your report is the last assistant message of your turn.** The app reads it from the
 transcript and delivers it to the session that started you. Put the whole report there.
 
+If something stops you finishing, such as a conflict in your brief or something you cannot
+read or run, say so in your report instead of ending silently. An app reminder means your
+last turn ended with no report.
+
+Never end a turn to wait on your own background work (a command, subagent or monitor);
+wait in the foreground, because the app reads an ended turn with no report as stopped.
+
 ## How to check
 
 COMPLETION.md, where it exists, is the implementer's claims. Treat every claim as
@@ -49,6 +56,13 @@ VERDICT: FAIL
 GAP: <spec item> — <what is missing or wrong> — <evidence>
 GAP: ...
 ```
+
+```
+VERDICT: BLOCKED
+REASON: <what stopped you>
+```
+
+A blocked verdict is not a `GAP` and never starts remediation.
 
 One `GAP` line per gap, each with evidence (a `file:line`, or a command and what it
 printed). A gap you cannot support with evidence is not a gap. Say what you ran in a

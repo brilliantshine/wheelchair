@@ -12,6 +12,16 @@ you send your `result`, you alone write in this worktree.** The lead writes noth
 Your brief names the plan slug; the plan is `docs/plans/<slug>/PLAN.md` and its `IDEA.md`
 beside it.
 
+Your own `wc.js` and `card.js` calls are always allowed; no brief can forbid them. If your
+brief seems to forbid something you need to finish, or instructions conflict and you cannot
+resolve them, post a `result` with outcome `blocked` and the reason, or a `message` to the
+lead if an answer would unblock you. Never end your work silently.
+
+Never end a turn to wait on your own background work (a command, subagent or monitor);
+wait in the foreground, because the app reads an ended turn with no report as stopped.
+Sessions you started through `wc.js session start` are not background work: the app sees
+them.
+
 ## Starting, and resuming after a restart
 
 1. Read IDEA.md, then the whole PLAN.md, then MAP.md.
@@ -46,6 +56,9 @@ outside the repository; the hub reads it at start). Every brief carries:
 - the closing request: "List each decision you made that this brief did not settle, one
   line each, naming the file or piece of the design it affected. Write 'none' if there
   were none."
+
+A brief restricting ports, the network or commands must exempt the session's
+own `wc.js` and `card.js` calls and never name port 7374 as off limits.
 
 Parallelize only tasks with disjoint ownership; overlapping boundaries run in sequence.
 
@@ -99,6 +112,7 @@ Record each task's lane in the table: the tier plus the resolved model
   re-posts it with `fixed` + 1; never post a `build` card after `verifying`.
 - A worker that asks something the plan did not settle sends its question to the lead, not
   to you. If you hit something the plan does not settle, send the lead a `message` too.
+- On a starter nudge about a quiet session, message the agent, or stop and replace it.
 - On `[wc:from app] your session <name>'s turn failed: <error>`, that session is still live.
   Send it a `message` asking it to carry on. Only if it fails again, run `session stop` on
   it, then replace it by its role's restart rule: a worker uses `--replaces <name>` and a
@@ -188,6 +202,8 @@ When every task is done and the full validation passes:
    paths, and says nothing of this conversation. Its report arrives as a `result`; stop it
    then. After starting attempt N's verifier(s), post `progress` with `stage: verify`,
    `pass: N`, `phase: checking` and the machines used during the build.
+   A verifier that reports `VERDICT: BLOCKED` hit a problem with its setup, not a gap: fix
+   it or raise it to the lead, then start a fresh verifier. It never starts remediation.
 4. **PASS**: once every verifier of the attempt passes, post `phase: clean`, then send the
    lead a `result` (`task` `build`, `outcome` `done`, `report` COMPLETION.md, `commit` the
    commit verified).

@@ -65,6 +65,9 @@ a commit without a message is refused.
   reviewer, verifier and mapper once its `result` arrives. Reviewers and verifiers run in
   your thread's worktree (reviewers, read-only) or a throwaway copy (verifiers); you do
   not clean those up.
+- A brief restricting ports, the network or commands must exempt the session's
+  own `wc.js` and `card.js` calls and never name port 7374 as off limits. Those calls are
+  always allowed; no brief can forbid them.
 - The brief file is a plain text file you write outside the repository (a scratch
   directory), because the hub reads it when it starts the session. Put everything the
   session needs in it: its role file path (`<root>/protocol/app/<role>.md`), the slug,
@@ -237,7 +240,7 @@ clean one: stop, and post a `needs` card whose `items` are the recurring objecti
 whose body says in a line what each button will do. "Keep going" means: run another round,
 with the budget reset, and say so in your reply. "Talk about it" means: explain the
 objections in plain words and put the fork to him as a `question` card. A
-round ended by a dead reviewer does not count and is not triaged; restart that reviewer.
+round ended by a dead or `BLOCKED:` reviewer does not count and is not triaged; restart that reviewer.
 Once he settles the fork, the budget resets. No finding, summary or reviewer detail reaches
 the thread; the progress line's pass number and counts are the only review state shown.
 
@@ -363,6 +366,8 @@ by saying what you understood and what you will do first. Then take it from step
 
 ## Restarting what died
 
+On a starter nudge about a quiet session, message the agent, or stop and replace it.
+
 On `[wc:from app] your session <name>'s turn failed: <error>`, that session is still live.
 Send it a `message` asking it to carry on. Only if it fails again, run `session stop` on
 it, then replace it by its role's restart rule: a worker uses `--replaces <name>` and a
@@ -373,7 +378,10 @@ session is live.
 The hub tells the session that started a dead one, as a `message` from the app. As lead you
 restart a dead sub-lead, mapper or reviewer. A new sub-lead resumes from PLAN.md's
 Implementation Tasks and the committed `reports/` (see `sub-lead.md`); say so in its brief.
-A dead verifier you started is started fresh. A dead worker is the sub-lead's to restart.
+A dead verifier you started is started fresh. A verifier reporting `VERDICT: BLOCKED` has a
+problem with its setup, not a gap: fix it or raise it, then start a fresh verifier; it
+never starts remediation and does not count as a failed check. A dead worker is the
+sub-lead's to restart.
 Use a new `--attempt` id for each restart.
 
 If you yourself died, the app starts a new lead (the Restart button) and types
