@@ -1,4 +1,6 @@
 'use strict';
+
+const { makeTemp } = require('../../test-support/run-dir');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const usage = require('../app/usage.js');
@@ -118,9 +120,9 @@ test('rank chooses by reset, weighted room, live sessions and last choice and ex
 });
 
 test('record serializes readings and chosen accounts', async () => {
-  const fs = require('node:fs/promises'); const os = require('node:os'); const path = require('node:path');
+  const fs = require('node:fs/promises'); const path = require('node:path');
   const { State } = require('../app/state.js');
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'usage-test-'));
+  const dir = await makeTemp('usage-test-');
   const hub = { state: new State(dir) };
   await usage.record(hub, reading);
   await usage.record(hub, { ...reading, at: '2025-01-01T00:00:00Z', week: null });
