@@ -35,6 +35,8 @@ async function startMachine(secret = 'machine-test-secret', options = {}) {
   let uploadsDir = options.uploadsDir;
   let preflightOk = true;
   let startOk = true;
+  // Start the next session but hang up before answering, as a start slower than the hub waits.
+  let dropNextStart = false;
   let submitOk = true;
   let archiveKept = [];
   let uploadsRemoved = true;
@@ -77,7 +79,13 @@ async function startMachine(secret = 'machine-test-secret', options = {}) {
     const input = write ? await readBody(request) : {};
     calls.push({ method: request.method, path: url.pathname, body: input });
     if (request.method === 'POST' && url.pathname === '/v1/sessions') {
-      return startOk ? startSession(response, sessions, input) : send(response, 503, { error: 'start refused' });
+      if (!startOk) return send(response, 503, { error: 'start refused' });
+      if (dropNextStart) {
+        dropNextStart = false;
+        startSession(null, sessions, input);
+        return response.socket.destroy();
+      }
+      return startSession(response, sessions, input);
     }
     if (request.method === 'POST' && url.pathname === '/v1/preview') {
       return send(response, preview.ok ? 200 : 503, preview.ok ? { text: preview.text } : { error: preview.error || 'preview unavailable' });
@@ -132,6 +140,8 @@ async function startMachine(secret = 'machine-test-secret', options = {}) {
     sessions,
     calls,
     status,
+    get dropNextStart() { return dropNextStart; },
+    set dropNextStart(value) { dropNextStart = Boolean(value); },
     get startOk() { return startOk; },
     set startOk(value) { startOk = Boolean(value); },
     get preflightOk() { return preflightOk; },
@@ -176,7 +186,9 @@ function projectsReply(response, url, projects) {
   return send(response, 200, reply);
 }
 
+// Like the real service, a start of a name it already runs answers with that session.
 function startSession(response, sessions, input) {
+  if (sessions.has(input.name)) return send(response, 201, sessions.get(input.name));
   const session = {
     ...input,
     status: 'ready',
@@ -185,7 +197,7 @@ function startSession(response, sessions, input) {
     default_branch: input.default_branch || 'main',
   };
   sessions.set(input.name, session);
-  return send(response, 201, session);
+  if (response) send(response, 201, session);
 }
 
 function submit(response, sessions, url, input, submitOk) {

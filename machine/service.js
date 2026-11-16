@@ -148,6 +148,7 @@ class MachineService {
     this.asideTurns = new AsideTurns(this.stateDir, atomicWrite, accountDir);
     this.sessions = {};
     this.startingWorktrees = new Set();
+    this.startingNames = new Map(); // name -> the start in progress, so a repeated start joins it
     this.logins = {};
     this.server = null;
     this.retryWindow = Number(process.env.WHEELCHAIR_RETRY_WINDOW_MS || 90_000);
@@ -407,6 +408,14 @@ class MachineService {
     safeName(name, 'session name');
     if (!name.startsWith('wc-') || name.startsWith('wc-login-')) die('invalid session name');
     if (this.sessions[name]) return this.sessions[name];
+    // The hub repeats a start it got no answer to, under the same name. Join the one still
+    // running rather than create a second worktree and tmux session for it.
+    if (this.startingNames.has(name)) return this.startingNames.get(name);
+    const starting = this.startNamed(input, name);
+    this.startingNames.set(name, starting);
+    try { return await starting; } finally { this.startingNames.delete(name); }
+  }
+  async startNamed(input, name) {
     const adapter = adapters[input.cli];
     if (!adapter) die('cli must be claude or codex');
     const account = input.account || { id: `default-${adapter.provider}`, dir: null };

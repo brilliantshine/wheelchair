@@ -71,6 +71,20 @@ function checkEffort(settings, role, cli, effort) {
   if (efforts.indexOf(effort) > efforts.indexOf(max)) throw appError(400, `effort ${effort} is above the highest effort in Settings (${max})`);
 }
 
+// A start creates a worktree and launches a CLI, which can take well over the usual 5 seconds.
+// No answer is not a refusal: the machine may still be starting it. Asking again under the same
+// name joins that start (machine/service.js start), so the session is recorded once, not
+// marked failed while it runs and then started a second time by a retried request.
+const START_TIMEOUT_MS = 60_000;
+async function startOnMachine(hub, machine, body) {
+  try {
+    return await hub.call(machine, '/v1/sessions', 'POST', body, START_TIMEOUT_MS);
+  } catch (error) {
+    if (error.status) throw error;
+    return hub.call(machine, '/v1/sessions', 'POST', body, START_TIMEOUT_MS);
+  }
+}
+
 async function startSession(hub, thread, input) {
   const role = input.role;
   if (!SESSION_ROLES.has(role)) throw appError(400, 'unknown role');
@@ -151,8 +165,7 @@ async function startSession(hub, thread, input) {
   else await hub.save(thread);
 
   let started;
-  try {
-    started = await hub.call(thread.machine, '/v1/sessions', 'POST', {
+  const startBody = {
       role,
       cli,
       account: { id: selection.account.id, dir: selection.account.id === `default-${selection.provider}` ? null : `~/.wheelchair/accounts/${selection.account.id}` },
@@ -174,7 +187,9 @@ async function startSession(hub, thread, input) {
       verify_ref: input.verify_ref,
       base: input.base,
       default_branch: thread.default_branch,
-    });
+  };
+  try {
+    started = await startOnMachine(hub, thread.machine, startBody);
   } catch (error) {
     // Leave no session claiming to be "starting" forever: record why it never started.
     Object.assign(session, { status: 'failed', live: false, error: error.message });

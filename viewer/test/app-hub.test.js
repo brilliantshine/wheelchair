@@ -418,6 +418,44 @@ test('deduplicates a live start attempt', async () => {
   });
 });
 
+test('two starts fired at once with one attempt id start one session', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const lead = made.sessions[0];
+    const body = { calling_session: lead.name, action: 'start', role: 'reviewer', cli: 'codex', attempt_id: 'review-1' };
+    const [first, second] = await Promise.all([
+      machinePost(context, '/machine/session', body),
+      machinePost(context, '/machine/session', body),
+    ]);
+    assert.equal(first.status, 200, JSON.stringify(first.body));
+    assert.equal(second.status, 200, JSON.stringify(second.body));
+    assert.equal(first.body.session.name, second.body.session.name);
+    const reviewers = [...context.machine.sessions.values()].filter((item) => item.role === 'reviewer');
+    assert.equal(reviewers.length, 1);
+  });
+});
+
+test('a start the machine never answered is asked again by name, and a retry returns it', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const lead = made.sessions[0];
+    context.machine.dropNextStart = true;
+    const body = { calling_session: lead.name, action: 'start', role: 'reviewer', cli: 'codex', attempt_id: 'review-slow' };
+    const started = await machinePost(context, '/machine/session', body);
+    assert.equal(started.status, 200, JSON.stringify(started.body));
+    const retried = await machinePost(context, '/machine/session', body);
+    assert.equal(retried.body.duplicate, true);
+    assert.equal(retried.body.session.name, started.body.session.name);
+    const starts = context.machine.calls.filter((call) => call.method === 'POST' && call.path === '/v1/sessions' && call.body.role === 'reviewer');
+    assert.deepEqual(starts.map((call) => call.body.name), [started.body.session.name, started.body.session.name]);
+    assert.equal([...context.machine.sessions.values()].filter((item) => item.role === 'reviewer').length, 1);
+    const listed = await machinePost(context, '/machine/session', { calling_session: lead.name, action: 'list' });
+    const reviewers = listed.body.sessions.filter((item) => item.role === 'reviewer');
+    assert.equal(reviewers.length, 1);
+    assert.equal(reviewers[0].live, true);
+  });
+});
+
 test('allows a lead to stop a session it started', async () => {
   await withContext(async (context) => {
     const made = await thread(context);
