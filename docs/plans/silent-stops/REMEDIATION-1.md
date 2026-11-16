@@ -29,3 +29,16 @@ The 17-of-18 figure was measured with the test file as first committed (`4b750ca
 - **Lane:** Light, `--provider gpt` (the provider that built T1).
 - **Validation:** `node --test viewer/test/app-quiet.test.js`; the mutation check below;
   `node --test viewer/test/*.test.js`.
+
+### R1-T2 — app-quiet tests reliable under load (found by the sub-lead, not the verifier)
+
+- **Evidence:** 8 runs of `node --test viewer/test/app-quiet.test.js` at 4 concurrent: test 7
+  failed once (`expected: 2, actual: 3`), test 12 once (`timed out waiting for condition`); one
+  of 6 sequential runs failed test 16; R1-T1's full-suite run failed test 7.
+- **Cause:** tests change persisted thread state through a second `Hub` (`edit`, `hub.save`,
+  `hub.enqueue`) outside the server's per-thread lock while the 20 ms tick reads and saves the
+  same thread; `until` times out at 2 s.
+- **Objective:** the 18 tests keep their meaning and become reliable under load; no product
+  code change unless a real detector bug is found (then report it, do not fix it).
+- **Lane:** Standard, `--provider gpt`.
+
