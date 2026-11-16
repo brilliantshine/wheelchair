@@ -174,3 +174,4 @@ diagram card or dragging.
 - 2026-11-15 — All four tasks merged; COMPLETION.md written; status verifying.
 - 2026-11-15 — Verification 1 FAIL (both verifiers): leftover ruling wording in implementation.md and README.md; pre-existing browser.spec.js:2133 failure counted against "the test suites pass". REMEDIATION-1.md written; R1 dispatched.
 - 2026-11-15 — R1 accepted and merged (choices: none; none seen in the diff). Browser suite 578 passed, 2 skipped. Verification attempt 2 started.
+- 2026-11-15 — Verification 2 on 7940aba: Claude PASS; GPT FAIL on pre-existing failures only (app-accounts.spec.js waiting-line clock bug after 21:00, lifecycle.test.js:423, one Firefox navigation in app-threads.spec.js), all in files this branch did not touch, reproduced on 635c45f. Asked the lead whether to accept as residual or fix the clock test here.
