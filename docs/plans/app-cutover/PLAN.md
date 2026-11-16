@@ -52,9 +52,12 @@ Source files removed (`git rm`):
 - `protocol/{planning,adopt,plan-review,implementation,verification,lanes,map,writing,seen}.md`
 - `protocol/templates/SEEN.md`
 - `seen/` entirely (scripts, router, tests)
-- `skills/AGENTS.md` and `codex/AGENTS.md`'s wrapper-convention text, rewritten for what
-  is left (see 6). If `skills/` is empty after removal, the directory and its router go,
-  and `install.sh` stops rendering skills.
+- `skills/` entirely, its router included: every wrapper in it is retired.
+  `codex/prompts/` is empty and goes too. `codex/AGENTS.md` stays for `model.sh`,
+  `preflight.sh` and `test/`, with its wrapper-convention text removed.
+- `install.sh` stops rendering skills and Codex prompts (both loops go); it still runs the
+  retired-wrapper removal below and `codex/model.sh init`. Root `AGENTS.md` loses the
+  "Harness adapter" kind row and the "A wrapper carries no content" rule.
 
 Kept: `protocol/graphs.md`, `protocol/diagrams.md`, `protocol/sensitivity.md`,
 `sensitivity/`, `codex/model.sh`, `codex/preflight.sh`, `protocol/app/`,
@@ -114,12 +117,15 @@ this plan.
   wheelchair app's Settings page (Models, Diagrams)".
 - The `ask` carve-out: "a thread lead drawing a proposed flow, as
   `{{WHEELCHAIR_ROOT}}/protocol/app/lead.md` (Diagrams) has it".
-- `protocol/app/lead.md`, Diagrams, gains the proposed-flow trigger that
+- `protocol/app/lead.md`, Diagrams, gains the proposed-flow trigger, for a thread whose
+  plan directory exists (before that, as in "Keep talking first", a flow is talked through
+  in prose: no directory is created for it). It is the one
   `protocol/planning.md:132-150` owns today (D18): when a lead's turn discusses a proposed
   flow (a design, not a fact about current code), it writes or updates that flow's graph
-  under `docs/plans/<slug>/graphs/` and posts a `diagram` card; a turn choosing between two
-  arrangements writes its own graph file. This fires at every dial level, `ask`
-  included; above `ask` the dial's shape test applies as to any turn.
+  under `docs/plans/<slug>/graphs/` and posts a `diagram` card. **That fires at every dial
+  level, `ask` included.** Above `ask` only, the dial's shape test also applies to a lead's
+  turn like any other, so a turn choosing between two arrangements draws too, into its own
+  graph file. At `ask` a choice between arrangements is not drawn unless Collin asks.
 - The rest of the file: "The command" section is replaced by "Moving the dial" describing
   the Settings control and that it runs `sensitivity/set.sh <level>`; the `/graph` bullet
   under "What the dial does not govern" goes. The level line, writer's contract and
@@ -145,8 +151,9 @@ Settings (Models > Diagrams) --GET /settings--> hub --GET /v1/diagram-sensitivit
     while one runs gets `409`).
   - If parsing `--report` output is fragile, add a `--json` flag to `set.sh --report`
     instead; the writer's contract is otherwise unchanged.
-- Hub: `GET /settings` gains `diagram_sensitivity: {machines: {<machine>: {level, files} |
-  {error}}}`; `POST /settings/diagram-sensitivity {level}` forwards to every configured
+- Hub: a separate `GET /settings/diagram-sensitivity` returns `{machines: {<machine>:
+  {level, files} | {error}}}`, read only by the Diagrams section, so no other page or
+  `GET /settings` caller waits on the machines; `POST /settings/diagram-sensitivity {level}` forwards to every configured
   machine, returns `{machines: {<machine>: {level} | {error}}}`, `200` if all succeeded,
   return `502` with the per-machine map when any failed. Each machine call has a 5 s
   timeout; a machine that times out or refuses the connection is `{error: "did not
@@ -180,6 +187,13 @@ Settings (Models > Diagrams) --GET /settings--> hub --GET /v1/diagram-sensitivit
 - The `diagram` card keeps its inline picture. Its "Open full screen" link becomes "Open
   full size", goes to the picture page in the same tab, and is shown for all three formats
   (forms included).
+- **Aside graphs** count as the thread's graphs too (an aside `draw` saves one per reply,
+  `viewer/app/asides.js:71-82`, recorded as `graph` on that aside's history entry). The
+  right column lists them after the diagram cards, one per saved graph, titled
+  "Aside: <first 40 characters of the aside's quote>". Each, and the aside panel's own
+  link (`viewer/pages/aside.js:56`, renamed "Open full size"), goes to the picture page
+  with `?thread=<id>&aside=<aside id>&entry=<history index>`; the page draws that graph
+  in the viewer iframe (`/wheelchair/?path=<graph path>`), back link as for cards.
 - Phones: `headFilesEl` (the header strip) lists the same picture links after the plan
   files.
 - New app page `viewer/pages/picture.html` + `picture.js` (`picture` added to `APP_PAGES`,
@@ -199,7 +213,7 @@ or command is removed or reworded (MAP.md "References to resolve" lists them):
 `protocol/app/AGENTS.md` (the Boundaries bullet about the wording hook: say the hook is
 gone and leads follow the Settings style), `AGENTS.md` (root; Executable row loses `seen/`, the "second reach" paragraph goes, the
 Where-to-go rows for `seen/` and `skills/`/`codex/` updated, verification commands lose
-`seen/test/run.sh`), `protocol/AGENTS.md`, `skills/AGENTS.md`, `codex/AGENTS.md`,
+`seen/test/run.sh`), `protocol/AGENTS.md`, `codex/AGENTS.md`,
 `protocol/graphs.md` (its three triggers become two: a thread lead's diagram, and an
 ordinary turn under the dial; lanes/planning/implementation references go),
 `protocol/diagrams.md` (`map.md` references point at `protocol/app/mapper.md` or go),
@@ -220,8 +234,7 @@ Two checks:
 
 ### 6. Routers
 
-`AGENTS.md` (root), `protocol/AGENTS.md`, `codex/AGENTS.md`, `skills/AGENTS.md` (or its
-removal), `install/` row (adds `unseen.py`) and `sensitivity/AGENTS.md` (the writer is now
+`AGENTS.md` (root), `protocol/AGENTS.md`, `codex/AGENTS.md`, `skills/` row removed, `install/` row (adds `unseen.py`) and `sensitivity/AGENTS.md` (the writer is now
 also run by the machine service) say what is true after the change.
 
 ### 7. Tests
@@ -333,6 +346,12 @@ idempotence case is the in-worktree proof.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| Claude intent | major | D18 port made decision graphs fire at `ask`; the source fires them only above `ask` | upheld | §3 lead.md bullet split |
+| Claude intent | major | §4 silent on graphs an aside draws in the thread | upheld | §4 aside graphs listed and opened on the picture page |
+| Claude intent | minor | Putting the dial in `GET /settings` makes every caller wait on machines | upheld | §3 separate `GET /settings/diagram-sensitivity` |
+| Claude intent | minor | `skills/` and `codex/prompts/` are certainly empty; consequences unstated | upheld | §1 states them |
+| GPT mechanics | major | Moved trigger would demand a graph before a plan directory may exist | upheld | §3: only once the plan directory exists; prose before |
+| GPT mechanics | minor | Arrangement choices could be read as firing at `ask` | upheld | Same fix as the intent finding: §3 bullet split |
 
 ## Implementation Tasks
 
