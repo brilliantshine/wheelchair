@@ -264,3 +264,4 @@ No findings from either lens. Clean round. (Mechanics reviewer restarted once af
 - 2026-11-15 — Choice: T3, viewer/test/app-threads.spec.js: the chip test seeds through a stub card and patched lead timestamps, using the real hub's naming.
 - 2026-11-15 — Choice: T3 attempt 2, validation: also ran the focused spec with --config=viewer/playwright.config.js so both browsers ran.
 - 2026-11-15 — Integration: sub-lead updated app-threads.spec.js:32 nav label to Agents.
+- 2026-11-15 — Verification 1 at 70668d4: one verifier, GPT (asked for --not-provider gpt; the hub fell back to GPT, so not cross-family). FAIL, no functional gaps: font tests 404 for lack of viewer/node_modules in its worktree, plus the two failures that predate the build (lifecycle port race, browser.spec.js:2395). Asked the lead how to treat failures that predate the build.
