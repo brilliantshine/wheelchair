@@ -56,7 +56,7 @@
       if (h.graph) { const src = '/wheelchair/?path=' + encodeURIComponent(h.graph); const link = el('a', 'btn small', 'Open full screen'); link.href = src; link.target = '_blank'; link.rel = 'noopener'; body.appendChild(link); const frame = el('iframe', 'diagram'); frame.src = src; frame.title = 'Aside diagram'; body.appendChild(frame); }
       if (h.graph_error) body.appendChild(el('div', 'dim', h.graph_error));
     }
-    if (current.turn) body.appendChild(el('div', 'dim', 'Thinking…'));
+    if (current.turn) { const w = el('div', 'dim waiting'); w.append(el('span', 'spinner'), el('span', '', 'Thinking…')); body.appendChild(w); }
     if (current.failed) { body.appendChild(el('div', 'dim', typeof current.failed === 'string' ? current.failed : (current.failed.message || current.failed.error || 'The aside failed'))); body.appendChild(button('Retry', 'small', () => act('/retry', {}), readOnly)); }
     if (notice) body.appendChild(el('div', 'card-error', notice));
     if (draft !== null) { const box = el('div', 'aside-draft'); const area = el('textarea'); area.value = draft; area.disabled = readOnly; area.setAttribute('aria-label', 'Your changed answer'); area.addEventListener('input', () => { draft = area.value; }); box.append(area, button('Send', 'primary small', () => act('/close', { outcome: 'changed', line: area.value }, () => closePanel(false)), readOnly), button('Cancel', 'small', () => { draft = null; renderPanel(); }, readOnly)); body.appendChild(box); }

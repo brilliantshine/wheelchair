@@ -1159,7 +1159,7 @@
         h('p', { class: 'lede', text: 'How much of this week is left, per provider.' }),
         usageError && h('p', { class: 'inline-err', role: 'alert', text: 'Could not read usage: ' + usageError })),
       h('section', { class: 'usage-bars', 'aria-label': 'Providers' },
-        usage ? Object.entries(usage.providers).map(([p, f]) => providerBar(p, f)) : h('p', { class: 'v-empty', text: 'Loading usage…' })),
+        usage ? Object.entries(usage.providers).map(([p, f]) => providerBar(p, f)) : h('p', { class: 'v-empty waiting' }, h('span', { class: 'spinner', 'aria-hidden': 'true' }), document.createTextNode('Loading usage…'))),
       settingsBox);
   }
 

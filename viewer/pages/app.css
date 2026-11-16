@@ -183,3 +183,11 @@ ul#list li.row.current .title { font-weight: 600; }
 #app-nav .usage-dot { display: inline-block; width: 8px; height: 8px; margin-left: 6px; border-radius: 50%; background: var(--warn); vertical-align: middle; }
 #app-nav .usage-dot[hidden] { display: none; }
 @media (max-width: 480px) { #app-nav .usage-dot { position: absolute; top: 4px; right: 4px; margin: 0; } }
+
+/* The wait spinner: a wheelchair whose wheels turn. Used wherever something takes a while.
+   An <span class="spinner"> sized by font-size (1.25em); .spinner.big for the thread's
+   working line. The animation lives inside the SVG and slows itself under reduced motion. */
+.spinner { display: inline-block; width: 1.25em; height: 1.25em; vertical-align: -0.3em; flex: none;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E %3Cstyle%3E @keyframes spin { to { transform: rotate(360deg) } } .wheel { transform-box: view-box; transform-origin: 26px 42px; animation: spin 1.2s linear infinite } .caster { transform-box: view-box; transform-origin: 52px 57px; animation: spin 0.4s linear infinite } @media (prefers-reduced-motion: reduce) { .wheel { animation-duration: 4s } .caster { animation-duration: 1.3s } } %3C/style%3E %3Cg class='wheel'%3E %3Ccircle cx='26' cy='42' r='17' stroke='%23e6e8ec' stroke-width='3.5'/%3E %3Cpath d='M26 25v34M11.3 33.5l29.4 17M11.3 50.5l29.4-17' stroke='%236b7280' stroke-width='1.8'/%3E %3Cpath d='M26 25A17 17 0 0 1 43 42' stroke='%235b9dd9' stroke-width='4'/%3E %3Ccircle cx='26' cy='42' r='2.6' fill='%23e6e8ec'/%3E %3C/g%3E %3Cg class='caster'%3E %3Ccircle cx='52' cy='57' r='3.6' stroke='%23e6e8ec' stroke-width='2.4'/%3E %3Cpath d='M52 53.4v1.4' stroke='%235b9dd9' stroke-width='2.4'/%3E %3C/g%3E %3Cpath d='M13 6l4 2 5 22h22l2 16h8M46 46l5 7.5' stroke='%23e6e8ec' stroke-width='3.5'/%3E %3C/svg%3E") center / contain no-repeat; }
+.spinner.big { width: 28px; height: 28px; }
+.waiting { display: flex; align-items: center; gap: 8px; }
