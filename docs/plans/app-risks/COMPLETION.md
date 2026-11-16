@@ -1,7 +1,7 @@
 ---
 slug: app-risks
 date: 2026-11-15
-implemented-by: "gpt standard (gpt-6.1-terra) ×6 workers: T1, T2, T3, T3b, R1-T1, R2-T1; sub-lead claude-opus-5-5 for the D10 seeding and the proposal wording fix"
+implemented-by: "gpt standard (gpt-6.1-terra) ×7 workers: T1, T2, T3, T3b, R1-T1, R2-T1, R3-T1; sub-lead claude-opus-5-5 for the D10 seeding and the proposal wording fix"
 verified-by: []
 ---
 
@@ -181,5 +181,39 @@ $ node --test test-support/test/*.test.js
 $ node test-support/smoke/harness.js --check-live
 Seeded session: {"name":"wc-smoke-sub-lead","role":"sub-lead","live":true,"status":"ready"}
 Slow origin fetch: 8.01 s
+Run folder removed: true
+```
+
+### Remediation 3 (2026-11-15)
+
+Verification 3 (claude / claude-opus-5-5 at `727f0a0`) confirmed remediations 1 and 2 on their paths. It failed the same leak gap on the signal path: SIGINT during a smoke run went through `run-dir.js`'s `cleanupNow()`, which never waited for the run's processes. See `REMEDIATION-3.md`. The R2 brief had named only `teardown()`; this is the second fix attempt for this gap.
+
+Fix, R3-T1 (gpt / gpt-6.1-terra, `wc-0958e89051d8-worker-7`, commit `82ddac5`):
+- `test-support/smoke/harness.js:59-77` `waitForRunProcesses(dir, matchPaths)` is synchronous: it polls `runProcesses` for 10 s, then SIGTERM (2 s), then SIGKILL (2 s), and sleeps with `Atomics.wait` as `run-dir.js` does. It returns the count still alive.
+- `harness.js:174`: the `onCleanup` callback now runs `tmux kill-server`, `proxy.close()` and then that wait. `cleanupNow()` runs callbacks before it removes the folder (`run-dir.js:96-99`), so the signal, `exit` and normal paths all wait.
+- `harness.js:192`: `teardown()` uses the same function.
+- `test-support/test/smoke-harness.test.js`: the wait returns 0 once the processes go, and escalates and stays bounded when they do not (injected clock, sleep and kill).
+
+Failing-before: the verifier's SIGINT run (REMEDIATION-3.md), which left `/tmp/wheelchair-test-run-981116-ZlIxpv`. It was not re-created.
+
+Sub-lead check after the merge. Each signal line comes from `node test-support/smoke/smoke.js`, sent that signal right after `PASS start`, then the run's own folder tested at +0, +5 and +10 s:
+
+```
+SIGINT pid=1034623 exit=130 folder=/tmp/wheelchair-test-run-1034623-rojNzu +0s=absent +5s=absent +10s=absent
+SIGTERM pid=1040531 exit=143 folder=/tmp/wheelchair-test-run-1040531-yjkg2C +0s=absent +5s=absent +10s=absent
+SIGHUP pid=1049272 exit=129 folder=/tmp/wheelchair-test-run-1049272-PLmvpb +0s=absent +5s=absent +10s=absent
+$ node --test test-support/test/*.test.js
+# tests 9
+# pass 9
+# fail 0
+$ bash test-support/smoke/run.sh
+PASS readiness through hub
+PASS start
+PASS stop
+PASS clean: run folder absent after 5s: /tmp/wheelchair-test-run-1058235-5R816R; leftover processes: 0; private tmux server gone
+exit 0
+$ node test-support/smoke/harness.js --check-live
+Seeded session: {"name":"wc-smoke-sub-lead","role":"sub-lead","live":true,"status":"ready"}
+Slow origin fetch: 8.02 s
 Run folder removed: true
 ```
