@@ -12,21 +12,14 @@ get buried as this file grows. **Map:** `MAP.md`.
 
 ## Open Questions
 
-### Q1: Who gets the first nudge when an agent goes quiet?
-- **Context:** The stub asked for the starter (sub-lead or lead) to be told. But the agent that
-  stalled thought it was forbidden to report; a message straight to it saying "you ended without a
-  result; your own wc.js and card.js calls are always allowed; post a result, or `blocked` with the
-  reason" would likely have fixed it with no one else involved.
-- **Options:** (a) the agent itself first, its starter only if it stays quiet; (b) the starter only,
-  as the stub said; (c) both at once.
-- **Recommendation:** (a): cheapest, and it fixes the common case (an agent that simply forgot) without
-  spending the starter's expensive turns.
-
 ### Q2: When does Collin see it?
-- **Context:** After the nudge(s), something must decide "that did not move it".
-- **Options:** (a) the agent ends another silent turn after the last nudge, or 10 minutes pass with no
-  card from it; (b) timer only; (c) second silent turn only.
-- **Recommendation:** (a).
+- **Context:** Order is fixed by decision 7: the agent is nudged, then its starter. Something must then
+  decide the starter's step "did not move it". The starter may message the agent (giving it a new turn)
+  or do nothing (a sub-lead that is itself idle, waiting).
+- **Options:** (a) after the starter is told: the agent ends another quiet turn, or 10 minutes pass with
+  no card from it; (b) timer only; (c) the agent's next quiet turn only.
+- **Recommendation:** (a): (c) alone never fires if the starter does nothing; (b) alone waits even when
+  the agent has visibly stalled again.
 
 ## Watch List
 
@@ -45,6 +38,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 4 | App posts the nudge as `[wc:from app] ...` messages and Collin's alert as an app (system) `needs` card that closes itself when the session posts a `result` or `message`, or is stopped or ends. | Reuses the existing turn-failed / dead-session / stuck patterns (MAP.md §6); system needs cards cannot be resolved by a lead, matching "Sessions ended". | defaulted |
 | 5 | Rules: worker.md, sub-lead.md, lead.md say a session's own `wc.js` and `card.js` calls are always allowed and no brief can forbid them; briefs restricting ports or the network must exempt them; a worker (and mapper, sub-lead) facing a conflict between its brief and finishing posts `result` `blocked` with the reason, never stops silently. cards.md gets the same one-line rule. | IDEA "What good looks like". | defaulted |
 | 6 | No Agents tab change. | Collin sees the alert in the thread (IDEA); the tab's idle state is correct. | defaulted |
+| 7 | Escalation order: on a quiet turn the app first messages the quiet agent itself (it ended without reporting; its own wc.js and card.js calls are always allowed; post a `result`, or `blocked` with the reason, or a `message` if it needs an answer). If its next turn is quiet too, the app messages the session that started it. | Fixes the common case (an agent that forgot or misread a brief) without spending the starter's turn. | user |
 
 ## Spec
 
