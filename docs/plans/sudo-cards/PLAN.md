@@ -12,18 +12,6 @@ get buried as this file grows.
 
 ## Open Questions
 
-### Q1: How strong does "the agent never sees the password" have to be?
-- **Context:** Agents run as Collin's Linux user with permission checks off, and the hub,
-  the machine service and the page code all live in a clone that user owns
-  (MAP.md; `install.sh:306-345`). Any agent can edit that code, or read the memory of a
-  process running as the same user. Passing the password only through memory stops
-  accidental leaks (disk, logs, thread, terminal), but not an agent that sets out to grab it.
-- **Options:** (a) In-memory pass-through in the existing hub and machine service. Stops
-  every accidental leak, not a hostile agent. (b) A small separate helper running as its own
-  Linux user, with root-owned code agents can't edit, that serves the password box and runs
-  sudo itself. Installing it takes one sudo run. Holds even against a hostile agent.
-- **Recommendation:** (b). "Completely isolated" is only true with (b).
-
 ### Q2: Who may ask for a sudo run?
 - **Context:** Workers and sub-leads only talk to the lead; only the lead posts shown cards.
 - **Options:** lead only, other sessions relaying through it; or any session posts directly.
@@ -35,11 +23,20 @@ get buried as this file grows.
   and must be pressed within a few seconds.
 - **Recommendation:** the two-step press.
 
+### Q4: How does Collin know he is typing into the real password box?
+- **Context:** Q1 assumes a hostile agent. Such an agent can edit the thread page and show a
+  lookalike password box. The real box lives on the helper's own address, which agents can't change.
+- **Options:** (a) the thread card only links out to the helper's page, and Collin checks the
+  address; (b) as (a), plus a secret word Collin picks at install, which only the helper knows
+  and shows above the real box; (c) accept the risk.
+- **Recommendation:** (b). On a phone the address bar is easy to miss; a missing word is not.
+
 ## Watch List
 
 | # | Noticed | What needs looking into | Raised to user? | Outcome |
 |---|---------|-------------------------|-----------------|---------|
 | 1 | Hub-to-machine traffic is plain HTTP over Tailscale (MAP.md) | Whether the password crosses a network hop unencrypted outside Tailscale | no | |
+| 3 | Running as Collin needs root: sudo checks the invoking user's password | Defaulted in Spec: the helper verifies Collin's password via PAM itself before running as root | no | settled, Decision 6 |
 | 2 | sudo caches authentication per terminal | Each run must invalidate the cache (`sudo -k`) so nothing stays unlocked | no | |
 
 ## Decision Log
@@ -51,11 +48,24 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 1 | The command runs non-interactively, stdin closed after the password, with a time limit (default 10 minutes) | IDEA.md rules out interactive commands; a hung command must not hang forever | defaulted |
 | 2 | The agent gets the exit code and output (stdout and stderr, capped in size); the card shows the same result to Collin | IDEA.md: the agent learns whether it worked | defaulted |
 | 3 | "Talk about it" sends the lead a message that Collin wants to discuss the request; nothing runs and the card stays open | IDEA.md | defaulted |
+| 5 | Isolation must hold against a hostile agent: a separate helper, running under an identity agents can't control, with root-owned code agents can't edit, serves the password box and runs the command; the password never passes through the hub, the machine service or any page they serve | Collin picked "safe from a hostile agent" | user |
+| 6 | The helper runs as a root system service (installed once with sudo), checks Collin's password against his account via PAM and that he may use sudo, then runs the command as root. It is reachable only through Tailscale HTTPS on its own port | sudo authenticates the invoking user, so a separate unprivileged user can't use Collin's password; PAM keeps the check as strict as sudo's | defaulted |
 | 4 | The command is fixed when the card is posted; the run uses the stored text byte for byte and the card shows it in full, unabridged | IDEA.md: what runs is exactly what is shown | defaulted |
 
 ## Spec
 
-(grows as decisions land)
+### Isolation boundary
+
+- A separate **sudo helper**: root system service, code installed root-owned outside the clone
+  (for example `/usr/local/lib/wheelchair-sudo/`), not editable by Collin's user. Installed once
+  by a command Collin runs with sudo.
+- The helper serves the password page itself, on its own Tailscale HTTPS port. The hub, the machine
+  service and every page they serve never receive, relay or render the password.
+- The hub hands the helper only the request (command, reason, which thread). The helper keeps the
+  command text from that moment and runs exactly it.
+- The helper checks the password with PAM against Collin's account and his sudo rights, runs the
+  command as root, keeps nothing (no disk, no log line with the password), and reports exit code
+  and output back to the hub.
 
 ## Accepted Risks
 
