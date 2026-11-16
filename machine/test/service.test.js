@@ -23,7 +23,7 @@ set -eu
 echo "$(basename \"$0\") $*" >> "$FAKE_LOG"
 case "$(basename \"$0\"):$1" in
   tmux:capture-pane) cat "$FAKE_PANE" ;;
-  tmux:list-sessions) printf '%s\\n' \${FAKE_SESSIONS:-} ;;
+  tmux:list-sessions) if [ -n "\${FAKE_LS_ERR:-}" ]; then printf '%s\\n' "$FAKE_LS_ERR" >&2; exit 1; fi; printf '%s\\n' \${FAKE_SESSIONS:-} ;;
   tmux:load-buffer) cat >> "$FAKE_LOG" ;;
   systemd-run:*) exit 1 ;;
   git:*) if [[ " $* " == *" rev-parse "* ]]; then echo "\${FAKE_GIT_VERSION:-deadbeef}"; fi ;;
@@ -472,6 +472,56 @@ test('the spool is retried on a timer until the hub acknowledges', async () => {
       for (let i = 0; i < 50 && (await fs.readdir(path.join(env.state, 'spool', 'cards'))).length; i += 1) await new Promise(resolve => setTimeout(resolve, 20));
       assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 0);
     } finally { await env.close(); await hub.close(); }
+  });
+});
+test('a failed tmux listing reports running as unknown, and "no server" as not running', async () => {
+  await withEnv({ FAKE_SESSIONS: 'wc-t-lead scratch' }, async () => {
+    const env = await service(await temp()); try {
+      await start(env);
+      const listed = async () => (await api(env, 'GET', '/v1/sessions', undefined, hubHeader)).body;
+      assert.equal((await listed()).find(s => s.name === 'wc-t-lead').running, true);
+      await withEnv({ FAKE_LS_ERR: 'server exited unexpectedly' }, async () => {
+        const sessions = await listed();
+        assert.equal('running' in sessions.find(s => s.name === 'wc-t-lead'), false);
+        assert.equal(sessions.some(s => s.name === 'scratch'), false);
+      });
+      await withEnv({ FAKE_LS_ERR: 'no server running on /tmp/tmux-1000/default' }, async () => {
+        assert.equal((await listed()).find(s => s.name === 'wc-t-lead').running, false);
+      });
+      await withEnv({ FAKE_LS_ERR: 'error connecting to /tmp/tmux-1000/default (Permission denied)' }, async () => {
+        assert.equal('running' in (await listed()).find(s => s.name === 'wc-t-lead'), false);
+      });
+    } finally { await env.close(); }
+  });
+});
+test('a replacement worker is refused while another worker still runs in its worktree', async () => {
+  await withEnv({ FAKE_GIT_VERSION: 'wc-t-w1' }, async () => {
+    const env = await service(await temp()); try {
+      const worktree = path.join(path.dirname(env.state), 'work-shared');
+      const first = await start(env, { role: 'worker', cli: 'codex', name: 'wc-t-worker', worktree, branch: 'wc-t-w1' });
+      const replace = (name) => api(env, 'POST', '/v1/sessions', { role: 'worker', cli: 'codex', thread_id: 't', token: 'beta', name, worktree, branch: 'wc-t-w1' }, hubHeader);
+      await withEnv({ FAKE_SESSIONS: first.name }, async () => {
+        const refused = await replace('wc-t-worker-2');
+        assert.equal(refused.status, 409); assert.match(refused.body.error, /in use \(wc-t-worker\)/);
+      });
+      await withEnv({ FAKE_LS_ERR: 'server exited unexpectedly' }, async () => {
+        assert.equal((await replace('wc-t-worker-2')).status, 409);
+      });
+      // Recorded as stopped while tmux still has it (a failed kill) is still in use.
+      env.instance.sessions[first.name].status = 'stopped';
+      await withEnv({ FAKE_SESSIONS: first.name }, async () => {
+        assert.equal((await replace('wc-t-worker-2')).status, 409);
+      });
+      assert.equal((await replace('wc-t-worker-2')).status, 201);
+      await withEnv({ FAKE_SESSIONS: 'wc-t-worker-2' }, async () => {
+        const second = await replace('wc-t-worker-3');
+        assert.equal(second.status, 409); assert.match(second.body.error, /wc-t-worker-2/);
+      });
+      await withEnv({ FAKE_SESSIONS: 'wc-t-worker-2' }, async () => {
+        const noBranch = await api(env, 'POST', '/v1/sessions', { role: 'worker', cli: 'codex', thread_id: 't', token: 'gamma', name: 'wc-t-worker-4', worktree }, hubHeader);
+        assert.equal(noBranch.status, 409);
+      });
+    } finally { await env.close(); }
   });
 });
 test('status lists other tmux sessions read-only and typing into them is refused', async () => {

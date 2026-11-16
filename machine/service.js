@@ -145,6 +145,7 @@ class MachineService {
     this.sessionsPath = path.join(this.stateDir, 'sessions.json');
     this.config = {};
     this.sessions = {};
+    this.startingWorktrees = new Set();
     this.logins = {};
     this.server = null;
     this.retryWindow = Number(process.env.WHEELCHAIR_RETRY_WINDOW_MS || 90_000);
@@ -260,15 +261,20 @@ class MachineService {
     this.trustTimer = setInterval(() => this.pollTrust().catch(error => this.log(error)), 500);
     this.trustTimer.unref();
   }
+  // The names of the running tmux sessions, or null when tmux could not be asked. "No server" is
+  // a real empty answer; any other failure is unknown, and must not read as "every session ended".
   liveTmux() {
     const ls = this.tmux(['list-sessions', '-F', '#S']);
-    return new Set(ls.ok ? ls.stdout.trim().split('\n').filter(Boolean) : []);
+    if (ls.ok) return new Set(ls.stdout.trim().split('\n').filter(Boolean));
+    if (/no server running|error connecting to .*\(No such file or directory\)/.test(ls.stderr)) return new Set();
+    this.log(`tmux list-sessions failed: ${ls.stderr.trim() || `exit ${ls.status}`}`);
+    return null;
   }
   // Spec "Machine service on the hub": a live wc-* tmux session missing from sessions.json (a lost or
   // stale file) is adopted again, so it can still be read, typed into and stopped.  It has no token.
   async recoverFromTmux() {
     let changed = false;
-    for (const name of this.liveTmux()) {
+    for (const name of this.liveTmux() || []) {
       if (!name.startsWith('wc-') || name.startsWith('wc-login-') || this.sessions[name]) continue;
       const parsed = /^wc-(.+?)-(sub-lead|lead|worker|reviewer|verifier|[a-z]+)(?:-\d+)?$/.exec(name);
       if (!parsed) continue;
@@ -320,6 +326,23 @@ class MachineService {
     let n = 1; let candidate = base;
     while (this.sessions[candidate]) candidate = `${base}-${++n}`;
     return candidate;
+  }
+  // A replacement worker reuses a dead worker's worktree. It must be alone there: the hub's record
+  // of who is dead can be wrong or missing (a queued start, a lost response), so this service, which
+  // sees every session, has the final say. A worker still in tmux, or tmux unknown, refuses.
+  refuseSharedWorktree(worktree, sessionName) {
+    // A worker recorded as stopped still counts: a failed kill-session records stopped too, so only
+    // tmux can say it is gone.
+    const others = Object.values(this.sessions).filter(other => other.role === 'worker' && other.name !== sessionName
+      && other.worktree && path.resolve(other.worktree) === worktree);
+    const conflict = (this.startingWorktrees.has(worktree) && 'another start') || (() => {
+      if (!others.length) return null;
+      const live = this.liveTmux();
+      if (!live) return 'tmux could not be checked';
+      return others.find(other => live.has(other.name))?.name || null;
+    })();
+    if (conflict) throw Object.assign(new Error(`worker worktree is in use (${conflict}): ${worktree}`), { status: 409 });
+    this.startingWorktrees.add(worktree); // released by start() once this session is recorded or failed
   }
   async createWorktree(input, sessionName) {
     if (input.worktree) {
@@ -390,7 +413,14 @@ class MachineService {
     if (dir) adapter.seed(dir, account.id);
     const options = startOptions(input);
     const createdWorktree = !input.worktree;
-    const created = await this.createWorktree(input, name);
+    const reserved = input.role === 'worker' && input.worktree ? path.resolve(input.worktree) : null;
+    if (reserved) this.refuseSharedWorktree(reserved, name);
+    try {
+      const created = await this.createWorktree(input, name);
+      return await this.startIn(input, name, adapter, account, dir, options, createdWorktree, created);
+    } finally { if (reserved) this.startingWorktrees.delete(reserved); }
+  }
+  async startIn(input, name, adapter, account, dir, options, createdWorktree, created) {
     const worktree = created.worktree;
     const session = { name, role: input.role, cli: input.cli, account: account.id, account_dir: dir, permission_mode: options.permission_mode, codex_mode: options.codex_mode, effort: options.effort, thread_id: input.thread_id, token: input.token,
       worktree, created_worktree: createdWorktree, attempt_id: input.attempt_id || null, started_by: input.started_by || null,
@@ -729,7 +759,9 @@ class MachineService {
     const worker = this.sessions[workerName];
     if (!worker || worker.role !== 'worker' || worker.thread_id !== caller.thread_id) die('args[0] must name a worker session of this thread');
     if (!worker.created_worktree || worker.worktree_removed) die('worker has no removable worktree');
-    if (worker.status !== 'stopped' && this.liveTmux().has(worker.name)) die('worker is still running');
+    const live = worker.status === 'stopped' ? new Set() : this.liveTmux();
+    if (!live) die('tmux could not be checked; try again');
+    if (live.has(worker.name)) die('worker is still running');
     const branch = command('git', ['-C', worker.worktree, 'rev-parse', '--abbrev-ref', 'HEAD']);
     if (!branch.ok || !branch.stdout.trim() || branch.stdout.trim() === 'HEAD') die('worker branch cannot be determined');
     if (!command('git', ['merge-base', '--is-ancestor', branch.stdout.trim(), 'HEAD'], { cwd }).ok) die('worker branch is not fully merged into yours');
@@ -784,7 +816,7 @@ class MachineService {
   loginRecord(account) {
     if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(account)) die('invalid account');
     let record = this.logins[account];
-    if (!record && this.liveTmux().has(`wc-login-${account}`)) {
+    if (!record && this.liveTmux()?.has(`wc-login-${account}`)) {
       const defaultEntry = Object.entries(adapters).find(([, adapter]) => account === `default-${adapter.provider}`);
       if (defaultEntry) record = { cli: defaultEntry[0], dir: null };
       else {
@@ -832,7 +864,7 @@ class MachineService {
   }
   status() {
     const live = this.liveTmux();
-    const others = [...live].filter(name => !name.startsWith('wc-login-') && !this.sessions[name]).map(name => ({ name, managed: false, running: true }));
+    const others = [...(live || [])].filter(name => !name.startsWith('wc-login-') && !this.sessions[name]).map(name => ({ name, managed: false, running: true }));
     const defaults = Object.fromEntries(Object.entries(adapters).map(([cli, adapter]) => [cli, adapter.loginStatus(null)]));
     const claude = this.cliStatus('claude', defaults.claude), codex = this.cliStatus('codex', defaults.codex);
     const accounts = Object.entries(adapters).map(([cli, adapter]) => ({ id: `default-${adapter.provider}`, cli, ...defaults[cli] }));
@@ -841,7 +873,7 @@ class MachineService {
     for (const folder of folders.filter(e => e.isDirectory())) {
       try { const record = JSON.parse(fs.readFileSync(path.join(root, folder.name, 'wheelchair-account.json'), 'utf8')); if (record.id !== folder.name || !adapters[record.cli] || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(record.id)) continue; accounts.push({ id: record.id, cli: record.cli, ...adapters[record.cli].loginStatus(path.join(root, folder.name)) }); } catch {}
     }
-    return { version: this.version, claude, codex, accounts, sessions: [...Object.values(this.sessions).filter(s => !s.name.startsWith('wc-login-')).map(s => ({ ...s, managed: true, running: live.has(s.name) })), ...others] };
+    return { version: this.version, claude, codex, accounts, sessions: [...Object.values(this.sessions).filter(s => !s.name.startsWith('wc-login-')).map(s => ({ ...s, managed: true, ...(live ? { running: live.has(s.name) } : {}) })), ...others] };
   }
   cliStatus(cli, login = adapters[cli].loginStatus(null)) {
     const version = command('sh', ['-c', `command -v ${cli}`]);

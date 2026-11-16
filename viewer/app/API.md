@@ -69,7 +69,7 @@ for Claude, `haiku`, `sonnet`, `opus` are accepted aliases for slots, not model 
 `--tier opus` runs whatever the Heavy cell holds. Every session receives a model and its configured effort when present. A provider cell set to `none` is a 400 directing the caller to the other CLI.
 A start is a 409 ("machine service out of date") while that machine's `/v1/status` commit differs from the hub's.
 
-Worker restart (`wc.js session start --role worker ... --replaces <session>`): the hub checks the named session is a worker in the same thread and not live, then starts the new worker in that session's `worktree` on its `branch`. A live session or a non-worker is refused with 400.
+Worker restart (`wc.js session start --role worker ... --replaces <session>`): the hub checks the named session is a worker in the same thread and not live, then starts the new worker in that session's `worktree` on its `branch`. A live session or a non-worker is refused with 400. The hub then asks the machine (`GET /v1/sessions`): if the old worker's tmux session is still listed as running, or running is unknown, or the machine cannot be reached, the start is refused with 409, because the hub's record can say ended while the old worker still runs and both would write one worktree.
 
 ### Accounts and usage
 
