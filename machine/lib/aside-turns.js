@@ -44,6 +44,7 @@ class AsideTurns {
     if (typeof i.cwd !== 'string' || !path.isAbsolute(i.cwd) || !fs.existsSync(i.cwd) || !fs.statSync(i.cwd).isDirectory()) bad('invalid cwd');
     if (typeof i.prompt !== 'string' || !i.prompt.trim()) bad('prompt is required');
     if (i.style !== undefined && typeof i.style !== 'string') bad('invalid style');
+    if (i.access !== undefined && !['read-only', 'full'].includes(i.access)) bad('invalid access');
     return this.accountDir(i.account_dir);
   }
   result(t) { return { state: t.state, reply: t.reply ?? null, conversation_id: t.conversation_id ?? null, error: t.error ?? null, limit: t.limit ?? false }; }
@@ -92,7 +93,8 @@ class AsideTurns {
         try { const parsed = JSON.parse(list.out); if (!Array.isArray(parsed) || parsed.some(x => typeof x.name !== 'string' || !x.name)) throw Error(); servers = parsed.map(x => x.name); } catch { return await this.finish(t, { state: 'failed', error: 'invalid codex mcp list output' }); }
       }
       if (t.state !== 'running') return;
-      const r = await runChild(adapter.asideArgv(i, { prompt, servers }), i.provider === 'gpt' && i.mode === 'fork' ? `${prompt}\n\n${i.prompt}` : i.prompt, onSpawn);
+      const message = i.access ? `${i.prompt}\n\nYour access is ${i.access}.` : i.prompt;
+      const r = await runChild(adapter.asideArgv(i, { prompt, servers }), i.provider === 'gpt' && i.mode === 'fork' ? `${prompt}\n\n${message}` : message, onSpawn);
       if (t.state !== 'running') return;
       if (i.provider === 'claude') {
         let obj = {}; try { obj = JSON.parse(r.out); } catch {}

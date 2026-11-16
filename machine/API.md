@@ -17,7 +17,7 @@ The secret is never inherited by a tmux session.
 | `POST /v1/sessions/:name/submit` | hub | `{ "text": "…" }`; bracketed paste followed by Enter. |
 | `POST /v1/sessions/:name/keys` | hub | `{ "keys": "…" }`; raw tmux keys, never an implicit Enter. |
 | `GET /v1/sessions/:name/transcript?offset=N` | hub | Newly copied transcript bytes and next byte offset. A Claude session with no Stop payload yet is found by session id under `$CLAUDE_CONFIG_DIR` (else `~/.claude`) at `projects/*/<id>.jsonl`. |
-| `POST /v1/aside-turns` | hub | Accept `{turn_id, provider, account_dir, cwd, model, effort?, mode, from, new_id?, prompt, style?}`; returns `202 {turn_id,state}` or `200` for an existing id. Runs a read-only CLI turn with a 15-minute timeout. |
+| `POST /v1/aside-turns` | hub | Accept `{turn_id, provider, account_dir, cwd, model, effort?, mode, from, new_id?, prompt, style?, access?}`; returns `202 {turn_id,state}` or `200` for an existing id. Runs a CLI turn with a 15-minute timeout: read-only by default; `access: "full"` runs Claude with `bypassPermissions` and Codex with `--dangerously-bypass-approvals-and-sandbox`. |
 | `GET /v1/aside-turns/:turn_id` | hub | Return `{state,reply,conversation_id,error,limit}`; unknown ids return 404. |
 | `DELETE /v1/aside-turns/:turn_id` | hub | Kill a running turn and mark it failed; finished turns are unchanged; an unknown id is recorded as stopped, so a later POST with that id starts nothing. |
 | `POST /v1/aside-turns/:turn_id/ack` | hub | Forget a turn after its result is saved; unknown ids return 404. Records survive restart, and running turns are killed and marked failed on recovery. |

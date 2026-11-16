@@ -31,6 +31,10 @@ test('settings defaults, templates, prompt composition, counts, and validation',
     const unrestricted = await api(context, '/settings/preferences', { method: 'PUT', body: { codex_mode: 'unrestricted' } });
     assert.equal(unrestricted.body.codex_mode, 'unrestricted');
     assert.equal((await api(context, '/settings')).body.codex_mode, 'unrestricted');
+    assert.equal(initial.body.aside_access, 'read-only');
+    assert.equal((await api(context, '/settings/preferences', { method: 'PUT', body: { aside_access: 'bypass' } })).status, 400);
+    assert.equal((await api(context, '/settings/preferences', { method: 'PUT', body: { aside_access: 'full' } })).body.aside_access, 'full');
+    assert.equal((await api(context, '/settings')).body.aside_access, 'full');
     const all = await api(context, '/settings/templates', { method: 'POST', body: workerTemplate('All workers') });
     const project = await api(context, '/settings/templates', { method: 'POST', body: workerTemplate('Project workers', '/tmp/project', 'Use the project convention.') });
     assert.equal(all.status, 201);

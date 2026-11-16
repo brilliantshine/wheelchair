@@ -36,14 +36,15 @@ test('aside turns fork, resume, save before ack, and retry failures', async () =
   try {
     await asides.pump(hub, thread.id);
     let current = (await hub.thread(thread.id)).asides[0];
-    assert.equal(posts[0].mode, 'fork'); assert.equal(posts[0].from, 'parent'); assert.ok(posts[0].style);
+    assert.equal(posts[0].mode, 'fork'); assert.equal(posts[0].from, 'parent'); assert.ok(posts[0].style); assert.equal(posts[0].access, 'read-only');
+    await settings.update(hub, (value) => { value.aside_access = 'full'; });
     modelPrefix = 'changed';
     turns.set(current.turn.id, { state: 'ok', reply: 'answer', conversation_id: 'fork' });
     await asides.pump(hub, thread.id);
     current = (await hub.thread(thread.id)).asides[0]; assert.equal(current.history[0].reply, 'answer'); assert.equal(current.history[0].model, 'model-standard');
     const record = await hub.thread(thread.id); await asides.change(hub, record, record.asides[0], 'messages', { text: 'again' });
     await asides.pump(hub, thread.id); current = (await hub.thread(thread.id)).asides[0];
-    assert.equal(posts[1].mode, 'resume'); assert.equal(posts[1].from, 'fork');
+    assert.equal(posts[1].mode, 'resume'); assert.equal(posts[1].from, 'fork'); assert.equal(posts[1].access, 'full');
     turns.set(current.turn.id, { state: 'failed', error: 'failed' }); await asides.pump(hub, thread.id);
     current = (await hub.thread(thread.id)).asides[0]; assert.equal(current.failed, 'failed'); assert.equal(current.pending[0].text, 'again');
     const retry = await hub.thread(thread.id); await asides.change(hub, retry, retry.asides[0], 'retry', {}); await asides.pump(hub, thread.id);
