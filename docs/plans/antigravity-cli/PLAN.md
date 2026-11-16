@@ -265,6 +265,15 @@ otherwise check the aside is refused with the plain message.
 | intent | minor | Ready meaning narrower than IDEA bullet | upheld | Decision 17 |
 | intent | minor | Live aside check can't pass if asides are refused | upheld | Validation made conditional |
 
+### Round 2 — 2026-11-16
+
+**Lanes:** intent, claude; mechanics, gpt; cross-family: yes.
+
+**Changed since Round 1:** Decisions 13-17 (real gemini model defaults; only `worker_order` migrated; per-account `prepare(dir)` hook write; `promptText` pane polling for permission prompts; per-session `--settings` hooks preferred over the global hooks file; Ready meaning); aside-turns.js gemini validation, adapter map and parser; Task 0 item 5; conditional aside validation.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
