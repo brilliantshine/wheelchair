@@ -80,33 +80,45 @@ async function graph(hub, thread, aside, reply) {
     return { reply: text, graph: graphPath, graph_error: null };
   } catch (error) { return { reply: text, graph: null, graph_error: `Couldn't draw that: ${error.message}` }; }
 }
-async function run(hub, thread, aside) {
-  if (!aside.turn && aside.status === 'open' && aside.pending.length && !aside.failed && !thread.archived) {
-    const resolved = await model(hub, aside.provider, aside.slot);
-    if (!resolved) { aside.failed = 'the model is off in Settings'; await hub.save(thread); return; }
-    aside.turn = { id: crypto.randomUUID(), state: 'dispatching', message: aside.pending.shift(), model: resolved.model, effort: resolved.effort || null }; await hub.save(thread);
-  }
-  if (!aside.turn || thread.archived) return;
-  const turn = aside.turn, base = `/v1/aside-turns/${encodeURIComponent(turn.id)}`;
-  let result;
-  try { result = await hub.call(thread.machine, base, 'GET'); }
-  catch (error) {
-    if (error.status !== 404) return;
-    if (turn.state === 'running') result = { state: 'failed', error: 'the machine lost this turn' };
-  }
-  if (!result && turn.state === 'dispatching') {
-    if (!turn.model) {
-      const resolved = await model(hub, aside.provider, aside.slot);
-      if (!resolved) { aside.failed = 'the model is off in Settings'; aside.pending.unshift(turn.message); aside.turn = null; await hub.save(thread); return; }
-      Object.assign(turn, { model: resolved.model, effort: resolved.effort || null });
-      await hub.save(thread);
+async function claim(hub, id) {
+  return hub.withThread(id, async () => {
+    const thread = await hub.thread(id), items = [];
+    if (thread.archived) return items;
+    for (const aside of thread.asides || []) {
+      if (!aside.turn && aside.status === 'open' && aside.pending.length && !aside.failed) {
+        const resolved = await model(hub, aside.provider, aside.slot);
+        if (!resolved) { aside.failed = 'the model is off in Settings'; await hub.save(thread); continue; }
+        aside.turn = { id: crypto.randomUUID(), state: 'dispatching', message: aside.pending.shift(), model: resolved.model, effort: resolved.effort || null }; await hub.save(thread);
+      }
+      if (!aside.turn) continue;
+      const turn = aside.turn;
+      let body;
+      if (turn.state === 'dispatching') {
+        if (!turn.model) {
+          const resolved = await model(hub, aside.provider, aside.slot);
+          if (!resolved) { aside.failed = 'the model is off in Settings'; aside.pending.unshift(turn.message); aside.turn = null; await hub.save(thread); continue; }
+          Object.assign(turn, { model: resolved.model, effort: resolved.effort || null }); await hub.save(thread);
+        }
+        const style = settings.renderStyle((await settings.load(hub)).style);
+        body = { turn_id: turn.id, provider: aside.provider, account_dir: Object.hasOwn(aside, 'account_dir') ? aside.account_dir : (aside.account === `default-${aside.provider}` ? null : `~/.wheelchair/accounts/${aside.account}`), cwd: thread.worktree, model: turn.model, ...(turn.effort ? { effort: turn.effort } : {}), mode: aside.cli_id ? 'resume' : 'fork', from: aside.cli_id || aside.fork_parent, new_id: turn.id, prompt: prompt(aside, turn.message), ...(style ? { style } : {}) };
+      }
+      items.push({ asideId: aside.id, turnId: turn.id, state: turn.state, machine: thread.machine, body });
     }
-    const style = settings.renderStyle((await settings.load(hub)).style);
-    const body = { turn_id: turn.id, provider: aside.provider, account_dir: Object.hasOwn(aside, 'account_dir') ? aside.account_dir : (aside.account === `default-${aside.provider}` ? null : `~/.wheelchair/accounts/${aside.account}`), cwd: thread.worktree, model: turn.model, ...(turn.effort ? { effort: turn.effort } : {}), mode: aside.cli_id ? 'resume' : 'fork', from: aside.cli_id || aside.fork_parent, new_id: turn.id, prompt: prompt(aside, turn.message), ...(style ? { style } : {}) };
-    try { await hub.call(thread.machine, '/v1/aside-turns', 'POST', body); turn.state = 'running'; await hub.save(thread); } catch { /* retry with the same id */ }
-    return;
+    return items;
+  });
+}
+async function call(hub, item) {
+  const base = `/v1/aside-turns/${encodeURIComponent(item.turnId)}`;
+  try { return await hub.call(item.machine, base, 'GET'); }
+  catch (error) {
+    if (error.status !== 404) return null;
+    if (item.state === 'running') return { state: 'failed', error: 'the machine lost this turn' };
+    try { await hub.call(item.machine, '/v1/aside-turns', 'POST', item.body); return { state: 'running' }; }
+    catch { return null; }
   }
-  if (!result || result.state === 'running') { if (result && turn.state === 'dispatching') { turn.state = 'running'; await hub.save(thread); } return; }
+}
+async function applyResult(hub, thread, aside, result) {
+  const turn = aside.turn;
   const message = turn.message;
   if (result.state === 'ok') {
     if (!aside.cli_id) aside.cli_id = result.conversation_id;
@@ -131,9 +143,41 @@ async function run(hub, thread, aside) {
     else { aside.pending.unshift(message); aside.failed = notice; }
   }
   aside.turn = null; await hub.save(thread);
-  await hub.call(thread.machine, `${base}/ack`, 'POST').catch(() => {});
-  if (aside.status === 'open' && aside.pending.length && !aside.failed) await run(hub, thread, aside);
+}
+async function pass(hub, id) {
+  const items = await claim(hub, id);
+  for (const item of items) item.result = await call(hub, item);
+  const { acks, again } = await hub.withThread(id, async () => {
+    const thread = await hub.thread(id), acks = [];
+    let changed = false;
+    for (const item of items) {
+      const aside = (thread.asides || []).find((a) => a.id === item.asideId);
+      if (!aside?.turn || aside.turn.id !== item.turnId || !item.result) continue;
+      if (item.result.state === 'running') {
+        if (aside.turn.state === 'dispatching') { aside.turn.state = 'running'; await hub.save(thread); }
+      } else {
+        await applyResult(hub, thread, aside, item.result);
+        acks.push({ machine: item.machine, turnId: item.turnId }); changed = true;
+      }
+    }
+    return { acks, again: changed && !thread.archived && (thread.asides || []).some((a) => a.status === 'open' && a.pending.length && !a.failed && !a.turn) };
+  });
+  for (const ack of acks) await hub.call(ack.machine, `/v1/aside-turns/${encodeURIComponent(ack.turnId)}/ack`, 'POST').catch(() => {});
+  return again;
+}
+const pumps = new Map();
+function pump(hub, id, { fromTimer = false } = {}) {
+  const existing = pumps.get(id);
+  if (existing) { if (!fromTimer) existing.again = true; return fromTimer ? Promise.resolve() : existing.promise; }
+  const entry = { again: false };
+  entry.promise = (async () => {
+    do {
+      entry.again = false;
+      while (await pass(hub, id)) { /* drain newly runnable messages */ }
+    } while (entry.again);
+  })().finally(() => { if (pumps.get(id) === entry) pumps.delete(id); });
+  pumps.set(id, entry);
+  return entry.promise;
 }
 function needsPump(thread) { return !thread.archived && (thread.asides || []).some((aside) => aside.turn || (aside.status === 'open' && aside.pending?.length && aside.failed == null)); }
-async function pump(hub, id) { return hub.withThread(id, async () => { const thread = await hub.thread(id); for (const aside of thread.asides || []) await run(hub, thread, aside); }); }
 module.exports = { brief, change, close, create, find, model, needsPump, pump };

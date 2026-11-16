@@ -153,6 +153,7 @@ test('routes anchor lead messages, expose summaries, hand off and archive', asyn
     settings.modelCommand = async () => ({ stdout: 'model' });
     before = await hub.thread('routes'); before.sessions[0].provider = 'gpt'; await hub.save(before);
     const made = await request('POST', '/asides', data); assert.equal(made.status, 201); assert.equal(made.body.history, undefined);
+    await asides.pump(hub, 'routes');
     const id = made.body.id; assert.equal(made.body.fork_parent, 'listed-codex'); let t = await hub.thread('routes'); t.asides[0].history.push({ kind: 'start', text: '', reply: 'r', graph: '/tmp/a.json' }); await hub.save(t);
     t.asides[0].history.push({ kind: 'ask', text: 'Please explain', reply: 'first answer' }); await hub.save(t);
     assert.equal((await request('POST', `/asides/${id}/think-harder`, {})).status, 200);
@@ -165,7 +166,7 @@ test('routes anchor lead messages, expose summaries, hand off and archive', asyn
     const full = await request('GET', `/asides/${id}`); assert.equal(full.body.history.length, 3); assert.deepEqual(registered, ['/tmp/a.json']);
     assert.equal((await request('GET', '/chat')).body.asides[0].history, undefined);
     const closed = await request('POST', `/asides/${id}/close`, { outcome: 'changed', line: 'Use this' }); assert.equal(closed.status, 200);
-    t = await hub.thread('routes'); assert.equal(t.asides[0].outcome, 'changed'); assert.equal(t.queues.lead[0].source, 'collin'); assert.match(t.queues.lead[0].text, /from aside 1 on: "Hello"/);
+    await asides.pump(hub, 'routes'); t = await hub.thread('routes'); assert.equal(t.asides[0].outcome, 'changed'); assert.equal(t.queues.lead[0].source, 'collin'); assert.match(t.queues.lead[0].text, /from aside 1 on: "Hello"/);
     t.asides[0].status = 'open'; t.asides[0].turn = { id: 'turn1', state: 'running', message: { kind: 'ask', text: 'test' } }; await hub.save(t);
     assert.equal((await request('POST', '/archive', {})).status, 200); assert.ok(calls.some((c) => c.route === '/v1/aside-turns/turn1' && c.method === 'DELETE'));
     const archived = await request('GET', `/asides/${id}`); assert.equal(archived.status, 200); assert.equal(archived.body.status, 'closed'); assert.equal(archived.body.history.at(-1).reply, 'better answer');
@@ -223,4 +224,50 @@ test('aside GET computes heavy usability from the model command without storing 
   await fs.writeFile(script, '#!/bin/sh\necho model\n', { mode: 0o755 });
   assert.equal((await get()).heavy_usable, true);
   assert.equal((await hub.thread('model')).asides[0].heavy_usable, undefined);
+});
+
+
+test('slow machine calls leave routes free, coalesce pumps, and discard archived results', async () => {
+  const { Readable } = require('node:stream');
+  const { handle } = require('../app/hub.js');
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'wc-asides-slow-'));
+  const hub = new Hub({ stateDir: dir }); await hub.state.init();
+  const aside = { id: 'a', status: 'open', provider: 'gpt', slot: 'standard', pending: [], failed: null, history: [], turn: { id: 'turn', state: 'running', message: { kind: 'ask', text: 'question' } } };
+  await hub.save({ id: 'slow', project: '/tmp/repo', worktree: '/tmp/repo', machine: 'hub', sessions: [], asides: [aside], cards: [], pinned: {}, queues: {}, sent: [], archived: false });
+  let release, entered;
+  let held = new Promise((resolve) => { release = resolve; });
+  let started = new Promise((resolve) => { entered = resolve; });
+  let gets = 0, concurrent = 0, maxConcurrent = 0;
+  hub.call = async (_, route, method) => {
+    if (method === 'GET' && route === '/v1/aside-turns/turn') {
+      gets++; concurrent++; maxConcurrent = Math.max(maxConcurrent, concurrent); entered();
+      const result = await held; concurrent--; return result;
+    }
+    if (route === '/v1/archive') return { kept: [] };
+    return {};
+  };
+  async function request(suffix, body) {
+    const req = Readable.from([Buffer.from(JSON.stringify(body))]); req.method = 'POST';
+    let status; const res = { writeHead(code) { status = code; }, end() {} };
+    await handle(hub, req, res, new URL(`http://localhost/wheelchair/api/threads/slow${suffix}`), false);
+    return status;
+  }
+  const first = asides.pump(hub, 'slow'); await started;
+  try {
+    await Promise.all(Array.from({ length: 5 }, () => asides.pump(hub, 'slow', { fromTimer: true })));
+    assert.equal(gets, 1); assert.equal(maxConcurrent, 1);
+    const closed = await Promise.race([request('/asides/a/close', { outcome: 'done' }), new Promise((_, reject) => setTimeout(() => reject(new Error('close waited for GET')), 1000))]);
+    assert.equal(closed, 200); assert.equal((await hub.thread('slow')).asides[0].status, 'closed');
+    release({ state: 'running' }); await first;
+    assert.equal(gets, 2); assert.equal(maxConcurrent, 1);
+
+    held = new Promise((resolve) => { release = resolve; });
+    started = new Promise((resolve) => { entered = resolve; });
+    const second = asides.pump(hub, 'slow'); await started;
+    try {
+      assert.equal(await request('/archive', {}), 200);
+      release({ state: 'ok', reply: 'late answer', conversation_id: 'fork' }); await second;
+      assert.deepEqual((await hub.thread('slow')).asides[0].history, []);
+    } finally { release({ state: 'running' }); await second; }
+  } finally { release({ state: 'running' }); await first; }
 });
