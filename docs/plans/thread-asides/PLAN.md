@@ -1,6 +1,6 @@
 ---
 slug: thread-asides
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-15
 ---
 
@@ -642,3 +642,4 @@ Round 9 is clean: no blocking or major finding upheld.
 - 2026-11-15 — Choice: T4, pages/aside.js: the "Ask about this message" control lives in a shadow root on the bubble, so it adds nothing to the bubble's textContent and anchor offsets stay exact.
 - 2026-11-15 — Choice: T4, pages/aside.js: the aside list shows creation times in the browser's locale.
 - 2026-11-15 — Choice: T4, pages/aside.js: quotes in the aside list longer than 60 characters are cut with an ellipsis.
+- 2026-11-15 — All five tasks merged; full validation run (see COMPLETION.md). Status set to verifying; one verifier started on Claude (--not-provider gpt), since every builder ran on GPT.
