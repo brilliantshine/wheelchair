@@ -162,3 +162,24 @@ no unsafe sinks
 ```
 
 Only `sudo-helper/helper.py`, `sudo-helper/static/page.js` and `sudo-helper/test/test_helper.py` changed, so the machine, viewer and installer suites' results above stand.
+
+### Remediation 2 — 2026-11-15
+
+Verification attempt 2 at `0de3bc1`: GPT verifier (gpt-6.1-sol) PASS; Claude verifier (claude-opus-5-5) FAIL with one gap (verbatim in `docs/plans/sudo-cards/REMEDIATION-2.md`): a file or directory the user owns but has made read-only was not flagged as editable, though the owner can always chmod it.
+
+| Gap | Fix | Task / lane |
+|-----|-----|-------------|
+| Owned read-only paths missed by the editable-file warning | `writable()` returns true for any path the user owns, whatever its mode (`sudo-helper/helper.py:51-55`) | R2-1, light gpt-6-luna |
+
+New test: `sudo-helper/test/test_helper.py` `test_scan_flags_owned_read_only_paths` (owned 0555 file and a missing path under an owned 0555 directory are flagged; direct `writable()` checks for owned read-only and not-owned 0644).
+
+Validation after the fix (sub-lead, on the feature branch):
+
+```
+$ python3 -m unittest discover -s sudo-helper/test -v
+Ran 9 tests ... OK
+$ bash sudo-helper/test/install-test.sh
+PASS helper installer, idempotence, uninstall and refusals
+```
+
+Only `sudo-helper/helper.py` and its test changed.
