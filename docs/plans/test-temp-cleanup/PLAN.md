@@ -1,6 +1,6 @@
 ---
 slug: test-temp-cleanup
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-15
 ---
 
@@ -48,6 +48,23 @@ folders left by processes that no longer exist, and old-style leftovers from bef
 change. Helpers that start child processes wait for them to exit, and anything still
 running at exit is killed before removal. The shell suites keep their own `mktemp -d` +
 trap, hardened for signals.
+
+```mermaid
+flowchart TD
+  A[Test asks for a temp folder] --> B{First one in this process?}
+  B -- yes --> C[Sweep: clear folders of finished runs, and old-style leftovers over an hour old]
+  C --> D[Make this process's run folder, note its owner]
+  B -- no --> E[Make the folder inside the run folder]
+  D --> E
+  E --> F[Tests run; servers and fake CLIs they start are noted]
+  F --> G{How does the process end?}
+  G -- normally or a test failed --> H[Stop noted processes, wait until they have stopped]
+  G -- Ctrl-C or kill --> H
+  G -- force-killed --> I[Folder stays; the next run's sweep stops its processes and removes it]
+  H --> J{All stopped within 2 s?}
+  J -- yes --> K[Remove the run folder]
+  J -- no --> I
+```
 
 ### 1. The helper: `test-support/run-dir.js`
 
@@ -278,7 +295,7 @@ product code changes; any cleanup run by an agent rather than the suites.
 
 ### Round 3 — 2026-11-15
 
-**Lanes:** pending.
+**Lanes:** intent: GPT; mechanics: GPT; cross-family: no.
 
 **Changed since Round 2:**
 - §3 step 1: the rule for killing a dead run's recorded children now requires both start times readable and equal; otherwise never kill.
@@ -286,6 +303,8 @@ product code changes; any cleanup run by an agent rather than the suites.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | — | No findings | — | — |
+| mechanics | — | No findings (clean round) | — | — |
 
 ## Prior Work
 
