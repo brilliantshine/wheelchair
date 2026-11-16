@@ -1,0 +1,50 @@
+Accessing workspace:
+
+/tmp/t0b-agy/trust
+
+Do you trust the contents of this project?
+
+Antigravity CLI requires permission to read, edit, and execute files here.
+
+> Yes, I trust this folder
+  No, exit       
+
+  ↑/↓ Navigate · enter Confirm
+                                                                                                                                                                          auto · Gemini 3.8 Flash · high
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
