@@ -431,8 +431,15 @@ idempotence case is the in-worktree proof.
 | T2 | Dial text and machine routes GET/POST /v1/diagram-sensitivity (§3, §7) | protocol/sensitivity.md, sensitivity/, machine/ | codex standard (gpt-6.1-terra) | wc-1cff24e4cc7d-worker-2 | sensitivity, machine, test-support suites | in progress |
 | T3 | Hub /settings/diagram-sensitivity and Settings Diagrams section (§3, D13, D16) | viewer/app settings routes, API.md, pages/settings.js, its tests | claude standard (claude-sonnet-5-5) | wc-1cff24e4cc7d-worker-3 | viewer node + browser | in progress |
 | T4 | Thread graph list, picture page, aside graphs (§4) | viewer/pages thread/aside/picture, app/asides.js brief, server.js APP_PAGES, its tests | claude standard (claude-sonnet-5-5) | wc-1cff24e4cc7d-worker-4 | viewer node + browser | in progress |
-| T5 | Remove old stage rules, port flow trigger to lead.md, reword references and routers (§1, §3 D18, §5, §6) | protocol text, routers, README, CONTRIBUTING, known-issues | claude standard (claude-sonnet-5-5) | wc-1cff24e4cc7d-worker-5 | §5 greps, protocol-rules test | in progress |
+| T5 | Remove old stage rules, port flow trigger to lead.md, reword references and routers (§1, §3 D18, §5, §6) | protocol text, routers, README, CONTRIBUTING, known-issues | claude standard (claude-sonnet-5-5) | wc-1cff24e4cc7d-worker-5 | §5 greps, protocol-rules test | done |
 
 ## Log
 
 - 2026-11-15 Ready check: hub and machine service answer (`wc.js session list`), review families both, Codex preflight passes (token fresh).
+- 2026-11-15 — Choice: T5, protocol/app/lead.md: states that a thread has a graph home once its plan directory exists, before the ported trigger.
+- 2026-11-15 — Choice: T5, protocol/diagrams.md: "see `map.md`" became "it is read in a terminal" rather than pointing at mapper.md, which does not state the Mermaid ban.
+- 2026-11-15 — Choice: T5, protocol/graphs.md: lanes link example replaced with a link to AGENTS.md; run-picture intro and question-slug sentence shortened instead of naming a replacement file.
+- 2026-11-15 — Choice: T5, README.md: dropped the run-picture paragraph and the SEEN.md row; kept the viewer section.
+- 2026-11-15 — Choice: T5, README.md/AGENTS.md: "Sessions page" became "Agents page"; the docs row's `/adopt` reworded.
+- 2026-11-15 — Choice: T5, protocol/AGENTS.md: names the removed files in one sentence saying they are gone.
+- 2026-11-15 — Choice: T5, codex/AGENTS.md: retitled, "lane" replaced by "session".
