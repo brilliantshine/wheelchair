@@ -44,6 +44,7 @@ None open.
 | 16 | Hooks go per session first: Task 0 checks whether `agy --settings <file>` loads a `Stop` hook. If it does, the adapter writes a settings file per session (as Claude does, `machine/adapters/claude.js:18-22`) with the session name as the hook's argument, and Decision 10's global hook file, its merge, `prepare(dir)`'s hook write and `WHEELCHAIR_SESSION_NAME` are all dropped. Decision 10 is the fallback only if it doesn't | Avoids writing into Collin's own `~/.gemini/config/hooks.json` | review-round-1 |
 | 17 | Ready keeps checking only the thread's own CLI. For a Claude- or Codex-led thread, workers reach Antigravity only when placement already found a signed-in Antigravity account (`viewer/app/balancer.js` `signedIn`), so no separate Ready line is needed. The IDEA bullet means threads whose CLI is `agy` | Keeps the Ready card about what the thread itself needs | review-round-1 |
 | 18 | Verification stays at most two verifiers. With `review_families` `both`: one family built → one verifier `--not-provider <it>`; two or more families built → one verifier on each of two families that built, chosen in the order claude, gpt, gemini (so all three building gives claude + gpt). Single-family settings are unchanged: one verifier, no flag | Each verifier checks the whole build, so a third adds cost without new coverage | review-round-3 |
+| 19 | Supersedes 14's migration rule: settings store `worker_order_seen`. On load, append to `worker_order` only providers not in it, then mark every known provider seen. A file saved before this build, with no `worker_order_seen`, counts as having seen `claude` and `gpt`, so only Antigravity is appended, once. A provider removed with Settings' Remove stays removed | Appending every missing provider undid the existing Remove button, changing how Claude and Codex are placed, which IDEA.md rules out | lead (build) |
 
 ## Spec
 
@@ -384,8 +385,11 @@ a worker with `--provider gemini` and check its `result` card arrives.
 | T6 | Protocol, API docs, routers | `protocol/app/{lead,sub-lead}.md`, `machine/API.md`, `viewer/app/API.md`, `machine/AGENTS.md`, `viewer/AGENTS.md`, `codex/AGENTS.md` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-8 (t6-a1) | protocol-rules test; grep for two-provider wording | done |
 | T7 | Graph-arrow browser test skips `form` picture files, as it skips `run` ones | `viewer/test/browser.spec.js` | light, gpt-6-luna | wc-9340ecf1256c-worker-9 (t7-a1) | the one test, both browsers | done |
 | T8 | Installer test expects the `gemini` pin lines `model.sh init` now writes | `install/test/run.sh` | light, gpt-6-luna | wc-9340ecf1256c-worker-10 (t8-a1) | `bash install/test/run.sh` | done |
+| T9 | Decision 19: `worker_order_seen`, so a removed provider stays removed | `viewer/app/settings.js`, `viewer/test/app-settings.test.js` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-11 (t9-a1) | `node --test viewer/test/*.test.js` | in progress |
 
 ## Log
+
+- 2026-11-16 — Lead chose (b) for the worker-order removal conflict: Decision 19. T9 builds it.
 
 - 2026-11-16 — T8 accepted (installer suite 180/0, re-run by me). Choices: none.
 
