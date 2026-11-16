@@ -313,3 +313,43 @@ test('archive races compensate claimed turns without changing history', async (t
     });
   }
 });
+
+test('archive tombstones a delayed POST whose response is lost', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'wc-asides-tombstone-race-'));
+  const hub = new Hub({ stateDir: dir }); await hub.state.init();
+  const turn = { id: require('node:crypto').randomUUID(), state: 'dispatching', message: { kind: 'ask', text: 'question' }, model: 'model' };
+  const history = [{ kind: 'note', text: 'existing' }];
+  const aside = { id: 'a', status: 'open', provider: 'gpt', account: 'default-gpt', fork_parent: 'parent', slot: 'standard', pending: [], failed: null, history, turn };
+  await hub.save({ id: 'tombstone-race', project: '/tmp/repo', worktree: '/tmp/repo', machine: 'hub', sessions: [], asides: [aside], cards: [], pinned: {}, queues: {}, sent: [], archived: false });
+  const known = new Map(), events = []; let starts = 0, release, entered;
+  const held = new Promise(resolve => { release = resolve; });
+  const posting = new Promise(resolve => { entered = resolve; });
+  hub.call = async (_, route, method, body) => {
+    if (route === `/v1/aside-turns/${turn.id}` && method === 'GET') {
+      if (known.has(turn.id)) return known.get(turn.id);
+      const error = new Error('missing'); error.status = 404; throw error;
+    }
+    if (route === `/v1/aside-turns/${turn.id}` && method === 'DELETE') {
+      events.push('delete');
+      if (!known.has(turn.id)) known.set(turn.id, { state: 'failed', error: 'stopped' });
+      return {};
+    }
+    if (route === '/v1/aside-turns' && method === 'POST') {
+      entered(); await held; events.push('post');
+      if (!known.has(body.turn_id)) { starts++; known.set(body.turn_id, { state: 'running' }); }
+      throw new Error('response timed out');
+    }
+    if (route === '/v1/archive') return { kept: [] };
+    throw new Error(`unexpected ${method} ${route}`);
+  };
+  const pumping = asides.pump(hub, 'tombstone-race'); await posting;
+  try {
+    await hub.withThread('tombstone-race', () => require('../app/threads.js').archive(hub, 'tombstone-race'));
+    assert.deepEqual(events, ['delete']);
+    release(); await pumping;
+    assert.deepEqual(events, ['delete', 'post']);
+    assert.equal(starts, 0); assert.deepEqual(known.get(turn.id), { state: 'failed', error: 'stopped' });
+    const archived = await hub.thread('tombstone-race');
+    assert.equal(archived.archived, true); assert.deepEqual(archived.asides[0].history, history);
+  } finally { release(); await pumping; }
+});

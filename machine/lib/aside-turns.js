@@ -6,6 +6,7 @@ const { spawn } = require('node:child_process');
 const adapters = require('../adapters');
 const root = require('../adapters/common').root;
 const last = text => text.split('\n').map(x => x.trim()).filter(Boolean).pop();
+const uuid = x => typeof x === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(x);
 const proc = {
   start(pid) { try { const s = fs.readFileSync(`/proc/${pid}/stat`, 'utf8'); return s.slice(s.lastIndexOf(')') + 2).split(' ')[19]; } catch { return null; } },
   marked(id) { return fs.readdirSync('/proc').filter(x => /^\d+$/.test(x)).filter(pid => { try { return fs.readFileSync(`/proc/${pid}/environ`).toString().split('\0').includes(`WHEELCHAIR_ASIDE_TURN=${id}`); } catch { return false; } }).map(Number); },
@@ -33,7 +34,6 @@ class AsideTurns {
   }
   validate(i) {
     const bad = msg => { throw Object.assign(new Error(msg), { status: 400 }); };
-    const uuid = x => typeof x === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(x);
     if (!uuid(i.turn_id)) bad('invalid turn_id');
     if (!['claude', 'gpt'].includes(i.provider)) bad('invalid provider');
     if (!['fork', 'resume'].includes(i.mode)) bad('invalid mode');
@@ -57,7 +57,15 @@ class AsideTurns {
     return { status: 202, body: { turn_id: i.turn_id, state: 'running' } };
   }
   async finish(t, result) { if (t.state !== 'running') return; Object.assign(t, result, { finished_at: new Date().toISOString() }); await this.save(); }
-  async stop(id) { const t = this.get(id); if (t.state === 'running') { if (t.pid) this.proc.kill(t.pid); await this.finish(t, { state: 'failed', error: 'stopped' }); } }
+  async stop(id) {
+    const t = Object.hasOwn(this.turns, id) ? this.turns[id] : null;
+    if (!t) {
+      if (!uuid(id)) throw Object.assign(new Error('invalid turn_id'), { status: 400 });
+      const now = new Date().toISOString();
+      this.turns[id] = { input: null, state: 'failed', error: 'stopped', pid: null, pid_start: null, started_at: now, finished_at: now, reply: null, conversation_id: null, limit: false };
+      await this.save();
+    } else if (t.state === 'running') { if (t.pid) this.proc.kill(t.pid); await this.finish(t, { state: 'failed', error: 'stopped' }); }
+  }
   async ack(id) { this.get(id); delete this.turns[id]; await this.save(); }
   async run(t, dir) {
     const i = t.input, adapter = adapters[i.provider === 'gpt' ? 'codex' : 'claude'];
