@@ -1,6 +1,6 @@
 ---
 slug: review-progress
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-15
 ---
 
@@ -53,6 +53,27 @@ The pinned `progress` card (one per thread, a new one replaces the old in the pi
 (`stage: build` or no stage). When the build moves to verification the sub-lead posts it
 with `stage: verify`. The thread page renders each stage as its own line. No finding text,
 reviewer or verifier names, severities or lens names ever appear in it.
+
+### The line through a feature's life
+
+The pin moves from review, through the build, to verification. Each review pass and each
+verification attempt goes "checking" → "fixing" (with this pass's counts) and repeats until
+it passes.
+
+```mermaid
+flowchart TD
+  A[plan ready for review] --> B["Reviewing plan · pass N · reviewers reading"]
+  B --> C{round clean?}
+  C -- no --> D["Reviewing plan · pass N · found, resolved"]
+  D --> B2[next pass, N+1] --> B
+  C -- yes --> E["Plan reviewed · pass N · passed"]
+  E --> F["Building · D of T tasks done"]
+  F --> G["Verifying · attempt N · checking"]
+  G --> H{verification passed?}
+  H -- no --> I["Verifying · attempt N · gaps, fixed"]
+  I --> G2[next attempt, N+1] --> G
+  H -- yes --> J["Verified · attempt N · passed"]
+```
 
 ### Card schema (`viewer/app/card.js`, documented in `protocol/app/cards.md` `progress`)
 
@@ -209,7 +230,7 @@ past validation) render as Building.
 
 ### Round 2 — 2026-11-15
 
-**Lanes:** pending; cross-family: pending.
+**Lanes:** intent — gpt (claude unavailable); mechanics — gpt; cross-family: no.
 
 **Changed since Round 1:**
 - `clean` redefined as lead.md's existing clean test; review `clean` may carry equal `found`/`fixed`; rendered "Plan reviewed · pass N · passed[, F resolved]" (decision 14).
