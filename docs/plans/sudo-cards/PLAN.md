@@ -435,7 +435,7 @@ Collin chose "keep going" after three rounds without a clean one; budget reset.
 | T5 | Routers and role files: `sudo-helper/AGENTS.md`, root `AGENTS.md` rows, `lead.md`, `sub-lead.md`, `worker.md` | `sudo-helper/AGENTS.md`, `AGENTS.md`, `CONTRIBUTING.md`, `protocol/app/{lead,sub-lead,worker}.md` | light, gpt (gpt-6-luna) | wc-306ee0793e11-worker-6 (medium) | done |
 | T6 | Page keeps checking after a dropped Run POST; ignore `__pycache__/` | `sudo-helper/static/page.js`, `.gitignore` | light, gpt (gpt-6-luna) | wc-306ee0793e11-worker-5 (medium) | `python3 -m unittest discover -s sudo-helper/test -v` | done |
 | R1-1 | Helper page: wrong-password message only while waiting (verification 1 gap) | `sudo-helper/helper.py`, `sudo-helper/static/page.js`, `sudo-helper/test/test_helper.py` | light, gpt (gpt-6-luna) | wc-306ee0793e11-worker-7 (medium) | `python3 -m unittest discover -s sudo-helper/test -v` | done |
-| R1-2 | Helper page keeps polling while the password is checked (verification 1 gap) | `sudo-helper/helper.py`, `sudo-helper/static/page.js`, `sudo-helper/test/test_helper.py` | light, gpt (gpt-6-luna) | wc-306ee0793e11-worker-8 (medium) | `python3 -m unittest discover -s sudo-helper/test -v` | dispatched |
+| R1-2 | Helper page keeps polling while the password is checked (verification 1 gap) | `sudo-helper/helper.py`, `sudo-helper/static/page.js`, `sudo-helper/test/test_helper.py` | light, gpt (gpt-6-luna) | wc-306ee0793e11-worker-8 (medium) | `python3 -m unittest discover -s sudo-helper/test -v` | done |
 
 ## Log
 
@@ -472,3 +472,4 @@ Collin chose "keep going" after three rounds without a clean one; budget reset.
 - 2026-11-15 — Sub-lead: verification 1, Claude verifier FAIL with one gap (stale "Wrong password" message hides the result on the helper page); REMEDIATION-1.md written; R1-1 dispatched to GPT (the provider that built T1). GPT verifier still running; fixes merge after it reports.
 - 2026-11-15 — Sub-lead: GPT verifier FAIL: same gap as Claude's plus a second (page stops polling if the Run POST drops during the password check); appended to REMEDIATION-1.md as R1-2, to run after R1-1 (same files). Browser suite under the GPT verifier: two flaky failures that passed on retry.
 - 2026-11-15 — Sub-lead: R1-1 accepted (7/7 helper tests; worker reported no choices; diff matches brief). R1-2 dispatched.
+- 2026-11-15 — Sub-lead: R1-2 accepted (8/8 helper tests; worker reported no choices; diff matches brief). COMPLETION.md "Remediation 1" added; verification attempt 2 started.

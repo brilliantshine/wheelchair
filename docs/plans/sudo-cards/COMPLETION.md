@@ -136,3 +136,29 @@ The two failures are pre-existing and unrelated, each reproduced on the feature 
 ## Remediation rounds
 
 Appended by Stage 4 loops; never erase earlier content.
+
+### Remediation 1 — 2026-11-15
+
+Verification attempt 1 at `0087751`: Claude verifier (claude-opus-5-5) FAIL, GPT verifier (gpt-6.1-sol) FAIL. Gap list verbatim in `docs/plans/sudo-cards/REMEDIATION-1.md`. Both failures were on the helper's run page; neither verifier reported a gap in the machine service, hub, card or installer.
+
+| Gap | Fix | Task / lane |
+|-----|-----|-------------|
+| A wrong-password message outlived the waiting state and hid the run's exit code (and the "wrong password 3 times" reason) | `message` cleared when the password check passes and when the third wrong try closes the request (`sudo-helper/helper.py:168,173`); `/data` returns it only while waiting (`sudo-helper/helper.py:286`); the page shows it only while waiting (`sudo-helper/static/page.js:23`) | R1-1, light gpt-6-luna |
+| A Run POST dropped during the password check left the page showing the form and no longer polling | `/data` reports `checking` while the password is being checked (`sudo-helper/helper.py:285`); the page hides the form, shows "Checking password…" and reloads every second while checking or running, and retries a failed load (`sudo-helper/static/page.js:12,23-27,30`) | R1-2, light gpt-6-luna |
+
+New tests: `sudo-helper/test/test_helper.py` `test_wrong_then_right_and_three_wrong_data`, `test_data_reports_checking_during_password_check`.
+
+Validation after both fixes (sub-lead, on the feature branch):
+
+```
+$ python3 -m unittest discover -s sudo-helper/test -v
+... 8 tests ... ok
+Ran 8 tests in 8.408s
+OK
+$ bash sudo-helper/test/install-test.sh
+PASS helper installer, idempotence, uninstall and refusals
+$ grep -nE 'innerHTML|insertAdjacentHTML|document\.write|eval\(' sudo-helper/static/page.js || echo 'no unsafe sinks'
+no unsafe sinks
+```
+
+Only `sudo-helper/helper.py`, `sudo-helper/static/page.js` and `sudo-helper/test/test_helper.py` changed, so the machine, viewer and installer suites' results above stand.
