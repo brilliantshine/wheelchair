@@ -3,7 +3,7 @@
   // A small Markdown renderer for chat. Agent text is untrusted, so every node is built with
   // createElement and textContent; nothing here ever assigns innerHTML. Supported: paragraphs,
   // headings (as bold lines), **bold**, *italic*, `code`, fenced code blocks, [links](url),
-  // and bullet and numbered lists. Anything else stays as literal text.
+  // bullet and numbered lists, and pipe tables. Anything else stays as literal text.
 
   function el(tag, cls, text) {
     const n = document.createElement(tag);
@@ -83,6 +83,19 @@
   const FENCE = /^\s{0,3}```+\s*([\w+-]*)\s*$/;
   const ITEM = /^(\s*)([-*+]|\d{1,9}[.)])\s+(.*)$/;
   const HEADING = /^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$/;
+  const TABLE_RULE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
+
+  // A table is a row with a pipe followed by a separator row (|---|---|).
+  function startsTable(rows, i) {
+    return rows[i].includes('|') && i + 1 < rows.length && TABLE_RULE.test(rows[i + 1]);
+  }
+
+  function cells(row) {
+    let t = row.trim();
+    if (t.startsWith('|')) t = t.slice(1);
+    if (t.endsWith('|')) t = t.slice(0, -1);
+    return t.split('|').map((c) => c.trim());
+  }
 
   function render(text, parent) {
     const rows = String(text == null ? '' : text).replace(/\r\n?/g, '\n').split('\n');
@@ -125,6 +138,24 @@
         continue;
       }
 
+      if (startsTable(rows, i)) {
+        const wrap = el('div', 'md-table');
+        const table = wrap.appendChild(el('table'));
+        const head = cells(row);
+        const tr = table.appendChild(el('thead')).appendChild(el('tr'));
+        for (const c of head) inline(c, tr.appendChild(el('th')));
+        const body = table.appendChild(el('tbody'));
+        i += 2;
+        while (i < rows.length && rows[i].trim() && rows[i].includes('|')) {
+          const r = body.appendChild(el('tr'));
+          const vals = cells(rows[i]);
+          head.forEach((_, k) => inline(vals[k] || '', r.appendChild(el('td'))));
+          i += 1;
+        }
+        parent.appendChild(wrap);
+        continue;
+      }
+
       const heading = row.match(HEADING);
       if (heading) {
         const p = el('p', 'md-head');
@@ -137,7 +168,7 @@
       }
 
       const para = [];
-      while (i < rows.length && rows[i].trim() && !FENCE.test(rows[i]) && !ITEM.test(rows[i]) && !HEADING.test(rows[i])) {
+      while (i < rows.length && rows[i].trim() && !FENCE.test(rows[i]) && !ITEM.test(rows[i]) && !HEADING.test(rows[i]) && !startsTable(rows, i)) {
         para.push(rows[i]);
         i += 1;
       }

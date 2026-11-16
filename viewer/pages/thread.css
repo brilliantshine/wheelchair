@@ -97,6 +97,12 @@ html:has(.shell.on-thread) { scroll-padding-top: calc(var(--nav-h) + var(--head-
   border-radius: 8px; max-width: 100%; }
 .md pre.md-code code { background: none; padding: 0; font-size: 12px; white-space: pre; }
 .md .md-head { font-size: 14px; }
+.md .md-table { overflow-x: auto; max-width: 100%; margin: 0 0 10px; border: 1px solid var(--line); border-radius: 6px; }
+.md .md-table table { border-collapse: collapse; font-size: 13px; }
+.md .md-table th, .md .md-table td { border-top: 1px solid var(--line); border-left: 1px solid var(--line);
+  padding: 6px 10px; text-align: left; vertical-align: top; line-height: 1.5; }
+.md .md-table th:first-child, .md .md-table td:first-child { border-left: none; }
+.md .md-table thead th { background: var(--panel-2); border-top: none; }
 .md a { overflow-wrap: anywhere; }
 .md.dim { color: var(--dim); }
 
