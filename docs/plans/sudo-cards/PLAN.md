@@ -12,7 +12,15 @@ get buried as this file grows.
 
 ## Open Questions
 
-None.
+### Q1: The command text is frozen, but not files it runs
+- **Context:** Round 1 review. `sh /home/collin/fix.sh` runs whatever that file holds at run
+  time, and an agent can edit it after Collin reads the card. IDEA.md promises "nothing can be
+  changed after Collin reads it".
+- **Options:** (a) narrow the promise to the command text, and make the lead put the actual
+  commands in the card rather than pointing at a script it wrote; the helper page flags any
+  command that names a file Collin's user can write. (b) Freeze referenced files: the helper
+  copies them when the card is posted. Only works for files it can spot, and is much more work.
+- **Recommendation:** (a).
 
 ## Watch List
 
@@ -40,6 +48,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 11 | The helper is Python 3 standard library only, served through `tailscale serve` from a root-only Unix socket; the machine service reaches it through a second socket | `/usr/bin/python3` ships with Debian, with nothing to install; a root-only socket can't be taken over by an agent the way a TCP port could | defaulted |
 | 12 | Requests live in the helper's memory only: unrun after 1 hour they expire; a helper restart expires them all; 3 wrong passwords end the request | Nothing durable to leak or replay | defaulted |
 | 13 | The sudo request runs on the machine where the lead runs | The work that needs sudo is on that machine | defaulted |
+| 14 | Supersedes 10: the password is checked by `sudo -S -k -l <command>` run as Collin (authenticates and checks the command is allowed, runs nothing); the helper then runs the command itself as root with stdin `/dev/null` | With `sudo -S` running the command, a NOPASSWD rule leaves the password unread in the command's stdin | review-round-1 |
 | 4 | The command is fixed when the card is posted; the run uses the stored text byte for byte and the card shows it in full, unabridged | IDEA.md: what runs is exactly what is shown | defaulted |
 
 ## Spec
@@ -132,12 +141,17 @@ row in the root `AGENTS.md` tables), but **runs only from an installed root-owne
   `autocomplete="current-password"`.
 
 **Running** (on `run`, only while state is `waiting`; one run at a time per request):
-1. Verify: run `/usr/sbin/runuser -u <user> -- /usr/bin/sudo -S -k -p '' -- /bin/true`, write
-   `password + "\n"` to its stdin, close stdin. Exit 0 = password good. Otherwise count a wrong
-   try; on the third the request becomes `failed`. The page says "Wrong password" and the try count.
-2. Run: `/usr/sbin/runuser -u <user> -- /usr/bin/sudo -S -k -p '' -- /bin/sh -c <command>`,
-   password on stdin then stdin closed, `cwd=/`, environment only `PATH=/usr/sbin:/usr/bin:/sbin:/bin`
-   and `LANG=C.UTF-8` (sudo applies its own env reset). New process group.
+1. Check: run `/usr/sbin/runuser -u <user> -- /usr/bin/sudo -S -k -l -p '' -- /bin/sh -c <command>`
+   (`-l` with a command: sudo authenticates, then only reports whether that command is allowed,
+   running nothing). Write `password + "\n"` to its stdin, close stdin, wait. Exit 0 = allowed.
+   Otherwise count a wrong try; on the third the request becomes `failed`. The page says "Wrong
+   password or not allowed" and the try count. This process runs nothing, so a password sudo
+   left unread (a NOPASSWD rule) dies with the pipe. If the user's sudo policy needs no
+   password for this command, any password passes, exactly as at a terminal.
+2. Run: the helper, already root, runs `/bin/sh -c <command>` itself as root, with stdin
+   `/dev/null`, `cwd=/`, environment only `PATH=/usr/sbin:/usr/bin:/sbin:/bin`, `HOME=/root`,
+   `LANG=C.UTF-8`, in a new process group. The password never reaches this process. The helper
+   writes one syslog line per run (user, request id, command, exit code; never the password).
 3. Time limit 10 minutes: SIGTERM to the group, SIGKILL 10 seconds later; output notes the timeout.
 4. Output: stdout and stderr merged in order, the first 32 KiB and last 32 KiB kept, with a
    `[… N bytes cut …]` line between when longer.
@@ -145,7 +159,14 @@ row in the root `AGENTS.md` tables), but **runs only from an installed root-owne
    it is never stored, logged, echoed or included in any response or error.
 
 `-k` with a command means sudo neither uses nor updates a cached ticket, so nothing stays
-unlocked after a run. All paths (`runuser`, `sudo`, `sh`) are absolute and configurable only in
+unlocked after a run.
+
+**What "exactly the command shown" covers:** the command text is frozen when the card is posted
+and run byte for byte. Files that text runs or reads are not frozen (see Q1 / the Decision Log).
+
+**Where to open the page:** on a device other than the agents' machine, such as Collin's phone.
+A browser running on the agents' machine as Collin's user holds the password in memory an agent
+can read. The page says so in one line under the password box. All paths (`runuser`, `sudo`, `sh`) are absolute and configurable only in
 the root-owned config, so tests can point them at shims.
 
 **Logging:** request lines only (method and path), never bodies. Errors never include the body.
@@ -176,6 +197,7 @@ response it can see.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A browser on the agents' own machine, as Collin's user, holds the typed password where an agent can read it | Collin uses the app from his phone or another device; the page warns; isolating a same-user browser is out of reach without a separate desktop account | review-round-1 |
 | A hostile agent can edit the thread page to show a lookalike password box and capture the password | Collin's choice (Decision 9) | planning |
 | A hostile agent can post its own requests to the intake socket, bypassing the lead-only rule | Each still needs Collin to open it, read it and type his password | planning |
 | Anyone on Collin's tailnet who has a request URL can see its command and output | 128-bit id; tailnet is Collin's own devices | planning |
@@ -185,12 +207,15 @@ response it can see.
 
 ### Round 1 — 2026-11-15
 
-**Lanes:** intent (pending); mechanics (pending); cross-family: pending.
+**Lanes:** intent — gpt (claude unavailable); mechanics — gpt; cross-family: no.
 
 **Changed since Round N-1:** n/a (first round — whole Spec in scope)
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | blocking | Password shares stdin with the command; under NOPASSWD sudo leaves it unread for the command to read | upheld | Decision 14: check with `sudo -l`, run as root with stdin `/dev/null` |
+| intent | major | Frozen command text doesn't freeze the files it runs (`sh ~/fix.sh`) | user-decision | Q1 |
+| intent | major | A browser on the agents' machine, same user, holds the password | accepted-risk | Spec "Where to open the page"; Accepted Risks |
 
 ## Prior Work
 
