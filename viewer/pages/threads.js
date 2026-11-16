@@ -40,16 +40,23 @@
   function row(t) {
     const li = el('li', 'row' + (t.id === currentId ? ' current' : ''));
     li.dataset.id = t.id;
-    const a = el('a', 'row-link');
-    a.href = '/wheelchair/app/thread?id=' + encodeURIComponent(t.id);
-    if (t.id === currentId) a.setAttribute('aria-current', 'page');
     const top = el('div', 'top');
     const stage = stages[t.id];
     const working = !t.archived && (t.sessions || []).some((s) => s.role === 'lead' && s.live && s.ready && s.turn_ended === false);
     const dot = el('span', 'dotmark ' + (waiting[t.id] ? 'amber' : stage === 'Done' ? 'green' : stage ? 'blue' : '') + (working ? ' working' : ''));
     if (working) dot.title = 'Working';
     top.appendChild(dot);
-    top.appendChild(el('span', 'title', nameOf(t)));
+    const a = el('a', 'row-link title', nameOf(t));
+    a.href = '/wheelchair/app/thread?id=' + encodeURIComponent(t.id);
+    if (t.id === currentId) a.setAttribute('aria-current', 'page');
+    top.appendChild(a);
+    if (t.lead_name) {
+      const newest = (t.sessions || []).filter((s) => s.role === 'lead')
+        .reduce((a, b) => !a || (b.created_at || '') > (a.created_at || '') ? b : a, null);
+      const chip = el(newest && newest.live ? 'a' : 'span', 'lead-chip', t.lead_name);
+      if (newest && newest.live) chip.href = '/wheelchair/app/agents#lead-' + encodeURIComponent(t.id);
+      top.appendChild(chip);
+    }
     // A stub is only a stub until it is opened: once a lead runs in it, it is ordinary work.
     if (t.stub && !(t.sessions || []).length) {
       top.appendChild(el('span', 'badge', 'stub'));
@@ -59,11 +66,10 @@
       }
     }
     if (t.archived) top.appendChild(el('span', 'badge', 'archived'));
-    a.appendChild(top);
-    a.appendChild(el('div', 'sub', [
+    li.appendChild(top);
+    li.appendChild(el('div', 'sub', [
       stage, waiting[t.id] ? 'needs you' : '', PROVIDER_LABEL[t.provider] || t.cli, t.machine, ago(t.collin_at || t.created_at),
     ].filter(Boolean).join(' · ')));
-    li.appendChild(a);
     return li;
   }
 

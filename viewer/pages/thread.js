@@ -122,7 +122,15 @@
     back.href = '/wheelchair/app/threads'; back.setAttribute('aria-label', 'Back to threads');
     headEl.appendChild(back);
     const block = el('div', 'title-block');
-    block.appendChild(el('h1', '', t.title || slug() || base(t.project)));
+    const titleLine = el('div', 'thread-title-line');
+    titleLine.appendChild(el('h1', '', t.title || slug() || base(t.project)));
+    if (t.lead_name) {
+      const newest = leads().reduce((a, b) => !a || (b.created_at || '') > (a.created_at || '') ? b : a, null);
+      const chip = el(newest && newest.live ? 'a' : 'span', 'lead-chip', t.lead_name);
+      if (newest && newest.live) chip.href = '/wheelchair/app/agents#lead-' + encodeURIComponent(id);
+      titleLine.appendChild(chip);
+    }
+    block.appendChild(titleLine);
     const where = slug() ? base(t.project) + ' / ' + slug() : base(t.project);
     block.appendChild(el('div', 'meta', [
       where, lead ? 'lead' : '', t.provider === 'gpt' ? 'GPT' : t.provider === 'claude' ? 'Claude' : t.cli, lead && lead.model, t.machine, lead && 'tmux ' + lead.name,
@@ -138,8 +146,8 @@
       term.href = '/wheelchair/app/terminal?name=' + encodeURIComponent(lead.name);
       line.appendChild(term);
     }
-    const sessions = el('a', 'btn small', 'Sessions'); sessions.href = '/wheelchair/app/sessions';
-    line.appendChild(sessions);
+    const agents = el('a', 'btn small', 'Agents'); agents.href = '/wheelchair/app/agents#lead-' + encodeURIComponent(id);
+    line.appendChild(agents);
     const stubless = t.stub && !t.sessions.length;
     if (!t.archived) {
       if (!archiveAsk) {
@@ -695,7 +703,7 @@
     if (!data) return;
     const t = thread();
     document.title = (t.title || slug() || base(t.project)) + ' - thread';
-    sync('head', [t.title, t.stub, t.archived, t.worktree, t.branch, t.slug, slug(), archiveAsk, t.pr_url, t.cli, t.machine, t.sessions.map((x) => [x.name, x.live, x.model, x.role])], renderHead);
+    sync('head', [t.title, t.lead_name, t.stub, t.archived, t.worktree, t.branch, t.slug, slug(), archiveAsk, t.pr_url, t.cli, t.machine, t.sessions.map((x) => [x.name, x.live, x.model, x.role, x.created_at])], renderHead);
     sync('files', [t.worktree, slug(), t.archived, data.cards.filter((c) => c.kind === 'diagram')], renderFiles);
     sync('stub', [t.stub, t.sessions.length, t.depends_on_parent, t.ready, t.context, t.parent_pr_url], renderStub);
     sync('wait', [waitingLine(), accountNames], renderWait);
