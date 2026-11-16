@@ -165,10 +165,12 @@ class State:
                 if code != 0:
                     request['tries_left'] -= 1
                     if not request['tries_left']:
+                        request.pop('message', None)
                         self.close(request, 'failed', reason='wrong password ' + str(self.cfg['max_tries']) + ' times')
                     else:
                         request['message'] = 'Wrong password'
                     return
+                request.pop('message', None)
             _, code = self.check(lambda s: ['-l', '-u', 'root', '-p', s, '--', self.cfg['sh'], '-c', request['command']], password, False)
             password = None
             with self.lock:
@@ -280,7 +282,7 @@ class Handler(BaseHTTPRequestHandler):
             if request and self.server.page and match.group(2) == 'data':
                 data.update({k: request[k] for k in ('command', 'does', 'why', 'editable', 'tries_left')})
                 data['user'] = state.cfg['user']
-                if 'message' in request:
+                if 'message' in request and request['state'] == 'waiting':
                     data['message'] = request['message']
         self.reply(200, data)
     def do_POST(self):

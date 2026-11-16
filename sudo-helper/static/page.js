@@ -19,7 +19,7 @@ function render(data) {
     el('editable').appendChild(item);
   }
   const messages = {running: 'Running…', declined: 'Declined', expired: 'No such request', failed: data.reason || 'Failed', ran: 'Exit code: ' + data.exit_code};
-  el('status').textContent = data.message ? data.message + ' (' + data.tries_left + ' tries left)' : messages[data.state] || '';
+  el('status').textContent = data.state === 'waiting' && data.message ? data.message + ' (' + data.tries_left + ' tries left)' : messages[data.state] || '';
   el('output').textContent = data.output || '';
   el('form').hidden = data.state !== 'waiting';
   if (data.state === 'running') setTimeout(load, 1000);
