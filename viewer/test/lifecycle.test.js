@@ -1,5 +1,8 @@
 'use strict';
 
+const { trackChild } = require('../../test-support/run-dir');
+function trackedSpawn(...args) { const child = spawn(...args); trackChild(child); return child; }
+
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
@@ -12,7 +15,7 @@ const { ROOT, makeDir, startServer, request, freePort } = require('./helpers/ser
 
 function run(args) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['viewer/server.js', ...args], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = trackedSpawn(process.execPath, ['viewer/server.js', ...args], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = ''; let stderr = '';
     child.stdout.on('data', (chunk) => { stdout += chunk; });
     child.stderr.on('data', (chunk) => { stderr += chunk; });
@@ -23,7 +26,7 @@ function run(args) {
 
 const HOOK = path.join(ROOT, 'viewer/test/hooks/lifecycle.js');
 function launch(args, mode, extraEnv = {}) {
-  const child = spawn(process.execPath, [...(mode ? ['--require', HOOK] : []), 'viewer/server.js', ...args], {
+  const child = trackedSpawn(process.execPath, [...(mode ? ['--require', HOOK] : []), 'viewer/server.js', ...args], {
     cwd: ROOT, env: { ...process.env, GRAPH_TEST_HOOK: mode, ...extraEnv }, stdio: ['ignore', 'pipe', 'pipe'],
   });
   let stdout = ''; let stderr = '';
@@ -36,7 +39,7 @@ function launch(args, mode, extraEnv = {}) {
   return { child, ready, output: () => ({ stdout, stderr }) };
 }
 function launchFile(file, args, cwd = ROOT) {
-  const child = spawn(process.execPath, [file, ...args], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = trackedSpawn(process.execPath, [file, ...args], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
   let stdout = ''; let stderr = ''; child.stdout.on('data', (chunk) => { stdout += chunk; }); child.stderr.on('data', (chunk) => { stderr += chunk; });
   const ready = new Promise((resolve, reject) => { const timer = setTimeout(() => reject(new Error(stderr)), 5000); child.stdout.on('data', () => { const line = stdout.split(/\r?\n/).find((line) => /^https?:\/\//.test(line)); if (line) { clearTimeout(timer); resolve(line); } }); child.once('exit', () => { clearTimeout(timer); reject(new Error(stderr)); }); });
   return { child, ready };
@@ -64,7 +67,7 @@ http.createServer((request,response)=>{
   response.writeHead(404,{'content-type':'application/json'}); response.end(JSON.stringify({error:'no-route'}));
 }).listen(Number(port),'127.0.0.1',()=>console.log('ready'));
 `);
-  const child = spawn(process.execPath, [fixture, String(port), requests, token, startId, proof ? 'yes' : 'no', pid ? 'yes' : 'no'], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = trackedSpawn(process.execPath, [fixture, String(port), requests, token, startId, proof ? 'yes' : 'no', pid ? 'yes' : 'no'], { stdio: ['ignore', 'pipe', 'pipe'] });
   await new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('pre-prefix holder did not start')), 2000);
     child.stdout.once('data', () => { clearTimeout(timer); resolve(); }); child.once('exit', (code) => { clearTimeout(timer); reject(new Error(`pre-prefix holder exited ${code}`)); });
@@ -230,7 +233,7 @@ test('an older server is stopped only by --stop and every other command gives th
   const fixture = path.join(root, 'old.js'); const record = path.join(root, 'requests.jsonl'); const serverToken = 'd'.repeat(64); const diskToken = 'e'.repeat(64);
   const plan = path.join(root, 'repo', 'docs', 'plans', 'old'); await fs.mkdir(plan, { recursive: true });
   await fs.writeFile(fixture, `const fs=require('node:fs'),http=require('node:http');const [p,file]=process.argv.slice(2);http.createServer((q,s)=>{fs.appendFileSync(file,JSON.stringify({method:q.method,url:q.url,headers:q.headers})+'\\n');s.statusCode=q.url==='/register'?404:200;s.end(JSON.stringify({start_id:'${startId}'}))}).listen(Number(p),'127.0.0.1');`);
-  const old = spawn(process.execPath, [fixture, String(port), record]); await new Promise((resolve) => setTimeout(resolve, 100));
+  const old = trackedSpawn(process.execPath, [fixture, String(port), record]); await new Promise((resolve) => setTimeout(resolve, 100));
   await fs.writeFile(path.join(root, '.token'), `${diskToken}\n`); await fs.writeFile(path.join(root, '.server'), JSON.stringify({ pid: old.pid, port, token: serverToken, start_id: startId }));
   try {
     for (const command of [['--open', path.join(root, 'graphs', 'x.json')], ['--show', path.join(root, 'graphs', 'x.json')], ['--service']]) {

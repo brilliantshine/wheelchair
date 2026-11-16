@@ -1,5 +1,8 @@
 'use strict';
 
+const { trackChild } = require('../../test-support/run-dir');
+function trackedSpawn(...args) { const child = spawn(...args); trackChild(child); return child; }
+
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
@@ -9,9 +12,16 @@ const test = require('node:test');
 
 const { ROOT, FIXTURES, makeDir, freePort, startServer } = require('./helpers/server');
 
+function exited(child) {
+  return new Promise((resolve) => {
+    if (child.exitCode !== null || child.signalCode !== null) resolve();
+    else child.once('exit', resolve);
+  });
+}
+
 function run(args, env = process.env) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['viewer/server.js', ...args], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = trackedSpawn(process.execPath, ['viewer/server.js', ...args], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = ''; let stderr = '';
     child.stdout.on('data', (chunk) => { stdout += chunk; });
     child.stderr.on('data', (chunk) => { stderr += chunk; });
@@ -20,7 +30,7 @@ function run(args, env = process.env) {
 }
 
 async function startServerWithEnv({ root, port, open, env }) {
-  const child = spawn(process.execPath, ['viewer/server.js', '--cache-root', root, '--port', String(port), '--open', open],
+  const child = trackedSpawn(process.execPath, ['viewer/server.js', '--cache-root', root, '--port', String(port), '--open', open],
     { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
   let stdout = ''; let stderr = '';
   child.stdout.on('data', (chunk) => { stdout += chunk; }); child.stderr.on('data', (chunk) => { stderr += chunk; });
@@ -36,9 +46,10 @@ async function startServerWithEnv({ root, port, open, env }) {
   return {
     root, port, graphPath: open, url: `http://127.0.0.1:${port}/wheelchair`, token: (await fs.readFile(path.join(root, '.token'), 'utf8')).trim(), child,
     async stop() {
-      if (child.exitCode === null) child.kill('SIGTERM');
-      await new Promise((resolve) => { const timer = setTimeout(resolve, 1500); child.once('exit', () => clearTimeout(timer) || resolve()); });
-      if (child.exitCode === null) child.kill('SIGKILL');
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
+      const timer = setTimeout(() => child.kill('SIGKILL'), 1500);
+      await exited(child);
+      clearTimeout(timer);
       await fs.unlink(path.join(root, '.server')).catch(() => {});
     },
   };

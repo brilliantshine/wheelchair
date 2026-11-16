@@ -1,5 +1,7 @@
 'use strict';
 
+const { makeTemp } = require('../../test-support/run-dir');
+
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const { transcriptItems } = require('../app/hub.js');
@@ -259,10 +261,9 @@ test('folds a Codex function_call_output into its call', () => {
 test('GET /threads/:id/graph reads an archived thread graph from its branch, and nothing else', async () => {
   const { execFileSync } = require('node:child_process');
   const fs = require('node:fs/promises');
-  const os = require('node:os');
   const path = require('node:path');
   const { api, close, setup, thread } = require('./helpers/app.js');
-  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'wc-graph-'));
+  const repo = await makeTemp('wc-graph-');
   const git = (...args) => execFileSync('git', ['-C', repo, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args]);
   git('init', '-q', '-b', 'main');
   await fs.mkdir(path.join(repo, 'docs/plans/demo/graphs'), { recursive: true });

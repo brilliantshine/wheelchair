@@ -1,9 +1,10 @@
 'use strict';
 
+const { makeTemp } = require('../../test-support/run-dir');
+
 // A thread's slug is the plan its branch adds, not whatever docs/plans/ already holds.
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
-const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const test = require('node:test');
@@ -13,7 +14,7 @@ const { newPlanDirectories, findSlug } = require('../app/views.js');
 function git(cwd, ...args) { return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' }); }
 
 async function repoWithOldPlans() {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'app-slug-'));
+  const root = await makeTemp('app-slug-');
   const origin = path.join(root, 'origin.git');
   const work = path.join(root, 'work');
   execFileSync('git', ['init', '-q', '--bare', origin]);
