@@ -1,6 +1,6 @@
 ---
 slug: app-risks
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-15
 ---
 
@@ -38,6 +38,21 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 ## Spec
 
 Three deliverables. Nothing here changes what Collin sees in the app.
+
+```mermaid
+flowchart TD
+  H[Set up a private run folder: own state, ports, tmux server, test repo] --> P[Real hub on its own port and state]
+  H --> M[Real machine service on its own port and state]
+  P -->|every start counted on the way| X[Counting pass-through] --> M
+  M --> T[Real tmux, real git, real claude / codex]
+  S[Smoke suite: free, no login] -->|asks the hub for the Claude version| P
+  S -->|starts and stops one session directly| M
+  L[Live script: real logins, costs turns] -->|asks as a seeded sub-lead| P
+  L --> C1[Slow start: one start request, not a retry]
+  L --> C2[Each tier on each CLI: model it actually ran]
+  L --> C3[Permission prompt appears, gets answered, card clears]
+  D[Card fix: hub error on a card means queued, not failed] --> N[Same card retried with same id, hub keeps one]
+```
 
 ### Shared harness
 
