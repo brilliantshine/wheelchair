@@ -293,3 +293,14 @@ test('GET /threads/:id/graph reads an archived thread graph from its branch, and
     await close(context);
   }
 });
+
+test('a failed transcript read keeps the last copy for the chat, not for a report', async () => {
+  const { sessionTranscript } = require('../app/chat.js');
+  let fail = false;
+  const hub = { call: async () => { if (fail) throw new Error('machine timeout'); return { data: '{"a":1}\n' }; } };
+  const thread = { machine: 'm' }; const session = { name: 'wc-t-lead' };
+  assert.equal(await sessionTranscript(hub, thread, session, { keepLast: true }), '{"a":1}\n');
+  fail = true;
+  assert.equal(await sessionTranscript(hub, thread, session, { keepLast: true }), '{"a":1}\n');
+  assert.equal(await sessionTranscript(hub, thread, session), '');
+});
