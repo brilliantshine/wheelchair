@@ -43,6 +43,7 @@ None open.
 | 15 | `agy` permission prompts are found by watching the pane of every ready `agy` session (not by a hook, since `agy` has none for prompts) | Ready sessions are otherwise only polled once a prompt is already open (`machine/service.js:546-551`) | review-round-1 |
 | 16 | Hooks go per session first: Task 0 checks whether `agy --settings <file>` loads a `Stop` hook. If it does, the adapter writes a settings file per session (as Claude does, `machine/adapters/claude.js:18-22`) with the session name as the hook's argument, and Decision 10's global hook file, its merge, `prepare(dir)`'s hook write and `WHEELCHAIR_SESSION_NAME` are all dropped. Decision 10 is the fallback only if it doesn't | Avoids writing into Collin's own `~/.gemini/config/hooks.json` | review-round-1 |
 | 17 | Ready keeps checking only the thread's own CLI. For a Claude- or Codex-led thread, workers reach Antigravity only when placement already found a signed-in Antigravity account (`viewer/app/balancer.js` `signedIn`), so no separate Ready line is needed. The IDEA bullet means threads whose CLI is `agy` | Keeps the Ready card about what the thread itself needs | review-round-1 |
+| 18 | Verification stays at most two verifiers. With `review_families` `both`: one family built → one verifier `--not-provider <it>`; two or more families built → one verifier on each of two families that built, chosen in the order claude, gpt, gemini (so all three building gives claude + gpt). Single-family settings are unchanged: one verifier, no flag | Each verifier checks the whole build, so a third adds cost without new coverage | review-round-3 |
 
 ## Spec
 
@@ -73,8 +74,9 @@ to the lead, who posts a card) and records real output under
    (ready text), the hook's stdin JSON, and the transcript file at `transcriptPath`.
 6. A permission prompt screen under `--mode auto`, and confirmation that `--mode plan`
    cannot edit files (for reviewers).
-7. `agy -p --conversation <id> --output-format json` resuming a conversation, and
-   whether it forks or appends.
+7. `agy -p --conversation <id> --output-format json` run against the conversation of an
+   interactive `agy` that is still running (as a lead is during a real aside): whether it
+   forks or appends, and whether the interactive session is disturbed.
 8. A rate-limit or quota error, if one can be provoked cheaply; otherwise record that it
    wasn't.
 
@@ -122,18 +124,17 @@ after it succeeds.
 - `chat.js`: an `agy` transcript parser from the Task 0 fixture, producing the same
   message shape as the others. Unknown row types are skipped; a file with no row it can
   read shows "Couldn't read this Antigravity transcript" instead of an empty chat.
-- `asides.js`: parent id for `agy` sessions is `agy_conversation_id`. The fork refusal
-  (Decision 5) happens here, in the hub, before anything is sent to the machine: a new
-  registry flag `asideFork` on `PROVIDERS.gemini` (true or false per Task 0) makes the
-  aside request for a fork on a `gemini` session fail with 400 and the plain message
-  "Side conversations aren't available on Antigravity sessions yet", shown where any
-  aside error is shown. The machine's own `validate` check stays as a backstop only; the
-  hub's retry path swallows machine POST errors (`viewer/app/asides.js:128-129`), so it
-  must never be the place the user's message comes from.
+- `asides.js`: a new registry flag `asideFork` on `PROVIDERS.gemini` (true or false per
+  Task 0). When false, `create` (`POST /asides`, `viewer/app/routes.js:396`) refuses an
+  aside on a `gemini` session with 400 and "Side conversations aren't available on
+  Antigravity sessions yet", shown where any aside error is shown. Every aside's first turn
+  is a fork (`viewer/app/asides.js:33-40`), so `create` is the place; `claim` has no request
+  to fail. When true, the parent id for `agy` sessions is `agy_conversation_id`.
 - `chat.js` report extraction: add `ASSISTANT_CONTENT.agy` (`viewer/app/chat.js:198-204`)
   from the Task 0 transcript fixture, so a reviewer or verifier running on `agy` has its
   report delivered by `deliverReport` (`viewer/app/sessions.js:262-267`); the `Stop`
-  hook payload carries no last message, so this transcript path is the only one. Tested:
+  hook payload carried no last message in the docs; if Task 0's payload does carry one,
+  `deliverReport` may read it first, as it does for the others. Tested:
   `lastAssistantText('agy', fixture)` returns the fixture's last assistant text.
 
 ### Pages (viewer/pages)
@@ -200,6 +201,9 @@ New `machine/adapters/agy.js`, registered in `adapters/index.js` as `agy`:
   `loginStatus`, since `agy` never exits on its own.
 - `loginStatus(dir)`: `agy models` with `loginEnv(dir)`; signed in when it exits 0 and
   does not print "Please sign in".
+- **Built only when Task 0 finds `--conversation` forks (`asideFork: true`)**; otherwise
+  none of the next two bullets is built and the hub's refusal above is the whole aside
+  change.
 - `asideArgv`: `agy -p --output-format json --conversation <from> --model … [--effort …]`,
   plus `--mode plan` for read-only asides and `--dangerously-skip-permissions` for full
   access.
@@ -210,9 +214,7 @@ New `machine/adapters/agy.js`, registered in `adapters/index.js` as `agy`:
   Codex branches (`:99-107`). Role instructions and style reach a `gemini` aside the way
   they reach a GPT fork: stdin is `${prompt}\n\n${message}` (`:97`), for both fork and
   resume, since `agy -p` has no system-prompt flag; without this the aside would inherit
-  the lead's instructions. If Task 0 shows `--conversation` appends rather than forks,
-  `validate` refuses `gemini` with mode `fork` with "Side conversations aren't available
-  on Antigravity sessions yet" (Decision 5). Tested on the fixture in
+  the lead's instructions. Tested on the fixture in
   `machine/test/aside-turns.test.js`.
 - `service.js`: `status()` adds `agy: cliStatus('agy', …)`; the launch error text and
   recovery's CLI inference include `agy` (`service.js:443-444,462-463,940-954,1049`).
@@ -235,6 +237,10 @@ include `gemini`.
 - `lead.md`, `sub-lead.md`: `--provider`/`--not-provider` take `claude|gpt|gemini`;
   `review_families` reads "`both` (mix families) or one of `claude`, `gpt`, `gemini`";
   the stale Ready sentence (`lead.md:82-83`) says Ready checks the thread's own CLI.
+- `sub-lead.md:192-200`: the verifier rule becomes Decision 18's, replacing "both providers
+  built → `--provider claude` and `--provider gpt`" with "two or more families built → one
+  verifier on each of the first two of claude, gpt, gemini that built"; the existing
+  `note` handling (no second verifier, or stop it at once) is unchanged.
 - `machine/API.md`, `viewer/app/API.md`: document `agy` in status, logins and hooks.
 - Routers (`machine/AGENTS.md`, `viewer/AGENTS.md`) list the new adapter and fixtures.
 
@@ -316,6 +322,11 @@ otherwise check the aside is refused with the plain message.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Gemini aside path is dead code if Task 0 finds no fork; machine backstop unreachable | upheld | Aside machine bullets built only when `asideFork` is true; backstop dropped |
+| mechanics | minor | Refusal must sit in `create`, since every first aside turn is a fork | upheld | asides.js bullet names `create` |
+| intent | minor | Task 0 fork test must run against a live interactive `agy` | upheld | Task 0 item 7 |
+| intent | minor | "Stop payload carries no last message" stated as fact before Task 0 | upheld | Reworded as conditional |
+| mechanics | major | Verifier selection undefined when Gemini builds alongside other families | upheld | Decision 18; Protocol sub-lead.md bullet |
 
 ## Prior Work
 
