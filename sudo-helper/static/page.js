@@ -9,6 +9,7 @@ function reset() {
   el('run').classList.remove('confirm');
 }
 function render(data) {
+  const busy = data.state === 'running' || (data.state === 'waiting' && data.checking);
   for (const name of ['command', 'does', 'why']) el(name).textContent = data[name] || '';
   el('user').textContent = data.user ? 'User: ' + data.user : '';
   el('editable-section').hidden = !data.editable || !data.editable.length;
@@ -19,14 +20,14 @@ function render(data) {
     el('editable').appendChild(item);
   }
   const messages = {running: 'Running…', declined: 'Declined', expired: 'No such request', failed: data.reason || 'Failed', ran: 'Exit code: ' + data.exit_code};
-  el('status').textContent = data.state === 'waiting' && data.message ? data.message + ' (' + data.tries_left + ' tries left)' : messages[data.state] || '';
+  el('status').textContent = data.state === 'waiting' && data.checking ? 'Checking password…' : data.state === 'waiting' && data.message ? data.message + ' (' + data.tries_left + ' tries left)' : messages[data.state] || '';
   el('output').textContent = data.output || '';
-  el('form').hidden = data.state !== 'waiting';
-  if (data.state === 'running') setTimeout(load, 1000);
+  el('form').hidden = data.state !== 'waiting' || Boolean(data.checking);
+  if (busy) setTimeout(load, 1000);
 }
 async function load() {
   try { render(await (await fetch(base + '/data', {cache: 'no-store'})).json()); }
-  catch (_) { el('status').textContent = 'Could not load the request.'; }
+  catch (_) { el('status').textContent = 'Could not load the request.'; setTimeout(load, 2000); }
 }
 el('form').addEventListener('submit', async event => {
   event.preventDefault();
