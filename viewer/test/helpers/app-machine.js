@@ -35,8 +35,9 @@ async function startMachine(secret = 'machine-test-secret', options = {}) {
   let uploadsDir = options.uploadsDir;
   let preflightOk = true;
   let startOk = true;
-  // Start the next session but hang up before answering, as a start slower than the hub waits.
-  let dropNextStart = false;
+  // Start the next sessions but hang up before answering, as a start slower than the hub waits.
+  // A number drops that many starts in a row; true drops one.
+  let dropNextStart = 0;
   let submitOk = true;
   let archiveKept = [];
   let uploadsRemoved = true;
@@ -80,8 +81,8 @@ async function startMachine(secret = 'machine-test-secret', options = {}) {
     calls.push({ method: request.method, path: url.pathname, body: input });
     if (request.method === 'POST' && url.pathname === '/v1/sessions') {
       if (!startOk) return send(response, 503, { error: 'start refused' });
-      if (dropNextStart) {
-        dropNextStart = false;
+      if (dropNextStart > 0) {
+        dropNextStart -= 1;
         startSession(null, sessions, input);
         return response.socket.destroy();
       }
@@ -141,7 +142,7 @@ async function startMachine(secret = 'machine-test-secret', options = {}) {
     calls,
     status,
     get dropNextStart() { return dropNextStart; },
-    set dropNextStart(value) { dropNextStart = Boolean(value); },
+    set dropNextStart(value) { dropNextStart = value === true ? 1 : Number(value) || 0; },
     get startOk() { return startOk; },
     set startOk(value) { startOk = Boolean(value); },
     get preflightOk() { return preflightOk; },
@@ -188,7 +189,7 @@ function projectsReply(response, url, projects) {
 
 // Like the real service, a start of a name it already runs answers with that session.
 function startSession(response, sessions, input) {
-  if (sessions.has(input.name)) return send(response, 201, sessions.get(input.name));
+  if (sessions.has(input.name)) return response && send(response, 201, sessions.get(input.name));
   const session = {
     ...input,
     status: 'ready',

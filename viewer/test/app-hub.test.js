@@ -456,6 +456,30 @@ test('a start the machine never answered is asked again by name, and a retry ret
   });
 });
 
+test('a start unanswered twice answers 503, and the retry finds the same session', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const lead = made.sessions[0];
+    context.machine.dropNextStart = 2;
+    const body = { calling_session: lead.name, action: 'start', role: 'reviewer', cli: 'codex', attempt_id: 'review-silent' };
+    const first = await machinePost(context, '/machine/session', body);
+    assert.equal(first.status, 503, JSON.stringify(first.body));
+    const retried = await machinePost(context, '/machine/session', body);
+    assert.equal(retried.status, 200, JSON.stringify(retried.body));
+    assert.equal(retried.body.duplicate, true);
+    assert.equal(retried.body.session.unanswered_start, undefined);
+    const onMachine = [...context.machine.sessions.values()].filter((item) => item.role === 'reviewer');
+    assert.equal(onMachine.length, 1);
+    assert.equal(retried.body.session.name, onMachine[0].name);
+    const listed = await machinePost(context, '/machine/session', { calling_session: lead.name, action: 'list' });
+    const reviewers = listed.body.sessions.filter((item) => item.role === 'reviewer');
+    assert.equal(reviewers.length, 1);
+    assert.equal(reviewers[0].live, true);
+    const again = await machinePost(context, '/machine/session', body);
+    assert.equal(again.body.session.name, onMachine[0].name);
+  });
+});
+
 test('allows a lead to stop a session it started', async () => {
   await withContext(async (context) => {
     const made = await thread(context);

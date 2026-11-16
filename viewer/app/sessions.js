@@ -46,7 +46,7 @@ const ALLOWED_START = {
 };
 
 function publicSession(session) {
-  const { token, ...value } = session;
+  const { token, unanswered_start: unanswered, ...value } = session;
   return value;
 }
 
@@ -83,6 +83,35 @@ async function startOnMachine(hub, machine, body) {
     if (error.status) throw error;
     return hub.call(machine, '/v1/sessions', 'POST', body, START_TIMEOUT_MS);
   }
+}
+
+// Asked twice and still no answer, the machine may yet bring the session up. Keep what was
+// sent, so a retry of the same attempt asks again under the same name and token (the machine
+// answers with that session if it came up), and answer 503 so the caller's retry happens.
+const UNANSWERED = 'the machine did not answer the start; run the same command again';
+async function resumeUnanswered(hub, thread, session) {
+  const pending = session.unanswered_start;
+  let started;
+  try {
+    started = await startOnMachine(hub, thread.machine, pending.body);
+  } catch (error) {
+    session.error = error.message;
+    if (error.status) delete session.unanswered_start;
+    await hub.save(thread);
+    throw error.status ? error : appError(503, UNANSWERED);
+  }
+  delete session.unanswered_start;
+  delete session.error;
+  const identity = { name: session.name, attempt_id: session.attempt_id, started_by: session.started_by, queue: session.queue || [] };
+  Object.assign(session, started, identity, {
+    token: pending.body.token,
+    ready: started.status === 'ready',
+    live: true,
+    first_message: pending.first_message,
+  });
+  markIdleIfFresh(session);
+  await hub.save(thread);
+  return session;
 }
 
 async function startSession(hub, thread, input) {
@@ -193,6 +222,11 @@ async function startSession(hub, thread, input) {
   } catch (error) {
     // Leave no session claiming to be "starting" forever: record why it never started.
     Object.assign(session, { status: 'failed', live: false, error: error.message });
+    if (!error.status) {
+      session.unanswered_start = { body: startBody, first_message: PROVIDERS[selection.provider].typesRoleMessage || Boolean(input.brief) };
+      await hub.save(thread);
+      throw appError(503, UNANSWERED);
+    }
     await hub.save(thread);
     throw error;
   }
@@ -410,10 +444,11 @@ async function sessionRequest(hub, payload) {
   // The provider is chosen at start; a GPT worker refuses max there (startSession).
   if (payload.effort !== undefined && !['low', 'medium', 'high', 'xhigh', 'max'].includes(payload.effort)) throw appError(400, 'effort must be one of low, medium, high, xhigh, max');
   if (!payload.attempt_id) throw appError(400, 'attempt_id is required');
-  const duplicate = thread.sessions.find((item) => (
-    item.started_by === caller.name && item.attempt_id === payload.attempt_id && item.live
-  ));
+  const sameAttempt = (item) => item.started_by === caller.name && item.attempt_id === payload.attempt_id;
+  const duplicate = thread.sessions.find((item) => sameAttempt(item) && item.live);
   if (duplicate) return { session: publicSession(duplicate), duplicate: true };
+  const unanswered = thread.sessions.find((item) => sameAttempt(item) && item.unanswered_start);
+  if (unanswered) return { session: publicSession(await resumeUnanswered(hub, thread, unanswered)), duplicate: true };
   if (payload.role === 'sub-lead' && thread.sessions.some((item) => item.role === 'sub-lead' && item.live)) {
     throw appError(409, 'a live sub-lead already exists');
   }
