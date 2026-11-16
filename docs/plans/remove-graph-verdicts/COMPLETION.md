@@ -120,3 +120,14 @@ $ grep -rnE "agent-verdict|preservation-(rejected|agreed)|bad-was|bad-origin-val
 ```
 
 The node suite's full runs each show at most one timing failure, in a different untouched test each time (`lifecycle.test.js:423`, `server.test.js` write lock, `app-hub.test.js` title), each passing on rerun. The known-gaps item about `browser.spec.js:2133` above is resolved by this round.
+
+### Verification 2 — 2026-11-15, commit 7940aba
+
+Claude verifier PASS; GPT verifier FAIL, on pre-existing test failures only (no gap in the Spec). The lead ruled them outside this plan: the IDEA's "the test suites pass" means this change does not break the suites, and all three fail the same way on the pre-branch commit `635c45f`. Recorded as residual risks and in `docs/known-issues.md`:
+
+- `viewer/test/lifecycle.test.js:423` "a starter that loses the freed port registers through the new holder": the Claude verifier saw it fail 5 of 5 on the branch and 3 of 3 on `635c45f` ("C retried after the silent holder"); the GPT verifier saw the marker assertion at `:452` (expected `/delayed/`, got `first`). It passed in one of the sub-lead's full runs, so the earlier "passes on rerun" above overstates it: it usually fails on this machine. Already in `docs/known-issues.md` since 2026-10-03.
+- `viewer/test/app-accounts.spec.js` "lead waiting line" (3 tests, both browsers): fails after 21:00 local time. The test sets a wait three hours ahead; past midnight the page prints a weekday ("about Mon 12:09 AM") and the expected pattern `about \d` fails. Reproduced on `635c45f` by the Claude verifier, and by the sub-lead at 21:09 PST (6 failed, 72 passed); R1's run at 20:56 passed. Untouched by this branch (`git diff --stat main...HEAD` shows no change to the spec, `viewer/app` or `viewer/pages`).
+- `viewer/test/app-threads.spec.js:142`: one Firefox navigation failure in the GPT verifier's run only; not seen by the Claude verifier. Untouched by this branch.
+
+`docs/known-issues.md`: the arrow-geometry entry is marked fixed by remediation 1; entries added for the waiting-line tests and the `app-threads.spec.js:142` Firefox failure.
+
