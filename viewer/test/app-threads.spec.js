@@ -720,6 +720,9 @@ test.describe('working indicator', () => {
     await setTurn(false);
     await page.goto(`${ctx.server.url}/app/thread?id=${made.id}`);
     await expect(page.locator('#working')).toBeVisible();
+    await expect(page.locator('#working-label')).toHaveText(/ is working$/);
+    await ctx.patch(made.id, (x) => { x.lead_name = 'Juniper'; });
+    await expect(page.locator('#working-label')).toHaveText('Juniper is working');
     await expect(page.locator(`#list li[data-id="${made.id}"] .dotmark.working`)).toHaveCount(1);
     await setTurn(true);
     await expect(page.locator('#working')).toBeHidden({ timeout: 10000 });

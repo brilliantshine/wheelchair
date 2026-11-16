@@ -873,6 +873,8 @@
     sync('chat', [data.items, pending, slug(), t.archived, data.cards.filter((c) => !PINNED_KINDS.includes(c.kind)), cardErrors, declining], () => { renderChat(); changed = true; });
     const workingEl = $('working');
     const working = leadWorking() && !t.archived;
+    const workingText = (t.lead_name || 'The lead') + ' is working';
+    if ($('working-label').textContent !== workingText) { $('working-label').textContent = workingText; workingEl.setAttribute('aria-label', workingText); }
     if (workingEl.hidden === working) { workingEl.hidden = !working; if (working && nearBottom) changed = true; }
     if (window.WCAside) window.WCAside.update(data, changed);
     if (changed && nearBottom) window.scrollTo(0, document.body.scrollHeight);
