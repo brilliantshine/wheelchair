@@ -1,6 +1,6 @@
 'use strict';
 
-// Fixture for the Features, Sessions and Terminal page specs: a real server, two live fake
+// Fixture for the Features, Agents and Terminal page specs: a real server, two live fake
 // machine services (hub and node-2), one dead machine (node-3), and seeded thread files.
 const fs = require('node:fs/promises');
 const path = require('node:path');

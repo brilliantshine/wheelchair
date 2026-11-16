@@ -8,6 +8,7 @@
 .thread-head .back { display: none; min-width: 36px; min-height: 36px; align-items: center; justify-content: center;
   font-size: 24px; line-height: 1; color: var(--ink-2); text-decoration: none; }
 .thread-head .title-block { flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.thread-title-line { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; }
 .thread-head h1 { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
 .thread-head .meta { font-family: var(--mono); font-size: 11px; color: var(--dim); overflow-wrap: anywhere; }
 .head-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

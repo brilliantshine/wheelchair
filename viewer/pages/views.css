@@ -104,3 +104,16 @@
   .v-machine .v-list { grid-template-columns: 1fr; }
   .term-view { padding: 8px; }
 }
+
+/* ---- Agents ---- */
+.agent-group { margin-bottom: 24px; scroll-margin-top: calc(var(--nav-h) + 12px); }
+.agent-group.highlight > .agent-node > .agent-card { outline: 2px solid var(--accent-text); }
+.agent-card.ended { opacity: .55; }
+.agent-card.awaited { border-color: var(--warn); }
+.agent-card .session-head { flex-wrap: wrap; }
+.agent-card .who { flex-basis: 130px; }
+.agent-waiting { padding: 8px 14px; color: var(--dim); overflow-wrap: anywhere; }
+.agent-unreachable { color: var(--bad-text); overflow-wrap: anywhere; }
+.agent-fold > summary { cursor: pointer; color: var(--dim); padding: 5px 0; font-size: 12px; }
+.agent-children { border-left: 1px solid var(--line); margin-left: 10px; padding-left: 14px; display: grid; gap: 8px; min-width: 0; }
+.agent-children.capped { margin-left: 0; padding-left: 4px; }

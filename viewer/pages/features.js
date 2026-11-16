@@ -81,7 +81,7 @@
     root.replaceChildren();
     for (const group of state.machines) {
       const row = el('a', `side-row machine${group.reachable ? '' : ' down'}`);
-      row.href = '/wheelchair/app/sessions';
+      row.href = '/wheelchair/app/agents';
       row.append(el('span', `dotmark ${group.reachable ? 'green' : ''}`), el('span', 'side-name', group.machine));
       if (group.hub) row.append(el('span', 'pill', 'hub'));
       else {

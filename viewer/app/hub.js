@@ -33,6 +33,7 @@ class Hub {
     this.threadsDir = this.state.threadsDir;
     this.lastSeen = new Map();
     this.threadLocks = new Map();
+    this.nameQueue = Promise.resolve();
     const configuredRetry = Number(queueRetryInterval ?? process.env.WHEELCHAIR_QUEUE_RETRY_MS ?? 5_000);
     this.queueRetryInterval = Number.isFinite(configuredRetry) && configuredRetry > 0 ? configuredRetry : 5_000;
   }
@@ -42,6 +43,8 @@ class Hub {
     for (const [name, machine] of Object.entries(await this.state.machines())) {
       if (machine.last_seen) this.lastSeen.set(name, machine.last_seen);
     }
+    const existing = (await this.allThreads()).filter((t) => !t.archived && !t.lead_name && t.sessions?.some((s) => s.role === 'lead')).sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')));
+    for (const thread of existing) await this.saveWithLeadName(thread);
     this.pollTimer = setInterval(() => this.pollDead().catch(() => {}), 10_000);
     this.pollTimer.unref();
     // A transient tmux/service failure leaves the message at the front of its queue. Retry
@@ -79,6 +82,17 @@ class Hub {
       if (this.threadLocks.get(id) === retained) this.threadLocks.delete(id);
     });
     this.threadLocks.set(id, retained);
+    return work;
+  }
+  saveWithLeadName(thread) {
+    const work = this.nameQueue.catch(() => {}).then(async () => {
+      if (!thread.lead_name) {
+        const names = (await require('./settings.js').load(this)).lead_names;
+        thread.lead_name = require('./names.js').chooseName(await this.allThreads(), names);
+      }
+      await this.save(thread);
+    });
+    this.nameQueue = work.catch(() => {});
     return work;
   }
   allThreads() { return this.state.allThreads(); }

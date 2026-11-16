@@ -59,6 +59,7 @@ async function handle(hub, request, response, url, machineAuthenticated) {
     if (bits[1] === 'seen' && request.method === 'POST') return send(response, 200, await usage.seen(hub));
   }
   if (bits[0] === 'accounts') return handleAccounts(hub, request, response, bits, body);
+  if (bits[0] === 'agents' && bits.length === 1 && request.method === 'GET') return send(response, 200, await require('./agents.js').agents(hub));
   if (bits[0] === 'sessions') return handleSessions(hub, request, response, bits, body);
   throw appError(404, 'route not found');
 }
@@ -207,6 +208,12 @@ async function handleSettings(hub, request, response, url, bits, body) {
   }
   if (bits[1] === 'preferences' && request.method === 'PUT') {
     const value = await settings.update(hub, (value) => {
+      if (body.lead_names !== undefined) {
+        if (!Array.isArray(body.lead_names) || body.lead_names.some((name) => typeof name !== 'string')) throw appError(400, 'lead_names must be an array of names');
+        const names = body.lead_names.map((name) => name.trim()).filter(Boolean);
+        if (names.length > 200 || names.some((name) => name.length > 40) || new Set(names.map((name) => name.toLowerCase())).size !== names.length) throw appError(400, 'lead_names must have at most 200 unique names of 1–40 characters');
+        value.lead_names = names;
+      }
       if (body.permission_mode !== undefined) {
         if (!['auto', 'bypass'].includes(body.permission_mode)) throw appError(400, 'permission_mode must be auto or bypass');
         value.permission_mode = body.permission_mode;
@@ -237,7 +244,7 @@ async function handleSettings(hub, request, response, url, bits, body) {
         for (const role of ['reviewer', 'verifier', 'mapper']) if (body.other_agents[role] !== undefined) value.other_agents[role] = settings.tier(body.other_agents[role], `other_agents.${role}`);
       }
     });
-    return send(response, 200, { permission_mode: value.permission_mode, codex_mode: value.codex_mode, tool_steps: value.tool_steps, other_agents: value.other_agents, default_project_folder: value.default_project_folder, escalation: value.escalation, escalation_text: settings.escalationSentences(value.escalation).join('\n') });
+    return send(response, 200, { lead_names: value.lead_names, permission_mode: value.permission_mode, codex_mode: value.codex_mode, tool_steps: value.tool_steps, other_agents: value.other_agents, default_project_folder: value.default_project_folder, escalation: value.escalation, escalation_text: settings.escalationSentences(value.escalation).join('\n') });
   }
   if (bits[1] === 'saved-dirs' && bits.length === 2 && request.method === 'POST') {
     return send(response, 201, await addSavedDir(hub, body));

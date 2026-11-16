@@ -19,6 +19,7 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 | `app/settings.js` | The Settings store (`settings.json` in the hub state dir), templates and writing style, the `role_layers` text sent at session start, and the style preview; models are read and written only through `codex/model.sh`. |
 | `app/chat.js`, `threads.js`, `views.js` | Transcript assembly, thread lifecycle, and view data. |
 | `app/routes.js`, `hub.js`, `API.md` | App HTTP dispatch, module composition, and the page-facing JSON contract. |
+| `app/names.js`, `agents.js` | Lead name allocation and the public agent tree and machine reachability view. |
 | `app/providers.js` | Hub provider names, CLI mappings and labels. |
 | `app/balancer.js` | Provider and account placement, constraints and waiting decisions. |
 | `app/usage.js` | Account usage persistence, machine sign-in state, forecasts and ranking. |
@@ -26,7 +27,7 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 | `index.html` | The graph page. Holds the second copy of the box and group size constants the server's layout reserves room for |
 | `list.html`, `list.js` | The list of open graphs and registered plans |
 | `doc.html`, `doc.js` | The plan document page, read from a plan's `docs/plans/<slug>/`; its Markdown renderer is the shared `pages/markdown.js` |
-| `pages/` | The app's pages (threads, thread, doc, features, sessions, settings, terminal), served at `/wheelchair/app/<page>` behind the remember cookie; their scripts and styles are public assets under `/wheelchair/assets/pages/`. `doc` opens a thread's MAP/IDEA/PLAN in the app (`doc.html`/`doc.js`/`doc.css`), and `markdown.js` is the Markdown renderer it shares with `doc.js` above, taking a link resolver |
+| `pages/` | The app's pages (threads, thread, doc, features, agents, settings, terminal), served at `/wheelchair/app/<page>` behind the remember cookie; their scripts and styles are public assets under `/wheelchair/assets/pages/`. `agents.html`/`agents.js` show the agent tree. `doc` opens a thread's MAP/IDEA/PLAN in the app (`doc.html`/`doc.js`/`doc.css`), and `markdown.js` is the Markdown renderer it shares with `doc.js` above, taking a link resolver |
 | `vendor/` | Vendored browser libraries for the app pages (xterm.js), public assets under `/wheelchair/assets/vendor/`. The app's fonts are not here: `/wheelchair/assets/fonts/<name>.woff2` serves four allowlisted files from `node_modules/@fontsource` (`FONT_FILES` in `server.js`) |
 | `signin.html` | What a browser with no remember cookie gets before it is signed in |
 | `playwright.config.js` | The browser suite's two projects, Chromium and Firefox |

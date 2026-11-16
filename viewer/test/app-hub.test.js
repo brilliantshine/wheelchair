@@ -449,6 +449,7 @@ test('starts a replacement lead after the old lead ends', async () => {
     assert.equal(started.worktree, `/tmp/${oldLead.name}`);
     assert.equal(started.branch, `wc/${made.id}`);
     const after = await hub.thread(made.id);
+    assert.equal(after.lead_name, made.lead_name);
     assert.ok(after.cards.filter((item) => item.title === 'Sessions ended').every((item) => item.answered));
     // The queued message moves once; the old lead keeps no copy.
     const lead = after.sessions.find((item) => item.name === restarted.body.name);
@@ -517,7 +518,10 @@ test('creates an unstarted stub and opens it after a role turn ends', async () =
       depends_on_parent: false,
     });
     const stubId = result.body.thread_id;
+    const before = (await api(context, '/threads')).body.threads.find((item) => item.id === stubId);
+    assert.equal(before.lead_name, undefined);
     const opened = await api(context, `/threads/${stubId}/open`, { method: 'POST', body: {} });
+    assert.ok(opened.body.lead_name);
     const stubLead = opened.body.sessions[0];
     assert.equal(context.machine.sessions.get(stubLead.name).submits, undefined);
     await event(context, stubId, stubLead.name, 'turn-ended');
@@ -1269,6 +1273,8 @@ test('runs Codex preflight before a lead start and records its failure as a need
     assert.equal(result.status, 409);
     const [stored] = await (new Hub({ stateDir: context.state })).allThreads();
     assert.equal(stored.cards.at(-1).title, 'Codex preflight failed');
+    assert.equal(stored.lead_name, undefined);
+    assert.equal(stored.sessions.length, 0);
     assert.ok(context.machine.calls.some((call) => call.path === '/v1/preflight'));
   });
 });
@@ -1716,6 +1722,36 @@ test('restarting a failed lead answers its turn-failed card', async () => {
     const hub = new Hub({ stateDir: context.state }); await hub.pollDead();
     assert.equal((await api(context, `/threads/${made.id}/restart`, { method: 'POST', body: {} })).status, 201);
     assert.ok((await hub.thread(made.id)).cards.some(card => card.title === "The lead's turn failed" && card.answered));
+  });
+});
+
+test('concurrent threads get distinct persisted names and session model', async () => {
+  await withContext(async (context) => {
+    const made = await Promise.all([thread(context), thread(context)]);
+    assert.equal(new Set(made.map((t) => t.lead_name)).size, 2);
+    for (const t of made) {
+      const stored = (await api(context, '/threads')).body.threads.find((item) => item.id === t.id);
+      assert.equal(stored.lead_name, t.lead_name);
+      assert.ok(stored.sessions[0].model);
+      assert.ok(Object.hasOwn(stored.sessions[0], 'effort'));
+    }
+  });
+});
+
+test('hub startup backfills existing unnamed leads oldest first', async () => {
+  await withContext(async (context) => {
+    const first = await thread(context);
+    const second = await thread(context);
+    for (const [i, made] of [first, second].entries()) {
+      const file = path.join(context.state, 'threads', `${made.id}.json`);
+      const value = JSON.parse(await fs.readFile(file, 'utf8'));
+      delete value.lead_name; value.created_at = `2020-01-0${i + 1}T00:00:00Z`;
+      await fs.writeFile(file, JSON.stringify(value));
+    }
+    const hub = new Hub({ stateDir: context.state });
+    await hub.init();
+    assert.equal((await hub.thread(first.id)).lead_name, 'Alpha');
+    assert.equal((await hub.thread(second.id)).lead_name, 'Beta');
   });
 });
 

@@ -28,7 +28,7 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 | `GET /settings` | — | `{models,model_options,heads_up,permission_mode,codex_mode,tool_steps,other_agents,escalation,escalation_text,templates,in_use,style,style_version,projects,default_project_folder,saved_dirs}`; `projects` is `projects.json` plus every saved directory's path; templates include `in_use`, `live_sessions`, and `scope_missing` when a saved project is no longer listed |
 | `PUT /settings/models` | `{provider:"claude"|"gpt",slot,model|null,effort?}` | `{models}`; `slot` is `light`, `standard`, `heavy`, `critical`, or `lead`; effort is `low`, `medium`, `high`, `xhigh`, and for Claude also `max`; omission clears it |
 | `POST /settings/models/heads-up` | `{action:"switch",tier,model}`, `{action:"skip",model}`, or `{action:"reset"}` | `{models,heads_up}` |
-| `PUT /settings/preferences` | `{permission_mode?:"auto"|"bypass",codex_mode?:"sandboxed"|"unrestricted",tool_steps?:"show"|"hide",other_agents?:{reviewer?,verifier?,mapper?},default_project_folder?:string,escalation?:{first?,max_effort?,max_tier?,ask_before?}}` | saved preference values, including `default_project_folder`, `escalation` and `escalation_text`; that field is trimmed, `""` clears it, otherwise it must be absolute, exactly `~`, or start with `~/` (`~user` → `400`); it is not checked against a machine |
+| `PUT /settings/preferences` | `{permission_mode?:"auto"|"bypass",codex_mode?:"sandboxed"|"unrestricted",tool_steps?:"show"|"hide",lead_names?:string[],other_agents?:{reviewer?,verifier?,mapper?},default_project_folder?:string,escalation?:{first?,max_effort?,max_tier?,ask_before?}}` | saved preference values, including `default_project_folder`, `escalation` and `escalation_text`; that field is trimmed, `""` clears it, otherwise it must be absolute, exactly `~`, or start with `~/` (`~user` → `400`); it is not checked against a machine |
 | `GET /new-thread?machine=` | — | `{machines,machine,default_folder,saved,found,found_error?,previous}` for `machine` (default `hub`; unknown → `404`). `machines`: `hub` first, then the names in `machines.json` except the hub's own hostname entry. `saved`: `saved_dirs` entries of that machine. `found`: that machine's `/v1/projects?folder=` when a default folder is set, else `[]`; its `folder_error` becomes `found_error`, and an unreachable or older machine gives `found: []` with `found_error` `"<machine> is not reachable"` or `"<machine> needs updating"`, still `200`. `previous`: distinct `project` paths of threads on that machine (a thread stored under the hub's hostname counts as `hub`), newest first |
 | `POST /settings/saved-dirs` | `{name,path,machine}` | `201 {saved}` (that machine's entries). `path` is checked on `machine` and stored as the expanded path the machine returned. `400` for a field error (a `name` of `.` or `..` is refused) or the check's reason (`"<path> <reason> on <machine>"`), `404` for an unknown machine, `409` when the name exists for that machine, `502` when the machine does not answer |
 | `DELETE /settings/saved-dirs/:name?machine=` | — | `{saved}` for that machine (default `hub`); `404` for an unknown name; changes no thread |
@@ -105,6 +105,13 @@ not checked against the ceiling, and explicit effort overrides the pin. The tier
 Escalation preference values are `first: effort|model`, `max_effort: high|xhigh|max`,
 `max_tier: standard|heavy|critical`, and `ask_before: never|critical|any`. Partial updates
 are accepted; invalid keys, values, and non-object inputs receive 400.
+
+
+### Agents and lead names
+
+`GET /wheelchair/api/agents` returns `{leads, machines}` for unarchived threads. Each lead has `thread_id`, `thread_title`, `lead_name`, `machine`, `session`, and `children`; agent sessions omit tokens and include `children` and `waiting_on` session names. Ended ancestors remain when they have live descendants. Machines carry `machine`, `reachable`, `last_seen`, and `hub`.
+
+Threads include `lead_name`, retained until and after archive; archived threads release the name for reuse. Settings `lead_names` is an array of up to 200 unique case-insensitive names, trimmed to 1–40 characters, with blank entries discarded; an empty list uses Greek letters. New session records include the resolved `model` and `effort` (which may be null). Older sessions may omit them.
 
 Diagram cards accept optional `format` (`graph`, the default, `form`, or `html`). Image
 cards are lead-only and contain `path` and `title`; stored image cards also carry `file`,

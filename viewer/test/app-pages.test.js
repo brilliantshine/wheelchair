@@ -86,3 +86,13 @@ test('app pages may frame this origin, for diagram cards', () => {
   assert.match(source, /APP_PAGE_CSP = `\$\{PAGE_CSP\}; frame-src 'self'`/);
   assert.match(source, /'content-security-policy': APP_PAGE_CSP/);
 });
+
+test('the old Sessions page redirects to Agents', async () => {
+  await withServer({}, async (ctx) => {
+    const signin = await fetch(`${ctx.url}/app/agents?token=${ctx.token}`, { redirect: 'manual' });
+    const cookie = signin.headers.get('set-cookie').split(';')[0];
+    const response = await fetch(`${ctx.url}/app/sessions`, { headers: { cookie }, redirect: 'manual' });
+    assert.equal(response.status, 302);
+    assert.equal(response.headers.get('location'), '/wheelchair/app/agents');
+  });
+});
