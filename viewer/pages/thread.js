@@ -300,6 +300,7 @@
         chatEl.appendChild(b);
       } else if (it.type === 'assistant') {
         const lead = el('div', 'bubble assistant md');
+        if (it.id) lead.dataset.messageId = it.id;
         window.WCMarkdown.render(it.text, lead);
         chatEl.appendChild(lead);
       } else if (it.type === 'tool') {
@@ -775,6 +776,7 @@
     const workingEl = $('working');
     const working = leadWorking() && !t.archived;
     if (workingEl.hidden === working) { workingEl.hidden = !working; if (working && nearBottom) changed = true; }
+    if (window.WCAside) window.WCAside.update(data, changed);
     if (changed && nearBottom) window.scrollTo(0, document.body.scrollHeight);
     const queuedTotal = Math.max(data.queued, pending.length);
     queuedNote.hidden = queuedTotal === 0;

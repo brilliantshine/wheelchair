@@ -342,6 +342,7 @@ async function event(hub, payload) {
   }
   if (['turn-ended', 'turn_ended', 'turn ended'].includes(type)) {
     target.turn_ended = true;
+    for (const key of ['cli_session_id', 'codex_thread_id']) if (payload[key]) target[key] = payload[key];
     if (target.role === 'lead') for (const card of thread.cards) if (card.kind === 'needs' && card.title === "The lead's turn failed" && !card.answered) card.answered = true;
     const reportTarget = limitEnded || Date.parse(target.limited_until) > Date.now() ? null : await deliverReport(hub, thread, target, payload);
     if (reportTarget) deliveryTargets.add(reportTarget.name);
@@ -495,7 +496,15 @@ async function pollDead(hub) {
     for (const listedThread of threads) {
       await hub.withThread(listedThread.id, async () => {
         const thread = await hub.thread(listedThread.id);
-        if (!missing(thread, early).length) return;
+        let changed = false;
+        for (const target of thread.sessions) {
+          const remote = listed.find((item) => item.name === target.name);
+          for (const key of ['cli_session_id', 'codex_thread_id']) if (remote?.[key] && remote[key] !== target[key]) { target[key] = remote[key]; changed = true; }
+        }
+        if (!missing(thread, early).length) {
+          if (changed) await hub.save(thread);
+          return;
+        }
         // The early listing was taken before this thread's lock, and the wait for the lock can
         // be long; a session started meanwhile is absent from it. Ask again under the lock, where
         // no start for this thread can be in flight, and act only on that answer.
@@ -503,9 +512,9 @@ async function pollDead(hub) {
         try {
           fresh = liveNames(await hub.call(machine, '/v1/sessions', 'GET'));
         } catch {
+          if (changed) await hub.save(thread);
           return;
         }
-        let changed = false;
         for (const target of missing(thread, fresh)) {
           target.live = false;
           target.status = 'ended';

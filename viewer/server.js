@@ -1571,7 +1571,11 @@ async function handleGraphPut(request, response, url, state) {
   requirePutAuth(request, state);
   const graphPath = await validGraphPath(state.config, url.searchParams.get('path'));
   const body = await requestBody(request);
-  const result = await withMutex(async () => {
+  const result = await withMutex(() => writeGraph(graphPath, body, state));
+  sendJson(response, 200, result);
+}
+
+async function writeGraph(graphPath, body, state) {
     if (!await ensureRegistered(state.config, graphPath)) fail(403, 'not-registered', 'This graph path is not registered.');
     const raw = await readRaw(graphPath);
     if (body.hash !== raw.hash) fail(409, 'stale', 'The graph changed since it was read.', { hash: raw.hash });
@@ -1606,8 +1610,6 @@ async function handleGraphPut(request, response, url, state) {
       await unregisterDroppedSubtrees(state.config, dropped);
     }
     return { hash: hashBytes(bytes) };
-  });
-  sendJson(response, 200, result);
 }
 
 async function handleViewPut(request, response, url, state) {
@@ -2238,7 +2240,15 @@ async function startServer(config) {
       if (url.pathname.startsWith(`${VIEWER_PREFIX}/api/`)) {
         if (!state.app) { const { Hub } = require('./app/hub.js'); state.app = new Hub({ stateDir: config.stateDir || path.join(os.homedir(), '.local', 'state', 'wheelchair'), root: path.resolve(__dirname, '..'), codeVersion: state.codeVersion,
           registerPlan: (planPath) => withMutex(() => registerPlanPath(config, planPath, null, 'other')),
-          registerGraph: (graphPath) => withMutex(() => registerPath(config, graphPath, false, null, 'other')) }); }
+          registerGraph: (graphPath) => withMutex(() => registerPath(config, graphPath, false, null, 'other')),
+          graphCacheRoot: config.cacheRoot,
+          saveGraph: (graphPath, graph) => withMutex(async () => {
+            await fsp.mkdir(path.dirname(graphPath), { recursive: true });
+            const valid = await validGraphPath(config, graphPath);
+            await registerPath(config, valid, false, null, 'other');
+            const raw = await readRaw(valid);
+            return writeGraph(valid, { graph, hash: raw.hash }, state);
+          }) }); }
         if (!state.appInit) state.appInit = state.app.init();
         await state.appInit;
         const machineRoute = url.pathname.startsWith(`${VIEWER_PREFIX}/api/machine/`);

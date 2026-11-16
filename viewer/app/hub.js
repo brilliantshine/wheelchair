@@ -13,7 +13,7 @@ const views = require('./views.js');
 const { handle } = require('./routes.js');
 
 class Hub {
-  constructor({ stateDir = DEFAULT_STATE, root, codeVersion, registerPlan = null, registerGraph = null, queueRetryInterval } = {}) {
+  constructor({ stateDir = DEFAULT_STATE, root, codeVersion, registerPlan = null, registerGraph = null, graphCacheRoot = null, saveGraph = null, queueRetryInterval } = {}) {
     this.root = root || path.resolve(__dirname, '..', '..');
     // The server supplies the commit it read at its own boot.  Direct Hub tests still read
     // their supplied root once, but a pull under a running viewer never changes this value.
@@ -27,6 +27,8 @@ class Hub {
     // Graphs have their own registry: registering the containing plan does not authorize an
     // iframe to fetch the graph itself.
     this.registerGraph = registerGraph;
+    this.graphCacheRoot = graphCacheRoot;
+    this.saveGraph = saveGraph;
     this.state = new State(stateDir);
     this.client = new MachineClient(this.state);
     this.stateDir = this.state.dir;
@@ -45,6 +47,8 @@ class Hub {
     }
     const existing = (await this.allThreads()).filter((t) => !t.archived && !t.lead_name && t.sessions?.some((s) => s.role === 'lead')).sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')));
     for (const thread of existing) await this.saveWithLeadName(thread);
+    this.asideTimer = setInterval(() => this.allThreads().then((threads) => Promise.all([...threads.filter(require('./asides.js').needsPump).map((t) => require('./asides.js').pump(this, t.id, { fromTimer: true })), ...threads.filter((t) => t.pending_cancels?.length).map((t) => require('./asides.js').sweepCancels(this, t.id))])).catch(() => {}), 2000);
+    this.asideTimer.unref();
     this.pollTimer = setInterval(() => this.pollDead().catch(() => {}), 10_000);
     this.pollTimer.unref();
     // A transient tmux/service failure leaves the message at the front of its queue. Retry
@@ -55,6 +59,7 @@ class Hub {
     // wait short for someone watching, at one gh call per waiting stub.
     this.waitTimer = setInterval(() => Promise.all([this.pollWaiting(), sessions.retryWaiting(this), sessions.releaseLimits(this)]).catch(() => {}), 60_000);
     this.waitTimer.unref();
+    await this.allThreads().then((threads) => Promise.all(threads.filter((t) => t.pending_cancels?.length).map((t) => require('./asides.js').sweepCancels(this, t.id)))).catch(() => {});
     await this.pollWaiting();
     await sessions.retryWaiting(this);
   }
