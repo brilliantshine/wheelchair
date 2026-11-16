@@ -71,11 +71,15 @@ async function createHarness({ mode = 'smoke', slowOriginSeconds = 0 } = {}) {
   git('clone', paths.origin, paths.clone);
   const threadId = 'smoke', sublead = 'wc-smoke-sub-lead', token = 'harness-sublead-token';
   if (mode === 'live') git('-C', paths.clone, 'branch', `wc/${threadId}`);
+  const script = path.join(dir, 'slow-upload-pack');
+  function setOriginSlow(slow) {
+    assert(!slow || slowOriginSeconds, 'slow origin was not configured');
+    git('-C', paths.clone, 'remote', 'set-url', 'origin', slow ? `ext::${script} ${paths.origin}` : paths.origin);
+  }
   if (slowOriginSeconds) {
-    const script = path.join(dir, 'slow-upload-pack');
     await fsp.writeFile(script, `#!/bin/sh\nsleep ${slowOriginSeconds}\nexec git-upload-pack "$1"\n`, { mode: 0o755 });
     git('-C', paths.clone, 'config', 'protocol.ext.allow', 'always');
-    git('-C', paths.clone, 'remote', 'set-url', 'origin', `ext::${script} ${paths.origin}`);
+    setOriginSlow(true);
   }
   const state = new State(paths.hubState);
   await state.init();
@@ -125,7 +129,7 @@ async function createHarness({ mode = 'smoke', slowOriginSeconds = 0 } = {}) {
       cleanupNow();
       return { privateTmuxGone, runFolderGone: !fs.existsSync(dir) };
     }
-    return { dir, paths, ports: { hub: hubPort, machine: machinePort, proxy: proxyPort }, env, threadId, sublead, token, counts, statuses, callHub, callMachine, agent, tmux, waitFor, teardown, git };
+    return { dir, paths, ports: { hub: hubPort, machine: machinePort, proxy: proxyPort }, env, threadId, sublead, token, counts, statuses, callHub, callMachine, agent, tmux, waitFor, teardown, git, setOriginSlow };
   } catch (error) { cleanupNow(); throw error; }
 }
 module.exports = { createHarness, waitFor };
