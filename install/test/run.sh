@@ -257,14 +257,17 @@ names=(spine plan adopt plan-review implement verify graph diagram-sensitivity)
 files=(spine planning adopt plan-review implementation verification graphs sensitivity)
 for i in "${!names[@]}"; do
   name=${names[$i]} protocol=${files[$i]}
-  for origin in current other quoted relative short_relative tilde foreign different; do
+  for origin in current other quoted spaced spaced_quoted mid_line relative short_relative tilde foreign different; do
     case_name="wrapper_${i}_${origin}"
     new_case "$case_name"
     mkdir -p "${claude[$case_name]}/skills/$name" "${codex[$case_name]}/prompts"
     case $origin in
-      current) text="Read $repo/protocol/$protocol.md" ;;
+      current) text="Read $repo/protocol/$protocol.md and follow it exactly for: \$ARGUMENTS" ;;
       other) text="Read /elsewhere/protocol/$protocol.md" ;;
-      quoted) text="Read \`/opt/w/protocol/$protocol.md\`" ;;
+      quoted) text="Read \`/opt/w/protocol/$protocol.md\` and" ;;
+      spaced) text="Read /old wheelchair/protocol/$protocol.md and follow it exactly for: \$ARGUMENTS" ;;
+      spaced_quoted) text="Read \`/old wheelchair/protocol/$protocol.md\` and" ;;
+      mid_line) text="See /elsewhere/protocol/$protocol.md for details" ;;
       relative) text="Read foo/bar/protocol/$protocol.md" ;;
       short_relative) text="Read x/protocol/$protocol.md" ;;
       tilde) text="Read ~/w/protocol/$protocol.md" ;;
@@ -274,7 +277,7 @@ for i in "${!names[@]}"; do
     printf '%s\n' "$text" > "${claude[$case_name]}/skills/$name/SKILL.md"
     printf '%s\n' "$text" > "${codex[$case_name]}/prompts/$name.md"
     run_case "$case_name"
-    if [[ $origin == current || $origin == other || $origin == quoted ]]; then
+    if [[ $origin == current || $origin == other || $origin == quoted || $origin == spaced || $origin == spaced_quoted ]]; then
       assert "$name $origin wrappers removed" no_retired_wrappers "${claude[$case_name]}" "${codex[$case_name]}"
     else
       assert "$name $origin wrappers kept" bash -c '[[ -f $1 && -f $2 ]]' _ "${claude[$case_name]}/skills/$name/SKILL.md" "${codex[$case_name]}/prompts/$name.md"
