@@ -41,9 +41,40 @@ default_pins() {
     "gpt.standard = gpt-5.6-terra" \
     "gpt.heavy = gpt-6.1-sol" \
     "gpt.critical = gpt-6-astra" \
-    "gpt.lead = gpt-6.1-sol"
+    "gpt.lead = gpt-6.1-sol" \
+    "gemini.light = gemini-3.8-flash-low" \
+    "gemini.standard = gemini-3.8-flash-medium" \
+    "gemini.heavy = gemini-3.8-flash-high" \
+    "gemini.critical = gemini-3.8-flash-high" \
+    "gemini.lead = gemini-3.8-flash-high"
 }
 json_assert() { python3 -c "$1" <<<"$output"; }
+
+# Gemini defaults and pins use the same effort range as Claude.
+new_case
+for slot in light standard heavy critical lead; do
+  case $slot in light) expected=low ;; standard) expected=medium ;; *) expected=high ;; esac
+  run_model gemini "$slot"
+  assert "Gemini $slot uses its shipped default" bash -c '[[ $1 == 0 && $2 == "$3" ]]' _ "$status" "$output" "gemini-3.8-flash-$expected"
+done
+run_model effort gemini heavy
+assert 'Gemini default effort is empty and successful' bash -c '[[ $1 == 0 && -z $2 ]]' _ "$status" "$output"
+run_model set gemini standard gemini-custom max
+assert 'set accepts Gemini max effort' test "$status" -eq 0
+run_model gemini standard
+assert 'Gemini custom model reads back' bash -c '[[ $1 == 0 && $2 == gemini-custom ]]' _ "$status" "$output"
+run_model effort gemini standard
+assert 'Gemini max effort reads back' bash -c '[[ $1 == 0 && $2 == max ]]' _ "$status" "$output"
+run_model set gemini light none
+run_model gemini light
+assert 'Gemini none exits 3' bash -c '[[ $1 == 3 && $2 == *"gemini is not used at light"* ]]' _ "$status" "$(<"$stderr")"
+printf 'gemini.heavy = gemini-x @xhigh\n' > "$pins"
+run_model gemini heavy
+assert 'Gemini pin line reads model' bash -c '[[ $1 == 0 && $2 == gemini-x ]]' _ "$status" "$output"
+run_model effort gemini heavy
+assert 'Gemini pin line reads effort' bash -c '[[ $1 == 0 && $2 == xhigh ]]' _ "$status" "$output"
+run_model show --json
+assert 'show JSON includes Gemini' json_assert 'import json,sys; assert json.load(sys.stdin)["gemini"]["heavy"] == {"model":"gemini-x","effort":"xhigh"}'
 
 # New-format reading, defaults, aliases, none, effort and family.
 new_case
