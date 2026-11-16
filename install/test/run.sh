@@ -20,10 +20,14 @@ assert() {
 }
 
 tree_state() {
-  local root=$1 item rel
+  local root=$1 item rel skip_account_tmp=${2:-0}
   [[ -e $root ]] || { printf absent; return; }
   while IFS= read -r -d '' item; do
     rel=${item#"$root"}
+    # Live Codex sessions write transient account scratch files during this suite.
+    if [[ $skip_account_tmp == 1 && $rel == /accounts/*/tmp* ]]; then
+      [[ $rel =~ ^/accounts/[^/]+/tmp(/|$) ]] && continue
+    fi
     if [[ -L $item ]]; then
       printf 'L\0%s\0%s\0' "$rel" "$(readlink "$item")"
     elif [[ -f $item ]]; then
@@ -41,28 +45,11 @@ file_state() {
   if [[ -e $1 ]]; then printf 'present:%s' "$(sha256sum "$1" | awk '{print $1}')"; else printf absent; fi
 }
 
-claude_wrappers_landed() {
-  local home=$1 source name destination
-  for source in "$repo"/skills/*/SKILL.md; do
-    name=$(basename "$(dirname "$source")")
-    destination="$home/skills/$name/SKILL.md"
-    [[ -f $destination ]] || return 1
-    sed "s|{{WHEELCHAIR_ROOT}}|$repo|g" "$source" | cmp -s - "$destination" || return 1
+no_retired_wrappers() {
+  local name
+  for name in spine plan adopt plan-review implement verify graph diagram-sensitivity; do
+    [[ ! -e $1/skills/$name && ! -L $1/skills/$name && ! -e $2/prompts/$name.md && ! -L $2/prompts/$name.md ]] || return 1
   done
-}
-
-codex_wrappers_landed() {
-  local home=$1 source name destination
-  for source in "$repo"/codex/prompts/*.md; do
-    name=$(basename "$source")
-    destination="$home/prompts/$name"
-    [[ -f $destination ]] || return 1
-    sed "s|{{WHEELCHAIR_ROOT}}|$repo|g" "$source" | cmp -s - "$destination" || return 1
-  done
-}
-
-both_wrappers_landed() {
-  claude_wrappers_landed "$1" && codex_wrappers_landed "$2"
 }
 
 last_line_is() { [[ ${1##*$'\n'} == "$2" ]]; }
@@ -155,7 +142,7 @@ run_case() {
   local command_path=$PATH
   if [[ ${tailscale_absent[$name]} == 1 ]]; then
     local tool
-    for tool in awk basename bash cat chmod cp cut dirname grep head mkdir mktemp od rm sed tail tr uname; do
+    for tool in awk basename bash cat chmod cp cut dirname grep head mkdir mktemp od python3 rm sed tail tr uname; do
       ln -sf "/usr/bin/$tool" "${shim[$name]}/$tool"
     done
     command_path=${shim[$name]}
@@ -204,7 +191,7 @@ real_codex_before=$(file_state "$HOME/.codex/AGENTS.md")
 real_seen_settings_before=$(file_state "$HOME/.claude/settings.json")
 real_seen_hooks_before=$(file_state "$HOME/.codex/hooks.json")
 real_seen_config_before=$(file_state "$HOME/.codex/config.toml")
-real_wheelchair_before=$(tree_state "$HOME/.wheelchair")
+real_wheelchair_before=$(tree_state "$HOME/.wheelchair" 1)
 
 # A checkout the guard must refuse: install.sh and its guard copied into <dir>, which the caller
 # has made a linked git worktree or placed under the app's worktree directory.
@@ -248,14 +235,14 @@ new_case claude_only
 present[claude_only]=claude
 run_case claude_only
 assert 'claude-only install succeeds and reports Claude' bash -c '[[ $1 == 0 && $2 == *"harness found: claude"* ]]' _ "${status[claude_only]}" "${output[claude_only]}"
-assert 'claude-only install renders every substituted Claude wrapper' claude_wrappers_landed "${claude[claude_only]}"
+assert 'claude-only install creates no retired wrappers' no_retired_wrappers "${claude[claude_only]}" "${codex[claude_only]}"
 assert 'claude-only install does not create the absent Codex home' test ! -e "${codex[claude_only]}"
 
 new_case codex_only
 present[codex_only]=codex
 run_case codex_only
 assert 'codex-only install succeeds and reports Codex' bash -c '[[ $1 == 0 && $2 == *"harness found: codex"* ]]' _ "${status[codex_only]}" "${output[codex_only]}"
-assert 'codex-only install renders every substituted Codex wrapper' codex_wrappers_landed "${codex[codex_only]}"
+assert 'codex-only install creates no retired wrappers' no_retired_wrappers "${claude[codex_only]}" "${codex[codex_only]}"
 assert 'codex-only install does not create the absent Claude home' test ! -e "${claude[codex_only]}"
 assert 'codex-only install creates the default model pins' cmp -s <(printf "# wheelchair's model pins. Change them with codex/model.sh.\nclaude.light = claude-haiku-5-5\nclaude.standard = claude-sonnet-5-5\nclaude.heavy = claude-opus-5-5\nclaude.critical = claude-fable-5-2\nclaude.lead = claude-opus-5-5\ngpt.light = gpt-6-luna\ngpt.standard = gpt-5.6-terra\ngpt.heavy = gpt-6.1-sol\ngpt.critical = gpt-6-astra\ngpt.lead = gpt-6.1-sol\n") "${home[codex_only]}/.wheelchair/models"
 
@@ -266,31 +253,76 @@ printf 'sol = local-model\n' > "${home[codex_pins_preserved]}/.wheelchair/models
 run_case codex_pins_preserved
 assert 'codex install never overwrites existing model pins' cmp -s <(printf 'sol = local-model\n') "${home[codex_pins_preserved]}/.wheelchair/models"
 
-old=spine  # the retired wrapper name, rendered by an earlier version
-new_case spine_removed
-for old_wrapper in "${claude[spine_removed]}/skills/$old/SKILL.md" "${codex[spine_removed]}/prompts/$old.md"; do
-  mkdir -p "${old_wrapper%/*}"
-  printf 'Read %s/protocol/%s.md and follow it exactly\n' "$repo" "$old" > "$old_wrapper"
+names=(spine plan adopt plan-review implement verify graph diagram-sensitivity)
+files=(spine planning adopt plan-review implementation verification graphs sensitivity)
+for i in "${!names[@]}"; do
+  name=${names[$i]} protocol=${files[$i]}
+  for origin in current other foreign different; do
+    case_name="wrapper_${i}_${origin}"
+    new_case "$case_name"
+    mkdir -p "${claude[$case_name]}/skills/$name" "${codex[$case_name]}/prompts"
+    case $origin in
+      current) text="Read $repo/protocol/$protocol.md" ;;
+      other) text="Read /elsewhere/protocol/$protocol.md" ;;
+      foreign) text='someone else owns this' ;;
+      different) text='Read /elsewhere/protocol/unrelated.md' ;;
+    esac
+    printf '%s\n' "$text" > "${claude[$case_name]}/skills/$name/SKILL.md"
+    printf '%s\n' "$text" > "${codex[$case_name]}/prompts/$name.md"
+    run_case "$case_name"
+    if [[ $origin == current || $origin == other ]]; then
+      assert "$name $origin wrappers removed" no_retired_wrappers "${claude[$case_name]}" "${codex[$case_name]}"
+    else
+      assert "$name $origin wrappers kept" bash -c '[[ -f $1 && -f $2 ]]' _ "${claude[$case_name]}/skills/$name/SKILL.md" "${codex[$case_name]}/prompts/$name.md"
+    fi
+  done
 done
-mkdir -p "${claude[spine_removed]}/skills/foreign-spine" "${claude[spine_removed]}/skills/other"
-printf 'unrelated\n' > "${claude[spine_removed]}/skills/foreign-spine/SKILL.md"
-run_case spine_removed
-assert 'an install removes a previously rendered spine skill' test ! -e "${claude[spine_removed]}/skills/$old"
-assert 'an install removes a previously rendered spine Codex prompt' test ! -e "${codex[spine_removed]}/prompts/$old.md"
-assert 'an install leaves other installed skills alone' test -f "${claude[spine_removed]}/skills/foreign-spine/SKILL.md"
-assert 'an install with the removal still renders the other wrappers' both_wrappers_landed "${claude[spine_removed]}" "${codex[spine_removed]}"
+new_case wrapper_links
+mkdir -p "${claude[wrapper_links]}/skills" "${codex[wrapper_links]}/prompts"
+ln -s /old/skills/plan "${claude[wrapper_links]}/skills/plan"
+ln -s /old/codex/prompts/plan.md "${codex[wrapper_links]}/prompts/plan.md"
+mkdir -p "$fixture/foreign-skill"
+ln -s "$fixture/foreign-skill" "${claude[wrapper_links]}/skills/verify"
+run_case wrapper_links
+assert 'owned symlinks removed and foreign symlink kept' bash -c '[[ ! -L $1 && ! -L $2 && -L $3 ]]' _ "${claude[wrapper_links]}/skills/plan" "${codex[wrapper_links]}/prompts/plan.md" "${claude[wrapper_links]}/skills/verify"
 
-new_case spine_foreign
-mkdir -p "${claude[spine_foreign]}/skills/$old"
-printf 'someone else owns this\n' > "${claude[spine_foreign]}/skills/$old/SKILL.md"
-run_case spine_foreign
-assert 'an install leaves a spine skill it did not render' test -f "${claude[spine_foreign]}/skills/$old/SKILL.md"
-
-new_case spine_foreign_mention
-mkdir -p "${claude[spine_foreign_mention]}/skills/$old"
-printf 'Read /elsewhere/protocol/%s.md first\n' "$old" > "${claude[spine_foreign_mention]}/skills/$old/SKILL.md"
-run_case spine_foreign_mention
-assert 'an install leaves a spine skill that mentions another checkout'"'"'s spine file' test -f "${claude[spine_foreign_mention]}/skills/$old/SKILL.md"
+new_case seen_removed
+mkdir -p "${claude[seen_removed]}" "${codex[seen_removed]}" "$fixture/checkout/protocol/app"
+printf x > "$fixture/checkout/protocol/app/lead.md"
+python3 - "${claude[seen_removed]}" "${codex[seen_removed]}" "$fixture/checkout" "${home[seen_removed]}" <<'PYTEST'
+import json, os, shlex, sys
+c, x, root, home = sys.argv[1:]
+for harness, path in [('claude', c+'/settings.json'), ('codex', x+'/hooks.json')]:
+    hook = {'type':'command','command':f'{shlex.quote(root+"/seen/hook.sh")} {harness} notice','timeout':2}
+    d={'hooks':{'UserPromptSubmit':[{'matcher':'x','hooks':[hook, {'command':'other'}]}, {'hooks':[{'command':'unrelated'}]}], 'Other': []}}
+    if harness == 'claude':
+        d.update(permissions={'allow':[f'Bash({root}/seen/wording.sh:*)','Bash(other:*)']}, sandbox={'filesystem':{'allowWrite':[home+'/.wheelchair']}})
+    with open(path,'w') as f: json.dump(d,f)
+    d['hooks']['UserPromptSubmit'][0]['hooks'].pop(0)
+    if harness == 'claude': d['permissions']['allow'].pop(0)
+    with open(path+'.expected','w') as f: json.dump(d,f)
+open(x+'/config.toml','w').write('[sandbox_workspace_write]\nwritable_roots = ["'+home+'/.wheelchair"]\n')
+PYTEST
+cp "${codex[seen_removed]}/config.toml" "$fixture/config.expected"
+run_case seen_removed
+assert 'seen hooks and permission removed while unrelated JSON and grants survive' python3 - "${claude[seen_removed]}/settings.json" "${codex[seen_removed]}/hooks.json" <<'PYTEST'
+import json, sys
+for p in sys.argv[1:]:
+    assert json.load(open(p)) == json.load(open(p+'.expected'))
+PYTEST
+assert 'Codex config grant is byte-identical' cmp -s "${codex[seen_removed]}/config.toml" "$fixture/config.expected"
+assert 'seen removal reports once' bash -c '[[ $(grep -c "^seen hook: removed$" <<< "$1") == 1 ]]' _ "${output[seen_removed]}"
+new_case seen_foreign
+mkdir -p "${claude[seen_foreign]}" "$fixture/foreign/seen"
+printf '{"hooks":{"UserPromptSubmit":[{"hooks":[{"command":"%s/foreign/seen/hook.sh claude notice"}]}]},"permissions":{"allow":["Bash(%s/foreign/seen/wording.sh:*)"]}}\n' "$fixture" "$fixture" > "${claude[seen_foreign]}/settings.json"
+cp "${claude[seen_foreign]}/settings.json" "$fixture/foreign.expected"
+run_case seen_foreign
+assert 'foreign seen entries survive unchanged' cmp -s "${claude[seen_foreign]}/settings.json" "$fixture/foreign.expected"
+new_case seen_malformed
+mkdir -p "${claude[seen_malformed]}"
+printf '{bad json' > "${claude[seen_malformed]}/settings.json"
+run_case seen_malformed
+assert 'malformed settings survive with warning and successful install' bash -c '[[ $1 == 0 && $2 == *"warning:"* && $2 == *"settings.json"* && $(cat "$3") == "{bad json" ]]' _ "${status[seen_malformed]}" "${output[seen_malformed]}" "${claude[seen_malformed]}/settings.json"
 
 new_case neither
 present[neither]=''
@@ -304,13 +336,10 @@ run_case both_idempotent
 first_claude=$(tree_state "${claude[both_idempotent]}")
 first_codex=$(tree_state "${codex[both_idempotent]}")
 run_case both_idempotent
-assert 'both harnesses render every substituted wrapper' both_wrappers_landed "${claude[both_idempotent]}" "${codex[both_idempotent]}"
+assert 'both harnesses have no retired wrappers' no_retired_wrappers "${claude[both_idempotent]}" "${codex[both_idempotent]}"
 assert 'a second install is idempotent' bash -c '[[ $1 == 0 && $2 == "$3" && $4 == "$5" ]]' _ "${status[both_idempotent]}" "$(tree_state "${claude[both_idempotent]}")" "$first_claude" "$(tree_state "${codex[both_idempotent]}")" "$first_codex"
-assert 'fixture install writes the Claude UserPromptSubmit hook' python3 - "${claude[both_idempotent]}/settings.json" "$repo" <<'PY'
-import json, shlex, sys
-d=json.load(open(sys.argv[1])); target=sys.argv[2] + '/seen/hook.sh'
-assert any(shlex.split(h['command'])[0] == target for g in d['hooks']['UserPromptSubmit'] for h in g['hooks'])
-PY
+assert 'second install reports nothing to remove' bash -c '[[ $1 == *"seen hook: nothing to remove"* ]]' _ "${output[both_idempotent]}"
+assert 'no UserPromptSubmit seen handler is installed' bash -c '[[ ! -e $1 && ! -e $2 ]]' _ "${claude[both_idempotent]}/settings.json" "${codex[both_idempotent]}/hooks.json"
 
 new_case headless_yes
 tty[headless_yes]=1
@@ -544,7 +573,7 @@ assert 'real AGENTS.md is byte-identical after suite' bash -c '[[ $1 == "$2" ]]'
 assert 'real Claude settings are byte-identical after suite' bash -c '[[ $1 == "$2" ]]' _ "$real_seen_settings_before" "$(file_state "$HOME/.claude/settings.json")"
 assert 'real Codex hooks are byte-identical after suite' bash -c '[[ $1 == "$2" ]]' _ "$real_seen_hooks_before" "$(file_state "$HOME/.codex/hooks.json")"
 assert 'real Codex config is byte-identical after suite' bash -c '[[ $1 == "$2" ]]' _ "$real_seen_config_before" "$(file_state "$HOME/.codex/config.toml")"
-assert 'real wheelchair directory is byte-identical after suite' bash -c '[[ $1 == "$2" ]]' _ "$real_wheelchair_before" "$(tree_state "$HOME/.wheelchair")"
+assert 'real wheelchair directory is byte-identical after suite' bash -c '[[ $1 == "$2" ]]' _ "$real_wheelchair_before" "$(tree_state "$HOME/.wheelchair" 1)"
 
 new_case sudo_hint
 run_case sudo_hint
