@@ -12,14 +12,6 @@ get buried as this file grows. **Map:** `MAP.md`.
 
 ## Open Questions
 
-### Q2: With "Both families" chosen but only one family signed in, how many reviewers?
-- **Context:** The CLI workflow runs two same-family reviewers in this case
-  (`protocol/plan-review.md:49-52`). The app today starts two and the second lands on the
-  same family with a note.
-- **Options:** two same-family reviewers (two independent reads); or behave as that
-  family's single-family setting (one reviewer).
-- **Recommendation:** two same-family reviewers.
-
 ### Q3: When the reserved provider is the only family there is, are other sessions still held back?
 - **Context:** The hold-back sends workers, reviewers and so on elsewhere when the lead's
   provider is projected to run short (`viewer/app/balancer.js:45`, `held_back`). With one
@@ -47,6 +39,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 5 | A worker's `--provider` preference for a family with no unpaused, signed-in account on the machine is dropped with a note, instead of waiting. A family that is signed in but out of room still waits as today. | Critical and taste-sensitive work asks for Claude by name (`protocol/app/sub-lead.md:63-69`); a GPT-only setup would otherwise wait forever. | defaulted |
 | 6 | Scope is the app (hub, Settings page, `protocol/app/`). The CLI `/plan-review` and `/verify` stages keep their own rules. | IDEA "Not doing"; they already handle one family. | defaulted |
 | 7 | One setting, "Reviewers and checkers": Both families (default), Claude only, GPT only. A single-family choice gives one reviewer per round covering both lenses, and one checker, all from that family. | Collin picked one choice over separate count and family settings. | user |
+| 8 | With `both` chosen but only one family usable, a plan still gets two reviewers, both from that family, one per lens. The checker lands on the same family as the builder with a note. | Collin picked two independent reads; matches the CLI `/plan-review`. | user |
 
 ## Spec
 
@@ -60,6 +53,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
   both the intent and mechanics lenses. Every checker (small fix, sub-lead verification,
   after-done fix) starts on that family; the sub-lead starts one checker even when both
   families built.
+- `both` with only one family usable: two reviewers, both on that family, one per lens
+  (the hub drops the provider constraint with a note, as today). One checker, on that
+  family.
 
 ## Accepted Risks
 
