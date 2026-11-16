@@ -12,6 +12,9 @@ verified-by:
   - round: 3
     lane: gpt verifier (hub could not avoid gpt), FAIL
     checks: gpt standard (gpt-6.1-terra) build + remediations 1-2
+  - round: 4
+    lane: gpt verifier (hub could not avoid gpt), FAIL
+    checks: gpt standard (gpt-6.1-terra) build + remediations 1-3
 ---
 
 # Completion Report — Asides
