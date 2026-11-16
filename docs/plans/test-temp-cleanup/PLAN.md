@@ -319,3 +319,4 @@ product code changes; any cleanup run by an agent rather than the suites.
 |---|-----------|--------------------|------|-----------|------------|--------|
 
 ## Log
+- 2026-11-15 Ready check: hub and machine service answer (session list); claude 2.1.325 and codex 0.169.0 installed; codex preflight token fresh.
