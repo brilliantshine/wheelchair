@@ -62,13 +62,13 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 
 | Directory | What it holds |
 |---|---|
-| `test/` | The node and Playwright suites; `fixtures/` holds the graph files they open, `helpers/server.js` starts a server on a free port with its own cache root under `test/.tmp/`, and `hooks/` holds fault seams selected by an environment variable, used only by tests |
+| `test/` | The node and Playwright suites; `fixtures/` holds the graph files they open, `helpers/server.js` starts a server on a free port with its own cache root, a folder from `test-support/run-dir.js` under system temp, and `hooks/` holds fault seams selected by an environment variable, used only by tests |
 
 ## Tests
 
 ```bash
 node --test viewer/test/*.test.js     # unquoted glob, as the root router explains
 npm --prefix viewer run test:browser  # Chromium and Firefox
+```
 
 Test temp folders come from `test-support/run-dir.js` (`makeTemp`/`makeTempSync`), which removes them when the test process ends; never allocate from `os.tmpdir()` directly in a test.
-```
