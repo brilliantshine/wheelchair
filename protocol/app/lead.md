@@ -48,8 +48,8 @@ That is deliberate: almost none of it helps him decide anything.
 ## What you may start and stop
 
 Use `node <root>/viewer/app/wc.js session start --role <role> --tier top --brief-file
-<path> --attempt <id>`, and `session stop <name>`, `session list`. The hub chooses the
-provider and account. Workers, reviewers and verifiers may pass `--provider <claude|gpt>`
+<path> --attempt <id>`, and `session stop <name>`, `session list`. The list output is
+`{ sessions, review_families }`. The hub chooses the provider and account. Workers, reviewers and verifiers may pass `--provider <claude|gpt>`
 or `--not-provider <claude|gpt>`; leads, sub-leads and mappers may not. The hub checks the
 rules and refuses anything else with the reason. A refusal is final: change the request
 rather than resending it.
@@ -99,9 +99,11 @@ Collin picks the project and the machine, then writes in plain words.
 
 - **A small fix** (a couple of files, nothing to parallelize) is just done. Make it in the
   worktree, commit it (`wc.js git commit` with the exact paths), and write no plan
-  documents. Start a verifier on that commit with `--not-provider <the provider the lead
-  runs on>` from `session list` and a brief that says what Collin asked for; its `result`
-  names the commit it checked. A failed check gets one more attempt; a
+  documents. Read `review_families` and the lead's provider in `sessions` from
+  `session list`. Start a verifier on that commit with
+  `--not-provider <the provider the lead runs on>` if `review_families` is `both`, or no
+  provider flag if it is `claude` or `gpt`, and a brief that says what Collin asked for;
+  its `result` names the commit it checked. A failed check gets one more attempt; a
   gap surviving two attempts comes to Collin as a `question` card (push the fix as it is,
   or drop it, which you do with `wc.js git revert`). Then push, open the pull request
   (`wc.js git push`, `wc.js git pr`), and post a `done` card. Say in your reply what
@@ -175,15 +177,19 @@ exact paths). The mapper commits MAP.md and `docs/maps/`.
 
 ### 5. Review, silent
 
-Two reviewer sessions, each fresh, each given only the plan path and repo access, never
+Before each round, read `review_families` from `session list`. If it is `both`, start two
+reviewer sessions, each fresh, each given only the plan path and repo access, never
 this conversation. Start the intent-lens reviewer with `--provider claude` (a preference:
 it moves to GPT rather than wait). Read the provider from that start's output and start the
 mechanics-lens reviewer with `--not-provider <that provider>`. If the intent reviewer's
 start came back `waiting`, start the mechanics reviewer with no provider flag. The hub
 drops a provider constraint it cannot meet and says so in the start output's `note`.
 Brief them from `<root>/protocol/app/reviewer.md`: one takes the **mechanics lens**, one
-the **intent lens**. Include in each brief the Review Rounds table and Accepted Risks from
-PLAN.md, so settled findings are not re-raised. Scope: round 1 is the whole Spec; later rounds are the changes since the last
+the **intent lens**. With one family usable, both land on it, one per lens. If
+`review_families` is `claude` or `gpt`, start one fresh reviewer with no provider flag,
+briefed with both lenses from `reviewer.md`. Record one lane and `cross-family: no` in
+the Review Rounds "Lanes" line. Include in each brief the Review Rounds table and Accepted
+Risks from PLAN.md, so settled findings are not re-raised. Scope: round 1 is the whole Spec; later rounds are the changes since the last
 round in depth plus one whole-Spec coherence pass. Write a short "Changed since the last
 round" list into the round's section before launching.
 
@@ -288,8 +294,10 @@ When Collin reports a problem, first run `gh pr view --json state`:
   sub-lead after `done`: the status stays `done`. If the fix would need parallel workers,
   say so in a `question` card offering a stub instead. Otherwise:
   1. Commit the fix (`wc.js git commit`, exact paths).
-  2. Start a verifier on that commit with `--not-provider <the provider the lead runs on>`
-     from `session list`, briefed with the reported problem and the plan's Spec. Its
+  2. Read `review_families` and the lead's provider in `sessions` from `session list`.
+     Start a verifier on that commit with `--not-provider <the provider the lead runs on>`
+     if `review_families` is `both`, or no provider flag if it is `claude` or `gpt`,
+     briefed with the reported problem and the plan's Spec. Its
      `result` names the commit it checked. A failed check gets one more
      attempt; a gap surviving two attempts comes to Collin as a `question` card: push the
      fix as it is, or drop it. Dropping reverts the fix's commits with `wc.js git revert`,

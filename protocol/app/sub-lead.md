@@ -22,7 +22,8 @@ beside it.
    Tasks table and the committed `docs/plans/<slug>/reports/`, check each row claiming
    completion against the tree, and trust the tree over the table. A row a worker claimed
    but did not land goes back to not-started; what is genuinely built moves to Prior Work.
-   Run `wc.js session list` first so you do not start a worker that is still alive.
+   Run `wc.js session list` first and check its `sessions` so you do not start a worker
+   that is still alive.
 
 ## Decomposing and briefing
 
@@ -36,7 +37,8 @@ and tier) and its validation commands. Write each brief to a file (a scratch dir
 outside the repository; the hub reads it at start). Every brief carries:
 
 - the path to `<root>/protocol/app/worker.md`, the plan slug and task id, and the lead's
-  session name (`wc-<thread-id>-lead`; `session list` shows it), so the worker can message it;
+  session name (`wc-<thread-id>-lead`; `session list` shows it in `sessions`), so the
+  worker can message it;
 - a concrete objective, the **ownership boundary**, and the deliverable;
 - exact validation commands;
 - for a GPT worker, the guardrail: "if the same gate fails twice, stop and report rather
@@ -64,8 +66,9 @@ looks.
   where this belongs", it is Standard. Writing the missing decision into the brief
   to keep a task cheap is good; assuming the worker will work it out is not.
 - **Which family.** Start interface, frontend and other taste-sensitive work with
-  `--provider claude`. The hub holds it until Claude has room, including while Claude is
-  signed out on that machine, and sends it elsewhere only when Claude is below its margin and workers are ticked as held back in Settings.
+  `--provider claude`. The hub holds it until Claude has room, and sends it elsewhere
+  only when Claude is below its margin and workers are ticked as held back in Settings. If no Claude account is signed
+  in on the machine, the hub sends it elsewhere with a note.
   Other work passes no provider flag.
 - Heavy and Critical are not implementation tiers. A brief reaches one only as an
   escalation, below.
@@ -165,8 +168,11 @@ When every task is done and the full validation passes:
    risks, the lanes that built it. Every spec item gets a row, including pre-existing
    ones. It is written for a hostile reader: every claim checkable.
 2. Set `status: verifying` and commit PLAN.md and COMPLETION.md.
-3. If every builder ran on one provider, start one top-tier verifier with
-   `--not-provider <that provider>` from `session list`. If both providers built, start one
+3. Read `review_families` and the builders in `sessions` from `wc.js session list`. If
+   `review_families` is `claude` or `gpt`, start exactly one top-tier verifier with no
+   provider flag, whatever families built. If it is `both` and every builder ran on one
+   provider, start one top-tier verifier with `--not-provider <that provider>`. If it is
+   `both` and both providers built, start one
    top-tier verifier with `--provider claude` and one with `--provider gpt`. If the first
    start's output has a `note` saying its provider was not honoured, start no second verifier.
    If the second start's output has such a note (it landed on the first verifier's provider),
@@ -178,7 +184,8 @@ When every task is done and the full validation passes:
    COMPLETION.md, `commit` the commit verified).
 5. **FAIL**: write `docs/plans/<slug>/REMEDIATION-N.md` (N is the verification attempt):
    the gap list verbatim, then one task per gap in the brief format. Route to the same
-   provider that built the work, using `--provider <that provider>` from `session list`.
+   provider that built the work, using `--provider <that provider>` from `session list`'s
+   `sessions`.
    Attempt 1 sharpens the brief rather than reaching for a
    bigger model: a first failure is a brief defect more often than a model defect. Fix,
    re-run validation, add a "Remediation N" section to COMPLETION.md without erasing
