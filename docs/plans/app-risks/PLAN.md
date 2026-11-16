@@ -316,3 +316,4 @@ Budget reset: Collin chose "Keep going" after three rounds.
 - 2026-11-15 — Choice: R2-T1, `smoke-harness.test.js`: the matcher takes an injectable fs so it is tested without fixture files.
 - 2026-11-15 — Choice: R2-T1, `smoke.js` (seen in the diff, not reported): the clean check is no longer wrapped by `check()`; it prints its own PASS/FAIL line with the folder, leftover count and tmux state.
 - 2026-11-15 — R2-T1 accepted: sub-lead's 3 smoke runs on its branch and 1 on the feature branch left no smoke folders (new folders seen belonged to other threads' running viewer tests, with owner files). The 10 earlier leaks were confirmed untouched; the failing-before run added an 11th (`/tmp/wheelchair-test-run-903082-g6WoX3`).
+- 2026-11-15 — Verifier attempt 3: `wc-0958e89051d8-verifier-3`, claude (`--not-provider gpt`), at `727f0a0`.
