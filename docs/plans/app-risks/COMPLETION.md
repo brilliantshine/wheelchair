@@ -1,7 +1,7 @@
 ---
 slug: app-risks
 date: 2026-11-15
-implemented-by: "gpt standard (gpt-6.1-terra) ×4 workers: T1, T2, T3, T3b; sub-lead claude-opus-5-5 for the D10 seeding and the proposal wording fix"
+implemented-by: "gpt standard (gpt-6.1-terra) ×5 workers: T1, T2, T3, T3b, R1-T1; sub-lead claude-opus-5-5 for the D10 seeding and the proposal wording fix"
 verified-by: []
 ---
 
@@ -119,3 +119,33 @@ Failing-before evidence: `docs/plans/app-risks/reports/T1.md` (card fix: `500 !=
 
 ## Remediation rounds
 
+
+### Remediation 1 (2026-11-15)
+
+Verification 1 (claude / claude-opus-5-5 at `d258bd8`) failed one gap: the startup path assertion checked only paths the harness built itself, so it could never fail. See `REMEDIATION-1.md`. The rows and deviation above about that assertion are superseded by this section; the original text is left as written.
+
+Fix, R1-T1 (gpt / gpt-6.1-terra, `wc-0958e89051d8-worker-5`, commit `c5e32f2`):
+- `test-support/smoke/harness.js:42-54` `effectivePaths({ hubArgv, machineArgv, env })` resolves each process's state, cache, spool, worktrees and settings paths and ports from the exact argv and child env about to be spawned. It uses each program's own defaults (`viewer/server.js:1112,2241`, `machine/service.js:26,144`).
+- `harness.js:56-62` `assertIsolated` rejects any path outside the run folder and ports 7373/7374. It runs at `:80-81` before the proxy listens or anything spawns, and the spawns use the same argv arrays. `:81` also requires the resolved paths to equal the intended ones: in smoke mode `HOME` is inside the run folder, so a dropped flag would otherwise still pass.
+- `harness.js:158-165` read-back after start: `machine.json` in the resolved machine state has the harness port and hub URL; the hub's `.token` is read from the resolved cache root; in live mode the seeded sub-lead is visible through the hub. On a mismatch it tears down and throws.
+- `test-support/test/smoke-harness.test.js`: dropping `--state-dir`, `--cache-root` or `--stateDir` yields the real-HOME default and the assertion throws; port 7374 throws.
+
+Shown failing on the real path (`reports/R1-T1.md`): with the hub's `--state-dir` temporarily removed, `bash test-support/smoke/run.sh` → `FAIL setup: AssertionError [ERR_ASSERTION]: hubState differs from intended path` (actual `<run folder>/home/.local/state/wheelchair`), exit 1. Restored, not committed.
+
+Also corrected: live run 2's recorded output had lost its header and slow-start row (a sub-lead copy error); the full output is now above and in `reports/live-run.md`.
+
+Validation after the merge (sub-lead):
+
+```
+$ node --test test-support/test/*.test.js
+# tests 7
+# pass 7
+# fail 0
+$ bash test-support/smoke/run.sh
+PASS readiness through hub
+PASS start
+PASS stop
+  removed run folder: /tmp/wheelchair-test-run-861862-cil1Mg; private tmux server gone
+PASS clean
+exit 0
+```
