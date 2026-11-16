@@ -605,6 +605,7 @@ Round 9 is clean: no blocking or major finding upheld.
 | T5 | `protocol/app/aside.md` and the `lead.md` line (§4 aside prompt, §8) | `protocol/app/aside.md`, `protocol/app/lead.md`, `protocol/app/AGENTS.md` | light, gpt (gpt-6-luna) | wc-54ce860aef63-worker-4 | read-through against §4/§8 | done (merged) |
 | R1-1 | Remediation 1: stranded queue after hub restart, stale waiting-on line, Think harder with Heavy off, Ask input focus | `viewer/app/{asides,hub,routes}.js`, `viewer/pages/aside.js`, `viewer/test/app-asides.{test,spec}.js`, `viewer/app/API.md` | standard, gpt (gpt-6.1-terra) | wc-54ce860aef63-worker-10 | REMEDIATION-1.md | done (merged 031dedc) |
 | R2-1 | Remediation 2: no machine call under the thread lock; one pump per thread; routes don't await the pump | `viewer/app/asides.js`, `viewer/app/hub.js` (timer), `viewer/app/routes.js` (aside block), `viewer/test/app-asides.test.js` | standard, gpt (gpt-6.1-terra) | wc-54ce860aef63-worker-11 | REMEDIATION-2.md | done (merged 7087567) |
+| R3-1 | Remediation 3: no POST after archive; cancel machine turns no aside holds | `viewer/app/asides.js`, `viewer/test/app-asides.test.js` | standard, gpt (gpt-6.1-terra) | — | REMEDIATION-3.md | in progress |
 
 ## Log
 
@@ -655,3 +656,4 @@ Round 9 is clean: no blocking or major finding upheld.
 - 2026-11-15 — Verification 2: FAIL, one new gap (polls pile up behind the thread lock when the machine is slow, delaying Done). The four Remediation 1 gaps passed. REMEDIATION-2.md written; task R2-1 on GPT, same rung.
 - 2026-11-15 — R2-1 accepted: claim/call/apply split with no machine call under the thread lock, one pump per thread, routes don't await the pump; new slow-machine test plus all aside tests pass (9/9 three times); unit 349/350 (known port test); aside browser spec 4/4. Worker reported no choices; none visible in the diff beyond the brief. Remediation 2 recorded in COMPLETION.md; verifier attempt 3 started.
 - 2026-11-15 — Verifier attempt 3 (wc-54ce860aef63-verifier-3) started on fe1d2d4; again "Could not avoid gpt; using gpt".
+- 2026-11-15 — Verification 3: FAIL, one new gap: after Remediation 2's lock split, a dispatch POST can land after archive and start an untracked turn. The Remediation 2 gap passed. Cause: my R2 brief told the worker to POST on 404 without a recheck. REMEDIATION-3.md written; task R3-1 on GPT, same rung, sharpened brief (recheck before POST, plus cancel any turn no aside holds).
