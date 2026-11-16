@@ -13,20 +13,71 @@ mid-plan and resume a week later.
 The reporting is held to the same standard as the work. Leads write in the style you set, and
 draw a picture whenever the answer has a shape.
 
-## Usage
+## Using the app
 
-Open the app at `/wheelchair/app/` on a machine that serves it (see "The viewer"). Start a thread
-and say what you want. The lead takes it from there:
+### First time
 
-- A small fix, it makes. Anything bigger, it offers to take into planning.
-- It shows you cards: one question at a time, the plan approval, progress, pictures.
-- Settings holds your writing style, the model for each role and how eagerly pictures appear
-  (the Diagrams section on the Models tab: ask, default or high).
+1. Run `./install.sh` on the machine that will run the agents (see "Install"). On a
+   headless machine it asks whether to serve the app to your other devices over Tailscale.
+2. Open `https://<machine>.<tailnet>.ts.net/wheelchair/app/` (or run
+   `node viewer/server.js --url` for the bookmark address). Open it once per device; the
+   browser is remembered after that.
+3. In **Settings**:
+   - **Accounts**: sign each Claude or GPT account in on the machine. The sign-in opens in
+     the page; paste back the code it gives you.
+   - **Models and preferences**: the model for the lead and for the other agents, and
+     **Diagrams** (ask, default or high: how readily agents draw a picture).
+   - **Writing style**: how leads write to you.
+   - **Default project folder** (optional): a folder holding your repos, so New thread can
+     list them.
+
+### Doing a piece of work
+
+1. **+ New thread**. Pick the machine and the project (any git repository; save ones you
+   use often under "Saved directories"). Type what you want and press **Start**.
+2. The lead answers in the thread. Each thread gets its own git worktree and branch, and
+   ends in one pull request.
+   - **A small fix** (a couple of files): the lead makes it, has it checked, and opens the
+     pull request.
+   - **Anything bigger**: it offers "Take it into planning?". Press it, or **Keep talking
+     first**.
+3. **Planning.** The lead maps the code, writes up your idea (**Your idea so far**, each
+   bullet removable), asks you to confirm IDEA.md, then asks design questions one card at
+   a time. Each question shows the lead's leaning; press an option or type your own answer
+   under it. MAP.md, IDEA.md and PLAN.md open from the thread.
+4. **Review.** Fresh reviewers try to break the plan, from the other model family when
+   both are signed in. You only see the progress line, and a question if a real choice
+   comes up.
+5. **Approval.** The approval card lists any serious objection the lead overruled, with
+   its reason (**Talk about this** to discuss one), and the Ready check: the machine is
+   up and on the same version, and the logins work. Press **Start building**.
+6. **Building.** A sub-lead runs workers in parallel and a verifier checks the result.
+   The progress line shows tasks done.
+7. **Done.** The done card says what you can do now, what was left out (each with
+   **Start a thread about it**), and links the pull request. You merge it; the lead never
+   does. Report a problem in the same thread while the pull request is open and the lead
+   fixes it there.
+
+### Finding your way
+
+- **Needs you** (top bar): every card waiting on you, across threads. Cards are the only
+  things the lead waits on; plain replies are updates.
+- **Asides**: select text in a lead's message and pick **Ask about this**, **Say it
+  simpler** or **Draw it**, or press **Ask about this message**. It opens a side
+  conversation; **This changes my answer** sends what you settled back to the lead.
+- **Pictures**: the thread's right column lists every picture; **Open full size** shows
+  one on its own page.
+- **Features**: every feature by stage, plus your projects and machines.
+- **Agents**: every running session; each opens in a browser terminal.
+- **Restart lead** appears if a thread's lead dies; the new one picks up from the plan
+  files. **Archive** stops a thread's sessions and hides it.
 
 Review and verification run cross-family when both `claude` and `codex` are installed. With one,
 the gates still run, with a fresh reviewer that never saw the conversation.
 
-Each feature lives in `docs/plans/<slug>/`:
+### What a feature leaves behind
+
+Each feature lives in `docs/plans/<slug>/` in the project:
 
 | File | What it is |
 |---|---|
