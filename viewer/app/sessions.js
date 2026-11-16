@@ -3,6 +3,7 @@
 // Spec "Agents start and stop sessions", "Prompts mid-run", and Edge cases.
 const crypto = require('node:crypto');
 const { addCard } = require('./cards.js');
+const quiet = require('./quiet.js');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
@@ -109,6 +110,7 @@ async function resumeUnanswered(hub, thread, session) {
     live: true,
     first_message: pending.first_message,
   });
+  if (quiet.watched(session) && session.first_message) session.owes_reply = true;
   markIdleIfFresh(session);
   await hub.save(thread);
   return session;
@@ -244,6 +246,7 @@ async function startSession(hub, thread, input) {
     // session is ready; without one, a ready session is idle and may take the queue at once.
     first_message: PROVIDERS[selection.provider].typesRoleMessage || Boolean(input.brief),
   });
+  if (quiet.watched(session) && session.first_message) session.owes_reply = true;
   markIdleIfFresh(session);
   if (!thread.worktree && started.worktree) {
     thread.worktree = started.worktree;
@@ -269,6 +272,7 @@ async function deliverReport(hub, thread, target, payload) {
     { session: target.name },
   );
   target.finished = true;
+  target.owes_reply = false; quiet.reset(thread, target);
   return enqueue(
     hub,
     thread,
@@ -294,11 +298,11 @@ function session(thread, name) {
   return found;
 }
 
-async function enqueue(hub, thread, name, text, source = 'app', first = false, { save = true, deliver: deliverNow = true } = {}) {
+async function enqueue(hub, thread, name, text, source = 'app', first = false, { save = true, deliver: deliverNow = true, quiet: quietTag, about } = {}) {
   const target = session(thread, name);
   target.queue ||= [];
   thread.queues ||= {};
-  const message = { text, source, at: new Date().toISOString() };
+  const message = { text, source, at: new Date().toISOString(), ...(quietTag ? { quiet: quietTag } : {}), ...(about ? { about } : {}) };
   // The thread list orders threads by when Collin last wrote in them, not by any activity.
   if (source === 'collin') thread.collin_at = message.at;
   if (first) target.queue.unshift(message);
@@ -337,6 +341,9 @@ async function deliver(hub, thread, target) {
     return false;
   }
   target.queue.shift();
+  if (quiet.watched(target)) target.owes_reply = true;
+  delete target.quiet_check_at;
+  if (next.quiet === 'starter') { const about = thread.sessions.find(s => s.name === next.about); if (about) about.quiet_starter_at = new Date().toISOString(); }
   if (deliveredStyleVersion !== undefined) target.style_version = deliveredStyleVersion;
   target.turn_ended = false;
   delete target.delivery_error;
@@ -395,6 +402,7 @@ async function event(hub, payload) {
     if (target.role === 'lead') for (const card of thread.cards) if (card.kind === 'needs' && card.title === "The lead's turn failed" && !card.answered) card.answered = true;
     const reportTarget = limitEnded || Date.parse(target.limited_until) > Date.now() ? null : await deliverReport(hub, thread, target, payload);
     if (reportTarget) deliveryTargets.add(reportTarget.name);
+    quiet.arm(hub, target);
   }
   const permission = type === 'prompt' && payload.notification_type === 'permission_prompt';
   if (type === 'stuck' || permission) {
@@ -510,6 +518,7 @@ async function stopSession(hub, thread, caller, name) {
   if (target.status !== 'waiting') await hub.call(thread.machine, `/v1/sessions/${encodeURIComponent(target.name)}`, 'DELETE');
   target.live = false;
   target.status = 'stopped';
+  quiet.reset(thread, target, true);
   await hub.save(thread);
   return { ok: true };
 }
@@ -568,6 +577,7 @@ async function pollDead(hub) {
         for (const target of missing(thread, fresh)) {
           target.live = false;
           target.status = 'ended';
+          quiet.reset(thread, target, true);
           changed = true;
           if (target.started_by) {
             const text = `[wc:from app] your session ${target.name} ended`;
