@@ -40,6 +40,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 11 | A pass that finds nothing shows "clean"; a passed verification shows "passed" | Ends each stage with a visible outcome rather than a stale "checking" | defaulted |
 | 12 | The review line counts upheld, downgraded, accepted-risk and user-decision findings as found; one is resolved once its Spec fix is saved, its risk recorded, or Collin's decision logged | Matches decision 4; "resolved" is honest for accepted risks where "fixed" is not | defaulted |
 | 13 | `choice_waiting` is also set while the review budget's needs card is open | That card also waits on Collin | defaulted |
+| 14 | `clean` means the round passed lead.md's existing clean test, not zero findings; it may carry resolved counts | Keeps the review gate unchanged while ending the line on a true outcome | review-round-1 |
+| 15 | After `verifying` is committed, the sub-lead's per-task progress posts use the `verify` line; `fixed` rises on each accepted remediation task | Otherwise remediation would flip the pin back to Building | review-round-1 |
 
 ## Spec
 
@@ -61,8 +63,8 @@ reviewer or verifier names, severities or lens names ever appear in it.
 | `machines` | string array | yes, every stage | As today; may be empty for `review` |
 | `choice_waiting` | boolean | yes, every stage | As today |
 | `pass` | integer `>= 1` | `review`, `verify` | Review round number, or verification attempt number (the N of `REMEDIATION-N.md` + 1 for a re-verify) |
-| `phase` | `checking` \| `fixing` \| `clean` | `review`, `verify` | `checking`: reviewers or verifier running. `fixing`: lead triaging and fixing the Spec, or sub-lead remediating. `clean`: the pass found nothing (review) or verification passed (verify) |
-| `found`, `fixed` | integer | `review`/`verify` with phase `fixing`; forbidden otherwise | This pass only. `0 <= fixed <= found`, `found >= 1` |
+| `phase` | `checking` \| `fixing` \| `clean` | `review`, `verify` | `checking`: reviewers or verifier running. `fixing`: lead triaging and fixing the Spec, or sub-lead remediating. `clean`: the round met lead.md's clean test — no upheld blocking or major finding and no open `user-decision`, whatever minor or accepted-risk findings it had (review) — or verification passed (verify) |
+| `found`, `fixed` | integer | required with `fixing`; optional (both or neither) with review `clean`; forbidden otherwise | This pass only. `0 <= fixed <= found`; with `fixing`, `found >= 1`; with `clean`, `fixed == found` |
 
 Validation rules, all refused with a 422 reason through the shared `validate`
 (`viewer/app/card.js:119-139`, called by the hub at `viewer/app/cards.js:46`):
@@ -70,7 +72,7 @@ Validation rules, all refused with a 422 reason through the shared `validate`
 - `stage` not one of the three: `invalid or missing field: stage`.
 - `build` (or absent): `done`/`total` required as today; `pass`, `phase`, `found`, `fixed` refused.
 - `review`/`verify`: `pass` and `phase` required; `done`/`total` refused; `found`/`fixed`
-  required with `fixing`, refused with `checking` and `clean`; count rule above.
+  required with `fixing`; with review `clean` both-or-neither and `fixed == found`; refused with `checking` and with verify `clean`; count rules above.
 - Roles unchanged: lead and sub-lead may post any stage (`viewer/app/card.js:28`).
 
 The field-allowlist check (`card.js:126-128`) admits the new keys for `progress`; the
@@ -83,7 +85,10 @@ check (`card.js:135-137`).
 
 1. Launching round N (after its reviewers start): `stage: review, pass: N, phase: checking`.
 2. Triage done for round N:
-   - no finding counted as found → `phase: clean` (then approval as today, step 6);
+   - the round is clean by lead.md's test (no upheld blocking/major, no open
+     `user-decision`) → resolve any counted minor or accepted-risk findings, then post
+     `phase: clean` with `found`/`fixed` equal (omitted if none were counted), then approval
+     as today, step 6. The review gate itself is unchanged;
    - otherwise → `phase: fixing, found: F, fixed: 0`, re-posted with `fixed` rising as each
      Spec fix, Accepted Risk or Collin decision is saved.
 3. Round numbering counts every triaged round in the thread; it never resets, including
@@ -106,6 +111,12 @@ check (`card.js:135-137`).
    fixed: 0`; re-post with `fixed` rising as each remediation task is accepted.
 3. On PASS (every verifier of the attempt passed): `phase: clean`, then the `result` to the
    lead as today.
+6. **Remediation tasks are stage-aware.** Once `status: verifying` is committed, the
+   "post `progress` on dispatch and acceptance" rules (`protocol/app/sub-lead.md:93-95`,
+   `:126-129`) post the `verify` line instead of a `build` one: dispatching a remediation
+   task re-posts the current `verify`/`fixing` line unchanged; accepting one re-posts it
+   with `fixed` + 1. A `build`-stage card is never posted after `verifying` is committed.
+   Both sub-lead.md places get a sentence saying so.
 4. When two verifiers run in one attempt, `found` is the number of distinct gaps across both
    reports after the sub-lead merges duplicates into REMEDIATION-N.md.
 5. A gap that survives two fixes and goes to the lead: the line stays on `fixing`; the lead
@@ -125,10 +136,15 @@ you" pill, sticky/fold behaviour (`thread.js:684-719`) and replacement behaviour
 | `build` / absent | Building | unchanged: segments + "D of T tasks done · machines" |
 | `review` / `checking` | Reviewing plan | "pass N · reviewers reading" |
 | `review` / `fixing` | Reviewing plan | "pass N · F found, X resolved" |
-| `review` / `clean` | Reviewing plan | "pass N · clean" |
+| `review` / `clean` | Plan reviewed | "pass N · passed", or "pass N · passed, F resolved" when counts are present |
 | `verify` / `checking` | Verifying | "attempt N · checking" |
 | `verify` / `fixing` | Verifying | "attempt N · F gaps, X fixed" |
 | `verify` / `clean` | Verified | "attempt N · passed" |
+
+When the pin is folded (`viewer/pages/thread.js:691-692` builds a separate one-line
+label, shown instead of the card at `:707-716`), the folded label is the box's label and
+text joined with " · ", plus ": choice for you" when `choice_waiting`, e.g. "Reviewing plan
+· pass 2 · 5 found, 3 resolved". The `build` folded label is unchanged ("Building D of T").
 
 No segment bar for `review`/`verify`. Machines are appended (" · hub") only for `verify`
 when non-empty. The line must fit a 360px-wide viewport without horizontal scroll; the
@@ -167,7 +183,9 @@ past validation) render as Building.
   review `fixing` line reads "Reviewing plan" and "pass 2 · 5 found, 3 resolved" and has no
   segment bar; a verify `clean` line reads "Verified"; a stage-less card still reads
   "Building … tasks done"; `choice_waiting` turns a review line amber; at 360px width the
-  pin has no horizontal overflow.
+  pin has no horizontal overflow; a folded review pin reads "Reviewing plan · pass 2 · 5
+  found, 3 resolved" and never contains "undefined"; posting a remediation-task acceptance
+  during verification leaves the pin on "Verifying".
 - Grep check: `grep -n "No round count" protocol/app/lead.md` returns nothing.
 
 ## Accepted Risks
@@ -179,9 +197,24 @@ past validation) render as Building.
 
 ### Round 1 — 2026-11-15
 
-**Lanes:** pending; cross-family: pending.
+**Lanes:** intent — gpt (claude unavailable); mechanics — gpt; cross-family: no.
 
 **Changed since Round N-1:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| mechanics | blocking | Remediation dispatch/acceptance still post build-task progress, replacing the Verifying line | upheld | Sub-lead rule 6: after `verifying`, those posts re-post the `verify` line; build cards never follow (decision 15) |
+| mechanics | minor | Folded pin label formats done/total, so review/verify fold to "Building undefined of undefined" | upheld | Folded label rule added to Rendering, with a browser test |
+| intent | major | No outcome for a round that passes with minor or accepted-risk findings: they force `fixing`, so either the gate changes or the pin lies | upheld | `clean` now means lead.md's clean test, may carry equal counts; rendered "Plan reviewed · pass N · passed" (decision 14) |
+
+### Round 2 — 2026-11-15
+
+**Lanes:** pending; cross-family: pending.
+
+**Changed since Round 1:**
+- `clean` redefined as lead.md's existing clean test; review `clean` may carry equal `found`/`fixed`; rendered "Plan reviewed · pass N · passed[, F resolved]" (decision 14).
+- Sub-lead rule 6: remediation dispatch/acceptance posts the `verify` line, never `build` (decision 15).
+- Folded pin label rule for review/verify, plus tests.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
