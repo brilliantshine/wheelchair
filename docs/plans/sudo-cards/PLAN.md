@@ -432,7 +432,7 @@ Collin chose "keep going" after three rounds without a clean one; budget reset.
 | T2 | Helper installer + `--uninstall`, fixture test; root `install.sh` missing-helper hint | `sudo-helper/install.sh`, `sudo-helper/test/install-test.sh`, `sudo-helper/test/install-fixtures/`, hint lines in `install.sh`, `install/test/run.sh` | standard, gpt (gpt-6.1-terra) | wc-306ee0793e11-worker-2 (medium) | done |
 | T3 | Machine: sudo card registration, lead-only, request file, outcome delivery, cancel route | `machine/service.js`, `machine/lib/sudo.js`, `machine/test/`, `machine/API.md`, `machine/AGENTS.md` | standard, gpt (gpt-6.1-terra) | wc-306ee0793e11-worker-3 (medium) | done |
 | T4 | Hub: sudo kind, `sudo-outcome`, `applySudoState`, Decline/Talk presses, thread page card; `cards.md` sudo kind | `viewer/app/{card,cards,routes,threads,machine-client,state,chat}.js`, `viewer/pages/thread.js` + card CSS, `viewer/app/API.md`, `protocol/app/cards.md`, `viewer/test/app-sudo.*` | standard, claude (claude-sonnet-5-5) | wc-306ee0793e11-worker-4 (medium) | done |
-| T5 | Routers and role files: `sudo-helper/AGENTS.md`, root `AGENTS.md` rows, `lead.md`, `sub-lead.md`, `worker.md` | `sudo-helper/AGENTS.md`, `AGENTS.md`, `CONTRIBUTING.md`, `protocol/app/{lead,sub-lead,worker}.md` | light, gpt (gpt-6-luna) | wc-306ee0793e11-worker-6 (medium) | dispatched |
+| T5 | Routers and role files: `sudo-helper/AGENTS.md`, root `AGENTS.md` rows, `lead.md`, `sub-lead.md`, `worker.md` | `sudo-helper/AGENTS.md`, `AGENTS.md`, `CONTRIBUTING.md`, `protocol/app/{lead,sub-lead,worker}.md` | light, gpt (gpt-6-luna) | wc-306ee0793e11-worker-6 (medium) | done |
 | T6 | Page keeps checking after a dropped Run POST; ignore `__pycache__/` | `sudo-helper/static/page.js`, `.gitignore` | light, gpt (gpt-6-luna) | wc-306ee0793e11-worker-5 (medium) | `python3 -m unittest discover -s sudo-helper/test -v` | done |
 
 ## Log
@@ -465,3 +465,4 @@ Collin chose "keep going" after three rounds without a clean one; budget reset.
 - 2026-11-15 — Choice: T4, `viewer/app/routes.js`: `sudo_index` is left out of `?view=list` summaries.
 - 2026-11-15 — Choice: T4, `viewer/test/app-sudo.*`: tests front the fake machine with their own proxy for `/v1/sudo/`, leaving `helpers/app-machine.js` untouched.
 - 2026-11-15 — Sub-lead: T4 accepted. Re-ran: node suite 403/404, the one failure (`lifecycle.test.js` "a starter that loses the freed port registers through the new holder") fails identically on the feature branch without T4; browser suite 610 passed, 2 skipped. Decline and `sudo-outcome` both run under `hub.withThread`.
+- 2026-11-15 — Sub-lead: T5 accepted; worker reported no choices; diff matches the brief.
