@@ -375,7 +375,7 @@ a worker with `--provider gemini` and check its `result` card arrives.
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T0 | Live check: sign `agy` in, record login, credentials, isolation, models, hooks, transcript, prompts, fork, limits | `machine/test/fixtures/agy/`, `reports/T0.md` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker (t0-a1) | fixtures listed, redaction grep empty, `agy models` signed in | done (merged; items 6 and trust screen left open, see T0b) |
-| T0b | Second live check: workspace trust, multi-line paste, hook env, tool transcript, permission prompt, plan mode, instruction file, error Stop, exit | new files in `machine/test/fixtures/agy/`, `reports/T0b.md` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-2 (t0b-a1) | redaction grep empty, still signed in, hooks.json moved away | in progress |
+| T0b | Second live check: workspace trust, multi-line paste, hook env, tool transcript, permission prompt, plan mode, instruction file, error Stop, exit | new files in `machine/test/fixtures/agy/`, `reports/T0b.md` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-2 (t0b-a1) | redaction grep empty, still signed in, hooks.json moved away | done |
 | T1 | `gemini` pins in model.sh (defaults flash-low/medium/high) | `codex/model.sh`, `codex/test/run.sh` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-3 (t1-a1) | `bash codex/test/run.sh` | done |
 | T2 | Hub: providers registry (`asideFork`), settings defaults/migration/one-account rule, balancer, sessions, routes, asides refusal | `viewer/app/{providers,settings,balancer,sessions,routes,asides,ready}.js` + their tests | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-4 (t2-a1) | `node --test viewer/test/*.test.js` | in progress |
 | T3 | Hub: `agy` transcript parser and report extraction | `viewer/app/chat.js`, `viewer/test/app-chat.test.js` | after T0b | — | `node --test viewer/test/*.test.js` | not started |
@@ -384,6 +384,10 @@ a worker with `--provider gemini` and check its `result` card arrives.
 | T6 | Protocol, API docs, routers | `protocol/app/{lead,sub-lead}.md`, `machine/API.md`, `viewer/app/API.md`, `machine/AGENTS.md`, `viewer/AGENTS.md`, `codex/AGENTS.md` | last | — | review against tree | not started |
 
 ## Log
+
+- 2026-11-16 — T0b accepted. Findings for T4: per-session `--settings '{"trustedWorkspaces":["<dir>"]}'` (inline or file) skips the trust question and isn't persisted; the global Stop hook inherits `agy`'s environment (`WHEELCHAIR_SESSION_NAME` reaches it); Stop fires once per user message and `transcriptPath` is stable and accumulates; tool calls are `PLANNER_RESPONSE.tool_calls`, results `GENERIC.content`, final text `PLANNER_RESPONSE.content`; user text is wrapped in `<USER_REQUEST>…</USER_REQUEST>`; the permission prompt shows "Requesting permission for:" / "Run this command?" (Enter approves, Esc cancels); `agy` reads both AGENTS.md and GEMINI.md from the working directory; `/exit` ends a session; an unknown `--model` falls back to the default with a warning, no error Stop.
+- 2026-11-16 — Plan mode for reviewers dropped, per the lead's rule: in plan mode `agy` turns any request into an implementation-plan artifact it writes (`implementation_plan.md` under its brain dir) and asks for plan review, and without the skip flag it prompts even for `ls`. Reviewers on `agy` get the same access flags as other roles; this is a residual risk for COMPLETION.md.
+- 2026-11-16 — Choice: T0b, item 8: sent one small turn after the invalid-model warning to observe its Stop payload.
 
 - 2026-11-16 — T1 accepted (codex suite 91/0). Choices: none reported. `check --json` stays GPT-only (an array of discovery events); my brief's "gemini key in check --json" was wrong, and the lead told the worker so. Only `show --json` gains `gemini`.
 
