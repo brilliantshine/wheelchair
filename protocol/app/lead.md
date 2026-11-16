@@ -49,8 +49,8 @@ That is deliberate: almost none of it helps him decide anything.
 
 Use `node <root>/viewer/app/wc.js session start --role <role> --tier top --brief-file
 <path> --attempt <id>`, and `session stop <name>`, `session list`. The list output is
-`{ sessions, review_families }`. The hub chooses the provider and account. Workers, reviewers and verifiers may pass `--provider <claude|gpt>`
-or `--not-provider <claude|gpt>`; leads, sub-leads and mappers may not. The hub checks the
+`{ sessions, review_families }`. The hub chooses the provider and account. Workers, reviewers and verifiers may pass `--provider <claude|gpt|gemini>`
+or `--not-provider <claude|gpt|gemini>`; leads, sub-leads and mappers may not. The hub checks the
 rules and refuses anything else with the reason. A refusal is final: change the request
 rather than resending it.
 
@@ -80,7 +80,7 @@ a commit without a message is refused.
   ignores the tier for those roles: the lead and sub-lead run on the lead model from Settings,
   and the reviewer, verifier and mapper on the Other agents tiers there. The hub drops a
   provider constraint it cannot meet and says so in the start output's `note`. The Ready
-  check covers both families' logins; a start for a missing CLI fails at the machine with
+  check covers the thread's own CLI login; a start for a missing CLI fails at the machine with
   the reason.
 - If a start fails with "hub unavailable", wait a minute and run the same command again.
   Never work around it.
@@ -107,7 +107,7 @@ Collin picks the project and the machine, then writes in plain words.
   documents. Read `review_families` and the lead's provider in `sessions` from
   `session list`. Start a verifier on that commit with
   `--not-provider <the provider the lead runs on>` if `review_families` is `both`, or no
-  provider flag if it is `claude` or `gpt`, and a brief that says what Collin asked for;
+  provider flag if it is `claude`, `gpt`, or `gemini`, and a brief that says what Collin asked for;
   its `result` names the commit it checked. A failed check gets one more attempt; a
   gap surviving two attempts comes to Collin as a `question` card (push the fix as it is,
   or drop it, which you do with `wc.js git revert`). Then push, open the pull request
@@ -185,13 +185,13 @@ exact paths). The mapper commits MAP.md and `docs/maps/`.
 Before each round, read `review_families` from `session list`. If it is `both`, start two
 reviewer sessions, each fresh, each given only the plan path and repo access, never
 this conversation. Start the intent-lens reviewer with `--provider claude` (a preference:
-it moves to GPT rather than wait). Read the provider from that start's output and start the
+it moves to another family rather than wait). Read the provider from that start's output and start the
 mechanics-lens reviewer with `--not-provider <that provider>`. If the intent reviewer's
 start came back `waiting`, start the mechanics reviewer with no provider flag. The hub
 drops a provider constraint it cannot meet and says so in the start output's `note`.
 Brief them from `<root>/protocol/app/reviewer.md`: one takes the **mechanics lens**, one
 the **intent lens**. With one family usable, both land on it, one per lens. If
-`review_families` is `claude` or `gpt`, start one fresh reviewer with no provider flag,
+`review_families` is `claude`, `gpt`, or `gemini`, start one fresh reviewer with no provider flag,
 briefed with both lenses from `reviewer.md`. Record one lane and `cross-family: no` in
 the Review Rounds "Lanes" line. Include in each brief the Review Rounds table and Accepted
 Risks from PLAN.md, so settled findings are not re-raised. Scope: round 1 is the whole Spec; later rounds are the changes since the last
@@ -316,7 +316,7 @@ When Collin reports a problem, first run `gh pr view --json state`:
   1. Commit the fix (`wc.js git commit`, exact paths).
   2. Read `review_families` and the lead's provider in `sessions` from `session list`.
      Start a verifier on that commit with `--not-provider <the provider the lead runs on>`
-     if `review_families` is `both`, or no provider flag if it is `claude` or `gpt`,
+     if `review_families` is `both`, or no provider flag if it is `claude`, `gpt`, or `gemini`,
      briefed with the reported problem and the plan's Spec. Its
      `result` names the commit it checked. A failed check gets one more
      attempt; a gap surviving two attempts comes to Collin as a `question` card: push the
