@@ -434,7 +434,7 @@ async function sessionRequest(hub, payload) {
   const thread = await hub.threadBySession(payload.calling_session);
   const caller = session(thread, payload.calling_session);
   if (payload.action === 'list') {
-    return { sessions: thread.sessions.map(publicSession) };
+    return { sessions: thread.sessions.map(publicSession), review_families: (await settingsStore.load(hub)).review_families };
   }
   if (payload.action === 'stop') return stopSession(hub, thread, caller, payload.name);
   if (payload.action === 'start' && payload.effort !== undefined && (caller.role !== 'sub-lead' || payload.role !== 'worker')) throw appError(400, 'effort can only be set for a worker');

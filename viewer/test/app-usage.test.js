@@ -62,6 +62,13 @@ test('account and balancing routes and usage shape', async () => {
     for (const body of [{ name: '' }, { plan: 'plus' }, { weight: 0 }, { paused: 'yes' }]) assert.equal((await api(ctx, `/settings/accounts/${add.body.id}`, { method: 'PUT', body })).status, 400);
     assert.equal((await api(ctx, '/settings/accounts/default-claude', { method: 'DELETE' })).status, 400);
     for (const body of [{ lead_order: [] }, { worker_order: [] }, { lead_order: ['any', 'claude'] }, { lead_order: ['gpt', 'gpt'] }, { worker_order: ['any'] }, { worker_order: ['bad'] }, { within: 'bad' }, { leave: -1 }, { notify_below: 101 }, { margin: '5' }, { save_claude_for_leads: 1 }, { held_back: { worker: true, reviewer: true, verifier: true } }, { held_back: { worker: true, reviewer: true, verifier: true, mapper: true, extra: true } }, { held_back: { worker: true, reviewer: 'yes', verifier: true, mapper: true } }, { held_back: [] }]) assert.equal((await api(ctx, '/settings/balancing', { method: 'PUT', body })).status, 400);
+    assert.equal((await api(ctx, '/settings/balancing', { method: 'PUT', body: { save_claude_for_leads: false } })).body.detail, 'invalid save_claude_for_leads');
+    const renamed = await api(ctx, '/settings/balancing', { method: 'PUT', body: { save_for_leads: false, lead_order: ['gpt', 'any'] } });
+    assert.equal(renamed.status, 200); assert.equal(renamed.body.save_for_leads, false); assert.equal(renamed.body.reserved_provider, 'GPT');
+    const preferences = await api(ctx, '/settings/preferences', { method: 'PUT', body: { review_families: 'gpt' } });
+    assert.equal(preferences.body.review_families, 'gpt');
+    assert.equal((await api(ctx, '/settings/preferences', { method: 'PUT', body: { review_families: 'bad' } })).body.detail, 'review_families must be both, claude or gpt');
+    const described = (await api(ctx, '/settings')).body; assert.equal(described.review_families, 'gpt'); assert.equal(described.reserved_provider, 'GPT');
     const held = { worker: true, reviewer: false, verifier: true, mapper: true };
     const saved = await api(ctx, '/settings/balancing', { method: 'PUT', body: { held_back: held } });
     assert.equal(saved.status, 200); assert.deepEqual(saved.body.held_back, held);
@@ -70,6 +77,8 @@ test('account and balancing routes and usage shape', async () => {
 });
 
 test('normalization supplies defaults and all plan weights', () => {
+  assert.equal(settings.normalize({ save_claude_for_leads: false }).save_for_leads, false);
+  assert.equal(settings.normalize({ review_families: 'bad' }).review_families, 'both');
   const plans = [['claude', 'pro', 1], ['claude', 'max5', 5], ['claude', 'max20', 20], ['gpt', 'plus', 1], ['gpt', 'pro', 6], ['gpt', 'unknown', 1]];
   const value = settings.defaults();
   value.accounts = plans.map(([provider, plan], i) => ({ ...account, id: `p${i}`, provider, plan, weight: undefined }));
@@ -290,4 +299,15 @@ test('alerts are acknowledged per provider and local ISO week', async () => {
   await settings.update(hub, s => { s.accounts.find(a => a.id === 'default-claude').paused = true; });
   assert.equal((await usage.alert(hub, monday)).dot, false);
   assert.equal((await usage.alert(hub, nextWeek)).dot, true);
+});
+
+test('legacy reserve value is carried over from the saved settings file', async () => {
+  const fs = require('node:fs/promises');
+  const path = require('node:path');
+  const { Hub } = require('../app/hub.js');
+  const { makeDir } = require('./helpers/server.js');
+  const hub = new Hub({ stateDir: await makeDir('legacy-reserve-') });
+  await hub.state.init();
+  await fs.writeFile(path.join(hub.state.dir, 'settings.json'), JSON.stringify({ save_claude_for_leads: false }));
+  assert.equal((await settings.load(hub)).save_for_leads, false);
 });

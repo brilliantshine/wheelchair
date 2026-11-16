@@ -7,6 +7,7 @@ const { publicSession } = require('./sessions.js');
 const { findSlug } = require('./views.js');
 const settings = require('./settings.js');
 const usage = require('./usage.js');
+const balancer = require('./balancer.js');
 const { PROVIDERS, cliOf } = require('./providers.js');
 const threadsModule = require('./threads.js');
 const UPLOAD_LIMIT = 25 * 1024 * 1024;
@@ -140,8 +141,13 @@ async function addSavedDir(hub, body) {
   return { saved: value.saved_dirs.filter((entry) => entry.machine === machine) };
 }
 
+async function reservedLabel(hub, value) {
+  const provider = balancer.reservedProvider(value, await usage.machineAccounts(hub), null);
+  return provider ? PROVIDERS[provider].label : null;
+}
+
 async function handleSettings(hub, request, response, url, bits, body) {
-  if (bits.length === 1 && request.method === 'GET') return send(response, 200, await settings.describe(hub));
+  if (bits.length === 1 && request.method === 'GET') return send(response, 200, { ...await settings.describe(hub), reserved_provider: await reservedLabel(hub, await settings.load(hub)) });
   if (bits[1] === 'accounts') {
     if (bits.length === 2 && request.method === 'POST') {
       let account;
@@ -176,7 +182,7 @@ async function handleSettings(hub, request, response, url, bits, body) {
   }
   if (bits[1] === 'balancing' && bits.length === 2 && request.method === 'PUT') {
     const value = await settings.update(hub, (value) => { for (const [key, v] of Object.entries(body)) { if (!settings.BALANCING.includes(key) || !settings.validBalancing(key, v)) throw appError(400, `invalid ${key}`); value[key] = v; } });
-    return send(response, 200, Object.fromEntries(settings.BALANCING.map((key) => [key, value[key]])));
+    return send(response, 200, { ...Object.fromEntries(settings.BALANCING.map((key) => [key, value[key]])), reserved_provider: await reservedLabel(hub, value) });
   }
   if (bits[1] === 'models' && request.method === 'PUT') {
     if (!Object.hasOwn(PROVIDERS, body.provider)) throw appError(400, 'provider must be claude or gpt');
@@ -222,6 +228,10 @@ async function handleSettings(hub, request, response, url, bits, body) {
         if (!['sandboxed', 'unrestricted'].includes(body.codex_mode)) throw appError(400, 'codex_mode must be sandboxed or unrestricted');
         value.codex_mode = body.codex_mode;
       }
+      if (body.review_families !== undefined) {
+        if (!['both', 'claude', 'gpt'].includes(body.review_families)) throw appError(400, 'review_families must be both, claude or gpt');
+        value.review_families = body.review_families;
+      }
       if (body.tool_steps !== undefined) {
         if (!['show', 'hide'].includes(body.tool_steps)) throw appError(400, 'tool_steps must be show or hide');
         value.tool_steps = body.tool_steps;
@@ -244,7 +254,7 @@ async function handleSettings(hub, request, response, url, bits, body) {
         for (const role of ['reviewer', 'verifier', 'mapper']) if (body.other_agents[role] !== undefined) value.other_agents[role] = settings.tier(body.other_agents[role], `other_agents.${role}`);
       }
     });
-    return send(response, 200, { lead_names: value.lead_names, permission_mode: value.permission_mode, codex_mode: value.codex_mode, tool_steps: value.tool_steps, other_agents: value.other_agents, default_project_folder: value.default_project_folder, escalation: value.escalation, escalation_text: settings.escalationSentences(value.escalation).join('\n') });
+    return send(response, 200, { lead_names: value.lead_names, permission_mode: value.permission_mode, codex_mode: value.codex_mode, tool_steps: value.tool_steps, review_families: value.review_families, other_agents: value.other_agents, default_project_folder: value.default_project_folder, escalation: value.escalation, escalation_text: settings.escalationSentences(value.escalation).join('\n') });
   }
   if (bits[1] === 'saved-dirs' && bits.length === 2 && request.method === 'POST') {
     return send(response, 201, await addSavedDir(hub, body));

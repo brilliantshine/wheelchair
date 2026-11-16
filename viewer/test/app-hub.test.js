@@ -919,7 +919,7 @@ test('Tool steps: Hide leaves the lead\'s tool calls out of the chat', async () 
 
 async function startVerifier(context, made) {
   const result = await machinePost(context, '/machine/session', {
-    calling_session: made.sessions[0].name, action: 'start', role: 'verifier', cli: 'codex', attempt_id: 'v-1',
+    calling_session: made.sessions[0].name, action: 'start', role: 'verifier', provider: 'gpt', attempt_id: 'v-1',
   });
   return result.body.session;
 }
@@ -1002,9 +1002,9 @@ test('models per role: leads, other agents, workers, aliases, and critical resol
       assert.equal(context.machine.sessions.get(result.body.session.name).model, pinned(context, 'gpt', 'heavy'));
     }
     const sublead = await startSublead(context, made, lead, 'models-worker');
-    const worker = await machinePost(context, '/machine/session', { calling_session: sublead.name, action: 'start', role: 'worker', cli: 'codex', tier: 'critical', attempt_id: 'critical-worker' });
+    const worker = await machinePost(context, '/machine/session', { calling_session: sublead.name, action: 'start', role: 'worker', provider: 'gpt', tier: 'critical', attempt_id: 'critical-worker' });
     assert.equal(context.machine.sessions.get(worker.body.session.name).model, pinned(context, 'gpt', 'critical'));
-    const alias = await machinePost(context, '/machine/session', { calling_session: sublead.name, action: 'start', role: 'worker', cli: 'codex', tier: 'terra', attempt_id: 'alias-worker' });
+    const alias = await machinePost(context, '/machine/session', { calling_session: sublead.name, action: 'start', role: 'worker', provider: 'gpt', tier: 'terra', attempt_id: 'alias-worker' });
     assert.equal(context.machine.sessions.get(alias.body.session.name).model, pinned(context, 'gpt', 'standard'));
   });
 });
@@ -1032,7 +1032,7 @@ test('models per role: Claude family aliases do not become Codex tiers', async (
     const codex = await thread(context, { cli: 'codex' });
     const codexSublead = await startSublead(context, codex, codex.sessions[0], 'codex-aliases');
     const codexAlias = await machinePost(context, '/machine/session', {
-      calling_session: codexSublead.name, action: 'start', role: 'worker', cli: 'codex', tier: 'haiku', attempt_id: 'codex-haiku',
+      calling_session: codexSublead.name, action: 'start', role: 'worker', provider: 'gpt', tier: 'haiku', attempt_id: 'codex-haiku',
     });
     assert.equal(codexAlias.status, 200);
     assert.equal(context.machine.sessions.get(codexAlias.body.session.name).model, pinned(context, 'gpt', 'light'));
@@ -1084,7 +1084,7 @@ test('no session starts while the machine service runs another commit', async ()
   });
 });
 
-test('the Ready check covers the other family and uses account login status', async () => {
+test('the Ready check covers only the thread family and uses account login status', async () => {
   await withContext(async (context) => {
     const made = await thread(context, { cli: 'claude' });
     const approval = await card(context, made.id, made.sessions[0].name, {
@@ -1096,8 +1096,7 @@ test('the Ready check covers the other family and uses account login status', as
     assert.deepEqual((await press()).body.ready, { ok: true, missing: [] });
     context.machine.status.codex.logged_in = false;
     const failed = (await press()).body.ready;
-    assert.equal(failed.ok, false);
-    assert.match(failed.missing[0], /GPT is not logged in/);
+    assert.deepEqual(failed, { ok: true, missing: [] });
     context.machine.status.codex.logged_in = true;
     context.machine.status.codex = { installed: false, logged_in: false };
     assert.equal((await press()).body.ready.ok, true);
