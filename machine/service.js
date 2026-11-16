@@ -306,7 +306,7 @@ class MachineService {
       const pane = this.tmux(['capture-pane', '-p', '-t', name]);
       const where = this.tmux(['display-message', '-p', '-t', name, '#{pane_current_path}']);
       this.sessions[name] = { name, thread_id: parsed[1], role: parsed[2], status: 'ready', recovered: true,
-        cli: pane.ok && pane.stdout.includes('Codex') ? 'codex' : 'claude',
+        cli: pane.ok && pane.stdout.includes('Antigravity CLI') ? 'agy' : pane.ok && pane.stdout.includes('Codex') ? 'codex' : 'claude',
         worktree: where.ok ? where.stdout.trim() : '', created_worktree: false, token: '', created_at: new Date().toISOString() };
       changed = true;
     }
@@ -441,7 +441,7 @@ class MachineService {
   }
   commandFor(input, session, worktree) {
     const adapter = adapters[input.cli];
-    if (!adapter) die('cli must be claude or codex');
+    if (!adapter) die('cli must be claude, codex or agy');
     return adapter.command(input, session, worktree, { stateDir: this.stateDir, rolePrompt: composeRolePrompt(input) });
   }
 
@@ -460,12 +460,13 @@ class MachineService {
   }
   async startNamed(input, name) {
     const adapter = adapters[input.cli];
-    if (!adapter) die('cli must be claude or codex');
+    if (!adapter) die('cli must be claude, codex or agy');
     const account = input.account || { id: `default-${adapter.provider}`, dir: null };
     if (!account || typeof account.id !== 'string') die('invalid account');
     const dir = accountDir(account.dir, account.id);
     if (!dir && account.id !== `default-${adapter.provider}`) die('invalid default account');
     if (dir) adapter.seed(dir, account.id);
+    await adapter.prepare?.(dir);
     const options = startOptions(input);
     const createdWorktree = !input.worktree;
     const reserved = input.role === 'worker' && input.worktree ? path.resolve(input.worktree) : null;
@@ -487,7 +488,7 @@ class MachineService {
       cli_session_id: input.cli_session_id || crypto.randomUUID(), status: 'starting', created_at: new Date().toISOString() };
     const built = this.commandFor(input, session, worktree);
     if (built.settingsPath) await atomicWrite(built.settingsPath, `${json(built.settings)}\n`);
-    const commandText = ['env', 'WHEELCHAIR_LANE=1', `WHEELCHAIR_SESSION_TOKEN=${session.token}`, `WHEELCHAIR_STATE_DIR=${this.stateDir}`, `WHEELCHAIR_MACHINE_ORIGIN=http://${this.config.host}:${this.config.port}`, ...Object.entries(adapter.loginEnv(dir)).map(([key, value]) => `${key}=${value}`), ...built.argv].map(shellQuote).join(' ');
+    const commandText = ['env', 'WHEELCHAIR_LANE=1', ...(adapter.sessionNameEnv ? [`WHEELCHAIR_SESSION_NAME=${name}`] : []), `WHEELCHAIR_SESSION_TOKEN=${session.token}`, `WHEELCHAIR_STATE_DIR=${this.stateDir}`, `WHEELCHAIR_MACHINE_ORIGIN=http://${this.config.host}:${this.config.port}`, ...Object.entries(adapter.loginEnv(dir)).map(([key, value]) => `${key}=${value}`), ...built.argv].map(shellQuote).join(' ');
     session.command = built.argv;
     session.pending_initial = adapter.firstMessage(input, composeRolePrompt(input));
     const tmuxArgs = ['new-session', '-d', '-s', name, '-x', '200', '-y', '50', '-c', worktree, commandText];
@@ -548,6 +549,10 @@ class MachineService {
     await Promise.all([
       ...watched.filter(s => s.status === 'starting' || s.status === 'stuck').map(s => this.checkReady(s)),
       ...watched.filter(s => s.prompt_open && s.status === 'ready').map(s => this.checkPrompt(s)),
+      ...watched.filter(s => s.status === 'ready' && !s.prompt_open && adapters[s.cli]?.promptText).map(async s => {
+        let pane; try { pane = this.pane(s.name); } catch { return; }
+        if (adapters[s.cli].promptText(pane)) await this.hook(s.name, { type: 'prompt', notification_type: 'permission_prompt' });
+      }),
     ]);
   }
   async pollTrust() {
@@ -906,6 +911,7 @@ class MachineService {
     const dir = accountDir(input.dir, account);
     if ((!dir && account !== `default-${adapter.provider}`) || (dir && Object.values(adapters).some(a => account === `default-${a.provider}`))) die('invalid default account');
     if (dir) adapter.seed(dir, account);
+    await adapter.prepare?.(dir);
     const name = `wc-login-${account}`;
     this.tmux(['kill-session', '-t', name]);
     const cmd = ['env', ...Object.entries(adapter.loginEnv(dir)).map(([k, v]) => `${k}=${v}`), ...adapter.loginCommand(dir)].map(shellQuote).join(' ');
@@ -929,6 +935,11 @@ class MachineService {
       const logged_in = adapter.loginStatus(record.dir).logged_in;
       return { state: logged_in ? 'done' : 'failed', url: null, code: null, wantsCode: false, logged_in };
     }
+    if (adapter.loginDone?.(pane)) {
+      this.tmux(['kill-session', '-t', `wc-login-${account}`]);
+      const logged_in = adapter.loginStatus(record.dir).logged_in;
+      return { state: logged_in ? 'done' : 'failed', url: null, code: null, wantsCode: false, logged_in };
+    }
     const keys = adapter.loginPrompt?.(pane);
     if (keys && !record.answered) { for (const key of keys) this.tmux(['send-keys', '-t', `wc-login-${account}`, key]); record.answered = true; }
     const parsed = adapter.parseLogin(pane);
@@ -938,14 +949,14 @@ class MachineService {
     const live = this.liveTmux();
     const others = [...(live || [])].filter(name => !name.startsWith('wc-login-') && !this.sessions[name]).map(name => ({ name, managed: false, running: true }));
     const defaults = Object.fromEntries(Object.entries(adapters).map(([cli, adapter]) => [cli, adapter.loginStatus(null)]));
-    const claude = this.cliStatus('claude', defaults.claude), codex = this.cliStatus('codex', defaults.codex);
+    const claude = this.cliStatus('claude', defaults.claude), codex = this.cliStatus('codex', defaults.codex), agy = this.cliStatus('agy', defaults.agy);
     const accounts = Object.entries(adapters).map(([cli, adapter]) => ({ id: `default-${adapter.provider}`, cli, ...defaults[cli] }));
     const root = path.join(os.homedir(), '.wheelchair', 'accounts');
     let folders = []; try { folders = fs.readdirSync(root, { withFileTypes: true }); } catch {}
     for (const folder of folders.filter(e => e.isDirectory())) {
       try { const record = JSON.parse(fs.readFileSync(path.join(root, folder.name, 'wheelchair-account.json'), 'utf8')); if (record.id !== folder.name || !adapters[record.cli] || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(record.id)) continue; accounts.push({ id: record.id, cli: record.cli, ...adapters[record.cli].loginStatus(path.join(root, folder.name)) }); } catch {}
     }
-    return { version: this.version, claude, codex, accounts, sessions: [...Object.values(this.sessions).filter(s => !s.name.startsWith('wc-login-')).map(s => ({ ...s, codex_thread_id: s.codex_thread_id || null, managed: true, ...(live ? { running: live.has(s.name) } : {}) })), ...others] };
+    return { version: this.version, claude, codex, agy, accounts, sessions: [...Object.values(this.sessions).filter(s => !s.name.startsWith('wc-login-')).map(s => ({ ...s, codex_thread_id: s.codex_thread_id || null, managed: true, ...(live ? { running: live.has(s.name) } : {}) })), ...others] };
   }
   cliStatus(cli, login = adapters[cli].loginStatus(null)) {
     const version = command('sh', ['-c', `command -v ${cli}`]);
