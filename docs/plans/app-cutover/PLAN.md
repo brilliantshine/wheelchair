@@ -126,6 +126,8 @@ this plan.
   level, `ask` included.** Above `ask` only, the dial's shape test also applies to a lead's
   turn like any other, so a turn choosing between two arrangements draws too, into its own
   graph file. At `ask` a choice between arrangements is not drawn unless Collin asks.
+- The intro's "moved by `/diagram-sensitivity` and remembered afterwards" becomes "moved
+  on the app's Settings page and remembered afterwards".
 - The rest of the file: "The command" section is replaced by "Moving the dial" describing
   the Settings control and that it runs `sensitivity/set.sh <level>`; the `/graph` bullet
   under "What the dial does not govern" goes. The level line, writer's contract and
@@ -136,7 +138,7 @@ this plan.
 Route, end to end:
 
 ```
-Settings (Models > Diagrams) --GET /settings--> hub --GET /v1/diagram-sensitivity--> machine
+Settings (Models > Diagrams) --GET /settings/diagram-sensitivity--> hub --GET /v1/diagram-sensitivity--> machine
    pick a level --POST /settings/diagram-sensitivity {level}--> hub --POST /v1/diagram-sensitivity--> machine runs sensitivity/set.sh <level>
 ```
 
@@ -170,7 +172,7 @@ Settings (Models > Diagrams) --GET /settings--> hub --GET /v1/diagram-sensitivit
     "Applies from each agent's next session". On a `502` the page shows, via
     `setNote(..., true)`, one line per failed machine with its reason; machines that
     succeeded keep the new level; choosing the level again retries all machines. Then it
-    re-reads `GET /settings` so the selection and note show what each machine now holds.
+    re-reads `GET /settings/diagram-sensitivity` so the selection and note show what each machine now holds.
   - The page's `api()` helper (`viewer/pages/settings.js:58-65`) only reads `error`,
     `detail` or `message` from a failed body: extend it to attach the parsed body to the
     thrown error, so the per-machine map reaches the page.
@@ -194,6 +196,11 @@ Settings (Models > Diagrams) --GET /settings--> hub --GET /v1/diagram-sensitivit
   link (`viewer/pages/aside.js:56`, renamed "Open full size"), goes to the picture page
   with `?thread=<id>&aside=<aside id>&entry=<history index>`; the page draws that graph
   in the viewer iframe (`/wheelchair/?path=<graph path>`), back link as for cards.
+  Data: the chat response strips aside history (`brief`, `viewer/app/asides.js:9`), so
+  `brief` gains `graphs: [{entry, path}]`, one per history entry with a `graph`. The right
+  column's change signature (`viewer/pages/thread.js:866`) adds `data.asides`' graphs, so
+  a new aside graph appears on the next poll. The picture page reads the aside through
+  `GET /threads/:id/asides/:aside` (works when archived).
 - Phones: `headFilesEl` (the header strip) lists the same picture links after the plan
   files.
 - New app page `viewer/pages/picture.html` + `picture.js` (`picture` added to `APP_PAGES`,
@@ -210,7 +217,8 @@ Settings (Models > Diagrams) --GET /settings--> hub --GET /v1/diagram-sensitivit
 
 Every reference outside `docs/plans/`, `docs/proposals/` and `docs/maps/` to a removed file
 or command is removed or reworded (MAP.md "References to resolve" lists them):
-`protocol/app/AGENTS.md` (the Boundaries bullet about the wording hook: say the hook is
+`protocol/app/cards.md` (the `diagram` card: "Open full size", for every format, opening
+the picture page), `protocol/app/AGENTS.md` (the Boundaries bullet about the wording hook: say the hook is
 gone and leads follow the Settings style), `AGENTS.md` (root; Executable row loses `seen/`, the "second reach" paragraph goes, the
 Where-to-go rows for `seen/` and `skills/`/`codex/` updated, verification commands lose
 `seen/test/run.sh`), `protocol/AGENTS.md`, `codex/AGENTS.md`,
@@ -225,7 +233,7 @@ Two checks:
 
 1. File references, which must return only deliberate mentions in `install.sh`,
    `install/unseen.py` and `install/test/`:
-   `git grep -nE 'protocol/(planning|adopt|plan-review|implementation|verification|lanes|map|writing|seen)\.md|seen/(hook|set|wording)\.sh|wording hook' -- ':!docs/plans' ':!docs/proposals' ':!docs/maps'`
+   `git grep -nE 'protocol/(planning|adopt|plan-review|implementation|verification|lanes|map|writing|seen)\.md|seen/(hook|set|wording)\.sh|wording hook|skills/|codex/prompts' -- ':!docs/plans' ':!docs/proposals' ':!docs/maps'`
 2. Slash commands in prose, which is advisory because HTTP routes such as `GET /graph`
    share the spelling:
    `git grep -nE '(^|[[:space:](\x60"])/(plan|adopt|plan-review|implement|verify|graph|diagram-sensitivity)([^A-Za-z0-9_/?-]|$)' -- '*.md' ':!docs/plans' ':!docs/proposals' ':!docs/maps'`
@@ -239,7 +247,11 @@ also run by the machine service) say what is true after the change.
 
 ### 7. Tests
 
-- `install/test/run.sh`: the `spine_*` cases generalise to every retired name, with:
+- `install/test/run.sh`: the `claude_wrappers_landed`/`codex_wrappers_landed`/
+  `both_wrappers_landed` helpers (`install/test/run.sh:44-65`) and their uses are deleted,
+  since no wrappers are rendered; in their place each case asserts no retired wrapper is
+  installed. `spine_foreign_mention` is inverted: a wrapper naming another checkout's
+  `protocol/spine.md` is now removed (D4). The `spine_*` cases generalise to every retired name, with:
   a seeded wrapper from this clone and one from another absolute root both removed (both
   harnesses); a same-named foreign file kept; a file mentioning a different protocol file
   kept. A `seen_removed` case seeds Claude `settings.json` with a seen handler, an unrelated
@@ -362,6 +374,27 @@ idempotence case is the in-worktree proof.
 - §3 separate `GET /settings/diagram-sensitivity`.
 - §4 aside graphs listed and opened on the picture page (`aside` + `entry` params).
 - §1 `skills/` and `codex/prompts/` removed outright; installer stops rendering both; root AGENTS.md loses the harness-adapter row.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| Claude intent | major | Aside graphs not reachable: chat payload strips history | upheld | Same fix as the GPT minor below: `brief` carries `graphs`; within IDEA's graph-list scope |
+| Claude intent | minor | Two §3 places still use `GET /settings` | upheld | Same fix as the GPT major below |
+| Claude intent | minor | Installer test helpers and `spine_foreign_mention` break; §7 silent | upheld | §7 deletes the helpers and inverts the case |
+| Claude intent | minor | Gating check does not catch `skills/` or `codex/prompts` mentions | upheld | §5 regex extended |
+| Claude intent | minor | `protocol/app/cards.md` still says "Open full screen" for graphs and HTML | upheld | Added to §5 |
+| Claude intent | minor | `sensitivity.md` intro still names the command | upheld | §3 bullet added |
+| GPT mechanics | major | Flow diagram and post-save refresh still name `GET /settings` | upheld | §3 both use `GET /settings/diagram-sensitivity` |
+| GPT mechanics | minor | Sidebar has no aside history and no refresh trigger for aside graphs | upheld | §4 `brief` carries `graphs`; signature includes them |
+
+### Round 5 — 2026-11-15
+
+**Lanes:** Claude (intent); GPT (mechanics); cross-family: yes.
+
+**Changed since Round 4:**
+- §3: dial reads and refresh use `GET /settings/diagram-sensitivity` throughout; `sensitivity.md` intro reworded.
+- §4: aside graphs reach the pages through `brief`'s new `graphs` list; sidebar signature includes them.
+- §5: gating check covers `skills/` and `codex/prompts`; `protocol/app/cards.md` added.
+- §7: wrapper-landed helpers deleted; `spine_foreign_mention` inverted.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
