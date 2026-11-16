@@ -99,8 +99,9 @@ async function claim(hub, id) {
           if (!resolved) { aside.failed = 'the model is off in Settings'; aside.pending.unshift(turn.message); aside.turn = null; await hub.save(thread); continue; }
           Object.assign(turn, { model: resolved.model, effort: resolved.effort || null }); await hub.save(thread);
         }
-        const style = settings.renderStyle((await settings.load(hub)).style);
-        body = { turn_id: turn.id, provider: aside.provider, account_dir: Object.hasOwn(aside, 'account_dir') ? aside.account_dir : (aside.account === `default-${aside.provider}` ? null : `~/.wheelchair/accounts/${aside.account}`), cwd: thread.worktree, model: turn.model, ...(turn.effort ? { effort: turn.effort } : {}), mode: aside.cli_id ? 'resume' : 'fork', from: aside.cli_id || aside.fork_parent, new_id: turn.id, prompt: prompt(aside, turn.message), ...(style ? { style } : {}) };
+        const saved = await settings.load(hub);
+        const style = settings.renderStyle(saved.style);
+        body = { turn_id: turn.id, provider: aside.provider, account_dir: Object.hasOwn(aside, 'account_dir') ? aside.account_dir : (aside.account === `default-${aside.provider}` ? null : `~/.wheelchair/accounts/${aside.account}`), cwd: thread.worktree, model: turn.model, ...(turn.effort ? { effort: turn.effort } : {}), mode: aside.cli_id ? 'resume' : 'fork', from: aside.cli_id || aside.fork_parent, new_id: turn.id, prompt: prompt(aside, turn.message), access: saved.aside_access === 'full' ? 'full' : 'read-only', ...(style ? { style } : {}) };
       }
       items.push({ asideId: aside.id, turnId: turn.id, state: turn.state, machine: thread.machine, body });
     }

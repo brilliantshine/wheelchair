@@ -6,7 +6,7 @@ const usual = () => c.home('CODEX_HOME', '.codex');
 const loginEnv = dir => dir ? { CODEX_HOME: dir } : {};
 module.exports = {
   provider: 'gpt', loginEnv,
-  asideArgv(input, context) { return ['codex', 'exec', '-s', 'read-only', '--json', '-m', input.model, ...(input.effort ? ['-c', `model_reasoning_effort=${input.effort}`] : []), ...context.servers.flatMap(name => ['-c', `mcp_servers.${/^[A-Za-z0-9_-]+$/.test(name) ? name : JSON.stringify(name)}.enabled=false`]), '--disable', 'apps', input.mode, input.from, '-']; },
+  asideArgv(input, context) { return ['codex', 'exec', ...(input.access === 'full' ? ['--dangerously-bypass-approvals-and-sandbox'] : ['-s', 'read-only']), '--json', '-m', input.model, ...(input.effort ? ['-c', `model_reasoning_effort=${input.effort}`] : []), ...context.servers.flatMap(name => ['-c', `mcp_servers.${/^[A-Za-z0-9_-]+$/.test(name) ? name : JSON.stringify(name)}.enabled=false`]), '--disable', 'apps', input.mode, input.from, '-']; },
   loginCommand() { return ['codex', 'login', '--device-auth']; },
   parseLogin(pane) { const url = pane.match(/https:\/\/auth\.openai\.com\/[^\s]+/)?.[0] || null; const code = pane.match(/\b[A-Z0-9]{4}-[A-Z0-9]{4,}\b/)?.[0] || null; return url && code ? { url, code, wantsCode: false } : null; },
   async onTurnEnded(session, event) {

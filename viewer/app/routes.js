@@ -228,6 +228,10 @@ async function handleSettings(hub, request, response, url, bits, body) {
         if (!['sandboxed', 'unrestricted'].includes(body.codex_mode)) throw appError(400, 'codex_mode must be sandboxed or unrestricted');
         value.codex_mode = body.codex_mode;
       }
+      if (body.aside_access !== undefined) {
+        if (!['read-only', 'full'].includes(body.aside_access)) throw appError(400, 'aside_access must be read-only or full');
+        value.aside_access = body.aside_access;
+      }
       if (body.review_families !== undefined) {
         if (!['both', 'claude', 'gpt'].includes(body.review_families)) throw appError(400, 'review_families must be both, claude or gpt');
         value.review_families = body.review_families;
@@ -254,7 +258,7 @@ async function handleSettings(hub, request, response, url, bits, body) {
         for (const role of ['reviewer', 'verifier', 'mapper']) if (body.other_agents[role] !== undefined) value.other_agents[role] = settings.tier(body.other_agents[role], `other_agents.${role}`);
       }
     });
-    return send(response, 200, { lead_names: value.lead_names, permission_mode: value.permission_mode, codex_mode: value.codex_mode, tool_steps: value.tool_steps, review_families: value.review_families, other_agents: value.other_agents, default_project_folder: value.default_project_folder, escalation: value.escalation, escalation_text: settings.escalationSentences(value.escalation).join('\n') });
+    return send(response, 200, { lead_names: value.lead_names, permission_mode: value.permission_mode, codex_mode: value.codex_mode, aside_access: value.aside_access, tool_steps: value.tool_steps, review_families: value.review_families, other_agents: value.other_agents, default_project_folder: value.default_project_folder, escalation: value.escalation, escalation_text: settings.escalationSentences(value.escalation).join('\n') });
   }
   if (bits[1] === 'saved-dirs' && bits.length === 2 && request.method === 'POST') {
     return send(response, 201, await addSavedDir(hub, body));

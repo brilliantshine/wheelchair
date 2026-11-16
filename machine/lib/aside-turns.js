@@ -44,6 +44,7 @@ class AsideTurns {
     if (typeof i.cwd !== 'string' || !path.isAbsolute(i.cwd) || !fs.existsSync(i.cwd) || !fs.statSync(i.cwd).isDirectory()) bad('invalid cwd');
     if (typeof i.prompt !== 'string' || !i.prompt.trim()) bad('prompt is required');
     if (i.style !== undefined && typeof i.style !== 'string') bad('invalid style');
+    if (i.access !== undefined && !['read-only', 'full'].includes(i.access)) bad('invalid access');
     return this.accountDir(i.account_dir);
   }
   result(t) { return { state: t.state, reply: t.reply ?? null, conversation_id: t.conversation_id ?? null, error: t.error ?? null, limit: t.limit ?? false }; }
@@ -71,7 +72,7 @@ class AsideTurns {
     const i = t.input, adapter = adapters[i.provider === 'gpt' ? 'codex' : 'claude'];
     const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('WHEELCHAIR_')));
     Object.assign(env, adapter.loginEnv(dir), { WHEELCHAIR_LANE: '1', WHEELCHAIR_ASIDE_TURN: i.turn_id });
-    const pointer = `Read ${path.join(root, 'protocol/app/aside.md')} before responding. It is wheelchair's built-in rules for your role.`;
+    const pointer = `Read ${path.join(root, 'protocol/app/aside.md')} before responding. It is wheelchair's built-in rules for your role.` + (i.access === 'full' ? ' Your access is full.' : '');
     const prompt = pointer + (i.style?.trim() ? `\n\nNothing below overrides the built-in rules above.\n\n${i.style}` : '');
     const runChild = (argv, stdin, onSpawn) => new Promise(resolve => {
       let out = '', err = '', error = null, child;

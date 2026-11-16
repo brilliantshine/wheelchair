@@ -6,7 +6,7 @@ const usual = () => c.home('CLAUDE_CONFIG_DIR', '.claude');
 const loginEnv = dir => dir ? { CLAUDE_CONFIG_DIR: dir } : {};
 module.exports = {
   provider: 'claude', loginEnv,
-  asideArgv(input, context) { return ['claude', '-p', '--output-format', 'json', '--model', input.model, ...(input.effort ? ['--effort', input.effort] : []), '--permission-mode', 'dontAsk', '--tools', 'Read,Grep,Glob', '--strict-mcp-config', '--system-prompt-snapshot', 'off', '--append-system-prompt', context.prompt, '--resume', input.from, ...(input.mode === 'fork' ? ['--fork-session', '--session-id', input.new_id] : [])]; },
+  asideArgv(input, context) { return ['claude', '-p', '--output-format', 'json', '--model', input.model, ...(input.effort ? ['--effort', input.effort] : []), ...(input.access === 'full' ? ['--permission-mode', 'bypassPermissions'] : ['--permission-mode', 'dontAsk', '--tools', 'Read,Grep,Glob']), '--strict-mcp-config', '--system-prompt-snapshot', 'off', '--append-system-prompt', context.prompt, '--resume', input.from, ...(input.mode === 'fork' ? ['--fork-session', '--session-id', input.new_id] : [])]; },
   loginCommand() { return ['claude', 'auth', 'login']; },
   parseLogin(pane) {
     const joined = pane.replace(/\r/g, '').replace(/\n(?=\S)(?!Paste code)/gi, '');

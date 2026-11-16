@@ -313,6 +313,10 @@
       escalationGroup(key, title, choices));
     const claudeMode = modeGroup('permission_mode', 'Claude permission mode', [['auto', 'Auto'], ['bypass', 'Bypass']]);
     const codexMode = modeGroup('codex_mode', 'Codex permission mode', [['sandboxed', 'Sandboxed'], ['unrestricted', 'Unrestricted']]);
+    const asideMode = modeGroup('aside_access', 'Aside access', [['read-only', 'Read-only'], ['full', 'Full']]);
+    const asideHint = data.aside_access === 'full'
+      ? 'Never asks, no sandbox: an aside can read anywhere, run commands and change files.'
+      : 'Reads files in the thread\'s worktree only. Runs no commands.';
     const codexHint = data.codex_mode === 'unrestricted'
       ? 'Never asks, no sandbox: it can change anything on the machine. Reviewers stay read-only.'
       : 'Never asks: it can write only inside its worktree.';
@@ -352,7 +356,10 @@
             claudeMode),
           h('div', { class: 'row-line' },
             h('div', { class: 'what' }, h('span', { text: 'Codex sessions' }), h('span', { class: 'hint', text: codexHint })),
-            codexMode))),
+            codexMode),
+          h('div', { class: 'row-line' },
+            h('div', { class: 'what' }, h('span', { text: 'Asides' }), h('span', { class: 'hint', text: asideHint })),
+            asideMode))),
       h('section', { 'aria-labelledby': 'thread-view' },
         h('h2', { id: 'thread-view', text: 'Threads' }),
         h('div', { class: 'box rows' },
