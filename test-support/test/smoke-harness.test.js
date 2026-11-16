@@ -3,7 +3,27 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const { effectivePaths, assertIsolated } = require('../smoke/harness');
+const { effectivePaths, assertIsolated, runProcesses } = require('../smoke/harness');
+
+test('run process matcher restricts uid, exact environment and directory boundaries', () => {
+  const entries = {
+    1: { env: 'HOME=/run/home\0', cwd: '/elsewhere' },
+    2: { env: 'TMUX_TMPDIR=/run/tmux\0', cwd: '/elsewhere' },
+    3: { env: '', cwd: '/run/subdir' },
+    4: { env: 'HOME=/run/home-other\0', cwd: '/run-other' },
+    5: { env: 'HOME=/run/home\0', cwd: '/run', uid: process.getuid() + 1 },
+    6: { env: 'HOME=/real/home\0', cwd: '/elsewhere' },
+    7: { unreadable: true },
+  };
+  const fake = {
+    readdirSync: () => [...Object.keys(entries), 'self'],
+    statSync: p => { const e = entries[p.split('/')[2]]; if (e.unreadable) throw Error(); return { uid: e.uid ?? process.getuid() }; },
+    readFileSync: p => entries[p.split('/')[2]].env,
+    readlinkSync: p => entries[p.split('/')[2]].cwd,
+  };
+  assert.deepEqual(runProcesses('/run', { home: '/run/home', tmux: '/run/tmux' }, fake), [1, 2, 3]);
+  assert.deepEqual(runProcesses('/run', { tmux: '/run/tmux' }, fake), [2, 3]);
+});
 
 test('effective process paths and isolation gate reflect argv and child HOME', () => {
   const dir = '/tmp/harness-test';
