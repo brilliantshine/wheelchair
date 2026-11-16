@@ -18,9 +18,6 @@ None.
 
 | # | Noticed | What needs looking into | Raised to user? | Outcome |
 |---|---------|-------------------------|-----------------|---------|
-| 1 | Hub-to-machine traffic is plain HTTP over Tailscale (MAP.md) | Whether the password crosses a network hop unencrypted outside Tailscale | no | |
-| 3 | Running as Collin needs root: sudo checks the invoking user's password | Defaulted in Spec: the helper verifies Collin's password via PAM itself before running as root | no | settled, Decision 6 |
-| 2 | sudo caches authentication per terminal | Each run must invalidate the cache (`sudo -k`) so nothing stays unlocked | no | |
 
 ## Decision Log
 
@@ -45,7 +42,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 16 | Decline is reported only after the helper confirms it; a lost race shows the run result; an unreachable machine returns the card to waiting | Review: Decline could promise nothing runs when something did | review-round-1 |
 | 17 | The helper page carries no request data in HTML; a static script sets every field with `textContent`; strict CSP with no inline script | Review: agent-controlled fields could inject script into the real password page | review-round-1 |
 | 18 | Only the command text is frozen. The lead writes the actual commands into the card, never a script it wrote; the helper flags any file named in the command that Collin's user could change, on the card and the run page. IDEA.md "What good looks like" narrowed to match | Collin picked "inline it, flag files" | idea-change |
-| 19 | Supersedes 14's check: the password is checked with `sudo -k -v` and the command's permission with `sudo -k -l`, each writing the password only after a sentinel prompt appears; a machine whose sudo asks for no password fails closed; `sudo -K` after | Review round 2: `-l` follows `listpw` (default any), so one NOPASSWD entry let any password pass | review-round-2 |
+| 19 | Supersedes 14's check: the password is checked with `sudo -k -v` and the command's permission with `sudo -k -l`, each writing the password only after a sentinel prompt appears; a machine whose sudo asks for no password fails closed | Review round 2: `-l` follows `listpw` (default any), so one NOPASSWD entry let any password pass | review-round-2 |
 | 20 | Intake refuses `~` in the command; the editable-file scan uses `shlex` | `~` meant Collin's home in the warning but /root at run time | review-round-2 |
 | 4 | The command is fixed when the card is posted; the run uses the stored text byte for byte and the card shows it in full, unabridged | IDEA.md: what runs is exactly what is shown | defaulted |
 
@@ -129,7 +126,7 @@ The helper's own transitions are atomic under one lock: `waiting → running` on
 `waiting → declined` on cancel; whichever comes first wins. A cancel that arrives while the
 password check is still going wins, and the check's result is discarded.
 The hub's call to the machine has a 10-second timeout, treated as unreachable. When the hub
-starts, any card still in `declining` returns to `waiting` with the same "Couldn't reach" note.
+starts, any card still in `declining` returns to `waiting` with the note "Decline status unknown; checking…" until the next outcome arrives.
 
 What reaches the lead (typed like any press, shown as a short bubble in the thread):
 - `[card <id>] sudo ran: exit <n>` followed by the output block.
@@ -195,9 +192,8 @@ row in the root `AGENTS.md` tables), but **runs only from an installed root-owne
      password written only if the sentinel appears (`-l` may not prompt under `listpw`; that is
      fine, the password was already checked in a). `-u root` because the helper runs the command
      as root whatever the sudoers `runas_default` is. Exit 0 = allowed; otherwise `failed` with
-     "Your sudo rules don't allow this command".
-   - After both: `/usr/sbin/runuser -u <user> -- /usr/bin/sudo -K` to remove any timestamp `-v`
-     left. This also clears sudo's cache in Collin's own terminals on that machine.
+     "Your sudo rules don't allow running a shell as root". Sudo cards need sudo rights to run
+     `/bin/sh` as root (in practice `ALL`); per-command sudoers rules are not supported.
    - A wrong password in a counts one try; the page says "Wrong password" and the try count; on
      the third the request becomes `failed`. Because the password is written only after a
      prompt, it is never left unread in a pipe.
@@ -211,8 +207,8 @@ row in the root `AGENTS.md` tables), but **runs only from an installed root-owne
 5. State becomes `ran` with exit code and output. The password is dropped right after writing it;
    it is never stored, logged, echoed or included in any response or error.
 
-`-k` with a command means sudo neither uses nor updates a cached ticket, so nothing stays
-unlocked after a run.
+`-k` on both check calls means sudo neither uses nor updates a cached ticket, so the checks
+leave nothing unlocked. The run itself does not go through sudo.
 
 **What "exactly the command shown" covers:** the command text is frozen when the card is posted
 and run byte for byte. Files that text runs or reads are not frozen (Decision 18). So:
@@ -325,7 +321,7 @@ Round 2, GPT lane (mechanics), reviewed the text before the intent lane's fixes:
 **Lanes:** intent — claude; mechanics — gpt; cross-family: yes.
 
 **Changed since Round 2:**
-- Password check: `sudo -k -v` and `sudo -k -l -u root`, sentinel prompts, fail closed, `sudo -K` (Decision 19).
+- Password check: `sudo -k -v` and `sudo -k -l -u root`, sentinel prompts, fail closed (Decision 19).
 - `~` refused; `shlex` scan (Decision 20).
 - Page assets as static files; installer list.
 - `declining` timeout and hub-start recovery.
@@ -333,6 +329,12 @@ Round 2, GPT lane (mechanics), reviewed the text before the intent lane's fixes:
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | `sudo -K` step unneeded and clears Collin's terminal cache | upheld | Dropped |
+| intent | minor | Leftover `-k` paragraph implies the run uses sudo | upheld | Rewritten |
+| intent | minor | Hub could poll the machine instead of machine durability file | declined | The machine design is reviewed and sound; switching re-opens the whole outcome path for no behavior change |
+| intent | minor | Post-restart `declining` note can be false | upheld | Neutral note |
+| intent | minor | Check b needs shell-as-root rights; message misstates the reason | upheld | Message and Spec say so |
+| intent | minor | Watch List rows left open | upheld | Rows removed: row 1 settled by Decision 5 (password only crosses browser → helper over Tailscale HTTPS); row 2 by Decision 19 and `-k`; row 3 by Decision 19 |
 
 ## Prior Work
 
