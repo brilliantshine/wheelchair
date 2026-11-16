@@ -603,7 +603,7 @@ Round 9 is clean: no blocking or major finding upheld.
 | T3 | Hub: message ids, aside record, routes, turn-running rule, step-up, graph save, archive, handoff (§1, §3-§6, §8 hub side) | `viewer/app/`, `viewer/server.js` if needed, `viewer/test/app-asides.test.js` (new), `viewer/app/API.md` | standard, gpt (gpt-6.1-terra) | wc-54ce860aef63-worker-5, -worker-8 | `node --test viewer/test/*.test.js` | done (attempt 2, merged 3cc2694) |
 | T4 | Page: selection bar, panel, underlines, aside list, phone sheet, handoff link (§2, §7, §9) | `viewer/pages/`, `viewer/test/app-asides.spec.js` (new) | standard, asked for claude; hub placed it on gpt (gpt-6.1-terra): "Could not use claude" | wc-54ce860aef63-worker-9 | `npm --prefix viewer run test:browser` | done (merged) |
 | T5 | `protocol/app/aside.md` and the `lead.md` line (§4 aside prompt, §8) | `protocol/app/aside.md`, `protocol/app/lead.md`, `protocol/app/AGENTS.md` | light, gpt (gpt-6-luna) | wc-54ce860aef63-worker-4 | read-through against §4/§8 | done (merged) |
-| R1-1 | Remediation 1: stranded queue after hub restart, stale waiting-on line, Think harder with Heavy off, Ask input focus | `viewer/app/{asides,hub,routes}.js`, `viewer/pages/aside.js`, `viewer/test/app-asides.{test,spec}.js`, `viewer/app/API.md` | standard, gpt (gpt-6.1-terra) | wc-54ce860aef63-worker-10 | REMEDIATION-1.md | in progress |
+| R1-1 | Remediation 1: stranded queue after hub restart, stale waiting-on line, Think harder with Heavy off, Ask input focus | `viewer/app/{asides,hub,routes}.js`, `viewer/pages/aside.js`, `viewer/test/app-asides.{test,spec}.js`, `viewer/app/API.md` | standard, gpt (gpt-6.1-terra) | wc-54ce860aef63-worker-10 | REMEDIATION-1.md | done (merged 031dedc) |
 
 ## Log
 
@@ -646,3 +646,7 @@ Round 9 is clean: no blocking or major finding upheld.
 - 2026-11-15 — All five tasks merged; full validation run (see COMPLETION.md). Status set to verifying; one verifier started on Claude (--not-provider gpt), since every builder ran on GPT.
 - 2026-11-15 — Verifier wc-54ce860aef63-verifier started with --not-provider gpt; the hub answered "Could not avoid gpt; using gpt", so verification is same-family (GPT). Per sub-lead.md no second verifier is started.
 - 2026-11-15 — Verification 1: FAIL, four gaps (stranded queue after hub restart; stale waiting-on line; Think harder enabled with Heavy "Not used"; Ask input not focused). All confirmed by the sub-lead. REMEDIATION-1.md written; one task R1-1 on GPT (the building provider), same rung, sharpened brief.
+- 2026-11-15 — R1-1 accepted: the four fixes match the brief; the worker stopped on its own test race (fixed by its last, unrun edit, which I ran: 8/8 over both browsers). Unit 348/349 (known port test; its "global write lock" failure didn't recur). Browser: only the graph baseline, plus the Firefox approval spec under load average ~25-30, which passes alone (54/54 for its file).
+- 2026-11-15 — Choice: R1-1, pages/aside.js: the provisional Ask input accepts typing before the hub answers (Send stays disabled), so focus lands immediately.
+- 2026-11-15 — Choice: R1-1, pages/aside.js: the selection range in the input and draft boxes is kept across panel re-renders.
+- 2026-11-15 — Remediation 1 recorded in COMPLETION.md; verifier attempt 2 started.

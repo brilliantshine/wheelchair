@@ -163,3 +163,52 @@ transcript shows `exec_command … written-by-fork.txt` → exit 1 "Read-only fi
   unmerged worktree, and nothing in this build uses it.
 
 ## Remediation rounds
+
+### Remediation 1 — 2026-11-15
+
+Verification attempt 1 (GPT verifier, commit `5f55f76`) failed with four gaps; the gap list
+and the brief are in `REMEDIATION-1.md`. One task, R1-1, built on GPT (standard,
+gpt-6.1-terra), merged at `031dedc`.
+
+| Gap | Fix (file:line) | Validated by |
+|-----|-----------------|--------------|
+| §5 queued messages stranded after a hub restart | `viewer/app/asides.js:137` (`needsPump`: a turn, or an open aside with pending and no failure); timer `viewer/app/hub.js:47` uses it | `viewer/test/app-asides.test.js` "a fresh hub selects stranded queued asides but not failed or archived ones" |
+| §7 waiting-on line stale when the main thread changes | `viewer/pages/aside.js:95-96` (`panelChatSig`; `update` re-renders the open panel when the waiting card or lead state changes; input/draft value, focus and selection kept across renders) | `viewer/test/app-asides.spec.js` (card answered in the next `/chat` → panel stops saying "Waiting on: Which option?") |
+| §5/§7 Think harder enabled with Heavy "Not used" | `viewer/app/routes.js:343` (GET adds computed `heavy_usable`, not stored); `viewer/pages/aside.js:66` (button requires `heavy_usable === true`) | `app-asides.test.js` "aside GET computes heavy usability from the model command without storing it"; spec (disabled with `heavy_usable: false`) |
+| §2 Ask input not focused on opening | `viewer/pages/aside.js:29` (`openAside(a, focusInput)`), `:30-35` (`create` focuses for `ask` only, before and after the hub answers) | spec (input is `document.activeElement` after Ask about this) |
+
+Worker choices: the provisional Ask input accepts typing before the hub answers (Send stays
+disabled), so focus can land at once; the selection range is kept in both text boxes across
+panel renders.
+
+Validation, run by the sub-lead on the R1-1 branch (`418871c`):
+
+```
+$ (cd viewer && npx playwright test test/app-asides.spec.js --repeat-each=4)
+  8 passed (10.3s)
+$ node --test viewer/test/*.test.js
+not ok 234 - a starter that loses the freed port registers through the new holder
+# tests 349
+# pass 348
+# fail 1
+$ npm --prefix viewer run test:browser
+  4 failed
+    [chromium] › test/browser.spec.js:2395:1 › no drawn arrow's line passes through either box it connects, over every committed graph
+    [firefox] › test/app-threads.spec.js:339:5 › phone › approval: Start building enabled when Ready and presses; offer press
+    [firefox] › test/app-threads.spec.js:339:5 › desktop › approval: Start building enabled when Ready and presses; offer press
+    [firefox] › test/browser.spec.js:2395:1 › no drawn arrow's line passes through either box it connects, over every committed graph
+  2 skipped
+  554 passed (3.7m)
+$ (cd viewer && npx playwright test test/app-threads.spec.js --project=firefox)
+  54 passed (1.1m)
+$ uptime
+ load average: 10.47, 25.50, 29.69
+```
+
+The port test is the known one in `docs/known-issues.md`; the graph spec fails on `main`; the
+Firefox approval spec fails only in full runs while the machine is heavily loaded (other
+threads' sessions) and passes alone. On the merged branch (`031dedc`):
+`node --test viewer/test/app-asides.test.js` → `# tests 8 # pass 8 # fail 0`. The worker's own
+two failed focused runs were a test race (asserting `closed` before the request landed, then
+a route fetch after the server closed); its final test edit (`expect.poll`) is what passed
+8/8 above.
