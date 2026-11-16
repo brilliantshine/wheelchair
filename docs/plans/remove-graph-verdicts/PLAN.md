@@ -156,5 +156,9 @@ diagram card or dragging.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Server: drop origin/was from normalization and canonical output, remove the verdict refusals and preservation; node tests trimmed, legacy-file test added | viewer/server.js, viewer/test/*.test.js, viewer/test/helpers/, viewer/test/fixtures/ (except verdicts.json, bulk-verdicts.json) | Standard, gpt-6.1-terra (asked default; hub chose gpt) | wc-d1880dd5eb13-worker | node --test viewer/test/*.test.js; refusal grep | in progress |
+| T2 | Page: remove approve/reject UI and verdict styling, one arrow marker, --rejected → --danger; browser tests trimmed, legacy-render test added | viewer/index.html, viewer/list.html, viewer/doc.html, viewer/test/*.spec.js, fixtures verdicts.json and bulk-verdicts.json | Standard, gpt-6.1-terra (asked claude; Claude unavailable, hub sent to gpt) | wc-d1880dd5eb13-worker-2 | npm --prefix viewer run test:browser; node --test viewer/test/*.test.js | in progress |
+| T3 | Rules and docs: graphs.md, planning.md, diagrams.md, implementation.md, app/lead.md, graph SKILL.md, README Pictures text, routers | protocol/graphs.md, protocol/planning.md, protocol/diagrams.md, protocol/implementation.md, protocol/app/lead.md, protocol/AGENTS.md, skills/graph/SKILL.md, README.md, viewer/AGENTS.md | Standard, gpt-6.1-terra (asked claude; Claude unavailable, hub sent to gpt) | wc-d1880dd5eb13-worker-3 | spec grep, verdict-term grep | in progress |
+| T4 | Retake docs/viewer.png without verdict styling (after T2 merges) | docs/viewer.png | Standard, provider claude | — | image shows no verdict styling | not started |
 
 ## Log
