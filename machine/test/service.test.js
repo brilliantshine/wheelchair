@@ -2,18 +2,18 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
-const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
 const { spawn, spawnSync } = require('node:child_process');
 const { MachineService } = require('../service.js');
+const { makeTemp, trackChild } = require('../../test-support/run-dir');
 
 const hubHeader = { 'x-wheelchair-machine-secret': 'correct-secret' };
 const readyClaude = 'auto mode on\n❯ Try anything\n';
 const trustDialog = 'Yes, I trust this folder\n❯ No, exit\n';
 const readyCodex = '› Ask Codex to do anything\n';
 
-async function temp() { return fs.mkdtemp(path.join(os.tmpdir(), 'wheelchair-machine-test-')); }
+async function temp() { return makeTemp('wheelchair-machine-test-'); }
 async function write(file, data, mode) { await fs.mkdir(path.dirname(file), { recursive: true }); await fs.writeFile(file, data, { mode }); }
 async function port() { const server = http.createServer(); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); const value = server.address().port; await new Promise(resolve => server.close(resolve)); return value; }
 async function fakeBin(root, paneText, realGit = false) {
@@ -412,7 +412,7 @@ test('a Codex notify payload is posted as turn-ended, keeping its last message',
   try {
     await write(path.join(state, 'machine.json'), JSON.stringify({ host: '127.0.0.1', port: server.address().port }));
     const notify = JSON.stringify({ type: 'agent-turn-complete', 'thread-id': 'x', 'last-assistant-message': 'No findings.' });
-    await new Promise((resolve, reject) => { const child = spawn(process.execPath, [path.join(process.cwd(), 'machine', 'lib', 'hook-post.js'), state, 'tok', 'codex', 'wc-t-reviewer'], { stdio: ['pipe', 'ignore', 'inherit'] }); child.on('exit', resolve); child.on('error', reject); child.stdin.end(notify); });
+    await new Promise((resolve, reject) => { const child = spawn(process.execPath, [path.join(process.cwd(), 'machine', 'lib', 'hook-post.js'), state, 'tok', 'codex', 'wc-t-reviewer'], { stdio: ['pipe', 'ignore', 'inherit'] }); trackChild(child); child.on('exit', resolve); child.on('error', reject); child.stdin.end(notify); });
     assert.equal(bodies[0].type, 'turn-ended'); assert.equal(bodies[0]['last-assistant-message'], 'No findings.');
   } finally { await new Promise(resolve => server.close(resolve)); }
 });
@@ -821,10 +821,12 @@ test('statusline posts a live reading and preflight accepts an account directory
     await start(env);
     const payload = JSON.stringify({ model: { display_name: 'opus' }, rate_limits: { five_hour: { used_percentage: 42, resets_at: 2000000000 } } });
     const child = spawn(path.join(__dirname, '../statusline.sh'), ['claude', 'wc-t-lead'], { env: { ...process.env, WHEELCHAIR_STATE_DIR: env.state, WHEELCHAIR_SESSION_TOKEN: 'alpha' }, stdio: ['pipe', 'pipe', 'pipe'] });
+    trackChild(child);
     let output = ''; child.stdout.on('data', chunk => { output += chunk; }); child.stdin.end(payload);
     assert.equal(await new Promise(resolve => child.on('close', resolve)), 0);
     assert.equal(output.trim(), 'opus · 5h 42%');
     const second = spawn(path.join(__dirname, '../statusline.sh'), ['claude', 'wc-t-lead'], { env: { ...process.env, WHEELCHAIR_STATE_DIR: env.state, WHEELCHAIR_SESSION_TOKEN: 'alpha' }, stdio: ['pipe', 'pipe', 'pipe'] });
+    trackChild(second);
     second.stdin.end(payload);
     assert.equal(await new Promise(resolve => second.on('close', resolve)), 0);
     assert.equal(hub.calls.map(c => JSON.parse(c.body)).filter(e => e.type === 'usage').length, 1);

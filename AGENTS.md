@@ -33,7 +33,7 @@ fresh off disk on each turn rather than rendered into a file an agent's instruct
 | Canonical rules | `protocol/` | an agent executing a stage |
 | Per-feature state | `docs/plans/<slug>/` | every stage, to find out where the work stands |
 | Harness adapter | `skills/`, `codex/prompts/` | Claude Code and the Codex CLI, at registration |
-| Executable | `sensitivity/`, `seen/`, `install/`, `viewer/`, `machine/`, `install.sh` | run by a command, not read as guidance |
+| Executable | `sensitivity/`, `seen/`, `install/`, `test-support/`, `viewer/`, `machine/`, `install.sh` | run by a command, not read as guidance |
 
 Two rules follow, and between them they cover most of what can go wrong here:
 
@@ -53,6 +53,7 @@ Two rules follow, and between them they cover most of what can go wrong here:
 | `sensitivity/` | [AGENTS.md](sensitivity/AGENTS.md) | `set.sh`, the only writer of each present harness's global instruction file |
 | `seen/` | [AGENTS.md](seen/AGENTS.md) | `hook.sh`, the per-turn hook both harnesses call; `wording.sh`, the only writer of the wording list; `set.sh`, the installer's writer of both harnesses' hook entry |
 | `install/` | — | `guard.sh`, the canonical-clone check `install.sh`, `seen/set.sh` and `sensitivity/set.sh` source before writing (a linked worktree or anything under `~/.local/state/wheelchair/worktrees` is refused, exit 3, unless `WHEELCHAIR_ALLOW_WORKTREE=1`); `test/run.sh`, the installer fixture suite. Temp homes and command shims only; real harness and machine state stay untouched |
+| `test-support/` | — | `run-dir.js`, the shared run folder for the JavaScript test suites: every temp folder a machine or viewer test makes lives in one per-process folder, removed at exit and swept when its owner is gone; `test/`, its own suite |
 | `codex/` | [AGENTS.md](codex/AGENTS.md) | `prompts/`, the Codex CLI wrappers, same convention as `skills/`, one line each; `preflight.sh`, the login check that also prints the model heads-up; `model.sh`, the GPT model pins' reader and writer; and `test/`, its fixture suite |
 | `docs/` | — | `plans/<slug>/` per feature; `proposals/<name>/`, ideas written outside the workflow and waiting for `/adopt`; `known-issues.md`, failures recorded but not yet fixed. State, not rules — nothing here is a contract |
 | `machine/` | [AGENTS.md](machine/AGENTS.md) | the per-machine agent session service the app's hub drives: `service.js` (sessions in tmux, worktrees, git for agents, transcript copies, spools), `hook.sh` and `lib/hook-post.js` (the CLIs' turn-end and prompt hooks), `API.md` (its route contract), `test/run.sh`. Runs as the `wheelchair-machine` user service, never read as guidance |
@@ -65,7 +66,7 @@ Two rules follow, and between them they cover most of what can go wrong here:
 | `README.md` | What this workflow is and how to drive it, for a person arriving cold |
 | `CONTRIBUTING.md` | The conventions, source-of-truth boundaries, and validation commands for someone changing this repository |
 | `install.sh` | Renders each present harness's wrappers, substituting this clone's path for `{{WHEELCHAIR_ROOT}}`, installs the viewer's dependencies, stops any running viewer that isn't running the code just pulled, initializes the hub machine service's private state and credentials, and decides once whether this machine serves the viewer to other tailnet devices (asking only on a headless machine that hasn't decided yet). On a serving systemd machine it installs both the viewer and machine user services. It calls `seen/set.sh` to write each present harness's own hook entry and the wording script's write grant — into each harness's own settings files, **outside this tree** — and, last, warning rather than failing if it refuses, calls `sensitivity/set.sh` to render the dial's region into each present global instruction file. Idempotent, removes the `spine` skill and Codex prompt an earlier version rendered (the command moved to highways), and it **globs** `skills/*/` and `codex/prompts/*.md`, so adding a command needs no edit here |
-| `.gitignore` | `node_modules/`, `graphify-out/`, and the two scratch paths the viewer's suites write, `viewer/test/.tmp/` and `test-results/`. `graphify-out/` is what lets a root router claim a graph cannot carry a contract |
+| `.gitignore` | `node_modules/`, `graphify-out/`, `test-results/`, which the browser suite writes, and `viewer/test/.tmp/`, where older checkouts' viewer suites wrote scratch folders (`test-support/run-dir.js` sweeps entries there over an hour old). `graphify-out/` is what lets a root router claim a graph cannot carry a contract |
 
 ## How to navigate (in order)
 
@@ -107,6 +108,7 @@ bash seen/test/run.sh                 # the hook and wording-list writer, exit-c
 bash codex/test/run.sh                # the GPT model pins and heads-up, exit-code gated
 bash install/test/run.sh              # presence-aware installer assertions, exit-code gated
 bash machine/test/run.sh              # the machine service, with fake tmux, CLIs and hub
+node --test test-support/test/*.test.js     # the shared test run folder
 ./install.sh && ./install.sh          # canonical clone only: refused from a worktree; elsewhere, install/test/run.sh
 node --test viewer/test/*.test.js     # unquoted glob; works on Node 20 and 26
 npm --prefix viewer run test:browser  # Chromium and Firefox; fails loudly if either is missing

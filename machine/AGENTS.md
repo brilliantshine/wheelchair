@@ -16,6 +16,8 @@ agents own neither tmux nor the machine secret.
 | `API.md` | The hub-to-machine and agent-to-machine route contract. |
 | `test/` | Isolated fakes and service tests; never uses a real CLI, tmux, or state directory. |
 
+Test temp folders come from `test-support/run-dir.js` (`makeTemp`/`makeTempSync`), which removes them when the test process ends; never allocate from `os.tmpdir()` directly in a test.
+
 ## Boundaries
 
 - Never put the machine secret in an agent environment. Session tokens authorize only their

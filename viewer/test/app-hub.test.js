@@ -1,8 +1,9 @@
 'use strict';
 
+const { makeTemp } = require('../../test-support/run-dir');
+
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
-const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const test = require('node:test');
@@ -644,7 +645,7 @@ test('opens a waiting stub after the 10-minute check finds its parent merged', a
       depends_on_parent: true,
     });
     // Not opened: a dependent stub left alone is watched all the same.
-    const bin = await fs.mkdtemp(path.join(os.tmpdir(), 'wc-gh-'));
+    const bin = await makeTemp('wc-gh-');
     const gh = path.join(bin, 'gh');
     // Like the real gh, -C is refused.
     await fs.writeFile(gh, '#!/bin/sh\n[ "$1" = "-C" ] && { echo "unknown shorthand flag: C" >&2; exit 1; }\nprintf \'[{"number":1}]\'\n');
@@ -727,7 +728,7 @@ test('queues a card press as a lead message', async () => {
 });
 
 async function archivedDocumentContext() {
-  const bin = await fs.mkdtemp(path.join(os.tmpdir(), 'wc-git-'));
+  const bin = await makeTemp('wc-git-');
   const git = path.join(bin, 'git');
   // The hub's own version check runs `git rev-parse HEAD` too; it gets the real commit.
   const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
@@ -1490,14 +1491,14 @@ test('a diagram card registers its graph for the real viewer iframe route', asyn
 });
 
 test('the real viewer keeps its boot commit when its clone moves before the first app request', async () => {
-  const clone = await fs.mkdtemp(path.join(os.tmpdir(), 'wheelchair-viewer-version-'));
+  const clone = await makeTemp('wheelchair-viewer-version-');
   execFileSync('git', ['clone', '--quiet', '--no-local', ROOT, clone]);
   // The test worktree has uncommitted implementation changes; give the temporary clone the
   // running server and hub sources while retaining its own independent Git HEAD.
   await fs.copyFile(path.join(ROOT, 'viewer', 'server.js'), path.join(clone, 'viewer', 'server.js'));
   await fs.copyFile(path.join(ROOT, 'viewer', 'app', 'hub.js'), path.join(clone, 'viewer', 'app', 'hub.js'));
   const machine = await startMachine();
-  const state = await fs.mkdtemp(path.join(os.tmpdir(), 'wheelchair-viewer-state-'));
+  const state = await makeTemp('wheelchair-viewer-state-');
   await fs.writeFile(path.join(state, 'machines.json'), JSON.stringify({
     hub: { name: 'hub', address: '127.0.0.1', port: machine.port, secret: machine.secret },
   }));

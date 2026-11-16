@@ -7,10 +7,10 @@ const http = require('node:http');
 const net = require('node:net');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const { makeTemp, trackChild } = require('../../../test-support/run-dir');
 
 const ROOT = path.resolve(__dirname, '../../..');
 const FIXTURES = path.join(ROOT, 'viewer/test/fixtures');
-const TMP_ROOT = path.join(ROOT, 'viewer/test/.tmp');
 
 async function freePort() {
   return new Promise((resolve, reject) => {
@@ -23,30 +23,8 @@ async function freePort() {
   });
 }
 
-// Every server the suite starts gets its own scratch directory, and nothing ever removed them:
-// a few hundred accumulate per run. They are gitignored so nothing failed, which is exactly why
-// it would have gone unnoticed. Prune once per process, and only what is old enough to belong to
-// a finished run, so a concurrent suite is never swept out from under itself.
-let pruned = false;
-async function pruneStaleScratch() {
-  if (pruned) return;
-  pruned = true;
-  const cutoff = Date.now() - 60 * 60 * 1000;
-  let entries;
-  try { entries = await fs.readdir(TMP_ROOT); } catch { return; }
-  await Promise.all(entries.map(async (name) => {
-    const full = path.join(TMP_ROOT, name);
-    try {
-      const info = await fs.stat(full);
-      if (info.mtimeMs < cutoff) await fs.rm(full, { recursive: true, force: true });
-    } catch { /* a concurrent run may have removed it already */ }
-  }));
-}
-
 async function makeDir(prefix = 'server-') {
-  await fs.mkdir(TMP_ROOT, { recursive: true });
-  await pruneStaleScratch();
-  return fs.mkdtemp(path.join(TMP_ROOT, prefix));
+  return makeTemp(prefix);
 }
 
 async function fixture(name) {
@@ -78,6 +56,13 @@ function waitForLine(child) {
   });
 }
 
+function waitForExit(child) {
+  return new Promise((resolve) => {
+    if (child.exitCode !== null || child.signalCode !== null) resolve();
+    else child.once('exit', resolve);
+  });
+}
+
 async function startServer({ open, cacheRoot, stateDir, port, env, cwd = ROOT } = {}) {
   const root = cacheRoot || await makeDir();
   const graphDir = path.join(root, 'graphs');
@@ -91,18 +76,25 @@ async function startServer({ open, cacheRoot, stateDir, port, env, cwd = ROOT } 
     env: { ...process.env, ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  const url = await waitForLine(child);
-  const token = (await fs.readFile(path.join(root, '.token'), 'utf8')).trim();
-  assert.ok(token, 'server writes a token');
+  trackChild(child);
+  let token;
+  try {
+    await waitForLine(child);
+    token = (await fs.readFile(path.join(root, '.token'), 'utf8')).trim();
+    assert.ok(token, 'server writes a token');
+  } catch (error) {
+    child.kill('SIGKILL');
+    await waitForExit(child);
+    throw error;
+  }
   return {
     root, graphDir, graphPath, port: chosenPort, child, url: `http://127.0.0.1:${chosenPort}/wheelchair`,
     token,
     async stop({ leaveLock = false } = {}) {
-      if (!child.killed) child.kill('SIGTERM');
-      await new Promise((resolve) => {
-        const timer = setTimeout(() => { child.kill('SIGKILL'); resolve(); }, 1500);
-        child.once('exit', () => { clearTimeout(timer); resolve(); });
-      });
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
+      const timer = setTimeout(() => child.kill('SIGKILL'), 1500);
+      await waitForExit(child);
+      clearTimeout(timer);
       if (!leaveLock) await fs.unlink(path.join(root, '.server')).catch(() => {});
     },
   };

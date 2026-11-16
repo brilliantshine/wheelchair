@@ -1,5 +1,8 @@
 'use strict';
 
+const { trackChild } = require('../../test-support/run-dir');
+function trackedSpawn(...args) { const child = spawn(...args); trackChild(child); return child; }
+
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
@@ -13,9 +16,16 @@ const test = require('node:test');
 const { ROOT, makeDir, freePort, startServer, request } = require('./helpers/server');
 const HOOK = path.join(ROOT, 'viewer/test/hooks/lifecycle.js');
 
+function exited(child) {
+  return new Promise((resolve) => {
+    if (child.exitCode !== null || child.signalCode !== null) resolve();
+    else child.once('exit', resolve);
+  });
+}
+
 function run(args, env = process.env) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['viewer/server.js', ...args], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = trackedSpawn(process.execPath, ['viewer/server.js', ...args], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = ''; let stderr = '';
     child.stdout.on('data', (chunk) => { stdout += chunk; }); child.stderr.on('data', (chunk) => { stderr += chunk; });
     child.once('error', reject); child.once('exit', (code) => resolve({ code, stdout, stderr }));
@@ -23,7 +33,7 @@ function run(args, env = process.env) {
 }
 
 function launch(args, env = process.env) {
-  const child = spawn(process.execPath, ['--require', HOOK, 'viewer/server.js', ...args], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = trackedSpawn(process.execPath, ['--require', HOOK, 'viewer/server.js', ...args], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
   let stdout = ''; let stderr = '';
   child.stdout.on('data', (chunk) => { stdout += chunk; }); child.stderr.on('data', (chunk) => { stderr += chunk; });
   const ready = new Promise((resolve, reject) => {
@@ -35,9 +45,10 @@ function launch(args, env = process.env) {
 }
 
 async function stop(child) {
-  if (child.exitCode === null) child.kill('SIGTERM');
-  await new Promise((resolve) => { const timer = setTimeout(resolve, 1500); child.once('exit', () => { clearTimeout(timer); resolve(); }); });
-  if (child.exitCode === null) child.kill('SIGKILL');
+  if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
+  const timer = setTimeout(() => child.kill('SIGKILL'), 1500);
+  await exited(child);
+  clearTimeout(timer);
 }
 
 async function listen(port, handler) {
@@ -212,7 +223,7 @@ test('show signs watching without sending the token', async () => {
 test('a port thief after proof receives a signature but never the token', async () => {
   const root = await makeDir(); const port = await freePort(); const graph = path.join(root, 'graphs', 'thief.json'); await fs.mkdir(path.dirname(graph), { recursive: true }); const marker = path.join(root, 'pause');
   const ctx = await startServer({ cacheRoot: root, port }); let stdout = ''; let stderr = '';
-  const child = spawn(process.execPath, ['--require', HOOK, 'viewer/server.js', '--cache-root', root, '--port', String(port), '--open', graph], { cwd: ROOT, env: { ...process.env, GRAPH_TEST_HOOK: 'pause-before-register', GRAPH_TEST_MARKER: marker }, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = trackedSpawn(process.execPath, ['--require', HOOK, 'viewer/server.js', '--cache-root', root, '--port', String(port), '--open', graph], { cwd: ROOT, env: { ...process.env, GRAPH_TEST_HOOK: 'pause-before-register', GRAPH_TEST_MARKER: marker }, stdio: ['ignore', 'pipe', 'pipe'] });
   child.stdout.on('data', (chunk) => { stdout += chunk; }); child.stderr.on('data', (chunk) => { stderr += chunk; });
   try {
     const deadline = Date.now() + 3000; while (!fssync.existsSync(marker) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10)); assert.ok(fssync.existsSync(marker), stderr);
@@ -259,7 +270,7 @@ test('the nearest codex process wins over inherited CLAUDECODE and a claude ance
   await fs.writeFile(codex, '#!/bin/sh\nnode "$@"\n', { mode: 0o755 });
   const ctx = await startServer({ cacheRoot: root, port });
   try {
-    const child = spawn(claude, ['viewer/server.js', '--cache-root', root, '--port', String(port), '--open', graph], { cwd: ROOT, env: { ...process.env, CLAUDECODE: '1' }, stdio: 'ignore' });
+    const child = trackedSpawn(claude, ['viewer/server.js', '--cache-root', root, '--port', String(port), '--open', graph], { cwd: ROOT, env: { ...process.env, CLAUDECODE: '1' }, stdio: 'ignore' });
     await new Promise((resolve) => child.once('exit', resolve));
     assert.equal(JSON.parse(await fs.readFile(path.join(root, '.registered')))[graph].harness, 'codex');
   } finally { await ctx.stop(); }

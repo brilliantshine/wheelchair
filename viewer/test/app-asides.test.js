@@ -1,8 +1,9 @@
 'use strict';
+
+const { makeTemp } = require('../../test-support/run-dir');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
-const os = require('node:os');
 const path = require('node:path');
 const { Hub } = require('../app/hub.js');
 const asides = require('../app/asides.js');
@@ -15,7 +16,7 @@ test('assistant ids count hidden transcript text before filtering', () => {
 });
 
 test('aside turns fork, resume, save before ack, and retry failures', async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'wc-asides-'));
+  const dir = await makeTemp('wc-asides-');
   const hub = new Hub({ stateDir: dir, root: path.resolve(__dirname, '../..'), graphCacheRoot: dir });
   await hub.state.init();
   const thread = { id: 'aside-test', project: '/tmp/repo', worktree: '/tmp/repo', machine: 'hub', sessions: [], asides: [], cards: [], pinned: {}, queues: {}, sent: [] };
@@ -66,7 +67,7 @@ test('aside turns fork, resume, save before ack, and retry failures', async () =
 });
 
 test('step-up refusal retries once; controls never step up; graphs are saved', async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'wc-asides-edge-'));
+  const dir = await makeTemp('wc-asides-edge-');
   const saved = [], calls = [];
   const hub = new Hub({ stateDir: dir, graphCacheRoot: dir, saveGraph: async (file, value) => saved.push({ file, value }) });
   await hub.state.init();
@@ -105,7 +106,7 @@ test('step-up refusal retries once; controls never step up; graphs are saved', a
 });
 
 test('dispatching turns recover a lost POST with the same id', async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'wc-asides-lost-'));
+  const dir = await makeTemp('wc-asides-lost-');
   const hub = new Hub({ stateDir: dir }); await hub.state.init();
   const aside = { id: 'a', anchor: { quote: 'words' }, action: 'ask', provider: 'gpt', account: 'default-gpt', fork_parent: 'parent', cli_id: null, slot: 'standard', status: 'open', pending: [], turn: { id: 'same-id', state: 'dispatching', message: { kind: 'start', text: 'why' } }, history: [], failed: null };
   await hub.save({ id: 'lost', project: '/tmp/repo', worktree: '/tmp/repo', machine: 'hub', sessions: [], asides: [aside], cards: [], pinned: {}, queues: {}, sent: [] });
@@ -122,7 +123,7 @@ test('dispatching turns recover a lost POST with the same id', async () => {
 test('routes anchor lead messages, expose summaries, hand off and archive', async () => {
   const { Readable } = require('node:stream');
   const { handle } = require('../app/hub.js');
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'wc-asides-routes-'));
+  const dir = await makeTemp('wc-asides-routes-');
   const registered = [], calls = [], turns = new Map();
   const hub = new Hub({ stateDir: dir, registerGraph: async (p) => registered.push(p) }); await hub.state.init();
   const lead = { name: 'lead', role: 'lead', cli: 'claude', provider: 'claude', account: 'default-claude', account_dir: '/x/y', live: true, cli_session_id: 'parent', queue: [], ready: false };
@@ -177,7 +178,7 @@ test('routes anchor lead messages, expose summaries, hand off and archive', asyn
 });
 
 test('Think harder repeats the last question and summary observes its readiness gates', async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'wc-asides-controls-'));
+  const dir = await makeTemp('wc-asides-controls-');
   const hub = new Hub({ stateDir: dir }); await hub.state.init();
   const original = settings.modelCommand;
   settings.modelCommand = async (_, args) => ({ stdout: args[0] === 'effort' ? 'high' : 'heavy-model' });
@@ -195,7 +196,7 @@ test('Think harder repeats the last question and summary observes its readiness 
 
 
 test('a fresh hub selects stranded queued asides but not failed or archived ones', async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'wc-asides-restart-'));
+  const dir = await makeTemp('wc-asides-restart-');
   const first = new Hub({ stateDir: dir }); await first.state.init();
   const aside = { id: 'a', anchor: { quote: 'words' }, action: 'ask', provider: 'gpt', account: 'default-gpt', fork_parent: 'parent', slot: 'standard', status: 'open', pending: [{ kind: 'start', text: 'queued' }], turn: null, history: [], failed: null };
   const thread = { id: 'restart', project: '/tmp/repo', worktree: '/tmp/repo', machine: 'hub', sessions: [], asides: [aside], cards: [], pinned: {}, queues: {}, sent: [] };
@@ -213,7 +214,7 @@ test('a fresh hub selects stranded queued asides but not failed or archived ones
 
 test('aside GET computes heavy usability from the model command without storing it', async () => {
   const { Readable } = require('node:stream'); const { handle } = require('../app/hub.js');
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'wc-asides-model-'));
+  const dir = await makeTemp('wc-asides-model-');
   await fs.mkdir(path.join(dir, 'codex'));
   const script = path.join(dir, 'codex', 'model.sh');
   const hub = new Hub({ stateDir: path.join(dir, 'state'), root: dir, codeVersion: '' }); await hub.state.init();
@@ -230,7 +231,7 @@ test('aside GET computes heavy usability from the model command without storing 
 test('slow machine calls leave routes free, coalesce pumps, and discard archived results', async () => {
   const { Readable } = require('node:stream');
   const { handle } = require('../app/hub.js');
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'wc-asides-slow-'));
+  const dir = await makeTemp('wc-asides-slow-');
   const hub = new Hub({ stateDir: dir }); await hub.state.init();
   const aside = { id: 'a', status: 'open', provider: 'gpt', slot: 'standard', pending: [], failed: null, history: [], turn: { id: 'turn', state: 'running', message: { kind: 'ask', text: 'question' } } };
   await hub.save({ id: 'slow', project: '/tmp/repo', worktree: '/tmp/repo', machine: 'hub', sessions: [], asides: [aside], cards: [], pinned: {}, queues: {}, sent: [], archived: false });
@@ -275,7 +276,7 @@ test('slow machine calls leave routes free, coalesce pumps, and discard archived
 test('archive races compensate claimed turns without changing history', async (t) => {
   for (const scenario of ['before recheck', 'before post response', 'finished unheld']) {
     await t.test(scenario, async () => {
-      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'wc-asides-archive-'));
+      const dir = await makeTemp('wc-asides-archive-');
       const hub = new Hub({ stateDir: dir }); await hub.state.init();
       const turn = { id: 'turn', state: scenario === 'finished unheld' ? 'running' : 'dispatching', message: { kind: 'ask', text: 'question' }, model: 'model' };
       const aside = { id: 'a', status: 'open', provider: 'gpt', account: 'default-gpt', fork_parent: 'parent', slot: 'standard', pending: [], failed: null, history: [{ kind: 'note', text: 'existing' }], turn };
@@ -314,7 +315,7 @@ test('archive races compensate claimed turns without changing history', async (t
 });
 
 test('a cancelled turn is never acknowledged, so a late start runs nothing', async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'wc-asides-cancelled-race-'));
+  const dir = await makeTemp('wc-asides-cancelled-race-');
   const hub = new Hub({ stateDir: dir }); await hub.state.init();
   const turn = { id: require('node:crypto').randomUUID(), state: 'dispatching', message: { kind: 'ask', text: 'question' }, model: 'model' };
   const history = [{ kind: 'note', text: 'existing' }];
@@ -360,7 +361,7 @@ test('a cancelled turn is never acknowledged, so a late start runs nothing', asy
 });
 
 test('a stopped result after archive is never acknowledged, so a late start runs nothing', async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'wc-asides-stopped-race-'));
+  const dir = await makeTemp('wc-asides-stopped-race-');
   const hub = new Hub({ stateDir: dir }); await hub.state.init();
   const turn = { id: require('node:crypto').randomUUID(), state: 'dispatching', message: { kind: 'ask', text: 'question' }, model: 'model' };
   const history = [{ kind: 'note', text: 'existing' }];
@@ -406,7 +407,7 @@ test('a stopped result after archive is never acknowledged, so a late start runs
 });
 
 test('archive tombstones a delayed POST whose response is lost', async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'wc-asides-tombstone-race-'));
+  const dir = await makeTemp('wc-asides-tombstone-race-');
   const hub = new Hub({ stateDir: dir }); await hub.state.init();
   const turn = { id: require('node:crypto').randomUUID(), state: 'dispatching', message: { kind: 'ask', text: 'question' }, model: 'model' };
   const history = [{ kind: 'note', text: 'existing' }];
@@ -446,7 +447,7 @@ test('archive tombstones a delayed POST whose response is lost', async () => {
 });
 
 test('a partly failed archive saves first and the hub retries the cancel', async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'wc-asides-retry-'));
+  const dir = await makeTemp('wc-asides-retry-');
   const hub = new Hub({ stateDir: dir }); await hub.state.init();
   const id = 'partial-archive', ids = ['first-turn', 'second-turn'];
   const aside = (turnId) => ({ id: turnId, status: 'open', pending: [], history: [], turn: { id: turnId, state: 'running' } });
@@ -480,7 +481,7 @@ test('a partly failed archive saves first and the hub retries the cancel', async
 });
 
 test('a fresh hub retries pending cancels on init', async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'wc-asides-init-cancel-'));
+  const dir = await makeTemp('wc-asides-init-cancel-');
   const first = new Hub({ stateDir: dir }); await first.state.init();
   await first.save({ id: 'pending-init', machine: 'hub', pending_cancels: ['turn'], archived: true, sessions: [], asides: [], cards: [], queues: {} });
   const fresh = new Hub({ stateDir: dir }); const calls = [];

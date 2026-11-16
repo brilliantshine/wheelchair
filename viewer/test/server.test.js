@@ -1,5 +1,8 @@
 'use strict';
 
+const { trackChild } = require('../../test-support/run-dir');
+function trackedSpawn(...args) { const child = spawn(...args); trackChild(child); return child; }
+
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const fs = require('node:fs/promises');
@@ -174,7 +177,7 @@ if (mode === 'before-rename') {
 }
 
 function spawnHookedServer({ root, graphPath, port, hookPath, marker, mode }) {
-  return spawn(process.execPath, [
+  return trackedSpawn(process.execPath, [
     '--require', hookPath, 'viewer/server.js', '--port', String(port), '--cache-root', root, '--open', graphPath,
   ], {
     cwd: ROOT,
@@ -917,7 +920,7 @@ test('--show opens a browser once, and never while a tab is already on that grap
   await fs.writeFile(opener, `#!/usr/bin/env bash\necho "$1" >> ${record}\n`, { mode: 0o755 });
 
   const show = (extraArgs = [], env = {}) => new Promise((resolve) => {
-    const child = spawn(process.execPath,
+    const child = trackedSpawn(process.execPath,
       ['viewer/server.js', '--cache-root', first.root, '--port', String(first.port),
        '--show', first.graphPath, ...extraArgs],
       { cwd: repoRoot, stdio: 'ignore', env: { ...process.env, WHEELCHAIR_BROWSER: opener, ...env } });
@@ -963,7 +966,7 @@ test('two starts at the same instant leave one server, and the loser reuses it r
   // not the default: a viewer the person left running on 7373 would otherwise fail this test with
   // EADDRINUSE and look like the regression it is written to catch.
   const racePort = await freePort();
-  const spawnStart = (name) => spawn(process.execPath,
+  const spawnStart = (name) => trackedSpawn(process.execPath,
     ['viewer/server.js', '--cache-root', root, '--port', String(racePort), '--open', path.join(graphDir, name)],
     { cwd: repoRoot, stdio: ['ignore', 'pipe', 'pipe'] });
 

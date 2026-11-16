@@ -3,22 +3,24 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
-const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { AsideTurns } = require('../lib/aside-turns');
 const { MachineService } = require('../service');
+const { makeTemp, trackChild, onCleanup } = require('../../test-support/run-dir');
 const root = require('../adapters/common').root;
 const uuid = () => crypto.randomUUID();
 const atomic = async (file, data) => { const temp = file + '.tmp'; await fsp.writeFile(temp, data); await fsp.rename(temp, file); };
 const delay = ms => new Promise(r => setTimeout(r, ms));
 const wait = async (store, id) => { for (let n = 0; n < 200; n++) { const t = store.get(id); if (t.state !== 'running') return t; await delay(20); } throw Error('turn did not finish'); };
 test('aside turns use isolated CLI commands and persist their outcomes', async () => {
-  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'aside-test-')), bin = path.join(dir, 'bin'); await fsp.mkdir(bin);
+  const dir = await makeTemp('aside-test-'), bin = path.join(dir, 'bin'); await fsp.mkdir(bin);
   for (const name of ['claude', 'codex']) await fsp.symlink(path.join(__dirname, 'fixtures/aside/cli.js'), path.join(bin, name));
   await fsp.chmod(path.join(__dirname, 'fixtures/aside/cli.js'), 0o755);
   const old = { ...process.env }; Object.assign(process.env, { PATH: bin + ':' + old.PATH, ASIDE_LOG: path.join(dir, 'log'), ASIDE_STORE: path.join(dir, 'aside-turns.json'), WHEELCHAIR_SECRET: 'hidden' });
-  const store = new AsideTurns(dir, atomic, x => x || null); await store.load();
+  const store = new AsideTurns(dir, atomic, x => x || null);
+  onCleanup(() => { for (const t of Object.values(store.turns)) if (t.state === 'running' && t.pid) store.proc.kill(t.pid); });
+  await store.load();
   const base = { provider: 'claude', mode: 'fork', from: 'parent', new_id: uuid(), cwd: dir, model: 'test-model', effort: 'high', prompt: 'hello', style: 'style text', account_dir: null };
   const rows = () => fs.readFileSync(process.env.ASIDE_LOG, 'utf8').trim().split('\n').map(JSON.parse);
   try {
@@ -40,16 +42,17 @@ test('aside turns use isolated CLI commands and persist their outcomes', async (
   } finally { process.env = old; }
 });
 test('recovery kills matching and marker-only process groups before failing', async () => {
-  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'aside-recover-')); const store = new AsideTurns(dir, atomic, x => x); const id = uuid(), killed = [];
+  const dir = await makeTemp('aside-recover-'); const store = new AsideTurns(dir, atomic, x => x); const id = uuid(), killed = [];
   store.proc = { start: pid => pid === 21 ? 'start' : null, marked: () => [22], kill: pid => killed.push(pid), exists: pid => !killed.includes(pid) };
   await atomic(store.file, JSON.stringify({ [id]: { state: 'running', pid: 21, pid_start: 'start', started_at: new Date().toISOString() } })); await store.load(); assert.deepEqual(killed.sort(), [21, 22]); assert.equal(store.get(id).error, 'the machine restarted');
 });
 
 test('recovery kills real detached groups, including a marker-only process', async () => {
   const { spawn } = require('node:child_process');
-  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'aside-groups-')), id = uuid();
+  const dir = await makeTemp('aside-groups-'), id = uuid();
   const start = () => spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore', env: { ...process.env, WHEELCHAIR_ASIDE_TURN: id } });
-  const a = start(), b = start();
+  const a = start(); trackChild(a, { group: true });
+  const b = start(); trackChild(b, { group: true });
   try {
     const store = new AsideTurns(dir, atomic, x => x); await delay(100);
     const startTime = store.proc.start(a.pid); assert.ok(startTime);
@@ -60,7 +63,7 @@ test('recovery kills real detached groups, including a marker-only process', asy
 
 test('hub authentication, validation and aside routes', async () => {
   const http = require('node:http');
-  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'aside-http-')); const secret = path.join(dir, 'secret'); await fsp.writeFile(secret, 'secret');
+  const dir = await makeTemp('aside-http-'); const secret = path.join(dir, 'secret'); await fsp.writeFile(secret, 'secret');
   const service = new MachineService({ stateDir: dir }); service.config.secret_file = secret; await service.asideTurns.load();
   const server = http.createServer((req, res) => service.handle(req, res)); await new Promise(r => server.listen(0, '127.0.0.1', r));
   const request = async (method, route, body, auth = true) => { const response = await fetch(`http://127.0.0.1:${server.address().port}${route}`, { method, headers: { 'content-type': 'application/json', ...(auth ? { 'x-wheelchair-machine-secret': 'secret' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) }); return [response.status, await response.json()]; };
@@ -72,12 +75,15 @@ test('hub authentication, validation and aside routes', async () => {
 
 test('stopping an unknown turn persists a tombstone and prevents a later start', async () => {
   const http = require('node:http');
-  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'aside-tombstone-'));
+  const dir = await makeTemp('aside-tombstone-');
   const bin = path.join(dir, 'bin'), log = path.join(dir, 'log'), secret = path.join(dir, 'secret');
   await fsp.mkdir(bin); await fsp.symlink(path.join(__dirname, 'fixtures/aside/cli.js'), path.join(bin, 'claude'));
   await fsp.writeFile(log, ''); await fsp.writeFile(secret, 'secret');
   const old = { ...process.env }; Object.assign(process.env, { PATH: bin + ':' + old.PATH, ASIDE_LOG: log, ASIDE_STORE: path.join(dir, 'aside-turns.json') });
-  let service = new MachineService({ stateDir: dir }); service.config.secret_file = secret; await service.asideTurns.load();
+  let service = new MachineService({ stateDir: dir });
+  const firstStore = service.asideTurns;
+  onCleanup(() => { for (const t of Object.values(firstStore.turns)) if (t.state === 'running' && t.pid) firstStore.proc.kill(t.pid); });
+  service.config.secret_file = secret; await service.asideTurns.load();
   let runs = 0; const run = service.asideTurns.run.bind(service.asideTurns);
   service.asideTurns.run = (...args) => { runs++; return run(...args); };
   const server = http.createServer((req, res) => service.handle(req, res)); await new Promise(r => server.listen(0, '127.0.0.1', r));
@@ -92,7 +98,10 @@ test('stopping an unknown turn persists a tombstone and prevents a later start',
     const tombstone = service.asideTurns.get(id);
     assert.deepEqual(tombstone, { input: null, state: 'failed', error: 'stopped', pid: null, pid_start: null, started_at: tombstone.started_at, finished_at: tombstone.started_at, reply: null, conversation_id: null, limit: false });
     assert.ok(!Number.isNaN(Date.parse(tombstone.started_at)));
-    service = new MachineService({ stateDir: dir }); service.config.secret_file = secret; await service.asideTurns.load();
+    service = new MachineService({ stateDir: dir });
+    const resumedStore = service.asideTurns;
+    onCleanup(() => { for (const t of Object.values(resumedStore.turns)) if (t.state === 'running' && t.pid) resumedStore.proc.kill(t.pid); });
+    service.config.secret_file = secret; await service.asideTurns.load();
     const resumedRun = service.asideTurns.run.bind(service.asideTurns);
     service.asideTurns.run = (...args) => { runs++; return resumedRun(...args); };
     assert.deepEqual(service.asideTurns.get(id), tombstone);

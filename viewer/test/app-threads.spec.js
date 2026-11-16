@@ -4,6 +4,7 @@
 // phone width and desktop width against a real viewer server and the fake machine service.
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { makeTemp } = require('../../test-support/run-dir');
 const { test, expect } = require('@playwright/test');
 const { startWorld, signIn } = require('./helpers/app-threads-world');
 
@@ -205,7 +206,7 @@ for (const [label, size] of SIZES) {
     });
 
     test('an archived thread draws a diagram read from its branch, read-only', async ({ page }) => {
-      const repo = await fs.mkdtemp(path.join(require('node:os').tmpdir(), 'wc-archived-'));
+      const repo = await makeTemp('wc-archived-');
       const git = (...args) => require('node:child_process').execFileSync('git', ['-C', repo, ...args], { stdio: 'pipe' });
       git('init', '-q', '-b', 'wc/gone');
       git('config', 'user.email', 't@example.com'); git('config', 'user.name', 't');
@@ -239,7 +240,7 @@ for (const [label, size] of SIZES) {
     });
 
     test('an archived diagram opens a child graph from the branch, with a way back, read-only', async ({ page }) => {
-      const repo = await fs.mkdtemp(path.join(require('node:os').tmpdir(), 'wc-archived-child-'));
+      const repo = await makeTemp('wc-archived-child-');
       const git = (...args) => require('node:child_process').execFileSync('git', ['-C', repo, ...args], { stdio: 'pipe' });
       git('init', '-q', '-b', 'wc/gone');
       git('config', 'user.email', 't@example.com'); git('config', 'user.name', 't');

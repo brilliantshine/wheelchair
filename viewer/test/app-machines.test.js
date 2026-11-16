@@ -1,13 +1,17 @@
 'use strict';
 
+const { trackChild } = require('../../test-support/run-dir');
+function trackedSpawn(...args) { const child = spawn(...args); trackChild(child); return child; }
+
+const { makeTemp } = require('../../test-support/run-dir');
+
 // The hub's own machine as the installer registers it: under the hostname, while threads say
 // "hub" (docs/plans/app-shell, "State" and "Machine service on the hub").
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const http = require('node:http');
 const path = require('node:path');
-const os = require('node:os');
-const { execFileSync } = require('node:child_process');
+const { execFileSync, spawn } = require('node:child_process');
 const test = require('node:test');
 const { Hub } = require('../app/hub.js');
 const { State } = require('../app/state.js');
@@ -112,7 +116,7 @@ test('wc.js preserves git flags and the worker replacement option', () => {
 });
 
 test('a hub keeps the version captured at construction after its clone advances', async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'hub-version-'));
+  const root = await makeTemp('hub-version-');
   const git = (...args) => execFileSync('git', ['-C', root, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args]);
   git('init', '-q');
   await fs.writeFile(path.join(root, 'version.txt'), 'A\n');
@@ -128,7 +132,6 @@ test('a hub keeps the version captured at construction after its clone advances'
 
 test('wc.js sends provider constraints and prints waiting and notice output', async () => {
   const http = require('node:http');
-  const { spawn } = require('node:child_process');
   const dir = await makeDir('wc-output-');
   const brief = path.join(dir, 'brief.txt');
   await fs.writeFile(brief, 'work');
@@ -142,7 +145,7 @@ test('wc.js sends provider constraints and prints waiting and notice output', as
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
-    const child = spawn(process.execPath, [path.join(__dirname, '../app/wc.js'), 'session', 'start', '--role', 'worker', '--brief-file', brief, '--attempt', 'test', '--cli', 'codex', '--provider', 'gpt', '--not-provider', 'claude'], {
+    const child = trackedSpawn(process.execPath, [path.join(__dirname, '../app/wc.js'), 'session', 'start', '--role', 'worker', '--brief-file', brief, '--attempt', 'test', '--cli', 'codex', '--provider', 'gpt', '--not-provider', 'claude'], {
       env: { ...process.env, WHEELCHAIR_MACHINE_ORIGIN: `http://127.0.0.1:${server.address().port}`, WHEELCHAIR_MACHINE_URL: '', WHEELCHAIR_SESSION_TOKEN: 'test-token' },
     });
     let stdout = '', stderr = '';
