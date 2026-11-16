@@ -218,3 +218,47 @@ threads' sessions) and passes alone. On the merged branch (`031dedc`):
 two failed focused runs were a test race (asserting `closed` before the request landed, then
 a route fetch after the server closed); its final test edit (`expect.poll`) is what passed
 8/8 above.
+
+### Remediation 2 — 2026-11-15
+
+Verification attempt 2 (GPT verifier, commit `3fdc8a2`) confirmed all four Remediation 1
+fixes and failed on one new gap: aside polls held the thread lock during machine calls and
+the timer started a pump every 2 s regardless, so with a slow machine Done waited 16.5 s
+behind five polls. Gap and brief: `REMEDIATION-2.md`. One task, R2-1, built on GPT (standard,
+gpt-6.1-terra), merged at `7087567`. Worker choices: none.
+
+| Change | Where (file:line) |
+|--------|-------------------|
+| Claim under the lock: dispatch rule, POST body built, work items recorded | `viewer/app/asides.js:83-108` (`claim`) |
+| Machine GET / POST with no lock held | `viewer/app/asides.js:110-118` (`call`) |
+| Apply under the lock, only for turns the aside still holds; acks sent after the lock is released; repeat while newly runnable messages exist | `viewer/app/asides.js:120-145` (`applyResult`, today's handling unchanged), `:147-166` (`pass`) |
+| One pump per thread; a route call during a pass gets one more pass; the timer skips when one is running | `viewer/app/asides.js:168-180` (`pumps`, `pump`); `viewer/app/hub.js:47` (`fromTimer: true`) |
+| Aside routes answer without waiting for the pump | `viewer/app/routes.js:349` |
+
+Validation, run by the sub-lead:
+
+```
+# R2-1 branch (79837b5)
+$ node --test viewer/test/app-asides.test.js     (three runs)
+# pass 9 # fail 0
+# pass 9 # fail 0
+# pass 9 # fail 0
+$ node --test viewer/test/*.test.js
+not ok 235 - a starter that loses the freed port registers through the new holder
+# tests 350
+# pass 349
+# fail 1
+$ (cd viewer && npx playwright test test/app-asides.spec.js --repeat-each=2)
+  4 passed (7.3s)
+# merged branch (7087567)
+$ node --test viewer/test/app-asides.test.js
+# pass 9 # fail 0
+$ bash machine/test/run.sh
+# pass 89 # fail 0
+```
+
+New test `viewer/test/app-asides.test.js` "slow machine calls leave routes free, coalesce
+pumps, and discard archived results": with the machine GET held open, five timer pumps make
+one GET (max concurrency 1); `close {outcome:"done"}` answers 200 within 1 s and the aside is
+closed on disk; the route's pump causes exactly one more pass (2 GETs); a result released
+after the thread is archived adds nothing to history. The port test is the known one.
