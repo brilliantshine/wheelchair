@@ -86,6 +86,25 @@ class HelperTest(unittest.TestCase):
             self.assertEqual(result['state'], 'failed'); self.assertFalse(marker.exists())
         with mock.patch.dict(os.environ, SHIM_MODE='denied'):
             rid = self.create(); self.assertEqual(self.run_request(rid)['state'], 'failed')
+    def test_wrong_then_right_and_three_wrong_data(self):
+        rid = self.create()
+        self.run_request(rid, 'wrong')
+        data = json.loads(self.call(True, 'GET', '/r/' + rid + '/data')[1])
+        self.assertEqual(data['message'], 'Wrong password')
+        self.assertEqual(data['tries_left'], 2)
+        self.run_request(rid)
+        data = json.loads(self.call(True, 'GET', '/r/' + rid + '/data')[1])
+        self.assertEqual(data['state'], 'ran')
+        self.assertEqual(data['exit_code'], 0)
+        self.assertNotIn('message', data)
+
+        rid = self.create()
+        for _ in range(3):
+            self.run_request(rid, 'wrong')
+        data = json.loads(self.call(True, 'GET', '/r/' + rid + '/data')[1])
+        self.assertEqual(data['state'], 'failed')
+        self.assertEqual(data['reason'], 'wrong password 3 times')
+        self.assertNotIn('message', data)
     def test_cancel_race_and_expiry(self):
         with mock.patch.dict(os.environ, SHIM_MODE='slow'):
             rid = self.create(); thread = threading.Thread(target=self.run_request, args=(rid,)); thread.start(); time.sleep(.1)
