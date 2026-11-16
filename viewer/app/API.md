@@ -46,6 +46,8 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 | `PUT /settings/style` | `{length,lists,terms,never_say,text}` | `{style,style_version}` |
 | `POST /settings/style/preview` | unsaved style object | `{before,after}`; previewing never saves it |
 | `GET /settings/prompt?role=&project=` | — | `{text}` with the exact composed starting instructions, using the hub root in its pointer |
+| `GET /settings/diagram-sensitivity` | — | `{machines:{<machine>:{level,files}|{error}}}`; asks every configured machine's `GET /v1/diagram-sensitivity` in parallel, 5 s each. `level` is `ask`, `default`, `high` or `null` (its CLIs' files disagree or hold none); `files` is `[{harness,level|null}]`. A machine that times out, refuses the connection or fails is `{error:"did not answer"}`; a machine's own 4xx gives `{error:<its text>}`. Separate from `GET /settings` so no other caller waits on machines. The hub stores nothing |
+| `POST /settings/diagram-sensitivity` | `{level:"ask"|"default"|"high"}` | `{machines:{<machine>:{level}|{error}}}`, forwarded to every machine's `POST /v1/diagram-sensitivity`; `200` when all succeeded, `502` with the same map when any failed (machines that succeeded keep the new level; posting again retries all); `400` for any other level. Same 5 s limit and error texts as the GET |
 
 `Thread` has `id`, `project`, `cli`, `machine`, `stub`, `context`, `parent`,
 `depends_on_parent`, `waiting_on_parent`, `sessions`, `cards`, `pinned`, `queues`, `sent`,

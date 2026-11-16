@@ -38,6 +38,8 @@
   let styleDraft = null;
   let preview = { running: false, after: null, error: '' };
   let styleNote = '';
+  let diagram = null; // GET /settings/diagram-sensitivity, or null until read for this visit
+  let diagramLoading = false;
   let folderDraft = null; // the typed Default project folder, kept across re-renders until saved
   const panel = document.getElementById('panel');
 
@@ -61,7 +63,12 @@
     let res;
     try { res = await fetch(API + route, init); } catch { throw new Error('Could not reach the hub.'); }
     const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body.detail || body.error || body.message || ('http ' + res.status));
+    if (!res.ok) {
+      const failure = new Error(body.detail || body.error || body.message || ('http ' + res.status));
+      failure.status = res.status;
+      failure.body = body;
+      throw failure;
+    }
     return body;
   }
 
@@ -79,6 +86,68 @@
     if (!message) { if (err) err.remove(); return; }
     if (!err) { err = h('p', { class: 'inline-err', role: 'alert' }); host.append(err); }
     err.textContent = message;
+  }
+
+  // ---------------------------------------------------------------- Diagrams
+
+  const DIAGRAM_CHOICES = [
+    ['ask', 'Ask', 'Only when you ask, or a lead draws a proposed flow'],
+    ['default', 'Default', 'When the arrangement is the answer'],
+    ['high', 'High', 'Whenever there is a shape'],
+  ];
+
+  // A level is selected only when every machine answered and each machine's level is non-null
+  // and the same. Otherwise `lines` says what each machine holds.
+  function diagramView() {
+    const machines = diagram && diagram.machines ? diagram.machines : {};
+    const names = Object.keys(machines);
+    const shown = (level) => (level || 'none');
+    const lines = names.map((name) => {
+      const m = machines[name];
+      if (m.error) return `${name}: ${m.error}`;
+      if (m.level) return `${name}: ${m.level}`;
+      const files = (m.files || []).map((f) => `${f.harness} ${shown(f.level)}`).join(', ');
+      return `${name}: its CLIs' files disagree (${files})`;
+    });
+    const levels = names.map((name) => machines[name].level);
+    const agreed = names.length && levels.every((l) => l && l === levels[0]) ? levels[0] : null;
+    return { agreed, lines };
+  }
+
+  function drawDiagram() {
+    const box = document.getElementById('diagram-choices');
+    if (!box) return;
+    if (!diagram) { box.replaceChildren(h('span', { class: 'hint', text: 'Reading each machine\u2026' })); return; }
+    const { agreed, lines } = diagramView();
+    box.replaceChildren(
+      h('div', { class: 'diagram-radios', role: 'radiogroup', 'aria-label': 'Diagram sensitivity' },
+        DIAGRAM_CHOICES.map(([value, name, line]) => h('button', {
+          type: 'button', class: 'choice', role: 'radio', 'aria-checked': String(agreed === value),
+          onclick: () => saveDiagram(value),
+        }, h('span', { class: 'choice-name', text: name }), h('span', { class: 'hint', text: line })))),
+      agreed ? null : h('p', { class: 'note diagram-lines', role: 'status' }, lines.map((line, i) => [i ? h('br') : null, line])));
+  }
+
+  async function loadDiagram() {
+    diagramLoading = true;
+    try { diagram = await api('/settings/diagram-sensitivity'); }
+    catch (e) { diagram = { machines: { hub: { error: e.message } } }; }
+    diagramLoading = false;
+    drawDiagram();
+  }
+
+  async function saveDiagram(level) {
+    let failure = null;
+    try {
+      await api('/settings/diagram-sensitivity', { method: 'POST', body: { level } });
+      setNote("Applies from each agent's next session", false);
+    } catch (e) {
+      const machines = e.body && e.body.machines;
+      const failed = machines ? Object.entries(machines).filter(([, m]) => m.error).map(([name, m]) => `${name}: ${m.error}`) : [];
+      failure = failed.length ? failed.join('\n') : e.message;
+      setNote(failure, true);
+    }
+    await loadDiagram();
   }
 
   // ---------------------------------------------------------------- Models and preferences
@@ -360,6 +429,9 @@
             h('div', { class: 'what' }, h('span', { text: 'Tool steps' }), h('span', { class: 'hint', text: data.tool_steps === 'hide' ? 'Hidden: a thread shows only messages and cards.' : 'Commands and file reads show as folded lines between messages.' })),
             modeGroup('tool_steps', 'Tool steps', [['show', 'Show'], ['hide', 'Hide']])),
           folderRow())),
+      h('section', { 'aria-labelledby': 'diagrams' },
+        h('h2', { id: 'diagrams', text: 'Diagrams' }),
+        h('div', { class: 'box', id: 'diagram-choices' })),
       h('section', { 'aria-labelledby': 'others' },
         h('h2', { id: 'others', text: 'Other agents' }),
         h('div', { class: 'box rows' },
@@ -1191,12 +1263,13 @@
     const keep = document.getElementById('error');
     panel.replaceChildren(keep, view);
     renderSections();
+    if (section === 'models') { if (!diagram && !diagramLoading) loadDiagram(); drawDiagram(); }
   }
 
   function readHash() {
     const key = location.hash.replace(/^#/, '');
     const next = SECTIONS.some(([k]) => k === key) ? key : 'models';
-    if (next !== section) { section = next; setNote('', false); styleNote = ''; }
+    if (next !== section) { section = next; setNote('', false); styleNote = ''; diagram = null; }
   }
 
   window.addEventListener('hashchange', () => { readHash(); renderPanel(); syncSection(); });
