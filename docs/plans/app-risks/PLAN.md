@@ -277,7 +277,7 @@ Budget reset: Collin chose "Keep going" after three rounds.
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Duplicate-card fix: hub 500 on direct relay = spooled; test fails before | `machine/service.js` cards route 5xx branch; `machine/test/service.test.js` | GPT standard (gpt-6.1-terra) | wc-0958e89051d8-worker | `bash machine/test/run.sh` | done (a0bb356) |
 | T2 | Shared harness (smoke + live modes, proxy, slow origin) and free smoke suite | `test-support/smoke/` (not live.sh); isolation flags only if missing | GPT standard (gpt-6.1-terra) | wc-0958e89051d8-worker-2 | `bash test-support/smoke/run.sh`; test-support, machine, viewer suites; free live-mode check | done (3be9258) |
-| T3 | Live script (slow start, tiers, permission prompt) and docs | `test-support/smoke/live.sh` + driver; root `AGENTS.md`; `docs/proposals/app-followups/proposal.md` | GPT standard (gpt-6.1-terra) | — | free suites; `live.sh` slow-start only, ≤2 runs | waiting on T2 |
+| T3 | Live script (slow start, tiers, permission prompt) and docs | `test-support/smoke/live.sh` + driver; root `AGENTS.md`; `docs/proposals/app-followups/proposal.md` | GPT standard (gpt-6.1-terra) | wc-0958e89051d8-worker-3 | free suites; `live.sh --only slow-start` ≤2 runs, `--only permission` ≤1 run | dispatched |
 
 ## Log
 
