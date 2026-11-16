@@ -1,6 +1,6 @@
 ---
 slug: lead-reserve-and-review-count
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-15
 ---
 
@@ -42,6 +42,18 @@ rules in `protocol/app/`). The CLI stages (`protocol/plan-review.md`,
 `protocol/verification.md`) are unchanged. Read `MAP.md` and
 `docs/maps/app-provider-placement.md` for how placement works today.
 
+How a reviewer or checker is placed once this lands (the reserve and one-account rules in
+§1-§2 apply underneath):
+
+```mermaid
+flowchart TD
+  A[reviewer or checker starts] --> B{Reviewers and checkers setting}
+  B -- Both families --> C[today's rules: aim for the other family, fall back with a note]
+  B -- one family F --> D{F signed in and has a model for this tier?}
+  D -- yes --> E[place on F, or wait for F's room]
+  D -- no --> F[place on whatever is available, with a note]
+```
+
 ### 1. The reserve follows the lead's provider
 
 Today "Save Claude for leads" (`save_claude_for_leads`) and the margin hold-back both key off
@@ -78,6 +90,9 @@ Today "Save Claude for leads" (`save_claude_for_leads`) and the margin hold-back
   becomes "When P is projected to have less than this left at refill, ticked roles go to
   another provider, or wait if there is none", and "Held back when Claude runs short"
   becomes "Held back when P runs short".
+  `PUT /settings/balancing` also returns the recomputed `reserved_provider`, and the
+  Settings page applies it after any balancing save (lead order, worker order or the
+  reserve section), so the label and hints update without a reload.
 
 ### 2. One-account setups
 
@@ -201,7 +216,7 @@ New or changed tests (in `viewer/test/`):
 
 ### Round 2 — 2026-11-15
 
-**Lanes:** intent lens; mechanics lens; recorded once both start.
+**Lanes:** intent lens, GPT (Claude requested, held back); mechanics lens, GPT; cross-family: no.
 
 **Changed since Round 1:**
 - §1 Label: `reserved_provider` counts only accounts signed in on some machine; margin hint
@@ -214,6 +229,7 @@ New or changed tests (in `viewer/test/`):
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics (GPT) | minor | `reserved_provider` not refreshed after saving an order | upheld | §1 Label: balancing PUT returns it; page applies it |
 
 ## Prior Work
 
