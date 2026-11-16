@@ -50,3 +50,28 @@ test('saves a changed status under the lock, on a fresh read', async (t) => {
   await features({ ...hub, allThreads: async () => [{ ...snapshot, last_status: 'verifying' }] });
   assert.equal(saved.length, 1, 'an unchanged status is not saved again');
 });
+
+test('records a status from a fresh read under the lock', async (t) => {
+  const worktree = await worktreeWithStatus('verifying');
+  t.after(() => fs.rm(worktree, { recursive: true, force: true }));
+  const snapshot = { id: 't1', slug: 'example', worktree, last_status: 'implementing', sessions: [], cards: [] };
+  const saved = [];
+  let stored = { ...snapshot, last_status: 'verifying' };
+  const hub = {
+    allThreads: async () => [snapshot],
+    withThread: (id, work) => work(),
+    thread: async () => stored,
+    save: async (thread) => { saved.push(thread); },
+  };
+  await features(hub);
+  assert.equal(saved.length, 0, 'already recorded by someone else: no save');
+  stored = { ...snapshot, last_status: 'implementing' };
+  hub.withThread = async (id, work) => {
+    // PLAN.md moved on while this call waited for the lock.
+    await fs.writeFile(path.join(worktree, 'docs', 'plans', 'example', 'PLAN.md'), 'status: done\n');
+    return work();
+  };
+  const result = await features(hub);
+  assert.equal(saved[0].last_status, 'done', 'the newer status wins');
+  assert.equal(result.done[0].id, 't1');
+});

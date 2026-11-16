@@ -95,21 +95,28 @@ async function findSlug(hub, thread) {
   if (hub.registerPlan) await hub.registerPlan(path.join(thread.worktree, 'docs', 'plans', thread.slug));
 }
 
+async function readStatus(thread) {
+  const file = path.join(thread.worktree, 'docs', 'plans', thread.slug, 'PLAN.md');
+  const contents = await fs.readFile(file, 'utf8').catch(() => '');
+  return contents.match(/^status:\s*([^\s#]+)/m)?.[1] || thread.last_status;
+}
+
+// PLAN.md is the truth; last_status is the thread's cached copy. A change seen in the snapshot
+// is recorded under the lock from a fresh read of both, so an older read never overwrites a newer
+// one and an unchanged status is never saved.
 async function currentStatus(hub, snapshot) {
-  let status = snapshot.last_status;
-  if (snapshot.worktree) {
-    const file = path.join(snapshot.worktree, 'docs', 'plans', snapshot.slug, 'PLAN.md');
-    const contents = await fs.readFile(file, 'utf8').catch(() => '');
-    status = contents.match(/^status:\s*([^\s#]+)/m)?.[1] || status;
-    if (status !== snapshot.last_status) {
-      await hub.withThread(snapshot.id, async () => {
-        const thread = await hub.thread(snapshot.id);
-        thread.last_status = status;
-        await hub.save(thread);
-      });
+  if (!snapshot.worktree) return snapshot.last_status;
+  const status = await readStatus(snapshot);
+  if (status === snapshot.last_status) return status;
+  return hub.withThread(snapshot.id, async () => {
+    const thread = await hub.thread(snapshot.id);
+    const fresh = await readStatus({ ...thread, slug: thread.slug || snapshot.slug });
+    if (fresh !== thread.last_status) {
+      thread.last_status = fresh;
+      await hub.save(thread);
     }
-  }
-  return status;
+    return fresh;
+  });
 }
 
 function addNeeds(needs, thread) {
