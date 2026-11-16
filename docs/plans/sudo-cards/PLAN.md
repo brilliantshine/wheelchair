@@ -102,8 +102,15 @@ treats as "retry later", not as a rejection.
 **Ordering and durability on the machine.** The machine service keeps a small file
 `sudo-requests.json` in its state directory (0600; no password ever exists in the machine
 service): per `request_id`, whether its card has been accepted by the hub, the last state the
-helper reported and whether the hub has acknowledged it. It:
-- polls the helper every 2 seconds for each request not yet terminal-and-acknowledged;
+helper reported (for a terminal state, with its exit code and output) and whether the hub has
+acknowledged it. Every change to this file is written atomically before the action it records
+is treated as done. It:
+- polls the helper every 2 seconds for each request whose state is not yet terminal. Once a
+  terminal state is saved, it stops polling that request and delivers the saved result; a later
+  `expired` from the helper (restart, retention) can never replace a saved terminal result;
+- for a `sudo` card, saves "accepted" **before** deleting the card's spool file. A crash between
+  the hub's 2xx and that save leaves the spool file, so the card is resent; the hub answers the
+  duplicate `delivery_id` with 200, and the machine then saves "accepted" and deletes the file;
 - posts an outcome only after that request's card has been accepted (2xx from `/api/machine/cards`);
 - retries outcome posts on 5xx, 409 or no connection until a 2xx, newest state only;
 - on restart, reloads the file and resumes. A helper that no longer knows the id answers
@@ -184,9 +191,10 @@ row in the root `AGENTS.md` tables), but **runs only from an installed root-owne
      prompting (every sudoers entry for the user is NOPASSWD), the request becomes `failed`
      with "sudo on this machine asks for no password, so a sudo card can't check one". Fail
      closed: agents could already run sudo themselves there.
-   - b. Allowed: `/usr/sbin/runuser -u <user> -- /usr/bin/sudo -S -k -l -p <sentinel> -- /bin/sh -c <command>`,
+   - b. Allowed: `/usr/sbin/runuser -u <user> -- /usr/bin/sudo -S -k -l -u root -p <sentinel> -- /bin/sh -c <command>`,
      password written only if the sentinel appears (`-l` may not prompt under `listpw`; that is
-     fine, the password was already checked in a). Exit 0 = allowed; otherwise `failed` with
+     fine, the password was already checked in a). `-u root` because the helper runs the command
+     as root whatever the sudoers `runas_default` is. Exit 0 = allowed; otherwise `failed` with
      "Your sudo rules don't allow this command".
    - After both: `/usr/sbin/runuser -u <user> -- /usr/bin/sudo -K` to remove any timestamp `-v`
      left. This also clears sudo's cache in Collin's own terminals on that machine.
@@ -301,6 +309,30 @@ response it can see.
 | mechanics | major | Page spec contradicts itself (inline JS/CSS vs CSP); installer omits static files | upheld | Page and Install bullets rewritten |
 | mechanics | minor | Quoted paths escape the editable-file scan | upheld | `shlex` split (Decision 20) |
 | mechanics | minor | A card can stick in `declining` if the hub restarts mid-call | upheld | 10 s timeout; hub start returns `declining` cards to `waiting` |
+
+Round 2, GPT lane (mechanics), reviewed the text before the intent lane's fixes:
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| mechanics | blocking | `sudo -l` follows `listpw`; NOPASSWD entry lets garbage passwords through | upheld | Already fixed by Decision 19 (`-v`, sentinel, fail closed) |
+| mechanics | blocking | Permission check omits `-u root`, run is always root | upheld | `-u root` added to check b |
+| mechanics | major | A saved result could be replaced by `expired` before delivery | upheld | Terminal results saved with output; polling stops; never replaced |
+| mechanics | major | Card acceptance flag vs spool deletion order | upheld | Save "accepted" before deleting the spool file; duplicate resend is 200 |
+| mechanics | minor | Page assets vs CSP contradiction | upheld | Already fixed in the intent lane's triage |
+
+### Round 3 — 2026-11-15
+
+**Lanes:** pending.
+
+**Changed since Round 2:**
+- Password check: `sudo -k -v` and `sudo -k -l -u root`, sentinel prompts, fail closed, `sudo -K` (Decision 19).
+- `~` refused; `shlex` scan (Decision 20).
+- Page assets as static files; installer list.
+- `declining` timeout and hub-start recovery.
+- Machine durability: saved terminal results, accepted-before-spool-delete.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
