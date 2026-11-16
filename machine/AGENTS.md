@@ -10,6 +10,7 @@ agents own neither tmux nor the machine secret.
 | `adapters/` | CLI-specific commands, login folders, hook translation and usage parsing. |
 | `statusline.sh`, `lib/statusline.js` | Claude status display and throttled usage delivery. |
 | `lib/aside-turns.js` | Durable headless aside turns, CLI spawning, parsing and restart recovery. |
+| `lib/sudo.js` | Durable sudo request registration, polling, outcome delivery and cancellation. |
 | `lib/limits.js` | Pure exhausted-window reset calculation. |
 | `hook.sh` | CLI hook entry point; turns Claude/Codex payloads into local events and spools while the service is down. |
 | `lib/hook-post.js` | Dependency-free HTTP/spool helper used by `hook.sh`. |
