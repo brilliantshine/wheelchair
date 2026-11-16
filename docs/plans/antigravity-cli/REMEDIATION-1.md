@@ -17,3 +17,13 @@ Brief: `R1-1` below, as given to the worker (also kept outside the repo at the s
 - **Ownership**: `machine/adapters/agy.js`, `machine/service.js` (login path only), `machine/test/` (incl. new fixtures in `machine/test/fixtures/agy/`), `reports/R1-1.md`.
 - **Lane**: standard, gpt (the provider that built T4). Attempt 1 sharpens the brief rather than raising the tier.
 - **Validation**: `bash machine/test/run.sh`; a replay of every captured first-run screen through `loginState` ends in `done` only at the idle screen.
+
+### R1-1 outcome
+
+Blocked: a copied signed-in HOME with `post_onboarding` removed showed only the trust question, then idle. The first-run screens can't be reproduced without a sign-in. Nothing was built (`reports/R1-1.md`). Not a worker defect: the brief's capture method didn't work. The same lane is kept.
+
+### R1-2 — same objective, capture by a fresh sign-in (Collin chose option A)
+
+- **Objective**: as R1-1. Part 1 captures the screens by signing in once in an empty scratch HOME, with Collin's code through the lead. The scratch HOME, which holds a token, is left in place and reported for Collin to delete.
+- **Safety net (lead)**: `loginDone` is true only at the idle prompt, so an unrecognised first-run screen keeps the sign-in waiting rather than reporting done.
+- **Ownership, lane, validation**: as R1-1; report `reports/R1-2.md`.

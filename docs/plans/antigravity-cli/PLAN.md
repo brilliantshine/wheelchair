@@ -390,6 +390,8 @@ a worker with `--provider gemini` and check its `result` card arrives.
 
 ## Log
 
+- 2026-11-16 — Collin chose (A) via the lead: one more code for a fresh scratch-HOME sign-in. The lead keeps (B)'s never-done-before-idle rule as the safety net. The scratch HOME holding a token is left for Collin, not deleted. R1-2 dispatched.
+
 - 2026-11-16 — R1-1 came back blocked. A copied signed-in HOME with `post_onboarding` removed showed only the trust question, then idle; the first-run screens didn't reappear. Nothing built; the real `~/.gemini` checksums are unchanged. The spent scratch home holding a token copy was deleted by the sub-lead. Asked the lead: (A) one more Collin code for a fresh scratch-HOME sign-in to capture the screens, or (B) a terminal fallback.
 
 - 2026-11-16 — Verification attempt 1: FAIL, 1 gap (agy first-run screens unfinished when sign-in reports done; a later session sticks). Verifier stopped. REMEDIATION-1.md written; R1-1 dispatched on gpt (the builders' provider), standard, with a sharpened brief.
