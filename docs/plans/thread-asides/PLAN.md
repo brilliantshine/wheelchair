@@ -644,3 +644,4 @@ Round 9 is clean: no blocking or major finding upheld.
 - 2026-11-15 — Choice: T4, pages/aside.js: quotes in the aside list longer than 60 characters are cut with an ellipsis.
 - 2026-11-15 — All five tasks merged; full validation run (see COMPLETION.md). Status set to verifying; one verifier started on Claude (--not-provider gpt), since every builder ran on GPT.
 - 2026-11-15 — Verifier wc-54ce860aef63-verifier started with --not-provider gpt; the hub answered "Could not avoid gpt; using gpt", so verification is same-family (GPT). Per sub-lead.md no second verifier is started.
+- 2026-11-15 — Verification 1: FAIL, four gaps (stranded queue after hub restart; stale waiting-on line; Think harder enabled with Heavy "Not used"; Ask input not focused). All confirmed by the sub-lead. REMEDIATION-1.md written; one task R1-1 on GPT (the building provider), same rung, sharpened brief.
