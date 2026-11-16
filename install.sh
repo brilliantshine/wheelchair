@@ -71,7 +71,7 @@ render() {  # render <source> <destination>
   sed "s|{{WHEELCHAIR_ROOT}}|$ROOT|g" "$1" > "$2"
 }
 
-# The spine command moved to highways. The globs below only add, so a wrapper this script rendered
+# The spine command was retired. The globs below only add, so a wrapper this script rendered
 # for it in an earlier version would stay installed; remove it. Only a copy that names this checkout's
 # own removed protocol file is ours to remove, so a same-named skill someone else installed is left alone.
 retired=spine
