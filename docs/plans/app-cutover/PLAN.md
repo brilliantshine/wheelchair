@@ -430,7 +430,7 @@ idempotence case is the in-worktree proof.
 | T1 | Installer stops rendering wrappers; removes retired wrappers and the seen hook (`install/unseen.py`); git rm skills/, codex/prompts/, seen/ (§1, §2, §7) | install.sh, install/, skills/, codex/prompts/, seen/ | codex standard (gpt-6.1-terra) | wc-1cff24e4cc7d-worker | install, codex suites | done (attempt 1; commit blocked by staged git rm, unblocked by message, not an escalation) |
 | T2 | Dial text and machine routes GET/POST /v1/diagram-sensitivity (§3, §7) | protocol/sensitivity.md, sensitivity/, machine/ | codex standard (gpt-6.1-terra) | wc-1cff24e4cc7d-worker-2 | sensitivity, machine, test-support suites | done |
 | T3 | Hub /settings/diagram-sensitivity and Settings Diagrams section (§3, D13, D16) | viewer/app settings routes, API.md, pages/settings.js, its tests | claude standard (claude-sonnet-5-5) | wc-1cff24e4cc7d-worker-3 | viewer node + browser | in progress |
-| T4 | Thread graph list, picture page, aside graphs (§4) | viewer/pages thread/aside/picture, app/asides.js brief, server.js APP_PAGES, its tests | claude standard (claude-sonnet-5-5) | wc-1cff24e4cc7d-worker-4 | viewer node + browser | in progress |
+| T4 | Thread graph list, picture page, aside graphs (§4) | viewer/pages thread/aside/picture, app/asides.js brief, server.js APP_PAGES, its tests | claude standard (claude-sonnet-5-5) | wc-1cff24e4cc7d-worker-4 | viewer node + browser | done |
 | T5 | Remove old stage rules, port flow trigger to lead.md, reword references and routers (§1, §3 D18, §5, §6) | protocol text, routers, README, CONTRIBUTING, known-issues | claude standard (claude-sonnet-5-5) | wc-1cff24e4cc7d-worker-5 | §5 greps, protocol-rules test | done |
 
 ## Log
@@ -450,3 +450,10 @@ idempotence case is the in-worktree proof.
 - 2026-11-15 — Choice: T1, install/test/run.sh: Python added to the restricted PATH fixture, since the installer now runs unseen.py.
 - 2026-11-15 — Choice: T1, install/test/run.sh: the real `~/.wheelchair` guard skips `accounts/*/tmp/`, where live Codex sessions write scratch files during the run (sub-lead's direction).
 - 2026-11-15 — Choice: T1, install.sh: a failing unseen.py warns and the install continues (sub-lead's direction, Spec §2).
+- 2026-11-15 — Choice: T4, viewer/test/app-pictures.spec.js: the aside spec stubs `GET /threads/:id/asides/:aside` (it 500s in the browser test world without model settings) and checks `brief` through the real chat payload.
+- 2026-11-15 — Choice: T4, viewer/pages/picture.html: loads `thread.css` for form styles; `picture.css` adds only layout.
+- 2026-11-15 — Choice: T4, viewer/pages/thread.js: deduplicated pictures are ordered by each file's latest card, not first appearance.
+- 2026-11-15 — Choice: T4, viewer/pages/thread.js: the phone strip uses the picture's title as link text, as the column does.
+- 2026-11-15 — Choice: T4, viewer/pages/picture.js: an aside entry with no graph shows "This aside has no picture at that step."
+- 2026-11-15 — Choice: T4, viewer/test/app-threads.spec.js: two assertions updated from "Open full screen" to the picture-page link.
+- 2026-11-15 — Note: pre-existing failures seen on the feature branch without T4: lifecycle.test.js "a starter that loses the freed port registers through the new holder"; app-accounts "lead waiting line" date text (per T4's report, also on main).
