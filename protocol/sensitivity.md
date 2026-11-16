@@ -86,7 +86,7 @@ Codex home refuses, naming it; the write across all present files is all-or-noth
 preflighted then committed; a present harness's missing target file is created holding just
 the block; and content between the markers is this repo's, overwritten on every run.
 
-`install.sh` calls the writer **last**, after the wrappers, npm and Chromium, and a refusal
+`install.sh` calls the writer **last**, after npm, Chromium and the seen-hook cleanup, and a refusal
 **warns without failing the install** — `install.sh` runs under `set -euo pipefail`, so a
 non-zero writer would abort it mid-run and break its own idempotence check for a reason
 unrelated to what that check tests. None of the other commands depends on the block existing.
