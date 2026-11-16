@@ -22,9 +22,9 @@ const DEFAULT_STYLE = Object.freeze({
 });
 
 const PLANS = { claude: { unknown: 1, pro: 1, max5: 5, max20: 20 }, gpt: { unknown: 1, plus: 1, pro: 6 } };
-const BALANCING = ['lead_order', 'worker_order', 'within', 'leave', 'notify_below', 'save_claude_for_leads', 'margin'];
+const BALANCING = ['lead_order', 'worker_order', 'within', 'leave', 'notify_below', 'save_claude_for_leads', 'margin', 'held_back'];
 function defaults() {
-  return { lead_names: [], retired_accounts: [], accounts: Object.keys(PROVIDERS).map((provider) => ({ id: `default-${provider}`, provider, name: 'default', plan: 'unknown', weight: 1, paused: false })), lead_order: ['claude', 'any'], worker_order: ['gpt', 'claude'], within: 'soonest', leave: 10, notify_below: 25, save_claude_for_leads: true, margin: 5, permission_mode: 'auto', codex_mode: 'sandboxed', tool_steps: 'show', other_agents: { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard' }, escalation: { first: 'effort', max_effort: 'xhigh', max_tier: 'critical', ask_before: 'critical' }, templates: [], style: structuredClone(DEFAULT_STYLE), style_version: 0, default_project_folder: '', saved_dirs: [] };
+  return { lead_names: [], retired_accounts: [], accounts: Object.keys(PROVIDERS).map((provider) => ({ id: `default-${provider}`, provider, name: 'default', plan: 'unknown', weight: 1, paused: false })), lead_order: ['claude', 'any'], worker_order: ['gpt', 'claude'], within: 'soonest', leave: 10, notify_below: 25, save_claude_for_leads: true, margin: 5, held_back: { worker: true, reviewer: true, verifier: true, mapper: true }, permission_mode: 'auto', codex_mode: 'sandboxed', tool_steps: 'show', other_agents: { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard' }, escalation: { first: 'effort', max_effort: 'xhigh', max_tier: 'critical', ask_before: 'critical' }, templates: [], style: structuredClone(DEFAULT_STYLE), style_version: 0, default_project_folder: '', saved_dirs: [] };
 }
 
 function fail(message) { throw appError(400, message); }
@@ -199,6 +199,10 @@ function normalize(saved) {
 
 function validBalancing(key, value) {
   if (key === 'lead_order' || key === 'worker_order') return Array.isArray(value) && value.length > 0 && new Set(value).size === value.length && value.every((v, i) => Object.hasOwn(PROVIDERS, v) || (key === 'lead_order' && v === 'any' && i === value.length - 1));
+  if (key === 'held_back') {
+    const roles = ['worker', 'reviewer', 'verifier', 'mapper'];
+    return value !== null && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype && Reflect.ownKeys(value).length === roles.length && roles.every((role) => Object.hasOwn(value, role) && typeof value[role] === 'boolean');
+  }
   if (key === 'within') return ['soonest', 'spread', 'one'].includes(value);
   if (key === 'save_claude_for_leads') return typeof value === 'boolean';
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100;

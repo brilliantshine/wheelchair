@@ -159,11 +159,16 @@ async function archive(hub, id) {
   const result = await hub.call(thread.machine, '/v1/archive', 'POST', { thread_id: thread.id });
   thread.archive = result;
   const rebases = (result.kept || []).filter((item) => item.reason === 'rebase in progress');
-  if (rebases.length) {
+  if (rebases.length || result.uploads_removed === false) {
     for (const kept of rebases) {
       const worktree = kept.worktree || kept.path || String(kept);
       const { addCard } = require('./cards.js');
       addCard(thread, { kind: 'needs', title: 'Rebase needs attention', body: `finish or abort the rebase in ${worktree}, then archive again` }, { system: true });
+    }
+    if (result.uploads_removed === false) {
+      const { addCard } = require('./cards.js');
+      addCard(thread, { kind: 'needs', title: 'Uploads could not be removed', body: `Could not remove ~/.local/state/wheelchair/uploads/${thread.id}/ on ${thread.machine}: ${result.uploads_error || 'unknown error'}. Archive again to retry.` }, { system: true });
+      for (const session of thread.sessions) session.live = false;
     }
     thread.archived = false;
     await hub.save(thread);
@@ -207,6 +212,14 @@ async function archivedGraph(hub, id, file) {
   } catch {
     throw appError(404, 'archived graph not found');
   }
+}
+
+async function archivedHtml(hub, id, file) {
+  const thread = await hub.thread(id);
+  if (!thread.archived || !thread.branch || !thread.slug || !/^[A-Za-z0-9][A-Za-z0-9._-]*\.html$/.test(String(file)) || String(file).includes('..')) throw appError(404, 'archived diagram not found');
+  try {
+    return (await execFileAsync('git', ['-C', thread.project, 'show', `${thread.branch}:docs/plans/${thread.slug}/graphs/${file}`], { maxBuffer: 2 * 1024 * 1024 })).stdout;
+  } catch { throw appError(404, 'archived diagram not found'); }
 }
 
 async function press(hub, id, cardId, input) {
@@ -305,6 +318,7 @@ module.exports = {
   archive,
   archivedDocument,
   archivedGraph,
+  archivedHtml,
   checkProject,
   createStub,
   createThread,

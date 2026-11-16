@@ -1,16 +1,18 @@
-# Map: serving and navigating app pages
+# Map: serving embedded graphs and app API
 
 Checked against: `7c380321f4556a08b63485203d613feeeae1f640` (origin/main)
-Files covered: `viewer/server.js`, `viewer/pages/nav.js`, `viewer/pages/terminal.html`, `viewer/pages/sessions.html`
+Files covered: `viewer/server.js`, `viewer/app/routes.js`, `viewer/app/threads.js`, `viewer/index.html`
 
 ## Flow
 
-The server allows app page names through `APP_PAGES`, currently including `sessions` and `terminal` (`viewer/server.js:1830`, `:1867-1885`). Sessions and terminal load their scripts and the shared navigation (`viewer/pages/sessions.html:7-11`, `viewer/pages/terminal.html:7-11`). The shared nav has a fixed Sessions link and fetches session data to display its count (`viewer/pages/nav.js:38-41`, `:108-122`). Terminal identifies Sessions as the current nav page and links back to it (`viewer/pages/terminal.html:11-14`).
+1. The server requires browser read or write authentication for non-machine app API routes, and checks a machine secret on machine callbacks (`viewer/server.js:2210-2223`; `viewer/app/routes.js:297-301`). App pages require the remember cookie and send `APP_PAGE_CSP` (`viewer/server.js:1867-1881`).
+2. The app CSP adds `frame-src 'self'` to a policy whose `default-src` is none and `connect-src` is self (`viewer/server.js:47,1830-1832`). The live graph page checks the graph path and registration; the archived graph page uses an archive query. Both serve `index.html` without a CSP response header in these branches (`viewer/server.js:1912-1936`).
+3. The graph page fetches live graph data or archived data (`viewer/index.html:462-479`). The archived API permits a plain JSON filename under the plan's `graphs/` on the thread branch and uses `git show`, with a 2 MiB output buffer (`viewer/app/routes.js:340-341`; `viewer/app/threads.js:195-208`).
 
 ```text
-app URL -> server page allowlist -> page HTML -> shared nav and page script
+app page -> same-origin iframe -> graph page -> live graph API or archived branch graph API
 ```
 
 ## What I did not look at
 
-- Non-app viewer routes, asset auth, document pages, CSS and their tests.
+Graph validation and layout, other viewer pages, asset routes, cookie implementation, browser tests and external reverse proxies. This focused map replaces the older broad map because its covered files changed; the prior version remains in git history.

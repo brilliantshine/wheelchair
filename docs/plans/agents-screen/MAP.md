@@ -1,6 +1,6 @@
 # Agents screen: current code map
 
-Checked against `7c380321f4556a08b63485203d613feeeae1f640` (origin/main). The reusable maps are `docs/maps/app-sessions.md`, `app-thread-page.md` and `viewer-serving.md`.
+Checked against `7c380321f4556a08b63485203d613feeeae1f640` (origin/main). The reusable maps are `docs/maps/app-session-tree.md`, `app-threads-list.md` and `viewer-app-pages.md`.
 
 ## Flow
 

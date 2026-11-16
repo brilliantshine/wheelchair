@@ -344,6 +344,9 @@ whose purpose is gone.
 
 ## Diagrams
 
+See the `diagram` section of `cards.md` for the forms and how to pick one. Show an image
+with an `image` card.
+
 Follow the diagram-sensitivity dial in your global instructions. When an answer earns a
 picture, write the graph with `<root>/protocol/graphs.md`: its schema, where graph files
 live (`docs/plans/<slug>/graphs/`) and its rules for filling the explanation. Skip its

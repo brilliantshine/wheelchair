@@ -74,7 +74,8 @@ Worker restart (`wc.js session start --role worker ... --replaces <session>`): t
 ### Accounts and usage
 
 `GET /settings` includes `accounts`, `lead_order`, `worker_order`, `within`, `leave`,
-`notify_below`, `save_claude_for_leads`, and `margin`. `POST /settings/accounts` accepts
+`notify_below`, `save_claude_for_leads`, `margin`, and `held_back` (an object with boolean
+`worker`, `reviewer`, `verifier`, and `mapper` keys, all defaulting to true). `POST /settings/accounts` accepts
 `{provider, name, plan}`; `PUT /settings/accounts/:id` accepts `{name?, plan?, weight?, paused?}`;
 `DELETE /settings/accounts/:id` removes a non-default account. `PUT /settings/balancing`
 updates the balancing keys. Invalid values and attempts to remove a default return 400.
@@ -87,7 +88,7 @@ machine sign-in states, placement reason and live session count. `GET /usage/ale
 `GET .../pane` and `POST .../keys` provide the login terminal. Unknown accounts or machines
 return 404.
 
-Session starts through `POST /machine/session` accept `role`, `tier`, `brief`, `attempt_id`, and optional `provider` or `not_provider` (`claude` or `gpt`) for workers, reviewers and verifiers. The flags are mutually exclusive; worker constraints are strict, subject to the Claude margin exception, and reviewer and verifier constraints are preferences. The obsolete `cli` field is ignored. The response has `session` and may have a `note`. Sessions carry `provider` and `account`; a waiting session has `status: "waiting"`, `waiting_until`, `waiting_reason`, `waiting_provider` (the pinned provider, the first explicit lead-order provider for a new lead, or null), and `pending_start`. Its identity and queue survive promotion.
+Session starts through `POST /machine/session` accept `role`, `tier`, `brief`, `attempt_id`, and optional `provider` or `not_provider` (`claude` or `gpt`) for workers, reviewers and verifiers. The flags are mutually exclusive; worker constraints are strict, subject to the Claude reserve when `held_back.worker` is on, and reviewer and verifier constraints are preferences. The obsolete `cli` field is ignored. The response has `session` and may have a `note`. Sessions carry `provider` and `account`; a waiting session has `status: "waiting"`, `waiting_until`, `waiting_reason`, `waiting_provider` (the pinned provider, the first explicit lead-order provider for a new lead, or null), and `pending_start`. Its identity and queue survive promotion.
 
 Machine events may carry a `reading`, including Codex `turn-ended` events; they include `usage` with a reading, `limit-hit` with `limited_until` and `error`, and `turn-failed` with `error`. A limit-ended turn never delivers a report: a future limit holds delivery until reset, while an already expired limit queues `Continue.` immediately, in both cases at the front of the queue. A failed turn releases the queue and informs the starter without delivering a partial reviewer or verifier report; a failed lead turn creates a needs card.
 
@@ -111,3 +112,20 @@ are accepted; invalid keys, values, and non-object inputs receive 400.
 `GET /wheelchair/api/agents` returns `{leads, machines}` for unarchived threads. Each lead has `thread_id`, `thread_title`, `lead_name`, `machine`, `session`, and `children`; agent sessions omit tokens and include `children` and `waiting_on` session names. Ended ancestors remain when they have live descendants. Machines carry `machine`, `reachable`, `last_seen`, and `hub`.
 
 Threads include `lead_name`, retained until and after archive; archived threads release the name for reuse. Settings `lead_names` is an array of up to 200 unique case-insensitive names, trimmed to 1–40 characters, with blank entries discarded; an empty list uses Greek letters. New session records include the resolved `model` and `effort` (which may be null). Older sessions may omit them.
+
+Diagram cards accept optional `format` (`graph`, the default, `form`, or `html`). Image
+cards are lead-only and contain `path` and `title`; stored image cards also carry `file`,
+the basename supplied by the machine. Form and HTML diagrams register their plan but do
+not enter the graph registry.
+
+`POST /threads/:id/uploads?name=...` streams a raw file of at most 25 MiB to the lead's
+machine and returns `201 {path}`. It returns 409 for an archived thread or absent live lead,
+and 413 for a missing or excessive Content-Length. `GET /threads/:id/files/:file` streams a
+machine file whose name matches `[0-9]+-[A-Za-z0-9._-]+` and preserves its content headers.
+`GET /threads/:id/graph?file=...json` reads an archived diagram as JSON;
+`GET /threads/:id/diagram-html?file=...html` reads archived HTML with the static sandbox CSP.
+Outside the API prefix, `GET /wheelchair/diagram-form?path=<absolute>` reads unchanged JSON
+(up to 2 MiB) and `GET /wheelchair/diagram-html?path=<absolute>` serves static HTML with the
+same CSP. Both require a file directly inside a registered plan's `graphs/` directory.
+Archive leaves the thread open with a system needs card if the machine reports that upload
+removal failed; its response includes `uploads_removed` and, on failure, `uploads_error`.

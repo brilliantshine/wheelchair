@@ -157,7 +157,10 @@ test('archive keeps and reports a worktree mid-rebase', async () => {
     await write(path.join(repo, 'rebase.txt'), 'main\n');
     git(['-C', repo, 'add', 'rebase.txt']); git(['-C', repo, 'commit', '-m', 'main change']);
     assert.equal(git(['-C', worktree, 'rebase', 'main'], { allowFailure: true }).status, 1);
+    await write(path.join(env.state, 'uploads', 'archive-rebase', '1-file'), 'saved');
     const result = await api(env, 'POST', '/v1/archive', { thread_id: 'archive-rebase' }, hubHeader);
+    assert.equal(result.body.uploads_removed, null);
+    assert.equal(await fs.readFile(path.join(env.state, 'uploads', 'archive-rebase', '1-file'), 'utf8'), 'saved');
     assert.equal(result.status, 200); assert.deepEqual(result.body.removed, []);
     assert.deepEqual(result.body.kept, [{ worktree, reason: 'rebase in progress' }]);
     await fs.access(worktree);
@@ -929,5 +932,80 @@ test('/v1/projects lists git folders, expands ~, and checks paths', async () => 
       assert.ok(both.found && both.checked.ok);
       assert.equal('checked' in listed.body, false);
     });
+  } finally { await env.close(); }
+});
+
+test('uploads sanitize, stream, serve, and enforce admission and size', async () => {
+  const env = await service(await temp());
+  const upload = async (name, body = 'hello') => fetch(`${env.base}/v1/uploads?thread_id=t&name=${encodeURIComponent(name)}`, { method: 'POST', headers: hubHeader, body });
+  try {
+    assert.equal((await upload('x')).status, 409);
+    await start(env);
+    for (const [name, expected] of [['name', '1-name'], ['name', '2-name'], ['...é x.txt', '3---x.txt'], ['...', '4-file'], ['a'.repeat(116) + '.png', `5-${'a'.repeat(96)}.png`]]) {
+      const r = await upload(name); assert.equal(r.status, 201); assert.equal(path.basename((await r.json()).path), expected);
+    }
+    const dir = path.join(env.state, 'uploads', 't');
+    const over = await upload('huge', Buffer.alloc(25 * 1024 * 1024 + 1)); assert.equal(over.status, 413);
+    assert.equal((await fs.readdir(dir)).length, 5);
+    await write(path.join(dir, '6-image.png'), 'png');
+    let r = await fetch(`${env.base}/v1/uploads/t/6-image.png`, { headers: hubHeader });
+    assert.equal(r.status, 200); assert.equal(r.headers.get('content-type'), 'image/png'); assert.equal(r.headers.get('x-content-type-options'), 'nosniff'); assert.equal(await r.text(), 'png');
+    r = await fetch(`${env.base}/v1/uploads/t/3---x.txt`, { headers: hubHeader }); assert.equal(r.headers.get('content-type'), 'application/octet-stream'); assert.equal(r.headers.get('content-disposition'), 'attachment'); await r.text();
+    assert.equal((await fetch(`${env.base}/v1/uploads/t/1-missing`, { headers: hubHeader })).status, 404);
+    assert.equal((await fetch(`${env.base}/v1/uploads/t/bad`, { headers: hubHeader })).status, 400);
+    env.instance.sessions['wc-t-lead'].archived_pending = true; assert.equal((await upload('x')).status, 409);
+    env.instance.sessions['wc-t-lead'].archived_pending = false; env.instance.sessions['wc-t-lead'].status = 'stopped'; assert.equal((await upload('x')).status, 409);
+    const archived = await api(env, 'POST', '/v1/archive', { thread_id: 't' }, hubHeader); assert.equal(archived.body.uploads_removed, true); await assert.rejects(fs.stat(dir), { code: 'ENOENT' });
+  } finally { await env.close(); }
+});
+
+test('image cards are validated and copied before spooling, including archive ordering', async () => {
+  const root = await temp(); const env = await service(root); const headers = { 'x-wheelchair-session-token': 'alpha' };
+  try {
+    await start(env); const png = path.join(root, 'picture.PNG'); await write(png, 'image'); const txt = path.join(root, 'picture.txt'); await write(txt, 'text');
+    const relative = await api(env, 'POST', '/v1/agent/cards', { kind: 'image', path: 'shot.png', title: 'x' }, headers);
+    assert.equal(relative.status, 422); assert.match(JSON.stringify(relative.body), /image path must be absolute/);
+    assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 0);
+    await assert.rejects(fs.stat(path.join(env.state, 'uploads', 't')), { code: 'ENOENT' });
+    assert.equal((await api(env, 'POST', '/v1/agent/cards', { kind: 'image', path: txt, title: 'x' }, headers)).status, 422);
+    assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 0);
+    assert.equal((await api(env, 'POST', '/v1/agent/cards', { kind: 'image', path: png, title: 'x' }, headers)).status, 202);
+    const spool = await fs.readdir(path.join(env.state, 'spool', 'cards')); const card = JSON.parse(await fs.readFile(path.join(env.state, 'spool', 'cards', spool[0]), 'utf8'));
+    assert.equal(await fs.readFile(card.path, 'utf8'), 'image'); assert.notEqual(card.path, png);
+    let release, entered; const gate = new Promise(r => { release = r; }); const started = new Promise(r => { entered = r; });
+    env.instance.options.beforeImageLock = async () => { entered(); await gate; };
+    const late = api(env, 'POST', '/v1/agent/cards', { kind: 'image', path: png, title: 'late' }, headers); await started;
+    assert.equal((await api(env, 'POST', '/v1/archive', { thread_id: 't' }, hubHeader)).body.uploads_removed, true); release(); assert.equal((await late).status, 409);
+    await assert.rejects(fs.stat(path.join(env.state, 'uploads', 't')), { code: 'ENOENT' });
+  } finally { await env.close(); }
+});
+
+test('archive cancels a paused upload before acquiring the lock', async () => {
+  const env = await service(await temp()); try {
+    await start(env); let began; const started = new Promise(r => { began = r; });
+    const upload = new Promise(resolve => {
+      const req = http.request(`${env.base}/v1/uploads?thread_id=t&name=slow`, { method: 'POST', headers: hubHeader }, res => { res.resume(); res.on('end', () => resolve(res.statusCode)); });
+      req.on('error', () => resolve('dropped')); req.write('partial');
+      const poll = setInterval(() => { if (env.instance.uploadRequests.get('t')?.size) { clearInterval(poll); began(); } }, 5);
+    });
+    await started; const at = Date.now(); const result = await api(env, 'POST', '/v1/archive', { thread_id: 't' }, hubHeader);
+    assert.ok(Date.now() - at < 5000); assert.equal(result.body.uploads_removed, true); assert.ok([409, 'dropped'].includes(await upload));
+    await assert.rejects(fs.stat(path.join(env.state, 'uploads', 't')), { code: 'ENOENT' });
+  } finally { await env.close(); }
+});
+
+
+test('a retained non-rebase session cannot post an image after archive', async () => {
+  const root = await temp(); const env = await service(root); try {
+    const session = await start(env); const record = env.instance.sessions[session.name];
+    record.created_worktree = true; env.instance.mergeInProgress = () => false; env.instance.rebaseInProgress = () => false;
+    // Force a non-rebase retention without relying on a real checkout.
+    env.instance.archiveCommit = () => ({ ok: false, reason: 'cannot commit' });
+    env.instance.mergeInProgress = () => true;
+    const image = path.join(root, 'image.png'); await write(image, 'image');
+    const result = await api(env, 'POST', '/v1/archive', { thread_id: 't' }, hubHeader);
+    assert.equal(result.body.kept[0].reason, 'cannot commit'); assert.equal(result.body.uploads_removed, true);
+    assert.equal((await api(env, 'POST', '/v1/agent/cards', { kind: 'image', path: image, title: 'x' }, { 'x-wheelchair-session-token': 'alpha' })).status, 409);
+    assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 0);
   } finally { await env.close(); }
 });
