@@ -42,7 +42,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 15 | Watched agents never end a turn to wait on their own background work; they wait in the foreground. The agent reminder adds a line telling an agent that did to wait in the foreground now. No exemption in the hub. | The hub cannot see a CLI's background jobs; a rule costs nothing and Codex already works this way. | user |
 | 16 | Supersedes the Terms part of 13: a child is outstanding only while it owes a reply or is still waiting to start; `finished` is not consulted. Reviewer/verifier reminder gets the background-work line. | Review round 2 intent findings, upheld. | review-round-2 |
 | 17 | Stage 3 from a quiet turn waits until the starter reminder is delivered; a starter that dies with the reminder queued sends it straight to Collin's card. | Review round 2 mechanics findings, upheld. | review-round-2 |
-| 18 | A child with a non-empty queue also counts as outstanding. | Review round 3 mechanics finding, upheld. | review-round-3 |
+| 18 | A child with a non-empty queue also counts as outstanding. Decisions 16 and 18 together supersede Decision 9's second sentence: `finished` plays no part in "waiting on others" (Spec Terms is authoritative). | Review round 3 mechanics finding, upheld. | review-round-3 |
 
 ## Spec
 
@@ -178,7 +178,12 @@ card rendering is reused unchanged.
   on the starter nudge: message the agent, or stop and replace it.
 - `protocol/app/reviewer.md` and `protocol/app/verifier.md`: if something stops you
   finishing (a conflict in your brief, something you cannot read or run), say so as your report
-  rather than ending silently with no report; an app reminder means your last turn ended with no report.
+  rather than ending silently with no report. verifier.md gains a third report form,
+  `VERDICT: BLOCKED` followed by `REASON: <what stopped you>`, which is not a `GAP` and never
+  starts remediation; sub-lead.md and lead.md, where they handle a verifier's result, treat it
+  as a problem with the verifier's setup to fix or raise, then start a fresh verifier.
+  reviewer.md gains one line form, `BLOCKED: <what stopped you>`, given instead of findings;
+  the lead restarts that reviewer and the round does not count, like a dead reviewer. an app reminder means your last turn ended with no report.
 - Every watched role's file (worker, mapper, sub-lead, reviewer, verifier): never end a turn to
   wait on your own background work (a background command, a subagent, a monitor); wait for it in
   the foreground, because the app reads an ended turn with no report as having stopped. A
@@ -326,6 +331,8 @@ state or timers.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| claude intent | minor | Decision 9's `finished`-based sentence never superseded in the log | upheld | Decision 18 states the supersession |
+| claude intent | minor | Verifier/reviewer have no report form for being blocked; a stuck verifier would write FAIL and start remediation | upheld | `VERDICT: BLOCKED` and `BLOCKED:` forms (Rules) |
 
 ## Prior Work
 
