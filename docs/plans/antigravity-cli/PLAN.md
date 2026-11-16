@@ -382,7 +382,7 @@ a worker with `--provider gemini` and check its `result` card arrives.
 | T4 | Machine: `agy` adapter, global-hook fallback, hook.sh, service status/prompt polling/login | `machine/adapters/`, `machine/service.js`, `machine/hook.sh`, `machine/lib/hook-post.js`, `machine/test/` (not fixtures) | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-6 (t4-a1) | `bash machine/test/run.sh` | done |
 | T5 | Pages: Settings, thread, threads show Antigravity; browser tests | `viewer/pages/{settings,thread,threads}.js`, `viewer/test/*.spec.js` | standard, gpt-6.1-terra (asked for claude; hub: \"Could not use claude; using gpt\") | wc-9340ecf1256c-worker-7 (t5-a1) | `npm --prefix viewer run test:browser` | done |
 | T6 | Protocol, API docs, routers | `protocol/app/{lead,sub-lead}.md`, `machine/API.md`, `viewer/app/API.md`, `machine/AGENTS.md`, `viewer/AGENTS.md`, `codex/AGENTS.md` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-8 (t6-a1) | protocol-rules test; grep for two-provider wording | done |
-| T7 | Graph-arrow browser test skips `form` picture files, as it skips `run` ones | `viewer/test/browser.spec.js` | light | — | the one test, both browsers | not started |
+| T7 | Graph-arrow browser test skips `form` picture files, as it skips `run` ones | `viewer/test/browser.spec.js` | light, gpt-6-luna | wc-9340ecf1256c-worker-9 (t7-a1) | the one test, both browsers | in progress |
 
 ## Log
 
