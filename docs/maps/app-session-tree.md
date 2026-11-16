@@ -20,3 +20,5 @@ start with brief -> machine types first message -> turn -> turn-end hook -> hub 
 ## What I did not look at
 
 Provider selection details, worktree lifecycle, or transcript parsing internals.
+
+> Risk-flow recheck at `635c45f07991f31191f2ab1443b52b4ee76559d5`: see [app-risks.md](app-risks.md).

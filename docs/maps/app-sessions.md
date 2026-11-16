@@ -17,3 +17,5 @@ message -> session queue -> ready and idle -> machine submit -> sent history
 ## What I did not look at
 
 Archive failure cases in detail, account placement, or UI rendering.
+
+> Risk-flow recheck at `635c45f07991f31191f2ab1443b52b4ee76559d5`: see [app-risks.md](app-risks.md).
