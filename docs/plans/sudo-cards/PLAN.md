@@ -12,12 +12,6 @@ get buried as this file grows.
 
 ## Open Questions
 
-### Q3: What exactly is "double-click to confirm"?
-- **Context:** A literal double-click is unreliable on a phone.
-- **Options:** literal double-tap; or press Run, then a "Confirm: run as root" button appears
-  and must be pressed within a few seconds.
-- **Recommendation:** the two-step press.
-
 ### Q4: How does Collin know he is typing into the real password box?
 - **Context:** Q1 assumes a hostile agent. Such an agent can edit the thread page and show a
   lookalike password box. The real box lives on the helper's own address, which agents can't change.
@@ -46,6 +40,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 5 | Isolation must hold against a hostile agent: a separate helper, running under an identity agents can't control, with root-owned code agents can't edit, serves the password box and runs the command; the password never passes through the hub, the machine service or any page they serve | Collin picked "safe from a hostile agent" | user |
 | 6 | The helper runs as a root system service (installed once with sudo), checks Collin's password against his account via PAM and that he may use sudo, then runs the command as root. It is reachable only through Tailscale HTTPS on its own port | sudo authenticates the invoking user, so a separate unprivileged user can't use Collin's password; PAM keeps the check as strict as sudo's | defaulted |
 | 7 | Only a lead may post a sudo request; other sessions ask the lead with a `message`, and the lead decides whether to bring it to Collin. The hub refuses the card from any other role | Collin picked "only the lead" | user |
+| 8 | Confirm is two presses: Run, then a red "Confirm: run as root" button replaces it for 5 seconds; letting it lapse returns to Run. This lives on the helper's page, beside the password box | Collin picked "press, then confirm" | user |
 | 4 | The command is fixed when the card is posted; the run uses the stored text byte for byte and the card shows it in full, unabridged | IDEA.md: what runs is exactly what is shown | defaulted |
 
 ## Spec
@@ -54,6 +49,16 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 
 - Only a lead posts a sudo request card. The hub refuses it from any other role. Workers and
   sub-leads ask the lead by `message`; the role files (`protocol/app/*.md`, `cards.md`) say so.
+
+### What Collin sees
+
+- **In the thread:** a sudo card showing the command in full, what it does and why the lead
+  needs it, with three buttons: "Open to run" (a link to the helper's page for this request),
+  Decline, and Talk about it. No password field is ever in the thread page.
+- **On the helper's page:** the same command and reason (from the helper's own copy), a
+  password box, and Run. Pressing Run turns it into a red "Confirm: run as root" button for 5
+  seconds; pressing that sends the password and runs. Letting it lapse returns to Run.
+- After the run, both the helper page and the thread card show exit code and output.
 
 ### Isolation boundary
 
