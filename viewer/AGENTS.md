@@ -26,8 +26,7 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 | `app/balancer.js` | Provider and account placement, constraints and waiting decisions. |
 | `app/usage.js` | Account usage persistence, machine sign-in state, forecasts and ranking. |
 | `app/ready.js` | The Ready check before Start building: each machine reachable, on the hub's commit, and its CLIs logged in. |
-| `index.html` | The graph page. Holds the second copy of the box and group size constants the server's layout reserves room for |
-| `list.html`, `list.js` | The list of open graphs and registered plans |
+| `index.html` | The graph page, at `/wheelchair/?path=<graph>`; `/wheelchair/` with no path redirects to the app's Threads page. Holds the second copy of the box and group size constants the server's layout reserves room for |
 | `doc.html`, `doc.js` | The plan document page, read from a plan's `docs/plans/<slug>/`; its Markdown renderer is the shared `pages/markdown.js` |
 | `pages/aside.js` | Thread-page aside selection, panel, marks and list. |
 | `pages/` | The app's pages (threads, thread, doc, features, agents, settings, terminal), served at `/wheelchair/app/<page>` behind the remember cookie; their scripts and styles are public assets under `/wheelchair/assets/pages/`. `agents.html`/`agents.js` show the agent tree. `doc` opens a thread's MAP/IDEA/PLAN in the app (`doc.html`/`doc.js`/`doc.css`), and `markdown.js` is the Markdown renderer it shares with `doc.js` above, taking a link resolver |

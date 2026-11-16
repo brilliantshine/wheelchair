@@ -10,7 +10,7 @@
   // Every URL below lives under /wheelchair and carries no token — the cookie set on the
   // first-visit redirect authenticates every request from here on.
   function listUrl() {
-    return '/wheelchair/';
+    return '/wheelchair/app/threads';
   }
 
   function docHref(file) {

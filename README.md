@@ -173,7 +173,7 @@ node viewer/server.js --stop
 
 A machine can serve the viewer to your other devices over Tailscale: run `./install.sh --serve`,
 or `--no-serve` to decline. This runs it as an always-on `systemd` user service, from this
-checkout's code, at `https://<machine>.<tailnet>.ts.net/wheelchair/`. Open the bookmark once per
+checkout's code, at `https://<machine>.<tailnet>.ts.net/wheelchair/`, which opens the app. Open the bookmark once per
 device and it's remembered. `node viewer/server.js --rotate-token` locks every device out again. Everything, including
 dragging boxes, works on a phone.
 

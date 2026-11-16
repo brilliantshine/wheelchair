@@ -1,12 +1,14 @@
 'use strict';
 
-// End-to-end Playwright cases for the list and document pages against the *real* server —
+// End-to-end Playwright cases for the graph and document pages against the *real* server —
 // render.spec.js exercises the same DOM against page.route mocks; this file starts an actual
 // viewer/server.js child process (free port, temp --cache-root, exactly as
 // viewer/test/browser.spec.js and viewer/test/helpers/server.js do) and drives it the way an
 // agent and a browser actually would: `--open`, `--register-plan`, a fake `tmux` on PATH, and
 // real navigation. Rules and DOM are fixed by docs/plans/remote-viewer/PLAN.md's Spec sections
-// "The list page", "Plan documents", "Session labels", "On a phone" and "Validation".
+// "Plan documents", "On a phone" and "Validation". The old list page is gone: /wheelchair/ with no
+// graph path now redirects to the app's Threads page, and the /list JSON it read is covered in
+// routes.test.js.
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
@@ -198,95 +200,25 @@ async function buildWorld(prefix = 'pages-') {
   };
 }
 
-// The lighter world for case 3: a bare server with nothing registered yet, plus a way to open a
-// graph afterwards, against the same running server, the way an agent's `--open` would while the
-// list page is already sitting open in a tab.
-async function buildLiveWorld() {
-  const root = await makeDir('pages-live-');
-  const bin = await makeFakeBin(root);
-  const graphDir = path.join(root, 'graphs');
-  await fs.mkdir(graphDir, { recursive: true });
-  const port = await freePort();
-  const baseEnv = { ...process.env, PATH: `${bin}:${process.env.PATH}` };
-  const serverEnv = { ...baseEnv, FAKE_TMUX_LIST: 'wheelchair' };
-  delete serverEnv.TMUX;
-  delete serverEnv.TMUX_PANE;
-  const server = await startServerEnv({ root, port, env: serverEnv });
-
-  return {
-    root, bin, port, url: server.url, token: server.token, graphDir, baseEnv,
-    async openGraph(name, title) {
-      const graphPath = path.join(this.graphDir, name);
-      await fs.writeFile(graphPath, minimalGraph(title));
-      const env = { ...this.baseEnv, TMUX: 'yes', TMUX_PANE: '%1', FAKE_SESSION_NAME: 'wheelchair' };
-      const result = await run(['--cache-root', this.root, '--port', String(this.port), '--open', graphPath], env);
-      assert.equal(result.code, 0, result.stderr);
-      return graphPath;
-    },
-    async stop() { await server.stop(); },
-  };
-}
-
 // ---------------------------------------------------------------------------
-// Cases 1, 2, 4, 5, 6: one shared world, default viewport.
+// One shared world, default viewport.
 // ---------------------------------------------------------------------------
 
-test.describe('list and document pages against a real server', () => {
+test.describe('graph and document pages against a real server', () => {
   let world;
 
   test.beforeAll(async () => { world = await buildWorld(); });
   test.afterAll(async () => { await world.stop(); });
 
-  test('a graph opened under a fake tmux session appears under that session, with its harness label and a working link into the graph viewer', async ({ page }) => {
+  test('a graph opened by an agent opens in the graph viewer by its path', async ({ page }) => {
     await page.goto(`${world.url}/?token=${world.token}`);
-
-    const group = page.locator('section.group').filter({ has: page.locator('.name', { hasText: 'wheelchair' }) });
-    await expect(group).toHaveCount(1);
-
-    const item = group.locator('ul.graph-list li').filter({ hasText: 'Running graph' });
-    await expect(item).toHaveCount(1);
-    await expect(item.locator('.harness')).toHaveText('Claude');
-
-    const link = item.locator('a');
-    // No token: the page relies on the cookie the earlier `?token=` navigation already set.
-    const expectedHref = '/wheelchair/?path=' + encodeURIComponent(world.runningGraph);
-    await expect(link).toHaveAttribute('href', expectedHref);
-
-    await link.click();
+    await page.goto(`${world.url}/?path=${encodeURIComponent(world.runningGraph)}`);
     await expect(page).toHaveTitle('Running graph');
     await expect(page.locator('svg#canvas')).toBeVisible();
   });
 
-  test('sessions group as not in tmux, ended, or running with a quoted attach command', async ({ page }) => {
-    await page.goto(`${world.url}/?token=${world.token}`);
-    await expect(page.locator('section.group')).toHaveCount(3);
-
-    const notInTmux = page.locator('section.group').filter({ has: page.locator('.name', { hasText: 'not in tmux' }) });
-    await expect(notInTmux).toHaveCount(1);
-    await expect(notInTmux.locator('ul.graph-list li')).toContainText(['No tmux graph']);
-
-    const ended = page.locator('section.group').filter({ has: page.locator('.name', { hasText: 'ghost' }) });
-    await expect(ended).toHaveCount(1);
-    await expect(ended.locator('.badge.ended')).toHaveText('ended');
-    await expect(ended.locator('code')).toHaveCount(0);
-
-    const running = page.locator('section.group').filter({ has: page.locator('.name', { hasText: 'wheelchair' }) });
-    await expect(running).toHaveCount(1);
-    await expect(running.locator('.badge.ended')).toHaveCount(0);
-    await expect(running.locator('code')).toHaveText("tmux attach -t 'wheelchair'");
-  });
-
-  test('the registered plan shows slug, repo, stripped status and session, and its document page navigates files and a same-plan link', async ({ page }) => {
-    await page.goto(`${world.url}/?token=${world.token}`);
-
-    const row = page.locator('table.plans tbody tr').filter({ hasText: 'demo' });
-    await expect(row).toHaveCount(1);
-    await expect(row.locator('td').nth(0)).toHaveText('demo');
-    await expect(row.locator('td').nth(1)).toHaveText('repo');
-    await expect(row.locator('td').nth(2)).toHaveText('approved');
-    await expect(row.locator('td').nth(3)).toHaveText('wheelchair');
-
-    await row.locator('a').click();
+  test('a registered plan\'s document page navigates files and a same-plan link', async ({ page }) => {
+    await page.goto(`${world.url}/docs?plan=${encodeURIComponent(world.planDir)}&token=${world.token}`);
     await expect(page.locator('#doc-title')).toHaveText('demo');
     await expect(page.locator('#content h1')).toHaveText('Demo plan');
     await expect(page.locator('nav#files a.current')).toHaveText('PLAN.md');
@@ -322,36 +254,11 @@ test.describe('list and document pages against a real server', () => {
     const rootResponse = await page.goto(`${world.url}/?token=wrong-token`);
     expect(rootResponse.status()).toBe(401);
     await expect(page.locator('#topbar')).toHaveCount(0);
-    await expect(page.locator('section.group')).toHaveCount(0);
 
     const docsResponse = await page.goto(`${world.url}/docs?plan=${encodeURIComponent(world.planDir)}&token=wrong-token`);
     expect(docsResponse.status()).toBe(401);
     await expect(page.locator('#doc')).toHaveCount(0);
   });
-});
-
-// ---------------------------------------------------------------------------
-// Case 3: a graph opened while the list page is already open.
-// ---------------------------------------------------------------------------
-
-test('a graph opened while the list page is open appears within one poll, with no reload', async ({ page }) => {
-  const world = await buildLiveWorld();
-  try {
-    await page.goto(`${world.url}/?token=${world.token}`);
-    await expect(page.locator('#empty')).toBeVisible();
-
-    await page.evaluate(() => { window.__pagesSpecMarker = true; });
-
-    await world.openGraph('later.json', 'Later graph');
-
-    const item = page.locator('ul.graph-list li').filter({ hasText: 'Later graph' });
-    await expect(item).toBeVisible({ timeout: 7000 });
-
-    const markerSurvived = await page.evaluate(() => window.__pagesSpecMarker === true);
-    expect(markerSurvived).toBe(true);
-  } finally {
-    await world.stop();
-  }
 });
 
 // ---------------------------------------------------------------------------
@@ -361,16 +268,9 @@ test('a graph opened while the list page is open appears within one poll, with n
 test.describe('narrow touch viewport', () => {
   test.use({ viewport: { width: 390, height: 800 }, hasTouch: true });
 
-  test('neither the list page nor the document page scrolls sideways at 390px', async ({ page }) => {
+  test('the document page does not scroll sideways at 390px', async ({ page }) => {
     const world = await buildWorld('pages-narrow-');
     try {
-      await page.goto(`${world.url}/?token=${world.token}`);
-      await expect(page.locator('section.group')).toHaveCount(3);
-      const listOverflow = await page.evaluate(() => (
-        document.documentElement.scrollWidth - document.documentElement.clientWidth
-      ));
-      expect(listOverflow).toBeLessThanOrEqual(1);
-
       await page.goto(`${world.url}/docs?plan=${encodeURIComponent(world.planDir)}&token=${world.token}`);
       await expect(page.locator('#content h1')).toHaveText('Demo plan');
       const docOverflow = await page.evaluate(() => (
@@ -433,19 +333,19 @@ test.describe('remember-me: the first visit and after', () => {
   test.beforeAll(async () => { world = await buildRememberWorld(); });
   test.afterAll(async () => { await world.stop(); });
 
-  test('opening the ?token= URL lands on /wheelchair/ with no token in page.url()', async ({ page }) => {
+  test('opening the ?token= URL lands on the app\'s Threads page with no token in page.url()', async ({ page }) => {
     await page.goto(`${world.url}/?token=${world.token}`);
     const landed = new URL(page.url());
-    expect(landed.pathname).toBe('/wheelchair/');
+    expect(landed.pathname).toBe('/wheelchair/app/threads');
     expect(landed.searchParams.has('token')).toBe(false);
   });
 
-  test('reloading /wheelchair/ in the same context shows the list', async ({ page }) => {
+  test('opening /wheelchair/ again in the same context goes straight to the app', async ({ page }) => {
     await page.goto(`${world.url}/?token=${world.token}`);
-    const response = await page.reload();
+    const response = await page.goto(`${world.url}/`);
     expect(response.status()).toBe(200);
-    await expect(page.locator('#topbar h1')).toHaveText('graphs & plans');
-    await expect(page.locator('table.plans tbody tr')).toHaveCount(1);
+    expect(new URL(page.url()).pathname).toBe('/wheelchair/app/threads');
+    await expect(page).toHaveTitle('Threads');
   });
 
   test('a fresh context opening /wheelchair/ gets the sign-in page (both sentences visible)', async ({ page }) => {
@@ -457,17 +357,15 @@ test.describe('remember-me: the first visit and after', () => {
     );
   });
 
-  test('from the list, a graph and a plan document open, and a drag saves, with no token in any request URL', async ({ page }) => {
+  test('after sign-in, a graph and a plan document open, and a drag saves, with no token in any request URL', async ({ page }) => {
     // The first visit legitimately carries the token; only requests issued after the page is
     // already signed in are checked below.
     await page.goto(`${world.url}/?token=${world.token}`);
-    await expect(page.locator('#topbar h1')).toHaveText('graphs & plans');
 
     const seenUrls = [];
     page.on('request', (req) => seenUrls.push(req.url()));
 
-    const graphLink = page.locator('ul.graph-list a').first();
-    await graphLink.click();
+    await page.goto(`${world.url}/?path=${encodeURIComponent(world.graphPath)}`);
     await page.waitForFunction(() => window.__viewer && !!window.__viewer.graph());
     await expect(page).toHaveTitle('Browser interaction fixture');
 
@@ -495,11 +393,7 @@ test.describe('remember-me: the first visit and after', () => {
     assert.equal(afterNode.x, beforeNode.x + 40);
     assert.equal(afterNode.y, beforeNode.y + 20);
 
-    // Back to the list — a fresh navigation, not the SPA — then open the registered plan document.
-    await page.goto(`${world.url}/`);
-    await expect(page.locator('#topbar h1')).toHaveText('graphs & plans');
-    const planLink = page.locator('table.plans tbody tr a').first();
-    await planLink.click();
+    await page.goto(`${world.url}/docs?plan=${encodeURIComponent(world.planDir)}`);
     await expect(page.locator('#content h1')).toHaveText('Demo plan');
 
     for (const url of seenUrls) {
@@ -507,11 +401,11 @@ test.describe('remember-me: the first visit and after', () => {
     }
   });
 
-  test('an old root bookmark /?token=… ends on /wheelchair/ with the cookie set', async ({ page, context }) => {
+  test('an old root bookmark /?token=… ends on the app\'s Threads page with the cookie set', async ({ page, context }) => {
     const origin = new URL(world.url).origin;
     await page.goto(`${origin}/?token=${world.token}`);
     const landed = new URL(page.url());
-    expect(landed.pathname).toBe('/wheelchair/');
+    expect(landed.pathname).toBe('/wheelchair/app/threads');
     expect(landed.searchParams.has('token')).toBe(false);
 
     const cookies = await context.cookies();
