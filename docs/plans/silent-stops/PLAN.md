@@ -369,6 +369,8 @@ state or timers.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Hub quiet-turn detector, Texts, timers, tests 1–18 (`viewer/test/app-quiet.test.js`), API.md/AGENTS.md notes | viewer/app/sessions.js, cards.js, hub.js (+ other viewer/app/*.js if needed), viewer/app/API.md, viewer/AGENTS.md, viewer/test/app-quiet.test.js | Standard, codex gpt-6.1-terra | wc-989abf66ac00-worker | node --test viewer/test/app-quiet.test.js; node --test viewer/test/*.test.js; npm --prefix viewer run test:browser | in progress |
+| T2 | Rules text in protocol/app/*.md and `viewer/test/protocol-rules.test.js` | protocol/app/cards.md, worker.md, mapper.md, sub-lead.md, lead.md, reviewer.md, verifier.md, viewer/test/protocol-rules.test.js | Standard, codex gpt-6.1-terra | wc-989abf66ac00-worker-2 | node --test viewer/test/protocol-rules.test.js; node --test viewer/test/*.test.js | in progress |
 
 ## Log
 
