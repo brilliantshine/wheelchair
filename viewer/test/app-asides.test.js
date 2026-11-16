@@ -490,3 +490,10 @@ test('a fresh hub retries pending cancels on init', async () => {
   assert.deepEqual(calls, [{ machine: 'hub', route: '/v1/aside-turns/turn', method: 'DELETE' }]);
   assert.deepEqual((await fresh.thread('pending-init')).pending_cancels, []);
 });
+
+test('brief carries one graphs entry per history entry that has a graph, and drops history', () => {
+  const out = asides.brief({ id: 'a', history: [{ kind: 'ask', text: 'q' }, { kind: 'ask', reply: 'r', graph: '/x/one.json' }, { kind: 'control' }, { graph: '/x/two.json' }] });
+  assert.deepEqual(out.graphs, [{ entry: 1, path: '/x/one.json' }, { entry: 3, path: '/x/two.json' }]);
+  assert.equal(out.history, undefined);
+  assert.deepEqual(asides.brief({ id: 'b', history: [] }).graphs, []);
+});

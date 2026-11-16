@@ -175,34 +175,33 @@
       into.appendChild(a);
     }
   }
-  function diagramSource(card) {
-    if (card.format === 'form' || card.format === 'html') {
-      const html = card.format === 'html';
-      const file = card.graph + (html ? '.html' : '.json');
-      if (thread().archived) return T + (html ? '/diagram-html?file=' : '/graph?file=') + encodeURIComponent(file);
-      const path = thread().worktree + '/docs/plans/' + card.plan + '/graphs/' + file;
-      return '/wheelchair/diagram-' + (html ? 'html' : 'form') + '?path=' + encodeURIComponent(path);
+  const pictureHref = (card) => '/wheelchair/app/picture?thread=' + encodeURIComponent(id) + '&card=' + encodeURIComponent(card.id);
+  const asideTitle = (a) => 'Aside: ' + String((a.anchor && a.anchor.quote) || '').slice(0, 40);
+  // One entry per picture file (the latest card for it wins), then one per saved aside graph.
+  function pictureList() {
+    const byFile = new Map();
+    for (const c of data.cards) if (c.kind === 'diagram') { byFile.delete(window.WCDiagram.fileKey(c)); byFile.set(window.WCDiagram.fileKey(c), c); }
+    const out = [...byFile.values()].map((c) => ({ title: c.title || c.graph, href: pictureHref(c) }));
+    for (const a of data.asides || []) {
+      for (const g of a.graphs || []) {
+        out.push({ title: asideTitle(a), href: '/wheelchair/app/picture?thread=' + encodeURIComponent(id) + '&aside=' + encodeURIComponent(a.id) + '&entry=' + g.entry });
+      }
     }
-    if (thread().archived) {
-      return '/wheelchair/?archive=' + encodeURIComponent(id) + '&file=' + encodeURIComponent(card.graph + '.json');
-    }
-    return '/wheelchair/?path=' + encodeURIComponent(thread().worktree + '/docs/plans/' + card.plan + '/graphs/' + card.graph + '.json');
+    return out;
   }
   function renderFiles() {
     filesEl.textContent = '';
     // Phones have no right column, so the plan files sit under the sticky header instead.
     headFilesEl.textContent = '';
     fileLinks(headFilesEl, 'btn small');
+    const pictures = pictureList();
+    for (const p of pictures) { const a = el('a', 'btn small', p.title); a.href = p.href; headFilesEl.appendChild(a); }
     headFilesEl.hidden = !headFilesEl.children.length;
     const list = el('div', 'file-list');
     fileLinks(list, 'file');
-    const pictures = data.cards.filter((c) => c.kind === 'diagram');
     if (pictures.length) {
       list.appendChild(el('span', 'file dim', 'graphs/ \u00b7 ' + pictures.length + (pictures.length === 1 ? ' picture' : ' pictures')));
-      for (const c of pictures) {
-        const a = el('a', 'file graph', c.title || c.graph); a.href = diagramSource(c); a.target = '_blank'; a.rel = 'noopener';
-        list.appendChild(a);
-      }
+      for (const p of pictures) { const a = el('a', 'file graph', p.title); a.href = p.href; list.appendChild(a); }
     }
     filesEl.hidden = !list.children.length;
     if (filesEl.hidden) return;
@@ -429,48 +428,6 @@
   }
   function seal() { const s = el('span', 'seal'); s.appendChild(icon(ICON.check, 14)); return s; }
 
-  function drawForm(value) {
-    const str = (v) => typeof v === 'string';
-    const optional = (v) => v === undefined || str(v);
-    const items = (v) => Array.isArray(v) && v.every(str);
-    if (!value || typeof value !== 'object' || !str(value.explanation)) throw new Error('Expected an explanation string');
-    const out = el('div', 'diagram-form');
-    out.appendChild(el('p', 'form-explanation', value.explanation));
-    const body = el('div', 'form-body form-' + value.form);
-    if (value.form === 'timeline') {
-      if (!Array.isArray(value.events) || !value.events.length || !value.events.every((e) => e && str(e.when) && str(e.label) && optional(e.detail))) throw new Error('Invalid timeline events');
-      for (const e of value.events) {
-        const row = el('div', 'form-event'); row.append(el('div', 'form-when', e.when), el('strong', '', e.label));
-        if (e.detail !== undefined) row.appendChild(el('div', 'form-detail', e.detail)); body.appendChild(row);
-      }
-    } else if (value.form === 'layers') {
-      if (!Array.isArray(value.layers) || !value.layers.length || !value.layers.every((e) => e && str(e.label) && optional(e.detail))) throw new Error('Invalid layers');
-      for (const e of value.layers) { const row = el('div', 'form-layer'); row.appendChild(el('strong', '', e.label)); if (e.detail !== undefined) row.appendChild(el('div', 'form-detail', e.detail)); body.appendChild(row); }
-    } else if (value.form === 'before-after' || value.form === 'side-by-side') {
-      const cols = value.form === 'before-after' ? [value.before, value.after] : value.columns;
-      if (!Array.isArray(cols) || (value.form === 'side-by-side' && (cols.length < 2 || cols.length > 4)) || !cols.every((c) => c && items(c.items) && (value.form === 'side-by-side' ? str(c.title) : optional(c.title)))) throw new Error('Invalid columns');
-      cols.forEach((c, i) => {
-        if (i === 1 && value.form === 'before-after') body.appendChild(el('div', 'form-arrow', '↓'));
-        const col = el('div', 'form-column'); col.appendChild(el('strong', '', c.title === undefined ? (i ? 'After' : 'Before') : c.title));
-        const ul = el('ul'); c.items.forEach((item) => ul.appendChild(el('li', '', item))); col.appendChild(ul); body.appendChild(col);
-      });
-    } else throw new Error('Missing or unknown form');
-    out.appendChild(body); return out;
-  }
-  function formCard(card, box, src) {
-    const target = el('div', 'form-content'); box.appendChild(target);
-    if (!formCache.has(card.id)) {
-      const promise = fetch(src).then(async (res) => {
-        if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.error || 'HTTP ' + res.status); }
-        return res.json();
-      });
-      formCache.set(card.id, promise);
-    }
-    formCache.get(card.id).then((value) => { target.appendChild(drawForm(value)); }).catch((e) => {
-      target.append(el('strong', '', 'This diagram could not be drawn'), el('div', 'form-detail', e.message));
-    });
-  }
-
   function renderCard(card) {
     const box = el('div', 'card card-' + card.kind);
     box.id = 'card-' + card.id; box.dataset.card = card.id; box.dataset.kind = card.kind;
@@ -664,16 +621,11 @@
       case 'diagram': {
         const bar = el('div', 'diagram-bar');
         bar.appendChild(el('h3', '', card.title));
-        const src = diagramSource(card);
-        if (card.format !== 'form') {
-          const link = el('a', 'btn small', 'Open full screen'); link.href = src; link.target = '_blank'; link.rel = 'noopener';
-          bar.appendChild(link);
-        }
+        const link = el('a', 'btn small', 'Open full size'); link.href = pictureHref(card); bar.appendChild(link);
         box.appendChild(bar);
         // An archived thread's worktree is gone: the graph page draws the committed JSON the hub reads from the branch, read-only.
         if (thread().archived) box.appendChild(el('p', 'dim diagram-note', 'Diagram kept on branch ' + (thread().branch || '')));
-        if (card.format === 'form') formCard(card, box, src);
-        else { const f = el('iframe', 'diagram'); f.src = src; f.title = card.title; if (card.format === 'html') f.setAttribute('sandbox', ''); box.appendChild(f); }
+        window.WCDiagram.draw(card, box, { id: id, archived: thread().archived, worktree: thread().worktree }, formCache);
         break;
       }
       case 'image': {
@@ -863,7 +815,7 @@
     const t = thread();
     document.title = (t.title || slug() || base(t.project)) + ' - thread';
     sync('head', [t.title, t.lead_name, t.stub, t.archived, t.worktree, t.branch, t.slug, slug(), archiveAsk, t.pr_url, t.cli, t.machine, t.sessions.map((x) => [x.name, x.live, x.model, x.role, x.created_at])], renderHead);
-    sync('files', [t.worktree, slug(), t.archived, data.cards.filter((c) => c.kind === 'diagram')], renderFiles);
+    sync('files', [t.worktree, slug(), t.archived, data.cards.filter((c) => c.kind === 'diagram'), (data.asides || []).map((a) => [a.id, a.anchor && a.anchor.quote, a.graphs])], renderFiles);
     sync('stub', [t.stub, t.sessions.length, t.depends_on_parent, t.ready, t.context, t.parent_pr_url], renderStub);
     sync('wait', [waitingLine(), accountNames], renderWait);
     sync('dead', [t.sessions.map((s) => [s.name, s.live]), t.archived], renderDead);

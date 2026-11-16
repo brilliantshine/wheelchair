@@ -6,7 +6,12 @@ const { appError } = require('./state.js');
 const settings = require('./settings.js');
 
 const now = () => new Date().toISOString();
-const brief = (aside) => { const { history, ...rest } = aside; return rest; };
+const brief = (aside) => {
+  const { history, ...rest } = aside;
+  const graphs = [];
+  (history || []).forEach((h, entry) => { if (h && h.graph) graphs.push({ entry, path: h.graph }); });
+  return { ...rest, graphs };
+};
 const find = (thread, id) => { const aside = (thread.asides || []).find((a) => a.id === id); if (!aside) throw appError(404, 'aside not found'); return aside; };
 async function model(hub, provider, slot) {
   try {
