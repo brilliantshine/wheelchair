@@ -286,6 +286,19 @@ state or timers.
 | claude intent | major | A child that asked its starter a question stays unfinished, exempting a starter that never answers | upheld | Outstanding child = owes a reply or waiting to start (Terms, Decision 16); test 15 |
 | claude intent | minor | Reviewer/verifier reminder lacks Decision 15's background-work line | upheld | Line added (Texts) |
 
+### Round 3 — 2026-11-15
+
+**Lanes:** claude (intent); gpt (mechanics); cross-family: yes.
+
+**Changed since Round 2:**
+- Terms: an outstanding child is one that is live and owes a reply or is still waiting to start; `finished` no longer consulted (Decision 16).
+- Texts: reviewer/verifier reminder gains the background-work line.
+- Detector 3: stage 2 → 3 on a quiet turn waits until the starter reminder is delivered; a starter that dies with the reminder queued goes straight to stage 3 (Decision 17).
+- Tests 15–17 added.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
