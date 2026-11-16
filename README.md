@@ -17,7 +17,7 @@ draw a picture when the answer has a shape, as readily as you set in Settings.
 
 ### First time
 
-1. On the machine that will run the agents (Linux with systemd), run
+1. On the machine that will run the agents (Linux with systemd; on Windows, see "On Windows"), run
    `./install.sh --serve` (see "Install"). Serving is what starts the app and the service
    that runs agent sessions. Without `--serve`, a headless machine asks; a machine with a
    display declines without asking.
@@ -38,6 +38,28 @@ draw a picture when the answer has a shape, as readily as you set in Settings.
    - **Writing style**: how leads write to you.
    - **Default project folder** (optional): a folder holding your repos, so New thread can
      list them.
+
+### On Windows
+
+Run it inside WSL2, which is a real Linux system, so the steps above apply unchanged. This
+route is untested. Docker is a poor fit: the agents need your real repos and sign-ins, and
+the sudo helper is meant to act on your machine, not on a container.
+
+1. Install WSL2 with Ubuntu or Debian: `wsl --install`.
+2. Turn on systemd: put this in `/etc/wsl.conf`, then run `wsl --shutdown` from Windows.
+   ```
+   [boot]
+   systemd=true
+   ```
+3. Inside WSL, install the [dependencies](#dependencies) and sign in to `gh` and `claude` or
+   `codex`. Install Tailscale inside WSL too, not only on Windows, so `tailscale serve` can
+   publish the app.
+4. Clone wheelchair and your projects under the Linux home folder (`~/...`), never under
+   `/mnt/c`. Windows drives are slow from WSL, and git and file permissions misbehave there.
+5. Follow "First time" above.
+
+WSL shuts down when idle, which stops the app and every agent session. Raise
+`vmIdleTimeout` in `%UserProfile%\.wslconfig`, or keep a WSL terminal open.
 
 ### Doing a piece of work
 
