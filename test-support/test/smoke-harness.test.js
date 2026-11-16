@@ -3,7 +3,25 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const { effectivePaths, assertIsolated, runProcesses } = require('../smoke/harness');
+const { effectivePaths, assertIsolated, runProcesses, waitForRunProcesses } = require('../smoke/harness');
+
+test('run process wait stops when empty and escalates within its deadlines', () => {
+  let time = 0, present = true;
+  const signals = [];
+  const proc = {
+    readdirSync: () => present ? ['123'] : [],
+    statSync: () => ({ uid: process.getuid() }),
+    readFileSync: () => 'HOME=/run/home\0',
+    readlinkSync: () => '/elsewhere',
+  };
+  const options = { proc, now: () => time, sleep: ms => { time += ms; }, kill: (pid, signal) => signals.push([pid, signal]), timeouts: [200, 100, 100] };
+  assert.equal(waitForRunProcesses('/run', { home: '/run/home' }, { ...options, sleep: ms => { time += ms; present = false; } }), 0);
+  assert.deepEqual(signals, []);
+  time = 0; present = true;
+  assert.equal(waitForRunProcesses('/run', { home: '/run/home' }, options), 1);
+  assert.equal(time, 400);
+  assert.deepEqual(signals, [[123, 'SIGTERM'], [123, 'SIGKILL']]);
+});
 
 test('run process matcher restricts uid, exact environment and directory boundaries', () => {
   const entries = {
