@@ -1,6 +1,6 @@
 ---
 slug: sudo-cards
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-15
 ---
 
@@ -56,6 +56,21 @@ A lead that needs a command run as root posts a `sudo` card. Collin sees the com
 does and why, and can Decline, Talk about it, or open a page served by a separate root-owned
 **sudo helper** on the lead's machine, type his password there, press Run then Confirm, and
 have the helper run the command. The lead gets the exit code and output, never the password.
+
+```mermaid
+flowchart TD
+  A[lead posts a sudo card: command, what it does, why] --> B[machine registers it with the root helper and gets a private page link]
+  B --> C[thread shows the card: Open to run, Decline, Talk about it]
+  C -- Talk about it --> T[lead is told; nothing runs]
+  C -- Decline --> D{helper confirms the decline?}
+  D -- yes --> X[card declined; lead told]
+  D -- run already started --> R
+  C -- Open to run --> P[helper's own page: password, Run, then Confirm]
+  P --> V{sudo asks for and accepts the password, and allows a root shell?}
+  V -- wrong 3 times or not allowed --> F[card failed; lead told why]
+  V -- yes --> R[helper runs the command as root, no password in reach]
+  R --> O[exit code and output saved on the machine, shown on the card, sent to the lead]
+```
 
 ### Who may ask
 
