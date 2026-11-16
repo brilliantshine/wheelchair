@@ -15,6 +15,9 @@ verified-by:
   - round: 4
     lane: gpt verifier (hub could not avoid gpt), FAIL
     checks: gpt standard (gpt-6.1-terra) build + remediations 1-3
+  - round: 5
+    lane: gpt verifier (hub could not avoid gpt), FAIL
+    checks: gpt standard (gpt-6.1-terra) build + remediations 1-4
 ---
 
 # Completion Report — Asides
@@ -360,3 +363,15 @@ not ok 237 - a starter that loses the freed port registers through the new holde
 # pass 354
 # fail 1
 ```
+
+### Verification 5 — 2026-11-15: FAIL, gap survives two fixes
+
+```
+GAP: Spec §5 Archiving / Remediation 4 — A delayed, timed-out POST can start an untracked turn after archive. If a retry is accepted and archive retains the worktree, compensation acknowledges the stopped turn (`viewer/app/asides.js:176-179`), deleting its cancellation record (`machine/lib/aside-turns.js:69`). The original delayed POST can then spawn again. Reproduction: `node /tmp/wc-verifier-5-race.js` printed `archived:true, hubTurn:null, machineHasTurn:false, starts:1`, followed by `status:202, machineState:"running", starts:2, hubTurn:null`.
+```
+
+This is the same gap Remediations 3 and 4 tried to close (archive leaves a machine turn the hub
+no longer tracks). Per `sub-lead.md`, a gap surviving two fix attempts is a plan defect: no
+third attempt was made; it went to the lead for Collin. Everything else the verifier checked
+passed: machine 90/90, aside unit 14/14, the shell suites, viewer unit 354/355 (known port
+test), browser 556 passed / 2 skipped / 2 known graph failures.
