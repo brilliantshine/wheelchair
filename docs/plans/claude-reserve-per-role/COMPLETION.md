@@ -96,3 +96,7 @@ The 409 and archived-diagram tests are flaky and passed on re-run. The arrow tes
 - `settings.held_back[role]` for a role outside the four (only leads and sub-leads reach `choose`, and they short-circuit earlier in the same expression) evaluates `undefined === true`, which is false, so it fails safe toward Claude.
 
 ## Remediation rounds
+
+### Remediation 1 — 2026-11-16
+
+Verification attempt 1 (GPT gpt-6.1-sol, commit `6e3d4e5`): FAIL. It found no implementation defect. Both gaps came from the environment: its worktree had no `viewer/node_modules` (the brief said not to install them), and the lifecycle test is the known issue `docs/known-issues.md:6`. See `REMEDIATION-1.md`. No code changed. Attempt 2 is a fresh verifier allowed to run `npm --prefix viewer ci`, told to check any failure against the pre-change base `99a6a3a` and `docs/known-issues.md`.
