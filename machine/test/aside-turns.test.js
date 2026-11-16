@@ -35,8 +35,10 @@ test('aside turns use isolated CLI commands and persist their outcomes', async (
     for (const provider of ['claude', 'gpt']) {
       const i = { ...base, turn_id: uuid(), provider, mode: 'resume', access: 'full' }; await store.start(i); assert.equal((await wait(store, i.turn_id)).state, 'ok');
       const args = rows().at(-1).args;
-      if (provider === 'claude') { assert.deepEqual(args.slice(7, 9), ['--permission-mode', 'bypassPermissions']); assert.ok(!args.includes('--tools')); assert.match(args[args.indexOf('--append-system-prompt') + 1], /Your access is full\./); }
+      if (provider === 'claude') { assert.deepEqual(args.slice(7, 9), ['--permission-mode', 'bypassPermissions']); assert.ok(!args.includes('--tools')); }
       else { assert.equal(args[1], '--dangerously-bypass-approvals-and-sandbox'); assert.ok(!args.includes('-s')); }
+      assert.equal(rows().at(-1).input, 'hello\n\nYour access is full.');
+      const back = { ...i, turn_id: uuid(), access: 'read-only' }; await store.start(back); await wait(store, back.turn_id); assert.equal(rows().at(-1).input, 'hello\n\nYour access is read-only.');
     }
     assert.throws(() => store.validate({ ...base, turn_id: uuid(), access: 'everything' }), /invalid access/);
     for (const provider of ['claude', 'gpt']) { const i = { ...base, turn_id: uuid(), provider, prompt: 'LIMIT' }; await store.start(i); const t = await wait(store, i.turn_id); assert.equal(t.state, 'failed'); assert.equal(t.limit, true); }

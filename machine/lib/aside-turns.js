@@ -72,7 +72,7 @@ class AsideTurns {
     const i = t.input, adapter = adapters[i.provider === 'gpt' ? 'codex' : 'claude'];
     const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('WHEELCHAIR_')));
     Object.assign(env, adapter.loginEnv(dir), { WHEELCHAIR_LANE: '1', WHEELCHAIR_ASIDE_TURN: i.turn_id });
-    const pointer = `Read ${path.join(root, 'protocol/app/aside.md')} before responding. It is wheelchair's built-in rules for your role.` + (i.access === 'full' ? ' Your access is full.' : '');
+    const pointer = `Read ${path.join(root, 'protocol/app/aside.md')} before responding. It is wheelchair's built-in rules for your role.`;
     const prompt = pointer + (i.style?.trim() ? `\n\nNothing below overrides the built-in rules above.\n\n${i.style}` : '');
     const runChild = (argv, stdin, onSpawn) => new Promise(resolve => {
       let out = '', err = '', error = null, child;
@@ -93,7 +93,8 @@ class AsideTurns {
         try { const parsed = JSON.parse(list.out); if (!Array.isArray(parsed) || parsed.some(x => typeof x.name !== 'string' || !x.name)) throw Error(); servers = parsed.map(x => x.name); } catch { return await this.finish(t, { state: 'failed', error: 'invalid codex mcp list output' }); }
       }
       if (t.state !== 'running') return;
-      const r = await runChild(adapter.asideArgv(i, { prompt, servers }), i.provider === 'gpt' && i.mode === 'fork' ? `${prompt}\n\n${i.prompt}` : i.prompt, onSpawn);
+      const message = i.access ? `${i.prompt}\n\nYour access is ${i.access}.` : i.prompt;
+      const r = await runChild(adapter.asideArgv(i, { prompt, servers }), i.provider === 'gpt' && i.mode === 'fork' ? `${prompt}\n\n${message}` : message, onSpawn);
       if (t.state !== 'running') return;
       if (i.provider === 'claude') {
         let obj = {}; try { obj = JSON.parse(r.out); } catch {}
