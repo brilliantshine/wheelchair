@@ -37,7 +37,7 @@ esac
   await write(pane, paneText);
   return { bin, log, pane };
 }
-async function hubServer(status = 200) {
+async function hubServer(status = 200, { failAfterStore = false } = {}) {
   const calls = []; let current = status; const delivered = new Set();
   const allowed = { idea: ['lead'], done: ['lead'], message: ['lead', 'sub-lead', 'worker', 'mapper'], result: ['worker', 'mapper', 'sub-lead'] };
   const server = http.createServer((request, response) => { let body = ''; request.on('data', c => { body += c; }); request.on('end', () => {
@@ -49,11 +49,12 @@ async function hubServer(status = 200) {
       if (!allowed[payload.kind]?.includes(role)) { code = 422; answer = { error: `${role || 'unknown'} may not post ${payload.kind || 'that card'}` }; }
       else if (payload.delivery_id && delivered.has(`${payload.thread_id}:${payload.delivery_id}`)) answer = { ok: true, duplicate: true };
       else if (payload.delivery_id) delivered.add(`${payload.thread_id}:${payload.delivery_id}`);
+      if (failAfterStore && code === 200 && !answer.duplicate) { code = 500; failAfterStore = false; }
     }
     calls.push({ path: request.url, body, status: code }); response.writeHead(code, { 'content-type': 'application/json' }); response.end(JSON.stringify(answer));
   }); });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  return { url: `http://127.0.0.1:${server.address().port}`, calls, setStatus: value => { current = value; }, close: () => new Promise(resolve => server.close(resolve)) };
+  return { url: `http://127.0.0.1:${server.address().port}`, calls, delivered, setStatus: value => { current = value; }, close: () => new Promise(resolve => server.close(resolve)) };
 }
 async function service(root, options = {}) {
   const fake = await fakeBin(root, options.pane || readyClaude, options.realGit); const state = path.join(root, 'state'); const secret = path.join(root, 'secret'); const listen = await port();
@@ -247,6 +248,21 @@ test('transcript copy dedupes content after source shrinks', async () => {
 });
 test('card spool keeps order and retries until acknowledged', async () => {
   const hub = await hubServer(503); const env = await service(await temp(), { config: { hub_url: hub.url } }); try { await start(env); await api(env, 'POST', '/v1/agent/cards', { kind: 'idea', bullets: [{ id: 'one', text: 'one' }] }, { 'x-wheelchair-session-token': 'alpha' }); await api(env, 'POST', '/v1/agent/cards', { kind: 'idea', bullets: [{ id: 'two', text: 'two' }] }, { 'x-wheelchair-session-token': 'alpha' }); assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 2); hub.setStatus(200); await env.instance.drainSpool('cards'); assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 0); const cards = hub.calls.filter(call => call.path.endsWith('/cards')); assert.match(cards.at(-2).body, /"id":"one"/); assert.match(cards.at(-1).body, /"id":"two"/); } finally { await env.close(); await hub.close(); }
+});
+test('a card stored before a hub 500 is queued and deduplicated on drain', async () => {
+  const hub = await hubServer(200, { failAfterStore: true }); const env = await service(await temp(), { config: { hub_url: hub.url } }); try {
+    await start(env);
+    const result = await api(env, 'POST', '/v1/agent/cards', { kind: 'idea', bullets: [{ id: 'one', text: 'one' }] }, { 'x-wheelchair-session-token': 'alpha' });
+    assert.equal(result.status, 202);
+    assert.equal(result.body.spooled, true);
+    await env.instance.drainSpool('cards');
+    assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 0);
+    assert.equal(hub.delivered.size, 1);
+    const cards = hub.calls.filter(call => call.path.endsWith('/cards')).map(call => JSON.parse(call.body));
+    assert.equal(cards.length, 2);
+    assert.ok(cards[0].delivery_id);
+    assert.equal(cards[0].delivery_id, cards[1].delivery_id);
+  } finally { await env.close(); await hub.close(); }
 });
 test('a refused card is returned to its worker, retained as rejected, and does not stop a following result', async () => {
   const hub = await hubServer(); const env = await service(await temp(), { config: { hub_url: hub.url } }); try {
