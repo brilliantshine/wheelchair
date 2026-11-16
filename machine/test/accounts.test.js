@@ -2,11 +2,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const adapters = require('../adapters');
 const { limitedUntil } = require('../lib/limits');
+const { makeTempSync } = require('../../test-support/run-dir');
 test('exhausted windows and expired resets choose a future reset', () => {
   const now = Date.parse('2026-01-01T00:00:00Z');
   const reading = { five_hour: { used: 100, resets_at: '2026-01-01T05:00:00Z' }, week: { used: 40, resets_at: '2026-01-08T00:00:00Z' } };
@@ -16,7 +16,7 @@ test('exhausted windows and expired resets choose a future reset', () => {
   assert.equal(limitedUntil(null, now), '2026-01-01T01:00:00.000Z');
 });
 test('adapters seed account files and locate transcripts', async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'wc-accounts-'));
+  const root = makeTempSync('wc-accounts-');
   for (const cli of ['claude', 'codex']) {
     const dir = path.join(root, cli); adapters[cli].seed(dir, cli);
     assert.equal(fs.statSync(dir).mode & 0o777, 0o700);
@@ -39,7 +39,7 @@ test('Claude failure hooks and status line survive an offline service', () => {
   assert.equal(adapters.claude.hookEvent({ hook_event_name: 'StopFailure', error: 'rate_limit' }).type, 'limit-hit');
   assert.equal(adapters.claude.hookEvent({ hook_event_name: 'StopFailure', error_type: 'rate_limit' }).type, 'limit-hit');
   assert.deepEqual(adapters.claude.hookEvent({ hook_event_name: 'StopFailure', error: 'broken' }), { type: 'turn-failed', error: 'broken' });
-  const state = fs.mkdtempSync(path.join(os.tmpdir(), 'wc-statusline-'));
+  const state = makeTempSync('wc-statusline-');
   fs.writeFileSync(path.join(state, 'machine.json'), JSON.stringify({ host: '127.0.0.1', port: 1 }));
   const payload = JSON.stringify({ model: { display_name: 'opus' }, rate_limits: { five_hour: { used_percentage: 42, resets_at: 1800000000 } } });
   const result = spawnSync(path.join(__dirname, '../statusline.sh'), ['claude', 'wc-test-lead'], { input: payload, encoding: 'utf8', env: { ...process.env, WHEELCHAIR_STATE_DIR: state, WHEELCHAIR_SESSION_TOKEN: 'test' } });
@@ -56,7 +56,7 @@ test('captured login screens parse wrapped URLs and device codes', () => {
   assert.deepEqual(adapters.codex.parseLogin(fixture('codex.txt')), { url: 'https://auth.openai.com/codex/device', code: 'ABCD-12345', wantsCode: false });
 });
 test('seed links instruction files and preserves existing Codex configuration', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'wc-seed-'));
+  const root = makeTempSync('wc-seed-');
   const prev = { CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR, CODEX_HOME: process.env.CODEX_HOME };
   try {
     for (const [cli, env, name] of [['claude', 'CLAUDE_CONFIG_DIR', 'CLAUDE.md'], ['codex', 'CODEX_HOME', 'AGENTS.md']]) {
