@@ -428,7 +428,7 @@ Collin chose "keep going" after three rounds without a clean one; budget reset.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | Root sudo helper: intake/page sockets, sentinel password check, run, page assets, unit tests | `sudo-helper/helper.py`, `sudo-helper/static/`, `sudo-helper/test/` (not `install*`) | standard, gpt (gpt-6.1-terra) | wc-306ee0793e11-worker (medium) | dispatched |
+| T1 | Root sudo helper: intake/page sockets, sentinel password check, run, page assets, unit tests | `sudo-helper/helper.py`, `sudo-helper/static/`, `sudo-helper/test/` (not `install*`) | standard, gpt (gpt-6.1-terra) | wc-306ee0793e11-worker (medium) | done |
 | T2 | Helper installer + `--uninstall`, fixture test; root `install.sh` missing-helper hint | `sudo-helper/install.sh`, `sudo-helper/test/install-test.sh`, `sudo-helper/test/install-fixtures/`, hint lines in `install.sh`, `install/test/run.sh` | standard, gpt (gpt-6.1-terra) | wc-306ee0793e11-worker-2 (medium) | done |
 | T3 | Machine: sudo card registration, lead-only, request file, outcome delivery, cancel route | `machine/service.js`, `machine/lib/sudo.js`, `machine/test/`, `machine/API.md`, `machine/AGENTS.md` | standard, gpt (gpt-6.1-terra) | wc-306ee0793e11-worker-3 (medium) | done |
 | T4 | Hub: sudo kind, `sudo-outcome`, `applySudoState`, Decline/Talk presses, thread page card; `cards.md` sudo kind | `viewer/app/{card,cards,routes,threads,machine-client,state,chat}.js`, `viewer/pages/thread.js` + card CSS, `viewer/app/API.md`, `protocol/app/cards.md`, `viewer/test/app-sudo.*` | standard, claude (claude-sonnet-5-5) | wc-306ee0793e11-worker-4 (medium) | dispatched |
@@ -444,3 +444,8 @@ Collin chose "keep going" after three rounds without a clean one; budget reset.
 - 2026-11-15 — Choice: T3, `machine/lib/sudo.js`: a late `waiting` poll answer after `running` is ignored rather than moving the saved state back.
 - 2026-11-15 — Choice: T3, `machine/test/sudo.test.js`: the fake helper lives inside the test file.
 - 2026-11-15 — Sub-lead: T3 accepted; `machine/test/run.sh` 98/98 re-run by the sub-lead.
+- 2026-11-15 — Choice: T1, `helper.py`: a non-socket file at a socket path stops the helper at start instead of being unlinked.
+- 2026-11-15 — Choice: T1, `helper.py`: each sudo check call is bounded by `run_timeout`.
+- 2026-11-15 — Choice: T1, `page.js`: the Run POST stays open until the command finishes; the page polls status meanwhile.
+- 2026-11-15 — Choice: T1, `helper.py`: a configured user of root counts as able to write every path in the editable scan.
+- 2026-11-15 — Sub-lead: T1 accepted; 6/6 helper tests and T2's installer test (now copying the real helper files) re-run by the sub-lead. Notes for T5 / follow-up: `sudo-helper/__pycache__/` from test runs is not ignored (it blocked `worktree-remove` of the T1 worktree, left in place; no rm); `page.js` shows "Could not run the request." and stops refreshing if the long Run POST drops (e.g. phone network), though the command keeps running; `sudo -k -v` as a flag combination is assumed valid on Debian 13 sudo and has not been checked against real sudo here.
