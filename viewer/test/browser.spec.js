@@ -436,209 +436,14 @@ test('a drag interrupted by an agent write mid-gesture loses the drag and keeps 
 });
 
 // ============================================================================================
-// Clearing `was`: after an agent resets an `agreed` entry, approving it again through the page
-// removes the field.
-// ============================================================================================
-test('approving a reset entry through the page clears was', async ({ page }) => {
-  const ctx = await launch('verdicts.json');
-  try {
-    await agentPut(ctx, (g) => {
-      Object.assign(entry(g, 'agree'), { origin: 'proposed', was: 'agreed' });
-    });
-    let onDisk = await diskGraph(ctx);
-    assert.equal(entry(onDisk, 'agree').was, 'agreed');
-
-    await page.goto(pageUrl(ctx));
-    await ready(page);
-    assert.equal(entry(await pageGraph(page), 'agree').was, 'agreed');
-
-    await clickNode(page, 'agree');
-    const collector = collectViewResponses(page);
-    await page.locator('#approve').click();
-    await expect.poll(() => collector.responses.some((r) => r.status() === 200)).toBe(true);
-    collector.stop();
-
-    onDisk = await diskGraph(ctx);
-    assert.equal(entry(onDisk, 'agree').origin, 'agreed');
-    assert.equal(entry(onDisk, 'agree').was, null);
-  } finally {
-    await ctx.stop();
-  }
-});
-
-// ============================================================================================
-// Box-select then approve sets `agreed` on every node and every edge whose endpoints are both
-// selected.
-// ============================================================================================
-test('box-select then approve sets agreed on every selected node and implied edge', async ({ page }) => {
+test('select-all drag issues exactly one PUT /view', async ({ page }) => {
   const ctx = await launch('interactive.json');
   try {
     await page.goto(pageUrl(ctx));
     await ready(page);
 
-    const boxA = await nodeBox(page, 'a').boundingBox();
-    const boxB = await nodeBox(page, 'b').boundingBox();
-    const x0 = Math.min(boxA.x, boxB.x) - 30;
-    const y0 = Math.min(boxA.y, boxB.y) - 30;
-    const x1 = Math.max(boxA.x + boxA.width, boxB.x + boxB.width) + 30;
-    const y1 = Math.max(boxA.y + boxA.height, boxB.y + boxB.height) + 30;
-
-    await page.mouse.move(x0, y0);
-    await page.mouse.down();
-    await page.mouse.move(x1, y1, { steps: 6 });
-    await page.mouse.up();
-
-    const sel = await selection(page);
-    assert.deepEqual(sel, ['a', 'a->b', 'b'].sort());
-
-    const collector = collectViewResponses(page);
-    await page.locator('#approve').click();
-    await expect.poll(() => collector.responses.some((r) => r.status() === 200)).toBe(true);
-    collector.stop();
-
-    const onDisk = await diskGraph(ctx);
-    assert.equal(entry(onDisk, 'a').origin, 'agreed');
-    assert.equal(entry(onDisk, 'b').origin, 'agreed');
-    assert.equal(entry(onDisk, 'a->b').origin, 'agreed');
-  } finally {
-    await ctx.stop();
-  }
-});
-
-// ============================================================================================
-// R5a — the bulk gesture, driven through the real UI, on a graph that already holds verdicts.
-// Starting from an all-unruled fixture (as the earlier box-select test does) cannot exercise the
-// additive-only rule at all: there is nothing already-ruled to protect. bulk-verdicts.json holds
-// one already-agreed node+edge, two already-rejected nodes and one already-rejected edge, and
-// several unruled ones, so select-all + approve either (a) rules only the unruled and is accepted,
-// which is the fix, or (b) is refused outright with nothing ruled, which was the bug: the old page
-// set origin on every selected entry unconditionally, so two-or-more already-ruled entries in the
-// selection produced more than one reversal and the server's additive-only check refused the whole
-// write (PLAN.md §6, §13 "Bulk verdicts are additive").
-// ============================================================================================
-test('select-all approve on a graph already holding verdicts rules only the unruled, and a lone reversal still works', async ({ page }) => {
-  const ctx = await launch('bulk-verdicts.json');
-  try {
-    await page.goto(pageUrl(ctx));
-    await ready(page);
-
-    const unruled = ['unruled1', 'unruled2', 'unruled3', 'agreed1->unruled1', 'unruled1->unruled2'];
-    const struck = ['rejected1', 'rejected2', 'rejected1->rejected2'];
-    const approved = ['agreed1', 'unruled2->unruled3'];
-
-    const collector = collectViewResponses(page);
     await page.locator('#select-all').click();
-    await page.locator('#approve').click();
-    await expect.poll(() => collector.responses.some((r) => r.status() === 200)).toBe(true);
-    collector.stop();
-
-    // The write was accepted, not refused: every response the page received back is 200, never
-    // the 422 bulk-not-additive the original bug produced.
-    assert.ok(collector.responses.length > 0, 'the approve click issued a write');
-    for (const resp of collector.responses) {
-      assert.equal(resp.status(), 200, `expected the bulk approve to be accepted, got ${resp.status()}`);
-    }
-
-    const onDisk = await diskGraph(ctx);
-    for (const id of unruled) {
-      assert.equal(entry(onDisk, id).origin, 'agreed', `${id} should have been ruled on`);
-    }
-    for (const id of struck) {
-      assert.equal(entry(onDisk, id).origin, 'rejected', `${id} must stay struck`);
-    }
-    for (const id of approved) {
-      assert.equal(entry(onDisk, id).origin, 'agreed', `${id} must stay approved`);
-    }
-
-    // The deliberate single reversal §6 permits still works: selecting exactly one already-struck
-    // entry and approving it reverses that one entry, clearing its reset record.
-    await clickNode(page, 'rejected1');
-    assert.deepEqual(await selection(page), ['rejected1'], 'exactly one entry selected, no implied edge');
-
-    const single = collectViewResponses(page);
-    await page.locator('#approve').click();
-    await expect.poll(() => single.responses.some((r) => r.status() === 200)).toBe(true);
-    single.stop();
-
-    const afterReversal = await diskGraph(ctx);
-    assert.equal(entry(afterReversal, 'rejected1').origin, 'agreed', 'the lone struck entry reversed');
-    assert.equal(entry(afterReversal, 'rejected1').was, null, 'its reset record is cleared');
-  } finally {
-    await ctx.stop();
-  }
-});
-
-// ============================================================================================
-// R5a, mirror case — select-all + reject on a graph holding approved entries leaves them approved
-// and strikes only the unruled. Same additive-only rule, opposite verdict.
-// ============================================================================================
-test('select-all reject on a graph already holding verdicts strikes only the unruled', async ({ page }) => {
-  const ctx = await launch('bulk-verdicts.json');
-  try {
-    await page.goto(pageUrl(ctx));
-    await ready(page);
-
-    const unruled = ['unruled1', 'unruled2', 'unruled3', 'agreed1->unruled1', 'unruled1->unruled2'];
-    const struck = ['rejected1', 'rejected2', 'rejected1->rejected2'];
-    const approved = ['agreed1', 'unruled2->unruled3'];
-
-    const collector = collectViewResponses(page);
-    await page.locator('#select-all').click();
-    await page.locator('#reject').click();
-    await expect.poll(() => collector.responses.some((r) => r.status() === 200)).toBe(true);
-    collector.stop();
-
-    assert.ok(collector.responses.length > 0, 'the reject click issued a write');
-    for (const resp of collector.responses) {
-      assert.equal(resp.status(), 200, `expected the bulk reject to be accepted, got ${resp.status()}`);
-    }
-
-    const onDisk = await diskGraph(ctx);
-    for (const id of unruled) {
-      assert.equal(entry(onDisk, id).origin, 'rejected', `${id} should have been struck`);
-    }
-    for (const id of approved) {
-      assert.equal(entry(onDisk, id).origin, 'agreed', `${id} must stay approved`);
-    }
-    for (const id of struck) {
-      assert.equal(entry(onDisk, id).origin, 'rejected', `${id} must stay struck`);
-    }
-  } finally {
-    await ctx.stop();
-  }
-});
-
-// ============================================================================================
-// R5b — one write per action (PLAN.md §13). There is no per-entry fan-out because there are no
-// patches: a select-all approve is one PUT /view, and a select-all drag is one more. Counting is
-// done on the *requests* the page issues (the 'request' event, which fires the instant a request is
-// sent) rather than on responses that happened to arrive, and each count is checked only after
-// waiting well past when a queued second write would have appeared — the page's write queue drains
-// one job at a time, so a hypothetical per-entry fan-out would show up shortly after the first
-// response, not simultaneously with it.
-// ============================================================================================
-test('select-all approve issues exactly one PUT /view, and a select-all drag issues exactly one more', async ({ page }) => {
-  const ctx = await launch('interactive.json');
-  try {
-    await page.goto(pageUrl(ctx));
-    await ready(page);
-
-    const approveReqs = collectViewRequests(page);
-    const approveResps = collectViewResponses(page);
-    await page.locator('#select-all').click();
-    await page.locator('#approve').click();
-    await expect.poll(() => approveResps.responses.some((r) => r.status() === 200)).toBe(true);
-    // Well past the first response, so a queued second write from a fan-out bug would have drained
-    // and been captured by now.
-    await page.waitForTimeout(1500);
-    approveReqs.stop();
-    approveResps.stop();
-    assert.equal(approveReqs.requests.length, 1,
-      `expected exactly one PUT /view for the select-all approve, got ${approveReqs.requests.length}`);
-
-    // The selection survives the write (performWrite only prunes ids that stopped existing), so
-    // the same select-all selection is what gets dragged next.
-    assert.ok((await selection(page)).length > 1, 'the selection is still the whole graph');
+    assert.ok((await selection(page)).length > 1);
 
     const dragReqs = collectViewRequests(page);
     const dragResps = collectViewResponses(page);
@@ -1015,7 +820,11 @@ test('a page write through the browser carries an Origin the server accepts', as
     await clickNode(page, 'a');
 
     const collector = collectViewResponses(page);
-    await page.locator('#approve').click();
+    const start = await center(nodeBox(page, 'a'));
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    await page.mouse.move(start.x + 30, start.y + 20, { steps: 5 });
+    await page.mouse.up();
     await expect.poll(() => collector.responses.some((r) => r.status() === 200)).toBe(true);
     const accepted = collector.responses.find((r) => r.status() === 200);
     assert.ok(accepted, 'the write was accepted');
@@ -1030,51 +839,7 @@ test('a page write through the browser carries an Origin the server accepts', as
     collector.stop();
 
     const onDisk = await diskGraph(ctx);
-    assert.equal(entry(onDisk, 'a').origin, 'agreed', 'the file on disk changed');
-  } finally {
-    await ctx.stop();
-  }
-});
-
-// ============================================================================================
-// A 409 mid-approve is survived: the page re-reads and re-applies its verdicts rather than
-// resending the stale payload.
-// ============================================================================================
-test('a 409 mid-approve is survived by re-reading and re-applying the verdict', async ({ page }) => {
-  const ctx = await launch('interactive.json');
-  try {
-    await page.goto(pageUrl(ctx));
-    await ready(page);
-
-    await clickNode(page, 'a');
-    await clickNode(page, 'b', { shift: true });
-    await clickNode(page, 'g', { shift: true });
-    // a->b's endpoints are both selected, so it rides along implicitly (decision 63); the write
-    // under test still only needs to move a, b and g to "agreed".
-    assert.deepEqual(await selection(page), ['a', 'a->b', 'b', 'g'].sort());
-
-    // An agent restructures the graph from outside, between the page's last read and its write.
-    await agentPut(ctx, (g) => {
-      g.nodes.push({
-        id: 'agent-added', label: 'Agent added this', kind: 'note', origin: 'proposed', was: null,
-        exclusive: false, ref: null, note: null, graph: null, x: 0, y: 0,
-      });
-    });
-
-    const collector = collectViewResponses(page);
-    await page.locator('#approve').click();
-    await expect.poll(() => collector.responses.some((r) => r.status() === 200), { timeout: 10000 }).toBe(true);
-    collector.stop();
-
-    const statuses = collector.responses.map((r) => r.status());
-    assert.ok(statuses.includes(409), `expected a 409 among ${JSON.stringify(statuses)}`);
-    assert.ok(statuses[statuses.length - 1] === 200 || statuses.includes(200));
-
-    const onDisk = await diskGraph(ctx);
-    assert.equal(entry(onDisk, 'a').origin, 'agreed');
-    assert.equal(entry(onDisk, 'b').origin, 'agreed');
-    assert.equal(entry(onDisk, 'g').origin, 'agreed');
-    assert.ok(entry(onDisk, 'agent-added'), "the agent's restructuring survived");
+    assert.equal(entry(onDisk, 'a').x, 180, 'the file on disk changed');
   } finally {
     await ctx.stop();
   }
@@ -1108,7 +873,11 @@ test('the browser suite never touches the live default cache root', async ({ pag
     await page.goto(pageUrl(ctx));
     await ready(page);
     await clickNode(page, 'a');
-    await page.locator('#approve').click();
+    const start = await center(nodeBox(page, 'a'));
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    await page.mouse.move(start.x + 30, start.y + 20, { steps: 5 });
+    await page.mouse.up();
     await page.waitForTimeout(300);
   } finally {
     await ctx.stop();
@@ -1312,7 +1081,11 @@ test('the error banner stays visible and legible with the panel expanded', async
     await page.route('**/view*', (route) => route.abort());
 
     await clickNode(page, 'a');
-    await page.locator('#approve').click();
+    const start = await center(nodeBox(page, 'a'));
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    await page.mouse.move(start.x + 30, start.y + 20, { steps: 5 });
+    await page.mouse.up();
 
     const banner = page.locator('#error-banner');
     await expect(banner).toBeVisible();
@@ -1413,10 +1186,9 @@ test('collapse state survives a poll and a child-graph navigation, but not a rel
 // render() adds to everything *outside* the hovered group (index.html's renderNodeGroup /
 // renderEdgeGroup), not a "lit" class of its own: the whole treatment is dimming the rest, and
 // what's inside the group is simply left alone — which is also why this must never touch the
-// selection: approve stays disabled throughout, since a hover that looked like a selection while
-// the button stayed disabled would be a worse lie than no highlight at all.
+// selection remains unchanged by hover.
 // ============================================================================================
-test('hovering a marked phrase lights the group and dims everything outside it, leaving approve disabled', async ({ page }) => {
+test('hovering a marked phrase lights the group and dims everything outside it, without changing selection', async ({ page }) => {
   const ctx = await launch('groups-basic.json');
   try {
     await page.goto(pageUrl(ctx));
@@ -1434,11 +1206,7 @@ test('hovering a marked phrase lights the group and dims everything outside it, 
     await expect(page.locator('g.node[data-id="outside"].group-dim')).toHaveCount(1);
     await expect(page.locator('g.node[data-id="far"].group-dim')).toHaveCount(1);
     await expect(page.locator('g.edge[data-id="gate->outside"].group-dim')).toHaveCount(1);
-    // Its was-mark too: that dot is drawn into the label layer rather than into g.edge, so it is
-    // the one piece of a dimmed edge that could stay at full brightness on its own.
-    await expect(page.locator('circle.was-mark[data-id="gate->outside"].group-dim')).toHaveCount(1);
-
-    await expect(page.locator('#approve')).toBeDisabled();
+    assert.deepEqual(await selection(page), []);
 
     // Transient: it goes when the pointer leaves, however it left.
     await page.mouse.move(0, 0);
@@ -1479,13 +1247,7 @@ test('hovering a marked phrase does not rebuild the panel', async ({ page }) => 
 });
 
 // ============================================================================================
-// Clicking a marked phrase makes the group the selection, through the existing
-// effectiveSelectionIds / applyOrigin path — no separate code adds the arrow between two members.
-// Approve then covers the whole option in one press, and the bulk-additive rule (already covered
-// elsewhere in this file for select-all) leaves an already-ruled member exactly as it was: `refuse`
-// starts `rejected` and must stay that way.
-// ============================================================================================
-test('clicking a marked phrase selects exactly the group, approves it, and leaves an already-ruled member untouched', async ({ page }) => {
+test('clicking a marked phrase selects exactly the group', async ({ page }) => {
   const ctx = await launch('groups-basic.json');
   try {
     await page.goto(pageUrl(ctx));
@@ -1494,18 +1256,6 @@ test('clicking a marked phrase selects exactly the group, approves it, and leave
     await groupRef(page, 'refusal-path').click();
     assert.deepEqual(await selection(page), ['gate', 'gate->refuse', 'refuse'].sort());
 
-    const collector = collectViewResponses(page);
-    await page.locator('#approve').click();
-    await expect.poll(() => collector.responses.some((r) => r.status() === 200)).toBe(true);
-    collector.stop();
-
-    const onDisk = await diskGraph(ctx);
-    assert.equal(entry(onDisk, 'gate').origin, 'agreed');
-    assert.equal(entry(onDisk, 'gate->refuse').origin, 'agreed');
-    assert.equal(entry(onDisk, 'refuse').origin, 'rejected', 'an already-ruled member must be left untouched');
-    // Neither the node outside the group nor its edge was swept in.
-    assert.equal(entry(onDisk, 'outside').origin, 'proposed');
-    assert.equal(entry(onDisk, 'gate->outside').origin, 'proposed');
   } finally {
     await ctx.stop();
   }
@@ -1800,7 +1550,7 @@ test('clicking a group with a member off-screen brings it into view without chan
 // — write a new version of the graph through the server (as an agent would) and let the page's
 // poll pick it up, never through the page itself.
 // ============================================================================================
-test("a redraw that changes a group's nodes while the explanation stays byte-identical relights and rules the new membership", async ({ page }) => {
+test("a redraw that changes a group's nodes while the explanation stays byte-identical relights and selects the new membership", async ({ page }) => {
   const ctx = await launch('groups-basic.json');
   try {
     await page.goto(pageUrl(ctx));
@@ -1830,17 +1580,6 @@ test("a redraw that changes a group's nodes while the explanation stays byte-ide
     await groupRef(page, 'refusal-path').click();
     assert.deepEqual(await selection(page), ['gate', 'gate->other', 'other'].sort());
 
-    const collector = collectViewResponses(page);
-    await page.locator('#approve').click();
-    await expect.poll(() => collector.responses.some((r) => r.status() === 200)).toBe(true);
-    collector.stop();
-
-    const onDisk = await diskGraph(ctx);
-    assert.equal(entry(onDisk, 'gate').origin, 'agreed');
-    assert.equal(entry(onDisk, 'other').origin, 'agreed');
-    assert.equal(entry(onDisk, 'gate->other').origin, 'agreed');
-    // 'refuse' left the group and was never selected — its pre-existing verdict is untouched.
-    assert.equal(entry(onDisk, 'refuse').origin, 'rejected');
   } finally {
     await ctx.stop();
   }
@@ -1974,7 +1713,7 @@ test('a group name and note too long for the box are cut, and the header tooltip
 });
 
 // ============================================================================================
-// Clicking a header selects exactly its members and enables approve, driven through a real
+// Clicking a header selects exactly its members, driven through a real
 // pointer gesture — locator.click() dispatches actual pointerdown/pointerup — which is what proves
 // the header's own stopPropagation + self setPointerCapture path (decision 34) actually works
 // against the svg's own setPointerCapture (:1441/:1650 above). A call through window.__viewer or a
@@ -2008,7 +1747,7 @@ test('the header hit rect is invisible and sized to its text, not the full box',
   }
 });
 
-test('clicking a group header selects exactly its members and enables approve', async ({ page }) => {
+test('clicking a group header selects exactly its members', async ({ page }) => {
   const ctx = await launch('groups-visible.json');
   try {
     await page.goto(pageUrl(ctx));
@@ -2016,7 +1755,6 @@ test('clicking a group header selects exactly its members and enables approve', 
 
     await page.locator('g.group-header[data-group="beta-group"] rect.group-header-hit').click();
     assert.deepEqual(await selection(page), ['beta1', 'beta2'].sort());
-    await expect(page.locator('#approve')).toBeEnabled();
   } finally {
     await ctx.stop();
   }
@@ -2270,12 +2008,12 @@ test('measureLabelWidth is keyed on size, not just text', async ({ page }) => {
 // below reads a label, kind or origin.
 function faceNode(id, x, y) {
   return {
-    id, label: id, kind: 'step', origin: 'proposed', was: null,
+    id, label: id, kind: 'step',
     exclusive: false, ref: null, note: null, graph: null, x, y,
   };
 }
 function faceEdge(id, from, to) {
-  return { id, from, to, label: id, kind: 'sequence', value: null, inferred: false, origin: 'proposed', was: null, note: null };
+  return { id, from, to, label: id, kind: 'sequence', value: null, inferred: false, note: null };
 }
 function faceGraph(nodes, edges) {
   return { schema: 1, title: 'Face geometry fixture', source: 'code-read', source_detail: null, explanation: null, groups: [], nodes, edges };
@@ -2663,4 +2401,31 @@ test('a vertically stacked reciprocal pair is drawn on two separate, non-colline
   } finally {
     await ctx.stop();
   }
+});
+
+test('legacy verdict fields have no visual effect', async ({ page }) => {
+  const ctx = await launch('verdicts.json');
+  try {
+    const legacy = JSON.parse(await fs.readFile(path.join(__dirname, 'fixtures', 'verdicts.json'), 'utf8'));
+    await page.route('**/wheelchair/graph?*', async route => {
+      const response = await route.fetch();
+      const body = await response.json();
+      for (const item of [...body.graph.nodes, ...body.graph.edges]) {
+        const original = entry(legacy, item.id);
+        item.origin = original.origin;
+        item.was = 'agreed';
+      }
+      await route.fulfill({ response, json: body });
+    });
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+    await expect(page.locator('.agreed, .rejected, .was-mark, [data-origin], [data-was]')).toHaveCount(0);
+    await expect(page.locator('#approve, #reject')).toHaveCount(0);
+    const styles = await page.locator('.node-label, .edge-label').evaluateAll(els => els.map(el => getComputedStyle(el).textDecorationLine));
+    assert.ok(styles.length > 0);
+    assert.ok(styles.every(style => !style.includes('line-through')));
+    const markers = await page.locator('.edge-line').evaluateAll(els => els.map(el => el.getAttribute('marker-end')));
+    assert.ok(markers.length > 0);
+    assert.ok(markers.every(marker => marker === 'url(#arrow)'));
+  } finally { await ctx.stop(); }
 });
