@@ -41,6 +41,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 14 | Collin's card wording follows the path that reached it; reviewer.md and verifier.md get the report-a-conflict rule. | Intent findings 2–4, upheld. | review-round-1 |
 | 15 | Watched agents never end a turn to wait on their own background work; they wait in the foreground. The agent reminder adds a line telling an agent that did to wait in the foreground now. No exemption in the hub. | The hub cannot see a CLI's background jobs; a rule costs nothing and Codex already works this way. | user |
 | 16 | Supersedes the Terms part of 13: a child is outstanding only while it owes a reply or is still waiting to start; `finished` is not consulted. Reviewer/verifier reminder gets the background-work line. | Review round 2 intent findings, upheld. | review-round-2 |
+| 17 | Stage 3 from a quiet turn waits until the starter reminder is delivered; a starter that dies with the reminder queued sends it straight to Collin's card. | Review round 2 mechanics findings, upheld. | review-round-2 |
 
 ## Spec
 
@@ -106,6 +107,11 @@ State on each session (persisted with the thread, like `turn_ended`):
      `quiet: 'starter'` and `about: <session name>`. `quiet_starter_at` is set only when
      `deliver()` successfully submits that entry (the starter has then been told), to the
      submit time. If the starter is not live, skip straight to stage 3.
+   - 2 → 3 needs the starter to have been told: on a due quiet check at stage 2 with
+     `quiet_starter_at` unset, keep `quiet_check_at` (re-checked each tick) and do not
+     advance. Exception: if the starter is no longer live and `quiet_starter_at` is unset (it
+     died with the reminder still queued), advance to stage 3 on the next tick, quiet turn or
+     not, with the "starter not live" card body.
    - 2 → 3: post a system `needs` card (`addCard(..., { system: true, session: name })`,
      `viewer/app/cards.js:11-29`) and store its id in `quiet_card`.
    - At stage 3 nothing further happens until a reset.
@@ -204,6 +210,10 @@ turn ends are driven as `viewer/test/app-balancer.test.js:185-215` does (machine
     escalate; once the hold clears and the nudge is delivered, the card appears escalate later.
 13. A worker that already posted a result is re-messaged by its sub-lead: while it owes a
     reply, the sub-lead's quiet turns are not nudged.
+16. At stage 2 with the starter busy (reminder still queued), the starter messages the worker
+    and the worker's turn ends quiet: no card until the reminder is delivered.
+17. At stage 2 with the reminder still queued, the starter is marked ended: the card appears
+    with the "starter not live" body.
 15. A worker sends its sub-lead a `message` (a question); the sub-lead's turn ends with no card:
     the sub-lead is nudged, although the worker is live and not finished.
 14. A worker whose grace expires while it holds `needs_open`: once the hold clears, it is
@@ -271,6 +281,8 @@ state or timers.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| gpt mechanics | blocking | Quiet-turn path can reach stage 3 before the starter reminder is delivered | downgraded to major | Needs a busy starter to message the worker meanwhile, but real; 2 → 3 gated on `quiet_starter_at` (Detector 3); test 16 |
+| gpt mechanics | major | Starter dies with its reminder queued: stage 2 never escalates | upheld | Dead starter with undelivered reminder goes to stage 3 (Detector 3); test 17 |
 | claude intent | major | A child that asked its starter a question stays unfinished, exempting a starter that never answers | upheld | Outstanding child = owes a reply or waiting to start (Terms, Decision 16); test 15 |
 | claude intent | minor | Reviewer/verifier reminder lacks Decision 15's background-work line | upheld | Line added (Texts) |
 
