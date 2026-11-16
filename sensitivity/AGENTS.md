@@ -1,7 +1,8 @@
 # `sensitivity/` — the diagram-sensitivity block writer
 
 Owned by [the repo root](../AGENTS.md). `set.sh` is the only writer of each present
-harness's global file; it renders the delimited region from `protocol/sensitivity.md` there.
+harness's global file; `install.sh` and the machine service's GET and POST
+`/v1/diagram-sensitivity` routes run it. It renders the delimited region from `protocol/sensitivity.md` there.
 
 The organizing idea: **one level is resolved across the present files before any is written,
 so present harnesses cannot disagree.**

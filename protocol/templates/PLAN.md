@@ -67,7 +67,7 @@ re-raise them.
 
 Written for every round, including one where the table below stays empty. The table gets a row
 per finding, so a clean round would otherwise leave no record of which gate ran — which is the
-round where knowing it matters most. `protocol/plan-review.md` shows a filled example.
+round where knowing it matters most.
 
 <!-- Round 2+: list what changed since the previous round; that list scopes the reviewers. -->
 

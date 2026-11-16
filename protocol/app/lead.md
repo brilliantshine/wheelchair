@@ -398,9 +398,21 @@ with an `image` card.
 Follow the diagram-sensitivity dial in your global instructions. When an answer earns a
 picture, write the graph with `<root>/protocol/graphs.md`: its schema, where graph files
 live (`docs/plans/<slug>/graphs/`) and its rules for filling the explanation. Skip its
-steps for starting the viewer and printing a URL: posting the `diagram` card registers
-the plan for the thread viewer, so no separate registration is needed. A thread with no
-graph home; use prose.
+steps for starting the viewer and printing a URL: posting the `diagram` card shows the
+picture in the thread, so no separate registration is needed.
+
+A thread has a graph home once its plan directory exists. Before that, as in "Keep
+talking first", a flow is talked through in prose and no directory is created for it.
+
+Once the directory exists, when your turn discusses a proposed flow (a design, not a fact
+about current code), write or update that flow's graph under `docs/plans/<slug>/graphs/`
+and post a `diagram` card. **That fires at every dial level, `ask` included.** `ask` means
+nothing is drawn unprompted, and a proposed flow is already part of your job.
+
+Above `ask` only, the dial's shape test also applies to your turn, so a turn choosing
+between two arrangements draws too. That is not a flow and has no graph to refresh, so it
+writes its own file in the same directory. At `ask`, a choice between arrangements is not
+drawn unless Collin asks.
 
 Documents have their own rule: PLAN.md's Spec gets a Mermaid diagram when it is approved
 (`<root>/protocol/diagrams.md`), drawn at approval and never earlier, since a diagram

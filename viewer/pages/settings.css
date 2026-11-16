@@ -204,3 +204,12 @@ button.danger { color: var(--bad-text); }
   .win .k { flex-basis: 100%; }
   .sections a { font-size: 11px; padding: 8px 2px; overflow-wrap: anywhere; }
 }
+
+.diagram-radios { display: flex; flex-direction: column; }
+.diagram-radios .choice { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; width: 100%; min-height: 44px; padding: 10px 16px; border: 0; border-top: 1px solid var(--panel-2); border-radius: 0; background: transparent; color: var(--ink); text-align: left; font-size: 13px; }
+.diagram-radios .choice:first-child { border-top: 0; border-radius: 12px 12px 0 0; }
+.diagram-radios .choice:last-child { border-radius: 0 0 12px 12px; }
+.diagram-radios .choice[aria-checked="true"] { background: var(--line); font-weight: 600; }
+.diagram-radios .choice .hint { margin: 0; font-weight: 400; }
+.diagram-lines { padding: 8px 16px 12px; color: var(--dim); line-height: 1.5; }
+.note { white-space: pre-line; }

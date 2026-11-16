@@ -223,7 +223,8 @@ for (const [label, size] of SIZES) {
       await open(page, made.id);
       const card = page.locator('.card-diagram');
       await expect(card).toContainText('Diagram kept on branch wc/gone');
-      await expect(card.locator('a')).toHaveAttribute('href', /archive=.*&file=flow\.json$/);
+      await expect(card.locator('a')).toHaveAttribute('href', /\/app\/picture\?thread=.*&card=/);
+      await expect(card.locator('iframe.diagram')).toHaveAttribute('src', /archive=.*&file=flow\.json$/);
       const frame = page.frameLocator('.card-diagram iframe.diagram');
       const box = frame.locator('svg#canvas g.node[data-id="decide"] rect.node-box');
       await expect(box).toBeVisible();
@@ -377,7 +378,7 @@ for (const [label, size] of SIZES) {
       const frame = page.locator('.card-diagram iframe.diagram');
       await expect(frame).toHaveCount(1);
       await expect(frame).toHaveAttribute('src', /^\/wheelchair\/\?path=.*flow\.json/);
-      await expect(page.locator('.card-diagram a', { hasText: 'Open full screen' })).toHaveAttribute('href', /path=/);
+      await expect(page.locator('.card-diagram a', { hasText: 'Open full size' })).toHaveAttribute('href', /\/app\/picture\?thread=.*&card=/);
       // Start building disabled until Ready
       await expect(page.locator('#start-building')).toBeDisabled();
       await expect(page.locator('.card-approval')).toContainText('Codex is signed out');

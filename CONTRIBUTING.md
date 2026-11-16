@@ -17,15 +17,13 @@ Navigate in this order:
 - `protocol/` holds the workflow's canonical rules. If behavior changes, change it
   there.
 - `docs/plans/<slug>/` holds per-feature state. It is not a source of general rules.
-- `skills/` and `codex/prompts/` are harness adapters. A wrapper points to one
-  `protocol/` file; it does not repeat that file's rules.
 - `AGENTS.md` files are maintained routing documents. Update them when a change moves
   ownership or makes a file-to-role entry false.
 - `graphify-out/` is a disposable, gitignored snapshot. Do not treat it as
   documentation.
 
-For feature work, the persistent documents carry the work from planning through
-verification:
+For feature work, a lead in an app thread carries the work from mapping through
+verification, and the persistent documents hold its state:
 
 ```mermaid
 flowchart LR
@@ -37,43 +35,38 @@ flowchart LR
 
 The `status:` field in `docs/plans/<slug>/PLAN.md` is the workflow's state machine:
 `planning -> ready-for-review -> approved -> implementing -> verifying -> done`.
-Do not edit it to skip a stage. Use `/adopt` when a plan was written outside this
-workflow.
+Do not edit it to skip a stage.
 
 ## Editing conventions
 
-- Keep wrappers thin. Adding a command requires both `skills/<command>/SKILL.md` and
-  `codex/prompts/<command>.md`; `install.sh` discovers both automatically.
-- Keep rules in one place. In particular, lane commands belong only in
-  `protocol/lanes.md`, and template changes are contract changes that must agree with
-  the stage which consumes the template.
+- Keep rules in one place. Card fields belong only in `protocol/app/cards.md`, and
+  template changes are contract changes that must agree with the role that consumes the
+  template.
 - Do not hand-edit the wheelchair-owned block in `~/.claude/CLAUDE.md` or
   `~/.codex/AGENTS.md`. `sensitivity/set.sh` is its only writer, and the next run
   overwrites that block.
 - When ownership moves between directories, update the routers on both sides in the
   same change. Never reformat an existing router.
 - Keep human-facing prose direct and grounded. Specific claims carry `file:line`, and
-  anything not checked is named as unchecked rather than inferred. The full rules are
-  in [protocol/writing.md](protocol/writing.md).
+  anything not checked is named as unchecked rather than inferred.
 - Do not commit `node_modules/`, `graphify-out/`, `viewer/test/.tmp/`, or
   `test-results/`.
 
 ## Installation and generated files
 
-Run `./install.sh` after cloning, after changing a wrapper, after installing another
-harness, or after pulling a change under `viewer/`. It renders wrappers into the harness
-homes, installs the viewer dependencies and both Chromium and Firefox, stops any
+Run `./install.sh` after cloning, after installing another harness, or after pulling a
+change under `viewer/`. It removes the retired skill and prompt wrappers and the old seen
+hook from the harness homes, installs the viewer dependencies and both Chromium and Firefox, stops any
 already-running viewer that isn't running the code you just pulled, sets up the app's state and, on a serving systemd machine, the viewer and machine
 services, then updates the diagram-sensitivity block. This reaches outside the clone; the fixture suites below do
 not. Because of that it runs only from the canonical clone: from a linked worktree or
-anything under `~/.local/state/wheelchair/worktrees`, it, `seen/set.sh` and
+anything under `~/.local/state/wheelchair/worktrees`, it and
 `sensitivity/set.sh` refuse (exit 3) unless `WHEELCHAIR_ALLOW_WORKTREE=1` forces them. To
 check the installer from a worktree, run `bash install/test/run.sh`.
 
-Edits under `protocol/` normally take effect immediately because installed wrappers
-point back to this checkout. The exception is the delimited region in
-`protocol/sensitivity.md`; run `sensitivity/set.sh` or `./install.sh` after changing it.
-Restart running harness sessions after adding or changing command registrations.
+Edits under `protocol/` take effect immediately, because sessions read their role files
+from this checkout. The exception is the delimited region in `protocol/sensitivity.md`;
+run `sensitivity/set.sh` or `./install.sh` after changing it.
 
 ## Validation
 

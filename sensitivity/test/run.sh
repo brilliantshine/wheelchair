@@ -222,7 +222,7 @@ assert 'landed regions match each other and substituted source apart from level'
 assert 'landed region is non-empty with one parseable level' bash -c '[[ -n $1 && $(printf "%s\n" "$1" | grep -Ec "^diagram-sensitivity: (ask|default|high)$") == 1 ]]' _ "$(region "$(target_claude equality)")"
 # Every probe below is a phrase that carries a behaviour, matched against the region with its
 # line breaks flattened away.  Both halves of that matter.  A short substring chosen for being
-# easy to grep -- 'protocol/planning.md', '/diagram-sensitivity' -- survives any edit that keeps
+# easy to grep -- 'protocol/app/lead.md', 'Settings page' -- survives any edit that keeps
 # the words around it, so it asserts that a sentence is nearby rather than that a rule is
 # present; that is how deleting two of these behaviours once left the suite green.  And matching
 # raw lines makes rewrapping a paragraph a failure, which is the wrong sensitivity in the other
@@ -258,12 +258,12 @@ done <<'PROBES'
 item 1, the three level names|Three levels — `ask`, `default`, `high`
 item 2, that the block is the repo's and is rewritten|owned by the wheelchair repo
 item 2, that it is never hand-edited|never by editing these lines
-item 2, how the dial is moved instead|/diagram-sensitivity <level>
+item 2, how the dial is moved instead|wheelchair app's Settings page (Models, Diagrams)
 item 3, the trigger property|three or more things that relate to each other
 item 3, its other two limbs|it has a branch, or the order matters
 item 4, what ask draws|draw nothing unprompted
-item 4, the ask carve-out's own trigger|a planning turn discussing a proposed flow
-item 4, where that trigger already lives|protocol/planning.md
+item 4, the ask carve-out's own trigger|a thread lead drawing a proposed flow
+item 4, where that trigger already lives|protocol/app/lead.md
 item 4, what default draws|the shape **is** the answer
 item 4, what high draws|whenever a shape is present at all
 item 5, the floor, at every level|No shape, no picture — at every level, including
@@ -307,6 +307,16 @@ writer=$saved_writer
 
 assert 'real CLAUDE.md is byte-identical after suite' bash -c '[[ $1 == "$2" ]]' _ "$real_claude_before" "$(file_state "$real_claude")"
 assert 'real AGENTS.md is byte-identical after suite' bash -c '[[ $1 == "$2" ]]' _ "$real_codex_before" "$(file_state "$real_codex")"
+
+run_case report_diverged --json
+assert 'structured report preserves divergent levels' bash -c '[[ $1 == 0 ]] && node -e "const x=JSON.parse(process.argv[1]); if(x.level!==null || x.files[0].level!==\"ask\" || x.files[1].level!==\"high\") process.exit(1)" "$2"' _ "${status[report_diverged]}" "${output[report_diverged]}"
+new_case report_partial
+run_case report_partial ask
+sed -i '/<!-- wheelchair:diagram-sensitivity start -->/,/<!-- wheelchair:diagram-sensitivity end -->/d' "$(target_codex report_partial)"
+run_case report_partial --json
+assert 'structured report requires a block in every present file' bash -c '[[ $1 == 0 ]] && node -e "const x=JSON.parse(process.argv[1]); if(x.level!==null || x.files.length!==2 || x.files[0].harness!==\"claude\" || x.files[0].level!==\"ask\" || x.files[1].harness!==\"codex\" || x.files[1].level!==null) process.exit(1)" "$2"' _ "${status[report_partial]}" "${output[report_partial]}"
+run_case report_absent --json
+assert 'structured report names absent blocks' bash -c '[[ $1 == 0 ]] && node -e "const x=JSON.parse(process.argv[1]); if(x.level!==null || x.files.length!==2 || x.files.some(f=>f.level!==null)) process.exit(1)" "$2"' _ "${status[report_absent]}" "${output[report_absent]}"
 
 printf 'RESULT %d passed, %d failed\n' "$passes" "$failures"
 (( failures == 0 ))
