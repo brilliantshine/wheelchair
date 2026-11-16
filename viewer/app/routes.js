@@ -445,6 +445,9 @@ async function handleThreads(hub, request, response, url, bits, body) {
     });
     return send(response, 202, { queued: true });
   }
+  if (request.method === 'POST' && bits[2] === 'send-now') {
+    return send(response, 202, { sent: await hub.sendNow(id, body.at) });
+  }
   if (request.method === 'POST' && bits[2] === 'cards' && bits[3] && bits[4] === 'press') {
     return send(response, 202, await hub.press(id, bits[3], body));
   }
