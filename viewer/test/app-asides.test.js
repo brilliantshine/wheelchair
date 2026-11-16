@@ -191,3 +191,36 @@ test('Think harder repeats the last question and summary observes its readiness 
     await assert.rejects(() => asides.change(hub, t, a, 'summary', {}), { status: 409 });
   } finally { settings.modelCommand = original; }
 });
+
+
+test('a fresh hub selects stranded queued asides but not failed or archived ones', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'wc-asides-restart-'));
+  const first = new Hub({ stateDir: dir }); await first.state.init();
+  const aside = { id: 'a', anchor: { quote: 'words' }, action: 'ask', provider: 'gpt', account: 'default-gpt', fork_parent: 'parent', slot: 'standard', status: 'open', pending: [{ kind: 'start', text: 'queued' }], turn: null, history: [], failed: null };
+  const thread = { id: 'restart', project: '/tmp/repo', worktree: '/tmp/repo', machine: 'hub', sessions: [], asides: [aside], cards: [], pinned: {}, queues: {}, sent: [] };
+  await first.save(thread);
+  assert.equal(asides.needsPump({ ...thread, asides: [{ ...aside, failed: 'failed' }] }), false);
+  assert.equal(asides.needsPump({ ...thread, archived: true }), false);
+  const fresh = new Hub({ stateDir: dir }); await fresh.state.init();
+  const original = settings.modelCommand; settings.modelCommand = async () => ({ stdout: 'model' });
+  const posts = []; fresh.call = async (_, route, method, body) => { if (method === 'GET') { const error = new Error('missing'); error.status = 404; throw error; } posts.push({ route, body }); return {}; };
+  try {
+    await Promise.all((await fresh.allThreads()).filter(asides.needsPump).map(t => asides.pump(fresh, t.id)));
+    assert.equal(posts.length, 1); assert.equal(posts[0].route, '/v1/aside-turns'); assert.match(posts[0].body.prompt, /queued/);
+  } finally { settings.modelCommand = original; }
+});
+
+test('aside GET computes heavy usability from the model command without storing it', async () => {
+  const { Readable } = require('node:stream'); const { handle } = require('../app/hub.js');
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'wc-asides-model-'));
+  await fs.mkdir(path.join(dir, 'codex'));
+  const script = path.join(dir, 'codex', 'model.sh');
+  const hub = new Hub({ stateDir: path.join(dir, 'state'), root: dir, codeVersion: '' }); await hub.state.init();
+  await hub.save({ id: 'model', sessions: [], asides: [{ id: 'a', provider: 'gpt', history: [] }], cards: [], pinned: {}, queues: {}, sent: [] });
+  async function get() { const req = Readable.from([]); req.method = 'GET'; let body; const res = { writeHead() {}, end(bytes) { body = JSON.parse(bytes); } }; await handle(hub, req, res, new URL('http://localhost/wheelchair/api/threads/model/asides/a'), false); return body; }
+  await fs.writeFile(script, '#!/bin/sh\nexit 3\n', { mode: 0o755 });
+  assert.equal((await get()).heavy_usable, false);
+  await fs.writeFile(script, '#!/bin/sh\necho model\n', { mode: 0o755 });
+  assert.equal((await get()).heavy_usable, true);
+  assert.equal((await hub.thread('model')).asides[0].heavy_usable, undefined);
+});

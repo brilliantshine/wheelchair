@@ -11,7 +11,7 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 | `POST /threads` | `{project,machine?,message?}` | a `Thread`, with its lead started or waiting for room. Before anything is saved the thread's machine checks `project` (`GET /v1/projects?check=`): not a usable git repository → `400 "<path> <reason> on <machine>"`, unknown machine → `404`, no answer or an older service → `502`; nothing is saved or added to `projects.json` on any of these, and the stored `project` is the path the machine returned (`~` and `~/…` expanded there). A non-empty string `message` sets `title` from its trimmed, whitespace-collapsed first line, cut at a word boundary to 60 characters plus `…` |
 | `GET /threads/:id/chat` | — | `{thread,items,cards,pinned,queued,asides}`; `items` leaves out the lead's tool steps when Settings has `tool_steps:"hide"` |
 | `POST /threads/:id/asides` | `{message_id,start,end,quote,action}` | `201` aside without history; action is `ask`, `simpler`, or `draw` |
-| `GET /threads/:id/asides/:aside` | — | full aside including history; also works when archived |
+| `GET /threads/:id/asides/:aside` | — | full aside including history and computed `heavy_usable` boolean (not stored); also works when archived |
 | `POST /threads/:id/asides/:aside/messages` | `{text}` | `202`, queues a message and reopens the aside |
 | `POST /threads/:id/asides/:aside/close` | `{outcome:"done"}` or `{outcome:"changed",line}` | `200`; changed sends the line to the lead |
 | `POST /threads/:id/asides/:aside/retry` | — | `200`, retries a failed message |

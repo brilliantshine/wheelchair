@@ -26,18 +26,20 @@
       if (JSON.stringify(next) !== JSON.stringify(current)) { current = next; renderPanel(); }
     } catch (e) { notice = e.message; renderPanel(); }
   }
-  function openAside(a) { current = a; notice = ''; heavyBlocked = false; draft = null; summaryAfter = null; listOpen = false; panel.hidden = false; files.hidden = true; document.body.classList.add('aside-open'); renderPanel(); clearInterval(timer); if (a.id) { refresh(); timer = setInterval(refresh, 2000); } renderChip(); }
+  function openAside(a, focusInput = false) { current = a; notice = ''; heavyBlocked = false; draft = null; summaryAfter = null; listOpen = false; panel.hidden = false; files.hidden = true; document.body.classList.add('aside-open'); renderPanel(); if (focusInput) panel.querySelector('.aside-input')?.focus(); clearInterval(timer); if (a.id) { refresh(); timer = setInterval(refresh, 2000); } renderChip(); }
   async function create(anchor, action) {
     bar.hidden = true; window.getSelection()?.removeAllRanges();
-    openAside({ anchor, history: [], status: 'open' });
-    try { const a = await request('/asides', { ...anchor, action }); openAside(a); }
+    openAside({ anchor, action, history: [], status: 'open' }, action === 'ask');
+    try { const a = await request('/asides', { ...anchor, action }); openAside(a, action === 'ask'); }
     catch (e) { notice = e.message; renderPanel(); }
   }
   async function act(suffix, body, after) { try { await request(path() + suffix, body); notice = ''; if (after) after(); else await refresh(); } catch (e) { notice = e.message; if (suffix === '/think-harder') heavyBlocked = true; renderPanel(); } }
   function renderPanel() {
     if (!current) return;
     const oldInput = panel.querySelector('.aside-input'); const oldValue = oldInput ? oldInput.value : '';
-    const focused = document.activeElement === oldInput;
+    const oldDraft = panel.querySelector('.aside-draft textarea');
+    const focused = document.activeElement === oldInput ? 'input' : document.activeElement === oldDraft ? 'draft' : null;
+    const selectionStart = focused ? document.activeElement.selectionStart : null, selectionEnd = focused ? document.activeElement.selectionEnd : null;
     panel.textContent = '';
     const top = el('div', 'aside-top'); const title = el('div', 'aside-title'); title.append(el('h2', '', 'Aside' + (current.number ? ' ' + current.number : '')), el('span', 'dim', "Doesn't change the main thread"));
     top.append(title, button('Back', 'small aside-back', () => closePanel(false)), button('×', 'small aside-close', () => closePanel(false))); top.lastChild.setAttribute('aria-label', 'Close aside'); panel.appendChild(top);
@@ -61,8 +63,8 @@
     const footer = el('div', 'aside-footer'); const actions = el('div', 'aside-actions'); const archived = data.thread.archived;
     const enabled = current.id && current.status === 'open' && !current.turn && !current.failed && !archived;
     const destination = card ? ({ question: 'your question', needs: 'the blocker', approval: 'Start building' }[card.kind]) : 'the thread';
-    actions.append(button('Done, back to ' + destination, 'primary small', () => act('/close', { outcome: 'done' }, () => closePanel(true)), !current.id || current.status !== 'open' || archived), button('This changes my answer', 'small', () => { summaryAfter = (current.history || []).filter(h => h.kind === 'control').length; act('/summary', {}); }, !enabled || !current.cli_id || summaryAfter !== null), button('Think harder', 'small', () => act('/think-harder', {}), !enabled || current.slot !== 'standard' || heavyBlocked || !(current.history || []).some(h => h.kind === 'start' || h.kind === 'ask'))); footer.appendChild(actions);
-    const form = el('form', 'aside-form'); const input = el('textarea', 'aside-input'); input.placeholder = 'Ask more about this'; input.setAttribute('aria-label', 'Ask more about this'); input.value = oldValue; input.disabled = !current.id || archived; const send = el('button', 'primary small', 'Send'); send.type = 'submit'; send.disabled = !current.id || archived; form.append(input, send); form.addEventListener('submit', e => { e.preventDefault(); const text = input.value.trim(); if (text) act('/messages', { text }, () => { input.value = ''; refresh(); }); }); footer.append(form, el('span', 'dim', 'Closed asides stay on the underlined words, so you can reopen them later.')); panel.appendChild(footer); if (focused) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+    actions.append(button('Done, back to ' + destination, 'primary small', () => act('/close', { outcome: 'done' }, () => closePanel(true)), !current.id || current.status !== 'open' || archived), button('This changes my answer', 'small', () => { summaryAfter = (current.history || []).filter(h => h.kind === 'control').length; act('/summary', {}); }, !enabled || !current.cli_id || summaryAfter !== null), button('Think harder', 'small', () => act('/think-harder', {}), !enabled || current.slot !== 'standard' || heavyBlocked || current.heavy_usable !== true || !(current.history || []).some(h => h.kind === 'start' || h.kind === 'ask'))); footer.appendChild(actions);
+    const form = el('form', 'aside-form'); const input = el('textarea', 'aside-input'); input.placeholder = 'Ask more about this'; input.setAttribute('aria-label', 'Ask more about this'); input.value = oldValue; input.disabled = (!current.id && current.action !== 'ask') || archived; const send = el('button', 'primary small', 'Send'); send.type = 'submit'; send.disabled = !current.id || archived; form.append(input, send); form.addEventListener('submit', e => { e.preventDefault(); const text = input.value.trim(); if (text) act('/messages', { text }, () => { input.value = ''; refresh(); }); }); footer.append(form, el('span', 'dim', 'Closed asides stay on the underlined words, so you can reopen them later.')); panel.appendChild(footer); if (focused) { const target = focused === 'input' ? input : panel.querySelector('.aside-draft textarea'); if (target) { target.focus(); target.setSelectionRange(selectionStart, selectionEnd); } }
   }
   function renderChip() {
     const head = document.getElementById('head'); head.querySelector('.aside-chip-wrap')?.remove(); const asides = data.asides || []; if (!asides.length) return;
@@ -90,5 +92,6 @@
   }
   for (const [label, action] of [['Ask about this', 'ask'], ['Say it simpler', 'simpler'], ['Draw it', 'draw']]) { const b = button(label, 'small', () => { if (selection) create(selection, action); }); b.addEventListener('mousedown', e => e.preventDefault()); bar.appendChild(b); }
   for (const event of ['selectionchange', 'mouseup', 'touchend']) document.addEventListener(event, selected);
-  window.WCAside = { update(next, rebuilt) { data = next; const sig = JSON.stringify(data.asides || []); if (rebuilt || sig !== marksSig) { decorate(); marksSig = sig; } renderChip(); if (current) { files.hidden = true; } } };
+  function panelChatSig(value) { if (!value) return ''; const card = (value.cards || []).find(c => ['question', 'needs', 'approval'].includes(c.kind) && !c.answered); const leads = (value.thread.sessions || []).filter(s => s.role === 'lead'); return JSON.stringify([card && [card.id, card.kind, card.question, card.title, card.answered], leads.at(-1)?.turn_ended]); }
+  window.WCAside = { update(next, rebuilt) { const panelChanged = panelChatSig(data) !== panelChatSig(next); data = next; const sig = JSON.stringify(data.asides || []); if (rebuilt || sig !== marksSig) { decorate(); marksSig = sig; } renderChip(); if (current) { files.hidden = true; if (panelChanged) renderPanel(); } } };
 })();

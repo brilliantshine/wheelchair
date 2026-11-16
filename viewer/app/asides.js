@@ -134,5 +134,6 @@ async function run(hub, thread, aside) {
   await hub.call(thread.machine, `${base}/ack`, 'POST').catch(() => {});
   if (aside.status === 'open' && aside.pending.length && !aside.failed) await run(hub, thread, aside);
 }
+function needsPump(thread) { return !thread.archived && (thread.asides || []).some((aside) => aside.turn || (aside.status === 'open' && aside.pending?.length && aside.failed == null)); }
 async function pump(hub, id) { return hub.withThread(id, async () => { const thread = await hub.thread(id); for (const aside of thread.asides || []) await run(hub, thread, aside); }); }
-module.exports = { brief, change, close, create, find, pump };
+module.exports = { brief, change, close, create, find, model, needsPump, pump };

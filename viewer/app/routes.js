@@ -340,7 +340,7 @@ async function handleThreads(hub, request, response, url, bits, body) {
       const aside = asides.find(thread, bits[3]);
       if (bits.length === 4 && request.method === 'GET') {
         for (const entry of aside.history) if (entry.graph && hub.registerGraph) await hub.registerGraph(entry.graph);
-        return { status: 200, body: aside };
+        return { status: 200, body: { ...aside, heavy_usable: !!(await asides.model(hub, aside.provider, 'heavy')) } };
       }
       if (bits.length !== 5 || request.method !== 'POST') throw appError(404, 'route not found');
       await asides.change(hub, thread, aside, bits[4], body);
