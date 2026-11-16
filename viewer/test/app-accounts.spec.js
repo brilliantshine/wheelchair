@@ -225,14 +225,16 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
       await open(page, 'usage');
       await page.locator('#bal-leave').fill('150');
       await page.locator('#bal-within').selectOption('spread');
+      await page.locator('#bal-held-reviewer').uncheck();
+      expect(state.calls.filter((c) => c[1] === '/settings/balancing')).toHaveLength(0);
       await page.locator('#bal-save').click();
       await expect(page.locator('.balancing .inline-err')).toHaveText('leave must be between 0 and 100');
       state.balancingError = null;
       await page.locator('#bal-save').click();
       await expect(page.locator('.balancing .note')).toHaveText(/Saved/);
       const sent = state.calls.filter((c) => c[1] === '/settings/balancing').pop()[2];
-      expect(sent).toMatchObject({ leave: 150, within: 'spread' });
-      expect(Object.keys(sent).sort()).toEqual(['leave', 'margin', 'notify_below', 'save_claude_for_leads', 'within', 'worker_order']);
+      expect(sent).toMatchObject({ leave: 150, within: 'spread', held_back: { worker: true, reviewer: false, verifier: true, mapper: true } });
+      expect(Object.keys(sent).sort()).toEqual(['held_back', 'leave', 'margin', 'notify_below', 'save_claude_for_leads', 'within', 'worker_order']);
       await noSideScroll(page);
     });
 

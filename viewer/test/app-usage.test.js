@@ -16,6 +16,9 @@ test('account normalization and balancing settings survive round trip', () => {
   assert.equal(normalized.accounts.filter((a) => a.id === 'default-claude').length, 1);
   assert.equal(normalized.accounts.find((a) => a.id === 'other').weight, 5);
   assert.deepEqual(settings.normalize(normalized), normalized);
+  const old = { ...normalized }; delete old.held_back;
+  assert.deepEqual(settings.normalize(old).held_back, { worker: true, reviewer: true, verifier: true, mapper: true });
+  assert.deepEqual(settings.normalize({ ...old, held_back: {} }).held_back, settings.defaults().held_back);
 });
 test('effective windows, room and forecasts', () => {
   assert.deepEqual(usage.effective({ week: { used: 90, resets_at: '2026-01-01T00:00:00Z' } }, now).week, { used: 0, resets_at: null });
@@ -58,7 +61,10 @@ test('account and balancing routes and usage shape', async () => {
     for (const body of [{ provider: 'bad', name: 'a', plan: 'pro' }, { provider: 'gpt', name: '', plan: 'pro' }, { provider: 'gpt', name: 'x', plan: 'max5' }]) assert.equal((await api(ctx, '/settings/accounts', { method: 'POST', body })).status, 400);
     for (const body of [{ name: '' }, { plan: 'plus' }, { weight: 0 }, { paused: 'yes' }]) assert.equal((await api(ctx, `/settings/accounts/${add.body.id}`, { method: 'PUT', body })).status, 400);
     assert.equal((await api(ctx, '/settings/accounts/default-claude', { method: 'DELETE' })).status, 400);
-    for (const body of [{ lead_order: [] }, { worker_order: [] }, { lead_order: ['any', 'claude'] }, { lead_order: ['gpt', 'gpt'] }, { worker_order: ['any'] }, { worker_order: ['bad'] }, { within: 'bad' }, { leave: -1 }, { notify_below: 101 }, { margin: '5' }, { save_claude_for_leads: 1 }]) assert.equal((await api(ctx, '/settings/balancing', { method: 'PUT', body })).status, 400);
+    for (const body of [{ lead_order: [] }, { worker_order: [] }, { lead_order: ['any', 'claude'] }, { lead_order: ['gpt', 'gpt'] }, { worker_order: ['any'] }, { worker_order: ['bad'] }, { within: 'bad' }, { leave: -1 }, { notify_below: 101 }, { margin: '5' }, { save_claude_for_leads: 1 }, { held_back: { worker: true, reviewer: true, verifier: true } }, { held_back: { worker: true, reviewer: true, verifier: true, mapper: true, extra: true } }, { held_back: { worker: true, reviewer: 'yes', verifier: true, mapper: true } }, { held_back: [] }]) assert.equal((await api(ctx, '/settings/balancing', { method: 'PUT', body })).status, 400);
+    const held = { worker: true, reviewer: false, verifier: true, mapper: true };
+    const saved = await api(ctx, '/settings/balancing', { method: 'PUT', body: { held_back: held } });
+    assert.equal(saved.status, 200); assert.deepEqual(saved.body.held_back, held);
     const result = await api(ctx, '/usage'); assert.equal(result.status, 200); assert.equal(result.body.providers.claude.accounts.length, 2); assert.ok(result.body.providers.gpt.accounts[0].machines.hub);
   } finally { await close(ctx); }
 });
