@@ -26,7 +26,7 @@ case "$(basename \"$0\"):$1" in
   tmux:list-sessions) if [ -n "\${FAKE_LS_ERR:-}" ]; then printf '%s\\n' "$FAKE_LS_ERR" >&2; exit 1; fi; printf '%s\\n' \${FAKE_SESSIONS:-} ;;
   tmux:load-buffer) cat >> "$FAKE_LOG" ;;
   systemd-run:*) exit 1 ;;
-  git:*) if [[ " $* " == *" rev-parse "* ]]; then echo "\${FAKE_GIT_VERSION:-deadbeef}"; fi ;;
+  git:*) if [[ " $* " == *" rev-parse "* ]]; then echo "\${FAKE_GIT_VERSION:-deadbeef}"; fi; if [[ " $* " == *" fetch "* && -n "\${FAKE_FETCH_SLEEP:-}" ]]; then sleep "$FAKE_FETCH_SLEEP"; fi ;;
   claude:-p) cat > "$FAKE_LOG.stdin"; echo "lane=\${WHEELCHAIR_LANE:-}" >> "$FAKE_LOG"; [ -z "\${FAKE_PREVIEW_SLEEP:-}" ] || sleep "$FAKE_PREVIEW_SLEEP"; [ -z "\${FAKE_PREVIEW_ERR:-}" ] || printf '%s\\n' "$FAKE_PREVIEW_ERR" >&2; [ -z "\${FAKE_PREVIEW_OUT:-}" ] || printf '%s\\n' "$FAKE_PREVIEW_OUT"; exit "\${FAKE_PREVIEW_EXIT:-0}" ;;
   claude:--version) echo claude-test ;;
   claude:auth) printf '%s\\n' "\${FAKE_CLAUDE_AUTH:-{\\"loggedIn\\":true}}" ;;
@@ -306,6 +306,30 @@ test('a worktree starts from origin trunk and records trunk as its default branc
     assert.equal(session.default_branch, 'trunk');
     assert.equal(git(['-C', repo, 'merge-base', '--is-ancestor', 'origin/trunk', session.branch]).status, 0);
   } finally { await env.close(); }
+});
+test('a slow git fetch in a session start does not hold up a status check', async () => {
+  const root = await temp(); const env = await service(root); process.env.FAKE_FETCH_SLEEP = '3'; try {
+    const repo = path.join(root, 'project'); await fs.mkdir(repo, { recursive: true });
+    // The status check runs in its own process: a service that blocks would also freeze a timer
+    // in this one, and the check would then only begin once the fetch was over.
+    const probe = `setTimeout(async () => { const began = Date.now(); const r = await fetch(${JSON.stringify(`${env.base}/v1/status`)}, { headers: ${JSON.stringify(hubHeader)} }); await r.text(); console.log(JSON.stringify({ status: r.status, waited: Date.now() - began })); }, 500);`;
+    const checked = new Promise((resolve, reject) => { let out = ''; const child = spawn(process.execPath, ['-e', probe]); child.stdout.on('data', c => { out += c; }); child.on('error', reject); child.on('close', () => resolve(out)); });
+    const starting = start(env, { thread_id: 'slow', token: 'slow-token', project_dir: repo, project: 'project', serviceWorktree: true });
+    const { status, waited } = JSON.parse(await checked);
+    assert.equal(status, 200);
+    assert.ok(waited < 1000, `status took ${waited} ms while the fetch ran`);
+    assert.match(await log(env), /git -C \S+ fetch origin/);
+    assert.equal((await starting).name, 'wc-slow-lead');
+  } finally { delete process.env.FAKE_FETCH_SLEEP; await env.close(); }
+});
+test('two worker starts in one thread overlapping in git get different branches', async () => {
+  const root = await temp(); const env = await service(root); process.env.FAKE_FETCH_SLEEP = '1'; try {
+    const repo = path.join(root, 'project'); await fs.mkdir(repo, { recursive: true });
+    const input = (n) => ({ role: 'worker', thread_id: 'pair', token: `pair-${n}`, name: `wc-pair-worker-${n}`, project_dir: repo, project: 'project', serviceWorktree: true });
+    const [first, second] = await Promise.all([start(env, input(1)), start(env, input(2))]);
+    assert.notEqual(first.branch, second.branch);
+    assert.deepEqual([first.branch, second.branch].sort(), ['wc-pair-w1', 'wc-pair-w2']);
+  } finally { delete process.env.FAKE_FETCH_SLEEP; await env.close(); }
 });
 test('a worker restart reuses its worktree and branch, while a missing worktree is refused', async () => {
   const root = await temp(); const env = await service(root, { realGit: true }); try {
