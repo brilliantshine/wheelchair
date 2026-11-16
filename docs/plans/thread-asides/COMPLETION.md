@@ -345,3 +345,18 @@ New tests: machine "DELETE unknown → tombstone; POST of that id → 200 failed
 survives restart; ack forgets; non-UUID → 400"; hub "archive tombstones a delayed POST whose
 response is lost" (store-like fake: DELETE reaches it first, the POST's response is lost,
 `starts === 0`, history unchanged). The port test is the known one.
+
+On the merged branch (`c5afb55` plus records), after Collin cleared the leftover test folders
+that had used up /tmp's inodes:
+
+```
+$ bash machine/test/run.sh
+# pass 90 # fail 0
+$ node --test viewer/test/app-asides.test.js
+# pass 14 # fail 0
+$ node --test viewer/test/*.test.js
+not ok 237 - a starter that loses the freed port registers through the new holder
+# tests 355
+# pass 354
+# fail 1
+```
