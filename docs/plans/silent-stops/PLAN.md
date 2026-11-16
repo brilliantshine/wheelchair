@@ -1,6 +1,6 @@
 ---
 slug: silent-stops
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-15
 ---
 
@@ -48,6 +48,29 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 
 Two parts: rule text in `protocol/app/`, and a quiet-turn detector in the hub
 (`viewer/app/`). Read `MAP.md` for how turns, deliveries and cards flow today.
+
+### The flow at a glance
+
+An agent's turn ends while it still owes a report. After a short wait, if it still owes one
+and isn't legitimately waiting, the app reminds the agent. If it goes quiet again, the app
+tells the session that started it. Once that session has actually been told, another quiet
+turn or ten minutes with nothing reaches Collin as a card. Any result or message from the
+agent resets everything and closes the card.
+
+```mermaid
+flowchart TD
+  A[agent's turn ends, report still owed] --> B[wait 30 seconds for a late report]
+  B --> C{still owes a report and not waiting on a hold, queued work or its own agents?}
+  C -- no --> R[nothing happens]
+  C -- yes --> D[remind the agent itself]
+  D --> E{next turn quiet too?}
+  E -- no --> R
+  E -- yes --> F[tell the session that started it]
+  F --> G{starter told, then another quiet turn or 10 minutes with nothing?}
+  G -- no --> R
+  G -- yes --> H[card for Collin]
+  X[agent posts a result or message] -.-> Z[reset: cancel reminders, close the card]
+```
 
 ### Terms
 
@@ -230,8 +253,10 @@ turn ends are driven as `viewer/test/app-balancer.test.js:185-215` does (machine
 17. At stage 2 with the reminder still queued, the starter is marked ended: the card appears
     with the "starter not live" body.
 18. A worker that asked its sub-lead a question is held (`needs_open`) when the sub-lead's answer
-    arrives, so the answer stays in the worker's queue; the sub-lead's turn ends with no card:
-    not nudged while the answer is queued.
+    arrives, so the answer stays in the worker's queue. The sub-lead is then given fresh work (a
+    delivered message, so it owes a reply again) and its turn ends with no card: not nudged while
+    the worker's answer is queued. (The fresh work isolates the queue rule: the answer card alone
+    already clears the sub-lead's own `owes_reply`.)
 
 New `viewer/test/protocol-rules.test.js`: asserts `protocol/app/worker.md`, `mapper.md`,
 `sub-lead.md`, `lead.md` and `cards.md` each state that a session's own `wc.js` and
@@ -331,6 +356,7 @@ state or timers.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| gpt mechanics | minor | Test 18 passes without the queue rule, since the answer card clears the sub-lead's flag | upheld | Test 18 delivers fresh work to the sub-lead first |
 | claude intent | minor | Decision 9's `finished`-based sentence never superseded in the log | upheld | Decision 18 states the supersession |
 | claude intent | minor | Verifier/reviewer have no report form for being blocked; a stuck verifier would write FAIL and start remediation | upheld | `VERDICT: BLOCKED` and `BLOCKED:` forms (Rules) |
 
