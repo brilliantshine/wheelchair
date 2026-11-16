@@ -289,6 +289,16 @@ test('status keeps the version read when the service was constructed', async () 
     } finally { await env.close(); }
   });
 });
+test('two starts of one name at once launch one tmux session', async () => {
+  const root = await temp(); const env = await service(root); try {
+    const worktree = path.join(root, 'work-twice'); await fs.mkdir(worktree, { recursive: true });
+    const body = { role: 'worker', cli: 'claude', thread_id: 't', token: 'twice', name: 'wc-t-worker-1', worktree };
+    const [first, second] = await Promise.all([env.instance.start(body), env.instance.start(body)]);
+    assert.equal(first.name, second.name);
+    const launches = (await log(env)).split('\n').filter(line => line.startsWith('tmux new-session') && line.includes('wc-t-worker-1'));
+    assert.equal(launches.length, 1);
+  } finally { await env.close(); }
+});
 test('a worktree starts from origin trunk and records trunk as its default branch', async () => {
   const root = await temp(); const env = await service(root, { realGit: true }); try {
     const repo = await project(root, 'trunk');
