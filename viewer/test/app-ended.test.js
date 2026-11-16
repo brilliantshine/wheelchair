@@ -52,6 +52,10 @@ test('a session the machine could not check stays live; one gone from tmux ends'
     delete c.machine.sessions.get(worker.name).running;
     await hub.pollDead();
     assert.equal((await hub.thread(made.id)).sessions.find((s) => s.name === worker.name).live, true);
+    // Recorded stopped while tmux still has it (a failed kill): still live.
+    Object.assign(c.machine.sessions.get(worker.name), { status: 'stopped', running: true });
+    await hub.pollDead();
+    assert.equal((await hub.thread(made.id)).sessions.find((s) => s.name === worker.name).live, true);
     c.machine.sessions.get(worker.name).running = false;
     await hub.pollDead();
     const target = (await hub.thread(made.id)).sessions.find((s) => s.name === worker.name);

@@ -413,7 +413,7 @@ class MachineService {
     if (dir) adapter.seed(dir, account.id);
     const options = startOptions(input);
     const createdWorktree = !input.worktree;
-    const reserved = input.role === 'worker' && input.worktree && input.branch ? path.resolve(input.worktree) : null;
+    const reserved = input.role === 'worker' && input.worktree ? path.resolve(input.worktree) : null;
     if (reserved) this.refuseSharedWorktree(reserved, name);
     try {
       const created = await this.createWorktree(input, name);

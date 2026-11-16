@@ -517,6 +517,10 @@ test('a replacement worker is refused while another worker still runs in its wor
         const second = await replace('wc-t-worker-3');
         assert.equal(second.status, 409); assert.match(second.body.error, /wc-t-worker-2/);
       });
+      await withEnv({ FAKE_SESSIONS: 'wc-t-worker-2' }, async () => {
+        const noBranch = await api(env, 'POST', '/v1/sessions', { role: 'worker', cli: 'codex', thread_id: 't', token: 'gamma', name: 'wc-t-worker-4', worktree }, hubHeader);
+        assert.equal(noBranch.status, 409);
+      });
     } finally { await env.close(); }
   });
 });

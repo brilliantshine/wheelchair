@@ -460,12 +460,13 @@ async function stopSession(hub, thread, caller, name) {
   return { ok: true };
 }
 
-// A listed session counts as live unless the machine says it is not running or stopped. A
-// session listed without `running` is one the machine could not check, so it stays live.
+// tmux decides: a listed session with `running: true` is live even if recorded stopped (a failed
+// kill records stopped too). Without `running` the machine could not check tmux, so only its record
+// can say stopped.
 function liveNames(listed) {
   return new Set(
     listed
-      .filter((item) => item.running !== false && item.status !== 'stopped')
+      .filter((item) => item.running === true || (item.running === undefined && item.status !== 'stopped'))
       .map((item) => item.name),
   );
 }
