@@ -386,9 +386,11 @@ a worker with `--provider gemini` and check its `result` card arrives.
 | T7 | Graph-arrow browser test skips `form` picture files, as it skips `run` ones | `viewer/test/browser.spec.js` | light, gpt-6-luna | wc-9340ecf1256c-worker-9 (t7-a1) | the one test, both browsers | done |
 | T8 | Installer test expects the `gemini` pin lines `model.sh init` now writes | `install/test/run.sh` | light, gpt-6-luna | wc-9340ecf1256c-worker-10 (t8-a1) | `bash install/test/run.sh` | done |
 | T9 | Decision 19: `worker_order_seen`, so a removed provider stays removed | `viewer/app/settings.js`, `viewer/test/app-settings.test.js` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-11 (t9-a1) | `node --test viewer/test/*.test.js` | done |
-| R1-1 | Remediation 1: finish agy's first-run screens inside sign-in; `loginDone` only at idle | `machine/adapters/agy.js`, `machine/service.js` (login), `machine/test/` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-12 (r1-1-a1) | `bash machine/test/run.sh` | in progress |
+| R1-1 | Remediation 1: finish agy's first-run screens inside sign-in; `loginDone` only at idle | `machine/adapters/agy.js`, `machine/service.js` (login), `machine/test/` | standard, gpt-6.1-terra | wc-9340ecf1256c-worker-12 (r1-1-a1) | `bash machine/test/run.sh` | blocked: screens not reproducible from a copied home; nothing built |
 
 ## Log
+
+- 2026-11-16 — R1-1 came back blocked. A copied signed-in HOME with `post_onboarding` removed showed only the trust question, then idle; the first-run screens didn't reappear. Nothing built; the real `~/.gemini` checksums are unchanged. The spent scratch home holding a token copy was deleted by the sub-lead. Asked the lead: (A) one more Collin code for a fresh scratch-HOME sign-in to capture the screens, or (B) a terminal fallback.
 
 - 2026-11-16 — Verification attempt 1: FAIL, 1 gap (agy first-run screens unfinished when sign-in reports done; a later session sticks). Verifier stopped. REMEDIATION-1.md written; R1-1 dispatched on gpt (the builders' provider), standard, with a sharpened brief.
 
