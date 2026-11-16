@@ -92,8 +92,16 @@ Intake takes `{command, does, why}` only (no thread or card reference).
 beside `cards` and `events` in `viewer/app/routes.js` `handleMachine`), body
 `{request_id, state, exit_code?, output?, truncated?, delivery_id}`, where `state` is `running`,
 `ran`, `declined`, `expired` or `failed`. Idempotent: a repeat or an older state than the card
-already has returns 200 and changes nothing. On the first terminal state the hub updates the card
-and queues one message to the lead (below). An unknown `request_id` returns 409, which the machine
+already has returns 200 and changes nothing.
+
+**One state handler in the hub.** Every sudo state change, from this route, from a cancel
+response or from hub-start recovery, goes through one function,
+`applySudoState(request_id, {state, exit_code?, output?, truncated?})`. Under the thread's
+existing save, it: ignores a state older than or equal to the card's (order `waiting`/`declining`
+< `running` < terminal); otherwise sets the card's state and result; and, on the card's first
+terminal state only, queues exactly one message to the lead (below), in the same save. A later
+call with the same or another terminal state is a no-op. So whichever path reports a result first,
+the lead hears it once and with the output. An unknown `request_id` returns 409, which the machine
 treats as "retry later", not as a rejection.
 
 **Ordering and durability on the machine.** The machine service keeps a small file
@@ -117,16 +125,19 @@ is treated as done. It:
 **Decline.** The press sets the card to `declining` and the hub calls the machine
 (`POST /sudo/<request_id>/cancel` on the machine service API, `machine/API.md`), which calls the
 helper's cancel. The helper answers with the request's actual state:
-- `declined`: the card becomes `declined`, the lead gets `[card <id>] declined`.
-- `running` or a terminal state (Run won the race): the card takes that state; the outcome follows
-  as usual; Collin sees the run result, not "declined".
-- machine or helper unreachable: the card returns to `waiting` with a one-line note "Couldn't reach
-  <machine> to decline. Try again." Nothing is reported as declined until the helper confirms it.
+- any state (`declined`, `running`, `ran`, …): passed to `applySudoState` with the full status
+  (the cancel response has the same shape as `GET /requests/<id>`). If Run won the race, Collin
+  sees the run result, not "declined".
+- machine or helper unreachable, or no answer in 10 seconds: the card returns to `waiting` with
+  a one-line note "Couldn't reach <machine> to decline. Try again." Nothing is reported as
+  declined until the helper confirms it.
+Each press stores a fresh `decline_attempt` id on the card. The unreachable/timeout restore
+applies only if the card is still `declining` with that same `decline_attempt`; if any outcome has
+moved the card on, the restore does nothing.
 The helper's own transitions are atomic under one lock: `waiting → running` on a good password,
 `waiting → declined` on cancel; whichever comes first wins. A cancel that arrives while the
 password check is still going wins, and the check's result is discarded.
-The hub's call to the machine has a 10-second timeout, treated as unreachable. When the hub
-starts, any card still in `declining` returns to `waiting` with the note "Decline status unknown; checking…" until the next outcome arrives.
+When the hub starts, any card still in `declining` returns to `waiting` with the note "Decline status unknown; checking…" until the next outcome arrives.
 
 What reaches the lead (typed like any press, shown as a short bubble in the thread):
 - `[card <id>] sudo ran: exit <n>` followed by the output block.
@@ -161,7 +172,8 @@ row in the root `AGENTS.md` tables), but **runs only from an installed root-owne
 - `POST /requests` `{command, does, why}` → `{request_id, url, editable}`.
   `request_id` is 128 random bits, hex; `url` is `<url_base>/r/<request_id>`.
 - `GET /requests/<id>` → `{state, exit_code?, output?, truncated?}`.
-- `POST /requests/<id>/cancel` → declines a `waiting` request; answers with the request's actual state either way.
+- `POST /requests/<id>/cancel` → declines a `waiting` request; answers with the request's actual
+  status either way, in the same shape as `GET /requests/<id>`.
 
 **Page** (on `page.sock`):
 - `GET /r/<id>`: a fixed HTML page (`static/page.html`) that loads `/static/page.js` and
@@ -217,7 +229,8 @@ and run byte for byte. Files that text runs or reads are not frozen (Decision 18
 - **No `~`.** Intake refuses a command in which any word (split as below) starts with `~`, with
   "Write the full path; ~ would mean /root here". `card.js` passes the error to the lead.
 - **Editable-file warning.** At intake the helper splits the command with Python's
-  `shlex.shlex(command, posix=True, punctuation_chars=True)` (so quoting is removed) and takes
+  `shlex.shlex(command, posix=True, punctuation_chars=True)` with `commenters = ''` (so quoting
+is removed and a `#` never hides the rest of the line) and takes
   every word that starts with `/` or `./` (`./` resolved against `/`, the run directory).
   A command that `shlex` can't split (unbalanced quotes) is refused at intake. A path is flagged when the user, with
   their groups, could write it or any directory above it (checked from owner, group and mode
@@ -329,12 +342,28 @@ Round 2, GPT lane (mechanics), reviewed the text before the intent lane's fixes:
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | major | Cancel response can set a terminal state, then the real outcome is a no-op and the lead misses it | upheld | One `applySudoState` handler, one message on first terminal state |
+| mechanics | major | Decline timeout could overwrite a delivered `declined` with `waiting` | upheld | `decline_attempt` id; restore only if still declining with the same id |
+| mechanics | minor | `shlex` comments hide paths after `#` | upheld | `commenters = ''` |
 | intent | minor | `sudo -K` step unneeded and clears Collin's terminal cache | upheld | Dropped |
 | intent | minor | Leftover `-k` paragraph implies the run uses sudo | upheld | Rewritten |
 | intent | minor | Hub could poll the machine instead of machine durability file | declined | The machine design is reviewed and sound; switching re-opens the whole outcome path for no behavior change |
 | intent | minor | Post-restart `declining` note can be false | upheld | Neutral note |
 | intent | minor | Check b needs shell-as-root rights; message misstates the reason | upheld | Message and Spec say so |
 | intent | minor | Watch List rows left open | upheld | Rows removed: row 1 settled by Decision 5 (password only crosses browser → helper over Tailscale HTTPS); row 2 by Decision 19 and `-k`; row 3 by Decision 19 |
+
+### Round 4 — 2026-11-15
+
+**Lanes:** intent — claude; mechanics — gpt; cross-family: yes.
+
+**Changed since Round 3:**
+- One hub `applySudoState` handler for every sudo state change; one lead message per card.
+- Decline: `decline_attempt` id guards the restore; cancel answers with full status.
+- `shlex` with comments off.
+- Dropped `sudo -K`; check-b message and shell-as-root requirement; neutral note after hub restart.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
