@@ -294,18 +294,27 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
     test('finished agents start folded out of the tree and come back on request', async ({ page }) => {
       const done = (name, children = []) => ({ name, role: 'worker', display_title: name, live: false, state: 'finished', children });
       const running = { name: 'wc-a-running', role: 'worker', display_title: 'Still going', live: true, state: 'working', children: [] };
-      const lead = { name: 'wc-a-lead', role: 'lead', display_title: 'A thread', live: true, state: 'working', children: [done('wc-a-sublead', [running, done('wc-a-old-worker')]), done('wc-a-reviewer')] };
-      await page.route('**/api/agents', route => route.fulfill({ json: { leads: [{ thread_id: 'a', thread_title: 'A thread', lead_name: 'Alpha', project: 'project-a', stage: 'building', counts: { total: 5 }, session: lead, asides: [] }], machines: [] } }));
+      const lead = { name: 'wc-a-lead', role: 'lead', display_title: 'A thread', live: true, state: 'working', children: [done('wc-a-sublead', [running, done('wc-a-old-worker')]), done('wc-a-reviewer'), ...Array.from({ length: 8 }, (_, i) => done(`wc-a-done-${i}`))] };
+      await page.route('**/api/agents', route => route.fulfill({ json: { leads: [{ thread_id: 'a', thread_title: 'A thread', lead_name: 'Alpha', project: 'project-a', stage: 'building', counts: { total: 5 }, session: lead, asides: [], question_paths: [['wc-a-reviewer', 'wc-a-lead']] }], machines: [] } }));
       await openPage(page, context, '/app/agents?lead=a');
       const boxes = page.locator('.agents-tree [data-session]');
       // The finished sub-lead stays because a running worker is under it.
       await expect(boxes).toHaveCount(3);
       await expect(page.locator('[data-session="wc-a-reviewer"]')).toHaveCount(0);
       await expect(page.locator('[data-session="wc-a-old-worker"]')).toHaveCount(0);
-      await page.getByRole('button', { name: 'Show 2 finished agents' }).click();
-      await expect(boxes).toHaveCount(5);
+      // The only question path runs through a hidden agent, so neither it nor its legend shows.
+      await expect(page.locator('.agents-path-legend')).toHaveCount(0);
+      await page.getByRole('button', { name: 'Show 10 finished agents' }).focus();
+      await page.keyboard.press('Enter');
+      await expect(boxes).toHaveCount(13);
+      await expect(page.getByRole('button', { name: 'Hide finished agents' })).toBeFocused();
+      await expect(page.locator('.agents-path-legend')).toHaveCount(1);
+      if (label === 'desktop') {
+        const inside = await page.evaluate(() => { const t = document.querySelector('.agents-tree').getBoundingClientRect(), b = document.querySelector('[data-session="wc-a-lead"]').getBoundingClientRect(); return b.left >= t.left - 1 && b.right <= t.right + 1; });
+        expect(inside).toBe(true);
+      }
       await page.waitForTimeout(5500); // a poll redraw keeps the choice
-      await expect(boxes).toHaveCount(5);
+      await expect(boxes).toHaveCount(13);
       await page.getByRole('button', { name: 'Hide finished agents' }).click();
       await expect(boxes).toHaveCount(3);
     });
