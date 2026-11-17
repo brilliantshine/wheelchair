@@ -44,6 +44,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 17 | Samples come only from the machine's kept transcript copies, read asynchronously within a 1-second budget; no CLI transcript discovery | The discovery helper probes synchronously and could stall the service | review-round-3 |
 | 18 | Only lead and reviewer sessions are checked, against a typical size per role; the limit is typical + 5,000 and the text gives the growth over typical | Every role shares one tool list, so these two measured, steady roles catch any tool growth; brief-driven roles would mostly track brief length | review-round-4 |
 | 19 | Supersedes the budget and timing of 17: the warning is computed in the background (at service start, every 10 minutes, and after each approval card) and the card route only reads the last result, never waiting | A card must not wait on a scan; no waiter can pile up behind a stalled read | review-round-4 |
+| 20 | A failed or abandoned refresh clears the warning; an abandoned scan stops at its next read and never writes the cache; a trigger during a refresh queues exactly one more | A failed check shows no warning (IDEA.md); no scans pile up; a new sample is picked up promptly | review-round-5 |
+| 21 | Only the spool drain strips and resends; the live relay, on a 4xx to an approval with `warnings`, leaves the spool file and triggers the drain | One owner (the drain is already single-flight per kind) from refusal through rewrite, resend and removal | review-round-5 |
 
 ## Spec
 
@@ -72,10 +74,14 @@ no warning.
 - `refreshStartupWarning()` in `machine/service.js` (or a small module beside it) sets
   `this.startupWarning` to a string or `null`. It runs at service start, every 10 minutes
   (an unref'd interval beside the spool timer), and after each lead approval card is
-  handled (not awaited). Only one refresh runs at a time: a trigger while one runs is
-  dropped. A refresh not finished 30 seconds after it began is abandoned: the guard is
-  cleared, and its result, if it ever arrives, is discarded (a refresh id is compared
-  before publishing). Any error leaves `this.startupWarning` unchanged and is logged.
+  handled (not awaited). Only one refresh runs at a time: a trigger while one runs sets a
+  flag, and when that refresh ends exactly one more starts (further triggers coalesce).
+  Each refresh has an id; `this.refreshId` names the current one. A refresh not finished
+  30 seconds after it began is abandoned: `this.startupWarning` is set to `null`, the
+  guard is cleared (a queued rerun starts), and `this.refreshId` moves on. An abandoned
+  refresh checks its id before every file open and every cache write and stops when it is
+  no longer current, so it issues no new reads and never writes the cache or the result.
+  Any error sets `this.startupWarning` to `null` and is logged.
 - Steps:
   1. Read the last 512 KB of `<stateDir>/session-ledger.jsonl` asynchronously (whole file if
      smaller; first partial line dropped; missing file: result `null`). Keep start lines (no
@@ -108,13 +114,16 @@ no warning.
   every incoming card (an agent never supplies it). Then, for a lead's `approval` card,
   beside the sudo step and before spooling, set `warnings: [this.startupWarning]` when it is
   a string; no awaiting, so the card is never held. Then trigger a background refresh.
-- **Older hub.** The machine forwards cards in two places, the live relay (`:1276`) and
-  the spool drain (`drainSpoolNow`, `:880`). Both go through one helper: when the hub
-  answers 4xx to an `approval` card that has `warnings`, it sends the same card once more
-  without `warnings`, and that second answer decides success or rejection as today. Before
-  the resend, the spool file is rewritten without `warnings` (`atomicWrite`, as the events
-  path does at `:891`), so if the resend fails transiently (5xx, timeout) the spool retries
-  the stripped card and never repeats the known refusal.
+- **Older hub.** Only the spool drain (`drainSpoolNow`, `:880`, single-flight per kind via
+  `drainSpool`) handles a refusal of `warnings`. In the drain, when the hub answers 4xx to
+  an `approval` card that has `warnings`: if the spool file still exists, rewrite it without
+  `warnings` (`atomicWrite`, as the events path does at `:891`), then send the stripped card
+  in the same loop iteration; its answer is handled as any card's is today (2xx removes the
+  file, 4xx rejects it, anything else leaves the stripped file for the next drain). If the
+  file is gone, move on. In the live relay (`:1276-1283`), a 4xx to an `approval` card that
+  has `warnings` neither rejects nor removes the spool file: it triggers
+  `drainSpool('cards')` (not awaited) and answers the lead `202 {ok: true, spooled: true}`.
+  Every other live-relay outcome is unchanged.
 - `protocol/app/cards-lead.md` approval table gains the row `warnings` — "Added by the
   machine, never by the lead: startup-size warnings. Shown as information; never affects
   Start building."
@@ -156,12 +165,15 @@ no warning.
   tail; corrupt lines; an agent-supplied `warnings` is removed from any card, with and
   without a current warning; a non-approval card and a non-lead approval are not enriched;
   the card route returns without waiting while a refresh is stalled; a refresh stalled past
-  30 s is abandoned, the next trigger starts a new one, and a late result is discarded;
-  a second trigger during a refresh is dropped; any thrown error keeps the previous
-  result. Forwarding: an `approval` with `warnings` refused 4xx by the hub is resent
-  without them on the live relay and on the spool drain after an outage; when that resend
-  gets 503, the spool file holds the stripped card and the next drain sends it; a card
-  without `warnings` refused 4xx is not resent.
+  30 s is abandoned, clears the warning, opens no further files and writes no cache entry
+  when its stalled read resolves, and a queued rerun starts; triggers during a refresh
+  coalesce into exactly one rerun, which sees a sample added mid-refresh; a thrown error
+  clears the warning. Forwarding: an `approval` with `warnings` refused 4xx by the hub on
+  the live relay answers the lead 202 and the drain delivers it stripped; the same after an
+  outage through the timer drain; when the stripped resend gets 503, the spool file holds
+  the stripped card and the next drain sends it; a live relay and the timer drain racing on
+  one such card deliver it once and leave no spool file; a card without `warnings` refused
+  4xx is rejected as today.
 - `node --test viewer/test/*.test.js`: `card.js` refuses `warnings` from an agent, accepts
   1-10 non-empty strings with `machine: true`, refuses empty strings and 11 items;
   `protocol-rules.test.js` still finds exactly one section per kind.
@@ -175,7 +187,7 @@ no warning.
 | Growth that stays under a role's limit, or comes from something other than tools (connectors, skills, a model change), is not attributed; the warning only says the limit was crossed | IDEA.md wants a heads-up, not a diagnosis; the text names both likely causes | 1, 3 |
 | Typical sizes go stale as lead or reviewer role files grow, giving false warnings until raised | Collin chose fixed limits knowing this; the text names the usual size | 3 |
 | Sessions with no kept transcript copy give no sample | Kept copies are made on every Stop hook; the walk uses older starts instead | 3 |
-| A warning can lag by up to one approval card or 10 minutes | The card is never held; tool growth persists for days | 4 |
+| A warning can lag behind the newest sessions by one refresh (seconds normally; up to 10 minutes plus one refresh after a quiet spell) | The card is never held; tool growth persists for days | 4, 5 |
 
 ## Review Rounds
 
@@ -265,13 +277,30 @@ no warning.
 
 ### Round 5 — 2026-11-17
 
-**Lanes:** pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 4:**
 - Only lead and reviewer checked, against typical sizes; text gives growth over typical (Decision 18)
 - Warning computed in the background; the card route only reads the last result and strips agent-supplied `warnings` (Decision 19)
 - Spool file rewritten without `warnings` before the resend
 - Usage and model validity rules; Edge cases and Validation updated
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | 10-minute interval may be unnecessary | declined | Without it, the first card after a quiet spell of days would carry a result from days ago |
+| mechanics | blocking | Live relay and drain can both strip and resend the same card | upheld | Decision 21 |
+| mechanics | major | A failure could leave an old warning forever | upheld | Decision 20: failure clears it |
+| mechanics | major | Abandoned scan keeps reading and writing the cache | upheld | Decision 20 |
+| mechanics | minor | RE-RAISE: dropped triggers miss new samples | upheld | Decision 20: coalesced rerun; risk text updated |
+
+### Round 6 — 2026-11-17
+
+**Lanes:** pending.
+
+**Changed since Round 5:**
+- Refresh failure and abandonment clear the warning; abandoned scans stop reading and never write the cache; triggers coalesce into one rerun (Decision 20)
+- Only the spool drain strips and resends; the live relay hands a refused approval to the drain (Decision 21)
+- Validation and the lag risk updated
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
