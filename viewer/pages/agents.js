@@ -10,6 +10,8 @@
   function terminalSpace() { document.documentElement.style.setProperty('--agents-terminal-height', !panel.hidden && !panel.classList.contains('full') ? `${panel.getBoundingClientRect().height}px` : '0px'); }
   new ResizeObserver(terminalSpace).observe(panel);
   new MutationObserver(terminalSpace).observe(panel, { attributes: true, attributeFilter: ['hidden', 'class'] });
+  const end = e => { if (!active.has(e.pointerId)) return; active.delete(e.pointerId); if (!active.size) { document.querySelector('.agents-tree')?.classList.remove('dragging'); const g = gesture; setTimeout(() => { if (gesture === g) gesture = null; if (pending && !active.size) { pending=false; render(); } }, 0); } };
+  window.addEventListener('pointerup', end); window.addEventListener('pointercancel', end);
   function treeView(tree, main, lead, content, sizer, label) {
     let zoom = view?.lead === lead ? view.zoom : 1;
     const measure = () => { sizer.style.width = `${content.offsetWidth * zoom}px`; sizer.style.height = `${content.offsetHeight * zoom}px`; content.style.transform = `scale(${zoom})`; label.textContent = `${Math.round(zoom * 100)}%`; };
@@ -23,8 +25,6 @@
     tree.addEventListener('wheel', e => { if (phone() || !e.ctrlKey) return; e.preventDefault(); const r = tree.getBoundingClientRect(); setZoom(zoom * Math.exp(-e.deltaY * .01), e.clientX-r.left, e.clientY-r.top); }, { passive: false });
     tree.addEventListener('pointerdown', e => { if (phone() || (e.pointerType === 'mouse' && e.button !== 0)) return; active.set(e.pointerId, { x:e.clientX, y:e.clientY }); if (active.size === 1) gesture = { x:e.clientX, y:e.clientY, left:tree.scrollLeft, top:tree.scrollTop, dragged:false, pinch:false }; else if (active.size === 2) { gesture.pinch = gesture.dragged = true; const [a,b] = [...active.values()]; gesture.distance = Math.hypot(a.x-b.x,a.y-b.y); } });
     tree.addEventListener('pointermove', e => { if (!active.has(e.pointerId) || !gesture) return; active.set(e.pointerId, { x:e.clientX, y:e.clientY }); if (gesture.pinch && active.size >= 2) { const [a,b] = [...active.values()], distance = Math.hypot(a.x-b.x,a.y-b.y), r = tree.getBoundingClientRect(); if (gesture.distance) setZoom(zoom * distance / gesture.distance, (a.x+b.x)/2-r.left, (a.y+b.y)/2-r.top); gesture.distance = distance; } else if (!gesture.pinch) { const dx=e.clientX-gesture.x, dy=e.clientY-gesture.y; if (!gesture.dragged && Math.hypot(dx,dy)>5) { gesture.dragged=true; tree.setPointerCapture(e.pointerId); tree.classList.add('dragging'); } if (gesture.dragged) { tree.scrollLeft=gesture.left-dx; tree.scrollTop=gesture.top-dy; } } });
-    const end = e => { if (!active.has(e.pointerId)) return; active.delete(e.pointerId); if (!active.size) { tree.classList.remove('dragging'); const g = gesture; setTimeout(() => { if (gesture === g) gesture = null; if (pending && !active.size) { pending=false; render(); } }, 0); } };
-    tree.addEventListener('pointerup', end); tree.addEventListener('pointercancel', end);
     tree.addEventListener('click', e => { if (gesture?.dragged) { e.preventDefault(); e.stopPropagation(); } }, true);
     return { step: factor => setZoom(zoom * factor, tree.clientWidth/2, tree.clientHeight/2), fit, full };
   }

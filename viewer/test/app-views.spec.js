@@ -127,6 +127,88 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       await page.locator('.agents-entry', { hasText: 'b' }).click(); await expect(zoom).toHaveText('100%');
     });
 
+    async function setupPanTree(page) {
+      const children = Array.from({ length: 12 }, (_, i) => ({ name: `worker-${i}`, role: 'worker', display_title: `Worker ${i}`, live: true, state: 'working', children: i < 2 ? [{ name: `nested-${i}`, role: 'worker', display_title: `Nested ${i}`, live: true, state: 'working', children: [] }] : [] }));
+      const lead = id => ({ thread_id: id, lead_name: id, counts: { total: 15 }, session: { name: `lead-${id}`, role: 'lead', live: true, state: 'working', children }, asides: [] });
+      const response = { leads: [lead('a'), lead('b')], machines: [] };
+      await page.route('**/api/agents', route => route.fulfill({ json: response }));
+      await openPage(page, context, '/app/agents?lead=a');
+      await expect(page.locator('.agents-tree .agents-box')).toHaveCount(15);
+      return response;
+    }
+
+    async function panTree(page) {
+      const tree = page.locator('.agents-tree');
+      const rect = await tree.boundingBox();
+      await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height - 10);
+      await page.mouse.down();
+      await page.mouse.move(rect.x + rect.width / 2 - 80, rect.y + rect.height - 70);
+      await page.mouse.up();
+    }
+
+    test('dragging empty tree space moves both scroll axes by the pointer distance', async ({ page }) => {
+      test.skip(label !== 'desktop');
+      await setupPanTree(page);
+      for (let i = 0; i < 4; i++) await page.getByRole('button', { name: 'Zoom in' }).click();
+      const tree = page.locator('.agents-tree');
+      await tree.evaluate(n => { n.scrollTop = 30; });
+      const before = await tree.evaluate(n => ({ left: n.scrollLeft, top: n.scrollTop, remaining: n.scrollHeight - n.clientHeight - n.scrollTop }));
+      expect(before.remaining).toBeGreaterThanOrEqual(60);
+      await panTree(page);
+      const after = await tree.evaluate(n => ({ left: n.scrollLeft, top: n.scrollTop }));
+      expect(Math.abs(after.left - before.left - 80)).toBeLessThanOrEqual(2);
+      expect(Math.abs(after.top - before.top - 60)).toBeLessThanOrEqual(2);
+    });
+
+    test('selecting a box after pan and zoom preserves the view', async ({ page }) => {
+      test.skip(label !== 'desktop');
+      await setupPanTree(page);
+      await panTree(page);
+      await page.getByRole('button', { name: 'Zoom in' }).click();
+      const tree = page.locator('.agents-tree'), zoom = page.locator('.agents-zoom');
+      const box = page.locator('[data-session="lead-a"]');
+      await box.scrollIntoViewIfNeeded();
+      const before = await tree.evaluate(n => [n.scrollLeft, n.scrollTop]);
+      const zoomText = await zoom.textContent();
+      await box.click();
+      await expect(page).toHaveURL(/agent=lead-a/);
+      await expect(zoom).toHaveText(zoomText);
+      const after = await tree.evaluate(n => [n.scrollLeft, n.scrollTop]);
+      expect(Math.abs(after[0] - before[0])).toBeLessThanOrEqual(1);
+      expect(Math.abs(after[1] - before[1])).toBeLessThanOrEqual(1);
+    });
+
+    test('switching leads resets zoom and centres the new lead at the top', async ({ page }) => {
+      test.skip(label !== 'desktop');
+      await setupPanTree(page);
+      await panTree(page);
+      await page.getByRole('button', { name: 'Zoom in' }).click();
+      await page.locator('.agents-entry', { hasText: 'b' }).click();
+      await expect(page.locator('.agents-zoom')).toHaveText('100%');
+      const position = await page.locator('.agents-tree').evaluate(n => {
+        const tree = n.getBoundingClientRect(), box = n.querySelector('[data-session="lead-b"]').getBoundingClientRect();
+        return { top: n.scrollTop, centre: Math.abs(box.left + box.width / 2 - tree.left - tree.width / 2) };
+      });
+      expect(position.top).toBe(0);
+      expect(position.centre).toBeLessThanOrEqual(2);
+    });
+
+    test('release outside the tree allows polls and later selection', async ({ page }) => {
+      test.skip(label !== 'desktop');
+      const response = await setupPanTree(page);
+      const tree = await page.locator('.agents-tree').boundingBox();
+      const sidebar = await page.locator('.agents-sidebar').boundingBox();
+      await page.mouse.move(tree.x + 10, tree.y + tree.height - 10);
+      await page.mouse.down();
+      await page.mouse.move(sidebar.x + 10, sidebar.y + sidebar.height - 10);
+      await page.mouse.up();
+      response.leads[0].session.display_title = 'Updated after poll';
+      await page.waitForTimeout(5500);
+      await expect(page.locator('[data-session="lead-a"]')).toContainText('Updated after poll');
+      await page.locator('[data-session="lead-a"]').click();
+      await expect(page).toHaveURL(/agent=lead-a/);
+    });
+
     test('phone agent selection shows only details and returns to the tree', async ({ page }) => {
       test.skip(label !== 'phone');
       await page.setViewportSize({ width: 390, height: 844 });
