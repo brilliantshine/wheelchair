@@ -151,7 +151,7 @@ function roleLayers(settings, role, project, scout, provider) {
     lines.push('Where the template and the brief you are given disagree, the brief wins.');
   }
   if (role === 'sub-lead') lines.push('', 'Escalation rules from Settings:', ...escalationSentences(settings.escalation));
-  if (role === 'lead') lines.push('', 'Collin’s writing style for everything he reads (thread replies and the text of cards):', renderStyle(settings.style));
+  if (role === 'lead') lines.push('', 'The user’s writing style for everything they read (thread replies and the text of cards):', renderStyle(settings.style));
   if (scout && ['lead', 'sub-lead'].includes(role)) {
     const clause = provider === 'claude' ? ` (Claude Code: the Agent tool with model "${scout.light}")` : '';
     lines.push('', scout.light
