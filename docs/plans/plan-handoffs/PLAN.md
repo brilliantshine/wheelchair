@@ -43,6 +43,11 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 13 | Archived threads cannot be exported; an archived thread found on import counts as existing and can be advanced | No worktree to push from; reviving fits the no-duplicates rule | defaulted |
 | 14 | Carried cards that were still open are stored withdrawn; the new lead posts fresh ones | Avoids pressing a card whose asker no longer exists | defaulted |
 | 15 | Whoever picks the work up pushes an empty "picked up" commit to the branch first; import refuses when the branch moved past the export, and undo hand-off refuses when the branch moved | Collin's proposal: makes a pick-up visible on GitHub so a second import or an undo can't start a second copy. Empty commit chosen so nothing lands in the files | user |
+| 16 | Undo hand-off also claims the branch ("taken back") and is refused if the claim loses | Closes the undo-then-import race that decision 15 meant to prevent | review-round-1 |
+| 17 | Claims are made without a worktree (`commit-tree` + non-forced push) before any local change | Atomic; a lost race changes nothing | review-round-1 |
+| 18 | Export needs a clean worktree, reads stage from committed HEAD, and is blocked once the pull request is merged or the origin isn't GitHub | Only commits travel; a merged thread has nothing to hand off | review-round-1 |
+| 19 | Carried cards replace the importing thread's cards, all open ones withdrawn; carried messages join the thread's sent history; the import context is stored for recovery | No stale presses; later restarts and exports keep the history; a failed lead start can recover | review-round-1 |
+| 20 | File limit 10 MB on both sides, sent as raw bytes | Export and import check the same size | review-round-1 |
 
 ## Spec
 
@@ -385,6 +390,21 @@ npm --prefix viewer run test:browser
 | mechanics | major | Size limit lost through parsed JSON; export has no oversize path | upheld | Raw body, 10 MB on both sides; export refuses oversize |
 | mechanics | major | Carried messages lost on the next restart or export | upheld | Appended to `thread.sent` |
 | mechanics | major | Non-GitHub origins unspecified | upheld | Normalization returns null; export and import refuse |
+
+### Round 2 — 2026-11-17
+
+**Lanes:** intent and mechanics, see start; cross-family: yes.
+
+**Changed since Round 1:**
+- New Claims section: empty commit via `commit-tree` + non-forced push; used by import and undo.
+- Quiet test adds asides and a clean worktree; stage read from committed HEAD; reasons table; `merged` and non-GitHub blocks.
+- Export order: push, size check, save, stop lead.
+- Handed-off thread refuses all input routes, card posts, session starts and asides; undo claims; no Undo when archived.
+- Import: raw-body 10 MB limit; deep card validation; stage checked at `head`; carried state replaces cards and joins `sent`; Create and Advance step orders; Recovery via stored `import_context`.
+- Machine: `from_remote_branch` archive ownership; `/v1/handoff` gains `claim` and `status`; Normalization section.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
