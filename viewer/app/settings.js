@@ -10,6 +10,14 @@ const { PROVIDERS } = require('./providers.js');
 
 const execFileAsync = promisify(execFile);
 const ROLES = new Set(['lead', 'sub-lead', 'worker', 'reviewer', 'verifier', 'mapper']);
+const ROLE_CARD_FILES = {
+  lead: ['cards.md', 'cards-lead.md'],
+  'sub-lead': ['cards.md'],
+  worker: ['cards.md'],
+  mapper: ['cards.md'],
+  reviewer: [],
+  verifier: [],
+};
 const MODEL_MAX = 64;
 const WORK_TIERS = ['light', 'standard', 'heavy', 'critical'];
 const TIER_ALIASES = { luna: 'light', terra: 'standard', sol: 'heavy', astra: 'critical' };
@@ -166,8 +174,11 @@ function roleLayers(settings, role, project, scout, provider) {
 
 function fullPrompt(hub, settings, role, project) {
   if (!ROLES.has(role)) fail('role is invalid');
-  const pointer = `Read ${path.join(hub.root, 'protocol', 'app', `${role}.md`)} before responding. It is wheelchair's built-in rules for your role.`;
-  return `${pointer}\n\n${roleLayers(settings, role, project).text}`;
+  const header = ROLE_CARD_FILES[role].length
+    ? 'Your role rules and card rules are below, already loaded: do not read these files again unless this text is no longer in your context.'
+    : 'Your role rules are below, already loaded: do not read these files again unless this text is no longer in your context.';
+  const files = [`[full text of protocol/app/${role}.md]`, ...ROLE_CARD_FILES[role].map((file) => `[full text of protocol/app/${file}]`)];
+  return `Role: ${role}\n${header} \`<root>\` is \`${hub.root}\`.\n\n${files.join('\n')}\n\n${roleLayers(settings, role, project).text}`;
 }
 
 function assertFits(settings) {

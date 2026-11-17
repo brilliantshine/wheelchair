@@ -549,7 +549,9 @@
   function promptBox() {
     if (!fullPrompt) return h('div', { id: 'full-prompt', hidden: true });
     if (fullPrompt.error) return h('p', { id: 'full-prompt', class: 'inline-err', role: 'alert', text: fullPrompt.error });
-    return h('pre', { id: 'full-prompt', class: 'full', text: fullPrompt.text });
+    return h('div', {},
+      h('pre', { id: 'full-prompt', class: 'full', text: fullPrompt.text }),
+      h('span', { class: 'hint', id: 'full-prompt-caption', text: 'Claude gets this as its starting instructions; GPT and Antigravity sessions get it as a file, through a two-line first message that points to it.' }));
   }
 
   function switchRow(title, hint, control) {
