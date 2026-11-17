@@ -196,6 +196,7 @@
 .agents-activity svg { display: block; width: 100%; overflow: visible; }
 .agents-activity figcaption { color: var(--dim); font-size: 11px; }
 .activity-line { stroke: var(--line-2); stroke-linecap: round; }
+/* 8s here matches the animation-delay agents.js sets from the clock, so a re-render keeps the phase */
 .activity-flow { stroke: var(--accent-hi); stroke-dasharray: 5 7; animation: activity-flow 8s linear infinite; }
 @keyframes activity-flow { to { stroke-dashoffset: -24; } }
 @media (prefers-reduced-motion: reduce) { .activity-flow { animation: none; } }
