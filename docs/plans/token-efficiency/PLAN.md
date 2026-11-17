@@ -12,15 +12,10 @@ get buried as this file grows.
 
 ## Open Questions
 
-### Q1: Is the scout the CLI's built-in helper or a new app session?
-- **Context:** MAP.md. Claude, Codex and Antigravity each document a built-in subagent that can take a cheaper model; the app does not disable it. A new app role needs a role file, both role sets, start rules, placement, worktree policy and Settings UI (`viewer/app/sessions.js:35-47,461-498`, `viewer/app/balancer.js:11-17`). Claude's Agent tool takes model aliases (haiku/sonnet/opus), not arbitrary ids. Codex/Gemini helper behaviour inside app sessions is untested.
-- **Options:** (a) built-in helper: the hub tells the lead/sub-lead its scout model in its starting instructions; the agent calls its own helper with that model and gets the answer inside the same turn. (b) new `scout` app role: the lead starts it with `wc.js session start --role scout`; the answer arrives later as a `result`.
-- **Recommendation:** (a). Answers come back in the same turn, so asking the scout costs no extra waiting, and it is far less code. Where a provider's helper can't use the model, the agent reads code itself as today.
-
-### Q2: How does the sub-lead's context stay small?
+### Q1: How does the sub-lead's context stay small?
 - **Context:** sub-lead.md:129-152 makes it read every worker diff and rerun validation; diffs are its largest input (~3M chars across past builds). Restart already rebuilds from PLAN.md and reports (sub-lead.md:25-36).
 - **Options:** (a) the scout reads each diff against the worker's brief and reports; the sub-lead still reruns validation itself. (b) the hub gives the sub-lead a fresh context between tasks. (c) both.
-- **Recommendation:** pending Q1.
+- **Recommendation:** (a). The verifier still checks the whole build at the end, so a cheaper diff read does not weaken the gate. (b) is hard to time: workers run in parallel, so there is rarely a quiet moment between tasks, and each restart re-reads IDEA, PLAN and MAP. Revisit (b) only if re-measuring shows sub-lead context still grows.
 
 ## Watch List
 
@@ -34,11 +29,18 @@ get buried as this file grows.
 |---|----------|-----------|--------|
 | 1 | Scout model is a Settings choice | Collin, on confirming IDEA.md | user |
 | 2 | Sub-lead gets its own model cell per provider, initially equal to the lead cell, so nothing changes until Collin changes it | no behaviour change on upgrade | defaulted |
+| 4 | Scout is the CLI's built-in helper (Claude Agent tool, Codex subagent, Antigravity subagent), not a new app role | answers return in the same turn; far less code | user |
 | 3 | Scout setting sits in Other agents as a tier selector like reviewer/verifier/mapper, default Light | matches the existing pattern and Collin's "light tier" | defaulted |
 
 ## Spec
 
-(grows as decisions land)
+### Settings
+- New per-provider `sub-lead` model cell beside `lead` in `codex/model.sh`, the API and the Models page; on first load it copies the lead cell. `balancer.js` resolves sub-leads to it.
+- New Other agents selector `scout`, a tier (`light` default), stored with reviewer/verifier/mapper.
+
+### Scout
+- At start, the hub resolves the scout tier to a model for the session's provider and adds one layer to the lead's and sub-lead's starting instructions: the scout model, and the rule below. For Claude the model is given as the Agent tool alias for its family (haiku, sonnet, opus); a model with no alias means no scout.
+- lead.md and sub-lead.md rule: questions that need reading more than a couple of files go to the built-in helper on the scout model, with a brief asking for conclusions with file:line evidence, not file dumps. The agent acts on those conclusions and opens a file itself only to confirm a specific line. With no scout model, read code as today.
 
 ## Accepted Risks
 
