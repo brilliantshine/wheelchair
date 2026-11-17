@@ -209,6 +209,67 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       await expect(page).toHaveURL(/agent=lead-a/);
     });
 
+    async function showTree(page, children, selectedName) {
+      const lead = { name: 'wc-a-lead', role: 'lead', display_title: 'A thread', live: true, state: 'working', children };
+      await page.route('**/api/agents', route => route.fulfill({ json: { leads: [{ thread_id: 'a', thread_title: 'A thread', lead_name: 'Alpha', project: 'project-a', stage: 'building', counts: { total: children.length + 1 }, session: lead, asides: [] }], machines: [] } }));
+      await openPage(page, context, `/app/agents?lead=a${selectedName ? `&agent=${selectedName}` : ''}`);
+      await expect(page.locator('.agents-tree .agents-box')).toHaveCount(children.length + 1);
+    }
+
+    // The horizontal connector each child draws, as page x-ranges, plus each child box's centre.
+    function connectors(page) {
+      return page.evaluate(() => {
+        const list = document.querySelector('.agents-tree .agents-sizer > .agents-branch > .agents-children');
+        const branches = [...list.children];
+        const centre = r => r.left + r.width / 2;
+        return {
+          listBorder: getComputedStyle(list).borderTopStyle,
+          stub: centre(document.querySelector('.agents-tree .agents-sizer > .agents-branch > .agents-box').getBoundingClientRect()),
+          centres: branches.map(b => centre(b.querySelector('.agents-box').getBoundingClientRect())),
+          bars: branches.map(b => {
+            const s = getComputedStyle(b, '::after'); const r = b.getBoundingClientRect();
+            return s.display === 'none' || s.content === 'none' ? null : [r.left + parseFloat(s.left), r.right - parseFloat(s.right)];
+          }),
+        };
+      });
+    }
+
+    test('one child hangs from a single straight line', async ({ page }) => {
+      test.skip(label !== 'desktop');
+      await showTree(page, [{ name: 'wc-a-worker', role: 'worker', display_title: 'Only child', live: true, state: 'working', children: [] }]);
+      const c = await connectors(page);
+      expect(c.listBorder).toBe('none');
+      expect(c.bars).toEqual([null]);
+      expect(Math.abs(c.centres[0] - c.stub)).toBeLessThanOrEqual(1);
+    });
+
+    test('several children share a bar from the first centre to the last', async ({ page }) => {
+      test.skip(label !== 'desktop');
+      const kids = [0, 1, 2].map(i => ({ name: `wc-a-worker-${i}`, role: 'worker', display_title: `Worker ${i}`, live: true, state: 'working', children: [] }));
+      await showTree(page, kids);
+      const c = await connectors(page);
+      expect(c.listBorder).toBe('none');
+      expect(c.bars.every(Boolean)).toBe(true);
+      const left = Math.min(...c.bars.map(b => b[0])); const right = Math.max(...c.bars.map(b => b[1]));
+      expect(Math.abs(left - c.centres[0])).toBeLessThanOrEqual(1);
+      expect(Math.abs(right - c.centres[2])).toBeLessThanOrEqual(1);
+      for (let i = 1; i < c.bars.length; i++) expect(c.bars[i][0]).toBeLessThanOrEqual(c.bars[i - 1][1] + 1);
+    });
+
+    test('a long box title is clamped to three lines; the side panel shows it whole with the report', async ({ page }) => {
+      const long = Array.from({ length: 40 }, (_, i) => `Finding ${i}: something the reviewer said at length.`).join(' ');
+      await showTree(page, [{ name: 'wc-a-reviewer', role: 'reviewer', display_title: long, result_summary: 'VERDICT: PASS\nAll checks ran.', live: false, state: 'finished', children: [] }]);
+      const title = page.locator('[data-session="wc-a-reviewer"] .agents-box-title');
+      const size = await title.evaluate(node => ({ height: node.clientHeight, full: node.scrollHeight, line: parseFloat(getComputedStyle(node).lineHeight) }));
+      expect(size.height).toBeLessThanOrEqual(size.line * 3 + 2);
+      expect(size.height).toBeGreaterThan(size.line * 2);
+      expect(size.full).toBeGreaterThan(size.height);
+      await page.locator('[data-session="wc-a-reviewer"]').click();
+      await expect(page.locator('.agents-side h2')).toHaveText(long);
+      await expect(page.locator('.agents-report-head')).toHaveText('Report');
+      await expect(page.locator('.agents-report')).toHaveText('VERDICT: PASS\nAll checks ran.');
+    });
+
     test('phone agent selection shows only details and returns to the tree', async ({ page }) => {
       test.skip(label !== 'phone');
       await page.setViewportSize({ width: 390, height: 844 });
