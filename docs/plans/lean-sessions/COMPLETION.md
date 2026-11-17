@@ -124,3 +124,18 @@ Claude CLI flag check: `claude -p hi --append-system-prompt-file /nonexistent/x.
   `app-accounts.spec.js` "lead waiting line".
 
 ## Remediation rounds
+
+### Remediation 1 (after verification attempt 1, commit 75c75e4)
+
+Gap: `sub-lead.md` removed the role-file pointer from worker and verifier briefs without
+saying the role rules are already in the starting instructions (Spec, "Starting instructions
+carry the rules", 4th bullet).
+
+Fix (task R1-1, light gpt-6-luna, plus a sub-lead rewrap):
+- `protocol/app/sub-lead.md:52-53` (worker briefs) and `:224-226` (verifier brief) now say
+  the role rules are already in the session's starting instructions, so a brief never tells
+  it to read its role file.
+- `protocol/app/cards.md:3-4` no longer claims every role reads it.
+- `viewer/test/protocol-rules.test.js:69-73` asserts both sentences.
+
+Validation after the fix: see the PLAN.md Log line for remediation 1 and the outputs below.
