@@ -1,6 +1,6 @@
 ---
 slug: agents-screen-redesign
-status: draft   # draft | confirmed
+status: confirmed   # draft | confirmed
 created: 2026-11-17
 ---
 
