@@ -235,9 +235,9 @@ test.describe('Features and Agents at desktop width', () => {
     await noSideScroll(page);
   });
 
-  test('Agents: cards have a copyable attach command and unreachable banner', async ({ page }) => {
+  test('Agents: no attach command and unreachable banner', async ({ page }) => {
     await openPage(page, context, '/app/agents');
-    await expect(page.locator('.agent-card').first().getByRole('button', { name: 'Copy' })).toBeVisible();
+    await expect(page.locator('body')).not.toContainText('tmux');
     await expect(page.locator('#unreachable')).toContainText('node-3 unreachable');
     await noSideScroll(page);
   });
