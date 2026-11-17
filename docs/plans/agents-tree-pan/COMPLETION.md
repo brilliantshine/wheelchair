@@ -2,7 +2,10 @@
 slug: agents-tree-pan
 date: 2026-11-17
 implemented-by: "standard, gpt-6.1-terra (T1, T2; claude was asked for, the hub sent gpt); sub-lead: claude-opus-5-5"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: verifier, claude-opus-5-5
+    checks: "standard, gpt-6.1-terra"
 ---
 
 # Completion Report — Drag the Agents tree to see all of it

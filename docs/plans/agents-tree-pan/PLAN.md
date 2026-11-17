@@ -238,3 +238,4 @@ npm --prefix viewer run test:browser
 - 2026-11-17 — Choice: T1, app-views.spec.js: Validation items 2–11 combined into one desktop test rather than one test each (seen in the diff; the report calls it a coverage gap).
 - 2026-11-17 — T1 reported its Node gate as blocked (port collision while the browser suite ran at the same time); the sub-lead re-ran the gates one after the other and both passed. Two gaps go to T2: a pointer released outside the tree area is never removed from the active set, which leaves refreshes deferred and turns the next press into a pinch; and items 2 (vertical scroll), 9 (selecting keeps the view) and 10 (another lead resets scroll) are not fully asserted.
 - 2026-11-17 — Choice: T2, app-views.spec.js: one shared 12-worker fixture and drag helper for the four new tests; the two-axis drag test zooms to 200% and starts from an interior scroll position.
+- 2026-11-17 — Verification attempt 1 (claude-opus-5-5) on 790f32b: PASS.
