@@ -1,6 +1,6 @@
 ---
 slug: agents-activity
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-17
 ---
 
@@ -47,6 +47,22 @@ Read IDEA.md and MAP.md first. The screen this extends is mapped in
 `AgentsNowOptions.dc.html` option A ("now" motion) and `AgentsTree.dc.html` (amber path and
 the waiting agent's panel). Match their layout, wording and colours; where this Spec and a
 design disagree, this Spec wins.
+
+```mermaid
+flowchart LR
+  A["Claude Code reports each tool call starting, ending or failing"] --> M["Machine turns each call into a step: kind, label, times"]
+  B["Claude Code status line reports how full memory is"] --> M
+  C["Codex log records calls, check-backs and memory use"] --> R["Machine reads the log every 2 s; a still-running command lasts until the agent moves on"]
+  R --> M
+  M --> S["Kept on disk until the app is reachable"]
+  S --> H["App keeps recent steps, turn times and memory fill per agent"]
+  H --> HI["Clearly finished steps go into the project's timing history"]
+  Q["Agents mark questions and name the one they pass on"] --> H
+  H --> API["Agents screen asks every 5 s"]
+  HI --> API
+  API --> P["Side panel: map, now timer, latest four, is-this-normal, memory ring"]
+  API --> T["Tree: question path in amber up to the lead"]
+```
 
 ### 1. Steps: what one is
 
