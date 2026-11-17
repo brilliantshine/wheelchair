@@ -173,6 +173,8 @@
  .agents-branch { align-items: stretch; min-width: 0; }
  .agents-box { width: 100%; }
  .agents-children { display: block; margin: 0 0 0 12px; padding: 12px 0 0 16px; border: 0; border-left: 1px solid var(--line-2); }
+ .agents-children.question-path-line { border-left-color: var(--warn); }
+ .agents-path-overlay { display: none; }
  .agents-children:before, .agents-children > .agents-branch:before { display: none; }
  .agents-children > .agents-branch { margin-bottom: 12px; }
  .agents-terminal { inset: 0; height: auto !important; }
