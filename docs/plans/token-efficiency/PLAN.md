@@ -73,6 +73,15 @@ New tests: model.sh reads, writes and defaults the sub-lead cell; balancer resol
 
 ## Review Rounds
 
+### Round 1 — 2026-11-16
+
+**Lanes:** intent — gpt / gpt-6.1-sol; mechanics — gpt / gpt-6.1-sol; cross-family: no (Claude unavailable for reviewers at start).
+
+**Changed since Round 0:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
