@@ -36,6 +36,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 9 | Step labels come from the CLI's own description or a short action plus target; no model call summarises output | Told Collin in the thread; a model call per step costs more than it shows | defaulted |
 | 10 | Steps live on the session record (last 30) and in a per-project history file pruned to 30 days, not in a new store | Thread files are already rewritten on every event; history needs to outlive sessions | defaulted |
 | 11 | Context for Claude is posted at most every 15 seconds, separate from the once-a-minute rate-limit throttle | Live enough for a ring, cheap | defaulted |
+| 12 | Codex steps follow an operation until it finishes (cell `wait` and process `write_stdin` polls end the original step), and a script is one step; supersedes Decision 3 | Review round 1: a tool response is not completion, and script source shows possible, not executed, calls | review-round-1 |
 
 ## Spec
 
@@ -54,8 +55,7 @@ A **step** is one tool call by one session:
 { id, kind, label, key, started_at, ended_at|null, failed: true|false|null }
 ```
 
-- `id`: the CLI's own call id (`tool_use_id` for Claude, `call_id` for Codex; for a Codex
-  nested call, `<call_id>#<n>`, n from 1 in source order).
+- `id`: the CLI's own call id (`tool_use_id` for Claude, the starting call's `call_id` for Codex).
 - `kind`: `files`, `shell`, `helpers`, `web` or `starter`. (`thinking` is never stored; see 4.)
 - `label`: plain words for the Latest list, at most 80 characters, cut with "…".
 - `key`: the matching key for "is this normal?" (section 5).
@@ -110,15 +110,37 @@ already finds once `codex_thread_id` is bound. The timer skips sessions whose th
 bound yet; the first turn's steps therefore arrive when that turn ends and binding happens
 (Accepted Risk 1). For each line:
 
-- `response_item` with `payload.type` `custom_tool_call` or `function_call` → start event(s),
-  `started_at` = the line's `timestamp`. When `name` is `exec`, parse `input` for every
-  `tools.<name>(` call and its first string argument (`cmd`, `path`, `query`…) and emit one
-  step per nested call, ids `<call_id>#<n>`; if none parse, one `shell` step labelled
-  "Ran a script".
-- `..._output` with the same `call_id` → end event(s) for that call (all nested ids),
-  `ended_at` = the line's `timestamp`. `failed` is true when the output reports a non-zero
-  `exit_code`, a script error, or a tool error; build this from real rollout fixtures
-  (`~/.codex/sessions/**` on this machine) and keep the fixtures in `machine/test/`.
+A Codex step is one **operation**, followed until it really finishes, not until its first
+tool response. Codex often answers a call with "still running" and the agent then polls:
+
+- a script (`exec`) may return `Script running with cell ID <n>`; later `wait` calls with
+  `{"cell_id":"<n>"}` poll it until an output says `Script completed` (or a script error);
+- a command (`exec_command`, directly or inside a script) may return a JSON result with a
+  `session_id` and no `exit_code`; later `write_stdin` calls with that `session_id` poll it
+  until a result carries `exit_code`.
+
+Rules, per line:
+
+- `response_item` `custom_tool_call` / `function_call` that is **not** a poll (a `wait` naming
+  a cell, or a `write_stdin` naming a process session, that this session already has
+  running) → a start event, id `call_id`, `started_at` = the line's `timestamp`. Polls start
+  nothing.
+- The matching `..._output` (same `call_id`):
+  - for an operation: if the output says it is still running, record its cell id and/or
+    process `session_id` against the step and leave it running; otherwise end it.
+  - for a poll: if the output shows the polled cell or process finished, end the step that
+    owns that cell or process; otherwise nothing.
+  - `ended_at` = the timestamp of the line that shows completion. `failed` is true for a
+    script error, a non-zero `exit_code` in the final result, or a tool error.
+- **One step per script.** The script's source is not split into nested steps (it shows
+  possible calls, not executed ones). Its kind and label come from the first `tools.<name>(`
+  call in its source (classified per section 1, label from its first string argument); with
+  two or more distinct calls in the source the label gets " and more"; with none it is a
+  `shell` step "Ran a script".
+- Build and test this against real rollouts from `~/.codex/sessions/**` on this machine,
+  copied as fixtures into `machine/test/`: a script that completes at once, one that yields
+  and is finished by `wait`, a command that yields and is finished by `write_stdin`, and one
+  with `exit_code` 1.
 - `event_msg` `token_count` with `info.model_context_window` → a context event (section 3).
 
 The existing turn-end usage scan is unchanged.
@@ -127,6 +149,12 @@ The existing turn-end usage scan is unchanged.
 `hook()` / `emitEvent` → event spool → drain → hub `POST /api/machine/events`, each with its
 own `delivery_id`. `hook()` adds `session` and `thread_id` as it does today and passes
 `step` / `context` through.
+
+**Codex turn end.** When the machine receives a Codex turn-complete notify, it first runs
+the rollout reader for that session to the end of the file and emits those step events,
+then emits `turn-ended`, so a turn's last steps never arrive after its end. Every step
+event carries the CLI-side times above, and the hub works from those times, not from
+arrival order (section 4).
 
 ### 3. Context fill
 
@@ -144,17 +172,31 @@ own `delivery_id`. `hook()` adds `session` and `thread_id` as it does today and 
 
 `viewer/app/sessions.js` `event()` handles `step` and `context`:
 
-- `session.steps`: the last 30 steps, newest last. A start adds a step (ignore a repeat id);
-  an end fills `ended_at` and `failed` on the matching id. An end with no start is dropped.
+- `session.steps`: every running step, plus the last 30 finished steps, ordered by
+  `started_at`. A finished step beyond 30 is dropped oldest first; a running step is never
+  dropped for space. More than 50 running steps: the oldest are closed (`ended_at` = now,
+  `failed: null`).
+- **Order does not matter** (Claude hooks are async and can arrive out of order). A start
+  adds a step; a repeat start for a known id is ignored. An end for an unknown id is kept
+  in `session.pending_ends` (by id, at most 50, dropped after 10 minutes); a start that
+  finds its id there is stored already finished. A start whose `started_at` is not after
+  the session's latest `turn_ended_at` belongs to an ended turn: it is stored finished at
+  that turn end with `failed: null`, unless its end is already known.
 - `session.step_counts`: `{files, shell, helpers, web, starter, thinking}`, counts over the
   session's life, incremented on start (thinking: see below).
 - When a step ends, append `{kind, key, ms, at}` to a per-project history file
-  `<state>/step-history/<project basename>.jsonl`. On hub start and once a day, rewrite each
+  `<state>/step-history/<project key>.jsonl`, where the project key is the thread
+  project path's basename, a hyphen, and the first 8 hex characters of the SHA-256 of its
+  absolute path (`thread.project`, the value `agents.js` takes the basename of), so two
+  projects with the same folder name never share history. On hub start and once a day, rewrite each
   file without rows older than 30 days.
-- When a turn ends, any step still running is closed with `ended_at` = turn end and
-  `failed: null` (shown as done).
+- When a turn ends, every running step with `started_at` before the turn end is closed with
+  `ended_at` = turn end and `failed: null` (shown as done).
+- When a session stops, fails or disappears (the existing handlers that set `live=false`
+  or `ended_at`, `viewer/app/sessions.js` ~571 and ~630), every running step is closed the
+  same way at that time, and `current` is null from then on.
 
-**Thinking.** A session is thinking when its turn is running (the existing
+**Thinking.** A session is thinking when it is live, its turn is running (the existing
 `turn_started_at` is later than `turn_ended_at`) and no step is running. It begins at the
 latest step `ended_at` in this turn, or the turn start. Each gap of 5 seconds or more adds 1
 to `step_counts.thinking` when the next step starts or the turn ends.
@@ -165,8 +207,11 @@ to `step_counts.thinking` when the next step starts or the turn ends.
 - `activity`: `{counts, trail, current, latest, normal}`:
   - `counts`: `step_counts`.
   - `trail`: kinds of the last five steps, oldest first, consecutive repeats collapsed.
-  - `current`: `{kind, label, since}`: the running step, else thinking (label
-    "Thinking"), else null when the turn is not running.
+  - `current`: `{kind, label, since, id}`: the most recently started running step (several
+    run at once when Claude calls tools in parallel; the others still count and show in
+    Latest); when it ends, the next most recent running step. Else thinking (label
+    "Thinking", no id). Else null when the session is not live or its turn is not running.
+    `since` is that step's `started_at`; "now · m:ss" and `normal` use this step.
   - `latest`: the last four steps, newest first: `{label, at: started_at, state: 'running'|'done'|'failed'}`.
   - `normal`: see section 5.
 - `question`: see section 6.
@@ -219,11 +264,15 @@ Protocol text (short additions, in each file's own voice):
 
 - `worker.md` (after its question rule, ~line 43): a message that needs an answer is sent with
   `asks: true`.
-- `sub-lead.md` (after the worker-question relay, ~line 125): when passing a worker's question
-  to the lead, send `asks: true` and `passes_on: <the question id from the [question <id>]
-  tag>`; answering it yourself needs nothing.
+- `sub-lead.md` (its own questions to the lead, ~line 125): sent with `asks: true`. If a
+  question ever reaches it from below and it passes it on, it adds `passes_on: <the id from
+  the [question <id>] tag>`.
 - `lead.md` (Build section, step 7 items 3–4): a `question` card that passes on a sub-lead's
   or worker's question carries `passes_on`. `cards.md` documents the fields and the tag.
+
+Routing does not change: workers still ask the lead directly (`worker.md:39`,
+`sub-lead.md:124`), so a path may skip the sub-lead. A path is the agents that actually
+handled the question, not the tree route.
 
 API per node, `question`: when this session's latest `asks` message is not yet answered
 (no later message or result back from its recipient to it, and no `passes_on` card from the
@@ -236,7 +285,7 @@ open question card when the chain reached Collin.
 Side panel, below today's details and in this order, as in `AgentsActivity.dc.html`:
 
 1. **Normal line** (section 5), or for a waiting agent the **question trail** as in
-   `AgentsTree.dc.html`: "Asked the sub-lead at 19:58", then each hop ("The sub-lead passed
+   `AgentsTree.dc.html`: "Asked <recipient's role or lead name> at 19:58", then each hop ("The sub-lead passed
    it to Beta: <its text>"), then "Beta is asking you in the thread" with **Go to the
    question** linking to the thread page at that card.
 2. **Activity map** (inline SVG): the agent in the middle; six spots at equal distance —
@@ -252,9 +301,11 @@ Side panel, below today's details and in this order, as in `AgentsActivity.dc.ht
    Small key under the map as in the design.
 4. **Latest**: four rows, time (HH:MM, local), ● running / ✓ done / ✕ failed, label.
 
-Tree (`AgentsTree.dc.html`): for each path in the lead's `question_paths`, the connectors
-and the boxes' left edges along it are drawn in `--warn`, from the asking agent up to the
-lead. A legend item "Where a question went" appears only when a path is drawn.
+Tree (`AgentsTree.dc.html`): for each path in the lead's `question_paths`, the boxes of the
+agents on the path get a `--warn` left edge, and the tree connectors from the asking agent up
+to the lead are drawn in `--warn`. When the path skips an agent (a worker asked the lead
+directly), the connectors through the skipped agent are still amber, since they are the only
+line between the two, but the skipped agent's box keeps its normal edge. A legend item "Where a question went" appears only when a path is drawn.
 
 ### 8. Boundaries and non-goals
 
@@ -284,17 +335,28 @@ commands, and their steps and context show on the Agents screen within 5 seconds
 |------|--------------|-------|
 | 1. A Codex session's first turn shows its steps only when that turn ends | The rollout is found only once the first turn-complete binds the thread; binding earlier means guessing which rollout is ours | planning |
 | 2. Claude tool calls that the CLI rejects before running, or that are cancelled, may show as running until the turn ends | The CLI fires no end hook for them; turn end closes them | planning |
+| 3. A Claude `Bash` call with `run_in_background: true` shows as done when it returns, and its later output checks show as separate shell steps | The CLI reports no end for the background process; agents here are told to wait in the foreground | review-round-1 |
 
 ## Review Rounds
 
 ### Round 1 — 2026-11-17
 
-**Lanes:** intent: pending; mechanics: pending; cross-family: pending.
+**Lanes:** intent: gpt; mechanics: gpt (Claude unavailable at start); cross-family: no.
 
 **Changed since Round 0:** n/a (first round — whole Spec in scope)
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | blocking | Codex "Script running" / yielded commands closed as done; durations wrong | upheld | Spec §2 Codex now follows cells and process sessions to completion (Decision 12) |
+| intent | blocking | Nested steps parsed from script source are possible, not executed, calls | upheld | One step per script, kind/label from its first call (Decision 12) |
+| mechanics | blocking | Async Claude hooks can arrive out of order; end-before-start dropped, start-after-Stop runs forever | upheld | §4: pending ends, time-based turn attribution |
+| mechanics | blocking | Codex output is not completion (same as intent finding) | upheld | Decision 12, §2 |
+| mechanics | major | Codex tailer can deliver a turn's last steps after turn end | upheld | §2 Codex turn end: flush before emitting turn-ended |
+| mechanics | blocking | Stopped or crashed sessions keep running steps forever | upheld | §4: close on stop/fail/disappear; current null when not live |
+| mechanics | major | `current` undefined with several running steps | upheld | §4: most recently started running step |
+| mechanics | major | Last-30 retention can evict a running step | upheld | §4: running steps never evicted; 50-running cap |
+| mechanics | blocking | History by project basename mixes projects | upheld | §4: basename + path hash key |
+| mechanics | major | Workers ask the lead directly, so the planned sub-lead relay contradicts protocol and paths skip tree edges | upheld | §6: routing unchanged, paths are handlers; §7 skip rendering |
 
 ## Prior Work
 
