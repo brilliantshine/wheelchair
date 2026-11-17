@@ -41,6 +41,9 @@
   let diagram = null; // GET /settings/diagram-sensitivity, or null until read for this visit
   let diagramLoading = false;
   let folderDraft = null; // the typed Default project folder, kept across re-renders until saved
+  // Lead name saves, kept across re-renders: they run one after another in the order made,
+  // and `choice` is the list last picked in the dropdown, which a save's answer never undoes.
+  const leadSaves = { queue: Promise.resolve(), latest: 0, choice: null };
   const panel = document.getElementById('panel');
 
   function h(tag, props, ...kids) {
@@ -304,58 +307,75 @@
 
   function leadNamesRow() {
     const select = h('select', { id: 'lead-names', 'aria-label': 'Lead names' }, NAME_LISTS.map(([value, label]) => h('option', { value, text: label })));
-    select.value = data.lead_name_list || 'greek';
+    select.value = leadSaves.choice || data.lead_name_list || 'greek';
     const file = h('input', { type: 'file', id: 'lead-names-file', 'aria-label': 'Upload lead names', accept: '.txt,.csv,text/plain,text/csv' });
     const status = h('p', { class: 'note', role: 'status' });
     const custom = h('div', { class: 'lead-names-custom' }, file, status);
     const host = h('div', { class: 'ctl wide' }, select, custom);
-    function summary() {
-      const names = data.lead_names || [];
-      if (!names.length) return 'Upload a text file with one name per line.';
-      const shown = names.slice(0, 5).join(', ');
-      return `${names.length} name${names.length === 1 ? '' : 's'}: ${shown}${names.length > 5 ? ', …' : ''}`;
-    }
-    function show() { custom.hidden = select.value !== 'custom'; status.textContent = summary(); }
-    // Saves run one after another, in the order they were made, and only the newest one's
-    // answer is shown, so a slow upload can't undo a later choice from the dropdown.
-    let queue = Promise.resolve(), latest = 0;
-    function save(body) {
-      const ticket = ++latest;
-      inlineErr(host, '');
-      const run = queue.then(async () => {
-        try {
-          const result = await api('/settings/preferences', { method: 'PUT', body });
-          if (ticket === latest) { data.lead_name_list = result.lead_name_list; data.lead_names = result.lead_names; select.value = data.lead_name_list; show(); }
-          return ticket === latest;
-        } catch (error) {
-          if (ticket === latest) { inlineErr(host, error.message); select.value = data.lead_name_list || 'greek'; show(); }
-          return false;
-        }
-      });
-      queue = run;
-      return run;
-    }
     select.addEventListener('change', () => {
-      show();
+      leadSaves.choice = select.value;
+      showLeadNames();
       if (select.value === 'custom' && !(data.lead_names || []).length) return;
-      save({ lead_name_list: select.value });
+      saveLeadNames({ lead_name_list: select.value });
     });
     file.addEventListener('change', async () => {
       const chosen = file.files && file.files[0];
       if (!chosen) return;
       const text = await chosen.text();
       file.value = '';
-      if (select.value !== 'custom') return;
+      if ((leadSaves.choice || data.lead_name_list) !== 'custom') return;
       const seen = new Set(), names = [];
       for (const raw of nameFields(text)) {
         const name = raw.trim();
         if (name && !seen.has(name.toLowerCase())) { seen.add(name.toLowerCase()); names.push(name); }
       }
-      if (!names.length) { inlineErr(host, 'That file has no names in it.'); return; }
-      if (await save({ lead_names: names, lead_name_list: 'custom' })) status.textContent = `Saved. ${summary()}`;
+      if (!names.length) { leadNamesError('That file has no names in it.'); return; }
+      if (await saveLeadNames({ lead_names: names, lead_name_list: 'custom' })) { const note = document.querySelector('.lead-names-custom .note'); if (note) note.textContent = `Saved. ${leadNamesSummary()}`; }
     });
-    show();
+    custom.hidden = select.value !== 'custom'; status.textContent = leadNamesSummary();
     return h('div', { class: 'row-line' }, h('div', { class: 'what' }, h('label', { for: 'lead-names', text: 'Lead names' }), h('span', { class: 'hint', text: 'New leads only.' })), host);
+  }
+
+  function leadNamesSummary() {
+    const names = data.lead_names || [];
+    if (!names.length) return 'Upload a text file with one name per line.';
+    const shown = names.slice(0, 5).join(', ');
+    return `${names.length} name${names.length === 1 ? '' : 's'}: ${shown}${names.length > 5 ? ', …' : ''}`;
+  }
+
+  // The row may have been drawn again since a save started, so these find it in the page.
+  function showLeadNames() {
+    const select = document.getElementById('lead-names');
+    if (!select) return;
+    select.value = leadSaves.choice || data.lead_name_list || 'greek';
+    const custom = document.querySelector('.lead-names-custom');
+    custom.hidden = select.value !== 'custom';
+    custom.querySelector('.note').textContent = leadNamesSummary();
+  }
+  function leadNamesError(message) {
+    const host = document.getElementById('lead-names')?.closest('.ctl');
+    if (host) inlineErr(host, message);
+  }
+
+  function saveLeadNames(body) {
+    const ticket = ++leadSaves.latest;
+    leadNamesError('');
+    const run = leadSaves.queue.then(async () => {
+      try {
+        const result = await api('/settings/preferences', { method: 'PUT', body });
+        data.lead_name_list = result.lead_name_list; data.lead_names = result.lead_names;
+        if (ticket !== leadSaves.latest) return false;
+        // Keep a later pick of Custom that is still waiting for a file.
+        if (leadSaves.choice !== 'custom' || data.lead_names.length) leadSaves.choice = null;
+        showLeadNames();
+        return true;
+      } catch (error) {
+        if (ticket === leadSaves.latest) { leadSaves.choice = null; showLeadNames(); leadNamesError(error.message); }
+        return false;
+      }
+    });
+    leadSaves.queue = run;
+    return run;
   }
 
   // The Default project folder: typed, then saved with the button. A refusal shows under the

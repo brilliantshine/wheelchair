@@ -406,6 +406,59 @@ test('a later dropdown choice wins over a slow upload save', async ({ page }) =>
   await expect(select).toHaveValue('people');
 });
 
+test('a slow upload does not undo a list picked after switching sections', async ({ page }) => {
+  await openPage(page, context, '/app/settings#models');
+  const select = page.getByLabel('Lead names', { exact: true });
+  await select.selectOption('custom');
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  let uploading;
+  const sent = new Promise((resolve) => { uploading = resolve; });
+  await page.route('**/settings/preferences', async (route) => {
+    // Held without blocking the handler, so other saves still go through meanwhile.
+    if (JSON.parse(route.request().postData() || '{}').lead_names) { uploading(); held.then(() => route.continue()); return; }
+    await route.continue();
+  });
+  await page.getByLabel('Upload lead names').setInputFiles({ name: 'names.txt', mimeType: 'text/plain', buffer: Buffer.from('Ada\nGrace\n') });
+  await sent;
+  await page.locator('#sections a').nth(4).click();
+  await page.locator('#sections a').nth(2).click();
+  const picked = page.waitForResponse((response) => response.url().includes('/settings/preferences') && JSON.parse(response.request().postData() || '{}').lead_name_list === 'people');
+  await select.selectOption('people');
+  // The old page sent this straight away; the fixed one waits behind the upload.
+  await Promise.race([picked, page.waitForTimeout(1000)]);
+  const answered = page.waitForResponse((response) => response.url().includes('/settings/preferences') && JSON.parse(response.request().postData() || '{}').lead_names);
+  release();
+  await answered;
+  await page.waitForTimeout(300);
+  await expect.poll(async () => (await settings(page)).lead_name_list).toBe('people');
+  await expect(select).toHaveValue('people');
+  await page.reload();
+  await expect(page.getByLabel('Lead names', { exact: true })).toHaveValue('people');
+});
+
+test('picking Custom while another list saves keeps Custom and its file picker', async ({ page }) => {
+  await openPage(page, context, '/app/settings#models');
+  await page.evaluate(() => fetch('/wheelchair/api/settings/preferences', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ lead_names: [], lead_name_list: 'greek' }) }));
+  await page.reload();
+  const select = page.getByLabel('Lead names', { exact: true });
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  await page.route('**/settings/preferences', async (route) => {
+    if (JSON.parse(route.request().postData() || '{}').lead_name_list === 'nato') await held;
+    await route.continue();
+  });
+  await select.selectOption('nato');
+  await select.selectOption('custom');
+  const answered = page.waitForResponse((response) => response.url().includes('/settings/preferences'));
+  release();
+  await answered;
+  await page.waitForTimeout(100);
+  await expect.poll(async () => (await settings(page)).lead_name_list).toBe('nato');
+  await expect(select).toHaveValue('custom');
+  await expect(page.getByLabel('Upload lead names')).toBeVisible();
+});
+
 test('models and preferences fits at 390px', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openPage(page, context, '/app/settings#models');
