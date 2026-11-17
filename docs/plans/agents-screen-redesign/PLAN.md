@@ -271,6 +271,22 @@ so the browser back button works.
 | mechanics | major | "Needs you" said to be sidebar-only and also on the lead box | upheld | Spec §4: sidebar entry and lead box only |
 | mechanics | major | Threads links use `#lead-<id>`; new selection uses `?lead=` | upheld | Spec §4: links change to `?lead=`, legacy hash still honoured |
 
+### Round 2 — 2026-11-17
+
+**Lanes:** pending.
+
+**Changed since Round 1:**
+- Decision 13: "waiting on" only for a message sent to the agent's own starter (§3).
+- Asides: open only, state from `turn`/`pending`, not selectable (§3).
+- First-turn `turn_started_at` (§2).
+- "Needs you" on the sidebar entry and lead box only (§4).
+- `?lead=` selection, legacy `#lead-` hash, link updates (§4).
+- Pop out uses `terminal?name=` (§6); re-target or close on selecting another agent (§6).
+- Tests (§9) for the above.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
