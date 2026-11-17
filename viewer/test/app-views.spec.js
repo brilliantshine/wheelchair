@@ -54,7 +54,7 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
         'href', `/wheelchair/app/thread?id=${made['review-one'].id}#card-${approval.id}`);
     });
 
-    test('wide agent trees scroll from the left while narrow trees stay centred', async ({ page }) => {
+    test('wide and narrow agent trees open centred', async ({ page }) => {
       test.skip(label !== 'desktop');
       const makeLead = count => ({
         name: 'wc-a-lead', role: 'lead', display_title: 'A thread', live: true, state: 'working',
@@ -67,10 +67,10 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       await expect(page.locator('.agents-tree .agents-children > .agents-branch .agents-box').first()).toBeVisible();
       const wide = await page.evaluate(() => {
         const tree = document.querySelector('.agents-tree');
-        const first = tree.querySelector('.agents-children > .agents-branch .agents-box').getBoundingClientRect();
+        const first = tree.querySelector('.agents-sizer > .agents-branch > .agents-box').getBoundingClientRect();
         return { tree: tree.getBoundingClientRect().toJSON(), first: first.toJSON(), scrollWidth: tree.scrollWidth, clientWidth: tree.clientWidth };
       });
-      expect(wide.first.left).toBeGreaterThanOrEqual(wide.tree.left);
+      expect(Math.abs(wide.first.left + wide.first.width / 2 - wide.tree.left - wide.tree.width / 2)).toBeLessThanOrEqual(2);
       expect(wide.scrollWidth).toBeGreaterThan(wide.clientWidth);
       await tree.evaluate(node => { node.scrollLeft = node.scrollWidth; });
       const lastRight = await page.locator('.agents-children > .agents-branch .agents-box').last().evaluate(node => node.getBoundingClientRect().right);
@@ -80,13 +80,51 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       await page.route('**/api/agents', route => route.fulfill({ json: { leads: [{ thread_id: 'a', thread_title: 'A thread', lead_name: 'Alpha', project: 'project-a', stage: 'building', counts: { total: 3 }, session: makeLead(2), asides: [] }], machines: [] } }));
       await page.reload();
       await expect(page.locator('.agents-tree .agents-box')).toHaveCount(3);
-      await expect(page.locator('.agents-tree > .agents-branch > .agents-box')).toBeVisible();
+      await expect(page.locator('.agents-tree .agents-sizer > .agents-branch > .agents-box')).toBeVisible();
       const centered = await page.evaluate(() => {
         const tree = document.querySelector('.agents-tree').getBoundingClientRect();
-        const lead = document.querySelector('.agents-tree > .agents-branch > .agents-box').getBoundingClientRect();
+        const lead = document.querySelector('.agents-tree .agents-sizer > .agents-branch > .agents-box').getBoundingClientRect();
         return Math.abs((lead.left + lead.width / 2) - (tree.left + tree.width / 2));
       });
       expect(centered).toBeLessThanOrEqual(2);
+    });
+
+    test('tree viewport supports pan, zoom, refresh, selection and terminal', async ({ page }) => {
+      test.skip(label !== 'desktop');
+      const children = Array.from({ length: 12 }, (_, i) => ({ name: `worker-${i}`, role: 'worker', display_title: `Worker ${i}`, live: true, state: 'working', children: i < 2 ? [{ name: `nested-${i}`, role: 'worker', display_title: `Nested ${i}`, live: true, state: 'working', children: [] }] : [] }));
+      const lead = id => ({ thread_id: id, lead_name: id, counts: { total: 15 }, session: { name: `lead-${id}`, role: 'lead', live: true, state: 'working', children }, asides: [] });
+      await page.route('**/api/agents', route => route.fulfill({ json: { leads: [lead('a'), lead('b')], machines: [] } }));
+      await page.route('**/api/sessions/*/pane?*', route => route.fulfill({ json: { pane: '' } }));
+      await openPage(page, context, '/app/agents?lead=a');
+      const tree = page.locator('.agents-tree'), zoom = page.locator('.agents-zoom');
+      await expect(zoom).toHaveText('100%');
+      const rect = await tree.boundingBox();
+      const before = await tree.evaluate(n => n.scrollLeft);
+      await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height - 10); await page.mouse.down(); await page.mouse.move(rect.x + rect.width / 2 - 80, rect.y + rect.height - 40); await page.mouse.up();
+      expect(await tree.evaluate(n => n.scrollLeft)).toBeGreaterThan(before);
+      const box = page.locator('[data-session="lead-a"]');
+      await box.scrollIntoViewIfNeeded(); const b = await box.boundingBox();
+      await page.mouse.move(b.x + 20, b.y + 20); await page.mouse.down(); await page.mouse.move(b.x - 40, b.y + 20); await page.mouse.up();
+      await expect(page).not.toHaveURL(/agent=/); await expect(page.locator('.agents-side')).toContainText('Select an agent');
+      await page.getByRole('button', { name: 'Zoom in' }).click(); await expect(zoom).toHaveText('125%');
+      await page.getByRole('button', { name: 'Zoom out' }).click(); await expect(zoom).toHaveText('100%');
+      for (let i = 0; i < 8; i++) await page.getByRole('button', { name: 'Zoom in' }).click(); await expect(zoom).toHaveText('200%');
+      for (let i = 0; i < 15; i++) await page.getByRole('button', { name: 'Zoom out' }).click(); await expect(zoom).toHaveText('20%');
+      await page.getByRole('button', { name: 'Full size' }).click();
+      const width = await box.evaluate(n => n.getBoundingClientRect().width), dpr = await page.evaluate(() => devicePixelRatio);
+      await tree.dispatchEvent('wheel', { ctrlKey: true, deltaY: -20, clientX: rect.x + 100, clientY: rect.y + 100 });
+      expect(await box.evaluate(n => n.getBoundingClientRect().width)).toBeGreaterThan(width); expect(await page.evaluate(() => devicePixelRatio)).toBe(dpr);
+      const state = await tree.evaluate(n => [n.scrollLeft, n.scrollTop]); const zoomText = await zoom.textContent();
+      await page.waitForTimeout(5500); await expect(zoom).toHaveText(zoomText); const after = await tree.evaluate(n => [n.scrollLeft, n.scrollTop]); expect(Math.abs(after[0]-state[0])).toBeLessThanOrEqual(1); expect(Math.abs(after[1]-state[1])).toBeLessThanOrEqual(1);
+      await page.getByRole('button', { name: 'Fit', exact: true }).click();
+      const fits = await tree.evaluate(n => { const r=n.getBoundingClientRect(); return [...n.querySelectorAll('.agents-box')].every(b => { const x=b.getBoundingClientRect(); return x.left >= r.left-1 && x.right <= r.right+1 && x.top >= r.top-1 && x.bottom <= r.bottom+1; }); }); expect(fits).toBe(true);
+      await page.getByRole('button', { name: 'Full size' }).click(); await expect(zoom).toHaveText('100%');
+      await box.scrollIntoViewIfNeeded();
+      const held = await box.boundingBox(); await page.mouse.move(held.x + 20, held.y + 20); await page.mouse.down(); await page.waitForTimeout(5500); await page.mouse.up(); await expect(page).toHaveURL(/agent=lead-a/);
+      await expect(zoom).toHaveText('100%');
+      await page.getByRole('button', { name: 'Open terminal' }).click(); await tree.evaluate(n => n.scrollTop=n.scrollHeight);
+      const bounds = await page.evaluate(() => ({ terminal: document.querySelector('#agents-terminal').getBoundingClientRect().top, bottom: Math.max(...[...document.querySelectorAll('.agents-box')].map(n => n.getBoundingClientRect().bottom)) })); expect(bounds.bottom).toBeLessThanOrEqual(bounds.terminal+1);
+      await page.locator('.agents-entry', { hasText: 'b' }).click(); await expect(zoom).toHaveText('100%');
     });
 
     test('phone agent selection shows only details and returns to the tree', async ({ page }) => {
@@ -101,6 +139,8 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       await expect(page.locator('.agents-side')).toBeVisible();
       await page.getByRole('button', { name: '‹ Alpha' }).click();
       await expect(page.locator('.agents-main')).toBeVisible();
+      await expect(page.locator('.agents-toolbar')).toBeHidden();
+      await expect(page.locator('.agents-children')).toHaveCSS('display', 'block');
       await expect(page.locator('.agents-side')).toBeHidden();
     });
 
