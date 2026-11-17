@@ -298,9 +298,13 @@ async function press(hub, id, cardId, input) {
     throw appError(422, card.system ? 'a system needs card closes itself' : 'card is already answered');
   }
   if (input.action === 'keep-going' && card.kind !== 'needs') throw appError(400, 'keep going requires a needs card');
+  // A question or offer takes one answer: a second press (a double tap, a stale tab) is not news for the lead.
+  if (card.kind === 'question' || card.kind === 'offer') {
+    if (input.action === 'answered' && card.kind !== 'question') throw appError(400, 'a typed answer requires a question card');
+    if (card.answered) throw appError(422, 'card is already answered');
+  }
   if (input.action === 'answered') {
     if (card.kind !== 'question') throw appError(400, 'a typed answer requires a question card');
-    if (card.answered) throw appError(422, 'card is already answered');
     input = { ...input, value: typeof input.value === 'string' ? input.value.trim() : '' };
     if (!input.value) throw appError(400, 'a typed answer needs text');
   }
