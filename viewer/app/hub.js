@@ -105,8 +105,8 @@ class Hub {
   saveWithLeadName(thread) {
     const work = this.nameQueue.catch(() => {}).then(async () => {
       if (!thread.lead_name) {
-        const names = (await require('./settings.js').load(this)).lead_names;
-        thread.lead_name = require('./names.js').chooseName(await this.allThreads(), names);
+        const { chooseName, namesFor } = require('./names.js');
+        thread.lead_name = chooseName(await this.allThreads(), namesFor(await require('./settings.js').load(this)));
       }
       await this.save(thread);
     });

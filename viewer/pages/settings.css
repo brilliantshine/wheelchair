@@ -59,6 +59,10 @@
 .escalation-text p { margin: 0; overflow-wrap: anywhere; }
 .row-line .ctl { flex: 0 1 280px; min-width: 0; }
 .row-line .ctl.wide { flex-basis: 340px; }
+.lead-names-custom { margin-top: 8px; }
+.lead-names-custom[hidden] { display: none; }
+.lead-names-custom input[type="file"] { max-width: 100%; }
+.lead-names-custom .note { overflow-wrap: anywhere; }
 .seg-radio { display: flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: 8px; background: var(--bg); border: 1px solid var(--line); }
 .seg-radio button { min-height: 28px; padding: 4px 12px; border: 0; border-radius: 6px; font-size: 12px; color: var(--ink-2); background: transparent; }
 .seg-radio button[aria-checked="true"] { background: var(--line); color: var(--ink); font-weight: 600; }

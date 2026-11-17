@@ -368,13 +368,166 @@ test.describe('phone', () => {
   });
 });
 
-test('saves lead names in Settings', async ({ page }) => {
+test('picks a lead name list and uploads a custom one in Settings', async ({ page }) => {
   await openPage(page, context, '/app/settings#models');
-  await page.getByLabel('Lead names').fill('Ada\nGrace');
-  await page.locator('#lead-names').locator('..').getByRole('button', { name: 'Save' }).click();
-  await expect.poll(async () => (await settings(page)).lead_names).toEqual(['Ada', 'Grace']);
+  await page.getByLabel('Lead names', { exact: true }).selectOption('nato');
+  await expect.poll(async () => (await settings(page)).lead_name_list).toBe('nato');
+  await expect(page.getByLabel('Upload lead names')).toBeHidden();
+  await page.getByLabel('Lead names', { exact: true }).selectOption('custom');
+  await expect(page.getByLabel('Upload lead names')).toBeVisible();
+  await page.getByLabel('Upload lead names').setInputFiles({ name: 'names.txt', mimeType: 'text/plain', buffer: Buffer.from('Ada\r\n\nGrace, ada\n') });
+  await expect.poll(async () => { const value = await settings(page); return [value.lead_name_list, value.lead_names]; }).toEqual(['custom', ['Ada', 'Grace']]);
   await page.reload();
-  await expect(page.getByLabel('Lead names')).toHaveValue('Ada\nGrace');
+  await expect(page.getByLabel('Lead names', { exact: true })).toHaveValue('custom');
+  await expect(page.locator('.lead-names-custom .note')).toHaveText('2 names: Ada, Grace');
+});
+
+test('a quoted CSV upload keeps commas inside names', async ({ page }) => {
+  await openPage(page, context, '/app/settings#models');
+  await page.getByLabel('Lead names', { exact: true }).selectOption('custom');
+  await page.getByLabel('Upload lead names').setInputFiles({ name: 'names.csv', mimeType: 'text/csv', buffer: Buffer.from('"Ada","Grace, Jr."\n"Say ""Hi"""\n') });
+  await expect.poll(async () => (await settings(page)).lead_names).toEqual(['Ada', 'Grace, Jr.', 'Say "Hi"']);
+});
+
+test('a later dropdown choice wins over a slow upload save', async ({ page }) => {
+  await openPage(page, context, '/app/settings#models');
+  const select = page.getByLabel('Lead names', { exact: true });
+  await select.selectOption('custom');
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  await page.route('**/settings/preferences', async (route) => {
+    if (JSON.parse(route.request().postData() || '{}').lead_names) await held;
+    await route.continue();
+  });
+  await page.getByLabel('Upload lead names').setInputFiles({ name: 'names.txt', mimeType: 'text/plain', buffer: Buffer.from('Ada\nGrace\n') });
+  await select.selectOption('people');
+  release();
+  await expect.poll(async () => (await settings(page)).lead_name_list).toBe('people');
+  await expect(select).toHaveValue('people');
+});
+
+test('a slow upload does not undo a list picked after switching sections', async ({ page }) => {
+  await openPage(page, context, '/app/settings#models');
+  const select = page.getByLabel('Lead names', { exact: true });
+  await select.selectOption('custom');
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  let uploading;
+  const sent = new Promise((resolve) => { uploading = resolve; });
+  await page.route('**/settings/preferences', async (route) => {
+    // Held without blocking the handler, so other saves still go through meanwhile.
+    if (JSON.parse(route.request().postData() || '{}').lead_names) { uploading(); held.then(() => route.continue()); return; }
+    await route.continue();
+  });
+  await page.getByLabel('Upload lead names').setInputFiles({ name: 'names.txt', mimeType: 'text/plain', buffer: Buffer.from('Ada\nGrace\n') });
+  await sent;
+  await page.locator('#sections a').nth(4).click();
+  await page.locator('#sections a').nth(2).click();
+  const picked = page.waitForResponse((response) => response.url().includes('/settings/preferences') && JSON.parse(response.request().postData() || '{}').lead_name_list === 'people');
+  await select.selectOption('people');
+  // The old page sent this straight away; the fixed one waits behind the upload.
+  await Promise.race([picked, page.waitForTimeout(1000)]);
+  const answered = page.waitForResponse((response) => response.url().includes('/settings/preferences') && JSON.parse(response.request().postData() || '{}').lead_names);
+  release();
+  await answered;
+  await page.waitForTimeout(300);
+  await expect.poll(async () => (await settings(page)).lead_name_list).toBe('people');
+  await expect(select).toHaveValue('people');
+  await page.reload();
+  await expect(page.getByLabel('Lead names', { exact: true })).toHaveValue('people');
+});
+
+test('picking Custom while another list saves keeps Custom and its file picker', async ({ page }) => {
+  await openPage(page, context, '/app/settings#models');
+  await page.evaluate(() => fetch('/wheelchair/api/settings/preferences', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ lead_names: [], lead_name_list: 'greek' }) }));
+  await page.reload();
+  const select = page.getByLabel('Lead names', { exact: true });
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  await page.route('**/settings/preferences', async (route) => {
+    if (JSON.parse(route.request().postData() || '{}').lead_name_list === 'nato') await held;
+    await route.continue();
+  });
+  await select.selectOption('nato');
+  await select.selectOption('custom');
+  const answered = page.waitForResponse((response) => response.url().includes('/settings/preferences'));
+  release();
+  await answered;
+  await page.waitForTimeout(100);
+  await expect.poll(async () => (await settings(page)).lead_name_list).toBe('nato');
+  await expect(select).toHaveValue('custom');
+  await expect(page.getByLabel('Upload lead names')).toBeVisible();
+});
+
+const clearLeadNames = async (page) => {
+  await page.evaluate(() => fetch('/wheelchair/api/settings/preferences', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ lead_names: [], lead_name_list: 'greek' }) }));
+  await page.reload();
+};
+
+test('Custom picked again during a slow upload and another save stays Custom', async ({ page }) => {
+  await openPage(page, context, '/app/settings#models');
+  await clearLeadNames(page);
+  const select = page.getByLabel('Lead names', { exact: true });
+  await select.selectOption('custom');
+  let release, uploading;
+  const held = new Promise((resolve) => { release = resolve; });
+  const sent = new Promise((resolve) => { uploading = resolve; });
+  await page.route('**/settings/preferences', async (route) => {
+    if (JSON.parse(route.request().postData() || '{}').lead_names) { uploading(); held.then(() => route.continue()); return; }
+    await route.continue();
+  });
+  await page.getByLabel('Upload lead names').setInputFiles({ name: 'names.txt', mimeType: 'text/plain', buffer: Buffer.from('Ada\n') });
+  await sent;
+  await select.selectOption('nato');
+  await select.selectOption('custom');
+  release();
+  await expect.poll(async () => (await settings(page)).lead_name_list).toBe('custom');
+  await page.waitForTimeout(300);
+  await expect(select).toHaveValue('custom');
+  await expect(page.getByLabel('Upload lead names')).toBeVisible();
+  expect((await settings(page)).lead_name_list).toBe('custom');
+});
+
+test('a failed save of another list keeps a later pick of Custom', async ({ page }) => {
+  await openPage(page, context, '/app/settings#models');
+  await clearLeadNames(page);
+  const select = page.getByLabel('Lead names', { exact: true });
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  await page.route('**/settings/preferences', async (route) => {
+    await held;
+    await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'unavailable', detail: 'hub unavailable' }) });
+  });
+  await select.selectOption('nato');
+  await select.selectOption('custom');
+  const answered = page.waitForResponse((response) => response.url().includes('/settings/preferences'));
+  release();
+  await answered;
+  await page.waitForTimeout(200);
+  await expect(select).toHaveValue('custom');
+  await expect(page.getByLabel('Upload lead names')).toBeVisible();
+});
+
+test('only the newest uploaded file is saved', async ({ page }) => {
+  await openPage(page, context, '/app/settings#models');
+  await clearLeadNames(page);
+  await page.evaluate(() => {
+    const read = File.prototype.text;
+    let first = true;
+    File.prototype.text = function () {
+      if (!first) return read.call(this);
+      first = false;
+      return new Promise((resolve) => { window.releaseFirstRead = () => resolve(read.call(this)); });
+    };
+  });
+  await page.getByLabel('Lead names', { exact: true }).selectOption('custom');
+  const upload = page.getByLabel('Upload lead names');
+  await upload.setInputFiles({ name: 'first.txt', mimeType: 'text/plain', buffer: Buffer.from('Ada\n') });
+  await upload.setInputFiles({ name: 'second.txt', mimeType: 'text/plain', buffer: Buffer.from('Grace\n') });
+  await expect.poll(async () => (await settings(page)).lead_names).toEqual(['Grace']);
+  await page.evaluate(() => window.releaseFirstRead());
+  await page.waitForTimeout(300);
+  expect((await settings(page)).lead_names).toEqual(['Grace']);
 });
 
 test('models and preferences fits at 390px', async ({ page }) => {

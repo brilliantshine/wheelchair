@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { buildAgents } = require('../app/agents.js');
-const { chooseName, GREEK } = require('../app/names.js');
+const { chooseName, namesFor, GREEK, NATO, STARS, PEOPLE } = require('../app/names.js');
 
 test('lead names pick a random free name, case insensitively, and release archived names', () => {
   const first = () => 0;
@@ -15,6 +15,21 @@ test('lead names pick a random free name, case insensitively, and release archiv
   const seen = new Set(Array.from({ length: 200 }, () => chooseName([])));
   assert.ok(seen.size > 1, 'default draws are not all the same name');
   for (const name of seen) assert.ok(GREEK.includes(name));
+});
+
+test('lead names come from the chosen list', () => {
+  assert.equal(namesFor({}), GREEK);
+  assert.equal(namesFor({ lead_name_list: 'nato' }), NATO);
+  assert.equal(namesFor({ lead_name_list: 'stars' }), STARS);
+  assert.equal(namesFor({ lead_name_list: 'people' }), PEOPLE);
+  assert.deepEqual(namesFor({ lead_name_list: 'custom', lead_names: ['Ada'] }), ['Ada']);
+  assert.equal(namesFor({ lead_name_list: 'custom', lead_names: [] }), GREEK);
+  for (const list of [NATO, STARS, PEOPLE]) {
+    assert.equal(new Set(list.map((name) => name.toLowerCase())).size, list.length);
+    for (const name of list) assert.match(name, /^[A-Z][a-z]+$/);
+  }
+  assert.equal(NATO.length, 26);
+  assert.equal(PEOPLE.length, 100);
 });
 
 test('agent tree keeps finished nodes, derives states and hides briefs', () => {

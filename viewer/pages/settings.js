@@ -41,6 +41,10 @@
   let diagram = null; // GET /settings/diagram-sensitivity, or null until read for this visit
   let diagramLoading = false;
   let folderDraft = null; // the typed Default project folder, kept across re-renders until saved
+  // Lead name saves, kept across re-renders: they run one after another in the order made,
+  // `choice` is the list last picked in the dropdown, which a save's answer never undoes, and
+  // `reads` counts file picks so only the newest file is saved.
+  const leadSaves = { queue: Promise.resolve(), latest: 0, choice: null, reads: 0 };
   const panel = document.getElementById('panel');
 
   function h(tag, props, ...kids) {
@@ -280,16 +284,110 @@
       h('div', { class: 'ctl' }, select));
   }
 
-  // Lead names: one per line, saved with the button; blank lines are dropped by the hub.
+  // Lead names: a built-in list, or a custom one uploaded as a text file (one name per
+  // line, or comma separated). Choosing Custom saves only once a file has names in it.
+  const NAME_LISTS = [['greek', 'Greek letters'], ['nato', 'NATO alphabet'], ['stars', 'Star names'], ['people', 'Popular first names'], ['custom', 'Custom list']];
+  // Splits an uploaded file into names: one per line or comma separated, with CSV quoting
+  // ("Grace, Jr." stays one name, and "" inside quotes is a literal quote).
+  function nameFields(text) {
+    const fields = [];
+    let field = '', quoted = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (quoted) {
+        if (c === '"' && text[i + 1] === '"') { field += '"'; i++; }
+        else if (c === '"') quoted = false;
+        else field += c;
+      } else if (c === '"' && !field.trim()) { field = ''; quoted = true; }
+      else if (c === ',' || c === '\n' || c === '\r') { fields.push(field); field = ''; }
+      else field += c;
+    }
+    fields.push(field);
+    return fields;
+  }
+
   function leadNamesRow() {
-    const input = h('textarea', { id: 'lead-names', 'aria-label': 'Lead names', rows: 4, value: (data.lead_names || []).join('\n') });
+    const select = h('select', { id: 'lead-names', 'aria-label': 'Lead names' }, NAME_LISTS.map(([value, label]) => h('option', { value, text: label })));
+    select.value = leadSaves.choice || data.lead_name_list || 'greek';
+    const file = h('input', { type: 'file', id: 'lead-names-file', 'aria-label': 'Upload lead names', accept: '.txt,.csv,text/plain,text/csv' });
     const status = h('p', { class: 'note', role: 'status' });
-    const host = h('div', { class: 'ctl wide' }, input, h('button', { type: 'button', text: 'Save', onclick: async () => {
-      inlineErr(host, ''); status.textContent = '';
-      try { const result = await api('/settings/preferences', { method: 'PUT', body: { lead_names: input.value.split(/\r?\n/) } }); data.lead_names = result.lead_names; input.value = data.lead_names.join('\n'); status.textContent = 'Saved'; }
-      catch (error) { inlineErr(host, error.message); }
-    } }), status);
-    return h('div', { class: 'row-line' }, h('div', { class: 'what' }, h('label', { for: 'lead-names', text: 'Lead names' }), h('span', { class: 'hint', text: 'Empty uses Greek letters. New leads only.' })), host);
+    const custom = h('div', { class: 'lead-names-custom' }, file, status);
+    const host = h('div', { class: 'ctl wide' }, select, custom);
+    select.addEventListener('change', () => {
+      leadSaves.choice = select.value;
+      showLeadNames();
+      if (select.value === 'custom' && !(data.lead_names || []).length) return;
+      saveLeadNames({ lead_name_list: select.value });
+    });
+    file.addEventListener('change', async () => {
+      const chosen = file.files && file.files[0];
+      if (!chosen) return;
+      const read = ++leadSaves.reads;
+      const text = await chosen.text();
+      file.value = '';
+      if (read !== leadSaves.reads || (leadSaves.choice || data.lead_name_list) !== 'custom') return;
+      const seen = new Set(), names = [];
+      for (const raw of nameFields(text)) {
+        const name = raw.trim();
+        if (name && !seen.has(name.toLowerCase())) { seen.add(name.toLowerCase()); names.push(name); }
+      }
+      if (!names.length) { leadNamesError('That file has no names in it.'); return; }
+      if (await saveLeadNames({ lead_names: names, lead_name_list: 'custom' })) { const note = document.querySelector('.lead-names-custom .note'); if (note) note.textContent = `Saved. ${leadNamesSummary()}`; }
+    });
+    custom.hidden = select.value !== 'custom'; status.textContent = leadNamesSummary();
+    return h('div', { class: 'row-line' }, h('div', { class: 'what' }, h('label', { for: 'lead-names', text: 'Lead names' }), h('span', { class: 'hint', text: 'New leads only.' })), host);
+  }
+
+  function leadNamesSummary() {
+    const names = data.lead_names || [];
+    if (!names.length) return 'Upload a text file with one name per line.';
+    const shown = names.slice(0, 5).join(', ');
+    return `${names.length} name${names.length === 1 ? '' : 's'}: ${shown}${names.length > 5 ? ', …' : ''}`;
+  }
+
+  // The row may have been drawn again since a save started, so these find it in the page.
+  function showLeadNames() {
+    const select = document.getElementById('lead-names');
+    if (!select) return;
+    select.value = leadSaves.choice || data.lead_name_list || 'greek';
+    const custom = document.querySelector('.lead-names-custom');
+    custom.hidden = select.value !== 'custom';
+    custom.querySelector('.note').textContent = leadNamesSummary();
+  }
+  function leadNamesError(message) {
+    const host = document.getElementById('lead-names')?.closest('.ctl');
+    if (host) inlineErr(host, message);
+  }
+
+  function saveLeadNames(body) {
+    const ticket = ++leadSaves.latest;
+    leadNamesError('');
+    const run = leadSaves.queue.then(async () => {
+      let ok = true;
+      try {
+        const result = await api('/settings/preferences', { method: 'PUT', body });
+        data.lead_name_list = result.lead_name_list; data.lead_names = result.lead_names;
+      } catch (error) {
+        ok = false;
+        if (ticket === leadSaves.latest) leadNamesError(error.message);
+      }
+      if (ticket !== leadSaves.latest) return false;
+      settleLeadChoice(ok);
+      return ok;
+    });
+    leadSaves.queue = run;
+    return run;
+  }
+
+  // Once the newest save is answered, line the saved list up with the dropdown: a pick of
+  // Custom made while names were still missing is saved now that names exist, or kept
+  // waiting for a file; a failed pick of another list falls back to the saved one.
+  function settleLeadChoice(ok) {
+    const choice = leadSaves.choice;
+    if (choice === 'custom' && choice !== data.lead_name_list) {
+      if ((data.lead_names || []).length && ok) { saveLeadNames({ lead_name_list: 'custom' }); return; }
+    } else leadSaves.choice = null;
+    showLeadNames();
   }
 
   // The Default project folder: typed, then saved with the button. A refusal shows under the
