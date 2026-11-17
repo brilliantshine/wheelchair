@@ -1,0 +1,31 @@
+{
+ "form": "timeline",
+ "explanation": "What happens after a worker finishes a task, in order. Step 3 is the new part: who reads the changes depends on how big they are. Not shown: the final verifier, which still checks the whole build afterwards.",
+ "events": [
+  {
+   "when": "1",
+   "label": "Worker finishes",
+   "detail": "It sends its report and commits its changes."
+  },
+  {
+   "when": "2",
+   "label": "Sub-lead reruns the tests",
+   "detail": "Same as today; it doesn't trust the worker's word."
+  },
+  {
+   "when": "3",
+   "label": "Pick a reader by size",
+   "detail": "Under 200 changed lines: the Light scout. 200 to 800: the Standard scout. Bigger, or marked tricky in the plan: the sub-lead reads it itself, as today."
+  },
+  {
+   "when": "4",
+   "label": "The reader reports",
+   "detail": "A scout replies with a short list (problems, mismatches with the worker's report, choices it made on its own), each with file and line. The sub-lead opens only those lines."
+  },
+  {
+   "when": "5",
+   "label": "Merge or send back",
+   "detail": "A real problem goes back to the worker to fix."
+  }
+ ]
+}

@@ -10,6 +10,7 @@ const { PROVIDERS } = require('./providers.js');
 
 const execFileAsync = promisify(execFile);
 const ROLES = new Set(['lead', 'sub-lead', 'worker', 'reviewer', 'verifier', 'mapper']);
+const MODEL_MAX = 64;
 const WORK_TIERS = ['light', 'standard', 'heavy', 'critical'];
 const TIER_ALIASES = { luna: 'light', terra: 'standard', sol: 'heavy', astra: 'critical' };
 const ESCALATION_VALUES = { first: ['effort', 'model'], max_effort: ['high', 'xhigh', 'max'], max_tier: ['standard', 'heavy', 'critical'], ask_before: ['never', 'critical', 'any'] };
@@ -24,7 +25,7 @@ const DEFAULT_STYLE = Object.freeze({
 const PLANS = { claude: { unknown: 1, pro: 1, max5: 5, max20: 20 }, gpt: { unknown: 1, plus: 1, pro: 6 }, gemini: { unknown: 1, pro: 1, ultra: 4 } };
 const BALANCING = ['lead_order', 'worker_order', 'within', 'leave', 'notify_below', 'save_for_leads', 'margin', 'held_back'];
 function defaults() {
-  return { lead_names: [], retired_accounts: [], accounts: Object.keys(PROVIDERS).map((provider) => ({ id: `default-${provider}`, provider, name: 'default', plan: 'unknown', weight: 1, paused: false })), lead_order: ['claude', 'any'], worker_order: ['gpt', 'claude', 'gemini'], worker_order_seen: Object.keys(PROVIDERS), within: 'soonest', leave: 10, notify_below: 25, save_for_leads: true, margin: 5, held_back: { worker: true, reviewer: true, verifier: true, mapper: true }, permission_mode: 'auto', codex_mode: 'sandboxed', aside_access: 'read-only', tool_steps: 'show', review_families: 'both', other_agents: { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard' }, escalation: { first: 'effort', max_effort: 'xhigh', max_tier: 'critical', ask_before: 'critical' }, templates: [], style: structuredClone(DEFAULT_STYLE), style_version: 0, default_project_folder: '', saved_dirs: [] };
+  return { lead_names: [], retired_accounts: [], accounts: Object.keys(PROVIDERS).map((provider) => ({ id: `default-${provider}`, provider, name: 'default', plan: 'unknown', weight: 1, paused: false })), lead_order: ['claude', 'any'], worker_order: ['gpt', 'claude', 'gemini'], worker_order_seen: Object.keys(PROVIDERS), within: 'soonest', leave: 10, notify_below: 25, save_for_leads: true, margin: 5, held_back: { worker: true, reviewer: true, verifier: true, mapper: true }, permission_mode: 'auto', codex_mode: 'sandboxed', aside_access: 'read-only', tool_steps: 'show', review_families: 'both', other_agents: { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard', scout: 'light', 'scout-heavy': 'standard' }, escalation: { first: 'effort', max_effort: 'xhigh', max_tier: 'critical', ask_before: 'critical' }, templates: [], style: structuredClone(DEFAULT_STYLE), style_version: 0, default_project_folder: '', saved_dirs: [] };
 }
 
 function fail(message) { throw appError(400, message); }
@@ -138,7 +139,7 @@ function escalationSentences(escalation) {
   return sentences;
 }
 
-function roleLayers(settings, role, project) {
+function roleLayers(settings, role, project, scout, provider) {
   const template = templateFor(settings, role, project);
   const deciding = role === 'worker' && template?.switches.unsettled === 'decide';
   const lines = [deciding
@@ -151,6 +152,15 @@ function roleLayers(settings, role, project) {
   }
   if (role === 'sub-lead') lines.push('', 'Escalation rules from Settings:', ...escalationSentences(settings.escalation));
   if (role === 'lead') lines.push('', 'Collin’s writing style for everything he reads (thread replies and the text of cards):', renderStyle(settings.style));
+  if (scout && ['lead', 'sub-lead'].includes(role)) {
+    const clause = provider === 'claude' ? ` (Claude Code: the Agent tool with model "${scout.light}")` : '';
+    lines.push('', scout.light
+      ? `Scout model for code reading: ${scout.light}. Questions that need more than a couple of files read go to your CLI's built-in helper on this model${clause}, asking for conclusions with file:line evidence, not file dumps.`
+      : 'Scout model for code reading: none on this CLI. Read code yourself.');
+    if (role === 'sub-lead') lines.push(scout.heavy
+      ? `Scout for bigger worker changes (200 to 800 lines): ${scout.heavy}.`
+      : 'Scout for bigger worker changes: none on this CLI.');
+  }
   return { text: lines.join('\n'), template };
 }
 
@@ -164,7 +174,7 @@ function assertFits(settings) {
   const projects = new Set([undefined]);
   for (const template of settings.templates) if (template.scope !== 'all') projects.add(template.scope);
   for (const role of ROLES) for (const project of projects) {
-    if (roleLayers(settings, role, project).text.length > 12000) fail('the composed role instructions exceed 12000 characters');
+    if (roleLayers(settings, role, project, { light: 'x'.repeat(MODEL_MAX), heavy: 'x'.repeat(MODEL_MAX) }, 'claude').text.length > 12000) fail('the composed role instructions exceed 12000 characters');
   }
 }
 
@@ -280,4 +290,4 @@ async function preview(hub, style) {
   } catch (error) { throw appError(502, `Preview failed: ${error.message}`); }
 }
 
-module.exports = { ESCALATION_VALUES, escalationSentences, PLANS, BALANCING, validBalancing, DEFAULT_STYLE, ROLES, SAMPLE, TIER_ALIASES, WORK_TIERS, assertFits, defaults, describe, fullPrompt, headsUp, knownProjects, load, modelCommand, models, normalize, options, preview, renderStyle, roleLayers, save, switchSentences, templateFor, tier, update, validateStyle, validateTemplate };
+module.exports = { MODEL_MAX, ESCALATION_VALUES, escalationSentences, PLANS, BALANCING, validBalancing, DEFAULT_STYLE, ROLES, SAMPLE, TIER_ALIASES, WORK_TIERS, assertFits, defaults, describe, fullPrompt, headsUp, knownProjects, load, modelCommand, models, normalize, options, preview, renderStyle, roleLayers, save, switchSentences, templateFor, tier, update, validateStyle, validateTemplate };

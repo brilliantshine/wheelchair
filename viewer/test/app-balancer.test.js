@@ -1,6 +1,9 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const path = require('node:path');
+const { makeTempSync } = require('../../test-support/run-dir.js');
+process.env.WHEELCHAIR_MODELS = path.join(makeTempSync('balancer-models-'), 'models');
 const { setup, close, api, machinePost, event } = require('./helpers/app.js');
 
 test('default placement, strict and preferred constraints, and invalid flags', async () => {
@@ -431,4 +434,10 @@ test('waiting lead records provider and promoted role layers and style', async (
     assert.ok(c.machine.sessions.get(lead.name).submits.includes('First message'));
     assert.ok(!c.machine.sessions.get(lead.name).submits.some(s => s.includes('[wc:style]')));
   } finally { await close(c); }
+});
+
+test('lead and sub-lead use distinct model slots', async () => {
+  const { slotFor } = require('../app/balancer.js');
+  assert.equal(await slotFor(null, 'lead'), 'lead');
+  assert.equal(await slotFor(null, 'sub-lead'), 'sub-lead');
 });

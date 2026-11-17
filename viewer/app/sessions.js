@@ -32,6 +32,17 @@ async function resolveModel(hub, cli, role, requestedTier = 'top') {
   }
 }
 
+async function resolveScout(hub, provider, tier) {
+  const args = provider === 'claude' ? ['family', 'claude', tier] : [provider, tier];
+  try {
+    const model = (await execFileAsync(path.join(hub.root, 'codex', 'model.sh'), args)).stdout.trim();
+    return model.length > settingsStore.MODEL_MAX ? null : model;
+  } catch (error) {
+    if (error.code === 3) return null;
+    throw appError(400, (error.stderr || error.message).trim());
+  }
+}
+
 const SESSION_ROLES = new Set([
   'lead',
   'sub-lead',
@@ -167,7 +178,12 @@ async function startSession(hub, thread, input) {
   if (role === 'lead' && !thread.provider) { thread.provider = selection.provider; thread.cli = cli; }
   const resolved = await resolveModel(hub, cli, role, input.tier);
   const settings = await settingsStore.load(hub);
-  const layers = settingsStore.roleLayers(settings, role, thread.project);
+  let scout;
+  if (role === 'lead' || role === 'sub-lead') {
+    scout = { light: await resolveScout(hub, selection.provider, settings.other_agents.scout), heavy: null };
+    if (role === 'sub-lead') scout.heavy = await resolveScout(hub, selection.provider, settings.other_agents['scout-heavy']);
+  }
+  const layers = settingsStore.roleLayers(settings, role, thread.project, scout, selection.provider);
   // Spec "Machine service on the hub": no new sessions while that service runs another commit.
   // A service that can't be reached falls through to the start, which records the failure.
   const current = await hub.call(thread.machine, '/v1/status', 'GET').catch(() => null);

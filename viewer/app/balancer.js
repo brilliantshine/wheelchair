@@ -9,7 +9,7 @@ const { appError } = require('./state.js');
 const exec = promisify(execFile);
 
 async function slotFor(hub, role, requestedTier = 'top') {
-  if (['lead', 'sub-lead'].includes(role)) return 'lead';
+  if (['lead', 'sub-lead'].includes(role)) return role;
   const settings = await settingsStore.load(hub);
   if (['reviewer', 'verifier', 'mapper'].includes(role)) return settings.other_agents[role];
   const tier = ({ haiku: 'light', sonnet: 'standard', opus: 'heavy' })[requestedTier] || requestedTier;
