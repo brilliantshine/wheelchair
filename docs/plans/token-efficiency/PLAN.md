@@ -164,6 +164,7 @@ New tests: model.sh reads, writes and defaults the sub-lead cell; balancer resol
 | T1 | Sub-lead model cell (model.sh, balancer, routes), scout + scout-heavy settings, scout layer in lead/sub-lead start | codex/, viewer/app/{balancer,settings,routes,sessions}.js, viewer/app/API.md, viewer/test/*.test.js | standard (gpt-6.1-terra) | wc-f8cf8710a770-worker (t1-a1) | codex, machine, node tests | done |
 | T2 | Settings page: Leads/Sub-leads model rows, Scout and Scout for bigger changes selectors (after T1) | viewer/pages/settings.js, viewer/test/app-settings.spec.js | standard, --provider claude; hub placed it on gpt (gpt-6.1-terra) | wc-f8cf8710a770-worker-3 (t2-a1) | node + browser tests | done |
 | T3 | Scout rule in lead.md and sub-lead.md; size-banded diff check in sub-lead.md | protocol/app/lead.md, protocol/app/sub-lead.md | standard (gpt-6.1-terra) | wc-f8cf8710a770-worker-2 (t3-a1) | protocol-rules test | done |
+| R1 | Remediation 1: bound model IDs at 64 characters so the 12000-character check covers every scout block | codex/model.sh, codex/test/run.sh, viewer/app/{routes,settings,sessions}.js, API.md, app-settings.test.js | standard, --provider gpt (gpt-6.1-terra) | wc-f8cf8710a770-worker-4 (r1-a1) | codex, node tests | in progress |
 
 ## Log
 
