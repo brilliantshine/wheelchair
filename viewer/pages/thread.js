@@ -28,6 +28,7 @@
   let pinsFolded = false;
   try { pinsFolded = localStorage.getItem(PINS_KEY) === '1'; } catch (e) { /* stays open */ }
   let archiveAsk = false;
+  const mergedArchiveAsk = {};
   let accountNames = null;   // account id -> name, from /settings; null until fetched
   const cardErrors = {};
   const sendingNow = {};     // queued message `at` -> true while its Send now call runs
@@ -445,7 +446,7 @@
     if (!card.answered) return null;
     const tag = el('div', 'answered-tag');
     let label = ' Answered';
-    if (card.kind === 'needs' && card.resolved_by) {
+    if (card.kind === 'merged' || (card.kind === 'needs' && card.resolved_by)) {
       label = ' ' + (card.resolved_note || (card.resolved_by === 'collin' ? 'Dismissed' : 'Resolved'));
       tag.classList.add('resolved');
     } else if (card.kind === 'question' && card.resolved_by) {
@@ -652,6 +653,30 @@
         }
         break;
       }
+      case 'merged': {
+        head(box, '', '', card.title);
+        const actions = el('div', 'actions');
+        const link = el('a', 'btn go', 'Review pull request');
+        link.prepend(icon(ICON.pr, 15));
+        link.href = safeUrl(card.pr_url); link.target = '_blank'; link.rel = 'noopener';
+        actions.appendChild(link);
+        if (!off) {
+          if (mergedArchiveAsk[card.id]) {
+            actions.appendChild(el('span', 'dim confirm-note', 'Stops its sessions and removes the worktree.'));
+            actions.appendChild(button('Confirm archive', 'danger small', doArchive));
+            actions.appendChild(button('Cancel', 'small', () => {
+              delete mergedArchiveAsk[card.id]; sigs.chat = null; render();
+            }));
+          } else {
+            actions.appendChild(button('Archive', 'danger small', () => {
+              mergedArchiveAsk[card.id] = true; sigs.chat = null; render();
+            }));
+            actions.appendChild(button('Keep it', 'small', () => press(card, 'keep')));
+          }
+        }
+        box.appendChild(actions);
+        break;
+      }
       case 'done': {
         const top = el('div', 'approval-head');
         top.appendChild(seal());
@@ -759,7 +784,7 @@
       default:
         return null;
     }
-    if (['offer', 'question', 'approval'].includes(card.kind) || (card.kind === 'needs' && card.resolved_by)) {
+    if (['offer', 'question', 'approval'].includes(card.kind) || card.kind === 'merged' || (card.kind === 'needs' && card.resolved_by)) {
       const t = answeredTag(card); if (t) box.appendChild(t);
     }
     if (cardErrors[card.id]) box.appendChild(el('div', 'card-error', (card.kind === 'sudo' ? '' : 'Could not send: ') + cardErrors[card.id]));
