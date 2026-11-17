@@ -187,6 +187,6 @@ Each Agents API session node includes `context` (`{percent, at}` or null) and `a
 
 `POST /api/machine/events` accepts `step` events with `phase: start` and `step: {id, kind, label, key, started_at}`, or `phase: end` and `step: {id, ended_at, failed, clean}`; and `context` events with `context: {percent, at}`. These events do not deliver queued messages or change turn or hold state.
 
-Each node has `question`, null or `{asked_at, to, trail, card_id}` for its latest unanswered asking message. Trail entries are `{who, at, text}` (first line, at most 80 characters); `card_id` identifies the open lead question when present. Each lead node has `question_paths`, arrays of session names from asker to lead for open passed-on question cards.
+Each node has `question`, null or `{asked_at, to, trail, card_id}` for its latest unanswered asking message. Trail entries are `{who, at, text}` (first line, at most 80 characters); `card_id` identifies the open lead question when present. Each lead record has `question_paths`, arrays of session names from asker to lead for open passed-on question cards.
 
 Message cards accept optional `asks` (boolean) and `passes_on` (string); question cards accept optional `passes_on` (string). A `passes_on` id must name an asking message in the same thread. Asking messages are delivered as `[wc:from <sender>] [question <id>] <text>`.

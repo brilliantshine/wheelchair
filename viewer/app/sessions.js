@@ -35,7 +35,11 @@ function countThinking(s, at) {
 }
 function beginTurn(s, at) {
   s.turns ||= [];
-  if (!s.turns.some(t => t.started_at === at)) s.turns.push({ started_at: at, ended_at: null });
+  if (!s.turns.some(t => t.started_at === at)) {
+    const last = s.turns.at(-1);
+    if (last && !last.ended_at && last.started_at < at) last.ended_at = at;
+    s.turns.push({ started_at: at, ended_at: null });
+  }
   s.turns = s.turns.slice(-20);
 }
 function closeSteps(s, at) {
