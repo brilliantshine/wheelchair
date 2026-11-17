@@ -31,6 +31,7 @@ get buried as this file grows.
 | 6 | No measurement script ships; the method and baseline are in the Log | re-measuring is a one-off check, not a product feature | defaulted |
 | 7 | Scout diff report also lists unbriefed choices and checks claimed file state | sub-lead.md's choices step needs a full list without the sub-lead reading the whole diff | review-round-1 |
 | 8 | Worker changes are checked by size: under 200 changed lines the Light scout, 200–800 a Standard "bigger changes" scout (its own Other agents setting), over 800 or marked tricky the sub-lead itself | Collin: different tiers by size, the sub-lead for truly big ones. Line limits and the separate setting are defaulted | user |
+| 9 | Worker diffs are sized and reviewed over `<feature>...<worker>`; lookups without the Light scout fall back to the agent, diff checks to the next band | review round 3 findings | review-round-3 |
 | 3 | Scout setting sits in Other agents as a tier selector like reviewer/verifier/mapper, default Light | matches the existing pattern and Collin's "light tier" | defaulted |
 
 ## Spec
@@ -64,7 +65,7 @@ flowchart TD
 - lead.md and sub-lead.md rule: questions that need reading more than a couple of files go to the built-in helper on the scout model, with a brief asking for conclusions with file:line evidence, not file dumps. The agent acts on those conclusions and opens a file itself only to confirm a specific line. With no scout model, read code as today.
 
 ### Sub-lead diff checks
-Replace the "read the diff" step in `protocol/app/sub-lead.md` (around :129-152) with: rerun the task's validation itself (unchanged); read the worker's report; pick the reader by the size of the worker's change (`git diff --shortstat` against the feature branch, added plus removed lines): under 200 lines, the scout; 200 to 800, the bigger-changes scout; over 800, or a task whose Implementation Tasks row is marked `tricky`, the sub-lead reads the diff itself as today (the choices step then works as today too). The chosen scout is asked to compare the worker's diff with its brief and the Spec and report, each with file:line: (1) every deviation, missing piece or risky change; (2) whether the file state the report claims matches the diff; (3) every choice the diff makes that the brief did not dictate. Open only the flagged lines, then decide to merge or send back. The choices step (sub-lead.md:136-143) uses the scout's list (3): it is checked against the report's choices section, and when the report has none, it is the list the sub-lead logs as "worker didn't report its choices; I listed N". With no scout model for the band, use the next band up (no bigger-changes scout means the sub-lead reads it). The final verifier is unchanged.
+Replace the "read the diff" step in `protocol/app/sub-lead.md` (around :129-152) with: rerun the task's validation itself (unchanged); read the worker's report; pick the reader by the size of the worker's change (`git diff --shortstat <feature branch>...<worker branch>`, three dots, so only the worker's own changes since its branch was cut count, never other workers' merges; added plus removed lines). The scout is given the same range (`git diff <feature branch>...<worker branch>`): under 200 lines, the scout; 200 to 800, the bigger-changes scout; over 800, or a task whose Implementation Tasks row is marked `tricky`, the sub-lead reads the diff itself as today (the choices step then works as today too). The chosen scout is asked to compare the worker's diff with its brief and the Spec and report, each with file:line: (1) every deviation, missing piece or risky change; (2) whether the file state the report claims matches the diff; (3) every choice the diff makes that the brief did not dictate. Open only the flagged lines, then decide to merge or send back. The choices step (sub-lead.md:136-143) uses the scout's list (3): it is checked against the report's choices section, and when the report has none, it is the list the sub-lead logs as "worker didn't report its choices; I listed N". With no scout model for the band, use the next band up (no bigger-changes scout means the sub-lead reads it). The final verifier is unchanged.
 
 ### Boundaries and non-goals
 - No new app role; `sessions.js` role sets and start rules are unchanged.
@@ -74,7 +75,7 @@ Replace the "read the diff" step in `protocol/app/sub-lead.md` (around :129-152)
 
 ### Edge cases
 - Existing model files without a `sub-lead` cell: read as the lead cell, written on next save.
-- Scout or bigger-changes scout tier set to `none` for a provider, or a Claude model with no Agent-tool alias: the layer says there is no scout and the agent reads code itself.
+- A scout tier set to `none` for a provider, or a Claude model with no Agent-tool alias, makes that scout unavailable, and the layer says so. Code lookups use only the Light `scout`: without it, the lead or sub-lead reads code itself. Worker diff checks follow the band fallback in Sub-lead diff checks: without the Light scout, the bigger-changes scout reads small changes too; without the bigger-changes scout, the sub-lead reads every change at or above 200 lines itself.
 - The composed role instructions must still fit the 12000-character limit (`settings.js:167`).
 
 ### Validation
@@ -125,6 +126,20 @@ New tests: model.sh reads, writes and defaults the sub-lead cell; balancer resol
 **Changed since Round 2:**
 - Settings: new `scout-heavy` Other agents selector, default Standard; the sub-lead layer names its model.
 - Sub-lead diff checks: the reader is chosen by change size (Light scout under 200 lines, bigger-changes scout 200–800, sub-lead itself over 800 or `tricky`), with fallback to the next band up.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| mechanics | major | Diff range for sizing and scout review undefined; branch-tip comparison after a parallel merge counts other workers' changes | upheld | Spec now uses `git diff <feature>...<worker>` (three dots) for both |
+| mechanics | major | Fallback contradiction: diff-check band fallback vs edge case saying the agent reads code itself | upheld | Edge case rewritten: lookups use only the Light scout; diff checks follow the band fallback |
+| intent | — | No findings | — | — |
+
+### Round 4 — 2026-11-16
+
+**Lanes:** pending.
+
+**Changed since Round 3:**
+- Sub-lead diff checks: the size and the scout's diff use `<feature>...<worker>` (three dots).
+- Edge cases: the fallback is split, lookups vs diff checks.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
