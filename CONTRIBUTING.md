@@ -39,8 +39,8 @@ Do not edit it to skip a stage.
 
 ## Editing conventions
 
-- Keep rules in one place. Card fields belong only in `protocol/app/cards.md`, and
-  template changes are contract changes that must agree with the role that consumes the
+- Keep rules in one place. Shared card kinds and fields live in `protocol/app/cards.md`; lead-only
+  kinds and fields live in `protocol/app/cards-lead.md`. Template changes are contract changes that must agree with the role that consumes the
   template.
 - Do not hand-edit the wheelchair-owned block in `~/.claude/CLAUDE.md` or
   `~/.codex/AGENTS.md`. `sensitivity/set.sh` is its only writer, and the next run
@@ -64,9 +64,7 @@ anything under `~/.local/state/wheelchair/worktrees`, it and
 `sensitivity/set.sh` refuse (exit 3) unless `WHEELCHAIR_ALLOW_WORKTREE=1` forces them. To
 check the installer from a worktree, run `bash install/test/run.sh`.
 
-Edits under `protocol/` take effect immediately, because sessions read their role files
-from this checkout. The exception is the delimited region in `protocol/sensitivity.md`;
-run `sensitivity/set.sh` or `./install.sh` after changing it.
+Role or card file edits reach sessions started after the edit, never running sessions: the machine copies these files into each session’s starting instructions at start. For the delimited region in `protocol/sensitivity.md`, run `sensitivity/set.sh` or `./install.sh` after changing it.
 
 The Mac CI job is `.github/workflows/macos.yml`. Its end-to-end check is
 `test-support/macos/check.sh`; `test-support/macos/` also holds its fake `claude` and
@@ -98,3 +96,17 @@ expects.
 Do not validate viewer changes against a manually started default server: it may reuse
 an older process. Use the suites, or start an isolated server with both `--port` and
 `--cache-root`.
+
+## Why the agent rules are the way they are
+
+The diagram dial governs ordinary conversation turns before any stage reads `protocol/`. Its region is a rendering, not a hand-maintained copy: one source and one writer keep the harness instructions in sync. The sudo helper is installed from a root-owned copy so a password entered for a `sudo` card never passes through the hub, machine service or anything an agent can read.
+
+`graphify-out/` is gitignored and per-clone, so a graph can be absent or arbitrarily old. It is a snapshot, and a stale graph can silently misroute work; it cannot carry a contract. There is no module-docstring step in navigation: the viewer and machine routers and their API tables already identify each file's role.
+
+`install.sh` installs viewer dependencies, stops an outdated viewer, initializes the hub machine service's private state and credentials, and decides once whether to serve other tailnet devices (asking only on a headless machine without a decision). On serving systemd or launchd machines it installs both user services. It removes retired skill and prompt wrappers and the old seen hook through `install/unseen.py`, runs `codex/model.sh init`, and finally calls `sensitivity/set.sh`, warning rather than failing if it refuses. It hints when the root sudo helper is absent but never installs or updates it. Its machine-wide writes would point harnesses and services at temporary code if run from a worktree; the guard refuses linked worktrees and paths under `~/.local/state/wheelchair/worktrees` with exit 3 unless `WHEELCHAIR_ALLOW_WORKTREE=1` is set.
+
+`.gitignore` excludes `node_modules/`, `graphify-out/`, browser `test-results/`, Python `__pycache__/`, and `viewer/test/.tmp/` from older viewer suites; `test-support/run-dir.js` sweeps old entries there.
+
+The viewer test glob must be expanded by the shell: Node 20 does not discover a quoted glob, while Node 26.7.0 does not discover the suite from a bare directory. The unquoted glob works on both.
+
+A viewer `--open` or `--show` start can register with an existing server at the default port and reuse its old code (`viewer/server.js:2306-2307`). Canonicalization drops unknown keys (`viewer/server.js:157`), so a write with a newer field can return 200 while silently losing it. The test helper starts an isolated server with `--port` and `--cache-root` (`viewer/test/helpers/server.js:87`). There is no cache-root environment variable: `server.js` reads `WHEELCHAIR_NO_BROWSER`, `WHEELCHAIR_BROWSER`, and `TMUX`, `TMUX_PANE`, `CLAUDECODE` for opener labels; exporting a cache-root variable leaves the default root in use.
