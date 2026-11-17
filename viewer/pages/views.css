@@ -136,17 +136,21 @@
 .agents-box.selected { border-color: var(--accent); background: var(--accent-soft); }
 .agents-box.state-finished, .agents-box.state-not-started { border-style: dashed; }
 .agents-role { text-transform: uppercase; letter-spacing: .07em; color: var(--dim); font-size: 10px; font-weight: 700; }
-.agents-box-title { font-size: 13px; }
+.agents-box-title { font-size: 13px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
 .agents-status { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--dim); }
 .agents-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--idle); flex: none; }
 .state-working .agents-dot { background: var(--good); }
 .state-waiting .agents-dot { background: transparent; border: 1px solid var(--dim); }
 .state-needs-you .agents-status { color: var(--warn); }
 .state-needs-you .agents-dot { background: var(--warn); }
-.agents-children { display: flex; justify-content: safe center; align-items: flex-start; gap: 16px; border-top: 1px solid var(--line-2); margin-top: 30px; padding-top: 30px; position: relative; }
+.agents-children { display: flex; justify-content: safe center; align-items: flex-start; gap: 16px; margin-top: 30px; padding-top: 30px; position: relative; }
 .agents-children:before { content: ''; position: absolute; height: 30px; border-left: 1px solid var(--line-2); top: -30px; left: 50%; }
 .agents-children > .agents-branch { position: relative; }
 .agents-children > .agents-branch:before { content: ''; position: absolute; height: 30px; border-left: 1px solid var(--line-2); top: -30px; left: 50%; }
+.agents-children > .agents-branch:after { content: ''; position: absolute; top: -30px; left: -8px; right: -8px; border-top: 1px solid var(--line-2); }
+.agents-children > .agents-branch:first-child:after { left: 50%; }
+.agents-children > .agents-branch:last-child:after { right: 50%; }
+.agents-children > .agents-branch:only-child:after { display: none; }
 .agents-side { border-left: 1px solid var(--line); padding: 28px; min-width: 0; background: var(--panel-3); }
 .agents-side h2 { margin: 10px 0; overflow-wrap: anywhere; }
 .agents-side button:not(.agents-back) { margin: 8px 8px 0 0; }
@@ -169,11 +173,11 @@
  .agents-layout.has-lead .agents-sidebar, .agents-layout.has-agent .agents-main { display: none; }
  .agents-layout.has-lead:not(.has-agent) .agents-main, .agents-layout.has-agent .agents-side { display: block; }
  .agents-back { display: inline-flex; margin-bottom: 20px; }
- .agents-tree { overflow: visible; }
+ .agents-tree { overflow: visible; display: block; }
  .agents-branch { align-items: stretch; min-width: 0; }
  .agents-box { width: 100%; }
  .agents-children { display: block; margin: 0 0 0 12px; padding: 12px 0 0 16px; border: 0; border-left: 1px solid var(--line-2); }
- .agents-children:before, .agents-children > .agents-branch:before { display: none; }
+ .agents-children:before, .agents-children > .agents-branch:before, .agents-children > .agents-branch:after { display: none; }
  .agents-children > .agents-branch { margin-bottom: 12px; }
  .agents-terminal { inset: 0; height: auto !important; }
  .agents-resize, #agents-full { display: none; }
