@@ -193,6 +193,19 @@ Tests to add:
 
 ## Review Rounds
 
+### Round 3 — 2026-11-16
+
+**Lanes:** intent — gpt; mechanics — gpt (Claude unavailable at start); cross-family: no.
+
+**Changed since Round 2:**
+- D13: whose login refresh IDEA excludes (wheelchair's code, not the CLI's own renewal); Non-goals reworded.
+- D14: Claude probe adds `--setting-sources ""` and the closed-port address via `--settings`; tests assert both.
+- D15 and two new Accepted Risks (managed settings; 15 s cached sign-in state).
+- Claude reset-time parsing accepts times without minutes (`7pm`).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ### Round 2 — 2026-11-16
 
 **Lanes:** intent — gpt; mechanics — gpt (Claude unavailable at start); cross-family: no.
