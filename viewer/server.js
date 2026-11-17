@@ -16,7 +16,7 @@ Errors:
   403 bad-origin, not-registered
   404 not-found, no-route
   409 stale (also returns hash)
-  422 invalid-json (position), unknown-schema (schema), missing-label, bad-id, bad-kind (ids),
+  422 invalid-json (position), unknown-schema (schema), missing-label (ids on a fork arm), bad-label (ids), bad-id, bad-kind (ids),
       edge-missing-node, self-edge (ids), group-bad-name, group-missing-node, group-bad-shape (ids),
       group-missing-label (ids), group-missing-note (ids), group-hidden-text (ids),
       group-overlap (ids), explanation-missing-group, group-unreferenced,
@@ -286,14 +286,17 @@ function validateGraph(input) {
       fail(422, 'bad-id', 'An edge id is missing, empty, or duplicated.');
     }
     edgeIds.add(raw.id);
-    if (!Object.prototype.hasOwnProperty.call(raw, 'label') || typeof raw.label !== 'string') {
-      fail(422, 'missing-label', 'An edge is missing its label.');
+    // An edge label is optional: many arrows are a plain "then". Absent, null and blank all store
+    // as null, so the page draws no text; only a non-string is refused.
+    const rawLabel = raw.label ?? null;
+    if (rawLabel !== null && typeof rawLabel !== 'string') {
+      fail(422, 'bad-label', 'An edge label must be a string or null.', { ids: [raw.id] });
     }
     const edge = {
       id: raw.id,
       from: raw.from,
       to: raw.to,
-      label: raw.label,
+      label: rawLabel === null || rawLabel.trim() === '' ? null : rawLabel,
       kind: raw.kind ?? 'sequence',
       value: raw.value ?? null,
       inferred: raw.inferred ?? false,
@@ -311,6 +314,10 @@ function validateGraph(input) {
     }
     if (edge.from === edge.to) {
       fail(422, 'self-edge', 'An edge may not connect a node back to itself.', { ids: [edge.id] });
+    }
+    // A fork's arm reads "if <label>": without one, "then either" has nothing to choose on.
+    if (edge.label === null && nodes.find((node) => node.id === edge.from).exclusive === true) {
+      fail(422, 'missing-label', 'An edge leaving an exclusive node must carry a label.', { ids: [edge.id] });
     }
   }
   for (const node of nodes) {
