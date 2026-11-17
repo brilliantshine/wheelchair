@@ -6,26 +6,187 @@
   "explanation": "The installer asks which system it's on, so Linux keeps today's path untouched and only the Mac gets the new launchd branch. The interesting arrow is the restart one: launchd is told to leave tmux alone, so sessions outlive a service restart, as they do on Linux. Leaves out the GPT login check and diagram setting fixes, which run the same on both systems.",
   "groups": [],
   "nodes": [
-    {"id":"install","label":"./install.sh --serve","kind":"step","exclusive":false,"ref":"install.sh","note":null,"graph":null},
-    {"id":"which","label":"which system is this?","kind":"decision","exclusive":true,"ref":"install.sh","note":"platform_supports_serving","graph":null},
-    {"id":"linux","label":"systemd services, exactly as today","kind":"step","exclusive":false,"ref":"install.sh","note":null,"graph":null},
-    {"id":"plists","label":"write two launchd service files for the viewer and machine service","kind":"step","exclusive":false,"ref":null,"note":"~/Library/LaunchAgents/com.wheelchair.viewer.plist, com.wheelchair.machine.plist","graph":null},
-    {"id":"load","label":"start both now; launchd restarts them if they die and after login","kind":"step","exclusive":false,"ref":null,"note":"launchctl bootstrap gui/<uid>; KeepAlive, RunAtLoad","graph":null},
-    {"id":"tailscale","label":"share the app over Tailscale, using the Mac app's built-in command","kind":"external","exclusive":false,"ref":"install.sh","note":"/Applications/Tailscale.app/Contents/MacOS/Tailscale","graph":null},
-    {"id":"sessions","label":"agent sessions run in tmux, started by the machine service","kind":"step","exclusive":false,"ref":"machine/service.js","note":"plain tmux; no systemd-run on a Mac","graph":null},
-    {"id":"restart","label":"machine service restarts; launchd leaves tmux sessions running","kind":"step","exclusive":false,"ref":null,"note":"AbandonProcessGroup","graph":null},
-    {"id":"ci","label":"every pull request: GitHub's Mac runs the install and a scripted check","kind":"external","exclusive":false,"ref":null,"note":".github/workflows/macos.yml, test-support/macos/check.sh","graph":null},
-    {"id":"friend","label":"the Mac owner tries phone access, Tailscale and Claude accounts","kind":"note","exclusive":false,"ref":"docs/plans/macos-support/MAC-CHECKLIST.md","note":null,"graph":null}
+    {
+      "id": "install",
+      "label": "./install.sh --serve",
+      "kind": "step",
+      "exclusive": false,
+      "ref": "install.sh",
+      "note": null,
+      "graph": null
+    },
+    {
+      "id": "which",
+      "label": "which system is this?",
+      "kind": "decision",
+      "exclusive": true,
+      "ref": "install.sh",
+      "note": "platform_supports_serving",
+      "graph": null
+    },
+    {
+      "id": "linux",
+      "label": "systemd services, exactly as today",
+      "kind": "step",
+      "exclusive": false,
+      "ref": "install.sh",
+      "note": null,
+      "graph": null
+    },
+    {
+      "id": "plists",
+      "label": "write two launchd service files for the viewer and machine service",
+      "kind": "step",
+      "exclusive": false,
+      "ref": null,
+      "note": "~/Library/LaunchAgents/com.wheelchair.viewer.plist, com.wheelchair.machine.plist",
+      "graph": null
+    },
+    {
+      "id": "load",
+      "label": "start both now; launchd restarts them if they die and after login",
+      "kind": "step",
+      "exclusive": false,
+      "ref": null,
+      "note": "launchctl bootstrap gui/<uid>; KeepAlive, RunAtLoad",
+      "graph": null
+    },
+    {
+      "id": "tailscale",
+      "label": "share the app over Tailscale, using the Mac app's built-in command",
+      "kind": "external",
+      "exclusive": false,
+      "ref": "install.sh",
+      "note": "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+      "graph": null
+    },
+    {
+      "id": "sessions",
+      "label": "agent sessions run in tmux, started by the machine service",
+      "kind": "step",
+      "exclusive": false,
+      "ref": "machine/service.js",
+      "note": "plain tmux; no systemd-run on a Mac",
+      "graph": null
+    },
+    {
+      "id": "restart",
+      "label": "machine service restarts; launchd leaves tmux sessions running",
+      "kind": "step",
+      "exclusive": false,
+      "ref": null,
+      "note": "AbandonProcessGroup",
+      "graph": null
+    },
+    {
+      "id": "ci",
+      "label": "every pull request: GitHub's Mac runs the install and a scripted check",
+      "kind": "external",
+      "exclusive": false,
+      "ref": null,
+      "note": ".github/workflows/macos.yml, test-support/macos/check.sh",
+      "graph": null
+    },
+    {
+      "id": "friend",
+      "label": "the Mac owner tries phone access, Tailscale and Claude accounts",
+      "kind": "note",
+      "exclusive": false,
+      "ref": "docs/plans/macos-support/MAC-CHECKLIST.md",
+      "note": null,
+      "graph": null
+    }
   ],
   "edges": [
-    {"id":"install->which","from":"install","to":"which","label":null,"kind":"sequence","value":null,"inferred":false,"note":null},
-    {"id":"which->linux","from":"which","to":"linux","label":"Linux","kind":"sequence","value":null,"inferred":false,"note":null},
-    {"id":"which->plists","from":"which","to":"plists","label":"Mac","kind":"sequence","value":null,"inferred":false,"note":null},
-    {"id":"plists->load","from":"plists","to":"load","label":null,"kind":"sequence","value":null,"inferred":false,"note":null},
-    {"id":"load->tailscale","from":"load","to":"tailscale","label":null,"kind":"sequence","value":null,"inferred":false,"note":null},
-    {"id":"load->sessions","from":"load","to":"sessions","label":null,"kind":"sequence","value":null,"inferred":false,"note":null},
-    {"id":"sessions->restart","from":"sessions","to":"restart","label":null,"kind":"sequence","value":null,"inferred":false,"note":null},
-    {"id":"ci->plists","from":"ci","to":"plists","label":"checks","kind":"sequence","value":null,"inferred":false,"note":null},
-    {"id":"friend->tailscale","from":"friend","to":"tailscale","label":"checks","kind":"sequence","value":null,"inferred":false,"note":null}
+    {
+      "id": "install->which",
+      "from": "install",
+      "to": "which",
+      "label": "checks first",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "which->linux",
+      "from": "which",
+      "to": "linux",
+      "label": "Linux",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "which->plists",
+      "from": "which",
+      "to": "plists",
+      "label": "Mac",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "plists->load",
+      "from": "plists",
+      "to": "load",
+      "label": "then",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "load->tailscale",
+      "from": "load",
+      "to": "tailscale",
+      "label": "then",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "load->sessions",
+      "from": "load",
+      "to": "sessions",
+      "label": "once running",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "sessions->restart",
+      "from": "sessions",
+      "to": "restart",
+      "label": "on restart",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "ci->plists",
+      "from": "ci",
+      "to": "plists",
+      "label": "checks",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "friend->tailscale",
+      "from": "friend",
+      "to": "tailscale",
+      "label": "checks",
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "note": null
+    }
   ]
 }
