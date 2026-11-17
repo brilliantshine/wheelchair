@@ -15,11 +15,6 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q2: Does the imported thread keep the same branch and pull request?
-- **Context:** Today a thread's branch is `wc/<thread-id>`; the machine can cut a worktree from another ref (`machine/service.js:441-470`) but uses `-b` to make a new branch.
-- **Options:** (a) imported thread keeps the original thread id, branch and pull request; (b) new id and branch cut from the exported branch, new pull request.
-- **Recommendation:** (a): one piece of work stays one branch and one pull request, and the id makes duplicate detection exact.
-
 ### Q3: What happens to the source thread after export?
 - **Options:** (a) nothing: it stays usable; (b) it is marked "handed off" and stops taking work until re-imported; (c) it is archived.
 - **Recommendation:** (b): keeps two copies from moving on separately, which is what Q4 has to resolve otherwise.
@@ -47,6 +42,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 6 | An imported thread's lead starts with a new `[wc:context import]` message, built like the restart context, and its reply is shown | Reuses the restart path the lead protocol already handles | defaulted |
 | 7 | The file is validated (schema, size limit, known stage) before anything is created; its text is shown and used as data, never run | The file may come from elsewhere | defaulted |
 | 8 | Export points are three: idea confirmed, plan approved, done | Collin picked the three major points over any quiet moment | user |
+| 9 | The imported thread is the same thread: it keeps the original thread id, branch `wc/<id>` and pull request | Collin chose same thread; one piece of work stays one branch and one pull request, and duplicate detection is by id | user |
 
 ## Spec
 
@@ -64,6 +60,20 @@ no session other than the lead is live, the lead is not mid-turn, and no sudo ca
 Anywhere else, the export control is shown disabled with a one-line reason in Collin's
 terms (for example "agents are still working", "planning has moved past the idea; export
 again once the plan is approved").
+
+### Thread identity
+
+- The export file carries the thread id. An imported thread is created with that id, not a
+  fresh one, and its branch is `wc/<id>`.
+- The machine builds the worktree from `origin/wc/<id>` (after a fetch), checking out the
+  existing remote branch as the local `wc/<id>`, not cutting a new branch from the default
+  branch. The base-ref support in `machine/service.js:441-470` is extended for this; the
+  `-b` path must not be used when the branch already exists on the remote.
+- Pushes from the imported thread go to the same remote branch, so an open pull request
+  updates in place. At the done point the file carries the pull request URL and the thread
+  records it.
+- If this app already has a thread with that id, import never creates a second one (see
+  Re-import).
 
 ## Accepted Risks
 
