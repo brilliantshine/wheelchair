@@ -102,7 +102,7 @@ A row above the tree area, right-aligned: `−`, the zoom as a percentage (for e
 
 ### Phones (decision 9)
 
-Under 900px: the toolbar is hidden; the tree area has no fixed height, no `touch-action` override and no transform (zoom is treated as 1); pointer and wheel handlers do nothing (check `matchMedia('(max-width: 899px)')` at gesture start). The indented list scrolls and selects exactly as today. Resizing across 900px needs no special handling beyond that: the next render applies the right mode.
+Under 900px: the toolbar is hidden; `.agents-view`, `.agents-layout` and `.agents-main` keep today's heights and scrolling (none of the fixed-height column rules apply); the tree area has no fixed height, no `touch-action` override and no transform (zoom is treated as 1); pointer and wheel handlers do nothing (check `matchMedia('(max-width: 899px)')` at gesture start). The indented list scrolls and selects exactly as today. Resizing across 900px needs no special handling beyond that: the next render applies the right mode.
 
 ### Non-goals
 
@@ -172,6 +172,18 @@ npm --prefix viewer run test:browser
 | mechanics | major | Error and unreachable banners push the fixed-height layout down, so the tree runs under the terminal. | upheld | `.agents-view` is the fixed-height column; layout flexes (decision 15). |
 | mechanics | major | A terminal resized near full height collapses the tree area. | upheld | 160px minimum; `.agents-main` scrolls as a whole (decision 15). |
 | mechanics | major | A pinch flushes the pending rebuild when its first finger lifts. | upheld | Defer until every active pointer is up (decision 15). |
+
+### Round 3 — 2026-11-17
+
+**Lanes:** intent lens; mechanics lens.
+
+**Changed since Round 2:**
+- Layout: `.agents-view` is the fixed-height column so banners shorten the layout; tree area minimum 160px with `.agents-main` scrolling as a whole below that (decision 15).
+- Keeping the view: deferral lasts until every active pointer is up or cancelled (decision 15).
+- Phones: the fixed-height column rules do not apply under 900px.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
