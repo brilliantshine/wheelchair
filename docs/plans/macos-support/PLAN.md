@@ -12,11 +12,6 @@ get buried as this file grows.
 
 ## Open Questions
 
-### Q1: How does the Mac build get tried without Collin owning a Mac?
-- **Context:** This build machine is Linux, and Collin has no Mac; the user is a friend who does. Everything Mac-specific (launchd, BSD tools, bash 3.2, Tailscale's Mac CLI, Keychain) can only be shown working on a Mac. The repo is public (`brilliantshine/wheelchair`), so GitHub's hosted macOS runners are free; it has no `.github/workflows/` today.
-- **Options:** (a) A GitHub Actions macOS job runs install and the relevant checks on every PR, and the friend then tries only Tailscale and phone access; (b) the friend runs a written checklist; (c) pause until a Mac is available.
-- **Recommendation:** (a).
-
 ### Q2: What happens with more than one Claude account on a Mac?
 - **Context:** Machines here use separate Claude accounts (`~/.wheelchair/accounts/personal`, `work1`) via `CLAUDE_CONFIG_DIR` (`machine/adapters/claude.js:5-6`). On macOS Claude Code keeps its login in the Keychain; public reports disagree on whether the Keychain entry is per config directory. If shared, two accounts overwrite each other's login.
 - **Options:** (a) Assume separation works, check it on the Mac, and fix in a follow-up thread if not; (b) on a Mac, allow only the default Claude account until checked; (c) on a Mac, refuse a second Claude account when a probe shows the entries are shared.
@@ -41,10 +36,13 @@ get buried as this file grows.
 | 7 | With no flag, a Mac keeps today's behavior: not serving unless `--serve` is passed | A Mac usually has a display, like a desktop; the README tells Mac servers to pass `--serve` | defaulted |
 | 8 | The installer finds Tailscale's CLI on PATH or inside `/Applications/Tailscale.app` | The Mac app does not put it on PATH by default | defaulted |
 | 9 | The installer does not change power settings; the README covers keeping the Mac awake | Changing sleep needs sudo and is the owner's call | defaulted |
+| 10 | Mac testing: a new GitHub Actions macOS job runs on every PR; Collin's friend (the Mac user) then tries only Tailscale, phone access and Claude accounts by checklist | Collin has no Mac; the repo is public so hosted macOS runners are free | user |
 
 ## Spec
 
-(Grows as decisions land.)
+### Mac testing
+- New workflow `.github/workflows/macos.yml`, on pull requests and pushes to `main`, `runs-on: macos-latest`. It runs on the stock system bash 3.2 and BSD tools, with no Homebrew coreutils or bash on PATH for the steps under test.
+- What GitHub's Macs can't cover goes in a checklist for the friend: Tailscale serving, phone access, Claude account separation.
 
 ## Accepted Risks
 
