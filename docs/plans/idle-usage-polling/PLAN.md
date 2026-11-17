@@ -1,6 +1,6 @@
 ---
 slug: idle-usage-polling
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-16
 ---
 
@@ -258,7 +258,7 @@ None.
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Machine `POST /v1/usage`, Claude and Codex probes and parsers, API.md, machine tests | `machine/service.js`, `machine/adapters/{claude,codex}.js`, new `machine/lib/*`, `machine/API.md`, `machine/AGENTS.md`, `machine/test/{accounts,service}.test.js`, `machine/test/fixtures/` | Standard, gpt-6.1-terra | wc-d40ef9c79052-worker (T1-a1) | `bash machine/test/run.sh` | done (cf9a484; 113/113 rerun by sub-lead) |
-| T2 | Hub `usage-poll.js`, `hub.pollIdle()` and timers, fake `/v1/usage`, hub tests, router rows | `viewer/app/usage-poll.js`, `viewer/app/hub.js`, `viewer/test/app-usage.test.js`, `viewer/test/helpers/app-machine.js`, `viewer/AGENTS.md`, `viewer/app/API.md` | Standard, gpt-6.1-terra | wc-d40ef9c79052-worker-2 (T2-a1) | `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser` | done (dca8618; node suite rerun by sub-lead: only pre-existing failures) |
+| T2 | Hub `usage-poll.js`, `hub.pollIdle()` and timers, fake `/v1/usage`, hub tests, router rows | `viewer/app/usage-poll.js`, `viewer/app/hub.js`, `viewer/test/app-usage.test.js`, `viewer/test/helpers/app-machine.js`, `viewer/AGENTS.md`, `viewer/app/API.md` | Standard, gpt-6.1-terra | wc-d40ef9c79052-worker-2 (T2-a1) | `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser` | done (b4cf308; node suite rerun by sub-lead: only pre-existing failures) |
 
 ## Log
 
@@ -273,6 +273,6 @@ None.
 - 2026-11-16, Ready check at approval: hub and machine service answer (session list; round 3 reviewer starts passed the version check); claude and codex installed; Claude logged in; Codex preflight: token fresh. Ready.
 - 2026-11-16 — Choice: T1, `machine/lib/usage-probe.js`: SIGKILL on the 30 s timeout so a hung child always exits.
 - 2026-11-16 — Choice: T1, `machine/service.js`: a `usageProbeTimeout` service option (default 30000) so tests can use a short timeout.
-- 2026-11-16 — Choice: T2, `viewer/app/hub.js`: added `Hub.close()` clearing all hub timers including the two new ones; no shutdown path cleared hub timers before, and nothing calls it yet (server.js was outside the boundary).
+- 2026-11-16 — Choice: T2, `viewer/app/hub.js`: the two new timers are only `unref()`'d, like the existing hub timers; no hub timer is cleared anywhere, so there is no clear path to join (an interim `Hub.close()` was removed in b4cf308 after the lead confirmed this).
 - 2026-11-16 — Choice: T2, `viewer/app/API.md`: no row added; that file documents page-facing HTTP routes, not hub modules. The router row is in `viewer/AGENTS.md`.
 - 2026-11-16 — Pre-existing failures (present on this branch before T2, untouched by this build): `app-balancer.test.js` "three provider placement and constraints" (from main, per the lead) and `lifecycle.test.js` "a starter that loses the freed port registers through the new holder" (fails on the base worktree at e81d612 too).
