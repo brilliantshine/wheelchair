@@ -42,56 +42,60 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 15 | Supersedes 5, 6 (deny hash and setups), 7, 10, 11, 12 and 14: growth means a role's last 5 Claude sessions have a median startup above a fixed per-role limit kept in code (today's typical size + about 5,000) | Claude Code updates every 1-3 days and this machine runs few Claude sessions, so a version-based comparison rarely has enough samples; Collin chose Fixed limit | user |
 | 16 | Supersedes 3 and 9: the machine attaches the warning to a lead's approval card in its card route before spooling; no `wc.js` command and no lead rule | With Decision 13's resend helper in place, this is less code than a CLI command, its deadline and a lead step, and the lead cannot drop or paraphrase it | review-round-3 |
 | 17 | Samples come only from the machine's kept transcript copies, read asynchronously within a 1-second budget; no CLI transcript discovery | The discovery helper probes synchronously and could stall the service | review-round-3 |
+| 18 | Only lead and reviewer sessions are checked, against a typical size per role; the limit is typical + 5,000 and the text gives the growth over typical | Every role shares one tool list, so these two measured, steady roles catch any tool growth; brief-driven roles would mostly track brief length | review-round-4 |
+| 19 | Supersedes the budget and timing of 17: the warning is computed in the background (at service start, every 10 minutes, and after each approval card) and the card route only reads the last result, never waiting | A card must not wait on a scan; no waiter can pile up behind a stalled read | review-round-4 |
 
 ## Spec
 
 ### What changes, in one paragraph
 
-When a lead posts an approval card, the machine looks at each role's last 5 Claude
-sessions on that machine, reads how many tokens each one's first call used from the
-transcript copies it already keeps, and compares the median with a fixed limit for that
-role. If any role is over its limit, the machine adds one warning line to the card before
-passing it on. The thread page shows it under the Ready result as a "Heads-up". Nothing
-about it can disable, delay or consume Start building, and any failure just means no
-warning.
+In the background, the machine looks at the last 5 Claude lead sessions and the last 5
+Claude reviewer sessions on that machine, reads how many tokens each one's first call used
+from the transcript copies it already keeps, and compares each role's median with that
+role's typical size. When a lead posts an approval card, the machine attaches the latest
+result: if a role is more than 5,000 over typical, one warning line saying by how much. The
+thread page shows it under the Ready result as a "Heads-up". The card is never held for the
+check, nothing about it can disable or consume Start building, and any failure just means
+no warning.
 
-### Limits (machine)
+### Typical sizes (machine)
 
 - `machine/adapters/claude.js`, next to `DISALLOWED_TOOLS`, exports
-  `STARTUP_LIMITS = { lead: 46000, 'sub-lead': 46000, worker: 32000, verifier: 30000, reviewer: 28000, mapper: 28000 }`
-  with a comment: typical startup measured 2026-11-17 plus about 5,000; raise a limit when
-  that role's starting text grows. A role not in the table is never checked.
-- Measured on 2026-11-17 (Claude Code 2.1.326-327, claude-opus-5-5): lead 39.6k-40.7k,
-  reviewer 21.4k-22.8k. Sub-lead, worker, verifier and mapper had no samples; their limits
-  are set from their role text size relative to these (lean-sessions measured a worker at
-  about 21k plus its brief).
+  `STARTUP_TYPICAL = { lead: 41000, reviewer: 23000 }` and `STARTUP_MARGIN = 5000`, with a
+  comment: typical first-call size measured 2026-11-17 (Claude Code 2.1.326-327,
+  claude-opus-5-5: lead 39.6k-40.7k, reviewer 21.4k-22.8k); raise a value when that role's
+  starting text grows. Only these roles are checked: every role gets the same tool list,
+  and these two have short, steady first messages.
 
-### Sampling (machine)
+### Computing the warning (machine, background)
 
-- `startupWarning()` in `machine/service.js` (or a small module beside it):
+- `refreshStartupWarning()` in `machine/service.js` (or a small module beside it) sets
+  `this.startupWarning` to a string or `null`. It runs at service start, every 10 minutes
+  (an unref'd interval beside the spool timer), and after each lead approval card is
+  handled (not awaited). Only one refresh runs at a time: a trigger while one runs is
+  dropped. A refresh not finished 30 seconds after it began is abandoned: the guard is
+  cleared, and its result, if it ever arrives, is discarded (a refresh id is compared
+  before publishing). Any error leaves `this.startupWarning` unchanged and is logged.
+- Steps:
   1. Read the last 512 KB of `<stateDir>/session-ledger.jsonl` asynchronously (whole file if
-     smaller; first partial line dropped; missing file: no warning). Keep start lines (no
-     `kind` field) with `provider: "claude"`, a `cli_session_id`, a `name`, a `thread_id`,
-     and a `role` in `STARTUP_LIMITS`. Skip lines that do not parse. Sort newest first by `at`.
-  2. Walk them newest first. For each role, stop once it has 5 samples. A start's sample:
-     read `<stateDir>/transcripts/<thread_id>/<name>.jsonl` asynchronously line by line, at
-     most the first 4 MB, skipping lines that do not parse; the first record with
-     `type: "assistant"`, `sessionId` equal to `cli_session_id` when the record has one,
-     `message.model` not `<synthetic>`, and
-     `input_tokens + cache_creation_input_tokens + cache_read_input_tokens > 0` (missing
-     counts are 0). Missing file or no such record: no sample; go on to the next start.
-     Examine at most 100 starts in total.
-  3. Found samples are cached in memory by `cli_session_id` (`{tokens, model}`); misses
-     are not cached.
-- **Budget.** The whole of steps 1-2 races a 1-second timer. At the timer, the warning is
-  computed from the samples gathered so far; the walk stops before its next read (all
-  reads are async, so nothing blocks the service). Only one walk runs at a time; a card
-  arriving while one runs waits for that walk's result.
-- **Rule.** A role with 5 samples is over when their median (the 3rd largest) is above
-  its limit. Fewer than 5 samples: not checked.
-- **Text.** When any role is over, one string, roles in the order of `STARTUP_LIMITS`,
-  numbers rounded to the nearest 100 with thousands separators:
-  `Claude <role> sessions start at about <median> tokens, over the <limit> limit[; <role> ...]. A new Claude Code tool may need turning off, or the limit raising if our own instructions grew.`
+     smaller; first partial line dropped; missing file: result `null`). Keep start lines (no
+     `kind` field) with `provider: "claude"`, string `cli_session_id`, `name`, `thread_id`,
+     and a `role` in `STARTUP_TYPICAL`. Skip lines that do not parse. Sort newest first by `at`.
+  2. Walk them newest first, examining at most 100; a role stops collecting at 5 samples.
+     A start's sample: read `<stateDir>/transcripts/<thread_id>/<name>.jsonl` asynchronously
+     line by line, at most the first 4 MB, skipping lines that do not parse. The sample is
+     the first record with `type: "assistant"`, `sessionId` equal to `cli_session_id` when
+     the record has one, `message.model` a non-empty string other than `<synthetic>`, and
+     `message.usage` whose `input_tokens`, `cache_creation_input_tokens` and
+     `cache_read_input_tokens` are each absent or a finite number >= 0 (absent counts as 0),
+     with a sum above 0. A record failing any of these is skipped and the search continues
+     in that transcript. Missing file or no such record: no sample.
+  3. Found samples are cached in memory by `cli_session_id`; misses are not cached.
+- **Rule.** A role with 5 samples is over when their median (the 3rd largest) is more than
+  `STARTUP_TYPICAL[role] + STARTUP_MARGIN`. Fewer than 5: not checked.
+- **Text.** When any role is over, one string, lead before reviewer, numbers rounded to the
+  nearest 100 with thousands separators:
+  `Claude <role> sessions now start about <median - typical> tokens bigger than usual (<median> vs <typical>)[; <role> ...]. A new Claude Code tool may need turning off, or the usual size raising if our own instructions grew.`
   Built from numbers only, so it always passes the card validator.
 
 ### The approval card
@@ -100,13 +104,17 @@ warning.
   non-empty strings. Agents never send it: as with `sudoMachineFields` (`viewer/app/card.js:56-58,152`),
   the field is allowed only when `validate` is called with `{ machine: true }`, which the
   hub's call at `viewer/app/cards.js:59` already passes.
-- `machine/service.js` `/v1/agent/cards` (`:1256`): for a lead's `approval` card, after
-  validation and before spooling (beside the sudo step), run `startupWarning()`; on a
-  string, set `warnings: [string]`; on none or any error, leave the card unchanged.
+- `machine/service.js` `/v1/agent/cards` (`:1256`): first delete any `warnings` field from
+  every incoming card (an agent never supplies it). Then, for a lead's `approval` card,
+  beside the sudo step and before spooling, set `warnings: [this.startupWarning]` when it is
+  a string; no awaiting, so the card is never held. Then trigger a background refresh.
 - **Older hub.** The machine forwards cards in two places, the live relay (`:1276`) and
   the spool drain (`drainSpoolNow`, `:880`). Both go through one helper: when the hub
   answers 4xx to an `approval` card that has `warnings`, it sends the same card once more
-  without `warnings`, and that second answer decides success or rejection as today.
+  without `warnings`, and that second answer decides success or rejection as today. Before
+  the resend, the spool file is rewritten without `warnings` (`atomicWrite`, as the events
+  path does at `:891`), so if the resend fails transiently (5xx, timeout) the spool retries
+  the stripped card and never repeats the known refusal.
 - `protocol/app/cards-lead.md` approval table gains the row `warnings` — "Added by the
   machine, never by the lead: startup-size warnings. Shown as information; never affects
   Start building."
@@ -120,32 +128,39 @@ warning.
 
 ### Boundaries and non-goals
 
-- Claude sessions only. No lead-rule change.
+- Claude lead and reviewer sessions only. No lead-rule change.
 - No automatic changes to the turned-off tool list or the limits; no dashboard; no warning
   elsewhere; no hub cache, poll or Ready-gate change. Ledger format unchanged.
 
 ### Edge cases
 
-- A session that ended before any reply, or whose transcript was never copied (no Stop
-  hook yet): no sample; the walk goes on to older starts.
-- A role with under 5 samples in the last 100 starts: not checked.
-- Two long briefs among 5 samples: the median ignores them.
+- A session that ended before any reply, or whose transcript was never copied: no sample;
+  older starts are used.
+- Under 5 samples for a role in the last 100 starts: that role is not checked.
+- Two long first messages among 5 samples: the median ignores them.
+- The first approval card after a service start may carry no warning if the startup
+  refresh has not finished; the next card will.
 - An older hub refusing `warnings`, live or after an outage: the card arrives without them.
-- Corrupt ledger or transcript lines are skipped.
+- Corrupt ledger or transcript lines, or malformed usage values, are skipped.
 
 ### Validation
 
-- `bash machine/test/run.sh`, with fixture ledgers and kept transcripts: a lead approval
-  card gains `warnings` when a role's 5 samples have median above its limit, and not at
-  exactly the limit; 4 samples: no warning; two long outliers among 5: no warning; two roles
-  over: one string naming both; `<synthetic>` and zero-usage records skipped; records of
-  another `sessionId` skipped; missing copy skipped and an older start used; non-Claude
-  and unlisted roles ignored; a ledger over 512 KB read from its tail; corrupt lines; a
-  transcript read that stalls returns the card within about 1 second, with no warning, and
-  the service answers other requests meanwhile; two approval cards at once run one walk;
-  a non-approval card and a non-lead card are untouched; any thrown error leaves the card
-  unchanged and accepted. Forwarding: an `approval` with `warnings` refused 4xx by the hub
-  is resent without them on the live relay and on the spool drain after an outage; a card
+- `bash machine/test/run.sh`, with fixture ledgers and kept transcripts, calling
+  `refreshStartupWarning()` directly and posting cards through `/v1/agent/cards` with a
+  session token: a lead approval card gains `warnings` when the lead median is over
+  typical + 5,000, and not at exactly that; reviewer likewise; both over: one string naming
+  both, lead first, with the growth numbers; 4 samples: none; two long outliers among 5:
+  none; `<synthetic>`, missing model, zero, negative, string or non-finite usage skipped
+  and the next record used; another `sessionId` skipped; missing copy skipped and an older
+  start used; other roles and non-Claude starts ignored; ledger over 512 KB read from its
+  tail; corrupt lines; an agent-supplied `warnings` is removed from any card, with and
+  without a current warning; a non-approval card and a non-lead approval are not enriched;
+  the card route returns without waiting while a refresh is stalled; a refresh stalled past
+  30 s is abandoned, the next trigger starts a new one, and a late result is discarded;
+  a second trigger during a refresh is dropped; any thrown error keeps the previous
+  result. Forwarding: an `approval` with `warnings` refused 4xx by the hub is resent
+  without them on the live relay and on the spool drain after an outage; when that resend
+  gets 503, the spool file holds the stripped card and the next drain sends it; a card
   without `warnings` refused 4xx is not resent.
 - `node --test viewer/test/*.test.js`: `card.js` refuses `warnings` from an agent, accepts
   1-10 non-empty strings with `machine: true`, refuses empty strings and 11 items;
@@ -158,9 +173,9 @@ warning.
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | Growth that stays under a role's limit, or comes from something other than tools (connectors, skills, a model change), is not attributed; the warning only says the limit was crossed | IDEA.md wants a heads-up, not a diagnosis; the text names both likely causes | 1, 3 |
-| Limits go stale as role files grow, giving false warnings until raised | Collin chose fixed limits knowing this; the text tells him which limit | 3 |
+| Typical sizes go stale as lead or reviewer role files grow, giving false warnings until raised | Collin chose fixed limits knowing this; the text names the usual size | 3 |
 | Sessions with no kept transcript copy give no sample | Kept copies are made on every Stop hook; the walk uses older starts instead | 3 |
-| Limits for sub-lead, worker, verifier and mapper are estimates without measured samples | They can be raised by editing one constant | 3 |
+| A warning can lag by up to one approval card or 10 minutes | The card is never held; tool growth persists for days | 4 |
 
 ## Review Rounds
 
@@ -233,9 +248,30 @@ warning.
 
 ### Round 4 — 2026-11-17
 
-**Lanes:** pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 3:** the growth rule replaced by fixed per-role limits (Decision 15); the machine attaches the warning in its card route, no `wc.js` command or lead rule (Decision 16); samples only from kept copies with async reads (Decision 17). Spec, Edge cases, Validation and Accepted Risks rewritten: review the whole Spec in depth.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Warning gives the limit, not the growth | upheld | Decision 18 |
+| intent | minor | Brief-driven roles add false warnings without catching more | upheld | Decision 18 |
+| mechanics | blocking | Card waits up to a second for the scan | upheld | Decision 19 |
+| mechanics | blocking | Agent-supplied `warnings` not stripped on the route | upheld | Route deletes it from every card |
+| mechanics | major | Timer race leaves stalled reads and waiters | upheld | Decision 19: no waiters, 30 s abandon with refresh id |
+| mechanics | major | Stripped resend failing leaves the original in the spool | upheld | Spool file rewritten before resend |
+| mechanics | minor | Timeout with a completed role ambiguous | upheld | Moot: no budget on the card path; abandoned refresh publishes nothing |
+| mechanics | minor | Malformed usage or model values | upheld | Validity rules in step 2 |
+
+### Round 5 — 2026-11-17
+
+**Lanes:** pending.
+
+**Changed since Round 4:**
+- Only lead and reviewer checked, against typical sizes; text gives growth over typical (Decision 18)
+- Warning computed in the background; the card route only reads the last result and strips agent-supplied `warnings` (Decision 19)
+- Spool file rewritten without `warnings` before the resend
+- Usage and model validity rules; Edge cases and Validation updated
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
