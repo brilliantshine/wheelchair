@@ -137,13 +137,23 @@ Rules, per line:
   says `Script completed`. Then the script's step stays running and owns that process. A
   later script whose source calls only `tools.write_stdin` / `tools.wait` naming processes or
   cells already owned by running steps (read `session_id:` / `cell_id:` literals from the
-  source) is a poll: it starts no step, and when its output shows the polled process finished
-  (`exit_code` present) it ends the owning step. If it polls several owned processes, a
-  result ends an owner only when the result names its `session_id`; one it cannot place
-  ends nothing. A script that mixes such polls with other calls is a new step for its other
-  calls (kind and label from its first non-poll call) and still applies its polls to their
-  owners. If a poll script itself yields a cell (`Script running with cell ID <n>`), that cell
-  is owned by the same owning step, so a later `wait` on it is a poll for that step too. Add
+  source) is a poll: it starts no step.
+- **Ownership and completion.** A step owns a set of unfinished processes and cells. It
+  ends only when that set is empty (and its own call has returned); `ended_at` is the time
+  the last one finished; `failed` is true if any owned operation ended in error or with a
+  non-zero `exit_code`.
+- **Attributing a result.** A result marks an owned process finished only when it can be
+  placed without doubt: it names that process's `session_id`, or it is the only result in the
+  output of a poll-only script (or a direct `write_stdin` call) that polls exactly one owned
+  process. Anything else (a mixed script, several polled processes, several results) marks
+  nothing finished; those owners stay running until a later placeable result or the turn
+  end closes them (Accepted Risk 4). A cell is finished by a `wait` output saying
+  `Script completed` or a script error for that `cell_id`.
+- A script that mixes polls with other calls is a new step for its other calls (kind and
+  label from its first non-poll call); its polls are applied by the attribution rule above.
+  If a poll-only script itself yields a cell (`Script running with cell ID <n>`), the cell
+  joins the owned set of every step it polls, and finishing it finishes those polls only
+  through placeable results as above. Add
   fixtures for this from
   `~/.codex/sessions/2026/11/15/rollout-2026-11-15T23-51-57-01a1e357-6320-7fc0-a648-0ceb46b4f6e1.jsonl`
   (lines 191–212, a yielding poll script, a cell wait, and a final `exit_code` 1) and from
@@ -362,6 +372,7 @@ commands, and their steps and context show on the Agents screen within 5 seconds
 | 1. A Codex session's first turn shows its steps only when that turn ends | The rollout is found only once the first turn-complete binds the thread; binding earlier means guessing which rollout is ours | planning |
 | 2. Claude tool calls that the CLI rejects before running, or that are cancelled, may show as running until the turn ends | The CLI fires no end hook for them; turn end closes them | planning |
 | 3. A Claude `Bash` call with `run_in_background: true` shows as done when it returns, and its later output checks show as separate shell steps | The CLI reports no end for the background process; agents here are told to wait in the foreground | review-round-1 |
+| 4. A yielded Codex command whose finish appears only in an output that can't be pinned to it (mixed or multi-poll scripts) shows as running until a later clear result or the turn end | Guessing would close the wrong step; the turn end bounds it | review-round-3 |
 
 ## Review Rounds
 
@@ -413,6 +424,8 @@ commands, and their steps and context show on the Agents screen within 5 seconds
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | major | Ambiguous results in mixed scripts can close the wrong step | upheld | §2 "Attributing a result"; Accepted Risk 4 |
+| mechanics | blocking | A step owning several processes ends when any one finishes | upheld | §2 "Ownership and completion" |
 
 ## Prior Work
 
