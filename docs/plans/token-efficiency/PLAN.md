@@ -161,7 +161,7 @@ New tests: model.sh reads, writes and defaults the sub-lead cell; balancer resol
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | Sub-lead model cell (model.sh, balancer, routes), scout + scout-heavy settings, scout layer in lead/sub-lead start | codex/, viewer/app/{balancer,settings,routes,sessions}.js, viewer/app/API.md, viewer/test/*.test.js | standard (gpt-6.1-terra) | wc-f8cf8710a770-worker (t1-a1) | codex, machine, node tests | in progress |
+| T1 | Sub-lead model cell (model.sh, balancer, routes), scout + scout-heavy settings, scout layer in lead/sub-lead start | codex/, viewer/app/{balancer,settings,routes,sessions}.js, viewer/app/API.md, viewer/test/*.test.js | standard (gpt-6.1-terra) | wc-f8cf8710a770-worker (t1-a1) | codex, machine, node tests | done |
 | T2 | Settings page: Leads/Sub-leads model rows, Scout and Scout for bigger changes selectors (after T1) | viewer/pages/settings.js, viewer/test/app-settings.spec.js | standard, --provider claude (claude-sonnet-5-5) | | node + browser tests | not started |
 | T3 | Scout rule in lead.md and sub-lead.md; size-banded diff check in sub-lead.md | protocol/app/lead.md, protocol/app/sub-lead.md | standard (gpt-6.1-terra) | wc-f8cf8710a770-worker-2 (t3-a1) | protocol-rules test | done |
 
@@ -174,3 +174,6 @@ Baseline (2026-11-16, all Claude transcripts under ~/.claude/projects/*wheelchai
 - 2026-11-16 — Choice: T3, sub-lead.md tricky marker: a task is marked `tricky` in its Objective cell.
 - 2026-11-16 — Choice: T3, sub-lead.md diff check: the scout is also given the worker's report, to check its claimed file state.
 - 2026-11-16 — T3 accepted: protocol-rules 15/15 rerun on the merge; diff read in full (71 lines). The lead.md scout section sits between steps 2 and 3 as its own heading.
+- 2026-11-16 — Choice: T1, settings.js roleLayers: the provider is a fifth argument, so the Claude-only "(Claude Code: ...)" clause is chosen explicitly.
+- 2026-11-16 — Choice: T1, app-balancer.test.js: direct balancer fixtures point WHEELCHAIR_MODELS at a temp file, so the machine's own pins cannot affect them.
+- 2026-11-16 — T1 accepted: the worker stopped on its fails-twice guard at lifecycle.test.js "a starter that loses the freed port registers through the new holder". That test fails the same way on the feature branch before T1 (pre-existing, unrelated: port-holder lifecycle). On the merge: codex 101/0, machine 114/0, viewer node 471/1 (that test only). Diff read in full (232 lines).
