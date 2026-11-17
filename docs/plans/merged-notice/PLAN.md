@@ -178,5 +178,7 @@ Automatic archiving; merging from the app; any notice for a closed-unmerged PR; 
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Hub: pollMerged, merged in needs, keep press, archive closes merged cards; cards.md, API.md; node tests | viewer/app/{threads,hub,views,cards}.js, viewer/app/API.md, protocol/app/cards.md, viewer/AGENTS.md, viewer/test/app-merged.test.js, viewer/test/protocol-rules.test.js | gpt standard (gpt-6.1-terra) | wc-d0ae8d2e2356-worker | node --test viewer/test/*.test.js | in progress |
+| T2 | Thread page: merged card with two-step Archive and Keep it; browser spec | viewer/pages/thread.js, viewer/pages/thread.css, viewer/test/app-merged.spec.js | gpt standard (gpt-6.1-terra; asked claude, unavailable) | wc-d0ae8d2e2356-worker-2 | npm --prefix viewer run test:browser; node --test viewer/test/*.test.js | in progress |
 
 ## Log
