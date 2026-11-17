@@ -185,3 +185,19 @@
  .agents-resize, #agents-full { display: none; }
  .agents-terminal-bar { flex-wrap: wrap; }
 }
+
+@media (min-width: 900px) {
+ .agents-view { height: calc(100vh - var(--nav-h)); display: flex; flex-direction: column; }
+ .agents-layout { flex: 1; min-height: 0; }
+ .agents-sidebar, .agents-side { overflow: auto; }
+ .agents-main { display: flex; flex-direction: column; min-height: 0; padding-bottom: calc(28px + var(--agents-terminal-height, 0px)); }
+ .agents-toolbar { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
+ .agents-tree { flex: 1; min-height: 160px; overflow: auto; display: block; cursor: grab; touch-action: none; }
+ .agents-tree.dragging { cursor: grabbing; user-select: none; }
+ .agents-sizer { position: relative; margin: 0 auto; }
+ .agents-sizer > .agents-branch { width: max-content; transform-origin: 0 0; }
+}
+@media (max-width: 899px) {
+ .agents-toolbar { display: none; }
+ .agents-sizer { width: 100%; }
+}
