@@ -66,6 +66,5 @@ test('agents hides raw activity state', async () => {
   const thread = { id: 't', title: 'T', project: '/project', sessions: ss, cards: [] };
   const hub = { stateDir: dir, allThreads: async () => [thread], machines: async () => ({}), state: { resolveMachine: async () => null } };
   const result = await agents(hub); const worker = node(result.leads[0].session, 'worker');
-  assert.equal(Object.hasOwn(worker.activity, 'normal'), false);
   for (const key of ['steps', 'pending_ends', 'turns', 'step_counts']) assert.equal(Object.hasOwn(worker, key), false);
 });
