@@ -3,7 +3,7 @@
   const $ = id => document.getElementById(id);
   const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
   const button = (text, fn, cls = '') => { const b = el('button', cls, text); b.type = 'button'; b.onclick = fn; return b; };
-  let data = { leads: [], machines: [] }, threads = [], term = null, termName = null, folded = true, pathObserver = null, redrawPaths = null;
+  let data = { leads: [], machines: [] }, threads = [], term = null, termName = null, folded = true, showFinished = false, pathObserver = null, redrawPaths = null;
   window.addEventListener('resize', () => redrawPaths?.());
   const panel = $('agents-terminal');
   const phone = () => matchMedia('(max-width: 899px)').matches;
@@ -120,9 +120,14 @@
     if (!lead) return;
     const main = el('section','agents-main'); main.append(button('‹ Leads', () => go(null), 'agents-back'));
     const heading = el('div','agents-heading'); heading.append(el('h2','',lead.lead_name || 'Lead'),el('span','agents-tag',lead.project || '')); main.append(heading,el('div','agents-thread',lead.thread_title || ''),el('p','agents-count',counts(lead)));
+    // Finished agents are folded out of the tree unless asked for; one that still has a running agent under it, or is the selected one, stays.
+    const kidsOf = node => [...(node.children || []), ...(node === lead.session ? (lead.asides || []) : [])];
+    const keeps = node => node.state !== 'finished' || node.name === selected?.name || kidsOf(node).some(keeps);
+    const hidden = nodes(lead.session).concat(lead.asides || []).filter(n => n !== lead.session && !keeps(n)).length;
+    if (hidden || showFinished) main.append(button(showFinished ? 'Hide finished agents' : `Show ${hidden} finished ${hidden === 1 ? 'agent' : 'agents'}`, () => { showFinished = !showFinished; render(); }, 'agents-finished-toggle'));
     const tree = el('div','agents-tree');
     const parents = new Map(); for (const n of nodes(lead.session)) for (const c of n.children || []) parents.set(c.name, n.name); const paths = []; for (const path of lead.question_paths || []) if (Array.isArray(path)) for (let i = 0; i < path.length - 1; i++) { let ancestor = parents.get(path[i]); while (ancestor && ancestor !== path[i+1]) ancestor = parents.get(ancestor); if (ancestor) paths.push([path[i], path[i+1]]); } const pathNames = new Set(paths.flat()); const pathChildren = new Set(); for (const [start, end] of paths) for (let child = start; child && child !== end; child = parents.get(child)) pathChildren.add(child);
-    function branch(node, aside = false) { const wrap = el('div','agents-branch'); const card = aside ? el('div','agents-box') : button('', () => go(lead.thread_id,node.name), `agents-box${selected?.name === node.name ? ' selected' : ''}`); card.classList.add(`state-${node.state || 'idle'}`); if (!aside && pathNames.has(node.name)) card.classList.add('question-path'); if (!aside) card.dataset.session = node.name; card.append(el('div','agents-role',aside ? 'Side conversation' : node.role || 'agent'),el('strong','agents-box-title',node.display_title || node.role || 'Agent')); const st = el('div','agents-status'); st.append(el('span','agents-dot'),document.createTextNode(status(node))); card.append(st); wrap.append(card); const children = [...(node.children || []), ...(node === lead.session ? (lead.asides || []) : [])]; if (children.length) { const list = el('div','agents-children'); if (children.some(c => pathChildren.has(c.name))) list.classList.add('question-path-line'); children.forEach(c => list.append(branch(c,c.kind === 'aside'))); wrap.append(list); } return wrap; }
+    function branch(node, aside = false) { const wrap = el('div','agents-branch'); const card = aside ? el('div','agents-box') : button('', () => go(lead.thread_id,node.name), `agents-box${selected?.name === node.name ? ' selected' : ''}`); card.classList.add(`state-${node.state || 'idle'}`); if (!aside && pathNames.has(node.name)) card.classList.add('question-path'); if (!aside) card.dataset.session = node.name; card.append(el('div','agents-role',aside ? 'Side conversation' : node.role || 'agent'),el('strong','agents-box-title',node.display_title || node.role || 'Agent')); const st = el('div','agents-status'); st.append(el('span','agents-dot'),document.createTextNode(status(node))); card.append(st); wrap.append(card); const children = kidsOf(node).filter(c => showFinished || keeps(c)); if (children.length) { const list = el('div','agents-children'); if (children.some(c => pathChildren.has(c.name))) list.classList.add('question-path-line'); children.forEach(c => list.append(branch(c,c.kind === 'aside'))); wrap.append(list); } return wrap; }
     const content = branch(lead.session);
     const toolbar = el('div', 'agents-toolbar'), label = el('span', 'agents-zoom');
     let controls;

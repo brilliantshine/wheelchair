@@ -129,6 +129,7 @@
 .agents-heading h2 { font-size: 20px; }
 .agents-thread { color: var(--ink-2); margin-top: 5px; }
 .agents-count { margin: 8px 0 30px; }
+.agents-finished-toggle { margin: -18px 0 18px; font-size: 12px; }
 .agents-tree { display: flex; min-width: 0; overflow-x: auto; padding: 10px 0 30px; }
 .agents-tree > .agents-branch { margin: 0 auto; flex-shrink: 0; }
 .agents-branch { display: flex; flex-direction: column; align-items: center; min-width: 190px; }

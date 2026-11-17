@@ -232,6 +232,8 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       const lead = { name: 'wc-a-lead', role: 'lead', display_title: 'A thread', live: true, state: 'working', children };
       await page.route('**/api/agents', route => route.fulfill({ json: { leads: [{ thread_id: 'a', thread_title: 'A thread', lead_name: 'Alpha', project: 'project-a', stage: 'building', counts: { total: children.length + 1 }, session: lead, asides: [] }], machines: [] } }));
       await openPage(page, context, `/app/agents?lead=a${selectedName ? `&agent=${selectedName}` : ''}`);
+      // Finished agents start folded out of the tree; these layout checks want every box.
+      if (children.some(c => c.state === 'finished' && c.name !== selectedName)) await page.locator('.agents-finished-toggle').click();
       await expect(page.locator('.agents-tree .agents-box')).toHaveCount(children.length + 1);
     }
 
@@ -289,6 +291,25 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       await expect(page.locator('.agents-report')).toHaveText('VERDICT: PASS\nAll checks ran.');
     });
 
+    test('finished agents start folded out of the tree and come back on request', async ({ page }) => {
+      const done = (name, children = []) => ({ name, role: 'worker', display_title: name, live: false, state: 'finished', children });
+      const running = { name: 'wc-a-running', role: 'worker', display_title: 'Still going', live: true, state: 'working', children: [] };
+      const lead = { name: 'wc-a-lead', role: 'lead', display_title: 'A thread', live: true, state: 'working', children: [done('wc-a-sublead', [running, done('wc-a-old-worker')]), done('wc-a-reviewer')] };
+      await page.route('**/api/agents', route => route.fulfill({ json: { leads: [{ thread_id: 'a', thread_title: 'A thread', lead_name: 'Alpha', project: 'project-a', stage: 'building', counts: { total: 5 }, session: lead, asides: [] }], machines: [] } }));
+      await openPage(page, context, '/app/agents?lead=a');
+      const boxes = page.locator('.agents-tree [data-session]');
+      // The finished sub-lead stays because a running worker is under it.
+      await expect(boxes).toHaveCount(3);
+      await expect(page.locator('[data-session="wc-a-reviewer"]')).toHaveCount(0);
+      await expect(page.locator('[data-session="wc-a-old-worker"]')).toHaveCount(0);
+      await page.getByRole('button', { name: 'Show 2 finished agents' }).click();
+      await expect(boxes).toHaveCount(5);
+      await page.waitForTimeout(5500); // a poll redraw keeps the choice
+      await expect(boxes).toHaveCount(5);
+      await page.getByRole('button', { name: 'Hide finished agents' }).click();
+      await expect(boxes).toHaveCount(3);
+    });
+
     test('phone agent selection shows only details and returns to the tree', async ({ page }) => {
       test.skip(label !== 'phone');
       await page.setViewportSize({ width: 390, height: 844 });
@@ -326,6 +347,8 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       await expect(page.locator('.agents-finished')).toContainText('project-b');
       await expect(page.locator('.agents-finished')).toContainText('Done · 1 agent');
       if (label === 'phone') await page.locator('.agents-entry', { hasText: 'Alpha' }).click();
+      await expect(page.locator('[data-session="wc-a-worker"]')).toHaveCount(0);
+      await page.getByRole('button', { name: 'Show 1 finished agent' }).click();
       await expect(page.locator('[data-session="wc-a-worker"]')).toHaveCSS('border-top-style', 'dashed');
       await expect(page.locator('[data-session="wc-a-mapper"]')).toContainText('Waiting on the lead');
       await expect(page.locator('.agents-box', { hasText: 'Needs you' })).toHaveCount(1);
