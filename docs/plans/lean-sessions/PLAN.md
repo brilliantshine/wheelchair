@@ -12,14 +12,17 @@ get buried as this file grows.
 
 ## Open Questions
 
-(none open yet; more follow from the Watch List)
+### Q2: How to make sub-leads follow the diff-check sizes
+- **Context:** 38 full diffs read by 8 sub-leads since 2026-11-17 (~81k tokens). 19 were in the scout bands (11 under 200 lines, 8 at 200–800); 5 of 8 sub-leads never used a scout. Only 8 were legitimately over 800 or tricky; one was "over 800" only because the worker's report file was counted.
+- **Options:** (a) stronger wording in sub-lead.md; (b) a `wc.js diff-check <branch>` command that sizes the diff (excluding `docs/plans/`), names the band, and prints the exact scout instruction or "read it yourself"; (c) the hub runs the scout itself and hands the sub-lead only the report.
+- **Recommendation:** (b).
 
 ## Watch List
 
 | # | Noticed | What needs looking into | Raised to user? | Outcome |
 |---|---------|-------------------------|-----------------|---------|
 | 1 | Sub-leads ran 63 `git diff` reads (~97k tokens) across 8 builds | Which were sizing (`--shortstat`), which full diffs, and whether the bands or a skipped rule caused them | no | |
-| 2 | Codex sessions start at ~18k; workers average 54k, verifiers 65k per call | What fills GPT worker and verifier context, and what Codex launch options can trim | no | |
+| 2 | Codex sessions start at ~18k; workers average 54k, verifiers 65k per call | What fills GPT worker and verifier context, and what Codex launch options can trim | no | Worker tool output: role/card file reads 35%, file reads 33%; verifiers: file reads 46%, tests 19%. Startup: tool schemas ~9.5k, base instructions, repo AGENTS.md (~3.5k, logged twice). Feeds the cards split and an AGENTS.md trim |
 | 3 | Leads read `cards.md` ~2.2 times per session | Whether rereads follow compaction or restarts | no | |
 | 4 | `protocol/app/AGENTS.md:16-17` says every role reads cards.md; reviewer and verifier files do not | Fix router or role files | no | |
 | 5 | Lead and sub-lead make ~40 and ~70 calls per session | Which routine sequences can become one command | no | |
