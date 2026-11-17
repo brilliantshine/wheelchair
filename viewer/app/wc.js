@@ -5,6 +5,7 @@
 const fs = require('node:fs');
 const http = require('node:http');
 const https = require('node:https');
+const { execFileSync } = require('node:child_process');
 
 const RETRY_MS = 90_000;
 const RETRY_DELAY_MS = 1_000;
@@ -94,6 +95,41 @@ function sessionRequest(operation, tail) {
   };
 }
 
+const compactFields = ['name', 'role', 'provider', 'model', 'status', 'live', 'ready', 'started_by', 'attempt_id', 'title', 'branch', 'worktree'];
+function compact(session) {
+  return Object.fromEntries(compactFields.filter(key => Object.hasOwn(session, key)).map(key => [key, session[key]]));
+}
+
+function diffSize(operation, args) {
+  if (operation !== 'size' || args.length < 2 || args.length > 3 || args[0].startsWith('-') || args[1].startsWith('-') || (args.length === 3 && args[2] !== '--tricky')) throw new Error('usage: wc.js diff size <feature-branch> <worker-branch> [--tricky]');
+  const git = (...argv) => execFileSync('git', argv, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  let top, numstat, names;
+  const range = `${args[0]}...${args[1]}`;
+  try {
+    top = git('rev-parse', '--show-toplevel').trimEnd();
+    numstat = git('-C', top, 'diff', '--numstat', range, '--', '.', ':(exclude)docs/plans');
+    names = git('-C', top, '-c', 'diff.renames=false', 'diff', '--name-status', '-z', '--find-renames', range);
+  } catch (error) { throw new Error(`git failed: ${String(error.stderr || error.message).trim()}`); }
+  const lines = numstat.split('\n').reduce((sum, line) => {
+    const [added, removed] = line.split('\t');
+    return sum + (Number(added) || 0) + (Number(removed) || 0);
+  }, 0);
+  const tokens = names.split('\0');
+  const excluded_paths = [];
+  const excluded = path => path === 'docs/plans' || path.startsWith('docs/plans/');
+  for (let i = 0; i < tokens.length - 1;) {
+    const status = tokens[i++];
+    const first = tokens[i++];
+    const renamed = /^[RC]/.test(status);
+    const old = renamed ? first : null;
+    const next = renamed ? tokens[i++] : first;
+    if (excluded(next) || (old !== null && excluded(old))) excluded_paths.push({ status, old, new: next });
+  }
+  const quote = value => `'${value.replace(/'/g, "'\\''")}'`;
+  const branch = value => /^[A-Za-z0-9._/@-]+$/.test(value) ? value : quote(value);
+  return { lines, band: args[2] === '--tricky' || lines > 800 ? 'self' : lines < 200 ? 'scout' : 'bigger-scout', excluded_paths, scout_diff: `git -C ${quote(top)} diff ${branch(args[0])}...${branch(args[1])} -- . ':(exclude)docs/plans'` };
+}
+
 function wait(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
@@ -114,6 +150,9 @@ async function postSessionWithRetry(url, token, body) {
 
 async function main(argv) {
   const [group, operation, ...tail] = argv;
+  if (group === 'diff') { process.stdout.write(`${JSON.stringify(diffSize(operation, tail))}\n`); return; }
+  const full = group === 'session' && ['start', 'list'].includes(operation) && tail.includes('--full');
+  const requestTail = full ? tail.filter(arg => arg !== '--full') : tail;
   const token = process.env.WHEELCHAIR_SESSION_TOKEN;
   if (!token) throw new Error('WHEELCHAIR_SESSION_TOKEN is required');
   // The service listens on its tailnet address only, and names it in each session's environment.
@@ -122,7 +161,7 @@ async function main(argv) {
   const input = group === 'git'
     ? gitRequest(operation, tail)
     : group === 'session'
-      ? sessionRequest(operation, tail)
+      ? sessionRequest(operation, requestTail)
       : null;
   if (!input) throw new Error('usage: wc.js git|session …');
   const result = group === 'session'
@@ -136,7 +175,13 @@ async function main(argv) {
     if (response.note) process.stderr.write(`${response.note}\n`);
     if (response.session?.status === 'waiting') process.stdout.write(`waiting for room until ${response.session.waiting_until}\n`);
   }
-  process.stdout.write(`${result.output}\n`);
+  if (group === 'session' && !full && ['start', 'list'].includes(operation)) {
+    const response = JSON.parse(result.output);
+    const output = operation === 'list'
+      ? { sessions: response.sessions.map(compact), review_families: response.review_families }
+      : { session: compact(response.session), ...(Object.hasOwn(response, 'note') ? { note: response.note } : {}) };
+    process.stdout.write(`${JSON.stringify(output)}\n`);
+  } else process.stdout.write(`${result.output}\n`);
 }
 
 if (require.main === module) {
