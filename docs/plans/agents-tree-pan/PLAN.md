@@ -14,11 +14,6 @@ Map: `MAP.md`.
 
 ## Open Questions
 
-### Q3: Where can a drag start?
-- **Context:** Boxes are buttons that select on click. The graph viewer treats a press that moves more than a few pixels as a drag, not a click (`viewer/index.html:2292-2309`).
-- **Options:** empty space only; anywhere, including on a box, with a small movement threshold so a still click selects.
-- **Recommendation:** anywhere, with the threshold: in a dense tree, empty space is hard to find.
-
 ### Q4: Phones?
 - **Context:** Under 900px the tree is an indented list that scrolls normally (`viewer/pages/views.css:165-180`); it never overflows sideways much.
 - **Options:** keep the list unchanged; show the drawn tree with drag and pinch on phones too.
@@ -42,6 +37,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 5 | A lead's tree opens at full size (100%), top centre, as today; zoom is never changed automatically. | Keeps decision 3; auto-shrinking would make boxes unreadable without being asked. | defaulted |
 | 6 | View buttons: −, +, Fit and 100%. Fit shrinks the whole tree into the visible area, centred; 100% returns to full size, top centre. | Collin picked "Fit and 100%". | user |
 | 7 | Zoom is limited to 20%–200%; Fit never enlarges past 100%; + and − step by 1.25×; zoom from the pinch/wheel keeps the point under the pointer still, zoom from buttons keeps the centre of the area still. | Common pan-zoom behaviour, matching the graph viewer's wheel zoom (`viewer/index.html:2362-2379`). | defaulted |
+| 8 | A drag can start anywhere in the tree area, on a box or empty space. A press that moves more than 5px (in screen pixels) is a drag and selects nothing; a press that stays within 5px and releases on a box is a click and selects it as today. | Collin picked "Anywhere"; threshold approach follows the graph viewer (`viewer/index.html:2292-2309`). | user |
 
 ## Spec
 
@@ -50,6 +46,7 @@ Grown as decisions land.
 - **View state.** The tree has a view: an offset (drag) and a zoom level. It survives the five-second rebuild and selecting a box; switching lead resets it to 100%, top centre (decisions 1, 5).
 - **Zoom.** + and − buttons, pinch on a trackpad or touch screen, and Ctrl+wheel. Wheel and two-finger scroll without Ctrl still move the tree (decision 2, 4).
 - **Buttons.** −, +, Fit, 100% (decision 6, limits in decision 7).
+- **Dragging.** Starts anywhere in the tree area; beyond 5px of movement it is a drag and suppresses the click (decision 8).
 - **Small trees** that fit look and behave as today (decision 3).
 
 ## Accepted Risks
