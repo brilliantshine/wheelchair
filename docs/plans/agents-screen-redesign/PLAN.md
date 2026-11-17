@@ -354,3 +354,4 @@ so the browser back button works.
 - 2026-11-17 — Verification attempt 1: FAIL, 2 gaps (REMEDIATION-1.md). Routed to GPT, the provider that built T4.
 - 2026-11-17 — Choice: R1, app-views.spec.js: the wide-tree test runs in the desktop viewport only, the phone test in the phone viewport only, the phone test sets 390×844 itself.
 - 2026-11-17 — Sub-lead integration on R1's merge: the worker stopped after its desktop test failed twice reading the tree before the page had drawn it; the sub-lead added waits for the boxes before measuring (viewer/test/app-views.spec.js), confirmed both new tests fail on the pre-fix CSS and pass on the fix.
+- 2026-11-17 — Verification attempt 2: PASS on 10ed6ae (wc-000b13766ec4-verifier-2, gpt-6.1-sol). Every verifier was GPT, as were all builders: the hub could not avoid GPT either time, so there was no cross-family check.

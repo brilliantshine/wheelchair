@@ -2,7 +2,13 @@
 slug: agents-screen-redesign
 date: 2026-11-17
 implemented-by: "standard / gpt-6.1-terra (T1, T3 ×2, T4, T5; Claude requested for T3 and T4 but unavailable); light / gpt-6-luna (T2); sub-lead claude-opus-5-5 (integration: two test assertions, router and API docs)"
-verified-by: []   # Stage 4 appends; Stage 3 leaves this empty. Shape below.
+verified-by:
+  - round: 1
+    lane: verifier top / gpt-6.1-sol (FAIL, 2 gaps; REMEDIATION-1.md)
+    checks: standard / gpt-6.1-terra, light / gpt-6-luna
+  - round: 2
+    lane: verifier top / gpt-6.1-sol (PASS on 10ed6ae)
+    checks: standard / gpt-6.1-terra, light / gpt-6-luna
 ---
 
 # Completion Report — Agents screen: layout and terminal
@@ -142,3 +148,7 @@ not ok 357 - a starter that loses the freed port registers through the new holde
 # pass 489
 # fail 1
 ```
+
+### Verification attempt 2 — 2026-11-17
+
+PASS on 10ed6aef8aa1f15eb5b9ee1491ccd3f0d53a8660 (verifier gpt-6.1-sol). Its run: machine 115/115; viewer Node 488/490 and browser 664 passed, 6 skipped, 2 failed, the failures being the known lifecycle port-retry test and the font check, which needs `viewer/node_modules` (its run used the canonical clone's Playwright). The sub-lead's runs on the same tree with dependencies installed: browser 666 passed, 6 skipped; Node 489/490 (known lifecycle only).
