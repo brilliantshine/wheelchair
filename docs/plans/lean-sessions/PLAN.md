@@ -1,6 +1,6 @@
 ---
 slug: lean-sessions
-status: planning   # planning | ready-for-review | approved | implementing | verifying | done
+status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-17
 ---
 
@@ -12,10 +12,7 @@ get buried as this file grows.
 
 ## Open Questions
 
-### Q2: How to make sub-leads follow the diff-check sizes
-- **Context:** 38 full diffs read by 8 sub-leads since 2026-11-17 (~81k tokens). 19 were in the scout bands (11 under 200 lines, 8 at 200–800); 5 of 8 sub-leads never used a scout. Only 8 were legitimately over 800 or tricky; one was "over 800" only because the worker's report file was counted.
-- **Options:** (a) stronger wording in sub-lead.md; (b) a `wc.js diff-check <branch>` command that sizes the diff (excluding `docs/plans/`), names the band, and prints the exact scout instruction or "read it yourself"; (c) the hub runs the scout itself and hands the sub-lead only the report.
-- **Recommendation:** (b).
+(none)
 
 ## Watch List
 
@@ -23,9 +20,9 @@ get buried as this file grows.
 |---|---------|-------------------------|-----------------|---------|
 | 1 | Sub-leads ran 63 `git diff` reads (~97k tokens) across 8 builds | Which were sizing (`--shortstat`), which full diffs, and whether the bands or a skipped rule caused them | no | |
 | 2 | Codex sessions start at ~18k; workers average 54k, verifiers 65k per call | What fills GPT worker and verifier context, and what Codex launch options can trim | no | Worker tool output: role/card file reads 35%, file reads 33%; verifiers: file reads 46%, tests 19%. Startup: tool schemas ~9.5k, base instructions, repo AGENTS.md (~3.5k, logged twice). Feeds the cards split and an AGENTS.md trim |
-| 3 | Leads read `cards.md` ~2.2 times per session | Whether rereads follow compaction or restarts | no | |
-| 4 | `protocol/app/AGENTS.md:16-17` says every role reads cards.md; reviewer and verifier files do not | Fix router or role files | no | |
-| 5 | Lead and sub-lead make ~40 and ~70 calls per session | Which routine sequences can become one command | no | |
+| 3 | Leads read `cards.md` ~2.2 times per session | Whether rereads follow compaction or restarts | no | Spec: role file and card rules go into the starting instructions, so nothing is reread |
+| 4 | `protocol/app/AGENTS.md:16-17` says every role reads cards.md; reviewer and verifier files do not | Fix router or role files | no | Spec: the router names who reads which card file |
+| 5 | Lead and sub-lead make ~40 and ~70 calls per session | Which routine sequences can become one command | no | Spec: chaining rule in role files, compact `session list`, the sizing command |
 
 ## Decision Log
 
@@ -34,6 +31,15 @@ get buried as this file grows.
 | 1 | GPT work aims at total GPT tokens against plan limits, workers and verifiers first | Collin, before IDEA.md | user |
 | 2 | Claude sessions launch with a deny list of unused tools, and the Ready check warns (never blocks) when a Claude session's startup grows past a threshold | Saves ~30k per call now; an allow list risks breaking on a renamed tool; the warning catches the next heavy tool | user |
 | 3 | Warning threshold is 25k startup tokens, measured from the first assistant message's usage in the session transcript | 17k measured today with the deny list; 25k leaves room for normal growth | defaulted |
+| 4 | Sub-leads size every worker change with a new `wc.js diff size` command, whose band is binding and recorded in the acceptance Log line | 19 of 38 full reads were scout-band; one command replaces a skipped judgment | user |
+| 5 | The sizing command ignores `docs/plans/` | A worker's report file pushed a ~100-line change over 800 | defaulted |
+| 6 | Each session's starting instructions carry its role file's text, and the card rules it needs, instead of a pointer to read them | Removes the read calls and the rereads (cards.md ~2.2 reads per lead session); same text, fewer copies | defaulted |
+| 7 | cards.md splits: `cards.md` keeps what every card-posting role needs; the lead-only kinds move to `cards-lead.md`, given to the lead only | Workers' tool output was 35% role/card reads on GPT; each rule still lives in one file | defaulted |
+| 8 | `wc.js session list` prints a compact view by default; `--full` prints today's raw output | One live list was 10.7KB for two sessions, mostly steps and command | defaulted |
+| 9 | Root `AGENTS.md` is cut below 6,000 bytes without dropping a rule; reasons and history move to `CONTRIBUTING.md` | It loads into every session on this repo, twice on Codex (~3.5k tokens each) | defaulted |
+| 10 | Workers and verifiers run test suites printing only the summary and failures, rerunning a failing test alone for detail | Tests are 15–19% of GPT worker and verifier tool output; reports still paste real output | defaulted |
+| 11 | Role files tell sessions to chain routine commands that do not depend on each other into one shell call | Each call rereads the whole context | defaulted |
+| 12 | No GPT tool-schema trimming | Codex offers no supported way to drop its built-in tools; revisit if it adds one | defaulted |
 
 ## Spec
 
@@ -47,6 +53,58 @@ get buried as this file grows.
 - Every role uses this list: lead, sub-lead, worker, reviewer, verifier, mapper. Asides and the usage probe keep their own argv.
 - **Growth warning.** After a Claude session's first assistant message, the machine reads its `usage` (input + cache write + cache read) from the transcript and records it on the session as `startup_tokens`. The Ready check adds a non-blocking warning, not a missing item, when the newest Claude session on the build machine recorded more than 25,000. The approval card shows the warning text: "Claude sessions now start at <n>k tokens (expected under 25k). A Claude Code update may have added tools; tell the lead." The Ready result stays Ready.
 - Measured: interactive haiku session in this worktree, first-call context 47,869 tokens by default, 17,093 with the deny list (2026-11-17).
+
+### Starting instructions carry the rules
+
+- `composeRolePrompt` (`machine/service.js:127-132`) builds, in order: a one-line header ("Your role rules and card rules are below. They are already loaded; do not read these files again."), the full text of `protocol/app/<role>.md`, then the card files that role needs, each under a `--- <file name> ---` line, then the layers as today. `role_prompt` still wins.
+- Card files per role: lead gets `cards.md` and `cards-lead.md`; sub-lead, worker and mapper get `cards.md`; reviewer, verifier and aside get none.
+- The files are read from the machine's clone when the session starts. A session keeps the text it started with; a later edit reaches the next session.
+- Role files lose their "Read `cards.md`, beside this file, first" lines; cross-references ("see the `diagram` section of `cards-lead.md`") stay, and resolve inside the starting text.
+- Claude carries it in `--append-system-prompt`, Codex and Antigravity in the first `[wc:role]` message, exactly as the pointer travels today.
+- The 12,000-character cap at `viewer/app/settings.js:177` stays on the layers only.
+
+### The card rules split
+
+- `cards.md` keeps: Posting a card, Which kinds exist (the full table, so everyone knows what exists), `progress`, `message`, `result`, What reaches a session and the markers, and The commands.
+- `cards-lead.md` gets every other kind section (offer, idea, question, approval, needs, resolve, done, merged, diagram, image, stub, sudo, retract, title), moved verbatim.
+- `card.js` validates against both files, so a kind's fields still live in exactly one place.
+- `protocol/app/AGENTS.md` lists both files and who gets each, and says reviewer and verifier get neither.
+
+### Sizing worker changes
+
+- New: `node <root>/viewer/app/wc.js diff size <feature-branch> <worker-branch> [--tricky]`. It runs `git diff --numstat <feature>...<worker>` locally (read-only), drops paths under `docs/plans/`, sums added and removed lines, and prints one JSON line: `{"lines": N, "excluded": M, "band": "scout" | "bigger-scout" | "self"}`. Under 200 is `scout`, 200–800 `bigger-scout`, over 800 or `--tricky` `self`. Binary files count 0.
+- `sub-lead.md` step 1 replaces its sizing prose: run the command for every worker result; the band is binding; the no-scout fallback stays as written. The acceptance Log line names the band: `- <date> — T<n> accepted (band: scout): ...`. A `self` read of a scout band is not allowed.
+
+### Shorter output and fewer calls
+
+- `wc.js session list` default prints, per session: name, role, provider, model, status, live, ready, started_by, attempt_id, title; plus `review_families`. `--full` prints the raw response. Nothing in the app parses `wc.js` stdout today; the lead and sub-lead rules that read `review_families` and the lead's provider still work.
+- `worker.md` and `verifier.md`: run suites so only the summary and failures print (`node --test --test-reporter=dot`, `| tail -n 80`, or the suite's quiet flag); rerun a single failing test for detail. Reports paste that output.
+- `lead.md`, `sub-lead.md`, `worker.md`, `verifier.md`, `mapper.md`: one line saying to chain routine commands that do not depend on each other's output into one shell call.
+
+### Root AGENTS.md
+
+- Cut to under 6,000 bytes. Every rule stays (the canonical-clone refusal, never starting a viewer by hand, the unquoted glob, graphify last); the reasons and history behind them move to `CONTRIBUTING.md`, with a one-line pointer.
+
+### Boundaries and non-goals
+
+- Nothing Collin sees in a thread changes, except the approval card's optional startup warning.
+- No model or tier moves. Reviews and verification are not reduced.
+- GPT's built-in tool schemas are not trimmed.
+- Sessions already running keep their old instructions.
+
+### Edge cases
+
+- A role file or card file missing at start: the start fails with the reason, as a missing role file would be noticed today.
+- A Claude Code release that renames a denied tool: the deny entry is ignored by the CLI; startup grows and the warning fires.
+- A diff where every path is under `docs/plans/`: `lines` 0, band `scout`.
+
+### Validation
+
+- `bash machine/test/run.sh` (Claude argv carries the deny list and both flags; composed prompt holds role text and the right card files per role; `startup_tokens` recorded from a fixture transcript).
+- `node --test viewer/test/*.test.js` (Ready check warning above 25,000 and not below; `wc.js diff size` bands and the `docs/plans/` exclusion on a temp repo; compact and `--full` list; `card.js` validates kinds from both card files; `protocol-rules.test.js` updated).
+- `npm --prefix viewer run test:browser` (approval card shows the warning).
+- Live: start a Claude worker on this machine after install; its `startup_tokens` is under 25,000.
+- Re-measure after a few threads with the baseline method above.
 
 ### Measured baseline (2026-11-17)
 
