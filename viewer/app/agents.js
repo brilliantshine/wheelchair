@@ -34,7 +34,7 @@ async function agents(hub) {
   const hubEntry = await hub.state.resolveMachine(registry, 'hub');
   const machines = await Promise.all(Object.entries(registry).map(async ([machine, entry]) => {
     let reachable = true;
-    try { await hub.call(machine, '/v1/status', 'GET'); } catch { reachable = false; }
+    try { await hub.call(machine, '/v1/sessions', 'GET'); } catch { reachable = false; }
     return { machine, reachable, last_seen: hub.machineSeen(machine), hub: !!hubEntry && entry === hubEntry };
   }));
   return { leads, machines };
