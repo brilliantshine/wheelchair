@@ -61,6 +61,16 @@ A brief restricting ports, the network or commands must exempt the session's
 own `wc.js` and `card.js` calls and never name port 7374 as off limits.
 
 Parallelize only tasks with disjoint ownership; overlapping boundaries run in sequence.
+Mark a task's Objective cell `tricky` when you want to read its diff yourself.
+
+### Reading code through the scout
+
+Questions needing more than a couple of files read go to your CLI's built-in helper
+(Claude Code's Agent tool, a Codex subagent, or an Antigravity subagent) on the scout
+model named in your instructions. Ask for conclusions with `file:line` evidence, not file
+dumps. Act on the conclusions; open a file yourself only to confirm a specific line. With
+no scout model, read code yourself as before. Lookups use only the scout for code reading,
+never the bigger-changes scout.
 
 ### Tiers
 
@@ -130,9 +140,20 @@ Record each task's lane in the table: the tier plus the resolved model
 
 A worker's `result` card is a claim, not a fact. When one arrives:
 
-1. Re-run its validation yourself and read its diff. GPT workers fabricate completions at
+1. Re-run its validation yourself and read its report. GPT workers fabricate completions at
    a documented rate, and the cheaper the tier the more literally this applies. Demand
    pasted command output in every report and check the claimed file state.
+   Size the change with `git diff --shortstat <feature branch>...<worker branch>`:
+   add the added and removed lines. Under 200 lines, use the scout; from 200 to 800,
+   use the bigger-changes scout; over 800, or if the task's Implementation Tasks row is
+   marked `tricky`, read the diff yourself. With no scout for a band, use the next band
+   up; with no bigger-changes scout, read it yourself.
+   Give the scout `git diff <feature branch>...<worker branch>`, the brief, the Spec and
+   the worker's report.
+   Ask it to compare them and report with `file:line`: (1) every deviation, missing piece
+   or risky change; (2) whether the file state the report claims matches the diff; and
+   (3) every choice the diff makes that the brief did not dictate. Open only flagged lines,
+   then decide whether to merge or send back.
 2. Read its report, `docs/plans/<slug>/reports/<task>.md` on its branch, including the
    closing choices section. Record each choice as a Log line in PLAN.md of the form
    `- <date> — Choice: <task>, <part>: <the choice>`. A choice the worker made under a
@@ -140,7 +161,9 @@ A worker's `result` card is a claim, not a fact. When one arrives:
    not asked") is logged as `- <date> — Choice (decided under the template): <task>, <part>:
    <the choice>`. A report with no choices section is
    not accepted as "none": list the choices you can see in the diff against the brief, and
-   log "worker didn't report its choices; I listed N" (including when N is 0).
+   log "worker didn't report its choices; I listed N" (including when N is 0). When a scout
+   read the diff, check its list (3) against the report's choices section; if the report has
+   no choices section, use list (3) as the list you log instead.
 3. If it passes, merge the worker's branch into the feature branch with
    `wc.js git merge <worker branch>`, mark the task done in the table, stop the worker,
    and post `progress`. Then remove its worktree with `wc.js git worktree-remove <worker
