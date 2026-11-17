@@ -87,6 +87,9 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       await expect(page.locator('.agents-side')).toContainText('Review the plan');
       await expect(page.locator('.agents-side')).toContainText('model-a · high');
       await expect(page.locator('.agents-side')).toContainText(/Working for \d+m/);
+      await page.waitForTimeout(5500); // one poll redraw keeps the selected agent
+      await expect(page).toHaveURL(/agent=wc-a-reviewer/);
+      await expect(page.locator('.agents-side')).toContainText('Review the plan');
       await page.getByRole('button', { name: 'Open terminal' }).click();
       await expect(page.getByRole('button', { name: 'View only' })).toBeVisible();
       await page.evaluate(() => window.agentsTermView._onDataForTest('x'));
@@ -97,6 +100,9 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       await page.evaluate(() => window.agentsTermView._onDataForTest('x'));
       await expect.poll(() => keys.length).toBe(1);
       expect(keys[0].keys).toBe('x');
+      await page.waitForTimeout(5500); // a redraw keeps the open terminal, still in Typing
+      await expect(page.locator('#agents-terminal')).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Typing' })).toBeVisible();
       if (label === 'desktop') {
         await page.locator('[data-session="wc-a-lead"]').click();
         await expect(page.getByRole('button', { name: 'View only' })).toBeVisible();
