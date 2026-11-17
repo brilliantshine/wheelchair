@@ -66,6 +66,11 @@ test('sub-lead uses the binding sizing command and no-scout fallback', () => {
   assert.ok(text.includes('--tricky'));
   assert.match(text, /with no scout model may read a `scout`-band diff itself/);
 });
+test('sub-lead briefs say role rules are in starting instructions', () => {
+  const text = read('sub-lead');
+  assert.ok(text.includes('starting instructions, so a brief never tells it to read its role file'));
+  assert.ok(text.includes('starting instructions, so the brief never tells it to read its role file'));
+});
 for (const role of ['worker', 'verifier']) {
   test(`${role} preserves suite exit status`, () => {
     assert.ok(read(role).includes('echo "exit $?"'));

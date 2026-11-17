@@ -49,7 +49,8 @@ objective, an ownership boundary (the files and directories the worker owns), a 
 and tier) and its validation commands. Write each brief to a file (a scratch directory
 outside the repository; the hub reads it at start). Every brief carries:
 
-- the plan slug and task id, and the lead's
+- the plan slug and task id (the worker's role rules are already in its
+  starting instructions, so a brief never tells it to read its role file), and the lead's
   session name (`wc-<thread-id>-lead`; `session list` shows it in `sessions`), so the
   worker can message it;
 - a concrete objective, the **ownership boundary**, and the deliverable;
@@ -220,8 +221,9 @@ When every task is done and the full validation passes:
    start's output has a `note` saying its provider was not honoured, start no second verifier.
    If the second start's output has such a note (it landed on the first verifier's provider),
    stop the second verifier at once.
-   Its brief gives it the PLAN.md and COMPLETION.md
-   paths, and says nothing of this conversation. Its report arrives as a `result`; stop it
+   Its brief gives it the PLAN.md and COMPLETION.md paths (its role rules are already in its
+   starting instructions, so the brief never tells it to read its role file), and says nothing
+   of this conversation. Its report arrives as a `result`; stop it
    then. After starting attempt N's verifier(s), post `progress` with `stage: verify`,
    `pass: N`, `phase: checking` and the machines used during the build.
    A verifier that reports `VERDICT: BLOCKED` hit a problem with its setup, not a gap: fix
