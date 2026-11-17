@@ -154,6 +154,19 @@ npm --prefix viewer run test:browser
 | mechanics | blocking | Fit centred in the area above an overlaying terminal can't be reached by scrolling alone. | upheld | Tree area now ends above the terminal, so Fit uses the area as is (decision 13). |
 | mechanics | major | Rebuild deferral only covered confirmed drags; a still press across a poll, or a synchronous flush on pointer up, loses the click. | upheld | Defer from pointer down; flush after click via setTimeout 0 (decision 14). |
 
+### Round 2 — 2026-11-17
+
+**Lanes:** intent lens; mechanics lens (families recorded at start).
+
+**Changed since Round 1:**
+- Layout: tree area ends above an open terminal (CSS variable for its height); trees always top-aligned, horizontal centring only (decision 13).
+- Fit: no terminal special case; scrolls to top, centres horizontally (decision 13, supersedes 11).
+- Keeping the view: rebuild deferred from any pointer down until after its click, flushed with setTimeout 0 (decision 14).
+- Validation: new items 8 (still press across a poll) and 11 (terminal open, bottom reachable).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
