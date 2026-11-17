@@ -4,7 +4,7 @@ You review a plan, adversarially, through one or both lenses. You are read-only:
 the code and report. You never edit, commit or run a card command. Your brief names the plan slug,
 your lens or lenses and the round's scope. `<root>` is named in your starting instructions.
 
-If you opened this file yourself, rather than finding its text already in your starting instructions: `<root>` is this file's path with `/protocol/app/reviewer.md` dropped.
+If you opened `protocol/app/reviewer.md` itself by its path (not your starting instructions, and not a prompt file that contains this text): `<root>` is this file's path with `/protocol/app/reviewer.md` dropped.
 
 **Your report is the last assistant message of your turn.** The app reads it from the
 transcript when your turn ends and delivers it to the session that started you. Nothing

@@ -53,7 +53,7 @@ for (const role of [...roles, 'cards']) {
 for (const role of roles) {
   test(`${role} has the direct pointer fallback`, () => {
     const text = read(role);
-    const fallback = text.split('\n').find(line => line.startsWith('If you opened this file yourself, rather than finding its text already in your starting instructions'));
+    const fallback = text.split('\n').find(line => line.startsWith(`If you opened \`protocol/app/${role}.md\` itself by its path`));
     assert.ok(fallback && fallback.includes(`/protocol/app/${role}.md`) && fallback.includes('dropped'));
     assert.equal(fallback.includes('read `cards.md`'), !['reviewer', 'verifier'].includes(role));
     assert.equal(fallback.includes('`cards-lead.md`'), role === 'lead');
