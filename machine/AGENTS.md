@@ -30,4 +30,4 @@ Test temp folders come from `test-support/run-dir.js` (`makeTemp`/`makeTempSync`
 - A recovered session (rebuilt from a live `wc-*` tmux session) has no token and never authorizes an agent route.
 - Git subprocesses use the authenticated session's recorded worktree, never a caller path.
 
-`lib/steps.js` classifies Claude and Codex tool calls into compact activity labels and timing keys. Claude tool hooks emit step start/end events; its statusline emits context and rate-limit events on independent throttles.
+`lib/steps.js` classifies Claude and Codex tool calls into compact activity labels and timing keys. `lib/codex-steps.js` parses Codex rollout steps and context; the service tails bound live sessions and flushes them at turn end. Claude tool hooks emit step start/end events; its statusline emits context and rate-limit events on independent throttles.

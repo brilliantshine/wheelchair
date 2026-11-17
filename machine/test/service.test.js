@@ -1250,3 +1250,29 @@ test('hook-post sends both status events individually to the service', async () 
     assert.ok(events.some(e => e.type === 'usage')); assert.ok(events.some(e => e.type === 'context' && e.context.percent === 34));
   } finally { await env.close(); }
 });
+
+test('Codex rollout reads persist complete lines, serialize reads, and flush before turn end', async () => {
+  const root = await temp(), file = path.join(root,'rollout.jsonl');
+  const svc = new MachineService({stateDir:root});
+  const session = {name:'wc-test',cli:'codex',thread_id:'thread',codex_thread_id:'codex-id',source_transcript:file};
+  svc.sessions[session.name] = session;
+  const seen = []; let active=0, peak=0;
+  svc.emitEvent = async event => { active++; peak=Math.max(peak,active); await new Promise(resolve=>setTimeout(resolve,5)); seen.push(event); active--; };
+  svc.liveTmux = () => new Set(['wc-test','wc-unbound']);
+  svc.sessions['wc-unbound'] = {name:'wc-unbound',cli:'codex',thread_id:'thread',source_transcript:file};
+  const row = (id,type,extra={}) => JSON.stringify({timestamp:'2026-01-01T00:00:00Z',type:'response_item',payload:{type,call_id:id,...extra}});
+  const start = row('a','custom_tool_call',{name:'exec',input:'tools.exec_command({cmd:"npm test"})'});
+  const end = row('a','custom_tool_call_output',{output:'Script running with cell ID 1'});
+  await write(file,start+'\n'+end);
+  await Promise.all([svc.pollCodexSteps(),svc.readCodexSteps(session)]);
+  assert.equal(peak,1); assert.deepEqual(seen.map(e=>e.phase),['start']); assert.equal(session.steps_offset,Buffer.byteLength(start+'\n'));
+  assert.equal(svc.sessions['wc-unbound'].steps_offset,undefined);
+  await fs.appendFile(file,'\n'); await svc.readCodexSteps(session);
+  const saved=JSON.parse(await fs.readFile(svc.sessionsPath,'utf8')); assert.equal(saved['wc-test'].steps_state.yielded,'a');
+  const restarted=new MachineService({stateDir:root}); restarted.sessions=saved; restarted.emitEvent=svc.emitEvent;
+  const poll=row('p','function_call',{name:'wait',arguments:'{}'}), finish=row('p','function_call_output',{output:'Script completed'});
+  await fs.appendFile(file,poll+'\n'+finish+'\n');
+  await restarted.hook('wc-test',{type:'turn-ended',thread_id:'codex-id'});
+  assert.deepEqual(seen.map(e=>e.type+':'+(e.phase||'')),['step:start','step:end','turn-ended:']);
+  assert.equal(seen[1].step.clean,true); assert.equal(restarted.sessions['wc-test'].steps_offset,(await fs.stat(file)).size);
+});
