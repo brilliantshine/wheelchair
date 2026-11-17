@@ -12,9 +12,9 @@ Every stage reads rules from `protocol/` and writes state to `docs/plans/<slug>/
 | Per-feature state | `docs/plans/<slug>/` | every stage |
 | Executable | `sensitivity/`, `install/`, `test-support/`, `viewer/`, `machine/`, `sudo-helper/`, `install.sh` | commands, not guidance |
 
-The diagram-sensitivity dial is the deliberate exception: `sensitivity/set.sh` is the only writer of the region rendered from `protocol/sensitivity.md` into each present harness's global instruction file. That repo-owned region is overwritten on every run; other context-window rules belong in `protocol/`.
+The diagram-sensitivity dial is the deliberate exception: `sensitivity/set.sh` is the only writer of the region rendered from `protocol/sensitivity.md` into each present harness's global instruction file, loaded every turn in every project. That repo-owned region is overwritten on every run; other context-window rules belong in `protocol/`.
 
-The root sudo helper is the other reach outside the clone. Collin installs it as a system service with `sudo-helper/install.sh` from a root-owned copy agents cannot edit; `./install.sh` never installs or updates it.
+The root sudo helper is the other reach outside the clone and the only part that runs as root. Collin installs it as a system service with `sudo-helper/install.sh` from a root-owned copy agents cannot edit; `./install.sh` never installs or updates it.
 
 **`status:` in `PLAN.md` is the state machine, not a label.** Stages refuse to run out of order; editing it to pass a gate skips the gate.
 
@@ -24,14 +24,14 @@ The root sudo helper is the other reach outside the clone. Collin installs it as
 |---|---|---|
 | `protocol/` | [AGENTS.md](protocol/AGENTS.md) | stages, writing and diagram rules, templates |
 | `sensitivity/` | [AGENTS.md](sensitivity/AGENTS.md) | dial block writer |
-| `install/` | — | canonical-clone guard, old hook removal, installer fixtures |
-| `test-support/` | — | shared test run folders, smoke and Mac CI checks |
+| `install/` | — | `guard.sh` canonical-clone guard; `unseen.py` old hook removal; `test/run.sh` installer fixtures. Temp homes and command shims only; real harness and machine state stay untouched |
+| `test-support/` | — | `run-dir.js`: every temp folder a machine or viewer test makes lives in one per-process folder, removed at exit and swept when its owner is gone; smoke and Mac CI checks |
 | `.github/workflows/macos.yml` | — | Mac CI job |
-| `codex/` | [AGENTS.md](codex/AGENTS.md) | login preflight, model pins, fixtures |
+| `codex/` | [AGENTS.md](codex/AGENTS.md) | `preflight.sh` login check and model heads-up; `model.sh` GPT model pins; fixtures |
 | `docs/` | — | plans, proposals and known issues; state, not rules or contracts |
-| `machine/` | [AGENTS.md](machine/AGENTS.md) | session service, hooks, API and tests |
+| `machine/` | [AGENTS.md](machine/AGENTS.md) | session service, hooks, API and tests; runs as the `wheelchair-machine` user service |
 | `sudo-helper/` | [AGENTS.md](sudo-helper/AGENTS.md) | root sudo helper, run page, installer and tests |
-| `viewer/` | [AGENTS.md](viewer/AGENTS.md) | viewer, server, hub app, pages, vendor and tests |
+| `viewer/` | [AGENTS.md](viewer/AGENTS.md) | viewer, server, hub app, pages, vendor and tests; runs as the `wheelchair-viewer` user service |
 
 ## Files at the root
 
@@ -67,7 +67,9 @@ npm --prefix viewer run test:browser  # Chromium and Firefox; fails loudly if ei
 
 Run `./install.sh` only from the canonical clone; it and its two writers refuse linked worktrees and paths under `~/.local/state/wheelchair/worktrees` (exit 3 unless `WHEELCHAIR_ALLOW_WORKTREE=1`). From a worktree use `bash install/test/run.sh` instead. Leave the `node --test viewer/test/*.test.js` glob unquoted.
 
-**Never check the viewer by starting a server by hand.** Start your own isolated server with `--port` and `--cache-root` as in `viewer/test/helpers/server.js:87`. There is no cache-root environment variable.
+No module-docstring rung: the routers' file/role tables already say what each file does.
+
+**Never check the viewer by starting a server by hand.** Start your own isolated server with `--port` and `--cache-root` as in `viewer/test/helpers/server.js:72`. There is no cache-root environment variable.
 
 There is no protocol document test suite; stages enforce their order and each stage's output is the next stage's input.
 
