@@ -15,10 +15,6 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q3: What happens to the source thread after export?
-- **Options:** (a) nothing: it stays usable; (b) it is marked "handed off" and stops taking work until re-imported; (c) it is archived.
-- **Recommendation:** (b): keeps two copies from moving on separately, which is what Q4 has to resolve otherwise.
-
 ### Q4: Re-import when both copies moved on
 - **Options:** (a) refuse and point to the existing thread, explaining why; (b) the import wins and overwrites the local thread; (c) the newer stage wins.
 - **Recommendation:** (a): advance only when the import is strictly ahead (its branch contains the local branch's head and its stage is the same or later).
@@ -43,6 +39,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 7 | The file is validated (schema, size limit, known stage) before anything is created; its text is shown and used as data, never run | The file may come from elsewhere | defaulted |
 | 8 | Export points are three: idea confirmed, plan approved, done | Collin picked the three major points over any quiet moment | user |
 | 9 | The imported thread is the same thread: it keeps the original thread id, branch `wc/<id>` and pull request | Collin chose same thread; one piece of work stays one branch and one pull request, and duplicate detection is by id | user |
+| 10 | After export the original thread is marked handed off: readable, takes no new work, undoable; a newer re-import revives it | Collin's pick; keeps two copies from moving on at once without discarding the original | user |
 
 ## Spec
 
@@ -74,6 +71,19 @@ again once the plan is approved").
   records it.
 - If this app already has a thread with that id, import never creates a second one (see
   Re-import).
+
+### The original thread after export
+
+- A successful export marks the thread **handed off** in the hub record (time of export and
+  the exported head commit). The app stops the lead session; transcripts stay.
+- A handed-off thread is readable (messages, cards, documents) but takes no new work: the
+  composer and card buttons are disabled, and the thread page shows a banner "Handed off
+  <date>. Import a newer file to continue here, or undo."
+- **Undo hand-off** clears the mark and starts a lead with the existing restart context
+  (`viewer/app/threads.js:122-157`). The file already exported stays valid; re-importing it
+  later is handled by Re-import.
+- The threads list shows handed-off threads with a "handed off" label. They can be archived
+  like any thread.
 
 ## Accepted Risks
 
