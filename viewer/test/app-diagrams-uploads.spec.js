@@ -56,6 +56,8 @@ test('paste uploads bytes, oversize is refused, and image cards respect archive'
     Object.defineProperty(event, 'clipboardData', { value: transfer }); node.dispatchEvent(event);
   }, [...png]);
   await expect(page.locator('.attachment-chip')).toContainText('pasted-');
+  const thumb = page.locator('.attachment-chip img.attachment-thumb');
+  await expect.poll(() => thumb.evaluate((n) => n.naturalWidth)).toBeGreaterThan(0);
   const msg = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith('/messages'));
   await page.locator('#send').click();
   const text = (await msg).postDataJSON().text; const match = text.match(/^\[attached: (.+)\]$/); expect(match).toBeTruthy();

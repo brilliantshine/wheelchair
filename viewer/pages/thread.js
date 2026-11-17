@@ -925,8 +925,9 @@
     attachments.forEach((file, i) => {
       const chip = el('span', 'attachment-chip');
       if (/^image\/(png|jpeg|gif|webp)$/.test(file.type)) {
-        const img = el('img', 'attachment-thumb'); const src = URL.createObjectURL(file);
-        img.onload = img.onerror = () => URL.revokeObjectURL(src); img.src = src; img.alt = ''; chip.appendChild(img);
+        // A data: URL, since the page's content policy allows data: images and not blob: ones.
+        const img = el('img', 'attachment-thumb'); img.alt = ''; chip.appendChild(img);
+        const reader = new FileReader(); reader.onload = () => { img.src = reader.result; }; reader.readAsDataURL(file);
       }
       const size = file.size < 1024 ? file.size + ' B' : file.size < 1048576 ? (file.size / 1024).toFixed(1) + ' KB' : (file.size / 1048576).toFixed(1) + ' MB';
       chip.appendChild(el('span', '', file.name + ' · ' + size));
