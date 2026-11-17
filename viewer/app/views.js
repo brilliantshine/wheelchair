@@ -93,8 +93,10 @@ async function newPlanDirectories(worktree, defaultBranch = 'main') {
   return [...names].filter((name) => !existing.has(name));
 }
 
+// An archived thread's worktree is gone, so its git checks only fail; skipping them keeps the
+// thread list, which every page polls, from spawning git for each one on every poll.
 async function findSlug(hub, thread) {
-  if (thread.slug || !thread.worktree) return;
+  if (thread.slug || !thread.worktree || thread.archived) return;
   const names = await newPlanDirectories(thread.worktree, thread.default_branch || 'main');
   if (names.length !== 1) return;
   thread.slug = names[0];
