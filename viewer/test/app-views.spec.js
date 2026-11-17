@@ -54,6 +54,53 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
         'href', `/wheelchair/app/thread?id=${made['review-one'].id}#card-${approval.id}`);
     });
 
+    test('wide agent trees scroll from the left while narrow trees stay centred', async ({ page }) => {
+      test.skip(label !== 'desktop');
+      const makeLead = count => ({
+        name: 'wc-a-lead', role: 'lead', display_title: 'A thread', live: true, state: 'working',
+        children: Array.from({ length: count }, (_, i) => ({ name: `wc-a-worker-${i}`, role: 'worker', display_title: `Worker ${i}`, live: true, state: 'working', children: [] })),
+      });
+      await page.route('**/api/agents', route => route.fulfill({ json: { leads: [{ thread_id: 'a', thread_title: 'A thread', lead_name: 'Alpha', project: 'project-a', stage: 'building', counts: { total: 6 }, session: makeLead(5), asides: [] }], machines: [] } }));
+      await openPage(page, context, '/app/agents?lead=a');
+      const tree = page.locator('.agents-tree');
+      await expect(tree.locator('.agents-box')).toHaveCount(6);
+      const wide = await page.evaluate(() => {
+        const tree = document.querySelector('.agents-tree');
+        const first = tree.querySelector('.agents-children > .agents-branch .agents-box').getBoundingClientRect();
+        return { tree: tree.getBoundingClientRect().toJSON(), first: first.toJSON(), scrollWidth: tree.scrollWidth, clientWidth: tree.clientWidth };
+      });
+      expect(wide.first.left).toBeGreaterThanOrEqual(wide.tree.left);
+      expect(wide.scrollWidth).toBeGreaterThan(wide.clientWidth);
+      await tree.evaluate(node => { node.scrollLeft = node.scrollWidth; });
+      const lastRight = await page.locator('.agents-children > .agents-branch .agents-box').last().evaluate(node => node.getBoundingClientRect().right);
+      const treeRight = await tree.evaluate(node => node.getBoundingClientRect().right);
+      expect(lastRight).toBeLessThanOrEqual(treeRight + 1);
+
+      await page.route('**/api/agents', route => route.fulfill({ json: { leads: [{ thread_id: 'a', thread_title: 'A thread', lead_name: 'Alpha', project: 'project-a', stage: 'building', counts: { total: 3 }, session: makeLead(2), asides: [] }], machines: [] } }));
+      await page.reload();
+      const centered = await page.evaluate(() => {
+        const tree = document.querySelector('.agents-tree').getBoundingClientRect();
+        const lead = document.querySelector('.agents-tree > .agents-branch > .agents-box').getBoundingClientRect();
+        return Math.abs((lead.left + lead.width / 2) - (tree.left + tree.width / 2));
+      });
+      expect(centered).toBeLessThanOrEqual(2);
+    });
+
+    test('phone agent selection shows only details and returns to the tree', async ({ page }) => {
+      test.skip(label !== 'phone');
+      await page.setViewportSize({ width: 390, height: 844 });
+      const child = { name: 'wc-a-child', role: 'worker', display_title: 'Build the feature', live: true, state: 'working', children: [] };
+      const lead = { name: 'wc-a-lead', role: 'lead', display_title: 'A thread', live: true, state: 'working', children: [child] };
+      await page.route('**/api/agents', route => route.fulfill({ json: { leads: [{ thread_id: 'a', thread_title: 'A thread', lead_name: 'Alpha', project: 'project-a', stage: 'building', counts: { total: 2 }, session: lead, asides: [] }], machines: [] } }));
+      await openPage(page, context, '/app/agents?lead=a&agent=wc-a-child');
+      await expect(page.locator('.agents-main')).toBeHidden();
+      await expect(page.locator('.agents-sidebar')).toBeHidden();
+      await expect(page.locator('.agents-side')).toBeVisible();
+      await page.getByRole('button', { name: '‹ Alpha' }).click();
+      await expect(page.locator('.agents-main')).toBeVisible();
+      await expect(page.locator('.agents-side')).toBeHidden();
+    });
+
     test('agent tree keeps selection and shows agent details', async ({ page }) => {
       const waiting = { name: 'wc-a-mapper', role: 'mapper', display_title: 'Map the code', live: true, state: 'waiting', waiting_on: { label: 'Waiting on the lead' }, children: [] };
       const child = { name: 'wc-a-reviewer', role: 'reviewer', display_title: 'Review the plan', live: true, state: 'working', model: 'model-a', effort: 'high', turn_started_at: new Date(Date.now() - 4 * 60000).toISOString(), has_brief: true, children: [waiting] };
