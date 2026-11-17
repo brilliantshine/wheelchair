@@ -15,9 +15,7 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q4: Re-import when both copies moved on
-- **Options:** (a) refuse and point to the existing thread, explaining why; (b) the import wins and overwrites the local thread; (c) the newer stage wins.
-- **Recommendation:** (a): advance only when the import is strictly ahead (its branch contains the local branch's head and its stage is the same or later).
+(none)
 
 ## Watch List
 
@@ -40,6 +38,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 8 | Export points are three: idea confirmed, plan approved, done | Collin picked the three major points over any quiet moment | user |
 | 9 | The imported thread is the same thread: it keeps the original thread id, branch `wc/<id>` and pull request | Collin chose same thread; one piece of work stays one branch and one pull request, and duplicate detection is by id | user |
 | 10 | After export the original thread is marked handed off: readable, takes no new work, undoable; a newer re-import revives it | Collin's pick; keeps two copies from moving on at once without discarding the original | user |
+| 11 | Re-import advances the existing thread only when the file is strictly ahead; when the copies drifted apart it opens the existing thread and explains, changing nothing | Collin's pick; never loses work silently | user |
 
 ## Spec
 
