@@ -15,6 +15,86 @@ const { choose, slotFor } = require('./balancer.js');
 const { PROVIDERS, cliOf, providerOf } = require('./providers.js');
 
 const execFileAsync = promisify(execFile);
+const history = require('./step-history.js');
+const KINDS = ['files', 'shell', 'helpers', 'web', 'starter', 'thinking'];
+function counts(s) { s.step_counts ||= {}; for (const k of KINDS) s.step_counts[k] ||= 0; }
+function running(s) { return (s.steps || []).filter(step => !step.ended_at); }
+function trimSteps(s) {
+  s.steps.sort((a, b) => a.started_at.localeCompare(b.started_at));
+  const finished = s.steps.filter(step => step.ended_at);
+  const drop = new Set(finished.slice(0, Math.max(0, finished.length - 30)));
+  s.steps = s.steps.filter(step => !drop.has(step));
+}
+function thinkingSince(s) {
+  const start = s.turn_started_at;
+  if (!start) return null;
+  return (s.steps || []).filter(step => step.ended_at && step.ended_at >= start).map(step => step.ended_at).sort().pop() || start;
+}
+function countThinking(s, at) {
+  if (s.live && s.turn_started_at && !s.turn_ended && !running(s).length && Date.parse(at) - Date.parse(thinkingSince(s)) >= 5000) { counts(s); s.step_counts.thinking++; }
+}
+function beginTurn(s, at) {
+  s.turns ||= [];
+  if (!s.turns.some(t => t.started_at === at)) s.turns.push({ started_at: at, ended_at: null });
+  s.turns = s.turns.slice(-20);
+}
+function closeSteps(s, at) {
+  for (const step of running(s)) if (step.started_at <= at) Object.assign(step, { ended_at: at, failed: null, clean: false });
+  if (s.steps) trimSteps(s);
+}
+function endTurn(s, at) {
+  countThinking(s, at);
+  if (s.turn_started_at) {
+    beginTurn(s, s.turn_started_at);
+    const turn = s.turns.find(t => t.started_at === s.turn_started_at);
+    if (turn && !turn.ended_at) turn.ended_at = at;
+  }
+  closeSteps(s, at);
+}
+async function activityEvent(hub, thread, s, payload) {
+  if (payload.type === 'context') {
+    if (payload.context && (!s.context || Date.parse(payload.context.at) > Date.parse(s.context.at))) s.context = payload.context;
+    return;
+  }
+  const now = new Date().toISOString();
+  s.steps ||= []; s.pending_ends ||= {};
+  for (const [id, end] of Object.entries(s.pending_ends)) if (Date.now() - Date.parse(end.received_at) >= 600000) delete s.pending_ends[id];
+  const incoming = payload.step;
+  if (!incoming?.id) return;
+  let step = s.steps.find(x => x.id === incoming.id);
+  if (payload.phase === 'start' && !step) {
+    countThinking(s, incoming.started_at);
+    counts(s); if (KINDS.includes(incoming.kind) && incoming.kind !== 'thinking') s.step_counts[incoming.kind]++;
+    step = { ...incoming };
+    const pending = s.pending_ends[step.id];
+    if (pending) { Object.assign(step, pending.step); delete s.pending_ends[step.id]; }
+    else {
+      const turns = s.turns || [];
+      const turn = turns.find(t => t.started_at <= step.started_at && (!t.ended_at || step.started_at <= t.ended_at));
+      let end = turn?.ended_at;
+      if (turns.length && step.started_at < turns[0].started_at) end = step.started_at;
+      if ((!s.live || s.ended_at) && s.ended_at && (!end || s.ended_at < end)) end = s.ended_at;
+      if ((!s.live || s.ended_at) && !end) end = s.ended_at || now;
+      if (end) Object.assign(step, { ended_at: end, failed: null, clean: false });
+    }
+    s.steps.push(step);
+    if (step.clean === true) await history.append(hub.stateDir, thread.project, step);
+    const active = running(s).sort((a, b) => a.started_at.localeCompare(b.started_at));
+    for (const excess of active.slice(0, Math.max(0, active.length - 50))) Object.assign(excess, { ended_at: now, failed: null, clean: false });
+    trimSteps(s);
+  } else if (payload.phase === 'end') {
+    if (!step) {
+      if (!s.pending_ends[incoming.id]) s.pending_ends[incoming.id] = { step: incoming, received_at: now };
+      const ids = Object.keys(s.pending_ends).sort((a, b) => s.pending_ends[a].received_at.localeCompare(s.pending_ends[b].received_at));
+      for (const id of ids.slice(0, Math.max(0, ids.length - 50))) delete s.pending_ends[id];
+    } else if (!step.ended_at || (step.clean === false && incoming.clean === true)) {
+      Object.assign(step, incoming);
+      if (step.clean === true) await history.append(hub.stateDir, thread.project, step);
+      trimSteps(s);
+    }
+  }
+}
+
 
 // Spec "How the hub picks a session's model": model cells are per provider and role.
 async function resolveModel(hub, cli, role, requestedTier = 'top') {
@@ -121,7 +201,7 @@ async function resumeUnanswered(hub, thread, session) {
     live: true,
     first_message: pending.first_message,
   });
-  if (session.first_message) session.turn_started_at = new Date().toISOString();
+  if (session.first_message) { session.turn_started_at = new Date().toISOString(); beginTurn(session, session.turn_started_at); }
   delete session.ended_at;
   if (quiet.watched(session) && session.first_message) session.owes_reply = true;
   markIdleIfFresh(session);
@@ -269,7 +349,7 @@ async function startSession(hub, thread, input) {
     // session is ready; without one, a ready session is idle and may take the queue at once.
     first_message: PROVIDERS[selection.provider].typesRoleMessage || Boolean(input.brief),
   });
-  if (session.first_message) session.turn_started_at = new Date().toISOString();
+  if (session.first_message) { session.turn_started_at = new Date().toISOString(); beginTurn(session, session.turn_started_at); }
   delete session.ended_at;
   if (quiet.watched(session) && session.first_message) session.owes_reply = true;
   markIdleIfFresh(session);
@@ -377,6 +457,7 @@ async function deliver(hub, thread, target, { midTurn = false } = {}) {
   if (deliveredStyleVersion !== undefined) target.style_version = deliveredStyleVersion;
   target.turn_ended = false;
   target.turn_started_at = new Date().toISOString();
+  beginTurn(target, target.turn_started_at);
   delete target.delivery_error;
   thread.queues ||= {};
   thread.queues[target.name] = target.queue;
@@ -411,6 +492,12 @@ async function event(hub, payload) {
     return { ok: true, duplicate: true };
   }
   const target = session(thread, payload.session);
+  if (payload.type === 'step' || payload.type === 'context') {
+    await activityEvent(hub, thread, target, payload);
+    if (payload.delivery_id) thread.delivered_ids = [...thread.delivered_ids, payload.delivery_id].slice(-500);
+    await hub.save(thread);
+    return { ok: true };
+  }
   const deliveryTargets = new Set();
   const type = payload.type;
   if (payload.reading) {
@@ -419,6 +506,7 @@ async function event(hub, payload) {
   const limit = type === 'limit-hit' ? payload.limited_until : payload.reading?.limited_until;
   const limitEnded = type === 'limit-hit' || Boolean(payload.reading?.limited_until);
   if (limit && Date.parse(limit) > Date.now()) {
+    endTurn(target, new Date().toISOString());
     const readings = await usage.readings(hub);
     const prior = readings[target.account] || { account: target.account, machine: thread.machine, five_hour: null, week: null };
     await usage.record(hub, { ...prior, at: new Date(Math.max(Date.now(), Date.parse(prior.at) + 1 || 0)).toISOString(), limited_until: limit });
@@ -426,12 +514,14 @@ async function event(hub, payload) {
     target.turn_ended = true;
     target.turn_ended_at = new Date().toISOString();
   } else if (limitEnded && limit && Date.parse(limit) <= Date.now()) {
+    endTurn(target, new Date().toISOString());
     delete target.limited_until;
     target.turn_ended = true;
     target.turn_ended_at = new Date().toISOString();
     if (target.live) await enqueue(hub, thread, target.name, 'Continue.', 'app', true, { save: false, deliver: false });
   }
   if (type === 'turn-failed') {
+    endTurn(target, new Date().toISOString());
     target.turn_ended = true;
     target.turn_ended_at = new Date().toISOString();
     if (target.started_by) {
@@ -447,6 +537,7 @@ async function event(hub, payload) {
     markIdleIfFresh(target);
   }
   if (['turn-ended', 'turn_ended', 'turn ended'].includes(type)) {
+    endTurn(target, new Date().toISOString());
     target.turn_ended = true;
     target.turn_ended_at = new Date().toISOString();
     for (const key of ['cli_session_id', 'codex_thread_id', 'agy_conversation_id']) if (payload[key]) target[key] = payload[key];
@@ -568,8 +659,9 @@ async function stopSession(hub, thread, caller, name) {
   );
   if (!canStop) throw appError(403, 'only the starter may stop this session');
   if (target.status !== 'waiting') await hub.call(thread.machine, `/v1/sessions/${encodeURIComponent(target.name)}`, 'DELETE');
-  target.live = false;
   target.ended_at = new Date().toISOString();
+  endTurn(target, target.ended_at);
+  target.live = false;
   target.status = 'stopped';
   quiet.reset(thread, target, true);
   await hub.save(thread);
@@ -628,8 +720,9 @@ async function pollDead(hub) {
           return;
         }
         for (const target of missing(thread, fresh)) {
-          target.live = false;
           target.ended_at = new Date().toISOString();
+          endTurn(target, target.ended_at);
+          target.live = false;
           target.status = 'ended';
           quiet.reset(thread, target, true);
           changed = true;
