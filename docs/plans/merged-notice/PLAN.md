@@ -12,11 +12,6 @@ get buried as this file grows.
 
 ## Open Questions
 
-### Q1: Does the merged card ask for Collin's attention, or sit quietly in the thread?
-- **Context:** cards that wait on Collin (question, needs, approval) count under "Needs you" and badge the thread in the Threads list (`viewer/app/views.js:122-130`). A merged card that counts there needs a way to clear it without archiving.
-- **Options:** (a) counts under "Needs you" until archived or dismissed with a "Keep it" button; (b) quiet card, no badge.
-- **Recommendation:** (a): the point is that he hears about the merge without opening every thread.
-
 ### Q2: Does the card's Archive button archive at once, or ask to confirm?
 - **Context:** the page's Archive expands to Confirm archive / Cancel with "Stops its sessions and removes the worktree." (`viewer/pages/thread.js:159-164`).
 - **Options:** (a) same two-step confirm; (b) one press.
@@ -38,10 +33,13 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 3 | One card per thread: the thread records that its merge was noticed; later `done` cards for the same PR never post a second one. | IDEA: "each merge produces one card". | defaulted |
 | 4 | A failed `gh` call (missing, logged out, offline) leaves the thread unchecked until the next minute; no card and no error card. | Same behavior as the stub poll; an error card every minute would be noise. Recorded as an accepted risk. | defaulted |
 | 5 | The lead is not told about the merge. | The lead already checks `gh pr view` itself before acting after done (`protocol/app/lead.md` step 9). | defaulted |
+| 6 | The merged card asks for attention: it counts under "Needs you" and badges the thread until Collin archives the thread or presses "Keep it" on the card. | So he hears about the merge without opening every thread. | user |
 
 ## Spec
 
 (Grows as decisions land.)
+
+- **Merged card attention:** an unanswered merged card counts under "Needs you" (`viewer/app/views.js` addNeeds) and badges the thread in the Threads list. It has two buttons: Archive and "Keep it". "Keep it" closes the card (marked answered) and the thread stays as it is. Archiving the thread also closes it.
 
 ## Accepted Risks
 
