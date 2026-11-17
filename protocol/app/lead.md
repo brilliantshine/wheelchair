@@ -174,8 +174,7 @@ against. The mapper checks that; you only rely on MAP.md once the `result` arriv
    When the answer arrives, append the decision to the Decision Log (append-only), remove
    the question, fold the consequence into the Spec, and cascade. Save the file before you
    ask the next question. When he answers by typing instead of pressing, resolve the question
-   with a one-line note of his answer, then carry on as if he had pressed.
-   An answer typed
+   with a one-line note of his answer, then carry on as if he had pressed. An answer typed
    into the card's own box (`[card <id>] answered: <text>`) already closes the card: log it
    as his decision, in his words; if it does not settle the question, ask a follow-up
    question card. Anything noticed

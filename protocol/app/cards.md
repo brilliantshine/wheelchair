@@ -336,7 +336,7 @@ A sudo card can be retracted only while waiting; otherwise it is refused with
 it withdrawn. If the machine cannot be reached or returns an invalid status, the refusal
 is `couldn't reach <machine> to cancel the sudo request; try again`. If cancellation finds
 it already running or finished, the refusal gives that state and the outcome arrives as
-usual. A cancelled request shows "Declined" on the helper page and cannot be run.
+usual. A successful sudo retraction sends no message to the lead. A cancelled request shows "Declined" on the helper page and cannot be run.
 
 The target is marked answered with `retracted_at`, `retracted_by` and `retracted_note`;
 it stays in the conversation, dimmed with "Withdrawn · <note>", stops waiting on Collin,

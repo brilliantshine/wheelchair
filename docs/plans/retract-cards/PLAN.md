@@ -295,6 +295,14 @@ with `resolve`).
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Hub and CLI: Spec §1–4 (retract kind, hub apply incl. sudo cancel, press refusal, approval pin) + node tests — tricky | viewer/app/card.js, cards.js, threads.js, views.js, chat.js; viewer/test/app-hub.test.js, app-sudo.test.js | standard / gpt-6.1-terra | wc-1416046edf72-worker | node --test viewer/test/*.test.js; bash machine/test/run.sh | running |
 | T2 | Thread page: Spec §5 + browser cases | viewer/pages/thread.js, thread.css, aside.js; viewer/test/app-threads.spec.js, app-sudo.spec.js | standard / gpt-6.1-terra (claude asked, unavailable) | wc-1416046edf72-worker-2 | npm --prefix viewer run test:browser; node --test viewer/test/*.test.js | running |
-| T3 | Protocol and routers: Spec §6 | protocol/app/cards.md, lead.md; viewer/app/API.md; viewer/AGENTS.md | standard / gpt-6.1-terra | wc-1416046edf72-worker-3 | grep retract; git diff --stat | running |
+| T3 | Protocol and routers: Spec §6 | protocol/app/cards.md, lead.md; viewer/app/API.md; viewer/AGENTS.md | standard / gpt-6.1-terra | wc-1416046edf72-worker-3 | grep retract; git diff --stat | done |
 
 ## Log
+
+- 2026-11-17 — T3 accepted and merged. The worker reported "Choices: none", but the scout found several. The scout's list is logged below.
+- 2026-11-17 — Choice: T3, lead.md "How you talk to Collin": the old restart sentence on needs cards is folded into the new retract bullet ("On a restart, retract or resolve open cards that no longer apply").
+- 2026-11-17 — Choice: T3, lead.md retract bullet: the trigger is worded "its question is moot, or he no longer wants what it offers"; it omits "he talks instead of pressing".
+- 2026-11-17 — Choice: T3, cards.md retract section: refusal 1 is glossed "missing, in another thread, or replaced"; a cancelled request is described as "cannot be run" rather than "hides the password form".
+- 2026-11-17 — Choice: T3, API.md: retraction is described in the press row and the sudo paragraph, and "Every state change" becomes "Other state changes".
+- 2026-11-17 — Choice: T3, viewer/AGENTS.md: one-line mention of hidden `retract` cards, in the worker's wording.
+- 2026-11-17 — Sub-lead fix after merging T3: cards.md now says a successful sudo retraction sends the lead no message (Spec §2.2), and a stray line wrap in lead.md step 5 is undone.
