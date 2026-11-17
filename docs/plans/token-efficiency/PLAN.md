@@ -129,3 +129,5 @@ New tests: model.sh reads, writes and defaults the sub-lead cell; balancer resol
 ## Log
 
 Baseline (2026-11-16, all Claude transcripts under ~/.claude/projects/*wheelchair-worktrees*, sessions classified by the role file named in their first messages, input = cache read + cache write + input per call): sub-lead 45% (median context 168k), lead 36% (94k), verifier 8%, worker 7%, reviewer+mapper 4%. Re-measure the same way after a few threads.
+
+- 2026-11-16 — Ready check: hub and machine service answer; Claude Code 2.1.326 and codex-cli 0.169.0 installed; Codex preflight passed.
