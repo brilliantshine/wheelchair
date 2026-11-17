@@ -1,6 +1,6 @@
 ---
 slug: agents-screen-redesign
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-17
 ---
 
@@ -51,6 +51,18 @@ layout, wording and colours, using the app's existing tokens in `viewer/pages/ap
 Ignore everything in `AgentsActivity.dc.html` and `AgentsNowOptions.dc.html`, and the
 activity map, Latest, "is this normal?" line, context ring and amber question path in
 any design: those belong to the stub thread.
+
+```mermaid
+flowchart TD
+  A["An agent is started with a short title and its brief"] --> B["The hub keeps the title, the brief and when each turn starts and ends"]
+  B --> C["The agents list builds each lead's tree, keeping finished agents, and works out each one's state"]
+  C --> D["Sidebar: leads with project tag, stage and agent count"]
+  D -->|"pick a lead"| E["Tree of boxes saying what each agent does"]
+  E -->|"pick an agent"| F["Side panel: role, model, machine, time, brief"]
+  F -->|"Open terminal"| G["Bottom panel, View only: nothing reaches the agent"]
+  G -->|"switch to Typing"| H["Keys go to the agent; amber edge"]
+  H -->|"close, or pick another agent"| G
+```
 
 ### 1. Session titles and briefs (hub and `wc.js`)
 
@@ -126,7 +138,8 @@ any design: those belong to the stub thread.
   the lead" for a lead); for (b), `{ names: [...], label: "Waiting on N agents" }` (or
   "Waiting on the <role>" for one).
 - Counts per lead: `counts: { total, working, waiting, not_started, finished, idle }`,
-  over the lead and its descendants, not asides.
+  over the lead and its descendants, not asides. A lead in `needs-you` is counted as
+  `waiting` (the heading's "waiting" part then reads "waiting on another agent or you").
 
 ### 4. The Agents page layout (desktop, 900px and wider)
 
@@ -189,6 +202,9 @@ so the browser back button works.
   - The panel returns to View only when it closes or another agent is selected. Selecting
     another agent while the panel is open re-targets the panel to it if that agent has
     Open terminal (live session); otherwise the panel closes.
+  - Switching to View only, closing or re-targeting discards any keys queued but not yet
+    sent (today's send queue, `viewer/pages/terminal.js:72-86`); nothing queued reaches
+    tmux after the switch.
 - **Never forward mouse reports** (Decision 12): in both modes, drop any `onData` chunk
   that is a mouse report (`ESC [ M` followed by three bytes, `ESC [ <` … `M`/`m`, and
   `ESC [ ` digits `;` … `M`), and keep xterm from entering mouse-tracking mode from pane
@@ -242,7 +258,8 @@ so the browser back button works.
   project tags and Finished today fold, URL selection kept across a redraw); the terminal
   tests cover View only sending nothing (typing and wheel), Typing on sending keys with no
   extra Enter, mouse reports dropped while typing, the switch resetting on close and on
-  selecting another agent (re-target when live, close when not), Pop out opening
+  selecting another agent (re-target when live, close when not), a long paste cut off by
+  switching to View only sending nothing further, Pop out opening
   `terminal?name=`, a legacy `#lead-<id>` link selecting that lead, and the phone layout
   at 390px width.
 - Commands: `node --test viewer/test/*.test.js`, `npm --prefix viewer run test:browser`,
@@ -273,7 +290,7 @@ so the browser back button works.
 
 ### Round 2 — 2026-11-17
 
-**Lanes:** pending.
+**Lanes:** intent: gpt / gpt-6.1-sol; mechanics: gpt / gpt-6.1-sol; cross-family: no (Claude unavailable).
 
 **Changed since Round 1:**
 - Decision 13: "waiting on" only for a message sent to the agent's own starter (§3).
@@ -286,6 +303,8 @@ so the browser back button works.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | minor | Switching to View only may leave queued keys sending | upheld | Spec §6: queued keys discarded on switch, close, re-target; test in §9 |
+| mechanics | minor | Counts have no bucket for a lead that needs you | upheld | Spec §3: counted as waiting, heading wording |
 
 ## Prior Work
 
