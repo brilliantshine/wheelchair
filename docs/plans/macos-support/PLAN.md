@@ -1,6 +1,6 @@
 ---
 slug: macos-support
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-16
 ---
 
@@ -38,6 +38,21 @@ None.
 | 12 | On macOS the installer skips the sudo-helper hint and says sudo cards aren't available on a Mac | The helper is out of scope (Decision 1); the hint would point at a Linux-only installer | defaulted |
 
 ## Spec
+
+```mermaid
+flowchart TD
+  A["./install.sh --serve"] --> B{"which system?"}
+  B -->|Linux| C["systemd services, as today"]
+  B -->|Mac| D["write two launchd service files"]
+  D --> E["start both; launchd restarts them and starts them at login"]
+  E --> F["share over Tailscale via the Mac app's CLI"]
+  E --> G["sessions run in tmux"]
+  G --> H["service restart leaves tmux sessions running"]
+  I["GitHub Mac job: install + scripted check"] -.checks.-> D
+  J["Mac owner's checklist"] -.checks.-> F
+```
+
+The diagram repeats sections 1, 2, 6 and 7 below.
 
 ### Goal and boundary
 Make macOS (Apple Silicon and Intel, current macOS) a serving wheelchair machine: `./install.sh --serve` installs the viewer and machine services under launchd, sessions (Claude and GPT) start and survive a machine-service restart, Settings → Diagrams works, and the README documents it. Linux behavior, flags, file paths and output stay byte-for-byte as today except where a line below says otherwise. The sudo helper is untouched and unsupported on a Mac.
@@ -154,7 +169,7 @@ On the Mac job: green on the pull request, including `test-support/macos/check.s
 
 ### Round 2 — 2026-11-16
 
-**Lanes:** intent / see start output; mechanics / see start output.
+**Lanes:** intent / gpt; mechanics / gpt (claude unavailable); cross-family: no. Both lanes: no findings.
 
 **Changed since Round 1:** exact LaunchAgent labels (section 1); installer platform seams `WHEELCHAIR_PLATFORM`, `WHEELCHAIR_SYSTEMD_RUN_DIR` and fixture cases pinned to Linux (sections 1, 5); fake `claude` answers `--version`/`auth` at once (section 6 step 3); secret path read from `machine.json` (section 6).
 
