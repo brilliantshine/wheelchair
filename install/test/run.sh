@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Each case owns temporary harness homes and command shims; this suite never writes live state.
-set -euo pipefail
-# Case names are dynamically assigned numeric indices for Bash 3.2.
+# Each case name is a variable holding its index into the indexed arrays below (Bash 3.2 has no
+# associative arrays), so shellcheck sees the names as unassigned.
 # shellcheck disable=SC2004,SC2154
+set -euo pipefail
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 installer=${INSTALL_SH:-"$repo/install.sh"}
@@ -32,6 +33,7 @@ if not os.path.exists(root):
     sys.exit()
 h = hashlib.sha256()
 for base, dirs, files in os.walk(root, followlinks=False):
+    dirs.sort()  # walk subdirectories in a fixed order, so the hash does not depend on listing order
     for name in sorted(dirs + files):
         path = os.path.join(base, name)
         rel = os.path.relpath(path, root)

@@ -286,12 +286,12 @@ offer_tailscale_serve() {  # offer_tailscale_serve <display command> <tailscale 
 
 configure_tailscale_serve() {  # configure_tailscale_serve <origin>
   local states wheelchair_state root_state prefix ts
-  ts=$(tailscale_cli) || return
-  prefix="sudo $ts"
-  [[ $(platform) == Darwin ]] && prefix=$ts
   if ! states=$(tailscale_mapping_states "$1"); then
     return
   fi
+  ts=$(tailscale_cli) || return
+  prefix="sudo $ts"
+  [[ $(platform) == Darwin ]] && prefix=$ts
   wheelchair_state=${states%%$'\n'*}
   root_state=${states##*$'\n'}
 
@@ -362,7 +362,7 @@ configure_service() {
     return
   fi
   node_path=$(command -v node)
-  mkdir -p "$cache_root" "${unit_file%/*}"
+  mkdir -p "$cache_root"
   printf '{"serve": true, "origin": "%s"}\n' "$origin" > "$serving_file"
   # systemd starts user services with a bare PATH, and every agent session inherits the
   # service's PATH through tmux. Give it this login's PATH, led by wherever claude and codex
@@ -375,6 +375,7 @@ configure_service() {
   if [[ $(platform) == Darwin ]]; then
     configure_launch_agents "$node_path" "$service_path"
   else
+  mkdir -p "${unit_file%/*}"
   cat > "$unit_file" <<EOF
 [Unit]
 Description=Wheelchair graph viewer
