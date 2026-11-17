@@ -163,7 +163,7 @@ New tests: model.sh reads, writes and defaults the sub-lead cell; balancer resol
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Sub-lead model cell (model.sh, balancer, routes), scout + scout-heavy settings, scout layer in lead/sub-lead start | codex/, viewer/app/{balancer,settings,routes,sessions}.js, viewer/app/API.md, viewer/test/*.test.js | standard (gpt-6.1-terra) | wc-f8cf8710a770-worker (t1-a1) | codex, machine, node tests | in progress |
 | T2 | Settings page: Leads/Sub-leads model rows, Scout and Scout for bigger changes selectors (after T1) | viewer/pages/settings.js, viewer/test/app-settings.spec.js | standard, --provider claude (claude-sonnet-5-5) | | node + browser tests | not started |
-| T3 | Scout rule in lead.md and sub-lead.md; size-banded diff check in sub-lead.md | protocol/app/lead.md, protocol/app/sub-lead.md | standard (gpt-6.1-terra) | wc-f8cf8710a770-worker-2 (t3-a1) | protocol-rules test | in progress |
+| T3 | Scout rule in lead.md and sub-lead.md; size-banded diff check in sub-lead.md | protocol/app/lead.md, protocol/app/sub-lead.md | standard (gpt-6.1-terra) | wc-f8cf8710a770-worker-2 (t3-a1) | protocol-rules test | done |
 
 ## Log
 
@@ -171,3 +171,6 @@ Baseline (2026-11-16, all Claude transcripts under ~/.claude/projects/*wheelchai
 
 - 2026-11-16 — Ready check: hub and machine service answer; Claude Code 2.1.326 and codex-cli 0.169.0 installed; Codex preflight passed.
 - 2026-11-16 — Re-approved after rounds 3–4 (size-banded diff readers). Ready check rerun.
+- 2026-11-16 — Choice: T3, sub-lead.md tricky marker: a task is marked `tricky` in its Objective cell.
+- 2026-11-16 — Choice: T3, sub-lead.md diff check: the scout is also given the worker's report, to check its claimed file state.
+- 2026-11-16 — T3 accepted: protocol-rules 15/15 rerun on the merge; diff read in full (71 lines). The lead.md scout section sits between steps 2 and 3 as its own heading.
