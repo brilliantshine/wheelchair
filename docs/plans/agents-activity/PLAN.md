@@ -1,6 +1,6 @@
 ---
 slug: agents-activity
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-17
 ---
 
@@ -472,7 +472,7 @@ throttle + 5 s page poll + delivery).
 | T4 | Question path: card fields, `[question <id>]` tag, `passes_on` check, `question`/`question_paths` in API, protocol text (Spec §6) | `viewer/app/{card,cards,agents}.js`, `protocol/app/{worker,sub-lead,lead,cards}.md`, tests | Standard, gpt-6.1-terra (medium) | wc-eb5a9e5941a0-worker-5 | `node --test viewer/test/*.test.js` | done (merged eca5614) |
 | T5 | Screen: side panel (normal line / question trail, activity map, now dashes, context ring, Latest), amber tree path (Spec §7) | `viewer/pages/agents.js`, `viewer/pages/views.css`, `viewer/pages/agents.html`, `viewer/test/app-views.spec.js` | Standard, gpt-6.1-terra (medium); asked for Claude, hub had no Claude room | wc-eb5a9e5941a0-worker-3 | `npm --prefix viewer run test:browser`; `node --test viewer/test/*.test.js` | done (merged; follow-up T5b) |
 | T2b | Fix T2: read rollouts from the offset in bounded chunks (not whole-file every 2 s; rollouts here reach 867 MB); completion/failure from the exec header (`Script failed`/`Script error`), not any `Error:` line | `machine/service.js` (`readCodexSteps`), `machine/lib/codex-steps.js` (`outputInfo`), machine tests | Light, gpt-6-luna | wc-eb5a9e5941a0-worker-6 | `bash machine/test/run.sh` | done (merged 1101885) |
-| T5b | Fix T5: amber path at phone width / stale overlay / overshoot, map labels inside viewBox, ring title, missing label, hours, missing tests, screenshots | `viewer/pages/{agents.js,views.css,agents.html}`, `viewer/test/app-views.spec.js` | Standard, gpt-6.1-terra (medium; Claude requested, no room) → rung 2: Standard, gpt-6.1-terra, effort high, rewritten brief T5c (reason: fails-twice guardrail on the Firefox phone connector assertion) | wc-eb5a9e5941a0-worker-7 → wc-eb5a9e5941a0-worker-8 (same branch) | `npm --prefix viewer run test:browser` | in progress (T5c) |
+| T5b | Fix T5: amber path at phone width / stale overlay / overshoot, map labels inside viewBox, ring title, missing label, hours, missing tests, screenshots | `viewer/pages/{agents.js,views.css,agents.html}`, `viewer/test/app-views.spec.js` | Standard, gpt-6.1-terra (medium; Claude requested, no room) → rung 2: Standard, gpt-6.1-terra, effort high, rewritten brief T5c (reason: fails-twice guardrail on the Firefox phone connector assertion) | wc-eb5a9e5941a0-worker-7 → wc-eb5a9e5941a0-worker-8 (same branch) | `npm --prefix viewer run test:browser` | done (merged 9b271dd) |
 
 ## Log
 
@@ -510,3 +510,5 @@ throttle + 5 s page poll + delivery).
 - 2026-11-17 — Choice: T2b, service.js: an 8 MiB window with no newline is skipped and its partial line dropped. Choice: T2b, codex-steps.js: a plain string output with no header and no JSON result is a finished poll.
 - 2026-11-17 — T5b hit its fails-twice guardrail: Firefox phone assertion measuring the amber overlay against the indented list. Desktop screenshot checked by the sub-lead and matches the designs. Escalated one rung (effort medium → high) with a rewritten brief (T5c): at phone width colour the `.agents-children` left border on the path instead of measuring an overlay. Same branch via --replaces.
 - 2026-11-17 — Choice: T5b, agents.js: kept the SVG overlay (desktop) and redraws it via ResizeObserver; invalid hops draw nothing and add no legend; map viewBox 275 high with spot positions unchanged; screenshots gated by `AGENTS_SHOTS`.
+- 2026-11-17 — Choice: T5c, app-views.spec.js: added a sibling with a child so the negative assertion has a list off the path. Phone-tree screenshot checked by the sub-lead.
+- 2026-11-17 — All tasks merged; full validation passed on the feature branch (see COMPLETION.md). Status verifying.
