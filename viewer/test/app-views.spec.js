@@ -89,6 +89,24 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       expect(centered).toBeLessThanOrEqual(2);
     });
 
+    test('zooming keeps the point under the pointer still, including when scrolled down', async ({ page }) => {
+      test.skip(label !== 'desktop');
+      const chain = depth => depth ? [{ name: `deep-${depth}`, role: 'worker', display_title: `Deep ${depth}`, live: true, state: 'working', children: chain(depth - 1) }] : [];
+      await page.route('**/api/agents', route => route.fulfill({ json: { leads: [{ thread_id: 'a', lead_name: 'a', counts: { total: 9 }, session: { name: 'lead-a', role: 'lead', live: true, state: 'working', children: chain(8) }, asides: [] }], machines: [] } }));
+      await openPage(page, context, '/app/agents?lead=a');
+      const tree = page.locator('.agents-tree');
+      await expect(page.locator('.agents-zoom')).toHaveText('100%');
+      await tree.evaluate(n => { n.scrollTop = 200; });
+      const rect = await tree.boundingBox(); const x = rect.x + rect.width / 2, y = rect.y + 150;
+      const box = page.locator('[data-session="deep-5"]');
+      const before = await box.boundingBox();
+      await tree.dispatchEvent('wheel', { ctrlKey: true, deltaY: -40, clientX: x, clientY: y });
+      const after = await box.boundingBox(); const ratio = after.width / before.width;
+      expect(ratio).toBeGreaterThan(1.1);
+      expect(Math.abs((after.y - y) - (before.y - y) * ratio)).toBeLessThanOrEqual(1.5);
+      expect(Math.abs((after.x - x) - (before.x - x) * ratio)).toBeLessThanOrEqual(1.5);
+    });
+
     test('tree viewport supports pan, zoom, refresh, selection and terminal', async ({ page }) => {
       test.skip(label !== 'desktop');
       const children = Array.from({ length: 12 }, (_, i) => ({ name: `worker-${i}`, role: 'worker', display_title: `Worker ${i}`, live: true, state: 'working', children: i < 2 ? [{ name: `nested-${i}`, role: 'worker', display_title: `Nested ${i}`, live: true, state: 'working', children: [] }] : [] }));
