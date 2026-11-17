@@ -37,18 +37,42 @@ default_pins() {
     "claude.heavy = claude-opus-5-5" \
     "claude.critical = claude-fable-5-2" \
     "claude.lead = claude-opus-5-5" \
+    "claude.sub-lead = claude-opus-5-5" \
     "gpt.light = gpt-6-luna" \
     "gpt.standard = gpt-5.6-terra" \
     "gpt.heavy = gpt-6.1-sol" \
     "gpt.critical = gpt-6-astra" \
     "gpt.lead = gpt-6.1-sol" \
+    "gpt.sub-lead = gpt-6.1-sol" \
     "gemini.light = gemini-3.8-flash-low" \
     "gemini.standard = gemini-3.8-flash-medium" \
     "gemini.heavy = gemini-3.8-flash-high" \
     "gemini.critical = gemini-3.8-flash-high" \
-    "gemini.lead = gemini-3.8-flash-high"
+    "gemini.lead = gemini-3.8-flash-high" \
+    "gemini.sub-lead = gemini-3.8-flash-high"
 }
 json_assert() { python3 -c "$1" <<<"$output"; }
+
+# Missing sub-lead cells inherit the current lead until the next write.
+new_case
+printf '%s\n' 'claude.lead = custom-sonnet @high' > "$pins"
+run_model claude sub-lead
+assert 'missing sub-lead inherits pinned lead' equals "$output" custom-sonnet
+run_model effort claude sub-lead
+assert 'missing sub-lead inherits lead effort' equals "$output" high
+run_model family claude sub-lead
+assert 'inherited sub-lead has Claude family' equals "$output" sonnet
+run_model gpt sub-lead
+assert 'missing sub-lead inherits default lead' equals "$output" gpt-6.1-sol
+run_model set gpt sub-lead custom-sub high
+assert 'set sub-lead succeeds' equals "$status" 0
+run_model gpt sub-lead
+assert 'sub-lead model reads back' equals "$output" custom-sub
+run_model effort gpt sub-lead
+assert 'sub-lead effort reads back' equals "$output" high
+run_model show --json
+assert 'show includes sub-lead' json_assert 'import json,sys; assert json.load(sys.stdin)["gpt"]["sub-lead"] == {"model":"custom-sub","effort":"high"}'
+assert 'save writes inherited sub-lead' bash -c '[[ $(<"$1") == *"claude.sub-lead = custom-sonnet @high"* ]]' _ "$pins"
 
 # Gemini defaults and pins use the same effort range as Claude.
 new_case

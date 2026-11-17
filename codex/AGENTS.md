@@ -10,7 +10,7 @@ gets clobbered or a credential gets voided.
 
 | File | Role |
 |---|---|
-| `model.sh` | Reads and writes the local Claude, GPT and Gemini model cells, including the lead and Not used cells. `set`, `skip`, `init` and `reset` render the shared models file; `check` reports newer GPT models and `show --json` is the hub's view of the file. A malformed file falls back to shipped defaults for reads and is left alone except by `reset` |
+| `model.sh` | Reads and writes the local Claude, GPT and Gemini model cells, including the lead, sub-lead and Not used cells. `set`, `skip`, `init` and `reset` render the shared models file; `check` reports newer GPT models and `show --json` is the hub's view of the file. A malformed file falls back to shipped defaults for reads and is left alone except by `reset` |
 | `preflight.sh` | Run before the first GPT dispatch and before any parallel fan-out. Under a lock, refreshes the Codex access token if it will not outlive the sessions about to run. Its exit code says whether to fan out, sequence the sessions, or reauthenticate |
 
 ## Boundaries
