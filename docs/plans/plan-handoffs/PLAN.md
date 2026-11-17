@@ -77,16 +77,17 @@ A thread can be exported at exactly three points. At each, the thread must also 
 - no aside is open or has a turn running (`thread.asides`, `viewer/app/asides.js`);
 - no `sudo` card is in state `waiting`;
 - the worktree has no uncommitted changes (`git status --porcelain` empty, untracked
-  files included).
+  files included), and it is on branch `wc/<id>` (`git symbolic-ref --short HEAD`), not
+  detached.
 
 The stage is read from the **committed** files at the worktree's `HEAD`
 (`git show HEAD:docs/plans/<slug>/IDEA.md` and `PLAN.md`), never from the working files.
 
 | Point (`stage` in the file) | Holds when | Import resumes at |
 |---|---|---|
-| `idea-confirmed` | IDEA.md `status: confirmed`; PLAN.md absent or `status: planning`; no `question` card answered after the last answered question card whose `doc` is `IDEA.md` (so no planning question has been answered yet) | Planning (lead step 4): the lead reads IDEA, MAP and any PLAN.md on the branch and asks the open questions again |
+| `idea-confirmed` | IDEA.md `status: confirmed`; PLAN.md absent or `status: planning`; no `question` card **answered by Collin** (a press, a typed answer, or a lead `resolve`; a retraction does not count) after the anchor: the last such answered question card whose `doc` is `IDEA.md`, or, when there is none and the thread was imported, `imported.at` | Planning (lead step 4): the lead reads IDEA, MAP and any PLAN.md on the branch and asks the open questions again |
 | `approved` | PLAN.md `status: approved`; no `approval` card was answered with Start building | Approval (lead step 6): the lead posts a fresh approval card with a fresh Ready check |
-| `done` | PLAN.md `status: done`; a non-replaced `done` card with `pr_url` exists; no `merged` card exists; the pull request's current state, read at export time with `gh pr view <pr_url> --json state` on the machine, is `OPEN`; and the worktree `HEAD` equals `origin/wc/<id>` after a fetch, so no after-done fix is waiting on its check or on Collin | After done (lead step 9) |
+| `done` | PLAN.md `status: done`; the thread's pull request is known: the `pr_url` of its latest non-replaced `done` card, else `imported.pr_url`; no `merged` card exists; the pull request's current state, read at export time with `gh pr view <pr_url> --json state` on the machine, is `OPEN`; and the worktree `HEAD` equals `origin/wc/<id>` after a fetch, so no after-done fix is waiting on its check or on Collin | After done (lead step 9) |
 
 A retracted approval card does not block the `approved` point. The `idea-confirmed`
 rule needs no new card field: the lead already gives IDEA confirmation cards
@@ -140,18 +141,22 @@ what happened, never a live card. Export builds it from, in time order:
 
 - the thread's own `imported.history`, if it was itself imported (so history accumulates
   across handoffs);
-- each sent message from `collin` or `card` in `thread.sent` (`who` `collin`, `kind`
+- each sent message from `collin` or `card` in `thread.sent` (for an imported thread,
+  only those after `imported.at`) (`who` `collin`, `kind`
   `message` or `press`, `text` the message text);
-- each non-replaced card shown to Collin (`who` `lead` or `app`), with `text` rendered by
+- each non-replaced card shown to Collin (for an imported thread, only those created
+  after `imported.at`; `who` `lead` or `app`), with `text` rendered by
   one function, `historyText(card)`, defined per kind: question → question, the options'
   labels, and the answer or "withdrawn"; idea → the bullets; approval → objections and
   outcome; done → title, can_do, left_as_is, pr_url; needs → title and body; offer →
   summary and answer; stub → title; diagram/image → title; sudo → command and outcome;
   progress cards are skipped. Never-shown kinds are skipped.
 
+An entry whose text is over 20,000 characters is cut to 19,990 and ends with "… (cut)".
 When the entries exceed 2000 or the file 10 MB, the oldest entries are dropped and one
-entry `{who: "app", kind: "message", text: "<n> earlier entries were left out"}` is put
-first.
+entry `{at: <the first kept entry's at>, who: "app", kind: "message", text: "<n> earlier
+entries were left out"}` is put first. Export validates the file it built with the
+importer's validator before step 4; a failure is a 500 and nothing changes.
 
 Not in the file: cards as objects, pins, the machine, project path, CLI, provider,
 sessions, transcripts, uploads, asides, queues. Plan decisions travel in PLAN.md's
@@ -189,12 +194,13 @@ commit too; wheelchair cannot enforce that.
 
 1. Re-check the export point and quiet test, including the machine `status` call; on
    failure 409 with the reason sentence.
-2. Ask the machine to push `wc/<id>` from the thread's worktree to `origin`
-   (`/v1/handoff` `push`, a plain non-forced push). It returns the pushed head and the
+2. Ask the machine to push the exact commit the check read, `<checked sha>`, as
+   `git push origin <checked sha>:refs/heads/wc/<id>` (`/v1/handoff` `push`, non-forced). It returns the pushed head and the
    normalized repository. On failure 409 "Couldn't push the branch to GitHub: <git's last
    line>"; nothing changes.
 3. Build the file, trimming history as above.
-4. Save `handed_off: {at, head, stage}` on the record and cancel asides as archive does
+4. Write the file to the hub state directory as `handoffs/<id>.json` (replacing any
+   earlier one) and save `handed_off: {at, head, stage}` on the record and cancel asides as archive does
    (`viewer/app/threads.js:163-167`). If the save fails, 500 and nothing else changes.
 5. Stop every live session of the thread as `session stop` does. If a stop fails, carry
    on: the thread is already handed off, so nothing reaches that session (below).
@@ -213,8 +219,9 @@ off? This thread stops taking work here." with Confirm / Cancel; Confirm downloa
   thread, session starts, aside creation and aside messages, `restart`, and terminal keys
   (`POST /sessions/:name/keys`, `viewer/app/routes.js:520`). Queue delivery
   (`canDeliver`, `viewer/app/sessions.js:428`) delivers nothing to a session of a
-  handed-off thread, and the rate-limit release (`viewer/app/sessions.js:761`) enqueues
-  nothing for one. The composer, attach and card buttons are disabled, and the "Restart
+  handed-off thread, and nothing enqueues `Continue.` for one, either from the rate-limit release
+  (`viewer/app/sessions.js:761`) or from the limit event itself
+  (`viewer/app/sessions.js:517-523`). The composer, attach and card buttons are disabled, and the "Restart
   lead" panel (`viewer/pages/thread.js:268-278`) is not shown.
 - The page shows a banner. When the page loads, it asks the hub
   `GET /threads/:id/handoff`, which runs `inspect` (cached for 60 seconds) and reports
@@ -229,6 +236,10 @@ off? This thread stops taking work here." with Confirm / Cancel; Confirm downloa
   to continue here". On success: stop any session of the thread still live, fast-forward
   the worktree to the claim (`/v1/handoff` `fast-forward`), clear `handed_off` and
   `claim`, save, and run the restart path (`restartLead`, `viewer/app/threads.js:122-159`).
+- While handed off, the page offers **Download the file again**
+  (`GET /threads/:id/handoff-file`, the saved `handoffs/<id>.json`), so a lost download
+  never needs a second export. The saved file is deleted when the hand-off is undone, the
+  thread is advanced by an import, or it is archived.
 - A handed-off thread can be archived like any thread. An archived handed-off thread shows
   no Undo; only an import can bring it back.
 - The threads list shows a "handed off" label on such threads.
@@ -280,15 +291,22 @@ the thread for `created` and `advanced`; for `opened` it shows the note and an "
 thread" link.
 
 **Carried state**, used by Create and Advance: save `imported: {at, stage, exported_at,
-history, pending, claim_sha, context_delivered: false}` where `history` is the file's
-history. The thread page renders `imported.history` above the thread's own conversation as
+history, pr_url, pending, claim_sha, context_delivered: false}` where `history` and
+`pr_url` are the file's. On Advance the file's history replaces the old
+`imported.history`, since the file's already contains everything before it. Wherever the
+hub reads a thread's pull request from its `done` cards (`mergedPr`,
+`viewer/app/threads.js:353-356`; `prOf`, `viewer/app/chat.js:256`), it falls back to
+`imported.pr_url`, so the merge watcher and the PR link work for an imported thread. The
+page shows the thread's own conversation only from `imported.at` on; what came before is
+in "Before the handoff". The thread page renders `imported.history` above the thread's own conversation as
 a collapsed, read-only "Before the handoff" section: one line per entry (`at`, `who`,
 `text`), as plain text, no buttons. On Advance, the thread's existing cards are all marked
 answered as retracted (`retracted_by: "import"`, note "Replaced by an import") and every
 pin is cleared, so nothing from before can be pressed; the lead posts fresh cards.
 
 The lead's context message is
-`[wc:context import] Thread state:\n<JSON {slug, stage, exported_at, history}>`.
+`[wc:context import] Thread state:\n<JSON {slug, stage, exported_at, pr_url, history}>`,
+where `history` is the **last 50** entries; the full history stays on the page.
 
 **Create**, in this order:
 1. Save a record with the file's `id`, `title`, `slug`, the picked machine and project,
@@ -334,8 +352,8 @@ import first".
 - After `imported.pending` clears: if the lead dies before `context_delivered` is set,
   `restartLead` sends `[wc:context import]` instead of `[wc:context restart]`. The hub sets
   `context_delivered: true` when the lead's first turn after delivery ends.
-- Restart for any thread includes `imported.history` (when present) in its context JSON as
-  `history_before_import`.
+- Restart for any thread includes the last 50 entries of `imported.history` (when present)
+  in its context JSON as `history_before_import`.
 
 ### Machine service changes (`machine/service.js`)
 
@@ -349,7 +367,7 @@ import first".
   (`machine/service.js:531-540`). The default path is unchanged.
 - New hub-only endpoint `POST /v1/handoff`, authorized like `/v1/archive`
   (`machine/service.js:1234`), with `action`:
-  - `status` `{worktree, slug, pr_url?}` → fetch; `{dirty, head, remote_tip,
+  - `status` `{worktree, slug, pr_url?}` → fetch; `{dirty, branch, head, remote_tip,
     idea_status, plan_status, repository, pr_state}` from `git status --porcelain`,
     `git show HEAD:...`, the origin, and `gh pr view <pr_url> --json state` when `pr_url`
     is given (`pr_state: null` and `pr_error` when gh fails, which blocks a `done` export
@@ -366,6 +384,9 @@ import first".
   - `claim-commit` `{project, parent, message}` → step 1 of Claims; returns `{sha}`.
   - `claim-push` `{project, branch, parent, sha}` → step 2; returns `{landed: true}` or
     409 `{remote_tip, picked_up_at}`.
+  - `reopen` `{thread_id}` → removes the id from the machine's `archivedThreads`
+    (`machine/service.js:263-271`, `:783-790`), so uploads work again; Advance calls it
+    when it revives an archived thread.
   - `fast-forward` `{worktree, head}` → refuses on a dirty worktree, else
     `git merge --ff-only <head>`.
   - Branch names must match `^wc/[0-9a-f]{12}$`, shas `^[0-9a-f]{40}$`, slugs the file's
@@ -511,7 +532,7 @@ npm --prefix viewer run test:browser
 
 ### Round 3 — 2026-11-17
 
-**Lanes:** intent and mechanics; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 2:**
 - The file: `history` (plain-text entries, `historyText`) replaces `cards`, `pinned`, `recent_messages`; unknown fields refused at any level.
@@ -526,6 +547,21 @@ npm --prefix viewer run test:browser
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Imported thread can't be exported again at done; no PR known | upheld | `imported.pr_url` saved, used by the done point, merge watcher and PR link; idea anchor falls back to `imported.at` |
+| intent | major | Advance duplicates history on every round trip | upheld | File history replaces `imported.history`; export and page use only own entries after `imported.at` |
+| intent | minor | Import and restart context carry unbounded history | upheld | Last 50 entries in lead context |
+| mechanics | blocking | Crash between saving the live lead and queuing the import context can't be finished | user-decision | Crash-recovery cluster, to Collin |
+| mechanics | blocking | Crash before the claim is saved loses `head`; refused Advance leaves the refused stage saved | user-decision | Crash-recovery cluster, to Collin |
+| mechanics | blocking | A landed undo claim with a lost response looks like an outside pick-up | user-decision | Crash-recovery cluster, to Collin |
+| mechanics | blocking | Failed lead start can leave an unrecorded checkout | user-decision | Crash-recovery cluster, to Collin |
+| mechanics | blocking | Imported done thread has no PR identity | upheld | Same fix as the intent finding |
+| mechanics | blocking | Export reads HEAD but pushes the branch name; detached checkout mismatch | upheld | Requires branch `wc/<id>`; pushes the checked sha |
+| mechanics | major | Revived archived thread still refuses uploads on the machine | upheld | `/v1/handoff` `reopen` |
+| mechanics | major | "First turn ended" can't identify the import-context turn | user-decision | Crash-recovery cluster, to Collin |
+| mechanics | major | Limit event path still enqueues `Continue.` | upheld | Guard both paths |
+| mechanics | major | Withdrawn questions count as answered in the idea rule | upheld | Only Collin's answers count |
+| mechanics | major | Export can build history its importer rejects | upheld | Omission entry has `at`; long entries cut; export self-validates |
+| mechanics | major | Lost export response leaves no file | upheld | Saved file, Download again while handed off |
 
 ## Prior Work
 
