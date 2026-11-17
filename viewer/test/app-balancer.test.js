@@ -55,6 +55,17 @@ test('placement ranks accounts and respects provider policy', async (t) => {
     if (mode === 'one') await usage.recordChosen(hub, 'gpt', 'gpt-two');
     assert.equal((await choose(hub, { machine: 'hub' }, 'worker')).account.id, expected);
   });
+  await t.test('three provider placement and constraints', async () => {
+    const all = ['default-claude', 'default-gpt', 'default-gemini'];
+    const hub = await fixture({ save_for_leads: false, worker_order: ['gpt', 'claude', 'gemini'] }, {}, all);
+    assert.equal((await choose(hub, { machine: 'hub' }, 'worker')).provider, 'gpt');
+    assert.equal((await choose(hub, { machine: 'hub' }, 'worker', 'top', { not_provider: 'gpt' })).provider, 'claude');
+    assert.equal((await choose(hub, { machine: 'hub' }, 'worker', 'top', { provider: 'gemini' })).provider, 'gemini');
+    await settings.update(hub, (s) => { s.review_families = 'gemini'; });
+    assert.equal((await choose(hub, { machine: 'hub' }, 'reviewer')).provider, 'gemini');
+    const onlyGemini = await fixture({ save_for_leads: false }, {}, ['default-gemini']);
+    assert.equal((await choose(onlyGemini, { machine: 'hub' }, 'worker')).provider, 'gemini');
+  });
   await t.test('leave, paused and signed out', async () => {
     const hub = await fixture({}, { 'default-gpt': { week: { used: 90, resets_at: future(24) } } }, ['default-gpt']);
     assert.ok((await choose(hub, { machine: 'hub' }, 'worker', 'top', { provider: 'gpt' })).wait);

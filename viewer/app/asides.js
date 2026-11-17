@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const path = require('node:path');
 const { appError } = require('./state.js');
 const settings = require('./settings.js');
+const { PROVIDERS, providerOf } = require('./providers.js');
 
 const now = () => new Date().toISOString();
 const brief = (aside) => {
@@ -35,8 +36,9 @@ async function create(hub, thread, input) {
   const chat = await require('./chat.js').chat(hub, thread.id);
   if (!chat.items.some((item) => item.type === 'assistant' && item.id === input.message_id)) throw appError(400, 'message not found');
   const lead = [...thread.sessions].reverse().find((item) => item.role === 'lead' && item.live);
-  const provider = lead?.provider || require('./providers.js').providerOf(lead?.cli);
-  const parent = provider === 'claude' ? lead?.cli_session_id : lead?.codex_thread_id;
+  const provider = lead?.provider || providerOf(lead?.cli);
+  if (PROVIDERS[provider]?.asideFork === false) throw appError(400, "Side conversations aren't available on Antigravity sessions yet");
+  const parent = lead?.[({ claude: 'cli_session_id', gpt: 'codex_thread_id', gemini: 'agy_conversation_id' })[provider]];
   if (!lead || !parent) throw appError(409, "the lead isn't ready yet");
   const standard = await model(hub, provider, 'standard'), heavy = await model(hub, provider, 'heavy');
   if (!standard && !heavy) throw appError(409, `asides need a Standard or Heavy model for ${provider} in Settings`);

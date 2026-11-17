@@ -311,7 +311,7 @@ class MachineService {
       const pane = this.tmux(['capture-pane', '-p', '-t', name]);
       const where = this.tmux(['display-message', '-p', '-t', name, '#{pane_current_path}']);
       this.sessions[name] = { name, thread_id: parsed[1], role: parsed[2], status: 'ready', recovered: true,
-        cli: pane.ok && pane.stdout.includes('Codex') ? 'codex' : 'claude',
+        cli: pane.ok && pane.stdout.includes('Antigravity CLI') ? 'agy' : pane.ok && pane.stdout.includes('Codex') ? 'codex' : 'claude',
         worktree: where.ok ? where.stdout.trim() : '', created_worktree: false, token: '', created_at: new Date().toISOString() };
       changed = true;
     }
@@ -446,7 +446,7 @@ class MachineService {
   }
   commandFor(input, session, worktree) {
     const adapter = adapters[input.cli];
-    if (!adapter) die('cli must be claude or codex');
+    if (!adapter) die('cli must be claude, codex or agy');
     return adapter.command(input, session, worktree, { stateDir: this.stateDir, rolePrompt: composeRolePrompt(input) });
   }
 
@@ -465,12 +465,13 @@ class MachineService {
   }
   async startNamed(input, name) {
     const adapter = adapters[input.cli];
-    if (!adapter) die('cli must be claude or codex');
+    if (!adapter) die('cli must be claude, codex or agy');
     const account = input.account || { id: `default-${adapter.provider}`, dir: null };
     if (!account || typeof account.id !== 'string') die('invalid account');
     const dir = accountDir(account.dir, account.id);
     if (!dir && account.id !== `default-${adapter.provider}`) die('invalid default account');
     if (dir) adapter.seed(dir, account.id);
+    await adapter.prepare?.(dir);
     const options = startOptions(input);
     const createdWorktree = !input.worktree;
     const reserved = input.role === 'worker' && input.worktree ? path.resolve(input.worktree) : null;
@@ -492,7 +493,7 @@ class MachineService {
       cli_session_id: input.cli_session_id || crypto.randomUUID(), status: 'starting', created_at: new Date().toISOString() };
     const built = this.commandFor(input, session, worktree);
     if (built.settingsPath) await atomicWrite(built.settingsPath, `${json(built.settings)}\n`);
-    const commandText = ['env', 'WHEELCHAIR_LANE=1', `WHEELCHAIR_SESSION_TOKEN=${session.token}`, `WHEELCHAIR_STATE_DIR=${this.stateDir}`, `WHEELCHAIR_MACHINE_ORIGIN=http://${this.config.host}:${this.config.port}`, ...Object.entries(adapter.loginEnv(dir)).map(([key, value]) => `${key}=${value}`), ...built.argv].map(shellQuote).join(' ');
+    const commandText = ['env', 'WHEELCHAIR_LANE=1', ...(adapter.sessionNameEnv ? [`WHEELCHAIR_SESSION_NAME=${name}`] : []), `WHEELCHAIR_SESSION_TOKEN=${session.token}`, `WHEELCHAIR_STATE_DIR=${this.stateDir}`, `WHEELCHAIR_MACHINE_ORIGIN=http://${this.config.host}:${this.config.port}`, ...Object.entries(adapter.loginEnv(dir)).map(([key, value]) => `${key}=${value}`), ...built.argv].map(shellQuote).join(' ');
     session.command = built.argv;
     session.pending_initial = adapter.firstMessage(input, composeRolePrompt(input));
     const tmuxArgs = ['new-session', '-d', '-s', name, '-x', '200', '-y', '50', '-c', worktree, commandText];
@@ -553,6 +554,10 @@ class MachineService {
     await Promise.all([
       ...watched.filter(s => s.status === 'starting' || s.status === 'stuck').map(s => this.checkReady(s)),
       ...watched.filter(s => s.prompt_open && s.status === 'ready').map(s => this.checkPrompt(s)),
+      ...watched.filter(s => s.status === 'ready' && !s.prompt_open && adapters[s.cli]?.promptText).map(async s => {
+        let pane; try { pane = this.pane(s.name); } catch { return; }
+        if (adapters[s.cli].promptText(pane)) await this.hook(s.name, { type: 'prompt', notification_type: 'permission_prompt' });
+      }),
     ]);
   }
   async pollTrust() {
@@ -686,7 +691,18 @@ class MachineService {
       if (remaining) this.closingThreads.set(threadId, remaining); else this.closingThreads.delete(threadId);
     }
   }
-  async copyTranscript(session, source) {
+  // One copy at a time per session: two overlapping copies read the same offset and the
+  // same copied file, so both would append the same new lines.
+  copyTranscript(session, source) {
+    this.copying ??= new Map();
+    const before = this.copying.get(session.name) || Promise.resolve();
+    const run = before.catch(() => {}).then(() => this.copyTranscriptNow(session, source));
+    const settled = run.catch(() => {});
+    this.copying.set(session.name, settled);
+    settled.then(() => { if (this.copying.get(session.name) === settled) this.copying.delete(session.name); });
+    return run;
+  }
+  async copyTranscriptNow(session, source) {
     if (!source) return { offset: 0, lines: [] };
     const stat = await fsp.stat(source);
     const current = session.transcript_source;
@@ -900,11 +916,13 @@ class MachineService {
     const dir = accountDir(input.dir, account);
     if ((!dir && account !== `default-${adapter.provider}`) || (dir && Object.values(adapters).some(a => account === `default-${a.provider}`))) die('invalid default account');
     if (dir) adapter.seed(dir, account);
+    await adapter.prepare?.(dir);
     const name = `wc-login-${account}`;
     this.tmux(['kill-session', '-t', name]);
     const cmd = ['env', ...Object.entries(adapter.loginEnv(dir)).map(([k, v]) => `${k}=${v}`), ...adapter.loginCommand(dir)].map(shellQuote).join(' ');
     const script = `${cmd}; printf '\n__wc_login_exit %s\n' "$?"; sleep 600`;
-    const result = this.tmux(['new-session', '-d', '-s', name, '-x', '200', '-y', '50', ['sh', '-c', script].map(shellQuote).join(' ')]);
+    const cwd = adapter.loginCwd?.(this.stateDir);
+    const result = this.tmux(['new-session', '-d', '-s', name, '-x', '200', '-y', '50', ...(cwd ? ['-c', cwd] : []), ['sh', '-c', script].map(shellQuote).join(' ')]);
     if (!result.ok) die(result.stderr.trim() || 'login session failed to start');
     this.logins[account] = { cli, dir };
     return { state: 'starting' };
@@ -923,23 +941,37 @@ class MachineService {
       const logged_in = adapter.loginStatus(record.dir).logged_in;
       return { state: logged_in ? 'done' : 'failed', url: null, code: null, wantsCode: false, logged_in };
     }
-    const keys = adapter.loginPrompt?.(pane);
-    if (keys && !record.answered) { for (const key of keys) this.tmux(['send-keys', '-t', `wc-login-${account}`, key]); record.answered = true; }
+    if (adapter.loginDone?.(pane)) {
+      this.tmux(['kill-session', '-t', `wc-login-${account}`]);
+      const logged_in = adapter.loginStatus(record.dir).logged_in;
+      return { state: logged_in ? 'done' : 'failed', url: null, code: null, wantsCode: false, logged_in };
+    }
+    const prompt = adapter.loginPrompt?.(pane);
+    if (prompt) {
+      const { step, keys } = Array.isArray(prompt) ? { step: 'default', keys: prompt } : prompt;
+      record.answered_steps ||= new Set();
+      if (!record.answered_steps.has(step)) { for (const key of keys) this.tmux(['send-keys', '-t', `wc-login-${account}`, key]); record.answered_steps.add(step); }
+    }
     const parsed = adapter.parseLogin(pane);
     return { state: parsed ? 'waiting' : 'starting', url: parsed?.url || null, code: parsed?.code || null, wantsCode: parsed?.wantsCode || false, logged_in: false };
   }
-  status() {
+  // The session list alone: tmux only, no CLI checks. /v1/sessions is polled every few
+  // seconds, and the login checks status() runs are synchronous and take over a second.
+  sessionList() {
     const live = this.liveTmux();
     const others = [...(live || [])].filter(name => !name.startsWith('wc-login-') && !this.sessions[name]).map(name => ({ name, managed: false, running: true }));
+    return [...Object.values(this.sessions).filter(s => !s.name.startsWith('wc-login-')).map(s => ({ ...s, codex_thread_id: s.codex_thread_id || null, managed: true, ...(live ? { running: live.has(s.name) } : {}) })), ...others];
+  }
+  status() {
     const defaults = Object.fromEntries(Object.entries(adapters).map(([cli, adapter]) => [cli, adapter.loginStatus(null)]));
-    const claude = this.cliStatus('claude', defaults.claude), codex = this.cliStatus('codex', defaults.codex);
+    const claude = this.cliStatus('claude', defaults.claude), codex = this.cliStatus('codex', defaults.codex), agy = this.cliStatus('agy', defaults.agy);
     const accounts = Object.entries(adapters).map(([cli, adapter]) => ({ id: `default-${adapter.provider}`, cli, ...defaults[cli] }));
     const root = path.join(os.homedir(), '.wheelchair', 'accounts');
     let folders = []; try { folders = fs.readdirSync(root, { withFileTypes: true }); } catch {}
     for (const folder of folders.filter(e => e.isDirectory())) {
       try { const record = JSON.parse(fs.readFileSync(path.join(root, folder.name, 'wheelchair-account.json'), 'utf8')); if (record.id !== folder.name || !adapters[record.cli] || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(record.id)) continue; accounts.push({ id: record.id, cli: record.cli, ...adapters[record.cli].loginStatus(path.join(root, folder.name)) }); } catch {}
     }
-    return { version: this.version, claude, codex, accounts, sessions: [...Object.values(this.sessions).filter(s => !s.name.startsWith('wc-login-')).map(s => ({ ...s, codex_thread_id: s.codex_thread_id || null, managed: true, ...(live ? { running: live.has(s.name) } : {}) })), ...others] };
+    return { version: this.version, claude, codex, agy, accounts, sessions: this.sessionList() };
   }
   cliStatus(cli, login = adapters[cli].loginStatus(null)) {
     const version = command('sh', ['-c', `command -v ${cli}`]);
@@ -1040,6 +1072,22 @@ class MachineService {
       }
       if (request.method === 'GET' && url.pathname === '/v1/status') { await this.authorize(request, 'hub'); return send(response, 200, this.status()); }
       if (request.method === 'GET' && url.pathname === '/v1/projects') { await this.authorize(request, 'hub'); return send(response, 200, await this.projects(url.searchParams)); }
+      if (request.method === 'POST' && url.pathname === '/v1/usage') {
+        await this.authorize(request, 'hub');
+        const input = await bodyOf(request);
+        if (!input || typeof input !== 'object' || Array.isArray(input)) die('invalid usage request');
+        const { account, cli } = input;
+        if (typeof account !== 'string' || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(account) || !['claude', 'codex'].includes(cli) || !Object.hasOwn(input, 'dir')) die('invalid account or cli');
+        const adapter = adapters[cli], dir = accountDir(input.dir, account);
+        if ((!dir && account !== `default-${adapter.provider}`) || (dir && Object.values(adapters).some(a => account === `default-${a.provider}`))) die('invalid default account');
+        try {
+          const parsed = await adapter.usageProbe(dir, { cwd: this.stateDir, timeout: this.options.usageProbeTimeout ?? 30000 });
+          const { reached, ...windows } = parsed;
+          const reading = { account, at: new Date().toISOString(), ...windows };
+          if (reached) reading.limited_until = limitedUntil(reading);
+          return send(response, 200, { reading });
+        } catch (error) { return send(response, 502, { error: error.message || 'usage probe failed' }); }
+      }
       if (request.method === 'POST' && url.pathname === '/v1/preflight') { await this.authorize(request, 'hub'); const input = await bodyOf(request); const dir = accountDir(input.dir); const result = command(path.join(ROOT, 'codex', 'preflight.sh'), [], dir ? { env: { ...process.env, ...adapters.codex.loginEnv(dir) } } : {}); return send(response, result.ok ? 200 : 409, result); }
       if (request.method === 'POST' && url.pathname === '/v1/preview') { await this.authorize(request, 'hub'); const result = await this.preview(await bodyOf(request)); return send(response, result.status, result.body); }
       if (pathBits[0] === 'v1' && pathBits[1] === 'aside-turns') {
@@ -1058,7 +1106,7 @@ class MachineService {
         if (request.method === 'POST' && pathBits[3] === 'code') { const input = await bodyOf(request); if (typeof input.code !== 'string' || !input.code) die('code required'); const buffer = `wc-${crypto.randomUUID()}`; const a = this.tmux(['load-buffer', '-b', buffer, '-'], { input: input.code }); const b = this.tmux(['paste-buffer', '-p', '-b', buffer, '-t', `wc-login-${account}`]); const c = this.tmux(['send-keys', '-t', `wc-login-${account}`, 'Enter']); if (!a.ok || !b.ok || !c.ok) throw Object.assign(new Error('tmux submit failed'), { status: 409 }); return send(response, 200, { ok: true }); }
       }
       if (request.method === 'POST' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); return send(response, 201, await this.start(await bodyOf(request))); }
-      if (request.method === 'GET' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); return send(response, 200, this.status().sessions); }
+      if (request.method === 'GET' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); return send(response, 200, this.sessionList()); }
       if (request.method === 'POST' && url.pathname === '/v1/uploads') {
         await this.authorize(request, 'hub');
         const stored = await this.upload(url.searchParams.get('thread_id'), url.searchParams.get('name'), request);

@@ -1,7 +1,7 @@
 'use strict';
 
 // Browser cases for the page side of run pictures (docs/plans/implementation-view/PLAN.md's
-// Spec, "Sockets and wires", "Statuses and needs-you on the page" and "The list page"), in the
+// Spec, "Sockets and wires", "Statuses and needs-you on the page"), in the
 // style of viewer/test/browser.spec.js and viewer/test/pages.spec.js: a real server (helpers/
 // server.js), real navigation, window.__viewer read back only to check state, never to drive the
 // page. Every graph here is written straight to disk (never through PUT /graph, which would lay
@@ -29,10 +29,6 @@ async function launchRun(graphObj, target = 'run.json') {
 
 function pageUrl(ctx) {
   return `${ctx.url}/?path=${encodeURIComponent(ctx.graphPath)}&token=${encodeURIComponent(ctx.token)}`;
-}
-
-function listUrl(ctx) {
-  return `${ctx.url}/?token=${encodeURIComponent(ctx.token)}`;
 }
 
 async function ready(page) {
@@ -524,44 +520,6 @@ test("a child file's status change redraws the open root without the root file c
     await expect(nodeGroup(page, 'c').locator('.status-tag')).toHaveText('in progress');
     const hashAfter = await page.evaluate(() => window.__viewer.hash);
     assert.equal(hashAfter, hashBefore, "the root file itself was never written, so its hash must not change");
-  } finally {
-    await ctx.stop();
-  }
-});
-
-// ============================================================================================
-// The list page shows a "run picture" link exactly when a plan's `run` is non-null
-// (server.js's planSummaries / GET /wheelchair/list), pointing at the graph page for that path
-// (Spec, "The list page", D10).
-// ============================================================================================
-test('the list page shows a run picture link for a plan with a run, and none for one without', async ({ page }) => {
-  const ctx = await launchRun(socketsGraph());
-  try {
-    const withRun = path.join(ctx.root, 'repo', 'docs', 'plans', 'has-run');
-    await fs.mkdir(path.join(withRun, 'graphs'), { recursive: true });
-    await fs.writeFile(path.join(withRun, 'PLAN.md'), '---\nstatus: implementing\n---\n');
-    await fs.writeFile(path.join(withRun, 'graphs', 'run.json'), JSON.stringify(socketsGraph()));
-
-    const withoutRun = path.join(ctx.root, 'repo', 'docs', 'plans', 'no-run');
-    await fs.mkdir(path.join(withoutRun, 'graphs'), { recursive: true });
-    await fs.writeFile(path.join(withoutRun, 'PLAN.md'), '---\nstatus: planning\n---\n');
-
-    await fs.writeFile(path.join(ctx.root, '.plans'), JSON.stringify({
-      [withRun]: { added: 2, session: null, harness: 'other' },
-      [withoutRun]: { added: 1, session: null, harness: 'other' },
-    }));
-
-    await page.goto(listUrl(ctx));
-    await expect(page.locator('table.plans tbody tr')).toHaveCount(2);
-
-    const hasRunRow = page.locator('table.plans tbody tr').filter({ hasText: 'has-run' });
-    const runLink = hasRunRow.locator('a', { hasText: 'run picture' });
-    await expect(runLink).toHaveCount(1);
-    await expect(runLink).toHaveAttribute('href',
-      '/wheelchair/?path=' + encodeURIComponent(path.join(withRun, 'graphs', 'run.json')));
-
-    const noRunRow = page.locator('table.plans tbody tr').filter({ hasText: 'no-run' });
-    await expect(noRunRow.locator('a', { hasText: 'run picture' })).toHaveCount(0);
   } finally {
     await ctx.stop();
   }

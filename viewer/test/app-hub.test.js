@@ -1951,3 +1951,41 @@ test('archived HTML route sends the static sandbox headers', async () => {
     assert.equal(response.headers['content-security-policy'], "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; sandbox");
   } finally { threads.archivedHtml = original; }
 });
+
+test('send now hands a queued message to the lead mid-turn', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const lead = made.sessions[0];
+    await event(context, made.id, lead.name, 'turn-ended');
+    await api(context, `/threads/${made.id}/messages`, { method: 'POST', body: { text: 'Start.' } });
+    await api(context, `/threads/${made.id}/messages`, { method: 'POST', body: { text: 'First.' } });
+    await api(context, `/threads/${made.id}/messages`, { method: 'POST', body: { text: 'Second.' } });
+    const queued = async () => (await api(context, `/threads/${made.id}/chat`)).body.thread.sessions[0].queue;
+    const second = (await queued()).find((item) => item.text === 'Second.');
+    const sent = await api(context, `/threads/${made.id}/send-now`, { method: 'POST', body: { at: second.at } });
+    assert.equal(sent.status, 202);
+    assert.equal(sent.body.sent, true);
+    assert.deepEqual(context.machine.sessions.get(lead.name).submits, ['Start.', 'Second.']);
+    assert.deepEqual((await queued()).map((item) => item.text), ['First.']);
+    const again = await api(context, `/threads/${made.id}/send-now`, { method: 'POST', body: { at: second.at } });
+    assert.equal(again.status, 404);
+    await event(context, made.id, lead.name, 'turn-ended');
+    assert.deepEqual(context.machine.sessions.get(lead.name).submits, ['Start.', 'Second.', 'First.']);
+  });
+});
+
+test('send now waits out a permission prompt', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const lead = made.sessions[0];
+    await event(context, made.id, lead.name, 'turn-ended');
+    await api(context, `/threads/${made.id}/messages`, { method: 'POST', body: { text: 'Start.' } });
+    await api(context, `/threads/${made.id}/messages`, { method: 'POST', body: { text: 'Held.' } });
+    await event(context, made.id, lead.name, 'prompt', { notification_type: 'permission_prompt' });
+    const chat = await api(context, `/threads/${made.id}/chat`);
+    const held = chat.body.thread.sessions[0].queue.find((item) => item.text === 'Held.');
+    const sent = await api(context, `/threads/${made.id}/send-now`, { method: 'POST', body: { at: held.at } });
+    assert.equal(sent.status, 409);
+    assert.deepEqual(context.machine.sessions.get(lead.name).submits, ['Start.']);
+  });
+});

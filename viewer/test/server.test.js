@@ -341,6 +341,41 @@ test('groups refuse malformed claims and unmatched explanation references', asyn
   });
 });
 
+// A plain "then" arrow needs no words: absent, null and blank all store as null. A fork's arm still
+// reads "if <label>", so it alone is refused without one.
+test('edge labels are optional except on a fork arm', async () => {
+  await withFixture('canonical.json', async (ctx) => {
+    let state = await getGraph(ctx);
+    const unlabelled = copy(state.graph);
+    delete entry(unlabelled, 'gather->inspect').label;
+    entry(unlabelled, 'inspect->decide').label = null;
+    entry(unlabelled, 'report->finish').label = '  ';
+    expect(await graphPut(ctx, unlabelled, state.hash), 200);
+    state = await getGraph(ctx);
+    for (const id of ['gather->inspect', 'inspect->decide', 'report->finish']) {
+      assert.ok(Object.hasOwn(entry(state.graph, id), 'label'));
+      assert.equal(entry(state.graph, id).label, null);
+    }
+    assert.equal(entry(state.graph, 'store->finish').label, 'done');
+
+    const forkArm = copy(state.graph);
+    entry(forkArm, 'decide->report').label = null;
+    const refused = await graphPut(ctx, forkArm, state.hash);
+    expect(refused, 422, 'missing-label');
+    assert.deepEqual(refused.body.ids, ['decide->report']);
+
+    const badType = copy(state.graph);
+    entry(badType, 'gather->inspect').label = 7;
+    const bad = await graphPut(ctx, badType, state.hash);
+    expect(bad, 422, 'bad-label');
+    assert.deepEqual(bad.body.ids, ['gather->inspect']);
+
+    const unlabelledNode = copy(state.graph);
+    delete entry(unlabelledNode, 'gather').label;
+    expect(await graphPut(ctx, unlabelledNode, state.hash), 422, 'missing-label');
+  });
+});
+
 test('ordinary markdown links in explanations do not require groups', async () => {
   await withFixture('canonical.json', async (ctx) => {
     const state = await getGraph(ctx); const graph = copy(state.graph);

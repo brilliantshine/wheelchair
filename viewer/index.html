@@ -2,6 +2,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>graph viewer</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%231f6feb'/><g fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'><path d='M14 10v8h7l3 7'/><path d='M14 13.5h5'/><path d='M10.5 15.5a6.5 6.5 0 1 0 9.5 7'/></g><circle cx='14' cy='6' r='2.6' fill='white'/></svg>">
 <style>
   :root {
     --bg: #14161a; --panel: #1c1f25; --panel-2: #23262d; --line: #2a2f38;
@@ -1604,6 +1605,9 @@
     const isForkArm = a.exclusive === true;
     const payload = (e.kind === 'data' && e.value) ? e.value : null;
     const text = isForkArm ? ('if ' + e.label + (payload ? ': ' + payload : '')) : e.label;
+    // An unlabelled arrow is a plain "then": no text, no background, no leader. The line and its
+    // handles stay reachable on their own. (The server refuses an unlabelled fork arm.)
+    if (e.label == null || e.label === '') return;
 
     // Offset perpendicular to the line, clear of both node boxes, instead of
     // centred on it — a centred label lands inside whichever box the gap is

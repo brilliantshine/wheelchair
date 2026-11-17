@@ -57,7 +57,7 @@ function isCodexHuman(row, codexTurn, text) {
 // every card, and the page places cards by time.
 let lastAt = null;
 function itemAt(row) {
-  const at = row.timestamp || row.payload?.timestamp || row.message?.timestamp;
+  const at = row.timestamp || row.payload?.timestamp || row.message?.timestamp || row.created_at;
   if (at) lastAt = at;
   return at || lastAt || new Date(0).toISOString();
 }
@@ -169,7 +169,35 @@ function parseCodex(raw, thread, sessionName) {
   if (sessionName) { let n = 0; for (const turn of turns) for (const reply of turn.replies) if (reply.type === 'assistant') reply.id = `${sessionName}#${n++}`; }
   return turns.flatMap((turn) => renderTurn(turn, thread));
 }
-const PARSERS = { claude: parseClaude, codex: parseCodex };
+function parseAgy(raw, thread, sessionName) {
+  lastAt = null;
+  const turns = [], calls = [];
+  let recognised = false;
+  for (const row of transcriptRows(raw)) {
+    if (!row || !['USER_INPUT', 'PLANNER_RESPONSE', 'GENERIC'].includes(row.type)) continue;
+    recognised = true;
+    if (row.type === 'USER_INPUT') {
+      const content = typeof row.content === 'string' ? row.content : '';
+      const request = content.match(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/);
+      turns.push({ human: unwrap((request ? request[1] : content).trim()), replies: [], at: itemAt(row) });
+    } else if (turns.length && row.type === 'PLANNER_RESPONSE') {
+      const text = typeof row.content === 'string' ? unwrap(row.content) : '';
+      if (text) turns.at(-1).replies.push({ type: 'assistant', text, at: itemAt(row) });
+      for (const call of Array.isArray(row.tool_calls) ? row.tool_calls : []) {
+        const tool = { type: 'tool', text: call.name || 'tool call', at: itemAt(row), detail: toolDetail(call.args) };
+        turns.at(-1).replies.push(tool);
+        calls.push({ item: tool, input: call.args });
+      }
+    } else if (turns.length && row.type === 'GENERIC') {
+      const call = calls.shift();
+      if (call) call.item.detail = toolDetail(call.input, resultText(row.content).replace(/^(?:(?:Created At|Completed At):[^\r\n]*(?:\r?\n|$))+/, ''));
+    }
+  }
+  if (!recognised && raw.trim()) return [{ type: 'notice', text: "Couldn't read this Antigravity transcript", at: new Date(0).toISOString() }];
+  if (sessionName) { let n = 0; for (const turn of turns) for (const reply of turn.replies) if (reply.type === 'assistant') reply.id = `${sessionName}#${n++}`; }
+  return turns.flatMap((turn) => renderTurn(turn, thread));
+}
+const PARSERS = { claude: parseClaude, codex: parseCodex, agy: parseAgy };
 function transcriptItems(cli, raw, thread, sessionName) {
   const parser = Object.hasOwn(PARSERS, cli) && PARSERS[cli];
   return parser ? parser(raw, thread, sessionName) : [{ type: 'notice', text: `This session's CLI (${cli}) has no transcript reader.`, at: new Date(0).toISOString() }];
@@ -178,11 +206,18 @@ function transcriptItems(cli, raw, thread, sessionName) {
 // The machine service keeps each session's transcript copy (a Claude Stop hook or a bound
 // Codex rollout tells it where the source is), so the hub reads it from there; the hub's own
 // record never learns the path.
-async function sessionTranscript(hub, thread, session) {
+// With `keepLast` (the chat page), a read that fails or times out, as when the service is busy
+// while the agent works, falls back to the last copy this hub read, so the chat never empties
+// for one poll and refills on the next. A report reader passes nothing: a stale copy could
+// hand it an earlier message as the report.
+async function sessionTranscript(hub, thread, session, { keepLast = false } = {}) {
+  hub.transcriptCache ??= new Map();
+  const key = `${thread.machine}/${session.name}`;
   try {
     const result = await hub.call(thread.machine, `/v1/sessions/${encodeURIComponent(session.name)}/transcript`, 'GET');
-    if (result?.data) return result.data;
+    if (result?.data) { hub.transcriptCache.set(key, result.data); return result.data; }
   } catch { /* the service may be down or the session unknown to it: fall back below */ }
+  if (keepLast && hub.transcriptCache.has(key)) return hub.transcriptCache.get(key);
   if (!session.transcript_path) return '';
   return fs.readFile(session.transcript_path, 'utf8').catch(() => '');
 }
@@ -191,6 +226,7 @@ async function sessionTranscript(hub, thread, session) {
 const ASSISTANT_CONTENT = {
   claude: (row) => row.type === 'assistant' && row.message?.role === 'assistant' ? row.message.content : null,
   codex: (row) => { const payload = row.payload || row; return row.type === 'response_item' && payload.type === 'message' && payload.role === 'assistant' ? payload.content : null; },
+  agy: (row) => row.type === 'PLANNER_RESPONSE' && typeof row.content === 'string' ? row.content : null,
 };
 function lastAssistantText(cli, raw) {
   const content = Object.hasOwn(ASSISTANT_CONTENT, cli) && ASSISTANT_CONTENT[cli];
@@ -208,7 +244,7 @@ async function chat(hub, id) {
   await require('./views.js').findSlug(hub, thread);
   const items = [];
   for (const session of thread.sessions.filter((item) => item.role === 'lead')) {
-    const raw = await sessionTranscript(hub, thread, session);
+    const raw = await sessionTranscript(hub, thread, session, { keepLast: true });
     if (!raw && Object.hasOwn(PARSERS, session.cli)) continue;
     items.push(...transcriptItems(session.cli, raw, thread, session.name));
   }

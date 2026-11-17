@@ -1,11 +1,11 @@
 /*
 Routes (all responses use Cache-Control: no-store):
-  GET  /wheelchair/?token       remembered list page or viewer
+  GET  /wheelchair/?token       remembered graph page; with no ?path, redirects to the app's Threads page
   GET  /wheelchair/list         -> { sessions, plans }
   GET  /wheelchair/plan, /doc   -> plan data and raw Markdown
   GET  /wheelchair/docs         -> viewer/doc.html
-  GET  /wheelchair/assets/*     -> page scripts (no token): list.js, doc.js, pages/*, vendor/*, fonts/<name>.woff2 (four allowlisted)
-  GET  /wheelchair/app/<page>   -> viewer/pages/<page>.html (threads, thread, doc, features, agents, terminal)
+  GET  /wheelchair/assets/*     -> page scripts (no token): doc.js, pages/*, vendor/*, fonts/<name>.woff2 (four allowlisted)
+  GET  /wheelchair/app/<page>   -> viewer/pages/<page>.html (threads, thread, doc, features, agents, terminal); /wheelchair/app/ redirects to threads
   GET  /wheelchair/graph        -> { hash, graph, children }
   PUT  /wheelchair/graph, /view -> { hash }
   GET  /wheelchair/whoami       no authentication -> { start_id }.
@@ -16,7 +16,7 @@ Errors:
   403 bad-origin, not-registered
   404 not-found, no-route
   409 stale (also returns hash)
-  422 invalid-json (position), unknown-schema (schema), missing-label, bad-id, bad-kind (ids),
+  422 invalid-json (position), unknown-schema (schema), missing-label (ids on a fork arm), bad-label (ids), bad-id, bad-kind (ids),
       edge-missing-node, self-edge (ids), group-bad-name, group-missing-node, group-bad-shape (ids),
       group-missing-label (ids), group-missing-note (ids), group-hidden-text (ids),
       group-overlap (ids), explanation-missing-group, group-unreferenced,
@@ -286,14 +286,17 @@ function validateGraph(input) {
       fail(422, 'bad-id', 'An edge id is missing, empty, or duplicated.');
     }
     edgeIds.add(raw.id);
-    if (!Object.prototype.hasOwnProperty.call(raw, 'label') || typeof raw.label !== 'string') {
-      fail(422, 'missing-label', 'An edge is missing its label.');
+    // An edge label is optional: many arrows are a plain "then". Absent, null and blank all store
+    // as null, so the page draws no text; only a non-string is refused.
+    const rawLabel = raw.label ?? null;
+    if (rawLabel !== null && typeof rawLabel !== 'string') {
+      fail(422, 'bad-label', 'An edge label must be a string or null.', { ids: [raw.id] });
     }
     const edge = {
       id: raw.id,
       from: raw.from,
       to: raw.to,
-      label: raw.label,
+      label: rawLabel === null || rawLabel.trim() === '' ? null : rawLabel,
       kind: raw.kind ?? 'sequence',
       value: raw.value ?? null,
       inferred: raw.inferred ?? false,
@@ -311,6 +314,10 @@ function validateGraph(input) {
     }
     if (edge.from === edge.to) {
       fail(422, 'self-edge', 'An edge may not connect a node back to itself.', { ids: [edge.id] });
+    }
+    // A fork's arm reads "if <label>": without one, "then either" has nothing to choose on.
+    if (edge.label === null && nodes.find((node) => node.id === edge.from).exclusive === true) {
+      fail(422, 'missing-label', 'An edge leaving an exclusive node must carry a label.', { ids: [edge.id] });
     }
   }
   for (const node of nodes) {
@@ -1696,7 +1703,7 @@ async function servePage(response, name, csp = false) {
 }
 
 // The app's pages (docs/plans/app-shell, "Views") live in viewer/pages/ and their vendored
-// libraries in viewer/vendor/; both are public assets like list.js, matched by a narrow name.
+// libraries in viewer/vendor/; both are public assets like doc.js, matched by a narrow name.
 const APP_PAGES = new Set(['threads', 'thread', 'new', 'doc', 'picture', 'features', 'sessions', 'agents', 'settings', 'terminal']);
 // The thread page embeds the graph page for `diagram` cards, so app pages may frame this origin.
 const APP_PAGE_CSP = `${PAGE_CSP}; frame-src 'self'`;
@@ -1712,7 +1719,7 @@ const APP_ASSET = /^(pages|vendor)\/[a-z0-9_-]+(\/[a-z0-9_.-]+)*\.(js|css)$/;
 
 async function handleAsset(response, url) {
   const name = url.pathname.slice(`${VIEWER_PREFIX}/assets/`.length);
-  if (['list.js', 'doc.js'].includes(name)) {
+  if (name === 'doc.js') {
     const script = await fsp.readFile(path.join(__dirname, name));
     sendFile(response, 200, script, 'text/javascript; charset=utf-8');
     return;
@@ -1734,8 +1741,13 @@ async function handleAsset(response, url) {
   sendFile(response, 200, bytes, name.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8');
 }
 
+function redirectToApp(response) {
+  response.writeHead(302, { location: `${VIEWER_PREFIX}/app/threads`, 'cache-control': 'no-store' }); response.end();
+}
+
 async function handleAppPage(request, response, url, state) {
   const name = url.pathname.slice(`${VIEWER_PREFIX}/app/`.length);
+  if (name === '') { redirectToApp(response); return; }
   if (!APP_PAGES.has(name)) fail(404, 'no-route', 'The requested route does not exist.');
   // A phone's first visit arrives on the bookmark link, so a page accepts the token the way
   // the root and docs pages do: remember the browser, then drop the token from the address.
@@ -1795,11 +1807,8 @@ async function handleRoot(request, response, url, state) {
     sendFile(response, 200, html, 'text/html; charset=utf-8', { 'set-cookie': rememberCookie(state) });
     return;
   }
-  if (!url.searchParams.has('path')) {
-    const html = await fsp.readFile(path.join(__dirname, 'list.html'));
-    sendFile(response, 200, html, 'text/html; charset=utf-8', { 'content-security-policy': PAGE_CSP, 'set-cookie': rememberCookie(state) });
-    return;
-  }
+  // The old graphs-and-plans list is gone: the bare root, the address people bookmarked, opens the app.
+  if (!url.searchParams.has('path')) { redirectToApp(response); return; }
   const graphPath = await validGraphPath(state.config, url.searchParams.get('path'));
   const allowed = await withMutex(() => ensureRegistered(state.config, graphPath));
   if (!allowed) fail(403, 'not-registered', 'This graph path is not registered.');

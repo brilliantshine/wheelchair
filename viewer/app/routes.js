@@ -158,11 +158,25 @@ async function handleSettings(hub, request, response, url, bits, body) {
       let account;
       await settings.update(hub, (value) => {
         if (!Object.hasOwn(PROVIDERS, body.provider) || typeof body.name !== 'string' || !body.name.trim() || !Object.hasOwn(settings.PLANS[body.provider], body.plan)) throw appError(400, 'invalid account');
+        if (PROVIDERS[body.provider].singleAccount) throw appError(400, `${PROVIDERS[body.provider].label} supports one account per machine`);
         const base = body.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '') || 'account';
         let id = base, n = 2;
         while (id.startsWith('default-') || (value.accounts.some((a) => a.id === id) || value.retired_accounts.includes(id))) { const suffix = `-${n++}`; id = base.slice(0, 40 - suffix.length) + suffix; if (id.startsWith('default-')) id = `account${suffix}`; }
         account = { id, provider: body.provider, name: body.name.trim(), plan: body.plan, weight: settings.PLANS[body.provider][body.plan], paused: false };
         value.accounts.push(account);
+      });
+      return send(response, 201, account);
+    }
+    if (bits.length === 4 && bits[3] === 'restore' && request.method === 'POST') {
+      let account;
+      await settings.update(hub, (value) => {
+        const provider = Object.keys(PROVIDERS).find((p) => bits[2] === `default-${p}`);
+        if (!provider) throw appError(404, 'account not found');
+        if (value.accounts.some((a) => a.id === bits[2])) throw appError(400, 'default account is already there');
+        if (PROVIDERS[provider].singleAccount && value.accounts.some((a) => a.provider === provider)) throw appError(400, `${PROVIDERS[provider].label} supports one account per machine`);
+        account = { id: bits[2], provider, name: 'default', plan: 'unknown', weight: settings.PLANS[provider].unknown, paused: false };
+        value.accounts.push(account);
+        value.retired_accounts = value.retired_accounts.filter((id) => id !== bits[2]);
       });
       return send(response, 201, account);
     }
@@ -172,7 +186,7 @@ async function handleSettings(hub, request, response, url, bits, body) {
         const index = value.accounts.findIndex((a) => a.id === bits[2]);
         if (index < 0) throw appError(404, 'account not found');
         account = value.accounts[index];
-        if (request.method === 'DELETE') { if (account.id === `default-${account.provider}`) throw appError(400, 'default account cannot be removed'); value.accounts.splice(index, 1); value.retired_accounts.push(account.id); return; }
+        if (request.method === 'DELETE') { value.accounts.splice(index, 1); value.retired_accounts.push(account.id); return; }
         if (body.name !== undefined && (typeof body.name !== 'string' || !body.name.trim())) throw appError(400, 'invalid name');
         if (body.plan !== undefined && !Object.hasOwn(settings.PLANS[account.provider], body.plan)) throw appError(400, 'invalid plan');
         if (body.weight !== undefined && (typeof body.weight !== 'number' || !Number.isFinite(body.weight) || body.weight <= 0)) throw appError(400, 'invalid weight');
@@ -190,13 +204,13 @@ async function handleSettings(hub, request, response, url, bits, body) {
     return send(response, 200, { ...Object.fromEntries(settings.BALANCING.map((key) => [key, value[key]])), reserved_provider: await reservedLabel(hub, value) });
   }
   if (bits[1] === 'models' && request.method === 'PUT') {
-    if (!Object.hasOwn(PROVIDERS, body.provider)) throw appError(400, 'provider must be claude or gpt');
+    if (!Object.hasOwn(PROVIDERS, body.provider)) throw appError(400, 'provider must be claude, gpt or gemini');
     let slot = settings.TIER_ALIASES[body.slot] || body.slot;
     if (body.provider === 'claude') slot = ({ haiku: 'light', sonnet: 'standard', opus: 'heavy' })[slot] || slot;
     if (!['light', 'standard', 'heavy', 'critical', 'lead'].includes(slot)) throw appError(400, 'slot is invalid');
     if (body.model !== null && (typeof body.model !== 'string' || !/^[a-z0-9][a-z0-9._-]*$/.test(body.model))) throw appError(400, 'model is invalid');
     if (body.provider === 'gpt' && body.effort !== undefined && !['low', 'medium', 'high', 'xhigh'].includes(body.effort)) throw appError(400, 'effort for GPT must be one of low, medium, high, xhigh');
-    if (body.provider === 'claude' && body.effort !== undefined && !['low', 'medium', 'high', 'xhigh', 'max'].includes(body.effort)) throw appError(400, 'effort is invalid');
+    if (['claude', 'gemini'].includes(body.provider) && body.effort !== undefined && !['low', 'medium', 'high', 'xhigh', 'max'].includes(body.effort)) throw appError(400, 'effort is invalid');
     try { await settings.modelCommand(hub, ['set', body.provider, slot, body.model || 'none', ...(body.effort ? [body.effort] : [])]); }
     catch (error) { throw appError(400, (error.stderr || error.message).trim()); }
     return send(response, 200, { models: await settings.models(hub) });
@@ -238,7 +252,7 @@ async function handleSettings(hub, request, response, url, bits, body) {
         value.aside_access = body.aside_access;
       }
       if (body.review_families !== undefined) {
-        if (!['both', 'claude', 'gpt'].includes(body.review_families)) throw appError(400, 'review_families must be both, claude or gpt');
+        if (!['both', 'claude', 'gpt', 'gemini'].includes(body.review_families)) throw appError(400, 'review_families must be both, claude, gpt or gemini');
         value.review_families = body.review_families;
       }
       if (body.tool_steps !== undefined) {
@@ -443,6 +457,9 @@ async function handleThreads(hub, request, response, url, bits, body) {
       await hub.enqueue(thread, lead.name, String(body.text || ''), 'collin');
     });
     return send(response, 202, { queued: true });
+  }
+  if (request.method === 'POST' && bits[2] === 'send-now') {
+    return send(response, 202, { sent: await hub.sendNow(id, body.at) });
   }
   if (request.method === 'POST' && bits[2] === 'cards' && bits[3] && bits[4] === 'press') {
     return send(response, 202, await hub.press(id, bits[3], body));

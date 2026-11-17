@@ -32,6 +32,7 @@ async function startMachine(secret = 'machine-test-secret', options = {}) {
     codex: { installed: true, logged_in: true },
     accounts: [{ id: 'default-claude', cli: 'claude', logged_in: true }, { id: 'default-gpt', cli: 'codex', logged_in: true }],
   };
+  let usageReply = { status: 200, delay: 0, reading: null };
   let uploadsDir = options.uploadsDir;
   let preflightOk = true;
   let startOk = true;
@@ -79,6 +80,11 @@ async function startMachine(secret = 'machine-test-secret', options = {}) {
     const write = ['POST', 'PUT'].includes(request.method);
     const input = write ? await readBody(request) : {};
     calls.push({ method: request.method, path: url.pathname, body: input });
+    if (request.method === 'POST' && url.pathname === '/v1/usage') {
+      const reply = typeof usageReply === 'function' ? await usageReply(input) : usageReply;
+      if (reply.delay) await new Promise((resolve) => setTimeout(resolve, reply.delay));
+      return send(response, reply.status || 200, reply.status && reply.status !== 200 ? { error: reply.error || 'usage failed' } : { reading: reply.reading || { account: input.account, five_hour: null, week: null } });
+    }
     if (request.method === 'POST' && url.pathname === '/v1/sessions') {
       if (!startOk) return send(response, 503, { error: 'start refused' });
       if (dropNextStart > 0) {
@@ -136,6 +142,8 @@ async function startMachine(secret = 'machine-test-secret', options = {}) {
   return {
     port,
     secret,
+    get usageReply() { return usageReply; },
+    set usageReply(value) { usageReply = value; },
     get uploadsDir() { return uploadsDir; },
     set uploadsDir(value) { uploadsDir = value; },
     sessions,

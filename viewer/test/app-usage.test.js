@@ -62,14 +62,13 @@ test('account and balancing routes and usage shape', async () => {
     assert.equal(add.status, 201); assert.equal(add.body.weight, 5);
     for (const body of [{ provider: 'bad', name: 'a', plan: 'pro' }, { provider: 'gpt', name: '', plan: 'pro' }, { provider: 'gpt', name: 'x', plan: 'max5' }]) assert.equal((await api(ctx, '/settings/accounts', { method: 'POST', body })).status, 400);
     for (const body of [{ name: '' }, { plan: 'plus' }, { weight: 0 }, { paused: 'yes' }]) assert.equal((await api(ctx, `/settings/accounts/${add.body.id}`, { method: 'PUT', body })).status, 400);
-    assert.equal((await api(ctx, '/settings/accounts/default-claude', { method: 'DELETE' })).status, 400);
     for (const body of [{ lead_order: [] }, { worker_order: [] }, { lead_order: ['any', 'claude'] }, { lead_order: ['gpt', 'gpt'] }, { worker_order: ['any'] }, { worker_order: ['bad'] }, { within: 'bad' }, { leave: -1 }, { notify_below: 101 }, { margin: '5' }, { save_claude_for_leads: 1 }, { held_back: { worker: true, reviewer: true, verifier: true } }, { held_back: { worker: true, reviewer: true, verifier: true, mapper: true, extra: true } }, { held_back: { worker: true, reviewer: 'yes', verifier: true, mapper: true } }, { held_back: [] }]) assert.equal((await api(ctx, '/settings/balancing', { method: 'PUT', body })).status, 400);
     assert.equal((await api(ctx, '/settings/balancing', { method: 'PUT', body: { save_claude_for_leads: false } })).body.detail, 'invalid save_claude_for_leads');
     const renamed = await api(ctx, '/settings/balancing', { method: 'PUT', body: { save_for_leads: false, lead_order: ['gpt', 'any'] } });
     assert.equal(renamed.status, 200); assert.equal(renamed.body.save_for_leads, false); assert.equal(renamed.body.reserved_provider, 'GPT');
     const preferences = await api(ctx, '/settings/preferences', { method: 'PUT', body: { review_families: 'gpt' } });
     assert.equal(preferences.body.review_families, 'gpt');
-    assert.equal((await api(ctx, '/settings/preferences', { method: 'PUT', body: { review_families: 'bad' } })).body.detail, 'review_families must be both, claude or gpt');
+    assert.equal((await api(ctx, '/settings/preferences', { method: 'PUT', body: { review_families: 'bad' } })).body.detail, 'review_families must be both, claude, gpt or gemini');
     const described = (await api(ctx, '/settings')).body; assert.equal(described.review_families, 'gpt'); assert.equal(described.reserved_provider, 'GPT');
     const held = { worker: true, reviewer: false, verifier: true, mapper: true };
     const saved = await api(ctx, '/settings/balancing', { method: 'PUT', body: { held_back: held } });
@@ -312,4 +311,100 @@ test('legacy reserve value is carried over from the saved settings file', async 
   await hub.state.init();
   await fs.writeFile(path.join(hub.state.dir, 'settings.json'), JSON.stringify({ save_claude_for_leads: false }));
   assert.equal((await settings.load(hub)).save_for_leads, false);
+});
+test('a default account can be removed, stays removed, and can be added back', async () => {
+  const ctx = await setup();
+  try {
+    assert.equal((await api(ctx, '/settings/accounts/default-claude/restore', { method: 'POST' })).status, 400);
+    assert.equal((await api(ctx, '/settings/accounts/default-claude', { method: 'DELETE' })).status, 200);
+    assert.equal((await api(ctx, '/settings/accounts/default-gemini', { method: 'DELETE' })).status, 200);
+    let saved = (await api(ctx, '/settings')).body;
+    assert.equal(saved.accounts.some((a) => a.id === 'default-claude' || a.id === 'default-gemini'), false);
+    assert.ok(saved.retired_accounts === undefined || saved.retired_accounts.includes('default-claude'));
+    assert.equal((await api(ctx, '/settings/accounts', { method: 'POST', body: { provider: 'gemini', name: 'x', plan: 'pro' } })).status, 400);
+    assert.equal((await api(ctx, '/settings/accounts/default-nope/restore', { method: 'POST' })).status, 404);
+    const back = await api(ctx, '/settings/accounts/default-claude/restore', { method: 'POST' });
+    assert.equal(back.status, 201); assert.equal(back.body.name, 'default');
+    assert.equal((await api(ctx, '/settings/accounts/default-gemini/restore', { method: 'POST' })).status, 201);
+    saved = (await api(ctx, '/settings')).body;
+    assert.ok(saved.accounts.some((a) => a.id === 'default-claude'));
+    assert.ok(saved.accounts.some((a) => a.id === 'default-gemini'));
+  } finally { await close(ctx); }
+});
+
+// Exercise polling against the scripted machine service, with a separate hub over the same state.
+async function pollSetup() {
+  const { Hub } = require('../app/hub.js');
+  const c = await setup();
+  const hub = new Hub({ stateDir: c.state });
+  await settings.update(hub, s => { s.accounts.find(a => a.id === 'default-gpt').paused = true; });
+  return { c, hub };
+}
+function usageCalls(c) { return c.machine.calls.filter(call => call.path === '/v1/usage'); }
+function gate() { let release, entered; const waiting = new Promise(r => { release = r; }); const called = new Promise(r => { entered = r; }); return { release, called, respond: async input => { entered(); await waiting; return { reading: { account: input.account, week: { used: 20, resets_at: null } } }; } }; }
+
+test('idle poll probes eligible accounts in order and records the selected machine', async () => {
+  const { c, hub } = await pollSetup();
+  try {
+    await settings.update(hub, s => { s.accounts.push({ ...account, id: 'signed-out' }, { ...account, id: 'live' }, { ...account, id: 'paused', paused: true }); });
+    c.machine.status.agy = { logged_in: true };
+    c.machine.status.accounts.push({ id: 'live', cli: 'claude', logged_in: true }, { id: 'paused', cli: 'claude', logged_in: true }, { id: 'default-gemini', cli: 'agy', logged_in: true });
+    await hub.save({ id: 'poll-live', sessions: [{ live: true, account: 'live' }] });
+    await hub.pollIdle();
+    assert.deepEqual(usageCalls(c).map(x => x.body), [{ account: 'default-claude', cli: 'claude', dir: null }]);
+    assert.equal((await usage.readings(hub))['default-claude'].machine, 'hub');
+  } finally { await close(c); }
+});
+
+test('idle poll drops a reading when the account becomes live', async () => {
+  const { c, hub } = await pollSetup(); const g = gate(); c.machine.usageReply = g.respond;
+  try { const poll = hub.pollIdle(); await g.called; await hub.save({ id: 'during', sessions: [{ live: true, account: 'default-claude' }] }); g.release(); await poll; assert.equal((await usage.readings(hub))['default-claude'], undefined); } finally { g.release(); await close(c); }
+});
+
+test('idle poll keeps stored usage on failure and throttles retries', async () => {
+  const { c, hub } = await pollSetup();
+  try { const old = { account: 'default-claude', at: new Date(Date.now() - 600000).toISOString(), week: { used: 80, resets_at: null } }; await usage.record(hub, old); c.machine.usageReply = { status: 502 }; await hub.pollIdle(); await hub.pollIdle(); assert.deepEqual((await usage.readings(hub))['default-claude'], old); assert.equal(usageCalls(c).length, 1); } finally { await close(c); }
+});
+
+test('overlapping idle polls share one run', async () => {
+  const { c, hub } = await pollSetup(); const g = gate(); c.machine.usageReply = g.respond;
+  try { const first = hub.pollIdle(); await g.called; const second = hub.pollIdle(); assert.equal(first, second); g.release(); await Promise.all([first, second]); assert.equal(usageCalls(c).length, 1); } finally { g.release(); await close(c); }
+});
+
+test('idle poll skips readings less than nine minutes old', async () => {
+  const { c, hub } = await pollSetup();
+  try { await usage.record(hub, { account: 'default-claude', at: new Date().toISOString() }); await hub.pollIdle(); assert.equal(usageCalls(c).length, 0); } finally { await close(c); }
+});
+
+test('idle poll rechecks later accounts before probing', async () => {
+  const { c, hub } = await pollSetup(); const g = gate(); c.machine.usageReply = g.respond;
+  try { await settings.update(hub, s => { s.accounts.find(a => a.id === 'default-gpt').paused = false; }); const poll = hub.pollIdle(); await g.called; await hub.save({ id: 'later', sessions: [{ live: true, account: 'default-gpt' }] }); g.release(); await poll; assert.deepEqual(usageCalls(c).map(x => x.body.account), ['default-claude']); } finally { g.release(); await close(c); }
+});
+
+test('a newer live reading survives an idle probe after the session ends', async () => {
+  const { c, hub } = await pollSetup(); const g = gate(); c.machine.usageReply = g.respond;
+  try { const poll = hub.pollIdle(); await g.called; const fresh = { account: 'default-claude', at: new Date(Date.now() + 1000).toISOString(), week: { used: 77, resets_at: null } }; await usage.record(hub, fresh); g.release(); await poll; assert.deepEqual((await usage.readings(hub))['default-claude'], fresh); } finally { g.release(); await close(c); }
+});
+
+test('idle poll drops a removed account result', async () => {
+  const { c, hub } = await pollSetup(); const g = gate(); c.machine.usageReply = g.respond;
+  try { const poll = hub.pollIdle(); await g.called; await api(c, '/settings/accounts/default-claude', { method: 'DELETE' }); g.release(); await poll; assert.equal((await usage.readings(hub))['default-claude'], undefined); } finally { g.release(); await close(c); }
+});
+
+test('idle poll promotes a waiting start when usage frees room', async () => {
+  const { machinePost } = require('./helpers/app.js');
+  const { c, hub } = await pollSetup();
+  try {
+    await settings.update(hub, s => { s.accounts.find(a => a.id === 'default-gpt').paused = false; });
+    const made = (await api(c, '/threads', { method: 'POST', body: { project: '/tmp/poll-waiting', cli: 'claude' } })).body;
+    const lead = made.sessions[0];
+    const sub = (await machinePost(c, '/machine/session', { calling_session: lead.name, action: 'start', role: 'sub-lead', attempt_id: 'poll-sub' })).body.session;
+    const reset = new Date(Date.now() + 3600000).toISOString();
+    await usage.record(hub, { account: 'default-gpt', at: new Date(Date.now() - 600000).toISOString(), week: { used: 100, resets_at: reset } });
+    const waiting = (await machinePost(c, '/machine/session', { calling_session: sub.name, action: 'start', role: 'worker', provider: 'gpt', attempt_id: 'poll-wait', brief: 'work' })).body.session;
+    assert.equal(waiting.status, 'waiting');
+    c.machine.usageReply = { reading: { account: 'default-gpt', week: { used: 0, resets_at: reset } } };
+    await hub.pollIdle();
+    assert.equal((await hub.thread(made.id)).sessions.find(s => s.name === waiting.name).status, 'ready');
+  } finally { await close(c); }
 });

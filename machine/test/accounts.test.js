@@ -72,3 +72,81 @@ test('Codex maps both quota windows and reached flag', () => {
   const reading = adapters.codex.usageFrom({ payload: { rate_limits: { primary: { window_minutes: 300, used_percent: 100, resets_at: 1800000000 }, secondary: { window_minutes: 10080, used_percent: 23, resets_at: 1800100000 }, rate_limit_reached_type: 'primary' } } });
   assert.equal(reading.five_hour.used, 100); assert.equal(reading.week.used, 23); assert.equal(reading.reached, true);
 });
+
+test('Antigravity screens, hooks, binding and command', () => {
+  const a = adapters.agy, fixture = name => fs.readFileSync(path.join(__dirname, 'fixtures/agy', name), 'utf8');
+  for (const name of ['login-link-wrapped.txt', 'login-link-joined.txt']) {
+    const pane = fixture(name).replace('[OAuth URL redacted]', 'https://accounts.google.com/oauth?abc=123');
+    const sample = `${pane}\npaste the authorization code below`;
+    const parsed = a.parseLogin(sample); assert.match(parsed.url, /^https:\/\/accounts\.google\.com\//); assert.equal(parsed.wantsCode, true);
+  }
+  const steps = { 'login-menu.txt': ['method', ['Enter']], 'onboard-1-theme.txt': ['theme', ['Enter']], 'onboard-2-data.txt': ['data', ['Enter', 'Down', 'Right', 'Enter']], 'onboard-3-trust.txt': ['trust', ['Enter']] };
+  for (const [name, [step, keys]] of Object.entries(steps)) assert.deepEqual(a.loginPrompt(fixture(name)), { step, keys });
+  for (const name of ['idle.txt', 'login-link-joined.txt']) assert.equal(a.loginPrompt(fixture(name)), null);
+  for (const name of ['login-success.txt', 'onboard-1-theme.txt', 'onboard-2-data.txt', 'onboard-3-trust.txt']) {
+    assert.equal(a.loginDone(fixture(name)), false); assert.equal(a.readyText({}, fixture(name)), false);
+    assert.equal(a.loginDone(fixture(name) + '\n? for shortcuts'), false); assert.equal(a.readyText({}, fixture(name) + '\n? for shortcuts'), false);
+  }
+  assert.equal(a.loginDone(fixture('idle.txt')), true);
+  assert.equal(a.loginDone(fixture('login-link-joined.txt')), false);
+  assert.equal(a.readyText({}, fixture('idle.txt')), true);
+  for (const name of ['permission-prompt.txt', 'trust-prompt.txt']) assert.equal(a.readyText({}, fixture(name)), false);
+  assert.equal(a.promptText(fixture('permission-prompt.txt')), true); assert.equal(a.promptText(fixture('idle.txt')), false);
+  const raw = name => JSON.parse(fixture(name));
+  for (const name of ['stop.json', 'stop-tools.json']) assert.equal(a.hookEvent(raw(name)).type, 'turn-ended');
+  assert.equal(a.hookEvent({ ...raw('stop.json'), terminationReason: 'max_steps_exceeded' }).type, 'turn-ended');
+  assert.equal(a.hookEvent({ ...raw('stop.json'), terminationReason: 'error', error: 'quota' }).type, 'limit-hit');
+  assert.equal(a.hookEvent({ ...raw('stop.json'), terminationReason: 'error', error: 'broken' }).type, 'turn-failed');
+  assert.equal(a.hookEvent({ hookEventName: 'Other' }), null);
+  const session = {}; assert.deepEqual(a.onTurnEnded(session, a.hookEvent(raw('stop-tools.json'))), { ignored: true });
+  assert.deepEqual(a.onTurnEnded(session, a.hookEvent(raw('stop-role.json'))), {});
+  assert.deepEqual(a.onTurnEnded(session, { conversation_id: 'different' }), { ignored: true });
+  const ctx = { stateDir: '/state' }, base = { name: 'wc-test', effort: 'high' };
+  const auto = a.command({ role: 'reviewer', model: 'model' }, base, '/work', ctx);
+  assert.deepEqual(auto.settings, { trustedWorkspaces: ['/work'] });
+  assert.deepEqual(auto.argv, ['agy', '--settings', '/state/settings/wc-test.json', '--mode', 'auto', '--model', 'model', '--effort', 'high']);
+  assert.deepEqual(a.command({}, { ...base, permission_mode: 'bypass' }, '/work', ctx).argv.slice(3, 4), ['--dangerously-skip-permissions']);
+});
+
+test('Antigravity hooks merge atomically and reject invalid JSON', () => {
+  const home = makeTempSync('wc-agy-home-'), previous = process.env.HOME; process.env.HOME = home;
+  try {
+    const file = path.join(home, '.gemini/config/hooks.json'); adapters.agy.prepare();
+    const wanted = JSON.parse(fs.readFileSync(file)); assert.ok(wanted.wheelchair.Stop);
+    fs.writeFileSync(file, JSON.stringify({ another: { value: 1 } })); adapters.agy.prepare();
+    assert.deepEqual(JSON.parse(fs.readFileSync(file)).another, { value: 1 });
+    fs.writeFileSync(file, '{bad'); assert.throws(() => adapters.agy.prepare(), /Couldn't update Antigravity's hooks file/); assert.equal(fs.readFileSync(file, 'utf8'), '{bad');
+  } finally { if (previous === undefined) delete process.env.HOME; else process.env.HOME = previous; }
+});
+
+test('Antigravity hook spools using the session environment', () => {
+  const state = makeTempSync('wc-agy-hook-'), hook = path.join(__dirname, '../hook.sh');
+  fs.writeFileSync(path.join(state, 'machine.json'), JSON.stringify({ host: '127.0.0.1', port: 1 }));
+  const env = { ...process.env, WHEELCHAIR_STATE_DIR: state, WHEELCHAIR_SESSION_TOKEN: 'test', WHEELCHAIR_SESSION_NAME: 'wc-test-lead' };
+  const input = fs.readFileSync(path.join(__dirname, 'fixtures/agy/stop-role.json'));
+  assert.equal(spawnSync(hook, ['agy'], { env, input }).status, 0);
+  const spool = path.join(state, 'spool/events'); assert.equal(JSON.parse(fs.readFileSync(path.join(spool, fs.readdirSync(spool)[0]))).session, 'wc-test-lead');
+  delete env.WHEELCHAIR_SESSION_NAME; assert.equal(spawnSync(hook, ['agy'], { env, input }).status, 0);
+  for (const cli of ['claude', 'codex']) assert.notEqual(spawnSync(hook, [cli], { env, input }).status, 0);
+});
+
+test('Claude idle usage parses windows, resets and rollover', () => {
+  const parse = (result, now = '2026-11-16T20:00:00Z', num_turns = 0) => adapters.claude.parseUsage({ result, num_turns }, new Date(now));
+  const sample = 'Current session: 42% used · resets Nov 16, 6:59pm (America/Los_Angeles)\nCurrent week (all models): 52% used · resets Nov 21, 2:59am (America/Los_Angeles)';
+  assert.deepEqual(parse(sample), { five_hour: { used: 42, resets_at: '2026-11-17T02:59:00.000Z' }, week: { used: 52, resets_at: '2026-11-21T10:59:00.000Z' } });
+  assert.equal(parse('Current session: 100% used · resets Jan 1, 7pm (America/Los_Angeles)', '2026-12-31T23:00:00Z').five_hour.resets_at, '2027-01-02T03:00:00.000Z');
+  assert.equal(parse('Current session: 100% used').reached, true);
+  assert.equal(parse('Current session: 10% used').five_hour.resets_at, null);
+  assert.throws(() => parse(sample, '2026-11-16T20:00:00Z', 1));
+  assert.throws(() => parse('no windows'));
+});
+test('Codex idle usage maps rate limit response', () => {
+  const parse = adapters.codex.parseUsage;
+  const primary = { windowDurationMins: 10080, usedPercent: 52, resetsAt: 1800000000 };
+  const secondary = { windowDurationMins: 300, usedPercent: 100, resetsAt: 1800001000 };
+  const response = { result: { rateLimits: { primary, planType: 'pro' } } };
+  assert.equal(parse(response).week.used, 52); assert.equal(parse(response).five_hour, null);
+  response.result.rateLimits.secondary = secondary; response.result.rateLimits.rateLimitReachedType = 'primary';
+  assert.equal(parse(response).five_hour.used, 100); assert.equal(parse(response).reached, true); assert.equal(parse(response).plan_type, 'pro');
+  assert.throws(() => parse({ error: { message: 'bad' } }));
+});

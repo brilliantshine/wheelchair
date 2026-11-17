@@ -157,7 +157,7 @@ test('/doc returns 404 for non-Markdown files, parent paths, and a symlink leadi
   } finally { await ctx.stop(); }
 });
 
-test('/wheelchair/docs and list have CSP while a graph page keeps the index page header-free', async () => {
+test('/wheelchair/docs has CSP while a graph page keeps the index page header-free', async () => {
   const root = await makeDir(); const plan = await makePlan(root); const graph = path.join(root, 'graphs', 'main.json');
   await fs.mkdir(path.dirname(graph), { recursive: true }); await fs.writeFile(graph, '{"title":"main"}');
   const ctx = await startServer({ cacheRoot: root, port: await freePort(), open: graph });
@@ -169,11 +169,11 @@ test('/wheelchair/docs and list have CSP while a graph page keeps the index page
       const url = new URL(`${ctx.url}${pathname}`); const response = await fetch(url, { headers: { cookie } });
       return { status: response.status, body: await response.text(), headers: response.headers };
     };
-    const docs = await fetchPage(`/docs?plan=${encodeURIComponent(plan)}`); const list = await fetchPage('/');
+    const docs = await fetchPage(`/docs?plan=${encodeURIComponent(plan)}`);
     const index = await fetchPage(`/?path=${encodeURIComponent(graph)}`);
     const csp = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
-    assert.equal(docs.status, 200); assert.equal(list.status, 200); assert.equal(index.status, 200);
-    assert.equal(docs.headers.get('content-security-policy'), csp); assert.equal(list.headers.get('content-security-policy'), csp);
+    assert.equal(docs.status, 200); assert.equal(index.status, 200);
+    assert.equal(docs.headers.get('content-security-policy'), csp);
     assert.equal(index.headers.get('content-security-policy'), null); assert.match(index.body, /graph viewer/i);
   } finally { await ctx.stop(); }
 });
@@ -199,12 +199,12 @@ test('an app page carries font-src self and the font route serves only the allow
   } finally { await ctx.stop(); }
 });
 
-test('/assets/list.js needs no token and other asset names are 404', async () => {
+test('/assets/doc.js needs no token and other asset names, including the removed list.js, are 404', async () => {
   const ctx = await startServer({ cacheRoot: await makeDir(), port: await freePort() });
   try {
-    const script = await get(ctx, '/assets/list.js', null); const other = await get(ctx, '/assets/other.js', null);
-    assert.equal(script.status, 200); assert.equal(script.headers.get('content-type'), 'text/javascript; charset=utf-8'); assert.match(script.body, /POLL_MS/);
-    assert.equal(other.status, 404); assert.equal(other.body.error, 'no-route');
+    const script = await get(ctx, '/assets/doc.js', null); const other = await get(ctx, '/assets/other.js', null); const list = await get(ctx, '/assets/list.js', null);
+    assert.equal(script.status, 200); assert.equal(script.headers.get('content-type'), 'text/javascript; charset=utf-8');
+    assert.equal(other.status, 404); assert.equal(other.body.error, 'no-route'); assert.equal(list.status, 404);
   } finally { await ctx.stop(); }
 });
 
@@ -220,11 +220,11 @@ test('every other route requires a token while /whoami remains available', async
 });
 
 test('a page changed on disk is served changed without restarting the server', async () => {
-  const page = path.join(ROOT, 'viewer', 'list.html'); const original = await fs.readFile(page, 'utf8'); const marker = `<!-- routes-test-${Date.now()} -->`;
+  const page = path.join(ROOT, 'viewer', 'pages', 'threads.html'); const original = await fs.readFile(page, 'utf8'); const marker = `<!-- routes-test-${Date.now()} -->`;
   const ctx = await startServer({ cacheRoot: await makeDir(), port: await freePort() });
   try {
     await fs.writeFile(page, `${original}${marker}`);
-    const first = await fetch(`${ctx.url}/?token=${ctx.token}`, { redirect: 'manual' }); const response = await fetch(`${ctx.url}/`, { headers: { cookie: first.headers.get('set-cookie') } });
+    const first = await fetch(`${ctx.url}/?token=${ctx.token}`, { redirect: 'manual' }); const response = await fetch(`${ctx.url}/app/threads`, { headers: { cookie: first.headers.get('set-cookie') } });
     assert.equal(response.status, 200); assert.match(await response.text(), new RegExp(marker));
   } finally { await fs.writeFile(page, original); await ctx.stop(); }
 });
@@ -256,13 +256,13 @@ test('GET /wheelchair/?token redirects without the token and sets the remember c
   } finally { await ctx.stop(); }
 });
 
-test('a remember cookie reads the page, list, plan, document, and graph', async () => {
+test('a remember cookie reads the graph page, list, plan, document, and graph', async () => {
   const root = await makeDir(); const graph = path.join(root, 'graphs', 'main.json'); const plan = await makePlan(root);
   await fs.mkdir(path.dirname(graph), { recursive: true }); await fs.writeFile(graph, await fs.readFile(path.join(FIXTURES, 'canonical.json'))); await fs.writeFile(path.join(plan, 'PLAN.md'), '# plan');
   const ctx = await startServer({ cacheRoot: root, port: await freePort(), open: graph });
   try {
     await registerPlan(ctx, plan); const cookie = await remember(ctx);
-    for (const route of ['/', '/list', `/plan?dir=${encodeURIComponent(plan)}`, `/doc?plan=${encodeURIComponent(plan)}&file=PLAN.md`, `/graph?path=${encodeURIComponent(graph)}`]) {
+    for (const route of [`/?path=${encodeURIComponent(graph)}`, '/list', `/plan?dir=${encodeURIComponent(plan)}`, `/doc?plan=${encodeURIComponent(plan)}&file=PLAN.md`, `/graph?path=${encodeURIComponent(graph)}`]) {
       assert.equal((await raw(ctx, route, { headers: { cookie } })).status, 200, route);
     }
   } finally { await ctx.stop(); }
@@ -278,6 +278,18 @@ test('JSON reads accept token directly and never set a remember cookie', async (
       const join = route.includes('?') ? '&' : '?'; const response = await raw(ctx, `${route}${join}token=${ctx.token}`);
       assert.equal(response.status, 200, route); assert.equal(response.headers.get('set-cookie'), null, route);
     }
+  } finally { await ctx.stop(); }
+});
+
+test('a signed-in /wheelchair/ and /wheelchair/app/ redirect to the Threads page; a graph path still opens the graph page', async () => {
+  const ctx = await startServer({ cacheRoot: await makeDir(), port: await freePort() });
+  try {
+    const cookie = await remember(ctx);
+    for (const route of ['/', '/app/']) {
+      const response = await raw(ctx, route, { headers: { cookie } });
+      assert.equal(response.status, 302, route); assert.equal(response.headers.get('location'), '/wheelchair/app/threads', route);
+    }
+    assert.equal((await raw(ctx, '/')).status, 401);
   } finally { await ctx.stop(); }
 });
 
@@ -348,7 +360,7 @@ test('root routes move to /wheelchair and /wheelchair gains its trailing slash',
 test('page responses renew the Lax cookie while JSON responses do not, and anonymous pages explain sign-in', async () => {
   const ctx = await startServer({ cacheRoot: await makeDir(), port: await freePort() });
   try {
-    const cookie = await remember(ctx); const page = await raw(ctx, '/', { headers: { cookie } });
+    const cookie = await remember(ctx); const page = await raw(ctx, '/app/threads', { headers: { cookie } });
     assert.match(page.headers.get('set-cookie'), /SameSite=Lax/); const list = await raw(ctx, `/list?token=${ctx.token}`); assert.equal(list.headers.get('set-cookie'), null);
     const anonymous = await raw(ctx, '/'); assert.equal(anonymous.status, 401); assert.match(anonymous.body, /Open your bookmark link once/); assert.match(anonymous.body, /<code>node viewer\/server\.js --url<\/code>/); assert.equal(anonymous.headers.get('content-security-policy'), "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
     assert.equal((await raw(ctx, '/list')).status, 401);

@@ -74,7 +74,7 @@ the sudo helper is meant to act on your machine, not on a container.
    systemd=true
    ```
 3. Inside WSL, install the [dependencies](#dependencies) and sign in to `gh` and `claude` or
-   `codex`. Install Tailscale inside WSL, since the installer runs `tailscale serve` there,
+   `codex` or `agy`. Install Tailscale inside WSL, since the installer runs `tailscale serve` there,
    and quit it on Windows: Tailscale traffic breaks when both run at once.
 4. Clone wheelchair and your projects under the Linux home folder (`~/...`), never under
    `/mnt/c`. Windows drives are slow from WSL, and git and file permissions misbehave there.
@@ -194,8 +194,9 @@ node viewer/server.js --stop
 ```
 
 A machine can serve the viewer to your other devices over Tailscale: run `./install.sh --serve`,
-or `--no-serve` to decline. This runs it as a `systemd` user service on Linux or a launchd user service while
-logged in on macOS, from this checkout's code, at `https://<machine>.<tailnet>.ts.net/wheelchair/`. Open the bookmark once per
+or `--no-serve` to decline. This runs it as an always-on `systemd` user service on Linux, or a
+launchd user service while logged in on macOS, from this checkout's code, at
+`https://<machine>.<tailnet>.ts.net/wheelchair/`, which opens the app. Open the bookmark once per
 device and it's remembered. `node viewer/server.js --rotate-token` locks every device out again. Everything, including
 dragging boxes, works on a phone.
 
@@ -221,8 +222,8 @@ next. Start at the root one. `CONTRIBUTING.md` has the conventions and validatio
 
 ## Dependencies
 
-- `claude` or `codex` (v0.146+). Either one alone works; both let reviews and checks use the
-  other family. Codex sessions run through the app like any other.
+- `claude`, `codex` (v0.146+), or `agy`. One alone works; multiple CLIs let reviews and checks use
+  another family. Codex sessions run through the app like any other.
 - `tmux`, which runs every agent session.
 - `git` and the GitHub CLI `gh`, signed in, so threads can push branches and open pull
   requests.

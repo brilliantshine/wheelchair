@@ -243,9 +243,14 @@ Field by field:
 - **`id`** (node and edge) — non-empty and unique within its own collection (nodes and
   edges are separate namespaces). Missing, empty, or duplicated draws `bad-id`. Pick a
   descriptive id rather than `n1`.
-- **`label`** — plain-language behavior, per "What a graph is" above. The one field with
-  **no default**. Omit it and the server refuses the whole write with `missing-label`,
-  naming the offending id — a missing label is a refusal, never a silent repair. A box
+- **`label`** — plain-language behavior, per "What a graph is" above. On a **node** it is
+  the one field with **no default**: omit it and the server refuses the whole write with
+  `missing-label` — a missing label is a refusal, never a silent repair. On an **edge** it
+  is optional: leave it out (or `null`) when the arrow is a plain "then", and the page
+  draws the arrow with no words on it. Forcing a word onto every step adds noise. The one
+  exception is an arm leaving an `exclusive` node, which reads `if <label>` and so must
+  carry one; an unlabelled arm draws `missing-label`, naming the edge. A blank edge label
+  is stored as `null`; one that is neither a string nor `null` draws `bad-label`. A box
   wraps a label to five lines of 24 characters, so the most it can hold is **124
   characters** — five full lines plus the four spaces at the breaks. Treat that as a
   ceiling, not a budget: wrapping breaks on whole words, so a label whose words fall badly
@@ -339,14 +344,14 @@ Defaults applied when canonicalizing a body that omits a key: top-level `run` �
 missing key differ. Group `label`/`note` → `null`. Node `kind` → `"note"`,
 `exclusive` → `false`, `ref`/`note`/`graph` →
 `null`, `task`/`status`/`needs` → `null`. Edge `kind` → `"sequence"`, `value` → `null`,
-`inferred` → `false`, `note` → `null`. **`label` has no default** — omit it and
-the write is refused, not repaired. Older files may carry `origin` and `was`; they are
+`inferred` → `false`, `note` → `null`, `label` → `null` (absent or blank). A **node's**
+`label` has no default — omit it and the write is refused, not repaired. Older files may carry `origin` and `was`; they are
 ignored and dropped on the next write.
 
 Given that, the minimal legal node you can send is just `{"id": "gate", "label":
 "accept it as a real measurement, or refuse"}` — everything else defaults. The same
-goes for edges, plus `from`/`to`, which have no default because an edge to nowhere is
-not a valid edge.
+goes for edges, except an edge needs only `id`, `from` and `to` — no label — and
+`from`/`to` have no default because an edge to nowhere is not a valid edge.
 
 **On the wire, an agent omits `x` and `y` entirely** — not sends them as `null`, leaves
 the keys out of the object. The every-key rule above governs the canonical file on
@@ -751,12 +756,12 @@ adding a named one of its own.
 The page's `PUT /view` may not change `task`, `status`, `needs`, or `run`; such a
 change is a `structural-difference`, as is any unexpected content change.
 
-### The list page
+### The list route
 
 `GET /wheelchair/list` adds `run` to each plan entry: the absolute path of
 `graphs/run.json` when that file exists and parses with `run: true`, and `null`
-otherwise. `viewer/list.js` shows a "run picture" link on a plan's entry when `run` is
-non-null.
+otherwise. No page reads it any more: `/wheelchair/` with no graph path redirects to the
+app's Threads page.
 
 ## What the server refuses
 
@@ -780,7 +785,8 @@ them:
 | 403 | `not-registered` | this path isn't in the writable set and isn't derivable from a graph that is |
 | 409 | `stale` | the hash you sent doesn't match what's on disk; the body carries the current one |
 | 422 | `unknown-schema` | `schema` isn't `1`, or a top-level field is the wrong type — `title` or `source` not a string, `source` outside the closed set, `source_detail` or `explanation` neither a string nor `null`, `nodes`, `edges`, or `groups` not an array |
-| 422 | `missing-label` | a node or edge has no `label` |
+| 422 | `missing-label` | a node has no `label`, or an edge leaving an `exclusive` node has none (naming the edge) |
+| 422 | `bad-label` | an edge `label` is neither a string nor `null` |
 | 422 | `bad-kind` | a node's `kind` is outside `file`/`module`/`step`/`decision`/`external`/`note`/`store`/`choice`, or an edge's is outside `data`/`sequence`. A missing `kind` is not this — it defaults instead |
 | 422 | `bad-id` | an id is missing, empty, or duplicated — nodes, edges, and groups are each their own namespace, and a group entry that isn't even an object counts as a bad id too |
 | 422 | `group-bad-name` | a group id outside `^[a-z0-9_-]+$` |

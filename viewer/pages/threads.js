@@ -11,7 +11,7 @@
   const STAGE = {
     idea: 'Idea', planning: 'Planning', review: 'Review', building: 'Building', verifying: 'Verifying', done: 'Done',
   };
-  const PROVIDER_LABEL = { claude: 'Claude', gpt: 'GPT' };
+  const PROVIDER_LABEL = { claude: 'Claude', gpt: 'GPT', gemini: 'Antigravity' };
   let threads = [];
   let titles = {};
   let stages = {};   // thread id -> stage label, from the features data

@@ -33,7 +33,7 @@ case "$(basename \"$0\"):$1" in
   codex:--version) echo codex-test ;;
 esac
 `;
-  for (const name of ['tmux', 'systemd-run', ...(realGit ? [] : ['git']), 'gh', 'claude', 'codex', 'tailscale', 'sh']) await write(path.join(bin, name), script, 0o755);
+  for (const name of ['tmux', 'systemd-run', ...(realGit ? [] : ['git']), 'gh', 'claude', 'codex', 'agy', 'tailscale', 'sh']) await write(path.join(bin, name), script, 0o755);
   await write(pane, paneText);
   return { bin, log, pane };
 }
@@ -381,6 +381,15 @@ test('transcript copies wait for a complete JSONL line before advancing their of
     assert.deepEqual((await fs.readFile(session.transcript_path, 'utf8')).trim().split('\n').map(JSON.parse), [{ one: 1 }, { two: 2 }]);
   } finally { await env.close(); }
 });
+test('overlapping transcript copies append each new line once', async () => {
+  const env = await service(await temp()); try {
+    await start(env); const session = env.instance.sessions['wc-t-lead']; const source = path.join(path.dirname(env.state), 'busy.jsonl');
+    await write(source, '{"one":1}\n{"two":2}\n');
+    await Promise.all(Array.from({ length: 8 }, () => env.instance.copyTranscript(session, source)));
+    assert.deepEqual((await fs.readFile(session.transcript_path, 'utf8')).trim().split('\n').map(JSON.parse), [{ one: 1 }, { two: 2 }]);
+  } finally { await env.close(); }
+});
+
 test('a live session serves its kept transcript copy after the source transcript disappears', async () => {
   const env = await service(await temp()); try {
     await start(env); const session = env.instance.sessions['wc-t-lead']; const source = path.join(path.dirname(env.state), 'gone.jsonl');
@@ -847,7 +856,7 @@ test('account starts bind the CLI environment, validate directories, and report 
     const invalid = await api(env, 'POST', '/v1/sessions', { role: 'lead', cli: 'claude', thread_id: 'bad', token: 'x', worktree: root, account: { id: 'bad', dir: '~/elsewhere/bad' } }, hubHeader);
     assert.equal(invalid.status, 400);
     const status = await api(env, 'GET', '/v1/status', undefined, hubHeader);
-    assert.deepEqual(status.body.accounts.map(a => a.id).sort(), ['default-claude', 'default-gpt', 'one', 'two']);
+    assert.deepEqual(status.body.accounts.map(a => a.id).sort(), ['default-claude', 'default-gemini', 'default-gpt', 'one', 'two']);
     const preflight = await api(env, 'POST', '/v1/preflight', { dir: '~/elsewhere/bad' }, hubHeader); assert.equal(preflight.status, 400);
   } finally { await env.close(); process.env.HOME = oldHome; }
 });
@@ -893,7 +902,7 @@ test('login sessions start, expose state, accept code and stay out of session re
   const root = await temp(), previous = process.env.HOME; process.env.HOME = root;
   const env = await service(root); try {
     const started = await api(env, 'POST', '/v1/logins', { account: 'test', cli: 'claude', dir: '~/.wheelchair/accounts/test' }, hubHeader);
-    assert.equal(started.status, 201); const cmd = await log(env); assert.match(cmd, /CLAUDE_CONFIG_DIR=/); assert.match(cmd, /auth.*login/); assert.doesNotMatch(cmd, /WHEELCHAIR_SESSION_TOKEN/);
+    assert.equal(started.status, 201); const cmd = await log(env); assert.doesNotMatch(cmd.split('\n').find(line => line.includes('new-session') && line.includes('wc-login-test')), / -c /); assert.match(cmd, /CLAUDE_CONFIG_DIR=/); assert.match(cmd, /auth.*login/); assert.doesNotMatch(cmd, /WHEELCHAIR_SESSION_TOKEN/);
     await write(env.fake.pane, 'starting'); assert.equal((await api(env, 'GET', '/v1/logins/test', undefined, hubHeader)).body.state, 'starting');
     await write(env.fake.pane, await fs.readFile(path.join(__dirname, 'fixtures/login/claude.txt'), 'utf8'));
     assert.equal((await api(env, 'GET', '/v1/logins/test', undefined, hubHeader)).body.state, 'waiting');
@@ -906,7 +915,7 @@ test('login sessions start, expose state, accept code and stay out of session re
     assert.equal((await api(env, 'POST', '/v1/logins', { account: 'test', cli: 'claude', dir: '~/bad/test' }, hubHeader)).status, 400);
     assert.equal((await api(env, 'POST', '/v1/logins', { account: 'default-gpt', cli: 'codex', dir: null }, hubHeader)).status, 201);
     const codexCommand = (await log(env)).split('\n').find(line => line.includes('new-session') && line.includes('wc-login-default-gpt'));
-    assert.match(codexCommand, /codex.*login.*--device-auth/); assert.doesNotMatch(codexCommand, /WHEELCHAIR_SESSION_TOKEN/);
+    assert.doesNotMatch(codexCommand, / -c \/[^ ]/); assert.match(codexCommand, /codex.*login.*--device-auth/); assert.doesNotMatch(codexCommand, /WHEELCHAIR_SESSION_TOKEN/);
     assert.equal((await api(env, 'POST', '/v1/logins', { account: 'other', cli: 'codex', dir: '~/.wheelchair/accounts/other' }, hubHeader)).status, 201);
     assert.match(await log(env), /CODEX_HOME=.*accounts\/other/);
   } finally { delete process.env.FAKE_SESSIONS; delete process.env.FAKE_CLAUDE_AUTH; if (previous === undefined) delete process.env.HOME; else process.env.HOME = previous; await env.close(); }
@@ -1122,5 +1131,72 @@ test('a retained non-rebase session cannot post an image after archive', async (
     assert.equal(result.body.kept[0].reason, 'cannot commit'); assert.equal(result.body.uploads_removed, true);
     assert.equal((await api(env, 'POST', '/v1/agent/cards', { kind: 'image', path: image, title: 'x' }, { 'x-wheelchair-session-token': 'alpha' })).status, 409);
     assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 0);
+  } finally { await env.close(); }
+});
+
+
+test('Antigravity start, prompt polling, status and login completion', async () => {
+  const root = await temp();
+  await withEnv({ HOME: root }, async () => {
+    const hub = await hubServer(); const env = await service(root, { pane: '? for shortcuts', config: { hub_url: hub.url } });
+    try {
+      const session = await start(env, { cli: 'agy' });
+      assert.deepEqual(JSON.parse(await fs.readFile(path.join(env.state, 'settings', `${session.name}.json`))), { trustedWorkspaces: [session.worktree] });
+      assert.match(await log(env), /WHEELCHAIR_SESSION_NAME=wc-t-lead/);
+      assert.ok(JSON.parse(await fs.readFile(path.join(root, '.gemini/config/hooks.json'))).wheelchair);
+      await write(env.fake.pane, await fs.readFile(path.join(__dirname, 'fixtures/agy/permission-prompt.txt')));
+      await env.instance.pollReadiness(); assert.equal(env.instance.sessions[session.name].prompt_open, true);
+      assert.ok(env.instance.status().agy);
+      await env.instance.startLogin({ account: 'default-gemini', cli: 'agy' });
+      const launch = (await log(env)).split('\n').find(line => line.includes('new-session') && line.includes('wc-login-default-gemini'));
+      assert.ok(launch.includes(` -c ${path.join(env.state, 'agy-login')} `));
+      assert.equal((await fs.stat(path.join(env.state, 'agy-login'))).mode & 0o777, 0o700);
+      const before = (await log(env)).split('\n').filter(line => line.includes('kill-session -t wc-login-default-gemini')).length;
+      for (const name of ['login-menu.txt', 'login-link-joined.txt', 'login-success.txt', 'onboard-1-theme.txt', 'onboard-2-data.txt', 'onboard-3-trust.txt']) {
+        await write(env.fake.pane, await fs.readFile(path.join(__dirname, 'fixtures/agy', name)));
+        assert.notEqual(env.instance.loginState('default-gemini').state, 'done');
+        assert.notEqual(env.instance.loginState('default-gemini').state, 'done');
+        assert.equal((await log(env)).split('\n').filter(line => line.includes('kill-session -t wc-login-default-gemini')).length, before);
+      }
+      const sends = (await log(env)).split('\n').filter(line => line.includes('send-keys -t wc-login-default-gemini ')).map(line => line.split(' ').at(-1));
+      assert.deepEqual(sends, ['Enter', 'Enter', 'Enter', 'Down', 'Right', 'Enter', 'Enter']);
+      await write(env.fake.pane, await fs.readFile(path.join(__dirname, 'fixtures/agy/idle.txt')));
+      assert.equal(env.instance.loginState('default-gemini').state, 'done');
+      assert.equal((await log(env)).split('\n').filter(line => line.includes('kill-session -t wc-login-default-gemini')).length, before + 1);
+    } finally { await env.close(); await hub.close(); }
+  });
+});
+
+test('idle usage probes isolate Claude and send only Codex rate-limit RPCs', async () => {
+  const root = await temp(), env = await service(root);
+  try {
+    const record = path.join(root, 'probe.json');
+    await write(path.join(env.fake.bin, 'claude'), `#!/usr/bin/env node\nconst fs = require('fs'); fs.writeFileSync(${JSON.stringify(record)}, JSON.stringify({ args: process.argv.slice(2), env: process.env.ANTHROPIC_BASE_URL })); console.log(JSON.stringify({ num_turns: 0, result: 'Current session: 100% used' }));\n`, 0o755);
+    const request = { account: 'default-claude', cli: 'claude', dir: null };
+    assert.equal((await api(env, 'POST', '/v1/usage', request)).status, 401);
+    assert.equal((await api(env, 'POST', '/v1/usage', { ...request, cli: 'agy' }, hubHeader)).status, 400);
+    assert.equal((await api(env, 'POST', '/v1/usage', { ...request, account: 'other' }, hubHeader)).status, 400);
+    const result = await api(env, 'POST', '/v1/usage', request, hubHeader);
+    assert.equal(result.status, 200); assert.equal(result.body.reading.five_hour.used, 100); assert.ok(result.body.reading.limited_until);
+    const capture = JSON.parse(await fs.readFile(record)); const args = capture.args;
+    assert.equal(capture.env, 'http://127.0.0.1:9'); assert.equal(args[args.indexOf('--setting-sources') + 1], '');
+    assert.equal(JSON.parse(args[args.indexOf('--settings') + 1]).env.ANTHROPIC_BASE_URL, capture.env);
+    await write(path.join(env.fake.bin, 'codex'), `#!/usr/bin/env node\nconst fs = require('fs'); let data = ''; process.stdin.on('data', c => { data += c; if (data.trim().split('\\n').length >= 3) { fs.writeFileSync(${JSON.stringify(record)}, data); console.log(JSON.stringify({method:'notice'})); console.log(JSON.stringify({id:2,result:{rateLimits:{primary:{windowDurationMins:10080,usedPercent:42,resetsAt:1800000000}}}})); } });\n`, 0o755);
+    const codex = await api(env, 'POST', '/v1/usage', { account: 'default-gpt', cli: 'codex', dir: null }, hubHeader);
+    assert.equal(codex.status, 200); assert.equal(codex.body.reading.week.used, 42);
+    assert.deepEqual((await fs.readFile(record, 'utf8')).trim().split('\n').map(line => JSON.parse(line).method), ['initialize', 'initialized', 'account/rateLimits/read']);
+  } finally { await env.close(); }
+});
+test('idle usage timeout kills the child without blocking status', async () => {
+  const root = await temp(), env = await service(root);
+  try {
+    env.instance.options.usageProbeTimeout = 200;
+    const pidfile = path.join(root, 'pid');
+    await write(path.join(env.fake.bin, 'claude'), `#!/usr/bin/env node\nif (process.argv[2] !== '-p') process.exit(0); require('fs').writeFileSync(${JSON.stringify(pidfile)}, String(process.pid)); setInterval(() => {}, 1000);\n`, 0o755);
+    const pending = api(env, 'POST', '/v1/usage', { account: 'default-claude', cli: 'claude', dir: null }, hubHeader);
+    assert.equal((await api(env, 'GET', '/v1/status', undefined, hubHeader)).status, 200);
+    assert.equal((await pending).status, 502);
+    const pid = Number(await fs.readFile(pidfile, 'utf8'));
+    await new Promise(resolve => setTimeout(resolve, 50)); assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
   } finally { await env.close(); }
 });

@@ -7,15 +7,16 @@ agents own neither tmux nor the machine secret.
 | File | Role |
 |---|---|
 | `service.js` | Dependency-free Node HTTP service, session registry, tmux/git boundary, worktrees, readiness, transcript copies, and durable spools. |
-| `adapters/` | CLI-specific commands, login folders, hook translation and usage parsing. |
+| `adapters/` | CLI-specific commands, login folders, hook translation and usage parsing (`claude.js`, `codex.js`, `agy.js`). |
 | `statusline.sh`, `lib/statusline.js` | Claude status display and throttled usage delivery. |
 | `lib/aside-turns.js` | Durable headless aside turns, CLI spawning, parsing and restart recovery. |
 | `lib/sudo.js` | Durable sudo request registration, polling, outcome delivery and cancellation. |
+| `lib/usage-probe.js` | Asynchronous, timed CLI usage probe runner. |
 | `lib/limits.js` | Pure exhausted-window reset calculation. |
-| `hook.sh` | CLI hook entry point; turns Claude/Codex payloads into local events and spools while the service is down. |
+| `hook.sh` | CLI hook entry point; turns Claude/Codex/Antigravity payloads into local events and spools while the service is down. |
 | `lib/hook-post.js` | Dependency-free HTTP/spool helper used by `hook.sh`. |
 | `API.md` | The hub-to-machine and agent-to-machine route contract. |
-| `test/` | Isolated fakes and service tests; never uses a real CLI, tmux, or state directory. |
+| `test/` | Isolated fakes and service tests; never uses a real CLI, tmux, or state directory. `fixtures/agy/` holds live captures from `agy` 1.5.9. |
 
 Test temp folders come from `test-support/run-dir.js` (`makeTemp`/`makeTempSync`), which removes them when the test process ends; never allocate from `os.tmpdir()` directly in a test.
 
