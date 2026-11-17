@@ -47,10 +47,11 @@ Platform test everywhere: `uname -s` = `Darwin` (shell) / `process.platform === 
 ### 1. Installer (`install.sh`)
 - **bash 3.2.** `install.sh` must run under `/bin/bash` 3.2 with `set -euo pipefail`. In particular, expanding an empty array under `set -u` (`"${a[@]}"`) is an error before bash 4.4: guard such expansions (`${a[@]+"${a[@]}"}`). No `declare -A`, `mapfile`, `${x,,}`, `&>>`, namerefs. No GNU-only tool flags (`sed -i` without a suffix argument, `stat -c`, `readlink -f`, `sha256sum`, `date -d`, `grep -P`, `find -printf`, `xargs -r`, `timeout`, `base64 -w`).
 - **Tailscale CLI lookup.** A function `tailscale_cli` prints the command to use: `tailscale` if on PATH; else, on Darwin only, `/Applications/Tailscale.app/Contents/MacOS/Tailscale` if executable; else fails. Every installer call to `tailscale` (machine_host, served_origin, tailscale_mapping_states, configure_tailscale_serve, the "run later" lines in disable_service) goes through it. On Darwin the serve commands it runs or prints carry no `sudo` (the Mac app's CLI talks to the app as the user); Linux keeps `sudo tailscale ...` exactly.
+- **Platform seams (tests only).** Every platform decision in `install.sh` reads a function `platform` that prints `${WHEELCHAIR_PLATFORM:-$(uname -s)}`, and the systemd check uses `${WHEELCHAIR_SYSTEMD_RUN_DIR:-/run/systemd/system}` instead of the literal path. Both variables are documented beside `WHEELCHAIR_TTY` as testing seams; unset, production behavior is exactly today's on Linux.
 - **`platform_supports_serving`** is true on Linux as today, or on Darwin when `launchctl` is on PATH.
 - **Darwin service setup** (in `configure_service`, after the serving decision is written, in place of the systemd unit/linger block; the Linux branch is unchanged):
   - Two LaunchAgent property lists in `$HOME/Library/LaunchAgents/`: `com.wheelchair.viewer.plist` and `com.wheelchair.machine.plist`, written with mode 644. Paths are installer variables next to `unit_file`/`machine_unit_file`.
-  - Both: `Label` as the file name; `ProgramArguments` = node's absolute path (`command -v node`) then the script and args (viewer: `$ROOT/viewer/server.js --service`; machine: `$ROOT/machine/service.js`); `RunAtLoad` true; `KeepAlive` true; `ThrottleInterval` 5; `WorkingDirectory` `$HOME`; `StandardOutPath`/`StandardErrorPath` `$HOME/Library/Logs/wheelchair/<viewer|machine>.log` (the directory is created); `EnvironmentVariables` with `PATH` = the same `service_path` the Linux machine unit gets (CLI dirs first, then the installer's PATH) and `HOME`. The viewer also gets `WHEELCHAIR_NO_BROWSER=1`. The machine plist also has `AbandonProcessGroup` true (the launchd form of `KillMode=process`: on stop, launchd kills only the service, not tmux or sessions it started).
+  - Both: `Label` exactly `com.wheelchair.viewer` / `com.wheelchair.machine` (the file name without `.plist`; every `launchctl` call in this Spec uses these labels); `ProgramArguments` = node's absolute path (`command -v node`) then the script and args (viewer: `$ROOT/viewer/server.js --service`; machine: `$ROOT/machine/service.js`); `RunAtLoad` true; `KeepAlive` true; `ThrottleInterval` 5; `WorkingDirectory` `$HOME`; `StandardOutPath`/`StandardErrorPath` `$HOME/Library/Logs/wheelchair/<viewer|machine>.log` (the directory is created); `EnvironmentVariables` with `PATH` = the same `service_path` the Linux machine unit gets (CLI dirs first, then the installer's PATH) and `HOME`. The viewer also gets `WHEELCHAIR_NO_BROWSER=1`. The machine plist also has `AbandonProcessGroup` true (the launchd form of `KillMode=process`: on stop, launchd kills only the service, not tmux or sessions it started).
   - XML-escape every interpolated value (`&`, `<`, `>`); paths with those characters must still produce valid plists. Validate each written file with `plutil -lint` and fail the setup with a message naming the file if it is invalid.
   - Load: for each label, `launchctl bootout gui/$(id -u)/<label>` (ignore failure: not loaded), then `launchctl bootstrap gui/$(id -u) <plist>`. On a bootstrap failure, print `viewer: could not start <label>: <launchctl output>` to stderr and continue to the next. Rerunning the installer reloads both (that replaces the Linux `restart`).
   - No linger. Instead print once: `viewer: on macOS the services run while you are logged in; to keep this Mac serving, turn on automatic login and stop it sleeping (see README, "On macOS")`.
@@ -83,15 +84,15 @@ Platform test everywhere: `uname -s` = `Darwin` (shell) / `process.platform === 
 The Mac job (section 7) runs these; each must pass on Linux too:
 - `bash sensitivity/test/run.sh` (ported per section 4).
 - `bash codex/test/run.sh` (port any bash-4/GNU use found in it; it covers preflight).
-- `bash install/test/run.sh`: ported to bash 3.2 (its `declare -A` at `:57`, `sort -z`, `stat -c`, `sha256sum` at `:35-41,562`), with new Darwin cases driven by a `uname` shim reporting `Darwin` plus `launchctl` and `plutil` shims that record calls: `--serve` writes both plists with the fields above and bootstraps both labels; rerun boots out then bootstraps again; `--no-serve` boots out and removes both plists; the Tailscale app-path fallback is used when `tailscale` is not on PATH, and its serve commands have no `sudo`; the Darwin sudo-helper line is printed. Existing Linux cases keep passing unchanged.
+- `bash install/test/run.sh`: ported to bash 3.2 (its `declare -A` at `:57`, `sort -z`, `stat -c`, `sha256sum` at `:35-41,562`), with every existing case pinned to Linux (`WHEELCHAIR_PLATFORM=Linux`, `WHEELCHAIR_SYSTEMD_RUN_DIR` pointing at a directory the fixture creates, so it passes on a Mac without systemd) and new Darwin cases (`WHEELCHAIR_PLATFORM=Darwin`) with `launchctl` and `plutil` shims that record calls: `--serve` writes both plists with the fields above and bootstraps both labels; rerun boots out then bootstraps again; `--no-serve` boots out and removes both plists; the Tailscale app-path fallback is used when `tailscale` is not on PATH, and its serve commands have no `sudo`; the Darwin sudo-helper line is printed. Existing Linux cases keep passing unchanged.
 - `node --test machine/test/aside-turns.test.js`, with new cases for the `ps` implementation (forced by an injectable "no /proc" switch, not by platform), including `load()` recovery not throwing.
 Other suites (viewer browser tests, smoke, sudo-helper, the rest of `machine/test`) are not required to pass on the Mac and are not run there.
 
 ### 6. Mac end-to-end check (`test-support/macos/check.sh`)
-A new script, Mac-only (exits 2 with a message on any other platform), run by the Mac job after the real install. Using only the running services and the machine's own secret file (`~/.wheelchair/...` as install.sh writes it; header `x-wheelchair-machine-secret`):
+A new script, Mac-only (exits 2 with a message on any other platform), run by the Mac job after the real install. Using only the running services and the machine's own secret (the file named by `secret_file` in `~/.local/state/wheelchair/machine.json`, normally `~/.local/state/wheelchair/machine.secret`; header `x-wheelchair-machine-secret`):
 1. Both labels are loaded: `launchctl print gui/$(id -u)/com.wheelchair.viewer` and `.machine` succeed.
 2. The viewer answers on `http://127.0.0.1:7373/wheelchair` and the machine on `GET /v1/status` (port 7374, with the secret), retrying up to 60 s.
-3. Start a session through `POST /v1/sessions` (role `worker`, cli `claude`, a throwaway git repo as `worktree`) with a fake `claude` placed first on the service's PATH by the job before install (a script that prints a line and sleeps). Wait until `tmux has-session -t <name>` succeeds.
+3. Start a session through `POST /v1/sessions` (role `worker`, cli `claude`, a throwaway git repo as `worktree`) with a fake `claude` placed first on the service's PATH by the job before install. The fake answers `--version` (prints `0.0.0-fake`, exits 0) and any `auth ...` call (exits 0) at once, because `/v1/status` runs them synchronously (`machine/service.js:938-942`, `machine/adapters/common.js:16`); any other invocation prints a line and sleeps. Wait until `tmux has-session -t <name>` succeeds.
 4. `launchctl kickstart -k gui/$(id -u)/com.wheelchair.machine`; wait for `/v1/status` again; the tmux session from step 3 still exists.
 5. Kill the machine service's process with SIGKILL; within 30 s it answers again (KeepAlive).
 6. `GET /v1/diagram-sensitivity` returns 200; `POST` it with the level it reported returns 200.
@@ -140,9 +141,22 @@ On the Mac job: green on the pull request, including `test-support/macos/check.s
 
 ### Round 1 — 2026-11-16
 
-**Lanes:** intent / claude (planned); mechanics / gpt (planned); cross-family: yes.
+**Lanes:** intent / gpt; mechanics / gpt (claude unavailable); cross-family: no.
 
 **Changed since Round N-1:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| mechanics/gpt | major | LaunchAgent `Label` ambiguous (file name includes `.plist`) | upheld | Exact labels stated in section 1 |
+| mechanics/gpt | major | Fake `claude` sleeps on `--version`/`auth status`, which `/v1/status` runs synchronously (`service.js:938-942`, `common.js:16`) | upheld | Fake answers those at once; section 6 step 3 |
+| mechanics/gpt | major | Installer fixture Linux cases can't run on a Mac: `platform_supports_serving` reads `uname` and `/run/systemd/system` directly (`install.sh:210-212`) | upheld | `WHEELCHAIR_PLATFORM` / `WHEELCHAIR_SYSTEMD_RUN_DIR` seams; existing cases pinned to Linux |
+| mechanics/gpt | minor | Secret path in section 6 wrong; installer writes `~/.local/state/wheelchair/machine.secret` (`install.sh:14-17`) | upheld | Read via `machine.json` `secret_file` |
+
+### Round 2 — 2026-11-16
+
+**Lanes:** intent / see start output; mechanics / see start output.
+
+**Changed since Round 1:** exact LaunchAgent labels (section 1); installer platform seams `WHEELCHAIR_PLATFORM`, `WHEELCHAIR_SYSTEMD_RUN_DIR` and fixture cases pinned to Linux (sections 1, 5); fake `claude` answers `--version`/`auth` at once (section 6 step 3); secret path read from `machine.json` (section 6).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
