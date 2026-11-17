@@ -38,6 +38,8 @@ None.
 | D7 | After a poll records any reading, run `sessions.retryWaiting(hub)` once (as `hub.event()` does for a reading) | A refilled idle account should release waiting starts without waiting for the minute timer | defaulted |
 | D8 | `gemini` accounts are not polled | No usage source exists for that CLI (W4) | defaulted |
 | D9 | The Claude probe runs with `ANTHROPIC_BASE_URL` set to a closed local port, so it cannot reach the model whatever the CLI does with `/usage`. The Codex probe sends only `initialize` and `account/rateLimits/read`, never a turn request; an unknown method is an RPC error, not a turn | A check after the fact (`num_turns`) cannot undo a spent turn or a started window (IDEA constraint 1) | review-round-1 |
+| D14 | The Claude probe also passes `--setting-sources ""` and sets the closed-port address through `--settings` | A settings file's `env` block outranks the inherited environment and could restore the real address. Checked 2026-11-16: `/usage` still answers with these flags (`num_turns 0`) and a prompt still cannot reach the model | review-round-2 |
+| D15 | The 15-second cache in `usage.machineAccounts` is acceptable for D11's re-check | A probe of an account signed out seconds earlier just fails (D5); it cannot spend quota (D9) | review-round-2 |
 | D13 | IDEA's "refreshing or rewriting any CLI's login" applies to wheelchair's own code: the hub and machine service never read, refresh or write a credentials file. A probe runs the provider's CLI unchanged, and that CLI may renew its own login as it does every time a session starts on the account. That is allowed | Without it an idle Claude account stops being readable once its token expires (W2), defeating the IDEA; the CLI's own renewal is routine, not a rewrite by us | review-round-2 |
 | D10 | Supersedes D2's timing: a one-minute tick probes each eligible account whose reading is missing or ≥ 9 minutes old and that was not probed in the last 9 minutes (so a failing account is retried every 9 minutes, D5). With probes of a few seconds each (30 s worst case) and a handful of accounts, an idle reading stays within about 10 minutes; a long run never skips a whole interval, since the next tick picks up whatever is due | A fixed 10-minute batch, suppressed while the previous one runs, could leave readings 20 minutes old | review-round-1 |
 | D11 | Eligibility is re-checked right before each account's probe, not once per run | An account that went live or was paused earlier in the run is not probed | review-round-1 |
@@ -73,14 +75,17 @@ New hub-authorized route in `machine/service.js` (beside `/v1/preflight`), docum
 ### Claude probe (`machine/adapters/claude.js`)
 
 Command: `claude -p /usage --output-format json --no-session-persistence
---strict-mcp-config`, run with `ANTHROPIC_BASE_URL=http://127.0.0.1:9` added to the
-child environment (D9). That points model calls at a closed local port, so even a future CLI
+--strict-mcp-config --setting-sources "" --settings '{"env":{"ANTHROPIC_BASE_URL":"http://127.0.0.1:9"}}'`,
+also with `ANTHROPIC_BASE_URL=http://127.0.0.1:9` in the child environment (D9, D14).
+`--setting-sources ""` stops user, project and local settings loading, so none of them can
+put the real API address back; the same address is also set through `--settings`. That points model calls at a closed local port, so even a future CLI
 that treated `/usage` as a prompt could not reach the model: the child hangs or errors and the
 30 s timeout fails the probe. `/usage` itself still answers with that variable set (checked
 2026-11-16, Log). Parse the JSON; also require `num_turns === 0`, otherwise fail.
 From `result` text:
 
-- `Current session: <N>% used · resets <Mon> <D>, <h:mm><am|pm> (<IANA zone>)` → `five_hour`.
+- `Current session: <N>% used · resets <Mon> <D>, <h[:mm]><am|pm> (<IANA zone>)` → `five_hour`.
+  The minutes are optional: both `6:59pm` and `7pm` were seen on 2026-11-16.
 - `Current week (all models): <N>% used · resets …` → `week`.
 - Other lines (per-model weeks, the "contributing" breakdown) are ignored.
 - A line without a `resets` part gives `resets_at: null`. Reset times are converted from
@@ -159,14 +164,15 @@ npm --prefix viewer run test:browser
 Tests to add:
 
 - `machine/test/accounts.test.js`: Claude parser on the sample above (correct UTC times
-  for `America/Los_Angeles`, year rollover near 31 Dec, missing `resets`, ≥100% →
+  for `America/Los_Angeles`, year rollover near 31 Dec, missing `resets`, a reset time without minutes (`7pm`), ≥100% →
   `reached`, `num_turns: 1` → fail, no windows → fail); Codex mapper on a
   `account/rateLimits/read` result with only a weekly primary, with both windows, with
   `rateLimitReachedType` set, and with an `error` response.
 - `machine/test/service.test.js`: `/v1/usage` with shim `claude` and `codex` executables on
   `PATH` (200 with a reading; timeout → 502 and child killed; bad `cli` → 400; hub auth
-  required; the `claude` shim records its environment and the test asserts
-  `ANTHROPIC_BASE_URL=http://127.0.0.1:9`; the `codex` shim records stdin and the test
+  required; the `claude` shim records its environment and arguments, and the test asserts
+  `ANTHROPIC_BASE_URL=http://127.0.0.1:9` in both the environment and the `--settings` JSON,
+  and `--setting-sources` with an empty value; the `codex` shim records stdin and the test
   asserts no method other than `initialize`, `initialized` and `account/rateLimits/read`).
 - `viewer/test/app-usage.test.js` (fake machine `/v1/usage` route in
   `viewer/test/helpers/app-machine.js`): only eligible accounts probed (paused,
@@ -181,6 +187,8 @@ Tests to add:
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| Machine-wide managed Claude settings (`/etc/claude-code/`) load whatever `--setting-sources` says and could set the API address | None exist on these personal machines (checked on hearth 2026-11-16); an organization policy is outside what wheelchair can override | round 2 |
+| D11 may probe an account signed out within the last 15 s (cached sign-in state) | The probe just fails (D5) and cannot spend quota (D9) | round 2 |
 | The Claude `/usage` text format and `codex app-server` (marked experimental) can change with a CLI update | A break only stops the readings (D5); D9 keeps a changed CLI from spending quota. The cost of a break is today's behavior | planning, revised round 1 |
 
 ## Review Rounds
@@ -198,6 +206,8 @@ Tests to add:
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | blocking | A settings file's `env` can override the inherited `ANTHROPIC_BASE_URL`, so a changed `/usage` could reach the model | upheld | D14: `--setting-sources ""` plus the address in `--settings`; test asserts the flags |
+| mechanics | minor | D11's re-check can use the 15 s cached sign-in state | accepted-risk | D15; see Accepted Risks |
 | intent | major | D1/W2 rely on the CLI renewing its login while IDEA excludes refreshing logins; the boundary is unclear | upheld | D13: the exclusion covers wheelchair's code; the CLI's own renewal is allowed |
 
 ### Round 1 — 2026-11-16
