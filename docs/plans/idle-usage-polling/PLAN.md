@@ -38,6 +38,7 @@ None.
 | D7 | After a poll records any reading, run `sessions.retryWaiting(hub)` once (as `hub.event()` does for a reading) | A refilled idle account should release waiting starts without waiting for the minute timer | defaulted |
 | D8 | `gemini` accounts are not polled | No usage source exists for that CLI (W4) | defaulted |
 | D9 | The Claude probe runs with `ANTHROPIC_BASE_URL` set to a closed local port, so it cannot reach the model whatever the CLI does with `/usage`. The Codex probe sends only `initialize` and `account/rateLimits/read`, never a turn request; an unknown method is an RPC error, not a turn | A check after the fact (`num_turns`) cannot undo a spent turn or a started window (IDEA constraint 1) | review-round-1 |
+| D13 | IDEA's "refreshing or rewriting any CLI's login" applies to wheelchair's own code: the hub and machine service never read, refresh or write a credentials file. A probe runs the provider's CLI unchanged, and that CLI may renew its own login as it does every time a session starts on the account. That is allowed | Without it an idle Claude account stops being readable once its token expires (W2), defeating the IDEA; the CLI's own renewal is routine, not a rewrite by us | review-round-2 |
 | D10 | Supersedes D2's timing: a one-minute tick probes each eligible account whose reading is missing or ≥ 9 minutes old and that was not probed in the last 9 minutes (so a failing account is retried every 9 minutes, D5). With probes of a few seconds each (30 s worst case) and a handful of accounts, an idle reading stays within about 10 minutes; a long run never skips a whole interval, since the next tick picks up whatever is due | A fixed 10-minute batch, suppressed while the previous one runs, could leave readings 20 minutes old | review-round-1 |
 | D11 | Eligibility is re-checked right before each account's probe, not once per run | An account that went live or was paused earlier in the run is not probed | review-round-1 |
 | D12 | A poll reading is stamped with the time its probe started | A live reading that arrives during the probe (even from a session that has already ended) is then newer and wins | review-round-1 |
@@ -143,7 +144,8 @@ or no window → fail.
 
 ### Non-goals
 
-Ranking or choice changes; Usage page changes; touching or refreshing any credentials;
+Ranking or choice changes; Usage page changes; wheelchair code reading, refreshing or
+writing any credentials (the CLI's own renewal while it runs is allowed, D13);
 polling `gemini`; per-model weekly windows.
 
 ### Validation
@@ -196,6 +198,7 @@ Tests to add:
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | D1/W2 rely on the CLI renewing its login while IDEA excludes refreshing logins; the boundary is unclear | upheld | D13: the exclusion covers wheelchair's code; the CLI's own renewal is allowed |
 
 ### Round 1 — 2026-11-16
 
