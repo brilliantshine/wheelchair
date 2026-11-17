@@ -38,7 +38,7 @@ None.
 | D7 | After a poll records any reading, run `sessions.retryWaiting(hub)` once (as `hub.event()` does for a reading) | A refilled idle account should release waiting starts without waiting for the minute timer | defaulted |
 | D8 | `gemini` accounts are not polled | No usage source exists for that CLI (W4) | defaulted |
 | D9 | The Claude probe runs with `ANTHROPIC_BASE_URL` set to a closed local port, so it cannot reach the model whatever the CLI does with `/usage`. The Codex probe sends only `initialize` and `account/rateLimits/read`, never a turn request; an unknown method is an RPC error, not a turn | A check after the fact (`num_turns`) cannot undo a spent turn or a started window (IDEA constraint 1) | review-round-1 |
-| D10 | Supersedes D2's timing: a one-minute tick probes each eligible account whose reading is missing or ≥ 9 minutes old. With probes of a few seconds each (30 s worst case) and a handful of accounts, an idle reading stays within about 10 minutes; a long run never skips a whole interval, since the next tick picks up whatever is due | A fixed 10-minute batch, suppressed while the previous one runs, could leave readings 20 minutes old | review-round-1 |
+| D10 | Supersedes D2's timing: a one-minute tick probes each eligible account whose reading is missing or ≥ 9 minutes old and that was not probed in the last 9 minutes (so a failing account is retried every 9 minutes, D5). With probes of a few seconds each (30 s worst case) and a handful of accounts, an idle reading stays within about 10 minutes; a long run never skips a whole interval, since the next tick picks up whatever is due | A fixed 10-minute batch, suppressed while the previous one runs, could leave readings 20 minutes old | review-round-1 |
 | D11 | Eligibility is re-checked right before each account's probe, not once per run | An account that went live or was paused earlier in the run is not probed | review-round-1 |
 | D12 | A poll reading is stamped with the time its probe started | A live reading that arrives during the probe (even from a session that has already ended) is then newer and wins | review-round-1 |
 
@@ -108,7 +108,9 @@ or no window → fail.
 ### Hub: `viewer/app/usage-poll.js` (new)
 
 - `pollIdle(hub)`: list the candidate accounts in settings order: provider `claude` or
-  `gpt`, and stored reading missing or with `at` at least 9 minutes old (D10). For each, in
+  `gpt`, stored reading missing or with `at` at least 9 minutes old, and no probe of it
+  started in the last 9 minutes (D10; kept in memory on the hub, so a failing account is
+  retried every 9 minutes, not every tick). For each, in
   turn: **re-check eligibility right before the call** with freshly loaded settings, threads
   and `usage.machineAccounts(hub)` (D3; skip it if no longer eligible, D11); note
   `started = new Date().toISOString()`; then `hub.call(machine,
@@ -180,6 +182,20 @@ Tests to add:
 | The Claude `/usage` text format and `codex app-server` (marked experimental) can change with a CLI update | A break only stops the readings (D5); D9 keeps a changed CLI from spending quota. The cost of a break is today's behavior | planning, revised round 1 |
 
 ## Review Rounds
+
+### Round 2 — 2026-11-16
+
+**Lanes:** pending.
+
+**Changed since Round 1:**
+- D9: the Claude probe runs with `ANTHROPIC_BASE_URL` at a closed local port; Codex probe sends no turn request; tests assert both.
+- D10: one-minute tick, per-account due time (reading ≥ 9 min old and no probe in the last 9 min), replacing the 10-minute batch.
+- D11: eligibility re-checked before each probe.
+- D12: poll readings stamped with the probe's start time.
+- Accepted Risk rationale reworded.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ### Round 1 — 2026-11-16
 
