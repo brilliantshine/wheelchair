@@ -1,6 +1,6 @@
 ---
 slug: agents-screen-redesign
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-17
 ---
 
@@ -348,3 +348,4 @@ so the browser back button works.
 - 2026-11-17 — Choice (listed by sub-lead from the diff): T4, agents.js: with no agent selected the side panel says "Select an agent to see details."; the machine line is the thread's machine; waiting and not-started agents use the "Idle for" wording from `turn_ended_at`; `window.agentsTermView` exposed for tests; the whole page except the terminal panel and brief dialog is rebuilt on each poll.
 - 2026-11-17 — Choice (listed by sub-lead): T4, app-threads.spec.js and app-ui.spec.js: the `#lead-` link and attach-command assertions now expect `?lead=` and no "tmux" on Agents (lead approved).
 - 2026-11-17 — Sub-lead integration on T4's merge: removed the three screenshots T4 committed under reports/ (the lead asked for them outside the repo; copies are in the sub-lead's scratch folder) and added two assertions to the Agents test in viewer/test/app-views.spec.js that a 5.5 s poll redraw keeps the selected agent and keeps the open terminal in Typing (§9; the worker's test had no redraw). Agents test: 4 passed (Chromium, Firefox; desktop, phone).
+- 2026-11-17 — Sub-lead: all tasks merged; viewer/AGENTS.md and viewer/app/API.md (agents response) brought up to date; COMPLETION.md written; status verifying.
