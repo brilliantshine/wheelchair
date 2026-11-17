@@ -1,0 +1,6 @@
+{"form":"timeline","explanation":"What happens after a worker finishes a task, in order. The point to look at is step 3: the scout reads the full changes so the sub-lead doesn't have to. Not shown: the final verifier, which still checks the whole build afterwards.","events":[
+{"when":"1","label":"Worker finishes","detail":"It sends its report and commits its changes."},
+{"when":"2","label":"Sub-lead reruns the tests","detail":"Same as today; it doesn't trust the worker's word."},
+{"when":"3","label":"Scout reads the changes","detail":"It compares them with the worker's instructions and the plan, and replies with a short list: each thing that deviates, is missing or looks risky, with the file and line."},
+{"when":"4","label":"Sub-lead opens only the flagged lines","detail":"An empty list means nothing to open."},
+{"when":"5","label":"Merge or send back","detail":"A real problem goes back to the worker to fix."}]}
