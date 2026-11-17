@@ -19,7 +19,7 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 | `POST /threads/:id/asides/:aside/summary` | — | `200`, queues a handoff draft when enabled |
 | `POST /threads/:id/messages` | `{text}` | `{queued:true}`; delivery waits for the lead turn end |
 | `POST /threads/:id/send-now` | `{at}` | `{sent}`; submits Collin's queued message with that `at` to the live lead mid-turn. `404` if it is no longer queued, `409` with no live lead or while the lead is unready or held (permission, needs, usage limit). `sent:false` means the submit failed and it stays first in the queue |
-| `POST /threads/:id/cards/:cardId/press` | `{action,value?}` | `{queued:true,text}` for lead actions and records `answered_action` and `answered_value` on an answered card; `recheck` updates an approval in place, and `start-building` first re-checks Ready. On an open lead `needs` card, `keep-going` and `talk` (value: the card title) also close it as `resolved_by:"collin"`; a `system` or answered needs card is refused with 422. `answered` (value: Collin's own words, trimmed) works only on an open `question` card: 400 for another kind or empty text, 422 once answered; it reaches the lead as `[card <id>] answered: <text>` |
+| `POST /threads/:id/cards/:cardId/press` | `{action,value?}` | `{queued:true,text}` for lead actions and records `answered_action` and `answered_value` on an answered card; `keep` resolves an open app `merged` card as Kept without a live lead and returns `{queued:false}`; other actions on it return 400 and repeating keep returns 422. `recheck` updates an approval in place, and `start-building` first re-checks Ready. On an open lead `needs` card, `keep-going` and `talk` (value: the card title) also close it as `resolved_by:"collin"`; a `system` or answered needs card is refused with 422. `answered` (value: Collin's own words, trimmed) works only on an open `question` card: 400 for another kind or empty text, 422 once answered; it reaches the lead as `[card <id>] answered: <text>` |
 | `POST /threads/:id/cards/:cardId/dismiss` | — | `{ok:true}`; closes an open `needs` card a lead posted (`resolved_by:"collin"`, shown dimmed as resolved). The thread page no longer shows a Dismiss button; it uses the press actions above. A `system` needs card is refused with 422, an unknown card with 404 |
 | `POST /threads/:id/open` | `{start_now?:boolean}` | a started stub, or `{waiting:true,thread}` |
 | `POST /threads/:id/restart` | — | replacement lead session; its restart context is queued first |
@@ -52,7 +52,7 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 
 `Thread` has `id`, `project`, `cli`, `machine`, `stub`, `context`, `parent`,
 `depends_on_parent`, `waiting_on_parent`, `sessions`, `cards`, `pinned`, `queues`, `sent`,
-`worktree`, `branch`, `slug`, and `archived`. Card records retain their card fields plus `id`,
+`worktree`, `branch`, `slug`, `archived`, and optional `merge_noticed_url` and `merge_noticed_at` (the reported PR URL and its ISO notice time). Card records retain their card fields plus `id`,
 `session`, `at`, `created_at`, `answered`, `answered_action`, `answered_value`, and `system`.
 A closed `needs` card, or a question the lead resolved after an answer in chat, also has
 `resolved_by` (a lead's session name, or `collin` for a needs dismissal), `resolved_note` and

@@ -191,6 +191,9 @@ async function archive(hub, id) {
     return result;
   }
   thread.archived = true;
+  for (const card of thread.cards) {
+    if (card.kind === 'merged' && !card.answered) require('./cards.js').resolveCard(card, 'collin', 'Archived');
+  }
   for (const session of thread.sessions) session.live = false;
   await hub.save(thread);
   return result;
@@ -267,6 +270,13 @@ async function press(hub, id, cardId, input) {
   const thread = await hub.thread(id);
   const card = thread.cards.find((item) => item.id === cardId && !item.replaced);
   if (!card) throw appError(404, 'card not found');
+  if (card.kind === 'merged') {
+    if (input.action !== 'keep') throw appError(400, 'a merged card takes keep');
+    if (card.answered) throw appError(422, 'card is already answered');
+    require('./cards.js').resolveCard(card, 'collin', 'Kept');
+    await hub.save(thread);
+    return { queued: false };
+  }
   if (card.kind === 'sudo') return pressSudo(hub, thread, card, input);
   if (input.action === 'recheck') {
     if (card.kind !== 'approval') throw appError(400, 're-check requires an approval card');
@@ -331,6 +341,37 @@ async function dismiss(hub, id, cardId) {
   return { ok: true };
 }
 
+function mergedPr(thread) {
+  return [...(thread.cards || [])].reverse().find((card) =>
+    card.kind === 'done' && !card.replaced && typeof card.pr_url === 'string' && card.pr_url.trim())?.pr_url || null;
+}
+
+async function pollMerged(hub) {
+  const eligible = (await hub.allThreads()).map((thread) => ({ thread, url: mergedPr(thread) }))
+    .filter(({ thread, url }) => !thread.archived && url && /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+$/.test(url) && thread.merge_noticed_url !== url);
+  let next = 0;
+  async function worker() {
+    while (next < eligible.length) {
+      const { thread, url } = eligible[next++];
+      try {
+        const result = await execFileAsync('gh', ['pr', 'view', url, '--json', 'state'], { timeout: 15000 });
+        if (JSON.parse(result.stdout).state !== 'MERGED') continue;
+        await hub.withThread(thread.id, async () => {
+          const current = await hub.thread(thread.id);
+          if (current.archived || mergedPr(current) !== url || current.merge_noticed_url === url) return;
+          current.merge_noticed_url = url;
+          current.merge_noticed_at = new Date().toISOString();
+          require('./cards.js').addCard(current, { kind: 'merged', title: 'Pull request merged', pr_url: url }, { system: true });
+          await hub.save(current);
+        });
+      } catch {
+        // An unavailable GitHub or a changed thread can be retried on the next sweep.
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(4, eligible.length) }, worker));
+}
+
 async function pollWaiting(hub) {
   for (const listedThread of await hub.allThreads()) {
     await hub.withThread(listedThread.id, async () => {
@@ -367,6 +408,7 @@ module.exports = {
   dismiss,
   openStub,
   pollWaiting,
+  pollMerged,
   press,
   publicSession,
   restartLead,

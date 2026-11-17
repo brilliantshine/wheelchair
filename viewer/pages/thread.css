@@ -132,7 +132,7 @@ html:has(.shell.on-thread) { scroll-padding-top: calc(var(--nav-h) + var(--head-
 .opt .cons { display: block; font-size: 13px; color: var(--ink-2); line-height: 1.5; font-weight: 400; }
 .opt.lean { border-color: var(--accent); background: var(--accent-soft); }
 .lean-tag { font-weight: 400; color: var(--accent-hi); margin-left: 6px; }
-.card-needs.is-answered { opacity: 0.6; border-color: var(--line); }
+.card-needs.is-answered, .card-merged.is-answered { opacity: 0.6; border-color: var(--line); }
 .card-question.is-resolved { opacity: 0.6; }
 .doc-link { display: inline-block; margin-top: 8px; font-size: 13px; }
 .own-words { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; margin-top: 10px; }
