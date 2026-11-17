@@ -1,6 +1,6 @@
 ---
 slug: idle-usage-polling
-status: draft   # draft | confirmed
+status: confirmed   # draft | confirmed
 created: 2026-11-16
 ---
 
