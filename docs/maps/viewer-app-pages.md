@@ -14,3 +14,5 @@ app URL -> server page allowlist -> page HTML -> shared nav and page script
 ## What I did not look at
 
 - Non-app viewer routes, asset auth, document pages, CSS and their tests.
+
+> Agents-screen recheck at `3065046af16a1f6b2822d308b5c32431ca39a449`: the overlapping session, page and card paths were checked in [app-agents-screen.md](app-agents-screen.md). The rest of this older map was not rechecked.

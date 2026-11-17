@@ -22,3 +22,5 @@ start with brief -> machine types first message -> turn -> turn-end hook -> hub 
 Provider selection details, worktree lifecycle, or transcript parsing internals.
 
 > Risk-flow recheck at `635c45f07991f31191f2ab1443b52b4ee76559d5`: see [app-risks.md](app-risks.md).
+
+> Agents-screen recheck at `3065046af16a1f6b2822d308b5c32431ca39a449`: the overlapping session, page and card paths were checked in [app-agents-screen.md](app-agents-screen.md). The rest of this older map was not rechecked.
