@@ -2,7 +2,10 @@
 slug: idle-usage-polling
 date: 2026-11-16
 implemented-by: "standard (gpt-6.1-terra) for T1 and T2; sub-lead claude-opus-5-5"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: gpt-6.1-sol (top tier; --not-provider gpt not honoured, no other family available)
+    checks: standard gpt-6.1-terra (T1, T2)
 ---
 
 # Completion Report — Check usage on accounts no agent is using
@@ -96,3 +99,5 @@ The real `claude` and `codex` CLIs were not run by the build; all tests use shim
 - The 9-minute retry memory is in-process; a hub restart forgets it, so failing accounts are tried again at the first run 30 s after start.
 
 ## Remediation rounds
+
+None. Verification attempt 1 (gpt-6.1-sol) on ccd6298: VERDICT PASS, no Spec gaps; the balancer and lifecycle failures reproduced on 969471c.
