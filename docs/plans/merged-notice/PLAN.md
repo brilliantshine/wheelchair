@@ -41,14 +41,15 @@ When a thread's pull request is merged on GitHub, within about a minute the app 
 
 ### 1. Noticing the merge (hub)
 
-- New function `pollMerged(hub)` in `viewer/app/threads.js`, exposed as `hub.pollMerged()` in `viewer/app/hub.js`. Run it from the existing 60-second `waitTimer` alongside `pollWaiting` (`viewer/app/hub.js:61-62`), and once at startup after `pollWaiting()` in `init()`.
-- For each thread from `hub.allThreads()`, under `hub.withThread(id, …)`, reload the thread and skip it unless all hold:
+- New function `pollMerged(hub)` in `viewer/app/threads.js`, exposed as `hub.pollMerged()` in `viewer/app/hub.js`. Run it from the existing 60-second `waitTimer` alongside `pollWaiting` (`viewer/app/hub.js:61-62`). Also start it once in `init()`, **without awaiting it**: `this.pollMerged().catch(() => {})`, so the first API request is not held up by GitHub calls.
+- **No overlapping sweeps:** the hub keeps an in-flight flag (or promise). A tick that finds a sweep still running returns at once and starts nothing.
+- **Select, then check outside the lock:** read `hub.allThreads()` and pick the eligible threads without taking any thread lock. A thread is eligible only if all of these hold:
   - not `archived`;
   - its PR URL is set: the `pr_url` of the newest `done` card with a non-empty `pr_url` among cards not `replaced` (same rule as `prOf`, `viewer/app/chat.js:256`);
   - the URL matches `^https://github\.com/[^/\s]+/[^/\s]+/pull/\d+$`;
   - `thread.merge_noticed_url` is not equal to that URL.
-- Run `execFile('gh', ['pr', 'view', url, '--json', 'state'])` (promisified, no shell, no `cwd` needed). Use a timeout of 30 seconds.
-- If the parsed JSON's `state` is `"MERGED"`: set `thread.merge_noticed_url = url` and `thread.merge_noticed_at` to now (ISO), add the card with `addCard(thread, { kind: 'merged', title: 'Pull request merged', pr_url: url }, { system: true })` (`viewer/app/cards.js:11`), then `hub.save(thread)`.
+- Ask GitHub for each eligible thread with **no thread lock held**, at most 4 calls at a time: `execFile('gh', ['pr', 'view', url, '--json', 'state'], { timeout: 15000 })` (promisified, no shell, no `cwd`). A thread's lock must never be held across a `gh` call, because agents' cards for that thread wait on the same lock.
+- If the parsed JSON's `state` is `"MERGED"`: take the thread's lock with `hub.withThread(id, …)` and reload the thread. If it is now archived, or its PR URL changed, or `merge_noticed_url` already equals the URL, do nothing. Otherwise set `thread.merge_noticed_url = url` and `thread.merge_noticed_at` to now (ISO), add the card with `addCard(thread, { kind: 'merged', title: 'Pull request merged', pr_url: url }, { system: true })` (`viewer/app/cards.js:11`), then `hub.save(thread)`.
 - Any other state, any error (missing `gh`, logged out, offline, bad JSON, timeout): change nothing and throw nothing. The thread is checked again on the next tick. One thread's failure never stops the others.
 - One card per PR: the `merge_noticed_url` marker is never cleared. A later `done` card carrying the same URL (an after-done fix) posts no second card.
 
@@ -97,6 +98,9 @@ Automatic archiving; merging from the app; any notice for a closed-unmerged PR; 
 
 - `node --test viewer/test/*.test.js` (unquoted glob). Add tests in `viewer/test/app-hub.test.js` (or a new `viewer/test/app-merged.test.js`) with a fake `gh` on `PATH`, as `app-hub.test.js:690-693` does. Cover:
   - `MERGED` posts exactly one card and sets the marker;
+  - two overlapping `pollMerged()` calls run `gh` once per thread (the second returns at once);
+  - a thread archived while its `gh` call is in flight gets no card;
+  - `init()` resolves while a slow fake `gh` is still running;
   - a second poll posts nothing;
   - `OPEN` and `CLOSED` post nothing;
   - a failing `gh` posts nothing and does not throw;
@@ -124,9 +128,23 @@ Automatic archiving; merging from the app; any notice for a closed-unmerged PR; 
 
 ### Round 1 — 2026-11-16
 
-**Lanes:** claude (intent); other family (mechanics); cross-family: yes.
+**Lanes:** gpt / gpt-6.1-sol (intent); gpt / gpt-6.1-sol (mechanics); cross-family: no (claude unavailable at start).
 
 **Changed since Round N-1:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | — | No findings | — | — |
+| mechanics | blocking | Hub initializes lazily on the first API request (`viewer/server.js:2083-2096`), so after a restart with no API traffic nothing polls. | declined | The card is only seen through the API, and the first API request runs `init()`, whose startup sweep posts it. Every existing hub timer (stubs, dead sessions) has the same lifecycle. Not a defect for this idea. |
+| mechanics | major | Sweep concurrency, overlap and the awaited startup sweep are unspecified; copying `pollWaiting` would hold each thread's lock across a 30 s `gh` call and delay the first request. | upheld | Spec 1: startup sweep not awaited; in-flight guard; `gh` runs outside the thread lock, 4 at a time, 15 s timeout; re-check under the lock before posting. Tests added. |
+
+### Round 2 — 2026-11-16
+
+**Lanes:** pending.
+
+**Changed since Round 1:**
+- Spec 1: the startup sweep is no longer awaited; an in-flight guard stops overlapping sweeps; `gh` runs with no thread lock held, 4 at a time, 15 s timeout; the thread is reloaded and re-checked under its lock before the card is posted.
+- Validation: tests for overlapping sweeps, archive during an in-flight `gh`, and a non-blocking `init()`.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
