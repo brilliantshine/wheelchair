@@ -51,7 +51,9 @@ That is deliberate: almost none of it helps him decide anything.
 ## What you may start and stop
 
 Use `node <root>/viewer/app/wc.js session start --role <role> --tier top --brief-file
-<path> --attempt <id>`, and `session stop <name>`, `session list`. The list output is
+<path> --attempt <id> --title "<a few words saying what this agent does, in Collin's
+terms>"`, and `session stop <name>`, `session list`. The title is what the Agents screen
+shows on the agent's box. The list output is
 `{ sessions, review_families }`. The hub chooses the provider and account. Workers, reviewers and verifiers may pass `--provider <claude|gpt|gemini>`
 or `--not-provider <claude|gpt|gemini>`; leads, sub-leads and mappers may not. The hub checks the
 rules and refuses anything else with the reason. A refusal is final: change the request
@@ -282,7 +284,8 @@ card with a fresh Ready check.
 On `[card <id>] start building`:
 
 1. Write the sub-lead's brief (`<root>/protocol/app/sub-lead.md`, the slug, anything you
-   know that the plan does not say) and start it: `--role sub-lead`, top tier. Run
+   know that the plan does not say) and start it: `--role sub-lead`, top tier, with a
+   `--title`. Run
    `session list` first. Do not set `status` yourself: the sub-lead writes `implementing`
    as its first act.
 2. From now until the sub-lead sends its `result`, the worktree belongs to the sub-lead.

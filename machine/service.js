@@ -346,9 +346,9 @@ class MachineService {
   }
   // `color` keeps the escape codes (capture-pane -e) for the terminal page; the internal
   // checks that match pane text read it plain.
-  pane(name, color = false) {
+  pane(name, color = false, history = 0) {
     this.managed(name);
-    const result = this.tmux(['capture-pane', '-p', ...(color ? ['-e'] : []), '-t', name]);
+    const result = this.tmux(['capture-pane', '-p', ...(color ? ['-e'] : []), ...(history > 0 ? ['-S', `-${history}`] : []), '-t', name]);
     if (!result.ok) throw Object.assign(new Error(result.stderr.trim() || 'tmux pane unavailable'), { status: 409 });
     return result.stdout;
   }
@@ -1126,7 +1126,15 @@ class MachineService {
       if (pathBits[0] === 'v1' && pathBits[1] === 'sessions' && pathBits[2]) {
         const name = decodeURIComponent(pathBits[2]); await this.authorize(request, 'hub');
         if (request.method === 'DELETE' && pathBits.length === 3) { await this.stop(name); return send(response, 200, { ok: true }); }
-        if (request.method === 'GET' && pathBits[3] === 'pane') return send(response, 200, { pane: this.pane(name, true) });
+        if (request.method === 'GET' && pathBits[3] === 'pane') {
+          const value = url.searchParams.get('history');
+          let history = 0;
+          if (value !== null) {
+            if (!/^\d+$/.test(value) || Number(value) > 2000) throw Object.assign(new Error('history must be 0-2000'), { status: 400 });
+            history = Number(value);
+          }
+          return send(response, 200, { pane: this.pane(name, true, history) });
+        }
         if (request.method === 'GET' && pathBits[3] === 'transcript') return send(response, 200, await this.transcript(name, url.searchParams.get('offset') || 0));
         if (request.method === 'POST' && pathBits[3] === 'submit') { const input = await bodyOf(request); await this.submit(name, String(input.text || '')); return send(response, 200, { ok: true }); }
         if (request.method === 'POST' && pathBits[3] === 'keys') { const input = await bodyOf(request); this.raw(name, String(input.keys || '')); return send(response, 200, { ok: true }); }
