@@ -466,5 +466,12 @@ throttle + 5 s page poll + delivery).
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Machine: Claude Pre/Post/Failure tool hooks → step events; statusline context with 15 s throttle; shared classifier `machine/lib/steps.js` (Spec §1, §2 Claude, §3 Claude, transport) | `machine/lib/steps.js`, `machine/adapters/claude.js`, `machine/lib/hook-post.js`, `machine/lib/statusline.js`, `machine/service.js` (passthrough only), `machine/test/{steps,service,accounts}.test.js`, `machine/API.md`, `machine/AGENTS.md` | Standard, gpt-6.1-terra (medium) | wc-eb5a9e5941a0-worker | `bash machine/test/run.sh` | in progress |
+| T3 | Hub: step/context storage, turns, thinking, pending ends, history file + prune, Agents API `activity`/`context`/`normal` (Spec §3 hub, §4 minus question, §5) — tricky | `viewer/app/{sessions,agents,step-history}.js`, hub boot (prune call only), `viewer/test/app-activity.test.js`, `viewer/test/app-agents.test.js`, `viewer/app/API.md`, `viewer/AGENTS.md` | Standard, gpt-6.1-terra (medium) | wc-eb5a9e5941a0-worker-2 | `node --test viewer/test/*.test.js` | in progress |
+| T2 | Machine: Codex rollout reader (2 s timer, `steps_offset`, polls/yield rules, turn-end flush, context from `token_count`), real-rollout fixtures (Spec §2 Codex, §3 Codex) — tricky | `machine/lib/codex-steps.js` (new), `machine/service.js`, `machine/adapters/codex.js`, `machine/test/fixtures/codex-steps/`, `machine/test/codex-steps.test.js`, `machine/API.md`, `machine/AGENTS.md` | after T1 | | `bash machine/test/run.sh` | not started |
+| T4 | Question path: card fields, `[question <id>]` tag, `passes_on` check, `question`/`question_paths` in API, protocol text (Spec §6) | `viewer/app/{card,cards,agents}.js`, `protocol/app/{worker,sub-lead,lead,cards}.md`, tests | after T3 | | `node --test viewer/test/*.test.js` | not started |
+| T5 | Screen: side panel (normal line / question trail, activity map, now dashes, context ring, Latest), amber tree path (Spec §7) | `viewer/pages/agents.js`, `viewer/pages/views.css`, `viewer/pages/agents.html`, `viewer/test/app-views.spec.js` | after T3, T4; Claude | | `npm --prefix viewer run test:browser` | not started |
 
 ## Log
+
+- 2026-11-17 — Build started. Confirmed Claude Code 2.1.326 supports `async: true` on command hooks (its hook schema: "If true, hook runs in background without blocking"); T1 registers the tool hooks async.
