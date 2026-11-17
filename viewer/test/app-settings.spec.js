@@ -382,6 +382,30 @@ test('picks a lead name list and uploads a custom one in Settings', async ({ pag
   await expect(page.locator('.lead-names-custom .note')).toHaveText('2 names: Ada, Grace');
 });
 
+test('a quoted CSV upload keeps commas inside names', async ({ page }) => {
+  await openPage(page, context, '/app/settings#models');
+  await page.getByLabel('Lead names', { exact: true }).selectOption('custom');
+  await page.getByLabel('Upload lead names').setInputFiles({ name: 'names.csv', mimeType: 'text/csv', buffer: Buffer.from('"Ada","Grace, Jr."\n"Say ""Hi"""\n') });
+  await expect.poll(async () => (await settings(page)).lead_names).toEqual(['Ada', 'Grace, Jr.', 'Say "Hi"']);
+});
+
+test('a later dropdown choice wins over a slow upload save', async ({ page }) => {
+  await openPage(page, context, '/app/settings#models');
+  const select = page.getByLabel('Lead names', { exact: true });
+  await select.selectOption('custom');
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  await page.route('**/settings/preferences', async (route) => {
+    if (JSON.parse(route.request().postData() || '{}').lead_names) await held;
+    await route.continue();
+  });
+  await page.getByLabel('Upload lead names').setInputFiles({ name: 'names.txt', mimeType: 'text/plain', buffer: Buffer.from('Ada\nGrace\n') });
+  await select.selectOption('people');
+  release();
+  await expect.poll(async () => (await settings(page)).lead_name_list).toBe('people');
+  await expect(select).toHaveValue('people');
+});
+
 test('models and preferences fits at 390px', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openPage(page, context, '/app/settings#models');

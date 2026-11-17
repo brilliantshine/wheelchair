@@ -283,6 +283,25 @@
   // Lead names: a built-in list, or a custom one uploaded as a text file (one name per
   // line, or comma separated). Choosing Custom saves only once a file has names in it.
   const NAME_LISTS = [['greek', 'Greek letters'], ['nato', 'NATO alphabet'], ['stars', 'Star names'], ['people', 'Popular first names'], ['custom', 'Custom list']];
+  // Splits an uploaded file into names: one per line or comma separated, with CSV quoting
+  // ("Grace, Jr." stays one name, and "" inside quotes is a literal quote).
+  function nameFields(text) {
+    const fields = [];
+    let field = '', quoted = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (quoted) {
+        if (c === '"' && text[i + 1] === '"') { field += '"'; i++; }
+        else if (c === '"') quoted = false;
+        else field += c;
+      } else if (c === '"' && !field.trim()) { field = ''; quoted = true; }
+      else if (c === ',' || c === '\n' || c === '\r') { fields.push(field); field = ''; }
+      else field += c;
+    }
+    fields.push(field);
+    return fields;
+  }
+
   function leadNamesRow() {
     const select = h('select', { id: 'lead-names', 'aria-label': 'Lead names' }, NAME_LISTS.map(([value, label]) => h('option', { value, text: label })));
     select.value = data.lead_name_list || 'greek';
@@ -297,28 +316,41 @@
       return `${names.length} name${names.length === 1 ? '' : 's'}: ${shown}${names.length > 5 ? ', …' : ''}`;
     }
     function show() { custom.hidden = select.value !== 'custom'; status.textContent = summary(); }
-    async function save(body) {
+    // Saves run one after another, in the order they were made, and only the newest one's
+    // answer is shown, so a slow upload can't undo a later choice from the dropdown.
+    let queue = Promise.resolve(), latest = 0;
+    function save(body) {
+      const ticket = ++latest;
       inlineErr(host, '');
-      try {
-        const result = await api('/settings/preferences', { method: 'PUT', body });
-        data.lead_name_list = result.lead_name_list; data.lead_names = result.lead_names;
-        show(); return true;
-      } catch (error) { inlineErr(host, error.message); return false; }
+      const run = queue.then(async () => {
+        try {
+          const result = await api('/settings/preferences', { method: 'PUT', body });
+          if (ticket === latest) { data.lead_name_list = result.lead_name_list; data.lead_names = result.lead_names; select.value = data.lead_name_list; show(); }
+          return ticket === latest;
+        } catch (error) {
+          if (ticket === latest) { inlineErr(host, error.message); select.value = data.lead_name_list || 'greek'; show(); }
+          return false;
+        }
+      });
+      queue = run;
+      return run;
     }
-    select.addEventListener('change', async () => {
+    select.addEventListener('change', () => {
       show();
       if (select.value === 'custom' && !(data.lead_names || []).length) return;
-      if (!await save({ lead_name_list: select.value })) select.value = data.lead_name_list || 'greek';
+      save({ lead_name_list: select.value });
     });
     file.addEventListener('change', async () => {
       const chosen = file.files && file.files[0];
       if (!chosen) return;
+      const text = await chosen.text();
+      file.value = '';
+      if (select.value !== 'custom') return;
       const seen = new Set(), names = [];
-      for (const raw of (await chosen.text()).split(/[\r\n,]+/)) {
+      for (const raw of nameFields(text)) {
         const name = raw.trim();
         if (name && !seen.has(name.toLowerCase())) { seen.add(name.toLowerCase()); names.push(name); }
       }
-      file.value = '';
       if (!names.length) { inlineErr(host, 'That file has no names in it.'); return; }
       if (await save({ lead_names: names, lead_name_list: 'custom' })) status.textContent = `Saved. ${summary()}`;
     });

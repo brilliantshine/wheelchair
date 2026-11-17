@@ -288,6 +288,9 @@ test('lead name list choice saves, validates and migrates', async () => {
     assert.equal((await put({ lead_name_list: 'klingon' })).status, 400);
     const custom = await put({ lead_names: ['Ada', 'Grace'], lead_name_list: 'custom' });
     assert.deepEqual([custom.body.lead_name_list, custom.body.lead_names], ['custom', ['Ada', 'Grace']]);
+    assert.equal((await put({ lead_name_list: 'nato' })).body.lead_name_list, 'nato');
+    assert.equal((await put({ lead_names: ['Ada'] })).body.lead_name_list, 'custom', 'names alone still turn the custom list on');
+    assert.equal((await put({ lead_names: [] })).body.lead_name_list, 'greek', 'clearing custom names goes back to Greek');
   });
   assert.equal(settings.normalize({ lead_names: ['Ada'] }).lead_name_list, 'custom');
   assert.equal(settings.normalize({}).lead_name_list, 'greek');

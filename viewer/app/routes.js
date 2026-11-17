@@ -238,6 +238,9 @@ async function handleSettings(hub, request, response, url, bits, body) {
         const names = body.lead_names.map((name) => name.trim()).filter(Boolean);
         if (names.length > 1000 || names.some((name) => name.length > 40) || new Set(names.map((name) => name.toLowerCase())).size !== names.length) throw appError(400, 'lead_names must have at most 1000 unique names of 1–40 characters');
         value.lead_names = names;
+        // Names sent without a list choice keep the old meaning: names mean use them,
+        // an empty list means Greek letters.
+        if (body.lead_name_list === undefined) value.lead_name_list = names.length ? 'custom' : value.lead_name_list === 'custom' ? 'greek' : value.lead_name_list;
       }
       if (body.lead_name_list !== undefined) {
         const keys = require('./names.js').LIST_KEYS;
