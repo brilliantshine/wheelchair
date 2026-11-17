@@ -42,8 +42,9 @@
   let diagramLoading = false;
   let folderDraft = null; // the typed Default project folder, kept across re-renders until saved
   // Lead name saves, kept across re-renders: they run one after another in the order made,
-  // and `choice` is the list last picked in the dropdown, which a save's answer never undoes.
-  const leadSaves = { queue: Promise.resolve(), latest: 0, choice: null };
+  // `choice` is the list last picked in the dropdown, which a save's answer never undoes, and
+  // `reads` counts file picks so only the newest file is saved.
+  const leadSaves = { queue: Promise.resolve(), latest: 0, choice: null, reads: 0 };
   const panel = document.getElementById('panel');
 
   function h(tag, props, ...kids) {
@@ -321,9 +322,10 @@
     file.addEventListener('change', async () => {
       const chosen = file.files && file.files[0];
       if (!chosen) return;
+      const read = ++leadSaves.reads;
       const text = await chosen.text();
       file.value = '';
-      if ((leadSaves.choice || data.lead_name_list) !== 'custom') return;
+      if (read !== leadSaves.reads || (leadSaves.choice || data.lead_name_list) !== 'custom') return;
       const seen = new Set(), names = [];
       for (const raw of nameFields(text)) {
         const name = raw.trim();
@@ -361,21 +363,31 @@
     const ticket = ++leadSaves.latest;
     leadNamesError('');
     const run = leadSaves.queue.then(async () => {
+      let ok = true;
       try {
         const result = await api('/settings/preferences', { method: 'PUT', body });
         data.lead_name_list = result.lead_name_list; data.lead_names = result.lead_names;
-        if (ticket !== leadSaves.latest) return false;
-        // Keep a later pick of Custom that is still waiting for a file.
-        if (leadSaves.choice !== 'custom' || data.lead_names.length) leadSaves.choice = null;
-        showLeadNames();
-        return true;
       } catch (error) {
-        if (ticket === leadSaves.latest) { leadSaves.choice = null; showLeadNames(); leadNamesError(error.message); }
-        return false;
+        ok = false;
+        if (ticket === leadSaves.latest) leadNamesError(error.message);
       }
+      if (ticket !== leadSaves.latest) return false;
+      settleLeadChoice(ok);
+      return ok;
     });
     leadSaves.queue = run;
     return run;
+  }
+
+  // Once the newest save is answered, line the saved list up with the dropdown: a pick of
+  // Custom made while names were still missing is saved now that names exist, or kept
+  // waiting for a file; a failed pick of another list falls back to the saved one.
+  function settleLeadChoice(ok) {
+    const choice = leadSaves.choice;
+    if (choice === 'custom' && choice !== data.lead_name_list) {
+      if ((data.lead_names || []).length && ok) { saveLeadNames({ lead_name_list: 'custom' }); return; }
+    } else leadSaves.choice = null;
+    showLeadNames();
   }
 
   // The Default project folder: typed, then saved with the button. A refusal shows under the
