@@ -48,6 +48,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 21 | Only the spool drain strips and resends; the live relay, on a 4xx to an approval with `warnings`, leaves the spool file and triggers the drain | One owner (the drain is already single-flight per kind) from refusal through rewrite, resend and removal | review-round-5 |
 | 22 | Supersedes 13 and 21: no older-hub fallback. Card forwarding is unchanged; a machine newer than its hub may have a lead's approval card refused (`unknown field: warnings`) until the hub is updated | The Ready check already fails "service out of date" in that window (`viewer/app/ready.js:13-16`); the fallback drew a blocking finding in rounds 2, 4, 5 and 6 | review-round-6 |
 | 23 | A refresh's error handling, abandonment and every read are gated on its id being current: a non-current refresh destroys its open stream, publishes nothing and clears nothing | A late failure must not clear a newer result; an abandoned scan must stop reading mid-file | review-round-6 |
+| 24 | Supersedes the abandonment parts of 19, 20 and 23: no timeout, refresh ids or stream destruction. One refresh in flight, one coalesced rerun, publish only on finish; an error clears the warning | It only guarded a local read hanging past 30 s while no card waits on it; a hang just leaves the last result showing | review-round-7 |
+| 25 | When `card.js` refuses a lead's approval card with `unknown field: warnings`, the lead posts a `needs` card saying the hub is older than this machine and needs updating | The lead never sent the field and cannot remove it; Collin would otherwise see no approval card | review-round-7 |
 
 ## Spec
 
@@ -77,15 +79,11 @@ no warning.
   `this.startupWarning` to a string or `null`. It runs at service start, every 10 minutes
   (an unref'd interval beside the spool timer), and after each lead approval card is
   handled (not awaited). Only one refresh runs at a time: a trigger while one runs sets a
-  flag, and when that refresh ends exactly one more starts (further triggers coalesce).
-  Each refresh has an id; `this.refreshId` names the current one. A refresh not finished
-  30 seconds after it began is abandoned: `this.startupWarning` is set to `null`, the
-  guard is cleared (a queued rerun starts), and `this.refreshId` moves on. An abandoned
-  refresh checks its id before every file open, after every chunk or line it receives and
-  before every cache write; when it is no longer current it destroys its open stream and
-  stops, so it reads nothing further and never writes the cache or the result. An error in
-  the current refresh sets `this.startupWarning` to `null` and is logged; an error in a
-  refresh that is no longer current is only logged.
+  flag, and when that refresh ends (success or error) exactly one more starts if the flag
+  is set (further triggers coalesce). `this.startupWarning` changes only when a refresh
+  ends: its result on success, `null` on any error (logged). There is no timeout: a refresh
+  whose read never settles leaves the last result showing and later triggers only set the
+  flag (Accepted Risks).
 - Steps:
   1. Read the last 512 KB of `<stateDir>/session-ledger.jsonl` asynchronously (whole file if
      smaller; first partial line dropped; missing file: result `null`). Keep start lines (no
@@ -128,11 +126,14 @@ no warning.
   only on `ready.ok` and the existing conditions.
 - The hub's Re-check and Start building paths (`viewer/app/threads.js:272-337`) only replace
   `card.ready`; `warnings` stays as attached. A fresh approval card gets a fresh check.
+- `protocol/app/lead.md` step 6.3 (the approval card): one sentence — if `card.js` refuses
+  the approval card with `unknown field: warnings`, post a `needs` card saying the app's hub
+  is older than this machine and needs updating before an approval card can be shown.
 - `machine/API.md`: note that lead approval cards may gain `warnings`.
 
 ### Boundaries and non-goals
 
-- Claude lead and reviewer sessions only. No lead-rule change.
+- Claude lead and reviewer sessions only.
 - No automatic changes to the turned-off tool list or the limits; no dashboard; no warning
   elsewhere; no hub cache, poll or Ready-gate change. Ledger format unchanged.
 
@@ -144,8 +145,10 @@ no warning.
 - Two long first messages among 5 samples: the median ignores them.
 - The first approval card after a service start may carry no warning if the startup
   refresh has not finished; the next card will.
-- A hub older than its machine refuses a lead's approval card carrying `warnings`; the lead
-  sees the refusal (see Accepted Risks).
+- A hub older than its machine refuses a lead's approval card carrying `warnings`. On the
+  live relay the lead sees the refusal and posts a `needs` card (Decision 25); if the card
+  was spooled first, the refusal goes to the rejected spool and the lead is not told (see
+  Accepted Risks).
 - Corrupt ledger or transcript lines, or malformed usage values, are skipped.
 
 ### Validation
@@ -160,13 +163,11 @@ no warning.
   start used; other roles and non-Claude starts ignored; ledger over 512 KB read from its
   tail; corrupt lines; an agent-supplied `warnings` is removed from any card, with and
   without a current warning; a non-approval card and a non-lead approval are not enriched;
-  the card route returns without waiting while a refresh is stalled; a refresh stalled past
-  30 s is abandoned, clears the warning, opens no further files and writes no cache entry
-  when its stalled read resolves, and a queued rerun starts; triggers during a refresh
-  coalesce into exactly one rerun, which sees a sample added mid-refresh; a thrown error
-  in the current refresh clears the warning; an abandoned refresh whose read rejects after
-  its replacement published leaves the new result; an abandoned refresh mid-file reads no
-  further chunks from that file. Card forwarding behaves exactly as before for every card.
+  the card route returns without waiting while a refresh is stalled, and the stalled
+  refresh's trigger only sets the rerun flag; triggers during a refresh coalesce into
+  exactly one rerun, which sees a sample added mid-refresh; a thrown error clears the
+  warning and the queued rerun still runs. Card forwarding behaves exactly as before for
+  every card.
 - `node --test viewer/test/*.test.js`: `card.js` refuses `warnings` from an agent, accepts
   1-10 non-empty strings with `machine: true`, refuses empty strings and 11 items;
   `protocol-rules.test.js` still finds exactly one section per kind.
@@ -180,7 +181,8 @@ no warning.
 | Growth that stays under a role's limit, or comes from something other than tools (connectors, skills, a model change), is not attributed; the warning only says the limit was crossed | IDEA.md wants a heads-up, not a diagnosis; the text names both likely causes | 1, 3 |
 | Typical sizes go stale as lead or reviewer role files grow, giving false warnings until raised | Collin chose fixed limits knowing this; the text names the usual size | 3 |
 | Sessions with no kept transcript copy give no sample | Kept copies are made on every Stop hook; the walk uses older starts instead | 3 |
-| A machine newer than its hub may have a lead's approval card refused (`unknown field: warnings`) until the hub is updated | The Ready check already reports "service out of date" in that window; update the hub first | 6 |
+| A machine newer than its hub may have a lead's approval card refused (`unknown field: warnings`) until the hub is updated | Nothing can build in that window (Ready fails "service out of date"); on the live relay the lead tells Collin (Decision 25); a card spooled during a hub outage is refused silently into the rejected spool. Update the hub first | 6, 7 |
+| A refresh whose local file read never settles stops further refreshes until the service restarts, leaving the last result showing | Local async reads of small kept files; guarding it drew more findings than it was worth | 7 |
 | A warning can lag behind the newest sessions by one refresh (seconds normally; up to 10 minutes plus one refresh after a quiet spell) | The card is never held; tool growth persists for days | 4, 5 |
 
 ## Review Rounds
@@ -306,12 +308,28 @@ no warning.
 
 ### Round 7 — 2026-11-17
 
-**Lanes:** pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 6:** Collin chose Keep going (budget reset).
 - Older-hub fallback removed; card forwarding unchanged; accepted risk added (Decision 22)
 - Refresh error handling, abandonment and every read gated on the refresh id (Decision 23)
 - Edge cases and Validation updated
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | RE-RAISE: older-hub risk rationale wrong; card can be lost silently | upheld | Decision 25 and risk rewritten |
+| intent | minor | Abandonment machinery guards an unlikely hang | upheld | Decision 24 |
+| mechanics | major | Abandoned refresh can clear a newer refresh's guard | upheld | Moot: abandonment removed (Decision 24) |
+| mechanics | major | Abandonment leaves the stalled stream open | upheld | Moot: abandonment removed (Decision 24) |
+| mechanics | minor | "Lead sees the refusal" only on the live relay | upheld | Edge case qualified |
+
+### Round 8 — 2026-11-17
+
+**Lanes:** pending.
+
+**Changed since Round 7:**
+- Refresh timeout, ids and stream destruction removed; one in flight, coalesced rerun, publish on finish (Decision 24)
+- Lead posts a `needs` card when the hub refuses `warnings` (Decision 25); Edge case and Accepted Risks rewritten
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
