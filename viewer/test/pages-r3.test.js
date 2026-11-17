@@ -20,9 +20,9 @@ test('a semicolon key reaches the pane only as backslash-semicolon', { skip: !ha
   const tmux = (...args) => spawnSync('tmux', ['-L', socket, ...args], { encoding: 'utf8' });
   try {
     assert.equal(tmux('new-session', '-d', '-s', 'probe', '-x', '80', '-y', '10', 'cat').status, 0);
-    // The page's key for ';' (viewer/pages/terminal.js) is the two-character string \;
+    // The page's key for ';' (viewer/pages/term-view.js) is the two-character string \;
     const pageKey = await (async () => {
-      const source = await fs.readFile(path.join(__dirname, '..', 'pages', 'terminal.js'), 'utf8');
+      const source = await fs.readFile(path.join(__dirname, '..', 'pages', 'term-view.js'), 'utf8');
       const line = source.split('\n').find((text) => text.includes("char === ';'"));
       return Function(`const char = ';'; ${line.trim().replace(/^if \(char === ';'\) /, '')}`)();
     })();

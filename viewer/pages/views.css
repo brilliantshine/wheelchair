@@ -87,10 +87,14 @@
 .term-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
 .term-bar a { color: var(--accent-text); text-decoration: none; }
 .term-bar strong { overflow-wrap: anywhere; font-family: var(--mono); font-size: 13px; }
-#term-wrap { flex: 1; min-height: 0; overflow: auto; background: var(--term-bg); border-radius: 6px; padding: 4px; }
-.term-keys { display: none; gap: 6px; flex-wrap: wrap; }
-.term-keys button { flex: 1 1 56px; min-height: 44px; }
-@media (pointer: coarse), (max-width: 600px) { .term-keys { display: flex; } }
+.tv-view { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--line); border-radius: 6px; }
+.tv-view.tv-typing { border-color: var(--warn); }
+.tv-switch[aria-pressed="true"] { color: var(--warn); border-color: var(--warn); background: var(--warn-bg); }
+.tv-notice { color: var(--warn); padding: 4px 8px 0; font-size: 13px; }
+.tv-host { flex: 1; min-height: 0; overflow: auto; background: var(--term-bg); padding: 4px; }
+.tv-keys { display: none; gap: 6px; flex-wrap: wrap; }
+.tv-keys button { flex: 1 1 56px; min-height: 44px; }
+@media (pointer: coarse), (max-width: 600px) { .tv-typing .tv-keys { display: flex; } }
 
 @media (max-width: 899px) {
   .view { padding: 16px; }
