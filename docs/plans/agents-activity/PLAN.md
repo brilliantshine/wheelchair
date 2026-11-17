@@ -194,7 +194,9 @@ arrival order (section 4).
   closed itself (`clean: false`, e.g. Stop arrived before `PostToolUse`) upgrades it:
   `ended_at`, `failed` and `clean: true` come from the event. A step is added to history at
   the moment it first becomes `clean: true`, so exactly once whatever the arrival order; a
-  second clean end for the same id is ignored.
+  second clean end for the same id is ignored. If the closed step was already dropped for
+  space, its late end is handled as an end with no start (kept in `pending_ends`, then
+  expires) and adds no history sample.
 - **Turn boundaries.** The hub keeps `session.turns`: the last 20 `{started_at, ended_at}`
   (appended when a turn starts, `ended_at` filled when it ends). A start whose `started_at`
   falls inside an ended turn is stored finished at **that** turn's `ended_at`, `failed:
@@ -437,6 +439,7 @@ throttle + 5 s page poll + delivery).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | major | Late-end upgrade lost once the step is evicted | downgraded (minor) | Behaviour was already defined by the end-with-no-start rule (§4); needs 30 newer steps to finish inside an async hook's delivery delay. Clarified in §4 |
 
 ## Prior Work
 
