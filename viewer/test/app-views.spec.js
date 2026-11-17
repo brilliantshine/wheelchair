@@ -98,11 +98,40 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       }
     });
 
+    test('view only blocks input and typing discards mouse and queued paste', async ({ page }) => {
+      const name = context.seed.made['build-one'].sessions[0].name;
+      const panes = [];
+      page.on('request', request => { if (request.url().includes('/pane')) panes.push(request.url()); });
+      await openPage(page, context, `/app/terminal?name=${name}`);
+      await expect(page.locator('.xterm-rows')).toContainText('fake pane');
+      expect(panes.some(url => new URL(url).searchParams.get('history') === '2000')).toBe(true);
+      const count = () => context.hub.calls.filter(call => call.path.endsWith('/keys')).length;
+      const before = count();
+      await page.locator('.xterm').click();
+      await page.keyboard.type('abc');
+      await page.mouse.wheel(0, -500);
+      await page.waitForTimeout(200);
+      expect(count()).toBe(before);
+      await page.getByRole('button', { name: 'View only' }).click();
+      await page.evaluate(() => window.termView._onDataForTest('\x1b[<0;10;20M'));
+      await page.waitForTimeout(100);
+      expect(count()).toBe(before);
+      await page.evaluate(() => { window.termView._onDataForTest('x'.repeat(200)); window.termView.setTyping(false); });
+      await page.waitForTimeout(400);
+      const stopped = count();
+      await page.waitForTimeout(400);
+      expect(count()).toBe(stopped);
+      expect(stopped - before).toBeLessThan(200);
+      await page.reload();
+      await expect(page.getByRole('button', { name: 'View only' })).toHaveAttribute('aria-pressed', 'false');
+    });
+
     test('the terminal shows the pane and sends typed keys without an extra Enter', async ({ page }) => {
       const name = context.seed.made['build-one'].sessions[0].name;
       await openPage(page, context, `/app/terminal?name=${name}`);
       await expect(page.locator('.xterm-rows')).toContainText('fake pane');
       await noSideScroll(page);
+      await page.getByRole('button', { name: 'View only' }).click();
       const before = context.hub.calls.filter((call) => call.path.endsWith('/keys')).length;
       await page.locator('.xterm').click();
       await page.keyboard.type('ls');
@@ -117,6 +146,7 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
     test('a typed semicolon is sent as backslash-semicolon, one argument', async ({ page }) => {
       const name = context.seed.made['build-one'].sessions[0].name;
       await openPage(page, context, `/app/terminal?name=${name}`);
+      await page.getByRole('button', { name: 'View only' }).click();
       const before = context.hub.calls.filter((call) => call.path.endsWith('/keys')).length;
       await page.locator('.xterm').click();
       await page.keyboard.type(';');
@@ -129,6 +159,7 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       test.skip(label !== 'phone', 'the key row is for touch and narrow screens');
       const name = context.seed.made['build-one'].sessions[0].name;
       await openPage(page, context, `/app/terminal?name=${name}`);
+      await page.getByRole('button', { name: 'View only' }).click();
       const before = context.hub.calls.filter((call) => call.path.endsWith('/keys')).length;
       for (const label of ['Esc', 'Tab', 'Ctrl-C']) await page.getByRole('button', { name: label }).click();
       await page.getByRole('button', { name: 'Up' }).click();

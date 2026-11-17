@@ -567,7 +567,8 @@ test.describe('terminal login mode', () => {
     await expect(page.locator('#term-status')).toHaveText('live');
     await expect(page.locator('#term-name')).toContainText('default-claude');
     expect(state.calls.some((c) => c[1] === '/accounts/default-claude/signin/beelink/pane')).toBe(true);
-    await page.locator('#term-keys button[data-key="Enter"]').click();
+    await page.getByRole('button', { name: 'View only' }).click();
+    await page.locator('.tv-keys button[data-key="Enter"]').click();
     await expect.poll(() => state.calls.find((c) => c[0] === 'POST' && c[1].endsWith('/keys'))).toBeTruthy();
     const keys = state.calls.find((c) => c[0] === 'POST' && c[1].endsWith('/keys'));
     expect(keys[1]).toBe('/accounts/default-claude/signin/beelink/keys');
