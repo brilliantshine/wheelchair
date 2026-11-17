@@ -163,6 +163,15 @@ Tests to add:
 
 ## Review Rounds
 
+### Round 1 — 2026-11-16
+
+**Lanes:** intent — gpt; mechanics — gpt (Claude unavailable at start); cross-family: no.
+
+**Changed since Round 0:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 None.
