@@ -338,3 +338,34 @@ test('scout preferences and session layers follow the selected provider', async 
     for (const role of ['worker', 'reviewer', 'verifier', 'mapper']) assert.doesNotMatch(settings.roleLayers(settings.defaults(), role, '', { light: 'haiku', heavy: 'sonnet' }, 'claude').text, /Scout model/);
   });
 });
+
+test('model ID limits protect near-limit scout role layers', async () => {
+  await withContext(async (context) => {
+    const putModel = (model, slot = 'light') => api(context, '/settings/models', { method: 'PUT', body: { provider: 'gpt', slot, model } });
+    for (const length of [65, 250]) {
+      const refused = await putModel('x'.repeat(length));
+      assert.equal(refused.status, 400);
+      assert.equal(refused.body.detail, 'model is invalid');
+    }
+    const model = 'x'.repeat(64);
+    assert.equal((await putModel(model)).status, 200);
+    assert.equal((await putModel(model, 'standard')).status, 200);
+    const style = { ...settings.defaults().style, text: 'y'.repeat(2000), never_say: ['z'.repeat(9000)] };
+    const saved = await api(context, '/settings/style', { method: 'PUT', body: style });
+    assert.ok([200, 400].includes(saved.status));
+    if (saved.status === 400) {
+      assert.match(saved.body.detail, /12000/);
+      return;
+    }
+    const made = await thread(context, { cli: 'codex', project: '/tmp/limit-scout' });
+    const lead = made.sessions[0];
+    const leadLayers = context.machine.sessions.get(lead.name).role_layers;
+    assert.ok(leadLayers.includes(model));
+    assert.ok(leadLayers.length <= 12000);
+    const sub = await machinePost(context, '/machine/session', { calling_session: lead.name, action: 'start', role: 'sub-lead', cli: 'codex', attempt_id: 'limit-scout-sub' });
+    assert.equal(sub.status, 200);
+    const subLayers = context.machine.sessions.get(sub.body.session.name).role_layers;
+    assert.ok(subLayers.includes(model));
+    assert.ok(subLayers.length <= 12000);
+  });
+});

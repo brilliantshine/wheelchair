@@ -53,6 +53,18 @@ default_pins() {
 }
 json_assert() { python3 -c "$1" <<<"$output"; }
 
+# Model IDs have a 64-character limit in writes and pins files.
+new_case
+model64=$(printf '%064d' 0 | tr 0 x)
+model65="${model64}x"
+run_model set gpt light "$model64"
+assert 'set accepts a 64-character model' test "$status" -eq 0
+run_model set gpt light "$model65"
+assert 'set rejects a 65-character model with usage exit' test "$status" -eq 2
+printf 'gpt.light = %s\n' "$model65" > "$pins"
+run_model show --json
+assert 'a 65-character pinned model is malformed' json_assert 'import json,sys; x=json.load(sys.stdin); assert x["malformed"] is True and x["gpt"]["light"]["model"] == "gpt-6-luna"'
+
 # Missing sub-lead cells inherit the current lead until the next write.
 new_case
 printf '%s\n' 'claude.lead = custom-sonnet @high' > "$pins"
