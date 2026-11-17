@@ -1,6 +1,6 @@
 ---
 slug: retract-cards
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-17
 ---
 
@@ -46,6 +46,23 @@ note. The hub marks that card withdrawn: it stays in the thread, dims, shows "Wi
 as waiting on Collin, and it leaves the pinned strip if it was pinned. A waiting sudo card's
 root request is cancelled at the helper before the card is marked. Separately, the approval
 card becomes pinned until Start building is pressed or it is retracted.
+
+### The flow
+
+```mermaid
+flowchart TD
+  A[Lead posts a retract card naming one of its open cards, with a note] --> B{Card exists, is an open question, offer, approval, needs or sudo card?}
+  B -- no --> R[Refused with the reason; lead sees it]
+  B -- yes --> C{Is it a sudo card?}
+  C -- no --> M[Mark it withdrawn: dimmed, note shown, out of Needs you]
+  C -- yes --> D[Hub asks the machine to cancel the root request]
+  D --> E{What the helper says}
+  E -- cancelled --> M
+  E -- already running or finished --> F[Refused; the result reaches the card and lead as usual]
+  E -- machine unreachable --> R
+  M --> P[Leaves the pinned strip if pinned; stays in the conversation]
+  P --> Q[Any later press on it is refused]
+```
 
 ### 1. The `retract` kind (`viewer/app/card.js`)
 
@@ -257,13 +274,15 @@ with `resolve`).
 
 ### Round 3 — 2026-11-17
 
-**Lanes:** pending; cross-family: pending.
+**Lanes:** gpt / intent; gpt / mechanics; cross-family: no (claude unavailable at start).
 
 **Changed since Round 2:**
 - §4: `addNeeds` skips `replaced` cards; Validation tests that a superseded approval leaves Needs you.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent (gpt) | — | No findings | — | — |
+| mechanics (gpt) | — | No findings | — | Round clean |
 
 ## Prior Work
 
