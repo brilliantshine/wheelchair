@@ -1,6 +1,6 @@
 ---
 slug: agents-tree-pan
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-17
 ---
 
@@ -225,7 +225,7 @@ npm --prefix viewer run test:browser
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Whole Spec: layout, toolbar, zoom, drag/click, view kept across rebuilds, phones unchanged, 12 browser tests | viewer/pages/agents.js, viewer/pages/views.css, viewer/test/app-views.spec.js | standard, gpt-6.1-terra (asked for claude; hub sent gpt) | wc-174e824a3643-worker (T1-a1) | `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser` | done (merged e316a81; sub-lead re-ran both gates: node 493/493, browser 668 passed) |
-| T2 | Follow-up to T1: release a pointer that ends outside the tree area (window-level pointerup/cancel), and separate tests for Validation items 2, 9, 10 | viewer/pages/agents.js, viewer/test/app-views.spec.js | standard, gpt-6.1-terra (asked for claude; hub sent gpt) | wc-174e824a3643-worker-2 (T2-a1) | `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser` | in progress |
+| T2 | Follow-up to T1: release a pointer that ends outside the tree area (window-level pointerup/cancel), and separate tests for Validation items 2, 9, 10 | viewer/pages/agents.js, viewer/test/app-views.spec.js | standard, gpt-6.1-terra (asked for claude; hub sent gpt) | wc-174e824a3643-worker-2 (T2-a1) | `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser` | done (merged; sub-lead re-ran: each full run had one unrelated flake while another session's suite ran on the machine; the flaked files passed alone) |
 
 ## Log
 
@@ -237,3 +237,4 @@ npm --prefix viewer run test:browser
 - 2026-11-17 — Choice: T1, views.css: `.agents-sizer > .agents-branch { width: max-content }` so the scaled tree keeps its natural width inside the sizer (seen in the diff, not in the report).
 - 2026-11-17 — Choice: T1, app-views.spec.js: Validation items 2–11 combined into one desktop test rather than one test each (seen in the diff; the report calls it a coverage gap).
 - 2026-11-17 — T1 reported its Node gate as blocked (port collision while the browser suite ran at the same time); the sub-lead re-ran the gates one after the other and both passed. Two gaps go to T2: a pointer released outside the tree area is never removed from the active set, which leaves refreshes deferred and turns the next press into a pinch; and items 2 (vertical scroll), 9 (selecting keeps the view) and 10 (another lead resets scroll) are not fully asserted.
+- 2026-11-17 — Choice: T2, app-views.spec.js: one shared 12-worker fixture and drag helper for the four new tests; the two-axis drag test zooms to 200% and starts from an interior scroll position.
