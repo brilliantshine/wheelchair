@@ -162,6 +162,23 @@ get buried as this file grows.
 | mechanics | major | Re-measure loses role attribution | upheld | Same as intent; ledger join and metrics named |
 | mechanics | minor | Asides in the role mapping | upheld | Decision 22 |
 
+### Round 2 — 2026-11-17
+
+**Lanes:** intent: claude; mechanics: gpt; cross-family: yes.
+
+**Changed since Round 1:**
+- Startup warning measures tool overhead and attaches to the approval card (Decisions 13, 19)
+- Connector and skill flags dropped (14)
+- Session ledger for re-measuring (15)
+- Verifier file reads left alone on purpose (16)
+- Test output via a log with the exit status printed (17)
+- `<root>` named in the starting text; asides out of scope (18, 22)
+- Card split is documentation only (20)
+- Sizing command's excluded paths and scout diff (21)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
