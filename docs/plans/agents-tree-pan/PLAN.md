@@ -41,6 +41,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 12 | The current zoom is shown as a percentage beside the buttons; the buttons sit in a row above the tree area and do not move when the tree moves. | Needs no choice from Collin; keeps the controls reachable. | defaulted |
 | 13 | Supersedes 11: while the terminal panel is open (not full screen), the tree area shrinks to end above it, so dragging and scrolling reach every box and Fit needs no special case. Trees are always top-aligned; only horizontal centring is kept. | Intent review: the terminal covered the bottom of the tree at any zoom, and vertical centring changed how small trees look. | review-round-1 |
 | 14 | Rebuilds wait from any pointer down in the tree area until after its click is delivered, not only during a confirmed drag. | Mechanics review: a still press spanning a poll would lose its button and never select. | review-round-1 |
+| 15 | The page body is a fixed-height column so banners shorten the layout; the tree area has a 160px minimum and `.agents-main` scrolls as a whole when a tall terminal leaves less; deferred rebuilds wait for every active pointer. | Mechanics review round 2: banners pushed the tree under the terminal, a tall terminal could collapse the tree area, and a pinch flushed on its first finger up. | review-round-2 |
 
 ## Spec
 
@@ -63,10 +64,11 @@ may change those, and this design must not depend on box size or connector drawi
 
 ### Layout (desktop, at least 900px wide)
 
-- `.agents-layout` is exactly the height below the nav (`calc(100vh - var(--nav-h))`) instead of a minimum; the sidebar and the side panel each scroll on their own (`overflow: auto`).
+- `.agents-view` (the `<main>`, which also holds the error and unreachable banners above `#agents`) becomes a column exactly the height below the nav (`calc(100vh - var(--nav-h))`). `.agents-layout` takes the rest (`flex: 1; min-height: 0`) instead of its own `min-height`, so a banner shortens the layout rather than pushing it down. The sidebar and the side panel each scroll on their own (`overflow: auto`) (decision 15).
 - `.agents-main` is a column: heading, thread title, counts line, then the toolbar row, then the tree area, which takes all remaining height (`flex: 1; min-height: 0`).
 - The tree area (`.agents-tree`) scrolls on both axes (`overflow: auto`). Inside it, a sizer element sized to the tree's natural size times the zoom, and inside that the tree itself scaled with `transform: scale(zoom)` and `transform-origin: 0 0`. The tree's natural size is its unscaled `offsetWidth`/`offsetHeight`. When the scaled tree is narrower than the area it is centred horizontally (as a small tree is today, decision 3); vertically it is always top-aligned, as today.
 - When the terminal panel is open and not full screen, `.agents-main` gets bottom padding equal to the panel's current height (a CSS variable that `agents.js` sets on open, resize and close), so the tree area ends where the terminal starts and every box can be scrolled or dragged into view above it (decision 13).
+- The tree area has a minimum height of 160px. When the terminal is dragged so tall that the heading, toolbar and 160px no longer fit, `.agents-main` keeps today's `overflow: auto` and scrolls as a whole, so nothing collapses; the terminal's own sizing is unchanged (decision 15).
 - Moving the tree is changing the tree area's `scrollLeft`/`scrollTop`. So the wheel and two-finger trackpad scroll keep working natively (decision 2), as do scrollbars.
 
 ### Toolbar
@@ -95,7 +97,7 @@ A row above the tree area, right-aligned: `−`, the zoom as a percentage (for e
 
 - The page keeps one view record: `{ lead, zoom, left, top }`, updated on every scroll and zoom of the tree area.
 - `render()` rebuilds the tree every five seconds and on every selection. After it puts the new tree area in place, it applies the record if `lead` matches the shown lead's `thread_id`: set zoom, then `scrollLeft`/`scrollTop`. If the lead differs (or there was none), it resets to the 100% view and records the new lead.
-- From any pointer down in the tree area (a possible drag, not only a confirmed one) until that pointer's click has been delivered, the five-second refresh does not call `render()`: it stores the new data and marks a rebuild as pending. On pointer up or cancel, the pending rebuild is run in a `setTimeout(..., 0)`, which lands after the browser has dispatched the click, so a still press that spans a poll still selects its box. If the click selects a box, `go()` renders anyway and the pending flag is cleared. A selection cannot happen mid-drag (decision 14).
+- From any pointer down in the tree area (a possible drag, not only a confirmed one) until that pointer's click has been delivered, the five-second refresh does not call `render()`: it stores the new data and marks a rebuild as pending. Deferral lasts until every pointer that went down in the tree area is up or cancelled (so lifting one finger of a pinch does not flush). When the last one is up or cancelled, the pending rebuild is run in a `setTimeout(..., 0)`, which lands after the browser has dispatched the click, so a still press that spans a poll still selects its box. If the click selects a box, `go()` renders anyway and the pending flag is cleared. A selection cannot happen mid-drag (decision 14).
 - The terminal panel, its height, full screen and the side panel behave as today.
 
 ### Phones (decision 9)
@@ -156,7 +158,7 @@ npm --prefix viewer run test:browser
 
 ### Round 2 — 2026-11-17
 
-**Lanes:** intent lens; mechanics lens (families recorded at start).
+**Lanes:** intent lens (gpt, claude unavailable); mechanics lens (gpt); cross-family: no.
 
 **Changed since Round 1:**
 - Layout: tree area ends above an open terminal (CSS variable for its height); trees always top-aligned, horizontal centring only (decision 13).
@@ -166,6 +168,10 @@ npm --prefix viewer run test:browser
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | — | No findings. | — | — |
+| mechanics | major | Error and unreachable banners push the fixed-height layout down, so the tree runs under the terminal. | upheld | `.agents-view` is the fixed-height column; layout flexes (decision 15). |
+| mechanics | major | A terminal resized near full height collapses the tree area. | upheld | 160px minimum; `.agents-main` scrolls as a whole (decision 15). |
+| mechanics | major | A pinch flushes the pending rebuild when its first finger lifts. | upheld | Defer until every active pointer is up (decision 15). |
 
 ## Prior Work
 
