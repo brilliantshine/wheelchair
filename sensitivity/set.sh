@@ -256,7 +256,8 @@ sed -n "${start_lines[$(index_of "$source_file")]},${end_lines[$(index_of "$sour
 
 for target in ${targets[@]+"${targets[@]}"}; do
   directory=${target%/*}
-  output[$(index_of "$target")]=$(mktemp "$directory/.wheelchair-sensitivity.XXXXXX")
+  made=$(mktemp "$directory/.wheelchair-sensitivity.XXXXXX")
+  output[$(index_of "$target")]=$made
   cleanup_paths+=("${output[$(index_of "$target")]}")
   if [[ -e $target ]]; then existed[$(index_of "$target")]=1; else existed[$(index_of "$target")]=0; fi
   if [[ ${state[$(index_of "$target")]} == valid ]]; then
@@ -275,7 +276,8 @@ for target in ${targets[@]+"${targets[@]}"}; do
     cat "$rendered" > "${output[$(index_of "$target")]}"
   fi
   if [[ ${existed[$(index_of "$target")]} == 1 ]]; then
-    backup[$(index_of "$target")]=$(mktemp "$directory/.wheelchair-sensitivity-backup.XXXXXX")
+    made=$(mktemp "$directory/.wheelchair-sensitivity-backup.XXXXXX")
+    backup[$(index_of "$target")]=$made
     cleanup_paths+=("${backup[$(index_of "$target")]}")
     cp -p -- "$target" "${backup[$(index_of "$target")]}"
   fi

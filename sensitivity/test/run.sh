@@ -58,11 +58,15 @@ new_case() {
   present[$(case_index "$name")]=claude,codex
 }
 run_case() {
-  local name=$1 result
+  local name=$1 index result captured
+  index=$(case_index "$name")
   set +e
-  output[$(case_index "$name")]=$(WHEELCHAIR_ALLOW_WORKTREE="${allow[$(case_index "$name")]-1}" WHEELCHAIR_PRESENT="${present[$(case_index "$name")]}" WHEELCHAIR_CLAUDE_HOME="${claude[$(case_index "$name")]}" WHEELCHAIR_CODEX_HOME="${codex[$(case_index "$name")]}" "$writer" "${@:2}" 2>&1)
+  # Capture into a plain variable first: an assignment to a[$(...)] reports the exit status of
+  # its last command substitution, which may be the subscript's rather than the writer's.
+  captured=$(WHEELCHAIR_ALLOW_WORKTREE="${allow[$(case_index "$name")]-1}" WHEELCHAIR_PRESENT="${present[$(case_index "$name")]}" WHEELCHAIR_CLAUDE_HOME="${claude[$(case_index "$name")]}" WHEELCHAIR_CODEX_HOME="${codex[$(case_index "$name")]}" "$writer" "${@:2}" 2>&1)
   result=$?
-  status[$(case_index "$name")]=$result
+  output[index]=$captured
+  status[index]=$result
   set -e
 }
 target_claude() { printf '%s/CLAUDE.md' "${claude[$(case_index "$1")]}"; }
