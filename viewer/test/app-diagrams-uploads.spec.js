@@ -60,6 +60,9 @@ test('paste uploads bytes, oversize is refused, and image cards respect archive'
   await page.locator('#send').click();
   const text = (await msg).postDataJSON().text; const match = text.match(/^\[attached: (.+)\]$/); expect(match).toBeTruthy();
   expect(await fs.readFile(match[1])).toEqual(png);
+  const preview = page.locator('.sent-attachments .sent-image img'); await expect(preview).toBeVisible();
+  await expect.poll(() => preview.evaluate((n) => n.naturalWidth)).toBeGreaterThan(0);
+  await expect(page.locator('.bubble.human')).not.toContainText('[attached:');
   const before = ctx.machine.calls.filter((c) => c.path === '/v1/uploads').length;
   await page.locator('#attachment-input').setInputFiles({ name: 'large.bin', mimeType: 'application/octet-stream', buffer: Buffer.alloc(25 * 1024 * 1024 + 1) });
   await expect(page.locator('#attachment-error')).toHaveText('large.bin is over 25 MB');
@@ -112,6 +115,7 @@ test('attachments stay fixed during upload and are sent in order', async ({ page
   } finally { release(); }
   expect((await message).postDataJSON().text).toMatch(/^\[attached: .*first\.txt\]\n\[attached: .*second\.txt\]$/);
   await expect(page.locator('.attachment-chip')).toHaveCount(0);
+  await expect(page.locator('.sent-attachments .sent-file')).toHaveText(['first.txt', 'second.txt']);
 });
 
 test('upload app error shows detail and preserves the draft', async ({ page }) => {
