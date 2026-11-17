@@ -173,4 +173,4 @@ async function findSessionMachine(hub, name) {
   return group?.machine || null;
 }
 
-module.exports = { features, findSessionMachine, findSlug, newPlanDirectories, sessions };
+module.exports = { readStatus, STATUS_GROUP, addNeeds, features, findSessionMachine, findSlug, newPlanDirectories, sessions };
