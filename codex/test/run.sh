@@ -328,6 +328,7 @@ assert 'preflight keeps exit 1 with a heads-up' bash -c '[[ $1 == 1 && $2 == *"h
 printf '{"tokens":{"access_token":"x.eyJleHAiOjB9.x","refresh_token":"fixture"}}\n' > "$case_dir/codex-home/auth.json"
 run_preflight "$case_dir/preflight/preflight-400.sh"
 assert 'preflight keeps exit 2 with a heads-up' bash -c '[[ $1 == 2 && $2 == *"heads-up: gpt-6.2-sol"* ]]' _ "$preflight_status" "$preflight_output"
+[[ $preflight_status == 2 ]] || printf 'exit-2 case got status %s, output:\n%s\n' "$preflight_status" "$preflight_output"
 wait "$stub_pid"
 
 printf 'RESULT %d passed, %d failed\n' "$passes" "$failures"
