@@ -176,7 +176,8 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       const since = new Date(Date.now() - 10000).toISOString();
       const worker = { name: 'worker', role: 'worker', live: true, state: 'working', children: [], context: { percent: 75 }, activity: { counts: { files: 10, shell: 5, web: 5 }, trail: ['files','shell'], current: { kind: 'web', label: 'Running tests', since }, latest: Array.from({ length: 5 }, (_, i) => ({ label: `Step ${i}`, at: since, state: 'running' })), normal: { samples: [180000,180000], typical_ms: 180000 } } };
       const middle = { name: 'middle', role: 'sub-lead', children: [worker] };
-      const lead = { name: 'lead', role: 'lead', children: [middle] };
+      const other = { name: 'other', role: 'worker', children: [{ name: 'other-child', role: 'worker', children: [] }] };
+      const lead = { name: 'lead', role: 'lead', children: [middle, other] };
       const payload = { leads: [{ thread_id: 'a', lead_name: 'Alpha', session: lead, question_paths: [['worker','lead']] }], machines: [] };
       await page.route('**/api/agents', route => route.fulfill({ json: payload }));
       await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -204,7 +205,17 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       await expect(page.locator('[data-session="lead"]')).toHaveClass(/question-path/);
       const stroke = await page.locator('.agents-path-overlay path').first().evaluate(n => [getComputedStyle(n).stroke, getComputedStyle(n).getPropertyValue('--warn').trim()]);
       expect(stroke[0]).toBe(await page.evaluate(color => { const e = document.createElement('div'); e.style.color = color; document.body.append(e); const c = getComputedStyle(e).color; e.remove(); return c; }, stroke[1]));
-      if (label === 'phone') { const aligned = await page.locator('.agents-path-overlay path').first().evaluate(n => { const p = n.getBoundingClientRect(), list = document.querySelector('[data-session="worker"]').parentElement.parentElement.getBoundingClientRect(); return Math.abs(p.left - list.left) < 2 && p.width < 2; }); expect(aligned).toBe(true); }
+      if (label === 'phone') {
+        for (const name of ['worker', 'middle']) {
+          const list = page.locator(`[data-session="${name}"]`).locator('..').locator('..');
+          await expect(list).toHaveClass(/question-path-line/);
+          const colors = await list.evaluate(n => { const probe = document.createElement('span'); probe.style.color = 'var(--warn)'; n.append(probe); const values = [getComputedStyle(n).borderLeftColor, getComputedStyle(probe).color]; probe.remove(); return values; });
+          expect(colors[0]).toBe(colors[1]);
+        }
+        await expect(page.locator('[data-session="other-child"]').locator('..').locator('..')).not.toHaveClass(/question-path-line/);
+        await expect(page.locator('.agents-path-overlay')).toBeHidden();
+        if (process.env.AGENTS_SHOTS && test.info().project.name === 'chromium') await page.screenshot({ path: `${process.env.AGENTS_SHOTS}/phone-tree.png` });
+      }
       await expect(page.locator('.agents-path-legend')).toBeVisible();
       if (label === 'phone') await page.locator('[data-session="worker"]').click();
       await expect(page.locator('.activity-flow')).toHaveCSS('animation-name','none');
