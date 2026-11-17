@@ -37,6 +37,7 @@ None.
 | D6 | No change to the Usage page; its existing "as of" time shows how fresh each reading is | IDEA "What good looks like" is met by the numbers themselves | defaulted |
 | D7 | After a poll records any reading, run `sessions.retryWaiting(hub)` once (as `hub.event()` does for a reading) | A refilled idle account should release waiting starts without waiting for the minute timer | defaulted |
 | D8 | `gemini` accounts are not polled | No usage source exists for that CLI (W4) | defaulted |
+| D9 | The Claude probe runs with `ANTHROPIC_BASE_URL` set to a closed local port, so it cannot reach the model whatever the CLI does with `/usage`. The Codex probe sends only `initialize` and `account/rateLimits/read`, never a turn request; an unknown method is an RPC error, not a turn | A check after the fact (`num_turns`) cannot undo a spent turn or a started window (IDEA constraint 1) | review-round-1 |
 
 ## Spec
 
@@ -68,8 +69,11 @@ New hub-authorized route in `machine/service.js` (beside `/v1/preflight`), docum
 ### Claude probe (`machine/adapters/claude.js`)
 
 Command: `claude -p /usage --output-format json --no-session-persistence
---strict-mcp-config`. Parse the JSON; require `num_turns === 0`, otherwise fail (a
-changed CLI that turned `/usage` into a prompt must never be repeated every 10 minutes).
+--strict-mcp-config`, run with `ANTHROPIC_BASE_URL=http://127.0.0.1:9` added to the
+child environment (D9). That points model calls at a closed local port, so even a future CLI
+that treated `/usage` as a prompt could not reach the model: the child hangs or errors and the
+30 s timeout fails the probe. `/usage` itself still answers with that variable set (checked
+2026-11-16, Log). Parse the JSON; also require `num_turns === 0`, otherwise fail.
 From `result` text:
 
 - `Current session: <N>% used · resets <Mon> <D>, <h:mm><am|pm> (<IANA zone>)` → `five_hour`.
@@ -148,7 +152,9 @@ Tests to add:
   `rateLimitReachedType` set, and with an `error` response.
 - `machine/test/service.test.js`: `/v1/usage` with shim `claude` and `codex` executables on
   `PATH` (200 with a reading; timeout → 502 and child killed; bad `cli` → 400; hub auth
-  required).
+  required; the `claude` shim records its environment and the test asserts
+  `ANTHROPIC_BASE_URL=http://127.0.0.1:9`; the `codex` shim records stdin and the test
+  asserts no method other than `initialize`, `initialized` and `account/rateLimits/read`).
 - `viewer/test/app-usage.test.js` (fake machine `/v1/usage` route in
   `viewer/test/helpers/app-machine.js`): only eligible accounts probed (paused,
   signed-out, live-session and `gemini` skipped); reading recorded with its machine;
@@ -159,7 +165,7 @@ Tests to add:
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
-| The Claude `/usage` text format and `codex app-server` (marked experimental) can change with a CLI update | Both fail closed (D5, and the `num_turns` guard); the cost of a break is today's behavior | planning |
+| The Claude `/usage` text format and `codex app-server` (marked experimental) can change with a CLI update | A break only stops the readings (D5); D9 keeps a changed CLI from spending quota. The cost of a break is today's behavior | planning, revised round 1 |
 
 ## Review Rounds
 
@@ -171,6 +177,7 @@ Tests to add:
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | blocking | `num_turns` guard checks after a turn is spent; retried every interval it would start windows on idle accounts | upheld | D9: Claude probe's model calls point at a closed port; Codex probe never sends a turn |
 
 ## Prior Work
 
@@ -188,3 +195,6 @@ None.
   `num_turns 0`, cost 0, text as in the Spec. `codex app-server` (0.169.0)
   `account/rateLimits/read`: `primary {usedPercent 72, windowDurationMins 10080, resetsAt
   <epoch s>}`, `secondary null`, `planType "prolite"`.
+- 2026-11-16: with `ANTHROPIC_BASE_URL=http://127.0.0.1:9`, `claude -p /usage` still
+  returned the usage text (`num_turns 0`); `claude -p "say hi"` hung without reaching the
+  model and was killed by `timeout`.
