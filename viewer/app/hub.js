@@ -62,13 +62,14 @@ class Hub {
     this.queueRetryTimer.unref();
     // Spec: a waiting stub shows ready within ten minutes of the merge; a minute keeps the
     // wait short for someone watching, at one gh call per waiting stub.
-    this.waitTimer = setInterval(() => Promise.all([this.pollWaiting(), sessions.retryWaiting(this), sessions.releaseLimits(this)]).catch(() => {}), 60_000);
+    this.waitTimer = setInterval(() => Promise.all([this.pollWaiting(), this.pollMerged(), sessions.retryWaiting(this), sessions.releaseLimits(this)]).catch(() => {}), 60_000);
     this.waitTimer.unref();
     this.usageTimer = setInterval(() => this.pollIdle().catch(() => {}), this.usagePollInterval ?? 60_000);
     this.usageTimer.unref();
     this.usageStartTimer = setTimeout(() => this.pollIdle().catch(() => {}), 30_000);
     this.usageStartTimer.unref();
     await this.allThreads().then((threads) => Promise.all(threads.filter((t) => t.pending_cancels?.length).map((t) => require('./asides.js').sweepCancels(this, t.id)))).catch(() => {});
+    this.pollMerged().catch(() => {});
     await this.pollWaiting();
     await sessions.retryWaiting(this);
   }
@@ -150,6 +151,11 @@ class Hub {
   dismiss(id, cardId) { return this.withThread(id, () => threads.dismiss(this, id, cardId)); }
   press(id, cardId, input) { return this.withThread(id, () => threads.press(this, id, cardId, input)); }
   pollWaiting() { return threads.pollWaiting(this); }
+  pollMerged() {
+    if (this.mergePolling) return Promise.resolve();
+    this.mergePolling = threads.pollMerged(this).finally(() => { this.mergePolling = null; });
+    return this.mergePolling;
+  }
   chat(id) { return this.withThread(id, () => chat.chat(this, id)); }
   features() { return views.features(this); }
   sessions() { return views.sessions(this); }
