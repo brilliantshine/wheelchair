@@ -16,6 +16,14 @@ The page fetches agents and thread timestamps together on load and every five se
 
 The browser suite loops desktop and phone viewports; it intercepts `/api/agents` with nested fixtures, checks wide scrolling and narrow centering, phone selection, status and URL selection across refresh, and terminal behavior (`viewer/test/app-views.spec.js:8-19,57-172`). Its setup starts a real isolated server and fake machines, seeds threads and gets the remember cookie (`viewer/test/helpers/app-views-setup.js:68-81,91-97`). Node tests assert the server-side tree's states, hierarchy, waits, aside data and secret filtering, rather than DOM interaction (`viewer/test/app-agents.test.js:20-44,52-103`). `npm --prefix viewer run test:browser` runs Playwright's `*.spec.js` in Chromium and Firefox (`viewer/package.json:8`; `viewer/playwright.config.js:8-16`).
 
+## Session signals and messages
+
+From the agents-activity mapping pass, checked against the same commit. Line numbers predate that feature's own changes.
+
+The page polls agents and thread-list endpoints every five seconds; selection is in URL parameters, `branch` draws the tree, and the selected side panel renders status, duration, model, terminal and brief (`viewer/pages/agents.js:18-22,25-54`). Its bottom terminal mounts shared `TermView`, can retarget, resize, expand and pop out (`viewer/pages/agents.js:7-16,37-38`; `viewer/pages/agents.html:14-19`). The current panel has no activity history or context ring (`viewer/pages/agents.js:51`).
+
+Message cards record sender and recipient, queue text prefixed with sender, and results go to `started_by` (`viewer/app/cards.js:11-20,115-133`). Queue delivery records `to`, `source`, text and time in bounded sent history (`viewer/app/sessions.js:327-336,348-385`). A question posted by a lead has a card author but no structured link to prior messages (`viewer/app/cards.js:11-20,115-116`; `viewer/app/card.js:1-150`).
+
 ## What I did not look at
 
 I did not run the browser suite or reproduce the overflow, audit every Agents API and terminal path, or recheck the old map's machine hooks, messaging and provider details. This focused map replaces that older broader map; those topics need a fresh check.

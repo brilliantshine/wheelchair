@@ -20,6 +20,7 @@ const { spawnSync, spawn } = require('node:child_process');
 const { pipeline } = require('node:stream/promises');
 const adapters = require('./adapters');
 const { limitedUntil } = require('./lib/limits');
+const { readLines: readCodexSteps } = require('./lib/codex-steps');
 const { AsideTurns } = require('./lib/aside-turns');
 const { SudoRequests } = require('./lib/sudo');
 
@@ -198,6 +199,8 @@ class MachineService {
     this.config = {};
     this.asideTurns = new AsideTurns(this.stateDir, atomicWrite, accountDir);
     this.sessions = {};
+    this.stepReads = new Map();
+    this.codexStepChunkSize = options.codexStepChunkSize || 8 * 1024 * 1024;
     this.startingWorktrees = new Set();
     this.startingNames = new Map(); // name -> the start in progress, so a repeated start joins it
     this.startingBranches = new Set(); // worker branches named by a start not yet recorded
@@ -315,6 +318,8 @@ class MachineService {
     await mkdir(path.join(this.stateDir, 'spool', 'events'));
     this.pollTimer = setInterval(() => this.pollReadiness().catch(error => this.log(error)), 2000);
     this.pollTimer.unref();
+    this.stepsTimer = setInterval(() => this.pollCodexSteps().catch(error => this.log(error)), 2000);
+    this.stepsTimer.unref();
     // Trust is the one startup screen where waiting two seconds makes a newly-created
     // worktree feel stalled. Stuck sessions and open prompts remain on pollTimer.
     this.trustTimer = setInterval(() => this.pollTrust().catch(error => this.log(error)), 500);
@@ -545,6 +550,54 @@ class MachineService {
     const spool = await this.spool('events', event);
     await this.drainSpool('events');
     return spool;
+  }
+  async pollCodexSteps() {
+    const live = this.liveTmux();
+    if (!live) return;
+    await Promise.all(Object.values(this.sessions).filter(s => s.cli === 'codex' && s.codex_thread_id && live.has(s.name)).map(s => this.readCodexSteps(s)));
+  }
+  async readCodexSteps(session, { spoolOnly = false, flush = false } = {}) {
+    const previous = this.stepReads.get(session.name) || Promise.resolve();
+    const reading = previous.catch(() => {}).then(async () => {
+      if (!session.codex_thread_id) return;
+      const file = session.source_transcript || await adapters.codex.findTranscript(session, session.account_dir);
+      if (!file) return;
+      session.source_transcript = file;
+      let handle;
+      try {
+        handle = await fsp.open(file, 'r');
+      } catch (error) { if (error.code === 'ENOENT') return; throw error; }
+      try {
+        const size = (await handle.stat()).size;
+        let start = session.steps_offset || 0;
+        if (size < start) { start = 0; session.steps_offset = 0; session.steps_state = {}; }
+        while (start < size) {
+          const length = Math.min(size - start, this.codexStepChunkSize);
+          const data = Buffer.alloc(length);
+          const { bytesRead } = await handle.read(data, 0, length, start);
+          if (!bytesRead) break;
+          const end = data.subarray(0, bytesRead).lastIndexOf(10);
+          const state = JSON.parse(JSON.stringify(session.steps_state || {}));
+          if (end < 0) {
+            if (bytesRead === this.codexStepChunkSize) {
+              session.steps_offset = start + bytesRead;
+              await this.persistSessions();
+            } else break; // Leave an incomplete trailing line for the next read.
+          } else {
+            const complete = data.subarray(0, end + 1);
+            const events = readCodexSteps(state, complete.toString('utf8').split('\n'), { cwd: session.worktree });
+            for (const event of events) await this.spool('events', { ...event, session: session.name, thread_id: session.thread_id, prepared: true });
+            session.steps_offset = start + end + 1; session.steps_state = state;
+            await this.persistSessions();
+          }
+          start = session.steps_offset;
+          if (!flush) break;
+        }
+      } finally { await handle.close(); }
+    });
+    this.stepReads.set(session.name, reading);
+    try { await reading; } finally { if (this.stepReads.get(session.name) === reading) this.stepReads.delete(session.name); }
+    if (!spoolOnly) await this.drainSpool('events');
   }
   async checkReady(session) {
     if (session.status === 'ready') return true;
@@ -840,6 +893,11 @@ class MachineService {
     if (event.type === 'turn-ended' && adapter.onTurnEnded) {
       const result = await adapter.onTurnEnded(current, event);
       if (result.ignored) return { ignored: true };
+      if (current.cli === 'codex') {
+        await this.readCodexSteps(current, { spoolOnly: spooled, flush: true });
+        // The hub closes any still-running steps at the turn boundary.
+        current.steps_state = { open: {}, yielded: null };
+      }
       if (result.reading) {
         const { reached, ...reading } = result.reading;
         reading.account = current.account || `default-${adapter.provider}`;
@@ -1219,7 +1277,7 @@ class MachineService {
     this.spoolTimer.unref();
     this.sudoTimer = setInterval(() => this.sudo.tick().catch(error => this.log(error)), Number(process.env.WHEELCHAIR_SUDO_POLL_MS || 2000));
     this.sudoTimer.unref();
-    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.pollTimer); clearInterval(this.trustTimer); clearInterval(this.sudoTimer); });
+    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.pollTimer); clearInterval(this.stepsTimer); clearInterval(this.trustTimer); clearInterval(this.sudoTimer); });
     process.stdout.write(`machine service listening on ${this.config.host}:${this.config.port}\n`);
     await this.drainSpool('events'); await this.drainSpool('cards');
   }

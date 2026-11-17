@@ -1,0 +1,264 @@
+{
+  "schema": 1,
+  "title": "how the Agents screen learns what each agent is doing",
+  "source": "plan-proposal",
+  "source_detail": "docs/plans/agents-activity/PLAN.md, Decisions 1-7 and Q1",
+  "explanation": "Claude Code reports each tool call live through its hooks; Codex is read from its own session log, because its hooks miss most tools and never report failures. Leaves out how the screen draws the map and ring, and the question path is still waiting on your answer.",
+  "groups": [],
+  "nodes": [
+    {
+      "id": "api",
+      "label": "Agents screen asks for all of it every 5 seconds",
+      "kind": "step",
+      "exclusive": false,
+      "ref": "viewer/app/agents.js",
+      "note": null,
+      "graph": null,
+      "x": 421,
+      "y": 840
+    },
+    {
+      "id": "cc-hooks",
+      "label": "Claude Code reports each tool call as it starts, ends or fails",
+      "kind": "external",
+      "exclusive": false,
+      "ref": null,
+      "note": "PreToolUse, PostToolUse, PostToolUseFailure",
+      "graph": null,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "id": "cc-status",
+      "label": "Claude Code status line reports how full its context is",
+      "kind": "external",
+      "exclusive": false,
+      "ref": null,
+      "note": "context_window.used_percentage",
+      "graph": null,
+      "x": 260,
+      "y": 0
+    },
+    {
+      "id": "cx-log",
+      "label": "Codex writes every tool call, with times, and its context use to its session log",
+      "kind": "external",
+      "exclusive": false,
+      "ref": null,
+      "note": "rollout custom_tool_call, token_count",
+      "graph": null,
+      "x": 520,
+      "y": 0
+    },
+    {
+      "id": "history",
+      "label": "past step times per project, for “is this normal?”",
+      "kind": "store",
+      "exclusive": false,
+      "ref": null,
+      "note": null,
+      "graph": null,
+      "x": 210,
+      "y": 700
+    },
+    {
+      "id": "hub",
+      "label": "app keeps each agent’s recent steps and context fill",
+      "kind": "store",
+      "exclusive": false,
+      "ref": "viewer/app/sessions.js",
+      "note": null,
+      "graph": null,
+      "x": 340,
+      "y": 560
+    },
+    {
+      "id": "panel",
+      "label": "side panel: activity map, latest four steps, is-this-normal line, context ring",
+      "kind": "step",
+      "exclusive": false,
+      "ref": "viewer/pages/agents.js",
+      "note": null,
+      "graph": null,
+      "x": 291,
+      "y": 980
+    },
+    {
+      "id": "q-link",
+      "label": "when a question is passed up, the app records which agent it came from",
+      "kind": "step",
+      "exclusive": false,
+      "ref": "viewer/app/cards.js",
+      "note": "pending Q1",
+      "graph": null,
+      "x": 780,
+      "y": 0
+    },
+    {
+      "id": "read-log",
+      "label": "machine reads new lines of the Codex log as they appear, not only at turn end",
+      "kind": "step",
+      "exclusive": false,
+      "ref": "machine/adapters/codex.js",
+      "note": null,
+      "graph": null,
+      "x": 430,
+      "y": 140
+    },
+    {
+      "id": "spool",
+      "label": "kept on disk until the app is reachable",
+      "kind": "store",
+      "exclusive": false,
+      "ref": "machine/service.js",
+      "note": null,
+      "graph": null,
+      "x": 340,
+      "y": 420
+    },
+    {
+      "id": "to-steps",
+      "label": "machine turns each call into a step: what kind, on what, start, end, failed",
+      "kind": "step",
+      "exclusive": false,
+      "ref": "machine/service.js",
+      "note": null,
+      "graph": null,
+      "x": 340,
+      "y": 280
+    },
+    {
+      "id": "tree",
+      "label": "tree: question path drawn in amber to the lead",
+      "kind": "step",
+      "exclusive": false,
+      "ref": "viewer/pages/agents.js",
+      "note": null,
+      "graph": null,
+      "x": 551,
+      "y": 980
+    }
+  ],
+  "edges": [
+    {
+      "id": "api->panel",
+      "from": "api",
+      "to": "panel",
+      "label": null,
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "api->tree",
+      "from": "api",
+      "to": "tree",
+      "label": null,
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "cc-hooks->to-steps",
+      "from": "cc-hooks",
+      "to": "to-steps",
+      "label": "each call",
+      "kind": "data",
+      "value": "tool name, input, id, error",
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "cc-status->to-steps",
+      "from": "cc-status",
+      "to": "to-steps",
+      "label": "context",
+      "kind": "data",
+      "value": "percent full",
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "cx-log->read-log",
+      "from": "cx-log",
+      "to": "read-log",
+      "label": null,
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "history->api",
+      "from": "history",
+      "to": "api",
+      "label": "typical durations",
+      "kind": "data",
+      "value": null,
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "hub->api",
+      "from": "hub",
+      "to": "api",
+      "label": null,
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "hub->history",
+      "from": "hub",
+      "to": "history",
+      "label": "finished steps",
+      "kind": "data",
+      "value": null,
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "q-link->api",
+      "from": "q-link",
+      "to": "api",
+      "label": "question path",
+      "kind": "data",
+      "value": null,
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "read-log->to-steps",
+      "from": "read-log",
+      "to": "to-steps",
+      "label": "each call and token count",
+      "kind": "data",
+      "value": null,
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "spool->hub",
+      "from": "spool",
+      "to": "hub",
+      "label": "steps and context",
+      "kind": "data",
+      "value": null,
+      "inferred": false,
+      "note": null
+    },
+    {
+      "id": "to-steps->spool",
+      "from": "to-steps",
+      "to": "spool",
+      "label": null,
+      "kind": "sequence",
+      "value": null,
+      "inferred": false,
+      "note": null
+    }
+  ]
+}
