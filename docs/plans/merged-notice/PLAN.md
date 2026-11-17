@@ -179,8 +179,9 @@ Automatic archiving; merging from the app; any notice for a closed-unmerged PR; 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Hub: pollMerged, merged in needs, keep press, archive closes merged cards; cards.md, API.md; node tests | viewer/app/{threads,hub,views,cards}.js, viewer/app/API.md, protocol/app/cards.md, viewer/AGENTS.md, viewer/test/app-merged.test.js, viewer/test/protocol-rules.test.js | gpt standard (gpt-6.1-terra) | wc-d0ae8d2e2356-worker | node --test viewer/test/*.test.js | done |
-| T2 | Thread page: merged card with two-step Archive and Keep it; browser spec | viewer/pages/thread.js, viewer/pages/thread.css, viewer/test/app-merged.spec.js | gpt standard (gpt-6.1-terra; asked claude, unavailable) | wc-d0ae8d2e2356-worker-2 | npm --prefix viewer run test:browser; node --test viewer/test/*.test.js | in progress |
+| T2 | Thread page: merged card with two-step Archive and Keep it; browser spec | viewer/pages/thread.js, viewer/pages/thread.css, viewer/test/app-merged.spec.js | gpt standard (gpt-6.1-terra; asked claude, unavailable) | wc-d0ae8d2e2356-worker-2 | npm --prefix viewer run test:browser; node --test viewer/test/*.test.js | done |
 
 ## Log
 
 - 2026-11-16 — T1 accepted. Choices reported: none. Full node suite: 3 failures pre-existing on the base (app-balancer placement, lifecycle freed-port, routes font route), plus one load-flaky test that changes between runs (app-hub boot commit, server.test.js write lock); both pass alone and neither is touched by T1.
+- 2026-11-16 — T2 accepted. Choices reported: none. Its 'blocked' was the same pre-existing node failures; on the merged branch the browser suite is 638 passed, 2 skipped.
