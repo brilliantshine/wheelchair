@@ -1,57 +1,48 @@
 ---
 slug: agents-screen
-status: draft   # draft | confirmed
-created: 2026-11-17
+status: confirmed   # draft | confirmed
+created: 2026-11-15
 ---
 
-# Agents screen: layout and terminal
+# An Agents screen with named leads
 
 ## What we're building
 
-A new Agents screen. Leads sit in a left sidebar with their project, feature and stage.
-Picking one shows its agents as a tree, each box saying in words what that agent is
-doing. Picking an agent opens a side panel about it, and its terminal opens in a panel
-along the bottom of the same screen, starting view only.
-
-Source: `docs/proposals/app-shell/agents-screen.md` and the `Agents*.dc.html` designs
-beside it. This thread builds the parts that run on data the app has or can cheaply keep.
+A new Agents screen that replaces the Sessions page. Every lead gets a short name (Greek
+letters by default, or names from a list in a settings file), so leads can be told apart.
+The Agents screen shows each lead with the family of agents under it as a tree, and the
+Threads screen shows which lead is working on each thread, with a link to that lead.
 
 ## Why — the problem
 
-- The nested list makes it hard to see who started whom.
-- Boxes show raw session names, not what each agent is working on.
-- Every session shows a tmux attach command the Open terminal button already covers.
-- The terminal is a separate page, so looking at one agent loses the tree.
-- Scrolling in the terminal can send stray characters into a session.
-- Finished agents vanish from the screen, so a lead's history is lost.
+The Sessions page is a wall of cards with internal names like `wc-85d38701e785-lead-2`.
+It does not show who started whom, what each agent is doing or waiting on, or which lead
+belongs to which piece of work. Every lead is just "lead", so there is no easy way to talk
+about or find one.
 
 ## What good looks like
 
-- The sidebar lists live leads with a project tag, feature, stage and agent count
-  ("Building · 6 agents"); finished leads fold into "Finished today", also tagged.
-- Picking a lead shows a tree: lead, then mapper, sub-lead and asides, then the sub-lead's
-  workers. The heading repeats lead, feature and tag, with a one-line count
-  ("6 agents · 2 working · 2 waiting on another agent · 1 not started · 1 finished").
-- Each box says what the agent is doing; finished boxes use its result. Finished and
-  not-started boxes have dashed borders.
-- Only a lead can show "Needs you". An agent waiting on another shows a hollow dot and
-  "Waiting on the sub-lead" (or whoever).
-- The side panel shows role, title, model, machine, how long it has been working, and the
-  buttons Open terminal and Read its brief.
-- Open terminal opens a bottom panel with a height handle, Full screen, Pop out (today's
-  page) and close. It starts view only: nothing reaches tmux, and scrolling never sends
-  keys. With typing on, the switch, panel edge and cursor turn amber and a line says keys
-  go straight to that agent. It returns to view only on close or when another agent is
-  picked.
-- No tmux commands anywhere on the screen.
+- Each lead has a name like Alpha or Beta, shown wherever the lead appears.
+- If a names list is set in a settings file, new leads take names from it instead.
+- Workers, reviewers, verifiers, mappers and sub-leads have no names.
+- A stub thread has no lead and no name until it is opened and its lead starts.
+- The Threads screen shows each thread's lead name; clicking it jumps to that lead on the
+  Agents screen.
+- The Agents screen lists every agent. Each lead's family (sub-lead, its workers,
+  reviewers, verifiers, mapper) shows as a tree under it.
+- Each agent is a card like the ones on Sessions today: a way to open its terminal, plus
+  its model and effort.
+- When an agent is waiting on one of its subagents, the card says so.
+- The Sessions page is gone; its nav entry points to Agents.
 
 ## Not doing
 
-- The activity map, Latest steps, "is this normal?" line, context ring and the amber path
-  a question takes up the tree. They need an event per agent step and go to the thread
-  "Agents screen: live activity per agent".
-- Changing how agents ask each other questions; this only shows who is waiting on whom.
+- Names for anything other than leads.
+- Changing how sessions are started, balanced or restarted.
+- Controls to start or stop agents from the Agents screen.
 
 ## Constraints
 
-- The hub runs on Node 20; existing viewer and browser test suites keep passing.
+- The hub's settings file drops fields it does not know, so a names list needs to be added
+  to what it keeps.
+- Works on a phone-width screen, like the other app pages.
