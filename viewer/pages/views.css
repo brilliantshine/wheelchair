@@ -151,7 +151,7 @@
 .agents-children > .agents-branch:first-child:after { left: 50%; }
 .agents-children > .agents-branch:last-child:after { right: 50%; }
 .agents-children > .agents-branch:only-child:after { display: none; }
-.agents-side { border-left: 1px solid var(--line); padding: 28px; min-width: 0; background: var(--panel-3); }
+.agents-side { border-left: 1px solid var(--line); padding: 28px; min-width: 0; background: var(--panel-3); scrollbar-gutter: stable; }
 .agents-side h2 { margin: 10px 0; overflow-wrap: anywhere; }
 .agents-report-head { font-size: 13px; margin: 18px 0 6px; }
 .agents-report { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink-2); font-size: 13px; margin: 0; }
@@ -175,6 +175,7 @@
  .agents-layout.has-lead .agents-sidebar, .agents-layout.has-agent .agents-main { display: none; }
  .agents-layout.has-lead:not(.has-agent) .agents-main, .agents-layout.has-agent .agents-side { display: block; }
  .agents-back { display: inline-flex; margin-bottom: 20px; }
+ html:has(.agents-layout.has-agent) { scrollbar-gutter: stable; }
  .agents-tree { overflow: visible; display: block; }
  .agents-branch { align-items: stretch; min-width: 0; }
  .agents-box { width: 100%; }
@@ -224,7 +225,6 @@
  .agents-view { height: calc(100vh - var(--nav-h)); display: flex; flex-direction: column; }
  .agents-layout { flex: 1; min-height: 0; }
  .agents-sidebar, .agents-side { overflow: auto; }
- .agents-side { scrollbar-gutter: stable; }
  .agents-main { display: flex; flex-direction: column; min-height: 0; padding-bottom: calc(28px + var(--agents-terminal-height, 0px)); }
  .agents-toolbar { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
  .agents-tree { flex: 1; min-height: 160px; overflow: auto; display: block; cursor: grab; touch-action: none; }

@@ -95,7 +95,10 @@
   }
   function render() {
     pathObserver?.disconnect(); pathObserver = null; redrawPaths = null;
-    const root = $('agents'), banners = $('unreachable'); root.replaceChildren(); banners.replaceChildren();
+    const root = $('agents'), banners = $('unreachable'), oldSide = root.querySelector('.agents-side');
+    // A refresh re-renders the whole page; keep the reader where they were if they are still on the same agent.
+    const kept = { agent: oldSide?.dataset.agent, side: oldSide?.scrollTop || 0, page: scrollY };
+    root.replaceChildren(); banners.replaceChildren();
     for (const m of data.machines || []) if (!m.reachable) { const d = new Date(m.last_seen); banners.append(el('p', 'agent-unreachable', `${m.machine} unreachable, last seen ${m.last_seen && !isNaN(d) ? d.toLocaleString() : 'never'}`)); }
     const timestamps = new Map(threads.map(t => [t.id, t.collin_at || t.created_at || '']));
     const leads = [...(data.leads || [])].sort((a,b) => String(timestamps.get(b.thread_id) || '').localeCompare(String(timestamps.get(a.thread_id) || '')));
@@ -127,6 +130,7 @@
     const sizer = el('div','agents-sizer'); sizer.append(content); tree.append(sizer); main.append(toolbar,tree); if (paths.length) { main.append(el('div','agents-path-legend','Where a question went')); redrawPaths = () => drawQuestionPaths(tree, paths, parents); requestAnimationFrame(redrawPaths); pathObserver = new ResizeObserver(redrawPaths); pathObserver.observe(sizer); pathObserver.observe(main); } root.append(main);
     if (!phone()) controls = treeView(tree, main, lead.thread_id, content, sizer, label);
     const side = el('aside','agents-side'); if (selected) { side.append(button(`‹ ${lead.lead_name || 'Lead'}`, () => go(lead.thread_id), 'agents-back'),el('div','agents-role',selected.role || 'agent'),el('h2','',selected.display_title || selected.role || 'Agent'),el('p','agents-muted',[selected.model,selected.effort].filter(Boolean).join(' · ')),el('p','agents-muted',lead.machine || ''),el('p','agents-muted',duration(selected)),el('p','agents-side-status',status(selected))); if (selected.result_summary) side.append(el('h3','agents-report-head','Report'),el('p','agents-report',selected.result_summary)); if (selected.live) side.append(button('Open terminal', () => openTerm(selected), 'primary')); if (selected.has_brief) side.append(button('Read its brief', async () => { try { const res = await fetch(`/wheelchair/api/sessions/${encodeURIComponent(selected.name)}/brief`); if (!res.ok) throw new Error(`HTTP ${res.status}`); $('brief-text').textContent = (await res.json()).brief; } catch (e) { $('brief-text').textContent = `Could not load brief: ${e.message}`; } $('brief-dialog').showModal(); })); side.append(activityPanel(selected, lead, nodes(lead.session))); } else side.append(el('p','agents-muted','Select an agent to see details.')); root.append(side);
+    if (selected) { side.dataset.agent = selected.name; if (kept.agent === selected.name) { side.scrollTop = kept.side; scrollTo(scrollX, kept.page); } }
   }
   async function refresh() { try { const [a,t] = await Promise.all([fetch('/wheelchair/api/agents'),fetch('/wheelchair/api/threads?view=list')]); if (!a.ok) throw new Error(`agents ${a.status}`); data = await a.json(); threads = t.ok ? (await t.json()).threads || [] : []; if (active.size) pending = true; else render(); $('error').hidden = true; } catch (e) { $('error').textContent = `Could not load agents: ${e.message}`; $('error').hidden = false; } }
   refresh(); setInterval(refresh,5000); setInterval(() => { for (const n of document.querySelectorAll('.activity-now')) n.textContent = `now · ${timer(seconds(n.dataset.since))}`; },1000);
