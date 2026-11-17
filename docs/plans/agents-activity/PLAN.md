@@ -132,6 +132,19 @@ Rules, per line:
     owns that cell or process; otherwise nothing.
   - `ended_at` = the timestamp of the line that shows completion. `failed` is true for a
     script error, a non-zero `exit_code` in the final result, or a tool error.
+- **Polls inside scripts.** A script's output can show a command still running (an
+  `exec_command` result with a `session_id` and no `exit_code`) even though the script itself
+  says `Script completed`. Then the script's step stays running and owns that process. A
+  later script whose source calls only `tools.write_stdin` / `tools.wait` naming processes or
+  cells already owned by running steps (read `session_id:` / `cell_id:` literals from the
+  source) is a poll: it starts no step, and when its output shows the polled process finished
+  (`exit_code` present) it ends the owning step. If it polls several owned processes, a
+  result ends an owner only when the result names its `session_id`; one it cannot place
+  ends nothing. A script that mixes such polls with other calls is a new step for its other
+  calls (kind and label from its first non-poll call) and still applies its polls to their
+  owners. Add a fixture for this from
+  `~/.codex/sessions/2026/11/17/rollout-2026-11-17T04-53-49-01a1e992-1d3d-7363-8ca9-d597e8f9a1ed.jsonl`
+  (lines 73–89).
 - **One step per script.** The script's source is not split into nested steps (it shows
   possible calls, not executed ones). Its kind and label come from the first `tools.<name>(`
   call in its source (classified per section 1, label from its first string argument); with
@@ -371,6 +384,7 @@ commands, and their steps and context show on the Agents screen within 5 seconds
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | blocking | Process polls wrapped in `exec` scripts start new steps instead of continuing the command | upheld | §2 "Polls inside scripts" |
 
 ## Prior Work
 
