@@ -98,7 +98,7 @@ async function newPlanDirectories(worktree, defaultBranch = 'main') {
 // worktree the archive failed to remove is still searched.
 async function findSlug(hub, thread) {
   if (thread.slug || !thread.worktree) return;
-  if (thread.archived && !(await fs.stat(thread.worktree).then(() => true, () => false))) return;
+  if (thread.archived && await fs.stat(thread.worktree).then(() => false, (error) => error.code === 'ENOENT' || error.code === 'ENOTDIR')) return;
   const names = await newPlanDirectories(thread.worktree, thread.default_branch || 'main');
   if (names.length !== 1) return;
   thread.slug = names[0];
