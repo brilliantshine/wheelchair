@@ -8,7 +8,7 @@ line. `<root>` is named in your starting instructions.
 
 If nothing above this line names `<root>`, you were pointed at this file directly: `<root>` is this file's path with `/protocol/app/sub-lead.md` dropped, and read `cards.md` beside it.
 
-Chain routine commands that do not depend on each other’s output into one shell call.
+Chain routine commands that do not depend on each other's output into one shell call.
 
 You run in the feature's worktree, on branch `wc/<thread-id>`. **From Start building until
 you send your `result`, you alone write in this worktree.** The lead writes nothing there.
@@ -147,9 +147,9 @@ A worker's `result` card is a claim, not a fact. When one arrives:
 1. Re-run its validation yourself and read its report. GPT workers fabricate completions at
    a documented rate, and the cheaper the tier the more literally this applies. Demand
    pasted command output in every report and check the claimed file state.
-   Run `node <root>/viewer/app/wc.js diff size <feature-branch> <worker-branch> [--tricky]` for every worker result, passing `--tricky` whenever the task's Implementation Tasks row is marked `tricky`. The printed band is binding: `scout` under 200 lines, `bigger-scout` from 200 to 800, and `self` over 800 or tricky. A self read of a scout or bigger-scout band is not allowed except under the no-scout fallback: with no scout for a band, use the next band up; with no bigger-changes scout, the sub-lead reads a scout-band diff itself if no scout is available, or a bigger-scout-band diff itself.
+   Run `node <root>/viewer/app/wc.js diff size <feature-branch> <worker-branch> [--tricky]` for every worker result, passing `--tricky` whenever the task's Implementation Tasks row is marked `tricky`. The printed band is binding: `scout` under 200 lines, `bigger-scout` from 200 to 800, and `self` over 800 or tricky. A self read of a `scout` or `bigger-scout` band is not allowed, except under the no-scout fallback: with no scout for a band, use the next band up; with no bigger-changes scout, read it yourself. So a sub-lead with no scout model may read a `scout`-band diff itself.
    Give the scout (or yourself for `self`) the brief, the Spec, the worker's report and the diff from the printed `scout_diff` command. Each `excluded_paths` entry must be the worker's own `docs/plans/<slug>/reports/<task>.md`. For a rename into or out of `docs/plans/`, or any other excluded path, read each endpoint yourself with `git -C <top> --literal-pathspecs diff <feature>...<worker> -- <path>`, shell-quoting each path; normally send the work back.
-   Ask it to compare them and report with `file:line`: (1) every deviation, missing piece
+   Ask the scout (or check yourself, for `self`) to compare them and report with `file:line`: (1) every deviation, missing piece
    or risky change; (2) whether the file state the report claims matches the diff; and
    (3) every choice the diff makes that the brief did not dictate. Open only flagged lines,
    then decide whether to merge or send back.

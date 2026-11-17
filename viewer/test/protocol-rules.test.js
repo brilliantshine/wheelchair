@@ -64,7 +64,7 @@ test('sub-lead uses the binding sizing command and no-scout fallback', () => {
   const text = read('sub-lead');
   assert.ok(text.includes('wc.js diff size'));
   assert.ok(text.includes('--tricky'));
-  assert.match(text, /sub-lead reads a scout-band diff itself if no scout is available/);
+  assert.match(text, /with no scout model may read a `scout`-band diff itself/);
 });
 for (const role of ['worker', 'verifier']) {
   test(`${role} preserves suite exit status`, () => {

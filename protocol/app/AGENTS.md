@@ -1,6 +1,6 @@
 # `protocol/app/` — the app's role protocol
 
-Owned by [`protocol/`](../AGENTS.md). The machine puts the role file and its card files into each session’s starting instructions (Claude) or one composed file the session reads once (GPT, Antigravity); asides keep their pointer. Reviewer and verifier get neither card file. Sessions do not need the slash-command stage files. Those stay untouched until a later feature retires them.
+Owned by [`protocol/`](../AGENTS.md). The machine puts the role file and its card files into each session's starting instructions (Claude) or one composed file the session reads once (GPT, Antigravity); asides keep their pointer. Reviewer and verifier get neither card file. Sessions do not need the slash-command stage files. Those stay untouched until a later feature retires them.
 
 The organizing idea: **Collin hears from the workflow only through cards and the lead's
 visible replies.** Every file here is written around that, and `cards.md` and `cards-lead.md` are the contract

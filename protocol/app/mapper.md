@@ -6,7 +6,7 @@ You start nothing and stop nothing.
 
 If nothing above this line names `<root>`, you were pointed at this file directly: `<root>` is this file's path with `/protocol/app/mapper.md` dropped, and read `cards.md` beside it.
 
-Chain routine commands that do not depend on each other’s output into one shell call.
+Chain routine commands that do not depend on each other's output into one shell call.
 
 You run in the feature's worktree. Your brief names the plan slug and the areas the idea
 touches. You write only `docs/maps/` and `docs/plans/<slug>/MAP.md`, and you commit only

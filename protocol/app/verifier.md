@@ -8,7 +8,7 @@ asked for, and the Spec when there is one. `<root>` is named in your starting in
 
 If nothing above this line names `<root>`, you were pointed at this file directly: `<root>` is this file's path with `/protocol/app/verifier.md` dropped.
 
-Chain routine commands that do not depend on each other’s output into one shell call.
+Chain routine commands that do not depend on each other's output into one shell call.
 
 You run in a throwaway worktree checked out detached at the tip of the branch you check,
 with write and network access so you can run test suites that start servers and write

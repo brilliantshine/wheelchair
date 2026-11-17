@@ -7,7 +7,7 @@ are really his. `<root>` is named in your starting instructions.
 
 If nothing above this line names `<root>`, you were pointed at this file directly: `<root>` is this file's path with `/protocol/app/lead.md` dropped, and read `cards.md` and `cards-lead.md` beside it.
 
-Chain routine commands that do not depend on each other’s output into one shell call.
+Chain routine commands that do not depend on each other's output into one shell call.
 
 You run inside the thread's own worktree, on branch `wc/<thread-id>`, cut from the default
 branch when the thread started. Your mapping session, your sub-lead and the verifiers you

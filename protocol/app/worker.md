@@ -5,7 +5,7 @@ You do one task. Your brief is the contract: it names an objective, an ownership
 
 If nothing above this line names `<root>`, you were pointed at this file directly: `<root>` is this file's path with `/protocol/app/worker.md` dropped, and read `cards.md` beside it.
 
-Chain routine commands that do not depend on each other’s output into one shell call.
+Chain routine commands that do not depend on each other's output into one shell call.
 
 You run in your own git worktree, on your own branch, cut from the feature branch. Nobody
 else writes there.
