@@ -1,6 +1,6 @@
 ---
 slug: lean-sessions
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-17
 ---
 
@@ -87,7 +87,36 @@ get buried as this file grows.
 
 ## Spec
 
-(grows as decisions land)
+How a session starts after this change:
+
+```mermaid
+flowchart TD
+  A[Hub asks the machine to start a session] --> B[Put together the starting text: Role line, header naming the clone, the role's rules, its card rules, the layers]
+  B -->|a file is missing or the write fails| X[Start fails; no branch or worktree left behind]
+  B --> C[Write the text to the session's prompt file]
+  C --> D[Create the worktree and branch]
+  D --> E{Which CLI?}
+  E -->|Claude| F[Launch with unused tools turned off and the prompt file as starting instructions]
+  E -->|GPT or Antigravity| G[First message: Role line and a pointer to read the prompt file once]
+  F --> H[Session works without rereading its rules]
+  G --> H
+```
+
+How a sub-lead checks a worker's change:
+
+```mermaid
+flowchart TD
+  A[Worker reports done] --> B[Sub-lead runs the sizing command]
+  B --> C{Size of the change, plan documents left out}
+  C -->|under 200 lines| D[Cheap scout reads it]
+  C -->|200 to 800 lines| E[Bigger-changes scout reads it]
+  C -->|over 800, or task marked tricky| F[Sub-lead reads it]
+  B --> G[Changes to plan documents other than the worker's report]
+  G --> F
+  D --> H[Sub-lead opens only flagged lines, logs the band, merges or sends back]
+  E --> H
+  F --> H
+```
 
 ### Claude startup tools
 
@@ -105,7 +134,7 @@ get buried as this file grows.
 - Card files per role: lead gets `cards.md` and `cards-lead.md`; sub-lead, worker and mapper get `cards.md`; reviewer and verifier get none.
 - The header also states the clone: "`<root>` is `<absolute path of the machine's clone>`." Role files and `cards.md` stop deriving `<root>` from their own path and say "`<root>` is named in your starting instructions", so a session never resolves it to a feature worktree.
 - Briefs stop naming role files. `lead.md` (mapper, reviewer, sub-lead and verifier briefs) and `sub-lead.md` (worker and verifier briefs) say instead: the session's role rules are already in its starting instructions, so a brief never tells it to read its role file. "Brief them from `reviewer.md`" style lines that tell the lead what to put in a brief stay; only the instruction to the started session changes.
-- Sessions started before the change keep a pointer and read the files from disk. So the lead, sub-lead, worker and mapper role files keep a fallback line: "If your starting instructions only point you to this file, `<root>` is this file's path with `/protocol/app/<role>.md` dropped, and read `cards.md` (the lead also `cards-lead.md`) beside it." `reviewer.md` and `verifier.md` get only its `<root>` part.
+- Sessions started before the change keep a pointer and read the files from disk. So the lead, sub-lead, worker and mapper role files keep a fallback line: "If nothing above this line names `<root>`, you were pointed at this file directly: `<root>` is this file's path with `/protocol/app/<role>.md` dropped, and read `cards.md` (the lead also `cards-lead.md`) beside it." The composed header always names `<root>`, so inside the composed text (Claude's instructions or the GPT/Antigravity prompt file) the line never fires. `reviewer.md` and `verifier.md` get only its `<root>` part.
 - Settings' prompt preview (`viewer/app/settings.js:167-171`, shown at `viewer/pages/settings.js:657-659`) shows the composed file's contents in order: the `Role:` line, the header, one line per included file ("[full text of protocol/app/<role>.md]", and likewise each card file), then the layers. The preview stays per role and project, with no provider choice: under the text, one fixed caption says "Claude gets this as its starting instructions; GPT and Antigravity sessions get it as a file, through a two-line first message that points to it."
 - Asides are out of scope: `machine/lib/aside-turns.js` keeps its own pointer prompt.
 - The files are read from the machine's clone when the session starts. A session keeps the text it started with; a later edit reaches the next session.
@@ -155,16 +184,16 @@ get buried as this file grows.
 ### Validation
 
 - `bash machine/test/run.sh` (a Claude lead start's tmux command stays under 8 KiB with a composed prompt over 30 KB and its argv carries `--append-system-prompt-file`;Claude argv carries the deny list and neither `--strict-mcp-config` nor `--disable-slash-commands`; composed prompt holds role text and the right card files per role; the ledger start line carries `account_dir`;  a missing role or card file, or a forced failure writing the prompt file, fails the start and leaves no branch or worktree, and a retry then succeeds; Codex and Antigravity first messages are `[wc:role] Role: <role>` on its own line plus the short pointer, and with a 100 KB brief a Codex start's first message is the brief plus under 1 KB, so its notify argument stays under Linux's 128 KiB argument limit;  a ledger append error does not fail a start, hook or report; `wc.js diff size` lists both rename ends with `diff.renames=false`).
-- `node --test viewer/test/*.test.js` (`wc.js diff size` bands, the `docs/plans/` exclusion, structured excluded paths, both ends of a rename across `docs/plans/` with `diff.renames=false`, literal pathspecs, and a run from a subdirectory of a worktree whose path contains spaces, on a temp repo; a sub-lead with no scout may read a `scout`-band diff itself; `session start` and `session list` default output compact with `branch` and `worktree` and no `command`, `--full` raw; every schema kind has exactly one section across `cards.md` and `cards-lead.md`; `card.js` accepts the same cards as before; Settings preview shows the `Role:` line, header and file lines; `protocol-rules.test.js` updated).
+- `node --test viewer/test/*.test.js` (`wc.js diff size` bands, the `docs/plans/` exclusion, a file and a symlink at exactly `docs/plans` both listed in `excluded_paths` and absent from `scout_diff`, structured excluded paths, both ends of a rename across `docs/plans/` with `diff.renames=false`, literal pathspecs, and a run from a subdirectory of a worktree whose path contains spaces, on a temp repo; a sub-lead with no scout may read a `scout`-band diff itself; `session start` and `session list` default output compact with `branch` and `worktree` and no `command`, `--full` raw; every schema kind has exactly one section across `cards.md` and `cards-lead.md`; `card.js` accepts the same cards as before; Settings preview shows the `Role:` line, header and file lines; `protocol-rules.test.js` updated).
 - Live: after install, start a Claude lead (a new test thread whose first message is "Reply ok.", so the normal launch with its Settings layers runs) and a Claude worker with the brief "Reply ok." on this machine; the lead starts in real tmux with its prompt file; the worker's transcript shows `startup_tokens` under 25,000 and the lead's under 32,000 (baseline ~44k for every role; 17.1k measured with the deny list and no role text, plus ~4k of worker text or ~13.5k of lead text), and the lead's composed instructions hold lead.md, cards.md and cards-lead.md.
 - Re-measure after a few threads with the baseline method above, taking each Claude session's role from the session ledger (joined on `cli_session_id` = transcript file name), and reporting the same metrics: cost share by role, average context per call, calls per session, and median Claude `startup_tokens` per role read from the transcripts the ledger names (a start's sample is the first assistant record whose `model` is not `<synthetic>` and whose input + cache write + cache read is above zero; a start without one is not a usable sample; the others are left out and counted per role in the report; the default Claude home is `$CLAUDE_CONFIG_DIR` if set, else `~/.claude`, as the adapter resolves it), against the baseline first-call context for lead, sub-lead and verifier; worker, mapper and reviewer are reported without a baseline (no Claude sessions of those roles in the baseline window). For GPT, role comes from the `Role: <role>` line at the start of the first `[wc:role]` message (or, for sessions started before the change, the first `protocol/app/<role>.md` it names), so no join is needed and interrupted attempts are counted; scan the default Codex home resolved as the adapter does (`$CODEX_HOME` if set, else `~/.codex`) and each Codex `account_dir`'s `sessions/`; per session, take the last `token_count` event whose `info.total_token_usage.input_tokens` is a number (events carrying only rate limits are skipped; repeated snapshots are not summed); a session with no such event is left out of both the total and the session count, and the number left out is reported; report the mean per worker session and per verifier session against the baseline above.
 
 ### Measured baseline (2026-11-17)
 
-- Claude, sessions since 2026-11-17 00:00, cost-weighted (cache read 0.1×, cache write 1.25×, output 5×): lead 52%, sub-lead 44%, verifier 4%. Average context per call: lead 102k, sub-lead 149k. Cache reads are about two-thirds of cost, so cost tracks calls × context.
+- Claude, sessions started 2026-11-17 00:00 to 20:30, cost-weighted (cache read 0.1×, cache write 1.25×, output 5×): lead 52%, sub-lead 44%, verifier 4%. Average context per call: lead 103k, sub-lead 149k. Calls per session: lead 42 (891 over 21 sessions), sub-lead 69 (555 over 8). No `<synthetic>` records in the window. These were measured with calls deduplicated by `message.id`, as the Method line says. Cache reads are about two-thirds of cost, so cost tracks calls × context.
 - Claude first-call context (startup), median per session since 2026-11-17 00:00: lead 44.0k, sub-lead 44.1k, verifier 43.7k.
 - GPT, sessions since 2026-11-10 (last cumulative `total_token_usage.input_tokens` per session, sessions started 2026-11-10 to 2026-11-17 21:00, role from the first message naming `protocol/app/<role>.md`): verifier 105.6M over 89 sessions (1.19M per session), worker 163.2M over 117 (1.39M per session), reviewer 36.8M over 98; 84–97% cached.
-- Method: Claude assistant records are grouped by `message.id` within a transcript and each id counts once, as one call, using its first record's `usage`. Claude transcripts under `~/.claude/projects/*wheelchair-worktrees*`, role from the first user message or the first tool call naming `protocol/app/<role>.md`; Codex from `~/.codex/sessions` `token_count` events. After this change the role no longer appears in a Claude transcript, so re-measuring takes it from the session ledger below.
+- Method: Claude assistant records are grouped by `message.id` within a transcript and each id counts once, as one call, using its first record's `usage`; records whose `model` is `<synthetic>` are not calls and are skipped, in the baseline and the re-measure alike. Claude transcripts under `~/.claude/projects/*wheelchair-worktrees*`, role from the first user message or the first tool call naming `protocol/app/<role>.md`; Codex from `~/.codex/sessions` `token_count` events. After this change the role no longer appears in a Claude transcript, so re-measuring takes it from the session ledger below.
 
 ### Session ledger
 
@@ -502,6 +531,12 @@ get buried as this file grows.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Baseline may not match the dedup method; no calls-per-session baseline | upheld | Baseline was deduplicated (measure scripts skipped repeated ids); stated, calls per session added |
+| intent | minor | Fallback line misfires in the GPT prompt file | upheld | Condition is now "nothing above names `<root>`" |
+| mechanics | minor | Synthetic records counted as calls | upheld | Skipped in both; baseline recomputed with an explicit window (unchanged within rounding) |
+| mechanics | minor | Exact `docs/plans` path untested | upheld | Validation extended |
+
+Round 17 is clean: no blocking or major finding upheld.
 
 ## Prior Work
 
