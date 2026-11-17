@@ -1,0 +1,48 @@
+name: macOS
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - 'wc/**' # temporary: iteration before PR
+permissions:
+  contents: read
+jobs:
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: brew install tmux
+      - name: Use macOS Bash and BSD tools
+        run: |
+          mkdir -p "$RUNNER_TEMP/wheelchair-shims"
+          ln -s /bin/bash "$RUNNER_TEMP/wheelchair-shims/bash"
+          echo "$RUNNER_TEMP/wheelchair-shims" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/wheelchair-shims/bash" --version | grep 'version 3\.2'
+          if sed --version >/dev/null 2>&1; then echo 'Expected BSD sed' >&2; exit 1; fi
+      - name: Run portable suites
+        run: |
+          bash sensitivity/test/run.sh
+          bash codex/test/run.sh
+          bash install/test/run.sh
+          node --test machine/test/aside-turns.test.js
+      - name: Install fake CLIs
+        run: |
+          cp test-support/macos/fake-claude "$RUNNER_TEMP/wheelchair-shims/claude"
+          cp test-support/macos/fake-tailscale "$RUNNER_TEMP/wheelchair-shims/tailscale"
+      - name: Install services
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+        run: ./install.sh --serve
+      - name: Check services
+        run: test-support/macos/check.sh
+      - name: Print service logs on failure
+        if: failure()
+        run: |
+          for log in "$HOME"/Library/Logs/wheelchair/*.log; do
+            if [ -f "$log" ]; then echo "--- $log ---"; cat "$log"; fi
+          done

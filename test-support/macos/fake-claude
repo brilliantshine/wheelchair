@@ -1,0 +1,8 @@
+#!/bin/bash
+set -euo pipefail
+case "${1:-}" in
+  --version) echo '0.0.0-fake'; exit 0 ;;
+  auth) exit 0 ;;
+esac
+echo 'fake claude running'
+while :; do sleep 3600; done
