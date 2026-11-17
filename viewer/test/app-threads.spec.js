@@ -130,7 +130,7 @@ for (const [label, size] of SIZES) {
       const endedRow = page.locator(`#list li[data-id="${ended.id}"]`);
       const chip = liveRow.locator('a.lead-chip');
       await expect(chip).toHaveText(liveName);
-      await expect(chip).toHaveAttribute('href', `/wheelchair/app/agents#lead-${live.id}`);
+      await expect(chip).toHaveAttribute('href', `/wheelchair/app/agents?lead=${live.id}`);
       await expect(endedRow.locator('span.lead-chip')).toHaveText(endedName);
       await expect(endedRow.locator('a.lead-chip')).toHaveCount(0);
       await expect(page.locator('#list li', { hasText: 'Unopened chip stub' }).locator('.lead-chip')).toHaveCount(0);
@@ -138,15 +138,15 @@ for (const [label, size] of SIZES) {
       await noSideScroll(page);
       await open(page, live.id);
       await expect(page.locator('#head a.lead-chip')).toHaveText(liveName);
-      await expect(page.locator('#head a.lead-chip')).toHaveAttribute('href', `/wheelchair/app/agents#lead-${live.id}`);
-      await expect(page.locator('#head a', { hasText: 'Agents' })).toHaveAttribute('href', `/wheelchair/app/agents#lead-${live.id}`);
+      await expect(page.locator('#head a.lead-chip')).toHaveAttribute('href', `/wheelchair/app/agents?lead=${live.id}`);
+      await expect(page.locator('#head a', { hasText: 'Agents' })).toHaveAttribute('href', `/wheelchair/app/agents?lead=${live.id}`);
       await noSideScroll(page);
       await open(page, ended.id);
       await expect(page.locator('#head span.lead-chip')).toHaveText(endedName);
       await page.goto(`${ctx.server.url}/app/threads`);
       await page.route('**/wheelchair/app/agents', (route) => route.fulfill({ status: 200, body: 'Agents' }));
       await page.locator(`#list li[data-id="${live.id}"] a.lead-chip`).click();
-      await expect(page).toHaveURL(new RegExp(`/wheelchair/app/agents#lead-${live.id}$`));
+      await expect(page).toHaveURL(`${ctx.server.url}/app/agents?lead=${live.id}`);
     });
 
     test('list: ?new=1 goes to the New thread screen', async ({ page }) => {
