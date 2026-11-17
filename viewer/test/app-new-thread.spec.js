@@ -68,9 +68,15 @@ test('attachments upload into the new thread and ride on its first message', asy
 
 test('a failed upload keeps Start off and links to the thread', async ({ page }) => {
   await open(page);
+  // Hold the create until the project has been changed under it.
+  let release; const held = new Promise((r) => { release = r; });
+  await page.route('**/api/threads', async (route) => { await held; await route.continue(); });
   await page.locator('#attachment-input').setInputFiles({ name: 'first.txt', mimeType: 'text/plain', buffer: Buffer.from('one') });
   await page.route('**/uploads?name=first.txt', (route) => route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ detail: 'nope' }) }));
   await page.locator('#nt-go').click();
+  await page.locator('#nt-project').selectOption({ index: 0 });
+  await expect(page.locator('#nt-go')).toBeDisabled();
+  release();
   await expect(page.locator('#form-error')).toContainText('The thread started, but the first message was not sent (could not upload first.txt: nope)');
   await expect(page.locator('#form-error a')).toHaveAttribute('href', /\/app\/thread\?id=[0-9a-f]+/);
   await expect(page.locator('#nt-go')).toBeDisabled();

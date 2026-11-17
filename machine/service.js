@@ -217,6 +217,10 @@ class MachineService {
     this.drains = new Map();
     this.threadLocks = new Map();
     this.closingThreads = new Map();
+    // Threads archived since this service started. A pending_lead upload queued behind an archive
+    // would otherwise find no sessions and be admitted; ids are never reused, and a restart drops
+    // any upload still in flight, so memory is enough.
+    this.archivedThreads = new Set();
     this.uploadRequests = new Map();
     this.options = options;
     this.sudo = new SudoRequests(this, atomicWrite, readJson, requestJson);
@@ -259,7 +263,7 @@ class MachineService {
     try {
       return await this.withThreadLock(id, async () => {
         const own = Object.values(this.sessions).filter(s => s.thread_id === id);
-        const waiting = pendingLead && own.length === 0;
+        const waiting = pendingLead && own.length === 0 && !this.archivedThreads.has(id);
         if (this.closingThreads.has(id) || (!waiting && !own.some(s => s.role === 'lead' && !s.archived_pending && s.status !== 'stopped'))) throw Object.assign(new Error('thread is not writable'), { status: 409 });
         const { target, file } = await this.reserveUpload(id, name);
         try {
@@ -712,6 +716,7 @@ class MachineService {
     if (typeof threadId !== 'string' || !threadId) throw Object.assign(new Error('thread_id required'), { status: 400 });
     threadName(threadId);
     this.closingThreads.set(threadId, (this.closingThreads.get(threadId) || 0) + 1);
+    this.archivedThreads.add(threadId);
     for (const request of this.uploadRequests.get(threadId) || []) request.destroy();
     try { return await this.withThreadLock(threadId, async () => {
     const sessions = Object.values(this.sessions).filter(session => !session.name.startsWith('wc-login-') && session.thread_id === threadId);

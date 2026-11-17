@@ -10,6 +10,7 @@
   let state = null;       // the last /new-thread answer
   let loadSeq = 0;
   let started = false;    // a thread exists: Start stays off and its error stays up
+  let sending = false;    // a start is in flight
 
   function el(tag, cls, text) {
     const n = document.createElement(tag);
@@ -61,7 +62,7 @@
   function syncProject(count) {
     const empty = count === 0;
     projectEl.disabled = empty;
-    goEl.disabled = empty || started;
+    goEl.disabled = empty || started || sending;
     $('nt-empty').hidden = !empty;
     const path = empty ? '' : projectEl.value;
     show($('nt-path'), path);
@@ -162,7 +163,6 @@
 
   // Attachments, as in the thread composer: picked, pasted or dropped, at most 25 MB each.
   let attachments = [];
-  let sending = false;
   const chips = $('attachments');
   function renderAttachments() {
     chips.textContent = '';

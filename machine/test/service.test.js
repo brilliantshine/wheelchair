@@ -1097,6 +1097,10 @@ test('pending_lead admits a thread with no sessions yet, but not one that has en
     assert.equal((await upload('t', true)).status, 409);
     env.instance.closingThreads.set('w', 1);
     assert.equal((await upload('w', true)).status, 409);
+    env.instance.closingThreads.delete('w');
+    assert.equal((await api(env, 'POST', '/v1/archive', { thread_id: 'w' }, hubHeader)).body.uploads_removed, true);
+    assert.equal((await upload('w', true)).status, 409);
+    await assert.rejects(fs.stat(path.join(env.state, 'uploads', 'w')), { code: 'ENOENT' });
   } finally { await env.close(); }
 });
 
