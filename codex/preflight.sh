@@ -82,7 +82,10 @@ try:
     with urllib.request.urlopen(req, timeout=60) as resp:
         fresh = json.load(resp)
 except urllib.error.HTTPError as e:
-    detail = e.read().decode(errors="replace")[:300]
+    try:
+        detail = e.read().decode(errors="replace")[:300]
+    except Exception:  # a reset while reading the body must not change what the status means
+        detail = ""
     if e.code in (400, 401, 403):
         print(f"preflight: refresh token rejected ({e.code}): {detail}", file=sys.stderr)
         print("preflight: reauth with: codex login --device-auth", file=sys.stderr)

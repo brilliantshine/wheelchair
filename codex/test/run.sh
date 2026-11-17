@@ -294,8 +294,11 @@ python3 - <<'PY' > "$case_dir/stub-port" &
 from http.server import BaseHTTPRequestHandler, HTTPServer
 class Stub(BaseHTTPRequestHandler):
     def do_POST(self):
+        # Read the body: closing a socket with unread data sends a reset, which macOS's
+        # client sees before it can read the error body.
+        self.rfile.read(int(self.headers.get('Content-Length') or 0))
         code = 500 if self.path == '/500' else 400
-        self.send_response(code); self.end_headers(); self.wfile.write(b'fixture')
+        self.send_response(code); self.send_header('Content-Length', '7'); self.end_headers(); self.wfile.write(b'fixture')
     def log_message(self, *args): pass
 server = HTTPServer(('127.0.0.1', 0), Stub)
 print(server.server_port, flush=True)
