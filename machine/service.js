@@ -716,7 +716,6 @@ class MachineService {
     if (typeof threadId !== 'string' || !threadId) throw Object.assign(new Error('thread_id required'), { status: 400 });
     threadName(threadId);
     this.closingThreads.set(threadId, (this.closingThreads.get(threadId) || 0) + 1);
-    this.archivedThreads.add(threadId);
     for (const request of this.uploadRequests.get(threadId) || []) request.destroy();
     try { return await this.withThreadLock(threadId, async () => {
     const sessions = Object.values(this.sessions).filter(session => !session.name.startsWith('wc-login-') && session.thread_id === threadId);
@@ -774,7 +773,10 @@ class MachineService {
     await this.persistSessions();
     let uploads_removed = null; let uploads_error;
     if (!kept.some(item => item.reason === 'rebase in progress')) {
-      try { await fsp.rm(path.join(this.stateDir, 'uploads', threadId), { recursive: true, force: true }); uploads_removed = true; }
+      // Only a finished archive counts: the hub reopens a thread whose archive kept a rebase or
+      // could not remove its uploads, and that thread takes uploads again. Still inside the lock,
+      // so an upload queued behind it sees this.
+      try { await fsp.rm(path.join(this.stateDir, 'uploads', threadId), { recursive: true, force: true }); uploads_removed = true; this.archivedThreads.add(threadId); }
       catch (error) { uploads_removed = false; uploads_error = error.message; }
     }
     return { stopped, committed, removed, kept, uploads_removed, ...(uploads_error ? { uploads_error } : {}) };

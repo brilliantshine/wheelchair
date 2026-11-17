@@ -162,6 +162,7 @@ test('archive keeps and reports a worktree mid-rebase', async () => {
     const result = await api(env, 'POST', '/v1/archive', { thread_id: 'archive-rebase' }, hubHeader);
     assert.equal(result.body.uploads_removed, null);
     assert.equal(await fs.readFile(path.join(env.state, 'uploads', 'archive-rebase', '1-file'), 'utf8'), 'saved');
+    assert.equal(env.instance.archivedThreads.has('archive-rebase'), false);
     assert.equal(result.status, 200); assert.deepEqual(result.body.removed, []);
     assert.deepEqual(result.body.kept, [{ worktree, reason: 'rebase in progress' }]);
     await fs.access(worktree);
