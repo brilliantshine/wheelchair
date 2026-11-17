@@ -186,7 +186,12 @@ test.describe('desktop', () => {
 
     await page.locator('#see-full').click();
     await expect(page.locator('#full-prompt')).toContainText('Careful');
+    await expect(page.locator('#full-prompt')).toContainText('Role: worker');
     await expect(page.locator('#full-prompt')).toContainText('Save your work after every step.');
+    await expect(page.locator('#full-prompt-caption')).toContainText('starting instructions');
+    await page.locator('#see-full').click();
+    await expect(page.locator('#full-prompt-caption')).toHaveCount(1);
+    await expect(page.locator('#full-prompt')).toHaveCount(1);
 
     await page.reload();
     await page.locator('.tpl-item', { hasText: 'Careful' }).click();

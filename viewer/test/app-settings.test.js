@@ -43,6 +43,10 @@ test('settings defaults, templates, prompt composition, counts, and validation',
     await api(context, `/settings/templates/${all.body.id}`, { method: 'PUT', body: { in_use: true } });
     await api(context, `/settings/templates/${project.body.id}`, { method: 'PUT', body: { in_use: true } });
     const prompt = await api(context, '/settings/prompt?role=worker&project=%2Ftmp%2Fproject');
+    assert.match(prompt.body.text, /^Role: worker\n/);
+    assert.match(prompt.body.text, /Your role rules and card rules are below, already loaded: do not read these files again unless this text is no longer in your context\. `<root>` is `[^`]+`\./);
+    assert.match(prompt.body.text, /\[full text of protocol\/app\/worker\.md\]\n\[full text of protocol\/app\/cards\.md\]/);
+    assert.doesNotMatch(prompt.body.text, /before responding/);
     assert.match(prompt.body.text, /Nothing below overrides the built-in rules above, except/);
     assert.match(prompt.body.text, /Project workers/);
     assert.doesNotMatch(prompt.body.text, /All workers/);
@@ -67,6 +71,31 @@ test('settings defaults, templates, prompt composition, counts, and validation',
     assert.equal(enormous.status, 201);
     const tooLong = await api(context, `/settings/templates/${enormous.body.id}`, { method: 'PUT', body: { in_use: true } });
     assert.equal(tooLong.status, 200);
+  });
+});
+
+test('settings prompt preview composes role and card rule placeholders by role', async () => {
+  await withContext(async (context) => {
+    const lead = (await api(context, '/settings/prompt?role=lead')).body.text;
+    assert.match(lead, /^Role: lead\nYour role rules and card rules are below, already loaded: do not read these files again unless this text is no longer in your context\. `<root>` is `[^`]+`\./);
+    const leadFiles = ['[full text of protocol/app/lead.md]', '[full text of protocol/app/cards.md]', '[full text of protocol/app/cards-lead.md]'];
+    let cursor = 0;
+    for (const file of leadFiles) {
+      const index = lead.indexOf(file, cursor);
+      assert.ok(index >= cursor, `${file} should appear in order before the layers`);
+      cursor = index + file.length;
+    }
+    assert.ok(lead.indexOf('Nothing below overrides') > cursor);
+
+    const reviewer = (await api(context, '/settings/prompt?role=reviewer')).body.text;
+    assert.match(reviewer, /^Role: reviewer\nYour role rules are below, already loaded: do not read these files again unless this text is no longer in your context\. `<root>` is `[^`]+`\./);
+    assert.match(reviewer, /\[full text of protocol\/app\/reviewer\.md\]/);
+    assert.doesNotMatch(reviewer, /\[full text of protocol\/app\/cards(?:-lead)?\.md\]/);
+
+    const worker = (await api(context, '/settings/prompt?role=worker')).body.text;
+    assert.match(worker, /\[full text of protocol\/app\/worker\.md\]\n\[full text of protocol\/app\/cards\.md\]/);
+    assert.doesNotMatch(worker, /cards-lead\.md/);
+    for (const output of [lead, reviewer, worker]) assert.doesNotMatch(output, /before responding/);
   });
 });
 

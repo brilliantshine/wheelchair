@@ -198,7 +198,7 @@ test('agent route refuses the machine secret', async () => {
   const env = await service(await temp()); try { await start(env); assert.equal((await api(env, 'POST', '/v1/agent/cards', { kind: 'idea' }, hubHeader)).status, 401); } finally { await env.close(); }
 });
 test('Claude command line has session, hooks, auto permission, and appended role prompt', async () => {
-  const env = await service(await temp(), { pane: trustDialog }); try { await start(env); const calls = await log(env); assert.match(calls, /'claude' '--session-id' .* '--settings' .* '--permission-mode' 'auto' '--append-system-prompt'/); assert.match(calls, /'WHEELCHAIR_MACHINE_ORIGIN=http:\/\/127\.0\.0\.1:\d+'/); const settings = await fs.readdir(path.join(env.state, 'settings')); const text = await fs.readFile(path.join(env.state, 'settings', settings[0]), 'utf8'); assert.match(text, /"Stop"/); assert.match(text, /"Notification"/); assert.match(text, /"cleanupPeriodDays":30/); assert.match(text, /"promptSuggestionEnabled":false/); } finally { await env.close(); }
+  const env = await service(await temp(), { pane: trustDialog }); try { await start(env); const calls = await log(env); assert.match(calls, /'claude' '--session-id' .* '--settings' .* '--permission-mode' 'auto' '--append-system-prompt-file'/); assert.match(calls, /'WHEELCHAIR_MACHINE_ORIGIN=http:\/\/127\.0\.0\.1:\d+'/); const settings = await fs.readdir(path.join(env.state, 'settings')); const text = await fs.readFile(path.join(env.state, 'settings', settings[0]), 'utf8'); assert.match(text, /"Stop"/); assert.match(text, /"Notification"/); assert.match(text, /"cleanupPeriodDays":30/); assert.match(text, /"promptSuggestionEnabled":false/); } finally { await env.close(); }
 });
 test('Codex command line has session-name notify and inline projects trust', async () => {
   const env = await service(await temp(), { pane: readyCodex }); try { await start(env, { cli: 'codex', role: 'worker', token: 'beta', brief: 'build it' }); const calls = await log(env); assert.match(calls, /'codex' '-s' 'workspace-write' '-a' 'never'/); assert.match(calls, /notify=\[.*"codex","wc-t-worker"\]/); assert.match(calls, /projects=\{.*trust_level/); assert.match(calls, /\[wc:role\]/); } finally { await env.close(); }
@@ -800,36 +800,59 @@ test('effort adds --effort for Claude and is refused when unknown', async () => 
     assert.equal(bad.status, 400); assert.match(bad.body.error, /effort/);
   } finally { await env.close(); }
 });
-test('role_layers follow the local pointer for Claude; the pointer carries the new sentence with or without layers', async () => {
+test('composed prompts, provider pointers, and ledger', async () => {
   const env = await service(await temp()); try {
-    await start(env, { thread_id: 'p', token: 'p' });
-    const pointer = (role) => `Read ${path.resolve(__dirname, '..', '..', 'protocol', 'app', `${role}.md`)} before responding. It is wheelchair's built-in rules for your role.`;
-    assert.equal(flagValue(argvOf(env, 'wc-p-lead'), '--append-system-prompt'), pointer('lead'));
-    await start(env, { thread_id: 'q', token: 'q', role_layers: 'Nothing below overrides the built-in rules above.\n\nBe brief.' });
-    assert.equal(flagValue(argvOf(env, 'wc-q-lead'), '--append-system-prompt'), `${pointer('lead')}\n\nNothing below overrides the built-in rules above.\n\nBe brief.`);
-    await start(env, { thread_id: 'r', token: 'r', role_layers: '' });
-    assert.equal(flagValue(argvOf(env, 'wc-r-lead'), '--append-system-prompt'), pointer('lead'));
-    const bad = await api(env, 'POST', '/v1/sessions', { role: 'lead', cli: 'claude', thread_id: 's', token: 's', worktree: env.state, role_layers: 5 }, hubHeader);
-    assert.equal(bad.status, 400);
+    const root = path.resolve(__dirname, '../..');
+    const names = ['Artifact','Workflow','ScheduleWakeup','SendFeedback','ShareOnboardingGuide','ReportFindings','ListAgents','ArtifactComments','ArtifactData','CronCreate','CronDelete','CronList','RemoteTrigger','PushNotification','PublishPlugin','DesignSync','EnterWorktree','ExitWorktree','EnterPlanMode','ExitPlanMode','AskUserQuestion','EndConversation'];
+    for (const role of ['lead', 'sub-lead', 'worker', 'mapper', 'reviewer', 'verifier']) {
+      const session = await start(env, { role, thread_id: role, role_layers: '  final layer  ' });
+      const file = path.join(env.state, 'prompts', `${session.name}.md`), prompt = await fs.readFile(file, 'utf8');
+      const cards = !['reviewer', 'verifier'].includes(role);
+      assert.ok(prompt.startsWith(`Role: ${role}\nYour role rules${cards ? ' and card rules' : ''} are below, already loaded: do not read these files again unless this text is no longer in your context. \`<root>\` is \`${root}\`.`));
+      assert.ok(prompt.includes((await fs.readFile(path.join(root, 'protocol/app', `${role}.md`), 'utf8')).trimEnd()));
+      assert.equal(prompt.includes('--- cards.md ---'), cards);
+      assert.equal(prompt.includes('--- cards-lead.md ---'), role === 'lead');
+      assert.ok(prompt.endsWith('\n\nfinal layer'));
+      assert.equal(flagValue(session.command, '--append-system-prompt-file'), file);
+      assert.equal(flagValue(session.command, '--disallowedTools'), names.join(','));
+      for (const flag of ['--append-system-prompt', '--strict-mcp-config', '--disable-slash-commands']) assert.ok(!session.command.includes(flag));
+      if (role === 'lead') { assert.ok(Buffer.byteLength(prompt) > 30000); assert.ok(session.command.join(' ').length < 8192); }
+    }
+    const custom = await start(env, { thread_id: 'custom', role_prompt: 'custom prompt', role_layers: 'ignored' });
+    assert.equal(await fs.readFile(path.join(env.state, 'prompts', `${custom.name}.md`), 'utf8'), 'Role: lead\ncustom prompt');
+    const ledger = (await fs.readFile(path.join(env.state, 'session-ledger.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
+    assert.equal(ledger.length, 7); assert.deepEqual(Object.keys(ledger[0]), ['at','name','role','provider','model','account_dir','cli_session_id','thread_id']);
+    assert.equal(ledger[0].account_dir, null); assert.equal(ledger[0].provider, 'claude');
+    await fs.unlink(path.join(env.state, 'session-ledger.jsonl')); await fs.mkdir(path.join(env.state, 'session-ledger.jsonl'));
+    await start(env, { thread_id: 'ledger-error' });
+    const bad = await api(env, 'POST', '/v1/sessions', { role: 'lead', cli: 'claude', thread_id: 'bad', token: 'bad', worktree: env.state, role_layers: 5 }, hubHeader); assert.equal(bad.status, 400);
   } finally { await env.close(); }
 });
-test('role_layers follow the local pointer in the Codex [wc:role] message', async () => {
-  const env = await service(await temp(), { pane: readyCodex }); try {
-    await start(env, { cli: 'codex', role: 'worker', token: 'beta', role_layers: 'Your template says: save every step.', brief: 'build it' });
-    const calls = await log(env);
-    assert.match(calls, /\[wc:role\] Read \S+protocol\/app\/worker\.md before responding\. It is wheelchair's built-in rules for your role\.\n\nYour template says: save every step\.\n\nbuild it/);
-  } finally { await env.close(); }
+test('Codex and Antigravity first messages point to prompt files', async () => {
+  for (const cli of ['codex', 'agy']) {
+    const env = await service(await temp(), { pane: cli === 'codex' ? readyCodex : '? for shortcuts' }); try {
+      const brief = 'x'.repeat(100000);
+      const session = await start(env, { cli, role: 'worker', brief });
+      const message = env.instance.sessions[session.name].pending_initial || await log(env);
+      const pointer = `[wc:role] Role: worker\nRead ${path.join(env.state, 'prompts', `${session.name}.md`)} before responding: it holds your role rules and card rules. Read it again only if it is no longer in your context.\n\n${brief}`;
+      assert.ok(message.includes(pointer)); assert.ok(pointer.length - brief.length < 1000);
+    } finally { await env.close(); }
+  }
 });
-test('role_prompt wins over role_layers for both CLIs', async () => {
-  const env = await service(await temp()); try {
-    await start(env, { thread_id: 'w', token: 'w', role_prompt: 'custom prompt', role_layers: 'ignored layers' });
-    assert.equal(flagValue(argvOf(env, 'wc-w-lead'), '--append-system-prompt'), 'custom prompt');
+test('prompt failures precede worktree creation and permit retry', async () => {
+  const root = await temp(), env = await service(root, { realGit: true }); try {
+    const repo = await project(root);
+    const body = { role: 'worker', cli: 'claude', thread_id: 'failure', token: 'x', project_dir: repo, project: 'project', name: 'wc-failure-worker' };
+    const originalRead = require('node:fs').readFileSync;
+    require('node:fs').readFileSync = function(file, ...args) { if (String(file).endsWith('/protocol/app/worker.md')) throw new Error(`missing ${file}`); return originalRead.call(this, file, ...args); };
+    try { const result = await api(env, 'POST', '/v1/sessions', body, hubHeader); assert.notEqual(result.status, 201); assert.match(result.body.error, /worker.md/); } finally { require('node:fs').readFileSync = originalRead; }
+    await fs.mkdir(path.join(env.state, 'prompts', 'wc-failure-worker.md'), { recursive: true });
+    assert.notEqual((await api(env, 'POST', '/v1/sessions', body, hubHeader)).status, 201);
+    assert.equal(git(['-C', repo, 'worktree', 'list', '--porcelain']).stdout.match(/^worktree /gm).length, 1);
+    assert.equal(git(['-C', repo, 'branch', '--list', 'wc-failure*']).stdout.trim(), '');
+    await fs.rmdir(path.join(env.state, 'prompts', 'wc-failure-worker.md'));
+    assert.equal((await api(env, 'POST', '/v1/sessions', body, hubHeader)).status, 201);
   } finally { await env.close(); }
-  const codex = await service(await temp(), { pane: readyCodex }); try {
-    await start(codex, { cli: 'codex', role: 'worker', token: 'beta', role_prompt: 'custom prompt', role_layers: 'ignored layers', brief: 'go' });
-    const calls = await log(codex);
-    assert.match(calls, /\[wc:role\] custom prompt\n\ngo/); assert.doesNotMatch(calls, /ignored layers/);
-  } finally { await codex.close(); }
 });
 
 async function withEnv(values, body) {
@@ -967,7 +990,8 @@ test('default Claude start preserves complete command and settings', async () =>
   const root = await temp(), env = await service(root); try {
     const session = await start(env, { cli_session_id: 'fixed', role_prompt: 'role' });
     const settingsPath = path.join(env.state, 'settings', 'wc-t-lead.json');
-    assert.deepEqual(session.command, ['claude', '--session-id', 'fixed', '--settings', settingsPath, '--permission-mode', 'auto', '--append-system-prompt', 'role']);
+    assert.equal(flagValue(session.command, '--append-system-prompt-file'), path.join(env.state, 'prompts', 'wc-t-lead.md'));
+    assert.equal(await fs.readFile(flagValue(session.command, '--append-system-prompt-file'), 'utf8'), 'Role: lead\nrole');
     const hook = `'${path.resolve(__dirname, '../hook.sh')}' claude 'wc-t-lead'`;
     const entry = [{ hooks: [{ type: 'command', command: hook }] }];
     assert.deepEqual(JSON.parse(await fs.readFile(settingsPath, 'utf8')), { cleanupPeriodDays: 30, promptSuggestionEnabled: false, hooks: { Stop: entry, Notification: entry, StopFailure: entry, ...Object.fromEntries(['PreToolUse', 'PostToolUse', 'PostToolUseFailure'].map(name => [name, [{ matcher: '*', hooks: [{ type: 'command', command: hook, async: true }] }]])) }, statusLine: { type: 'command', command: `'${path.resolve(__dirname, '../statusline.sh')}' claude 'wc-t-lead'` } });

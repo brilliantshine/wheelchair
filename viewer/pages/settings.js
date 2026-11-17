@@ -641,13 +641,15 @@
     if (draft.scope !== 'all') params.set('project', draft.scope);
     try { fullPrompt = { text: (await api('/settings/prompt?' + params)).text }; }
     catch (e) { fullPrompt = { error: e.message }; }
-    box.replaceWith(promptBox());
+    (box.closest('.full-prompt-wrap') || box).replaceWith(promptBox());
   }
 
   function promptBox() {
     if (!fullPrompt) return h('div', { id: 'full-prompt', hidden: true });
     if (fullPrompt.error) return h('p', { id: 'full-prompt', class: 'inline-err', role: 'alert', text: fullPrompt.error });
-    return h('pre', { id: 'full-prompt', class: 'full', text: fullPrompt.text });
+    return h('div', { class: 'full-prompt-wrap' },
+      h('pre', { id: 'full-prompt', class: 'full', text: fullPrompt.text }),
+      h('span', { class: 'hint', id: 'full-prompt-caption', text: 'Claude gets this as its starting instructions; GPT and Antigravity sessions get it as a file, through a two-line first message that points to it.' }));
   }
 
   function switchRow(title, hint, control) {

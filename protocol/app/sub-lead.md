@@ -4,8 +4,11 @@ You run one feature's build. The lead started you when Collin pressed Start buil
 decompose the approved plan into tasks, brief and start worker sessions, check what they
 bring back, integrate it, have it verified, and report to the lead. You talk only to the
 lead, with `message` cards; you never post cards meant for Collin except the `progress`
-line. Read `cards.md`, beside this file, first. `<root>` is the wheelchair clone, this
-file's path with `/protocol/app/sub-lead.md` dropped.
+line. `<root>` is named in your starting instructions.
+
+If you opened `protocol/app/sub-lead.md` itself by its path (not your starting instructions, and not a prompt file that contains this text): `<root>` is this file's path with `/protocol/app/sub-lead.md` dropped, and read `cards.md` beside it.
+
+Chain routine commands that do not depend on each other's output into one shell call.
 
 You run in the feature's worktree, on branch `wc/<thread-id>`. **From Start building until
 you send your `result`, you alone write in this worktree.** The lead writes nothing there.
@@ -46,7 +49,8 @@ objective, an ownership boundary (the files and directories the worker owns), a 
 and tier) and its validation commands. Write each brief to a file (a scratch directory
 outside the repository; the hub reads it at start). Every brief carries:
 
-- the path to `<root>/protocol/app/worker.md`, the plan slug and task id, and the lead's
+- the plan slug and task id (the worker's role rules are already in its
+  starting instructions, so a brief never tells it to read its role file), and the lead's
   session name (`wc-<thread-id>-lead`; `session list` shows it in `sessions`), so the
   worker can message it;
 - a concrete objective, the **ownership boundary**, and the deliverable;
@@ -144,14 +148,9 @@ A worker's `result` card is a claim, not a fact. When one arrives:
 1. Re-run its validation yourself and read its report. GPT workers fabricate completions at
    a documented rate, and the cheaper the tier the more literally this applies. Demand
    pasted command output in every report and check the claimed file state.
-   Size the change with `git diff --shortstat <feature branch>...<worker branch>`:
-   add the added and removed lines. Under 200 lines, use the scout; from 200 to 800,
-   use the bigger-changes scout; over 800, or if the task's Implementation Tasks row is
-   marked `tricky`, read the diff yourself. With no scout for a band, use the next band
-   up; with no bigger-changes scout, read it yourself.
-   Give the scout `git diff <feature branch>...<worker branch>`, the brief, the Spec and
-   the worker's report.
-   Ask it to compare them and report with `file:line`: (1) every deviation, missing piece
+   Run `node <root>/viewer/app/wc.js diff size <feature-branch> <worker-branch> [--tricky]` for every worker result, passing `--tricky` whenever the task's Implementation Tasks row is marked `tricky`. The printed band is binding: `scout` under 200 lines, `bigger-scout` from 200 to 800, and `self` over 800 or tricky. A self read of a `scout` or `bigger-scout` band is not allowed, except under the no-scout fallback: with no scout for a band, use the next band up; with no bigger-changes scout, read it yourself. So a sub-lead with no scout model may read a `scout`-band diff itself.
+   Give the scout (or yourself for `self`) the brief, the Spec, the worker's report and the diff from the printed `scout_diff` command. Each `excluded_paths` entry must be the worker's own `docs/plans/<slug>/reports/<task>.md`. For a rename into or out of `docs/plans/`, or any other excluded path, read each endpoint yourself with `git -C <top> --literal-pathspecs diff <feature>...<worker> -- <path>`, shell-quoting each path; normally send the work back.
+   Ask the scout (or check yourself, for `self`) to compare them and report with `file:line`: (1) every deviation, missing piece
    or risky change; (2) whether the file state the report claims matches the diff; and
    (3) every choice the diff makes that the brief did not dictate. Open only flagged lines,
    then decide whether to merge or send back.
@@ -165,7 +164,7 @@ A worker's `result` card is a claim, not a fact. When one arrives:
    log "worker didn't report its choices; I listed N" (including when N is 0). When a scout
    read the diff, check its list (3) against the report's choices section; if the report has
    no choices section, use list (3) as the list you log instead.
-3. If it passes, merge the worker's branch into the feature branch with
+3. If it passes, record `- <date> — T<n> accepted (band: scout): ...` in the Log, using the actual band. Merge the worker's branch into the feature branch with
    `wc.js git merge <worker branch>`, mark the task done in the table, stop the worker,
    and post `progress`. Then remove its worktree with `wc.js git worktree-remove <worker
    session>`; the service refuses unless the worker is stopped and its branch is merged.
@@ -222,8 +221,9 @@ When every task is done and the full validation passes:
    start's output has a `note` saying its provider was not honoured, start no second verifier.
    If the second start's output has such a note (it landed on the first verifier's provider),
    stop the second verifier at once.
-   Its brief gives it `<root>/protocol/app/verifier.md`, the PLAN.md and COMPLETION.md
-   paths, and says nothing of this conversation. Its report arrives as a `result`; stop it
+   Its brief gives it the PLAN.md and COMPLETION.md paths (its role rules are already in its
+   starting instructions, so the brief never tells it to read its role file), and says nothing
+   of this conversation. Its report arrives as a `result`; stop it
    then. After starting attempt N's verifier(s), post `progress` with `stage: verify`,
    `pass: N`, `phase: checking` and the machines used during the build.
    A verifier that reports `VERDICT: BLOCKED` hit a problem with its setup, not a gap: fix

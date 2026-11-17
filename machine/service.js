@@ -122,14 +122,18 @@ const PERMISSION_MODES = { auto: 'auto', bypass: 'bypassPermissions' };
 const CODEX_MODES = ['sandboxed', 'unrestricted'];
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const PREVIEW_TIMEOUT_MS = 60_000;
-// The one place the starting instructions are composed, so the Claude system prompt and the
-// Codex [wc:role] message cannot drift. role_prompt wins and role_layers is then ignored.
+const ROLE_CARDS = { lead: ['cards.md', 'cards-lead.md'], 'sub-lead': ['cards.md'], worker: ['cards.md'], mapper: ['cards.md'], reviewer: [], verifier: [] };
 function composeRolePrompt(input) {
-  if (input.role_prompt) return input.role_prompt;
-  const roleFile = path.join(ROOT, 'protocol', 'app', `${input.role}.md`);
-  const pointer = `Read ${roleFile} before responding. It is wheelchair's built-in rules for your role.`;
+  const first = `Role: ${input.role}`;
+  if (input.role_prompt) return `${first}\n${input.role_prompt}`;
+  const cards = ROLE_CARDS[input.role] || [];
+  const header = cards.length ? 'Your role rules and card rules are below, already loaded: do not read these files again unless this text is no longer in your context.' : 'Your role rules are below, already loaded: do not read these files again unless this text is no longer in your context.';
+  const read = file => fs.readFileSync(path.join(ROOT, 'protocol', 'app', file), 'utf8').trimEnd();
+  const parts = [`${first}\n${header} \`<root>\` is \`${ROOT}\`.`, read(`${input.role}.md`)];
+  for (const file of cards) parts.push(`--- ${file} ---\n${read(file)}`);
   const layers = typeof input.role_layers === 'string' ? input.role_layers.trim() : '';
-  return layers ? `${pointer}\n\n${layers}` : pointer;
+  if (layers) parts.push(layers);
+  return parts.join('\n\n');
 }
 // Validates the optional start fields; returns the normalised ones.
 function startOptions(input) {
@@ -487,10 +491,10 @@ class MachineService {
     const match = shown.stdout.match(/^\s*HEAD branch:\s*(\S+)\s*$/m);
     return match ? match[1] : 'main';
   }
-  commandFor(input, session, worktree) {
+  commandFor(input, session, worktree, promptPath, rolePrompt) {
     const adapter = adapters[input.cli];
     if (!adapter) die('cli must be claude, codex or agy');
-    return adapter.command(input, session, worktree, { stateDir: this.stateDir, rolePrompt: composeRolePrompt(input) });
+    return adapter.command(input, session, worktree, { stateDir: this.stateDir, promptPath, rolePrompt });
   }
 
   async start(input) {
@@ -521,24 +525,27 @@ class MachineService {
     if (reserved) this.refuseSharedWorktree(reserved, name);
     let created = null;
     try {
+      const rolePrompt = composeRolePrompt(input);
+      const promptPath = path.join(this.stateDir, 'prompts', `${name}.md`);
+      await atomicWrite(promptPath, rolePrompt);
       created = await this.createWorktree(input, name);
-      return await this.startIn(input, name, adapter, account, dir, options, createdWorktree, created);
+      return await this.startIn(input, name, adapter, account, dir, options, createdWorktree, created, promptPath, rolePrompt);
     } finally {
       if (reserved) this.startingWorktrees.delete(reserved);
       if (created?.branch && input.role === 'worker') this.startingBranches.delete(created.branch);
     }
   }
-  async startIn(input, name, adapter, account, dir, options, createdWorktree, created) {
+  async startIn(input, name, adapter, account, dir, options, createdWorktree, created, promptPath, rolePrompt) {
     const worktree = created.worktree;
     const session = { name, role: input.role, cli: input.cli, account: account.id, account_dir: dir, permission_mode: options.permission_mode, codex_mode: options.codex_mode, effort: options.effort, thread_id: input.thread_id, token: input.token,
       worktree, created_worktree: createdWorktree, attempt_id: input.attempt_id || null, started_by: input.started_by || null,
       branch: created.branch || input.branch || null, default_branch: created.defaultBranch || input.default_branch || input.defaultBranch || null,
       cli_session_id: input.cli_session_id || crypto.randomUUID(), status: 'starting', created_at: new Date().toISOString() };
-    const built = this.commandFor(input, session, worktree);
+    const built = this.commandFor(input, session, worktree, promptPath, rolePrompt);
     if (built.settingsPath) await atomicWrite(built.settingsPath, `${json(built.settings)}\n`);
     const commandText = ['env', 'WHEELCHAIR_LANE=1', ...(adapter.sessionNameEnv ? [`WHEELCHAIR_SESSION_NAME=${name}`] : []), `WHEELCHAIR_SESSION_TOKEN=${session.token}`, `WHEELCHAIR_STATE_DIR=${this.stateDir}`, `WHEELCHAIR_MACHINE_ORIGIN=http://${this.config.host}:${this.config.port}`, ...Object.entries(adapter.loginEnv(dir)).map(([key, value]) => `${key}=${value}`), ...built.argv].map(shellQuote).join(' ');
     session.command = built.argv;
-    session.pending_initial = adapter.firstMessage(input, composeRolePrompt(input));
+    session.pending_initial = adapter.firstMessage(input, promptPath);
     const tmuxArgs = ['new-session', '-d', '-s', name, '-x', '200', '-y', '50', '-c', worktree, commandText];
     // systemd-run scope prevents service restarts killing tmux; installer sets KillMode=process too.
     // Both asynchronous, like the git above: a slow systemd-run must not hold up the service.
@@ -547,6 +554,9 @@ class MachineService {
     if (!result.ok) die(result.stderr.trim() || 'tmux session failed to start');
     this.sessions[name] = session;
     await this.persistSessions();
+    try {
+      await fsp.appendFile(path.join(this.stateDir, 'session-ledger.jsonl'), `${json({ at: new Date().toISOString(), name, role: input.role, provider: adapter.provider, model: input.model || null, account_dir: dir, cli_session_id: session.cli_session_id, thread_id: input.thread_id })}\n`);
+    } catch (error) { console.error('session ledger append failed:', error.message); }
     await this.checkReady(session);
     return session;
   }

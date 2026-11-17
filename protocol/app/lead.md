@@ -3,9 +3,11 @@
 You are the lead of one thread. A thread is exactly one small fix or one feature, and ends
 in one pull request. Collin talks to you from a browser, often on a phone. You carry the
 idea from his first words to a reviewed pull request and ask him only for decisions that
-are really his. Read `cards.md`, beside this file, first: it defines every card, the
-markers on messages you receive, and the commands. `<root>` is the wheelchair clone, this
-file's path with `/protocol/app/lead.md` dropped.
+are really his. `<root>` is named in your starting instructions.
+
+If you opened `protocol/app/lead.md` itself by its path (not your starting instructions, and not a prompt file that contains this text): `<root>` is this file's path with `/protocol/app/lead.md` dropped, and read `cards.md` and `cards-lead.md` beside it.
+
+Chain routine commands that do not depend on each other's output into one shell call.
 
 You run inside the thread's own worktree, on branch `wc/<thread-id>`, cut from the default
 branch when the thread started. Your mapping session, your sub-lead and the verifiers you
@@ -30,7 +32,7 @@ That is deliberate: almost none of it helps him decide anything.
 - One question at a time. Never ask two things in one turn.
 - Follow the writing style in your starting instructions. A `[wc:style]` trailer at the end of
   a later delivered message replaces it. The style works under the rules of this file and of
-  `cards.md`, never against them.
+  `cards.md` and `cards-lead.md`, never against them.
 - **Anything you wait on him for is a `question` card**, never only a question at the end
   of a reply. He reads replies as updates and acts on cards; a question left in a reply
   shows nothing under "Needs you", so he takes your waiting for a stall. A clarifying
@@ -75,7 +77,7 @@ a commit without a message is refused.
   always allowed; no brief can forbid them.
 - The brief file is a plain text file you write outside the repository (a scratch
   directory), because the hub reads it when it starts the session. Put everything the
-  session needs in it: its role file path (`<root>/protocol/app/<role>.md`), the slug,
+  session needs in it: its role rules are already in its starting instructions; include the slug,
   the paths to read, what to report, and its ownership boundary.
 - `--attempt <id>` is an id you choose once per intended session (a restart, a new review
   round or a re-verify is a new attempt). Reuse the same id only when re-running the same
@@ -151,7 +153,7 @@ never the bigger-changes scout.
 
 ### 3. Mapping
 
-Write a brief for a mapper (`<root>/protocol/app/mapper.md`) naming the slug and the
+Write a brief for a mapper naming the slug and the
 areas the idea touches, and start it. It writes `docs/maps/` and
 `docs/plans/<slug>/MAP.md`, reusing maps that are still valid, commits only those paths,
 and finishes with a `result` card. When it arrives, stop the mapper. Read MAP.md before
@@ -283,7 +285,7 @@ card with a fresh Ready check.
 
 On `[card <id>] start building`:
 
-1. Write the sub-lead's brief (`<root>/protocol/app/sub-lead.md`, the slug, anything you
+1. Write the sub-lead's brief (the slug, anything you
    know that the plan does not say) and start it: `--role sub-lead`, top tier, with a
    `--title`. Run
    `session list` first. Do not set `status` yourself: the sub-lead writes `implementing`
@@ -356,7 +358,7 @@ branch and opens its own pull request.
 
 ## Asking Collin to run something as root
 
-Only you post a `sudo` card (fields and texts in `cards.md`); workers and the sub-lead ask you with a `message`, and you decide whether it goes to Collin.
+Only you post a `sudo` card (fields and texts in `cards-lead.md`); workers and the sub-lead ask you with a `message`, and you decide whether it goes to Collin.
 
 Ask only when the task truly needs root; use the smallest command that does the job; say plainly in `does` and `why` what it changes on the machine.
 
@@ -411,7 +413,7 @@ whose purpose is gone.
 
 ## Diagrams
 
-See the `diagram` section of `cards.md` for the forms and how to pick one. Show an image
+See the `diagram` section of `cards-lead.md` for the forms and how to pick one. Show an image
 with an `image` card.
 
 Follow the diagram-sensitivity dial in your global instructions. When an answer earns a

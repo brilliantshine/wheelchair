@@ -31,7 +31,7 @@ module.exports = {
     const settingsPath = path.join(context.stateDir, 'settings', `${session.name}.json`);
     return { settingsPath, settings: { trustedWorkspaces: [worktree] }, argv: ['agy', '--settings', settingsPath, ...(session.permission_mode === 'bypass' ? ['--dangerously-skip-permissions'] : ['--mode', 'auto']), ...(input.model ? ['--model', input.model] : []), ...(session.effort ? ['--effort', session.effort] : [])] };
   },
-  firstMessage(input, rolePrompt) { const first = input.brief || input.first_message || ''; return `[wc:role] ${rolePrompt}${first ? `\n\n${first}` : ''}`; },
+  firstMessage(input, promptPath) { const first = input.brief || input.first_message || ''; return `[wc:role] Role: ${input.role}\nRead ${promptPath} before responding: it holds your role rules and card rules. Read it again only if it is no longer in your context.\n\n${first}`; },
   readyText(session, pane) { return pane.includes('? for shortcuts') && !onboarding.some(s => pane.includes(s)); },
   answerPrompts() { return null; },
   promptText(pane) { return pane.includes('Requesting permission for:') && pane.includes('Run this command?'); },

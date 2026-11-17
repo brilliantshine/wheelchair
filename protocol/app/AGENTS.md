@@ -1,11 +1,9 @@
 # `protocol/app/` — the app's role protocol
 
-Owned by [`protocol/`](../AGENTS.md). Every agent session the app starts is told one thing:
-read your role file here. Each file stands alone for its role, so a session never needs
-the slash-command stage files. Those stay untouched until a later feature retires them.
+Owned by [`protocol/`](../AGENTS.md). The machine puts the role file and its card files into each session's starting instructions (Claude) or one composed file the session reads once (GPT, Antigravity); asides keep their pointer. Reviewer and verifier get neither card file. Sessions do not need the slash-command stage files. Those stay untouched until a later feature retires them.
 
 The organizing idea: **Collin hears from the workflow only through cards and the lead's
-visible replies.** Every file here is written around that, and `cards.md` is the contract
+visible replies.** Every file here is written around that, and `cards.md` and `cards-lead.md` are the contract
 that makes it checkable: `viewer/app/card.js` validates against it.
 
 | File | Read by | What it is for |
@@ -17,14 +15,15 @@ that makes it checkable: `viewer/app/card.js` validates against it.
 | `reviewer.md` | a plan reviewer | The two lenses, the severity ladder and the one-line finding format; read-only |
 | `verifier.md` | a verifier | Falsifying claims against the Spec or the reported problem; names the commit it checked |
 | `aside.md` | an aside: one headless turn of a side conversation about part of a lead message | Who it is (a read-only copy of the lead's conversation), the `[wc:aside …]` message headers, the ask, simpler and draw actions, stepping up, and the one-line summary for the main thread |
-| `cards.md` | every role | Every card kind and its JSON fields, which are shown, how a button press comes back, the message markers, and the `card.js`, `wc.js git` and `wc.js session` commands |
+| `cards.md` | every card-posting role: lead, sub-lead, worker, mapper | Shared card rules, kinds, markers and commands |
+| `cards-lead.md` | lead only | Lead-only card kind sections and fields |
 
 ## Boundaries
 
 - **These files never reference the old stage-file communication rules or their record
   files.** The per-turn wording hook is gone. Leads follow Collin's writing style from
   Settings instead.
-- **A rule lives in one file.** The card fields live only in `cards.md`; a role file
+- **A rule lives in one file.** Card fields live in `cards.md` or `cards-lead.md`, each in one place; a role file
   names a card kind and says when to post it.
 - **No Mermaid here.** These are read by an agent mid-task, not rendered.
 - `status:` in a plan's PLAN.md is the state machine: `lead.md` says who writes each value.
