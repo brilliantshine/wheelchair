@@ -224,6 +224,7 @@ npm --prefix viewer run test:browser
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Whole Spec: layout, toolbar, zoom, drag/click, view kept across rebuilds, phones unchanged, 12 browser tests | viewer/pages/agents.js, viewer/pages/views.css, viewer/test/app-views.spec.js | standard, gpt-6.1-terra (asked for claude; hub sent gpt) | wc-174e824a3643-worker (T1-a1) | `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser` | in progress |
 
 ## Log
 
