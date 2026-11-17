@@ -358,6 +358,20 @@ commands, and their steps and context show on the Agents screen within 5 seconds
 | mechanics | blocking | History by project basename mixes projects | upheld | §4: basename + path hash key |
 | mechanics | major | Workers ask the lead directly, so the planned sub-lead relay contradicts protocol and paths skip tree edges | upheld | §6: routing unchanged, paths are handlers; §7 skip rendering |
 
+### Round 2 — 2026-11-17
+
+**Lanes:** intent: gpt; mechanics: gpt (Claude unavailable at start); cross-family: no.
+
+**Changed since Round 1:**
+- §2 Codex: steps follow an operation to completion through `wait` (cell) and `write_stdin` (process) polls; one step per script (Decision 12).
+- §2 Codex turn end: reader flushed before `turn-ended` is emitted.
+- §4: order-independent start/end handling, pending ends, time-based turn attribution; running steps never evicted; closure on stop/failure; `current` with parallel steps; history key with path hash.
+- §6/§7: question routing unchanged (workers ask the lead directly); path = agents that handled it; amber rendering when a path skips an agent.
+- Accepted Risk 3 added (Claude background Bash).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
