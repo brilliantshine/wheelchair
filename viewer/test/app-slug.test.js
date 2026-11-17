@@ -102,3 +102,25 @@ test('finding the slug registers the plan directory once', async () => {
     assert.deepEqual(registered, [path.join(work, 'docs', 'plans', 'new-thing')]);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
+
+test('an archived thread whose worktree is gone is not searched for a slug', async () => {
+  const root = await makeTemp('app-slug-gone-');
+  try {
+    let saves = 0;
+    const thread = { worktree: path.join(root, 'removed'), archived: true };
+    await findSlug({ save: async () => { saves += 1; } }, thread);
+    assert.equal(thread.slug, undefined);
+    assert.equal(saves, 0);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('an archived thread whose worktree the archive left behind is still searched', async () => {
+  const { root, work } = await repoWithOldPlans();
+  try {
+    await fs.mkdir(path.join(work, 'docs', 'plans', 'new-thing'), { recursive: true });
+    await fs.writeFile(path.join(work, 'docs', 'plans', 'new-thing', 'IDEA.md'), 'idea\n');
+    const thread = { worktree: work, archived: true };
+    await findSlug({ save: async () => {} }, thread);
+    assert.equal(thread.slug, 'new-thing');
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
