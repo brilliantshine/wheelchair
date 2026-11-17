@@ -403,9 +403,9 @@
       h('section', { 'aria-labelledby': 'leads' },
         h('h2', { id: 'leads', text: 'Leads' }),
         h('div', { class: 'box rows' },
-          PROVIDERS.map(([provider, name]) => h('div', { class: 'row-line' },
-            h('div', { class: 'what' }, h('span', { text: 'Leads and sub-leads run on' }), h('span', { class: 'hint', text: `${name} model` })),
-            h('div', { class: 'ctl wide' }, modelPicker(provider, 'lead', { allowNone: false, withEffort: true }))))
+          PROVIDERS.flatMap(([provider, name]) => [['lead', 'Leads run on'], ['sub-lead', 'Sub-leads run on']].map(([slot, title]) => h('div', { class: 'row-line' },
+            h('div', { class: 'what' }, h('span', { text: title }), h('span', { class: 'hint', text: `${name} model` })),
+            h('div', { class: 'ctl wide' }, modelPicker(provider, slot, { allowNone: false, withEffort: true })))))
           .concat([leadOrderRow(), leadNamesRow()]))),
       h('section', { 'aria-labelledby': 'escalation' },
         h('h2', { id: 'escalation', text: 'Escalation' }),
@@ -447,7 +447,9 @@
             modeGroup('review_families', 'Reviewers and checkers', [['both', 'Mix families'], ['claude', 'Claude'], ['gpt', 'GPT'], ['gemini', 'Antigravity']])),
           otherAgentRow('reviewer', 'Plan reviewers', 'Model tier for plan reviewers'),
           otherAgentRow('verifier', 'Checker', 'Model tier for the checker'),
-          otherAgentRow('mapper', 'Code mapping', 'Maps how the existing code works before planning')),
+          otherAgentRow('mapper', 'Code mapping', 'Maps how the existing code works before planning'),
+          otherAgentRow('scout', 'Scout', 'Reads code for leads and sub-leads and reports back'),
+          otherAgentRow('scout-heavy', 'Scout for bigger changes', 'Checks worker changes of 200 to 800 lines for the sub-lead')),
         h('span', { class: 'hint', text: 'For threads in the app. Terminal commands keep their own rules.' })));
   }
 
