@@ -29,3 +29,46 @@ for (const role of ['worker', 'mapper', 'sub-lead', 'reviewer', 'verifier']) {
     assert.ok(paragraphHas(read(role), 'background', 'foreground'));
   });
 }
+
+const roles = ['lead', 'sub-lead', 'worker', 'mapper', 'reviewer', 'verifier'];
+const leadKinds = ['offer', 'idea', 'question', 'approval', 'needs', 'resolve', 'done', 'merged', 'diagram', 'image', 'stub', 'sudo', 'retract', 'title'];
+const sharedKinds = ['progress', 'message', 'result'];
+const sections = text => [...text.matchAll(/^### `([^`]+)`$/gm)].map(match => match[1]);
+
+test('each schema kind has one card section, in its intended file', () => {
+  const shared = sections(read('cards'));
+  const lead = sections(read('cards-lead'));
+  for (const kind of Object.keys(require('../app/card.js').fields)) {
+    assert.equal([...shared, ...lead].filter(item => item === kind).length, 1, kind);
+  }
+  assert.deepEqual([...shared].sort(), [...sharedKinds].sort());
+  assert.deepEqual([...lead].sort(), [...leadKinds].sort());
+});
+
+for (const role of [...roles, 'cards']) {
+  test(`${role} has no obsolete read pointer`, () => {
+    assert.ok(!read(role).includes('beside this file, first'));
+  });
+}
+for (const role of roles) {
+  test(`${role} has the direct pointer fallback`, () => {
+    const text = read(role);
+    const fallback = text.split('\n').find(line => line.startsWith('If nothing above this line names `<root>`'));
+    assert.ok(fallback && fallback.includes(`/protocol/app/${role}.md`) && fallback.includes('dropped'));
+    assert.equal(fallback.includes('read `cards.md`'), !['reviewer', 'verifier'].includes(role));
+    assert.equal(fallback.includes('`cards-lead.md`'), role === 'lead');
+  });
+}
+
+test('sub-lead uses the binding sizing command and no-scout fallback', () => {
+  const text = read('sub-lead');
+  assert.ok(text.includes('wc.js diff size'));
+  assert.ok(text.includes('--tricky'));
+  assert.match(text, /sub-lead reads a scout-band diff itself if no scout is available/);
+});
+for (const role of ['worker', 'verifier']) {
+  test(`${role} preserves suite exit status`, () => {
+    assert.ok(read(role).includes('echo "exit $?"'));
+    assert.ok(!read(role).includes('| tail'));
+  });
+}
