@@ -32,7 +32,7 @@ test('agent tree keeps finished nodes, derives states and hides briefs', () => {
   const sub = tree.children.find((s) => s.name === 'sub');
   assert.equal(sub.display_title, 'Build feature'); assert.equal(sub.waiting_on.label, 'Waiting on the worker');
   assert.equal(sub.children[0].waiting_on.label, 'Waiting on the sub-lead');
-  assert.equal(tree.children.find((s) => s.name === 'done').display_title, 'Verified');
+  assert.equal(tree.children.find((s) => s.name === 'done').display_title, 'Verify'); assert.equal(tree.children.find((s) => s.name === 'done').result_summary, 'Verified');
   assert.equal(tree.children.find((s) => s.name === 'starting').state, 'not-started');
   assert.equal(tree.asides[0].state, 'working'); assert.equal(tree.counts.total, 5);
   assert.ok(!JSON.stringify(tree).includes('secret')); assert.ok(!JSON.stringify(tree).includes('[wc:role]'));
@@ -91,7 +91,7 @@ test('titles, result ownership, first turn and secrets', () => {
   const t = tree(sessions, { cards: [{ kind: 'result', session: 'result', summary: 'Old' }, { kind: 'result', session: 'other', summary: 'Wrong' }, { kind: 'result', session: 'result', summary: 'Newest' }] });
   assert.equal(t.session.display_title, 'Feature'); assert.equal(node(t.session, 'title').display_title, 'Title');
   assert.equal(node(t.session, 'title').turn_started_at, '2026-01-01'); assert.equal(node(t.session, 'brief').display_title, 'x'.repeat(80));
-  assert.equal(node(t.session, 'fallback').display_title, 'worker'); assert.equal(node(t.session, 'result').display_title, 'Newest'); assert.equal(node(t.session, 'no-result').display_title, 'Fallback');
+  assert.equal(node(t.session, 'fallback').display_title, 'worker'); assert.equal(node(t.session, 'result').display_title, 'Original'); assert.equal(node(t.session, 'result').result_summary, 'Newest'); assert.equal(Object.hasOwn(node(t.session, 'no-result'), 'result_summary'), false); assert.equal(node(t.session, 'no-result').display_title, 'Fallback');
   assert.equal(node(t.session, 'brief').has_brief, true); assert.equal(node(t.session, 'fallback').has_brief, false);
   const walk = (v) => { if (!v || typeof v !== 'object') return; assert.equal(Object.hasOwn(v, 'brief'), false); assert.equal(Object.hasOwn(v, 'token'), false); Object.values(v).forEach(walk); }; walk(t);
 });

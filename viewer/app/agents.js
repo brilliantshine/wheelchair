@@ -52,7 +52,8 @@ function buildAgents(threads, stages = {}) {
       node.waiting_on = waiting;
       node.state = !s.live || s.finished === true ? 'finished' : s.status === 'starting' || s.status === 'waiting' ? 'not-started' : s === lead && needs.length ? 'needs-you' : waiting ? 'waiting' : s.turn_ended !== true ? 'working' : 'idle';
       const result = [...cards].reverse().find((card) => card.kind === 'result' && card.session === s.name && card.summary);
-      node.display_title = node.state === 'finished' && s.role !== 'lead' ? result?.summary || displayTitle(s, thread) : displayTitle(s, thread);
+      node.display_title = displayTitle(s, thread);
+      if (s.role !== 'lead' && result) node.result_summary = result.summary;
       counts.total++; counts[node.state === 'needs-you' ? 'waiting' : node.state.replace('-', '_')]++;
     }
     const finished = !sessions.some((s) => s.live === true);

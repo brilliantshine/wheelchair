@@ -153,6 +153,8 @@
 .agents-children > .agents-branch:only-child:after { display: none; }
 .agents-side { border-left: 1px solid var(--line); padding: 28px; min-width: 0; background: var(--panel-3); }
 .agents-side h2 { margin: 10px 0; overflow-wrap: anywhere; }
+.agents-report-head { font-size: 13px; margin: 18px 0 6px; }
+.agents-report { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink-2); font-size: 13px; margin: 0; }
 .agents-side button:not(.agents-back) { margin: 8px 8px 0 0; }
 .agents-back { display: none; }
 .agent-unreachable { color: var(--bad-text); padding: 0 20px; overflow-wrap: anywhere; }
