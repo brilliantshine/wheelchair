@@ -217,8 +217,8 @@ class MachineService {
     this.drains = new Map();
     this.threadLocks = new Map();
     this.closingThreads = new Map();
-    // Threads archived since this service started. A pending_lead upload queued behind an archive
-    // would otherwise find no sessions and be admitted; ids are never reused, and a restart drops
+    // Threads archived since this service started. A vouched upload queued behind an archive
+    // would otherwise be admitted; ids are never reused, and a restart drops
     // any upload still in flight, so memory is enough.
     this.archivedThreads = new Set();
     this.uploadRequests = new Map();
@@ -253,18 +253,18 @@ class MachineService {
       } catch (error) { if (error.code !== 'EEXIST') throw error; n++; }
     }
   }
-  // pendingLead: the hub vouches that the thread's lead is waiting for room, so it has no
-  // session here yet; its files are taken and archive removes them like any other.
-  async upload(id, name, request, pendingLead) {
+  // vouched: the hub has checked the thread is open with a live lead (which may still be waiting
+  // for room or starting, with no session here yet), so only closing or archived threads are
+  // refused. Archive removes the files like any other.
+  async upload(id, name, request, vouched) {
     threadName(id);
     const requests = this.uploadRequests.get(id) || new Set();
     this.uploadRequests.set(id, requests);
     requests.add(request);
     try {
       return await this.withThreadLock(id, async () => {
-        const own = Object.values(this.sessions).filter(s => s.thread_id === id);
-        const waiting = pendingLead && own.length === 0 && !this.archivedThreads.has(id);
-        if (this.closingThreads.has(id) || (!waiting && !own.some(s => s.role === 'lead' && !s.archived_pending && s.status !== 'stopped'))) throw Object.assign(new Error('thread is not writable'), { status: 409 });
+        const lead = Object.values(this.sessions).some(s => s.thread_id === id && s.role === 'lead' && !s.archived_pending && s.status !== 'stopped');
+        if (this.closingThreads.has(id) || this.archivedThreads.has(id) || !(vouched || lead)) throw Object.assign(new Error('thread is not writable'), { status: 409 });
         const { target, file } = await this.reserveUpload(id, name);
         try {
           let size = 0;
@@ -1206,7 +1206,7 @@ class MachineService {
       if (request.method === 'GET' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); return send(response, 200, this.sessionList()); }
       if (request.method === 'POST' && url.pathname === '/v1/uploads') {
         await this.authorize(request, 'hub');
-        const stored = await this.upload(url.searchParams.get('thread_id'), url.searchParams.get('name'), request, url.searchParams.get('pending_lead') === '1');
+        const stored = await this.upload(url.searchParams.get('thread_id'), url.searchParams.get('name'), request, url.searchParams.get('vouched') === '1');
         return send(response, 201, { path: stored });
       }
       if (request.method === 'GET' && pathBits[0] === 'v1' && pathBits[1] === 'uploads' && pathBits.length === 4) {

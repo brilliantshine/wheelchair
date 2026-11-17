@@ -109,16 +109,16 @@ test('archive through the hub cancels a stalled upload to the real machine', { t
   }
 });
 
-test('a lead waiting for room still takes uploads on the real machine', { timeout: 30000 }, async () => {
+for (const status of ['waiting', 'starting']) test(`a lead still ${status} takes uploads on the real machine`, { timeout: 30000 }, async () => {
   const { Hub } = require('../app/hub.js');
   const context = await setup();
   try {
     const made = await thread(context, { project: context.project, cli: 'claude' });
-    // Stand in for a lead still waiting for room: the hub has its record, the machine nothing yet.
+    // Stand in for a lead not yet on the machine: the hub has its record, the machine nothing yet.
     const hub = new Hub({ stateDir: context.state });
     const stored = await hub.thread(made.id);
     const lead = stored.sessions.find(session => session.role === 'lead');
-    lead.status = 'waiting';
+    lead.status = status;
     await hub.save(stored);
     delete context.instance.sessions[lead.name];
     const base = `${context.server.url}/api/threads/${made.id}`;

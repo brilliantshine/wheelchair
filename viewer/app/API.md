@@ -165,7 +165,7 @@ the basename supplied by the machine. Form and HTML diagrams register their plan
 not enter the graph registry.
 
 `POST /threads/:id/uploads?name=...` streams a raw file of at most 25 MiB to the lead's
-machine and returns `201 {path}`. A lead waiting for room counts as live (the hub passes `pending_lead=1` to the machine). It returns 409 for an archived thread or absent live lead,
+machine and returns `201 {path}`. A lead waiting for room or starting counts as live: the hub passes `vouched=1`, so the machine does not judge the lead itself. It returns 409 for an archived thread or absent live lead,
 and 413 for a missing or excessive Content-Length. `GET /threads/:id/files/:file` streams a
 machine file whose name matches `[0-9]+-[A-Za-z0-9._-]+` and preserves its content headers.
 `GET /threads/:id/graph?file=...json` reads an archived diagram as JSON;
