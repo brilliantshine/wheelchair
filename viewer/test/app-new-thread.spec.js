@@ -48,6 +48,47 @@ test('start posts the picked project and opens the thread', async ({ page }) => 
   await expect(page).toHaveURL(/\/app\/thread\?id=[0-9a-f]+/);
 });
 
+test('attachments upload into the new thread and ride on its first message', async ({ page }) => {
+  await open(page);
+  await page.locator('#nt-message').fill('look at this\nsecond line');
+  await page.locator('#attachment-input').setInputFiles([
+    { name: 'first.txt', mimeType: 'text/plain', buffer: Buffer.from('one') },
+    { name: 'second.txt', mimeType: 'text/plain', buffer: Buffer.from('two') },
+  ]);
+  await expect(page.locator('.attachment-chip')).toHaveCount(2);
+  await noSideScroll(page);
+  const created = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith('/api/threads'));
+  const sent = page.waitForRequest((r) => r.method() === 'POST' && /\/api\/threads\/[0-9a-f]+\/messages$/.test(r.url()));
+  await page.locator('#nt-go').click();
+  expect((await created).postDataJSON()).toEqual({ project: '/home/fake/code/alpha', machine: 'hub', title: 'look at this\nsecond line' });
+  expect((await sent).postDataJSON().text).toMatch(/^look at this\nsecond line\n\n\[attached: .*first\.txt\]\n\[attached: .*second\.txt\]$/);
+  await expect(page).toHaveURL(/\/app\/thread\?id=[0-9a-f]+/);
+  expect(ctx.machine.calls.filter((c) => c.path === '/v1/uploads')).toHaveLength(2);
+});
+
+test('a failed upload keeps Start off and links to the thread', async ({ page }) => {
+  await open(page);
+  // Hold the create until the project has been changed under it.
+  let release; const held = new Promise((r) => { release = r; });
+  await page.route('**/api/threads', async (route) => { await held; await route.continue(); });
+  await page.locator('#attachment-input').setInputFiles({ name: 'first.txt', mimeType: 'text/plain', buffer: Buffer.from('one') });
+  await page.route('**/uploads?name=first.txt', (route) => route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ detail: 'nope' }) }));
+  await page.locator('#nt-go').click();
+  await page.locator('#nt-project').selectOption({ index: 0 });
+  await expect(page.locator('#nt-go')).toBeDisabled();
+  release();
+  await expect(page.locator('#form-error')).toContainText('The thread started, but the first message was not sent (could not upload first.txt: nope)');
+  await expect(page.locator('#form-error a')).toHaveAttribute('href', /\/app\/thread\?id=[0-9a-f]+/);
+  await expect(page.locator('#nt-go')).toBeDisabled();
+  // Neither another project nor a saved directory brings Start back or drops the link.
+  await page.locator('#add-name').fill('beta'); await page.locator('#add-path').fill('/home/fake/code/alpha');
+  await page.locator('#add-go').click();
+  await expect(page.locator('#saved-list li')).toHaveCount(1);
+  await page.locator('#nt-project').selectOption({ index: 0 });
+  await expect(page.locator('#nt-go')).toBeDisabled();
+  await expect(page.locator('#form-error a')).toHaveAttribute('href', /\/app\/thread\?id=[0-9a-f]+/);
+});
+
 test('a refusal shows on the screen and keeps the fields', async ({ page }) => {
   ctx.machine.projects = { bad: { '/home/fake/code/alpha': 'is not a git repository' } };
   await open(page);

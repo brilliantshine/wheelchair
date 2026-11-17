@@ -22,7 +22,11 @@
       <span id="nt-no-folder" class="hint" hidden>Set a default project folder in <a href="/wheelchair/app/settings">Settings</a></span>
       <span id="nt-empty" class="hint" hidden>Nothing to pick yet. Save a directory below.</span></div>
     <div class="field"><label for="nt-message">First message (optional)</label>
-      <textarea id="nt-message" rows="4"></textarea></div>
+      <textarea id="nt-message" rows="4"></textarea>
+      <div id="attachments" class="attachments"></div>
+      <div id="attachment-error" class="hint warn" role="status"></div>
+      <input id="attachment-input" type="file" multiple hidden>
+      <button type="button" id="nt-attach" class="attach-btn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M21 11.5 12.5 20a6 6 0 0 1-8.5-8.5L13 2.5a4 4 0 0 1 5.7 5.7l-9 9a2 2 0 0 1-2.8-2.8l8-8"/></svg> Attach files</button></div>
     <span class="hint">The first message opens a tmux session for the lead. Small fixes it just does. When something grows into a feature, it asks before starting the plan workflow, and the thread gets a card on the Features board.</span>
     <button type="submit" class="primary" id="nt-go">Start</button>
   </form>

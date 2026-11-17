@@ -162,6 +162,7 @@ test('archive keeps and reports a worktree mid-rebase', async () => {
     const result = await api(env, 'POST', '/v1/archive', { thread_id: 'archive-rebase' }, hubHeader);
     assert.equal(result.body.uploads_removed, null);
     assert.equal(await fs.readFile(path.join(env.state, 'uploads', 'archive-rebase', '1-file'), 'utf8'), 'saved');
+    assert.equal(env.instance.archivedThreads.has('archive-rebase'), false);
     assert.equal(result.status, 200); assert.deepEqual(result.body.removed, []);
     assert.deepEqual(result.body.kept, [{ worktree, reason: 'rebase in progress' }]);
     await fs.access(worktree);
@@ -1083,6 +1084,25 @@ test('/v1/projects lists git folders, expands ~, and checks paths', async () => 
       assert.ok(both.found && both.checked.ok);
       assert.equal('checked' in listed.body, false);
     });
+  } finally { await env.close(); }
+});
+
+test('a vouched upload is admitted without a lead session, but not for a closing or archived thread', async () => {
+  const env = await service(await temp());
+  const upload = (id, pending) => fetch(`${env.base}/v1/uploads?thread_id=${id}&name=x${pending ? '&vouched=1' : ''}`, { method: 'POST', headers: hubHeader, body: 'hi' });
+  try {
+    assert.equal((await upload('w', false)).status, 409);
+    assert.equal((await upload('w', true)).status, 201);
+    await start(env);
+    env.instance.sessions['wc-t-lead'].status = 'stopped';
+    assert.equal((await upload('t', false)).status, 409);
+    assert.equal((await upload('t', true)).status, 201);
+    env.instance.closingThreads.set('w', 1);
+    assert.equal((await upload('w', true)).status, 409);
+    env.instance.closingThreads.delete('w');
+    assert.equal((await api(env, 'POST', '/v1/archive', { thread_id: 'w' }, hubHeader)).body.uploads_removed, true);
+    assert.equal((await upload('w', true)).status, 409);
+    await assert.rejects(fs.stat(path.join(env.state, 'uploads', 'w')), { code: 'ENOENT' });
   } finally { await env.close(); }
 });
 

@@ -114,6 +114,8 @@ test('derives an opening title and lets only the lead rename it with title cards
     assert.equal(made.title, 'First line title has enough words to demonstrate the sixty…');
     const untitled = await thread(context);
     assert.equal(Object.hasOwn(untitled, 'title'), false);
+    const named = await thread(context, { title: 'Look at this\nnot this' });
+    assert.equal(named.title, 'Look at this');
 
     const lead = made.sessions[0];
     const first = await card(context, made.id, lead.name, { kind: 'title', title: '  A concise name  ' });

@@ -217,6 +217,10 @@ class MachineService {
     this.drains = new Map();
     this.threadLocks = new Map();
     this.closingThreads = new Map();
+    // Threads archived since this service started. A vouched upload queued behind an archive
+    // would otherwise be admitted; ids are never reused, and a restart drops
+    // any upload still in flight, so memory is enough.
+    this.archivedThreads = new Set();
     this.uploadRequests = new Map();
     this.options = options;
     this.sudo = new SudoRequests(this, atomicWrite, readJson, requestJson);
@@ -249,14 +253,18 @@ class MachineService {
       } catch (error) { if (error.code !== 'EEXIST') throw error; n++; }
     }
   }
-  async upload(id, name, request) {
+  // vouched: the hub has checked the thread is open with a live lead (which may still be waiting
+  // for room or starting, with no session here yet), so only closing or archived threads are
+  // refused. Archive removes the files like any other.
+  async upload(id, name, request, vouched) {
     threadName(id);
     const requests = this.uploadRequests.get(id) || new Set();
     this.uploadRequests.set(id, requests);
     requests.add(request);
     try {
       return await this.withThreadLock(id, async () => {
-        if (this.closingThreads.has(id) || !Object.values(this.sessions).some(s => s.thread_id === id && s.role === 'lead' && !s.archived_pending && s.status !== 'stopped')) throw Object.assign(new Error('thread is not writable'), { status: 409 });
+        const lead = Object.values(this.sessions).some(s => s.thread_id === id && s.role === 'lead' && !s.archived_pending && s.status !== 'stopped');
+        if (this.closingThreads.has(id) || this.archivedThreads.has(id) || !(vouched || lead)) throw Object.assign(new Error('thread is not writable'), { status: 409 });
         const { target, file } = await this.reserveUpload(id, name);
         try {
           let size = 0;
@@ -765,7 +773,10 @@ class MachineService {
     await this.persistSessions();
     let uploads_removed = null; let uploads_error;
     if (!kept.some(item => item.reason === 'rebase in progress')) {
-      try { await fsp.rm(path.join(this.stateDir, 'uploads', threadId), { recursive: true, force: true }); uploads_removed = true; }
+      // Only a finished archive counts: the hub reopens a thread whose archive kept a rebase or
+      // could not remove its uploads, and that thread takes uploads again. Still inside the lock,
+      // so an upload queued behind it sees this.
+      try { await fsp.rm(path.join(this.stateDir, 'uploads', threadId), { recursive: true, force: true }); uploads_removed = true; this.archivedThreads.add(threadId); }
       catch (error) { uploads_removed = false; uploads_error = error.message; }
     }
     return { stopped, committed, removed, kept, uploads_removed, ...(uploads_error ? { uploads_error } : {}) };
@@ -1197,7 +1208,7 @@ class MachineService {
       if (request.method === 'GET' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); return send(response, 200, this.sessionList()); }
       if (request.method === 'POST' && url.pathname === '/v1/uploads') {
         await this.authorize(request, 'hub');
-        const stored = await this.upload(url.searchParams.get('thread_id'), url.searchParams.get('name'), request);
+        const stored = await this.upload(url.searchParams.get('thread_id'), url.searchParams.get('name'), request, url.searchParams.get('vouched') === '1');
         return send(response, 201, { path: stored });
       }
       if (request.method === 'GET' && pathBits[0] === 'v1' && pathBits[1] === 'uploads' && pathBits.length === 4) {

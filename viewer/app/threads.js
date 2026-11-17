@@ -62,8 +62,11 @@ async function createThread(hub, input) {
   const checked = await checkProject(hub, machine, input.project);
   if (!checked.ok) throw appError(400, `${checked.path || input.project} ${checked.reason || 'is not usable'} on ${machine}`);
   const thread = emptyThread({ ...input, project: checked.path });
-  if (typeof input.message === 'string') {
-    const title = truncateTitle(input.message.split(/\r?\n/, 1)[0], 60);
+  // `title` names a thread whose first message comes later (the New thread screen sends it
+  // after uploading attachments, which need the thread's id first).
+  const named = typeof input.message === 'string' ? input.message : input.title;
+  if (typeof named === 'string') {
+    const title = truncateTitle(named.split(/\r?\n/, 1)[0], 60);
     if (title) thread.title = title;
   }
   await hub.save(thread);
