@@ -474,6 +474,18 @@ get buried as this file grows.
 | mechanics | minor | Default Claude home may be `$CLAUDE_CONFIG_DIR` | upheld | Decision 55 |
 | mechanics | minor | `--tricky` vs all-plan-docs edge case | upheld | Decision 55 |
 
+### Round 16 — 2026-11-17
+
+**Lanes:** intent: claude; mechanics: gpt; cross-family: yes.
+
+**Changed since Round 15:** budget reset after Collin chose Keep going.
+- Settings preview: one form per role with a caption (55)
+- Re-measure: usable samples, omissions reported, default Claude home (55)
+- `--tricky` wins on an all-plan-docs diff (55)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
