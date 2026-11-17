@@ -135,6 +135,15 @@ makes this a feature. Then:
 - If you see two features in what he wants, suggest splitting; the second becomes a
   `stub` card.
 
+### Reading code through the scout
+
+Questions needing more than a couple of files read go to your CLI's built-in helper
+(Claude Code's Agent tool, a Codex subagent, or an Antigravity subagent) on the scout
+model named in your instructions. Ask for conclusions with `file:line` evidence, not file
+dumps. Act on the conclusions; open a file yourself only to confirm a specific line. With
+no scout model, read code yourself as before. Lookups use only the scout for code reading,
+never the bigger-changes scout.
+
 ### 3. Mapping
 
 Write a brief for a mapper (`<root>/protocol/app/mapper.md`) naming the slug and the
