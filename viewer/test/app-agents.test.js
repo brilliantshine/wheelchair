@@ -4,12 +4,17 @@ const assert = require('node:assert/strict');
 const { buildAgents } = require('../app/agents.js');
 const { chooseName, GREEK } = require('../app/names.js');
 
-test('lead names use free names in order, case insensitively, and release archived names', () => {
-  assert.equal(chooseName([], []), 'Alpha');
-  assert.equal(chooseName([{ lead_name: 'alpha' }]), 'Beta');
-  assert.equal(chooseName([{ lead_name: 'X', archived: true }], ['X', 'Y']), 'X');
-  assert.equal(chooseName([{ lead_name: 'x' }, { lead_name: 'y' }, { lead_name: 'X 2' }], ['X', 'Y']), 'Y 2');
-  assert.equal(chooseName(GREEK.map((lead_name) => ({ lead_name }))), 'Alpha 2');
+test('lead names pick a random free name, case insensitively, and release archived names', () => {
+  const first = () => 0;
+  assert.equal(chooseName([], [], first), 'Alpha');
+  assert.equal(chooseName([], [], () => 0.999), 'Omega');
+  assert.equal(chooseName([{ lead_name: 'alpha' }], [], first), 'Beta');
+  assert.equal(chooseName([{ lead_name: 'X', archived: true }], ['X', 'Y'], first), 'X');
+  assert.equal(chooseName([{ lead_name: 'x' }, { lead_name: 'y' }, { lead_name: 'X 2' }], ['X', 'Y'], first), 'Y 2');
+  assert.equal(chooseName(GREEK.map((lead_name) => ({ lead_name })), [], first), 'Alpha 2');
+  const seen = new Set(Array.from({ length: 200 }, () => chooseName([])));
+  assert.ok(seen.size > 1, 'default draws are not all the same name');
+  for (const name of seen) assert.ok(GREEK.includes(name));
 });
 
 test('agent tree retains live descendants and waiting follows actual starter', () => {
