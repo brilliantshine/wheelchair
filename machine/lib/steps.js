@@ -1,0 +1,40 @@
+'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
+const truncate = text => { text = String(text || ''); return text.length > 80 ? text.slice(0, 79) + '…' : text; };
+const shellTarget = command => String(command || '').replace(/^\s*cd\s+(?:'[^']*'|"[^"]*"|\S+)\s*&&\s*/, '').split(/\r?\n/)[0];
+function relative(target, cwd) {
+  if (cwd && path.isAbsolute(target)) { const rel = path.relative(cwd, target); if (rel !== '..' && !rel.startsWith('../') && !path.isAbsolute(rel)) return rel || '.'; }
+  return target;
+}
+function keyFor(kind, target = '', verb = '', ctx = {}) {
+  if (kind === 'shell') return `shell:${shellTarget(target).trim().split(/\s+/).filter(Boolean).slice(0, 2).join(' ')}`;
+  if (kind === 'files') return `files:${verb} ${verb === 'Searched' ? relative(target, ctx.cwd) : path.dirname(relative(target, ctx.cwd))}`;
+  return `${kind}:${kind}`;
+}
+function classify(cli, toolName, input, ctx = {}) {
+  const name = String(toolName || ''), data = input && typeof input === 'object' ? input : {};
+  const command = typeof input === 'string' ? input : (data.command || data.cmd || '');
+  const card = (cli === 'claude' ? name === 'Bash' : ['exec_command', 'shell'].includes(name)) && /(?:^|[\s/])card\.js\s+(message|result)\b(?:\s+([^\s;&|]+))?/.exec(command);
+  let kind, label, target = '', verb = '';
+  if (card) {
+    kind = 'starter'; label = 'Reported back';
+    if (card[1] === 'message') {
+      label = 'Sent a message';
+      try { const file = card[2].replace(/^['"]|['"]$/g, ''); const to = JSON.parse(fs.readFileSync(path.resolve(ctx.cwd || process.cwd(), file), 'utf8')).to; if (typeof to === 'string' && to) label = `Messaged ${to.replace(/^wc-[^-]+-/, '')}`; } catch {}
+    }
+  } else if ((cli === 'claude' ? ['Agent', 'Task'] : ['spawn_agent', 'send_input', 'wait_agent', 'close_agent']).includes(name)) {
+    kind = 'helpers'; label = `Asked a helper: ${data.description || String(data.prompt || data.message || '').split(/\r?\n/)[0]}`;
+  } else if ((cli === 'claude' ? ['WebFetch', 'WebSearch'] : ['web_search', 'web_fetch']).includes(name)) {
+    kind = 'web'; if (data.query) label = `Searched the web: ${data.query}`; else { let host = data.url || ''; try { host = new URL(host).host; } catch {} label = `Read ${host}`; }
+  } else if ((cli === 'claude' ? ['Read', 'Write', 'Edit', 'MultiEdit', 'Glob', 'Grep', 'NotebookEdit', 'LS'].includes(name) : name === 'apply_patch' || name === 'view_image' || name.toLowerCase().includes('file'))) {
+    kind = 'files'; target = data.file_path || data.path || data.notebook_path || data.pattern || '';
+    if (name === 'apply_patch') {
+      const patch = typeof input === 'string' ? input : (data.patch || data.input || '');
+      const files = [...patch.matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)].map(m => m[1]); target = files[0] || ''; verb = 'Edited'; label = files.length > 1 ? `Edited ${files.length} files` : `Edited ${path.basename(target)}`;
+    } else if (['Glob', 'Grep', 'LS'].includes(name)) { verb = 'Searched'; target = data.pattern || data.path || ''; label = `Searched ${target}`; }
+    else { verb = ['Read', 'view_image'].includes(name) || /read/i.test(name) ? 'Read' : 'Edited'; label = `${verb} ${path.basename(target)}`; }
+  } else { kind = 'shell'; target = command; label = cli === 'claude' && name === 'Bash' && data.description ? data.description : `Ran ${shellTarget(command)}`; }
+  return { kind, label: truncate(label), key: keyFor(kind, target, verb, ctx) };
+}
+module.exports = { classify, shellTarget, truncate, keyFor };
