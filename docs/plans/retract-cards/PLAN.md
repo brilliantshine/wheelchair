@@ -236,6 +236,19 @@ with `resolve`).
 | mechanics (gpt) | blocking | Unpinned offers/approvals vanish from the conversation (kind filter); chat render key must follow | upheld (blocking): duplicate of the intent finding, plus `viewer/pages/thread.js:925` | Fixed with the intent finding; §5 now also names the sync keys |
 | mechanics (gpt) | blocking | A second offer marks the retracted first `replaced` | upheld (blocking): duplicate of the intent finding | Fixed with the intent finding (§4) |
 
+### Round 2 — 2026-11-17
+
+**Lanes:** pending; cross-family: pending.
+
+**Changed since Round 1:**
+- §2 sudo: the declined path sets state and retraction in-transaction with no save or enqueue; other states refuse and arrive through the machine's outcome poll; a later `declined` outcome is a no-op.
+- §4: retracted cards are never marked `replaced` when a new offer or approval is posted.
+- §5: the conversation excludes only cards that are current pins (by id), and the `chat`/`pinned` render keys follow that and include `retracted_at`.
+- Validation: tests for the above.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
