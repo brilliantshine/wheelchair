@@ -190,6 +190,11 @@ arrival order (section 4).
   adds a step; a repeat start for a known id is ignored. An end for an unknown id is kept
   in `session.pending_ends` (by id, at most 50, dropped after 10 minutes); a start that
   finds its id there is stored already finished.
+- **A real end beats a closure.** An end event from the CLI for a step the hub already
+  closed itself (`clean: false`, e.g. Stop arrived before `PostToolUse`) upgrades it:
+  `ended_at`, `failed` and `clean: true` come from the event. A step is added to history at
+  the moment it first becomes `clean: true`, so exactly once whatever the arrival order; a
+  second clean end for the same id is ignored.
 - **Turn boundaries.** The hub keeps `session.turns`: the last 20 `{started_at, ended_at}`
   (appended when a turn starts, `ended_at` filled when it ends). A start whose `started_at`
   falls inside an ended turn is stored finished at **that** turn's `ended_at`, `failed:
@@ -344,7 +349,9 @@ bash install/test/run.sh
 
 Plus one live check on this machine (not from a worktree's own server; use `--port` and
 `--cache-root` per the root AGENTS.md): a Claude and a Codex session each run a few
-commands, and their steps and context show on the Agents screen within 5 seconds.
+commands; each step shows on the Agents screen within 10 seconds of the call (2 s Codex
+scan + 5 s page poll + delivery), and the context ring within 25 seconds (15 s Claude
+throttle + 5 s page poll + delivery).
 
 ## Accepted Risks
 
@@ -414,6 +421,19 @@ commands, and their steps and context show on the Agents screen within 5 seconds
 
 **Changed since Round 3:**
 - Collin chose the simpler Codex rule (Decision 13): §2 Codex rewritten (polls, yielded step ends when the agent moves on, `clean` flag); Accepted Risk 4 replaced; §1 step shape gains `clean`; §4 history takes only `clean` steps.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| mechanics | major | A clean end arriving after the hub's own closure is unspecified | upheld | §4 "A real end beats a closure" |
+| mechanics | minor | 5 s live-check target is tighter than the timers allow | upheld | §9: 10 s for steps, 25 s for context |
+
+### Round 5 — 2026-11-17
+
+**Lanes:** intent: gpt; mechanics: gpt (Claude unavailable at start); cross-family: no.
+
+**Changed since Round 4:**
+- §4: a CLI end arriving after the hub closed the step upgrades it; history sample added exactly once.
+- §9: live-check bounds 10 s (steps) and 25 s (context).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
