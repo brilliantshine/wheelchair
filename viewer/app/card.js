@@ -84,6 +84,7 @@ const fields = {
     leaning: text,
     why: text,
     progress: (value) => value === undefined || text(value),
+    passes_on: (value) => value === undefined || text(value),
     doc: (value) => value === undefined || ['MAP.md', 'IDEA.md', 'PLAN.md'].includes(value),
   },
   approval: {
@@ -131,7 +132,7 @@ const fields = {
   title: { title: text },
   resolve: { card: text, note: text },
   retract: { card: text, note: (value) => text(value) && !/[\r\n]/.test(value) },
-  message: { to: text, text },
+  message: { to: text, text, asks: (value) => value === undefined || typeof value === 'boolean', passes_on: (value) => value === undefined || text(value) },
   result: {
     task: text,
     outcome: (value) => ['done', 'blocked'].includes(value),
