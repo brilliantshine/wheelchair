@@ -12,10 +12,7 @@ get buried as this file grows.
 
 ## Open Questions
 
-### Q1: How Claude sessions drop unused tools
-- **Context:** An interactive Claude session (haiku, this worktree) starts at 47,869 tokens. With `--strict-mcp-config --disable-slash-commands` it is 47,392; adding `--disallowedTools Artifact,Workflow,ScheduleWakeup,SendFeedback,ShareOnboardingGuide,ReportFindings,ListAgents` it is 17,093. The tool descriptions are the cost, not connectors or skills.
-- **Options:** (a) deny list of known unused tools; (b) allow list per role (`--tools`), so tools a future Claude Code adds never load; (c) deny list plus a startup-size check that warns when a new release grows it.
-- **Recommendation:** (a) or (c).
+(none open yet; more follow from the Watch List)
 
 ## Watch List
 
@@ -32,10 +29,21 @@ get buried as this file grows.
 | # | Decision | Rationale | Source |
 |---|----------|-----------|--------|
 | 1 | GPT work aims at total GPT tokens against plan limits, workers and verifiers first | Collin, before IDEA.md | user |
+| 2 | Claude sessions launch with a deny list of unused tools, and the Ready check warns (never blocks) when a Claude session's startup grows past a threshold | Saves ~30k per call now; an allow list risks breaking on a renamed tool; the warning catches the next heavy tool | user |
+| 3 | Warning threshold is 25k startup tokens, measured from the first assistant message's usage in the session transcript | 17k measured today with the deny list; 25k leaves room for normal growth | defaulted |
 
 ## Spec
 
 (grows as decisions land)
+
+### Claude startup tools
+
+- `machine/adapters/claude.js` `command()` adds `--disallowedTools` with: Artifact, Workflow, ScheduleWakeup, SendFeedback, ShareOnboardingGuide, ReportFindings, ListAgents, and the deferred-tool names that only reach interactive users (ArtifactComments, ArtifactData, CronCreate, CronDelete, CronList, RemoteTrigger, PushNotification, PublishPlugin, DesignSync, EnterWorktree, ExitWorktree, EnterPlanMode, ExitPlanMode). It also adds `--strict-mcp-config` and `--disable-slash-commands`: small today, but they keep account connectors and skills out of agent sessions.
+- Kept: Bash, Read, Edit, Write, Agent (the scout), ToolSearch, TaskStop, SendMessage, Monitor, WebFetch, WebSearch, NotebookEdit.
+- The list lives in one constant beside `command()`, so adding a tool is a one-line change.
+- Every role uses this list: lead, sub-lead, worker, reviewer, verifier, mapper. Asides and the usage probe keep their own argv.
+- **Growth warning.** After a Claude session's first assistant message, the machine reads its `usage` (input + cache write + cache read) from the transcript and records it on the session as `startup_tokens`. The Ready check adds a non-blocking warning, not a missing item, when the newest Claude session on the build machine recorded more than 25,000. The approval card shows the warning text: "Claude sessions now start at <n>k tokens (expected under 25k). A Claude Code update may have added tools; tell the lead." The Ready result stays Ready.
+- Measured: interactive haiku session in this worktree, first-call context 47,869 tokens by default, 17,093 with the deny list (2026-11-17).
 
 ### Measured baseline (2026-11-17)
 
