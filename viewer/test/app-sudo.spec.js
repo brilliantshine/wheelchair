@@ -29,6 +29,22 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
     test.afterEach(async () => { await ctx.close(); });
     const open = (page, id) => page.goto(`${ctx.server.url}/app/thread?id=${id}`);
 
+    test('a withdrawn sudo card shows its note without controls or declined state', async ({ page }) => {
+      const made = await ctx.make({ cli: 'claude' });
+      const posted = await ctx.post(made.id, sudo(1));
+      await ctx.patch(made.id, (x) => {
+        const card = x.cards.find((c) => c.id === posted.id);
+        Object.assign(card, { state: 'declined', answered: true, retracted_at: new Date().toISOString(),
+          retracted_by: 'lead', retracted_note: 'Command no longer needed' });
+      });
+      await open(page, made.id);
+      const card = page.locator(`#card-${posted.id}`);
+      await expect(card.locator('.answered-tag')).toContainText('Withdrawn · Command no longer needed');
+      await expect(card).not.toContainText('Declined');
+      await expect(card.locator('button, a')).toHaveCount(0);
+      expect(await card.evaluate((n) => Number(getComputedStyle(n).opacity))).toBe(0.6);
+    });
+
     test('a long command is shown in full, wrapped, with three controls and no password field', async ({ page }) => {
       const made = await ctx.make({ cli: 'claude' });
       const long = `/usr/bin/tee /etc/${'a'.repeat(900)}/conf < /dev/null && echo ${'word '.repeat(150)}end`;
