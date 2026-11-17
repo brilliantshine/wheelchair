@@ -468,10 +468,12 @@ async function handleThreads(hub, request, response, url, bits, body) {
     return send(response, 200, await hub.dismiss(id, bits[3]));
   }
   if (request.method === 'POST' && bits[2] === 'open') {
-    return send(response, 200, await hub.openStub(id, body));
+    const result = await hub.openStub(id, body);
+    const clean = (thread) => ({ ...thread, sessions: thread.sessions.map(publicSession) });
+    return send(response, 200, result.waiting ? { ...result, thread: clean(result.thread) } : clean(result));
   }
   if (request.method === 'POST' && bits[2] === 'restart') {
-    return send(response, 201, await hub.restartLead(id));
+    return send(response, 201, publicSession(await hub.restartLead(id)));
   }
   if (request.method === 'POST' && bits[2] === 'archive') {
     return send(response, 200, await hub.archive(id));

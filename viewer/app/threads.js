@@ -184,7 +184,7 @@ async function archive(hub, id) {
     if (result.uploads_removed === false) {
       const { addCard } = require('./cards.js');
       addCard(thread, { kind: 'needs', title: 'Uploads could not be removed', body: `Could not remove ~/.local/state/wheelchair/uploads/${thread.id}/ on ${thread.machine}: ${result.uploads_error || 'unknown error'}. Archive again to retry.` }, { system: true });
-      for (const session of thread.sessions) session.live = false;
+      for (const session of thread.sessions) { session.live = false; session.ended_at ||= new Date().toISOString(); }
     }
     thread.archived = false;
     await hub.save(thread);
@@ -194,7 +194,7 @@ async function archive(hub, id) {
   for (const card of thread.cards) {
     if (card.kind === 'merged' && !card.answered) require('./cards.js').resolveCard(card, 'collin', 'Archived');
   }
-  for (const session of thread.sessions) session.live = false;
+  for (const session of thread.sessions) { session.live = false; session.ended_at ||= new Date().toISOString(); }
   await hub.save(thread);
   return result;
 }
