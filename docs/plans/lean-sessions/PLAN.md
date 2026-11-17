@@ -119,6 +119,15 @@ get buried as this file grows.
 
 ## Review Rounds
 
+### Round 1 — 2026-11-17
+
+**Lanes:** intent: claude; mechanics: gpt; cross-family: yes.
+
+**Changed since Round 0:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
