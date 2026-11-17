@@ -57,7 +57,7 @@ Do not edit it to skip a stage.
 Run `./install.sh` after cloning, after installing another harness, or after pulling a
 change under `viewer/`. It removes the retired skill and prompt wrappers and the old seen
 hook from the harness homes, installs the viewer dependencies and both Chromium and Firefox, stops any
-already-running viewer that isn't running the code you just pulled, sets up the app's state and, on a serving systemd machine, the viewer and machine
+already-running viewer that isn't running the code you just pulled, sets up the app's state and, on a serving systemd or launchd machine, the viewer and machine
 services, then updates the diagram-sensitivity block. This reaches outside the clone; the fixture suites below do
 not. Because of that it runs only from the canonical clone: from a linked worktree or
 anything under `~/.local/state/wheelchair/worktrees`, it and
@@ -67,6 +67,10 @@ check the installer from a worktree, run `bash install/test/run.sh`.
 Edits under `protocol/` take effect immediately, because sessions read their role files
 from this checkout. The exception is the delimited region in `protocol/sensitivity.md`;
 run `sensitivity/set.sh` or `./install.sh` after changing it.
+
+The Mac CI job is `.github/workflows/macos.yml`. Its end-to-end check is
+`test-support/macos/check.sh`; `test-support/macos/` also holds its fake `claude` and
+`tailscale`.
 
 ## Validation
 
