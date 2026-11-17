@@ -60,6 +60,7 @@ get buried as this file grows.
 | 31 | Warning lookup has a 2-second deadline; ledger records account_dir; role files keep a pointer fallback | Relay timeout, account homes, sessions spanning a deploy | review-round-3 |
 | 32 | Supersedes 13, 25 (overhead part), 27 and 28 (overhead part): the warning compares the newest session's raw startup with the median of earlier sessions of the same role and project (+5,000, at least 5 earlier samples); no estimate of the parts | Three rounds of estimate formulas each broke; a comparison needs no arithmetic about the parts. Collin chose Keep going | review-round-3 |
 | 33 | Supersedes 32's comparison: per role only, newest-3 median against the earlier-20 median, from the ledger; the machine reports `startup_growth` in its status | Session records vanish on archive; one long brief shouldn't trip it | review-round-4 |
+| 34 | Sizing runs from the repository root; compact output keeps `branch` and `worktree`; Settings preview and the moved approval section follow the new behavior | Round 4 mechanics | review-round-4 |
 | 12 | No GPT tool-schema trimming | Codex offers no supported way to drop its built-in tools; revisit if it adds one | defaulted |
 
 ## Spec
@@ -73,7 +74,7 @@ get buried as this file grows.
 - The list lives in one constant beside `command()`, so adding a tool is a one-line change.
 - Every role uses this list: lead, sub-lead, worker, reviewer, verifier, mapper. Asides and the usage probe keep their own argv.
 - No `--strict-mcp-config` or `--disable-slash-commands`: measured savings were ~0.5k, and they would drop a target project's own MCP servers and skills.
-- **Growth warning.** After a Claude session's first assistant message, the machine reads its `usage` (input + cache write + cache read) from the transcript as `startup_tokens`, stores it on the session, and appends `{at, name, startup_tokens}` to the session ledger. The ledger is the sample source, because the machine deletes session records when a thread is archived (`machine/service.js:762`). Growth is found by comparison, per role: join startup lines to start lines by `name` to get each sample's role; for each role, take the median of its newest 3 samples and the median of the up to 20 samples before those. When some role's newest median exceeds its earlier median by more than 5,000, the machine's status response carries `startup_growth: {role, newest_median, earlier_median}` (the largest such gap); otherwise it is absent. A role with fewer than 3 + 5 samples is skipped. Three newest samples, not one, so a single long brief does not trip it. The Ready check (`viewer/app/ready.js` `check`) turns `startup_growth` into one entry of a `warnings` array alongside `missing`; warnings never change `ok`. A Claude Code update that adds tools is a step change for every role, so it shows; ordinary role-file edits move a few hundred tokens and do not.
+- **Growth warning.** After a Claude session's first assistant message, the machine reads its `usage` (input + cache write + cache read) from the transcript as `startup_tokens`, stores it on the session, and appends `{at, name, startup_tokens}` to the session ledger. The ledger is the sample source, because the machine deletes session records when a thread is archived (`machine/service.js:762`). Growth is found by comparison, per role: join startup lines to start lines by `name` to get each sample's role; for each role, take the median of its newest 3 samples and the median of the up to 20 samples before those. When some role's newest median exceeds its earlier median by more than 5,000, the machine's status response carries `startup_growth: {role, newest_median, earlier_median}` (the largest such gap); otherwise it is absent. A role with fewer than 3 + 5 samples is skipped. The window rolls: once a new level fills most of the earlier window (about 13 sessions of that role) the warning clears; the approval card keeps the warning it was given. Three newest samples, not one, so a single long brief does not trip it. The Ready check (`viewer/app/ready.js` `check`) turns `startup_growth` into one entry of a `warnings` array alongside `missing`; warnings never change `ok`. A Claude Code update that adds tools is a step change for every role, so it shows; ordinary role-file edits move a few hundred tokens and do not.
 - **Where the warning shows.** When the hub accepts an `approval` card (`viewer/app/cards.js`, the add-card path), it runs the Ready check's warning part and stores `card.ready.warnings`; the lookup has its own 2-second deadline, shorter than the card relay's, and if it fails or times out the card is accepted with `warnings: []`; the lead's submitted `ok`/`missing` are kept as today. A `recheck` press replaces `card.ready` whole, warnings included. On `start-building`, `same()` keeps comparing `missing` only; the hub writes the fresh `warnings` onto the card and, if `ok`, starts the build on that same press. A warning that appears or clears never consumes the press. The approval card shows the warning text: "Claude <role> sessions now start about <n>k tokens bigger than before. A Claude Code update may have added tools; tell the lead." `<n>` is `newest_median − earlier_median`, in thousands. The Ready result stays Ready.
 - Measured: interactive haiku session in this worktree, first-call context 47,869 tokens by default, 17,093 with the deny list (2026-11-17).
 
@@ -84,6 +85,7 @@ get buried as this file grows.
 - The header also states the clone: "`<root>` is `<absolute path of the machine's clone>`." Role files and `cards.md` stop deriving `<root>` from their own path and say "`<root>` is named in your starting instructions", so a session never resolves it to a feature worktree.
 - Briefs stop naming role files. `lead.md` (mapper, reviewer, sub-lead and verifier briefs) and `sub-lead.md` (worker and verifier briefs) say instead: the session's role rules are already in its starting instructions, so a brief never tells it to read its role file. "Brief them from `reviewer.md`" style lines that tell the lead what to put in a brief stay; only the instruction to the started session changes.
 - Sessions started before the change keep a pointer and read the files from disk. So the lead, sub-lead, worker and mapper role files keep a fallback line: "If your starting instructions only point you to this file, `<root>` is this file's path with `/protocol/app/<role>.md` dropped, and read `cards.md` (the lead also `cards-lead.md`) beside it." `reviewer.md` and `verifier.md` get only its `<root>` part.
+- Settings' prompt preview (`viewer/app/settings.js:167-171`, shown at `viewer/pages/settings.js:657-659`) uses the same composition: the header, then one line per included file ("[full text of protocol/app/<role>.md]", and likewise each card file), then the layers.
 - Asides are out of scope: `machine/lib/aside-turns.js` keeps its own pointer prompt.
 - The files are read from the machine's clone when the session starts. A session keeps the text it started with; a later edit reaches the next session.
 - Role files lose their "Read `cards.md`, beside this file, first" lines; cross-references ("see the `diagram` section of `cards-lead.md`") stay, and resolve inside the starting text.
@@ -94,18 +96,19 @@ get buried as this file grows.
 
 - `cards.md` keeps: Posting a card, Which kinds exist (the full table, so everyone knows what exists), `progress`, `message`, `result`, What reaches a session and the markers, and The commands.
 - `cards-lead.md` gets every other kind section (offer, idea, question, approval, needs, resolve, done, merged, diagram, image, stub, sudo, retract, title), moved verbatim.
+- The moved `approval` section is updated to the new behavior: a change in warnings alone never consumes the Start building press; only a change in `missing` does.
 - The split is documentation only. `card.js` keeps its JavaScript schema (`viewer/app/card.js:24-41,145-191`) unchanged, so exactly the same cards are accepted. `protocol-rules.test.js` checks that every kind in the schema has exactly one section across the two files.
 - `protocol/app/AGENTS.md` lists both files and who gets each, and says reviewer and verifier get neither.
 
 ### Sizing worker changes
 
-- New: `node <root>/viewer/app/wc.js diff size <feature-branch> <worker-branch> [--tricky]`. It runs `git diff --numstat <feature>...<worker> -- . ':(exclude)docs/plans'` locally (read-only), the same filtered diff the scout reads, sums added and removed lines, lists `excluded_paths` from the unfiltered `git diff --name-status <feature>...<worker>`: every entry with an endpoint under `docs/plans/`, giving both endpoints of a rename (`old -> new`), and prints one JSON line: `{"lines": N, "band": "scout" | "bigger-scout" | "self", "excluded_paths": [...], "scout_diff": "git diff <feature>...<worker> -- . ':(exclude)docs/plans'"}`. Under 200 is `scout`, 200–800 `bigger-scout`, over 800 or `--tricky` `self`. Binary files count 0.
+- New: `node <root>/viewer/app/wc.js diff size <feature-branch> <worker-branch> [--tricky]`. It resolves the repository root (`git rev-parse --show-toplevel`) and runs everything there, whatever the caller's directory: `git -C <top> diff --numstat <feature>...<worker> -- . ':(exclude)docs/plans'` locally (read-only), the same filtered diff the scout reads, sums added and removed lines, lists `excluded_paths` from the unfiltered `git diff --name-status <feature>...<worker>`: every entry with an endpoint under `docs/plans/`, giving both endpoints of a rename (`old -> new`), and prints one JSON line: `{"lines": N, "band": "scout" | "bigger-scout" | "self", "excluded_paths": [...], "scout_diff": "git -C <top> diff <feature>...<worker> -- . ':(exclude)docs/plans'"}`. Under 200 is `scout`, 200–800 `bigger-scout`, over 800 or `--tricky` `self`. Binary files count 0.
 - `sub-lead.md` step 1 replaces its sizing prose: run the command for every worker result; the band is binding; the no-scout fallback stays as written. The acceptance Log line names the band: `- <date> — T<n> accepted (band: scout): ...`. A `self` read of a scout band is not allowed. The scout (or the sub-lead, for `self`) gets, as today, the brief, the Spec and the worker's report, plus the diff from the `scout_diff` command, which leaves out changes under `docs/plans/`. Each excluded path must be the worker's own `docs/plans/<slug>/reports/<task>.md`, which step 2 already reads; a rename into or out of `docs/plans/` and any other excluded path is read by the sub-lead itself (`git diff <feature>...<worker> -- <path>`) and, being outside a worker's ownership, is normally sent back.
 
 ### Shorter output and fewer calls
 
-- `wc.js session start` prints the same compact view of the started session (plus `note` and any waiting line), never `command`, so the inlined starting text is not echoed into the starter's context. `--full` prints today's output.
-- `wc.js session list` default prints, per session: name, role, provider, model, status, live, ready, started_by, attempt_id, title; plus `review_families`. `--full` prints the raw response. Nothing in the app parses `wc.js` stdout today; the lead and sub-lead rules that read `review_families` and the lead's provider still work.
+- `wc.js session start` prints the same compact view of the started session (plus `note` and any waiting line), with `branch` and `worktree` kept, never `command`, so the inlined starting text is not echoed into the starter's context. `--full` prints today's output.
+- `wc.js session list` default prints, per session: name, role, provider, model, status, live, ready, started_by, attempt_id, title, branch, worktree; plus `review_families`. `--full` prints the raw response. Nothing in the app parses `wc.js` stdout today; the lead and sub-lead rules that read `review_families` and the lead's provider still work.
 - `worker.md` and `verifier.md`: run a suite as `<command> > <log> 2>&1; echo "exit $?"; tail -n 80 <log>` (log in a scratch directory), so the exit status is the suite's own and is always printed. On a non-zero exit, read the failures from the log (`grep -n -A30 'not ok\|FAIL\|Error' <log>`) before reporting; never pipe a suite straight into `tail`. Reports paste the exit line and the tail.
 - `lead.md`, `sub-lead.md`, `worker.md`, `verifier.md`, `mapper.md`: one line saying to chain routine commands that do not depend on each other's output into one shell call.
 
@@ -150,6 +153,7 @@ get buried as this file grows.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| The growth warning clears by itself after about 13 sessions of a role at the new level | It flags a recent change; by then it has shown on approval cards or been seen in Ready checks | 4 |
 
 ## Review Rounds
 
@@ -247,6 +251,24 @@ get buried as this file grows.
 | intent | minor | One long brief can trip the warning | upheld | Decision 33 |
 | intent | minor | Fallback line would send reviewer/verifier to card rules | upheld | Only `<root>` part for them |
 | intent | minor | Validation misses round-3 changes | upheld | Validation extended |
+| mechanics | blocking | Sizing depends on the caller's directory | upheld | Decision 34 |
+| mechanics | major | No durable project-keyed samples | upheld | Already fixed by Decision 33 (ledger, per role) |
+| mechanics | major | Rolling median absorbs a permanent increase | accepted-risk | Newest-3 vs earlier-20 still fires on the reviewer's case (5 old + 6 new gives gap 6,000); clears after ~13 sessions, accepted |
+| mechanics | major | Compact output drops `branch` | upheld | Decision 34 |
+| mechanics | minor | Settings preview keeps the pointer | upheld | Decision 34 |
+| mechanics | minor | Moved approval text contradicts warning-only behavior | upheld | Decision 34 |
+
+### Round 5 — 2026-11-17
+
+**Lanes:** intent: claude; mechanics: gpt; cross-family: yes.
+
+**Changed since Round 4:**
+- Growth warning per role from the ledger, reported in machine status (33); rolling-window risk accepted
+- Sizing from the repository root; compact output keeps `branch` and `worktree`; Settings preview; moved approval section (34)
+- Fallback line scope for reviewer and verifier; validation extended
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
