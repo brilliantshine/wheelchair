@@ -50,6 +50,30 @@ test('a plan directory committed on the thread branch is found against its upstr
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
 
+test('an edited file in an existing plan directory does not claim that plan', async () => {
+  const { root, work } = await repoWithOldPlans();
+  try {
+    await fs.writeFile(path.join(work, 'docs', 'plans', 'aaa-old', 'PLAN.md'), 'edited\n');
+    await fs.writeFile(path.join(work, 'docs', 'plans', 'zzz-old', 'NOTES.md'), 'new file\n');
+    assert.deepEqual(await newPlanDirectories(work), []);
+    await fs.mkdir(path.join(work, 'docs', 'plans', 'new-thing'), { recursive: true });
+    await fs.writeFile(path.join(work, 'docs', 'plans', 'new-thing', 'IDEA.md'), 'idea\n');
+    assert.deepEqual(await newPlanDirectories(work), ['new-thing']);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('a file committed into an existing plan directory does not claim that plan', async () => {
+  const { root, work } = await repoWithOldPlans();
+  try {
+    await fs.writeFile(path.join(work, 'docs', 'plans', 'aaa-old', 'PLAN.md'), 'edited\n');
+    await fs.writeFile(path.join(work, 'docs', 'plans', 'aaa-old', 'NOTES.md'), 'new file\n');
+    await fs.mkdir(path.join(work, 'docs', 'plans', 'new-thing'), { recursive: true });
+    await fs.writeFile(path.join(work, 'docs', 'plans', 'new-thing', 'IDEA.md'), 'idea\n');
+    git(work, 'add', '.'); git(work, 'commit', '-q', '-m', 'edit old, add new');
+    assert.deepEqual(await newPlanDirectories(work), ['new-thing']);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
 test('finds a committed plan on a no-track worktree branch against origin/default', async () => {
   const { root, work, branch } = await repoWithOldPlans();
   const noTrack = path.join(root, 'no-track');
