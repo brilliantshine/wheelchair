@@ -268,3 +268,4 @@ None.
 - 2026-11-16: with `ANTHROPIC_BASE_URL=http://127.0.0.1:9`, `claude -p /usage` still
   returned the usage text (`num_turns 0`); `claude -p "say hi"` hung without reaching the
   model and was killed by `timeout`.
+- 2026-11-16, Ready check at approval: hub and machine service answer (session list; round 3 reviewer starts passed the version check); claude and codex installed; Claude logged in; Codex preflight: token fresh. Ready.
