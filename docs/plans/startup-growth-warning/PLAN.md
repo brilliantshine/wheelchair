@@ -304,6 +304,18 @@ no warning.
 | mechanics | major | Abandoned scan keeps reading an open file | upheld | Decision 23 |
 | mechanics | major | Live relay and drain can both unlink a delivered spool file | declined | Pre-existing behavior of today's relay (`machine/service.js:874-907,1273-1278`), not changed by this plan once the fallback is gone (Decision 22) |
 
+### Round 7 — 2026-11-17
+
+**Lanes:** pending.
+
+**Changed since Round 6:** Collin chose Keep going (budget reset).
+- Older-hub fallback removed; card forwarding unchanged; accepted risk added (Decision 22)
+- Refresh error handling, abandonment and every read gated on the refresh id (Decision 23)
+- Edge cases and Validation updated
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
