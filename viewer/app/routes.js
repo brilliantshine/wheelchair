@@ -208,7 +208,7 @@ async function handleSettings(hub, request, response, url, bits, body) {
     let slot = settings.TIER_ALIASES[body.slot] || body.slot;
     if (body.provider === 'claude') slot = ({ haiku: 'light', sonnet: 'standard', opus: 'heavy' })[slot] || slot;
     if (!['light', 'standard', 'heavy', 'critical', 'lead', 'sub-lead'].includes(slot)) throw appError(400, 'slot is invalid');
-    if (body.model !== null && (typeof body.model !== 'string' || !/^[a-z0-9][a-z0-9._-]*$/.test(body.model))) throw appError(400, 'model is invalid');
+    if (body.model !== null && (typeof body.model !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,63}$/.test(body.model))) throw appError(400, 'model is invalid');
     if (body.provider === 'gpt' && body.effort !== undefined && !['low', 'medium', 'high', 'xhigh'].includes(body.effort)) throw appError(400, 'effort for GPT must be one of low, medium, high, xhigh');
     if (['claude', 'gemini'].includes(body.provider) && body.effort !== undefined && !['low', 'medium', 'high', 'xhigh', 'max'].includes(body.effort)) throw appError(400, 'effort is invalid');
     try { await settings.modelCommand(hub, ['set', body.provider, slot, body.model || 'none', ...(body.effort ? [body.effort] : [])]); }

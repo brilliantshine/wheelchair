@@ -35,7 +35,7 @@ ALIASES = {"luna": "light", "terra": "standard", "sol": "heavy", "astra": "criti
 CLAUDE_ALIASES = {"haiku": "light", "sonnet": "standard", "opus": "heavy"}
 EFFORTS = {"low", "medium", "high", "xhigh", "max"}
 GPT_EFFORTS = {"low", "medium", "high", "xhigh"}
-VALUE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
+VALUE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 MODEL = re.compile(r"^gpt-(\d+(?:\.\d+)*)-([a-z]+)$")
 USAGE = ("usage: model.sh <light|standard|heavy|critical> | <claude|gpt|gemini> <slot> | "
          "effort <claude|gpt|gemini> <slot> | family claude <slot> | "
@@ -77,7 +77,7 @@ def parse_pins(text):
             skipped.append(skip.group(1))
             continue
         entry = re.fullmatch(
-            r"(claude|gpt|gemini)\.([a-z-]+)\s*=\s*([a-z0-9][a-z0-9._-]*)(?:\s+@([a-z]+))?", line)
+            r"(claude|gpt|gemini)\.([a-z-]+)\s*=\s*([a-z0-9][a-z0-9._-]{0,63})(?:\s+@([a-z]+))?", line)
         if entry is not None:
             provider, raw_slot, model, effort = entry.groups()
             slot = slot_for(provider, raw_slot)

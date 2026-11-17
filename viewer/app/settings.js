@@ -10,6 +10,7 @@ const { PROVIDERS } = require('./providers.js');
 
 const execFileAsync = promisify(execFile);
 const ROLES = new Set(['lead', 'sub-lead', 'worker', 'reviewer', 'verifier', 'mapper']);
+const MODEL_MAX = 64;
 const WORK_TIERS = ['light', 'standard', 'heavy', 'critical'];
 const TIER_ALIASES = { luna: 'light', terra: 'standard', sol: 'heavy', astra: 'critical' };
 const ESCALATION_VALUES = { first: ['effort', 'model'], max_effort: ['high', 'xhigh', 'max'], max_tier: ['standard', 'heavy', 'critical'], ask_before: ['never', 'critical', 'any'] };
@@ -173,7 +174,7 @@ function assertFits(settings) {
   const projects = new Set([undefined]);
   for (const template of settings.templates) if (template.scope !== 'all') projects.add(template.scope);
   for (const role of ROLES) for (const project of projects) {
-    if (roleLayers(settings, role, project, { light: 'x'.repeat(60), heavy: 'x'.repeat(60) }, 'claude').text.length > 12000) fail('the composed role instructions exceed 12000 characters');
+    if (roleLayers(settings, role, project, { light: 'x'.repeat(MODEL_MAX), heavy: 'x'.repeat(MODEL_MAX) }, 'claude').text.length > 12000) fail('the composed role instructions exceed 12000 characters');
   }
 }
 
@@ -289,4 +290,4 @@ async function preview(hub, style) {
   } catch (error) { throw appError(502, `Preview failed: ${error.message}`); }
 }
 
-module.exports = { ESCALATION_VALUES, escalationSentences, PLANS, BALANCING, validBalancing, DEFAULT_STYLE, ROLES, SAMPLE, TIER_ALIASES, WORK_TIERS, assertFits, defaults, describe, fullPrompt, headsUp, knownProjects, load, modelCommand, models, normalize, options, preview, renderStyle, roleLayers, save, switchSentences, templateFor, tier, update, validateStyle, validateTemplate };
+module.exports = { MODEL_MAX, ESCALATION_VALUES, escalationSentences, PLANS, BALANCING, validBalancing, DEFAULT_STYLE, ROLES, SAMPLE, TIER_ALIASES, WORK_TIERS, assertFits, defaults, describe, fullPrompt, headsUp, knownProjects, load, modelCommand, models, normalize, options, preview, renderStyle, roleLayers, save, switchSentences, templateFor, tier, update, validateStyle, validateTemplate };
