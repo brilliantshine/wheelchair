@@ -13,7 +13,8 @@ const views = require('./views.js');
 const { handle } = require('./routes.js');
 
 class Hub {
-  constructor({ stateDir = DEFAULT_STATE, root, codeVersion, registerPlan = null, registerGraph = null, graphCacheRoot = null, saveGraph = null, queueRetryInterval, quietGraceMs, quietEscalateMs } = {}) {
+  constructor({ stateDir = DEFAULT_STATE, root, codeVersion, registerPlan = null, registerGraph = null, graphCacheRoot = null, saveGraph = null, queueRetryInterval, quietGraceMs, quietEscalateMs, usagePollInterval } = {}) {
+    this.usagePollInterval = usagePollInterval;
     this.root = root || path.resolve(__dirname, '..', '..');
     // The server supplies the commit it read at its own boot.  Direct Hub tests still read
     // their supplied root once, but a pull under a running viewer never changes this value.
@@ -63,6 +64,10 @@ class Hub {
     // wait short for someone watching, at one gh call per waiting stub.
     this.waitTimer = setInterval(() => Promise.all([this.pollWaiting(), sessions.retryWaiting(this), sessions.releaseLimits(this)]).catch(() => {}), 60_000);
     this.waitTimer.unref();
+    this.usageTimer = setInterval(() => this.pollIdle().catch(() => {}), this.usagePollInterval ?? 60_000);
+    this.usageTimer.unref();
+    this.usageStartTimer = setTimeout(() => this.pollIdle().catch(() => {}), 30_000);
+    this.usageStartTimer.unref();
     await this.allThreads().then((threads) => Promise.all(threads.filter((t) => t.pending_cancels?.length).map((t) => require('./asides.js').sweepCancels(this, t.id)))).catch(() => {});
     await this.pollWaiting();
     await sessions.retryWaiting(this);
@@ -128,6 +133,14 @@ class Hub {
   pollDead() {
     if (!this.polling) this.polling = sessions.pollDead(this).finally(() => { this.polling = null; });
     return this.polling;
+  }
+  pollIdle() {
+    if (!this.usagePolling) this.usagePolling = require('./usage-poll.js').pollIdle(this).finally(() => { this.usagePolling = null; });
+    return this.usagePolling;
+  }
+  close() {
+    for (const timer of [this.asideTimer, this.pollTimer, this.queueRetryTimer, this.waitTimer, this.usageTimer]) clearInterval(timer);
+    clearTimeout(this.usageStartTimer);
   }
   retryQueues() { return sessions.retryQueues(this); }
   acceptCard(payload) { return this.withThread(payload.thread_id, () => cards.acceptCard(this, payload)); }
