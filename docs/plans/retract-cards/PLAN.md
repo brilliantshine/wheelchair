@@ -83,13 +83,22 @@ A `retract` branch, beside the `resolve` branch, under the same thread lock:
      request; try again`. A `4xx` makes the machine reject the spooled card and return the
      refusal to `card.js` synchronously, so the lead sees it and can retry; a `5xx` would
      be re-spooled silently, which is why this is a `422`.
-  2. Response `declined`: call `retractCard` first, then `applySudoState`, so the card ends
-     `state: declined` and retracted. `applySudoState` must not queue its
-     `[card <id>] declined` message to the lead when the card is retracted (the lead
-     retracted it and needs no echo).
-  3. Response `running`, `ran`, `expired` or `failed`: apply it with `applySudoState` as
-     usual (which queues the normal terminal message), do not retract, and refuse with
-     `the sudo request is already <state>`. The command keeps whatever outcome it has.
+  2. Response `declined`: set `card.state = 'declined'` and call `retractCard`, directly on
+     the thread object inside the `acceptCard` transaction. **Do not call `applySudoState`,
+     `hub.save` or `hub.enqueue` here**: `acceptCard` runs inside `hub.updateThread`, which
+     holds the thread file's write queue (`viewer/app/state.js:54-60,122-131`), and any
+     `hub.save` awaited inside it queues behind the transaction awaiting it, a deadlock. The
+     transaction's own write persists the change. No message goes to the lead.
+  3. Response `running`, `ran`, `expired` or `failed`: refuse with `422`
+     `the sudo request is already <state>` and leave the card untouched in this
+     transaction. The machine already stored that state when it handled the cancel
+     (`machine/lib/sudo.js:66-84`); its poll delivers every unacknowledged state to
+     `/api/machine/sudo-outcome` on the next tick (`machine/lib/sudo.js:86-112`), which
+     applies it through `applySudoState` outside any transaction, with the normal lead
+     message for a terminal state.
+  4. When the machine later delivers the `declined` outcome for a retracted card,
+     `applySudoState` finds it not newer than the card's state (both rank 2) and changes
+     nothing and queues nothing; a test pins that.
   The helper itself is unchanged: its run page shows a cancelled request as "Declined" and
   hides the password form; the cancel is atomic with a run under the helper's own lock
   (`sudo-helper/helper.py:175-185,306-322`).
@@ -117,6 +126,11 @@ A `retract` branch, beside the `resolve` branch, under the same thread lock:
   pinned.
 - `approval` is not added to `SINGLETONS`: it is not limited to one per thread over time,
   and it unpins, which singletons never do.
+- **Retracted cards are never marked `replaced`.** When a new offer (singleton) or a new
+  approval is posted, `addCard` skips any earlier card with `retracted_at` when choosing what
+  to mark `replaced`, so a withdrawn card stays in the conversation history. (`chat.js:268`
+  drops `replaced` cards from the page payload, and `resolvable`/`retractable` treat a
+  `replaced` card as missing.)
 
 ### 5. The thread page (`viewer/pages/thread.js`, `thread.css`, `aside.js`)
 
@@ -128,6 +142,17 @@ A `retract` branch, beside the `resolve` branch, under the same thread lock:
   hidden when retracted.
 - Sudo: a retracted card shows no "Open to run" link, Decline or Talk buttons, and shows the
   Withdrawn tag instead of "Declined".
+- **Conversation vs pinned strip by pin membership, not kind.** Today the conversation
+  drops every card whose kind is in `PINNED_KINDS` (`viewer/pages/thread.js:290`), so a card
+  that leaves the pin would vanish. Change that filter to drop only cards whose id is a
+  current pin (`data.pinned` ids). A retracted offer or approval, and an approval whose
+  Start building was pressed, then appear in the conversation at their posted time, with
+  their dimmed state; idea and progress pins are unaffected because they never leave the
+  pin while current.
+- Render invalidation follows the same rule: the `chat` sync key
+  (`viewer/pages/thread.js:925`) uses the cards not currently pinned (by id) instead of the
+  `PINNED_KINDS` filter, and both the `chat` and `pinned` keys include `retracted_at`, so a
+  retraction or an unpin redraws both.
 - Pinned strip: `PINNED_KINDS` and `renderPinned`'s order include `approval` (order: offer,
   idea, approval, progress). `pinLabel` for approval: `Plan approved: needs you` while open.
   A card absent from `thread.pinned` is not shown in the strip.
@@ -178,8 +203,11 @@ with `resolve`).
   - approval pin: set on post, an open older approval marked `replaced`, removed on
     accepted Start building and on retraction, kept on Re-check and on a refused start;
   - sudo: waiting → cancel called, card retracted and `declined`, no lead message;
-    cancel returns `running` or `ran` → refused, state applied, normal lead message for a
-    terminal state; cancel throws → `422`, card unchanged, still waiting.
+    cancel returns `running` or `ran` → refused with the card unchanged by the retraction,
+    and the later sudo-outcome delivery applies the state with the normal lead message;
+    cancel throws → `422`, card unchanged, still waiting; a later `declined` outcome on a
+    retracted card queues nothing; and a sudo retraction returns (no deadlock: the test
+    awaits it under a timeout).
 - `npm --prefix viewer run test:browser` with browser cases in
   `viewer/test/app-threads.spec.js` / `app-sudo.spec.js`: a retracted question, offer,
   approval and sudo card show "Withdrawn · <note>", are dimmed and have no enabled
@@ -197,12 +225,16 @@ with `resolve`).
 
 ### Round 1 — 2026-11-17
 
-**Lanes:** pending; cross-family: pending.
+**Lanes:** gpt / intent; gpt / mechanics; cross-family: no (claude unavailable at start).
 
 **Changed since Round N-1:** n/a (first round — whole Spec in scope)
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent (gpt) | blocking | Unpinned retracted offers/approvals vanish: the page filters pinned kinds out of the conversation by kind, and a new offer marks the retracted one `replaced` | upheld (blocking): confirmed at `viewer/pages/thread.js:290`, `viewer/app/cards.js:22-25`, `viewer/app/chat.js:268` | §4 never marks retracted cards `replaced`; §5 filters the conversation by current pin id |
+| mechanics (gpt) | blocking | `applySudoState` inside the `acceptCard` transaction deadlocks: its `hub.save`/`enqueue` queues behind the transaction | upheld (blocking): `acceptCard` runs in `updateThread` (`viewer/app/cards.js:39`), whose queue `save` joins (`viewer/app/state.js:54-60,113-131`) | §2 sets the declined state in-transaction with no save/enqueue; non-declined states refuse and arrive through the machine's outcome poll |
+| mechanics (gpt) | blocking | Unpinned offers/approvals vanish from the conversation (kind filter); chat render key must follow | upheld (blocking): duplicate of the intent finding, plus `viewer/pages/thread.js:925` | Fixed with the intent finding; §5 now also names the sync keys |
+| mechanics (gpt) | blocking | A second offer marks the retracted first `replaced` | upheld (blocking): duplicate of the intent finding | Fixed with the intent finding (§4) |
 
 ## Prior Work
 
