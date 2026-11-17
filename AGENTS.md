@@ -46,7 +46,8 @@ The root sudo helper is the other reach outside the clone and the only part that
 
 1. Read the router for the directory you are touching.
 2. Grep for the phrase.
-3. Graphify last: routers are the spine; graphify is an opt-in supplement, overriding the graphify skill's graph-first default. Never answer “where does X live” or “what owns Y” from it; use routers. Use it only for what a router cannot do, such as cross-file blast radius, shortest paths between distant concepts or community structure. Confirm every result in source before acting.
+   No module-docstring rung: the routers' file/role tables already say what each file does.
+3. Graphify last: routers are the spine; graphify is an opt-in supplement, overriding the graphify skill's graph-first default. Never answer "where does X live" or "what owns Y" from it; use routers. Use it only for what a router cannot do, such as cross-file blast radius, shortest paths between distant concepts or community structure. Confirm every result in source before acting.
 
 ## Verification
 
@@ -66,8 +67,6 @@ npm --prefix viewer run test:browser  # Chromium and Firefox; fails loudly if ei
 ```
 
 Run `./install.sh` only from the canonical clone; it and its two writers refuse linked worktrees and paths under `~/.local/state/wheelchair/worktrees` (exit 3 unless `WHEELCHAIR_ALLOW_WORKTREE=1`). From a worktree use `bash install/test/run.sh` instead. Leave the `node --test viewer/test/*.test.js` glob unquoted.
-
-No module-docstring rung: the routers' file/role tables already say what each file does.
 
 **Never check the viewer by starting a server by hand.** Start your own isolated server with `--port` and `--cache-root` as in `viewer/test/helpers/server.js:72`. There is no cache-root environment variable.
 
