@@ -102,7 +102,7 @@ function compact(session) {
 
 function diffSize(operation, args) {
   if (operation !== 'size' || args.length < 2 || args.length > 3 || args[0].startsWith('-') || args[1].startsWith('-') || (args.length === 3 && args[2] !== '--tricky')) throw new Error('usage: wc.js diff size <feature-branch> <worker-branch> [--tricky]');
-  const git = (...argv) => execFileSync('git', argv, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const git = (...argv) => execFileSync('git', argv, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 256 * 1024 * 1024 });
   let top, numstat, names;
   const range = `${args[0]}...${args[1]}`;
   try {
