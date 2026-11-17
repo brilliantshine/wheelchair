@@ -969,7 +969,7 @@ test('default Claude start preserves complete command and settings', async () =>
     assert.deepEqual(session.command, ['claude', '--session-id', 'fixed', '--settings', settingsPath, '--permission-mode', 'auto', '--append-system-prompt', 'role']);
     const hook = `'${path.resolve(__dirname, '../hook.sh')}' claude 'wc-t-lead'`;
     const entry = [{ hooks: [{ type: 'command', command: hook }] }];
-    assert.deepEqual(JSON.parse(await fs.readFile(settingsPath, 'utf8')), { cleanupPeriodDays: 30, promptSuggestionEnabled: false, hooks: { Stop: entry, Notification: entry, StopFailure: entry }, statusLine: { type: 'command', command: `'${path.resolve(__dirname, '../statusline.sh')}' claude 'wc-t-lead'` } });
+    assert.deepEqual(JSON.parse(await fs.readFile(settingsPath, 'utf8')), { cleanupPeriodDays: 30, promptSuggestionEnabled: false, hooks: { Stop: entry, Notification: entry, StopFailure: entry, ...Object.fromEntries(['PreToolUse', 'PostToolUse', 'PostToolUseFailure'].map(name => [name, [{ matcher: '*', hooks: [{ type: 'command', command: hook, async: true }] }]])) }, statusLine: { type: 'command', command: `'${path.resolve(__dirname, '../statusline.sh')}' claude 'wc-t-lead'` } });
     const expected = ['env', 'WHEELCHAIR_LANE=1', 'WHEELCHAIR_SESSION_TOKEN=alpha', `WHEELCHAIR_STATE_DIR=${env.state}`, `WHEELCHAIR_MACHINE_ORIGIN=http://127.0.0.1:${env.instance.config.port}`, ...session.command].map(x => `'${x}'`).join(' ');
     assert.ok((await log(env)).includes(`tmux new-session -d -s wc-t-lead -x 200 -y 50 -c ${session.worktree} ${expected}`));
   } finally { await env.close(); }
@@ -1225,5 +1225,28 @@ test('idle usage timeout kills the child without blocking status', async () => {
     assert.equal((await pending).status, 502);
     const pid = Number(await fs.readFile(pidfile, 'utf8'));
     await new Promise(resolve => setTimeout(resolve, 50)); assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
+  } finally { await env.close(); }
+});
+test('step hooks reach the hub with session and thread unchanged', async () => {
+  const hub = await hubServer(); const env = await service(await temp(), { config: { hub_url: hub.url } });
+  try {
+    await start(env);
+    const step = { id: 'call', kind: 'files', label: 'Read a', key: 'files:Read .', started_at: '2026-01-01T00:00:00.000Z' };
+    await api(env, 'POST', '/v1/agent/hooks', { type: 'step', phase: 'start', step }, agentHeader('alpha'));
+    await env.instance.drainSpool('events');
+    const event = hub.calls.map(c => JSON.parse(c.body)).find(c => c.type === 'step');
+    assert.deepEqual(event.step, step); assert.equal(event.phase, 'start'); assert.equal(event.session, 'wc-t-lead'); assert.equal(event.thread_id, 't'); assert.ok(event.delivery_id);
+  } finally { await env.close(); await hub.close(); }
+});
+test('hook-post sends both status events individually to the service', async () => {
+  const env = await service(await temp());
+  try {
+    await start(env);
+    const child = spawn(process.execPath, [path.join(__dirname, '../lib/hook-post.js'), env.state, 'alpha', 'claude', 'wc-t-lead'], { stdio: ['pipe', 'ignore', 'ignore'] });
+    child.stdin.end(JSON.stringify({ rate_limits: { five_hour: { used_percentage: 12 } }, context_window: { used_percentage: 34 } }));
+    assert.equal(await new Promise(resolve => child.on('exit', resolve)), 0);
+    const files = await fs.readdir(path.join(env.state, 'spool/events'));
+    const events = await Promise.all(files.map(async f => JSON.parse(await fs.readFile(path.join(env.state, 'spool/events', f), 'utf8'))));
+    assert.ok(events.some(e => e.type === 'usage')); assert.ok(events.some(e => e.type === 'context' && e.context.percent === 34));
   } finally { await env.close(); }
 });
