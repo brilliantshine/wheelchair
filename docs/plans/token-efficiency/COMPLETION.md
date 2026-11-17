@@ -89,3 +89,19 @@ The failures are pre-existing and unrelated:
 - The two pre-existing failures above remain.
 
 ## Remediation rounds
+
+### Remediation 1 (verification attempt 1)
+
+Gap: the 12000-character check used 60-character placeholder model IDs while the models API accepted any length (a 250-character scout ID produced 12030 characters).
+
+Fix (R1, standard, gpt-6.1-terra): model IDs are at most 64 characters (`MODEL_MAX`, `viewer/app/settings.js:13`), enforced by `codex/model.sh:38` (`set`, `skip`, listed models) and the pins-line parser (`:80`, a longer ID reads as malformed), and by `viewer/app/routes.js:211`. assertFits uses 64-character placeholders (`settings.js:177`); `resolveScout` treats a longer resolved ID as unavailable (`sessions.js:39`). API.md:38 states the limit.
+
+Evidence on the merge:
+```text
+$ bash codex/test/run.sh | tail -1
+RESULT 104 passed, 0 failed
+$ node --test viewer/test/*.test.js
+not ok 340 - a starter that loses the freed port registers through the new holder
+# pass 472
+# fail 1
+```
