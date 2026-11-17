@@ -159,21 +159,101 @@
     go.disabled = false;
   });
 
+  // Attachments, as in the thread composer: picked, pasted or dropped, at most 25 MB each.
+  let attachments = [];
+  let sending = false;
+  const chips = $('attachments');
+  function renderAttachments() {
+    chips.textContent = '';
+    attachments.forEach((file, i) => {
+      const chip = el('span', 'attachment-chip');
+      if (/^image\/(png|jpeg|gif|webp)$/.test(file.type)) {
+        // A data: URL, since the page's content policy allows data: images and not blob: ones.
+        const img = el('img', 'attachment-thumb'); img.alt = ''; chip.appendChild(img);
+        const reader = new FileReader(); reader.onload = () => { img.src = reader.result; }; reader.readAsDataURL(file);
+      }
+      const size = file.size < 1024 ? file.size + ' B' : file.size < 1048576 ? (file.size / 1024).toFixed(1) + ' KB' : (file.size / 1048576).toFixed(1) + ' MB';
+      chip.appendChild(el('span', '', file.name + ' · ' + size));
+      const remove = el('button', 'attachment-remove', '×');
+      remove.type = 'button'; remove.disabled = sending;
+      remove.setAttribute('aria-label', 'Remove ' + file.name);
+      remove.addEventListener('click', () => { if (sending) return; attachments.splice(i, 1); renderAttachments(); });
+      chip.appendChild(remove); chips.appendChild(chip);
+    });
+  }
+  function addFiles(files, pasted) {
+    if (sending) return;
+    const errors = [];
+    for (let file of files) {
+      if (pasted && file.type.startsWith('image/') && (!file.name || /^image\.[a-z0-9]+$/i.test(file.name))) {
+        const d = new Date(); const pad = (n) => String(n).padStart(2, '0');
+        const stamp = d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '-' + pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds());
+        const ext = ({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp' })[file.type] || file.type.slice(6).replace(/[^a-z0-9]/gi, '') || 'bin';
+        file = new File([file], 'pasted-' + stamp + '.' + ext, { type: file.type });
+      }
+      if (file.size > 25 * 1024 * 1024) errors.push(file.name + ' is over 25 MB'); else attachments.push(file);
+    }
+    $('attachment-error').textContent = errors.join(' · '); renderAttachments();
+  }
+  const fileInput = $('attachment-input');
+  const messageEl = $('nt-message');
+  $('nt-attach').addEventListener('click', () => { if (!sending) fileInput.click(); });
+  fileInput.addEventListener('change', () => { addFiles(fileInput.files, false); fileInput.value = ''; });
+  messageEl.addEventListener('paste', (ev) => { if (ev.clipboardData && ev.clipboardData.files.length) { ev.preventDefault(); addFiles(ev.clipboardData.files, true); } });
+  messageEl.addEventListener('dragover', (ev) => { if (ev.dataTransfer.types.includes('Files')) ev.preventDefault(); });
+  messageEl.addEventListener('drop', (ev) => { if (ev.dataTransfer.files.length) { ev.preventDefault(); addFiles(ev.dataTransfer.files, false); } });
+
+  // Uploads need the thread's id, so with attachments the thread starts first (named from the
+  // message), the files go up, and the message carrying their paths follows.
+  async function sendFirst(id, message, files) {
+    const T = API + '/threads/' + encodeURIComponent(id);
+    const paths = [];
+    for (const file of files) {
+      const res = await fetch(T + '/uploads?name=' + encodeURIComponent(file.name), { method: 'POST', headers: { 'content-type': file.type || 'application/octet-stream' }, body: file });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error('could not upload ' + file.name + ': ' + (out.detail || out.error || 'http ' + res.status));
+      paths.push(out.path);
+    }
+    const text = [message, paths.map((path) => '[attached: ' + path + ']').join('\n')].filter(Boolean).join('\n\n');
+    await call('/threads/' + encodeURIComponent(id) + '/messages', json('POST', { text }));
+  }
+
+  function setSending(on) {
+    sending = on;
+    $('nt-attach').disabled = on;
+    renderAttachments();
+  }
+
   $('new-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
-    if (goEl.disabled) return;
+    if (goEl.disabled || sending) return;
     if (!state || state.machine !== machineEl.value) return;
     const body = { project: projectEl.value, machine: state.machine };
-    const message = $('nt-message').value.trim();
-    if (message) body.message = message;
-    goEl.disabled = true;
+    const message = messageEl.value.trim();
+    const files = attachments.slice();
+    if (message && !files.length) body.message = message;
+    if (message && files.length) body.title = message;
+    goEl.disabled = true; setSending(true);
+    let data;
     try {
-      const data = await call('/threads', json('POST', body));
-      location.href = '/wheelchair/app/thread?id=' + encodeURIComponent(data.id);
+      data = await call('/threads', json('POST', body));
     } catch (e) {
       show($('form-error'), 'Could not start the thread: ' + e.message);
-      goEl.disabled = false;
+      goEl.disabled = false; setSending(false);
+      return;
     }
+    const where = '/wheelchair/app/thread?id=' + encodeURIComponent(data.id);
+    if (files.length) {
+      try { await sendFirst(data.id, message, files); } catch (e) {
+        // The thread exists, so Start stays off: pressing it again would start a second one.
+        const banner = $('form-error');
+        banner.textContent = 'The thread started, but the first message was not sent (' + e.message + '). ';
+        const link = el('a', '', 'Open the thread'); link.href = where;
+        banner.appendChild(link); banner.hidden = false;
+        return;
+      }
+    }
+    location.href = where;
   });
 
   load('');
