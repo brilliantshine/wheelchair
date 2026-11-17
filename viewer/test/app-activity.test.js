@@ -66,3 +66,28 @@ test('late starts and pending ends expire, with bounded running steps', async ()
   f.s.live = false; f.s.ended_at = f.stamp(10000);
   await f.begin('after', 11000); assert.equal(f.s.steps.find(s => s.id === 'after').clean, false);
 });
+
+test('thinking gaps and current choose the latest running step, then the previous one', async () => {
+  const f = await fixture();
+  await f.begin('quick', 4000); await f.end('quick', 4500);
+  assert.equal(f.s.step_counts.thinking, 0);
+  await f.begin('one', 9500, 'files'); await f.begin('two', 9600, 'web');
+  assert.equal(f.s.step_counts.thinking, 1);
+  assert.equal(buildAgents([f.thread])[0].session.activity.current.id, 'two');
+  await f.end('two', 9700);
+  assert.equal(buildAgents([f.thread])[0].session.activity.current.id, 'one');
+  await f.end('one', 9800);
+  const current = buildAgents([f.thread])[0].session.activity.current;
+  assert.equal(current.kind, 'thinking'); assert.equal(current.since, f.stamp(9800));
+  f.s.live = false;
+  assert.equal(buildAgents([f.thread])[0].session.activity.current, null);
+});
+
+test('pending ends are bounded and old history is excluded from normal', async () => {
+  const f = await fixture();
+  for (let i = 0; i < 51; i++) await f.end(`unknown${i}`);
+  assert.equal(Object.keys(f.s.pending_ends).length, 50);
+  const old = new Date(Date.now() - 31 * 86400_000).toISOString();
+  await history.append(f.stateDir, f.thread.project, { kind: 'shell', key: 'old', started_at: old, ended_at: old });
+  assert.equal(await history.normal(f.stateDir, f.thread.project, 'old'), null);
+});
