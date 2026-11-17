@@ -35,6 +35,7 @@ const roles = {
   sudo: ['lead'],
   title: ['lead'],
   resolve: ['lead'],
+  retract: ['lead'],
   message: ['lead', 'sub-lead', 'worker', 'mapper'],
   result: ['worker', 'mapper', 'sub-lead'],
 };
@@ -129,6 +130,7 @@ const fields = {
   sudo: sudoFields,
   title: { title: text },
   resolve: { card: text, note: text },
+  retract: { card: text, note: (value) => text(value) && !/[\r\n]/.test(value) },
   message: { to: text, text },
   result: {
     task: text,
@@ -202,6 +204,17 @@ function resolvable(thread, cardId, mode) {
   return { ok: true, card: target };
 }
 
+function retractable(thread, cardId) {
+  const target = (thread.cards || []).find((item) => item.id === cardId && !item.replaced);
+  if (!target) return { ok: false, reason: 'no such card in this thread' };
+  if (!['question', 'offer', 'approval', 'needs', 'sudo'].includes(target.kind)) {
+    return { ok: false, reason: 'only a question, offer, approval, needs or sudo card can be retracted' };
+  }
+  if (target.kind === 'needs' && target.system) return { ok: false, reason: 'a system needs card closes itself' };
+  if (target.kind !== 'sudo' && target.answered) return { ok: false, reason: 'card is already answered' };
+  return { ok: true, card: target };
+}
+
 function post(urlText, token, body) {
   return new Promise((resolve, reject) => {
     const url = new URL(urlText);
@@ -257,4 +270,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { fields, resolvable, roles, shown, truncateTitle, validate };
+module.exports = { fields, resolvable, retractable, roles, shown, truncateTitle, validate };

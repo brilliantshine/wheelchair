@@ -607,6 +607,48 @@ for (const [label, size] of SIZES) {
         'href', `/wheelchair/app/doc?thread=${made.id}&file=IDEA.md`);
     });
 
+    test('withdrawn cards leave pins and show disabled controls in the conversation', async ({ page }) => {
+      const made = await ctx.make({ cli: 'claude' });
+      const q = await ctx.post(made.id, QUESTION);
+      const offer = await ctx.post(made.id, { kind: 'offer', summary: 'A feature.' });
+      const approval = await ctx.post(made.id, { kind: 'approval', ready: { ok: false, missing: ['x'] },
+        objections: [{ id: 'o', finding: 'A concern', severity: 'major', reason: 'Discussed' }] });
+      await ctx.patch(made.id, (x) => { x.pinned.approval = x.cards.find((c) => c.id === approval.id); });
+      await open(page, made.id);
+      await expect(page.locator(`#pinned #card-${approval.id}`)).toBeVisible();
+      await page.locator('#pinned .pin-toggle').click();
+      await expect(page.locator('#pinned .pin-bar')).toContainText('Plan approved: needs you');
+      await page.locator('#pinned .pin-toggle').click();
+      await ctx.patch(made.id, (x) => {
+        for (const id of [q.id, offer.id, approval.id]) {
+          const c = x.cards.find((card) => card.id === id);
+          Object.assign(c, { answered: true, retracted_at: new Date().toISOString(), retracted_by: 'lead', retracted_note: 'No longer needed' });
+        }
+        delete x.pinned.offer; delete x.pinned.approval;
+      });
+      for (const id of [q.id, offer.id, approval.id]) {
+        const card = page.locator(`#chat #card-${id}`);
+        await expect(card.locator('.answered-tag')).toContainText('Withdrawn · No longer needed');
+        expect(await card.evaluate((n) => Number(getComputedStyle(n).opacity))).toBe(0.6);
+        await expect(card.locator('button:enabled, textarea:enabled')).toHaveCount(0);
+      }
+      await expect(page.locator(`#pinned #card-${approval.id}`)).toHaveCount(0);
+    });
+
+    test('a withdrawn approval that was ready has Start building disabled', async ({ page }) => {
+      const made = await ctx.make({ cli: 'claude' });
+      const approval = await ctx.post(made.id, { kind: 'approval', ready: { ok: true, missing: [] }, objections: [] });
+      await ctx.patch(made.id, (x) => {
+        const c = x.cards.find((card) => card.id === approval.id);
+        Object.assign(c, { answered: true, retracted_at: new Date().toISOString(), retracted_by: 'lead', retracted_note: 'Talking first' });
+        delete x.pinned.approval;
+      });
+      await open(page, made.id);
+      const card = page.locator(`#chat #card-${approval.id}`);
+      await expect(card.locator('.answered-tag')).toContainText('Withdrawn · Talking first');
+      await expect(card.locator('#start-building')).toBeDisabled();
+    });
+
     test('S4: pressing an option says what was picked and marks it', async ({ page }) => {
       const made = await ctx.make({ cli: 'claude' });
       const q = await ctx.post(made.id, QUESTION);

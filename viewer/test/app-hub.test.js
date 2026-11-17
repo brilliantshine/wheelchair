@@ -2019,3 +2019,83 @@ test('send now waits out a permission prompt', async () => {
     assert.deepEqual(context.machine.sessions.get(lead.name).submits, ['Start.']);
   });
 });
+
+test('retract validates targets, removes pins and refuses stale presses', async () => {
+  const { retractable } = require('../app/card.js');
+  assert.equal(validate('retract', { card: 'x', note: 'one\ntwo' }, 'lead').ok, false);
+  assert.equal(validate('retract', { card: 'x', note: 'No longer needed' }, 'worker').ok, false);
+  const targets = { cards: [{ id: 'x', kind: 'idea' }, { id: 's', kind: 'needs', system: true }, { id: 'a', kind: 'question', answered: true }, { id: 'r', kind: 'offer', replaced: true }] };
+  for (const [id, reason] of [['x', 'only a question, offer, approval, needs or sudo card can be retracted'], ['s', 'a system needs card closes itself'], ['a', 'card is already answered'], ['r', 'no such card in this thread']]) assert.equal(retractable(targets, id).reason, reason);
+  await withContext(async (context) => {
+    const made = await thread(context); const other = await thread(context); const lead = made.sessions[0].name;
+    const foreign = await openNeed(context, other);
+    assert.equal((await card(context, made.id, lead, { kind: 'retract', card: foreign, note: 'No' })).status, 422);
+    const values = [
+      { kind: 'offer', summary: 'Offer' },
+      { kind: 'question', fits: 'Fits', question: 'Question?', options: [{ id: 'a', label: 'A', consequence: 'A' }, { id: 'b', label: 'B', consequence: 'B' }], leaning: 'a', why: 'Why' },
+      { kind: 'approval', objections: [], ready: { ok: true, missing: [] } },
+      { kind: 'needs', title: 'Need', body: 'Body' },
+    ];
+    for (const value of values) {
+      const posted = await card(context, made.id, lead, value); assert.equal(posted.status, 202);
+      const result = await card(context, made.id, lead, { kind: 'retract', card: posted.body.id, note: 'No longer needed' }); assert.equal(result.status, 202);
+      const chat = (await api(context, `/threads/${made.id}/chat`)).body;
+      const closed = chat.cards.find((item) => item.id === posted.body.id);
+      assert.equal(closed.answered, true); assert.equal(closed.retracted_by, lead); assert.equal(closed.retracted_note, 'No longer needed'); assert.ok(!Number.isNaN(Date.parse(closed.retracted_at)));
+      assert.equal(chat.cards.some((item) => item.kind === 'retract'), false); assert.equal(chat.pinned.some((item) => item.id === closed.id), false);
+      assert.equal((await needsStrip(context)).some((item) => item.card_id === closed.id), false);
+      for (const action of ['picked', 'answered', 'keep-going', 'talk', 'recheck', 'start-building']) {
+        const response = await api(context, `/threads/${made.id}/cards/${closed.id}/press`, { method: 'POST', body: { action, value: 'A' } });
+        assert.equal(response.status, 422); assert.equal(response.body.detail, 'this card was withdrawn');
+      }
+    }
+    assert.equal((await card(context, made.id, lead, { kind: 'offer', summary: 'Again' })).status, 202);
+    assert.equal((await card(context, made.id, lead, { kind: 'offer', summary: 'Third' })).status, 422);
+    assert.equal(context.machine.sessions.get(lead).submits, undefined);
+  });
+});
+
+test('approval replacement skips Needs and pins persist until accepted start or retraction', async () => {
+  await withContext(async (context) => {
+    context.machine.status.version = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+    const made = await thread(context); const lead = made.sessions[0].name;
+    const post = () => card(context, made.id, lead, { kind: 'approval', objections: [], ready: { ok: true, missing: [] } });
+    const first = (await post()).body; const second = (await post()).body;
+    let state = await (new Hub({ stateDir: context.state })).thread(made.id);
+    assert.equal(state.cards.find((item) => item.id === first.id).replaced, true); assert.equal(state.pinned.approval.id, second.id);
+    assert.equal((await needsStrip(context)).some((item) => item.card_id === first.id), false);
+    const press = (action) => api(context, `/threads/${made.id}/cards/${second.id}/press`, { method: 'POST', body: { action, value: 'Concern' } });
+    await press('talk'); await press('recheck');
+    state = await (new Hub({ stateDir: context.state })).thread(made.id); assert.equal(state.pinned.approval.id, second.id);
+    context.machine.status.codex.logged_in = false; await press('start-building');
+    state = await (new Hub({ stateDir: context.state })).thread(made.id); assert.equal(state.pinned.approval.id, second.id);
+    context.machine.status.codex.logged_in = true; await press('recheck'); await press('start-building');
+    state = await (new Hub({ stateDir: context.state })).thread(made.id); assert.equal(state.pinned.approval, undefined);
+    assert.equal((await needsStrip(context)).some((item) => item.card_id === first.id), false);
+    const third = (await post()).body;
+    await card(context, made.id, lead, { kind: 'retract', card: third.id, note: 'Discussing' });
+    const fourth = (await post()).body;
+    state = await (new Hub({ stateDir: context.state })).thread(made.id);
+    assert.equal(state.cards.find((item) => item.id === third.id).replaced, undefined); assert.equal(state.pinned.approval.id, fourth.id);
+  });
+});
+
+test('a non-lead cannot retract, and a retracted offer stays in the conversation after a new offer', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context); const lead = made.sessions[0];
+    const offer = (await card(context, made.id, lead.name, { kind: 'offer', summary: 'First' })).body;
+    const sublead = await startSublead(context, made, lead);
+    const refused = await card(context, made.id, sublead.name, { kind: 'retract', card: offer.id, note: 'No' });
+    assert.equal(refused.status, 422);
+    let chat = (await api(context, `/threads/${made.id}/chat`)).body;
+    assert.equal(chat.cards.find((item) => item.id === offer.id).retracted_at, undefined);
+    assert.equal((await card(context, made.id, lead.name, { kind: 'retract', card: offer.id, note: 'Talking first' })).status, 202);
+    const second = (await card(context, made.id, lead.name, { kind: 'offer', summary: 'Second' })).body;
+    chat = (await api(context, `/threads/${made.id}/chat`)).body;
+    const first = chat.cards.find((item) => item.id === offer.id);
+    assert.ok(first, 'the retracted offer is still in the payload');
+    assert.equal(first.replaced, undefined);
+    assert.equal(first.retracted_note, 'Talking first');
+    assert.equal(chat.pinned.find((item) => item.kind === 'offer').id, second.id);
+  });
+});

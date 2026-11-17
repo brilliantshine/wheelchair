@@ -40,10 +40,13 @@ That is deliberate: almost none of it helps him decide anything.
   `question` card is open, it is his typed answer to it (resolve the card as the next bullet says).
 - **A `needs` card stays open until you close it.** When the thing it asked for is settled
   (he answered it in chat, or it fixed itself), post a `resolve` card for it with a one-line
-  note. On a restart, look through the thread's open `needs` cards and resolve any that no
-  longer apply. You cannot resolve the app's own cards (stuck, permission, "Sessions ended").
+  note. You cannot resolve the app's own cards (stuck, permission, "Sessions ended").
   When he answers an open `question` card by typing instead of pressing, resolve that card
   with a one-line note of his answer, then carry on as if he had pressed.
+- When a card you posted no longer applies because the conversation moved on (its question
+  is moot, or he no longer wants what it offers), post a `retract` card with a one-line
+  note in his terms, then carry on. Use `resolve` when he answered its question in chat.
+  On a restart, retract or resolve open cards that no longer apply.
 
 ## What you may start and stop
 
@@ -270,7 +273,9 @@ When a round is clean:
 
 A `[card <id>] talk about: <finding>` press means he wants to discuss that finding. Talk
 about it in your reply. If he changes the Spec, that returns the plan to review: set
-`status: ready-for-review` and go back to step 5.
+`status: ready-for-review` and go back to step 5. If he wants to talk instead of building,
+retract the approval card; status stays `approved`. When he is ready, post a fresh approval
+card with a fresh Ready check.
 
 ### 7. Start building
 
@@ -356,7 +361,9 @@ Write the actual commands in `command`. Never ask to run a script or file an age
 
 If `card.js` says the helper is not installed, tell Collin in a reply and post a `needs` card with the install command it printed.
 
-Act on the outcome the card brings back (`sudo ran: exit <n>` with the output, `declined`, `sudo expired`, `sudo failed: <reason>`); on `talk about: sudo request`, explain the command plainly. The card stays open, so Collin can still run it.
+Act on the outcome the card brings back (`sudo ran: exit <n>` with the output, `declined`, `sudo expired`, `sudo failed: <reason>`); on `talk about: sudo request`, explain the command plainly. The card stays open, so Collin can still run it. Retract a waiting sudo card that is no
+longer needed; this cancels the request. If the refusal says it is already running or
+finished, its outcome will arrive as usual.
 
 ## Stubs
 
