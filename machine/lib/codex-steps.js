@@ -37,13 +37,17 @@ function scriptInfo(source, ctx) {
 }
 function outputInfo(output) {
   const parts = Array.isArray(output) ? output.map(x => x.text || '') : [typeof output === 'string' ? output : JSON.stringify(output || '')];
-  const text = parts.join('\n');
+  const first = parts[0] || '';
+  const runningHeader = first.startsWith('Script running with cell ID');
+  const failedHeader = first.startsWith('Script failed') || first.startsWith('Script error');
+  const finishedHeader = first.startsWith('Script completed') || failedHeader;
   const results = [];
   for (const part of parts) { try { const value = JSON.parse(part); if (value && typeof value === 'object') results.push(value); } catch {} }
   const exit = results.filter(x => typeof x.exit_code === 'number');
-  const running = /Script running with cell ID/.test(text) || results.some(x => x.session_id != null && x.exit_code == null);
-  const failed = exit.some(x => x.exit_code !== 0) || /(?:^|\n)(?:Script error|Error:|Error executing tool|Tool error)/i.test(text) || results.some(x => x.isError === true || x.error != null);
-  return { running, failed, pollFinish: !running && (exit.length > 0 || /Script completed|Script error|Error:/i.test(text)) };
+  const running = runningHeader || results.some(x => x.session_id != null && x.exit_code == null);
+  const failed = failedHeader || exit.some(x => x.exit_code !== 0) || results.some(x => x.isError === true);
+  const plainOutput = typeof output === 'string' && !finishedHeader && !runningHeader && results.length === 0;
+  return { running, failed, pollFinish: !running && (exit.length > 0 || finishedHeader || plainOutput) };
 }
 function readLines(state, lines, ctx = {}) {
   state.open ||= {}; state.yielded ||= null;

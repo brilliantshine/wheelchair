@@ -36,3 +36,20 @@ test('script targets, polls, state round trip and failure', () => {
   events=readLines({},[call('b','exec','tools.view_image({path:"/tmp/a.png"}); tools.exec_command({cmd:"true"});')]);
   assert.equal(events[0].step.label,'Read a.png and more'); assert.equal(events[0].step.kind,'files');
 });
+test('script headers control completion and failure, not error words in the body', () => {
+  let events = readLines({}, [call('failed','exec_command',{cmd:'false'}), output('failed','Script failed\ncommand exited')]);
+  assert.equal(events[1].step.failed, true);
+  const state = { yielded: 'original', open: {} };
+  events = readLines(state, [call('poll','wait',{}), output('poll','Script failed\ncommand exited')]);
+  assert.deepEqual(events.map(e => [e.step.clean, e.step.failed]), [[true, true]]);
+  events = readLines({}, [call('ok','exec_command',{cmd:'test'}), output('ok','Script completed\nError: something')]);
+  assert.equal(events[1].step.failed, false);
+  const yielded = { yielded: 'still-running', open: {} };
+  events = readLines(yielded, [call('poll2','wait',{}), output('poll2','Script running with cell ID 4\nError: still working')]);
+  assert.equal(events.length, 0); assert.equal(yielded.yielded, 'still-running');
+  events = readLines({}, [call('plain','wait',{}), output('plain','Wall time: 35.0 seconds\nSleep completed.')]);
+  assert.equal(events.length, 0);
+  const plainPoll = { yielded: 'plain-original', open: {} };
+  events = readLines(plainPoll, [call('plain-poll','wait',{}), output('plain-poll','Wall time: 35.0 seconds\nSleep completed.')]);
+  assert.deepEqual([events[0].step.clean, events[0].step.failed], [true, false]);
+});

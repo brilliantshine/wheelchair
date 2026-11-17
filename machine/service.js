@@ -562,17 +562,34 @@ class MachineService {
       const file = session.source_transcript || await adapters.codex.findTranscript(session, session.account_dir);
       if (!file) return;
       session.source_transcript = file;
-      const data = await fsp.readFile(file).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
-      if (!data) return;
-      const start = Math.min(session.steps_offset || 0, data.length);
-      const end = data.lastIndexOf(10);
-      if (end < start) return;
-      const complete = data.subarray(start, end + 1);
-      const state = JSON.parse(JSON.stringify(session.steps_state || {}));
-      const events = readCodexSteps(state, complete.toString('utf8').split('\n'), { cwd: session.worktree });
-      for (const event of events) await this.emitEvent({ ...event, session: session.name, thread_id: session.thread_id, prepared: true });
-      session.steps_offset = end + 1; session.steps_state = state;
-      await this.persistSessions();
+      let handle;
+      try {
+        handle = await fsp.open(file, 'r');
+      } catch (error) { if (error.code === 'ENOENT') return; throw error; }
+      try {
+        const size = (await handle.stat()).size;
+        let start = session.steps_offset || 0;
+        if (size < start) { start = 0; session.steps_offset = 0; session.steps_state = {}; }
+        if (size <= start) return;
+        const length = Math.min(size - start, 8 * 1024 * 1024);
+        const data = Buffer.alloc(length);
+        const { bytesRead } = await handle.read(data, 0, length, start);
+        if (!bytesRead) return;
+        const end = data.subarray(0, bytesRead).lastIndexOf(10);
+        const state = JSON.parse(JSON.stringify(session.steps_state || {}));
+        if (end < 0) {
+          if (bytesRead === 8 * 1024 * 1024) {
+            session.steps_offset = start + bytesRead;
+            await this.persistSessions();
+          }
+          return;
+        }
+        const complete = data.subarray(0, end + 1);
+        const events = readCodexSteps(state, complete.toString('utf8').split('\n'), { cwd: session.worktree });
+        for (const event of events) await this.emitEvent({ ...event, session: session.name, thread_id: session.thread_id, prepared: true });
+        session.steps_offset = start + end + 1; session.steps_state = state;
+        await this.persistSessions();
+      } finally { await handle.close(); }
     });
     this.stepReads.set(session.name, reading);
     try { await reading; } finally { if (this.stepReads.get(session.name) === reading) this.stepReads.delete(session.name); }
