@@ -115,3 +115,30 @@ Screenshots (test-helper data, outside the repo) are in the sub-lead's scratch f
 ## Remediation rounds
 
 Appended by Stage 4 loops; never erase earlier content.
+
+### Remediation 1 — 2026-11-17
+
+Verification attempt 1 (verifier gpt-6.1-sol, commit 589d66d) failed with two gaps (REMEDIATION-1.md, verbatim there).
+
+| Gap | Fix (file:line) | Validated by |
+|-----|-----------------|--------------|
+| §4 wide desktop trees clipped past the unreachable left edge | `viewer/pages/views.css:132-133` (`.agents-tree` flex, top branch `margin: 0 auto; flex-shrink: 0`), `:146` (`.agents-children` `justify-content: safe center`) | `viewer/test/app-views.spec.js` 'wide agent trees scroll from the left while narrow trees stay centred' |
+| §5 phone: tree stayed above the selected agent's details | `viewer/pages/views.css:170` (show rule `.has-lead:not(.has-agent) .agents-main`) | `viewer/test/app-views.spec.js` 'phone agent selection shows only details and returns to the tree' |
+
+Lane: R1, light / gpt-6-luna. The worker's desktop test measured before the first render; the sub-lead added waits for the boxes before measuring (two lines). Both new tests fail against the pre-fix CSS (`895f77c`): 4 failed (2 tests, Chromium and Firefox), checked by the sub-lead, and pass with it.
+
+```text
+$ cd viewer && npx playwright test test/app-views.spec.js --reporter=line   (twice)
+  6 skipped
+  38 passed (56.1s)
+
+$ npm --prefix viewer run test:browser
+  6 skipped
+  666 passed (3.1m)
+
+$ node --test viewer/test/*.test.js
+not ok 357 - a starter that loses the freed port registers through the new holder   (known, docs/known-issues.md)
+# tests 490
+# pass 489
+# fail 1
+```

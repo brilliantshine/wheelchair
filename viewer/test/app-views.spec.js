@@ -64,6 +64,7 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       await openPage(page, context, '/app/agents?lead=a');
       const tree = page.locator('.agents-tree');
       await expect(tree.locator('.agents-box')).toHaveCount(6);
+      await expect(page.locator('.agents-tree .agents-children > .agents-branch .agents-box').first()).toBeVisible();
       const wide = await page.evaluate(() => {
         const tree = document.querySelector('.agents-tree');
         const first = tree.querySelector('.agents-children > .agents-branch .agents-box').getBoundingClientRect();
@@ -78,6 +79,8 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
 
       await page.route('**/api/agents', route => route.fulfill({ json: { leads: [{ thread_id: 'a', thread_title: 'A thread', lead_name: 'Alpha', project: 'project-a', stage: 'building', counts: { total: 3 }, session: makeLead(2), asides: [] }], machines: [] } }));
       await page.reload();
+      await expect(page.locator('.agents-tree .agents-box')).toHaveCount(3);
+      await expect(page.locator('.agents-tree > .agents-branch > .agents-box')).toBeVisible();
       const centered = await page.evaluate(() => {
         const tree = document.querySelector('.agents-tree').getBoundingClientRect();
         const lead = document.querySelector('.agents-tree > .agents-branch > .agents-box').getBoundingClientRect();
