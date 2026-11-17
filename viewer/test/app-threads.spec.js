@@ -635,6 +635,20 @@ for (const [label, size] of SIZES) {
       await expect(page.locator(`#pinned #card-${approval.id}`)).toHaveCount(0);
     });
 
+    test('a withdrawn approval that was ready has Start building disabled', async ({ page }) => {
+      const made = await ctx.make({ cli: 'claude' });
+      const approval = await ctx.post(made.id, { kind: 'approval', ready: { ok: true, missing: [] }, objections: [] });
+      await ctx.patch(made.id, (x) => {
+        const c = x.cards.find((card) => card.id === approval.id);
+        Object.assign(c, { answered: true, retracted_at: new Date().toISOString(), retracted_by: 'lead', retracted_note: 'Talking first' });
+        delete x.pinned.approval;
+      });
+      await open(page, made.id);
+      const card = page.locator(`#chat #card-${approval.id}`);
+      await expect(card.locator('.answered-tag')).toContainText('Withdrawn · Talking first');
+      await expect(card.locator('#start-building')).toBeDisabled();
+    });
+
     test('S4: pressing an option says what was picked and marks it', async ({ page }) => {
       const made = await ctx.make({ cli: 'claude' });
       const q = await ctx.post(made.id, QUESTION);
