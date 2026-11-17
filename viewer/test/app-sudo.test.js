@@ -361,3 +361,31 @@ test('the chat bubble for a sudo result keeps only its first line', () => {
   assert.equal(cardBubble('[card c1] sudo ran: exit 0\nlots\nof output'), 'sudo ran: exit 0');
   assert.equal(cardBubble('[card c1] declined'), 'declined');
 });
+
+test('retracting a waiting sudo cancels without deadlock or a lead message', async () => {
+  await withContext(async (context) => {
+    const { made, id } = await sudoThread(context);
+    const result = await Promise.race([post(context, made, { kind: 'retract', card: id, note: 'No longer needed' }), new Promise((_, reject) => setTimeout(() => reject(new Error('retraction timed out')), 3000))]);
+    assert.equal(result.status, 202); assert.equal(context.cancels.length, 1);
+    const closed = await stored(context, made); assert.equal(closed.state, 'declined'); assert.equal(closed.answered, true); assert.equal(closed.retracted_by, made.sessions[0].name); assert.equal(closed.retracted_note, 'No longer needed'); assert.ok(closed.retracted_at);
+    for (const action of ['decline', 'talk']) { const response = await press(context, made, id, { action }); assert.equal(response.status, 422); assert.equal(response.body.detail, 'this card was withdrawn'); }
+    assert.equal((await outcome(context, { state: 'declined' })).body.changed, false); assert.deepEqual(await heard(context, made), []);
+    assert.equal((await post(context, made, { kind: 'retract', card: id, note: 'Again' })).body.detail, 'the sudo request is already declined');
+  });
+});
+
+test('sudo retraction refusal preserves the card and later outcomes are delivered', async () => {
+  for (const status of [{ state: 'running' }, { state: 'ran', exit_code: 0, output: 'done' }, null, { state: 'bogus' }]) {
+    await withContext(async (context) => {
+      const { made, id } = await sudoThread(context);
+      context.front.answer = () => status ? { status: 200, body: status } : { status: 503, body: {} };
+      const result = await post(context, made, { kind: 'retract', card: id, note: 'No longer needed' });
+      assert.equal(result.status, 422); assert.match(result.body.detail, status && status.state !== 'bogus' ? new RegExp(`already ${status.state}`) : /couldn't reach/);
+      const before = await stored(context, made); assert.equal(before.state, 'waiting'); assert.equal(before.answered, false); assert.equal(before.retracted_at, undefined);
+      if (status && ['running', 'ran'].includes(status.state)) {
+        await outcome(context, status); assert.equal((await stored(context, made)).state, status.state);
+        if (status.state === 'ran') assert.match((await heard(context, made))[0], /sudo ran: exit 0/);
+      }
+    });
+  }
+});
