@@ -63,8 +63,10 @@ async function recordSlug(hub, snapshot, slug) {
 }
 
 // A thread's worktree is a full checkout, so docs/plans/ already holds every earlier plan. The
-// thread's own plan is the one directory under docs/plans/ that this branch added or that is
-// still untracked there (Spec "Branches and checkouts": the plan is written on the thread's branch).
+// thread's own plan is the one directory under docs/plans/ that this branch created: files added
+// since the merge base, or new files in the worktree, under a directory the merge base does not
+// have (Spec "Branches and checkouts": the plan is written on the thread's branch). Editing or
+// adding a file in an earlier plan's directory never claims that plan.
 async function newPlanDirectories(worktree, defaultBranch = 'main') {
   const names = new Set();
   const take = (output) => {
@@ -83,7 +85,12 @@ async function newPlanDirectories(worktree, defaultBranch = 'main') {
   }
   await execFileAsync('git', ['-C', worktree, 'status', '--porcelain', '--untracked-files=all', '--', 'docs/plans'])
     .then((result) => take(result.stdout)).catch(() => {});
-  return [...names];
+  if (!base || !names.size) return [...names];
+  const existing = await execFileAsync('git', ['-C', worktree, 'ls-tree', '--name-only', base, 'docs/plans/'])
+    .then((result) => new Set(result.stdout.split('\n').map((line) => line.trim().split('/').pop()).filter(Boolean)))
+    .catch(() => null);
+  if (!existing) return [];
+  return [...names].filter((name) => !existing.has(name));
 }
 
 async function findSlug(hub, thread) {
