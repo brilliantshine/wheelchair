@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - 'wc/**' # temporary: iteration before PR
 permissions:
   contents: read
 jobs:

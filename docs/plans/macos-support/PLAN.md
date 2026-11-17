@@ -1,6 +1,6 @@
 ---
 slug: macos-support
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-16
 ---
 
@@ -212,3 +212,4 @@ On the Mac job: green on the pull request, including `test-support/macos/check.s
 - 2026-11-16 — Choice: T1, install/test/run.sh: each case name is a variable holding its index into indexed arrays (`printf -v`), replacing `declare -A`.
 - 2026-11-16 — Choice: T1, install/test/run.sh: tree hashing and file modes are checked in Python rather than `find -print0 | sort -z` and `stat -c`; the account-tmp skip is a little broader than the old regex.
 - 2026-11-16 — Choice: T1, install.sh: `WHEELCHAIR_TAILSCALE_APP` test seam for the Mac app CLI path, documented beside the other seams.
+- 2026-11-16 — Mac job run 44001663012 (b57c3e0) green: all four suites under bash 3.2, real launchd install, check.sh steps 1-7. Temporary `wc/**` trigger removed. COMPLETION.md written; status verifying.
