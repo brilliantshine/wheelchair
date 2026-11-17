@@ -185,7 +185,7 @@ Tests to add:
 
 ### Round 2 — 2026-11-16
 
-**Lanes:** pending.
+**Lanes:** intent — gpt; mechanics — gpt (Claude unavailable at start); cross-family: no.
 
 **Changed since Round 1:**
 - D9: the Claude probe runs with `ANTHROPIC_BASE_URL` at a closed local port; Codex probe sends no turn request; tests assert both.
