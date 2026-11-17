@@ -150,7 +150,7 @@ are accepted; invalid keys, values, and non-object inputs receive 400.
 
 `GET /wheelchair/api/agents` returns `{leads, machines}` for unarchived threads. Each lead has `thread_id`, `thread_title`, `lead_name`, `machine`, `session`, and `children`; agent sessions omit tokens and include `children` and `waiting_on` session names. Ended ancestors remain when they have live descendants. Machines carry `machine`, `reachable`, `last_seen`, and `hub`.
 
-Threads include `lead_name`, retained until and after archive; archived threads release the name for reuse. Settings `lead_names` is an array of up to 200 unique case-insensitive names, trimmed to 1–40 characters, with blank entries discarded; an empty list uses Greek letters. New session records include the resolved `model` and `effort` (which may be null). Older sessions may omit them.
+Threads include `lead_name`, retained until and after archive; archived threads release the name for reuse. Settings `lead_names` is an array of up to 200 unique case-insensitive names, trimmed to 1–40 characters, with blank entries discarded; an empty list uses Greek letters. A new lead gets a random free name from the list; only when every plain name is held does it draw from "<name> 2", then "<name> 3". New session records include the resolved `model` and `effort` (which may be null). Older sessions may omit them.
 
 Diagram cards accept optional `format` (`graph`, the default, `form`, or `html`). Image
 cards are lead-only and contain `path` and `title`; stored image cards also carry `file`,

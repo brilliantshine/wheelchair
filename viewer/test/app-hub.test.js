@@ -9,6 +9,7 @@ const { execFileSync } = require('node:child_process');
 const test = require('node:test');
 const { validate } = require('../app/card.js');
 const { Hub } = require('../app/hub.js');
+const { GREEK } = require('../app/names.js');
 const { api, card, close, event, machinePost, setup, thread } = require('./helpers/app.js');
 const { startMachine } = require('./helpers/app-machine.js');
 const { ROOT, startServer } = require('./helpers/server.js');
@@ -1870,7 +1871,7 @@ test('concurrent threads get distinct persisted names and session model', async 
   });
 });
 
-test('hub startup backfills existing unnamed leads oldest first', async () => {
+test('hub startup backfills existing unnamed leads with distinct names', async () => {
   await withContext(async (context) => {
     const first = await thread(context);
     const second = await thread(context);
@@ -1882,8 +1883,9 @@ test('hub startup backfills existing unnamed leads oldest first', async () => {
     }
     const hub = new Hub({ stateDir: context.state });
     await hub.init();
-    assert.equal((await hub.thread(first.id)).lead_name, 'Alpha');
-    assert.equal((await hub.thread(second.id)).lead_name, 'Beta');
+    const names = [(await hub.thread(first.id)).lead_name, (await hub.thread(second.id)).lead_name];
+    for (const name of names) assert.ok(GREEK.includes(name), name);
+    assert.notEqual(names[0], names[1]);
   });
 });
 
