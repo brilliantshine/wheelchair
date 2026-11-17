@@ -34,6 +34,11 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 7 | Supersedes the "previous setup" part of 5: the newest setup is compared with the lowest median among earlier setups seen in the 30 days before it, not with the one just before | Otherwise the grown setup becomes the reference at the next release and the leak goes unnoticed | review-round-1 |
 | 8 | One warning line for all roles, naming each grown role; wording says the increase is measured and the cause is a guess | Every role shares one tool list; per-role lines repeat; the setup change alone cannot prove the cause | review-round-1 |
 | 9 | `wc.js startup check` has a 3-second total deadline; the route stops scanning after 1.5 seconds and answers with what it has; a refused approval card is posted again without `warnings` | The check must never hold up the approval card; an older hub refuses the new field | review-round-1 |
+| 10 | Samples are compared only within the same role and model | A model change alters tokenizer and built-in prompt and would read as growth | review-round-2 |
+| 11 | Each setup needs at least 5 samples (was 3) | A median of 5 tolerates two unusually long briefs | review-round-2 |
+| 12 | One 30-day window anchored on the newest sample's time bounds every sample used, so a grown setup stops warning once all lower samples are over 30 days older | Single definition; also bounds how long a growth Collin keeps warns | review-round-2 |
+| 13 | Supersedes the repost part of 9: the machine, not the lead, retries an approval card without `warnings` when the hub refuses it, in both the live relay and the spool drain | A spooled card's refusal never reaches the lead | review-round-2 |
+| 14 | The route's 1.5-second budget covers ledger reading, transcript discovery and reads; the ledger is read from its last 512 KB only; one check runs at a time | The client deadline cannot stop server work | review-round-2 |
 
 ## Spec
 
@@ -60,31 +65,37 @@ Start building.
 - New route `GET /v1/agent/startup-check`, authorized as an agent (any role, like
   `/v1/agent/session`), documented in `machine/API.md`. Returns `200 {"warnings": [string]}`
   (zero or one string). Never 5xx for data problems: any error inside gives `{"warnings": []}`.
-- **Samples.** Read `<stateDir>/session-ledger.jsonl` (missing: no warnings), keep start
+- **Budget.** One deadline, 1.5 seconds from the moment the route starts, covers every
+  step below: ledger read, transcript discovery and transcript reads. Each step checks it
+  before starting; once passed, the route stops gathering and applies the rule to the
+  samples it has. Checks are serialized: a request arriving while one runs waits for that
+  one's result and returns it.
+- **Samples.** Read the last 512 KB of `<stateDir>/session-ledger.jsonl` (the whole file if
+  smaller; the first partial line dropped; missing file: no warnings), keep start
   lines (no `kind`) with `provider: "claude"` and a `cli_session_id`, skip lines that do not
-  parse, and take the newest 300 by `at`. For each, find the transcript: the kept copy
-  `<stateDir>/transcripts/<thread_id>/<name>.jsonl` if it exists, else
-  `adapters.claude.findTranscript({cli_session_id}, account_dir)`. Read it line by line, at
+  parse, and take the newest 300 by `at`, newest first. For each, look for a sample first in
+  the kept copy `<stateDir>/transcripts/<thread_id>/<name>.jsonl`; if it is missing or holds
+  no usable record, in `adapters.claude.findTranscript({cli_session_id}, account_dir)`
+  (its result path cached per `cli_session_id`). Read each line by line, at
   most the first 4 MB, skipping lines that do not parse. The sample is the first record with
   `type: "assistant"`, `sessionId` equal to `cli_session_id` when the record has a
   `sessionId`, `message.model` not `<synthetic>`, and
   `input_tokens + cache_creation_input_tokens + cache_read_input_tokens > 0` (missing counts
   are 0). No such record or no transcript: that start has no sample. A sample's time is the
   start line's `at`; its setup is `<record.version or "unknown">|<deny_hash or LEGACY_DENY_HASH>`;
-  its role is the start line's `role`.
+  its group is the start line's `role` plus its `model` (`null` is its own model).
 - Found samples are cached in memory by `cli_session_id` (they never change); misses are
-  not cached. The route stops reading transcripts 1.5 seconds after it began and works
-  with the samples it has, newest starts read first.
-- **Rule.** The newest setup is the setup of the newest sample. For each role: the newest
-  setup's median over that role's latest 20 samples on it (at least 3 needed, else the role
-  is skipped); the baseline is the lowest such median (at least 3 samples, latest 20) among
-  that role's other setups whose newest sample is at most 30 days older than the newest
-  setup's oldest sample. No baseline: the role is skipped. Median of an even count is the
-  mean of the middle two. The role has grown when newest median minus baseline is at least
+  not cached.
+- **Rule.** Only samples whose time is within 30 days before the newest sample's time are
+  used. The newest setup is the setup of the newest sample. For each group (role + model):
+  the newest setup's median over the group's latest 20 samples on it (at least 5 needed,
+  else the group is skipped); the baseline is the lowest median (latest 20, at least 5)
+  among the group's other setups. No baseline: skipped. Median of an even count is the mean
+  of the middle two. The group has grown when newest median minus baseline is at least
   5,000.
-- **Text.** When any role has grown, one warning, roles in name order, numbers rounded to
+- **Text.** When any role has grown, one warning, groups in role then model order, numbers rounded to
   the nearest 100 with thousands separators:
-  `Claude sessions now start bigger than before (now on Claude Code <version>): <role> about <d> more tokens (<baseline> before, <newest> now)[; <role> ...]. A new Claude Code tool, or a tool turned back on, may be the cause; the increase is measured, the cause is a guess.`
+  `Claude sessions now start bigger than before (now on Claude Code <version>): <role> on <model> about <d> more tokens (<baseline> before, <newest> now)[; <role> on <model> ...]. A new Claude Code tool, or a tool turned back on, may be the cause; the increase is measured, the cause is a guess.`
 - `wc.js startup check` calls the route through the local machine service the way other
   `wc.js` agent calls do, with a 3-second deadline covering connection, headers and the whole
   body, and prints one JSON line `{"warnings": [...]}`. On any failure (deadline, refused,
@@ -102,6 +113,11 @@ Start building.
   array, show them under the Ready status as a list headed "Heads-up", in the existing
   amber/notice style, with text set as text (never HTML). Start building's enabled state
   still depends only on `ready.ok` and the existing conditions.
+- **Older hub.** The machine forwards cards to the hub in two places, the live relay in the
+  `/v1/agent/cards` route (`machine/service.js:1276`) and the spool drain
+  (`drainSpoolNow`, `:880`). Both go through one helper: when the hub answers 4xx to an
+  `approval` card that has `warnings`, it sends the same card once more without
+  `warnings`, and only that second answer decides success or rejection.
 - The hub's Re-check and Start building paths (`viewer/app/threads.js:272-337`) only replace
   `card.ready`; `warnings` stays as the lead posted it. Not re-computed by the hub.
 
@@ -110,8 +126,7 @@ Start building.
 - `protocol/app/lead.md` step 6.2, Ready check: also run
   `node <root>/viewer/app/wc.js startup check` and copy its `warnings` onto the approval
   card unchanged; omit the field when the list is empty or the command reports an error.
-  If `card.js` refuses the approval card and the reason names `warnings`, post it again
-  without the field. A warning never changes `ready` and never stops the approval card
+  A warning never changes `ready` and never stops the approval card
   being posted.
 
 ### Boundaries and non-goals
@@ -125,9 +140,10 @@ Start building.
 
 - A session that ends before any assistant reply: no sample.
 - A session interrupted after its first reply: its transcript still holds the record, so it counts.
-- A role with samples on only one setup, or a newest setup with fewer than 3 samples: that role is skipped.
+- A group with samples on only one setup, or a setup with fewer than 5 samples: no comparison for it.
+- A role moved to another model: a new group, so no warning until both its setups have samples.
 - A rollback to an older Claude Code version: just another setup.
-- Growth that persists: it keeps warning until the newest setup's median drops (for example the tool is turned off, which is a new setup) or the low baseline ages past 30 days.
+- Growth that persists: it keeps warning until the newest setup's median drops (for example the tool is turned off, which is a new setup) or the lower samples are all more than 30 days older than the newest sample.
 - Corrupt ledger or transcript lines are skipped.
 
 ### Validation
@@ -135,12 +151,17 @@ Start building.
 - `bash machine/test/run.sh`: a Claude start line carries `deny_hash`, a Codex one does not;
   `LEGACY_DENY_HASH` matches the c81c022 list. `/v1/agent/startup-check` on fixture ledgers
   and transcripts: no ledger; kept copy preferred, `findTranscript` fallback; `<synthetic>`
-  first record skipped; records of another `sessionId` skipped; start line without
-  `deny_hash` grouped with the legacy list; one setup only; newest with 2 samples; growth of
-  4,900 (none) and 5,000 (warn); baseline is the lowest earlier setup, not the latest
-  (A 17k, B 23k, C 23k: warns on C); a baseline older than 30 days ignored; two roles in one
-  line; shrink; 20-sample window; corrupt lines; a slow transcript read stops at 1.5 s and
-  still answers 200; unauthorized request refused.
+  first record skipped; records of another `sessionId` skipped; a kept copy without a usable
+  record falls back to the CLI transcript; start line without `deny_hash` grouped with the
+  legacy list; one setup only; newest with 4 samples (none); growth of 4,900 (none) and
+  5,000 (warn); baseline is the lowest earlier setup, not the latest (A 17k, B 23k, C 23k:
+  warns on C); a model change is a separate group (no warning); samples over 30 days older
+  than the newest ignored; two roles in one line; shrink; 20-sample window; corrupt lines;
+  a ledger over 512 KB read from its tail; a slow ledger read, a slow discovery and a slow
+  transcript read each stop at 1.5 s and still answer 200; two concurrent requests run one
+  check; unauthorized request refused. Card forwarding: an `approval` with `warnings` refused
+  4xx by the hub is resent without them, on the live relay and on the spool drain after an
+  outage; a card without `warnings` refused 4xx is not resent.
 - `node --test viewer/test/*.test.js`: `card.js` accepts approval with and without
   `warnings`, refuses non-array, empty strings and 11 items; `wc.js startup check` prints
   the route's warnings, and prints `warnings: []` with `error` when the service is down,
@@ -154,7 +175,8 @@ Start building.
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | Growth with no change of Claude Code version or tool list (new connectors, skills, plugins, role text) never warns | IDEA.md targets updates; a moving-average rule for this drew most of the lean-sessions findings | 1 |
-| Sessions older than the newest 300 Claude starts, or whose transcripts Claude Code has cleaned up and the machine never copied, give no sample | A baseline needs only 3 samples per role within 30 days | 1 |
+| A growth Collin decides to keep warns on every approval card until its lower samples are 30 days older than the newest; no dismiss button | Approval cards are occasional and the warning says the cause is a guess; a dismiss control is new UI for a rare case | 2 |
+| Sessions older than the newest 300 Claude starts, or whose transcripts Claude Code has cleaned up and the machine never copied, give no sample | A comparison needs only 5 samples per group within 30 days | 1 |
 
 ## Review Rounds
 
@@ -185,7 +207,7 @@ Start building.
 
 ### Round 2 — 2026-11-17
 
-**Lanes:** pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 1:**
 - Capture moved out of hooks: samples read on demand from kept transcript copies; start line gains `deny_hash`; legacy lines count as the PR #100 list (Decision 6)
@@ -193,6 +215,27 @@ Start building.
 - One combined warning line with hedged wording (Decision 8)
 - Deadlines (3 s in `wc.js`, 1.5 s scan budget in the route) and the lead's repost without `warnings` (Decision 9)
 - Route returns only `warnings`; Edge cases, Validation and Accepted Risks rewritten
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Model changes read as growth | upheld | Decision 10 |
+| intent | minor | Brief length moves a 3-sample median | upheld | Decision 11 |
+| intent | minor | A kept growth warns with no dismiss | accepted-risk | Accepted Risks |
+| mechanics | blocking | A spooled approval refused by an older hub is lost | upheld | Decision 13 |
+| mechanics | blocking | Kept copy without the record skips the CLI transcript | upheld | Fallback when the copy has no usable record |
+| mechanics | major | 30-day window ambiguous | upheld | Decision 12 |
+| mechanics | major | Budget doesn't bound ledger read and discovery | upheld | Decision 14 |
+
+### Round 3 — 2026-11-17
+
+**Lanes:** pending.
+
+**Changed since Round 2:**
+- Samples grouped by role and model (Decision 10); 5 samples per setup (Decision 11)
+- One 30-day window anchored on the newest sample (Decision 12)
+- Machine resends a refused approval without `warnings` on live relay and spool drain; lead repost rule removed (Decision 13)
+- Route budget covers ledger, discovery and reads; ledger tail read; checks serialized (Decision 14)
+- Kept copy without a usable record falls back to the CLI transcript
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
