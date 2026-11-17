@@ -189,7 +189,7 @@
 }
 
 /* Activity and question path */
-.agents-insight { display: flex; flex-direction: column; gap: 6px; margin-top: 18px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); font-size: 12px; line-height: 1.5; }
+.agents-insight { display: flex; flex-direction: column; gap: 6px; margin: 0 0 18px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); font-size: 12px; line-height: 1.5; }
 .agents-insight strong { font-size: 13px; }
 .agents-long { color: var(--warn); }
 .agents-activity { margin: 18px 0; }
@@ -224,6 +224,7 @@
  .agents-view { height: calc(100vh - var(--nav-h)); display: flex; flex-direction: column; }
  .agents-layout { flex: 1; min-height: 0; }
  .agents-sidebar, .agents-side { overflow: auto; }
+ .agents-side { scrollbar-gutter: stable; }
  .agents-main { display: flex; flex-direction: column; min-height: 0; padding-bottom: calc(28px + var(--agents-terminal-height, 0px)); }
  .agents-toolbar { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
  .agents-tree { flex: 1; min-height: 160px; overflow: auto; display: block; cursor: grab; touch-action: none; }
