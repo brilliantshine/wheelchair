@@ -39,6 +39,10 @@ get buried as this file grows.
 | 9 | Root `AGENTS.md` is cut below 6,000 bytes without dropping a rule; reasons and history move to `CONTRIBUTING.md` | It loads into every session on this repo, twice on Codex (~3.5k tokens each) | defaulted |
 | 10 | Workers and verifiers run test suites printing only the summary and failures, rerunning a failing test alone for detail | Tests are 15–19% of GPT worker and verifier tool output; reports still paste real output | defaulted |
 | 11 | Role files tell sessions to chain routine commands that do not depend on each other into one shell call | Each call rereads the whole context | defaulted |
+| 13 | Startup warning measures tool overhead: startup minus the starting text and first message, at 25,000 | Rule text in the starting instructions would otherwise trip it for every lead | review-round-1 |
+| 14 | Drop `--strict-mcp-config` and `--disable-slash-commands` | ~0.5k saving; they would cut a project's own MCP servers and skills | review-round-1 |
+| 15 | The machine keeps an append-only session ledger with role and CLI session id | Re-measuring needs a role source once the role leaves the transcript | review-round-1 |
+| 16 | Verifier file reading is deliberately left alone | It is the verification itself; verifiers still gain from shorter test output, AGENTS.md trim and loaded rules | review-round-1 |
 | 12 | No GPT tool-schema trimming | Codex offers no supported way to drop its built-in tools; revisit if it adds one | defaulted |
 
 ## Spec
@@ -47,16 +51,17 @@ get buried as this file grows.
 
 ### Claude startup tools
 
-- `machine/adapters/claude.js` `command()` adds `--disallowedTools` with: Artifact, Workflow, ScheduleWakeup, SendFeedback, ShareOnboardingGuide, ReportFindings, ListAgents, and the deferred-tool names that only reach interactive users (ArtifactComments, ArtifactData, CronCreate, CronDelete, CronList, RemoteTrigger, PushNotification, PublishPlugin, DesignSync, EnterWorktree, ExitWorktree, EnterPlanMode, ExitPlanMode). It also adds `--strict-mcp-config` and `--disable-slash-commands`: small today, but they keep account connectors and skills out of agent sessions.
+- `machine/adapters/claude.js` `command()` adds `--disallowedTools` with: Artifact, Workflow, ScheduleWakeup, SendFeedback, ShareOnboardingGuide, ReportFindings, ListAgents, and the deferred-tool names that only reach interactive users (ArtifactComments, ArtifactData, CronCreate, CronDelete, CronList, RemoteTrigger, PushNotification, PublishPlugin, DesignSync, EnterWorktree, ExitWorktree, EnterPlanMode, ExitPlanMode).
 - Kept: Bash, Read, Edit, Write, Agent (the scout), ToolSearch, TaskStop, SendMessage, Monitor, WebFetch, WebSearch, NotebookEdit.
 - The list lives in one constant beside `command()`, so adding a tool is a one-line change.
 - Every role uses this list: lead, sub-lead, worker, reviewer, verifier, mapper. Asides and the usage probe keep their own argv.
-- **Growth warning.** After a Claude session's first assistant message, the machine reads its `usage` (input + cache write + cache read) from the transcript and records it on the session as `startup_tokens`. The Ready check adds a non-blocking warning, not a missing item, when the newest Claude session on the build machine recorded more than 25,000. The approval card shows the warning text: "Claude sessions now start at <n>k tokens (expected under 25k). A Claude Code update may have added tools; tell the lead." The Ready result stays Ready.
+- No `--strict-mcp-config` or `--disable-slash-commands`: measured savings were ~0.5k, and they would drop a target project's own MCP servers and skills.
+- **Growth warning.** After a Claude session's first assistant message, the machine reads its `usage` (input + cache write + cache read) from the transcript and records on the session `startup_tokens` and `tool_overhead` = `startup_tokens` − ceil((characters of the composed starting instructions + characters of the first message) / 4). The Ready check adds a non-blocking warning, not a missing item, when the newest Claude session on the build machine has `tool_overhead` above 25,000, so a lead's longer rule text never trips it. The approval card shows the warning text: "Claude sessions now start at <n>k tokens (expected under 25k). A Claude Code update may have added tools; tell the lead." The Ready result stays Ready.
 - Measured: interactive haiku session in this worktree, first-call context 47,869 tokens by default, 17,093 with the deny list (2026-11-17).
 
 ### Starting instructions carry the rules
 
-- `composeRolePrompt` (`machine/service.js:127-132`) builds, in order: a one-line header ("Your role rules and card rules are below. They are already loaded; do not read these files again."), the full text of `protocol/app/<role>.md`, then the card files that role needs, each under a `--- <file name> ---` line, then the layers as today. `role_prompt` still wins.
+- `composeRolePrompt` (`machine/service.js:127-132`) builds, in order: a one-line header ("Your role rules and card rules are below, already loaded: do not read these files again unless this text is no longer in your context."), the full text of `protocol/app/<role>.md`, then the card files that role needs, each under a `--- <file name> ---` line, then the layers as today. `role_prompt` still wins.
 - Card files per role: lead gets `cards.md` and `cards-lead.md`; sub-lead, worker and mapper get `cards.md`; reviewer, verifier and aside get none.
 - The files are read from the machine's clone when the session starts. A session keeps the text it started with; a later edit reaches the next session.
 - Role files lose their "Read `cards.md`, beside this file, first" lines; cross-references ("see the `diagram` section of `cards-lead.md`") stay, and resolve inside the starting text.
@@ -104,13 +109,18 @@ get buried as this file grows.
 - `node --test viewer/test/*.test.js` (Ready check warning above 25,000 and not below; `wc.js diff size` bands and the `docs/plans/` exclusion on a temp repo; compact and `--full` list; `card.js` validates kinds from both card files; `protocol-rules.test.js` updated).
 - `npm --prefix viewer run test:browser` (approval card shows the warning).
 - Live: start a Claude worker on this machine after install; its `startup_tokens` is under 25,000.
-- Re-measure after a few threads with the baseline method above.
+- Re-measure after a few threads with the baseline method above, taking each Claude session's role from the session ledger.
 
 ### Measured baseline (2026-11-17)
 
 - Claude, sessions since 2026-11-17 00:00, cost-weighted (cache read 0.1×, cache write 1.25×, output 5×): lead 52%, sub-lead 44%, verifier 4%. Average context per call: lead 102k, sub-lead 149k. Cache reads are about two-thirds of cost, so cost tracks calls × context.
 - GPT, sessions since 2026-11-10: verifier 106M input tokens, worker 163M, reviewer 37M; 84–97% cached.
-- Method: Claude transcripts under `~/.claude/projects/*wheelchair-worktrees*`, role from the first user message or the first tool call naming `protocol/app/<role>.md`; Codex from `~/.codex/sessions` `token_count` events.
+- Method: Claude transcripts under `~/.claude/projects/*wheelchair-worktrees*`, role from the first user message or the first tool call naming `protocol/app/<role>.md`; Codex from `~/.codex/sessions` `token_count` events. After this change the role no longer appears in a Claude transcript, so re-measuring takes it from the session ledger below.
+
+### Session ledger
+
+- When the machine starts a session it appends one JSON line to `<stateDir>/session-ledger.jsonl`: `{at, name, role, provider, model, cli_session_id, thread_id}`. Append-only, never pruned by the service; `cli_session_id` matches the Claude transcript file name, and for Codex the thread id the session reports once known (or `null`).
+- It is for re-measuring only; nothing reads it at runtime.
 
 ## Accepted Risks
 
@@ -127,6 +137,11 @@ get buried as this file grows.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | blocking | Startup warning would fire for every lead once rules are in the starting text | upheld | Measures tool overhead (Decision 13) |
+| intent | major | Re-measuring loses the role source for Claude | upheld | Session ledger (Decision 15) |
+| intent | major | Connector and skill flags drop project MCP servers and skills for ~0 saving | upheld | Flags dropped (Decision 14) |
+| intent | minor | Codex can compact away the first message; header forbids rereading | upheld | Header allows a reread when the text is gone |
+| intent | minor | Verifier file reads (46%) unaddressed without saying why | upheld | Decision 16 |
 
 ## Prior Work
 
