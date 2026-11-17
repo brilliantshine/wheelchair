@@ -142,12 +142,20 @@ Rules, per line:
   result ends an owner only when the result names its `session_id`; one it cannot place
   ends nothing. A script that mixes such polls with other calls is a new step for its other
   calls (kind and label from its first non-poll call) and still applies its polls to their
-  owners. Add a fixture for this from
+  owners. If a poll script itself yields a cell (`Script running with cell ID <n>`), that cell
+  is owned by the same owning step, so a later `wait` on it is a poll for that step too. Add
+  fixtures for this from
+  `~/.codex/sessions/2026/11/15/rollout-2026-11-15T23-51-57-01a1e357-6320-7fc0-a648-0ceb46b4f6e1.jsonl`
+  (lines 191–212, a yielding poll script, a cell wait, and a final `exit_code` 1) and from
   `~/.codex/sessions/2026/11/17/rollout-2026-11-17T04-53-49-01a1e992-1d3d-7363-8ca9-d597e8f9a1ed.jsonl`
   (lines 73–89).
 - **One step per script.** The script's source is not split into nested steps (it shows
   possible calls, not executed ones). Its kind and label come from the first `tools.<name>(`
-  call in its source (classified per section 1, label from its first string argument); with
+  call in its source (classified per section 1). Its target text is the call's argument when that is a string
+  literal; when it is an object literal, the string-literal value of the first of these keys
+  present: `cmd`, `command`, `path`, `file_path`, `query`, `url`, `prompt`, `message`; for
+  `apply_patch`, the first `*** ... File: <path>` line. No such literal: no target, label
+  "Ran a script"; with
   two or more distinct calls in the source the label gets " and more"; with none it is a
   `shell` step "Ran a script".
 - Build and test this against real rollouts from `~/.codex/sessions/**` on this machine,
@@ -192,9 +200,14 @@ arrival order (section 4).
 - **Order does not matter** (Claude hooks are async and can arrive out of order). A start
   adds a step; a repeat start for a known id is ignored. An end for an unknown id is kept
   in `session.pending_ends` (by id, at most 50, dropped after 10 minutes); a start that
-  finds its id there is stored already finished. A start whose `started_at` is not after
-  the session's latest `turn_ended_at` belongs to an ended turn: it is stored finished at
-  that turn end with `failed: null`, unless its end is already known.
+  finds its id there is stored already finished.
+- **Turn boundaries.** The hub keeps `session.turns`: the last 20 `{started_at, ended_at}`
+  (appended when a turn starts, `ended_at` filled when it ends). A start whose `started_at`
+  falls inside an ended turn is stored finished at **that** turn's `ended_at`, `failed:
+  null`, unless its end is already known. A start for a session that is no longer live or
+  has `ended_at` is stored finished at the earlier of its own turn's end and the session's
+  `ended_at`. A start older than every kept turn is stored finished at its own `started_at`
+  and kept out of history.
 - `session.step_counts`: `{files, shell, helpers, web, starter, thinking}`, counts over the
   session's life, incremented on start (thinking: see below).
 - When a step ends, append `{kind, key, ms, at}` to a per-project history file
@@ -385,6 +398,21 @@ commands, and their steps and context show on the Agents screen within 5 seconds
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
 | intent | blocking | Process polls wrapped in `exec` scripts start new steps instead of continuing the command | upheld | §2 "Polls inside scripts" |
+| mechanics | blocking | Wrapped `write_stdin` polls start new steps; a poll script can itself yield a cell | upheld | §2 "Polls inside scripts", incl. yielded poll cells |
+| mechanics | major | "First string argument" undefined for object arguments | upheld | §2 key list for object literals |
+| mechanics | blocking | Late starts closed at the latest turn end, not their own | upheld | §4 turn boundaries (`session.turns`) |
+| mechanics | blocking | Late starts after stop/disappearance inserted as running | upheld | §4 terminal boundary for incoming starts |
+
+### Round 3 — 2026-11-17
+
+**Lanes:** intent: gpt; mechanics: gpt (Claude unavailable at start); cross-family: no.
+
+**Changed since Round 2:**
+- §2 Codex: polls inside `exec` scripts join their owning step, incl. a poll script that itself yields a cell; target extraction from object-literal arguments.
+- §4: `session.turns` keeps turn boundaries; late starts close at their own turn's end; starts after a session stops or disappears are stored finished.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
