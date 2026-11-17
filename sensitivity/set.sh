@@ -261,7 +261,8 @@ for target in ${targets[@]+"${targets[@]}"}; do
   cleanup_paths+=("${output[$(index_of "$target")]}")
   if [[ -e $target ]]; then existed[$(index_of "$target")]=1; else existed[$(index_of "$target")]=0; fi
   if [[ ${state[$(index_of "$target")]} == valid ]]; then
-    head -n "$(( ${start_lines[$(index_of "$target")]} - 1 ))" "$target" > "${output[$(index_of "$target")]}"
+    # awk, not head: BSD head refuses -n 0, which a block on line 1 asks for.
+    awk -v first="${start_lines[$(index_of "$target")]}" 'NR < first' "$target" > "${output[$(index_of "$target")]}"
     cat "$rendered" >> "${output[$(index_of "$target")]}"
     tail -n "+$(( ${end_lines[$(index_of "$target")]} + 1 ))" "$target" >> "${output[$(index_of "$target")]}"
   elif [[ -e $target && -s $target ]]; then
