@@ -4,8 +4,46 @@ const path = require('node:path');
 const c = require('./common');
 const usual = () => c.home('CLAUDE_CONFIG_DIR', '.claude');
 const loginEnv = dir => dir ? { CLAUDE_CONFIG_DIR: dir } : {};
+const { run } = require('../lib/usage-probe');
+const closedPort = 'http://127.0.0.1:9';
+function resetTime(text, now) {
+  const match = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{1,2}), (\d{1,2})(?::(\d{2}))?(am|pm) \(([^)]+)\)$/.exec(text);
+  if (!match) throw new Error('invalid reset time');
+  const month = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].indexOf(match[1]);
+  const day = +match[2], hour = +match[3] % 12 + (match[5] === 'pm' ? 12 : 0), minute = +(match[4] || 0);
+  if (+match[3] < 1 || +match[3] > 12 || minute > 59) throw new Error('invalid reset time');
+  const fmt = new Intl.DateTimeFormat('en-US', { timeZone: match[6], year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', hourCycle: 'h23' });
+  const start = new Date(now).getTime();
+  if (!Number.isFinite(start)) throw new Error('invalid current time');
+  for (const year of [new Date(start).getUTCFullYear() - 1, new Date(start).getUTCFullYear(), new Date(start).getUTCFullYear() + 1]) {
+    const target = Date.UTC(year, month, day, hour, minute);
+    if (new Date(target).getUTCMonth() !== month) continue;
+    let instant = target;
+    for (let i = 0; i < 3; i++) {
+      const parts = Object.fromEntries(fmt.formatToParts(new Date(instant)).map(p => [p.type, p.value]));
+      instant += target - Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute);
+    }
+    const parts = Object.fromEntries(fmt.formatToParts(new Date(instant)).map(p => [p.type, p.value]));
+    if (+parts.year === year && +parts.month === month + 1 && +parts.day === day && +parts.hour === hour && +parts.minute === minute && instant >= start && instant - start <= 8 * 86400000) return new Date(instant).toISOString();
+  }
+  throw new Error('reset time outside expected range');
+}
+function parseUsage(raw, now = Date.now()) {
+  if (typeof raw === 'string') raw = JSON.parse(raw);
+  if (raw?.num_turns !== 0 || typeof raw.result !== 'string') throw new Error('invalid Claude usage response');
+  let five_hour = null, week = null;
+  for (const line of raw.result.split(/\r?\n/)) {
+    const match = /^\s*(Current session|Current week \(all models\)): (\d+(?:\.\d+)?)% used(?:\s*·\s*resets (.+))?\s*$/.exec(line);
+    if (!match) continue;
+    const window = { used: +match[2], resets_at: match[3] ? resetTime(match[3].trim(), now) : null };
+    if (match[1] === 'Current session') five_hour = window; else week = window;
+  }
+  if (!five_hour && !week) throw new Error('no usage windows');
+  return { five_hour, week, ...([five_hour, week].some(w => w && w.used >= 100) ? { reached: true } : {}) };
+}
 module.exports = {
-  provider: 'claude', loginEnv,
+  provider: 'claude', loginEnv, parseUsage,
+  usageProbe(dir, options = {}) { return run('claude', ['-p', '/usage', '--output-format', 'json', '--no-session-persistence', '--strict-mcp-config', '--setting-sources', '', '--settings', JSON.stringify({ env: { ANTHROPIC_BASE_URL: closedPort } })], { ...options, env: { ...process.env, ...loginEnv(dir), ANTHROPIC_BASE_URL: closedPort }, parse: parseUsage }); },
   asideArgv(input, context) { return ['claude', '-p', '--output-format', 'json', '--model', input.model, ...(input.effort ? ['--effort', input.effort] : []), ...(input.access === 'full' ? ['--permission-mode', 'bypassPermissions'] : ['--permission-mode', 'dontAsk', '--tools', 'Read,Grep,Glob']), '--strict-mcp-config', '--system-prompt-snapshot', 'off', '--append-system-prompt', context.prompt, '--resume', input.from, ...(input.mode === 'fork' ? ['--fork-session', '--session-id', input.new_id] : [])]; },
   loginCommand() { return ['claude', 'auth', 'login']; },
   parseLogin(pane) {

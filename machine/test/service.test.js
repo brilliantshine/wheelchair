@@ -1166,3 +1166,37 @@ test('Antigravity start, prompt polling, status and login completion', async () 
     } finally { await env.close(); await hub.close(); }
   });
 });
+
+test('idle usage probes isolate Claude and send only Codex rate-limit RPCs', async () => {
+  const root = await temp(), env = await service(root);
+  try {
+    const record = path.join(root, 'probe.json');
+    await write(path.join(env.fake.bin, 'claude'), `#!/usr/bin/env node\nconst fs = require('fs'); fs.writeFileSync(${JSON.stringify(record)}, JSON.stringify({ args: process.argv.slice(2), env: process.env.ANTHROPIC_BASE_URL })); console.log(JSON.stringify({ num_turns: 0, result: 'Current session: 100% used' }));\n`, 0o755);
+    const request = { account: 'default-claude', cli: 'claude', dir: null };
+    assert.equal((await api(env, 'POST', '/v1/usage', request)).status, 401);
+    assert.equal((await api(env, 'POST', '/v1/usage', { ...request, cli: 'agy' }, hubHeader)).status, 400);
+    assert.equal((await api(env, 'POST', '/v1/usage', { ...request, account: 'other' }, hubHeader)).status, 400);
+    const result = await api(env, 'POST', '/v1/usage', request, hubHeader);
+    assert.equal(result.status, 200); assert.equal(result.body.reading.five_hour.used, 100); assert.ok(result.body.reading.limited_until);
+    const capture = JSON.parse(await fs.readFile(record)); const args = capture.args;
+    assert.equal(capture.env, 'http://127.0.0.1:9'); assert.equal(args[args.indexOf('--setting-sources') + 1], '');
+    assert.equal(JSON.parse(args[args.indexOf('--settings') + 1]).env.ANTHROPIC_BASE_URL, capture.env);
+    await write(path.join(env.fake.bin, 'codex'), `#!/usr/bin/env node\nconst fs = require('fs'); let data = ''; process.stdin.on('data', c => { data += c; if (data.trim().split('\\n').length >= 3) { fs.writeFileSync(${JSON.stringify(record)}, data); console.log(JSON.stringify({method:'notice'})); console.log(JSON.stringify({id:2,result:{rateLimits:{primary:{windowDurationMins:10080,usedPercent:42,resetsAt:1800000000}}}})); } });\n`, 0o755);
+    const codex = await api(env, 'POST', '/v1/usage', { account: 'default-gpt', cli: 'codex', dir: null }, hubHeader);
+    assert.equal(codex.status, 200); assert.equal(codex.body.reading.week.used, 42);
+    assert.deepEqual((await fs.readFile(record, 'utf8')).trim().split('\n').map(line => JSON.parse(line).method), ['initialize', 'initialized', 'account/rateLimits/read']);
+  } finally { await env.close(); }
+});
+test('idle usage timeout kills the child without blocking status', async () => {
+  const root = await temp(), env = await service(root);
+  try {
+    env.instance.options.usageProbeTimeout = 200;
+    const pidfile = path.join(root, 'pid');
+    await write(path.join(env.fake.bin, 'claude'), `#!/usr/bin/env node\nif (process.argv[2] !== '-p') process.exit(0); require('fs').writeFileSync(${JSON.stringify(pidfile)}, String(process.pid)); setInterval(() => {}, 1000);\n`, 0o755);
+    const pending = api(env, 'POST', '/v1/usage', { account: 'default-claude', cli: 'claude', dir: null }, hubHeader);
+    assert.equal((await api(env, 'GET', '/v1/status', undefined, hubHeader)).status, 200);
+    assert.equal((await pending).status, 502);
+    const pid = Number(await fs.readFile(pidfile, 'utf8'));
+    await new Promise(resolve => setTimeout(resolve, 50)); assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
+  } finally { await env.close(); }
+});

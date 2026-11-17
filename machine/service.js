@@ -1067,6 +1067,22 @@ class MachineService {
       }
       if (request.method === 'GET' && url.pathname === '/v1/status') { await this.authorize(request, 'hub'); return send(response, 200, this.status()); }
       if (request.method === 'GET' && url.pathname === '/v1/projects') { await this.authorize(request, 'hub'); return send(response, 200, await this.projects(url.searchParams)); }
+      if (request.method === 'POST' && url.pathname === '/v1/usage') {
+        await this.authorize(request, 'hub');
+        const input = await bodyOf(request);
+        if (!input || typeof input !== 'object' || Array.isArray(input)) die('invalid usage request');
+        const { account, cli } = input;
+        if (typeof account !== 'string' || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(account) || !['claude', 'codex'].includes(cli) || !Object.hasOwn(input, 'dir')) die('invalid account or cli');
+        const adapter = adapters[cli], dir = accountDir(input.dir, account);
+        if ((!dir && account !== `default-${adapter.provider}`) || (dir && Object.values(adapters).some(a => account === `default-${a.provider}`))) die('invalid default account');
+        try {
+          const parsed = await adapter.usageProbe(dir, { cwd: this.stateDir, timeout: this.options.usageProbeTimeout ?? 30000 });
+          const { reached, ...windows } = parsed;
+          const reading = { account, at: new Date().toISOString(), ...windows };
+          if (reached) reading.limited_until = limitedUntil(reading);
+          return send(response, 200, { reading });
+        } catch (error) { return send(response, 502, { error: error.message || 'usage probe failed' }); }
+      }
       if (request.method === 'POST' && url.pathname === '/v1/preflight') { await this.authorize(request, 'hub'); const input = await bodyOf(request); const dir = accountDir(input.dir); const result = command(path.join(ROOT, 'codex', 'preflight.sh'), [], dir ? { env: { ...process.env, ...adapters.codex.loginEnv(dir) } } : {}); return send(response, result.ok ? 200 : 409, result); }
       if (request.method === 'POST' && url.pathname === '/v1/preview') { await this.authorize(request, 'hub'); const result = await this.preview(await bodyOf(request)); return send(response, result.status, result.body); }
       if (pathBits[0] === 'v1' && pathBits[1] === 'aside-turns') {
