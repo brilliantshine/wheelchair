@@ -5,7 +5,6 @@ const { makeTemp } = require('../../test-support/run-dir');
 const { validate } = require('../app/card');
 const { acceptCard } = require('../app/cards');
 const { buildAgents, agents } = require('../app/agents');
-const history = require('../app/step-history');
 
 const question = { fits: 'Fits', question: 'Choose?', options: [{ id: 'a', label: 'A', consequence: 'A' }, { id: 'b', label: 'B', consequence: 'B' }], leaning: 'a', why: 'Reason' };
 const sessions = () => [{ name: 'lead', role: 'lead', live: true }, { name: 'sub', role: 'sub-lead', started_by: 'lead', live: true }, { name: 'worker', role: 'worker', started_by: 'sub', live: true }];
@@ -58,16 +57,14 @@ test('paths and waiting questions follow direct and relayed cards and close on r
   assert.ok(record(loop).question_paths[0].length <= 3);
 });
 
-test('agents fills normal from session steps and hides raw activity state', async () => {
+test('agents hides raw activity state', async () => {
   const dir = await makeTemp('questions-');
   const now = new Date();
   const start = new Date(now.getTime() - 2000).toISOString();
-  await history.append(dir, '/project', { kind: 'shell', key: 'shell:npm test', started_at: start, ended_at: now.toISOString() });
   const ss = sessions();
   Object.assign(ss[2], { steps: [{ id: 's', kind: 'shell', key: 'shell:npm test', label: 'Run', started_at: start }], pending_ends: [1], turns: [1], step_counts: { shell: 1 } });
   const thread = { id: 't', title: 'T', project: '/project', sessions: ss, cards: [] };
   const hub = { stateDir: dir, allThreads: async () => [thread], machines: async () => ({}), state: { resolveMachine: async () => null } };
   const result = await agents(hub); const worker = node(result.leads[0].session, 'worker');
-  assert.deepEqual(worker.activity.normal, { samples: [2000], typical_ms: 2000 });
   for (const key of ['steps', 'pending_ends', 'turns', 'step_counts']) assert.equal(Object.hasOwn(worker, key), false);
 });

@@ -193,7 +193,6 @@
 /* Activity and question path */
 .agents-insight { display: flex; flex-direction: column; gap: 6px; margin: 0 0 18px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); font-size: 12px; line-height: 1.5; }
 .agents-insight strong { font-size: 13px; }
-.agents-long { color: var(--warn); }
 .agents-activity { margin: 18px 0; }
 .agents-activity svg { display: block; width: 100%; overflow: visible; }
 .agents-activity figcaption { color: var(--dim); font-size: 11px; }

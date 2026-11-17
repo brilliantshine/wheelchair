@@ -1,11 +1,8 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs/promises');
-const path = require('node:path');
 const { makeTemp } = require('../../test-support/run-dir');
 const sessions = require('../app/sessions');
-const history = require('../app/step-history');
 const { buildAgents } = require('../app/agents');
 
 async function fixture() {
@@ -28,8 +25,7 @@ test('events pair in either order, upgrade closure once, and preserve turn and q
   await f.begin('b', 8000); assert.equal(f.s.queue.length, 1); f.s.queue = []; await f.event({ type: 'turn-ended' });
   assert.equal(f.s.steps.find(s => s.id === 'b').clean, false);
   await f.end('b', 9000); await f.end('b', 10000);
-  const rows = (await fs.readFile(history.file(f.stateDir, f.thread.project), 'utf8')).trim().split('\n');
-  assert.equal(rows.length, 2); assert.equal(f.s.steps.find(s => s.id === 'b').ended_at, f.stamp(9000));
+  assert.equal(f.s.steps.find(s => s.id === 'b').ended_at, f.stamp(9000));
 });
 
 test('retention, parallel current, trail, failures and context', async () => {
@@ -43,15 +39,6 @@ test('retention, parallel current, trail, failures and context', async () => {
   assert.deepEqual(node.activity.trail, ['shell', 'files']);
   assert.equal(node.activity.latest[2].label, 'Failed: s31'); assert.equal(node.context.percent, 20);
   assert.equal(f.s.turn_ended, false); assert.equal(f.s.queue.length, 1);
-});
-
-test('history median, isolation and pruning', async () => {
-  const f = await fixture();
-  for (let i = 1; i <= 6; i++) await history.append(f.stateDir, '/one/project', { kind: 'shell', key: 'x', started_at: f.stamp(0), ended_at: f.stamp(i * 1000) });
-  await history.append(f.stateDir, '/two/project', { kind: 'shell', key: 'x', started_at: f.stamp(0), ended_at: f.stamp(90000) });
-  assert.deepEqual(await history.normal(f.stateDir, '/one/project', 'x'), { samples: [2000, 3000, 4000, 5000, 6000], typical_ms: 4000 });
-  await history.prune(f.stateDir, Date.now() + 31 * 86400_000);
-  assert.equal(await history.normal(f.stateDir, '/one/project', 'x'), null);
 });
 
 test('late starts and pending ends expire, with bounded running steps', async () => {
@@ -83,13 +70,10 @@ test('thinking gaps and current choose the latest running step, then the previou
   assert.equal(buildAgents([f.thread])[0].session.activity.current, null);
 });
 
-test('pending ends are bounded and old history is excluded from normal', async () => {
+test('pending ends are bounded', async () => {
   const f = await fixture();
   for (let i = 0; i < 51; i++) await f.end(`unknown${i}`);
   assert.equal(Object.keys(f.s.pending_ends).length, 50);
-  const old = new Date(Date.now() - 31 * 86400_000).toISOString();
-  await history.append(f.stateDir, f.thread.project, { kind: 'shell', key: 'old', started_at: old, ended_at: old });
-  assert.equal(await history.normal(f.stateDir, f.thread.project, 'old'), null);
 });
 
 test('mid-turn delivery closes the preceding turn for late step starts', async () => {

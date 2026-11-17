@@ -47,9 +47,6 @@ class Hub {
 
   async init() {
     await this.state.init();
-    await require('./step-history.js').prune(this.stateDir);
-    this.historyTimer = setInterval(() => require('./step-history.js').prune(this.stateDir).catch(() => {}), 86400_000);
-    this.historyTimer.unref();
     for (const [name, machine] of Object.entries(await this.state.machines())) {
       if (machine.last_seen) this.lastSeen.set(name, machine.last_seen);
     }
