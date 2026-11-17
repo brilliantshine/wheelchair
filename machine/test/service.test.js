@@ -1276,3 +1276,29 @@ test('Codex rollout reads persist complete lines, serialize reads, and flush bef
   assert.deepEqual(seen.map(e=>e.type+':'+(e.phase||'')),['step:start','step:end','turn-ended:']);
   assert.equal(seen[1].step.clean,true); assert.equal(restarted.sessions['wc-test'].steps_offset,(await fs.stat(file)).size);
 });
+
+test('Codex rollout reader tails bounded chunks, reads appends once, and resets after truncation', async () => {
+  const root = await temp(), file = path.join(root,'rollout.jsonl');
+  const svc = new MachineService({stateDir:root});
+  const session = {name:'wc-tail',cli:'codex',thread_id:'thread',codex_thread_id:'codex-id',source_transcript:file};
+  svc.sessions[session.name] = session; svc.emitEvent = async () => {};
+  const row = (id,type,extra={}) => JSON.stringify({timestamp:'2026-01-01T00:00:00Z',type:'response_item',payload:{type,call_id:id,...extra}});
+  const pair = id => row(id,'custom_tool_call',{name:'exec_command',input:{cmd:'true'}})+'\n'+row(id,'custom_tool_call_output',{output:'Script completed'})+'\n';
+  await write(file,pair('one'));
+  await svc.readCodexSteps(session); const firstOffset = session.steps_offset;
+  await fs.appendFile(file,pair('two'));
+  await svc.readCodexSteps(session); assert.equal(session.steps_offset, (await fs.stat(file)).size);
+  assert.equal(session.steps_state.open.two, undefined);
+  await svc.readCodexSteps(session); assert.equal(session.steps_offset, (await fs.stat(file)).size);
+  // A full chunk without a newline is skipped, so one pathological line cannot stall the tail.
+  await write(file,'x'.repeat(8 * 1024 * 1024));
+  session.steps_offset = 0;
+  await svc.readCodexSteps(session); assert.equal(session.steps_offset, 8 * 1024 * 1024);
+  // Replacing the file with a shorter rollout resets the offset and parser state.
+  session.steps_state = {open:{stale:{poll:false}},yielded:'stale'};
+  await write(file,pair('replacement'));
+  await svc.readCodexSteps(session);
+  assert.equal(session.steps_offset, (await fs.stat(file)).size);
+  assert.deepEqual(session.steps_state, {open:{},yielded:null});
+  assert.ok(firstOffset > 0);
+});
