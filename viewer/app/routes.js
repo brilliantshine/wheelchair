@@ -68,10 +68,13 @@ async function handle(hub, request, response, url, machineAuthenticated) {
 
 async function upload(hub, request, response, url, id) {
   const thread = await hub.thread(id);
-  if (thread.archived || !thread.sessions.some((session) => session.role === 'lead' && session.live)) throw appError(409, 'no live lead or thread is archived');
+  const lead = thread.sessions.find((session) => session.role === 'lead' && session.live);
+  if (thread.archived || !lead) throw appError(409, 'no live lead or thread is archived');
   const length = request.headers['content-length'];
   if (typeof length !== 'string' || !/^\d+$/.test(length) || Number(length) > UPLOAD_LIMIT) throw appError(413, 'missing or oversized content-length');
   const query = new URLSearchParams({ thread_id: id, name: url.searchParams.get('name') || '' });
+  // A lead waiting for room has no session on the machine yet; say so, or the machine refuses.
+  if (lead.status === 'waiting') query.set('pending_lead', '1');
   let result;
   try {
     result = await hub.client.stream(thread.machine, `/v1/uploads?${query}`, 'POST', request);

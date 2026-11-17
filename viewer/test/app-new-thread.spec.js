@@ -74,6 +74,13 @@ test('a failed upload keeps Start off and links to the thread', async ({ page })
   await expect(page.locator('#form-error')).toContainText('The thread started, but the first message was not sent (could not upload first.txt: nope)');
   await expect(page.locator('#form-error a')).toHaveAttribute('href', /\/app\/thread\?id=[0-9a-f]+/);
   await expect(page.locator('#nt-go')).toBeDisabled();
+  // Neither another project nor a saved directory brings Start back or drops the link.
+  await page.locator('#add-name').fill('beta'); await page.locator('#add-path').fill('/home/fake/code/alpha');
+  await page.locator('#add-go').click();
+  await expect(page.locator('#saved-list li')).toHaveCount(1);
+  await page.locator('#nt-project').selectOption({ index: 0 });
+  await expect(page.locator('#nt-go')).toBeDisabled();
+  await expect(page.locator('#form-error a')).toHaveAttribute('href', /\/app\/thread\?id=[0-9a-f]+/);
 });
 
 test('a refusal shows on the screen and keeps the fields', async ({ page }) => {

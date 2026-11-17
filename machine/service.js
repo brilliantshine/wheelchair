@@ -249,14 +249,18 @@ class MachineService {
       } catch (error) { if (error.code !== 'EEXIST') throw error; n++; }
     }
   }
-  async upload(id, name, request) {
+  // pendingLead: the hub vouches that the thread's lead is waiting for room, so it has no
+  // session here yet; its files are taken and archive removes them like any other.
+  async upload(id, name, request, pendingLead) {
     threadName(id);
     const requests = this.uploadRequests.get(id) || new Set();
     this.uploadRequests.set(id, requests);
     requests.add(request);
     try {
       return await this.withThreadLock(id, async () => {
-        if (this.closingThreads.has(id) || !Object.values(this.sessions).some(s => s.thread_id === id && s.role === 'lead' && !s.archived_pending && s.status !== 'stopped')) throw Object.assign(new Error('thread is not writable'), { status: 409 });
+        const own = Object.values(this.sessions).filter(s => s.thread_id === id);
+        const waiting = pendingLead && own.length === 0;
+        if (this.closingThreads.has(id) || (!waiting && !own.some(s => s.role === 'lead' && !s.archived_pending && s.status !== 'stopped'))) throw Object.assign(new Error('thread is not writable'), { status: 409 });
         const { target, file } = await this.reserveUpload(id, name);
         try {
           let size = 0;
@@ -1197,7 +1201,7 @@ class MachineService {
       if (request.method === 'GET' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); return send(response, 200, this.sessionList()); }
       if (request.method === 'POST' && url.pathname === '/v1/uploads') {
         await this.authorize(request, 'hub');
-        const stored = await this.upload(url.searchParams.get('thread_id'), url.searchParams.get('name'), request);
+        const stored = await this.upload(url.searchParams.get('thread_id'), url.searchParams.get('name'), request, url.searchParams.get('pending_lead') === '1');
         return send(response, 201, { path: stored });
       }
       if (request.method === 'GET' && pathBits[0] === 'v1' && pathBits[1] === 'uploads' && pathBits.length === 4) {

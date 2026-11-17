@@ -1086,6 +1086,20 @@ test('/v1/projects lists git folders, expands ~, and checks paths', async () => 
   } finally { await env.close(); }
 });
 
+test('pending_lead admits a thread with no sessions yet, but not one that has ended or is closing', async () => {
+  const env = await service(await temp());
+  const upload = (id, pending) => fetch(`${env.base}/v1/uploads?thread_id=${id}&name=x${pending ? '&pending_lead=1' : ''}`, { method: 'POST', headers: hubHeader, body: 'hi' });
+  try {
+    assert.equal((await upload('w', false)).status, 409);
+    assert.equal((await upload('w', true)).status, 201);
+    await start(env);
+    env.instance.sessions['wc-t-lead'].status = 'stopped';
+    assert.equal((await upload('t', true)).status, 409);
+    env.instance.closingThreads.set('w', 1);
+    assert.equal((await upload('w', true)).status, 409);
+  } finally { await env.close(); }
+});
+
 test('uploads sanitize, stream, serve, and enforce admission and size', async () => {
   const env = await service(await temp());
   const upload = async (name, body = 'hello') => fetch(`${env.base}/v1/uploads?thread_id=t&name=${encodeURIComponent(name)}`, { method: 'POST', headers: hubHeader, body });

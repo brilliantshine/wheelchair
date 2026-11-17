@@ -9,6 +9,7 @@
   const goEl = $('nt-go');
   let state = null;       // the last /new-thread answer
   let loadSeq = 0;
+  let started = false;    // a thread exists: Start stays off and its error stays up
 
   function el(tag, cls, text) {
     const n = document.createElement(tag);
@@ -60,7 +61,7 @@
   function syncProject(count) {
     const empty = count === 0;
     projectEl.disabled = empty;
-    goEl.disabled = empty;
+    goEl.disabled = empty || started;
     $('nt-empty').hidden = !empty;
     const path = empty ? '' : projectEl.value;
     show($('nt-path'), path);
@@ -102,10 +103,10 @@
       if (seq !== loadSeq) return;
       state = { saved: [], found: [], previous: [], machines: ['hub'], ...data };
       fillMachines(); fillProjects(keep); fillSaved();
-      show($('form-error'), '');
+      if (!started) show($('form-error'), '');
     } catch (e) {
       if (seq !== loadSeq) return;
-      show($('form-error'), 'Could not load this screen: ' + e.message);
+      if (!started) show($('form-error'), 'Could not load this screen: ' + e.message);
     }
   }
 
@@ -226,7 +227,7 @@
 
   $('new-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
-    if (goEl.disabled || sending) return;
+    if (goEl.disabled || sending || started) return;
     if (!state || state.machine !== machineEl.value) return;
     const body = { project: projectEl.value, machine: state.machine };
     const message = messageEl.value.trim();
@@ -242,12 +243,13 @@
       goEl.disabled = false; setSending(false);
       return;
     }
+    started = true;
     const where = '/wheelchair/app/thread?id=' + encodeURIComponent(data.id);
     if (files.length) {
       try { await sendFirst(data.id, message, files); } catch (e) {
         // The thread exists, so Start stays off: pressing it again would start a second one.
         const banner = $('form-error');
-        banner.textContent = 'The thread started, but the first message was not sent (' + e.message + '). ';
+        banner.textContent = 'The thread started, but the first message was not sent (' + e.message + '). Send it from the thread: ';
         const link = el('a', '', 'Open the thread'); link.href = where;
         banner.appendChild(link); banner.hidden = false;
         return;
