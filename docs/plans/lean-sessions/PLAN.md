@@ -58,6 +58,7 @@ get buried as this file grows.
 | 29 | Excluded paths come from the unfiltered name-status; renames across `docs/plans/` go to the sub-lead | Path-limited listing shows one end only | review-round-3 |
 | 30 | `session start` prints a compact view | It would echo the inlined starting text | review-round-3 |
 | 31 | Warning lookup has a 2-second deadline; ledger records account_dir; role files keep a pointer fallback | Relay timeout, account homes, sessions spanning a deploy | review-round-3 |
+| 32 | Supersedes 13, 25 (overhead part), 27 and 28 (overhead part): the warning compares the newest session's raw startup with the median of earlier sessions of the same role and project (+5,000, at least 5 earlier samples); no estimate of the parts | Three rounds of estimate formulas each broke; a comparison needs no arithmetic about the parts. Collin chose Keep going | review-round-3 |
 | 12 | No GPT tool-schema trimming | Codex offers no supported way to drop its built-in tools; revisit if it adds one | defaulted |
 
 ## Spec
@@ -71,8 +72,8 @@ get buried as this file grows.
 - The list lives in one constant beside `command()`, so adding a tool is a one-line change.
 - Every role uses this list: lead, sub-lead, worker, reviewer, verifier, mapper. Asides and the usage probe keep their own argv.
 - No `--strict-mcp-config` or `--disable-slash-commands`: measured savings were ~0.5k, and they would drop a target project's own MCP servers and skills.
-- **Growth warning.** After a Claude session's first assistant message, the machine reads its `usage` (input + cache write + cache read) from the transcript and records on the session `startup_tokens` and `tool_overhead` = `startup_tokens` − ceil((characters of the composed starting instructions + characters of every transcript record before the first assistant message, including `attachment` records such as project instructions and the skill listing) / 4). These are read from the transcript itself, not the launch brief, since a lead launches with an empty brief and its first input is whatever arrives first. The Ready check (`viewer/app/ready.js` `check`) returns a `warnings` array alongside `missing`: one entry when the newest Claude session on the build machine that has a recorded `tool_overhead` is above 25,000 (sessions without a sample yet are skipped; no sample at all means no warning), so a lead's longer rule text never trips it. Warnings never change `ok`.
-- **Where the warning shows.** When the hub accepts an `approval` card (`viewer/app/cards.js`, the add-card path), it runs the Ready check's warning part and stores `card.ready.warnings`; the lookup has its own 2-second deadline, shorter than the card relay's, and if it fails or times out the card is accepted with `warnings: []`; the lead's submitted `ok`/`missing` are kept as today. A `recheck` press replaces `card.ready` whole, warnings included. On `start-building`, `same()` keeps comparing `missing` only; the hub writes the fresh `warnings` onto the card and, if `ok`, starts the build on that same press. A warning that appears or clears never consumes the press. The approval card shows the warning text: "Estimated startup overhead is now <n>k tokens in the newest Claude session (expected under 25k), mostly Claude Code's built-in tools. An update may have added some; tell the lead." `<n>` is `tool_overhead` in thousands. The Ready result stays Ready.
+- **Growth warning.** After a Claude session's first assistant message, the machine reads its `usage` (input + cache write + cache read) from the transcript as `startup_tokens`, stores it on the session, and appends `{at, name, startup_tokens}` to the session ledger. No estimate of what the tokens are made of: growth is found by comparison. The Ready check (`viewer/app/ready.js` `check`) returns a `warnings` array alongside `missing`, with one entry when the newest Claude session on the build machine that has a sample started more than 5,000 tokens above the median of up to 20 earlier sampled Claude sessions with the same role and project folder. Fewer than 5 earlier samples, or none at all, gives no warning. Warnings never change `ok`. A Claude Code update that adds tools is a step change across all roles, so it shows; ordinary edits to a role file move a few hundred tokens and do not.
+- **Where the warning shows.** When the hub accepts an `approval` card (`viewer/app/cards.js`, the add-card path), it runs the Ready check's warning part and stores `card.ready.warnings`; the lookup has its own 2-second deadline, shorter than the card relay's, and if it fails or times out the card is accepted with `warnings: []`; the lead's submitted `ok`/`missing` are kept as today. A `recheck` press replaces `card.ready` whole, warnings included. On `start-building`, `same()` keeps comparing `missing` only; the hub writes the fresh `warnings` onto the card and, if `ok`, starts the build on that same press. A warning that appears or clears never consumes the press. The approval card shows the warning text: "Claude sessions now start about <n>k tokens bigger than usual for this role and project. A Claude Code update may have added tools; tell the lead." `<n>` is the difference from the median, in thousands. The Ready result stays Ready.
 - Measured: interactive haiku session in this worktree, first-call context 47,869 tokens by default, 17,093 with the deny list (2026-11-17).
 
 ### Starting instructions carry the rules
@@ -126,10 +127,10 @@ get buried as this file grows.
 
 ### Validation
 
-- `bash machine/test/run.sh` (Claude argv carries the deny list and neither `--strict-mcp-config` nor `--disable-slash-commands`; composed prompt holds role text and the right card files per role; `startup_tokens` and `tool_overhead` recorded from a fixture transcript with attachment records; ledger start line and Codex thread-id line written).
-- `node --test viewer/test/*.test.js` (Ready check warning above 25,000 and not below, sessions without a sample skipped, none at all gives no warning; approval card accepted with `warnings: []` when the lookup fails; Start building not consumed by a warning-only change; `wc.js diff size` bands and the `docs/plans/` exclusion on a temp repo; compact and `--full` list; every schema kind has exactly one section across `cards.md` and `cards-lead.md`; `card.js` accepts the same cards as before; `protocol-rules.test.js` updated).
+- `bash machine/test/run.sh` (Claude argv carries the deny list and neither `--strict-mcp-config` nor `--disable-slash-commands`; composed prompt holds role text and the right card files per role; `startup_tokens` recorded from a fixture transcript and its ledger line written; ledger start line and Codex thread-id line written).
+- `node --test viewer/test/*.test.js` (Ready check warning when the newest sample is more than 5,000 above the role-and-project median and not at 5,000 or below, sessions without a sample skipped, fewer than 5 earlier samples gives no warning; approval card accepted with `warnings: []` when the lookup fails; Start building not consumed by a warning-only change; `wc.js diff size` bands and the `docs/plans/` exclusion on a temp repo; compact and `--full` list; every schema kind has exactly one section across `cards.md` and `cards-lead.md`; `card.js` accepts the same cards as before; `protocol-rules.test.js` updated).
 - `npm --prefix viewer run test:browser` (approval card shows the warning).
-- Live: after install, start a Claude lead (a test thread) and a Claude worker on this machine; both record `tool_overhead` under 25,000, and the lead's composed instructions hold lead.md, cards.md and cards-lead.md.
+- Live: after install, start a Claude lead (a test thread) and a Claude worker on this machine; both record `startup_tokens`, the worker's at least 25,000 below today's comparable worker sessions, and the lead's composed instructions hold lead.md, cards.md and cards-lead.md.
 - Re-measure after a few threads with the baseline method above, taking each Claude session's role from the session ledger (joined on `cli_session_id` = transcript file name), and reporting the same metrics: cost share by role, average context per call, calls per session.
 
 ### Measured baseline (2026-11-17)
@@ -221,12 +222,26 @@ get buried as this file grows.
 | intent | minor | Decision 3 not superseded | upheld | Decision 27 |
 | intent | minor | Validation misses the round-2 items | upheld | Validation extended |
 | intent | minor | Kept list incomplete | upheld | Decision 28 |
-| mechanics | blocking | Overhead formula subtracts diagnostics records; 30 of 30 estimates negative | user-decision | Budget reached; the warning's measurement is a recurring objection, put to Collin |
+| mechanics | blocking | Overhead formula subtracts diagnostics records; 30 of 30 estimates negative | upheld | Budget reached; Collin chose Keep going; replaced the estimate with a comparison (Decision 32) |
 | mechanics | blocking | Rename endpoints vs the path-limited listing | upheld | Decision 29 |
 | mechanics | major | `session start` echoes the inlined prompt | upheld | Decision 30 |
 | mechanics | major | Warning lookup can outlast the relay | upheld | Decision 31 |
 | mechanics | major | Re-measure misses account directories | upheld | Decision 31 |
 | mechanics | major | Sessions spanning a deploy lose `<root>` and lead card rules | upheld | Decision 31 |
+
+### Round 4 — 2026-11-17
+
+**Lanes:** intent: claude; mechanics: gpt; cross-family: yes.
+
+**Changed since Round 3:** budget reset after Collin chose Keep going.
+- Startup warning is now a comparison with earlier sessions of the same role and project (32)
+- Excluded paths and renames in the sizing command (29)
+- `session start` compact output (30)
+- Warning lookup deadline, ledger account_dir and startup line, pointer fallback in role files (31)
+- Round 3 intent wording fixes (scout inputs, ledger Codex id, kept tools, validation)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
