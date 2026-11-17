@@ -41,7 +41,8 @@
     const li = el('li', 'row' + (t.id === currentId ? ' current' : ''));
     li.dataset.id = t.id;
     const top = el('div', 'top');
-    const stage = stages[t.id];
+    // A small fix has no plan and so no stage; its done card marks it Done.
+    const stage = stages[t.id] || (t.done_card ? 'Done' : undefined);
     const working = !t.archived && (t.sessions || []).some((s) => s.role === 'lead' && s.live && s.ready && s.turn_ended === false);
     const dot = el('span', 'dotmark ' + (waiting[t.id] ? 'amber' : stage === 'Done' ? 'green' : stage ? 'blue' : '') + (working ? ' working' : ''));
     if (working) dot.title = 'Working';

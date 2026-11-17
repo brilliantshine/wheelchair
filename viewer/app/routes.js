@@ -392,7 +392,9 @@ async function handleThreads(hub, request, response, url, bits, body) {
     const threads = all.map((thread) => {
       if (!lean) return { ...thread, sessions: thread.sessions.map(publicSession) };
       const { cards, sent, delivered_ids, context, pinned, archive, queues, sudo_index, ...summary } = thread;
-      return { ...summary, sessions: thread.sessions.map(({ name, role, live, ready, turn_ended, created_at }) => ({ name, role, live, ready, turn_ended, created_at })) };
+      // A small fix writes no plan, so it has no stage; its done card is what says it finished.
+      const doneCard = (cards || []).some((card) => card.kind === 'done' && !card.replaced);
+      return { ...summary, done_card: doneCard, sessions: thread.sessions.map(({ name, role, live, ready, turn_ended, created_at }) => ({ name, role, live, ready, turn_ended, created_at })) };
     });
     return send(response, 200, { threads });
   }
