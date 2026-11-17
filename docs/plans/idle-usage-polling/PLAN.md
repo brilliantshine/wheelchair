@@ -1,6 +1,6 @@
 ---
 slug: idle-usage-polling
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-16
 ---
 
@@ -46,6 +46,18 @@ None.
 | D12 | A poll reading is stamped with the time its probe started | A live reading that arrives during the probe (even from a session that has already ended) is then newer and wins | review-round-1 |
 
 ## Spec
+
+```mermaid
+flowchart TD
+  tick["every minute: list accounts that are due<br/>(reading 9+ min old, not tried in 9 min)"] --> check{"still idle, signed in,<br/>not paused, Claude or Codex?"}
+  check -- no --> skip["skip it"]
+  check -- yes --> ask["machine asks that account's own CLI<br/>(no message can reach the model)"]
+  ask -- failed --> keep["keep the old reading"]
+  ask -- read --> again{"agent started on it meanwhile,<br/>or account removed?"}
+  again -- yes --> drop["drop the reading"]
+  again -- no --> save["save it, stamped with the time the check started<br/>(a newer live reading still wins)"]
+  save --> retry["retry waiting starts"]
+```
 
 ### Behavior
 
