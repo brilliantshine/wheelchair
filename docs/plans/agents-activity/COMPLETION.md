@@ -145,3 +145,21 @@ Screenshots checked by the sub-lead: desktop panel and tree, phone panel, and ph
 - **The 8 MiB no-newline window** is skipped, dropping that one oversized line (T2b).
 
 ## Remediation rounds
+
+### Remediation 1 (verification attempt 1: FAIL, 3 gaps; see REMEDIATION-1.md)
+
+| Gap | Fix | Task / lane | Evidence |
+|-----|-----|-------------|----------|
+| §7 amber path never drawn with real data (`question_paths` on the tree node, page reads the lead record) | `question_paths` moved to the lead record in `buildAgents` (`viewer/app/agents.js`), `viewer/app/API.md` updated | R1, Standard gpt-6.1-terra | `viewer/test/app-views.spec.js:239`: the browser case feeds the real `buildAgents` output to the page |
+| §7 trail rendered the lead passing the question to itself | `questionPanel` (`viewer/pages/agents.js:39`) renders only hops strictly between the asker and the lead's card; the asker is identified by name | R1 | same spec: worker→lead shows no "passed it to" line; worker→sub-lead→lead shows one |
+| §2 spooled Codex turn end deadlocked the event spool | `readCodexSteps` spools events inside its read lock and drains outside it; a spooled turn end only spools (`machine/service.js` `readCodexSteps`, `hook()`) | R2, Standard gpt-6.1-terra | `machine/test/service.test.js`: the verifier's repro as a test (drain finishes, spool empties, offset persisted; a Claude event behind it is delivered) |
+| Note: turn-end flush read one 8 MiB chunk | flush loops bounded reads up to the file size measured at flush start | R2 | `machine/test/service.test.js` multi-chunk flush case (injectable chunk size) |
+| Note: mid-turn delivery left an open turn | `beginTurn` ends the previous open turn at the new turn's start (`viewer/app/sessions.js:36`) | R1 | `viewer/test/app-activity.test.js` mid-turn case |
+
+Validation after remediation, on the merged feature branch (ecf377d), run sequentially, all exit 0:
+```
+node --test viewer/test/*.test.js      # tests 504, pass 504, fail 0
+npm --prefix viewer run test:browser   # 676 passed, 12 skipped (3.2m)
+bash machine/test/run.sh               # tests 133, pass 133, fail 0
+bash install/test/run.sh               # RESULT 187 passed, 0 failed
+```
