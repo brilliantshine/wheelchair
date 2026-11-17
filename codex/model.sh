@@ -12,8 +12,8 @@ import sys
 import tempfile
 
 PROVIDERS = ("claude", "gpt", "gemini")
-SLOTS = ("light", "standard", "heavy", "critical", "lead")
-WORK_TIERS = SLOTS[:-1]
+SLOTS = ("light", "standard", "heavy", "critical", "lead", "sub-lead")
+WORK_TIERS = ("light", "standard", "heavy", "critical")
 DEFAULTS = {
     "claude": {
         "light": ("claude-haiku-5-5", None), "standard": ("claude-sonnet-5-5", None),
@@ -77,7 +77,7 @@ def parse_pins(text):
             skipped.append(skip.group(1))
             continue
         entry = re.fullmatch(
-            r"(claude|gpt|gemini)\.([a-z]+)\s*=\s*([a-z0-9][a-z0-9._-]*)(?:\s+@([a-z]+))?", line)
+            r"(claude|gpt|gemini)\.([a-z-]+)\s*=\s*([a-z0-9][a-z0-9._-]*)(?:\s+@([a-z]+))?", line)
         if entry is not None:
             provider, raw_slot, model, effort = entry.groups()
             slot = slot_for(provider, raw_slot)
@@ -121,7 +121,9 @@ def read_pins(path):
 
 
 def cell(pins, provider, slot):
-    return pins[provider].get(slot, DEFAULTS[provider][slot])
+    if slot == "sub-lead" and slot not in pins[provider]:
+        return cell(pins, provider, "lead")
+    return pins[provider][slot] if slot in pins[provider] else DEFAULTS[provider][slot]
 
 
 def rendered(pins, skipped):

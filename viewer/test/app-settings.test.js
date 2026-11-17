@@ -25,7 +25,7 @@ test('settings defaults, templates, prompt composition, counts, and validation',
     assert.equal(initial.status, 200);
     assert.ok(initial.body.accounts.some((account) => account.id === 'default-gemini'));
     assert.deepEqual(initial.body.worker_order, ['gpt', 'claude', 'gemini']);
-    assert.deepEqual(initial.body.other_agents, { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard' });
+    assert.deepEqual(initial.body.other_agents, { reviewer: 'heavy', verifier: 'heavy', mapper: 'standard', scout: 'light', 'scout-heavy': 'standard' });
     assert.equal(initial.body.permission_mode, 'auto');
     assert.equal(initial.body.codex_mode, 'sandboxed');
     assert.equal(initial.body.tool_steps, 'show');
@@ -311,5 +311,30 @@ test('removed worker providers stay removed after saving', async () => {
       const stored = JSON.parse(await fs.readFile(path.join(context.state, 'settings.json'), 'utf8'));
       assert.deepEqual(stored.worker_order_seen, ['claude', 'gpt', 'gemini']);
     }
+  });
+});
+
+test('scout preferences and session layers follow the selected provider', async () => {
+  await withContext(async (context) => {
+    assert.equal(settings.normalize({ other_agents: { mapper: 'heavy' } }).other_agents.scout, 'light');
+    const saved = await api(context, '/settings/preferences', { method: 'PUT', body: { other_agents: { scout: 'standard', 'scout-heavy': 'heavy' } } });
+    assert.equal(saved.body.other_agents.scout, 'standard');
+    assert.equal((await api(context, '/settings')).body.other_agents['scout-heavy'], 'heavy');
+    assert.equal((await api(context, '/settings/preferences', { method: 'PUT', body: { other_agents: { scout: 'bad' } } })).status, 400);
+    await api(context, '/settings/preferences', { method: 'PUT', body: { other_agents: { scout: 'light', 'scout-heavy': 'standard' } } });
+    const claude = await thread(context, { cli: 'claude' });
+    const lead = claude.sessions[0];
+    assert.match(context.machine.sessions.get(lead.name).role_layers, /Scout model for code reading: haiku\./);
+    const sub = await machinePost(context, '/machine/session', { calling_session: lead.name, action: 'start', role: 'sub-lead', cli: 'claude', attempt_id: 'scout-sub' });
+    const layers = context.machine.sessions.get(sub.body.session.name).role_layers;
+    assert.match(layers, /Agent tool with model "haiku"/);
+    assert.match(layers, /Scout for bigger worker changes \(200 to 800 lines\): sonnet\./);
+    const gpt = await thread(context, { cli: 'codex', project: '/tmp/scout-gpt' });
+    assert.match(context.machine.sessions.get(gpt.sessions[0].name).role_layers, /Scout model for code reading: gpt-6-luna\./);
+    assert.doesNotMatch(context.machine.sessions.get(gpt.sessions[0].name).role_layers, /Claude Code/);
+    await api(context, '/settings/models', { method: 'PUT', body: { provider: 'claude', slot: 'light', model: null } });
+    const none = await thread(context, { cli: 'claude', project: '/tmp/scout-none' });
+    assert.match(context.machine.sessions.get(none.sessions[0].name).role_layers, /Scout model for code reading: none on this CLI\. Read code yourself\./);
+    for (const role of ['worker', 'reviewer', 'verifier', 'mapper']) assert.doesNotMatch(settings.roleLayers(settings.defaults(), role, '', { light: 'haiku', heavy: 'sonnet' }, 'claude').text, /Scout model/);
   });
 });
