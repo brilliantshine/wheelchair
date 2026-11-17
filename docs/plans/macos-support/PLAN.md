@@ -187,7 +187,7 @@ On the Mac job: green on the pull request, including `test-support/macos/check.s
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Spec 1 installer + install/test/run.sh port, Darwin cases (Spec 5) | install.sh, install/test/ | standard / gpt-6.1-terra medium | wc-cb4717eb2af5-worker | bash install/test/run.sh; bash -n; shellcheck | dispatched |
 | T2 | Spec 2 machine service Tailscale/tmux on Darwin, aside-turns ps impl + tests | machine/service.js (2 spots), machine/lib/aside-turns.js, machine/test/aside-turns.test.js | standard / gpt-6.1-terra medium | wc-cb4717eb2af5-worker-2 | node --test machine/test/aside-turns.test.js; bash machine/test/run.sh | dispatched |
-| T3 | Spec 3 preflight lock in Python fcntl; codex scripts bash 3.2; test port | codex/preflight.sh, codex/model.sh, codex/test/ | standard / gpt-6.1-terra medium | wc-cb4717eb2af5-worker-3 | bash codex/test/run.sh | dispatched |
+| T3 | Spec 3 preflight lock in Python fcntl; codex scripts bash 3.2; test port | codex/preflight.sh, codex/model.sh, codex/test/ | standard / gpt-6.1-terra medium | wc-cb4717eb2af5-worker-3 | bash codex/test/run.sh | done |
 | T4 | Spec 4 set.sh without associative arrays; test port | sensitivity/set.sh, sensitivity/test/ | standard / gpt-6.1-terra medium | wc-cb4717eb2af5-worker-4 | bash sensitivity/test/run.sh; bash machine/test/run.sh | dispatched |
 | T5 | Spec 6 check.sh + fakes; Spec 7 macos.yml | test-support/macos/, .github/workflows/macos.yml | standard / gpt-6.1-terra medium | wc-cb4717eb2af5-worker-5 | bash -n; shellcheck; check.sh exits 2 on Linux; YAML parse | dispatched |
 | T6 | Spec 8 README macOS section, routers, MAC-CHECKLIST.md | README.md, AGENTS.md, CONTRIBUTING.md, docs/plans/macos-support/MAC-CHECKLIST.md | standard / gpt-6.1-terra medium (asked claude; hub: claude unavailable) | wc-cb4717eb2af5-worker-6 | git diff --stat; grep launchd | dispatched |
@@ -196,3 +196,4 @@ On the Mac job: green on the pull request, including `test-support/macos/check.s
 
 - 2026-11-16 — Prior Work: none; every Spec item is new in this run.
 - 2026-11-16 — Deviation (temporary): macos.yml also triggers on push to `wc/**` so the Mac job can run before a PR exists; removed before the build result.
+- 2026-11-16 — Choice: T3, codex/test/run.sh: a FIFO passes the fixture server's port (replacing bash-4 `coproc`), and a minimal PATH of symlinked commands excludes `flock`.
