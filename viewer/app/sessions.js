@@ -15,7 +15,6 @@ const { choose, slotFor } = require('./balancer.js');
 const { PROVIDERS, cliOf, providerOf } = require('./providers.js');
 
 const execFileAsync = promisify(execFile);
-const history = require('./step-history.js');
 const KINDS = ['files', 'shell', 'helpers', 'web', 'starter', 'thinking'];
 function counts(s) { s.step_counts ||= {}; for (const k of KINDS) s.step_counts[k] ||= 0; }
 function running(s) { return (s.steps || []).filter(step => !step.ended_at); }
@@ -82,7 +81,6 @@ async function activityEvent(hub, thread, s, payload) {
       if (end) Object.assign(step, { ended_at: end, failed: null, clean: false });
     }
     s.steps.push(step);
-    if (step.clean === true) await history.append(hub.stateDir, thread.project, step);
     const active = running(s).sort((a, b) => a.started_at.localeCompare(b.started_at));
     for (const excess of active.slice(0, Math.max(0, active.length - 50))) Object.assign(excess, { ended_at: now, failed: null, clean: false });
     trimSteps(s);
@@ -93,7 +91,6 @@ async function activityEvent(hub, thread, s, payload) {
       for (const id of ids.slice(0, Math.max(0, ids.length - 50))) delete s.pending_ends[id];
     } else if (!step.ended_at || (step.clean === false && incoming.clean === true)) {
       Object.assign(step, incoming);
-      if (step.clean === true) await history.append(hub.stateDir, thread.project, step);
       trimSteps(s);
     }
   }

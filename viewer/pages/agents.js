@@ -50,15 +50,7 @@
   function svg(tag, attrs = {}, text) { const n = document.createElementNS(svgNS, tag); for (const [k,v] of Object.entries(attrs)) n.setAttribute(k, v); if (text !== undefined) n.textContent = text; return n; }
   function clock(at) { const d = new Date(at); return Number.isNaN(d.getTime()) ? '' : `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; }
   function seconds(since) { const t = Date.parse(since); return Number.isFinite(t) ? Math.max(0, Math.floor((Date.now()-t)/1000)) : 0; }
-  function elapsed(n) { return n >= 3600 ? `${Math.floor(n/3600)}h ${String(Math.floor(n%3600/60)).padStart(2,'0')}m` : n < 60 ? `${n}s` : `${Math.floor(n/60)}m ${String(n%60).padStart(2,'0')}s`; }
   function timer(n) { return `${Math.floor(n/60)}:${String(n%60).padStart(2,'0')}`; }
-  function normalPanel(activity) {
-    const current = activity.current; if (!current) return null;
-    const n = seconds(current.since), normal = activity.normal, box = el('div','agents-insight');
-    if (!normal?.samples?.length) box.append(el('strong','',`Busy for ${elapsed(n)}. Nothing earlier to compare it with.`));
-    else { const long = n * 1000 > 1.5 * normal.typical_ms, minutes = Math.max(1, Math.round(normal.typical_ms / 60000)); const count = normal.samples.length, label = current.label || 'Working'; const times = count === 1 ? 'last time' : `the last ${['','one','two','three','four','five'][count] || count} times`; const typical = normal.typical_ms < 60000 ? `${Math.round(normal.typical_ms / 1000)} seconds` : `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`; box.append(el('strong','',`Quiet for ${elapsed(n)}. ${long ? 'Longer than usual.' : "That's expected."}`), el('span',long ? 'agents-long' : '',`It's ${label.charAt(0).toLowerCase()+label.slice(1)}, which took about ${typical} ${times}.`)); }
-    return box;
-  }
   function questionPanel(q, lead, all, asker) {
     const box = el('div','agents-insight agents-question'); const find = name => all.find(n => n.name === name); const describe = name => name === lead.session.name ? (lead.lead_name || 'Lead') : (find(name)?.role ? `the ${find(name).role}` : name);
     box.append(el('strong','',`Asked ${describe(q.to)} at ${clock(q.asked_at)}`));
@@ -67,7 +59,7 @@
   }
   function activityPanel(node, lead, all) {
     const activity = node.activity || {}, counts = activity.counts || {}, current = activity.current;
-    const insight = node.question ? questionPanel(node.question, lead, all, node.name) : normalPanel(activity); const fragment = document.createDocumentFragment();
+    const insight = node.question ? questionPanel(node.question, lead, all, node.name) : null; const fragment = document.createDocumentFragment();
     const figure = el('figure','agents-activity'); const map = svg('svg',{viewBox:'0 0 320 275',role:'img','aria-label':'Activity map'}); const parent = all.find(n => (n.children || []).includes(node)); const starter = node === lead.session ? 'You' : (parent?.role || 'Lead').replace(/^./, c => c.toUpperCase());
     const spots = [{kind:'starter',label:starter,x:160,y:27,tx:160,ty:11,anchor:'middle'}, {kind:'files',label:'Files',x:242,y:75,tx:258,ty:71,anchor:'start'}, {kind:'shell',label:'Shell',x:242,y:170,tx:258,ty:166,anchor:'start'}, {kind:'web',label:'Web',x:160,y:217,tx:160,ty:242,anchor:'middle'}, {kind:'helpers',label:'Helpers',x:78,y:170,tx:62,ty:166,anchor:'end'}, {kind:'thinking',label:'Thinking',x:78,y:75,tx:62,ty:71,anchor:'end'}]; const max = Math.max(0,...spots.map(s => Number(counts[s.kind]) || 0));
     for (const spot of spots) { const width = 1 + (max ? 5 * (Number(counts[spot.kind]) || 0)/max : 0); map.append(svg('line',{x1:160,y1:122,x2:spot.x,y2:spot.y,'stroke-width':width,class:'activity-line','data-kind':spot.kind})); if (current?.kind === spot.kind) map.append(svg('line',{x1:160,y1:122,x2:spot.x,y2:spot.y,'stroke-width':Math.max(2,width),class:'activity-flow',style:`animation-delay:-${Date.now() % 8000}ms`})); }

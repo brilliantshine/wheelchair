@@ -26,7 +26,7 @@ function activity(session) {
       current = { kind: 'thinking', label: 'Thinking', since };
     }
   }
-  return { counts, trail, current, latest, normal: null };
+  return { counts, trail, current, latest };
 }
 
 // Follow stored links, stopping before a repeated card or sender.
@@ -120,18 +120,6 @@ async function agents(hub) {
   const threads = await hub.allThreads();
   const stages = Object.fromEntries(await Promise.all(threads.map(async (thread) => [thread.id, !thread.slug ? 'idea' : STATUS_GROUP[thread.worktree ? await readStatus(thread) : thread.last_status] || 'idea'])));
   const leads = buildAgents(threads, stages);
-  const history = require('./step-history.js');
-  await Promise.all(leads.map(async lead => {
-    const thread = threads.find(t => t.id === lead.thread_id);
-    async function fill(node) {
-      const current = node.activity.current;
-      const session = (thread.sessions || []).find(s => s.name === node.name);
-      const step = current?.id && (session?.steps || []).find(s => s.id === current.id);
-      if (step) node.activity.normal = await history.normal(hub.stateDir, thread.project, step.key);
-      await Promise.all(node.children.map(fill));
-    }
-    await fill(lead.session);
-  }));
   const registry = await hub.machines();
   const hubEntry = await hub.state.resolveMachine(registry, 'hub');
   const machines = await Promise.all(Object.entries(registry).map(async ([machine, entry]) => {

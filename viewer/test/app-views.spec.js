@@ -376,7 +376,7 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
 
     test('activity, memory and question paths render from the agents API', async ({ page }) => {
       const since = new Date(Date.now() - 10000).toISOString();
-      const worker = { name: 'worker', role: 'worker', live: true, state: 'working', children: [], context: { percent: 75 }, activity: { counts: { files: 10, shell: 5, web: 5 }, trail: ['files','shell'], current: { kind: 'web', label: 'Running tests', since }, latest: Array.from({ length: 5 }, (_, i) => ({ label: `Step ${i}`, at: since, state: 'running' })), normal: { samples: [180000,180000], typical_ms: 180000 } } };
+      const worker = { name: 'worker', role: 'worker', live: true, state: 'working', children: [], context: { percent: 75 }, activity: { counts: { files: 10, shell: 5, web: 5 }, trail: ['files','shell'], current: { kind: 'web', label: 'Running tests', since }, latest: Array.from({ length: 5 }, (_, i) => ({ label: `Step ${i}`, at: since, state: 'running' })) } };
       const middle = { name: 'middle', role: 'sub-lead', children: [worker] };
       const other = { name: 'other', role: 'worker', children: [{ name: 'other-child', role: 'worker', children: [] }] };
       const lead = { name: 'lead', role: 'lead', children: [middle, other] };
@@ -393,8 +393,7 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       const bounds = await page.locator('.agents-activity svg').evaluate(map => [...map.querySelectorAll('text')].every(n => { const b = n.getBBox(), v = map.viewBox.baseVal; return b.x >= v.x && b.y >= v.y && b.x + b.width <= v.x + v.width && b.y + b.height <= v.y + v.height; }));
       expect(bounds).toBe(true);
       await expect(page.locator('.activity-ring-group title')).toHaveText('Memory 75% full');
-      await expect(page.locator('.agents-insight')).toContainText("That's expected.");
-      await expect(page.locator('.agents-insight')).toContainText('about 3 minutes the last two times');
+      await expect(page.locator('.agents-insight')).toHaveCount(0);
       await expect(page.locator('.agents-latest-row')).toHaveCount(4);
       await expect(page.locator('.latest-running').first()).toHaveText('●');
       await expect(page.locator('.agents-latest-row time').first()).toHaveText(/^\d{2}:\d{2}$/);
@@ -467,16 +466,11 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       await expect(page.locator('.agents-path-legend')).toHaveCount(0);
       worker.activity = { current: { kind: 'files', label: 'Reading files', since: new Date(Date.now()-45000).toISOString() }, latest: [{ label: 'Done', at: new Date().toISOString(), state: 'done' }, { label: 'Failed', at: new Date().toISOString(), state: 'failed' }] };
       worker.context = { percent: 50 }; await load();
-      await expect(page.locator('.agents-insight')).toContainText('Nothing earlier to compare it with.');
+      await expect(page.locator('.agents-insight')).toHaveCount(0);
       await expect(page.locator('.activity-ring-group title')).toHaveText('Memory 50% full');
       await expect(page.locator('.latest-done')).toHaveText('✓'); await expect(page.locator('.latest-failed')).toHaveText('✕');
-      worker.activity.normal = { samples: [10000], typical_ms: 10000 }; worker.context.percent = 95; await load();
-      await expect(page.locator('.agents-insight')).toContainText('Longer than usual.');
-      await expect(page.locator('.agents-long')).toContainText('last time.');
+      worker.context.percent = 95; await load();
       await expect(page.locator('.activity-ring-group title')).toHaveText('Memory 95% full');
-      worker.activity.current = { kind: 'files', since: new Date(Date.now()-3900000).toISOString() }; await load();
-      await expect(page.locator('.agents-insight')).toContainText('Quiet for 1h 05m');
-      await expect(page.locator('.agents-insight')).toContainText("It's working");
       await openPage(page, context, '/app/agents?lead=a&agent=lead');
       await expect(page.locator('.activity-label').first()).toHaveText('You');
       record.question_paths = [['worker','missing']]; await load();
