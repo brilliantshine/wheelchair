@@ -624,6 +624,20 @@ test('a live wc-* tmux session missing from sessions.json is rebuilt and tokenle
     } finally { await env.close(); }
   });
 });
+test('pane history captures requested scrollback and rejects invalid values', async () => {
+  const env = await service(await temp()); try {
+    await start(env);
+    assert.equal((await api(env, 'GET', '/v1/sessions/wc-t-lead/pane?history=2000', undefined, hubHeader)).status, 200);
+    assert.match(await log(env), /tmux capture-pane -p -e -S -2000 -t wc-t-lead/);
+    await fs.writeFile(env.fake.log, '');
+    assert.equal((await api(env, 'GET', '/v1/sessions/wc-t-lead/pane', undefined, hubHeader)).status, 200);
+    assert.doesNotMatch(await log(env), /capture-pane.* -S /);
+    for (const value of ['2001', 'abc']) {
+      const response = await api(env, 'GET', `/v1/sessions/wc-t-lead/pane?history=${value}`, undefined, hubHeader);
+      assert.equal(response.status, 400); assert.deepEqual(response.body, { error: 'history must be 0-2000' });
+    }
+  } finally { await env.close(); }
+});
 test('worktree-remove: only a merged, finished worker of the same thread, called by a sub-lead', async () => {
   const root = await temp(); const env = await service(root, { realGit: true }); try {
     const { repo, worktree } = await startedWorktree(env, root, 'wr');

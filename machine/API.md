@@ -13,7 +13,7 @@ The secret is never inherited by a tmux session.
 | `GET /v1/uploads/<thread-id>/<file>` | hub | Streams a stored file, with image MIME types for PNG, JPEG, GIF and WebP; other files are octet-stream attachments. Sends `X-Content-Type-Options: nosniff`. |
 | `POST /v1/archive` | hub | `{ "thread_id": "…" }`; stop the thread's sessions, locally commit or retain its service-created worktrees as appropriate, remove clean worktrees, and forget its sessions. A session whose worktree is retained stays as a non-running `archived_pending` record so a later archive can remove it after the problem is resolved. Returns `200 { "stopped": [names], "committed": [{ "worktree", "commit" }], "removed": [paths], "kept": [{ "worktree", "reason" }], "uploads_removed": true|false|null, "uploads_error"?: "…" }`. Uploads are removed unless a rebase is in progress (null); false and the error indicate removal failed. |
 | `DELETE /v1/sessions/:name` | hub | Stop a managed session. |
-| `GET /v1/sessions/:name/pane` | hub | Current pane text, with its color escape codes. |
+| `GET /v1/sessions/:name/pane` | hub | Current pane text, with its color escape codes. `?history=<n>` (0–2000) adds the last n lines of scrollback (`capture-pane -S -<n>`); anything else is 400. |
 | `POST /v1/sessions/:name/submit` | hub | `{ "text": "…" }`; bracketed paste followed by Enter. |
 | `POST /v1/sessions/:name/keys` | hub | `{ "keys": "…" }`; raw tmux keys, never an implicit Enter. |
 | `GET /v1/sessions/:name/transcript?offset=N` | hub | Newly copied transcript bytes and next byte offset. A Claude session with no Stop payload yet is found by session id under `$CLAUDE_CONFIG_DIR` (else `~/.claude`) at `projects/*/<id>.jsonl`. |

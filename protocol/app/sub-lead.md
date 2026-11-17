@@ -97,7 +97,8 @@ looks.
   escalation, below.
 
 Start a worker with `node <root>/viewer/app/wc.js session start --role worker --tier
-<tier> --brief-file <path> --attempt <id> [--provider <claude|gpt|gemini> |
+<tier> --brief-file <path> --attempt <id> --title "<a few words saying what this agent
+does, in Collin's terms>" [--provider <claude|gpt|gemini> |
 --not-provider <claude|gpt|gemini>] [--effort <e>]`. The optional `--effort` is for worker starts
 only and overrides the tier's pinned effort for that session. The tier is `light`, `standard`, `heavy`, `critical` or `top` (Heavy), for all CLIs; a tier whose
 cell in Settings is Not used for that CLI is refused. The old names `luna`, `terra`, `sol`, `astra`
