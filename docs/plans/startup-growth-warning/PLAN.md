@@ -228,7 +228,7 @@ Start building.
 
 ### Round 3 — 2026-11-17
 
-**Lanes:** pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 2:**
 - Samples grouped by role and model (Decision 10); 5 samples per setup (Decision 11)
@@ -239,6 +239,13 @@ Start building.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | blocking | Claude Code updates every 1-3 days, so a setup rarely reaches 5 samples and the warning almost never shows | user-decision | Budget card; rule choice goes back to Collin |
+| intent | minor | RE-RAISE: machine attaching warnings is now cheaper than the lead copying them | upheld | Pending the rule decision |
+| intent | minor | One-paragraph summary out of date | upheld | Pending |
+| mechanics | blocking | Deadline cannot stop a synchronous transcript probe already running | upheld | Pending |
+| mechanics | major | A first sample on a third setup clears an existing warning | upheld | Pending the rule decision |
+| mechanics | major | Configured model may be an alias; group by the record's model | upheld | Pending |
+| mechanics | blocking | CLI passes warnings the card validator rejects | upheld | Pending |
 
 ## Prior Work
 
