@@ -155,11 +155,15 @@ New tests: model.sh reads, writes and defaults the sub-lead cell; balancer resol
 
 | Spec item | State | Evidence (file:line) | Confidence |
 |-----------|-------|----------------------|------------|
+| `model.sh family claude <slot>` prints the Claude family alias (haiku/sonnet/opus/fable) | pre-existing | codex/model.sh:331-338 | high |
 
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Sub-lead model cell (model.sh, balancer, routes), scout + scout-heavy settings, scout layer in lead/sub-lead start | codex/, viewer/app/{balancer,settings,routes,sessions}.js, viewer/app/API.md, viewer/test/*.test.js | standard (claude-sonnet-5-5 / gpt-6.1-terra) | | codex, machine, node tests | not started |
+| T2 | Settings page: Leads/Sub-leads model rows, Scout and Scout for bigger changes selectors (after T1) | viewer/pages/settings.js, viewer/test/app-settings.spec.js | standard, --provider claude (claude-sonnet-5-5) | | node + browser tests | not started |
+| T3 | Scout rule in lead.md and sub-lead.md; size-banded diff check in sub-lead.md | protocol/app/lead.md, protocol/app/sub-lead.md | standard (claude-sonnet-5-5 / gpt-6.1-terra) | | protocol-rules test | not started |
 
 ## Log
 
