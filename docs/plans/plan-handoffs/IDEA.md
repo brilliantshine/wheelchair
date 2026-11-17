@@ -30,6 +30,10 @@ and pick it up somewhere else.
   from the same stage, without being re-told the idea or the decisions made so far.
 - The new thread works from the exported branch on GitHub, so the plan documents and any
   committed code are there.
+- Importing never makes a duplicate. If the file comes from a thread this app already has,
+  the import points you back to that thread instead of making a new one. If the file is a
+  later stage of that same thread (it went elsewhere, moved on, and came back), the
+  existing thread is advanced to the newer stage.
 
 ## Not doing
 
