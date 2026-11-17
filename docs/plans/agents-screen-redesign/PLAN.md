@@ -14,17 +14,7 @@ and `docs/proposals/app-shell/design/AgentsTree.dc.html`, `AgentsTerminal.dc.htm
 
 ## Open Questions
 
-### Q1: How does the screen work on a phone?
-- **Context:** The designs are desktop only: sidebar, tree, side panel and bottom terminal
-  side by side. Collin often uses the app from a phone, and the other app pages switch
-  layout under 900px (`viewer/pages/app.css:151`).
-- **Options:** (a) Stack it: the lead list, then tapping a lead shows its tree, tapping an
-  agent opens its panel full screen, and the terminal opens full screen. (b) Desktop
-  only; on a phone the screen shows the tree without the side panel or bottom terminal,
-  and Open terminal goes to today's page.
-- **Recommendation:** (a).
-
-### Q2: Where does each box's title come from?
+### Q1: Where does each box's title come from?
 - **Context:** The design labels each agent by what it is doing. The hub does not reliably
   keep an agent's brief (MAP.md, session records paragraph), and briefs are long.
 - **Options:** (a) Whoever starts an agent gives it a short title (`wc.js session start
@@ -51,10 +41,13 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 5 | "Finished today" means leads whose sessions all ended since local midnight | Plain reading of the label | defaulted |
 | 6 | Pop out opens today's terminal page, which also starts view only with the same typing switch | The stray-key problem exists there too | defaulted |
 | 7 | The project tag is the basename of the thread's project path | Already stored on the thread (`viewer/app/threads.js:20-38`) | defaulted |
+| 8 | On a phone (under 900px) the screen stacks: lead list, then the lead's tree, then the agent's panel full screen; the terminal opens full screen with the same view-only switch | Keeps everything reachable on a phone | user |
 
 ## Spec
 
 (Grows as decisions land.)
+
+- **Phone, under 900px:** the screen stacks. First the list of leads; tapping one shows its tree with a back link; tapping an agent shows its panel full screen with a back link; Open terminal opens the terminal full screen, starting view only, with the same typing switch and close.
 
 ## Accepted Risks
 
