@@ -421,18 +421,27 @@
     }
     sigs.chat = null; render();
   }
+  // One press at a time per card: a question or offer greys out the moment it is tapped, so a
+  // double tap sends nothing twice. A card answered elsewhere (another tab) just shows as answered.
+  const pressing = {};
   async function press(card, action, value, node) {
+    if (pressing[card.id]) return;
+    const once = card.kind === 'question' || card.kind === 'offer';
+    if (once) { pressing[card.id] = true; card.answered = true; sigs.chat = null; sigs.pinned = null; render(); }
     try {
       await post(T + '/cards/' + encodeURIComponent(card.id) + '/press',
         value === undefined ? { action } : { action, value });
       delete cardErrors[card.id];
       card.answered = true;
-      await poll(true);
     } catch (e) {
-      cardErrors[card.id] = e.message;
-      sigs.chat = null; sigs.pinned = null;
-      render();
+      if (once && /already answered/.test(e.message)) card.answered = true;
+      else { if (once) card.answered = false; cardErrors[card.id] = e.message; }
+    } finally {
+      delete pressing[card.id];
     }
+    sigs.chat = null; sigs.pinned = null;
+    await poll(true);
+    render();
   }
   // What a pressed question or offer shows as its pick: the offer's mapped label, else the value itself.
   function pickedLabel(card) {

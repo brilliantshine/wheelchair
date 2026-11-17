@@ -192,6 +192,34 @@ test('replaces a thread singleton card', async () => {
   });
 });
 
+test('refuses a second press on an answered question or offer and queues only the first', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const lead = made.sessions[0];
+    const question = await card(context, made.id, lead.name, {
+      kind: 'question', fits: 'This settles the approach.', question: 'Which?',
+      options: [{ id: 'a', label: 'A', consequence: 'Use A.' }, { id: 'b', label: 'B', consequence: 'Use B.' }],
+      leaning: 'a', why: 'It is simpler.',
+    });
+    const offer = await card(context, made.id, lead.name, { kind: 'offer', summary: 'A feature.' });
+    const press = (id, body) => api(context, `/threads/${made.id}/cards/${id}/press`, { method: 'POST', body });
+    assert.equal((await press(question.body.id, { action: 'picked', value: 'A' })).status, 202);
+    for (const body of [{ action: 'picked', value: 'A' }, { action: 'picked', value: 'B' }, { action: 'answered', value: 'C' }]) {
+      const again = await press(question.body.id, body);
+      assert.equal(again.status, 422);
+      assert.match(JSON.stringify(again.body), /card is already answered/);
+    }
+    assert.equal((await press(offer.body.id, { action: 'picked', value: 'take it into planning' })).status, 202);
+    assert.equal((await press(offer.body.id, { action: 'picked', value: 'take it into planning' })).status, 422);
+    const stored = JSON.parse(await fs.readFile(path.join(context.state, 'threads', `${made.id}.json`), 'utf8'));
+    const queue = stored.sessions.find((item) => item.name === lead.name).queue.map((item) => item.text);
+    assert.equal(queue.filter((text) => text.startsWith(`[card ${question.body.id}]`)).length, 1);
+    assert.equal(queue.filter((text) => text.startsWith(`[card ${offer.body.id}]`)).length, 1);
+    const stillA = stored.cards.find((item) => item.id === question.body.id);
+    assert.equal(stillA.answered_value, 'A');
+  });
+});
+
 test('records a press and lets a lead resolve an open question only in its thread', async () => {
   await withContext(async (context) => {
     const made = await thread(context);

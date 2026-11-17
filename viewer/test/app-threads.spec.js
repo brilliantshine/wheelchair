@@ -622,6 +622,32 @@ for (const [label, size] of SIZES) {
       await expect(card.locator('button.opt').first()).toBeDisabled();
     });
 
+    test('S4: a double tap sends one press, and a card answered elsewhere shows answered with no error', async ({ page }) => {
+      const made = await ctx.make({ cli: 'claude' });
+      const q = await ctx.post(made.id, QUESTION);
+      const stale = await ctx.post(made.id, { ...QUESTION, question: 'Answered in another tab?' });
+      await open(page, made.id);
+      const presses = [];
+      page.on('request', (r) => { if (r.url().includes(`/cards/${q.id}/press`)) presses.push(r); });
+      const card = page.locator(`#card-${q.id}`);
+      await card.locator('button.opt', { hasText: 'Not quite' }).dblclick();
+      await expect(card.locator('.answered-tag')).toHaveText(/You picked Not quite/);
+      expect(presses).toHaveLength(1);
+
+      const other = page.locator(`#card-${stale.id}`);
+      await expect(other.locator('button.opt').first()).toBeEnabled();
+      await ctx.patch(made.id, (x) => {
+        const c = x.cards.find((c) => c.id === stale.id);
+        c.answered = true; c.answered_action = 'picked'; c.answered_value = 'Not quite';
+      });
+      const res = page.waitForResponse((r) => r.url().includes(`/cards/${stale.id}/press`));
+      await other.locator('button.opt').first().click();
+      expect((await res).status()).toBe(422);
+      await expect(other.locator('.answered-tag')).toHaveText(/You picked Not quite/);
+      await expect(other.locator('button.opt').first()).toBeDisabled();
+      await expect(other).not.toContainText('already answered');
+    });
+
     test('S4: an answer in his own words is sent, closes the card and is shown', async ({ page }) => {
       const made = await ctx.make({ cli: 'claude' });
       const q = await ctx.post(made.id, QUESTION);
