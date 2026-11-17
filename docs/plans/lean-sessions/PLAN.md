@@ -77,7 +77,8 @@ get buried as this file grows.
 | 48 | Claude gets its starting text through `--append-system-prompt-file`; default Codex home resolved like the adapter; API.md updated | tmux rejects commands over ~16 KiB | review-round-11 |
 | 49 | Prompt files are kept like settings files | No cleanup exists for either; adding one is out of scope | review-round-12 |
 | 50 | Prompt file written before the worktree; growth answers validated before caching | Round 12 mechanics | review-round-12 |
-| 51 | The startup-growth warning moves to its own thread; this plan only records `startup_tokens` in the ledger. Supersedes the warning parts of 2, 3, 13, 19, 25, 27, 31–33, 35–37, 39–42, 45–47, 50 | Most review findings were about the warning; the saving doesn't depend on it | user |
+| 51 | The startup-growth warning moves to its own thread; this plan only records `startup_tokens` in the ledger. Supersedes the warning parts of 2, 3, 13, 19, 25, 27, 31–34, 35–37, 39–42, 45–47, 50 | Most review findings were about the warning; the saving doesn't depend on it | user |
+| 52 | Codex and Antigravity get a pointer to the composed file, not inline text; startup sample captured once from Stop or at stop; live check uses a fixed brief and absolute thresholds | Round 13 mechanics | review-round-13 |
 | 12 | No GPT tool-schema trimming | Codex offers no supported way to drop its built-in tools; revisit if it adds one | defaulted |
 
 ## Spec
@@ -91,7 +92,7 @@ get buried as this file grows.
 - The list lives in one constant beside `command()`, so adding a tool is a one-line change.
 - Every role uses this list: lead, sub-lead, worker, reviewer, verifier, mapper. Asides and the usage probe keep their own argv.
 - No `--strict-mcp-config` or `--disable-slash-commands`: measured savings were ~0.5k, and they would drop a target project's own MCP servers and skills.
-- **Startup size recorded.** After a Claude session's first assistant message, the machine reads its `usage` (input + cache write + cache read) from the transcript as `startup_tokens`, stores it on the session, and appends `{at, name, role, project, startup_tokens}` to the session ledger, where `project` is the start input's `project_dir`. Best-effort, like every ledger append. Nothing reads it at runtime in this plan: it is data for re-measuring and for the startup-growth warning's own thread (Decision 51).
+- **Startup size recorded.** Once per session (a `startup_recorded` flag on the session record makes replays and later hooks no-ops): on the first `Stop` hook, which carries `transcript_path`; or, if the session stops or ends without one (an interrupted first turn sends only `StopFailure`), at stop, from the transcript the machine locates by `cli_session_id` under the session's Claude home (`<home>/projects/*/<cli_session_id>.jsonl`). No transcript or no assistant message: nothing is recorded. From the first assistant message the machine reads its `usage` (input + cache write + cache read) from the transcript as `startup_tokens`, stores it on the session, and appends `{at, name, role, project, startup_tokens}` to the session ledger, where `project` is the start input's `project_dir`. Best-effort, like every ledger append. Nothing reads it at runtime in this plan: it is data for re-measuring and for the startup-growth warning's own thread (Decision 51).
 - Measured: interactive haiku session in this worktree, first-call context 47,869 tokens by default, 17,093 with the deny list (2026-11-17).
 
 ### Starting instructions carry the rules
@@ -105,7 +106,8 @@ get buried as this file grows.
 - Asides are out of scope: `machine/lib/aside-turns.js` keeps its own pointer prompt.
 - The files are read from the machine's clone when the session starts. A session keeps the text it started with; a later edit reaches the next session.
 - Role files lose their "Read `cards.md`, beside this file, first" lines; cross-references ("see the `diagram` section of `cards-lead.md`") stay, and resolve inside the starting text.
-- Claude carries it in a file: the machine writes the composed text to `<stateDir>/prompts/<session name>.md` and launches with `--append-system-prompt-file <that path>` instead of `--append-system-prompt <text>`, because tmux refuses a command line over about 16 KiB and lead.md alone is 28.8 KB. The file is written right after the text is composed and before `git worktree add`, so a failed write leaves no branch or worktree and a retry works. It is kept, like the settings file beside it (neither is removed today; about 30 KB per lead start). Codex and Antigravity carry it in the first `[wc:role]` message, which is typed through `tmux load-buffer` from stdin (`machine/service.js:666-669`), so no size limit applies.
+- Codex and Antigravity get the composed text in a file too, never inline: Codex hands the first input back to its notify hook as one command-line argument, which Linux caps at 128 KiB, so inlining the rules could push a brief that works today over that cap and lose the turn-end event. The machine writes `<stateDir>/prompts/<session name>.md` (before the worktree, like Claude's) and the first message is `[wc:role] Role: <role>. Read <that path> before responding: it holds your role rules and card rules. Read it again only if it is no longer in your context.` followed by the brief. That is one read per session instead of the role file plus all of `cards.md`.
+- Claude carries it in a file: the machine writes the composed text to `<stateDir>/prompts/<session name>.md` and launches with `--append-system-prompt-file <that path>` instead of `--append-system-prompt <text>`, because tmux refuses a command line over about 16 KiB and lead.md alone is 28.8 KB. The file is written right after the text is composed and before `git worktree add`, so a failed write leaves no branch or worktree and a retry works. It is kept, like the settings file beside it (neither is removed today; about 30 KB per lead start). 
 - `machine/API.md` is updated: starting text is the `Role:` line, the header and the inlined files, then layers; `role_prompt` replaces everything after the `Role:` line.
 - The 12,000-character cap at `viewer/app/settings.js:177` stays on the layers only.
 
@@ -148,14 +150,15 @@ get buried as this file grows.
 
 ### Validation
 
-- `bash machine/test/run.sh` (a Claude lead start's tmux command stays under 8 KiB with a composed prompt over 30 KB and its argv carries `--append-system-prompt-file`;Claude argv carries the deny list and neither `--strict-mcp-config` nor `--disable-slash-commands`; composed prompt holds role text and the right card files per role; `startup_tokens` recorded from a fixture transcript and its ledger startup line written; the ledger start line carries `account_dir`;  a missing role or card file fails the start and leaves no branch or worktree; a ledger append error does not fail a start, hook or report; `wc.js diff size` lists both rename ends with `diff.renames=false`).
+- `bash machine/test/run.sh` (a Claude lead start's tmux command stays under 8 KiB with a composed prompt over 30 KB and its argv carries `--append-system-prompt-file`;Claude argv carries the deny list and neither `--strict-mcp-config` nor `--disable-slash-commands`; composed prompt holds role text and the right card files per role; `startup_tokens` recorded from a fixture transcript and its ledger startup line written; the ledger start line carries `account_dir`;  a missing role or card file, or a forced failure writing the prompt file, fails the start and leaves no branch or worktree, and a retry then succeeds; a Codex start's first message is the short pointer and its notify argument stays small with a 100 KB brief; `startup_tokens` recorded once from a `Stop` hook and, for a first turn ending in `StopFailure`, at stop from the located transcript, never twice; a ledger append error does not fail a start, hook or report; `wc.js diff size` lists both rename ends with `diff.renames=false`).
 - `node --test viewer/test/*.test.js` (`wc.js diff size` bands, the `docs/plans/` exclusion, structured excluded paths, both ends of a rename across `docs/plans/` with `diff.renames=false`, literal pathspecs, and a run from a subdirectory of a worktree whose path contains spaces, on a temp repo; a sub-lead with no scout may read a `scout`-band diff itself; `session start` and `session list` default output compact with `branch` and `worktree` and no `command`, `--full` raw; every schema kind has exactly one section across `cards.md` and `cards-lead.md`; `card.js` accepts the same cards as before; Settings preview shows the `Role:` line, header and file lines; `protocol-rules.test.js` updated).
-- Live: after install, start a Claude lead (a test thread) and a Claude worker on this machine; the lead starts in real tmux with its prompt file; both record `startup_tokens`, the worker's at least 25,000 below today's comparable worker sessions, and the lead's composed instructions hold lead.md, cards.md and cards-lead.md.
-- Re-measure after a few threads with the baseline method above, taking each Claude session's role from the session ledger (joined on `cli_session_id` = transcript file name), and reporting the same metrics: cost share by role, average context per call, calls per session. For GPT, role comes from the `Role: <role>` line at the start of the first `[wc:role]` message (or, for sessions started before the change, the first `protocol/app/<role>.md` it names), so no join is needed and interrupted attempts are counted; scan the default Codex home resolved as the adapter does (`$CODEX_HOME` if set, else `~/.codex`) and each Codex `account_dir`'s `sessions/`; per session, take the last `token_count` event whose `info.total_token_usage.input_tokens` is a number (events carrying only rate limits are skipped; repeated snapshots are not summed); a session with no such event is left out of both the total and the session count, and the number left out is reported; report the mean per worker session and per verifier session against the baseline above.
+- Live: after install, start a Claude lead (a test thread) and a Claude worker on this machine; each with the brief "Reply ok."; the lead starts in real tmux with its prompt file; the worker records `startup_tokens` under 25,000 and the lead under 32,000 (baseline ~44k for every role; 17.1k measured with the deny list and no role text, plus ~4k of worker text or ~13.5k of lead text), and the lead's composed instructions hold lead.md, cards.md and cards-lead.md.
+- Re-measure after a few threads with the baseline method above, taking each Claude session's role from the session ledger (joined on `cli_session_id` = transcript file name), and reporting the same metrics: cost share by role, average context per call, calls per session, and median Claude `startup_tokens` per role from the ledger startup lines against the baseline first-call context. For GPT, role comes from the `Role: <role>` line at the start of the first `[wc:role]` message (or, for sessions started before the change, the first `protocol/app/<role>.md` it names), so no join is needed and interrupted attempts are counted; scan the default Codex home resolved as the adapter does (`$CODEX_HOME` if set, else `~/.codex`) and each Codex `account_dir`'s `sessions/`; per session, take the last `token_count` event whose `info.total_token_usage.input_tokens` is a number (events carrying only rate limits are skipped; repeated snapshots are not summed); a session with no such event is left out of both the total and the session count, and the number left out is reported; report the mean per worker session and per verifier session against the baseline above.
 
 ### Measured baseline (2026-11-17)
 
 - Claude, sessions since 2026-11-17 00:00, cost-weighted (cache read 0.1×, cache write 1.25×, output 5×): lead 52%, sub-lead 44%, verifier 4%. Average context per call: lead 102k, sub-lead 149k. Cache reads are about two-thirds of cost, so cost tracks calls × context.
+- Claude first-call context (startup), median per session since 2026-11-17 00:00: lead 44.0k, sub-lead 44.1k, verifier 43.7k.
 - GPT, sessions since 2026-11-10 (last cumulative `total_token_usage.input_tokens` per session, sessions started 2026-11-10 to 2026-11-17 21:00, role from the first message naming `protocol/app/<role>.md`): verifier 105.6M over 89 sessions (1.19M per session), worker 163.2M over 117 (1.39M per session), reviewer 36.8M over 98; 84–97% cached.
 - Method: Claude transcripts under `~/.claude/projects/*wheelchair-worktrees*`, role from the first user message or the first tool call naming `protocol/app/<role>.md`; Codex from `~/.codex/sessions` `token_count` events. After this change the role no longer appears in a Claude transcript, so re-measuring takes it from the session ledger below.
 
@@ -419,6 +422,24 @@ get buried as this file grows.
 - The startup-growth warning is removed (route, hub cache, Ready check, approval card, pinned redraw); only `startup_tokens` is recorded in the ledger (51)
 - Prompt file written before the worktree (50)
 - Validation rewritten to match
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Startup size never reported by re-measure; no baseline | upheld | Re-measure metric and baseline added |
+| intent | minor | Decision 34 not in 51's supersede list | upheld | Added |
+| mechanics | blocking | Inlined Codex first message can break the notify argument limit | upheld | Decision 52 |
+| mechanics | major | Startup sample missed on interrupted first turns | upheld | Decision 52 |
+| mechanics | major | Live check threshold not reproducible | upheld | Decision 52 |
+| mechanics | minor | No forced prompt-write failure test | upheld | Validation extended |
+
+### Round 14 — 2026-11-17
+
+**Lanes:** intent: claude; mechanics: gpt; cross-family: yes.
+
+**Changed since Round 13:**
+- Codex and Antigravity read the composed file once instead of receiving it inline (52)
+- Startup sample capture rule; fixed-brief live check (52)
+- Re-measure reports startup per role; Claude startup baseline added
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
