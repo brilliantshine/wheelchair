@@ -3,7 +3,7 @@
 // GET /threads?view=list: the summary the pages poll, without each thread's history.
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { api, close, setup, thread } = require('./helpers/app.js');
+const { api, card, close, setup, thread } = require('./helpers/app.js');
 
 test('the list view keeps the summary and drops the history', async () => {
   const context = await setup();
@@ -19,5 +19,20 @@ test('the list view keeps the summary and drops the history', async () => {
       assert.deepEqual(Object.keys(s).sort().filter((k) => s[k] !== undefined), ['created_at', 'live', 'name', 'ready', 'role', 'turn_ended'].filter((k) => s[k] !== undefined));
       assert.ok(s.name && s.role);
     }
+  } finally { await close(context); }
+});
+
+test('the list view marks a thread whose lead posted a done card', async () => {
+  const context = await setup();
+  try {
+    const made = await thread(context, { project: '/srv/proj', machine: 'hub', message: 'Quick fix' });
+    const lead = made.sessions.find((s) => s.role === 'lead');
+    const lean = async () => (await api(context, '/threads?view=list')).body.threads.find((t) => t.id === made.id);
+    assert.equal((await lean()).done_card, false);
+    const posted = await card(context, made.id, lead.name, {
+      kind: 'done', title: 'Fixed: typo', can_do: ['Use it'], left_as_is: [], pr_url: 'https://github.com/o/r/pull/1',
+    });
+    assert.equal(posted.status, 202, JSON.stringify(posted.body));
+    assert.equal((await lean()).done_card, true);
   } finally { await close(context); }
 });
