@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Each case owns temporary harness homes and command shims; this suite never writes live state.
 set -euo pipefail
+# Case names are dynamically assigned numeric indices for Bash 3.2.
+# shellcheck disable=SC2004,SC2154
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 installer=${INSTALL_SH:-"$repo/install.sh"}
@@ -19,30 +21,33 @@ assert() {
   if "$@"; then pass "$description"; else fail "$description"; fi
 }
 
+hash_stream() { if command -v sha256sum >/dev/null 2>&1; then sha256sum | awk '{print $1}'; else shasum -a 256 | awk '{print $1}'; fi; }
+hash_file() { hash_stream < "$1"; }
 tree_state() {
-  local root=$1 item rel skip_account_tmp=${2:-0}
-  [[ -e $root ]] || { printf absent; return; }
-  while IFS= read -r -d '' item; do
-    rel=${item#"$root"}
-    # Live Codex sessions write transient account scratch files during this suite.
-    if [[ $skip_account_tmp == 1 && $rel == /accounts/*/tmp* ]]; then
-      [[ $rel =~ ^/accounts/[^/]+/tmp(/|$) ]] && continue
-    fi
-    if [[ -L $item ]]; then
-      printf 'L\0%s\0%s\0' "$rel" "$(readlink "$item")"
-    elif [[ -f $item ]]; then
-      printf 'F\0%s\0' "$rel"
-      sha256sum "$item" | awk '{print $1}'
-    elif [[ -d $item ]]; then
-      printf 'D\0%s\0' "$rel"
-    else
-      printf 'O\0%s\0' "$rel"
-    fi
-  done < <(find "$root" -print0 | sort -z) | sha256sum | awk '{print $1}'
+  python3 - "$1" "${2:-0}" <<'PYCODE'
+import hashlib, os, sys
+root, skip = sys.argv[1:]
+if not os.path.exists(root):
+    print('absent', end='')
+    sys.exit()
+h = hashlib.sha256()
+for base, dirs, files in os.walk(root, followlinks=False):
+    for name in sorted(dirs + files):
+        path = os.path.join(base, name)
+        rel = os.path.relpath(path, root)
+        if skip == '1' and rel.startswith('accounts/') and '/tmp' in rel:
+            continue
+        h.update(os.fsencode(rel))
+        if os.path.islink(path): h.update(b'L' + os.fsencode(os.readlink(path)))
+        elif os.path.isfile(path):
+            h.update(b'F')
+            with open(path, 'rb') as f: h.update(hashlib.sha256(f.read()).digest())
+        else: h.update(b'D')
+print(h.hexdigest(), end='')
+PYCODE
 }
-
 file_state() {
-  if [[ -e $1 ]]; then printf 'present:%s' "$(sha256sum "$1" | awk '{print $1}')"; else printf absent; fi
+  if [[ -e $1 ]]; then printf 'present:%s' "$(hash_file "$1")"; else printf absent; fi
 }
 
 no_retired_wrappers() {
@@ -54,12 +59,14 @@ no_retired_wrappers() {
 
 last_line_is() { [[ ${1##*$'\n'} == "$2" ]]; }
 
-declare -A home claude codex shim present output status tty display input args allow case_installer dns loginctl_status linger node_stop_status tailscale_absent serve_status serve_status_exit tailscale_ip tailscale_ip_status
+case_count=0
 status_with_handlers() {
   printf '{"TCP":{"443":{"HTTPS":true}},"Web":{"fixture.tailnet.ts.net:443":{"Handlers":%s}}}' "$1"
 }
 new_case() {
   local name=$1 base
+  printf -v "$name" %s "$case_count"
+  case_count=$((case_count + 1))
   base=$fixture/$name
   home[$name]=$base/home
   claude[$name]=${home[$name]}/claude
@@ -81,7 +88,7 @@ new_case() {
   tailscale_ip_status[$name]=0
   serve_status[$name]=$(status_with_handlers '{}')
   serve_status_exit[$name]=0
-  mkdir -p "${home[$name]}" "${shim[$name]}"
+  mkdir -p "${home[$name]}" "${shim[$name]}" "$fixture/systemd"
   install_shims "$name"
 }
 
@@ -125,6 +132,15 @@ elif [[ $1 == ip && $2 == -4 ]]; then
   printf '%s\n' "${WHEELCHAIR_TAILSCALE_IP}"
 fi
 EOF
+  cat > "$dir/launchctl" <<'EOF'
+#!/usr/bin/env bash
+printf 'launchctl %s\n' "$*" >> "$WHEELCHAIR_SHIM_LOG"
+EOF
+  cat > "$dir/plutil" <<'EOF'
+#!/usr/bin/env bash
+printf 'plutil %s\n' "$*" >> "$WHEELCHAIR_SHIM_LOG"
+python3 -c 'import plistlib,sys; plistlib.load(open(sys.argv[1], "rb"))' "$2"
+EOF
   cat > "$dir/hostname" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "${WHEELCHAIR_HOSTNAME:-fixture-host}"
@@ -134,7 +150,7 @@ EOF
 printf 'sudo %s\n' "$*" >> "$WHEELCHAIR_SHIM_LOG"
 "$@"
 EOF
-  chmod +x "$dir/node" "$dir/systemctl" "$dir/loginctl" "$dir/tailscale" "$dir/sudo" "$dir/hostname"
+  chmod +x "$dir/node" "$dir/systemctl" "$dir/loginctl" "$dir/tailscale" "$dir/sudo" "$dir/hostname" "$dir/launchctl" "$dir/plutil"
 }
 
 run_case() {
@@ -142,8 +158,8 @@ run_case() {
   local command_path=$PATH
   if [[ ${tailscale_absent[$name]} == 1 ]]; then
     local tool
-    for tool in awk basename bash cat chmod cp cut dirname grep head mkdir mktemp od python3 rm sed tail tr uname; do
-      ln -sf "/usr/bin/$tool" "${shim[$name]}/$tool"
+    for tool in awk basename bash cat chmod cp cut dirname grep head id mkdir mktemp od python3 rm sed tail tr uname; do
+      ln -sf "$(command -v "$tool")" "${shim[$name]}/$tool"
     done
     command_path=${shim[$name]}
     rm -f "${shim[$name]}/tailscale"
@@ -157,6 +173,8 @@ run_case() {
     "WHEELCHAIR_CLAUDE_HOME=${claude[$name]}" "WHEELCHAIR_CODEX_HOME=${codex[$name]}"
     "WHEELCHAIR_WORDING=${home[$name]}/wheelchair/wording.md"
     "WHEELCHAIR_TTY=${tty[$name]}" "WHEELCHAIR_TAILSCALE_DNS=${dns[$name]}"
+    "WHEELCHAIR_PLATFORM=${case_platform:-Linux}" "WHEELCHAIR_SYSTEMD_RUN_DIR=$fixture/systemd"
+    "WHEELCHAIR_TAILSCALE_APP=${case_tailscale_app:-/nonexistent}"
     "WHEELCHAIR_REAL_NODE=$real_node"
     "WHEELCHAIR_TAILSCALE_SERVE_STATUS=${serve_status[$name]}"
     "WHEELCHAIR_TAILSCALE_SERVE_STATUS_EXIT=${serve_status_exit[$name]}"
@@ -167,7 +185,7 @@ run_case() {
     "WHEELCHAIR_NODE_STOP_STATUS=${node_stop_status[$name]}")
   [[ ${display[$name]} == 1 ]] && command+=(DISPLAY=:fixture)
   set +e
-  output[$name]=$(printf '%s' "${input[$name]}" | "${command[@]}" "${case_installer[$name]}" ${args[$name]} 2>&1)
+  output[$name]=$(printf '%s' "${input[$name]}" | ${command[@]+"${command[@]}"} "${case_installer[$name]}" ${args[$name]} 2>&1)
   status[$name]=$?
   set -e
 }
@@ -558,8 +576,8 @@ assert 'dependency installation requests both browser engines' grep -Fq 'playwri
 new_case machine_state_idempotent
 run_case machine_state_idempotent
 first_machine_state=$(tree_state "$(machine_state_path machine_state_idempotent)")
-first_secret=$(sha256sum "$(machine_secret_path machine_state_idempotent)" | awk '{print $1}')
-assert 'machine state directory and files have private modes' bash -c '[[ $(stat -c %a "$1") == 700 && $(stat -c %a "$2") == 600 && $(stat -c %a "$3") == 600 && $(stat -c %a "$4") == 600 ]]' _ "$(machine_state_path machine_state_idempotent)" "$(machine_secret_path machine_state_idempotent)" "$(machine_config_path machine_state_idempotent)" "$(machines_path machine_state_idempotent)"
+first_secret=$(hash_file "$(machine_secret_path machine_state_idempotent)")
+assert 'machine state directory and files have private modes' python3 -c 'import os,stat,sys; assert [stat.S_IMODE(os.stat(p).st_mode) for p in sys.argv[1:]] == [0o700,0o600,0o600,0o600]' "$(machine_state_path machine_state_idempotent)" "$(machine_secret_path machine_state_idempotent)" "$(machine_config_path machine_state_idempotent)" "$(machines_path machine_state_idempotent)"
 assert 'machine state files contain the hub and this machine' python3 - "$(machine_config_path machine_state_idempotent)" "$(machines_path machine_state_idempotent)" "$(machine_secret_path machine_state_idempotent)" <<'PY'
 import json, sys
 config, machines, secret = map(lambda p: p, sys.argv[1:])
@@ -572,7 +590,7 @@ assert json.load(open(machines)) == [{
 }]
 PY
 run_case machine_state_idempotent
-assert 'a rerun leaves the machine secret unchanged' bash -c '[[ $1 == "$2" ]]' _ "$first_secret" "$(sha256sum "$(machine_secret_path machine_state_idempotent)" | awk '{print $1}')"
+assert 'a rerun leaves the machine secret unchanged' bash -c '[[ $1 == "$2" ]]' _ "$first_secret" "$(hash_file "$(machine_secret_path machine_state_idempotent)")"
 assert 'a rerun writes byte-identical machine state files' bash -c '[[ $1 == "$2" ]]' _ "$first_machine_state" "$(tree_state "$(machine_state_path machine_state_idempotent)")"
 
 assert 'real CLAUDE.md is byte-identical after suite' bash -c '[[ $1 == "$2" ]]' _ "$real_claude_before" "$(file_state "$HOME/.claude/CLAUDE.md")"
@@ -582,10 +600,53 @@ assert 'real Codex hooks are byte-identical after suite' bash -c '[[ $1 == "$2" 
 assert 'real Codex config is byte-identical after suite' bash -c '[[ $1 == "$2" ]]' _ "$real_seen_config_before" "$(file_state "$HOME/.codex/config.toml")"
 assert 'real wheelchair directory is byte-identical after suite' bash -c '[[ $1 == "$2" ]]' _ "$real_wheelchair_before" "$(tree_state "$HOME/.wheelchair" 1)"
 
+# Exercise Darwin with XML-sensitive HOME and a Tailscale app fallback.
+case_platform=Darwin
+new_case darwin
+args[darwin]=--serve
+home[darwin]="$fixture/darwin/home & <mac>"
+mkdir -p "${home[darwin]}"
+tty[darwin]=1
+input[darwin]=$'y\ny\n'
+case_tailscale_app="$fixture/tailscale app"
+cp "${shim[darwin]}/tailscale" "$case_tailscale_app"
+tailscale_absent[darwin]=1
+run_case darwin
+viewer_plist="${home[darwin]}/Library/LaunchAgents/com.wheelchair.viewer.plist"
+machine_plist="${home[darwin]}/Library/LaunchAgents/com.wheelchair.machine.plist"
+assert 'Darwin serve writes valid complete LaunchAgent plists' python3 - "$viewer_plist" "$machine_plist" "$repo" "${home[darwin]}" "${shim[darwin]}" <<'PYCODE'
+import os, plistlib, stat, sys
+viewer, machine, root, home, shim = sys.argv[1:]
+for path, label in [(viewer, 'viewer'), (machine, 'machine')]:
+    with open(path, 'rb') as f: p = plistlib.load(f)
+    assert stat.S_IMODE(os.stat(path).st_mode) == 0o644
+    assert p['Label'] == 'com.wheelchair.' + label
+    assert p['ProgramArguments'] == [shim + '/node', root + ('/viewer/server.js' if label == 'viewer' else '/machine/service.js')] + (['--service'] if label == 'viewer' else [])
+    assert p['RunAtLoad'] and p['KeepAlive'] and p['ThrottleInterval'] == 5
+    assert p['WorkingDirectory'] == home
+    assert p['StandardOutPath'] == p['StandardErrorPath'] == home + '/Library/Logs/wheelchair/' + label + '.log'
+    assert p['EnvironmentVariables']['HOME'] == home and shim in p['EnvironmentVariables']['PATH']
+    if label == 'viewer': assert p['EnvironmentVariables']['WHEELCHAIR_NO_BROWSER'] == '1'
+    else: assert p['AbandonProcessGroup']
+PYCODE
+assert 'Darwin validates and bootstraps both plists' bash -c '[[ $(grep -c "^plutil -lint " "$1") == 2 && $(grep -c "^launchctl bootstrap " "$1") == 2 && $(grep -c "^launchctl bootout " "$1") == 2 ]]' _ "$(log_path darwin)"
+assert 'Darwin app fallback runs serve without sudo' bash -c '[[ $(grep -c "^tailscale serve --bg" "$1") == 2 ]] && ! grep -q "^sudo " "$1"' _ "$(log_path darwin)"
+assert 'Darwin prints the sudo helper and login messages' bash -c '[[ $1 == *"sudo helper: not available on macOS"* && $1 == *"services run while you are logged in"* ]]' _ "${output[darwin]}"
+# Preserve the app shim when run_case removes the PATH shim on subsequent runs.
+input[darwin]=''
+run_case darwin
+assert 'Darwin rerun boots out and bootstraps both agents again' bash -c '[[ $(grep -c "^launchctl bootout " "$1") == 4 && $(grep -c "^launchctl bootstrap " "$1") == 4 ]]' _ "$(log_path darwin)"
+args[darwin]=--no-serve
+serve_status[darwin]=$(status_with_handlers '{"/wheelchair":{"Proxy":"http://127.0.0.1:7373/wheelchair"},"/":{"Proxy":"http://127.0.0.1:7373"}}')
+run_case darwin
+assert 'Darwin disable boots out and removes both agents' bash -c '[[ ! -e $1 && ! -e $2 && $(grep -c "^launchctl bootout " "$3") == 6 ]]' _ "$viewer_plist" "$machine_plist" "$(log_path darwin)"
+assert 'Darwin removal commands omit sudo' bash -c '[[ $1 == *"serve --https=443 --set-path /wheelchair off"* && $1 == *"serve --https=443 --set-path / off"* && $1 != *"sudo tailscale serve"* ]]' _ "${output[darwin]}"
+unset case_platform case_tailscale_app
+
 new_case sudo_hint
 run_case sudo_hint
 assert 'missing sudo helper prints install hint and no test password' bash -c '[[ $1 == *"sudo helper not installed; to let agents ask for sudo from a card, run: sudo $2/sudo-helper/install.sh"* ]] && [[ $1 != *hunter2-TESTPW-9f3a* ]]' _ "${output[sudo_hint]}" "$repo"
-for captured in "${output[@]}"; do [[ $captured != *hunter2-TESTPW-9f3a* ]] || fail "test password appeared in output"; done
+for captured in ${output[@]+"${output[@]}"}; do [[ $captured != *hunter2-TESTPW-9f3a* ]] || fail "test password appeared in output"; done
 if grep -R -F -q "hunter2-TESTPW-9f3a" "$fixture"; then fail "test password appeared in fixture"; fi
 
 printf 'RESULT %d passed, %d failed\n' "$passes" "$failures"

@@ -11,11 +11,26 @@ cache_root="$HOME/.cache/agent-graphs"
 serving_file="$cache_root/.serving"
 unit_file="$HOME/.config/systemd/user/wheelchair-viewer.service"
 machine_unit_file="$HOME/.config/systemd/user/wheelchair-machine.service"
+viewer_plist="$HOME/Library/LaunchAgents/com.wheelchair.viewer.plist"
+machine_plist="$HOME/Library/LaunchAgents/com.wheelchair.machine.plist"
 machine_state_dir="$HOME/.local/state/wheelchair"
 machine_config_file="$machine_state_dir/machine.json"
 machines_file="$machine_state_dir/machines.json"
 machine_secret_file="$machine_state_dir/machine.secret"
 port=7373
+
+# Testing seams: WHEELCHAIR_PLATFORM overrides uname, WHEELCHAIR_SYSTEMD_RUN_DIR
+# overrides /run/systemd/system, and WHEELCHAIR_TAILSCALE_APP overrides the Mac app path.
+platform() { printf '%s\n' "${WHEELCHAIR_PLATFORM:-$(uname -s)}"; }
+tailscale_cli() {
+  if command -v tailscale >/dev/null 2>&1; then
+    printf '%s\n' tailscale
+  elif [[ $(platform) == Darwin && -x ${WHEELCHAIR_TAILSCALE_APP:-/Applications/Tailscale.app/Contents/MacOS/Tailscale} ]]; then
+    printf '%s\n' "${WHEELCHAIR_TAILSCALE_APP:-/Applications/Tailscale.app/Contents/MacOS/Tailscale}"
+  else
+    return 1
+  fi
+}
 
 claude_home=${WHEELCHAIR_CLAUDE_HOME:-"$HOME/.claude"}
 codex_home=${WHEELCHAIR_CODEX_HOME:-"$HOME/.codex"}
@@ -53,7 +68,9 @@ esac
 
 (( claude_present )) && printf 'harness found: claude\n'
 (( codex_present )) && printf 'harness found: codex\n'
-if [[ ! -f ${WHEELCHAIR_SUDO_TEST_ROOT:-}/etc/systemd/system/wheelchair-sudo.service || ! -f ${WHEELCHAIR_SUDO_TEST_ROOT:-}/usr/local/lib/wheelchair-sudo/helper.py ]]; then
+if [[ $(platform) == Darwin ]]; then
+  echo "sudo helper: not available on macOS; sudo cards won't work on this machine"
+elif [[ ! -f ${WHEELCHAIR_SUDO_TEST_ROOT:-}/etc/systemd/system/wheelchair-sudo.service || ! -f ${WHEELCHAIR_SUDO_TEST_ROOT:-}/usr/local/lib/wheelchair-sudo/helper.py ]]; then
   printf 'sudo helper not installed; to let agents ask for sudo from a card, run: sudo %s/sudo-helper/install.sh\n' "$ROOT"
 fi
 
@@ -120,7 +137,7 @@ fi
 
 machine_host() {
   local host
-  host=$(tailscale ip -4 2>/dev/null || true)
+  host=$("$(tailscale_cli)" ip -4 2>/dev/null || true)
   host=${host%%$'\n'*}
   if [[ -n $host ]]; then
     printf '%s\n' "$host"
@@ -164,7 +181,7 @@ has_terminal() {
 }
 
 has_display() {
-  [[ $(uname -s) == Darwin || -n ${DISPLAY:-} || -n ${WAYLAND_DISPLAY:-} ]]
+  [[ $(platform) == Darwin || -n ${DISPLAY:-} || -n ${WAYLAND_DISPLAY:-} ]]
 }
 
 is_serving() {
@@ -189,12 +206,12 @@ ask_yes() {  # ask_yes <prompt>; answers yes only for y or yes
 }
 
 served_origin() {
-  local status dns_name
-  if ! command -v tailscale >/dev/null 2>&1; then
+  local status dns_name ts
+  if ! ts=$(tailscale_cli); then
     echo 'viewer: tailscale is not installed; serving was not configured' >&2
     return 1
   fi
-  if ! status=$(tailscale status --json); then
+  if ! status=$("$ts" status --json); then
     echo 'viewer: could not read tailscale status; serving was not configured' >&2
     return 1
   fi
@@ -208,21 +225,25 @@ served_origin() {
 }
 
 platform_supports_serving() {
-  [[ $(uname -s) == Linux && -d /run/systemd/system ]] && command -v systemctl >/dev/null 2>&1
+  if [[ $(platform) == Darwin ]]; then
+    command -v launchctl >/dev/null 2>&1
+  else
+    [[ $(platform) == Linux && -d ${WHEELCHAIR_SYSTEMD_RUN_DIR:-/run/systemd/system} ]] && command -v systemctl >/dev/null 2>&1
+  fi
 }
 
 # Prints the state of the two mappings, one per line: missing, viewer, or other.
 # Tailscale's text status is deliberately not used: its shape is presentation, not an API.
 tailscale_mapping_states() {  # tailscale_mapping_states <origin>
-  local status host states
+  local status host states ts
   host=${1#https://}
   host=${host%%/*}
 
-  if ! command -v tailscale >/dev/null 2>&1; then
+  if ! ts=$(tailscale_cli); then
     echo 'viewer: tailscale is not installed; Tailscale Serve was not changed' >&2
     return 1
   fi
-  if ! status=$(tailscale serve status --json); then
+  if ! status=$("$ts" serve status --json); then
     echo 'viewer: could not read tailscale serve status; Tailscale Serve was not changed' >&2
     return 1
   fi
@@ -253,14 +274,21 @@ offer_tailscale_serve() {  # offer_tailscale_serve <display command> <tailscale 
   shift
   printf 'viewer: %s\n' "$command_text"
   if has_terminal && ask_yes 'viewer: run that command now?'; then
-    sudo tailscale "$@"
+    if [[ $(platform) == Darwin ]]; then
+      "$(tailscale_cli)" "$@"
+    else
+      sudo "$(tailscale_cli)" "$@"
+    fi
   else
     printf 'viewer: run later: %s\n' "$command_text"
   fi
 }
 
 configure_tailscale_serve() {  # configure_tailscale_serve <origin>
-  local states wheelchair_state root_state
+  local states wheelchair_state root_state prefix ts
+  ts=$(tailscale_cli) || return
+  prefix="sudo $ts"
+  [[ $(platform) == Darwin ]] && prefix=$ts
   if ! states=$(tailscale_mapping_states "$1"); then
     return
   fi
@@ -269,12 +297,59 @@ configure_tailscale_serve() {  # configure_tailscale_serve <origin>
 
   if [[ $wheelchair_state == missing ]]; then
     offer_tailscale_serve \
-      "sudo tailscale serve --bg --set-path /wheelchair http://127.0.0.1:$port/wheelchair" \
+      "$prefix serve --bg --set-path /wheelchair http://127.0.0.1:$port/wheelchair" \
       serve --bg --set-path /wheelchair "http://127.0.0.1:$port/wheelchair"
   fi
   if [[ $root_state == missing ]]; then
-    offer_tailscale_serve "sudo tailscale serve --bg $port" serve --bg "$port"
+    offer_tailscale_serve "$prefix serve --bg $port" serve --bg "$port"
   fi
+}
+
+xml_escape() {
+  printf '%s' "$1" | sed -e 's/\&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
+}
+
+configure_launch_agents() {
+  local node_path=$1 service_path=$2 label plist script extra env_extra log domain result
+  mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs/wheelchair"
+  domain="gui/$(id -u)"
+  for label in viewer machine; do
+    if [[ $label == viewer ]]; then plist=$viewer_plist; else plist=$machine_plist; fi
+    script="$ROOT/$label/service.js"
+    extra=''
+    env_extra=''
+    if [[ $label == viewer ]]; then
+      script="$ROOT/viewer/server.js"
+      extra='<string>--service</string>'
+      env_extra='<key>WHEELCHAIR_NO_BROWSER</key><string>1</string>'
+    else
+      extra=''
+    fi
+    log="$HOME/Library/Logs/wheelchair/$label.log"
+    cat > "$plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>com.wheelchair.$label</string>
+<key>ProgramArguments</key><array><string>$(xml_escape "$node_path")</string><string>$(xml_escape "$script")</string>$extra</array>
+<key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>5</integer>
+<key>WorkingDirectory</key><string>$(xml_escape "$HOME")</string>
+<key>StandardOutPath</key><string>$(xml_escape "$log")</string><key>StandardErrorPath</key><string>$(xml_escape "$log")</string>
+<key>EnvironmentVariables</key><dict><key>PATH</key><string>$(xml_escape "$service_path")</string><key>HOME</key><string>$(xml_escape "$HOME")</string>$env_extra</dict>
+$([[ $label == machine ]] && printf '%s' '<key>AbandonProcessGroup</key><true/>')
+</dict></plist>
+EOF
+    chmod 644 "$plist"
+    if ! plutil -lint "$plist"; then
+      printf 'viewer: invalid plist: %s\n' "$plist" >&2
+      return 1
+    fi
+    launchctl bootout "$domain/com.wheelchair.$label" >/dev/null 2>&1 || true
+    if ! result=$(launchctl bootstrap "$domain" "$plist" 2>&1); then
+      printf 'viewer: could not start com.wheelchair.%s: %s\n' "$label" "$result" >&2
+    fi
+  done
+  echo 'viewer: on macOS the services run while you are logged in; to keep this Mac serving, turn on automatic login and stop it sleeping (see README, "On macOS")'
 }
 
 configure_service() {
@@ -289,6 +364,17 @@ configure_service() {
   node_path=$(command -v node)
   mkdir -p "$cache_root" "${unit_file%/*}"
   printf '{"serve": true, "origin": "%s"}\n' "$origin" > "$serving_file"
+  # systemd starts user services with a bare PATH, and every agent session inherits the
+  # service's PATH through tmux. Give it this login's PATH, led by wherever claude and codex
+  # live, or a session dies at once with "claude: not found".
+  service_path=$PATH
+  for cli in codex claude; do
+    cli_path=$(command -v "$cli" 2>/dev/null) || continue
+    service_path="${cli_path%/*}:$service_path"
+  done
+  if [[ $(platform) == Darwin ]]; then
+    configure_launch_agents "$node_path" "$service_path"
+  else
   cat > "$unit_file" <<EOF
 [Unit]
 Description=Wheelchair graph viewer
@@ -302,14 +388,6 @@ RestartSec=2
 [Install]
 WantedBy=default.target
 EOF
-  # systemd starts user services with a bare PATH, and every agent session inherits the
-  # service's PATH through tmux. Give it this login's PATH, led by wherever claude and codex
-  # live, or a session dies at once with "claude: not found".
-  service_path=$PATH
-  for cli in codex claude; do
-    cli_path=$(command -v "$cli" 2>/dev/null) || continue
-    service_path="${cli_path%/*}:$service_path"
-  done
   cat > "$machine_unit_file" <<EOF
 [Unit]
 Description=Wheelchair machine service
@@ -336,6 +414,7 @@ EOF
     printf 'viewer: run later: sudo loginctl enable-linger %s\n' "$USER" >&2
     echo 'viewer: warning — the viewer service will stop at logout until lingering is enabled' >&2
   fi
+  fi
   configure_tailscale_serve "$origin"
   node "$ROOT/viewer/server.js" --url
 }
@@ -349,14 +428,21 @@ recorded_origin() {
 }
 
 disable_service() {
-  local origin states wheelchair_state root_state
+  local origin states wheelchair_state root_state prefix ts label
   origin=$(recorded_origin || true)
   if platform_supports_serving; then
+    if [[ $(platform) == Darwin ]]; then
+      for label in viewer machine; do
+        launchctl bootout "gui/$(id -u)/com.wheelchair.$label" >/dev/null 2>&1 || true
+        if [[ $label == viewer ]]; then rm -f "$viewer_plist"; else rm -f "$machine_plist"; fi
+      done
+    else
     systemctl --user disable --now wheelchair-viewer.service || true
     systemctl --user disable --now wheelchair-machine.service || true
     rm -f "$unit_file"
     rm -f "$machine_unit_file"
     systemctl --user daemon-reload
+    fi
   fi
   write_not_serving "$origin"
   if [[ -z $origin ]]; then
@@ -368,11 +454,14 @@ disable_service() {
   fi
   wheelchair_state=${states%%$'\n'*}
   root_state=${states##*$'\n'}
+  ts=$(tailscale_cli) || return
+  prefix="sudo $ts"
+  [[ $(platform) == Darwin ]] && prefix=$ts
   if [[ $wheelchair_state == viewer ]]; then
-    echo 'viewer: run later: sudo tailscale serve --https=443 --set-path /wheelchair off'
+    echo "viewer: run later: $prefix serve --https=443 --set-path /wheelchair off"
   fi
   if [[ $root_state == viewer ]]; then
-    echo 'viewer: run later: sudo tailscale serve --https=443 --set-path / off'
+    echo "viewer: run later: $prefix serve --https=443 --set-path / off"
   fi
 }
 
