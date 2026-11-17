@@ -15,11 +15,6 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q1: Which points can a thread be exported from?
-- **Context:** Map shows `status:` alone does not prove a quiet thread (`approved` is written before the approval card; `verifying` before verifiers start). Quiet points where only the lead exists and nothing waits on another agent: IDEA confirmed / planning between questions, plan approved awaiting Start building, done.
-- **Options:** (a) three fixed points: idea confirmed, plan approved, done; (b) any time only the lead is running and idle, which adds every pause in planning; (c) plan approved and done only.
-- **Recommendation:** (a): matches "major stage", and each point has a clear resume rule.
-
 ### Q2: Does the imported thread keep the same branch and pull request?
 - **Context:** Today a thread's branch is `wc/<thread-id>`; the machine can cut a worktree from another ref (`machine/service.js:441-470`) but uses `-b` to make a new branch.
 - **Options:** (a) imported thread keeps the original thread id, branch and pull request; (b) new id and branch cut from the exported branch, new pull request.
@@ -51,10 +46,24 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 5 | Import starts from the new-thread screen: pick machine and project, choose the file. The project's GitHub remote must match the file's repository, or import is refused with the reason | A file from another repository cannot resume against this code | defaulted |
 | 6 | An imported thread's lead starts with a new `[wc:context import]` message, built like the restart context, and its reply is shown | Reuses the restart path the lead protocol already handles | defaulted |
 | 7 | The file is validated (schema, size limit, known stage) before anything is created; its text is shown and used as data, never run | The file may come from elsewhere | defaulted |
+| 8 | Export points are three: idea confirmed, plan approved, done | Collin picked the three major points over any quiet moment | user |
 
 ## Spec
 
-(Grows as decisions land.)
+### Export points
+
+A thread can be exported at exactly three points. At each, the thread must also be quiet:
+no session other than the lead is live, the lead is not mid-turn, and no sudo card is waiting.
+
+| Point | Holds when | Import resumes at |
+|---|---|---|
+| Idea confirmed | IDEA.md `status: confirmed`, PLAN.md absent or `status: planning`, and no Decision Log row with source `user` yet | Planning: the lead reads IDEA, MAP and any PLAN.md on the branch and asks the open question cards again |
+| Plan approved | PLAN.md `status: approved` and Start building not yet pressed | Approval: the lead posts a fresh approval card with a fresh Ready check |
+| Done | PLAN.md `status: done` and the pull request exists | After done (lead step 9) |
+
+Anywhere else, the export control is shown disabled with a one-line reason in Collin's
+terms (for example "agents are still working", "planning has moved past the idea; export
+again once the plan is approved").
 
 ## Accepted Risks
 
