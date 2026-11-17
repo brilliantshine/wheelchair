@@ -6,7 +6,7 @@ plan slug (`docs/plans/<slug>/IDEA.md` for what the work is for, `PLAN.md` for t
 `COMPLETION.md` for the builder's claims); for a fix, the reported problem or what Collin
 asked for, and the Spec when there is one. `<root>` is named in your starting instructions.
 
-If nothing above this line names `<root>`, you were pointed at this file directly: `<root>` is this file's path with `/protocol/app/verifier.md` dropped.
+If you opened this file yourself, rather than finding its text already in your starting instructions: `<root>` is this file's path with `/protocol/app/verifier.md` dropped.
 
 Chain routine commands that do not depend on each other's output into one shell call.
 
