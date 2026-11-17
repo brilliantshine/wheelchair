@@ -161,5 +161,6 @@ test('wc.js sends provider constraints and prints waiting and notice output', as
     assert.match(stderr, /--cli is ignored: the hub picks the provider/);
     assert.match(stderr, /Using another provider\./);
     assert.match(stdout, /waiting for room until 2026-12-01T12:00:00.000Z/);
+    assert.deepEqual(JSON.parse(stdout.trim().split('\n').at(-1)), { session: { status: 'waiting' }, note: 'Using another provider.' });
   } finally { await new Promise(resolve => server.close(resolve)); }
 });
