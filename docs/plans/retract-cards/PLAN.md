@@ -124,6 +124,9 @@ A `retract` branch, beside the `resolve` branch, under the same thread lock:
   (the press that queues `start building` to the lead) and on retraction. Re-check, a
   Start building press refused by a changed Ready result, and "Talk about this" leave it
   pinned.
+- `addNeeds` (`viewer/app/views.js:122-133`) skips cards marked `replaced`, so a superseded
+  approval (open when it was replaced) never stays in Needs you. This also covers any
+  `replaced` card of the other listed kinds.
 - `approval` is not added to `SINGLETONS`: it is not limited to one per thread over time,
   and it unpins, which singletons never do.
 - **Retracted cards are never marked `replaced`.** When a new offer (singleton) or a new
@@ -200,7 +203,8 @@ with `resolve`).
   - every press action on a retracted card refused with `this card was withdrawn`,
     including approval Re-check, Start building and Talk, and sudo Decline and Talk;
   - offer: a second offer allowed after a retracted first, a third refused;
-  - approval pin: set on post, an open older approval marked `replaced`, removed on
+  - approval pin: set on post, an open older approval marked `replaced` and absent from
+    Needs you (including after the newer approval is answered or retracted), removed on
     accepted Start building and on retraction, kept on Re-check and on a refused start;
   - sudo: waiting → cancel called, card retracted and `declined`, no lead message;
     cancel returns `running` or `ran` → refused with the card unchanged by the retraction,
@@ -238,13 +242,25 @@ with `resolve`).
 
 ### Round 2 — 2026-11-17
 
-**Lanes:** pending; cross-family: pending.
+**Lanes:** gpt / intent; gpt / mechanics; cross-family: no (claude unavailable at start).
 
 **Changed since Round 1:**
 - §2 sudo: the declined path sets state and retraction in-transaction with no save or enqueue; other states refuse and arrive through the machine's outcome poll; a later `declined` outcome is a no-op.
 - §4: retracted cards are never marked `replaced` when a new offer or approval is posted.
 - §5: the conversation excludes only cards that are current pins (by id), and the `chat`/`pinned` render keys follow that and include `retracted_at`.
 - Validation: tests for the above.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent (gpt) | — | No findings | — | — |
+| mechanics (gpt) | blocking | A replaced open approval stays in Needs you forever, linking to a card the page no longer shows | upheld (blocking): `addNeeds` has no `replaced` filter (`viewer/app/views.js:124`); `chat.js:268` drops replaced cards | §4: `addNeeds` skips `replaced` cards; test added to Validation |
+
+### Round 3 — 2026-11-17
+
+**Lanes:** pending; cross-family: pending.
+
+**Changed since Round 2:**
+- §4: `addNeeds` skips `replaced` cards; Validation tests that a superseded approval leaves Needs you.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
