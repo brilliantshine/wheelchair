@@ -293,5 +293,8 @@ with `resolve`).
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Hub and CLI: Spec §1–4 (retract kind, hub apply incl. sudo cancel, press refusal, approval pin) + node tests — tricky | viewer/app/card.js, cards.js, threads.js, views.js, chat.js; viewer/test/app-hub.test.js, app-sudo.test.js | standard / gpt-6.1-terra | wc-1416046edf72-worker | node --test viewer/test/*.test.js; bash machine/test/run.sh | running |
+| T2 | Thread page: Spec §5 + browser cases | viewer/pages/thread.js, thread.css, aside.js; viewer/test/app-threads.spec.js, app-sudo.spec.js | standard / gpt-6.1-terra (claude asked, unavailable) | wc-1416046edf72-worker-2 | npm --prefix viewer run test:browser; node --test viewer/test/*.test.js | running |
+| T3 | Protocol and routers: Spec §6 | protocol/app/cards.md, lead.md; viewer/app/API.md; viewer/AGENTS.md | standard / gpt-6.1-terra | wc-1416046edf72-worker-3 | grep retract; git diff --stat | running |
 
 ## Log
