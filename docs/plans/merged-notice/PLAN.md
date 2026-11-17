@@ -1,6 +1,6 @@
 ---
 slug: merged-notice
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-16
 ---
 
@@ -38,6 +38,24 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 ### Behavior
 
 When a thread's pull request is merged on GitHub, within about a minute the app posts a `merged` card in that thread. The card says the pull request was merged, links to it, and has two buttons: **Archive** and **Keep it**. Until it is answered, it counts under "Needs you" and badges the thread in the Threads list. No agent session needs to be running.
+
+### Flow
+
+```mermaid
+flowchart TD
+  T[Every minute, and once when the app starts] --> S{Sweep already running?}
+  S -- yes --> X[Skip this minute]
+  S -- no --> P[Pick open threads whose pull request was not yet reported merged]
+  P --> G[Ask GitHub about each, four at a time]
+  G -- merged --> R[Recheck the thread: still open, same pull request, not yet reported]
+  G -- open, closed or error --> N[Nothing; try again next minute]
+  R --> C[Post the merged card; the thread shows under Needs you]
+  C --> A[Archive, then Confirm archive]
+  C --> K[Keep it]
+  A -- archive works --> D[Thread archived; card closed]
+  A -- archive fails --> C
+  K --> E[Card closed; thread stays as it is]
+```
 
 ### 1. Noticing the merge (hub)
 
@@ -140,7 +158,7 @@ Automatic archiving; merging from the app; any notice for a closed-unmerged PR; 
 
 ### Round 2 — 2026-11-16
 
-**Lanes:** pending.
+**Lanes:** gpt / gpt-6.1-sol (intent); gpt / gpt-6.1-sol (mechanics); cross-family: no (claude unavailable at start).
 
 **Changed since Round 1:**
 - Spec 1: the startup sweep is no longer awaited; an in-flight guard stops overlapping sweeps; `gh` runs with no thread lock held, 4 at a time, 15 s timeout; the thread is reloaded and re-checked under its lock before the card is posted.
@@ -148,6 +166,8 @@ Automatic archiving; merging from the app; any notice for a closed-unmerged PR; 
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | — | No findings | — | — |
+| mechanics | — | No findings | — | — |
 
 ## Prior Work
 
