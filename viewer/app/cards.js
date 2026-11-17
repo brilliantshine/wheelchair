@@ -4,7 +4,7 @@
 const crypto = require('node:crypto');
 const path = require('node:path');
 const { appError } = require('./state.js');
-const { resolvable, truncateTitle, validate } = require('./card.js');
+const { resolvable, retractable, truncateTitle, validate } = require('./card.js');
 
 const SINGLETONS = new Set(['offer', 'idea', 'progress']);
 
@@ -20,9 +20,14 @@ function addCard(thread, card, meta = {}) {
     system: Boolean(meta.system),
   };
   if (SINGLETONS.has(card.kind)) {
-    const old = [...thread.cards].reverse().find((item) => item.kind === card.kind && !item.replaced);
+    const old = [...thread.cards].reverse().find((item) => item.kind === card.kind && !item.replaced && !item.retracted_at);
     if (old) old.replaced = true;
     thread.pinned[card.kind] = record;
+  }
+  if (card.kind === 'approval') {
+    const old = [...thread.cards].reverse().find((item) => item.kind === 'approval' && !item.replaced && !item.answered && !item.retracted_at);
+    if (old) old.replaced = true;
+    thread.pinned.approval = record;
   }
   thread.cards.push(record);
   return record;
@@ -33,6 +38,13 @@ function resolveCard(card, by, note) {
   card.resolved_by = by;
   card.resolved_note = note || null;
   card.resolved_at = new Date().toISOString();
+}
+
+function retractCard(card, by, note) {
+  card.answered = true;
+  card.retracted_by = by;
+  card.retracted_note = note;
+  card.retracted_at = new Date().toISOString();
 }
 
 async function acceptCard(hub, payload) {
@@ -63,6 +75,24 @@ async function acceptCard(hub, payload) {
       return { card: { ok: true, resolved: found.card.id }, targetName: null };
     }
 
+    if (checked.card.kind === 'retract') {
+      const found = retractable(thread, checked.card.card);
+      if (!found.ok) throw appError(422, found.reason);
+      const target = found.card;
+      if (target.kind === 'sudo') {
+        if (target.state !== 'waiting') throw appError(422, `the sudo request is already ${target.state}`);
+        let status;
+        try { status = await hub.client.sudoCancel(thread.machine, target.request_id); } catch {}
+        if (!validSudoStatus(status)) throw appError(422, `couldn't reach ${thread.machine} to cancel the sudo request; try again`);
+        if (status.state !== 'declined') throw appError(422, `the sudo request is already ${status.state}`);
+        target.state = 'declined';
+      }
+      retractCard(target, session.name, checked.card.note);
+      if (thread.pinned[target.kind]?.id === target.id) delete thread.pinned[target.kind];
+      if (payload.delivery_id) thread.delivered_ids = [...thread.delivered_ids, payload.delivery_id].slice(-500);
+      return { card: { ok: true, retracted: target.id }, targetName: null };
+    }
+
     if (checked.card.kind === 'title') {
       thread.title = truncateTitle(checked.card.title, 80);
       if (payload.delivery_id) thread.delivered_ids = [...thread.delivered_ids, payload.delivery_id].slice(-500);
@@ -71,7 +101,7 @@ async function acceptCard(hub, payload) {
 
     if (checked.card.kind === 'offer') {
       const offers = thread.cards.filter((item) => item.kind === 'offer');
-      if (offers.length > 1 || (offers.length === 1 && offers[0].answered_value !== 'keep talking first')) {
+      if (offers.length > 1 || (offers.length === 1 && offers[0].answered_value !== 'keep talking first' && !offers[0].retracted_at)) {
         throw appError(422, 'the offer was already asked');
       }
     }
@@ -186,4 +216,4 @@ async function sudoOutcome(hub, body) {
   });
 }
 
-module.exports = { SINGLETONS, addCard, acceptCard, applySudoState, resolveCard, sudoOutcome, validSudoStatus };
+module.exports = { SINGLETONS, addCard, acceptCard, applySudoState, resolveCard, retractCard, sudoOutcome, validSudoStatus };

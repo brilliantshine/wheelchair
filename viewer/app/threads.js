@@ -270,6 +270,7 @@ async function press(hub, id, cardId, input) {
   const thread = await hub.thread(id);
   const card = thread.cards.find((item) => item.id === cardId && !item.replaced);
   if (!card) throw appError(404, 'card not found');
+  if (card.retracted_at) throw appError(422, 'this card was withdrawn');
   if (card.kind === 'merged') {
     if (input.action !== 'keep') throw appError(400, 'a merged card takes keep');
     if (card.answered) throw appError(422, 'card is already answered');
@@ -329,6 +330,7 @@ async function press(hub, id, cardId, input) {
   if (card.kind === 'needs') {
     require('./cards.js').resolveCard(card, 'collin', input.action === 'keep-going' ? 'Keep going' : 'Talking it over');
   }
+  if (card.kind === 'approval' && input.action === 'start-building' && thread.pinned.approval?.id === card.id) delete thread.pinned.approval;
   await hub.enqueue(thread, lead.name, `[card ${card.id}] ${suffixes[input.action]}`, 'card');
   return { queued: true, text: suffixes[input.action] };
 }
