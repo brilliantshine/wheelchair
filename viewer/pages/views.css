@@ -129,7 +129,8 @@
 .agents-heading h2 { font-size: 20px; }
 .agents-thread { color: var(--ink-2); margin-top: 5px; }
 .agents-count { margin: 8px 0 30px; }
-.agents-tree { min-width: 0; overflow-x: auto; padding: 10px 0 30px; }
+.agents-tree { display: flex; min-width: 0; overflow-x: auto; padding: 10px 0 30px; }
+.agents-tree > .agents-branch { margin: 0 auto; flex-shrink: 0; }
 .agents-branch { display: flex; flex-direction: column; align-items: center; min-width: 190px; }
 .agents-box { width: 190px; min-height: 112px !important; display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: 7px; padding: 14px !important; background: var(--panel); border: 1px solid var(--line-2); border-radius: 8px; color: var(--ink); overflow-wrap: anywhere; }
 .agents-box.selected { border-color: var(--accent); background: var(--accent-soft); }
@@ -142,7 +143,7 @@
 .state-waiting .agents-dot { background: transparent; border: 1px solid var(--dim); }
 .state-needs-you .agents-status { color: var(--warn); }
 .state-needs-you .agents-dot { background: var(--warn); }
-.agents-children { display: flex; justify-content: center; align-items: flex-start; gap: 16px; border-top: 1px solid var(--line-2); margin-top: 30px; padding-top: 30px; position: relative; }
+.agents-children { display: flex; justify-content: safe center; align-items: flex-start; gap: 16px; border-top: 1px solid var(--line-2); margin-top: 30px; padding-top: 30px; position: relative; }
 .agents-children:before { content: ''; position: absolute; height: 30px; border-left: 1px solid var(--line-2); top: -30px; left: 50%; }
 .agents-children > .agents-branch { position: relative; }
 .agents-children > .agents-branch:before { content: ''; position: absolute; height: 30px; border-left: 1px solid var(--line-2); top: -30px; left: 50%; }
@@ -166,7 +167,7 @@
  .agents-sidebar, .agents-main, .agents-side { border: 0; }
  .agents-main, .agents-side { display: none; padding: 20px; }
  .agents-layout.has-lead .agents-sidebar, .agents-layout.has-agent .agents-main { display: none; }
- .agents-layout.has-lead .agents-main, .agents-layout.has-agent .agents-side { display: block; }
+ .agents-layout.has-lead:not(.has-agent) .agents-main, .agents-layout.has-agent .agents-side { display: block; }
  .agents-back { display: inline-flex; margin-bottom: 20px; }
  .agents-tree { overflow: visible; }
  .agents-branch { align-items: stretch; min-width: 0; }
