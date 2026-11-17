@@ -172,6 +172,59 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       await noSideScroll(page);
     });
 
+    test('activity, memory and question paths render from the agents API', async ({ page }) => {
+      test.skip(label !== 'desktop');
+      const since = new Date(Date.now() - 10000).toISOString();
+      const worker = { name: 'worker', role: 'worker', live: true, state: 'working', children: [], context: { percent: 75 }, activity: { counts: { files: 10, shell: 5 }, trail: ['files','shell'], current: { kind: 'shell', label: 'Running tests', since }, latest: [{ label: 'Running tests', at: since, state: 'running' }], normal: { samples: [60000,60000], typical_ms: 60000 } } };
+      const middle = { name: 'middle', role: 'sub-lead', children: [worker] };
+      const lead = { name: 'lead', role: 'lead', children: [middle] };
+      const payload = { leads: [{ thread_id: 'a', lead_name: 'Alpha', session: lead, question_paths: [['worker','lead']] }], machines: [] };
+      await page.route('**/api/agents', route => route.fulfill({ json: payload }));
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await openPage(page, context, '/app/agents?lead=a&agent=worker');
+      await expect(page.locator('.activity-line')).toHaveCount(6);
+      await expect(page.locator('.activity-line[data-kind="files"]')).toHaveAttribute('stroke-width','6');
+      await expect(page.locator('.activity-line[data-kind="shell"]')).toHaveAttribute('stroke-width','3.5');
+      await expect(page.locator('.activity-count')).toHaveCount(2);
+      await expect(page.locator('.activity-ring.warn title')).toHaveText('Memory 75% full');
+      await expect(page.locator('.agents-insight')).toContainText("That's expected.");
+      await expect(page.locator('.agents-latest')).toContainText('Running tests');
+      await expect(page.locator('.agents-path-overlay path')).toHaveCount(2);
+      await expect(page.locator('[data-session="middle"]')).not.toHaveClass(/question-path/);
+      await expect(page.locator('.agents-path-legend')).toBeVisible();
+      await expect(page.locator('.activity-flow')).toHaveCSS('animation-name','none');
+      const before = await page.locator('.activity-now').textContent();
+      await expect.poll(() => page.locator('.activity-now').textContent()).not.toBe(before);
+    });
+
+    test('activity handles timing, memory and waiting variations', async ({ page }) => {
+      test.skip(label !== 'desktop');
+      const worker = { name: 'worker', role: 'worker', children: [], activity: {}, context: null };
+      const middle = { name: 'middle', role: 'sub-lead', children: [worker] };
+      const lead = { name: 'lead', role: 'lead', children: [middle] };
+      const record = { thread_id: 'a', lead_name: 'Beta', session: lead };
+      await page.route('**/api/agents', route => route.fulfill({ json: { leads: [record], machines: [] } }));
+      const load = () => openPage(page, context, '/app/agents?lead=a&agent=worker');
+      await load();
+      await expect(page.locator('.agents-insight')).toHaveCount(0);
+      await expect(page.locator('.activity-ring')).toHaveCount(0);
+      await expect(page.locator('.agents-latest')).toContainText('Nothing yet.');
+      await expect(page.locator('.agents-path-legend')).toHaveCount(0);
+      worker.activity = { current: { kind: 'files', label: 'Reading files', since: new Date(Date.now()-45000).toISOString() }, latest: [{ label: 'Done', at: new Date().toISOString(), state: 'done' }, { label: 'Failed', at: new Date().toISOString(), state: 'failed' }] };
+      worker.context = { percent: 50 }; await load();
+      await expect(page.locator('.agents-insight')).toContainText('Nothing earlier to compare it with.');
+      await expect(page.locator('.activity-ring:not(.warn):not(.high) title')).toHaveText('Memory 50% full');
+      await expect(page.locator('.latest-done')).toHaveText('✓'); await expect(page.locator('.latest-failed')).toHaveText('✕');
+      worker.activity.normal = { samples: [10000], typical_ms: 10000 }; worker.context.percent = 95; await load();
+      await expect(page.locator('.agents-insight')).toContainText('Longer than usual.');
+      await expect(page.locator('.agents-long')).toContainText('last time.');
+      await expect(page.locator('.activity-ring.high title')).toHaveText('Memory 95% full');
+      worker.question = { asked_at: new Date().toISOString(), to: 'middle', trail: [{ who: 'worker', text: 'Question' }, { who: 'middle', text: 'Needs a decision' }], card_id: 'card1' }; await load();
+      await expect(page.locator('.agents-question')).toContainText('Asked the sub-lead at');
+      await expect(page.locator('.agents-question')).toContainText('The sub-lead passed it to Beta: Needs a decision');
+      await expect(page.getByRole('link', { name: 'Go to the question' })).toHaveAttribute('href','/wheelchair/app/thread?id=a#card-card1');
+    });
+
     test('sessions URL redirects to Agents', async ({ page }) => {
       await openPage(page, context, '/app/sessions');
       await expect(page).toHaveURL(/\/app\/agents$/);
