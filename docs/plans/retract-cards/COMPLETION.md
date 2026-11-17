@@ -2,7 +2,10 @@
 slug: retract-cards
 date: 2026-11-17
 implemented-by: "standard / gpt-6.1-terra (T1, T2, T3); sub-lead claude-opus-5-5 (small test and doc additions)"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: verifier / gpt-6.1-sol (claude unavailable; not cross-family)
+    checks: standard / gpt-6.1-terra
 ---
 
 # Completion Report — Retract cards that no longer apply

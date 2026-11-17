@@ -319,3 +319,4 @@ with `resolve`).
 - 2026-11-17 — Choice: T2, viewer/pages/thread.js question: the own-words box is hidden on any `off` card, including a withdrawn one.
 - 2026-11-17 — Sub-lead addition after merging T2: added a browser test ("a withdrawn approval that was ready has Start building disabled"). The worker's test used a not-ready approval, which disables Start building anyway.
 - 2026-11-17 — A flaky failure in viewer/test/run.spec.js:225 (the graph viewer, outside this feature) appeared once in a full browser run. It passed on both re-runs and on the next full run.
+- 2026-11-17 — Verification attempt 1: PASS at f158c99 (gpt-6.1-sol; Claude unavailable, so not cross-family). The verifier independently reproduced the lifecycle test failure on main.
