@@ -9,12 +9,13 @@ function relative(target, cwd) {
 }
 function keyFor(kind, target = '', verb = '', ctx = {}) {
   if (kind === 'shell') return `shell:${shellTarget(target).trim().split(/\s+/).filter(Boolean).slice(0, 2).join(' ')}`;
-  if (kind === 'files') return `files:${verb} ${verb === 'Searched' ? relative(target, ctx.cwd) : path.dirname(relative(target, ctx.cwd))}`;
+  if (kind === 'files') return target ? `files:${verb} ${verb === 'Searched' ? relative(target, ctx.cwd) : path.dirname(relative(target, ctx.cwd))}` : `files:${verb}`;
   return `${kind}:${kind}`;
 }
 function classify(cli, toolName, input, ctx = {}) {
   const name = String(toolName || ''), data = input && typeof input === 'object' ? input : {};
-  const command = typeof input === 'string' ? input : (data.command || data.cmd || '');
+  let command = typeof input === 'string' ? input : (data.command || data.cmd || '');
+  if (Array.isArray(command)) command = command.length === 3 && ['-lc', '-c'].includes(command[1]) ? command[2] : command.join(' ');
   const card = (cli === 'claude' ? name === 'Bash' : ['exec_command', 'shell'].includes(name)) && /(?:^|[\s/])card\.js\s+(message|result)\b(?:\s+([^\s;&|]+))?/.exec(command);
   let kind, label, target = '', verb = '';
   if (card) {
@@ -31,10 +32,10 @@ function classify(cli, toolName, input, ctx = {}) {
     kind = 'files'; target = data.file_path || data.path || data.notebook_path || data.pattern || '';
     if (name === 'apply_patch') {
       const patch = typeof input === 'string' ? input : (data.patch || data.input || '');
-      const files = [...patch.matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)].map(m => m[1]); target = files[0] || ''; verb = 'Edited'; label = files.length > 1 ? `Edited ${files.length} files` : `Edited ${path.basename(target)}`;
+      const files = [...patch.matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)].map(m => m[1]); target = files[0] || ''; verb = 'Edited'; label = files.length > 1 ? `Edited ${files.length} files` : target ? `Edited ${path.basename(target)}` : 'Edited files';
     } else if (['Glob', 'Grep', 'LS'].includes(name)) { verb = 'Searched'; target = data.pattern || data.path || ''; label = `Searched ${target}`; }
     else { verb = ['Read', 'view_image'].includes(name) || /read/i.test(name) ? 'Read' : 'Edited'; label = `${verb} ${path.basename(target)}`; }
-  } else { kind = 'shell'; target = command; label = cli === 'claude' && name === 'Bash' && data.description ? data.description : `Ran ${shellTarget(command)}`; }
+  } else { kind = 'shell'; target = command || name; label = cli === 'claude' && name === 'Bash' && data.description ? data.description : command ? `Ran ${shellTarget(command)}` : `Used ${name}`; }
   return { kind, label: truncate(label), key: keyFor(kind, target, verb, ctx) };
 }
 module.exports = { classify, shellTarget, truncate, keyFor };

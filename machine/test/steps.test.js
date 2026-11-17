@@ -54,3 +54,10 @@ test('statusline independently throttles and spools both events', () => {
   const older = new Date(Date.now()-61000); fs.utimesSync(path.join(state,'statusline/wc-test'),older,older);
   run(payload); assert.equal(events().filter(e=>e.type==='context').length,2); assert.equal(events().filter(e=>e.type==='usage-source').length,2);
 });
+test('empty commands, command arrays and empty patches have useful labels and keys', () => {
+  assert.deepEqual(classify('codex', 'write_stdin', {}), {kind:'shell', label:'Used write_stdin', key:'shell:write_stdin'});
+  assert.deepEqual(classify('claude', 'mcp_example', {}), {kind:'shell', label:'Used mcp_example', key:'shell:mcp_example'});
+  assert.deepEqual(classify('codex', 'shell', {command:['bash','-lc','npm test']}), {kind:'shell',label:'Ran npm test',key:'shell:npm test'});
+  assert.equal(classify('codex', 'shell', {command:['echo','hello']}).label, 'Ran echo hello');
+  assert.deepEqual(classify('codex', 'apply_patch', 'no file'), {kind:'files',label:'Edited files',key:'files:Edited'});
+});

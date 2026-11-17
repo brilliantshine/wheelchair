@@ -20,6 +20,7 @@ const { spawnSync, spawn } = require('node:child_process');
 const { pipeline } = require('node:stream/promises');
 const adapters = require('./adapters');
 const { limitedUntil } = require('./lib/limits');
+const { readLines: readCodexSteps } = require('./lib/codex-steps');
 const { AsideTurns } = require('./lib/aside-turns');
 const { SudoRequests } = require('./lib/sudo');
 
@@ -198,6 +199,7 @@ class MachineService {
     this.config = {};
     this.asideTurns = new AsideTurns(this.stateDir, atomicWrite, accountDir);
     this.sessions = {};
+    this.stepReads = new Map();
     this.startingWorktrees = new Set();
     this.startingNames = new Map(); // name -> the start in progress, so a repeated start joins it
     this.startingBranches = new Set(); // worker branches named by a start not yet recorded
@@ -315,6 +317,8 @@ class MachineService {
     await mkdir(path.join(this.stateDir, 'spool', 'events'));
     this.pollTimer = setInterval(() => this.pollReadiness().catch(error => this.log(error)), 2000);
     this.pollTimer.unref();
+    this.stepsTimer = setInterval(() => this.pollCodexSteps().catch(error => this.log(error)), 2000);
+    this.stepsTimer.unref();
     // Trust is the one startup screen where waiting two seconds makes a newly-created
     // worktree feel stalled. Stuck sessions and open prompts remain on pollTimer.
     this.trustTimer = setInterval(() => this.pollTrust().catch(error => this.log(error)), 500);
@@ -545,6 +549,33 @@ class MachineService {
     const spool = await this.spool('events', event);
     await this.drainSpool('events');
     return spool;
+  }
+  async pollCodexSteps() {
+    const live = this.liveTmux();
+    if (!live) return;
+    await Promise.all(Object.values(this.sessions).filter(s => s.cli === 'codex' && s.codex_thread_id && live.has(s.name)).map(s => this.readCodexSteps(s)));
+  }
+  async readCodexSteps(session) {
+    const previous = this.stepReads.get(session.name) || Promise.resolve();
+    const reading = previous.catch(() => {}).then(async () => {
+      if (!session.codex_thread_id) return;
+      const file = session.source_transcript || await adapters.codex.findTranscript(session, session.account_dir);
+      if (!file) return;
+      session.source_transcript = file;
+      const data = await fsp.readFile(file).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
+      if (!data) return;
+      const start = Math.min(session.steps_offset || 0, data.length);
+      const end = data.lastIndexOf(10);
+      if (end < start) return;
+      const complete = data.subarray(start, end + 1);
+      const state = JSON.parse(JSON.stringify(session.steps_state || {}));
+      const events = readCodexSteps(state, complete.toString('utf8').split('\n'), { cwd: session.worktree });
+      for (const event of events) await this.emitEvent({ ...event, session: session.name, thread_id: session.thread_id, prepared: true });
+      session.steps_offset = end + 1; session.steps_state = state;
+      await this.persistSessions();
+    });
+    this.stepReads.set(session.name, reading);
+    try { await reading; } finally { if (this.stepReads.get(session.name) === reading) this.stepReads.delete(session.name); }
   }
   async checkReady(session) {
     if (session.status === 'ready') return true;
@@ -840,6 +871,11 @@ class MachineService {
     if (event.type === 'turn-ended' && adapter.onTurnEnded) {
       const result = await adapter.onTurnEnded(current, event);
       if (result.ignored) return { ignored: true };
+      if (current.cli === 'codex') {
+        await this.readCodexSteps(current);
+        // The hub closes any still-running steps at the turn boundary.
+        current.steps_state = { open: {}, yielded: null };
+      }
       if (result.reading) {
         const { reached, ...reading } = result.reading;
         reading.account = current.account || `default-${adapter.provider}`;
@@ -1219,7 +1255,7 @@ class MachineService {
     this.spoolTimer.unref();
     this.sudoTimer = setInterval(() => this.sudo.tick().catch(error => this.log(error)), Number(process.env.WHEELCHAIR_SUDO_POLL_MS || 2000));
     this.sudoTimer.unref();
-    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.pollTimer); clearInterval(this.trustTimer); clearInterval(this.sudoTimer); });
+    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.pollTimer); clearInterval(this.stepsTimer); clearInterval(this.trustTimer); clearInterval(this.sudoTimer); });
     process.stdout.write(`machine service listening on ${this.config.host}:${this.config.port}\n`);
     await this.drainSpool('events'); await this.drainSpool('cards');
   }
