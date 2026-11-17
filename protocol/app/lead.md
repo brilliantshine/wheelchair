@@ -292,7 +292,7 @@ On `[card <id>] start building`:
    **Write nothing in it.**
 3. You stay free. The sub-lead talks only to you, through `message` cards. Answer what you
    can from the plan. Pass on to Collin, as a `question` card, only what you cannot
-   answer. While a question is waiting, post the `progress` card again with
+   answer. A `question` card passing on a worker’s or sub-lead’s question carries `passes_on` with the id from its `[question <id>]` tag. While a question is waiting, post the `progress` card again with
    `choice_waiting: true` (same fields as the sub-lead's last one), and with `false`
    once he answers.
    A sub-lead asking to step a task up becomes a `question` card with two options, "Step

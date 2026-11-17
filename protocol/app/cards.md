@@ -99,6 +99,7 @@ One decision for Collin. Also used to confirm IDEA.md.
 | `why` | string | yes | One line on why you lean that way |
 | `progress` | string | no | For example "decision 4 of roughly 9" |
 | `doc` | string | no | One of `MAP.md`, `IDEA.md` or `PLAN.md` |
+| `passes_on` | string | no | The id of the question message this passes on |
 
 A press comes back as `[card <id>] picked: <option label>`. Under the options the card has
 a box for his own words; sending it closes the card and comes back as
@@ -359,6 +360,8 @@ To another session in the same thread.
 |---|---|---|---|
 | `to` | string | yes | The session's name, `wc-<thread-id>-<role>[-<n>]`. `wc.js session list` shows the names |
 | `text` | string | yes | The message |
+| `asks` | boolean | no | True when this message needs an answer |
+| `passes_on` | string | no | The id of the question message this passes on |
 
 The app types it into that session when its turn ends, as one message starting
 `[wc:from <your session name>]`. The thread hides it and the receiver's whole reply.
@@ -396,6 +399,8 @@ app uses to hide traffic Collin did not write:
 | `[card <id>] ...` | Collin pressed a button on card `<id>` | a short bubble from him ("Picked B"), and your reply is shown |
 | a final `[wc:style]` block, after a blank line at the END of a message | Collin's writing style, delivered to a lead, replacing any earlier style | stripped from Collin's bubble |
 | anything else | Collin's own words, typed in the app, the browser terminal or over `tmux attach` | his bubble, and your reply is shown |
+
+A question message includes `[question <id>]` after its `[wc:from <session>]` marker. Use that id as `passes_on` when passing the question on. The id must name an asking message in the same thread.
 
 An uploaded file arrives in Collin's message as a line `[attached: <absolute path>]`;
 the lead can open that path.

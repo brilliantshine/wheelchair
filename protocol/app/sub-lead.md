@@ -122,7 +122,7 @@ Record each task's lane in the table: the tier plus the resolved model
   is committed, dispatch re-posts the current `verify` line unchanged and acceptance
   re-posts it with `fixed` + 1; never post a `build` card after `verifying`.
 - A worker that asks something the plan did not settle sends its question to the lead, not
-  to you. If you hit something the plan does not settle, send the lead a `message` too.
+  to you. If you hit something the plan does not settle, send the lead a `message` with `asks: true` too. If you pass on a question received from below, add `passes_on` with the id from its `[question <id>]` tag.
 - On a starter nudge about a quiet session, message the agent, or stop and replace it.
 - On `[wc:from app] your session <name>'s turn failed: <error>`, that session is still live.
   Send it a `message` asking it to carry on. Only if it fails again, run `session stop` on
