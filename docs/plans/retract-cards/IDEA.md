@@ -36,6 +36,8 @@ can start something nobody wants any more (a build, or a root command).
 - A retracted sudo card's command can no longer be run, including from the page where
   Collin types his password.
 - The lead can post a fresh card later when the question comes back.
+- The plan's approval card stays pinned at the top of the thread until Collin presses
+  Start building or it is retracted; a fresh approval card replaces the pinned one.
 
 ## Not doing
 
