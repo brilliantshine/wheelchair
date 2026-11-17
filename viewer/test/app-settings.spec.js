@@ -115,6 +115,27 @@ test.describe('desktop', () => {
     await expect(page.getByLabel('Claude lead effort', { exact: true })).toHaveValue('max');
   });
 
+  test('sub-lead models and scout tiers render and save independently', async ({ page }) => {
+    await openPage(page, context, '/app/settings#models');
+    for (const provider of ['Claude', 'GPT', 'Antigravity']) {
+      await expect(page.getByLabel(`${provider} lead model`, { exact: true })).toBeVisible();
+      await expect(page.getByLabel(`${provider} sub-lead model`, { exact: true })).toBeVisible();
+    }
+    await expect(page.getByText('Leads run on', { exact: true })).toHaveCount(3);
+    await expect(page.getByText('Sub-leads run on', { exact: true })).toHaveCount(3);
+    const modelRequest = page.waitForRequest((request) => request.url().endsWith('/api/settings/models') && request.method() === 'PUT');
+    await page.getByLabel('GPT sub-lead effort', { exact: true }).selectOption('high');
+    expect((await modelRequest).postDataJSON()).toMatchObject({ provider: 'gpt', slot: 'sub-lead', effort: 'high' });
+    await expect.poll(async () => (await settings(page)).models.gpt['sub-lead'].effort).toBe('high');
+
+    await expect(page.getByLabel('Scout', { exact: true }).locator('option:checked')).toHaveText('Light');
+    await expect(page.getByLabel('Scout for bigger changes', { exact: true }).locator('option:checked')).toHaveText('Standard');
+    const preferenceRequest = page.waitForRequest((request) => request.url().endsWith('/api/settings/preferences') && request.method() === 'PUT');
+    await page.getByLabel('Scout for bigger changes', { exact: true }).selectOption('heavy');
+    expect((await preferenceRequest).postDataJSON()).toEqual({ other_agents: { 'scout-heavy': 'heavy' } });
+    await expect.poll(async () => (await settings(page)).other_agents['scout-heavy']).toBe('heavy');
+  });
+
   test('Escalation: default text, Model first, Highest tier Heavy', async ({ page }) => {
     await openPage(page, context, '/app/settings#models');
     await expect(page.locator('h2#escalation')).toHaveText('Escalation');
