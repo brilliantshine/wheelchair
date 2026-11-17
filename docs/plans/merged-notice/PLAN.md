@@ -64,7 +64,7 @@ When a thread's pull request is merged on GitHub, within about a minute the app 
   - the title "Pull request merged";
   - a "Review pull request" link to `pr_url`, as on the `done` card;
   - while unanswered and the thread is not archived, the buttons **Archive** and **Keep it**.
-- **Archive** is two-step, like the page header's (`:159-164`). The first press swaps the buttons for **Confirm archive**, **Cancel** and the note "Stops its sessions and removes the worktree." **Confirm archive** POSTs to the existing archive route (`POST /app/api/threads/<id>/archive`, `viewer/app/routes.js:476`), the same call `doArchive` makes. Then it repolls, as `doArchive` does. **Cancel** restores the two buttons. The confirm state is per card and lives only on the page.
+- **Archive** is two-step, like the page header's (`:159-164`). The first press swaps the buttons for **Confirm archive**, **Cancel** and the note "Stops its sessions and removes the worktree." **Confirm archive** POSTs to the existing archive route (`POST <T>/archive`, where `T` is the thread page's API base, `viewer/app/routes.js:476`), the same call `doArchive` makes. Then it repolls, as `doArchive` does. **Cancel** restores the two buttons. The confirm state is per card and lives only on the page.
 - **Keep it** POSTs a card press with action `keep` (see 4). The card then shows dimmed and answered, with the note "Kept", like a resolved needs card (`:448`).
 - An answered `merged` card shows no buttons. It shows "Archived" or "Kept" from `resolved_note`.
 - Pin and sort the card like other unpinned cards, in time order in the conversation. It is not pinned.
@@ -121,6 +121,15 @@ Automatic archiving; merging from the app; any notice for a closed-unmerged PR; 
 | If the hub's `gh` is missing or logged out, merges are never noticed and nothing says why. | Matches the existing stub poll; the hub's `gh` is already assumed. | planning |
 
 ## Review Rounds
+
+### Round 1 — 2026-11-16
+
+**Lanes:** claude (intent); other family (mechanics); cross-family: yes.
+
+**Changed since Round N-1:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
