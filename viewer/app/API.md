@@ -112,8 +112,8 @@ Worker restart (`wc.js session start --role worker ... --replaces <session>`): t
 `notify_below`, `save_for_leads`, `margin`, and `held_back` (an object with boolean
 `worker`, `reviewer`, `verifier`, and `mapper` keys, all defaulting to true). `POST /settings/accounts` accepts
 `{provider, name, plan}`; a second Antigravity account is refused with 400; `PUT /settings/accounts/:id` accepts `{name?, plan?, weight?, paused?}`;
-`DELETE /settings/accounts/:id` removes a non-default account. `PUT /settings/balancing`
-updates the balancing keys and returns `reserved_provider`; an old saved file’s boolean `save_claude_for_leads` carries over to `save_for_leads`. `PUT /settings/preferences` accepts `review_families` as `both`, `claude`, `gpt`, or `gemini` and returns it. Invalid values and attempts to remove a default return 400.
+`DELETE /settings/accounts/:id` removes an account, a provider's default (the CLI's own login) included; a removed default stays removed until `POST /settings/accounts/default-<provider>/restore` adds it back (400 when it is already there or Antigravity already has an account, 404 for an unknown provider). `PUT /settings/balancing`
+updates the balancing keys and returns `reserved_provider`; an old saved file’s boolean `save_claude_for_leads` carries over to `save_for_leads`. `PUT /settings/preferences` accepts `review_families` as `both`, `claude`, `gpt`, or `gemini` and returns it. Invalid values return 400.
 
 `GET /usage` returns `{providers}` with each provider's forecast and account readings,
 machine sign-in states, placement reason and live session count. `GET /usage/alert` returns

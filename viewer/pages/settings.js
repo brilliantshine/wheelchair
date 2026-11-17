@@ -1069,7 +1069,7 @@
         h('button', { type: 'button', class: 'small', text: 'Cancel', onclick: () => { editing = null; renderPanel(); } })),
       h('span', { class: 'hint', text: 'Weight is how big this account is next to the others. Leave it blank to use the plan\'s.' }));
     } else if (edit === 'remove') {
-      card.append(h('div', { class: 'actions' }, h('span', { text: `Remove ${a.name}?` }),
+      card.append(h('div', { class: 'actions' }, h('span', { text: isDefault ? `Remove the default login? Agents stop using this machine's own ${PROVIDER_NAME[a.provider]} login.` : `Remove ${a.name}?` }),
         h('button', { type: 'button', class: 'danger small', text: 'Remove', onclick: () => mutate(card, () => api('/settings/accounts/' + encodeURIComponent(a.id), { method: 'DELETE' })) }),
         h('button', { type: 'button', class: 'small', text: 'Keep', onclick: () => { editing = null; renderPanel(); } })));
     } else {
@@ -1077,7 +1077,7 @@
         h('button', { type: 'button', class: 'small', text: a.paused ? 'Resume' : 'Pause', onclick: () => mutate(card, () => api('/settings/accounts/' + encodeURIComponent(a.id), { method: 'PUT', body: { paused: !a.paused } })) }),
         h('button', { type: 'button', class: 'small', text: 'Rename', onclick: () => { editing = { id: a.id, kind: 'rename' }; renderPanel(); } }),
         h('button', { type: 'button', class: 'small', text: 'Change plan', onclick: () => { editing = { id: a.id, kind: 'plan' }; renderPanel(); } }),
-        !isDefault && h('button', { type: 'button', class: 'small', text: 'Remove', onclick: () => { editing = { id: a.id, kind: 'remove' }; renderPanel(); } })));
+        h('button', { type: 'button', class: 'small', text: 'Remove', onclick: () => { editing = { id: a.id, kind: 'remove' }; renderPanel(); } })));
     }
     if (justAdded === a.id) {
       card.append(h('div', { class: 'actions just-added' }, h('span', { text: 'Added. Sign in on:' }),
@@ -1125,6 +1125,13 @@
     return form;
   }
 
+  // A removed default account can be brought back; it is the CLI's own login on each machine.
+  function restoreDefault(provider) {
+    const row = h('div', { class: 'actions restore-default' });
+    row.append(h('button', { type: 'button', class: 'small', text: 'Add back the default login', onclick: () => mutate(row, () => api(`/settings/accounts/default-${provider}/restore`, { method: 'POST' })) }));
+    return row;
+  }
+
   function renderAccounts() {
     return h('div', { class: 'models accounts' },
       h('div', {}, h('h1', { text: 'Accounts' }),
@@ -1134,7 +1141,8 @@
       Object.entries(PROVIDER_NAME).map(([provider, label]) => h('section', { class: 'prov-group', 'data-provider': provider, 'aria-label': label },
         h('h2', { text: label }),
         provider === 'gemini' && h('p', { class: 'hint', text: 'Antigravity supports one account per machine' }),
-        accountRows(provider).filter((a) => provider !== 'gemini' || a.id === 'default-gemini').map(accountCard))),
+        accountRows(provider).filter((a) => provider !== 'gemini' || a.id === 'default-gemini').map(accountCard),
+        !(data.accounts || []).some((a) => a.id === `default-${provider}`) && restoreDefault(provider))),
       addForm());
   }
 

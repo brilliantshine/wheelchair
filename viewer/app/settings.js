@@ -178,7 +178,8 @@ function normalize(saved) {
     seen.add(item.id);
     accounts.push({ id: item.id, provider: item.provider, name: item.name, plan: item.plan, weight: item.weight ?? PLANS[item.provider][item.plan], paused: item.paused ?? false });
   }
-  for (const account of base.accounts) if (!seen.has(account.id)) accounts.push(account);
+  const retired = Array.isArray(saved.retired_accounts) ? saved.retired_accounts.filter((id) => typeof id === 'string') : [];
+  for (const account of base.accounts) if (!seen.has(account.id) && !retired.includes(account.id)) accounts.push(account);
   const balancing = {};
   for (const key of BALANCING) balancing[key] = validBalancing(key, saved[key]) ? saved[key] : base[key];
   const orderSeen = Array.isArray(saved.worker_order_seen) ? saved.worker_order_seen.filter((provider) => Object.hasOwn(PROVIDERS, provider)) : ['claude', 'gpt'];
@@ -187,7 +188,7 @@ function normalize(saved) {
   return {
     lead_names: Array.isArray(saved.lead_names) ? saved.lead_names : [],
     worker_order_seen: Object.keys(PROVIDERS),
-    accounts, retired_accounts: Array.isArray(saved.retired_accounts) ? saved.retired_accounts.filter((id) => typeof id === 'string') : [], ...balancing,
+    accounts, retired_accounts: retired, ...balancing,
     permission_mode: saved.permission_mode === 'bypass' ? 'bypass' : 'auto',
     codex_mode: saved.codex_mode === 'unrestricted' ? 'unrestricted' : 'sandboxed',
     aside_access: saved.aside_access === 'full' ? 'full' : 'read-only',
