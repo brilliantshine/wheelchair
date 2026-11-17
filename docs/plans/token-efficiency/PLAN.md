@@ -1,6 +1,6 @@
 ---
 slug: token-efficiency
-status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
+status: done   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-16
 ---
 
