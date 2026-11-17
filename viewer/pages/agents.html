@@ -4,13 +4,18 @@
 <title>Agents</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%231f6feb'/><g fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'><path d='M14 10v8h7l3 7'/><path d='M14 13.5h5'/><path d='M10.5 15.5a6.5 6.5 0 1 0 9.5 7'/></g><circle cx='14' cy='6' r='2.6' fill='white'/></svg>">
 <link rel="stylesheet" href="/wheelchair/assets/pages/app.css">
+<link rel="stylesheet" href="/wheelchair/assets/vendor/xterm/xterm.css">
 <link rel="stylesheet" href="/wheelchair/assets/pages/views.css">
 <script src="/wheelchair/assets/pages/nav.js" defer></script>
+<script src="/wheelchair/assets/vendor/xterm/xterm.js" defer></script>
+<script src="/wheelchair/assets/pages/term-view.js" defer></script>
 <script src="/wheelchair/assets/pages/agents.js" defer></script>
 <header id="app-nav" data-current="agents"></header>
-<main class="view">
+<main class="view agents-view">
   <p id="error" class="v-error" hidden></p>
   <div id="unreachable"></div>
-  <div id="agents"></div>
+  <div id="agents" class="agents-layout"></div>
+  <section id="agents-terminal" class="agents-terminal" hidden><div id="agents-resize" class="agents-resize" title="Drag to resize"></div><div class="agents-terminal-bar"><strong id="agents-terminal-title"></strong><span id="agents-terminal-status" class="agents-muted"></span><span id="agents-terminal-switch"></span><button id="agents-full">Full screen</button><button id="agents-pop">Pop out</button><button id="agents-close">Close</button></div><div id="agents-terminal-view" class="tv-view"></div></section>
+  <dialog id="brief-dialog"><div class="brief-head"><strong>Brief</strong><button id="brief-close">Close</button></div><pre id="brief-text"></pre></dialog>
   <p id="empty" class="v-empty" hidden>No agents running.</p>
 </main>
