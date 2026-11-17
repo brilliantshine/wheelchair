@@ -257,6 +257,8 @@ None.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Machine `POST /v1/usage`, Claude and Codex probes and parsers, API.md, machine tests | `machine/service.js`, `machine/adapters/{claude,codex}.js`, new `machine/lib/*`, `machine/API.md`, `machine/AGENTS.md`, `machine/test/{accounts,service}.test.js`, `machine/test/fixtures/` | Standard, gpt-6.1-terra | wc-d40ef9c79052-worker (T1-a1) | `bash machine/test/run.sh` | in progress |
+| T2 | Hub `usage-poll.js`, `hub.pollIdle()` and timers, fake `/v1/usage`, hub tests, router rows | `viewer/app/usage-poll.js`, `viewer/app/hub.js`, `viewer/test/app-usage.test.js`, `viewer/test/helpers/app-machine.js`, `viewer/AGENTS.md`, `viewer/app/API.md` | Standard, gpt-6.1-terra | wc-d40ef9c79052-worker-2 (T2-a1) | `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser` | in progress |
 
 ## Log
 
