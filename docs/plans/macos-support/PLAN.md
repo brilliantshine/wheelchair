@@ -125,7 +125,6 @@ bash machine/test/run.sh
 node --test test-support/test/*.test.js
 node --test viewer/test/*.test.js
 ```
-Under bash 3.2 semantics on Linux, as a spot check where available: none required (the Mac job is the gate).
 On the Mac job: green on the pull request, including `test-support/macos/check.sh`.
 `bash -n` and `shellcheck` (if installed) on every changed shell file.
 
@@ -138,6 +137,15 @@ On the Mac job: green on the pull request, including `test-support/macos/check.s
 | A `sudo` card posted on a Mac fails with the existing "helper unreachable" 503 | Helper is out of scope (Decision 1); the README says so | planning |
 
 ## Review Rounds
+
+### Round 1 — 2026-11-16
+
+**Lanes:** intent / claude (planned); mechanics / gpt (planned); cross-family: yes.
+
+**Changed since Round N-1:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
