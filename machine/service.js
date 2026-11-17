@@ -113,7 +113,12 @@ function startOptions(input) {
 }
 function shellQuote(value) { return `'${String(value).replace(/'/g, `'\\''`)}'`; }
 function maybeTailscaleIp() {
-  const result = command('tailscale', ['ip', '-4']);
+  let program = 'tailscale';
+  if (process.platform === 'darwin') {
+    const found = (process.env.PATH || '').split(path.delimiter).some(dir => { try { fs.accessSync(path.join(dir || '.', program), fs.constants.X_OK); return true; } catch { return false; } });
+    if (!found) program = '/Applications/Tailscale.app/Contents/MacOS/Tailscale';
+  }
+  const result = command(program, ['ip', '-4']);
   return result.ok ? result.stdout.trim().split(/\s+/)[0] : '127.0.0.1';
 }
 function parseArgs(argv) {
@@ -493,7 +498,7 @@ class MachineService {
     const tmuxArgs = ['new-session', '-d', '-s', name, '-x', '200', '-y', '50', '-c', worktree, commandText];
     // systemd-run scope prevents service restarts killing tmux; installer sets KillMode=process too.
     // Both asynchronous, like the git above: a slow systemd-run must not hold up the service.
-    const scoped = await commandAsync('systemd-run', ['--user', '--scope', 'tmux', ...tmuxArgs]);
+    const scoped = process.platform === 'darwin' ? { ok: false } : await commandAsync('systemd-run', ['--user', '--scope', 'tmux', ...tmuxArgs]);
     const result = scoped.ok ? scoped : await commandAsync('tmux', tmuxArgs);
     if (!result.ok) die(result.stderr.trim() || 'tmux session failed to start');
     this.sessions[name] = session;

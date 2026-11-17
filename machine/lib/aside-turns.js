@@ -2,17 +2,40 @@
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
+const { spawn, execFileSync } = require('node:child_process');
 const adapters = require('../adapters');
 const root = require('../adapters/common').root;
 const last = text => text.split('\n').map(x => x.trim()).filter(Boolean).pop();
 const uuid = x => typeof x === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(x);
-const proc = {
+const linuxProc = {
   start(pid) { try { const s = fs.readFileSync(`/proc/${pid}/stat`, 'utf8'); return s.slice(s.lastIndexOf(')') + 2).split(' ')[19]; } catch { return null; } },
   marked(id) { return fs.readdirSync('/proc').filter(x => /^\d+$/.test(x)).filter(pid => { try { return fs.readFileSync(`/proc/${pid}/environ`).toString().split('\0').includes(`WHEELCHAIR_ASIDE_TURN=${id}`); } catch { return false; } }).map(Number); },
   exists(pid) { try { process.kill(pid, 0); return true; } catch { return false; } },
   kill(pid) { let group; try { const s = fs.readFileSync(`/proc/${pid}/stat`, 'utf8'); group = Number(s.slice(s.lastIndexOf(')') + 2).split(' ')[2]); } catch { return; } try { process.kill(-group, 'SIGKILL'); } catch (e) { if (e.code !== 'ESRCH') throw e; } },
 };
+function createProc({ hasProc = fs.existsSync('/proc'), exec = execFileSync, signal = process.kill.bind(process) } = {}) {
+  if (hasProc) return linuxProc;
+  const ps = args => exec('ps', args, { encoding: 'utf8', timeout: 5000 });
+  return {
+    start(pid) { try { return ps(['-o', 'lstart=', '-p', String(pid)]).trim() || null; } catch { return null; } },
+    marked(id) {
+      try {
+        const marker = `WHEELCHAIR_ASIDE_TURN=${id}`;
+        return ps(['-E', '-ww', '-o', 'pid=,command=', '-A']).split('\n').flatMap(line => {
+          const match = /^\s*(\d+)\s+(.+)$/.exec(line);
+          return match && match[2].split(/\s+/).includes(marker) ? [Number(match[1])] : [];
+        });
+      } catch { return []; }
+    },
+    exists(pid) { try { signal(pid, 0); return true; } catch { return false; } },
+    kill(pid) {
+      let group;
+      try { const value = ps(['-o', 'pgid=', '-p', String(pid)]).trim(); if (!/^\d+$/.test(value) || Number(value) <= 0) return; group = Number(value); } catch { return; }
+      try { signal(-group, 'SIGKILL'); } catch (e) { if (e.code !== 'ESRCH') throw e; }
+    },
+  };
+}
+const proc = createProc();
 class AsideTurns {
   constructor(stateDir, atomicWrite, accountDir) { this.file = path.join(stateDir, 'aside-turns.json'); this.atomicWrite = atomicWrite; this.accountDir = accountDir; this.turns = {}; this.proc = proc; this.timeoutMs = 900000; this.writes = Promise.resolve(); }
   save() { const data = JSON.stringify(this.turns) + '\n'; this.writes = this.writes.then(() => this.atomicWrite(this.file, data)); return this.writes; }
@@ -108,4 +131,4 @@ class AsideTurns {
     } finally { clearTimeout(timer); }
   }
 }
-module.exports = { AsideTurns, proc };
+module.exports = { AsideTurns, proc, createProc };

@@ -122,3 +122,27 @@ test('stopping an unknown turn persists a tombstone and prevents a later start',
     assert.equal((await request('DELETE', '/v1/aside-turns/not-a-uuid'))[0], 400);
   } finally { await new Promise(r => server.close(r)); process.env = old; }
 });
+
+test('ps process backend matches exact markers and handles failures', async () => {
+  const { createProc } = require('../lib/aside-turns');
+  const calls = [], signals = [], id = uuid();
+  let fail = false, group = ' 42\n';
+  const proc = createProc({ hasProc: false, exec: (program, args, options) => {
+    calls.push({ program, args, options });
+    if (fail) throw Error('ps failed');
+    if (args[1] === 'lstart=') return ' Mon Nov 16 12:34:56 2026 \n';
+    if (args[1] === 'pgid=') return group;
+    return ` 11 command WHEELCHAIR_ASIDE_TURN=${id}\n 12 command XWHEELCHAIR_ASIDE_TURN=${id}\n 13 command WHEELCHAIR_ASIDE_TURN=${id}suffix\n 14 command WHEELCHAIR_ASIDE_TURN=${id} OTHER=yes\n`;
+  }, signal: (pid, sig) => signals.push([pid, sig]) });
+  assert.equal(proc.start(11), 'Mon Nov 16 12:34:56 2026');
+  assert.deepEqual(proc.marked(id), [11, 14]);
+  proc.kill(11); assert.deepEqual(signals, [[-42, 'SIGKILL']]);
+  group = ''; proc.kill(11); assert.equal(signals.length, 1);
+  fail = true; assert.equal(proc.start(11), null); assert.deepEqual(proc.marked(id), []); assert.doesNotThrow(() => proc.kill(11));
+  assert.ok(calls.every(call => call.program === 'ps' && call.options.timeout === 5000 && call.options.encoding === 'utf8'));
+  assert.deepEqual(calls[1].args, ['-E', '-ww', '-o', 'pid=,command=', '-A']);
+  const dir = await makeTemp('aside-ps-recovery-'), store = new AsideTurns(dir, atomic, x => x);
+  store.proc = proc;
+  await atomic(store.file, JSON.stringify({ [id]: { state: 'running', pid: 11, pid_start: 'old', started_at: new Date().toISOString() } }));
+  await assert.doesNotReject(store.load()); assert.equal(store.get(id).error, 'the machine restarted');
+});
