@@ -17,25 +17,29 @@ test('lead names pick a random free name, case insensitively, and release archiv
   for (const name of seen) assert.ok(GREEK.includes(name));
 });
 
-test('agent tree retains live descendants and waiting follows actual starter', () => {
+test('agent tree keeps finished nodes, derives states and hides briefs', () => {
   const sessions = [
-    { name: 'old', role: 'lead', created_at: '1', live: false },
-    { name: 'new', role: 'lead', created_at: '2', live: true, turn_ended: true, token: 'secret' },
-    { name: 'sub', role: 'sub-lead', started_by: 'old', live: false, turn_ended: true },
-    { name: 'worker', role: 'worker', started_by: 'sub', live: true },
-    { name: 'review', role: 'reviewer', started_by: 'new', live: true },
-    { name: 'done', role: 'verifier', started_by: 'new', live: true, finished: true },
-    { name: 'orphan', role: 'mapper', live: true },
-    { name: 'dead', role: 'worker', started_by: 'new', live: false },
+    { name: 'lead', role: 'lead', live: true, turn_ended: true, token: 'secret' },
+    { name: 'sub', role: 'sub-lead', started_by: 'lead', live: true, turn_ended: true, brief: '[wc:role]\nRead rules\nBuild feature' },
+    { name: 'worker', role: 'worker', started_by: 'sub', live: true, turn_ended: true, title: 'Work' },
+    { name: 'done', role: 'verifier', started_by: 'lead', live: false, ended_at: '2026-01-01', brief: 'Verify' },
+    { name: 'starting', role: 'mapper', started_by: 'lead', live: true, status: 'starting' },
   ];
-  const [tree] = buildAgents([{ id: 'a', title: 'A', lead_name: 'Alpha', sessions }]);
-  assert.equal(tree.session.name, 'new');
-  assert.equal(tree.session.token, undefined);
-  assert.deepEqual(tree.session.waiting_on, ['review']);
-  assert.deepEqual(tree.children.map((s) => s.name), ['sub', 'review', 'done', 'orphan']);
-  assert.deepEqual(tree.children[0].waiting_on, ['worker']);
-  assert.equal(tree.children[0].children[0].name, 'worker');
-  assert.deepEqual(tree.children[0].children[0].waiting_on, []);
-  assert.deepEqual(buildAgents([{ sessions: sessions.map((s) => ({ ...s, live: false })) }]), []);
-  assert.deepEqual(buildAgents([{ archived: true, sessions }]), []);
+  const thread = { id: 'a', title: 'Feature', project: '/src/project', sessions, cards: [{ kind: 'message', session: 'worker', to: 'sub' }, { kind: 'result', session: 'done', summary: 'Verified' }], asides: [{ id: 'x', number: 1, status: 'open', pending: ['a'] }] };
+  const [tree] = buildAgents([thread], { a: 'building' });
+  assert.equal(tree.project, 'project'); assert.equal(tree.stage, 'building');
+  assert.equal(tree.session.state, 'waiting');
+  const sub = tree.children.find((s) => s.name === 'sub');
+  assert.equal(sub.display_title, 'Build feature'); assert.equal(sub.waiting_on.label, 'Waiting on the worker');
+  assert.equal(sub.children[0].waiting_on.label, 'Waiting on the sub-lead');
+  assert.equal(tree.children.find((s) => s.name === 'done').display_title, 'Verified');
+  assert.equal(tree.children.find((s) => s.name === 'starting').state, 'not-started');
+  assert.equal(tree.asides[0].state, 'working'); assert.equal(tree.counts.total, 5);
+  assert.ok(!JSON.stringify(tree).includes('secret')); assert.ok(!JSON.stringify(tree).includes('[wc:role]'));
+  thread.cards.push({ kind: 'message', session: 'sub', to: 'worker' });
+  assert.equal(buildAgents([thread])[0].children.find((s) => s.name === 'sub').children[0].state, 'idle');
+  thread.cards.push({ kind: 'question' });
+  assert.equal(buildAgents([thread])[0].session.state, 'needs-you');
+  for (const session of sessions) session.live = false;
+  const finished = buildAgents([thread])[0]; assert.equal(finished.finished, true); assert.equal(finished.finished_at, '2026-01-01');
 });
