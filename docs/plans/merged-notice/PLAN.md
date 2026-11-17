@@ -185,3 +185,4 @@ Automatic archiving; merging from the app; any notice for a closed-unmerged PR; 
 
 - 2026-11-16 — T1 accepted. Choices reported: none. Full node suite: 3 failures pre-existing on the base (app-balancer placement, lifecycle freed-port, routes font route), plus one load-flaky test that changes between runs (app-hub boot commit, server.test.js write lock); both pass alone and neither is touched by T1.
 - 2026-11-16 — T2 accepted. Choices reported: none. Its 'blocked' was the same pre-existing node failures; on the merged branch the browser suite is 638 passed, 2 skipped.
+- 2026-11-16 — Verification attempt 1: PASS (gpt-6.1-sol, same family as the builders; --not-provider gpt could not be honoured). It verified b8592a6; the only later change is COMPLETION.md (414f278), which it found absent because the first commit dropped it.
