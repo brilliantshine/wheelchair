@@ -280,16 +280,50 @@
       h('div', { class: 'ctl' }, select));
   }
 
-  // Lead names: one per line, saved with the button; blank lines are dropped by the hub.
+  // Lead names: a built-in list, or a custom one uploaded as a text file (one name per
+  // line, or comma separated). Choosing Custom saves only once a file has names in it.
+  const NAME_LISTS = [['greek', 'Greek letters'], ['nato', 'NATO alphabet'], ['stars', 'Star names'], ['people', 'Popular first names'], ['custom', 'Custom list']];
   function leadNamesRow() {
-    const input = h('textarea', { id: 'lead-names', 'aria-label': 'Lead names', rows: 4, value: (data.lead_names || []).join('\n') });
+    const select = h('select', { id: 'lead-names', 'aria-label': 'Lead names' }, NAME_LISTS.map(([value, label]) => h('option', { value, text: label })));
+    select.value = data.lead_name_list || 'greek';
+    const file = h('input', { type: 'file', id: 'lead-names-file', 'aria-label': 'Upload lead names', accept: '.txt,.csv,text/plain,text/csv' });
     const status = h('p', { class: 'note', role: 'status' });
-    const host = h('div', { class: 'ctl wide' }, input, h('button', { type: 'button', text: 'Save', onclick: async () => {
-      inlineErr(host, ''); status.textContent = '';
-      try { const result = await api('/settings/preferences', { method: 'PUT', body: { lead_names: input.value.split(/\r?\n/) } }); data.lead_names = result.lead_names; input.value = data.lead_names.join('\n'); status.textContent = 'Saved'; }
-      catch (error) { inlineErr(host, error.message); }
-    } }), status);
-    return h('div', { class: 'row-line' }, h('div', { class: 'what' }, h('label', { for: 'lead-names', text: 'Lead names' }), h('span', { class: 'hint', text: 'Empty uses Greek letters. New leads only.' })), host);
+    const custom = h('div', { class: 'lead-names-custom' }, file, status);
+    const host = h('div', { class: 'ctl wide' }, select, custom);
+    function summary() {
+      const names = data.lead_names || [];
+      if (!names.length) return 'Upload a text file with one name per line.';
+      const shown = names.slice(0, 5).join(', ');
+      return `${names.length} name${names.length === 1 ? '' : 's'}: ${shown}${names.length > 5 ? ', …' : ''}`;
+    }
+    function show() { custom.hidden = select.value !== 'custom'; status.textContent = summary(); }
+    async function save(body) {
+      inlineErr(host, '');
+      try {
+        const result = await api('/settings/preferences', { method: 'PUT', body });
+        data.lead_name_list = result.lead_name_list; data.lead_names = result.lead_names;
+        show(); return true;
+      } catch (error) { inlineErr(host, error.message); return false; }
+    }
+    select.addEventListener('change', async () => {
+      show();
+      if (select.value === 'custom' && !(data.lead_names || []).length) return;
+      if (!await save({ lead_name_list: select.value })) select.value = data.lead_name_list || 'greek';
+    });
+    file.addEventListener('change', async () => {
+      const chosen = file.files && file.files[0];
+      if (!chosen) return;
+      const seen = new Set(), names = [];
+      for (const raw of (await chosen.text()).split(/[\r\n,]+/)) {
+        const name = raw.trim();
+        if (name && !seen.has(name.toLowerCase())) { seen.add(name.toLowerCase()); names.push(name); }
+      }
+      file.value = '';
+      if (!names.length) { inlineErr(host, 'That file has no names in it.'); return; }
+      if (await save({ lead_names: names, lead_name_list: 'custom' })) status.textContent = `Saved. ${summary()}`;
+    });
+    show();
+    return h('div', { class: 'row-line' }, h('div', { class: 'what' }, h('label', { for: 'lead-names', text: 'Lead names' }), h('span', { class: 'hint', text: 'New leads only.' })), host);
   }
 
   // The Default project folder: typed, then saved with the button. A refusal shows under the

@@ -236,8 +236,13 @@ async function handleSettings(hub, request, response, url, bits, body) {
       if (body.lead_names !== undefined) {
         if (!Array.isArray(body.lead_names) || body.lead_names.some((name) => typeof name !== 'string')) throw appError(400, 'lead_names must be an array of names');
         const names = body.lead_names.map((name) => name.trim()).filter(Boolean);
-        if (names.length > 200 || names.some((name) => name.length > 40) || new Set(names.map((name) => name.toLowerCase())).size !== names.length) throw appError(400, 'lead_names must have at most 200 unique names of 1–40 characters');
+        if (names.length > 1000 || names.some((name) => name.length > 40) || new Set(names.map((name) => name.toLowerCase())).size !== names.length) throw appError(400, 'lead_names must have at most 1000 unique names of 1–40 characters');
         value.lead_names = names;
+      }
+      if (body.lead_name_list !== undefined) {
+        const keys = require('./names.js').LIST_KEYS;
+        if (!keys.includes(body.lead_name_list)) throw appError(400, `lead_name_list must be one of ${keys.join(', ')}`);
+        value.lead_name_list = body.lead_name_list;
       }
       if (body.permission_mode !== undefined) {
         if (!['auto', 'bypass'].includes(body.permission_mode)) throw appError(400, 'permission_mode must be auto or bypass');
@@ -277,7 +282,7 @@ async function handleSettings(hub, request, response, url, bits, body) {
         for (const role of ['reviewer', 'verifier', 'mapper', 'scout', 'scout-heavy']) if (body.other_agents[role] !== undefined) value.other_agents[role] = settings.tier(body.other_agents[role], `other_agents.${role}`);
       }
     });
-    return send(response, 200, { lead_names: value.lead_names, permission_mode: value.permission_mode, codex_mode: value.codex_mode, aside_access: value.aside_access, tool_steps: value.tool_steps, review_families: value.review_families, other_agents: value.other_agents, default_project_folder: value.default_project_folder, escalation: value.escalation, escalation_text: settings.escalationSentences(value.escalation).join('\n') });
+    return send(response, 200, { lead_name_list: value.lead_name_list, lead_names: value.lead_names, permission_mode: value.permission_mode, codex_mode: value.codex_mode, aside_access: value.aside_access, tool_steps: value.tool_steps, review_families: value.review_families, other_agents: value.other_agents, default_project_folder: value.default_project_folder, escalation: value.escalation, escalation_text: settings.escalationSentences(value.escalation).join('\n') });
   }
   if (bits[1] === 'saved-dirs' && bits.length === 2 && request.method === 'POST') {
     return send(response, 201, await addSavedDir(hub, body));

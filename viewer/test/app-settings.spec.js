@@ -368,13 +368,18 @@ test.describe('phone', () => {
   });
 });
 
-test('saves lead names in Settings', async ({ page }) => {
+test('picks a lead name list and uploads a custom one in Settings', async ({ page }) => {
   await openPage(page, context, '/app/settings#models');
-  await page.getByLabel('Lead names').fill('Ada\nGrace');
-  await page.locator('#lead-names').locator('..').getByRole('button', { name: 'Save' }).click();
-  await expect.poll(async () => (await settings(page)).lead_names).toEqual(['Ada', 'Grace']);
+  await page.getByLabel('Lead names', { exact: true }).selectOption('nato');
+  await expect.poll(async () => (await settings(page)).lead_name_list).toBe('nato');
+  await expect(page.getByLabel('Upload lead names')).toBeHidden();
+  await page.getByLabel('Lead names', { exact: true }).selectOption('custom');
+  await expect(page.getByLabel('Upload lead names')).toBeVisible();
+  await page.getByLabel('Upload lead names').setInputFiles({ name: 'names.txt', mimeType: 'text/plain', buffer: Buffer.from('Ada\r\n\nGrace, ada\n') });
+  await expect.poll(async () => { const value = await settings(page); return [value.lead_name_list, value.lead_names]; }).toEqual(['custom', ['Ada', 'Grace']]);
   await page.reload();
-  await expect(page.getByLabel('Lead names')).toHaveValue('Ada\nGrace');
+  await expect(page.getByLabel('Lead names', { exact: true })).toHaveValue('custom');
+  await expect(page.locator('.lead-names-custom .note')).toHaveText('2 names: Ada, Grace');
 });
 
 test('models and preferences fits at 390px', async ({ page }) => {

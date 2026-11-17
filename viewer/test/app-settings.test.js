@@ -275,8 +275,22 @@ test('lead name settings trim and validate names', async () => {
     const save = (lead_names) => api(context, '/settings/preferences', { method: 'PUT', body: { lead_names } });
     assert.deepEqual((await save([' Ada ', '', 'Grace'])).body.lead_names, ['Ada', 'Grace']);
     assert.deepEqual((await api(context, '/settings')).body.lead_names, ['Ada', 'Grace']);
-    for (const names of [['Ada', 'ada'], ['x'.repeat(41)], Array.from({ length: 201 }, (_, i) => String(i)), [3], 'Ada']) assert.equal((await save(names)).status, 400);
+    for (const names of [['Ada', 'ada'], ['x'.repeat(41)], Array.from({ length: 1001 }, (_, i) => String(i)), [3], 'Ada']) assert.equal((await save(names)).status, 400);
   });
+});
+
+test('lead name list choice saves, validates and migrates', async () => {
+  await withContext(async (context) => {
+    assert.equal((await api(context, '/settings')).body.lead_name_list, 'greek');
+    const put = (body) => api(context, '/settings/preferences', { method: 'PUT', body });
+    assert.equal((await put({ lead_name_list: 'stars' })).body.lead_name_list, 'stars');
+    assert.equal((await api(context, '/settings')).body.lead_name_list, 'stars');
+    assert.equal((await put({ lead_name_list: 'klingon' })).status, 400);
+    const custom = await put({ lead_names: ['Ada', 'Grace'], lead_name_list: 'custom' });
+    assert.deepEqual([custom.body.lead_name_list, custom.body.lead_names], ['custom', ['Ada', 'Grace']]);
+  });
+  assert.equal(settings.normalize({ lead_names: ['Ada'] }).lead_name_list, 'custom');
+  assert.equal(settings.normalize({}).lead_name_list, 'greek');
 });
 
 
