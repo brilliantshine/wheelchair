@@ -136,9 +136,9 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       for (let i = 1; i < c.bars.length; i++) expect(c.bars[i][0]).toBeLessThanOrEqual(c.bars[i - 1][1] + 1);
     });
 
-    test('a long box title is clamped to three lines and shown whole in the side panel', async ({ page }) => {
+    test('a long box title is clamped to three lines; the side panel shows it whole with the report', async ({ page }) => {
       const long = Array.from({ length: 40 }, (_, i) => `Finding ${i}: something the reviewer said at length.`).join(' ');
-      await showTree(page, [{ name: 'wc-a-reviewer', role: 'reviewer', display_title: long, live: false, state: 'finished', children: [] }]);
+      await showTree(page, [{ name: 'wc-a-reviewer', role: 'reviewer', display_title: long, result_summary: 'VERDICT: PASS\nAll checks ran.', live: false, state: 'finished', children: [] }]);
       const title = page.locator('[data-session="wc-a-reviewer"] .agents-box-title');
       const size = await title.evaluate(node => ({ height: node.clientHeight, full: node.scrollHeight, line: parseFloat(getComputedStyle(node).lineHeight) }));
       expect(size.height).toBeLessThanOrEqual(size.line * 3 + 2);
@@ -146,6 +146,8 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       expect(size.full).toBeGreaterThan(size.height);
       await page.locator('[data-session="wc-a-reviewer"]').click();
       await expect(page.locator('.agents-side h2')).toHaveText(long);
+      await expect(page.locator('.agents-report-head')).toHaveText('Report');
+      await expect(page.locator('.agents-report')).toHaveText('VERDICT: PASS\nAll checks ran.');
     });
 
     test('phone agent selection shows only details and returns to the tree', async ({ page }) => {
