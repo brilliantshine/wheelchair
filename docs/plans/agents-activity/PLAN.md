@@ -37,6 +37,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 10 | Steps live on the session record (last 30) and in a per-project history file pruned to 30 days, not in a new store | Thread files are already rewritten on every event; history needs to outlive sessions | defaulted |
 | 11 | Context for Claude is posted at most every 15 seconds, separate from the once-a-minute rate-limit throttle | Live enough for a ring, cheap | defaulted |
 | 12 | Codex steps follow an operation until it finishes (cell `wait` and process `write_stdin` polls end the original step), and a script is one step; supersedes Decision 3 | Review round 1: a tool response is not completion, and script source shows possible, not executed, calls | review-round-1 |
+| 13 | A still-running Codex command stays the current step until the agent starts something new or the turn ends; check-backs never start steps; only clearly finished steps feed "is this normal?". Supersedes Decision 12's poll-tracking rules (one step per script stays) | Three review rounds kept finding finer cases in exact tracking; right in the common case, and wrong guesses stay out of the timings | user |
 
 ## Spec
 
@@ -52,14 +53,15 @@ design disagree, this Spec wins.
 A **step** is one tool call by one session:
 
 ```
-{ id, kind, label, key, started_at, ended_at|null, failed: true|false|null }
+{ id, kind, label, key, started_at, ended_at|null, failed: true|false|null, clean: true|false|null }
 ```
 
 - `id`: the CLI's own call id (`tool_use_id` for Claude, the starting call's `call_id` for Codex).
 - `kind`: `files`, `shell`, `helpers`, `web` or `starter`. (`thinking` is never stored; see 4.)
 - `label`: plain words for the Latest list, at most 80 characters, cut with "…".
 - `key`: the matching key for "is this normal?" (section 5).
-- `ended_at` null and `failed` null while running.
+- `ended_at`, `failed` and `clean` null while running. `clean` is true when the CLI itself
+  reported the end, false when the step was closed by something else (section 2, section 4).
 
 Classification (first match wins):
 
@@ -110,55 +112,30 @@ already finds once `codex_thread_id` is bound. The timer skips sessions whose th
 bound yet; the first turn's steps therefore arrive when that turn ends and binding happens
 (Accepted Risk 1). For each line:
 
-A Codex step is one **operation**, followed until it really finishes, not until its first
-tool response. Codex often answers a call with "still running" and the agent then polls:
+A Codex step is one **operation**. Codex often answers a slow call with "still running"
+and the agent then checks back. The rule (Decision 13) is: a still-running operation stays
+the current step **until the agent moves on**.
 
-- a script (`exec`) may return `Script running with cell ID <n>`; later `wait` calls with
-  `{"cell_id":"<n>"}` poll it until an output says `Script completed` (or a script error);
-- a command (`exec_command`, directly or inside a script) may return a JSON result with a
-  `session_id` and no `exit_code`; later `write_stdin` calls with that `session_id` poll it
-  until a result carries `exit_code`.
-
-Rules, per line:
-
-- `response_item` `custom_tool_call` / `function_call` that is **not** a poll (a `wait` naming
-  a cell, or a `write_stdin` naming a process session, that this session already has
-  running) → a start event, id `call_id`, `started_at` = the line's `timestamp`. Polls start
-  nothing.
-- The matching `..._output` (same `call_id`):
-  - for an operation: if the output says it is still running, record its cell id and/or
-    process `session_id` against the step and leave it running; otherwise end it.
-  - for a poll: if the output shows the polled cell or process finished, end the step that
-    owns that cell or process; otherwise nothing.
-  - `ended_at` = the timestamp of the line that shows completion. `failed` is true for a
-    script error, a non-zero `exit_code` in the final result, or a tool error.
-- **Polls inside scripts.** A script's output can show a command still running (an
-  `exec_command` result with a `session_id` and no `exit_code`) even though the script itself
-  says `Script completed`. Then the script's step stays running and owns that process. A
-  later script whose source calls only `tools.write_stdin` / `tools.wait` naming processes or
-  cells already owned by running steps (read `session_id:` / `cell_id:` literals from the
-  source) is a poll: it starts no step.
-- **Ownership and completion.** A step owns a set of unfinished processes and cells. It
-  ends only when that set is empty (and its own call has returned); `ended_at` is the time
-  the last one finished; `failed` is true if any owned operation ended in error or with a
-  non-zero `exit_code`.
-- **Attributing a result.** A result marks an owned process finished only when it can be
-  placed without doubt: it names that process's `session_id`, or it is the only result in the
-  output of a poll-only script (or a direct `write_stdin` call) that polls exactly one owned
-  process. Anything else (a mixed script, several polled processes, several results) marks
-  nothing finished; those owners stay running until a later placeable result or the turn
-  end closes them (Accepted Risk 4). A cell is finished by a `wait` output saying
-  `Script completed` or a script error for that `cell_id`.
-- A script that mixes polls with other calls is a new step for its other calls (kind and
-  label from its first non-poll call); its polls are applied by the attribution rule above.
-  If a poll-only script itself yields a cell (`Script running with cell ID <n>`), the cell
-  joins the owned set of every step it polls, and finishing it finishes those polls only
-  through placeable results as above. Add
-  fixtures for this from
-  `~/.codex/sessions/2026/11/15/rollout-2026-11-15T23-51-57-01a1e357-6320-7fc0-a648-0ceb46b4f6e1.jsonl`
-  (lines 191–212, a yielding poll script, a cell wait, and a final `exit_code` 1) and from
-  `~/.codex/sessions/2026/11/17/rollout-2026-11-17T04-53-49-01a1e992-1d3d-7363-8ca9-d597e8f9a1ed.jsonl`
-  (lines 73–89).
+- **Polls.** A `wait` call, a `write_stdin` call, or an `exec` script whose source calls only
+  `tools.wait` / `tools.write_stdin` is a check-back (poll). A poll never starts a step.
+- **Start.** Any other `response_item` `custom_tool_call` / `function_call` starts a step: id
+  `call_id`, `started_at` = the line's `timestamp`.
+- **Finished in its own output.** If the matching `..._output` (same `call_id`) shows the
+  operation complete, the step ends there, `clean: true`. Complete means: no
+  `Script running with cell ID` line, and no command result carrying a `session_id` without
+  an `exit_code`.
+- **Yielded.** Otherwise the step is **yielded** and stays running. At most one step is
+  yielded at a time, because:
+  - when the next non-poll operation starts, a yielded step ends at that start's
+    `timestamp`, `clean: false` (it may still be running in the background; Accepted Risk 4);
+  - when a poll's output shows a finish (`Script completed` or a script error from a `wait`,
+    or any command result with an `exit_code`), the yielded step ends at that line's
+    `timestamp`, `clean: true`;
+  - turn end closes it like any running step (section 4), `clean: false`.
+- **Failed** is true when the finishing output shows a script error, a non-zero `exit_code`
+  or a tool error; null when the step ended `clean: false`.
+- End events carry `clean`. Claude ends from `PostToolUse` / `PostToolUseFailure` are
+  `clean: true`.
 - **One step per script.** The script's source is not split into nested steps (it shows
   possible calls, not executed ones). Its kind and label come from the first `tools.<name>(`
   call in its source (classified per section 1). Its target text is the call's argument when that is a string
@@ -169,9 +146,11 @@ Rules, per line:
   two or more distinct calls in the source the label gets " and more"; with none it is a
   `shell` step "Ran a script".
 - Build and test this against real rollouts from `~/.codex/sessions/**` on this machine,
-  copied as fixtures into `machine/test/`: a script that completes at once, one that yields
-  and is finished by `wait`, a command that yields and is finished by `write_stdin`, and one
-  with `exit_code` 1.
+  copied as fixtures into `machine/test/`: a script that completes at once; one that yields
+  and is finished by `wait`; a command that yields and is finished by a wrapped
+  `write_stdin` (`rollout-2026-11-17T04-53-49-01a1e992-...jsonl` lines 73–89); a poll chain
+  ending in `exit_code` 1 (`rollout-2026-11-15T23-51-57-01a1e357-...jsonl` lines 191–212);
+  and a yielded step cut short by a new operation.
 - `event_msg` `token_count` with `info.model_context_window` → a context event (section 3).
 
 The existing turn-end usage scan is unchanged.
@@ -220,7 +199,9 @@ arrival order (section 4).
   and kept out of history.
 - `session.step_counts`: `{files, shell, helpers, web, starter, thinking}`, counts over the
   session's life, incremented on start (thinking: see below).
-- When a step ends, append `{kind, key, ms, at}` to a per-project history file
+- When a step ends with `clean: true`, append `{kind, key, ms, at}` to a per-project history
+  file (steps the hub closes itself, at turn end, session stop or the running cap, are
+  `clean: false` and never enter history):
   `<state>/step-history/<project key>.jsonl`, where the project key is the thread
   project path's basename, a hyphen, and the first 8 hex characters of the SHA-256 of its
   absolute path (`thread.project`, the value `agents.js` takes the basename of), so two
@@ -372,7 +353,7 @@ commands, and their steps and context show on the Agents screen within 5 seconds
 | 1. A Codex session's first turn shows its steps only when that turn ends | The rollout is found only once the first turn-complete binds the thread; binding earlier means guessing which rollout is ours | planning |
 | 2. Claude tool calls that the CLI rejects before running, or that are cancelled, may show as running until the turn ends | The CLI fires no end hook for them; turn end closes them | planning |
 | 3. A Claude `Bash` call with `run_in_background: true` shows as done when it returns, and its later output checks show as separate shell steps | The CLI reports no end for the background process; agents here are told to wait in the foreground | review-round-1 |
-| 4. A yielded Codex command whose finish appears only in an output that can't be pinned to it (mixed or multi-poll scripts) shows as running until a later clear result or the turn end | Guessing would close the wrong step; the turn end bounds it | review-round-3 |
+| 4. A Codex command left running in the background while the agent starts something else shows as finished at that moment | Collin chose this simpler rule over exact tracking; such steps stay out of the timing history | user |
 
 ## Review Rounds
 
@@ -426,6 +407,16 @@ commands, and their steps and context show on the Agents screen within 5 seconds
 |------|----------|---------|--------------|------------|
 | mechanics | major | Ambiguous results in mixed scripts can close the wrong step | upheld | §2 "Attributing a result"; Accepted Risk 4 |
 | mechanics | blocking | A step owning several processes ends when any one finishes | upheld | §2 "Ownership and completion" |
+
+### Round 4 — 2026-11-17
+
+**Lanes:** intent: gpt; mechanics: gpt (Claude unavailable at start); cross-family: no.
+
+**Changed since Round 3:**
+- Collin chose the simpler Codex rule (Decision 13): §2 Codex rewritten (polls, yielded step ends when the agent moves on, `clean` flag); Accepted Risk 4 replaced; §1 step shape gains `clean`; §4 history takes only `clean` steps.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
