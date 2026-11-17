@@ -55,7 +55,7 @@
       const newest = (t.sessions || []).filter((s) => s.role === 'lead')
         .reduce((a, b) => !a || (b.created_at || '') > (a.created_at || '') ? b : a, null);
       const chip = el(newest && newest.live ? 'a' : 'span', 'lead-chip', t.lead_name);
-      if (newest && newest.live) chip.href = '/wheelchair/app/agents#lead-' + encodeURIComponent(t.id);
+      if (newest && newest.live) chip.href = '/wheelchair/app/agents?lead=' + encodeURIComponent(t.id);
       top.appendChild(chip);
     }
     // A stub is only a stub until it is opened: once a lead runs in it, it is ordinary work.

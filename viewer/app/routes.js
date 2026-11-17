@@ -470,10 +470,12 @@ async function handleThreads(hub, request, response, url, bits, body) {
     return send(response, 200, await hub.dismiss(id, bits[3]));
   }
   if (request.method === 'POST' && bits[2] === 'open') {
-    return send(response, 200, await hub.openStub(id, body));
+    const result = await hub.openStub(id, body);
+    const clean = (thread) => ({ ...thread, sessions: thread.sessions.map(publicSession) });
+    return send(response, 200, result.waiting ? { ...result, thread: clean(result.thread) } : clean(result));
   }
   if (request.method === 'POST' && bits[2] === 'restart') {
-    return send(response, 201, await hub.restartLead(id));
+    return send(response, 201, publicSession(await hub.restartLead(id)));
   }
   if (request.method === 'POST' && bits[2] === 'archive') {
     return send(response, 200, await hub.archive(id));
@@ -483,14 +485,25 @@ async function handleThreads(hub, request, response, url, bits, body) {
 
 async function handleSessions(hub, request, response, bits, body) {
   if (bits.length === 1 && request.method === 'GET') {
-    return send(response, 200, await hub.sessions());
+    const groups = await hub.sessions();
+    return send(response, 200, groups.map((group) => ({ ...group, sessions: group.sessions.map(publicSession) })));
   }
   if (!bits[1]) throw appError(404, 'route not found');
   const encoded = encodeURIComponent(bits[1]);
+  if (bits[2] === 'brief' && request.method === 'GET') {
+    if (!bits[1].startsWith('wc-')) throw appError(404, 'session not found');
+    const thread = await hub.threadBySession(bits[1]);
+    const target = hub.session(thread, bits[1]);
+    if (typeof target.brief !== 'string' || !target.brief) throw appError(404, 'brief not found');
+    return send(response, 200, { brief: target.brief });
+  }
   if (bits[2] === 'pane' && request.method === 'GET') {
+    const query = new URL(request.url, 'http://localhost').searchParams;
+    const history = query.get('history');
+    if (history !== null && (!/^\d+$/.test(history) || Number(history) > 2000)) throw appError(400, 'invalid history');
     const machine = await hub.findSessionMachine(bits[1]);
     if (!machine) throw appError(404, 'session not found');
-    return send(response, 200, await hub.call(machine, `/v1/sessions/${encoded}/pane`, 'GET'));
+    return send(response, 200, await hub.call(machine, `/v1/sessions/${encoded}/pane${history === null ? '' : `?history=${history}`}`, 'GET'));
   }
   if (bits[2] === 'keys' && request.method === 'POST') {
     if (!bits[1].startsWith('wc-')) throw appError(403, 'session is read-only');
@@ -512,6 +525,7 @@ async function handleSessions(hub, request, response, bits, body) {
       if (String(body.keys || '') === 'Enter' || String(body.keys || '') === 'C-m') {
         const target = hub.session(current, bits[1]);
         target.turn_ended = false;
+        target.turn_started_at = new Date().toISOString();
         await hub.save(current);
       }
       return sent;

@@ -442,4 +442,6 @@ A session's own `wc.js` and `card.js` calls go to its own machine service (defau
   unavailable". Wait a minute and run the same command again; never work around it.
   `start` takes `--attempt <id>`, chosen once per intended session and reused when you
   re-run the same command after "hub unavailable", so a retry never starts a session twice.
+  `start` takes `--title "<a few words>"`: what the agent does, in Collin's terms,
+  shown on its box on the Agents screen.
   A restart, or a re-verify, is a new attempt with a new id.

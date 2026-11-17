@@ -87,6 +87,7 @@ function sessionRequest(operation, tail) {
       tier: parsed.tier || 'top',
       ...(parsed.effort !== undefined ? { effort: parsed.effort } : {}),
       attempt_id: parsed.attempt,
+      ...(parsed.title !== undefined ? { title: parsed.title } : {}),
       brief: fs.readFileSync(parsed['brief-file'], 'utf8'),
       replaces: parsed.replaces,
     },

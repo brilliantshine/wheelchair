@@ -134,7 +134,7 @@
     if (t.lead_name) {
       const newest = leads().reduce((a, b) => !a || (b.created_at || '') > (a.created_at || '') ? b : a, null);
       const chip = el(newest && newest.live ? 'a' : 'span', 'lead-chip', t.lead_name);
-      if (newest && newest.live) chip.href = '/wheelchair/app/agents#lead-' + encodeURIComponent(id);
+      if (newest && newest.live) chip.href = '/wheelchair/app/agents?lead=' + encodeURIComponent(id);
       titleLine.appendChild(chip);
     }
     block.appendChild(titleLine);
@@ -153,7 +153,7 @@
       term.href = '/wheelchair/app/terminal?name=' + encodeURIComponent(lead.name);
       line.appendChild(term);
     }
-    const agents = el('a', 'btn small', 'Agents'); agents.href = '/wheelchair/app/agents#lead-' + encodeURIComponent(id);
+    const agents = el('a', 'btn small', 'Agents'); agents.href = '/wheelchair/app/agents?lead=' + encodeURIComponent(id);
     line.appendChild(agents);
     const stubless = t.stub && !t.sessions.length;
     if (!t.archived) {

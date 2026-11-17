@@ -101,7 +101,7 @@ test.describe('thread page layout', () => {
       await page.evaluate(() => window.scrollTo(0, 0));
       await page.evaluate(() => window.scrollTo(0, 600));
       await expect(archive).toBeInViewport({ ratio: 1 });
-      await expect(page.locator('#head a', { hasText: 'Agents' })).toHaveAttribute('href', `/wheelchair/app/agents#lead-${made.id}`);
+      await expect(page.locator('#head a', { hasText: 'Agents' })).toHaveAttribute('href', `/wheelchair/app/agents?lead=${made.id}`);
       await expect(page.locator('#head a', { hasText: 'Open in terminal' })).toHaveAttribute(
         'href', `/wheelchair/app/terminal?name=${encodeURIComponent(ctx.lead(made.id).name)}`);
       await archive.click();
@@ -235,9 +235,9 @@ test.describe('Features and Agents at desktop width', () => {
     await noSideScroll(page);
   });
 
-  test('Agents: cards have a copyable attach command and unreachable banner', async ({ page }) => {
+  test('Agents: no attach command and unreachable banner', async ({ page }) => {
     await openPage(page, context, '/app/agents');
-    await expect(page.locator('.agent-card').first().getByRole('button', { name: 'Copy' })).toBeVisible();
+    await expect(page.locator('body')).not.toContainText('tmux');
     await expect(page.locator('#unreachable')).toContainText('node-3 unreachable');
     await noSideScroll(page);
   });

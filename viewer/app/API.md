@@ -28,7 +28,8 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 | `GET /features` | — | `{idea,planning,review,building,verifying,done,needs}` |
 | `GET /projects` | — | `{projects:[path]}`, the repos in `projects.json`, added when a thread is created |
 | `GET /sessions` | — | machine groups `{machine,hub,reachable,last_seen,sessions}, `hub:true` on the entry `"hub"` resolves to`; other tmux sessions appear as `{name,managed:false}` (read-only) |
-| `GET /sessions/:name/pane` | — | `{pane}` |
+| `GET /sessions/:name/pane?history=<n>` | Optional integer history, 0–2000 | `{pane}` |
+| `GET /sessions/:name/brief` | — | `{brief}`; 404 if missing |
 | `POST /sessions/:name/keys` | `{keys}` | `{ok:true}` |
 | `POST /machine/cards` | service envelope `{thread_id,session,...card}` | accepted card, `202` |
 | `POST /machine/sudo-outcome` | `{request_id,state,exit_code?,output?,truncated?,reason?,delivery_id}`; `state` is `running`, `ran` (needs an integer `exit_code`), `declined`, `expired` or `failed` | `200 {ok:true,changed}`. Finds the thread by `request_id` (its `sudo_index`) and calls `applySudoState`; a repeat, an older or equal state changes nothing and is still `200`. `409` for an unknown `request_id` (the machine retries later), `400` for a bad body, `401` without the machine secret |
@@ -154,7 +155,7 @@ are accepted; invalid keys, values, and non-object inputs receive 400.
 
 ### Agents and lead names
 
-`GET /wheelchair/api/agents` returns `{leads, machines}` for unarchived threads. Each lead has `thread_id`, `thread_title`, `lead_name`, `machine`, `session`, and `children`; agent sessions omit tokens and include `children` and `waiting_on` session names. Ended ancestors remain when they have live descendants. Machines carry `machine`, `reachable`, `last_seen`, and `hub`.
+`GET /wheelchair/api/agents` returns `{leads, machines}` for unarchived threads with a lead session. Each lead has `thread_id`, `thread_title`, `lead_name`, `machine`, `project` (basename of the thread's project), `stage` (`idea`, `planning`, `review`, `building`, `verifying`, `done`, as on the Features page), `finished` (no live session), `finished_at` (latest `ended_at`, when finished), `asides` (open asides: `{kind:'aside', id, number, display_title, state}`, state `working` or `idle`), `counts` (`total`, `working`, `waiting`, `not_started`, `finished`, `idle`, over the lead and its descendants; a lead that needs Collin counts as waiting), `session` (the newest lead) and `children`. Every session node keeps all sessions, finished ones included, omits `token` and `brief`, and adds `display_title`, `state` (`not-started`, `finished`, `needs-you` (lead only), `waiting`, `working`, `idle`), `waiting_on` (`{name, label}` when it messaged its starter and has had no reply, `{names, label}` for live unfinished children, else `null`), `has_brief` and `children`. Machines carry `machine`, `reachable`, `last_seen`, and `hub`.
 
 Threads include `lead_name`, retained until and after archive; archived threads release the name for reuse. Settings `lead_names` is an array of up to 200 unique case-insensitive names, trimmed to 1–40 characters, with blank entries discarded; an empty list uses Greek letters. A new lead gets a random free name from the list; only when every plain name is held does it draw from "<name> 2", then "<name> 3". New session records include the resolved `model` and `effort` (which may be null). Older sessions may omit them.
 

@@ -58,7 +58,7 @@ const ALLOWED_START = {
 };
 
 function publicSession(session) {
-  const { token, unanswered_start: unanswered, ...value } = session;
+  const { token, brief, pending_initial, pending_start, unanswered_start: unanswered, ...value } = session;
   return value;
 }
 
@@ -121,6 +121,8 @@ async function resumeUnanswered(hub, thread, session) {
     live: true,
     first_message: pending.first_message,
   });
+  if (session.first_message) session.turn_started_at = new Date().toISOString();
+  delete session.ended_at;
   if (quiet.watched(session) && session.first_message) session.owes_reply = true;
   markIdleIfFresh(session);
   await hub.save(thread);
@@ -129,6 +131,7 @@ async function resumeUnanswered(hub, thread, session) {
 
 async function startSession(hub, thread, input) {
   const role = input.role;
+  const title = typeof input.title === 'string' ? input.title.trim().slice(0, 80) : '';
   if (!SESSION_ROLES.has(role)) throw appError(400, 'unknown role');
   // Spec §2: the highest tier in Settings is checked before a provider is chosen or a wait is queued.
   if (role === 'worker') {
@@ -143,6 +146,8 @@ async function startSession(hub, thread, input) {
       token: crypto.randomBytes(32).toString('hex'), attempt_id: input.attempt_id || null,
       queue: [], ready: false, live: true, created_at: new Date().toISOString(),
     };
+    if (title) waiting.title = title;
+    if (typeof input.brief === 'string') waiting.brief = input.brief;
     Object.assign(waiting, { status: 'waiting', waiting_until: selection.wait.until, waiting_reason: selection.wait.reason, waiting_provider: selection.wait.provider, pending_start: input._waiting ? waiting.pending_start : { ...input } });
     if (!input._waiting) thread.sessions.push(waiting);
     if (role === 'lead' && !thread.lead_name) await hub.saveWithLeadName(thread);
@@ -204,6 +209,8 @@ async function startSession(hub, thread, input) {
     template_id: layers.template?.id || null,
     ...(role === 'lead' ? { style_version: settings.style_version } : {}),
   };
+  if (title) session.title = title;
+  if (typeof input.brief === 'string') session.brief = input.brief;
   if (!input._waiting) thread.sessions.push(session);
   Object.assign(session, { model: resolved.model, effort: input.effort || resolved.effort || null, status: 'starting', cli, provider: selection.provider, account: selection.account.id, template_id: layers.template?.id || null, ...(role === 'lead' ? { style_version: settings.style_version } : {}) });
   if (selection.note) session.note = selection.note;
@@ -239,7 +246,7 @@ async function startSession(hub, thread, input) {
     started = await startOnMachine(hub, thread.machine, startBody);
   } catch (error) {
     // Leave no session claiming to be "starting" forever: record why it never started.
-    Object.assign(session, { status: 'failed', live: false, error: error.message });
+    Object.assign(session, { status: 'failed', live: false, ended_at: new Date().toISOString(), error: error.message });
     if (!error.status) {
       session.unanswered_start = { body: startBody, first_message: PROVIDERS[selection.provider].typesRoleMessage || Boolean(input.brief) };
       await hub.save(thread);
@@ -262,6 +269,8 @@ async function startSession(hub, thread, input) {
     // session is ready; without one, a ready session is idle and may take the queue at once.
     first_message: PROVIDERS[selection.provider].typesRoleMessage || Boolean(input.brief),
   });
+  if (session.first_message) session.turn_started_at = new Date().toISOString();
+  delete session.ended_at;
   if (quiet.watched(session) && session.first_message) session.owes_reply = true;
   markIdleIfFresh(session);
   if (!thread.worktree && started.worktree) {
@@ -305,6 +314,7 @@ async function deliverReport(hub, thread, target, payload) {
 function markIdleIfFresh(target) {
   if (target.ready && target.turn_ended === undefined && target.first_message === false) {
     target.turn_ended = true;
+    target.turn_ended_at = new Date().toISOString();
   }
 }
 
@@ -366,6 +376,7 @@ async function deliver(hub, thread, target, { midTurn = false } = {}) {
   if (next.quiet === 'starter') { const about = thread.sessions.find(s => s.name === next.about); if (about) about.quiet_starter_at = new Date().toISOString(); }
   if (deliveredStyleVersion !== undefined) target.style_version = deliveredStyleVersion;
   target.turn_ended = false;
+  target.turn_started_at = new Date().toISOString();
   delete target.delivery_error;
   thread.queues ||= {};
   thread.queues[target.name] = target.queue;
@@ -413,13 +424,16 @@ async function event(hub, payload) {
     await usage.record(hub, { ...prior, at: new Date(Math.max(Date.now(), Date.parse(prior.at) + 1 || 0)).toISOString(), limited_until: limit });
     target.limited_until = limit;
     target.turn_ended = true;
+    target.turn_ended_at = new Date().toISOString();
   } else if (limitEnded && limit && Date.parse(limit) <= Date.now()) {
     delete target.limited_until;
     target.turn_ended = true;
+    target.turn_ended_at = new Date().toISOString();
     if (target.live) await enqueue(hub, thread, target.name, 'Continue.', 'app', true, { save: false, deliver: false });
   }
   if (type === 'turn-failed') {
     target.turn_ended = true;
+    target.turn_ended_at = new Date().toISOString();
     if (target.started_by) {
       const starter = await enqueue(hub, thread, target.started_by, `[wc:from app] your session ${target.name}'s turn failed: ${payload.error}`, 'app', false, { save: false, deliver: false });
       deliveryTargets.add(starter.name);
@@ -434,6 +448,7 @@ async function event(hub, payload) {
   }
   if (['turn-ended', 'turn_ended', 'turn ended'].includes(type)) {
     target.turn_ended = true;
+    target.turn_ended_at = new Date().toISOString();
     for (const key of ['cli_session_id', 'codex_thread_id', 'agy_conversation_id']) if (payload[key]) target[key] = payload[key];
     if (target.role === 'lead') for (const card of thread.cards) if (card.kind === 'needs' && card.title === "The lead's turn failed" && !card.answered) card.answered = true;
     const reportTarget = limitEnded || Date.parse(target.limited_until) > Date.now() ? null : await deliverReport(hub, thread, target, payload);
@@ -503,6 +518,7 @@ async function sessionRequest(hub, payload) {
     started_by: caller.name,
     attempt_id: payload.attempt_id,
     brief: payload.brief,
+    title: payload.title,
     tier: payload.tier,
     effort: payload.effort,
     // Spec "Branches and checkouts": the mapper, reviewers and the sub-lead run in the thread's
@@ -553,6 +569,7 @@ async function stopSession(hub, thread, caller, name) {
   if (!canStop) throw appError(403, 'only the starter may stop this session');
   if (target.status !== 'waiting') await hub.call(thread.machine, `/v1/sessions/${encodeURIComponent(target.name)}`, 'DELETE');
   target.live = false;
+  target.ended_at = new Date().toISOString();
   target.status = 'stopped';
   quiet.reset(thread, target, true);
   await hub.save(thread);
@@ -612,6 +629,7 @@ async function pollDead(hub) {
         }
         for (const target of missing(thread, fresh)) {
           target.live = false;
+          target.ended_at = new Date().toISOString();
           target.status = 'ended';
           quiet.reset(thread, target, true);
           changed = true;
