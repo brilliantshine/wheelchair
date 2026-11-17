@@ -1,0 +1,5 @@
+{"form":"timeline","explanation":"The proposed path from a session starting to a warning on the approval card. Step 4 is the new part Collin sees; nothing in it can stop Start building. Leaves out the rule for what counts as growth, which is the open question.","events":[
+{"when":"1","label":"A Claude agent session starts","detail":"As today; the machine already notes it in its session record."},
+{"when":"2","label":"Its first turn ends","detail":"The machine reads how many tokens that first call used, and which Claude Code version ran it, and adds one line to the record."},
+{"when":"3","label":"The lead runs its Ready check","detail":"It also asks the machine whether any role's sessions grew."},
+{"when":"4","label":"Approval card shows the warning","detail":"Next to the Ready result, as information only. A failed check just shows nothing."}]}
