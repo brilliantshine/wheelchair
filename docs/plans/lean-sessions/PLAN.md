@@ -576,3 +576,4 @@ Round 17 is clean: no blocking or major finding upheld.
 - 2026-11-17 — R1-1 accepted (band: scout, 15 lines): protocol-rules 33/33; both sentences in `sub-lead.md:52-53,224-226`; `cards.md:3` audience corrected (sub-lead rewrapped the 140-column line after merge).
 - 2026-11-17 — worker reported choices as none; scout listed 3: R1-1, cards.md:3 sentence merged into the paragraph unwrapped (rewrapped since); sub-lead.md:52-53 wrapping; protocol-rules.test.js test name and placement after the sub-lead test.
 - 2026-11-17 — After remediation 1 (ba7ba07): protocol-rules exit 0, viewer node 529/529 exit 0, machine 133 exit 0. An earlier viewer run hung in app-hub.test.js after a test server was refused a port "held by a process it cannot identify" (environment; the rerun passed).
+- 2026-11-17 — Verification attempt 2 (claude-opus-5-5, commit bcb4c8e): PASS. Live checks and re-measure left for after merge in the canonical clone.

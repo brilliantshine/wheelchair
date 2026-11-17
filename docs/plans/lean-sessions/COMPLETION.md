@@ -2,7 +2,13 @@
 slug: lean-sessions
 date: 2026-11-17
 implemented-by: "standard gpt-6.1-terra (T1, T2, T4, T5); light gpt-6-luna (T3, T5b); sub-lead claude-opus-5-5 post-merge fixes"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: top, claude-opus-5-5
+    checks: "standard gpt-6.1-terra / light gpt-6-luna (FAIL: 1 gap, remediation 1)"
+  - round: 2
+    lane: top, claude-opus-5-5
+    checks: "standard gpt-6.1-terra / light gpt-6-luna (PASS at bcb4c8e)"
 ---
 
 # Completion Report — Make wheelchair sessions leaner
@@ -139,3 +145,5 @@ Fix (task R1-1, light gpt-6-luna, plus a sub-lead rewrap):
 - `viewer/test/protocol-rules.test.js:69-73` asserts both sentences.
 
 Validation after the fix: see the PLAN.md Log line for remediation 1 and the outputs below.
+
+Verification attempt 2 (commit `bcb4c8e`): PASS. Residual notes from the verifier, not gaps: the tmux size test measures the claude argv without the `env` prefix; the fallback line "If nothing above this line names `<root>`" sits just below "`<root>` is named in your starting instructions", so a session pointed at the file directly might skip the fallback (wording as the Spec gives it).
