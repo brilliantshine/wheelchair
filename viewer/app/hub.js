@@ -138,10 +138,6 @@ class Hub {
     if (!this.usagePolling) this.usagePolling = require('./usage-poll.js').pollIdle(this).finally(() => { this.usagePolling = null; });
     return this.usagePolling;
   }
-  close() {
-    for (const timer of [this.asideTimer, this.pollTimer, this.queueRetryTimer, this.waitTimer, this.usageTimer]) clearInterval(timer);
-    clearTimeout(this.usageStartTimer);
-  }
   retryQueues() { return sessions.retryQueues(this); }
   acceptCard(payload) { return this.withThread(payload.thread_id, () => cards.acceptCard(this, payload)); }
   createThread(input) { return threads.createThread(this, input); }
