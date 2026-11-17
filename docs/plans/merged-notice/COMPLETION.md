@@ -2,7 +2,10 @@
 slug: merged-notice
 date: 2026-11-16
 implemented-by: "gpt standard (gpt-6.1-terra) for T1 and T2; sub-lead claude-opus-5-5"
-verified-by: []   # Stage 4 appends; Stage 3 leaves this empty.
+verified-by:
+  - round: 1
+    lane: gpt / gpt-6.1-sol (asked for a non-GPT verifier; none available)
+    checks: gpt standard (gpt-6.1-terra)
 ---
 
 # Completion Report — Merged notice with archive button
