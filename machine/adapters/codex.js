@@ -4,8 +4,27 @@ const path = require('node:path');
 const c = require('./common');
 const usual = () => c.home('CODEX_HOME', '.codex');
 const loginEnv = dir => dir ? { CODEX_HOME: dir } : {};
+const { run } = require('../lib/usage-probe');
+function parseUsage(response) {
+  if (response?.error || !response?.result?.rateLimits) throw new Error('invalid Codex usage response');
+  const limits = response.result.rateLimits; let five_hour = null, week = null;
+  for (const w of [limits.primary, limits.secondary]) {
+    if (!w || typeof w.usedPercent !== 'number' || !Number.isFinite(w.usedPercent)) continue;
+    const value = { used: w.usedPercent, resets_at: w.resetsAt == null ? null : c.iso(w.resetsAt) };
+    if (w.resetsAt != null && !value.resets_at) throw new Error('invalid reset time');
+    if (w.windowDurationMins === 300) five_hour = value;
+    if (w.windowDurationMins === 10080) week = value;
+  }
+  if (!five_hour && !week) throw new Error('no usage windows');
+  return { five_hour, week, ...(limits.planType ? { plan_type: limits.planType } : {}), ...(limits.rateLimitReachedType != null ? { reached: true } : {}) };
+}
 module.exports = {
-  provider: 'gpt', loginEnv,
+  provider: 'gpt', loginEnv, parseUsage,
+  usageProbe(dir, options = {}) { return run('codex', ['app-server'], { ...options, env: { ...process.env, ...loginEnv(dir) }, parse: parseUsage, messages: [
+    { jsonrpc: '2.0', id: 1, method: 'initialize', params: { clientInfo: { name: 'wheelchair', version: '1' } } },
+    { jsonrpc: '2.0', method: 'initialized' },
+    { jsonrpc: '2.0', id: 2, method: 'account/rateLimits/read' },
+  ] }); },
   asideArgv(input, context) { return ['codex', 'exec', ...(input.access === 'full' ? ['--dangerously-bypass-approvals-and-sandbox'] : ['-s', 'read-only']), '--json', '-m', input.model, ...(input.effort ? ['-c', `model_reasoning_effort=${input.effort}`] : []), ...context.servers.flatMap(name => ['-c', `mcp_servers.${/^[A-Za-z0-9_-]+$/.test(name) ? name : JSON.stringify(name)}.enabled=false`]), '--disable', 'apps', input.mode, input.from, '-']; },
   loginCommand() { return ['codex', 'login', '--device-auth']; },
   parseLogin(pane) { const url = pane.match(/https:\/\/auth\.openai\.com\/[^\s]+/)?.[0] || null; const code = pane.match(/\b[A-Z0-9]{4}-[A-Z0-9]{4,}\b/)?.[0] || null; return url && code ? { url, code, wantsCode: false } : null; },

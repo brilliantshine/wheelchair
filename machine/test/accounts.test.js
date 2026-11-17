@@ -129,3 +129,24 @@ test('Antigravity hook spools using the session environment', () => {
   delete env.WHEELCHAIR_SESSION_NAME; assert.equal(spawnSync(hook, ['agy'], { env, input }).status, 0);
   for (const cli of ['claude', 'codex']) assert.notEqual(spawnSync(hook, [cli], { env, input }).status, 0);
 });
+
+test('Claude idle usage parses windows, resets and rollover', () => {
+  const parse = (result, now = '2026-11-16T20:00:00Z', num_turns = 0) => adapters.claude.parseUsage({ result, num_turns }, new Date(now));
+  const sample = 'Current session: 42% used · resets Nov 16, 6:59pm (America/Los_Angeles)\nCurrent week (all models): 52% used · resets Nov 21, 2:59am (America/Los_Angeles)';
+  assert.deepEqual(parse(sample), { five_hour: { used: 42, resets_at: '2026-11-17T02:59:00.000Z' }, week: { used: 52, resets_at: '2026-11-21T10:59:00.000Z' } });
+  assert.equal(parse('Current session: 100% used · resets Jan 1, 7pm (America/Los_Angeles)', '2026-12-31T23:00:00Z').five_hour.resets_at, '2027-01-02T03:00:00.000Z');
+  assert.equal(parse('Current session: 100% used').reached, true);
+  assert.equal(parse('Current session: 10% used').five_hour.resets_at, null);
+  assert.throws(() => parse(sample, '2026-11-16T20:00:00Z', 1));
+  assert.throws(() => parse('no windows'));
+});
+test('Codex idle usage maps rate limit response', () => {
+  const parse = adapters.codex.parseUsage;
+  const primary = { windowDurationMins: 10080, usedPercent: 52, resetsAt: 1800000000 };
+  const secondary = { windowDurationMins: 300, usedPercent: 100, resetsAt: 1800001000 };
+  const response = { result: { rateLimits: { primary, planType: 'pro' } } };
+  assert.equal(parse(response).week.used, 52); assert.equal(parse(response).five_hour, null);
+  response.result.rateLimits.secondary = secondary; response.result.rateLimits.rateLimitReachedType = 'primary';
+  assert.equal(parse(response).five_hour.used, 100); assert.equal(parse(response).reached, true); assert.equal(parse(response).plan_type, 'pro');
+  assert.throws(() => parse({ error: { message: 'bad' } }));
+});

@@ -47,6 +47,8 @@ and port 7374. Tests and the unit may override host, port and state directory on
 
 Antigravity sessions use a per-session `--settings` file with `trustedWorkspaces`. The adapter merges a `wheelchair` Stop hook into `~/.gemini/config/hooks.json`, calling `machine/hook.sh agy`; the hook takes the session name from its second argument or `WHEELCHAIR_SESSION_NAME`, which the service sets for the session. Ready Antigravity panes are watched for permission prompts.
 
+`POST /v1/usage` requires hub authorization and body `{account, cli, dir}`. The CLI is `claude` or `codex`; the directory follows the login account rules, including null for the matching default account. It returns `200 {reading}` in the usage event shape below, `400 {error}` for invalid input, or `502 {error}` if the 30-second probe times out, exits unsuccessfully, or produces an invalid response. The service does not read credentials. Claude's model endpoint is isolated to a closed local port, and Codex receives only initialization and a rate-limit read, so the probe sends no model message.
+
 Claude's settings run `machine/statusline.sh claude <session>` to display the model and five-hour usage and forward status payloads at most once a minute, with the same local spool fallback as hooks. `StopFailure` forwards `limit-hit` with `error` and `limited_until`, or `turn-failed` with `error`. Usage events carry `reading: {account, at, five_hour, week, plan_type?, limited_until?}`; each window is null or `{used, resets_at}`. Codex readings come from appended rollout lines and travel in the `reading` field of the `turn-ended` event. Reset times and `at` are ISO strings.
 
 ### Login sessions
