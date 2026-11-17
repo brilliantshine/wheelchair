@@ -41,6 +41,7 @@ Rules for every card:
 | `progress` | yes | sub-lead, lead | yes |
 | `needs` | yes | lead | no |
 | `done` | yes | lead | no |
+| `merged` | yes | app | no |
 | `diagram` | yes | lead | no |
 | `image` | yes | lead | no |
 | `stub` | yes | lead | no |
@@ -202,6 +203,12 @@ the same treatment: say what you will do now instead of going quiet.
 
 A "Start a thread about it" press comes back as
 `[card <id>] start thread about: <left_as_is text>`; you answer it with a `stub` card.
+
+### `merged`
+
+The app posts this card when the thread's pull request is merged. It carries `kind`,
+`title` and `pr_url`, along with the usual stored card fields. Archive (with confirmation)
+and Keep it are handled by the app; nothing reaches the lead, and no session may post it.
 
 ### `diagram`
 
