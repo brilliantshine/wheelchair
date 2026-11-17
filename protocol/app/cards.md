@@ -1,6 +1,6 @@
 # Cards, markers and the commands that carry them
 
-The one file every role reads for how to talk to the app. A **card** is a small JSON
+The card rules every card-posting role gets (lead, sub-lead, worker, mapper; the lead also gets `cards-lead.md`). A **card** is a small JSON
 document a session posts; the app shows some kinds to Collin and uses the rest to move
 work between sessions. `<root>` is named in your starting instructions.
 
