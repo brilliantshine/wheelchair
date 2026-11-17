@@ -55,10 +55,11 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
     });
 
     test('agent tree keeps selection and shows agent details', async ({ page }) => {
-      const child = { name: 'wc-a-reviewer', role: 'reviewer', display_title: 'Review the plan', live: true, state: 'waiting', waiting_on: { label: 'Waiting on the lead' }, has_brief: true, children: [] };
-      const done = { name: 'wc-a-worker', role: 'worker', display_title: 'Finished work', live: false, state: 'finished', children: [] };
+      const waiting = { name: 'wc-a-mapper', role: 'mapper', display_title: 'Map the code', live: true, state: 'waiting', waiting_on: { label: 'Waiting on the lead' }, children: [] };
+      const child = { name: 'wc-a-reviewer', role: 'reviewer', display_title: 'Review the plan', live: true, state: 'working', model: 'model-a', effort: 'high', turn_started_at: new Date(Date.now() - 4 * 60000).toISOString(), has_brief: true, children: [waiting] };
+      const done = { name: 'wc-a-worker', role: 'worker', display_title: 'Finished work', live: false, state: 'finished', created_at: '2026-01-01T00:00:00Z', ended_at: '2026-01-01T00:22:00Z', children: [] };
       const lead = { name: 'wc-a-lead', role: 'lead', display_title: 'A thread', live: true, state: 'needs-you', model: 'model-a', children: [child, done] };
-      await page.route('**/api/agents', route => route.fulfill({ json: { leads: [{ thread_id: 'a', thread_title: 'A thread', lead_name: 'Alpha', project: 'project-a', stage: 'building', machine: 'hub', counts: { total: 3, waiting: 2, finished: 1 }, session: lead, asides: [] }, { thread_id: 'b', thread_title: 'Done thread', lead_name: 'Beta', project: 'project-b', stage: 'done', finished: true, finished_at: new Date().toISOString(), counts: { total: 1 }, session: done }], machines: [{ machine: 'node-3', reachable: false }] } }));
+      await page.route('**/api/agents', route => route.fulfill({ json: { leads: [{ thread_id: 'a', thread_title: 'A thread', lead_name: 'Alpha', project: 'project-a', stage: 'building', machine: 'hub', counts: { total: 4, working: 1, waiting: 2, finished: 1 }, session: lead, asides: [] }, { thread_id: 'b', thread_title: 'Done thread', lead_name: 'Beta', project: 'project-b', stage: 'done', finished: true, finished_at: new Date().toISOString(), counts: { total: 1 }, session: done }], machines: [{ machine: 'node-3', reachable: false }] } }));
       const keys = [];
       await page.route('**/api/sessions/*/keys', async route => { keys.push(route.request().postDataJSON()); await route.fulfill({ json: {} }); });
       await page.route('**/api/sessions/*/pane?*', route => route.fulfill({ json: { pane: 'Agent terminal ready' } }));
@@ -71,12 +72,12 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       if (label === 'phone') await page.getByRole('button', { name: '‹ Leads' }).click();
       await page.locator('.agents-finished summary').click();
       await expect(page.locator('.agents-finished')).toContainText('project-b');
+      await expect(page.locator('.agents-finished')).toContainText('Done · 1 agent');
       if (label === 'phone') await page.locator('.agents-entry', { hasText: 'Alpha' }).click();
       await expect(page.locator('[data-session="wc-a-worker"]')).toHaveCSS('border-top-style', 'dashed');
-      await expect(page.locator('[data-session="wc-a-reviewer"]')).toContainText('Waiting on the lead');
+      await expect(page.locator('[data-session="wc-a-mapper"]')).toContainText('Waiting on the lead');
       await expect(page.locator('.agents-box', { hasText: 'Needs you' })).toHaveCount(1);
       await expect(page.locator('body')).not.toContainText('tmux');
-      if (label === 'phone' && test.info().project.name === 'chromium') { await page.setViewportSize({ width: 390, height: 844 }); await page.screenshot({ path: '../docs/plans/agents-screen-redesign/reports/T4-phone.png' }); }
       await page.locator('[data-session="wc-a-reviewer"]').click();
       await page.getByRole('button', { name: 'Read its brief' }).click();
       await expect(page.locator('#brief-text')).toHaveText('<b>Plain brief</b>');
@@ -84,7 +85,8 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       await expect(page.locator('#brief-dialog')).toBeVisible();
       await page.getByRole('button', { name: 'Close', exact: true }).last().click();
       await expect(page.locator('.agents-side')).toContainText('Review the plan');
-      if (label === 'desktop' && test.info().project.name === 'chromium') await page.screenshot({ path: '../docs/plans/agents-screen-redesign/reports/T4-desktop.png' });
+      await expect(page.locator('.agents-side')).toContainText('model-a · high');
+      await expect(page.locator('.agents-side')).toContainText(/Working for \d+m/);
       await page.getByRole('button', { name: 'Open terminal' }).click();
       await expect(page.getByRole('button', { name: 'View only' })).toBeVisible();
       await page.evaluate(() => window.agentsTermView._onDataForTest('x'));
@@ -95,12 +97,12 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       await page.evaluate(() => window.agentsTermView._onDataForTest('x'));
       await expect.poll(() => keys.length).toBe(1);
       expect(keys[0].keys).toBe('x');
-      if (label === 'desktop' && test.info().project.name === 'chromium') await page.screenshot({ path: '../docs/plans/agents-screen-redesign/reports/T4-terminal.png' });
       if (label === 'desktop') {
         await page.locator('[data-session="wc-a-lead"]').click();
         await expect(page.getByRole('button', { name: 'View only' })).toBeVisible();
         await page.locator('[data-session="wc-a-worker"]').click();
         await expect(page.locator('#agents-terminal')).toBeHidden();
+        await expect(page.locator('.agents-side')).toContainText('Ran 22m');
         await page.locator('[data-session="wc-a-reviewer"]').click();
         await page.getByRole('button', { name: 'Open terminal' }).click();
       }
