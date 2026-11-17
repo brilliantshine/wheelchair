@@ -77,6 +77,7 @@ get buried as this file grows.
 | 48 | Claude gets its starting text through `--append-system-prompt-file`; default Codex home resolved like the adapter; API.md updated | tmux rejects commands over ~16 KiB | review-round-11 |
 | 49 | Prompt files are kept like settings files | No cleanup exists for either; adding one is out of scope | review-round-12 |
 | 50 | Prompt file written before the worktree; growth answers validated before caching | Round 12 mechanics | review-round-12 |
+| 51 | The startup-growth warning moves to its own thread; this plan only records `startup_tokens` in the ledger. Supersedes the warning parts of 2, 3, 13, 19, 25, 27, 31–33, 35–37, 39–42, 45–47, 50 | Most review findings were about the warning; the saving doesn't depend on it | user |
 | 12 | No GPT tool-schema trimming | Codex offers no supported way to drop its built-in tools; revisit if it adds one | defaulted |
 
 ## Spec
@@ -90,9 +91,7 @@ get buried as this file grows.
 - The list lives in one constant beside `command()`, so adding a tool is a one-line change.
 - Every role uses this list: lead, sub-lead, worker, reviewer, verifier, mapper. Asides and the usage probe keep their own argv.
 - No `--strict-mcp-config` or `--disable-slash-commands`: measured savings were ~0.5k, and they would drop a target project's own MCP servers and skills.
-- **Growth warning.** After a Claude session's first assistant message, the machine reads its `usage` (input + cache write + cache read) from the transcript as `startup_tokens`, stores it on the session, and appends `{at, name, role, project, startup_tokens}` to the session ledger, where `project` is the start input's `project_dir` (the hub sends `thread.project`, `viewer/app/sessions.js:315`), so hub and machine use the same key. The ledger is the sample source, because the machine deletes session records when a thread is archived (`machine/service.js:762`). Growth is found by comparison, per role and project, using only startup lines (no join): for each role and project, take the median of its newest 3 samples and the median of the up to 20 samples before those. When some role's newest median exceeds its earlier median by more than 5,000, a new hub-authorized route `GET /v1/startup-growth`, which reads only the ledger and runs no login checks, returns `{ "<project_dir>": {role, newest_median, earlier_median} }` with, per project, the role with the largest gap above 5,000; projects without one are left out. A role with fewer than 3 + 5 samples in a project is skipped. The window rolls: once a new level fills most of the earlier window (about 13 sessions of that role) the warning clears; an approval card's warning stays until a `recheck` or Start building press refreshes it from the cache. A missing, empty or unreadable ledger (a fresh install included) returns `{}` with status 200. `/v1/status` is unchanged.
-- **Delivery without a deadline.** The refresh's promise rejects on a request error, a response-stream error (a body cut off mid-way) or the client timeout, and the in-flight mark clears in a `finally`, so the next eligible refresh always runs and the previous cached answer stays. For each machine the session poll (`viewer/app/sessions.js:693-699`) visits, the hub starts a `/v1/startup-growth` refresh at most once a minute, never awaited by the poll and with at most one in flight per machine, so a stalled refresh never delays session checks on any machine; with the machine client's normal timeout, and keeps the latest answer in memory per machine. A failed call, or a 200 whose body is not an object mapping project strings to `{role: string, newest_median: number, earlier_median: number}` (the client returns `{raw}` for unparseable bodies), keeps the previous answer. Nothing on the card or press path calls the machine for it: the Ready check (`viewer/app/ready.js` `check`) and the approval-card accept read the hub's cached copy for the thread's machine and `thread.project`, synchronously. A slow login check on the machine can delay the cache refresh, never a card. The Ready check turns a cached entry into one entry of a `warnings` array alongside `missing`; warnings never change `ok`. A Claude Code update that adds tools is a step change for every role, so it shows; ordinary role-file edits move a few hundred tokens and do not.
-- **Where the warning shows.** When the hub accepts an `approval` card (`viewer/app/cards.js`, the add-card path), it stores `card.ready.warnings` from the hub's cached copy (none cached means `[]`); the lead's submitted `ok`/`missing` are kept as today. A `recheck` press replaces `card.ready` whole, warnings included. On `start-building`, `same()` keeps comparing `missing` only; the hub writes the fresh `warnings` onto the card and saves it (today the pinned-card render signature at `viewer/pages/thread.js:933` hashes only `data.pinned` and each card's answered/retracted fields, and `thread.pinned.approval` is a copy written once at accept, `viewer/app/cards.js:30`; the change adds `c.ready` to the `data.cards.map((c) => [...])` tuple there, which iterates the live `thread.cards` entries that `renderPinned` itself draws from (`thread.js:848-849`), never `data.pinned`, so an open tab redraws the warning on its next poll), whether or not the gate passes, and, if `ok`, starts the build on that same press. A warning that appears or clears never consumes the press. The approval card shows the warning text: "Claude <role> sessions now start about <n>k tokens bigger than before. A Claude Code update may have added tools; tell the lead." `<n>` is `newest_median − earlier_median`, in thousands. The Ready result stays Ready.
+- **Startup size recorded.** After a Claude session's first assistant message, the machine reads its `usage` (input + cache write + cache read) from the transcript as `startup_tokens`, stores it on the session, and appends `{at, name, role, project, startup_tokens}` to the session ledger, where `project` is the start input's `project_dir`. Best-effort, like every ledger append. Nothing reads it at runtime in this plan: it is data for re-measuring and for the startup-growth warning's own thread (Decision 51).
 - Measured: interactive haiku session in this worktree, first-call context 47,869 tokens by default, 17,093 with the deny list (2026-11-17).
 
 ### Starting instructions carry the rules
@@ -114,7 +113,6 @@ get buried as this file grows.
 
 - `cards.md` keeps: Posting a card, Which kinds exist (the full table, so everyone knows what exists), `progress`, `message`, `result`, What reaches a session and the markers, and The commands.
 - `cards-lead.md` gets every other kind section (offer, idea, question, approval, needs, resolve, done, merged, diagram, image, stub, sudo, retract, title), moved verbatim.
-- The moved `approval` section is updated to the new behavior: a change in warnings alone never consumes the Start building press; only a change in `missing` does.
 - The split is documentation only. `card.js` keeps its JavaScript schema (`viewer/app/card.js:24-41,145-191`) unchanged, so exactly the same cards are accepted. `protocol-rules.test.js` checks that every kind in the schema has exactly one section across the two files.
 - `protocol/app/AGENTS.md` lists both files and who gets each, and says reviewer and verifier get neither.
 
@@ -137,7 +135,7 @@ get buried as this file grows.
 
 ### Boundaries and non-goals
 
-- Nothing Collin sees in a thread changes, except the approval card's optional startup warning.
+- Nothing Collin sees in a thread changes. No startup-growth warning, Ready check change or approval-card change: that is its own thread (Decision 51).
 - No model or tier moves. Reviews and verification are not reduced.
 - GPT's built-in tool schemas are not trimmed.
 - Sessions already running keep their old instructions.
@@ -145,14 +143,13 @@ get buried as this file grows.
 ### Edge cases
 
 - A role file or card file missing at start: the start fails with the reason. The machine loads and composes the starting text before `git worktree add`, so a failed start leaves no branch or worktree behind and a retry works.
-- A Claude Code release that renames a denied tool: the deny entry is ignored by the CLI; startup grows and the warning fires.
+- A Claude Code release that renames a denied tool: the deny entry is ignored by the CLI and startup grows; the recorded `startup_tokens` show it at the next re-measure.
 - A diff where every path is under `docs/plans/`: `lines` 0, band `scout`.
 
 ### Validation
 
-- `bash machine/test/run.sh` (a Claude lead start's tmux command stays under 8 KiB with a composed prompt over 30 KB and its argv carries `--append-system-prompt-file`;Claude argv carries the deny list and neither `--strict-mcp-config` nor `--disable-slash-commands`; composed prompt holds role text and the right card files per role; `startup_tokens` recorded from a fixture transcript and its ledger startup line written; the ledger start line carries `account_dir`; `/v1/startup-growth` has an entry for a project when a role's newest-3 median exceeds its earlier median by more than 5,000, none at 5,000 or below or below 8 samples, computed per project (a heavier project does not trip another's), and still computed after the sessions are archived; a missing role or card file fails the start and leaves no branch or worktree; a ledger append error does not fail a start, hook or report; `wc.js diff size` lists both rename ends with `diff.renames=false`).
-- `node --test viewer/test/*.test.js` (Ready check turns the cached entry for the thread's machine and `thread.project` into a warning and gives none without one; the cache is keyed by machine and an entry for another project is ignored; `wc.js diff size` lists both ends of a rename across `docs/plans/`; `session start` default output is compact and has no `command`; the approval card and the Ready check's warning part read only the hub's cache and never call `/v1/startup-growth` (the Ready gate's existing `/v1/status` and `/v1/preflight` calls stay); a stalled growth refresh leaves the session poll running; the background refresh runs at most once a minute and keeps the last answer on failure; approval card gets `warnings: []` with nothing cached; Start building not consumed by a warning-only change; an open thread page redraws the pinned approval card when only its warnings change; `wc.js diff size` bands and the `docs/plans/` exclusion on a temp repo; compact and `--full` list; every schema kind has exactly one section across `cards.md` and `cards-lead.md`; `card.js` accepts the same cards as before; `wc.js diff size` run from a subdirectory sizes the whole repository, and its `scout_diff` runs unchanged from a nested directory of a worktree whose path contains spaces; `/v1/startup-growth` returns `{}` with no ledger and filters nothing it shouldn't (one entry per project with growth); `/v1/status` is unaffected by a broken ledger; a sub-lead with no scout may read a `scout`-band diff itself; compact `session start` and `session list` keep `branch` and `worktree`; Settings preview shows the header and file lines; the moved approval section says a warning-only change does not consume the press; `protocol-rules.test.js` updated).
-- `npm --prefix viewer run test:browser` (approval card shows the warning).
+- `bash machine/test/run.sh` (a Claude lead start's tmux command stays under 8 KiB with a composed prompt over 30 KB and its argv carries `--append-system-prompt-file`;Claude argv carries the deny list and neither `--strict-mcp-config` nor `--disable-slash-commands`; composed prompt holds role text and the right card files per role; `startup_tokens` recorded from a fixture transcript and its ledger startup line written; the ledger start line carries `account_dir`;  a missing role or card file fails the start and leaves no branch or worktree; a ledger append error does not fail a start, hook or report; `wc.js diff size` lists both rename ends with `diff.renames=false`).
+- `node --test viewer/test/*.test.js` (`wc.js diff size` bands, the `docs/plans/` exclusion, structured excluded paths, both ends of a rename across `docs/plans/` with `diff.renames=false`, literal pathspecs, and a run from a subdirectory of a worktree whose path contains spaces, on a temp repo; a sub-lead with no scout may read a `scout`-band diff itself; `session start` and `session list` default output compact with `branch` and `worktree` and no `command`, `--full` raw; every schema kind has exactly one section across `cards.md` and `cards-lead.md`; `card.js` accepts the same cards as before; Settings preview shows the `Role:` line, header and file lines; `protocol-rules.test.js` updated).
 - Live: after install, start a Claude lead (a test thread) and a Claude worker on this machine; the lead starts in real tmux with its prompt file; both record `startup_tokens`, the worker's at least 25,000 below today's comparable worker sessions, and the lead's composed instructions hold lead.md, cards.md and cards-lead.md.
 - Re-measure after a few threads with the baseline method above, taking each Claude session's role from the session ledger (joined on `cli_session_id` = transcript file name), and reporting the same metrics: cost share by role, average context per call, calls per session. For GPT, role comes from the `Role: <role>` line at the start of the first `[wc:role]` message (or, for sessions started before the change, the first `protocol/app/<role>.md` it names), so no join is needed and interrupted attempts are counted; scan the default Codex home resolved as the adapter does (`$CODEX_HOME` if set, else `~/.codex`) and each Codex `account_dir`'s `sessions/`; per session, take the last `token_count` event whose `info.total_token_usage.input_tokens` is a number (events carrying only rate limits are skipped; repeated snapshots are not summed); a session with no such event is left out of both the total and the session count, and the number left out is reported; report the mean per worker session and per verifier session against the baseline above.
 
@@ -166,13 +163,12 @@ get buried as this file grows.
 
 - When the machine starts a session it appends one JSON line to `<stateDir>/session-ledger.jsonl`: `{at, name, role, provider, model, account_dir, cli_session_id, thread_id}`. Re-measuring scans each `account_dir`'s transcript home as well as the default one. Append-only, never pruned by the service; `cli_session_id` matches the Claude transcript file name, and for Codex it is the machine's own UUID and is not a join key.
 - Ledger appends are best-effort: an append error is logged by the machine and swallowed, never failing a session start, a hook or a report delivery.
-- The machine reads it for the growth warning; it is also the role source for re-measuring.
+- It is the role source and startup-size record for re-measuring; nothing reads it at runtime.
 
 ## Accepted Risks
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
-| The growth warning clears by itself after about 13 sessions of a role at the new level | It flags a recent change; by then it has shown on approval cards or been seen in Ready checks | 4 |
 
 ## Review Rounds
 
@@ -414,6 +410,18 @@ get buried as this file grows.
 | mechanics | major | Prompt-file write failure leaves a worktree | upheld | Decision 50 |
 | mechanics | major | No cleanup trigger for prompt files | upheld | Resolved by Decision 49 (kept, no cleanup) |
 | mechanics | minor | Malformed growth body would clear the cache | upheld | Decision 50 |
+
+### Round 13 — 2026-11-17
+
+**Lanes:** intent: claude; mechanics: gpt; cross-family: yes.
+
+**Changed since Round 12:** budget reset after Collin's decision.
+- The startup-growth warning is removed (route, hub cache, Ready check, approval card, pinned redraw); only `startup_tokens` is recorded in the ledger (51)
+- Prompt file written before the worktree (50)
+- Validation rewritten to match
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
