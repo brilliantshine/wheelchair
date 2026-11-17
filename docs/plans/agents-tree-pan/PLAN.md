@@ -189,6 +189,17 @@ npm --prefix viewer run test:browser
 | mechanics | major | `.agents-main`'s own scroll is lost on every rebuild. | upheld | Kept in the view record (decision 16). |
 | mechanics | major | During a pinch, a still finger lifting over a box selects it. | upheld | A pinch suppresses clicks from all its pointers (decision 16). |
 
+### Round 4 — 2026-11-17
+
+**Lanes:** intent lens; mechanics lens.
+
+**Changed since Round 3:**
+- Keeping the view: the view record also keeps `.agents-main`'s scroll, restored after each rebuild (decision 16).
+- Dragging: a gesture lasts until every pointer is up; a two-finger gesture suppresses clicks from all its pointers (decision 16).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
@@ -200,5 +211,7 @@ npm --prefix viewer run test:browser
 |---|-----------|--------------------|------|-----------|------------|--------|
 
 ## Log
+
+- 2026-11-17: review budget hit after round 3; Collin chose "Keep going", budget reset.
 
 - 2026-11-17: the thread "Agents tree: straight connectors, shorter boxes" may edit the same CSS file; this plan touches only the layout, tree-area and toolbar rules, not box or connector rules.
