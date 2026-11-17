@@ -135,7 +135,7 @@ New tests: model.sh reads, writes and defaults the sub-lead cell; balancer resol
 
 ### Round 4 — 2026-11-16
 
-**Lanes:** pending.
+**Lanes:** intent — gpt / gpt-6.1-sol; mechanics — gpt / gpt-6.1-sol; cross-family: no (Claude unavailable for reviewers).
 
 **Changed since Round 3:**
 - Sub-lead diff checks: the size and the scout's diff use `<feature>...<worker>` (three dots).
