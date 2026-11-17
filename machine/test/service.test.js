@@ -461,6 +461,19 @@ test('a thread branch made from origin/main tracks nothing', async () => {
     assert.notEqual(upstream.status, 0, upstream.stdout);
   } finally { await env.close(); }
 });
+test('a new worktree links the clone\'s installed packages and git ignores the link', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true }); try {
+    const repo = await project(root);
+    await write(path.join(repo, 'viewer', 'package.json'), '{}\n');
+    git(['-C', repo, 'add', 'viewer/package.json']); git(['-C', repo, 'commit', '-m', 'viewer']); git(['-C', repo, 'push']);
+    await write(path.join(repo, 'viewer', 'node_modules', 'dep', 'index.js'), 'x\n');
+    const session = await start(env, { thread_id: 'pkgs', token: 'pkgs-token', project_dir: repo, project: 'project', default_branch: 'main', serviceWorktree: true });
+    const link = path.join(session.worktree, 'viewer', 'node_modules');
+    assert.equal(await fs.readlink(link), path.join(repo, 'viewer', 'node_modules'));
+    assert.equal(await fs.readFile(path.join(link, 'dep', 'index.js'), 'utf8'), 'x\n');
+    assert.equal(git(['-C', session.worktree, 'status', '--porcelain']).stdout, '');
+  } finally { await env.close(); }
+});
 test('a hub 500 reaches the agent at once; a 502 is retried', async () => {
   const hub = await hubServer(500); const env = await service(await temp(), { config: { hub_url: hub.url } }); try { await start(env); env.instance.retryWindow = 2000; env.instance.retryDelay = 5; await assert.rejects(() => env.instance.forwardSession(env.instance.sessions['wc-t-lead'], { action: 'start', attempt_id: 'a' }), (error) => error.status === 500); assert.equal(hub.calls.filter(call => call.path.endsWith('/session')).length, 1); hub.setStatus(502); env.instance.retryWindow = 30; await assert.rejects(() => env.instance.forwardSession(env.instance.sessions['wc-t-lead'], { action: 'start', attempt_id: 'b' }), /hub unavailable/); assert.ok(hub.calls.filter(call => call.path.endsWith('/session')).length > 2); } finally { await env.close(); await hub.close(); }
 });
