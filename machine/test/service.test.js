@@ -1257,7 +1257,8 @@ test('Codex rollout reads persist complete lines, serialize reads, and flush bef
   const session = {name:'wc-test',cli:'codex',thread_id:'thread',codex_thread_id:'codex-id',source_transcript:file};
   svc.sessions[session.name] = session;
   const seen = []; let active=0, peak=0;
-  svc.emitEvent = async event => { active++; peak=Math.max(peak,active); await new Promise(resolve=>setTimeout(resolve,5)); seen.push(event); active--; };
+  svc.spool = async (kind, event) => { active++; peak=Math.max(peak,active); await new Promise(resolve=>setTimeout(resolve,5)); seen.push(event); active--; };
+  svc.emitEvent = async event => { seen.push(event); };
   svc.liveTmux = () => new Set(['wc-test','wc-unbound']);
   svc.sessions['wc-unbound'] = {name:'wc-unbound',cli:'codex',thread_id:'thread',source_transcript:file};
   const row = (id,type,extra={}) => JSON.stringify({timestamp:'2026-01-01T00:00:00Z',type:'response_item',payload:{type,call_id:id,...extra}});
@@ -1269,7 +1270,7 @@ test('Codex rollout reads persist complete lines, serialize reads, and flush bef
   assert.equal(svc.sessions['wc-unbound'].steps_offset,undefined);
   await fs.appendFile(file,'\n'); await svc.readCodexSteps(session);
   const saved=JSON.parse(await fs.readFile(svc.sessionsPath,'utf8')); assert.equal(saved['wc-test'].steps_state.yielded,'a');
-  const restarted=new MachineService({stateDir:root}); restarted.sessions=saved; restarted.emitEvent=svc.emitEvent;
+  const restarted=new MachineService({stateDir:root}); restarted.sessions=saved; restarted.emitEvent=svc.emitEvent; restarted.spool=svc.spool;
   const poll=row('p','function_call',{name:'wait',arguments:'{}'}), finish=row('p','function_call_output',{output:'Script completed'});
   await fs.appendFile(file,poll+'\n'+finish+'\n');
   await restarted.hook('wc-test',{type:'turn-ended',thread_id:'codex-id'});
@@ -1301,4 +1302,45 @@ test('Codex rollout reader tails bounded chunks, reads appends once, and resets 
   assert.equal(session.steps_offset, (await fs.stat(file)).size);
   assert.deepEqual(session.steps_state, {open:{},yielded:null});
   assert.ok(firstOffset > 0);
+});
+
+
+test('spooled Codex turn end drains without blocking later Claude events', async () => {
+  const root = await temp(), file = path.join(root, 'rollout.jsonl'), hub = await hubServer();
+  const svc = new MachineService({stateDir: root}); svc.config.hub_url = hub.url; svc.secret = async () => 'secret';
+  const session = {name:'wc-x-worker',cli:'codex',thread_id:'t',codex_thread_id:'cid',source_transcript:file};
+  svc.sessions[session.name] = session;
+  svc.sessions['wc-x-lead'] = {name:'wc-x-lead',cli:'claude',thread_id:'t'};
+  const row = JSON.stringify({timestamp:'2026-01-01T00:00:00Z',type:'response_item',payload:{type:'function_call',call_id:'a',name:'exec_command',arguments:'{"cmd":"npm test"}'}}) + '\n';
+  try {
+    await write(file, row);
+    await svc.spool('events', {type:'turn-ended','thread-id':'cid',session:session.name});
+    await svc.spool('events', {type:'prompt',notification_type:'permission_prompt',session:'wc-x-lead'});
+    let timer;
+    try {
+      await Promise.race([svc.drainSpool('events'), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('drain timed out')), 3000); })]);
+    } finally { clearTimeout(timer); }
+    await svc.drainSpool('events');
+    const events = hub.calls.map(c => JSON.parse(c.body));
+    assert.ok(events.some(e => e.type === 'turn-ended' && e.session === session.name));
+    assert.ok(events.some(e => e.type === 'step' && e.session === session.name));
+    assert.ok(events.some(e => e.type === 'prompt' && e.session === 'wc-x-lead'));
+    assert.deepEqual(await fs.readdir(path.join(root, 'spool/events')), []);
+    assert.equal(JSON.parse(await fs.readFile(svc.sessionsPath, 'utf8'))[session.name].steps_offset, Buffer.byteLength(row));
+  } finally { await hub.close(); }
+});
+
+test('live Codex turn end flushes every bounded chunk before the turn event', async () => {
+  const root = await temp(), file = path.join(root, 'rollout.jsonl'), hub = await hubServer();
+  const svc = new MachineService({stateDir:root, codexStepChunkSize:256}); svc.config.hub_url = hub.url; svc.secret = async () => 'secret';
+  const session = {name:'wc-x-worker',cli:'codex',thread_id:'t',codex_thread_id:'cid',source_transcript:file}; svc.sessions[session.name] = session;
+  const row = id => JSON.stringify({timestamp:'2026-01-01T00:00:00Z',type:'response_item',payload:{type:'function_call',call_id:id,name:'exec_command',arguments:'{"cmd":"npm test"}'}}) + '\n';
+  const data = row('one') + row('two') + row('three');
+  try {
+    await write(file, data); assert.ok(Buffer.byteLength(data) > svc.codexStepChunkSize);
+    await svc.hook(session.name, {type:'turn-ended','thread-id':'cid'});
+    const events = hub.calls.map(c => JSON.parse(c.body));
+    assert.deepEqual(events.map(e => e.type), ['step','step','step','turn-ended']);
+    assert.equal(session.steps_offset, Buffer.byteLength(data));
+  } finally { await hub.close(); }
 });
