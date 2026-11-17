@@ -1,6 +1,6 @@
 ---
 slug: token-efficiency
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-16
 ---
 
@@ -38,7 +38,7 @@ get buried as this file grows.
 
 ### Flow
 
-A lead or sub-lead starts with its scout model in its instructions; code reading goes to the scout, and only its findings come back. The sub-lead's check of a finished worker (after its own test rerun) is the same pattern, drawn from `graphs/scout-diff-check.json`.
+A lead or sub-lead starts with its scout models in its instructions; code reading goes to the scout, and only its findings come back. The sub-lead's check of a finished worker reruns the tests, then picks a reader by the size of that worker's own change: the Light scout under 200 lines, the Standard scout from 200 to 800, the sub-lead itself above that or for a tricky task. Drawn from `graphs/scout-diff-check.json`.
 
 ```mermaid
 flowchart TD
@@ -50,9 +50,14 @@ flowchart TD
   E -- yes --> F[built-in helper on scout model reads code]
   F --> G[short findings with file and line come back]
   H[worker finishes] --> I[sub-lead reruns tests]
-  I --> J[scout lists problems, file-state mismatches, unbriefed choices]
-  J --> K[sub-lead opens only flagged lines]
-  K --> L{merge or send back}
+  I --> J{how many lines did this worker change?}
+  J -- under 200 --> K[Light scout reports]
+  J -- 200 to 800 --> M[Standard scout reports]
+  J -- over 800 or marked tricky --> N[sub-lead reads the changes itself]
+  K --> O[sub-lead opens only flagged lines]
+  M --> O
+  O --> P{merge or send back}
+  N --> P
 ```
 
 ### Settings
@@ -143,6 +148,8 @@ New tests: model.sh reads, writes and defaults the sub-lead cell; balancer resol
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | — | No findings | — | — |
+| mechanics | — | No findings | — | — |
 
 ## Prior Work
 
@@ -159,3 +166,4 @@ New tests: model.sh reads, writes and defaults the sub-lead cell; balancer resol
 Baseline (2026-11-16, all Claude transcripts under ~/.claude/projects/*wheelchair-worktrees*, sessions classified by the role file named in their first messages, input = cache read + cache write + input per call): sub-lead 45% (median context 168k), lead 36% (94k), verifier 8%, worker 7%, reviewer+mapper 4%. Re-measure the same way after a few threads.
 
 - 2026-11-16 — Ready check: hub and machine service answer; Claude Code 2.1.326 and codex-cli 0.169.0 installed; Codex preflight passed.
+- 2026-11-16 — Re-approved after rounds 3–4 (size-banded diff readers). Ready check rerun.
