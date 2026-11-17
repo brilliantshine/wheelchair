@@ -47,6 +47,8 @@ test('the section follows Threads and selects the level every machine agrees on'
   await expect(radio(page, /Ask/)).toContainText('Only when you ask, or a lead draws a proposed flow');
   await expect(radio(page, /High/)).toContainText('Whenever there is a shape');
   await expect(page.locator('.diagram-lines')).toHaveCount(0);
+  // Nothing but the radio group: a skipped note must not leave text such as "null" behind.
+  expect(await page.locator('#diagram-choices').evaluate((box) => [...box.childNodes].map((n) => n.nodeName))).toEqual(['DIV']);
 });
 
 test('disagreeing machines select nothing and the note says why', async ({ page }) => {
