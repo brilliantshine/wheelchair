@@ -1605,6 +1605,9 @@
     const isForkArm = a.exclusive === true;
     const payload = (e.kind === 'data' && e.value) ? e.value : null;
     const text = isForkArm ? ('if ' + e.label + (payload ? ': ' + payload : '')) : e.label;
+    // An unlabelled arrow is a plain "then": no text, no background, no leader. The line and its
+    // handles stay reachable on their own. (The server refuses an unlabelled fork arm.)
+    if (e.label == null || e.label === '') return;
 
     // Offset perpendicular to the line, clear of both node boxes, instead of
     // centred on it — a centred label lands inside whichever box the gap is

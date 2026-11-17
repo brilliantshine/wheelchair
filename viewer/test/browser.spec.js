@@ -537,6 +537,29 @@ test('an edge is selectable by label, band and endpoint handle at minimum zoom',
   }
 });
 
+// An edge with no label is a plain "then": the page draws no words and no background for it, and
+// the line alone still selects it. A labelled edge beside it is drawn as before.
+test('an unlabelled edge draws no label and is still selectable by its line', async ({ page }) => {
+  const graph = JSON.parse(await fs.readFile(path.join(__dirname, 'fixtures', 'interactive.json'), 'utf8'));
+  graph.edges.find((e) => e.id === 'c->d').label = null;
+  graph.edges.find((e) => e.id === 'g->h').label = null; // a data edge: its payload is not shown either
+  const ctx = await launchInline(graph);
+  try {
+    await page.goto(pageUrl(ctx));
+    await ready(page);
+    for (const id of ['c->d', 'g->h']) {
+      assert.equal(await page.locator(`svg#canvas [data-id="${id}"].edge-label, svg#canvas [data-id="${id}"].edge-label-bg, svg#canvas [data-id="${id}"].edge-leader`).count(), 0);
+    }
+    assert.equal(await edgeLabel(page, 'a->b').textContent(), 'then');
+
+    const lineBox = await edgeLine(page, 'c->d').boundingBox();
+    await page.mouse.click(lineBox.x + lineBox.width / 2, lineBox.y + lineBox.height / 2);
+    assert.deepEqual(await selection(page), ['c->d']);
+  } finally {
+    await ctx.stop();
+  }
+});
+
 // ============================================================================================
 // Hovering a label reveals its edge's endpoint handles. This used to come free from
 // `.edge:hover .edge-handle` because the label lived inside g.edge; now that it's in its own
