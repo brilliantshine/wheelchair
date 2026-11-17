@@ -6,7 +6,7 @@ agents own neither tmux nor the machine secret.
 
 | File | Role |
 |---|---|
-| `service.js` | Dependency-free Node HTTP service, session registry, tmux/git boundary, worktrees, readiness, transcript copies, and durable spools. |
+| `service.js` | Dependency-free Node HTTP service, session registry, tmux/git boundary, worktrees (each new one links the clone's installed `node_modules` and lists the links in git's exclude file), readiness, transcript copies, and durable spools. |
 | `adapters/` | CLI-specific commands, login folders, hook translation and usage parsing (`claude.js`, `codex.js`, `agy.js`). |
 | `statusline.sh`, `lib/statusline.js` | Claude status display and throttled usage delivery. |
 | `lib/aside-turns.js` | Durable headless aside turns, CLI spawning, parsing and restart recovery. |

@@ -88,6 +88,35 @@ function commandAsync(program, args, options = {}) {
     child.on('close', (status) => finish({ ok: status === 0, status, stdout, stderr }));
   });
 }
+// A new worktree has no installed packages (node_modules is never committed), so tests that
+// read them fail there. Link each node_modules the clone has, next to a tracked package.json,
+// into the worktree, and keep the links out of git status. Best effort: a start never fails here.
+async function linkInstalledPackages(repo, worktree) {
+  try {
+    const listed = await commandAsync('git', ['-C', worktree, 'ls-files', '--', 'package.json', '*/package.json']);
+    if (!listed.ok) return;
+    const linked = [];
+    for (const file of listed.stdout.split('\n').filter(Boolean)) {
+      const dir = path.dirname(file);
+      const source = path.join(repo, dir, 'node_modules'); const target = path.join(worktree, dir, 'node_modules');
+      const stat = await fsp.stat(source).catch(() => null);
+      if (!stat || !stat.isDirectory() || await fsp.lstat(target).catch(() => null)) continue;
+      await fsp.symlink(source, target, 'dir');
+      linked.push(dir === '.' ? '/node_modules' : `/${dir}/node_modules`);
+    }
+    if (!linked.length) return;
+    // The ignore pattern `node_modules/` matches only directories, not a link, so name each link.
+    const where = await commandAsync('git', ['-C', worktree, 'rev-parse', '--git-common-dir']);
+    if (!where.ok) return;
+    const exclude = path.join(path.resolve(worktree, where.stdout.trim()), 'info', 'exclude');
+    const current = await fsp.readFile(exclude, 'utf8').catch(() => '');
+    const lines = new Set(current.split('\n'));
+    const missing = linked.filter((line) => !lines.has(line));
+    if (!missing.length) return;
+    await fsp.mkdir(path.dirname(exclude), { recursive: true });
+    await fsp.appendFile(exclude, `${current && !current.endsWith('\n') ? '\n' : ''}${missing.join('\n')}\n`);
+  } catch { /* the session still starts; only these tests lack their packages */ }
+}
 const PERMISSION_MODES = { auto: 'auto', bypass: 'bypassPermissions' };
 const CODEX_MODES = ['sandboxed', 'unrestricted'];
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
@@ -424,6 +453,7 @@ class MachineService {
         : ['-C', repo, 'worktree', 'add', '--no-track', '-b', branch, destination, base];
       const added = await commandAsync('git', args);
       if (!added.ok) die(added.stderr.trim() || 'git worktree add failed');
+      await linkInstalledPackages(repo, destination);
       return { worktree: destination, defaultBranch, branch };
     });
     // A failed start never reaches startNamed's release, so it lets its branch name go here.

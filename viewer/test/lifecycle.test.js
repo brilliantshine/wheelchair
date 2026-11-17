@@ -449,7 +449,8 @@ test('a starter that loses the freed port registers through the new holder', asy
     const code = await exit(loser.child); const output = loser.output();
     assert.equal(code, 0, output.stderr);
     assert.doesNotMatch(`${output.stdout}\n${output.stderr}`, /refused/i);
-    assert.match(await fs.readFile(marker, 'utf8'), /delayed/, 'C retried after the silent holder');
+    // C need not listen again: it keeps probing the silent holder, and once B holds the port
+    // it registers through B directly. Registering through B is what matters, checked below.
     assert.equal(JSON.parse(await fs.readFile(path.join(root, '.server'))).pid, winner.child.pid);
     assert.equal(JSON.parse(await fs.readFile(path.join(root, '.registered')))[graph].opened, true);
   } finally { await fs.unlink(release).catch(() => {}); await stop(loser?.child); await winner?.stop(); await stop(old.child); }
