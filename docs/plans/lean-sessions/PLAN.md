@@ -549,3 +549,4 @@ Round 17 is clean: no blocking or major finding upheld.
 |---|-----------|--------------------|------|-----------|------------|--------|
 
 ## Log
+- 2026-11-17 — Approved after round 17 (clean). Ready check: hub and machine service answer; Claude Code 2.1.326 and codex-cli 0.169.0 installed; Codex preflight passed.
