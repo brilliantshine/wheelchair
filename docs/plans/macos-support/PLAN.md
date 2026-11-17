@@ -12,10 +12,10 @@ get buried as this file grows.
 
 ## Open Questions
 
-### Q1: How does the Mac build get tried on a real Mac?
-- **Context:** This build machine is Linux. Everything Mac-specific (launchd, BSD tools, bash 3.2, Tailscale's Mac CLI, Keychain) can only be shown working on a Mac. Fakes in the Linux suites prove the logic, not the platform.
-- **Options:** (a) A Mac reachable over the tailnet that a verifier can SSH into and run a scripted check on; (b) Collin runs a written checklist on his Mac at the end and reports back; (c) both.
-- **Recommendation:** (b) unless a Mac is reachable, then (a).
+### Q1: How does the Mac build get tried without Collin owning a Mac?
+- **Context:** This build machine is Linux, and Collin has no Mac; the user is a friend who does. Everything Mac-specific (launchd, BSD tools, bash 3.2, Tailscale's Mac CLI, Keychain) can only be shown working on a Mac. The repo is public (`brilliantshine/wheelchair`), so GitHub's hosted macOS runners are free; it has no `.github/workflows/` today.
+- **Options:** (a) A GitHub Actions macOS job runs install and the relevant checks on every PR, and the friend then tries only Tailscale and phone access; (b) the friend runs a written checklist; (c) pause until a Mac is available.
+- **Recommendation:** (a).
 
 ### Q2: What happens with more than one Claude account on a Mac?
 - **Context:** Machines here use separate Claude accounts (`~/.wheelchair/accounts/personal`, `work1`) via `CLAUDE_CONFIG_DIR` (`machine/adapters/claude.js:5-6`). On macOS Claude Code keeps its login in the Keychain; public reports disagree on whether the Keychain entry is per config directory. If shared, two accounts overwrite each other's login.
