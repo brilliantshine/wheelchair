@@ -320,21 +320,24 @@ new_case
 write_cache '{"models":[{"slug":"gpt-6.2-sol","visibility":"list"}]}'
 mkdir -p "$case_dir/codex-home" "$case_dir/preflight"
 ln -s "$model" "$case_dir/preflight/model.sh"
-coproc STUB { python3 - <<'PY'
+mkfifo "$case_dir/stub-port"
+python3 - <<'PY' > "$case_dir/stub-port" &
 from http.server import BaseHTTPRequestHandler, HTTPServer
 class Stub(BaseHTTPRequestHandler):
     def do_POST(self):
+        # Read the body: closing a socket with unread data sends a reset, which macOS's
+        # client sees before it can read the error body.
+        self.rfile.read(int(self.headers.get('Content-Length') or 0))
         code = 500 if self.path == '/500' else 400
-        self.send_response(code); self.end_headers(); self.wfile.write(b'fixture')
+        self.send_response(code); self.send_header('Content-Length', '7'); self.end_headers(); self.wfile.write(b'fixture')
     def log_message(self, *args): pass
 server = HTTPServer(('127.0.0.1', 0), Stub)
 print(server.server_port, flush=True)
 server.handle_request()
 server.handle_request()
 PY
-}
-read -r stub_port <&"${STUB[0]}"
-stub_pid=$STUB_PID
+stub_pid=$!
+read -r stub_port < "$case_dir/stub-port"
 sed "s|https://auth.openai.com/oauth/token|http://127.0.0.1:$stub_port/500|" "$preflight" > "$case_dir/preflight/preflight-500.sh"
 sed "s|https://auth.openai.com/oauth/token|http://127.0.0.1:$stub_port/400|" "$preflight" > "$case_dir/preflight/preflight-400.sh"
 chmod +x "$case_dir/preflight/preflight-500.sh" "$case_dir/preflight/preflight-400.sh"
@@ -345,8 +348,13 @@ run_preflight() {
   preflight_status=$?
   set -e
 }
+mkdir "$case_dir/no-flock"
+for command in bash python3 dirname; do
+  ln -s "$(command -v "$command")" "$case_dir/no-flock/$command"
+done
 printf '{"tokens":{}}\n' > "$case_dir/codex-home/auth.json"
-run_preflight "$case_dir/preflight/preflight-500.sh"
+PATH="$case_dir/no-flock" run_preflight "$case_dir/preflight/preflight-500.sh"
+assert 'preflight works without flock on PATH' test "$preflight_status" -eq 0
 assert 'preflight keeps exit 0 with a heads-up' bash -c '[[ $1 == 0 && $2 == *"heads-up: gpt-6.2-sol"* ]]' _ "$preflight_status" "$preflight_output"
 printf '{"tokens":{"access_token":"x.eyJleHAiOjB9.x","refresh_token":"fixture"}}\n' > "$case_dir/codex-home/auth.json"
 run_preflight "$case_dir/preflight/preflight-500.sh"
@@ -354,6 +362,7 @@ assert 'preflight keeps exit 1 with a heads-up' bash -c '[[ $1 == 1 && $2 == *"h
 printf '{"tokens":{"access_token":"x.eyJleHAiOjB9.x","refresh_token":"fixture"}}\n' > "$case_dir/codex-home/auth.json"
 run_preflight "$case_dir/preflight/preflight-400.sh"
 assert 'preflight keeps exit 2 with a heads-up' bash -c '[[ $1 == 2 && $2 == *"heads-up: gpt-6.2-sol"* ]]' _ "$preflight_status" "$preflight_output"
+[[ $preflight_status == 2 ]] || printf 'exit-2 case got status %s, output:\n%s\n' "$preflight_status" "$preflight_output"
 wait "$stub_pid"
 
 printf 'RESULT %d passed, %d failed\n' "$passes" "$failures"

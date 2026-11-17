@@ -17,11 +17,11 @@ draw a picture when the answer has a shape, as readily as you set in Settings.
 
 ### First time
 
-1. On the machine that will run the agents (Linux with systemd; on Windows, see "On Windows"), run
+1. On the machine that will run the agents (Linux with systemd or macOS with launchd; on Windows, see "On Windows"), run
    `./install.sh --serve` (see "Install"). Serving is what starts the app and the service
    that runs agent sessions. Without `--serve`, a headless machine asks; a machine with a
    display declines without asking.
-2. The installer then offers one or two `sudo tailscale serve ...` commands that publish the
+2. The installer then offers one or two `tailscale serve ...` commands (`sudo tailscale` on Linux) that publish the
    app on your tailnet. Accept them, or run the ones it prints later; until they run, other
    devices can't reach the app.
 3. Run `node viewer/server.js --url` and open the address it prints on each device. It
@@ -38,6 +38,27 @@ draw a picture when the answer has a shape, as readily as you set in Settings.
    - **Writing style**: how leads write to you.
    - **Default project folder** (optional): a folder holding your repos, so New thread can
      list them.
+
+### On macOS
+
+1. Install the Xcode command line tools for git and python3: open Terminal and run
+   `xcode-select --install`. Install [Homebrew](https://brew.sh/), then run
+   `brew install node tmux`. Install the [Tailscale Mac app](https://tailscale.com/download/mac)
+   and sign in. Install Claude Code and/or Codex, and the GitHub CLI `gh` for pull requests.
+2. Clone this repository, open its folder in Terminal, and run `./install.sh --serve`.
+   A Mac does not serve by default without the flag. The installer finds the Tailscale CLI
+   inside `/Applications/Tailscale.app` if it is not on PATH. Accept its offered Tailscale
+   mappings, then follow the remaining "First time" steps above.
+3. The launchd services run only while you are logged in. To bring them back after a
+   restart, log in, or turn on automatic login in System Settings → Users & Groups. To
+   keep the Mac awake, run `sudo pmset -a sleep 0 disksleep 0`, or use System Settings →
+   Energy, "Prevent automatic sleeping".
+
+The service files are `~/Library/LaunchAgents/com.wheelchair.viewer.plist` and
+`~/Library/LaunchAgents/com.wheelchair.machine.plist`. Logs are
+`~/Library/Logs/wheelchair/viewer.log` and `~/Library/Logs/wheelchair/machine.log`.
+Sudo cards do not work on a Mac. A second Claude account may share the first account's
+login; check both accounts using the [Mac checklist](docs/plans/macos-support/MAC-CHECKLIST.md).
 
 ### On Windows
 
@@ -153,7 +174,8 @@ It also writes a few things outside this repo:
 - `~/.local/state/wheelchair/`: the app's threads, settings, machine registry and the
   machine service's secret
 - on a serving systemd machine, the `wheelchair-viewer` and `wheelchair-machine` user
-  services, in `~/.config/systemd/user/`
+  services, in `~/.config/systemd/user/`; on a serving Mac, launchd services in
+  `~/Library/LaunchAgents/`
 
 Only the delimited block is this repo's, so nothing else in those files is touched.
 
@@ -172,8 +194,9 @@ node viewer/server.js --stop
 ```
 
 A machine can serve the viewer to your other devices over Tailscale: run `./install.sh --serve`,
-or `--no-serve` to decline. This runs it as an always-on `systemd` user service, from this
-checkout's code, at `https://<machine>.<tailnet>.ts.net/wheelchair/`, which opens the app. Open the bookmark once per
+or `--no-serve` to decline. This runs it as an always-on `systemd` user service on Linux, or a
+launchd user service while logged in on macOS, from this checkout's code, at
+`https://<machine>.<tailnet>.ts.net/wheelchair/`, which opens the app. Open the bookmark once per
 device and it's remembered. `node viewer/server.js --rotate-token` locks every device out again. Everything, including
 dragging boxes, works on a phone.
 

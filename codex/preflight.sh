@@ -26,20 +26,19 @@ set -euo pipefail
 codex_home="${CODEX_HOME:-$HOME/.codex}"
 lock="$codex_home/.wheelchair-refresh.lock"
 
-exec 9>"$lock"
-flock 9
-
 # Everything below holds the lock: the re-read, the exchange, and the atomic write-back all
 # happen before another preflight can start, so a concurrent caller adopts this rotation
 # instead of making its own.
 rc=0
-python3 - "$codex_home/auth.json" "${WHEELCHAIR_TOKEN_MARGIN_HOURS:-24}" <<'PY' || rc=$?
-import base64, datetime, json, os, sys, tempfile, urllib.error, urllib.parse, urllib.request
+python3 - "$codex_home/auth.json" "${WHEELCHAIR_TOKEN_MARGIN_HOURS:-24}" "$lock" <<'PY' || rc=$?
+import base64, datetime, fcntl, json, os, sys, tempfile, urllib.error, urllib.parse, urllib.request
 
 TOKEN_URL = "https://auth.openai.com/oauth/token"
 CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"  # codex's public OAuth client
 
 auth_path, margin_hours = sys.argv[1], float(sys.argv[2])
+lock_fd = os.open(sys.argv[3], os.O_WRONLY | os.O_CREAT, 0o600)
+fcntl.flock(lock_fd, fcntl.LOCK_EX)
 
 try:
     with open(auth_path) as f:
@@ -67,7 +66,7 @@ if remaining > margin_hours * 3600:
     sys.exit(0)
 
 # Refresh. The refresh token is single-use: never retried with the same value, and the
-# result is persisted before this process exits (and before the flock in the wrapper
+# result is persisted before this process exits (and before the lock
 # releases). A success we fail to write would brick the token family, hence the atomic
 # replace in the same breath as the exchange.
 body = urllib.parse.urlencode({
@@ -83,7 +82,10 @@ try:
     with urllib.request.urlopen(req, timeout=60) as resp:
         fresh = json.load(resp)
 except urllib.error.HTTPError as e:
-    detail = e.read().decode(errors="replace")[:300]
+    try:
+        detail = e.read().decode(errors="replace")[:300]
+    except Exception:  # a reset while reading the body must not change what the status means
+        detail = ""
     if e.code in (400, 401, 403):
         print(f"preflight: refresh token rejected ({e.code}): {detail}", file=sys.stderr)
         print("preflight: reauth with: codex login --device-auth", file=sys.stderr)

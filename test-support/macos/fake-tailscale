@@ -1,0 +1,7 @@
+#!/bin/bash
+set -euo pipefail
+case "${1:-} ${2:-}" in
+  'status --json') printf '%s\n' '{"Self":{"DNSName":"wheelchair-test.example."}}' ;;
+  'ip -4') echo '127.0.0.1' ;;
+  serve*) printf '%s\n' "$*" >> "${TMPDIR:-/tmp}/wheelchair-fake-tailscale.log"; if [ "${2:-}" = status ]; then echo '{}'; fi ;;
+esac
