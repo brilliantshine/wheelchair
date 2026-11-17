@@ -474,7 +474,7 @@ throttle + 5 s page poll + delivery).
 | T2b | Fix T2: read rollouts from the offset in bounded chunks (not whole-file every 2 s; rollouts here reach 867 MB); completion/failure from the exec header (`Script failed`/`Script error`), not any `Error:` line | `machine/service.js` (`readCodexSteps`), `machine/lib/codex-steps.js` (`outputInfo`), machine tests | Light, gpt-6-luna | wc-eb5a9e5941a0-worker-6 | `bash machine/test/run.sh` | done (merged 1101885) |
 | T5b | Fix T5: amber path at phone width / stale overlay / overshoot, map labels inside viewBox, ring title, missing label, hours, missing tests, screenshots | `viewer/pages/{agents.js,views.css,agents.html}`, `viewer/test/app-views.spec.js` | Standard, gpt-6.1-terra (medium; Claude requested, no room) → rung 2: Standard, gpt-6.1-terra, effort high, rewritten brief T5c (reason: fails-twice guardrail on the Firefox phone connector assertion) | wc-eb5a9e5941a0-worker-7 → wc-eb5a9e5941a0-worker-8 (same branch) | `npm --prefix viewer run test:browser` | done (merged 9b271dd) |
 | R1 | Remediation 1: question_paths on the lead record; trail wording without the lead's self-hop; close open turns on mid-turn delivery; hub→page contract test from real `buildAgents` | `viewer/app/{agents,sessions}.js`, `viewer/pages/agents.js`, `viewer/app/API.md`, viewer tests | Standard, gpt-6.1-terra | wc-eb5a9e5941a0-worker-9 | `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser` | in progress |
-| R2 | Remediation 1: spooled Codex turn end deadlocks the event spool; turn-end flush to end of file | `machine/service.js`, `machine/test/service.test.js` | Standard, gpt-6.1-terra | wc-eb5a9e5941a0-worker-10 | `bash machine/test/run.sh` | in progress |
+| R2 | Remediation 1: spooled Codex turn end deadlocks the event spool; turn-end flush to end of file | `machine/service.js`, `machine/test/service.test.js` | Standard, gpt-6.1-terra | wc-eb5a9e5941a0-worker-10 | `bash machine/test/run.sh` | done (merged) |
 
 ## Log
 
@@ -515,3 +515,5 @@ throttle + 5 s page poll + delivery).
 - 2026-11-17 — Choice: T5c, app-views.spec.js: added a sibling with a child so the negative assertion has a list off the path. Phone-tree screenshot checked by the sub-lead.
 - 2026-11-17 — All tasks merged; full validation passed on the feature branch (see COMPLETION.md). Status verifying.
 - 2026-11-17 — Verification attempt 1: FAIL, 3 gaps (question_paths on the wrong object, trail self-hop, spool deadlock on a spooled Codex turn end). REMEDIATION-1.md written; R1 and R2 dispatched to gpt.
+- 2026-11-17 — Choice: R2, service.js: reader events are spooled inside the per-session read lock and drained outside it (live reads only); a spooled turn end only spools.
+- 2026-11-17 — Choice: R2, service.js: a flush stops at an incomplete trailing line, leaving it for the next read; chunk size is a constructor option (default 8 MiB) for tests.
