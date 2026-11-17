@@ -5,7 +5,7 @@
   const id = new URLSearchParams(location.search).get('id') || '';
   const T = API + '/threads/' + encodeURIComponent(id);
   const POLL_MS = 2000;
-  const PINNED_KINDS = ['offer', 'idea', 'progress'];
+  const PINNED_KINDS = ['offer', 'idea', 'approval', 'progress'];
   // The offer's buttons press these fixed values; one map renders the buttons and marks the picked one.
   const OFFER_CHOICES = [
     ['take it into planning', 'Take it into planning', 'primary small'],
@@ -278,6 +278,11 @@
   }
 
   // ---- chat ----
+  function unpinnedCards() {
+    const ids = new Set(data.pinned.map((c) => c.id));
+    return data.cards.filter((c) => !ids.has(c.id));
+  }
+
   function renderChat() {
     const items = data.items;
     chatEl.textContent = '';
@@ -287,7 +292,7 @@
       if (at >= 0) { humans.splice(at, 1); return false; }
       return true;
     });
-    const cards = data.cards.filter((c) => !PINNED_KINDS.includes(c.kind));
+    const cards = unpinnedCards();
     let next = 0;
     const cardsBefore = (when) => {
       while (next < cards.length) {
@@ -452,10 +457,13 @@
     return String(card.answered_value);
   }
   function answeredTag(card) {
-    if (!card.answered) return null;
+    if (!card.answered && !card.retracted_at) return null;
     const tag = el('div', 'answered-tag');
     let label = ' Answered';
-    if (card.kind === 'merged' || (card.kind === 'needs' && card.resolved_by)) {
+    if (card.retracted_at) {
+      label = ' Withdrawn \u00b7 ' + card.retracted_note;
+      tag.classList.add('resolved');
+    } else if (card.kind === 'merged' || (card.kind === 'needs' && card.resolved_by)) {
       label = ' ' + (card.resolved_note || (card.resolved_by === 'collin' ? 'Dismissed' : 'Resolved'));
       tag.classList.add('resolved');
     } else if (card.kind === 'question' && card.resolved_by) {
@@ -506,8 +514,9 @@
   function renderCard(card) {
     const box = el('div', 'card card-' + card.kind);
     box.id = 'card-' + card.id; box.dataset.card = card.id; box.dataset.kind = card.kind;
-    const off = card.answered || thread().archived;
+    const off = card.answered || card.retracted_at || thread().archived;
     if (card.answered) box.classList.add('is-answered');
+    if (card.retracted_at) box.classList.add('is-retracted');
     if (card.kind === 'question' && card.resolved_by) box.classList.add('is-resolved');
     switch (card.kind) {
       case 'offer': {
@@ -594,7 +603,7 @@
           row.appendChild(el('div', 'finding', '"' + o.finding + '"'));
           const why = el('div', 'why'); why.append(el('span', 'dim', 'Why I disagreed: '), document.createTextNode(o.reason));
           row.appendChild(why);
-          row.appendChild(button('Talk about this', 'small', () => press(card, 'talk', o.finding), thread().archived));
+          row.appendChild(button('Talk about this', 'small', () => press(card, 'talk', o.finding), card.retracted_at || thread().archived));
           box.appendChild(row);
         });
         const ready = card.ready || {};
@@ -603,7 +612,7 @@
         const sb = button('Start building', 'go', () => press(card, 'start-building'), off || !ready.ok);
         sb.id = 'start-building';
         a.appendChild(sb);
-        if (!ready.ok) a.appendChild(button('Re-check', '', () => press(card, 'recheck'), thread().archived));
+        if (!ready.ok) a.appendChild(button('Re-check', '', () => press(card, 'recheck'), card.retracted_at || thread().archived));
         a.appendChild(el('span', 'dim', 'Nothing is built until you press start.'));
         r.appendChild(a);
         const status = el('div', 'ready-status ' + (ready.ok ? 'ok' : 'no'));
@@ -760,7 +769,9 @@
         facts.appendChild(el('div', 'eyebrow', 'Why'));
         facts.appendChild(el('p', '', card.why));
         box.appendChild(facts);
-        if (state === 'waiting') {
+        if (card.retracted_at) {
+          // The withdrawal tag below replaces the sudo state and its controls.
+        } else if (state === 'waiting') {
           const actions = el('div', 'actions');
           if (/^https:\/\//.test(String(card.url))) {
             const open = el('a', 'btn primary', 'Open to run');
@@ -793,7 +804,7 @@
       default:
         return null;
     }
-    if (['offer', 'question', 'approval'].includes(card.kind) || card.kind === 'merged' || (card.kind === 'needs' && card.resolved_by)) {
+    if (card.retracted_at || ['offer', 'question', 'approval'].includes(card.kind) || card.kind === 'merged' || (card.kind === 'needs' && card.resolved_by)) {
       const t = answeredTag(card); if (t) box.appendChild(t);
     }
     if (cardErrors[card.id]) box.appendChild(el('div', 'card-error', (card.kind === 'sudo' ? '' : 'Could not send: ') + cardErrors[card.id]));
@@ -817,6 +828,7 @@
   // One short label per pin, for the folded strip.
   function pinLabel(card) {
     if (card.kind === 'offer') return card.answered ? 'Planning offer' : 'Planning offer: needs you';
+    if (card.kind === 'approval') return card.answered ? 'Plan approved' : 'Plan approved: needs you';
     if (card.kind === 'idea') {
       const n = (card.bullets || []).length;
       return 'Your idea · ' + n + (n === 1 ? ' thing' : ' things');
@@ -833,7 +845,7 @@
 
   function renderPinned() {
     pinnedEl.textContent = '';
-    const order = { offer: 0, idea: 1, progress: 2 };
+    const order = Object.fromEntries(PINNED_KINDS.map((kind, i) => [kind, i]));
     const pins = data.pinned.filter((c) => c.kind in order).sort((a, b) => order[a.kind] - order[b.kind])
       .map((p) => data.cards.find((c) => c.id === p.id) || p);
     pinnedEl.classList.toggle('folded', pinsFolded);
@@ -918,11 +930,11 @@
     sync('stub', [t.stub, t.sessions.length, t.depends_on_parent, t.ready, t.context, t.parent_pr_url], renderStub);
     sync('wait', [waitingLine(), accountNames], renderWait);
     sync('dead', [t.sessions.map((s) => [s.name, s.live]), t.archived], renderDead);
-    sync('pinned', [data.pinned, data.cards.map((c) => [c.answered, c.answered_value]), ideaOpen, pinsFolded, cardErrors], renderPinned);
+    sync('pinned', [data.pinned, data.cards.map((c) => [c.answered, c.answered_value, c.retracted_at]), ideaOpen, pinsFolded, cardErrors], renderPinned);
     const nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
     let changed = false;
     const leadNow = leadSession();
-    sync('chat', [data.items, pending, leadNow && [leadNow.queue, leadNow.ready, leadNow.permission_open, leadNow.needs_open, leadNow.limited_until], sendingNow, slug(), t.archived, data.cards.filter((c) => !PINNED_KINDS.includes(c.kind)), cardErrors, declining], () => { renderChat(); changed = true; });
+    sync('chat', [data.items, pending, leadNow && [leadNow.queue, leadNow.ready, leadNow.permission_open, leadNow.needs_open, leadNow.limited_until], sendingNow, slug(), t.archived, unpinnedCards(), cardErrors, declining], () => { renderChat(); changed = true; });
     const workingEl = $('working');
     const working = leadWorking() && !t.archived;
     const workingText = (t.lead_name || 'The lead') + ' is working';
