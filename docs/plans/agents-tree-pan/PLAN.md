@@ -39,6 +39,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 10 | Supersedes 5: a lead's tree opens at 100%, scrolled to the top with the lead box centred horizontally. Today a wide tree opens at its left edge, which can leave the lead off screen; the 100% button returns to this same view. | Decision 5 wrongly said this was today's behaviour; centring the lead is the useful start for a wide tree. | defaulted |
 | 11 | Fit fits the tree into the part of the tree area the terminal panel does not cover. | Otherwise Fit would hide the bottom of the tree under an open terminal. | defaulted |
 | 12 | The current zoom is shown as a percentage beside the buttons; the buttons sit in a row above the tree area and do not move when the tree moves. | Needs no choice from Collin; keeps the controls reachable. | defaulted |
+| 13 | Supersedes 11: while the terminal panel is open (not full screen), the tree area shrinks to end above it, so dragging and scrolling reach every box and Fit needs no special case. Trees are always top-aligned; only horizontal centring is kept. | Intent review: the terminal covered the bottom of the tree at any zoom, and vertical centring changed how small trees look. | review-round-1 |
+| 14 | Rebuilds wait from any pointer down in the tree area until after its click is delivered, not only during a confirmed drag. | Mechanics review: a still press spanning a poll would lose its button and never select. | review-round-1 |
 
 ## Spec
 
@@ -63,7 +65,8 @@ may change those, and this design must not depend on box size or connector drawi
 
 - `.agents-layout` is exactly the height below the nav (`calc(100vh - var(--nav-h))`) instead of a minimum; the sidebar and the side panel each scroll on their own (`overflow: auto`).
 - `.agents-main` is a column: heading, thread title, counts line, then the toolbar row, then the tree area, which takes all remaining height (`flex: 1; min-height: 0`).
-- The tree area (`.agents-tree`) scrolls on both axes (`overflow: auto`). Inside it, a sizer element sized to the tree's natural size times the zoom, and inside that the tree itself scaled with `transform: scale(zoom)` and `transform-origin: 0 0`. The tree's natural size is its unscaled `offsetWidth`/`offsetHeight`. When the scaled tree is smaller than the area on an axis, it is centred on that axis (as a small tree is centred today, decision 3).
+- The tree area (`.agents-tree`) scrolls on both axes (`overflow: auto`). Inside it, a sizer element sized to the tree's natural size times the zoom, and inside that the tree itself scaled with `transform: scale(zoom)` and `transform-origin: 0 0`. The tree's natural size is its unscaled `offsetWidth`/`offsetHeight`. When the scaled tree is narrower than the area it is centred horizontally (as a small tree is today, decision 3); vertically it is always top-aligned, as today.
+- When the terminal panel is open and not full screen, `.agents-main` gets bottom padding equal to the panel's current height (a CSS variable that `agents.js` sets on open, resize and close), so the tree area ends where the terminal starts and every box can be scrolled or dragged into view above it (decision 13).
 - Moving the tree is changing the tree area's `scrollLeft`/`scrollTop`. So the wheel and two-finger trackpad scroll keep working natively (decision 2), as do scrollbars.
 
 ### Toolbar
@@ -76,7 +79,7 @@ A row above the tree area, right-aligned: `−`, the zoom as a percentage (for e
 - Ctrl+wheel (which is also how Chromium and Firefox deliver a trackpad pinch) zooms by `exp(-deltaY * 0.01)`-style steps, clamped, keeping the point under the pointer still. The wheel listener is non-passive and calls `preventDefault()` only when Ctrl is held, so the browser's own page zoom doesn't fire, and plain scrolling is untouched.
 - Two-finger touch pinch on a touch screen at least 900px wide zooms around the midpoint of the two fingers.
 - "Keeps a point still" means: after changing zoom from `z0` to `z1`, set scroll so that the tree coordinate under that screen point before is under it after (`scroll = (scroll + p) * z1/z0 - p`, per axis, with `p` the point's offset inside the tree area, adjusted for any centring offset).
-- **Fit**: zoom = min(1, available width / natural width, available height / natural height), clamped to 20%, then centre the tree in the available area. Available area is the tree area's client rectangle minus the part covered by the terminal panel when it is open (decision 11), with a small margin (16px).
+- **Fit**: zoom = min(1, available width / natural width, available height / natural height), clamped to 20%, then scroll to the top and centre it horizontally. Available area is the tree area's client rectangle (which already stops above an open terminal, decision 13) less a 16px margin.
 - **100%**: zoom 1, `scrollTop` 0, `scrollLeft` set so the lead box is centred horizontally in the tree area (decision 10). This is also the view a lead's tree opens at.
 
 ### Dragging and clicking (decision 8)
@@ -92,7 +95,7 @@ A row above the tree area, right-aligned: `−`, the zoom as a percentage (for e
 
 - The page keeps one view record: `{ lead, zoom, left, top }`, updated on every scroll and zoom of the tree area.
 - `render()` rebuilds the tree every five seconds and on every selection. After it puts the new tree area in place, it applies the record if `lead` matches the shown lead's `thread_id`: set zoom, then `scrollLeft`/`scrollTop`. If the lead differs (or there was none), it resets to the 100% view and records the new lead.
-- While a drag or pinch is in progress, `render()` is not run: the refresh marks a rebuild as pending and it runs when the gesture ends. A selection cannot happen mid-gesture.
+- From any pointer down in the tree area (a possible drag, not only a confirmed one) until that pointer's click has been delivered, the five-second refresh does not call `render()`: it stores the new data and marks a rebuild as pending. On pointer up or cancel, the pending rebuild is run in a `setTimeout(..., 0)`, which lands after the browser has dispatched the click, so a still press that spans a poll still selects its box. If the click selects a box, `go()` renders anyway and the pending flag is cleared. A selection cannot happen mid-drag (decision 14).
 - The terminal panel, its height, full screen and the side panel behave as today.
 
 ### Phones (decision 9)
@@ -117,9 +120,11 @@ New or updated browser tests in `viewer/test/app-views.spec.js` (desktop project
 5. Ctrl+wheel over the tree changes the zoom label and the box's on-screen width; the page's own zoom (`devicePixelRatio`) is unchanged.
 6. `Zoom in`/`Zoom out` change the label by 1.25× steps and stop at 200% and 20%.
 7. `Fit` makes every box's bounding rectangle lie inside the tree area; `Full size` returns to the opening view.
-8. After dragging and zooming, waiting 5.5s for a poll keeps the same zoom and scroll (within 1px); clicking a box keeps them too.
-9. Switching to another lead in the sidebar opens it at 100%.
-10. Phone project: the toolbar is not visible and the tree is still the indented list (existing phone tests keep passing).
+8. A still press on a box held across a poll (mouse down, wait 5.5s, mouse up) still selects it.
+9. After dragging and zooming, waiting 5.5s for a poll keeps the same zoom and scroll (within 1px); clicking a box keeps them too.
+10. Switching to another lead in the sidebar opens it at 100%.
+11. With the terminal open (select a live agent, Open terminal), scrolling the tree area to its bottom puts the lowest box's bottom edge above the terminal panel's top.
+12. Phone project: the toolbar is not visible and the tree is still the indented list (existing phone tests keep passing).
 
 Commands, all must pass:
 
@@ -137,12 +142,17 @@ npm --prefix viewer run test:browser
 
 ### Round 1 — 2026-11-17
 
-**Lanes:** intent lens (claude); mechanics lens (other family); cross-family: yes.
+**Lanes:** intent lens (gpt, claude unavailable); mechanics lens (gpt, no other family available); cross-family: no.
 
 **Changed since Round 0:** n/a (first round — whole Spec in scope)
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | blocking | An open terminal covers the bottom of the tree, so dragging can't reach the bottom boxes; only Fit accounted for it. | upheld | Tree area ends above the terminal (decision 13, Layout). |
+| intent | minor | Centring small trees vertically changes how they look today. | upheld | Top-aligned always; horizontal centring only (decision 13). |
+| mechanics | major | Vertical centring contradicts opening at the top. | upheld | Same fix: always top-aligned (decision 13). |
+| mechanics | blocking | Fit centred in the area above an overlaying terminal can't be reached by scrolling alone. | upheld | Tree area now ends above the terminal, so Fit uses the area as is (decision 13). |
+| mechanics | major | Rebuild deferral only covered confirmed drags; a still press across a poll, or a synchronous flush on pointer up, loses the click. | upheld | Defer from pointer down; flush after click via setTimeout 0 (decision 14). |
 
 ## Prior Work
 
