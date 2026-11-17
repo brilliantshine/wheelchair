@@ -37,7 +37,7 @@ wait in the foreground, because the app reads an ended turn with no report as st
 If the brief and the plan leave a real question open (an interface, a behaviour, a case
 nobody named), do not guess silently on something that matters and do not stop the whole
 task. Send the lead a `message` card (`to` the lead's session name, which your brief
-gives; `wc.js session list` shows it). Say the question and the options you see in two or
+gives; `wc.js session list` shows it). Send a message that needs an answer with `asks: true`. Say the question and the options you see in two or
 three sentences. The answer arrives as a message starting `[wc:from <session>]` when
 your current turn ends. If you can safely continue on other parts meanwhile, do. If a
 small decision does not matter, make it and list it in your choices (below).

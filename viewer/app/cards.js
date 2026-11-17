@@ -59,6 +59,10 @@ async function acceptCard(hub, payload) {
     const checked = validate(payload.kind, input, session.role, { machine: true });
     if (!checked.ok) throw appError(422, checked.reason);
 
+    if (checked.card.passes_on !== undefined && !thread.cards.some((item) => item.id === checked.card.passes_on && item.kind === 'message' && item.asks === true)) {
+      throw appError(422, 'passes_on names no question in this thread');
+    }
+
     // A diagram iframe must never observe its card before its plan is registered.
     if (checked.card.kind === 'diagram' && hub.registerPlan) {
       const plan = path.join(thread.worktree || thread.project, 'docs', 'plans', checked.card.plan);
@@ -119,7 +123,7 @@ async function acceptCard(hub, payload) {
     if (card.kind === 'message') {
       const target = hub.session(thread, card.to);
       target.queue ||= [];
-      const message = { text: `[wc:from ${session.name}] ${card.text}`, source: 'session', at: new Date().toISOString() };
+      const message = { text: `[wc:from ${session.name}] ${card.asks === true ? `[question ${card.id}] ` : ''}${card.text}`, source: 'session', at: new Date().toISOString() };
       target.queue.push(message);
       thread.queues[target.name] = target.queue;
     }
