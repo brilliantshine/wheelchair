@@ -14,11 +14,6 @@ Map: `MAP.md`.
 
 ## Open Questions
 
-### Q2: Which view buttons besides + and −?
-- **Context:** Zoom is in (decision 4). "Fit" shrinks the whole tree into view; "100%" returns to full size at the top centre, the starting view.
-- **Options:** Fit only; Fit and 100%.
-- **Recommendation:** Fit and 100%: Fit gets you the overview, 100% gets you back to readable boxes in one press.
-
 ### Q3: Where can a drag start?
 - **Context:** Boxes are buttons that select on click. The graph viewer treats a press that moves more than a few pixels as a drag, not a click (`viewer/index.html:2292-2309`).
 - **Options:** empty space only; anywhere, including on a box, with a small movement threshold so a still click selects.
@@ -45,6 +40,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 3 | A tree that already fits looks and behaves as it does today (centred, no drag needed). | IDEA "what good looks like". | defaulted |
 | 4 | Zoom as well as drag: + and − buttons, plus pinch (trackpad or touch) and Ctrl+wheel. | Collin picked "Drag and zoom": a big tree can be seen whole. | user |
 | 5 | A lead's tree opens at full size (100%), top centre, as today; zoom is never changed automatically. | Keeps decision 3; auto-shrinking would make boxes unreadable without being asked. | defaulted |
+| 6 | View buttons: −, +, Fit and 100%. Fit shrinks the whole tree into the visible area, centred; 100% returns to full size, top centre. | Collin picked "Fit and 100%". | user |
+| 7 | Zoom is limited to 20%–200%; Fit never enlarges past 100%; + and − step by 1.25×; zoom from the pinch/wheel keeps the point under the pointer still, zoom from buttons keeps the centre of the area still. | Common pan-zoom behaviour, matching the graph viewer's wheel zoom (`viewer/index.html:2362-2379`). | defaulted |
 
 ## Spec
 
@@ -52,6 +49,7 @@ Grown as decisions land.
 
 - **View state.** The tree has a view: an offset (drag) and a zoom level. It survives the five-second rebuild and selecting a box; switching lead resets it to 100%, top centre (decisions 1, 5).
 - **Zoom.** + and − buttons, pinch on a trackpad or touch screen, and Ctrl+wheel. Wheel and two-finger scroll without Ctrl still move the tree (decision 2, 4).
+- **Buttons.** −, +, Fit, 100% (decision 6, limits in decision 7).
 - **Small trees** that fit look and behave as today (decision 3).
 
 ## Accepted Risks
