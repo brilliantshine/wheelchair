@@ -5,6 +5,29 @@
   const button = (text, fn, cls = '') => { const b = el('button', cls, text); b.type = 'button'; b.onclick = fn; return b; };
   let data = { leads: [], machines: [] }, threads = [], term = null, termName = null, folded = true;
   const panel = $('agents-terminal');
+  const phone = () => matchMedia('(max-width: 899px)').matches;
+  let view = null, active = new Map(), pending = false, gesture = null;
+  function terminalSpace() { document.documentElement.style.setProperty('--agents-terminal-height', !panel.hidden && !panel.classList.contains('full') ? `${panel.getBoundingClientRect().height}px` : '0px'); }
+  new ResizeObserver(terminalSpace).observe(panel);
+  new MutationObserver(terminalSpace).observe(panel, { attributes: true, attributeFilter: ['hidden', 'class'] });
+  function treeView(tree, main, lead, content, sizer, label) {
+    let zoom = view?.lead === lead ? view.zoom : 1;
+    const measure = () => { sizer.style.width = `${content.offsetWidth * zoom}px`; sizer.style.height = `${content.offsetHeight * zoom}px`; content.style.transform = `scale(${zoom})`; label.textContent = `${Math.round(zoom * 100)}%`; };
+    const save = () => { view = { lead, zoom, left: tree.scrollLeft, top: tree.scrollTop, mainTop: main.scrollTop }; };
+    const setZoom = (next, x, y) => { const old = zoom, oldOffset = Math.max(0, (tree.clientWidth - content.offsetWidth * old) / 2); const tx = (tree.scrollLeft + x - oldOffset) / old, ty = (tree.scrollTop + y) / old; zoom = Math.max(.2, Math.min(2, next)); measure(); const offset = Math.max(0, (tree.clientWidth - content.offsetWidth * zoom) / 2); tree.scrollLeft = tx * zoom + offset - x; tree.scrollTop = ty * zoom - y; save(); };
+    const full = () => { zoom = 1; measure(); tree.scrollTop = 0; const box = content.querySelector('.agents-box'); tree.scrollLeft = Math.max(0, (box.getBoundingClientRect().left - content.getBoundingClientRect().left) + box.offsetWidth / 2 - tree.clientWidth / 2); save(); };
+    const fit = () => { zoom = Math.max(.2, Math.min(1, (tree.clientWidth - 16) / content.offsetWidth, (tree.clientHeight - 16) / content.offsetHeight)); measure(); tree.scrollTop = 0; tree.scrollLeft = Math.max(0, (content.offsetWidth * zoom - tree.clientWidth) / 2); save(); };
+    measure();
+    if (view?.lead === lead) { tree.scrollLeft = view.left; tree.scrollTop = view.top; main.scrollTop = view.mainTop; } else full();
+    tree.addEventListener('scroll', save); main.addEventListener('scroll', save);
+    tree.addEventListener('wheel', e => { if (phone() || !e.ctrlKey) return; e.preventDefault(); const r = tree.getBoundingClientRect(); setZoom(zoom * Math.exp(-e.deltaY * .01), e.clientX-r.left, e.clientY-r.top); }, { passive: false });
+    tree.addEventListener('pointerdown', e => { if (phone() || (e.pointerType === 'mouse' && e.button !== 0)) return; active.set(e.pointerId, { x:e.clientX, y:e.clientY }); if (active.size === 1) gesture = { x:e.clientX, y:e.clientY, left:tree.scrollLeft, top:tree.scrollTop, dragged:false, pinch:false }; else if (active.size === 2) { gesture.pinch = gesture.dragged = true; const [a,b] = [...active.values()]; gesture.distance = Math.hypot(a.x-b.x,a.y-b.y); } });
+    tree.addEventListener('pointermove', e => { if (!active.has(e.pointerId) || !gesture) return; active.set(e.pointerId, { x:e.clientX, y:e.clientY }); if (gesture.pinch && active.size >= 2) { const [a,b] = [...active.values()], distance = Math.hypot(a.x-b.x,a.y-b.y), r = tree.getBoundingClientRect(); if (gesture.distance) setZoom(zoom * distance / gesture.distance, (a.x+b.x)/2-r.left, (a.y+b.y)/2-r.top); gesture.distance = distance; } else if (!gesture.pinch) { const dx=e.clientX-gesture.x, dy=e.clientY-gesture.y; if (!gesture.dragged && Math.hypot(dx,dy)>5) { gesture.dragged=true; tree.setPointerCapture(e.pointerId); tree.classList.add('dragging'); } if (gesture.dragged) { tree.scrollLeft=gesture.left-dx; tree.scrollTop=gesture.top-dy; } } });
+    const end = e => { if (!active.has(e.pointerId)) return; active.delete(e.pointerId); if (!active.size) { tree.classList.remove('dragging'); const g = gesture; setTimeout(() => { if (gesture === g) gesture = null; if (pending && !active.size) { pending=false; render(); } }, 0); } };
+    tree.addEventListener('pointerup', end); tree.addEventListener('pointercancel', end);
+    tree.addEventListener('click', e => { if (gesture?.dragged) { e.preventDefault(); e.stopPropagation(); } }, true);
+    return { step: factor => setZoom(zoom * factor, tree.clientWidth/2, tree.clientHeight/2), fit, full };
+  }
   function options(node) { return { base: `/wheelchair/api/sessions/${encodeURIComponent(node.name)}`, paneField: 'pane', history: 2000, label: node.display_title || node.role, onStatus: (text) => { $('agents-terminal-status').textContent = text; } }; }
   function closeTerm() { if (term) term.destroy(); term = null; termName = null; window.agentsTermView = null; panel.hidden = true; panel.classList.remove('full'); }
   function openTerm(node) { closeTerm(); panel.hidden = false; $('agents-terminal-title').textContent = node.display_title || node.role; term = window.TermView.mount($('agents-terminal-view'), options(node)); window.agentsTermView = term; termName = node.name; $('agents-terminal-switch').replaceChildren(term.switchEl); }
@@ -15,7 +38,7 @@
   try { const h = Number(localStorage.getItem('agents-terminal-height')); if (h >= 150) panel.style.height = `${h}px`; } catch (_) {}
   $('agents-resize').onpointerdown = e => { const y = e.clientY, h = panel.getBoundingClientRect().height; e.target.setPointerCapture(e.pointerId); e.target.onpointermove = ev => { panel.style.height = `${Math.max(150, Math.min(innerHeight - 100, h + y - ev.clientY))}px`; }; e.target.onpointerup = ev => { e.target.onpointermove = null; try { localStorage.setItem('agents-terminal-height', String(parseInt(panel.style.height, 10))); } catch (_) {} }; };
   $('brief-close').onclick = () => $('brief-dialog').close();
-  function go(lead, agent) { const u = new URL(location.href); u.hash = ''; if (lead) u.searchParams.set('lead', lead); else u.searchParams.delete('lead'); if (agent) u.searchParams.set('agent', agent); else u.searchParams.delete('agent'); history.pushState(null, '', u); render(); }
+  function go(lead, agent) { pending = false; const u = new URL(location.href); u.hash = ''; if (lead) u.searchParams.set('lead', lead); else u.searchParams.delete('lead'); if (agent) u.searchParams.set('agent', agent); else u.searchParams.delete('agent'); history.pushState(null, '', u); render(); }
   window.addEventListener('popstate', render);
   function nodes(node) { return node ? [node, ...(node.children || []).flatMap(nodes)] : []; }
   function status(node) { return ({ working: 'Working', waiting: node.waiting_on?.label || 'Waiting', 'not-started': 'Not started', finished: 'Finished', idle: 'Idle', 'needs-you': 'Needs you' })[node.state] || 'Idle'; }
@@ -47,9 +70,14 @@
     const heading = el('div','agents-heading'); heading.append(el('h2','',lead.lead_name || 'Lead'),el('span','agents-tag',lead.project || '')); main.append(heading,el('div','agents-thread',lead.thread_title || ''),el('p','agents-count',counts(lead)));
     const tree = el('div','agents-tree');
     function branch(node, aside = false) { const wrap = el('div','agents-branch'); const card = aside ? el('div','agents-box') : button('', () => go(lead.thread_id,node.name), `agents-box${selected?.name === node.name ? ' selected' : ''}`); card.classList.add(`state-${node.state || 'idle'}`); if (!aside) card.dataset.session = node.name; card.append(el('div','agents-role',aside ? 'Side conversation' : node.role || 'agent'),el('strong','agents-box-title',node.display_title || node.role || 'Agent')); const st = el('div','agents-status'); st.append(el('span','agents-dot'),document.createTextNode(status(node))); card.append(st); wrap.append(card); const children = [...(node.children || []), ...(node === lead.session ? (lead.asides || []) : [])]; if (children.length) { const list = el('div','agents-children'); children.forEach(c => list.append(branch(c,c.kind === 'aside'))); wrap.append(list); } return wrap; }
-    tree.append(branch(lead.session)); main.append(tree); root.append(main);
+    const content = branch(lead.session);
+    const toolbar = el('div', 'agents-toolbar'), label = el('span', 'agents-zoom');
+    let controls;
+    for (const [text, name, action] of [['−','Zoom out',() => controls.step(1/1.25)], ['+','Zoom in',() => controls.step(1.25)], ['Fit','Fit',() => controls.fit()], ['100%','Full size',() => controls.full()]]) { const b = button(text, action); b.setAttribute('aria-label',name); toolbar.append(b); if (name === 'Zoom out') toolbar.append(label); }
+    const sizer = el('div','agents-sizer'); sizer.append(content); tree.append(sizer); main.append(toolbar,tree); root.append(main);
+    if (!phone()) controls = treeView(tree, main, lead.thread_id, content, sizer, label);
     const side = el('aside','agents-side'); if (selected) { side.append(button(`‹ ${lead.lead_name || 'Lead'}`, () => go(lead.thread_id), 'agents-back'),el('div','agents-role',selected.role || 'agent'),el('h2','',selected.display_title || selected.role || 'Agent'),el('p','agents-muted',[selected.model,selected.effort].filter(Boolean).join(' · ')),el('p','agents-muted',lead.machine || ''),el('p','agents-muted',duration(selected)),el('p','agents-side-status',status(selected))); if (selected.live) side.append(button('Open terminal', () => openTerm(selected), 'primary')); if (selected.has_brief) side.append(button('Read its brief', async () => { try { const res = await fetch(`/wheelchair/api/sessions/${encodeURIComponent(selected.name)}/brief`); if (!res.ok) throw new Error(`HTTP ${res.status}`); $('brief-text').textContent = (await res.json()).brief; } catch (e) { $('brief-text').textContent = `Could not load brief: ${e.message}`; } $('brief-dialog').showModal(); })); } else side.append(el('p','agents-muted','Select an agent to see details.')); root.append(side);
   }
-  async function refresh() { try { const [a,t] = await Promise.all([fetch('/wheelchair/api/agents'),fetch('/wheelchair/api/threads?view=list')]); if (!a.ok) throw new Error(`agents ${a.status}`); data = await a.json(); threads = t.ok ? (await t.json()).threads || [] : []; render(); $('error').hidden = true; } catch (e) { $('error').textContent = `Could not load agents: ${e.message}`; $('error').hidden = false; } }
+  async function refresh() { try { const [a,t] = await Promise.all([fetch('/wheelchair/api/agents'),fetch('/wheelchair/api/threads?view=list')]); if (!a.ok) throw new Error(`agents ${a.status}`); data = await a.json(); threads = t.ok ? (await t.json()).threads || [] : []; if (active.size) pending = true; else render(); $('error').hidden = true; } catch (e) { $('error').textContent = `Could not load agents: ${e.message}`; $('error').hidden = false; } }
   refresh(); setInterval(refresh,5000);
 })();
