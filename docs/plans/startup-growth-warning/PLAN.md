@@ -126,9 +126,12 @@ no warning.
   only on `ready.ok` and the existing conditions.
 - The hub's Re-check and Start building paths (`viewer/app/threads.js:272-337`) only replace
   `card.ready`; `warnings` stays as attached. A fresh approval card gets a fresh check.
-- `protocol/app/lead.md` step 6.3 (the approval card): one sentence — if `card.js` refuses
-  the approval card with `unknown field: warnings`, post a `needs` card saying the app's hub
-  is older than this machine and needs updating before an approval card can be shown.
+- `protocol/app/lead.md` step 6.3 (the approval card): if `card.js` refuses the approval
+  card and the refusal mentions `unknown field: warnings` (it arrives wrapped, e.g.
+  `machine refused card (400): {"error":"unknown field: warnings"}`), post a `needs` card
+  saying the app's hub is older than this machine and needs updating before an approval
+  card can be shown. When he answers it (Keep going, or says it is updated), rerun the
+  Ready check and post a fresh approval card.
 - `machine/API.md`: note that lead approval cards may gain `warnings`.
 
 ### Boundaries and non-goals
@@ -143,8 +146,8 @@ no warning.
   older starts are used.
 - Under 5 samples for a role in the last 100 starts: that role is not checked.
 - Two long first messages among 5 samples: the median ignores them.
-- The first approval card after a service start may carry no warning if the startup
-  refresh has not finished; the next card will.
+- An approval card posted before any refresh has finished since the service started
+  carries no warning; cards posted after a finished refresh that found growth carry it.
 - A hub older than its machine refuses a lead's approval card carrying `warnings`. On the
   live relay the lead sees the refusal and posts a `needs` card (Decision 25); if the card
   was spooled first, the refusal goes to the rejected spool and the lead is not told (see
@@ -181,7 +184,7 @@ no warning.
 | Growth that stays under a role's limit, or comes from something other than tools (connectors, skills, a model change), is not attributed; the warning only says the limit was crossed | IDEA.md wants a heads-up, not a diagnosis; the text names both likely causes | 1, 3 |
 | Typical sizes go stale as lead or reviewer role files grow, giving false warnings until raised | Collin chose fixed limits knowing this; the text names the usual size | 3 |
 | Sessions with no kept transcript copy give no sample | Kept copies are made on every Stop hook; the walk uses older starts instead | 3 |
-| A machine newer than its hub may have a lead's approval card refused (`unknown field: warnings`) until the hub is updated | Nothing can build in that window (Ready fails "service out of date"); on the live relay the lead tells Collin (Decision 25); a card spooled during a hub outage is refused silently into the rejected spool. Update the hub first | 6, 7 |
+| A machine newer than its hub may have a lead's approval card refused (`unknown field: warnings`) until the hub is updated | Nothing can build in that window (Ready fails "service out of date"); on the live relay the lead tells Collin (Decision 25); a card spooled during a hub outage, or posted by a lead started before the upgrade (it keeps its old instructions), is refused without that notice. Update the hub first | 6, 7, 8 |
 | A refresh whose local file read never settles stops further refreshes until the service restarts, leaving the last result showing | Local async reads of small kept files; guarding it drew more findings than it was worth | 7 |
 | A warning can lag behind the newest sessions by one refresh (seconds normally; up to 10 minutes plus one refresh after a quiet spell) | The card is never held; tool growth persists for days | 4, 5 |
 
@@ -325,11 +328,27 @@ no warning.
 
 ### Round 8 — 2026-11-17
 
-**Lanes:** pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 7:**
 - Refresh timeout, ids and stream destruction removed; one in flight, coalesced rerun, publish on finish (Decision 24)
 - Lead posts a `needs` card when the hub refuses `warnings` (Decision 25); Edge case and Accepted Risks rewritten
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Decision 25 doesn't say what happens after the hub is updated | upheld | Lead reruns Ready and posts a fresh approval card |
+| intent | minor | Refusal text arrives wrapped | upheld | "mentions", with the wrapped example |
+| mechanics | major | RE-RAISE: leads started before the upgrade won't post the notice | accepted-risk | Needs a hub/machine skew and a lead spanning the upgrade at once; nothing can build then; folded into the existing risk row |
+| mechanics | major | No step after Collin updates the hub | upheld | Same fix as the intent finding |
+| mechanics | minor | Restart edge case overpromises | upheld | Edge case reworded |
+
+### Round 9 — 2026-11-17
+
+**Lanes:** pending.
+
+**Changed since Round 8:**
+- Lead step 6.3: match the refusal by substring; after Collin answers, rerun Ready and post a fresh approval card
+- Restart edge case and the older-hub risk row reworded
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
