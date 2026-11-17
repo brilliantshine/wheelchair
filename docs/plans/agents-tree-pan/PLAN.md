@@ -1,6 +1,6 @@
 ---
 slug: agents-tree-pan
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-17
 ---
 
@@ -47,6 +47,21 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 ## Spec
 
 ### What changes, in short
+
+```mermaid
+flowchart TD
+  P[Press anywhere in the tree] --> M{Moved more than 5px, or a second finger?}
+  M -- no --> C[Release on a box: it is selected, as today]
+  M -- yes --> D[Tree moves or zooms; no box is selected]
+  R[Five-second refresh arrives] --> H{Any finger or button still down?}
+  H -- yes --> W[Wait until all are up and the click is handled]
+  H -- no --> B[Rebuild the tree]
+  W --> B
+  B --> V[Put back the same zoom and position, unless the lead changed]
+```
+
+The picture shows a press becoming a click or a drag, and how a refresh waits for it; it
+leaves out the buttons, Fit and the phone list.
 
 On screens 900px and wider, the Agents screen's tree area becomes a fixed-size window
 onto the tree. Collin moves the tree by dragging (from anywhere in it), by scrolling, or
