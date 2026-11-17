@@ -5,10 +5,60 @@ const { makeTemp } = require('../../test-support/run-dir');
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const { transcriptItems } = require('../app/hub.js');
+const { lastAssistantText } = require('../app/chat.js');
+const { readFileSync } = require('node:fs');
+const path = require('node:path');
 
 function lines(rows) {
   return rows.map((row) => JSON.stringify(row)).join('\n');
 }
+
+test('renders Antigravity fixture turns, tools, timestamps and report', () => {
+  const raw = readFileSync(path.join(__dirname, '../../machine/test/fixtures/agy/transcript-tools.jsonl'), 'utf8');
+  const rows = raw.trim().split('\n').map(JSON.parse);
+  const items = transcriptItems('agy', raw, {}, 'wc-x-lead');
+  assert.deepEqual(items.map((item) => item.type), ['human', 'tool', 'tool', 'assistant', 'human', 'assistant']);
+  assert.equal(items[0].text, 'Create a file named x.txt containing hi, then run `ls` and tell me what you saw.');
+  assert.equal(items[1].text, 'write_file');
+  assert.match(items[1].detail, /Created file\./);
+  assert.doesNotMatch(items[1].detail, /Created At:/);
+  assert.equal(items[2].text, 'run_command');
+  assert.match(items[2].detail, /x\.txt/);
+  assert.match(items[3].text, /^I created/);
+  assert.equal(items[4].text, 'Reply with the word done.');
+  assert.equal(items[5].text, 'done');
+  assert.deepEqual(items.map((item) => item.at), [2, 3, 5, 7, 8, 9].map((i) => rows[i].created_at));
+  assert.deepEqual([items[3].id, items[5].id], ['wc-x-lead#1', 'wc-x-lead#2']);
+  assert.equal(lastAssistantText('agy', raw), 'done');
+  assert.equal(lastAssistantText('agy', ''), '');
+});
+
+test('renders the single-turn Antigravity fixture', () => {
+  const raw = readFileSync(path.join(__dirname, '../../machine/test/fixtures/agy/transcript.jsonl'), 'utf8');
+  assert.deepEqual(transcriptItems('agy', raw, {}).map((item) => item.text), ['reply with the word ok', 'ok']);
+});
+
+test('skips unknown Antigravity rows and folds queued tool results in order', () => {
+  const raw = lines([
+    { type: 'USER_INPUT', content: ' <pasted_content id="1">Hello</pasted_content id="1"> ' },
+    { type: 'PLANNER_RESPONSE', content: 'Working', tool_calls: [{ name: 'one', args: 'a' }, { args: 'b' }] },
+    { type: 'UNKNOWN' },
+    { type: 'GENERIC', content: 'Created At: today\nCompleted At: today\nfirst' },
+    { type: 'GENERIC', content: 'second' },
+  ]);
+  const items = transcriptItems('agy', raw, {});
+  assert.deepEqual(items.map((item) => item.text), ['Hello', 'Working', 'one', 'tool call']);
+  assert.equal(items[2].detail, 'Input:\na\n\nResult:\nfirst');
+  assert.equal(items[3].detail, 'Input:\nb\n\nResult:\nsecond');
+});
+
+test('reports unreadable nonempty Antigravity transcripts', () => {
+  const notice = [{ type: 'notice', text: "Couldn't read this Antigravity transcript", at: new Date(0).toISOString() }];
+  for (const raw of ['junk\nnot json', lines([{ type: 'UNKNOWN' }, { type: 'OTHER' }])]) {
+    assert.deepEqual(transcriptItems('agy', raw, {}), notice);
+  }
+  assert.deepEqual(transcriptItems('agy', '  \n', {}), []);
+});
 
 test('renders a Claude human turn after unwrapping pasted content', () => {
   const transcript = lines([

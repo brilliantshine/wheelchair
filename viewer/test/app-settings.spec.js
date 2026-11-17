@@ -97,6 +97,10 @@ test.describe('desktop', () => {
 
   test('effort selects: GPT tier and both leads save; GPT has no max', async ({ page }) => {
     await openPage(page, context, '/app/settings#models');
+    await expect(page.locator('tr[data-provider="gemini"]')).toContainText('Antigravity');
+    await expect(page.getByLabel('Antigravity light model')).toBeVisible();
+    await expect(page.getByLabel('Antigravity light effort').locator('option')).toContainText(['max']);
+    await expect(page.getByLabel('Antigravity lead model')).toBeVisible();
     const gptStd = page.getByLabel('GPT standard effort', { exact: true });
     await expect(gptStd.locator('option')).toHaveText(['CLI default', 'low', 'medium', 'high', 'xhigh']);
     await expect(page.getByLabel('Claude heavy effort', { exact: true }).locator('option')).toHaveText(['CLI default', 'low', 'medium', 'high', 'xhigh', 'max']);
@@ -350,4 +354,11 @@ test('saves lead names in Settings', async ({ page }) => {
   await expect.poll(async () => (await settings(page)).lead_names).toEqual(['Ada', 'Grace']);
   await page.reload();
   await expect(page.getByLabel('Lead names')).toHaveValue('Ada\nGrace');
+});
+
+test('models and preferences fits at 390px', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openPage(page, context, '/app/settings#models');
+  await expect(page.locator('tr[data-provider="gemini"]')).toBeVisible();
+  await noSideScroll(page);
 });

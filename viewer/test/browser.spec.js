@@ -2136,9 +2136,14 @@ test("no drawn arrow's line passes through either box it connects, over every co
   // (index.html's wirePath), never as the straight segment this guard clips, so it is left out:
   // the regex below has no `M… L…` to read from a curve's `d`, and the straight-line rule is not
   // the one those arrows follow.
+  // A `form` picture (timeline, before-after, layers, side-by-side) has no boxes or arrows and is
+  // drawn by the app's picture page, not the graph viewer.
   const files = execFileSync('git', ['ls-files', 'docs/plans/*/graphs/*.json'], { cwd: ROOT })
     .toString().split('\n').filter(Boolean)
-    .filter((file) => !JSON.parse(readFileSync(path.join(ROOT, file), 'utf8')).run);
+    .filter((file) => {
+      const graph = JSON.parse(readFileSync(path.join(ROOT, file), 'utf8'));
+      return !graph.run && !graph.form;
+    });
   assert.ok(files.length > 0, 'expected at least one committed graph to check');
 
   for (const file of files) {

@@ -1,5 +1,6 @@
 (function () {
   'use strict';
+  const PROVIDER_LABEL = { claude: 'Claude', gpt: 'GPT', gemini: 'Antigravity' };
   const API = '/wheelchair/api';
   const id = new URLSearchParams(location.search).get('id') || '';
   const T = API + '/threads/' + encodeURIComponent(id);
@@ -29,6 +30,7 @@
   let archiveAsk = false;
   let accountNames = null;   // account id -> name, from /settings; null until fetched
   const cardErrors = {};
+  const sendingNow = {};     // queued message `at` -> true while its Send now call runs
   const declining = {};      // card id -> true while a sudo Decline call is pending
   const formCache = new Map();
   let attachments = [];
@@ -137,7 +139,7 @@
     block.appendChild(titleLine);
     const where = slug() ? base(t.project) + ' / ' + slug() : base(t.project);
     block.appendChild(el('div', 'meta', [
-      where, lead ? 'lead' : '', t.provider === 'gpt' ? 'GPT' : t.provider === 'claude' ? 'Claude' : t.cli, lead && lead.model, t.machine, lead && 'tmux ' + lead.name,
+      where, lead ? 'lead' : '', PROVIDER_LABEL[t.provider] || t.cli, lead && lead.model, t.machine, lead && 'tmux ' + lead.name,
     ].filter(Boolean).join(' \u00b7 ')));
     headEl.appendChild(block);
 
@@ -308,8 +310,9 @@
     for (const it of items) {
       cardsBefore(Date.parse(it.at));
       if (it.type === 'human') {
-        const b = el('div', 'bubble human' + (it.card ? ' card' : ''), it.text);
-        chatEl.appendChild(b);
+        const parts = splitAttached(it.card ? '' : it.text);
+        if (it.card || parts.text) chatEl.appendChild(el('div', 'bubble human' + (it.card ? ' card' : ''), it.card ? it.text : parts.text));
+        if (parts.files.length) chatEl.appendChild(attachedRow(parts.files));
       } else if (it.type === 'assistant') {
         const lead = el('div', 'bubble assistant md');
         if (it.id) lead.dataset.messageId = it.id;
@@ -330,11 +333,73 @@
       }
     }
     cardsBefore();
-    for (const p of pending) {
-      const b = el('div', 'bubble human pending', p.text);
+    // Pair each pending bubble with Collin's message still in the lead's queue, so it can be
+    // sent now. One queued before this page loaded has no pending bubble and gets its own.
+    const lead = leadSession();
+    const waiting = ((lead && lead.queue) || []).filter((q) => q.source === 'collin');
+    // Pending ones already delivered (not queued) come first; the queue then shows in its own
+    // order, whichever tab each message was sent from.
+    const left = waiting.slice();
+    const delivered = pending.filter((p) => {
+      const at = left.findIndex((q) => q.text === p.text);
+      if (at < 0) return true;
+      left.splice(at, 1);
+      return false;
+    });
+    const shown = [...delivered.map((p) => ({ text: p.text, queued: null })), ...waiting.map((q) => ({ text: q.text, queued: q }))];
+    const canSendNow = lead && lead.live && lead.ready && !lead.permission_open && !lead.needs_open
+      && !(lead.limited_until && Date.parse(lead.limited_until) > Date.now()) && !thread().archived;
+    for (const p of shown) {
+      const parts = splitAttached(p.text);
+      const b = el('div', 'bubble human pending', parts.text);
       b.appendChild(el('span', 'tag', 'queued'));
+      if (p.queued && canSendNow) {
+        const at = p.queued.at;
+        b.appendChild(button(sendingNow[at] ? 'Sending…' : 'Send now', 'send-now', () => sendNow(at), Boolean(sendingNow[at])));
+      }
       chatEl.appendChild(b);
+      if (parts.files.length) chatEl.appendChild(attachedRow(parts.files, true));
     }
+  }
+
+  // A message's trailing `[attached: <path>]` lines become files shown under its bubble.
+  function splitAttached(text) {
+    const lines = String(text || '').split('\n');
+    const files = [];
+    while (lines.length) {
+      const m = /^\[attached: (.+)\]$/.exec(lines[lines.length - 1]);
+      if (!m) { if (files.length && !lines[lines.length - 1].trim()) { lines.pop(); continue; } break; }
+      files.unshift(m[1]); lines.pop();
+    }
+    return { text: lines.join('\n').trim(), files };
+  }
+  // Images as previews, anything else as a chip; each opens the upload. An archived thread's
+  // uploads are gone, so nothing is fetched and each shows only its name.
+  function attachedRow(paths, pending) {
+    const row = el('div', 'sent-attachments' + (pending ? ' pending' : ''));
+    for (const full of paths) {
+      const file = full.split('/').pop();
+      const name = file.replace(/^[0-9]+-/, '');
+      const servable = /^[0-9]+-[A-Za-z0-9._-]+$/.test(file) && !thread().archived;
+      const url = T + '/files/' + encodeURIComponent(file);
+      if (servable && /\.(png|jpe?g|gif|webp)$/i.test(file)) {
+        const a = el('a', 'sent-image'); a.href = url; a.target = '_blank'; a.rel = 'noopener'; a.title = name;
+        const img = el('img'); img.src = url; img.alt = name; img.loading = 'lazy'; a.appendChild(img); row.appendChild(a);
+      } else {
+        const chip = el(servable ? 'a' : 'span', 'sent-file', name);
+        if (servable) { chip.href = url; chip.target = '_blank'; chip.rel = 'noopener'; chip.setAttribute('download', name); }
+        row.appendChild(chip);
+      }
+    }
+    return row;
+  }
+
+  // Hand one queued message to the lead mid-turn instead of waiting for the turn to end.
+  async function sendNow(at) {
+    sendingNow[at] = true; sigs.chat = null; render();
+    try { await post(T + '/send-now', { at }); showError(''); }
+    catch (e) { showError('Could not send it now: ' + e.message); }
+    finally { delete sendingNow[at]; sigs.chat = null; await poll(); }
   }
 
   // ---- cards ----
@@ -785,9 +850,9 @@
     if (!lead) return '';
     if (lead.status === 'waiting' && lead.waiting_until) {
       // The provider the wait is pinned to, else the lead's, else the thread's; none set → room.
-      const provider = [lead.waiting_provider, lead.provider, thread().provider].find((p) => p === 'claude' || p === 'gpt');
+      const provider = [lead.waiting_provider, lead.provider, thread().provider].find((p) => PROVIDER_LABEL[p]);
       if (!provider) return 'Waiting for room, about ' + clock(lead.waiting_until);
-      const label = provider === 'gpt' ? 'GPT' : 'Claude';
+      const label = PROVIDER_LABEL[provider];
       return 'Waiting for ' + label + ' to refill, about ' + clock(lead.waiting_until);
     }
     if (lead.live && lead.limited_until && Date.parse(lead.limited_until) > Date.now()) {
@@ -822,7 +887,8 @@
     sync('pinned', [data.pinned, data.cards.map((c) => [c.answered, c.answered_value]), ideaOpen, pinsFolded, cardErrors], renderPinned);
     const nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
     let changed = false;
-    sync('chat', [data.items, pending, slug(), t.archived, data.cards.filter((c) => !PINNED_KINDS.includes(c.kind)), cardErrors, declining], () => { renderChat(); changed = true; });
+    const leadNow = leadSession();
+    sync('chat', [data.items, pending, leadNow && [leadNow.queue, leadNow.ready, leadNow.permission_open, leadNow.needs_open, leadNow.limited_until], sendingNow, slug(), t.archived, data.cards.filter((c) => !PINNED_KINDS.includes(c.kind)), cardErrors, declining], () => { renderChat(); changed = true; });
     const workingEl = $('working');
     const working = leadWorking() && !t.archived;
     const workingText = (t.lead_name || 'The lead') + ' is working';
@@ -858,6 +924,11 @@
     chips.textContent = '';
     attachments.forEach((file, i) => {
       const chip = el('span', 'attachment-chip');
+      if (/^image\/(png|jpeg|gif|webp)$/.test(file.type)) {
+        // A data: URL, since the page's content policy allows data: images and not blob: ones.
+        const img = el('img', 'attachment-thumb'); img.alt = ''; chip.appendChild(img);
+        const reader = new FileReader(); reader.onload = () => { img.src = reader.result; }; reader.readAsDataURL(file);
+      }
       const size = file.size < 1024 ? file.size + ' B' : file.size < 1048576 ? (file.size / 1024).toFixed(1) + ' KB' : (file.size / 1048576).toFixed(1) + ' MB';
       chip.appendChild(el('span', '', file.name + ' · ' + size));
       const remove = button('×', 'attachment-remove', () => { if (uploading) return; attachments.splice(i, 1); renderAttachments(); });

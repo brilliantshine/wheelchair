@@ -147,7 +147,12 @@ test('routes anchor lead messages, expose summaries, hand off and archive', asyn
     assert.equal((await request('GET', '/chat')).body.items.at(-1).id, 'lead#0');
     const data = { message_id: 'lead#0', start: 0, end: 5, quote: 'Hello', action: 'ask' };
     assert.equal((await request('POST', '/asides', { ...data, message_id: 'worker#0' })).status, 400);
-    let before = await hub.thread('routes'); before.sessions[0].cli_session_id = null; await hub.save(before);
+    let before = await hub.thread('routes');
+    before.sessions[0].provider = 'gemini'; before.sessions[0].cli_session_id = null; await hub.save(before);
+    const unavailable = await request('POST', '/asides', data);
+    assert.equal(unavailable.status, 400);
+    assert.equal(unavailable.error, "Side conversations aren't available on Antigravity sessions yet");
+    before.sessions[0].provider = 'claude'; await hub.save(before);
     assert.equal((await request('POST', '/asides', data)).error, "the lead isn't ready yet");
     before.sessions[0].cli_session_id = 'parent'; await hub.save(before);
     settings.modelCommand = async () => { const error = new Error('unused'); error.code = 3; throw error; };

@@ -27,6 +27,13 @@ for (const [label, size] of SIZES) {
 
     const open = (page, id) => page.goto(`${ctx.server.url}/app/thread?id=${id}`);
 
+    test('the header labels an Antigravity thread', async ({ page }) => {
+      const made = await ctx.make({ cli: 'claude' });
+      await ctx.patch(made.id, (x) => { x.provider = 'gemini'; x.cli = 'agy'; });
+      await open(page, made.id);
+      await expect(page.locator('#head')).toContainText('Antigravity');
+    });
+
     test('the nav stays at the top of a long thread', async ({ page }) => {
       const made = await ctx.make({ cli: 'claude' });
       await open(page, made.id);
@@ -291,6 +298,40 @@ for (const [label, size] of SIZES) {
       await expect(page.locator('#chat .bubble.pending')).toContainText('queued');
       await expect(page.locator('#queued-note')).toContainText('queued');
       await expect(page.locator('#msg')).toHaveValue('');
+    });
+
+    test('send now hands a queued message to a busy lead', async ({ page }) => {
+      const made = await ctx.make({ cli: 'claude' });
+      const at = new Date().toISOString();
+      await ctx.patch(made.id, (t) => {
+        Object.assign(t.sessions[0], { ready: true, turn_ended: false, queue: [{ text: 'do this now', source: 'collin', at }] });
+        t.queues = { [t.sessions[0].name]: t.sessions[0].queue };
+      });
+      await open(page, made.id);
+      const bubble = page.locator('#chat .bubble.pending', { hasText: 'do this now' });
+      await expect(bubble).toContainText('queued');
+      const request = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith(`/threads/${made.id}/send-now`));
+      await bubble.locator('button.send-now').click();
+      expect((await request).postDataJSON()).toEqual({ at });
+      await expect(bubble).toHaveCount(0);
+      expect(ctx.machine.sessions.get(made.sessions[0].name).submits).toEqual(['do this now']);
+      await noSideScroll(page);
+    });
+
+    test('queued bubbles keep the queue order across tabs', async ({ page }) => {
+      const made = await ctx.make({ cli: 'claude' });
+      await ctx.patch(made.id, (t) => { Object.assign(t.sessions[0], { ready: true, turn_ended: false }); });
+      await open(page, made.id);
+      for (const text of ['A one', 'B two']) {
+        await page.locator('#msg').fill(text);
+        await page.locator('#send').click();
+        await expect(page.locator('#chat .bubble.pending', { hasText: text })).toHaveCount(1);
+      }
+      // C arrives from another tab, so this page has no pending bubble for it.
+      await ctx.patch(made.id, (t) => { t.sessions[0].queue.push({ text: 'C three', source: 'collin', at: new Date().toISOString() }); t.queues = { [t.sessions[0].name]: t.sessions[0].queue }; });
+      await expect(page.locator('#chat .bubble.pending')).toHaveCount(3);
+      const order = await page.locator('#chat .bubble.pending').evaluateAll((els) => els.map((e) => e.firstChild.textContent));
+      expect(order).toEqual(['A one', 'B two', 'C three']);
     });
 
     test('progress stages render and remain pinned through remediation', async ({ page }) => {
