@@ -1,6 +1,6 @@
 ---
 slug: agents-activity
-status: draft   # draft | confirmed
+status: confirmed   # draft | confirmed
 created: 2026-11-17
 ---
 
