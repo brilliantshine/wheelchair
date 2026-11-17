@@ -18,8 +18,17 @@ assert() {
   if "$@"; then pass "$description"; else fail "$description"; fi
 }
 
+digest() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi
+}
+sed_replace() {
+  local expression=$1 file=$2 temp
+  temp=$(mktemp "$fixture/sed.XXXXXX")
+  sed "$expression" "$file" > "$temp"
+  mv "$temp" "$file"
+}
 file_state() {
-  if [[ -e $1 ]]; then printf 'present:%s' "$(sha256sum "$1" | awk '{print $1}')"; else printf absent; fi
+  if [[ -e $1 ]]; then printf 'present:%s' "$(digest "$1" | awk '{print $1}')"; else printf absent; fi
 }
 region() { sed -n '/^<!-- wheelchair:diagram-sensitivity start -->$/,/^<!-- wheelchair:diagram-sensitivity end -->$/p' "$1"; }
 without_level() { grep -Ev '^diagram-sensitivity: (ask|default|high)$'; }
@@ -30,24 +39,34 @@ real_codex="$HOME/.codex/AGENTS.md"
 real_claude_before=$(file_state "$real_claude")
 real_codex_before=$(file_state "$real_codex")
 
-declare -A claude codex output status present allow
+case_names=()
+claude=(); codex=(); output=(); status=(); present=(); allow=()
+case_index() {
+  local name=$1 i
+  for (( i=0; i<${#case_names[@]}; i++ )); do
+    if [[ ${case_names[$i]} == "$name" ]]; then printf '%s' "$i"; return; fi
+  done
+  return 1
+}
 new_case() {
   local name=$1 base
+  case_names+=("$name")
   base=$fixture/$name
   mkdir -p "$base/claude" "$base/codex"
-  claude[$name]=$base/claude
-  codex[$name]=$base/codex
-  present[$name]=claude,codex
+  claude[$(case_index "$name")]=$base/claude
+  codex[$(case_index "$name")]=$base/codex
+  present[$(case_index "$name")]=claude,codex
 }
 run_case() {
-  local name=$1
+  local name=$1 result
   set +e
-  output[$name]=$(WHEELCHAIR_ALLOW_WORKTREE="${allow[$name]-1}" WHEELCHAIR_PRESENT="${present[$name]}" WHEELCHAIR_CLAUDE_HOME="${claude[$name]}" WHEELCHAIR_CODEX_HOME="${codex[$name]}" "$writer" "${@:2}" 2>&1)
-  status[$name]=$?
+  output[$(case_index "$name")]=$(WHEELCHAIR_ALLOW_WORKTREE="${allow[$(case_index "$name")]-1}" WHEELCHAIR_PRESENT="${present[$(case_index "$name")]}" WHEELCHAIR_CLAUDE_HOME="${claude[$(case_index "$name")]}" WHEELCHAIR_CODEX_HOME="${codex[$(case_index "$name")]}" "$writer" "${@:2}" 2>&1)
+  result=$?
+  status[$(case_index "$name")]=$result
   set -e
 }
-target_claude() { printf '%s/CLAUDE.md' "${claude[$1]}"; }
-target_codex() { printf '%s/AGENTS.md' "${codex[$1]}"; }
+target_claude() { printf '%s/CLAUDE.md' "${claude[$(case_index "$1")]}"; }
+target_codex() { printf '%s/AGENTS.md' "${codex[$(case_index "$1")]}"; }
 both_unchanged() {
   [[ $(file_state "$(target_claude "$1")") == "$2" && $(file_state "$(target_codex "$1")") == "$3" ]]
 }
@@ -58,30 +77,30 @@ both_unchanged() {
 # error away from the actual cause.  Say the cause here instead.
 new_case source_sane
 run_case source_sane
-if [[ ${status[source_sane]} != 0 ]]; then
-  printf 'FATAL %s\n' "the writer refuses this repo's own protocol/sensitivity.md: ${output[source_sane]}" >&2
+if [[ ${status[$(case_index "source_sane")]} != 0 ]]; then
+  printf 'FATAL %s\n' "the writer refuses this repo's own protocol/sensitivity.md: ${output[$(case_index "source_sane")]}" >&2
   exit 2
 fi
 
 # Presence is command availability, not whether a redirected home already exists.
 new_case presence_claude
-present[presence_claude]=claude
+present[$(case_index "presence_claude")]=claude
 run_case presence_claude
 run_case presence_claude --report
-assert 'claude-only writes Claude and reports Codex unavailable' bash -c '[[ $1 == 0 && -f $2 && ! -e $3 && $4 == *"diagram-sensitivity: default"* && $4 == *"codex is not on this machine"* ]]' _ "${status[presence_claude]}" "$(target_claude presence_claude)" "$(target_codex presence_claude)" "${output[presence_claude]}"
+assert 'claude-only writes Claude and reports Codex unavailable' bash -c '[[ $1 == 0 && -f $2 && ! -e $3 && $4 == *"diagram-sensitivity: default"* && $4 == *"codex is not on this machine"* ]]' _ "${status[$(case_index "presence_claude")]}" "$(target_claude presence_claude)" "$(target_codex presence_claude)" "${output[$(case_index "presence_claude")]}"
 
 new_case presence_codex
-present[presence_codex]=codex
+present[$(case_index "presence_codex")]=codex
 run_case presence_codex
 run_case presence_codex --report
-assert 'codex-only writes Codex and reports Claude unavailable' bash -c '[[ $1 == 0 && ! -e $2 && -f $3 && $4 == *"diagram-sensitivity: default"* && $4 == *"claude is not on this machine"* ]]' _ "${status[presence_codex]}" "$(target_claude presence_codex)" "$(target_codex presence_codex)" "${output[presence_codex]}"
+assert 'codex-only writes Codex and reports Claude unavailable' bash -c '[[ $1 == 0 && ! -e $2 && -f $3 && $4 == *"diagram-sensitivity: default"* && $4 == *"claude is not on this machine"* ]]' _ "${status[$(case_index "presence_codex")]}" "$(target_claude presence_codex)" "$(target_codex presence_codex)" "${output[$(case_index "presence_codex")]}"
 
 new_case presence_neither
-present[presence_neither]=''
+present[$(case_index "presence_neither")]=''
 before_c=$(file_state "$(target_claude presence_neither)")
 before_d=$(file_state "$(target_codex presence_neither)")
 run_case presence_neither
-assert 'neither present reports and writes nothing' bash -c '[[ $1 == 0 && $2 == *"neither claude nor codex is on this machine"* && $3 == "$4" && $5 == "$6" ]]' _ "${status[presence_neither]}" "${output[presence_neither]}" "$(file_state "$(target_claude presence_neither)")" "$before_c" "$(file_state "$(target_codex presence_neither)")" "$before_d"
+assert 'neither present reports and writes nothing' bash -c '[[ $1 == 0 && $2 == *"neither claude nor codex is on this machine"* && $3 == "$4" && $5 == "$6" ]]' _ "${status[$(case_index "presence_neither")]}" "${output[$(case_index "presence_neither")]}" "$(file_state "$(target_claude presence_neither)")" "$before_c" "$(file_state "$(target_codex presence_neither)")" "$before_d"
 
 # Writing: existing prose, a missing target, three explicit positions, and an
 # edited owned region all keep their unowned bytes intact.
@@ -89,7 +108,7 @@ new_case prose
 printf 'claude prose\n' > "$(target_claude prose)"
 printf 'codex prose' > "$(target_codex prose)"
 run_case prose
-assert 'markerless prose seeds both files' bash -c '[[ $1 == 0 && $2 == *"claude prose"* && $2 == *"codex prose"* ]]' _ "${status[prose]}" "$(cat "$(target_claude prose)")$(cat "$(target_codex prose)")"
+assert 'markerless prose seeds both files' bash -c '[[ $1 == 0 && $2 == *"claude prose"* && $2 == *"codex prose"* ]]' _ "${status[$(case_index "prose")]}" "$(cat "$(target_claude prose)")$(cat "$(target_codex prose)")"
 assert 'markerless prose keeps prefixes byte-for-byte' bash -c 'head -c 13 "$1" | cmp -s - <(printf "claude prose\\n") && head -c 11 "$2" | cmp -s - <(printf "codex prose")' _ "$(target_claude prose)" "$(target_codex prose)"
 
 new_case missing
@@ -101,19 +120,19 @@ for requested in ask default high; do
   new_case "$name"
   run_case "$name" "$requested"
   run_case "$name" --report
-  assert "$requested sets and reports both files" bash -c '[[ $1 == 0 && $2 == "diagram-sensitivity: $3" && $(sed -nE "s/^diagram-sensitivity: (ask|default|high)$/\\1/p" "$4") == "$3" && $(sed -nE "s/^diagram-sensitivity: (ask|default|high)$/\\1/p" "$5") == "$3" ]]' _ "${status[$name]}" "${output[$name]}" "$requested" "$(target_claude "$name")" "$(target_codex "$name")"
+  assert "$requested sets and reports both files" bash -c '[[ $1 == 0 && $2 == "diagram-sensitivity: $3" && $(sed -nE "s/^diagram-sensitivity: (ask|default|high)$/\\1/p" "$4") == "$3" && $(sed -nE "s/^diagram-sensitivity: (ask|default|high)$/\\1/p" "$5") == "$3" ]]' _ "${status[$(case_index "$name")]}" "${output[$(case_index "$name")]}" "$requested" "$(target_claude "$name")" "$(target_codex "$name")"
 done
 
 new_case edited
 run_case edited high
 edited_c=$(target_claude edited); edited_d=$(target_codex edited)
-sed -i 's/## Answering with a picture/## Hand edited/' "$edited_c"
+sed_replace 's/## Answering with a picture/## Hand edited/' "$edited_c"
 printf 'before\n' > "$edited_d.tmp"
 cat "$edited_d" >> "$edited_d.tmp"
 printf 'after-no-newline' >> "$edited_d.tmp"
 mv "$edited_d.tmp" "$edited_d"
 run_case edited default
-assert 'owned content is overwritten while outside bytes survive' bash -c '[[ $1 == 0 ]] && grep -q "## Answering with a picture" "$2" && ! grep -q "Hand edited" "$2" && [[ $(head -n 1 "$3") == before ]] && [[ $(tail -c 16 "$3") == after-no-newline ]]' _ "${status[edited]}" "$edited_c" "$edited_d"
+assert 'owned content is overwritten while outside bytes survive' bash -c '[[ $1 == 0 ]] && grep -q "## Answering with a picture" "$2" && ! grep -q "Hand edited" "$2" && [[ $(head -n 1 "$3") == before ]] && [[ $(tail -c 16 "$3") == after-no-newline ]]' _ "${status[$(case_index "edited")]}" "$edited_c" "$edited_d"
 
 # Resolve once across the pair.
 new_case resolution_none
@@ -122,7 +141,7 @@ if [[ $(level_of "$(target_claude resolution_none)") == default && $(level_of "$
 
 new_case resolution_one
 run_case resolution_one high
-sed -i '/^<!-- wheelchair:diagram-sensitivity start -->$/,/^<!-- wheelchair:diagram-sensitivity end -->$/d' "$(target_codex resolution_one)"
+sed_replace '/^<!-- wheelchair:diagram-sensitivity start -->$/,/^<!-- wheelchair:diagram-sensitivity end -->$/d' "$(target_codex resolution_one)"
 run_case resolution_one
 if [[ $(level_of "$(target_claude resolution_one)") == high && $(level_of "$(target_codex resolution_one)") == high ]]; then pass 'one high block refreshes both at high'; else fail 'one high block refreshes both at high'; fi
 
@@ -133,12 +152,12 @@ if [[ $(level_of "$(target_claude resolution_same)") == high && $(level_of "$(ta
 
 new_case divergence
 run_case divergence ask
-sed -i 's/^diagram-sensitivity: ask$/diagram-sensitivity: high/' "$(target_codex divergence)"
+sed_replace 's/^diagram-sensitivity: ask$/diagram-sensitivity: high/' "$(target_codex divergence)"
 before_c=$(file_state "$(target_claude divergence)"); before_d=$(file_state "$(target_codex divergence)")
 run_case divergence
-assert 'unrequested divergence refuses and names both levels' bash -c '[[ $1 == 1 && $2 == *ask* && $2 == *high* && $3 == "$4" && $5 == "$6" ]]' _ "${status[divergence]}" "${output[divergence]}" "$(file_state "$(target_claude divergence)")" "$before_c" "$(file_state "$(target_codex divergence)")" "$before_d"
+assert 'unrequested divergence refuses and names both levels' bash -c '[[ $1 == 1 && $2 == *ask* && $2 == *high* && $3 == "$4" && $5 == "$6" ]]' _ "${status[$(case_index "divergence")]}" "${output[$(case_index "divergence")]}" "$(file_state "$(target_claude divergence)")" "$before_c" "$(file_state "$(target_codex divergence)")" "$before_d"
 run_case divergence default
-if [[ ${status[divergence]} == 0 && $(level_of "$(target_claude divergence)") == default && $(level_of "$(target_codex divergence)") == default ]]; then pass 'explicit level repairs divergence in both files'; else fail 'explicit level repairs divergence in both files'; fi
+if [[ ${status[$(case_index "divergence")]} == 0 && $(level_of "$(target_claude divergence)") == default && $(level_of "$(target_codex divergence)") == default ]]; then pass 'explicit level repairs divergence in both files'; else fail 'explicit level repairs divergence in both files'; fi
 
 # Fault helper snapshots both targets immediately before a refusal.
 snapshot_fault() { fault_c=$(file_state "$(target_claude "$1")"); fault_d=$(file_state "$(target_codex "$1")"); }
@@ -149,39 +168,39 @@ run_case double_markers
 cp "$(target_claude double_markers)" "$(target_claude double_markers).again"
 cat "$(target_claude double_markers).again" >> "$(target_claude double_markers)"
 snapshot_fault double_markers; run_case double_markers
-assert 'two marker pairs refuse' bash -c '[[ $1 == 1 && $2 == *marker* ]]' _ "${status[double_markers]}" "${output[double_markers]}"
+assert 'two marker pairs refuse' bash -c '[[ $1 == 1 && $2 == *marker* ]]' _ "${status[$(case_index "double_markers")]}" "${output[$(case_index "double_markers")]}"
 assert_fault 'two marker pairs' double_markers
 
 new_case broken_marker
 printf '%s\n' '<!-- wheelchair:diagram-sensitivity start -->' > "$(target_claude broken_marker)"
 snapshot_fault broken_marker; run_case broken_marker
-assert 'unclosed marker refuses' bash -c '[[ $1 == 1 && $2 == *marker* ]]' _ "${status[broken_marker]}" "${output[broken_marker]}"
+assert 'unclosed marker refuses' bash -c '[[ $1 == 1 && $2 == *marker* ]]' _ "${status[$(case_index "broken_marker")]}" "${output[$(case_index "broken_marker")]}"
 assert_fault 'unclosed marker' broken_marker
 
 new_case unwritable
 run_case unwritable
 chmod a-w "$(target_codex unwritable)"
 snapshot_fault unwritable; run_case unwritable default
-assert 'unwritable second target refuses' bash -c '[[ $1 == 1 && $2 == *writable* ]]' _ "${status[unwritable]}" "${output[unwritable]}"
+assert 'unwritable second target refuses' bash -c '[[ $1 == 1 && $2 == *writable* ]]' _ "${status[$(case_index "unwritable")]}" "${output[$(case_index "unwritable")]}"
 assert_fault 'unwritable second target' unwritable
 
 new_case malformed_second
 run_case malformed_second
-sed -i '/^diagram-sensitivity:/d' "$(target_codex malformed_second)"
+sed_replace '/^diagram-sensitivity:/d' "$(target_codex malformed_second)"
 snapshot_fault malformed_second; run_case malformed_second
-assert 'malformed second target refuses' bash -c '[[ $1 == 1 && $2 == *"level line"* ]]' _ "${status[malformed_second]}" "${output[malformed_second]}"
+assert 'malformed second target refuses' bash -c '[[ $1 == 1 && $2 == *"level line"* ]]' _ "${status[$(case_index "malformed_second")]}" "${output[$(case_index "malformed_second")]}"
 assert_fault 'malformed second target' malformed_second
 
 new_case override
 run_case override
-printf 'custom override\n' > "${codex[override]}/AGENTS.override.md"
+printf 'custom override\n' > "${codex[$(case_index "override")]}/AGENTS.override.md"
 snapshot_fault override; run_case override
-assert 'non-empty override refuses by name' bash -c '[[ $1 == 1 && $2 == *AGENTS.override.md* ]]' _ "${status[override]}" "${output[override]}"
+assert 'non-empty override refuses by name' bash -c '[[ $1 == 1 && $2 == *AGENTS.override.md* ]]' _ "${status[$(case_index "override")]}" "${output[$(case_index "override")]}"
 assert_fault 'non-empty override' override
 
 new_case invalid_argument
 snapshot_fault invalid_argument; run_case invalid_argument nonsense
-assert 'unrecognised level exits two and names every level' bash -c '[[ $1 == 2 && $2 == *ask* && $2 == *default* && $2 == *high* ]]' _ "${status[invalid_argument]}" "${output[invalid_argument]}"
+assert 'unrecognised level exits two and names every level' bash -c '[[ $1 == 2 && $2 == *ask* && $2 == *default* && $2 == *high* ]]' _ "${status[$(case_index "invalid_argument")]}" "${output[$(case_index "invalid_argument")]}"
 assert_fault 'unrecognised level' invalid_argument
 
 for kind in no_level two_levels; do
@@ -189,12 +208,13 @@ for kind in no_level two_levels; do
   new_case "$name"
   run_case "$name"
   if [[ $kind == no_level ]]; then
-    sed -i '/^diagram-sensitivity:/d' "$(target_claude "$name")"
+    sed_replace '/^diagram-sensitivity:/d' "$(target_claude "$name")"
   else
-    sed -i '/^diagram-sensitivity:/a diagram-sensitivity: high' "$(target_claude "$name")"
+    sed_replace '/^diagram-sensitivity:/a\
+diagram-sensitivity: high' "$(target_claude "$name")"
   fi
   snapshot_fault "$name"; run_case "$name"
-  assert "$kind level lines refuse without repair" bash -c '[[ $1 == 1 && $2 == *"level line"* ]]' _ "${status[$name]}" "${output[$name]}"
+  assert "$kind level lines refuse without repair" bash -c '[[ $1 == 1 && $2 == *"level line"* ]]' _ "${status[$(case_index "$name")]}" "${output[$(case_index "$name")]}"
   assert_fault "$kind level lines" "$name"
 done
 
@@ -202,14 +222,14 @@ done
 # absent dial is named as absent rather than reported at some level.
 new_case report_diverged
 run_case report_diverged ask
-sed -i 's/^diagram-sensitivity: ask$/diagram-sensitivity: high/' "$(target_codex report_diverged)"
+sed_replace 's/^diagram-sensitivity: ask$/diagram-sensitivity: high/' "$(target_codex report_diverged)"
 snapshot_fault report_diverged; run_case report_diverged --report
-assert 'the bare command reports a disagreement instead of picking a side' bash -c '[[ $1 == 1 && $2 == *ask* && $2 == *high* ]]' _ "${status[report_diverged]}" "${output[report_diverged]}"
+assert 'the bare command reports a disagreement instead of picking a side' bash -c '[[ $1 == 1 && $2 == *ask* && $2 == *high* ]]' _ "${status[$(case_index "report_diverged")]}" "${output[$(case_index "report_diverged")]}"
 assert_fault 'the bare command' report_diverged
 
 new_case report_absent
 snapshot_fault report_absent; run_case report_absent --report
-assert 'the bare command names an uninstalled dial and writes nothing' bash -c '[[ $1 == 0 && $2 == *"not installed"* ]]' _ "${status[report_absent]}" "${output[report_absent]}"
+assert 'the bare command names an uninstalled dial and writes nothing' bash -c '[[ $1 == 0 && $2 == *"not installed"* ]]' _ "${status[$(case_index "report_absent")]}" "${output[$(case_index "report_absent")]}"
 assert_fault 'the bare command on an absent dial' report_absent
 
 # Both harnesses receive the same substituted rule, except for their dial line.
@@ -297,26 +317,26 @@ cp "$writer" "$fixture/guard-worktree/sensitivity/set.sh"
 cp "$repo/install/guard.sh" "$fixture/guard-worktree/install/guard.sh"
 cp "$repo/protocol/sensitivity.md" "$fixture/guard-worktree/protocol/sensitivity.md"
 new_case refuse_worktree
-allow[refuse_worktree]=''
+allow[$(case_index "refuse_worktree")]=''
 saved_writer=$writer; writer=$fixture/guard-worktree/sensitivity/set.sh
 run_case refuse_worktree high
-assert 'a write from a linked worktree is refused and lands nothing' bash -c '[[ $1 == 3 && $2 == *"linked git worktree"* && ! -e $3 && ! -e $4 ]]' _ "${status[refuse_worktree]}" "${output[refuse_worktree]}" "$(target_claude refuse_worktree)" "$(target_codex refuse_worktree)"
+assert 'a write from a linked worktree is refused and lands nothing' bash -c '[[ $1 == 3 && $2 == *"linked git worktree"* && ! -e $3 && ! -e $4 ]]' _ "${status[$(case_index "refuse_worktree")]}" "${output[$(case_index "refuse_worktree")]}" "$(target_claude refuse_worktree)" "$(target_codex refuse_worktree)"
 run_case refuse_worktree --report
-assert 'a report from a linked worktree still runs' bash -c '[[ $1 != 3 ]]' _ "${status[refuse_worktree]}"
+assert 'a report from a linked worktree still runs' bash -c '[[ $1 != 3 ]]' _ "${status[$(case_index "refuse_worktree")]}"
 writer=$saved_writer
 
 assert 'real CLAUDE.md is byte-identical after suite' bash -c '[[ $1 == "$2" ]]' _ "$real_claude_before" "$(file_state "$real_claude")"
 assert 'real AGENTS.md is byte-identical after suite' bash -c '[[ $1 == "$2" ]]' _ "$real_codex_before" "$(file_state "$real_codex")"
 
 run_case report_diverged --json
-assert 'structured report preserves divergent levels' bash -c '[[ $1 == 0 ]] && node -e "const x=JSON.parse(process.argv[1]); if(x.level!==null || x.files[0].level!==\"ask\" || x.files[1].level!==\"high\") process.exit(1)" "$2"' _ "${status[report_diverged]}" "${output[report_diverged]}"
+assert 'structured report preserves divergent levels' bash -c '[[ $1 == 0 ]] && node -e "const x=JSON.parse(process.argv[1]); if(x.level!==null || x.files[0].level!==\"ask\" || x.files[1].level!==\"high\") process.exit(1)" "$2"' _ "${status[$(case_index "report_diverged")]}" "${output[$(case_index "report_diverged")]}"
 new_case report_partial
 run_case report_partial ask
-sed -i '/<!-- wheelchair:diagram-sensitivity start -->/,/<!-- wheelchair:diagram-sensitivity end -->/d' "$(target_codex report_partial)"
+sed_replace '/<!-- wheelchair:diagram-sensitivity start -->/,/<!-- wheelchair:diagram-sensitivity end -->/d' "$(target_codex report_partial)"
 run_case report_partial --json
-assert 'structured report requires a block in every present file' bash -c '[[ $1 == 0 ]] && node -e "const x=JSON.parse(process.argv[1]); if(x.level!==null || x.files.length!==2 || x.files[0].harness!==\"claude\" || x.files[0].level!==\"ask\" || x.files[1].harness!==\"codex\" || x.files[1].level!==null) process.exit(1)" "$2"' _ "${status[report_partial]}" "${output[report_partial]}"
+assert 'structured report requires a block in every present file' bash -c '[[ $1 == 0 ]] && node -e "const x=JSON.parse(process.argv[1]); if(x.level!==null || x.files.length!==2 || x.files[0].harness!==\"claude\" || x.files[0].level!==\"ask\" || x.files[1].harness!==\"codex\" || x.files[1].level!==null) process.exit(1)" "$2"' _ "${status[$(case_index "report_partial")]}" "${output[$(case_index "report_partial")]}"
 run_case report_absent --json
-assert 'structured report names absent blocks' bash -c '[[ $1 == 0 ]] && node -e "const x=JSON.parse(process.argv[1]); if(x.level!==null || x.files.length!==2 || x.files.some(f=>f.level!==null)) process.exit(1)" "$2"' _ "${status[report_absent]}" "${output[report_absent]}"
+assert 'structured report names absent blocks' bash -c '[[ $1 == 0 ]] && node -e "const x=JSON.parse(process.argv[1]); if(x.level!==null || x.files.length!==2 || x.files.some(f=>f.level!==null)) process.exit(1)" "$2"' _ "${status[$(case_index "report_absent")]}" "${output[$(case_index "report_absent")]}"
 
 printf 'RESULT %d passed, %d failed\n' "$passes" "$failures"
 (( failures == 0 ))
