@@ -70,7 +70,7 @@ function buildAgents(threads, stages = {}) {
     const needs = []; addNeeds(needs, { ...thread, cards });
     const nodes = new Map(visible.map((s) => [s.name, { ...publicSession(s), context: s.context || null, activity: activity(s), children: [], has_brief: typeof s.brief === 'string' && !!s.brief }]));
     const root = nodes.get(lead.name);
-    root.question_paths = cards.filter(c => c.kind === 'question' && c.passes_on && !c.answered && !c.retracted_at).map(c => questionChain(c, cards).map(h => h.session));
+    const question_paths = cards.filter(c => c.kind === 'question' && c.passes_on && !c.answered && !c.retracted_at).map(c => questionChain(c, cards).map(h => h.session));
     for (const s of visible) {
       const node = nodes.get(s.name);
       node.question = questionFor(s, cards, sessions);
@@ -111,7 +111,7 @@ function buildAgents(threads, stages = {}) {
     }
     const finished = !sessions.some((s) => s.live === true);
     const finishedAt = sessions.map((s) => s.ended_at).filter(Boolean).sort().pop();
-    return [{ thread_id: thread.id, thread_title: thread.title, lead_name: thread.lead_name, machine: thread.machine, project: path.basename(thread.project || ''), stage: stages[thread.id] || 'idea', finished, ...(finished && finishedAt ? { finished_at: finishedAt } : {}), asides: (thread.asides || []).filter((a) => a.status === 'open').map((a) => ({ kind: 'aside', id: a.id, number: a.number, display_title: `Side conversation ${a.number}`, state: a.turn || a.pending?.length ? 'working' : 'idle' })), counts, session: root, children: root.children }];
+    return [{ thread_id: thread.id, thread_title: thread.title, lead_name: thread.lead_name, machine: thread.machine, project: path.basename(thread.project || ''), stage: stages[thread.id] || 'idea', finished, ...(finished && finishedAt ? { finished_at: finishedAt } : {}), question_paths, asides: (thread.asides || []).filter((a) => a.status === 'open').map((a) => ({ kind: 'aside', id: a.id, number: a.number, display_title: `Side conversation ${a.number}`, state: a.turn || a.pending?.length ? 'working' : 'idle' })), counts, session: root, children: root.children }];
   });
 }
 
