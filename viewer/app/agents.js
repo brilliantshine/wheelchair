@@ -63,7 +63,7 @@ function buildAgents(threads, stages = {}) {
 
 async function agents(hub) {
   const threads = await hub.allThreads();
-  const stages = Object.fromEntries(await Promise.all(threads.map(async (thread) => [thread.id, thread.slug ? STATUS_GROUP[await readStatus({ ...thread, worktree: thread.worktree || thread.project || '' })] || 'idea' : 'idea'])));
+  const stages = Object.fromEntries(await Promise.all(threads.map(async (thread) => [thread.id, !thread.slug ? 'idea' : STATUS_GROUP[thread.worktree ? await readStatus(thread) : thread.last_status] || 'idea'])));
   const leads = buildAgents(threads, stages);
   const registry = await hub.machines();
   const hubEntry = await hub.state.resolveMachine(registry, 'hub');
