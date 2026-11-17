@@ -91,3 +91,15 @@ test('pending ends are bounded and old history is excluded from normal', async (
   await history.append(f.stateDir, f.thread.project, { kind: 'shell', key: 'old', started_at: old, ended_at: old });
   assert.equal(await history.normal(f.stateDir, f.thread.project, 'old'), null);
 });
+
+test('mid-turn delivery closes the preceding turn for late step starts', async () => {
+  const f = await fixture();
+  f.s.role = 'worker';
+  const hub = { call: async () => {}, appendSent: async () => {}, save: async () => {} };
+  assert.equal(await sessions.deliver(hub, f.thread, f.s, { midTurn: true }), true);
+  const end = f.s.turns[0].ended_at;
+  assert.equal(end, f.s.turns[1].started_at);
+  await f.begin('late-mid-turn', 6000);
+  assert.equal(f.s.steps.find(s => s.id === 'late-mid-turn').ended_at, end);
+  assert.equal(f.s.steps.find(s => s.id === 'late-mid-turn').clean, false);
+});

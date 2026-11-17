@@ -11,7 +11,8 @@ const question = { fits: 'Fits', question: 'Choose?', options: [{ id: 'a', label
 const sessions = () => [{ name: 'lead', role: 'lead', live: true }, { name: 'sub', role: 'sub-lead', started_by: 'lead', live: true }, { name: 'worker', role: 'worker', started_by: 'sub', live: true }];
 const message = (id, session, to, passes_on) => ({ kind: 'message', id, session, to, asks: true, text: id, at: id, ...(passes_on && { passes_on }) });
 const node = (root, name) => root.name === name ? root : root.children.map(c => node(c, name)).find(Boolean);
-const tree = cards => buildAgents([{ id: 't', title: 'T', sessions: sessions(), cards }])[0].session;
+const record = cards => buildAgents([{ id: 't', title: 'T', sessions: sessions(), cards }])[0];
+const tree = cards => record(cards).session;
 
 test('optional question fields validate and old cards remain valid', () => {
   for (const value of [{ to: 'lead', text: 'Hi' }, { to: 'lead', text: 'Hi', asks: true, passes_on: 'id' }]) assert.equal(validate('message', value).ok, true);
@@ -36,24 +37,25 @@ test('paths and waiting questions follow direct and relayed cards and close on r
   const first = message('1', 'worker', 'lead');
   const leadCard = { kind: 'question', id: '2', session: 'lead', at: '2', question: 'Choose?', passes_on: '1' };
   let root = tree([first, leadCard]);
-  assert.deepEqual(root.question_paths, [['worker', 'lead']]);
+  assert.deepEqual(record([first, leadCard]).question_paths, [['worker', 'lead']]);
   assert.equal(node(root, 'worker').question.card_id, '2');
   assert.deepEqual(node(root, 'worker').question.trail.map(h => h.who), ['worker', 'lead']);
   const relay = message('3', 'sub', 'lead', '1');
   const relayed = { ...leadCard, passes_on: '3' };
   root = tree([{ ...first, to: 'sub', text: 'x'.repeat(81) + '\nsecond' }, relay, relayed]);
-  assert.deepEqual(root.question_paths, [['worker', 'sub', 'lead']]);
+  assert.deepEqual(record([{ ...first, to: 'sub' }, relay, relayed]).question_paths, [['worker', 'sub', 'lead']]);
   assert.equal(node(root, 'worker').question.trail[0].text, 'x'.repeat(79) + '…');
   assert.equal(node(tree([first, { kind: 'message', session: 'lead', to: 'worker' }]), 'worker').question, null);
   assert.equal(node(tree([message('4', 'sub', 'worker'), { kind: 'result', session: 'worker' }]), 'sub').question, null);
   for (const closed of [{ answered: true }, { retracted_at: 'now' }]) {
     root = tree([first, { ...leadCard, ...closed }]);
     assert.equal(node(root, 'worker').question, null);
-    assert.deepEqual(root.question_paths, []);
+    assert.deepEqual(record([first, { ...leadCard, ...closed }]).question_paths, []);
   }
+  assert.equal(Object.hasOwn(root, 'question_paths'), false);
   assert.equal(Object.hasOwn(node(root, 'worker'), 'question_paths'), false);
   const loop = [message('a', 'worker', 'sub', 'b'), message('b', 'sub', 'lead', 'a'), { ...leadCard, passes_on: 'b' }];
-  assert.ok(tree(loop).question_paths[0].length <= 3);
+  assert.ok(record(loop).question_paths[0].length <= 3);
 });
 
 test('agents fills normal from session steps and hides raw activity state', async () => {

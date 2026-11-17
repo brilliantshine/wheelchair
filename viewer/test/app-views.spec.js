@@ -3,6 +3,7 @@
 // Features, Agents and Terminal pages against a real server (Spec "Views"), at phone and
 // desktop width. Server and fake machine services come from helpers/app-views-setup.js.
 const { test, expect } = require('@playwright/test');
+const { buildAgents } = require('../app/agents.js');
 const { closeViews, openPage, setupViews } = require('./helpers/app-views-setup.js');
 
 const VIEWPORTS = {
@@ -222,6 +223,32 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       const before = await page.locator('.activity-now').textContent();
       await expect.poll(() => page.locator('.activity-now').textContent()).not.toBe(before);
     });
+
+    for (const relayed of [false, true]) {
+      test(`real agents payload renders ${relayed ? 'relayed' : 'direct'} question trail`, async ({ page }) => {
+        test.skip(label !== 'desktop');
+        const at = '2026-01-01T06:23:00';
+        const sessions = [
+          { name: 'lead', role: 'lead', live: true },
+          { name: 'sub', role: 'sub-lead', started_by: 'lead', live: true },
+          { name: 'worker', role: 'worker', started_by: 'sub', live: true },
+        ];
+        const cards = [{ kind: 'message', id: 'ask', session: 'worker', to: relayed ? 'sub' : 'lead', asks: true, text: 'Question?', at }];
+        if (relayed) cards.push({ kind: 'message', id: 'relay', session: 'sub', to: 'lead', asks: true, passes_on: 'ask', text: 'Needs a decision', at });
+        cards.push({ kind: 'question', id: 'card', session: 'lead', passes_on: relayed ? 'relay' : 'ask', question: 'Choose?', at });
+        const leads = buildAgents([{ id: 'a', title: 'Thread', lead_name: 'Beta', sessions, cards }]);
+        await page.route('**/api/agents', route => route.fulfill({ json: { leads, machines: [] } }));
+        await openPage(page, context, '/app/agents?lead=a&agent=worker');
+        await expect(page.locator('[data-session="worker"]')).toHaveClass(/question-path/);
+        await expect(page.locator('[data-session="lead"]')).toHaveClass(/question-path/);
+        await expect(page.locator('.agents-path-legend')).toBeVisible();
+        const lines = [`Asked ${relayed ? 'the sub-lead' : 'Beta'} at 06:23`];
+        if (relayed) lines.push('The sub-lead passed it to Beta: Needs a decision');
+        lines.push('Beta is asking you in the thread');
+        await expect(page.locator('.agents-question strong, .agents-question span')).toHaveText(lines);
+        await expect(page.getByRole('link', { name: 'Go to the question' })).toHaveAttribute('href', '/wheelchair/app/thread?id=a#card-card');
+      });
+    }
 
     test('activity handles timing, memory and waiting variations', async ({ page }) => {
       test.skip(label !== 'desktop');
