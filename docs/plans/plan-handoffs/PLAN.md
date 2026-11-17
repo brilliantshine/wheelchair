@@ -42,6 +42,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 12 | Strictly ahead is decided by git ancestry of the heads alone, not by comparing stage names | Stage moves only with committed PLAN.md changes, so the heads already order it; one rule instead of two | defaulted |
 | 13 | Archived threads cannot be exported; an archived thread found on import counts as existing and can be advanced | No worktree to push from; reviving fits the no-duplicates rule | defaulted |
 | 14 | Carried cards that were still open are stored withdrawn; the new lead posts fresh ones | Avoids pressing a card whose asker no longer exists | defaulted |
+| 15 | Whoever picks the work up pushes an empty "picked up" commit to the branch first; import refuses when the branch moved past the export, and undo hand-off refuses when the branch moved | Collin's proposal: makes a pick-up visible on GitHub so a second import or an undo can't start a second copy. Empty commit chosen so nothing lands in the files | user |
 
 ## Spec
 
@@ -149,7 +150,11 @@ The hub then:
 3. **Checks the branch**: machine fetches `origin`; `origin/wc/<id>` must exist and
    contain `head` (`head` is an ancestor of or equal to its tip). Otherwise 409 "the branch
    on GitHub doesn't have the exported work".
-4. **Looks for the thread id** in this hub, archived or not, and branches:
+4. **Looks for the thread id** in this hub, archived or not, and branches (the table
+   below). Only for Create and Advance, the branch tip must also **equal** `head`: a tip
+   past `head` means someone already picked the work up (see Pick-up commit), and import
+   is refused with 409 "this was already picked up elsewhere on <date of the first commit
+   after head>; export again from wherever it is now".
 
 | Case | Outcome |
 |---|---|
@@ -185,6 +190,26 @@ whose ids are not already present (open ones retracted as in Create), replace `p
 Create, clear `handed_off`, set `imported`, and start a lead in that worktree with the same
 `[wc:context import]` message.
 
+### Pick-up commit
+
+Whoever takes the work pushes a small commit to the branch on GitHub before working, so
+everyone can see from the branch that it was picked up.
+
+- On Create and Advance, after the worktree is at `head` and before the lead starts, the
+  machine makes an empty commit on `wc/<id>` (`git commit --allow-empty`) with message
+  `handoff: picked up <ISO time>` and pushes it. If the push is rejected (the branch moved
+  meanwhile), the import fails with the "already picked up elsewhere" 409, and a created
+  thread record and worktree are removed again (the record is deleted; the worktree is
+  removed with `git worktree remove`, its local branch kept).
+- **Undo hand-off** first fetches and compares `origin/wc/<id>` with `handed_off.head`. If
+  the tip has moved, undo is refused with 409 "this was picked up elsewhere on <date>;
+  import a newer file to continue here", and the banner says the same.
+- Advance's ancestry check still holds after a pick-up: the source's head is the exported
+  head, which the pick-up commit and later work build on, so a file exported back from
+  the other copy is strictly ahead.
+- Someone picking the branch up by hand, without wheelchair, is asked (README) to push such
+  a commit too; wheelchair cannot enforce that.
+
 ### Machine service changes (`machine/service.js`)
 
 - `createWorktree` (`machine/service.js:425-478`) gains `input.from_remote_branch: true`:
@@ -203,6 +228,11 @@ Create, clear `handed_off`, set `imported`, and start a lead in that worktree wi
     `same`, `behind` (file older), `ahead` (file strictly ahead), `diverged` or `none`.
   - `fast-forward` `{worktree, head}` → refuses on a dirty worktree, else
     `git merge --ff-only <head>`.
+  - `pick-up` `{worktree, branch, head}` → refuses unless the worktree's HEAD is `head`;
+    empty commit as in Pick-up commit, `git push origin <branch>` (no force); returns the
+    new head or 409 on rejection.
+  - `inspect` also returns `remote_tip` and, when the tip is past `head`, the committer
+    date of the first commit after `head` (`git rev-list --reverse head..tip | head -1`).
   - Branch names must match `^wc/[0-9a-f]{12}$` and shas `^[0-9a-f]{40}$`; anything else 422.
 - Repository normalization is one function used by both actions:
   `git@github.com:o/r.git`, `https://github.com/o/r(.git)`, `ssh://git@github.com/o/r` →
@@ -238,10 +268,12 @@ New tests, then the suites:
   thread refuses messages, presses, restart; undo restarts the lead; import validation
   failures (bad JSON shape, bad id, wrong version, repo mismatch, missing branch); import
   create (cards carried, open ones retracted, pins filtered, `[wc:context import]` queued);
-  opened-same, opened-older, opened-diverged, opened-other-machine, advanced (live and
+  pick-up commit pushed on create and advance; import refused when the tip moved past
+  `head`, and the created record and worktree rolled back when the pick-up push is
+  rejected; undo refused when the branch moved; opened-same, opened-older, opened-diverged, opened-other-machine, advanced (live and
   archived), advance refused when busy or dirty.
 - `machine/test/service.test.js`: worktree from remote branch (new local, existing
-  ancestor, existing diverged); `/v1/handoff` push/inspect/fast-forward with each
+  ancestor, existing diverged); `/v1/handoff` push/inspect/fast-forward/pick-up with each
   relation; name and sha validation; URL normalization table.
 - Browser (`viewer/test/*.spec.js`): Export button disabled with reason, confirm and
   download; handed-off banner and Undo; new-thread Import flow for created and opened.
