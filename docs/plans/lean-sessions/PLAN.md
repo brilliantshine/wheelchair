@@ -361,6 +361,17 @@ get buried as this file grows.
 | mechanics | blocking | Summing Codex snapshots double-counts | upheld | Decision 45; baseline recomputed (differences under 0.1%) |
 | mechanics | major | Open tab keeps a stale warning | upheld | Decision 45 |
 
+### Round 10 — 2026-11-17
+
+**Lanes:** intent: claude; mechanics: gpt; cross-family: yes.
+
+**Changed since Round 9:** budget reset after Collin chose Keep going.
+- `Role: <role>` first line; Codex account homes in re-measure (44)
+- GPT measured by the last cumulative total; baseline recomputed; pinned approval card redraws on `ready` change (45)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
