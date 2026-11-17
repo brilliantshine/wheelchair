@@ -42,17 +42,17 @@
     return keys;
   }
 
-  const mouseReport = /^(?:\x1b\[M[\s\S]{3}|\x1b\[<\d+;\d+;\d+[Mm]|\x1b\[\d+;\d+;\d+M)$/;
+  const mouseReport = /\x1b\[M[\s\S]{3}|\x1b\[<\d+;\d+;\d+[Mm]|\x1b\[\d+;\d+;\d+M|\x1b\[[IO]/g;
   function stripMouseModes(text) {
     return text.replace(/\x1b\[\?([\d;]+)h/g, (sequence, modes) => {
-      const kept = modes.split(';').filter(mode => !['1000', '1002', '1003', '1005', '1006', '1015'].includes(mode));
+      const kept = modes.split(';').filter(mode => !['1000', '1002', '1003', '1004', '1005', '1006', '1015'].includes(mode));
       return kept.length ? `\x1b[?${kept.join(';')}h` : '';
     });
   }
 
   function mount(container, initial) {
     let options = { ...initial }, term, observer, interval, dataSubscription;
-    let generation = 0, active = false, enabled = false, previous = null, polling = false;
+    let generation = 0, active = false, enabled = false, previous = null, polling = false, defaultCursor;
     let sending = Promise.resolve();
     const switchEl = document.createElement('button');
     switchEl.type = 'button';
@@ -78,7 +78,16 @@
       container.classList.toggle('tv-typing', enabled);
       notice.textContent = enabled ? `Keys and pastes go straight to ${options.label}.` : '';
       notice.hidden = !enabled;
-      if (term) term.options.theme = { cursor: '#d9a441' };
+      if (term) {
+        if (enabled) {
+          const cursor = getComputedStyle(document.documentElement).getPropertyValue('--warn').trim();
+          term.options.theme = { ...term.options.theme, cursor };
+        } else {
+          term.options.theme = { ...term.options.theme, cursor: defaultCursor };
+        }
+        term.write(enabled ? '\x1b[?25h' : '\x1b[?25l');
+        if (enabled) term.focus();
+      }
     }
     function sendKey(key) {
       const queuedGeneration = generation;
@@ -94,7 +103,9 @@
       });
     }
     function onData(data) {
-      if (!enabled || mouseReport.test(data)) return;
+      if (!enabled) return;
+      data = data.replace(mouseReport, '');
+      if (!data) return;
       for (const key of keysFor(data)) sendKey(key);
     }
     const onSwitch = () => setTyping(!enabled);
@@ -109,7 +120,9 @@
       const screen = host.querySelector('.xterm-screen');
       if (!screen) return;
       const cellHeight = screen.getBoundingClientRect().height / term.rows;
-      const rows = cellHeight ? Math.max(1, Math.floor(host.clientHeight / cellHeight)) : 24;
+      const style = getComputedStyle(host);
+      const height = host.clientHeight - (parseFloat(style.paddingTop) || 0) - (parseFloat(style.paddingBottom) || 0);
+      const rows = cellHeight ? Math.max(1, Math.floor(height / cellHeight)) : 24;
       if (rows !== term.rows) { term.resize(term.cols, rows); previous = null; }
     }
     async function poll() {
@@ -119,7 +132,10 @@
       const currentTerm = term;
       try {
         const response = await fetch(`${options.base}/pane${options.history ? `?history=${options.history}` : ''}`);
-        if (!response.ok) throw new Error(`pane ${response.status}`);
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body.error || String(response.status));
+        }
         const body = await response.json();
         if (!active || currentTerm !== term) return;
         const pane = stripMouseModes(String(body[options.paneField] ?? ''));
@@ -133,7 +149,7 @@
           const distance = buffer.baseY - buffer.viewportY;
           if (cols !== term.cols) term.resize(cols, term.rows);
           // Clear screen and scrollback in one write, preserving the viewport in its callback.
-          term.write(`\x1b[0m\x1b[3J\x1b[2J\x1b[H${lines.join('\r\n')}\x1b[0m`, () => {
+          term.write(`\x1b[0m\x1b[3J\x1b[2J\x1b[H${lines.join('\r\n')}\x1b[0m${enabled ? '\x1b[?25h' : '\x1b[?25l'}`,  () => {
             if (!active || currentTerm !== term) return;
             if (distance > 0) term.scrollToLine(Math.max(0, term.buffer.active.baseY - distance));
             else term.scrollToBottom();
@@ -143,7 +159,7 @@
         if (!active || currentTerm !== term) return;
         const message = `unreachable: ${failure.message}`;
         options.onStatus(message, false);
-        if (previous !== message) { previous = message; term.write(`\x1b[3J\x1b[2J\x1b[H${message}`); }
+        if (previous !== message) { previous = message; term.write(`\x1b[3J\x1b[2J\x1b[H${message}${enabled ? '\x1b[?25h' : '\x1b[?25l'}`); }
       } finally { if (currentTerm === term) polling = false; }
     }
     function start() {
@@ -152,6 +168,7 @@
       container.append(notice, host, keys);
       term = new window.Terminal({ fontSize: 13, cols: 80, rows: 24, scrollback: 2000, cursorBlink: false, convertEol: false });
       term.open(host);
+      defaultCursor = term.options.theme.cursor;
       dataSubscription = term.onData(onData);
       setTyping(false);
       resize();

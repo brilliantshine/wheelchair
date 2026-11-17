@@ -92,7 +92,6 @@
 .tv-switch[aria-pressed="true"] { color: var(--warn); border-color: var(--warn); background: var(--warn-bg); }
 .tv-notice { color: var(--warn); padding: 4px 8px 0; font-size: 13px; }
 .tv-host { flex: 1; min-height: 0; overflow: auto; background: var(--term-bg); padding: 4px; }
-.tv-view:not(.tv-typing) .xterm-cursor-layer, .tv-view:not(.tv-typing) .xterm-cursor { visibility: hidden; }
 .tv-keys { display: none; gap: 6px; flex-wrap: wrap; }
 .tv-keys button { flex: 1 1 56px; min-height: 44px; }
 @media (pointer: coarse), (max-width: 600px) { .tv-typing .tv-keys { display: flex; } }

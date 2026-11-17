@@ -116,14 +116,22 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       await page.evaluate(() => window.termView._onDataForTest('\x1b[<0;10;20M'));
       await page.waitForTimeout(100);
       expect(count()).toBe(before);
-      await page.evaluate(() => { window.termView._onDataForTest('x'.repeat(200)); window.termView.setTyping(false); });
-      await page.waitForTimeout(400);
+      await page.evaluate(() => window.termView._onDataForTest('x'.repeat(200)));
+      await expect.poll(count).toBeGreaterThan(before);
+      await page.getByRole('button', { name: 'Typing' }).click();
+      await page.waitForTimeout(1500);
       const stopped = count();
-      await page.waitForTimeout(400);
+      await page.waitForTimeout(1000);
       expect(count()).toBe(stopped);
       expect(stopped - before).toBeLessThan(200);
+      await page.getByRole('button', { name: 'View only' }).click();
       await page.reload();
       await expect(page.getByRole('button', { name: 'View only' })).toHaveAttribute('aria-pressed', 'false');
+      const afterReload = count();
+      await page.locator('.xterm').click();
+      await page.keyboard.type('abc');
+      await page.waitForTimeout(200);
+      expect(count()).toBe(afterReload);
     });
 
     test('the terminal shows the pane and sends typed keys without an extra Enter', async ({ page }) => {
@@ -133,8 +141,9 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       await noSideScroll(page);
       await page.getByRole('button', { name: 'View only' }).click();
       const before = context.hub.calls.filter((call) => call.path.endsWith('/keys')).length;
-      await page.locator('.xterm').click();
-      await page.keyboard.type('ls');
+      await page.keyboard.type('l');
+      await expect.poll(() => context.hub.calls.filter((call) => call.path.endsWith('/keys')).slice(before).some(call => call.body.keys === 'l')).toBe(true);
+      await page.keyboard.type('s');
       await page.keyboard.press('Enter');
       await expect.poll(() => context.hub.calls.filter((call) => call.path.endsWith('/keys')).length)
         .toBe(before + 3);

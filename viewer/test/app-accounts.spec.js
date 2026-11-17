@@ -562,11 +562,14 @@ test.describe('terminal login mode', () => {
   test.use({ viewport: { width: 390, height: 844 } });
   test('reads the login pane and sends keys to the login route', async ({ page }) => {
     const state = {};
+    const panes = [];
+    page.on('request', request => { if (request.url().includes('/signin/beelink/pane')) panes.push(request.url()); });
     await mock(page, state);
     await page.goto(`${ctx.server.url}/app/terminal?login=default-claude&machine=beelink`);
     await expect(page.locator('#term-status')).toHaveText('live');
     await expect(page.locator('#term-name')).toContainText('default-claude');
     expect(state.calls.some((c) => c[1] === '/accounts/default-claude/signin/beelink/pane')).toBe(true);
+    expect(panes.every(url => !new URL(url).searchParams.has('history'))).toBe(true);
     await page.getByRole('button', { name: 'View only' }).click();
     await page.locator('.tv-keys button[data-key="Enter"]').click();
     await expect.poll(() => state.calls.find((c) => c[0] === 'POST' && c[1].endsWith('/keys'))).toBeTruthy();
