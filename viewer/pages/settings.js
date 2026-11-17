@@ -125,7 +125,7 @@
           type: 'button', class: 'choice', role: 'radio', 'aria-checked': String(agreed === value),
           onclick: () => saveDiagram(value),
         }, h('span', { class: 'choice-name', text: name }), h('span', { class: 'hint', text: line })))),
-      agreed ? null : h('p', { class: 'note diagram-lines', role: 'status' }, lines.map((line, i) => [i ? h('br') : null, line])));
+      ...(agreed ? [] : [h('p', { class: 'note diagram-lines', role: 'status' }, lines.map((line, i) => [i ? h('br') : null, line]))]));
   }
 
   async function loadDiagram() {
