@@ -1,6 +1,6 @@
 ---
 slug: token-efficiency
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-16
 ---
 
@@ -33,6 +33,25 @@ get buried as this file grows.
 | 3 | Scout setting sits in Other agents as a tier selector like reviewer/verifier/mapper, default Light | matches the existing pattern and Collin's "light tier" | defaulted |
 
 ## Spec
+
+### Flow
+
+A lead or sub-lead starts with its scout model in its instructions; code reading goes to the scout, and only its findings come back. The sub-lead's check of a finished worker (after its own test rerun) is the same pattern, drawn from `graphs/scout-diff-check.json`.
+
+```mermaid
+flowchart TD
+  A[Settings: scout tier, sub-lead model] --> B[hub starts lead or sub-lead with its model and scout model]
+  B --> C{needs to read more than a couple of files?}
+  C -- no --> D[reads them itself]
+  C -- yes --> E{scout model available on this CLI?}
+  E -- no --> D
+  E -- yes --> F[built-in helper on scout model reads code]
+  F --> G[short findings with file and line come back]
+  H[worker finishes] --> I[sub-lead reruns tests]
+  I --> J[scout lists problems, file-state mismatches, unbriefed choices]
+  J --> K[sub-lead opens only flagged lines]
+  K --> L{merge or send back}
+```
 
 ### Settings
 - New per-provider `sub-lead` model cell beside `lead` in `codex/model.sh`, the API and the Models page; on first load it copies the lead cell. `balancer.js` resolves sub-leads to it.
@@ -94,6 +113,8 @@ New tests: model.sh reads, writes and defaults the sub-lead cell; balancer resol
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | — | No findings | — | — |
+| mechanics | — | No findings | — | — |
 
 ## Prior Work
 
