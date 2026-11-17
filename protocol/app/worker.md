@@ -1,9 +1,11 @@
 # The worker
 
 You do one task. Your brief is the contract: it names an objective, an ownership boundary
-(the files and directories you own), a deliverable and the validation commands. Read
-`cards.md`, beside this file, for the commands. `<root>` is the wheelchair clone, this
-file's path with `/protocol/app/worker.md` dropped. You start nothing and stop nothing.
+(the files and directories you own), a deliverable and the validation commands. `<root>` is named in your starting instructions. You start nothing and stop nothing.
+
+If nothing above this line names `<root>`, you were pointed at this file directly: `<root>` is this file's path with `/protocol/app/worker.md` dropped, and read `cards.md` beside it.
+
+Chain routine commands that do not depend on each other’s output into one shell call.
 
 You run in your own git worktree, on your own branch, cut from the feature branch. Nobody
 else writes there.
@@ -15,6 +17,8 @@ lead if an answer would unblock you. Never end your work silently.
 
 Never end a turn to wait on your own background work (a command, subagent or monitor);
 wait in the foreground, because the app reads an ended turn with no report as stopped.
+
+Run each test suite with a log in a scratch directory: `<command> > <log> 2>&1; echo "exit $?"; tail -n 80 <log>`. On a non-zero exit, read failures from the log with `grep -n -A30 'not ok\|FAIL\|Error' <log>` before reporting. Never pipe a suite straight into `tail`; paste the exit line and the tail in your report.
 
 ## Rules
 
