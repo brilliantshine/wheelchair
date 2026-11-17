@@ -293,7 +293,7 @@ with `resolve`).
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | Hub and CLI: Spec §1–4 (retract kind, hub apply incl. sudo cancel, press refusal, approval pin) + node tests — tricky | viewer/app/card.js, cards.js, threads.js, views.js, chat.js; viewer/test/app-hub.test.js, app-sudo.test.js | standard / gpt-6.1-terra | wc-1416046edf72-worker | node --test viewer/test/*.test.js; bash machine/test/run.sh | running |
+| T1 | Hub and CLI: Spec §1–4 (retract kind, hub apply incl. sudo cancel, press refusal, approval pin) + node tests — tricky | viewer/app/card.js, cards.js, threads.js, views.js, chat.js; viewer/test/app-hub.test.js, app-sudo.test.js | standard / gpt-6.1-terra | wc-1416046edf72-worker | node --test viewer/test/*.test.js; bash machine/test/run.sh | done |
 | T2 | Thread page: Spec §5 + browser cases | viewer/pages/thread.js, thread.css, aside.js; viewer/test/app-threads.spec.js, app-sudo.spec.js | standard / gpt-6.1-terra (claude asked, unavailable) | wc-1416046edf72-worker-2 | npm --prefix viewer run test:browser; node --test viewer/test/*.test.js | running |
 | T3 | Protocol and routers: Spec §6 | protocol/app/cards.md, lead.md; viewer/app/API.md; viewer/AGENTS.md | standard / gpt-6.1-terra | wc-1416046edf72-worker-3 | grep retract; git diff --stat | done |
 
@@ -306,3 +306,7 @@ with `resolve`).
 - 2026-11-17 — Choice: T3, API.md: retraction is described in the press row and the sudo paragraph, and "Every state change" becomes "Other state changes".
 - 2026-11-17 — Choice: T3, viewer/AGENTS.md: one-line mention of hidden `retract` cards, in the worker's wording.
 - 2026-11-17 — Sub-lead fix after merging T3: cards.md now says a successful sudo retraction sends the lead no message (Spec §2.2), and a stray line wrap in lead.md step 5 is undone.
+- 2026-11-17 — T1 accepted and merged. I read the code diff myself (marked tricky) and found it matches Spec §1–4.
+- 2026-11-17 — Choice: T1, viewer/app/card.js: a `retract` note containing a carriage return or newline is refused at validation, to enforce "one line".
+- 2026-11-17 — Sub-lead addition after merging T1: added a hub test in viewer/test/app-hub.test.js covering a non-lead (sub-lead) retract refused at the hub, and a retracted offer still present (not `replaced`) after a new offer. The worker had left these Validation items uncovered.
+- 2026-11-17 — Pre-existing failure, not from this build: `lifecycle.test.js` "a starter that loses the freed port registers through the new holder" fails identically on a clean export of `main` (30c53a6). Neither viewer/server.js nor that test changed on this branch.

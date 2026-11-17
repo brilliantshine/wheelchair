@@ -2077,3 +2077,23 @@ test('approval replacement skips Needs and pins persist until accepted start or 
     assert.equal(state.cards.find((item) => item.id === third.id).replaced, undefined); assert.equal(state.pinned.approval.id, fourth.id);
   });
 });
+
+test('a non-lead cannot retract, and a retracted offer stays in the conversation after a new offer', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context); const lead = made.sessions[0];
+    const offer = (await card(context, made.id, lead.name, { kind: 'offer', summary: 'First' })).body;
+    const sublead = await startSublead(context, made, lead);
+    const refused = await card(context, made.id, sublead.name, { kind: 'retract', card: offer.id, note: 'No' });
+    assert.equal(refused.status, 422);
+    let chat = (await api(context, `/threads/${made.id}/chat`)).body;
+    assert.equal(chat.cards.find((item) => item.id === offer.id).retracted_at, undefined);
+    assert.equal((await card(context, made.id, lead.name, { kind: 'retract', card: offer.id, note: 'Talking first' })).status, 202);
+    const second = (await card(context, made.id, lead.name, { kind: 'offer', summary: 'Second' })).body;
+    chat = (await api(context, `/threads/${made.id}/chat`)).body;
+    const first = chat.cards.find((item) => item.id === offer.id);
+    assert.ok(first, 'the retracted offer is still in the payload');
+    assert.equal(first.replaced, undefined);
+    assert.equal(first.retracted_note, 'Talking first');
+    assert.equal(chat.pinned.find((item) => item.kind === 'offer').id, second.id);
+  });
+});
