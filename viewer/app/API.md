@@ -180,3 +180,9 @@ Quiet-turn detection persists `owes_reply`, `quiet_stage`, `quiet_check_at`,
 `quiet_starter_at`, and `quiet_card` on sessions. The hub options `quietGraceMs` and
 `quietEscalateMs` (or `WHEELCHAIR_QUIET_GRACE_MS` and `WHEELCHAIR_QUIET_ESCALATE_MS`)
 set the grace and escalation intervals in milliseconds; defaults are 30000 and 600000.
+
+### Agent activity and context
+
+Each Agents API session node includes `context` (`{percent, at}` or null) and `activity`: `counts` for files, shell, helpers, web, starter and thinking; `trail`, the last five step kinds with adjacent repeats collapsed; `current` (`{kind, label, since, id}` for a running step, or Thinking without an id) or null; `latest`, up to four `{label, at, state}` entries newest first; and `normal`, `{samples, typical_ms}` or null. Failed labels begin with `Failed: `. Normal uses the last five clean matching step timings in the project within 30 days.
+
+`POST /api/machine/events` accepts `step` events with `phase: start` and `step: {id, kind, label, key, started_at}`, or `phase: end` and `step: {id, ended_at, failed, clean}`; and `context` events with `context: {percent, at}`. These events do not deliver queued messages or change turn or hold state.

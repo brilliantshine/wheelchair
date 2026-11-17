@@ -11,6 +11,24 @@ function displayTitle(session, thread) {
     .find((line) => line && !line.startsWith('[wc:') && !line.startsWith('Read ') && !line.startsWith('Nothing below overrides'))?.slice(0, 80) || session.role;
 }
 
+function activity(session) {
+  const steps = session.steps || [];
+  const counts = Object.fromEntries(['files', 'shell', 'helpers', 'web', 'starter', 'thinking'].map(k => [k, session.step_counts?.[k] || 0]));
+  const trail = [];
+  for (const step of steps.slice(-5)) if (trail[trail.length - 1] !== step.kind) trail.push(step.kind);
+  const latest = steps.slice(-4).reverse().map(step => ({ label: (step.failed === true ? 'Failed: ' : '') + step.label, at: step.started_at, state: !step.ended_at ? 'running' : step.failed === true ? 'failed' : 'done' }));
+  let current = null;
+  if (session.live && !session.ended_at) {
+    const active = steps.filter(step => !step.ended_at).at(-1);
+    if (active) current = { kind: active.kind, label: active.label, since: active.started_at, id: active.id };
+    else if (session.turn_started_at && session.turn_started_at > (session.turn_ended_at || '') && !session.turn_ended) {
+      const since = steps.filter(step => step.ended_at && step.ended_at >= session.turn_started_at).map(step => step.ended_at).sort().pop() || session.turn_started_at;
+      current = { kind: 'thinking', label: 'Thinking', since };
+    }
+  }
+  return { counts, trail, current, latest, normal: null };
+}
+
 function buildAgents(threads, stages = {}) {
   return threads.filter((thread) => !thread.archived).sort((a, b) => String(b.collin_at || b.created_at || '').localeCompare(String(a.collin_at || a.created_at || ''))).flatMap((thread) => {
     const sessions = thread.sessions || [];
@@ -20,7 +38,7 @@ function buildAgents(threads, stages = {}) {
     const visible = sessions.filter((s) => s.role !== 'lead' || s === lead);
     const cards = thread.cards || [];
     const needs = []; addNeeds(needs, { ...thread, cards });
-    const nodes = new Map(visible.map((s) => [s.name, { ...publicSession(s), children: [], has_brief: typeof s.brief === 'string' && !!s.brief }]));
+    const nodes = new Map(visible.map((s) => [s.name, { ...publicSession(s), context: s.context || null, activity: activity(s), children: [], has_brief: typeof s.brief === 'string' && !!s.brief }]));
     const root = nodes.get(lead.name);
     for (const s of visible.filter((item) => item !== lead)) {
       let parent = leadNames.has(s.started_by) ? root : nodes.get(s.started_by);
@@ -65,6 +83,17 @@ async function agents(hub) {
   const threads = await hub.allThreads();
   const stages = Object.fromEntries(await Promise.all(threads.map(async (thread) => [thread.id, !thread.slug ? 'idea' : STATUS_GROUP[thread.worktree ? await readStatus(thread) : thread.last_status] || 'idea'])));
   const leads = buildAgents(threads, stages);
+  const history = require('./step-history.js');
+  await Promise.all(leads.map(async lead => {
+    const thread = threads.find(t => t.id === lead.thread_id);
+    async function fill(node) {
+      const current = node.activity.current;
+      const step = current?.id && (node.steps || []).find(s => s.id === current.id);
+      if (step) node.activity.normal = await history.normal(hub.stateDir, thread.project, step.key);
+      await Promise.all(node.children.map(fill));
+    }
+    await fill(lead.session);
+  }));
   const registry = await hub.machines();
   const hubEntry = await hub.state.resolveMachine(registry, 'hub');
   const machines = await Promise.all(Object.entries(registry).map(async ([machine, entry]) => {
