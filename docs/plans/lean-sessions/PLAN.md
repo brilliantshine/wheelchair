@@ -49,6 +49,10 @@ get buried as this file grows.
 | 20 | Card split is documentation only; card.js schema unchanged | Keeps accepted cards identical | review-round-1 |
 | 21 | Band from non-plan paths; scout gets the diff without `docs/plans/`; other excluded paths read by the sub-lead | Report file inflated sizes; nothing escapes review | review-round-1 |
 | 22 | Asides keep their own pointer prompt | Separate path in aside-turns.js | review-round-1 |
+| 23 | Briefs stop telling sessions to read their role file | Would bring the reread back | review-round-2 |
+| 24 | Band sized on the same filtered diff the scout reads; excluded paths list both rename ends | Renames across docs/plans/ skewed both | review-round-2 |
+| 25 | Warning uses the newest session with a sample; lookup failure accepts the card with no warnings; overhead subtracts the transcript's first user message | Robust advisory; leads start with an empty brief | review-round-2 |
+| 26 | Ledger gets a second Codex line with its thread id | Codex learns its transcript id after start | review-round-2 |
 | 12 | No GPT tool-schema trimming | Codex offers no supported way to drop its built-in tools; revisit if it adds one | defaulted |
 
 ## Spec
@@ -62,8 +66,8 @@ get buried as this file grows.
 - The list lives in one constant beside `command()`, so adding a tool is a one-line change.
 - Every role uses this list: lead, sub-lead, worker, reviewer, verifier, mapper. Asides and the usage probe keep their own argv.
 - No `--strict-mcp-config` or `--disable-slash-commands`: measured savings were ~0.5k, and they would drop a target project's own MCP servers and skills.
-- **Growth warning.** After a Claude session's first assistant message, the machine reads its `usage` (input + cache write + cache read) from the transcript and records on the session `startup_tokens` and `tool_overhead` = `startup_tokens` − ceil((characters of the composed starting instructions + characters of the first message) / 4). The Ready check (`viewer/app/ready.js` `check`) returns a `warnings` array alongside `missing`: one entry when the newest Claude session on the build machine has `tool_overhead` above 25,000, so a lead's longer rule text never trips it. Warnings never change `ok`.
-- **Where the warning shows.** When the hub accepts an `approval` card (`viewer/app/cards.js`, the add-card path), it runs the Ready check's warning part and stores `card.ready.warnings`; the lead's submitted `ok`/`missing` are kept as today. A `recheck` press replaces `card.ready` whole, warnings included. On `start-building`, `same()` keeps comparing `missing` only; the hub writes the fresh `warnings` onto the card and, if `ok`, starts the build on that same press. A warning that appears or clears never consumes the press. The approval card shows the warning text: "Claude sessions now start at <n>k tokens (expected under 25k). A Claude Code update may have added tools; tell the lead." The Ready result stays Ready.
+- **Growth warning.** After a Claude session's first assistant message, the machine reads its `usage` (input + cache write + cache read) from the transcript and records on the session `startup_tokens` and `tool_overhead` = `startup_tokens` − ceil((characters of the composed starting instructions + characters of the first user message in that transcript) / 4). The first user message is read from the transcript itself, not the launch brief, since a lead launches with an empty brief and its first input is whatever arrives first. The Ready check (`viewer/app/ready.js` `check`) returns a `warnings` array alongside `missing`: one entry when the newest Claude session on the build machine that has a recorded `tool_overhead` is above 25,000 (sessions without a sample yet are skipped; no sample at all means no warning), so a lead's longer rule text never trips it. Warnings never change `ok`.
+- **Where the warning shows.** When the hub accepts an `approval` card (`viewer/app/cards.js`, the add-card path), it runs the Ready check's warning part and stores `card.ready.warnings`; if that lookup fails or times out, the card is accepted with `warnings: []`; the lead's submitted `ok`/`missing` are kept as today. A `recheck` press replaces `card.ready` whole, warnings included. On `start-building`, `same()` keeps comparing `missing` only; the hub writes the fresh `warnings` onto the card and, if `ok`, starts the build on that same press. A warning that appears or clears never consumes the press. The approval card shows the warning text: "Estimated startup overhead is now <n>k tokens in the newest Claude session (expected under 25k), mostly Claude Code's built-in tools. An update may have added some; tell the lead." `<n>` is `tool_overhead` in thousands. The Ready result stays Ready.
 - Measured: interactive haiku session in this worktree, first-call context 47,869 tokens by default, 17,093 with the deny list (2026-11-17).
 
 ### Starting instructions carry the rules
@@ -71,6 +75,7 @@ get buried as this file grows.
 - `composeRolePrompt` (`machine/service.js:127-132`) builds, in order: a one-line header ("Your role rules and card rules are below, already loaded: do not read these files again unless this text is no longer in your context."), the full text of `protocol/app/<role>.md`, then the card files that role needs, each under a `--- <file name> ---` line, then the layers as today. `role_prompt` still wins.
 - Card files per role: lead gets `cards.md` and `cards-lead.md`; sub-lead, worker and mapper get `cards.md`; reviewer and verifier get none.
 - The header also states the clone: "`<root>` is `<absolute path of the machine's clone>`." Role files and `cards.md` stop deriving `<root>` from their own path and say "`<root>` is named in your starting instructions", so a session never resolves it to a feature worktree.
+- Briefs stop naming role files. `lead.md` (mapper, reviewer, sub-lead and verifier briefs) and `sub-lead.md` (worker and verifier briefs) say instead: the session's role rules are already in its starting instructions, so a brief never tells it to read its role file. "Brief them from `reviewer.md`" style lines that tell the lead what to put in a brief stay; only the instruction to the started session changes.
 - Asides are out of scope: `machine/lib/aside-turns.js` keeps its own pointer prompt.
 - The files are read from the machine's clone when the session starts. A session keeps the text it started with; a later edit reaches the next session.
 - Role files lose their "Read `cards.md`, beside this file, first" lines; cross-references ("see the `diagram` section of `cards-lead.md`") stay, and resolve inside the starting text.
@@ -86,7 +91,7 @@ get buried as this file grows.
 
 ### Sizing worker changes
 
-- New: `node <root>/viewer/app/wc.js diff size <feature-branch> <worker-branch> [--tricky]`. It runs `git diff --numstat <feature>...<worker>` locally (read-only), sets aside paths under `docs/plans/`, sums added and removed lines of the rest, and prints one JSON line: `{"lines": N, "band": "scout" | "bigger-scout" | "self", "excluded_paths": [...], "scout_diff": "git diff <feature>...<worker> -- . ':(exclude)docs/plans'"}`. Under 200 is `scout`, 200–800 `bigger-scout`, over 800 or `--tricky` `self`. Binary files count 0.
+- New: `node <root>/viewer/app/wc.js diff size <feature-branch> <worker-branch> [--tricky]`. It runs `git diff --numstat <feature>...<worker> -- . ':(exclude)docs/plans'` locally (read-only), the same filtered diff the scout reads, sums added and removed lines, lists `excluded_paths` from `git diff --name-only --no-renames <feature>...<worker> -- docs/plans` (both ends of any rename into or out of `docs/plans/`), and prints one JSON line: `{"lines": N, "band": "scout" | "bigger-scout" | "self", "excluded_paths": [...], "scout_diff": "git diff <feature>...<worker> -- . ':(exclude)docs/plans'"}`. Under 200 is `scout`, 200–800 `bigger-scout`, over 800 or `--tricky` `self`. Binary files count 0.
 - `sub-lead.md` step 1 replaces its sizing prose: run the command for every worker result; the band is binding; the no-scout fallback stays as written. The acceptance Log line names the band: `- <date> — T<n> accepted (band: scout): ...`. A `self` read of a scout band is not allowed. The scout (or the sub-lead, for `self`) gets the `scout_diff` command, never the plan documents. Each excluded path must be the worker's own `docs/plans/<slug>/reports/<task>.md`, which step 2 already reads; any other excluded path is read by the sub-lead itself (`git diff <feature>...<worker> -- <path>`) and, being outside a worker's ownership, is normally sent back.
 
 ### Shorter output and fewer calls
@@ -114,8 +119,8 @@ get buried as this file grows.
 
 ### Validation
 
-- `bash machine/test/run.sh` (Claude argv carries the deny list and both flags; composed prompt holds role text and the right card files per role; `startup_tokens` recorded from a fixture transcript).
-- `node --test viewer/test/*.test.js` (Ready check warning above 25,000 and not below; `wc.js diff size` bands and the `docs/plans/` exclusion on a temp repo; compact and `--full` list; `card.js` validates kinds from both card files; `protocol-rules.test.js` updated).
+- `bash machine/test/run.sh` (Claude argv carries the deny list and neither `--strict-mcp-config` nor `--disable-slash-commands`; composed prompt holds role text and the right card files per role; `startup_tokens` recorded from a fixture transcript).
+- `node --test viewer/test/*.test.js` (Ready check warning above 25,000 and not below; `wc.js diff size` bands and the `docs/plans/` exclusion on a temp repo; compact and `--full` list; every schema kind has exactly one section across `cards.md` and `cards-lead.md`; `card.js` accepts the same cards as before; `protocol-rules.test.js` updated).
 - `npm --prefix viewer run test:browser` (approval card shows the warning).
 - Live: after install, start a Claude lead (a test thread) and a Claude worker on this machine; both record `tool_overhead` under 25,000, and the lead's composed instructions hold lead.md, cards.md and cards-lead.md.
 - Re-measure after a few threads with the baseline method above, taking each Claude session's role from the session ledger (joined on `cli_session_id` = transcript file name), and reporting the same metrics: cost share by role, average context per call, calls per session.
@@ -129,6 +134,7 @@ get buried as this file grows.
 ### Session ledger
 
 - When the machine starts a session it appends one JSON line to `<stateDir>/session-ledger.jsonl`: `{at, name, role, provider, model, cli_session_id, thread_id}`. Append-only, never pruned by the service; `cli_session_id` matches the Claude transcript file name, and for Codex the thread id the session reports once known (or `null`).
+- For Codex, when the adapter learns the transcript's thread id (`machine/adapters/codex.js:31-39`) the machine appends a second line `{at, name, codex_thread_id}`. Joins: Claude on `cli_session_id` = transcript file name; Codex on `codex_thread_id` = the `session_meta` id in `~/.codex/sessions`.
 - It is for re-measuring only; nothing reads it at runtime.
 
 ## Accepted Risks
@@ -175,6 +181,30 @@ get buried as this file grows.
 - `<root>` named in the starting text; asides out of scope (18, 22)
 - Card split is documentation only (20)
 - Sizing command's excluded paths and scout diff (21)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Briefs still name role files | upheld | Decision 23 |
+| intent | major | Validation still checks the dropped flags | upheld | Validation fixed |
+| intent | major | Validation tests card.js reading Markdown | upheld | Validation fixed |
+| intent | minor | Warning number ambiguous | upheld | `<n>` is tool_overhead |
+| mechanics | blocking | Renames across docs/plans/ skew band and hide plan changes | upheld | Decision 24 |
+| mechanics | major | New session without a sample suppresses the warning | upheld | Decision 25 |
+| mechanics | major | Lookup failure on approval | upheld | Decision 25 |
+| mechanics | major | Lead's first input is not the brief | upheld | Decision 25 |
+| mechanics | major | Ledger can't hold the Codex id | upheld | Decision 26 |
+| mechanics | minor | Warning copy overclaims | upheld | Copy relabelled as estimated |
+
+### Round 3 — 2026-11-17
+
+**Lanes:** intent: claude; mechanics: gpt; cross-family: yes.
+
+**Changed since Round 2:**
+- Briefs no longer name role files (23)
+- Validation lines match Decisions 14 and 20
+- Sizing on the filtered diff; rename ends listed (24)
+- Warning: sample selection, lookup failure, first-message source, copy (25)
+- Ledger Codex line and joins (26)
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
