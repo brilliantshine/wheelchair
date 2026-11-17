@@ -19,7 +19,7 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 | `POST /threads/:id/asides/:aside/summary` | — | `200`, queues a handoff draft when enabled |
 | `POST /threads/:id/messages` | `{text}` | `{queued:true}`; delivery waits for the lead turn end |
 | `POST /threads/:id/send-now` | `{at}` | `{sent}`; submits Collin's queued message with that `at` to the live lead mid-turn. `404` if it is no longer queued, `409` with no live lead or while the lead is unready or held (permission, needs, usage limit). `sent:false` means the submit failed and it stays first in the queue |
-| `POST /threads/:id/cards/:cardId/press` | `{action,value?}` | `{queued:true,text}` for lead actions and records `answered_action` and `answered_value` on an answered card; `keep` resolves an open app `merged` card as Kept without a live lead and returns `{queued:false}`; other actions on it return 400 and repeating keep returns 422. `recheck` updates an approval in place, and `start-building` first re-checks Ready. On an open lead `needs` card, `keep-going` and `talk` (value: the card title) also close it as `resolved_by:"collin"`; a `system` or answered needs card is refused with 422. `answered` (value: Collin's own words, trimmed) works only on an open `question` card: 400 for another kind or empty text, 422 once answered; it reaches the lead as `[card <id>] answered: <text>` |
+| `POST /threads/:id/cards/:cardId/press` | `{action,value?}` | `{queued:true,text}` for lead actions and records `answered_action` and `answered_value` on an answered card; `keep` resolves an open app `merged` card as Kept without a live lead and returns `{queued:false}`; other actions on it return 400 and repeating keep returns 422. `recheck` updates an approval in place, and `start-building` first re-checks Ready. Any press on a retracted card returns 422 `this card was withdrawn`. On an open lead `needs` card, `keep-going` and `talk` (value: the card title) also close it as `resolved_by:"collin"`; a `system` or answered needs card is refused with 422. `answered` (value: Collin's own words, trimmed) works only on an open `question` card: 400 for another kind or empty text, 422 once answered; it reaches the lead as `[card <id>] answered: <text>` |
 | `POST /threads/:id/cards/:cardId/dismiss` | — | `{ok:true}`; closes an open `needs` card a lead posted (`resolved_by:"collin"`, shown dimmed as resolved). The thread page no longer shows a Dismiss button; it uses the press actions above. A `system` needs card is refused with 422, an unknown card with 404 |
 | `POST /threads/:id/open` | `{start_now?:boolean}` | a started stub, or `{waiting:true,thread}` |
 | `POST /threads/:id/restart` | — | replacement lead session; its restart context is queued first |
@@ -57,7 +57,13 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 A closed `needs` card, or a question the lead resolved after an answer in chat, also has
 `resolved_by` (a lead's session name, or `collin` for a needs dismissal), `resolved_note` and
 `resolved_at`; a lead closes one by posting a `resolve` card (`{card,note}`, never stored).
-Collin's dismiss remains needs-only. `at` is the ISO time the hub stored the card.
+A lead can post a hidden `retract` card (`{card,note}`, never stored) for an open question,
+offer, approval, lead needs or waiting sudo card. It marks the target `answered` with
+`retracted_at`, `retracted_by` and `retracted_note`, removes its pin, and leaves it dimmed
+in the conversation with its note. A waiting sudo request is cancelled first; a running or
+finished request refuses retraction and reports its outcome as usual. An approval is pinned
+until accepted Start building or retraction; a fresh approval replaces an open one. An offer
+may be posted a second time after retraction, but a third is refused. Collin's dismiss remains needs-only. `at` is the ISO time the hub stored the card.
 
 A `sudo` card (lead only) is posted by an agent with `command`, `does` and `why` alone; the
 machine service adds `request_id` (32 hex), `url` (`https://…`) and `editable` (array of strings)
@@ -65,8 +71,8 @@ before it reaches `POST /machine/cards`, and the hub requires all six, refusing 
 poster, a repeated `request_id` or any other field (422). The stored card has `state`
 (`waiting` on arrival; then `running`, `ran`, `declined`, `expired` or `failed`) and, once set,
 `exit_code`, `output`, `truncated` and `reason`. The thread carries `sudo_index`, `{request_id:
-card id}`, written in the same save as the card (`?view=list` leaves it out). Every state
-change goes through one function, `applySudoState` (`app/cards.js`): ranks `waiting` <
+card id}`, written in the same save as the card (`?view=list` leaves it out). Sudo retraction sets a cancelled card to `declined` in the card transaction without queuing a message. Other state
+changes go through one function, `applySudoState` (`app/cards.js`): ranks `waiting` <
 `running` < terminal, ignores `waiting` and any state not newer than the card's, and on the
 first terminal state queues exactly one message to the lead in the same save (`[card <id>] sudo
 ran: exit <n>` and the output, `declined`, `sudo expired`, `sudo failed: <reason>`). Presses on

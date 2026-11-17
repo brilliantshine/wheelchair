@@ -37,7 +37,7 @@ Rules for every card:
 | `offer` | yes | lead | yes |
 | `idea` | yes | lead | yes |
 | `question` | yes | lead | no |
-| `approval` | yes | lead | no |
+| `approval` | yes | lead | yes |
 | `progress` | yes | sub-lead, lead | yes |
 | `needs` | yes | lead | no |
 | `done` | yes | lead | no |
@@ -48,12 +48,14 @@ Rules for every card:
 | `sudo` | yes | lead | no |
 | `title` | never | lead | no |
 | `resolve` | never | lead | no |
+| `retract` | never | lead | no |
 | `message` | never | any session except reviewer and verifier | no |
 | `result` | never | worker, mapper, sub-lead | no |
 
 A pinned kind sits at the top of the thread, and posting a new card of that kind replaces
 the old one in the pin (there is one offer, one idea list and one progress line per
-thread). The app also posts `needs` cards of its own (a session stuck at startup, a
+thread). An approval unpins when Start building is accepted or it is retracted; a fresh
+approval replaces an open pinned approval. The app also posts `needs` cards of its own (a session stuck at startup, a
 permission prompt, "Sessions ended"); you never post those.
 
 ## The shown kinds
@@ -69,7 +71,7 @@ The "Take it into planning?" question.
 Buttons: "Take it into planning" and "Keep talking first". Their presses come back as
 `[card <id>] picked: take it into planning` and `[card <id>] picked: keep talking first`.
 The hub refuses a third offer, and also refuses a second unless the first was answered
-"keep talking first" (422, "the offer was already asked"). If he keeps talking instead
+"keep talking first" or was retracted (422, "the offer was already asked"). If he keeps talking instead
 of pressing, the app pins the offer and it is a feature as before.
 
 ### `idea`
@@ -308,6 +310,38 @@ What reaches you, once per card (the output follows `ran` on the next lines):
 The password is never in any of these.
 
 ## The kinds never shown
+
+### `retract`
+
+Withdraws an open card that no longer applies. Unlike `resolve`, which records that he
+answered in chat, `retract` says the card is no longer relevant. It is never stored as a
+card of its own.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `card` | string | yes | The target card's id |
+| `note` | string | yes | One line saying why it was withdrawn |
+
+Only a lead may retract, and any lead of the thread may retract an earlier lead's card.
+The hub checks these refusals in order (422):
+
+1. `no such card in this thread`: missing, in another thread, or replaced.
+2. `only a question, offer, approval, needs or sudo card can be retracted`.
+3. `a system needs card closes itself`.
+4. `card is already answered`: including a previous retraction, resolution or press; sudo
+   cards are checked by state instead.
+
+A sudo card can be retracted only while waiting; otherwise it is refused with
+`the sudo request is already <state>`. The hub cancels its helper request before marking
+it withdrawn. If the machine cannot be reached or returns an invalid status, the refusal
+is `couldn't reach <machine> to cancel the sudo request; try again`. If cancellation finds
+it already running or finished, the refusal gives that state and the outcome arrives as
+usual. A cancelled request shows "Declined" on the helper page and cannot be run.
+
+The target is marked answered with `retracted_at`, `retracted_by` and `retracted_note`;
+it stays in the conversation, dimmed with "Withdrawn · <note>", stops waiting on Collin,
+and leaves the pin if pinned. Any later press is refused with `this card was withdrawn`.
+Post a fresh card when it is needed again.
 
 ### `title`
 
