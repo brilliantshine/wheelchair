@@ -50,6 +50,13 @@ non-goals, and concrete validation commands.
 A Mermaid diagram of the flow belongs here, added by Stage 2 at approval — not while the
 Spec is still churning. See `protocol/diagrams.md`.
 
+## Deferred
+
+Optional; present only in the lighter modes.
+
+| # | Item | Why it can wait | Source | Notes for the follow-up |
+|---|------|-----------------|--------|-------------------------|
+
 ## Accepted Risks
 
 Real issues consciously not fixed, each with the reason. Part of the spec, not review

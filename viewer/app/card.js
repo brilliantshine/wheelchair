@@ -10,6 +10,7 @@ const path = require('node:path');
 const shown = new Set([
   'offer',
   'idea',
+  'deferred',
   'question',
   'approval',
   'progress',
@@ -24,6 +25,7 @@ const shown = new Set([
 const roles = {
   offer: ['lead'],
   idea: ['lead'],
+  deferred: ['lead'],
   question: ['lead'],
   approval: ['lead'],
   progress: ['lead', 'sub-lead'],
@@ -72,6 +74,13 @@ const fields = {
   offer: { summary: text },
   idea: {
     bullets: (value) => array(value, (item) => object(item) && text(item.id) && text(item.text), 1),
+  },
+  deferred: {
+    mode: (value) => ['two-part', 'proof-of-concept'].includes(value),
+    bullets: (value) => array(value, (item) => object(item) && text(item.id) && text(item.text))
+      && new Set(value.map((item) => item.id)).size === value.length
+      && new Set(value.map((item) => item.text)).size === value.length,
+    locked: (value) => value === undefined || typeof value === 'boolean',
   },
   question: {
     fits: text,
@@ -215,8 +224,8 @@ function resolvable(thread, cardId, mode) {
 function retractable(thread, cardId) {
   const target = (thread.cards || []).find((item) => item.id === cardId && !item.replaced);
   if (!target) return { ok: false, reason: 'no such card in this thread' };
-  if (!['question', 'offer', 'approval', 'needs', 'sudo'].includes(target.kind)) {
-    return { ok: false, reason: 'only a question, offer, approval, needs or sudo card can be retracted' };
+  if (!['question', 'offer', 'approval', 'needs', 'sudo', 'deferred'].includes(target.kind)) {
+    return { ok: false, reason: 'only a question, offer, approval, needs, sudo or deferred card can be retracted' };
   }
   if (target.kind === 'needs' && target.system) return { ok: false, reason: 'a system needs card closes itself' };
   if (target.kind !== 'sudo' && target.answered) return { ok: false, reason: 'card is already answered' };

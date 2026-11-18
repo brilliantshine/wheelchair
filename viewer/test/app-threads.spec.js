@@ -33,6 +33,49 @@ for (const [label, size] of SIZES) {
 
     const open = (page, id) => page.goto(`${ctx.server.url}/app/thread?id=${id}`);
 
+    test('deferred cards show mode, bullets and locking', async ({ page }) => {
+      const made = await ctx.make({ cli: 'claude' });
+      await ctx.post(made.id, { kind: 'deferred', mode: 'two-part', bullets: [{ id: 'a', text: 'Later' }] });
+      await open(page, made.id);
+      const pin = page.locator('#pinned .card-deferred');
+      await expect(pin).toContainText('Saved for the follow-up · 1 thing');
+      await expect(pin).toContainText('These go into a new thread when this one is done.');
+      await expect(pin).toContainText('Later');
+      await expect(pin.getByRole('button', { name: 'Pull back in' })).toBeVisible();
+      await ctx.post(made.id, { kind: 'deferred', mode: 'proof-of-concept', bullets: [{ id: 'b', text: 'Risk' }], locked: true });
+      await page.reload();
+      await expect(pin).toContainText('Skipped for this proof of concept · 1 thing');
+      await expect(pin).toContainText('These are accepted as risks; nothing will fix them later.');
+      await expect(pin).toContainText('Risk');
+      await expect(pin.getByRole('button', { name: 'Pull back in' })).toHaveCount(0);
+      await ctx.post(made.id, { kind: 'deferred', mode: 'two-part', bullets: [{ id: 'c', text: 'Locked follow-up' }], locked: true });
+      await page.reload();
+      await expect(pin).toContainText('Locked follow-up');
+      await expect(pin.getByRole('button', { name: 'Pull back in' })).toHaveCount(0);
+      await ctx.post(made.id, { kind: 'deferred', mode: 'two-part', bullets: [] });
+      await page.reload();
+      await expect(pin).toContainText('Saved for the follow-up · 0 things');
+      await expect(pin).toContainText('Nothing deferred yet');
+      const bullets = Array.from({ length: 4 }, (_, i) => ({ id: String(i), text: `Deferred ${i}` }));
+      const ideas = Array.from({ length: 4 }, (_, i) => ({ id: String(i), text: `Idea ${i}` }));
+      await ctx.post(made.id, { kind: 'idea', bullets: ideas });
+      const deferred = await ctx.post(made.id, { kind: 'deferred', mode: 'two-part', bullets });
+      await page.reload();
+      const idea = page.locator('#pinned .card-idea');
+      await expect(pin).not.toContainText('Deferred 0');
+      await expect(idea).not.toContainText('Idea 0');
+      await pin.getByRole('button', { name: 'Show all 4' }).click();
+      await expect(pin).toContainText('Deferred 0');
+      await expect(idea).not.toContainText('Idea 0');
+      await expect(idea.getByRole('button', { name: 'Show all 4' })).toBeVisible();
+      await ctx.post(made.id, { kind: 'retract', card: deferred.id, note: 'Changed plans' });
+      await page.reload();
+      const withdrawn = page.locator(`#chat #card-${deferred.id}`);
+      await expect(withdrawn.locator('.answered-tag')).toContainText('Withdrawn · Changed plans');
+      expect(await withdrawn.evaluate((n) => Number(getComputedStyle(n).opacity))).toBe(0.6);
+      await expect(withdrawn.getByRole('button', { name: 'Pull back in' })).toHaveCount(0);
+    });
+
     test('the header labels an Antigravity thread', async ({ page }) => {
       const made = await ctx.make({ cli: 'claude' });
       await ctx.patch(made.id, (x) => { x.provider = 'gemini'; x.cli = 'agy'; });

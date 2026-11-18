@@ -6,7 +6,7 @@ const path = require('node:path');
 const { appError } = require('./state.js');
 const { resolvable, retractable, truncateTitle, validate } = require('./card.js');
 
-const SINGLETONS = new Set(['offer', 'idea', 'progress']);
+const SINGLETONS = new Set(['offer', 'idea', 'deferred', 'progress']);
 
 function addCard(thread, card, meta = {}) {
   const at = new Date().toISOString();
