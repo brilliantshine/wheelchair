@@ -991,7 +991,10 @@ class MachineService {
     const run = (program, argv) => command(program, argv, { cwd });
     let result;
     if (operation === 'commit') result = run('git', ['add', '--', ...input.paths,]);
-    if (operation === 'commit' && result.ok) result = run('git', ['commit', '-m', input.message, '--', ...input.paths]);
+    if (operation === 'commit' && result.ok) {
+      const merging = run('git', ['rev-parse', '-q', '--verify', 'MERGE_HEAD']).ok;
+      result = run('git', ['commit', '-m', input.message, ...(merging ? [] : ['--', ...input.paths])]);
+    }
     if (operation === 'fetch') result = run('git', ['fetch', ...args]);
     if (operation === 'merge') result = run('git', ['merge', ...args]);
     if (operation === 'cherry-pick') result = run('git', ['cherry-pick', ...args]);
@@ -1290,6 +1293,17 @@ class MachineService {
         const waiting = (await fsp.readdir(path.join(this.stateDir, 'spool', 'cards')).catch(() => [])).filter(f => f.endsWith('.json'));
         if (waiting.length && this.config.hub_url) await this.drainSpool('cards');
         const behind = (await fsp.readdir(path.join(this.stateDir, 'spool', 'cards')).catch(() => [])).some(f => f.endsWith('.json'));
+        if (input.kind === 'done') {
+          const unavailable = { error: 'the app is unreachable; the done card was not recorded; try again in a minute' };
+          if (behind || !this.config.hub_url) return send(response, 503, unavailable);
+          try {
+            const payload = { ...input, session: agent.name, thread_id: agent.thread_id, delivery_id: input.delivery_id || crypto.randomUUID() };
+            const relay = await requestJson(`${this.config.hub_url.replace(/\/$/, '')}/api/machine/cards`, 'POST', { [HUB_HEADER]: await this.secret() }, payload, 30000);
+            if (relay.status >= 500) return send(response, 503, unavailable);
+            let body; try { body = JSON.parse(relay.body || '{}'); } catch { body = { error: relay.body || 'hub returned invalid JSON' }; }
+            return send(response, relay.status, body);
+          } catch { return send(response, 503, unavailable); }
+        }
         if (behind) { await this.spool('cards', { ...input, session: agent.name, thread_id: agent.thread_id }); return send(response, 202, { ok: true, spooled: true }); }
         const queued = await this.spool('cards', { ...input, session: agent.name, thread_id: agent.thread_id });
         if (!this.config.hub_url) return send(response, 202, { ok: true, spooled: true });
