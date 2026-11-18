@@ -36,6 +36,7 @@ Rules for every card:
 |---|---|---|---|
 | `offer` | yes | lead | yes |
 | `idea` | yes | lead | yes |
+| `deferred` | yes | lead | yes |
 | `question` | yes | lead | no |
 | `approval` | yes | lead | yes |
 | `progress` | yes | sub-lead, lead | yes |
@@ -53,7 +54,7 @@ Rules for every card:
 | `result` | never | worker, mapper, sub-lead | no |
 
 A pinned kind sits at the top of the thread, and posting a new card of that kind replaces
-the old one in the pin (there is one offer, one idea list and one progress line per
+the old one in the pin (there is one offer, one idea list, one deferred list and one progress line per
 thread). An approval unpins when Start building is accepted or it is retracted; a fresh
 approval replaces an open pinned approval. The app also posts `needs` cards of its own (a session stuck at startup, a
 permission prompt, "Sessions ended"); you never post those.
