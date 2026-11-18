@@ -55,6 +55,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 15 | The card's identity is the set of affected tools, not the reason text; it lists working tools too; `session list` shows the last check by default | One card per set of problems; the lead can answer "did it connect" | review-round-1 |
 | 16 | Antigravity variable rules are fixed by research, not left to the worker: agy expands nothing in plugin config and stdio servers inherit its environment | Verified 2026-11-18 on agy 1.5.11 | review-round-2 |
 | 17 | Supersedes 12's ordering: check state per thread carries a generation bumped at each qualifying start under a per-thread serial queue; only the current generation publishes; publication is spooled before it is marked done and republished after a restart; agents cannot send the event | Rounds 2 findings on races, restart and spoofing | review-round-2 |
+| 18 | Antigravity http header tokens are expanded into the agent's private plugin file (owner-only, deleted when the agent ends); IDEA's no-secrets constraint gains this one exception | Collin's pick "Write it, privately": otherwise token web tools never work on Antigravity | user |
 
 ## Spec
 
@@ -95,7 +96,7 @@ For a tools-getting session with servers:
 - Variables (verified 2026-11-18 on agy 1.5.11: plugin `mcp_config.json` expands nothing — not env, args, url or headers; stdio servers inherit agy's whole environment):
   - stdio `env` value that passes through (same key, section 2): omitted, so the server inherits it.
   - Any other `${...}` in stdio command, args or env, or in an http `url`: skip, "uses ${...} that Antigravity cannot pass through".
-  - http header `${NAME}`: AGY-HEADER-RULE (pending Collin's decision).
+  - http header values: every `${NAME}` and `${NAME:-default}` is expanded when the file is written, from the same environment the check uses (section 5: tmux global environment, else `process.env`). An unset `${NAME}` with no default skips the server: "uses a variable that isn't set: NAME". Any other `${...}` form in a header skips the server. The expanded file is the private per-session file above (0600, in a 0700 dir), deleted by `sweepAgyTools` when the session ends; its values never reach `session.command`, logs or the card (Decision 18).
   - Literal values are copied as is.
 - Skips: `type: "sse"` ("uses sse, which Antigravity does not support here"); names not matching `[A-Za-z0-9_-]+` (same text as Codex); the same header twice ignoring case.
 - If every server is skipped: no plugin dir and no `--add-dir`.
@@ -249,7 +250,7 @@ exit. Downgrades and declines cite evidence.
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
 | intent | major | Non-goals contradict §4's agy branch | upheld | §4 fixed by research; Non-goals; Decision 16 |
-| intent | major | agy drops `${NAME}` token headers; env inheritance unverified | user-decision | Inheritance verified; header rule asked of Collin |
+| intent | major | agy drops `${NAME}` token headers; env inheritance unverified | user-decision | Inheritance verified; Collin chose to write tokens into the private per-agent file (Decision 18) |
 | intent | minor | Worker-checkout reset clears the thread's check | upheld | §6/§7 reset only from thread worktree |
 | intent | minor | `login`-only tools never shown on a card | accepted-risk | Accepted Risks |
 | intent | minor | "Working" contradicts per-CLI skip lines | upheld | §8 "Connects: … (not on Codex)" |
@@ -263,6 +264,15 @@ exit. Downgrades and declines cite evidence.
 | mechanics | major | Cleanup misses natural exits and handoff kills | upheld | §4 timer sweep, `finally` |
 | mechanics | major | Same-identity card body goes stale | upheld | §8 update in place |
 | mechanics | minor | `checked_at` undefined | upheld | §8, §6 `at` |
+
+### Round 3 — 2026-11-18
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 2:** §4 Antigravity variable rules (fixed by research) and header token expansion into the private file (Decision 18), timer and `finally` cleanup; §5 id matching, `ping`, legacy SSE full handshake; §6 rewritten (generation, per-thread serial queue, `published` flag and republish, forwarder drops agent-sent check events, reset only from the thread worktree); §7 reset scope; §8 `check.at`, body updated in place, "Connects … (not on <CLI>)", `session list` `skipped`; Non-goals; Accepted Risks (login-only tools); Decisions 16-18; IDEA.md Constraints exception.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
