@@ -490,7 +490,13 @@
   // Hand one queued message to the lead mid-turn instead of waiting for the turn to end.
   async function sendNow(at) {
     sendingNow[at] = true; sigs.chat = null; render();
-    try { await post(T + '/send-now', { at }); showError(''); }
+    const lead = leadSession();
+    const item = ((lead && lead.queue) || []).find((q) => q.source === 'collin' && q.at === at);
+    try {
+      await post(T + '/send-now', { at }); showError('');
+      // Keep its bubble until the transcript shows it, as for a message sent from this tab.
+      if (item && !pending.some((p) => p.text === item.text)) pending.push({ text: item.text });
+    }
     catch (e) { showError('Could not send it now: ' + e.message); }
     finally { delete sendingNow[at]; sigs.chat = null; await poll(); }
   }

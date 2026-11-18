@@ -362,7 +362,9 @@ for (const [label, size] of SIZES) {
       const request = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith(`/threads/${made.id}/send-now`));
       await bubble.locator('button.send-now').click();
       expect((await request).postDataJSON()).toEqual({ at });
-      await expect(bubble).toHaveCount(0);
+      // It left the queue but stays on screen until the lead's transcript shows it.
+      await expect(bubble.locator('button.send-now')).toHaveCount(0);
+      await expect(bubble).toHaveCount(1);
       expect(ctx.machine.sessions.get(made.sessions[0].name).submits).toEqual(['do this now']);
       await noSideScroll(page);
     });
