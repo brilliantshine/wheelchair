@@ -1,6 +1,6 @@
 ---
 slug: plan-handoffs
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-17
 ---
 
@@ -1406,3 +1406,4 @@ npm --prefix viewer run test:browser
 - 2026-11-17 — Choice: T5, new.html/new.css: at phone width Start and Import stack full width; Import is disabled whenever Start is.
 - 2026-11-17 — Choice: T5, thread.js: frozen cards disable every control inside them.
 - 2026-11-17 — T5 accepted (band: bigger-scout): Export button and reason, handed-off banner and Undo, Download again, Retry panel with Retry/Cancel, frozen controls, dead-lead condition, Before the handoff, threads-list label and revoke notices, new-thread Import; browser spec `app-handoff.spec.js`. After the first attempt hit its fails-twice guardrail on a real regression (the reason line inside the sticky head), fixed on a pinpointed brief in the same session, then one more review round. Browser 740 passed / 28 skipped re-run by the sub-lead before the last small round.
+- 2026-11-17 — All seven tasks merged; full validation green at 21db739 (viewer 615/615, machine 146/146, browser 746 passed / 28 skipped). Routers updated. COMPLETION.md written; status set to verifying.
