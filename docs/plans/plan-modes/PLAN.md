@@ -15,11 +15,6 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q1: Who picks the mode, and when?
-- **Context:** The mode shapes everything after the offer, so it must be set before planning questions start.
-- **Options:** (a) Lead suggests a mode when the thread becomes a feature, Collin confirms or changes it on a card; (b) Collin always picks with no suggestion; (c) a Settings default, overridable per thread.
-- **Recommendation:** (a).
-
 ### Q2: How much review do the lighter modes get?
 - **Context:** Today's review runs rounds until clean (no blocking/major upheld). The lighter modes exist partly to cut that cost.
 - **Options:** same review on the smaller first part; fewer rounds; blocking-only gate; no review in proof of concept.
@@ -42,6 +37,7 @@ promoted to a Constraint or Accepted Risk, or waved off by the user.
 
 | # | Noticed | What needs looking into | Raised to user? | Outcome |
 |---|---------|-------------------------|-----------------|---------|
+| W1 | Q1 decided | Where the mode suggestion appears: its own question card after the offer is accepted, or folded into the offer card's buttons (an app change). Depends on the mapper's findings on the offer card | no | |
 
 ## Decision Log
 
@@ -50,6 +46,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | # | Decision | Rationale | Source |
 |---|----------|-----------|--------|
 |   |          |           | user / defaulted / adopted / idea-change / review-round-N |
+| D1 | The lead suggests a mode with a one-line reason when a thread becomes a feature; Collin accepts it or picks another | The lead has read the request and can tell a proof of concept from lasting work; Collin keeps the final say | user |
 
 ## Spec
 
@@ -59,6 +56,15 @@ non-goals, and concrete validation commands.
 
 A Mermaid diagram of the flow belongs here, added by Stage 2 at approval — not while the
 Spec is still churning. See `protocol/diagrams.md`.
+
+### Modes
+
+Three modes: `thorough` (default, today's behaviour unchanged), `two-part`, `proof-of-concept`.
+
+### Choosing the mode
+
+When a thread becomes a feature, the lead suggests a mode with a one-line reason and
+Collin accepts it or picks another (D1). With no choice made, the mode is `thorough`.
 
 ## Accepted Risks
 
