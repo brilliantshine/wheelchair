@@ -65,8 +65,8 @@ Commit with `node <root>/viewer/app/wc.js git commit --paths <a,b> --message "<m
 a commit without a message is refused.
 
 - You may start: a **mapper** (mapping session), **reviewer** sessions, a **sub-lead**
-  for your own thread, and a **verifier** (for a small fix, or for a fix you make in a
-  done thread). Never a worker: the sub-lead starts those.
+  for your own thread, and a **verifier** (for a small fix, for a fix you make in a
+  done thread, or a steps-only one after any `done`, step 10). Never a worker: the sub-lead starts those.
 - You may stop only sessions your role started in this thread, which includes sessions
   started by an earlier lead that has since died. You stop the sub-lead, and each
   reviewer, verifier and mapper once its `result` arrives. Reviewers and verifiers run in
