@@ -180,6 +180,20 @@ account-level tools; merging the PR.
 | mechanics | major | Symlinked or non-regular `.mcp.json` | upheld | Reading via ls-tree; Saving step 3 writes a regular file |
 | mechanics | major | Key-only vs tool change vs no-op undefined | upheld | Saving first three bullets |
 
+### Round 2 — 2026-11-18
+
+**Lanes:** intent — pending; mechanics — pending; cross-family: pending.
+
+**Changed since Round 1:** new "Project identity" section; Reading rewritten (fixed `wc-tools`
+PR lookup, `git ls-tree` read, non-regular entries, ref + sha returned, exported validators,
+per-machine keys note); Keys rewritten (shared names, reserved names, no auto-delete, unused
+keys listed); Saving rewritten as numbered steps (no-op / key-only / tool change, stale-sha
+refusal, which checks block, force-with-lease recreate, PR retry); Validation extended.
+Decision Log 10-14.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
