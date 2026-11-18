@@ -60,6 +60,8 @@ async function importHandoff(hub, bytes, machine, project) {
       }
       if (thread) {
         if (quietReason(hub, thread)) throw appError(409, 'The thread here is busy');
+        try { await ops.preclaim(hub, thread, { parent: file.head, repository: file.repository }); }
+        catch (error) { throw appError(409, error.message); }
         const advanced = await ops.advanceLocked(hub, thread, file);
         if (prefix) advanced.note = prefix;
         return advanced;

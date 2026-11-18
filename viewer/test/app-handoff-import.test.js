@@ -65,7 +65,7 @@ async function operationFixture(overrides = {}) {
   hub.call = async () => ({ checked: { ok: true, path: '/project' } });
   const calls = [], sha = 'b'.repeat(40);
   let restarts = 0;
-  hub.restartLead = async () => { restarts++; assert.equal((await hub.thread(file.thread.id)).handoff_op, undefined); };
+  hub.restartLead = async () => { restarts++; await hub.withThread(file.thread.id, async () => assert.equal((await hub.thread(file.thread.id)).handoff_op, undefined)); };
   hub.client.handoff = async (_, input) => {
     calls.push(input);
     const standard = { inspect: { repository: file.repository, remote_has_branch: true, remote_contains_head: true, remote_tip: file.head, plan_status: 'approved', relation: 'same', worktree_exists: false }, known: { known: false, local_branch: false, checked_out: [] }, 'claim-commit': { sha }, 'claim-push': { result: 'landed' }, running: { names: [] }, 'set-branch': { result: 'ok' }, 'fast-forward': { result: 'ok' }, reopen: { result: 'ok' }, status: { branch: file.branch, dirty: false } };
@@ -220,7 +220,7 @@ test('dirty Advance refuses before claim and preserves prior imported content', 
   await f.hub.save({ id: file.thread.id, machine: 'hub', project: '/project', slug: 'title', worktree: '/work', sessions: [], cards: [{ id: 'old', kind: 'question' }], pinned: { question: 'old' }, imported: { history: ['old'] } });
   await assert.rejects(importHandoff(f.hub, bytes(), 'hub', '/project'), { status: 409, message: /uncommitted changes/ });
   const saved = await f.hub.thread(file.thread.id);
-  assert.deepEqual(saved.imported, { history: ['old'] }); assert.deepEqual(saved.pinned, { question: 'old' }); assert.equal(saved.cards[0].retracted_by, undefined);
+  assert.deepEqual(saved.imported, { history: ['old'] }); assert.deepEqual(saved.pinned, { question: 'old' }); assert.equal(saved.cards[0].retracted_by, undefined); assert.equal(saved.handoff_op, undefined);
   assert.equal(f.calls.some((c) => c.action === 'claim-commit'), false);
 });
 
