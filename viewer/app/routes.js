@@ -240,13 +240,13 @@ async function handleSettings(hub, request, response, url, bits, body) {
     return send(response, 200, { ...Object.fromEntries(settings.BALANCING.map((key) => [key, value[key]])), reserved_provider: await reservedLabel(hub, value) });
   }
   if (bits[1] === 'models' && request.method === 'PUT') {
-    if (!Object.hasOwn(PROVIDERS, body.provider)) throw appError(400, 'provider must be claude, gpt or gemini');
+    if (!Object.hasOwn(PROVIDERS, body.provider)) throw appError(400, 'provider must be claude, gpt, gemini or kimi');
     let slot = settings.TIER_ALIASES[body.slot] || body.slot;
     if (body.provider === 'claude') slot = ({ haiku: 'light', sonnet: 'standard', opus: 'heavy' })[slot] || slot;
     if (!['light', 'standard', 'heavy', 'critical', 'lead', 'sub-lead'].includes(slot)) throw appError(400, 'slot is invalid');
-    if (body.model !== null && (typeof body.model !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,63}$/.test(body.model))) throw appError(400, 'model is invalid');
+    if (body.model !== null && (typeof body.model !== 'string' || !(body.provider === 'kimi' ? /^[a-z0-9][a-z0-9._-]{0,63}(\/[a-z0-9][a-z0-9._-]{0,63})?$/ : /^[a-z0-9][a-z0-9._-]{0,63}$/).test(body.model))) throw appError(400, 'model is invalid');
     if (body.provider === 'gpt' && body.effort !== undefined && !['low', 'medium', 'high', 'xhigh'].includes(body.effort)) throw appError(400, 'effort for GPT must be one of low, medium, high, xhigh');
-    if (['claude', 'gemini'].includes(body.provider) && body.effort !== undefined && !['low', 'medium', 'high', 'xhigh', 'max'].includes(body.effort)) throw appError(400, 'effort is invalid');
+    if (['claude', 'gemini', 'kimi'].includes(body.provider) && body.effort !== undefined && !['low', 'medium', 'high', 'xhigh', 'max'].includes(body.effort)) throw appError(400, 'effort is invalid');
     try { await settings.modelCommand(hub, ['set', body.provider, slot, body.model || 'none', ...(body.effort ? [body.effort] : [])]); }
     catch (error) { throw appError(400, (error.stderr || error.message).trim()); }
     return send(response, 200, { models: await settings.models(hub) });
@@ -296,7 +296,7 @@ async function handleSettings(hub, request, response, url, bits, body) {
         value.aside_access = body.aside_access;
       }
       if (body.review_families !== undefined) {
-        if (!['both', 'claude', 'gpt', 'gemini'].includes(body.review_families)) throw appError(400, 'review_families must be both, claude, gpt or gemini');
+        if (!['both', 'claude', 'gpt', 'gemini', 'kimi'].includes(body.review_families)) throw appError(400, 'review_families must be both, claude, gpt, gemini or kimi');
         value.review_families = body.review_families;
       }
       if (body.tool_steps !== undefined) {

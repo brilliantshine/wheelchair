@@ -11,7 +11,7 @@ import re
 import sys
 import tempfile
 
-PROVIDERS = ("claude", "gpt", "gemini")
+PROVIDERS = ("claude", "gpt", "gemini", "kimi")
 SLOTS = ("light", "standard", "heavy", "critical", "lead", "sub-lead")
 WORK_TIERS = ("light", "standard", "heavy", "critical")
 DEFAULTS = {
@@ -30,15 +30,25 @@ DEFAULTS = {
         "heavy": ("gemini-3.8-flash-high", None), "critical": ("gemini-3.8-flash-high", None),
         "lead": ("gemini-3.8-flash-high", None),
     },
+    "kimi": {
+        "light": ("kimi-code/kimi-for-coding-highspeed", None), "standard": ("kimi-code/k3", None),
+        "heavy": ("kimi-code/k3.1-pro", None), "critical": ("kimi-code/k3.1-pro", None),
+        "lead": ("kimi-code/k3.1-pro", None),
+    },
 }
 ALIASES = {"luna": "light", "terra": "standard", "sol": "heavy", "astra": "critical"}
 CLAUDE_ALIASES = {"haiku": "light", "sonnet": "standard", "opus": "heavy"}
 EFFORTS = {"low", "medium", "high", "xhigh", "max"}
 GPT_EFFORTS = {"low", "medium", "high", "xhigh"}
 VALUE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
+KIMI_VALUE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}(/[a-z0-9][a-z0-9._-]{0,63})?$")
+
+
+def value_ok(provider, model):
+    return (KIMI_VALUE if provider == "kimi" else VALUE).match(model) is not None
 MODEL = re.compile(r"^gpt-(\d+(?:\.\d+)*)-([a-z]+)$")
-USAGE = ("usage: model.sh <light|standard|heavy|critical> | <claude|gpt|gemini> <slot> | "
-         "effort <claude|gpt|gemini> <slot> | family claude <slot> | "
+USAGE = ("usage: model.sh <light|standard|heavy|critical> | <claude|gpt|gemini|kimi> <slot> | "
+         "effort <claude|gpt|gemini|kimi> <slot> | family claude <slot> | "
          "set [<provider> <slot> | <tier>] <model|none> [effort] | "
          "skip <model> | init | reset | check [--json] | show --json")
 
@@ -77,11 +87,11 @@ def parse_pins(text):
             skipped.append(skip.group(1))
             continue
         entry = re.fullmatch(
-            r"(claude|gpt|gemini)\.([a-z-]+)\s*=\s*([a-z0-9][a-z0-9._-]{0,63})(?:\s+@([a-z]+))?", line)
+            r"(claude|gpt|gemini|kimi)\.([a-z-]+)\s*=\s*([a-z0-9][a-z0-9._-]{0,63}(?:/[a-z0-9][a-z0-9._-]{0,63})?)(?:\s+@([a-z]+))?", line)
         if entry is not None:
             provider, raw_slot, model, effort = entry.groups()
             slot = slot_for(provider, raw_slot)
-            if slot is None:
+            if slot is None or not value_ok(provider, model):
                 return None
             if model == "none":
                 if effort is not None:
@@ -380,7 +390,7 @@ def main(root, argv):
         if provider == "gpt" and effort is not None and effort not in GPT_EFFORTS:
             print("GPT effort must be one of: low, medium, high, xhigh", file=sys.stderr)
             die_usage()
-        if (slot is None or not VALUE.match(model)
+        if (slot is None or not value_ok(provider, model)
                 or (model == "none" and effort is not None)
                 or (effort is not None and effort not in (GPT_EFFORTS if provider == "gpt" else EFFORTS))):
             die_usage()
