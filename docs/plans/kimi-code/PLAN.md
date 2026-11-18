@@ -952,6 +952,8 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — R1 attempt 1 (`wc-01b8cb1bf051-worker-12`, draft `7d33b69`) hit its fails-twice guardrail on its own new HTTP test (expected 200 where `POST /v1/sessions` answers 201, and passed `port: 0`, which the service turns into 7374 — it bound 127.0.0.1:7374 during the test; checked afterwards: no stray process, the real service is on the Tailscale address). Sub-lead read the draft: the code for all seven items looks right. Escalation rung 1 (guardrail): narrow rewritten brief (fix the test, free port, timeout and nonzero-exit tests, approval titles confirmed), effort xhigh (`wc-01b8cb1bf051-worker-16`).
+
 - 2026-11-18 — Choice: R2, `viewer/test/app-hub.test.js:1868-1890`: the check was added to the existing Kimi start test (a Claude 400 check, then the Kimi xhigh start under a `high` ceiling), with `max_tier: 'standard'` set in the test's preferences (scout-found; report said none).
 - 2026-11-18 — R2 accepted (band: scout): viewer 643/643 re-run by the sub-lead. Gap 4 hub half fixed.
 
