@@ -952,6 +952,8 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — T6 late evidence (worker-10, before it was stopped): on the light pin `kimi-code/kimi-for-coding`, launches with `KIMI_MODEL_THINKING_EFFORT=low` and `=max` both showed `thinking: max` and recorded max in `profile.bind`; confirms Decision 46.
+
 - 2026-11-18 — Sub-lead process error found and fixed: `wc.js git commit --paths` takes a comma-separated list; my earlier space-separated multi-path commits (`799485e`, `9189b68`, `57f5050`, `c7c2c5e`) committed only their first path. The left-out files (archive `pending_sessions` fix and its test, T3 report, Kimi light pin in `codex/test/run.sh` and `install/test/run.sh`) were committed in `8cf5611`; the tree is now clean.
 - 2026-11-18 — Choice: T6, `test-support/smoke/harness.js`: a private event proxy (hub deliveries counted), a temp `WHEELCHAIR_MODELS` pin file and an always-reserved fourth port for live runs.
 - 2026-11-18 — Choice: T6, `test-support/smoke/kimi-live.js`: startup screens captured every 50 ms; a check selector (`KIMI_LIVE_CHECKS`); the stopped curl request counted as one of three approval attempts; check 7 writes `/tmp/wheelchair-kimi-live-approval-check`; check-5 assertions still expect `thinking: low/max` (now stale under Decision 46).
