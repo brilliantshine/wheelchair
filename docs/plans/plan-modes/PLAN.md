@@ -56,6 +56,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D21 | Deferred bullet ids and texts must be unique within the card | The press carries the text, so duplicates would be ambiguous | review-round-1 |
 | D22 | Restart recovers the mode from cards before IDEA.md exists; no silent default | Avoids bypassing Collin's choice | review-round-1 |
 | D23 | A restarted lead in a done two-part thread posts the follow-up stub only if none exists | Neither misses nor duplicates the handoff | review-round-1 |
+| D24 | The empty `deferred` card is posted as soon as a lighter mode is chosen | Keeps the mode visible from the start (IDEA: "the mode in use is clear") | review-round-2 |
+| D25 | Only the first all-deferred re-check in a build is free; later ones count toward the two-attempt rule | Keeps verification bounded as today | review-round-2 |
 
 ## Spec
 
@@ -161,8 +163,8 @@ any retracted pinned card. This is how a change to thorough clears it.
 The hub refuses a `removed` press on a `deferred` card whose `locked` is true, or on one
 that has been replaced or retracted, with the same refusal shape as other stale presses.
 
-Lead behaviour: post it the first time an item is deferred, and again whenever a row is
-added or removed. On a `removed:` press, fold that item back into the Spec, delete its row,
+Lead behaviour: post it, empty, as soon as a lighter mode is chosen (so the mode is
+visible from then on), and again whenever a row is added or removed. On a `removed:` press, fold that item back into the Spec, delete its row,
 log it, repost the card. If the plan was `approved`, that Spec change returns it to
 `ready-for-review`. On a `[card <id>] start building` press, the lead reposts it with `locked: true` before
 starting the sub-lead. A `removed:` press that still reaches the lead after that (an
@@ -194,8 +196,14 @@ Deferred item is out of scope and is not a gap. Nothing else about how it checks
    only those, and REMEDIATION-N.md lists only those.
 4. If every gap was deferred, there is no remediation: the sub-lead starts a fresh
    verifier (a new attempt, briefed with the updated Deferred table) on the same commit.
-   That attempt is not a fix attempt for the two-attempt rule.
-A deferred gap never counts toward the two-attempt rule.
+   The first such re-check in a build is free; any later one counts as a fix attempt
+   for the two-attempt rule, so verification stays bounded as today.
+A deferred gap itself never counts as a surviving gap.
+
+Gaps deferred during verification are decided by the lead, not Collin: building has
+started and the card is locked. Collin sees them on the `deferred` card as they are added
+and accepts them after the fact (two-part: the follow-up thread; proof-of-concept: the
+done card's "left as is").
 
 ### Done (D4, D6, D8, D12)
 
@@ -221,8 +229,9 @@ A deferred gap never counts toward the two-attempt rule.
   and `PLAN.md` (an optional `## Deferred` section with the table and a note that it
   exists only in the lighter modes).
 - `viewer/app/card.js` (kind, `lead` only, fields with unique ids and texts, retractable),
-  `viewer/app/cards.js` (singleton), `viewer/app/threads.js` (refuse `removed` on a locked,
-  replaced or retracted `deferred` card),
+  `viewer/app/cards.js` (singleton), `viewer/app/threads.js` (refuse `removed` on a
+  locked `deferred` card; replaced and retracted cards are already refused for every kind
+  at `threads.js:274-276`, so add only the `locked` check),
   `viewer/app/chat.js` `shownPins` (not hidden after build), the press path that routes
   `removed` for `idea` (accept it for `deferred` too), `viewer/pages/thread.js` (pinned
   kind and rendering).
@@ -303,6 +312,10 @@ exit. Downgrades and declines cite evidence.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent (claude) | minor | Mode invisible in a lighter mode until something is deferred | upheld | D24 |
+| intent (claude) | minor | All-deferred re-checks make verification unbounded | upheld | D25 |
+| intent (claude) | minor | Verification-time deferrals in proof of concept are only seen after the fact; say so | upheld | Stated in Spec "Verification in the lighter modes" |
+| intent (claude) | minor | Hub already refuses replaced/retracted presses; only the lock check is new | upheld | Spec "Where the changes go" clarified |
 
 ## Prior Work
 
