@@ -514,19 +514,23 @@ this exact version"; results already obtained on the done head are kept.
 already has a check card` means it is posted. A `broken` step gives the card its "Fix it now"
 button; post no separate question. On `[card <id>] fix what the check found`, first check
 the card's `head` is still the current done head (a newer done may have been posted while the
-press was queued); if not, say in a line that a newer version replaced it and do nothing.
-Otherwise handle it as a problem Collin reported (step 9, which checks the PR state first),
-using the broken steps' notes as the report. `[card <id>] leave it` gets a one-line reply
-and nothing else. In a two-part thread the follow-up `stub` is posted right after `done`,
-without waiting for the check card.
+press was queued): the press does not name the head, so if you have posted a `done`
+since your latest `check` card, a newer version replaced it; say so in a line and do
+nothing. Otherwise handle it as a problem Collin reported (step 9, which checks the PR
+state first), using your latest check card's broken steps' notes as the report.
+`[card <id>] leave it` gets a one-line reply and nothing else. In a two-part thread the
+follow-up `stub` is posted right after `done`, without waiting for the check card.
 
 A new `done` accepted while a steps verifier for an older head runs: stop that verifier,
 post no check card for the older head, and start over for the new one.
 
 **Restart.** After `[wc:context restart]`: run `session list` and stop any live steps
 verifier the dead lead started (its report would go to the dead lead); steps it was trying
-are tried afresh. A `fix what the check found` press in the recent messages with no lead
-reply after it is handled now, as in Posting (current-head check first). If the latest done
+are tried afresh. A `fix what the check found` press in the recent messages is handled now,
+as in Posting (current-head check first, using the pressed card's `head` from the context's
+cards), unless a later `done` card is in the context (it was already fixed) or the local
+branch has commits past that card's `head` (a fix is in progress: carry on from them as
+step 9). The context carries no lead replies, so judge only by these. If the latest done
 card in the context without `retracted_at` has a `head`, no `check` card has that `head`, and
 local `HEAD` equals it or is an ancestor of it (fast-forward as above), write, try and post
 the steps as above; a duplicate refusal means the original arrived, and any other head
