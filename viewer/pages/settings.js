@@ -12,9 +12,10 @@
     ['heavy', 'Heavy', 'Leading, planning, review, checking'],
     ['critical', 'Critical', "Can't afford to get wrong"],
   ];
-  const PROVIDERS = [['claude', 'Claude', 'Claude Code'], ['gpt', 'GPT', 'Codex'], ['gemini', 'Antigravity', 'Antigravity CLI']];
-  const EFFORTS = { claude: ['low', 'medium', 'high', 'xhigh', 'max'], gpt: ['low', 'medium', 'high', 'xhigh'], gemini: ['low', 'medium', 'high', 'xhigh', 'max'] };
+  const PROVIDERS = [['claude', 'Claude', 'Claude Code'], ['gpt', 'GPT', 'Codex'], ['gemini', 'Antigravity', 'Antigravity CLI'], ['kimi', 'Kimi Code', 'Kimi CLI']];
+  const EFFORTS = { claude: ['low', 'medium', 'high', 'xhigh', 'max'], gpt: ['low', 'medium', 'high', 'xhigh'], gemini: ['low', 'medium', 'high', 'xhigh', 'max'], kimi: ['low', 'medium', 'high', 'xhigh', 'max'] };
   const MODEL_VALUE = /^[a-z0-9][a-z0-9._-]*$/;
+  const KIMI_MODEL_VALUE = /^[a-z0-9][a-z0-9._-]{0,63}(\/[a-z0-9][a-z0-9._-]{0,63})?$/;
   const NONE = '__none';
   const OTHER = '__other';
   const ROLES = [
@@ -209,7 +210,7 @@
       const row = h('div', { class: 'other' }, input, use);
       const go = () => {
         const value = input.value.trim();
-        if (!MODEL_VALUE.test(value)) {
+        if (!(provider === 'kimi' ? KIMI_MODEL_VALUE : MODEL_VALUE).test(value)) {
           inlineErr(wrap, 'Use lowercase letters, digits, dots, dashes and underscores, starting with a letter or digit.');
           return;
         }
@@ -478,7 +479,7 @@
     const escRow = (title, key, choices) => h('div', { class: 'row-line' },
       h('div', { class: 'what' }, h('span', { text: title })),
       escalationGroup(key, title, choices));
-    const claudeMode = modeGroup('permission_mode', 'Claude permission mode', [['auto', 'Auto'], ['bypass', 'Bypass']]);
+    const claudeMode = modeGroup('permission_mode', 'Claude, Antigravity and Kimi permission mode', [['auto', 'Auto'], ['bypass', 'Bypass']]);
     const codexMode = modeGroup('codex_mode', 'Codex permission mode', [['sandboxed', 'Sandboxed'], ['unrestricted', 'Unrestricted']]);
     const asideMode = modeGroup('aside_access', 'Aside access', [['read-only', 'Read-only'], ['full', 'Full']]);
     const asideHint = data.aside_access === 'full'
@@ -519,7 +520,7 @@
         h('h2', { id: 'perm', text: 'Permission mode' }),
         h('div', { class: 'box rows' },
           h('div', { class: 'row-line' },
-            h('div', { class: 'what' }, h('span', { text: 'Claude and Antigravity sessions' })),
+            h('div', { class: 'what' }, h('span', { text: 'Claude, Antigravity and Kimi sessions' })),
             claudeMode),
           h('div', { class: 'row-line' },
             h('div', { class: 'what' }, h('span', { text: 'Codex sessions' }), h('span', { class: 'hint', text: codexHint })),
@@ -542,7 +543,7 @@
         h('div', { class: 'box rows' },
           h('div', { class: 'row-line' },
             h('div', { class: 'what' }, h('span', { text: 'Reviewers and checkers' }), h('span', { class: 'hint', text: data.review_families === 'both' ? 'Plan reviewers from two different families; the checker from a family other than the builder\'s.' : `One plan reviewer and the checker, both on ${PROVIDER_NAME[data.review_families]}.` })),
-            modeGroup('review_families', 'Reviewers and checkers', [['both', 'Mix families'], ['claude', 'Claude'], ['gpt', 'GPT'], ['gemini', 'Antigravity']])),
+            modeGroup('review_families', 'Reviewers and checkers', [['both', 'Mix families'], ['claude', 'Claude'], ['gpt', 'GPT'], ['gemini', 'Antigravity'], ['kimi', 'Kimi Code']])),
           otherAgentRow('reviewer', 'Plan reviewers', 'Model tier for plan reviewers'),
           otherAgentRow('verifier', 'Checker', 'Model tier for the checker'),
           otherAgentRow('mapper', 'Code mapping', 'Maps how the existing code works before planning'),
@@ -941,9 +942,10 @@
     claude: [['unknown', 'Not sure'], ['pro', 'Pro'], ['max5', 'Max 5x'], ['max20', 'Max 20x']],
     gpt: [['unknown', 'Not sure'], ['plus', 'Plus'], ['pro', 'Pro']],
     gemini: [['unknown', 'Not sure'], ['pro', 'AI Pro'], ['ultra', 'AI Ultra']],
+    kimi: [['unknown', 'Not sure']],
   };
   const planLabel = (provider, plan) => ((PLAN_OPTIONS[provider] || []).find((p) => p[0] === plan) || [0, plan])[1];
-  const PROVIDER_NAME = { claude: 'Claude', gpt: 'GPT', gemini: 'Antigravity' };
+  const PROVIDER_NAME = { claude: 'Claude', gpt: 'GPT', gemini: 'Antigravity', kimi: 'Kimi Code' };
   const WITHIN = [['soonest', 'Soonest refill first'], ['spread', 'Spread evenly'], ['one', 'Stay on one account']];
   const CLAUDE_TERMS = "Anthropic's terms say plan limits assume ordinary, individual use. Several Claude accounts behind one setup may get flagged.";
   const SIGNIN_WAIT_MS = 30000;
@@ -1139,15 +1141,16 @@
     const card = h('div', { class: 'acct', 'data-account': a.id });
     const machines = Object.entries(a.machines || {});
     const states = { signed_in: 'signed in', signed_out: 'signed out', unknown: 'unknown' };
+    const stateName = (st) => (st && typeof st === 'object' ? st.state : st);
     card.append(
       h('div', { class: 'acct-head' },
         h('strong', { class: 'acct-name', text: a.name }),
         h('span', { class: 'v-badge', text: `${planLabel(a.provider, a.plan)}${reportedPlan(a)} · weight ${a.weight}` }),
         a.paused && h('span', { class: 'v-badge', text: 'paused' }),
         h('span', { class: 'in-use' + (a.live_sessions ? ' on' : ''), text: a.live_sessions ? `in use · ${a.live_sessions} ${a.live_sessions === 1 ? 'agent' : 'agents'}` : 'idle' })),
-      machines.length && h('ul', { class: 'machines' }, machines.map(([m, st]) => h('li', { 'data-machine': m, 'data-state': st },
-        h('span', { class: 'mname', text: m }), h('span', { class: 'mstate ' + st, text: states[st] || st }),
-        st !== 'signed_in' && h('button', { type: 'button', class: 'small', text: 'Sign in', 'aria-label': `Sign in ${a.name} on ${m}`, onclick: () => openSignin(a, m) })))),
+      machines.length && h('ul', { class: 'machines' }, machines.map(([m, st]) => h('li', { 'data-machine': m, 'data-state': stateName(st) },
+        h('span', { class: 'mname', text: m }), h('span', { class: 'mstate ' + stateName(st), text: st && st.state === 'problem' ? st.text : (states[st] || st) }),
+        stateName(st) !== 'signed_in' && h('button', { type: 'button', class: 'small', text: 'Sign in', 'aria-label': `Sign in ${a.name} on ${m}`, onclick: () => openSignin(a, m) })))),
       h('div', { class: 'wins' },
         windowLine('5-hour window', a.reading && a.reading.five_hour),
         windowLine('This week', a.reading && a.reading.week),

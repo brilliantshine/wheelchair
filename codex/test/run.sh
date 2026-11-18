@@ -49,7 +49,13 @@ default_pins() {
     "gemini.heavy = gemini-3.8-flash-high" \
     "gemini.critical = gemini-3.8-flash-high" \
     "gemini.lead = gemini-3.8-flash-high" \
-    "gemini.sub-lead = gemini-3.8-flash-high"
+    "gemini.sub-lead = gemini-3.8-flash-high" \
+    "kimi.light = kimi-code/kimi-for-coding-highspeed" \
+    "kimi.standard = kimi-code/k3" \
+    "kimi.heavy = kimi-code/k3.1-pro" \
+    "kimi.critical = kimi-code/k3.1-pro" \
+    "kimi.lead = kimi-code/k3.1-pro" \
+    "kimi.sub-lead = kimi-code/k3.1-pro"
 }
 json_assert() { python3 -c "$1" <<<"$output"; }
 
@@ -111,6 +117,32 @@ run_model effort gemini heavy
 assert 'Gemini pin line reads effort' bash -c '[[ $1 == 0 && $2 == xhigh ]]' _ "$status" "$output"
 run_model show --json
 assert 'show JSON includes Gemini' json_assert 'import json,sys; assert json.load(sys.stdin)["gemini"]["heavy"] == {"model":"gemini-x","effort":"xhigh"}'
+
+# Kimi defaults and slashed aliases (slashes only for Kimi).
+new_case
+for slot in light standard heavy critical lead sub-lead; do
+  case $slot in light) expected=kimi-code/kimi-for-coding-highspeed ;; standard) expected=kimi-code/k3 ;; *) expected=kimi-code/k3.1-pro ;; esac
+  run_model kimi "$slot"
+  assert "Kimi $slot uses its shipped default" bash -c '[[ $1 == 0 && $2 == "$3" ]]' _ "$status" "$output" "$expected"
+done
+run_model set kimi standard kimi-code/k3-custom max
+assert 'set accepts a slashed Kimi alias with max effort' test "$status" -eq 0
+run_model kimi standard
+assert 'Kimi slashed alias reads back' equals "$output" kimi-code/k3-custom
+run_model effort kimi standard
+assert 'Kimi effort reads back' equals "$output" max
+run_model show --json
+assert 'show JSON includes Kimi' json_assert 'import json,sys; x=json.load(sys.stdin); assert x["kimi"]["standard"] == {"model":"kimi-code/k3-custom","effort":"max"} and x["malformed"] is False'
+run_model set gemini standard a/b
+assert 'set rejects a slashed non-Kimi model' test "$status" -eq 2
+run_model set kimi standard a/b/c
+assert 'set rejects two slashes for Kimi' test "$status" -eq 2
+printf 'gpt.light = a/b\n' > "$pins"
+run_model show --json
+assert 'a slashed non-Kimi pin is malformed' json_assert 'import json,sys; assert json.load(sys.stdin)["malformed"] is True'
+printf 'kimi.heavy = kimi-code/x @high\n' > "$pins"
+run_model kimi heavy
+assert 'Kimi pin line reads a slashed model' equals "$output" kimi-code/x
 
 # New-format reading, defaults, aliases, none, effort and family.
 new_case

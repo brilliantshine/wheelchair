@@ -58,6 +58,28 @@ test.describe('desktop', () => {
     await expect(page.locator('.covers')).not.toContainText('Phone notifications');
   });
 
+  test('a slashed Kimi alias saves through Other, survives a reload, and other providers refuse a slash', async ({ page }) => {
+    await openPage(page, context, '/app/settings#models');
+    await expect(page.locator('tr[data-provider="kimi"]')).toContainText('Kimi Code');
+    const standard = page.getByLabel('Kimi Code standard model', { exact: true });
+    await expect(standard).toHaveValue('kimi-code/k3');
+    await standard.selectOption('__other');
+    await page.getByLabel('Kimi Code standard model, other').fill('kimi-code/a/b');
+    await page.getByRole('button', { name: 'Use', exact: true }).click();
+    await expect(page.locator('.inline-err')).toBeVisible();
+    await page.getByLabel('Kimi Code standard model, other').fill('kimi-code/k3-preview');
+    await page.getByRole('button', { name: 'Use', exact: true }).click();
+    await expect(page.locator('.note').first()).toHaveText('Saved, applies to new sessions');
+    await expect.poll(async () => (await settings(page)).models.kimi.standard.model).toBe('kimi-code/k3-preview');
+    await page.reload();
+    await expect(page.getByLabel('Kimi Code standard model', { exact: true })).toHaveValue('kimi-code/k3-preview');
+    const light = page.getByLabel('GPT light model', { exact: true });
+    await light.selectOption('__other');
+    await page.getByLabel('GPT light model, other').fill('gpt/x');
+    await page.getByRole('button', { name: 'Use', exact: true }).click();
+    await expect(page.locator('.inline-err')).toBeVisible();
+  });
+
   test('editing a table cell saves, and Not used saves null', async ({ page }) => {
     await openPage(page, context, '/app/settings#models');
     const light = page.getByLabel('GPT light model', { exact: true });
@@ -117,12 +139,12 @@ test.describe('desktop', () => {
 
   test('sub-lead models and scout tiers render and save independently', async ({ page }) => {
     await openPage(page, context, '/app/settings#models');
-    for (const provider of ['Claude', 'GPT', 'Antigravity']) {
+    for (const provider of ['Claude', 'GPT', 'Antigravity', 'Kimi Code']) {
       await expect(page.getByLabel(`${provider} lead model`, { exact: true })).toBeVisible();
       await expect(page.getByLabel(`${provider} sub-lead model`, { exact: true })).toBeVisible();
     }
-    await expect(page.getByText('Leads run on', { exact: true })).toHaveCount(3);
-    await expect(page.getByText('Sub-leads run on', { exact: true })).toHaveCount(3);
+    await expect(page.getByText('Leads run on', { exact: true })).toHaveCount(4);
+    await expect(page.getByText('Sub-leads run on', { exact: true })).toHaveCount(4);
     const modelRequest = page.waitForRequest((request) => request.url().endsWith('/api/settings/models') && request.method() === 'PUT');
     await page.getByLabel('GPT sub-lead effort', { exact: true }).selectOption('high');
     expect((await modelRequest).postDataJSON()).toMatchObject({ provider: 'gpt', slot: 'sub-lead', effort: 'high' });
