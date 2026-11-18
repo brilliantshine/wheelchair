@@ -1158,6 +1158,18 @@ class MachineService {
     }
     return out;
   }
+  async fetchHandoffBranch(repo, branch) {
+    const ref = `refs/heads/${branch}`;
+    const listed = await commandAsync('git', ['-C', repo, 'ls-remote', 'origin', ref]);
+    if (!listed.ok) throw new Error(listed.stderr.trim() || 'git ls-remote failed');
+    const line = listed.stdout.split('\n').map(row => row.split(/\s+/)).find(parts => parts[1] === ref);
+    if (!line) return { remote_has_branch: false, remote_tip: null };
+    const fetched = await commandAsync('git', ['-C', repo, 'fetch', 'origin', `+${ref}:refs/remotes/origin/${branch}`]);
+    if (!fetched.ok) throw new Error(fetched.stderr.trim() || 'git fetch failed');
+    const tip = await commandAsync('git', ['-C', repo, 'rev-parse', 'FETCH_HEAD']);
+    if (!tip.ok) throw new Error(tip.stderr.trim() || 'git rev-parse failed');
+    return { remote_has_branch: true, remote_tip: tip.stdout.trim() };
+  }
   async handoff(input) {
     const invalid = message => { throw Object.assign(new Error(message), { status: 422, handoff: true }); };
     if (!input || typeof input !== 'object' || Array.isArray(input)) invalid('invalid request');

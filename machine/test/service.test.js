@@ -1425,3 +1425,19 @@ test('handoff validates input, authorization, and waits for the archive lock', a
     release(); await held; assert.equal((await pending).status, 200);
   } finally { await env.close(); }
 });
+
+test('handoff fetch checks exact remote ref and updates a single-branch clone', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true }); try {
+    const repo = await project(root); const id = '012345abcdef'; const branch = `wc/${id}`;
+    git(['-C', repo, 'push', 'origin', `HEAD:refs/heads/backup/${branch}`]);
+    const clone = path.join(root, 'single');
+    git(['clone', '--single-branch', '--branch', 'main', `file://${path.join(root, 'origin.git')}`, clone]);
+    let state = await env.instance.fetchHandoffBranch(clone, branch);
+    assert.deepEqual(state, { remote_has_branch: false, remote_tip: null }, JSON.stringify(state));
+    git(['-C', repo, 'push', 'origin', `HEAD:refs/heads/${branch}`]);
+    state = await env.instance.fetchHandoffBranch(clone, branch);
+    const head = git(['-C', repo, 'rev-parse', 'HEAD']).stdout.trim();
+    assert.deepEqual(state, { remote_has_branch: true, remote_tip: head }, JSON.stringify(state));
+    assert.equal(git(['-C', clone, 'rev-parse', `refs/remotes/origin/${branch}`]).stdout.trim(), head);
+  } finally { await env.close(); }
+});
