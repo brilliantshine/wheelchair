@@ -106,3 +106,14 @@ Claude tool hooks send `step` events with `phase` (`start` or `end`) and a `step
 Codex steps and context are read from each bound live session’s rollout every two seconds, with the reader offset and open state persisted in `sessions.json`. Complete lines are emitted through the same spool; a turn-end notification flushes through the file size measured at the start of the flush. For a live notification, steps are delivered before `turn-ended`; when replaying a spooled notification, steps may be delivered on the next drain after `turn-ended`. Polls continue a yielded step and a new operation closes it uncleanly. The separate turn-end usage scan is unchanged.
 
 Kimi Code uses an absolute resolved executable and an explicit `KIMI_CODE_HOME` for login and launches. Status reads the home config without invoking Kimi and reports account authentication separately from eligibility; an unsupported CLI version appears as a per-CLI problem. Sign-in uses the global region and keeps its exit result for the attempt. Launch maps permission mode to `--yolo` or `--auto` and sets supported effort through the process environment.
+
+Kimi Code turn ends are read from the bound main wire log. Lifecycle events carry a
+numeric `turn_id`; a cancelled `turn-ended` also carries `interrupted: true`. Failed
+turns use `turn-failed` or `limit-hit` with `error`. Agent hook events from Kimi
+sessions are ignored; permission prompts are detected from the pane.
+
+Session listings may include `end_reason` when the service can no longer safely follow
+a session. Input is refused with that reason. A DELETE for such a session returns
+`202 { pending: true, end_reason }` while the tmux session's absence is unconfirmed;
+repeat the request or inspect the listing for the stopped state. Archive likewise keeps
+its session and worktree until the stop is confirmed.
