@@ -59,6 +59,8 @@ None.
 | 32 | Read token binds the project identity and GitHub repository; Save pushes only to the one validated URL | No write to a retargeted alias or a second push URL | review-round-6 |
 | 33 | Unset and held-back keys are key warnings, not skip reasons | Adapters still start the tool | review-round-6 |
 | 34 | Supersedes 26, 28 and 31: no save tracking; after a lost reply the screen reloads and tells Collin to check Waiting to merge | Lost replies are rare and the list shows whether it landed | user |
+| 35 | Exactly one fetch and one push URL, same GitHub repo; all git calls use that URL | One destination, checked once | review-round-7 |
+| 36 | `start_over` flag; per-Save commit trailer; Remove checks identity; lock-held shown on Read | Close gaps from round 7 | review-round-7 |
 
 ## Spec
 
@@ -75,12 +77,12 @@ project's tools and lets him add, change and remove them. Works at phone width.
   symlinked or aliased picker paths, Save, key status and session launch all use one identity.
 
 ### Reading
-- The machine resolves the GitHub repository (`owner/name`) from both
-  `git remote get-url origin` and `git remote get-url --push origin` in the project; if they
-  name different GitHub repositories, or the remote has more than one push URL
-  (`git config --get-all remote.origin.pushurl`), the section says so and allows only key
-  changes; Save pushes to that one validated URL explicitly, never to the name `origin`; a non-GitHub origin shows "pull requests need a GitHub origin" and allows
-  only key changes. Every `gh` call passes `--repo <owner/name>` and runs non-interactively.
+- The machine reads every effective fetch URL (`git remote get-url --all origin`) and push
+  URL (`git remote get-url --push --all origin`). Tool changes are allowed only when there is
+  exactly one of each and both name the same GitHub repository (`owner/name`); otherwise the
+  section says why and allows only key changes ("pull requests need a single GitHub origin").
+  That one push URL is the **validated URL**: every later fetch, push and `ls-remote` in Read
+  and Save uses it explicitly, never the remote name `origin`. Every `gh` call passes `--repo <owner/name>` and runs non-interactively.
 - The machine fetches the current default branch (resolved as below) with an explicit
   refspec, and reads `.mcp.json` from it. That is the **source**; Collin's working checkout is
   never read or touched. The default branch is the current remote default, from
@@ -99,8 +101,10 @@ project's tools and lets him add, change and remove them. Works at phone width.
   "not a regular file; edit it by hand or Start over". Session launch is unchanged and may
   still follow a symlink (Accepted Risks). Otherwise the same checks as `machine/lib/project-mcp.js` apply, with
   the same reasons.
-- Unreadable file: the section shows the reason, offers no editing, and offers "Start over"
-  (an empty tool list, saved as below, writing a regular file in place of whatever was there).
+- Unreadable file: the section shows the reason, offers no editing, and offers "Start over":
+  a Save with `start_over: true` and an empty tool list, which counts as a tool-list change
+  (never "nothing to save") and writes a regular file in place of whatever was there. Save
+  refuses `start_over` unless the read token says the file was unreadable.
 - The read returns a **read token**: the project identity (git common directory) and the
   validated GitHub repository, the default branch name, the git blob id of `.mcp.json`
   on it as its tree mode plus object id (or "absent"), and the key store's revision (a counter the machine bumps on every key write). The screen sends it back
@@ -176,7 +180,8 @@ project's tools and lets him add, change and remove them. Works at phone width.
   value (it may be left empty; the tool then shows "not set").
 - Save can only set keys. Remove is a separate button on that list, with a confirmation that
   names the tools on main using it and warns that waiting pull requests may need it too. The
-  machine checks only the key-store revision before removing; it does not scan PRs (Accepted
+  machine checks the read token's project identity and the key-store revision before
+  removing, refusing like Save step 1 on a mismatch; it does not scan PRs (Accepted
   Risks).
 - At session start, a name referenced in any form (`${NAME}` or `${NAME:-default}`) in a
   command, args or URL anywhere in that worktree's `.mcp.json` is never injected, even if an
@@ -189,7 +194,7 @@ project's tools and lets him add, change and remove them. Works at phone width.
 - No tool-list change and no keys set: refused, "nothing to save".
 - One save or removal per project at a time on the machine (a lock); a second waits.
 - Order, with nothing written until step 3:
-  1. Key-store revision differs from the read token: refuse "changed since you opened it"
+  1. Project identity or key-store revision differs from the read token: refuse "changed since you opened it"
      (the screen reloads). The token's project identity must match the project the request
      names, and for tool changes its GitHub repository must match a fresh resolution;
      otherwise refuse the same way. If the tool list changed, also fetch the default branch and refuse
@@ -202,24 +207,30 @@ project's tools and lets him add, change and remove them. Works at phone width.
   3. Store the keys being set. If the tool list didn't change, stop here: no PR.
   4. In a temporary worktree (never Collin's checkout) at the default-branch head just
      fetched, replace `.mcp.json` with a regular file holding the candidate and commit "Update
-     project tools".
+     project tools" with the trailer `Wheelchair-Save: <32 random hex>`, so the commit id is
+     unique to this Save.
   5. Push to a new branch `wc-tools/<12 random hex>` with
-     `git push --porcelain --force-with-lease=refs/heads/<branch>: origin HEAD:refs/heads/<branch>`
+     `git push --porcelain --force-with-lease=refs/heads/<branch>: <validated URL> HEAD:refs/heads/<branch>`
      and go on only if the porcelain line for that ref has the `*` (new ref) flag; "up to
      date" is a failure. If the push errors or its result is unclear, check with
-     `git ls-remote origin refs/heads/<branch>`: present at our commit means created (go on);
+     `git ls-remote <validated URL> refs/heads/<branch>`: present at our commit means created (go on);
      absent means failed; anything else fails with "couldn't confirm the push". If the remote refuses because a branch named
      `wc-tools` (or any ref blocking the `wc-tools/` namespace) exists, show "a branch named
      <name> on GitHub blocks saving; rename or delete it"; never touch it.
   6. Run `gh pr create --repo R --head <branch> --base <default branch> --title "Update
      project tools" --body "Saved from the wheelchair app's Project tools screen."`. If that
      fails or times out, confirm with `gh pr list --repo R --head <branch> --base <default
-     branch> --state all --json url`: a PR found is reported as opened, with its link. None
+     branch> --state all --json url,isCrossRepository,headRefOid`, keeping only a
+     same-repository PR whose head is this Save's commit: one found is reported as opened, with its link. None
      found: the reply shows the error, the branch name and GitHub's compare link so Collin can
      open it himself. If confirmation also fails: "couldn't confirm whether the pull request
      was opened; check Waiting to merge" plus the compare link. Creation is never
      retried.
   7. Remove the temporary worktree.
+- Header keys: the form notes that tools with headers only work for Claude agents (Codex skips
+  them), and that Claude reads some credential-like names as empty in remote headers (see
+  https://code.claude.com/docs/en/mcp, "credential variables that read as empty"); a header
+  key whose name is on that list gets a key warning.
 - Every Save makes its own branch and PR; two saves never share anything. Two waiting PRs may
   conflict with each other; GitHub shows that and Collin closes one.
 - The section shows the PR link and that new threads get the change once it is merged.
@@ -233,10 +244,17 @@ project's tools and lets him add, change and remove them. Works at phone width.
 - The machine runs a Save to the end even if the HTTP request is dropped. It keeps no record
   of saves.
 - Deadlines: the hub calls the new read, save and remove routes with a 120-second timeout
-  (`viewer/app/machine-client.js:64` takes a timeout argument; the default is 5 seconds). If
-  Save times out or the connection drops, the screen reloads and shows "Your last save may or
-  may not have gone through; check Waiting to merge before saving again." It never retries on
-  its own and tracks nothing.
+  (`viewer/app/machine-client.js:64` takes a timeout argument; the default is 5 seconds).
+- A Save reply counts only if it is complete JSON with `ok: true` and the expected fields.
+  The page's `api()` helper turns an unreadable body into `{}` (`viewer/pages/settings.js:69`);
+  the new section must treat that, a timeout or a dropped connection as a **lost reply**.
+- On a lost reply the screen reloads and shows, never retrying on its own and tracking nothing:
+  - tool change: "Your last save may or may not have gone through; check Waiting to merge
+    before saving again." If `gh` failed on the reload, it names the repository's pull
+    requests page on GitHub instead of Waiting to merge;
+  - key-only: "Check the keys list to see whether your key was saved."
+- Reading reports whether this project's save lock is held; if so the section shows "A save
+  is still running" and disables Save until a reload finds the lock free.
 
 ### Not doing
 Running or testing a tool; changing which roles or CLIs get tools; changing running threads;
@@ -249,7 +267,10 @@ account-level tools; merging the PR.
   names refused; Save refused only when `.mcp.json` or the key revision changed;
   push without a new-ref `*` flag stops before PR creation (including equal-sha); a blocking
   `wc-tools` ref shows its message; `${NAME:-x}` in args holds back that key at launch;
-  a dropped Save still runs to the end on the machine; command timeout kills a grandchild holding the pipe;
+  a dropped Save still runs to the end on the machine;
+  Start over replaces an unreadable file; Remove refused on an identity mismatch; push uses
+  the validated URL only (two push URLs refused); fork PR not taken as this Save's; lost reply
+  from an unreadable body; lock-held read; command timeout kills a grandchild holding the pipe;
   push with lost result confirmed by ls-remote; differing push and fetch repos refused; waiting tools PRs listed and filtered by `wc-tools/` prefix;
   symlinked `.mcp.json` read as unreadable and replaced by Start over; key-only save opens no PR;
   PR-create failure shows the compare link;
@@ -432,7 +453,7 @@ polling); Validation; Accepted Risks row (round 5); Decision Log 28-30.
 
 ### Round 7 — 2026-11-18
 
-**Lanes:** intent — pending; mechanics — pending; cross-family: pending.
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 6:** save tracking removed (Log 34): no save ids, status route or
 localStorage; a lost reply reloads with a "check Waiting to merge" message. From round 6
@@ -440,6 +461,30 @@ triage: single validated push URL and token bound to project identity and GitHub
 (Log 32); both-ways key conflicts refused only when this Save creates them; unset and
 held-back keys are key warnings, not skip reasons (Log 33); PR-create confirmation via
 `gh pr list --head`.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Log 32's validated URL not in step 5 | upheld | Log 35 |
+| intent | minor | Reload often too early after a lost reply | upheld | Lock-held "A save is still running" |
+| intent | minor | Lost-reply message points to the wrong place | upheld | Message per case |
+| intent | minor | Remove skips identity check | upheld | Log 36 |
+| mechanics | blocking | RE-RAISE: push/ls-remote to `origin`; multiple URLs | upheld | Log 35 |
+| mechanics | blocking | RE-RAISE: Remove without identity | upheld | Log 36 |
+| mechanics | major | RE-RAISE: fork PR taken as this Save's | upheld | Same-repo + head sha filter |
+| mechanics | major | RE-RAISE: commit id not unique per Save | upheld | `Wheelchair-Save` trailer |
+| mechanics | major | Unreadable 200 body treated as success | upheld | Lost-reply rule |
+| mechanics | major | Start over refused as unchanged | upheld | `start_over` flag |
+| mechanics | major | Claude empties some credential headers | downgraded to minor: a warning, not a wrong build | Header-key note and warning |
+
+### Round 8 — 2026-11-18
+
+**Lanes:** intent — pending; mechanics — pending; cross-family: pending.
+
+**Changed since Round 7:** Reading (all fetch/push URLs, single validated URL used for every
+git call, `start_over` flag, lock-held state); Keys (Remove checks identity); Saving (step 1
+identity, step 4 `Wheelchair-Save` trailer, step 5 validated URL, step 6 same-repo + head sha
+filter, header-key notes, complete-reply rule, per-case lost-reply messages); Validation;
+Decision Log 35-36.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
