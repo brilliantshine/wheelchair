@@ -206,6 +206,15 @@ test('Codex command line has session-name notify and inline projects trust', asy
 test('Claude trust dialog is answered Down then Enter', async () => {
   const env = await service(await temp(), { pane: trustDialog }); try { await start(env); const calls = await log(env); assert.match(calls, /send-keys -t wc-t-lead Down/); assert.match(calls, /send-keys -t wc-t-lead Enter/); } finally { await env.close(); }
 });
+const themePicker = " Let's get started.\n\n Choose the text style that looks best with your terminal\n To change this later, run /theme\n\n     Auto (match terminal)\n ❯ ✔ Dark mode\n     Light mode\n";
+const securityNotes = ' Security notes:\n 1. Claude can make mistakes.\n Press Enter to continue…\n';
+test('Claude first-run theme picker and security notes are answered with Enter alone, and are not ready', async () => {
+  for (const pane of [themePicker, securityNotes]) {
+    const env = await service(await temp(), { pane }); try { await start(env); const calls = await log(env); assert.match(calls, /send-keys -t wc-t-lead Enter/); assert.doesNotMatch(calls, /send-keys -t wc-t-lead Down/); assert.notEqual(env.instance.sessions['wc-t-lead'].status, 'ready'); } finally { await env.close(); }
+  }
+  const adapter = require('../adapters/claude');
+  assert.equal(adapter.readyText({ permission_mode: 'bypass' }, themePicker + '⏵⏵ bypass permissions on\n❯ \n'), false);
+});
 test('session is stuck after 30 seconds then becomes ready', async () => {
   const env = await service(await temp(), { pane: 'loading' }); try { await start(env); const session = env.instance.sessions['wc-t-lead']; session.created_at = new Date(Date.now() - 31_000).toISOString(); await env.instance.checkReady(session); assert.equal(session.status, 'stuck'); await write(env.fake.pane, readyClaude); await env.instance.checkReady(session); assert.equal(session.status, 'ready'); } finally { await env.close(); }
 });
