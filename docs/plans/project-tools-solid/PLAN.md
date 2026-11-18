@@ -15,7 +15,13 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-Being filled in: two research checks are running (Antigravity per-session tools; Codex header keys and which CLIs can really test a connection). Questions follow from their answers.
+### Q1: How does the connection check work?
+- **Context:** Research (2026-11-18): `codex mcp list` and `codex mcp get` only read config; `claude mcp list` connects but is text-only, takes ~6 s, and skips project servers until approved under `~/.claude`; `agy mcp list` does not even show workspace-plugin servers. No CLI gives a cheap, reliable status.
+- **Options:** (a) wheelchair connects to each tool itself (MCP handshake plus tool list) once per thread when `.mcp.json` changes, same answer for every CLI; (b) wheelchair connects at every tools-getting session start; (c) no connection check, only "program exists".
+- **Recommendation:** (a).
+
+### Q2: Antigravity mechanism (pending research)
+- **Context:** A workspace plugin at `<cwd>/.agents/plugins/<name>/` (`plugin.json` + `mcp_config.json`) loads servers with no HOME change (verified, model turn reached the tool). But leads and reviewers share one worktree, and reviewers must not get tools (local-projects Decision 4). A follow-up check for a per-session on/off switch is running. Fallback is a per-session fake HOME with a copied login token, which isolates conversation history and anything else under HOME.
 
 ## Watch List
 
@@ -28,6 +34,9 @@ promoted to a Constraint or Accepted Risk, or waved off by the user.
 
 | # | Noticed | What needs looking into | Raised to user? | Outcome |
 |---|---------|-------------------------|-----------------|---------|
+| 1 | Codex research | `http_headers` (literal), `env_http_headers` (header → env var), `bearer_token_env_var` all accepted as `-c` overrides; `bearer_token` makes Codex refuse its config; `type: "sse"` is silently treated as HTTP | no | Fold into Spec: map `Bearer ${NAME}` → `bearer_token_env_var`, exact `${NAME}` header → `env_http_headers`, literal → `http_headers`; skip sse and other `${}` |
+| 2 | Codex research | Literal header values go into the stored argv; a literal `Authorization` or key header is likely a secret | no | Decide: skip literal secret-looking headers with a warning |
+| 3 | Codex budget | 64 KiB budget counts UTF-16 units | no | Fold into Spec: `Buffer.byteLength` |
 
 ## Decision Log
 
