@@ -79,6 +79,7 @@ module.exports = {
           add('env', `{${literal.join(',')}}`);
           add('env_vars', `[${passthrough.join(',')}]`);
         }
+        add('default_tools_approval_mode', '"approve"');
         add('enabled', 'true');
       }
     }
