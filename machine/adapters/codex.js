@@ -59,7 +59,10 @@ module.exports = {
         let reason;
         if (!/^[A-Za-z0-9_-]+$/.test(name)) reason = 'its name must use only letters, digits, _ and -';
         else if (Object.hasOwn(entry, 'headers')) reason = 'servers with headers are not supported on Codex yet';
-        else if ([entry.command, ...(entry.args || []), entry.url].some(value => value?.includes('${')) ||
+        // Only the fields this transport uses are read: the reader validates stdio fields for stdio
+        // entries and only `url` for http ones, so an http entry's other keys may be anything.
+        else if (entry.type === 'http' ? entry.url.includes('${') :
+          [entry.command, ...(entry.args || [])].some(value => value.includes('${')) ||
           Object.entries(entry.env || {}).some(([key, value]) => value.includes('${') &&
             (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || value !== `\${${key}}`))) {
           reason = 'it uses ${...} that Codex cannot pass through';

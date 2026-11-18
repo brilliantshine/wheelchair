@@ -69,3 +69,9 @@ test('never expands environment secrets into arguments or warnings', () => {
     else process.env.WC_TEST_SECRET = previous;
   }
 });
+
+test('an http entry with stray stdio-shaped keys does not stop its siblings', () => {
+  const result = call({ remote: { type: 'http', url: 'https://example.test/mcp', args: {}, env: 5, command: 7 }, local: { command: 'node' } });
+  assert.deepEqual(result.argv.slice(base.length), pairs('mcp_servers.project_remote.url="https://example.test/mcp"', 'mcp_servers.project_remote.default_tools_approval_mode="approve"', 'mcp_servers.project_remote.enabled=true', 'mcp_servers.project_local.command="node"', 'mcp_servers.project_local.args=[]', 'mcp_servers.project_local.env={}', 'mcp_servers.project_local.env_vars=[]', 'mcp_servers.project_local.default_tools_approval_mode="approve"', 'mcp_servers.project_local.enabled=true'));
+  assert.deepEqual(result.warnings, []);
+});
