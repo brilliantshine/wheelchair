@@ -686,7 +686,7 @@ Filled by Stage 3. One row per worker brief.
 | T3 | `tricky` check card rendering, Copy, Fix it now/Leave it buttons, CSS, browser test | viewer/pages/thread.js, viewer/pages/thread.css, new viewer/test/*.spec.js | standard / claude-sonnet-5-5 | wc-2daed8b3ee7f-worker-3 | `npm --prefix viewer run test:browser` | done |
 | R1 | Remediation 1: check card update wrapping; buttons honour the import cutoff | viewer/pages/thread.js, thread.css, viewer/test/app-check-card.spec.js | standard / claude-sonnet-5-5 | wc-2daed8b3ee7f-worker-4 | `npm --prefix viewer run test:browser` | in progress |
 | R2 | Remediation 1: note rejects U+2028/U+2029/U+0085 | viewer/app/card.js, viewer/test/app-check-card.test.js | light / gpt-6-luna | wc-2daed8b3ee7f-worker-5 | `node --test viewer/test/*.test.js` | in progress |
-| R3 | Remediation 1: lead may start the steps-only verifier after any done | protocol/app/lead.md | light / claude-haiku-5-5 | wc-2daed8b3ee7f-worker-6 | protocol-rules test | in progress |
+| R3 | Remediation 1: lead may start the steps-only verifier after any done | protocol/app/lead.md | light / claude-haiku-5-5 | wc-2daed8b3ee7f-worker-6 | protocol-rules test | done |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -715,3 +715,5 @@ anything a future session needs that fits nowhere above.
 - 2026-11-18 — Choice: T3, app-check-card.spec.js: fake `gh` reads its head from a file so a second done can be posted; thread `branch`/`default_branch` nulled as in app-threads.spec.js.
 - 2026-11-18 — T3 accepted (band: self, tricky): read the full diff; re-ran `npm --prefix viewer run test:browser` in its worktree: exit 0, 782 passed, 28 skipped (16 app-check-card runs, all pass).
 - 2026-11-18 — Verification attempt 1 on 2344766: claude PASS, gpt FAIL (4 gaps); REMEDIATION-1.md, tasks R1-R3.
+- 2026-11-18 — Choice: R3, lead.md:69: the widened verifier sentence kept on one line (~104 chars) to avoid rewrapping the bullet.
+- 2026-11-18 — R3 accepted (band: scout; 4-line diff exactly the brief's text, read inline): protocol-rules 35/35 in its worktree.
