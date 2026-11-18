@@ -53,6 +53,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 16 | Supersedes the `differed` state in 12 and 15. A reworded step whose re-try still differs but meets intent takes the agent's observation as its `see` and is `matched`; three states remain (matched, not-tried, broken) | Every step Collin gets is one he can follow (IDEA.md) | review-round-7 |
 | 17 | A check card with a `broken` step carries "Fix it now" and "Leave it" buttons (Decision 14's two choices) instead of a separate question card; the hub accepts it once, only while the card's head is the current done head. Decision 10 still holds (no "it worked / it didn't" buttons) | A button on the stored card cannot drift from it: no duplicate, missing or stale question after restarts or newer dones | review-round-7 |
 | 18 | One last review round (9). Findings about crashes or restarts at awkward moments, retrying or recovering verifier sessions, and this thread's first-release stand-in are recorded as accepted risks instead of fixed, unless they would make the feature behave wrongly for Collin (not just leave a check card missing, late or marked not tried) | Collin's choice after rounds 6 to 8; the design has held since Decision 14 | user |
+| 19 | Fix it now presses are judged by what the lead can observe. A live lead treats a fix press as stale if it has posted a `done` since its latest `check` card, and uses that card's broken notes. A restarted lead handles a fix press unless a later `done` is in the context or the branch has commits past the pressed card's head (then it carries on that fix). Supersedes "with no lead reply after it" | Verification attempt 2: the press carries only the card id, and the restart context has no lead replies, so the Spec's checks could not be made | verification (decided by lead under Decision 18's intent) |
 
 ## Spec
 
@@ -232,9 +233,10 @@ a retried `done` was recorded twice at the same head, the one check card covers 
 `broken` step gives the card its "Fix it now" button; no separate question is posted. On
 `[card <id>] fix what the check found`, the lead first checks that the card's `head` is
 still the current done head (a newer done may have been posted while the press was
-queued); if not, it says in a line that a newer version has replaced it and does nothing.
+queued): the press does not name the head, so if the lead has posted a `done` since its
+latest `check` card, a newer version has replaced it; it says so in a line and does nothing.
 Otherwise it handles it as a problem Collin reported (step 9, which checks the PR state
-first), using the broken steps' notes as the report. `[card <id>] leave it` gets a one-line
+first), using its latest check card's broken steps' notes as the report (Decision 19). `[card <id>] leave it` gets a one-line
 reply and nothing else. In
 a two-part thread the follow-up `stub` is posted right after `done`, as today, without
 waiting for the check card. The `check` card is never a condition for `done` or the stub.
@@ -245,8 +247,11 @@ that verifier, posts no check card for the older head, and starts over for the n
 **Restart.** After `[wc:context restart]`:
 - The lead runs `session list` and stops any live steps verifier the dead lead started (its
   report would go to the dead lead); any steps it was trying are tried afresh below.
-- A `fix what the check found` press in the context's recent messages with no lead reply
-  after it is handled now, as on "Posting" (current-head check first).
+- A `fix what the check found` press in the context's recent messages is handled now, as on
+  "Posting" (current-head check first, using the pressed card's `head` from the context's
+  cards), unless a later `done` card is in the context (already fixed) or the local branch
+  has commits past that card's `head` (a fix in progress: carry on from them as step 9). The
+  restart context carries no lead replies (Decision 19).
 - If the latest done card in its context without `retracted_at` has a `head` and no `check`
   card has that `head`, and the local `HEAD` equals that `head` or is an ancestor of it
   (fast-forward as above), the lead writes and tries the steps as above and posts. A duplicate refusal means the original arrived; any other
@@ -688,7 +693,7 @@ Filled by Stage 3. One row per worker brief.
 | R2 | Remediation 1: note rejects U+2028/U+2029/U+0085 | viewer/app/card.js, viewer/test/app-check-card.test.js | light / gpt-6-luna | wc-2daed8b3ee7f-worker-5 | `node --test viewer/test/*.test.js` | done |
 | R3 | Remediation 1: lead may start the steps-only verifier after any done | protocol/app/lead.md | light / claude-haiku-5-5 | wc-2daed8b3ee7f-worker-6 | protocol-rules test | done |
 | R4 | Remediation 2: note rejects every line terminator (adds U+000B, U+000C) | viewer/app/card.js, viewer/test/app-check-card.test.js | light / gpt-6-luna | wc-2daed8b3ee7f-worker-7 | `node --test viewer/test/*.test.js` | in progress |
-| R5 | Remediation 2: fix press after a newer done; restart replay | protocol/app/lead.md | light / claude | — | protocol-rules test | waiting on the lead's answer |
+| R5 | Remediation 2: fix press after a newer done; restart replay (Decision 19) | protocol/app/lead.md | light / claude-haiku-5-5 | wc-2daed8b3ee7f-worker-8 | protocol-rules test | in progress |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -724,3 +729,4 @@ anything a future session needs that fits nowhere above.
 - 2026-11-18 — Choice: R1, app-check-card.spec.js: the wrap test uses a ~250-char path plus a 24-char code span (update is capped at 300); the cutoff test moves `imported.at` to the done card's own time, then 60 s before it.
 - 2026-11-18 — R1 accepted (band: self, tricky; 41 lines read): on the merged tip 786c0fa, `npm test` 636/636 and `npm --prefix viewer run test:browser` exit 0, 790 passed, 28 skipped.
 - 2026-11-18 — Verification attempt 2 on 591ec3a: claude PASS, gpt FAIL (3 gaps); REMEDIATION-2.md. Asked the lead about the restart-replay gap (Spec wording not observable).
+- 2026-11-18 — Lead answered the restart-replay question: Option 1 (observable rule), Decision 19; Spec Posting and Restart wording updated to match.
