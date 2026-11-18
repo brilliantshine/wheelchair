@@ -116,6 +116,24 @@ instanceIdleTimeout=-1
    does. Report a problem in the same thread while the pull request is open and the lead
    fixes it there.
 
+### Handing off a thread
+
+At a quiet stopping point, export a thread after the idea is confirmed and mapping is
+finished, after the plan is approved, or when the work is done. Export pushes the branch
+to GitHub and downloads a file with the stage and a readable history. The file does not
+contain code, live cards or sessions; committed code and plan documents travel on the
+GitHub branch.
+
+On the new-thread screen, choose **Import a handoff**, a machine and project, and the
+file. Import never creates a duplicate: an existing thread is opened if it is as new or
+newer, advanced if the file is newer, and left unchanged if the two have diverged. The
+original is marked handed off and frozen; you can download the file again, or undo the
+handoff if nobody has picked it up.
+
+Import and Undo push an empty claim commit to the branch to show who holds the work. If
+you take the branch by hand without wheelchair, please push an empty commit named
+`handoff: picked up <time>` too.
+
 ### Finding your way
 
 - **Needs you** (top bar): open questions, approvals and other cards waiting on you,
