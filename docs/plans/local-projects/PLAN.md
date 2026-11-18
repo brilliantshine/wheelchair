@@ -36,6 +36,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 7 | Claude Code and Codex get project tools now; Antigravity sessions start without them and say so; Antigravity support is deferred to the follow-up. IDEA.md's "What good looks like" and Constraints updated to match | `agy --settings` rejects `mcpServers`; no per-session config found; writing global config would leak tools across projects | idea-change |
 | 8 | Problems are surfaced through `session list` and the start output's `note`, and the lead tells Collin; lead.md gains one line saying so | No new card kind or screen needed; the lead already reads both | defaulted |
 | 9 | For Codex, `${VAR}` and `${VAR:-default}` in `.mcp.json` are expanded from the session's environment at start; an unset variable with no default skips that server with a warning. Servers with `headers`, or of `type` other than `stdio`/`http`, are skipped for Codex with a warning (deferred) | Claude Code expands these itself; Codex's `-c` takes literal values | defaulted |
+| 10 | Supersedes 6 and 8: problems are warnings only (no server is removed), and the hub shows them to Collin itself as a system `needs` card; no lead.md change and no `note` plumbing | Intent review: removing on a wrong PATH guess hides a working tool, and relying on the lead to relay misses the lead's own start; the hub already posts a system card for a failed Codex preflight (`viewer/app/sessions.js:253`) | review-round-1 |
+| 11 | Supersedes 9: wheelchair never expands `${...}` into the Codex argv. An `env` entry whose value is exactly `${NAME}` with the same key `NAME` becomes `env_vars=["NAME"]` (Codex reads it from the session's environment; verified on codex-cli 0.169.0); any other `${...}` in `command`, `args`, `env` or `url` skips that server for Codex with a warning | The launch argv is stored as `session.command` and returned by `session list --full`, so expanded secrets would leak | review-round-1 |
+| 12 | Codex server names must match `[A-Za-z0-9_-]+`; others are skipped for Codex with a warning | Codex's `-c` key parser splits on every dot and keeps quotes (verified: `mcp_servers."a.b"` fails to load) | review-round-1 |
 
 ## Spec
 
@@ -56,34 +59,56 @@ means today's behaviour, byte for byte: same settings file, same argv.
 ### Reading the file (machine side)
 
 - In `startIn` (`machine/service.js`, before `commandFor`), read `<worktree>/.mcp.json`.
-  Put the parsed server map (or `null`) and a `warnings` array into the context passed to
-  the adapter's `command`.
+  Pass the validated server map (or `null`) to the adapter's `command` through its
+  `context`, and collect a `warnings` array.
 - Missing file: no servers, no warnings.
-- Unparseable JSON, or `mcpServers` not an object: no servers, one warning
-  (`.mcp.json could not be read: <reason>`). The session still starts.
-- For each stdio server in a role that gets tools: if `command` is not an absolute
-  executable path and is not found on the session's PATH (the PATH the CLI will run
-  with), drop the server and warn `tool "<name>": program "<command>" not found on <machine>`.
-  An absolute path must exist and be executable.
+- Unparseable JSON, or `mcpServers` missing, not an object, or an array: no servers, one
+  warning (`.mcp.json could not be read: <reason>`). The session still starts.
+- Each entry is validated on its own; a bad entry is dropped with a warning naming it and
+  never affects its siblings. An entry is valid when it is an object and either:
+  - stdio (`type` absent or `"stdio"`): `command` is a non-empty string; `args`, if
+    present, is an array of strings; `env`, if present, is an object of string values.
+  - http (`type: "http"`): `url` is a non-empty string.
+  Anything else (`null`, wrong types, other `type`) is dropped for both CLIs.
+- Warnings never contain an expanded value: they quote the file's own text.
+
+### Program check (warning only)
+
+For roles that get tools, each valid stdio server's `command` is checked. A failure adds a
+warning (`tool "<name>": program "<command>" not found on <machine>`) and changes nothing
+else: the server is still passed to the CLI.
+- Contains `${`: not checked.
+- No `/`: looked up on the PATH of the machine service process (the CLI inherits it;
+  `commandText` adds variables but leaves PATH alone, `machine/service.js:613`).
+- Relative with a `/`: resolved against the worktree (the CLI's working directory).
+- Absolute: must exist and be executable.
 
 ### Claude Code (`machine/adapters/claude.js` `command`)
 
-- Role gets tools, file has servers: add `enableAllProjectMcpServers: true` to `settings`.
-  Servers dropped by the checks above go into `disabledMcpjsonServers` so Claude does not try them.
-- Role doesn't get tools, file has servers: add `disabledMcpjsonServers: [<every server name>]`.
-- Either way the session never shows the project-server approval prompt.
+- Role gets tools, file has valid servers: add `enableAllProjectMcpServers: true` to `settings`.
+  Entries dropped as invalid go into `disabledMcpjsonServers`.
+- Role doesn't get tools, file has any server entries: add
+  `disabledMcpjsonServers: [<every name in mcpServers>]`.
+- Either way the session never shows the project-server approval prompt. Claude does its
+  own `${...}` expansion; wheelchair passes nothing expanded.
 
 ### Codex (`machine/adapters/codex.js` `command`)
 
-- Role gets tools: for each kept server add `-c` overrides after the existing ones:
-  - stdio: `mcp_servers.<name>.command=<toml string>`, `mcp_servers.<name>.args=[...]` if
-    present, `mcp_servers.<name>.env={K="v",...}` if present.
-  - `type: "http"`: `mcp_servers.<name>.url=<toml string>`.
-  - Quote a name that is not `[A-Za-z0-9_-]+` the way `codex.js:28` already does.
-  - Expand `${VAR}` and `${VAR:-default}` in `command`, `args`, `env` values and `url`
-    from the session's environment. Unset with no default: skip the server, warn.
-  - Skip with a warning: servers with `headers`, or a `type` other than `stdio`/`http`.
+- Role gets tools: for each valid server add `-c` overrides after the existing ones:
+  - Name must match `[A-Za-z0-9_-]+`, otherwise skip with a warning (no quoting).
+  - Any `${...}` in `command`, `args`, `url`, or in an `env` value that is not exactly
+    `${KEY}` for its own key `KEY`: skip the server with a warning.
+  - stdio: `mcp_servers.<name>.command=<toml string>`, `.args=[...]` (empty array if
+    absent), `.env={K="v",...}` with the literal entries (empty table if none),
+    `.env_vars=[...]` with the pass-through keys (empty array if none), `.enabled=true`.
+  - http: `mcp_servers.<name>.url=<toml string>`, `.enabled=true`.
+  - Always setting these fields means an account server of the same name cannot leak its
+    own args, env or `enabled=false` into the project one; the project definition wins.
+    Other inherited fields (timeouts, tool filters) are accepted.
+  - Skip with a warning: servers with `headers` (deferred, D3).
 - Role doesn't get tools: add nothing. The account's `config.toml` is never written.
+- No expanded value ever enters the argv, so `session.command` and `session list --full`
+  hold only what is already in the repo's file.
 
 ### Antigravity (`machine/adapters/agy.js`)
 
@@ -92,14 +117,17 @@ means today's behaviour, byte for byte: same settings file, same argv.
 
 ### Where warnings go
 
-- The machine stores `mcp_warnings` (array of strings, possibly empty) on the session and
-  returns it in the start response.
-- The hub stores it on its session record, includes it in `wc.js session list` output for
-  that session, and appends it to the start output's `note` (joined with `; `, after any
-  existing note such as a dropped provider constraint).
-- `protocol/app/lead.md`: one line under "What you may start and stop": when a start
-  `note` or `session list` shows project tool problems, tell Collin in plain words in your
-  reply; also run `session list` once at your first turn to see your own.
+- The machine returns `mcp_warnings` (array of strings) in its start response and keeps it
+  on the session record.
+- When the hub receives a start response with a non-empty `mcp_warnings`, wherever it
+  handles that response (direct start, queued start promoted later, recovered or duplicate
+  start), it posts a system `needs` card in the thread, the same way as the Codex preflight
+  card (`viewer/app/sessions.js:253`):
+  - title: `Project tools problem`
+  - body: the session's title or role, then each warning on its own line, then: `Agents
+    read .mcp.json from the thread's branch, so it must be committed and pushed to take effect.`
+  - Not posted if the thread already has an unanswered system card with the same body.
+- No change to `lead.md`, `wc.js` output or the start `note`.
 
 ### Edge cases
 
@@ -107,6 +135,12 @@ means today's behaviour, byte for byte: same settings file, same argv.
 - The file changing mid-session has no effect until the next session start.
 - A worker's worktree is cut from the thread branch, so a `.mcp.json` added in a thread is
   seen by sessions started after the commit that adds it.
+- `.mcp.json` must be committed and on the branch a session's worktree is cut from (the
+  fetched default branch for a new thread). A local, uncommitted or gitignored file is not
+  seen; when the file is missing nothing is shown, as for any project without tools.
+- Who may change what runs: any agent that can commit to the thread branch can already run
+  any program through its shell, so a `.mcp.json` it edits adds no new power. Roles without
+  shell writes (reviewers, mapper) never get project tools.
 - `.mcp.json` servers already used by Collin's own Claude Code outside wheelchair behave the
   same there; nothing here writes the file.
 
@@ -121,13 +155,16 @@ means today's behaviour, byte for byte: same settings file, same argv.
 - `bash machine/test/run.sh` and `cd viewer && npm test` pass.
 - New tests in `machine/test/` cover, for Claude and Codex: no file (settings and argv
   identical to today's), a worker with a stdio and an http server, a reviewer with servers
-  (Claude `disabledMcpjsonServers`, Codex none), bad JSON, a missing command, `${VAR}`
-  expansion and an unset variable (Codex), a `headers` server skipped (Codex), and the
-  Antigravity warning.
-- A viewer test covers `mcp_warnings` reaching the start output `note` and `session list`.
-- Manual: in a scratch repo with `.mcp.json` naming a tiny stdio server, start a Claude
-  worker and a Codex worker; each reaches ready without a prompt, and `claude mcp list` /
-  the Codex session's `/mcp` show the server.
+  (Claude `disabledMcpjsonServers`, Codex none), bad JSON, an array as `mcpServers`, a bad
+  entry next to a good one, a missing command (warned, still passed), an `env` pass-through
+  `${KEY}` becoming `env_vars`, another `${...}` skipping the server (Codex), a dotted name
+  skipped (Codex), a `headers` server skipped (Codex), no expanded value in the argv, and
+  the Antigravity warning.
+- A viewer test covers a start response with `mcp_warnings` producing one system `needs`
+  card, and a repeat with the same warnings producing none.
+- Manual: in a scratch repo with `.mcp.json` naming a tiny stdio server with one tool,
+  start a Claude worker and a Codex worker; each reaches ready without a prompt, `/mcp`
+  inside each session shows the server connected, and each calls the tool once.
 
 ## Deferred
 
@@ -135,7 +172,7 @@ means today's behaviour, byte for byte: same settings file, same argv.
 |---|------|-----------------|--------|-------------------------|
 | D1 | Antigravity support | Claude Code and Codex cover normal use; Antigravity has no per-session config | planning | `agy --settings` rejects `mcpServers` (verified). Servers live in global `~/.gemini/config/mcp_config.json` or `plugins/<name>/mcp_config.json`. Try a per-session config home (e.g. `XDG_CONFIG_HOME`/`HOME` override) or a per-session plugin dir |
 | D2 | Real connection health check for tools | A missing-program check covers the common failure | planning | `claude mcp list` reports Connected/Failed; `codex mcp list` and `agy mcp list` only list config |
-| D3 | Codex: servers with `headers` or other transport types | Stdio and plain http cover typical local tools | planning | Check Codex keys such as `http_headers` / `bearer_token_env_var` |
+| D3 | Codex: servers with `headers`, other transport types, or `${...}` beyond env pass-through | Stdio and plain http cover typical local tools | planning | Check Codex keys such as `http_headers` / `bearer_token_env_var` |
 
 ## Accepted Risks
 
@@ -146,9 +183,36 @@ means today's behaviour, byte for byte: same settings file, same argv.
 
 ### Round 1 — 2026-11-18
 
-**Lanes:** intent: claude / claude-opus-5-5; mechanics: see session; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since the last round:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | lead.md first-turn `session list` changes every thread, including projects with no tools | downgraded to minor | Implementable as written, so no worker would stop; design improved anyway: hub posts a system card (Decision 10) |
+| intent | minor | Warnings depend on the lead relaying them; the lead's own start has no reader | upheld | Decision 10 |
+| intent | minor | Removing a server on a failed PATH check goes beyond "find out" and fails unsafe | upheld | Warning only (Decision 10, Spec "Program check") |
+| intent | minor | Nothing says `.mcp.json` must be committed and pushed | upheld | Edge case line and card body text |
+| mechanics | blocking | Codex `-c` key quoting doesn't preserve server names | upheld | Verified on codex 0.169.0; names restricted (Decision 12) |
+| mechanics | blocking | Expanded secrets would be stored in `session.command` and `session list --full` | upheld | No expansion into argv; `env_vars` pass-through (Decision 11) |
+| mechanics | blocking | A thread commit can authorize its own program to run at the next launch | declined | Workers, verifiers and leads already run arbitrary shell commands in the worktree (`machine/adapters/codex.js:50` workspace-write or bypass; Claude auto/bypass), so `.mcp.json` adds no capability; read-only roles never get tools. Edge case line added |
+| mechanics | blocking | Program check has undefined environment/cwd and rejects `${VAR}` commands | upheld | Spec "Program check" |
+| mechanics | major | Per-entry validation undefined; arrays accepted | upheld | Spec "Reading the file" |
+| mechanics | major | Codex same-name collision with account servers | upheld | Always set command/args/env/env_vars/enabled |
+| mechanics | major | Warnings miss duplicate, recovered and queued starts | upheld | Hub posts card wherever a start response is handled, deduped |
+| mechanics | minor | Manual `claude mcp list` check doesn't use the worker's settings | upheld | Manual check uses `/mcp` and a tool call in each session |
+
+### Round 2 — 2026-11-18
+
+**Lanes:** intent: pending; mechanics: pending; cross-family: pending.
+
+**Changed since the last round:**
+- Warnings are warning-only (no server removed) and the hub posts a system `needs` card; lead.md, `note` and `session list` plumbing dropped (Decision 10).
+- Codex: no `${...}` expansion into argv; exact `${KEY}` env values become `env_vars`; other `${...}` skips the server (Decision 11).
+- Codex: server names restricted to `[A-Za-z0-9_-]+` (Decision 12); command/args/env/env_vars/enabled always set to beat same-name account servers.
+- New per-entry validation rules; program check rules (PATH, worktree-relative, `${` unchecked).
+- Edge cases: committed-file requirement; thread-edited `.mcp.json` adds no new power.
+- Validation list and manual check updated.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
