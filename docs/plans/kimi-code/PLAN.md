@@ -67,6 +67,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 30 | Kimi commands use the resolved absolute executable path, never PATH inside tmux | tmux panes inherit the server environment, which lacks the service PATH | review-round-4 |
 | 31 | Kimi status separates `authenticated` (sign-in worked) from `logged_in` (eligible for agents); `loginEnv` always passes the effective `KIMI_CODE_HOME`; `cliStatus('kimi')` uses the adapter's resolver | Review round 5 gaps | review-round-5 |
 | 32 | Kimi sign-in succeeds only on this attempt's success and `authenticated`; account problems are shown on the Settings account row; the Kimi home path is absolute; files with multi-line strings are not edited | Review round 6 gaps | review-round-6 |
+| 33 | Kimi sign-in completes only from the wrapper's exit marker; account problems are per machine; unreadable or multi-line-string configs are neither read nor edited | Review round 7 gaps | review-round-7 |
 
 ## Spec
 
@@ -134,8 +135,18 @@ has a 3-second budget). `machine/adapters/kimi.js` has a small line reader for
   and whether any line before the first table header matches
   `^\s*(hooks|"hooks"|'hooks')\s*=` (a top-level inline hooks assignment, bare or
   quoted key).
-- A missing or unreadable file means "nothing configured": not logged in, no efforts,
-  no inline hooks.
+- **File states.** Absent (`ENOENT`): nothing configured (not logged in, no efforts, no
+  inline hooks); `prepare()` may create a fresh file holding only wheelchair's hooks.
+  Exists but cannot be read (any other error): no facts are trusted, the home's status is
+  `logged_in: false`, `authenticated: false`,
+  `problem: "Kimi Code's config.toml can't be read"`; `prepare()` and `seed()` never
+  write it; agent start on that home is refused with the same sentence.
+  Contains a multi-line string delimiter (`"""` or `'''` anywhere): no facts are
+  trusted for reading **or** editing (a header- or key-shaped line could sit inside a
+  string): `logged_in: false`, `authenticated: false`, and the multi-line `problem`
+  below; no edit; agent start refused. Tests cover a real OAuth table alongside a
+  multi-line value containing a fake one (refused, not misread), and an unreadable
+  file (left untouched, start refused).
 Unit tests run it on a fixture copying the logged-in shape below (with dummy values),
 including the `services.*.oauth` tables, a model with and one without
 `support_efforts`, and on an empty home.
@@ -209,8 +220,10 @@ the reader must tolerate any key order within a table.
   its accessible label "Claude, Antigravity and Kimi permission mode"
   (`viewer/pages/settings.js:481,522`), with no other change.
 - **Folder trust.** First launch in a folder shows a "Trust this folder?" screen
-  (`❯ Trust and continue` / `Exit`). `answerPrompts(pane)` presses Enter when the pane
-  contains `Trust this folder?` and `Trust and continue` (the first, selected option),
+  (`❯ Trust and continue` / `Exit`). `answerPrompts(session, pane)` (the existing
+  contract, `machine/service.js:694`) returns `{ step: 'trust', keys: ['Enter'] }` when the
+  pane contains `Trust this folder?` and `Trust and continue` (the first, selected
+  option), and `null` otherwise,
   as `agy.js` handles its onboarding screens. Nothing is pre-written into Kimi's
   `workspace-trust/` directory (its key format is internal).
 - **Ready text:** the pane shows the input box line `│ >` and the footer's `context:`
@@ -263,16 +276,23 @@ the reader must tolerate any key order within a table.
   `authenticated` (true when the oauth credentials exist, regardless of region or
   hooks). `machine/service.js` `loginState` decides sign-in success from
   `authenticated` when present, else `logged_in` (other CLIs unchanged): for Kimi,
-  sign-in is `done` only when this attempt succeeded (the pane shows
-  `Logged in to` or the exit marker `__wc_login_exit 0`) **and** `authenticated` is
-  true; a nonzero exit is `failed` even if older credentials exist. The `logged_in` field
+  sign-in is `done` only when this attempt's exit marker is `__wc_login_exit 0` **and**
+  `authenticated` is true; a nonzero exit is `failed` even if older credentials exist. The `logged_in` field
   `loginState` returns is `authenticated` for Kimi, so the Settings page
   (`viewer/pages/settings.js:1056`, which needs `state === 'done' && logged_in`) shows
   "Signed in." on a home with inline hooks or China region.
-- **Showing a problem on the account.** `viewer/app/usage.js` carries each account's
-  `problem` (and `authenticated`) from machine status onto the account it returns. The
-  Settings account row shows the `problem` sentence in place of "signed out" when one is
-  set; its Sign in button stays (signing in again fixes the China-region case). Tests:
+- **Showing a problem on the account.** The problem is per machine, like sign-in state.
+  `viewer/app/usage.js:57` keeps its boolean `accounts[id]` map untouched (placement and
+  usage polling read it by truthiness). The per-machine value built at `usage.js:99`
+  gains a third form: `{ state: 'problem', text: <problem> }` beside `'signed_in'` and
+  `'signed_out'`, used when the machine's status entry for that account has
+  `logged_in: false` and a `problem`. The Settings account row
+  (`viewer/pages/settings.js:1141-1150`) shows that machine's sentence in place of
+  "signed out"; its Sign in button stays (signing in again fixes the China-region case).
+  `authenticated` is read only by the machine's `loginState`; it is not carried to the
+  hub. A test has one Kimi account on two machines, signed in on one and with a
+  problem on the other, and checks each machine's row and that placement still uses the
+  signed-in machine. Tests:
   a browser test where the machine reports a Kimi account with `authenticated: true,
   logged_in: false, problem: …` shows the sentence; a sign-in on a China-region and on an
   inline-hooks home ends with "Signed in."; a cancelled re-login (nonzero exit) on a home
@@ -363,7 +383,12 @@ the reader must tolerate any key order within a table.
   on success (exit 0). No prompts need answering (`loginPrompt` → `null`).
 - `parseLogin(pane)` returns `{ url, code, wantsCode: false }` with the link and user
   code exactly as printed (no rewriting).
-- `loginDone(pane)` is true once `Logged in to` appears.
+- `loginDone(pane)` returns false for Kimi: completion comes only from the wrapper's
+  exit marker (`__wc_login_exit <n>`), which stays on the pane (the wrapper sleeps after
+  it) so repeated polls see the same result. Exit 0 and `authenticated` → `done`; any
+  other code → `failed`. The pane is not killed on success by the Kimi path. Tests:
+  repeated polls after a successful login all return `done`; a cancelled login (nonzero
+  exit) on a home with old credentials returns `failed`.
 - `loginStatus(dir)` (no CLI spawn; see "Reading a Kimi home's config"):
   - logged in when the managed provider's oauth `key` is present and
     `<home>/credentials/<key with the leading "oauth/" removed>.json` exists. Observed
@@ -624,6 +649,22 @@ exit. Downgrades and declines cite evidence.
 **Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 6:** Kimi sign-in success needs this attempt's success marker plus `authenticated`, and `loginState` returns `logged_in: authenticated` for Kimi; `usage.js` carries `problem`/`authenticated` to the Settings account row, which shows the problem sentence; effective Kimi home made absolute; config files with multi-line strings are not edited (reported as a problem); permission label wording; sign-in test scoping and new tests.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Problem must be per machine, not per account | upheld | Verified `usage.js:57,99`; third per-machine form, boolean map untouched |
+| intent | minor | `authenticated` carried to the hub but unused | upheld | Kept machine-side only |
+| mechanics | blocking | `loginDone` kills the pane, losing the marker | upheld | Verified `service.js:1111-1135`; Kimi completes from the exit marker only |
+| mechanics | major | `problem` must be keyed by machine | upheld | Same fix as intent finding 1, two-machine test |
+| mechanics | blocking | Multi-line strings can fool config reads | upheld | Such files are not read or edited |
+| mechanics | blocking | Unreadable config could be replaced | upheld | Only `ENOENT` creates a file; unreadable refuses start |
+| mechanics | blocking | `answerPrompts` signature | upheld | Verified `service.js:694`; `(session, pane)` returning `{ step: 'trust', keys: ['Enter'] }` |
+
+### Round 8 — 2026-11-18
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 7:** account problems are a third per-machine form in `usage.js` (boolean map untouched; `authenticated` stays on the machine); Kimi sign-in completes only from the wrapper's exit marker, pane kept; config file states (absent, unreadable, multi-line strings) and what each does to reads, edits and start; `answerPrompts(session, pane)` contract for folder trust; new tests.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
