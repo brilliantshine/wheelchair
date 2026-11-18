@@ -35,7 +35,7 @@ function historyText(card) {
   const answer = card.retracted_at ? 'withdrawn' : card.answered_value || card.resolved_note || card.answered_action || (card.answered ? 'answered' : '');
   const lines = (...items) => items.flat(Infinity).filter((item) => typeof item === 'string' && item.length).join('\n');
   switch (card.kind) {
-    case 'question': return lines(card.question, (card.options || []).map((option) => option.label), answer);
+    case 'question': return lines(card.question, (card.options || []).map((option) => option.label), answer || 'withdrawn');
     case 'idea': return lines((card.bullets || []).map((bullet) => bullet.text));
     case 'approval': return lines((card.objections || []).map((item) => lines(item.finding, item.reason)), answer);
     case 'done': return lines(card.title, card.can_do || [], card.left_as_is || [], card.pr_url);

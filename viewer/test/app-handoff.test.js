@@ -31,6 +31,7 @@ test('history renders shown cards and skips hidden and progress cards', () => {
     [{ kind: 'sudo', command: 'cmd', state: 'ran', exit_code: 0 }, ['cmd', 'ran', 'exit 0']],
   ];
   for (const [card, parts] of cases) for (const part of parts) assert.match(historyText(card), new RegExp(part));
+  assert.match(historyText({ kind: 'question', question: 'Open?', options: [] }), /withdrawn/);
   assert.equal(historyText({ kind: 'progress' }), null); assert.equal(historyText({ kind: 'result' }), null);
 });
 test('history accumulates, orders and trims entries, and names downloads', () => {
@@ -273,4 +274,18 @@ test('handoff banner HTTP route reports each state and the thread list marks han
     }
     const list = await api(c, '/threads?view=list'); assert.ok(list.body.threads.find((thread) => thread.id === made.id).handed_off);
   } finally { await close(c); }
+});
+
+test('validator rejects each malformed scalar and history limit', () => {
+  const file = sample();
+  const entry = { at, who: 'lead', kind: 'question', text: 'text' };
+  for (const change of [
+    (f) => { f.format = 'other'; }, (f) => { f.exported_at = 'yesterday'; },
+    (f) => { f.thread.title = 'x'.repeat(121); }, (f) => { f.thread.slug = '../bad'; },
+    (f) => { f.repository = 'gitlab.com/owner/repo'; }, (f) => { f.head = 'f'.repeat(39); },
+    (f) => { f.stage = 'planning'; }, (f) => { f.history = 'bad'; },
+    (f) => { f.history = Array(2001).fill(entry); },
+    (f) => { f.history = [{ ...entry, at: 'bad' }]; }, (f) => { f.history = [{ ...entry, kind: 'unknown' }]; },
+    (f) => { f.history = [{ ...entry, text: 'x'.repeat(20001) }]; },
+  ]) { const changed = structuredClone(file); change(changed); assert.equal(valid(changed), false); }
 });
