@@ -1200,11 +1200,67 @@ class MachineService {
       if (!checked.checked.ok) invalid('invalid project');
       repo = path.resolve(input.project);
     }
-    return this.withThreadLock(id, () => gitAction
-      ? this.inRepoQueue(repo, () => this.handoffAction(input, repo))
-      : this.handoffAction(input, repo));
+    try {
+      return await this.withThreadLock(id, () => gitAction
+        ? this.inRepoQueue(repo, () => this.handoffAction(input, repo))
+        : this.handoffAction(input, repo));
+    } catch (error) { return { result: 'failed', error: error.message }; }
   }
-  async handoffAction() { return { result: 'failed', error: 'Action is not implemented.' }; }
+  async handoffAction(input, repo) {
+    const git = (...args) => commandAsync('git', ['-C', repo, ...args]);
+    const run = async (...args) => {
+      const result = await git(...args);
+      if (!result.ok) throw new Error((result.stderr || result.stdout).trim().split('\n').pop() || 'git command failed');
+      return result.stdout.trim();
+    };
+    const ancestor = async (a, b) => (await git('merge-base', '--is-ancestor', a, b)).ok;
+    const repository = async () => normalizeGithubOrigin(await run('remote', 'get-url', 'origin'));
+    const statuses = async (ref, slug) => {
+      const show = async name => git('show', `${ref}:docs/plans/${slug}/${name}.md`);
+      const [idea, plan, map] = await Promise.all(['IDEA', 'PLAN', 'MAP'].map(show));
+      const status = result => result.ok ? (result.stdout.match(/^status:\s*([^\s#]+)/m)?.[1] || null) : null;
+      return { idea_status: status(idea), plan_status: status(plan), map_committed: map.ok };
+    };
+    const { action, branch, head, worktree, slug } = input;
+    if (action === 'status') {
+      const symbolic = await git('-C', worktree, 'symbolic-ref', '--quiet', '--short', 'HEAD');
+      const current = symbolic.ok ? symbolic.stdout.trim() : null;
+      const actualHead = await run('-C', worktree, 'rev-parse', 'HEAD');
+      const dirty = !!(await run('-C', worktree, 'status', '--porcelain'));
+      const remote = await this.fetchHandoffBranch(repo, `wc/${input.thread_id}`);
+      let pr_state = null; let pr_error;
+      if (input.pr_url) {
+        const gh = await commandAsync('gh', ['pr', 'view', input.pr_url, '--json', 'state'], { cwd: repo });
+        if (gh.ok) { try { pr_state = JSON.parse(gh.stdout).state || null; } catch { pr_error = 'Invalid pull request response.'; } }
+        else pr_error = gh.stderr.trim() || 'Could not check pull request.';
+      }
+      return { dirty, branch: current, head: actualHead, ...remote, ...await statuses(actualHead, slug), repository: await repository(), pr_state, ...(pr_error ? { pr_error } : {}) };
+    }
+    if (action === 'push') {
+      await run('-C', worktree, 'push', 'origin', `${input.sha}:refs/heads/${branch}`);
+      return { head: input.sha, repository: await repository() };
+    }
+    if (action === 'inspect') {
+      const remote = await this.fetchHandoffBranch(repo, branch);
+      const contains = remote.remote_has_branch && await ancestor(head, remote.remote_tip);
+      let picked_up_at = null;
+      if (contains && remote.remote_tip !== head) {
+        const commits = await run('rev-list', '--reverse', '--ancestry-path', `${head}..${remote.remote_tip}`);
+        if (commits) picked_up_at = await run('show', '-s', '--format=%cI', commits.split('\n')[0]);
+      }
+      let local_head = null; let worktree_exists = false;
+      if (worktree) {
+        const actual = await git('-C', worktree, 'rev-parse', '--verify', 'HEAD');
+        if (actual.ok) { worktree_exists = true; local_head = actual.stdout.trim(); }
+      }
+      if (!local_head) { const local = await git('rev-parse', '--verify', `refs/heads/${branch}`); if (local.ok) local_head = local.stdout.trim(); }
+      if (!local_head) local_head = input.fallback_head || null;
+      let relation = null;
+      if (local_head) relation = local_head === head ? 'same' : await ancestor(head, local_head) ? 'behind' : await ancestor(local_head, head) ? 'ahead' : 'diverged';
+      return { repository: await repository(), ...remote, remote_contains_head: !!contains, picked_up_at, local_head, worktree_exists, relation, ...await statuses(head, slug) };
+    }
+    return { result: 'failed', error: 'Action is not implemented.' };
+  }
   async handle(request, response) {
     const url = new URL(request.url, 'http://machine.local');
     const pathBits = url.pathname.split('/').filter(Boolean);

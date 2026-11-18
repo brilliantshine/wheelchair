@@ -62,7 +62,8 @@ async function service(root, options = {}) {
   await write(path.join(state, 'machine.json'), JSON.stringify({ secret_file: secret, host: '127.0.0.1', port: listen, ...(options.config || {}) }));
   const prior = { PATH: process.env.PATH, FAKE_LOG: process.env.FAKE_LOG, FAKE_PANE: process.env.FAKE_PANE };
   process.env.PATH = `${fake.bin}:${prior.PATH}`; process.env.FAKE_LOG = fake.log; process.env.FAKE_PANE = fake.pane;
-  const instance = new MachineService({ stateDir: state, host: '127.0.0.1', port: listen }); await instance.listen();
+  let instance = new MachineService({ stateDir: state, host: '127.0.0.1', port: listen });
+  try { await instance.listen(); } catch (error) { Object.assign(process.env, prior); throw error; }
   return { instance, state, fake, base: `http://127.0.0.1:${listen}`, async close() { await new Promise(resolve => instance.server.close(resolve)); Object.assign(process.env, prior); } };
 }
 async function api(env, method, endpoint, body, headers = {}) {
@@ -1439,5 +1440,41 @@ test('handoff fetch checks exact remote ref and updates a single-branch clone', 
     const head = git(['-C', repo, 'rev-parse', 'HEAD']).stdout.trim();
     assert.deepEqual(state, { remote_has_branch: true, remote_tip: head }, JSON.stringify(state));
     assert.equal(git(['-C', clone, 'rev-parse', `refs/remotes/origin/${branch}`]).stdout.trim(), head);
+  } finally { await env.close(); }
+});
+
+test('handoff status, exact push, and inspect read committed state and ancestry', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true }); try {
+    const id = '012345abcdef'; const { repo, worktree } = await startedWorktree(env, root, id); const branch = `wc/${id}`;
+    const call = async (action, fields) => { const response = await api(env, 'POST', '/v1/handoff', { action, thread_id: id, project: repo, ...fields }, hubHeader); assert.equal(response.status, 200, JSON.stringify(response.body)); return response.body; };
+    await write(path.join(worktree, 'docs/plans/sample/IDEA.md'), '---\nstatus: confirmed\n---\n');
+    await write(path.join(worktree, 'docs/plans/sample/PLAN.md'), '---\nstatus: approved\n---\n');
+    await write(path.join(worktree, 'docs/plans/sample/MAP.md'), 'map\n');
+    git(['-C', worktree, 'add', '.']); git(['-C', worktree, 'commit', '-m', 'plan']);
+    const old = git(['-C', worktree, 'rev-parse', 'HEAD']).stdout.trim();
+    await write(path.join(worktree, 'docs/plans/sample/IDEA.md'), 'status: draft\n');
+    let body = await call('status', { worktree, slug: 'sample' });
+    assert.equal(body.dirty, true, JSON.stringify(body)); assert.equal(body.idea_status, 'confirmed', JSON.stringify(body));
+    assert.equal(body.plan_status, 'approved', JSON.stringify(body)); assert.equal(body.map_committed, true, JSON.stringify(body));
+    assert.equal(body.remote_has_branch, false, JSON.stringify(body)); assert.equal(body.pr_state, null, JSON.stringify(body));
+    git(['-C', worktree, 'checkout', '--', 'docs/plans/sample/IDEA.md']);
+    body = await call('push', { worktree, branch, sha: old }); assert.equal(body.head, old, JSON.stringify(body));
+    body = await call('status', { worktree, slug: 'sample', pr_url: 'https://example.test/pr' });
+    assert.equal(body.dirty, false, JSON.stringify(body)); assert.equal(body.remote_tip, old, JSON.stringify(body));
+    assert.equal(body.pr_state, null, JSON.stringify(body)); assert.ok(body.pr_error, JSON.stringify(body));
+    await write(path.join(env.fake.bin, 'gh'), '#!/bin/sh\necho "{\\"state\\":\\"OPEN\\"}"\n', 0o755);
+    body = await call('status', { worktree, slug: 'sample', pr_url: 'https://example.test/pr' }); assert.equal(body.pr_state, 'OPEN', JSON.stringify(body));
+    git(['-C', worktree, 'commit', '--allow-empty', '-m', 'next']); const newer = git(['-C', worktree, 'rev-parse', 'HEAD']).stdout.trim();
+    await call('push', { worktree, branch, sha: newer });
+    body = await call('inspect', { branch, head: old, worktree, slug: 'sample' });
+    assert.equal(body.relation, 'behind', JSON.stringify(body)); assert.equal(body.remote_contains_head, true, JSON.stringify(body)); assert.ok(body.picked_up_at, JSON.stringify(body));
+    body = await call('inspect', { branch, head: newer, worktree, slug: 'sample' }); assert.equal(body.relation, 'same', JSON.stringify(body));
+    git(['-C', worktree, 'checkout', '--detach', old]);
+    body = await call('inspect', { branch, head: newer, worktree, slug: 'sample' }); assert.equal(body.relation, 'ahead', JSON.stringify(body));
+    git(['-C', worktree, 'commit', '--allow-empty', '-m', 'diverge']);
+    body = await call('inspect', { branch, head: newer, worktree, slug: 'missing' }); assert.equal(body.relation, 'diverged', JSON.stringify(body)); assert.equal(body.idea_status, null, JSON.stringify(body)); assert.equal(body.map_committed, false, JSON.stringify(body));
+    body = await call('inspect', { branch, head: old, slug: 'sample' }); assert.equal(body.local_head, newer, JSON.stringify(body));
+    git(['-C', repo, 'branch', '-D', branch]);
+    body = await call('inspect', { branch, head: old, slug: 'sample', fallback_head: old }); assert.equal(body.local_head, old, JSON.stringify(body)); assert.equal(body.worktree_exists, false, JSON.stringify(body));
   } finally { await env.close(); }
 });
