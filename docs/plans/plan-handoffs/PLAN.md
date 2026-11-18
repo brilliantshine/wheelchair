@@ -59,6 +59,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 29 | An operation keeps the validated carried state in its record instead of a copy of the file | Removes every missing-file case; the thread record holds that state after Apply anyway | review-round-8 |
 | 30 | The machine keeps its archive records on disk | Makes the same-machine refusal (27) survive a machine restart | review-round-8 |
 | 31 | The restart reorder (28) and partial-start handling apply to imported threads only; supersedes 28 | Changing start-up for every thread pulled pre-existing crash windows into this feature | review-round-12 |
+| 32 | Cancel never waits on an in-flight push: it records the claim on a hub revoke list and abandons; a sweep takes a late-landing claim back off GitHub with a lease that only matches that exact commit. Supersedes the `claim-cancel`, pid and time-bound design | Collin chose to keep going on Cancel; this removes the need to know whether a push is still running | review-round-12 |
 
 ## Spec
 
@@ -468,15 +469,17 @@ and its thread id is not in that set.
 - shows, instead of the composer, a panel "The import didn't finish." (or "The undo didn't
   finish."), the saved `last_error` when there is one, and a **Retry** button:
   `POST /threads/:id/retry-handoff` runs the saved operation again from its record;
-- offers **Cancel** next to Retry only while `claim_landed` and `applied` are both false.
-  When `claim_sha` is null, Cancel abandons at once. Otherwise it calls the machine's
-  `claim-cancel`, which first records `claim_sha` as cancelled (durably, so no later or
-  delayed `claim-push` for that sha will push), then reports: `busy` when a push for that
-  sha is still running → refuse ("A pick-up may still be going through; try again in a
-  minute"); otherwise the `claim-state` result: `landed` → save `claim_landed: true` and
-  refuse ("The pick-up already went through; press Retry"); `parent` or `moved` → abandon;
-  `unknown` → refuse ("Couldn't check GitHub; try again"). Abandoning here gives no 409: Create deletes
-  its record, Advance and Undo clear `handoff_op`;
+- offers **Cancel** next to Retry while `applied` is false. Cancel never waits on or asks
+  about a push that may still be under way. Instead, when `claim_sha` is set, it first
+  adds `{thread_id, project, machine, branch, parent, sha: claim_sha, until: now + 24
+  hours}` to the hub's durable revoke list (`handoffs/revoke.json`), then abandons the
+  operation without the 409: Create deletes its record, Advance and Undo clear
+  `handoff_op`. When `claim_sha` is null, it just abandons.
+- **Revoking.** At hub start and every 10 minutes, the hub calls `claim-revoke` for each
+  entry on the revoke list: `revoked` or `gone` removes the entry; `waiting` keeps it until
+  `until`, then removes it. So a pick-up commit that lands after Cancel, from a push that
+  was slow, retried or outlived a restart, is taken back off GitHub, and only if nothing
+  was built on it.
 - is also reached by importing a file for that thread id (Import step 1), which runs
   the saved operation and ignores the new file;
 - for an Undo, makes the handed-off banner show "The undo didn't finish" with Retry,
@@ -531,18 +534,16 @@ and its thread id is not in that set.
     else → `moved` with `remote_tip` and `picked_up_at`; fetch failure or a missing branch
     → `unknown` (a missing branch is not proof of anything).
   - `claim-push` `{project, branch, parent, sha}` → `claim-state`; if `parent`, run step 2
-    of Claims and then `claim-state` again. Before pushing it checks the cancelled list
-    and pushes nothing for a cancelled sha (result from `claim-state` only). While the push
-    runs, its pid is in a durable `claim-pushes` record; the push runs as
-    `perl -e 'alarm shift; exec @ARGV' 120 git push ...` (perl is present on Linux and
-    macOS; the alarm survives `exec`), so it cannot outlive 120 seconds, even across a
-    machine-service restart, which leaves children running (`KillMode=process`,
-    `install.sh:401`).
-  - `claim-cancel` `{project, branch, parent, sha}` → adds `sha` to the durable cancelled
-    list; if `claim-pushes` names a live pid for `sha`, `{result: "busy"}`; else the
-    `claim-state` result. The result comes only from the last
+    of Claims and then `claim-state` again. The result comes only from the last
     `claim-state`, never from the push's exit code: `landed` → `landed`; `parent` or
     `unknown` → `unknown`; `moved` → `moved`.
+  - `claim-revoke` `{project, branch, parent, sha}` → `claim-state`, then: tip exactly
+    `sha` → `git push --force-with-lease=refs/heads/<branch>:<sha> origin
+    <parent>:refs/heads/<branch>`, which puts the branch back on `parent` only if the tip
+    is still exactly the cancelled claim, then `{result: "revoked"}` (a lease failure
+    re-reads and reports as below); tip `parent` → `{result: "waiting"}`; any other tip,
+    including a descendant of `sha` (someone built on it) → `{result: "gone"}`, nothing
+    pushed; tip unreadable → `waiting`.
   - Every `/v1/handoff` outcome, including refusals, is a 200 with a JSON body (except 422
     for invalid input), so the hub's machine client (`viewer/app/machine-client.js:64-76`)
     never drops the body.
@@ -653,20 +654,22 @@ New tests, then the suites:
     a failed start shows the ordinary Restart; restart enqueues the context before starting; an imported thread with no
     sessions shows Restart; a lead with no recorded worktree starts from `checkout_sha`;
   - partial lead start at hub start: marked not live and Restart offered; Restart kills the
-    leftover start and moves its queued context; other roles untouched; Cancel with
-    `claim-cancel` (busy, landed, parent, moved, unknown) and a delayed `claim-push` after
-    Cancel pushing nothing; claim push killed at 120 s by the perl alarm on Linux and
-    macOS; inspect in a single-branch clone; Apply calls `reopen` even when the hub thinks
+    leftover start and moves its queued context; ordinary threads' starts untouched;
+    Cancel adds the claim to the revoke list and abandons; `claim-revoke` (tip is the
+    claim → branch back on `parent`; tip `parent` → waiting until 24 h; descendant or other
+    tip → gone, nothing pushed; lease failure re-read); a claim that lands after Cancel is
+    revoked by the sweep; inspect in a single-branch clone; first export with no remote
+    branch; pre-claim check refuses a divergent worktree or local ref; handoff actions wait
+    for a running archive of the thread; Apply calls `reopen` even when the hub thinks
     the thread is open; Advance and Undo refused before claiming when the branch is checked
     out elsewhere or the worktree is detached; re-import with a saved Undo opens with its
     note; existing thread on another machine inspected and advanced there; plans registered
-    at hub start; Cancel with `claim-state` each
-    result; Create refused when the local branch is checked out; archive records survive a
+    at hub start; Create refused when the local branch is checked out; archive records survive a
     machine restart;
   - frozen: every entry point in Frozen threads refused while handed off and while an
     operation is unfinished; Stop fails when a tmux session survives; Checkout refuses a
     HEAD past the claim; Apply's `reopen` failure saves nothing; `imported.at` unchanged by
-    Retry; Cancel before the claim lands; claim-push outcome by remote tip only; Create
+    Retry; claim-push outcome by remote tip only; Create
     refused when the machine knows the id; an imported thread ignores pre-import `done`
     cards for its PR;
   - export builds and validates before pushing (a 120-character title passes); sudo
@@ -1029,13 +1032,28 @@ npm --prefix viewer run test:browser
 |------|----------|---------|--------------|------------|
 | intent | minor | Claim failure hides git's reason | upheld | `last_error` carries git's last line |
 | intent | minor | Advance repeats the pre-claim checks | upheld | Advance keeps only the busy check and points to the pre-claim checks |
-| mechanics | blocking | Cancel and machine disagree on `parent` after a durable cancel | user-decision | Cancel safety net, to Collin |
-| mechanics | blocking | Perl alarm doesn't bound transport helpers | user-decision | Cancel safety net, to Collin |
-| mechanics | blocking | Crash between spawning the push and saving its pid | user-decision | Cancel safety net, to Collin |
+| mechanics | blocking | Cancel and machine disagree on `parent` after a durable cancel | user-decision | Collin: keep going; Cancel redesigned as revoke-after (decision 32) |
+| mechanics | blocking | Perl alarm doesn't bound transport helpers | user-decision | No time bound needed any more (decision 32) |
+| mechanics | blocking | Crash between spawning the push and saving its pid | user-decision | No pid tracking any more (decision 32) |
 | mechanics | blocking | Fetch helper fails when the branch isn't on GitHub yet (first export) | upheld | Missing remote branch reported, not an error |
 | mechanics | blocking | Clean but divergent checkout or local ref passes pre-claim checks | upheld | Pre-claim checks require HEAD or local ref to be `parent` or its ancestor |
 | mechanics | blocking | Handoff actions can race a running archive | upheld | Handoff actions hold the machine's per-thread archive lock |
 | mechanics | blocking | Partial-start rule strands ordinary threads | upheld | Partial-start and restart changes limited to imported threads |
+
+### Round 13 — 2026-11-17
+
+**Lanes:** intent and mechanics; cross-family: yes.
+
+**Changed since Round 12:**
+- Cancel redesigned: revoke list in the hub, sweep at start and every 10 minutes for 24 hours, machine `claim-revoke` with a lease on the exact claim; `claim-cancel`, pid records and the perl time bound removed.
+- Claim failure message carries git's last line.
+- Pre-claim checks: HEAD or local ref must be `parent` or its ancestor; Advance points to them.
+- Fetch helper: a branch missing on GitHub is reported, not an error.
+- Handoff actions hold the machine's per-thread archive lock.
+- Partial-start and restart changes limited to imported threads (decision 31).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
