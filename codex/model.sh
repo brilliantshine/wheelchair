@@ -31,7 +31,7 @@ DEFAULTS = {
         "lead": ("gemini-3.8-flash-high", None),
     },
     "kimi": {
-        "light": ("kimi-code/kimi-for-coding-highspeed", None), "standard": ("kimi-code/k3", None),
+        "light": ("kimi-code/kimi-for-coding", None), "standard": ("kimi-code/k3", None),
         "heavy": ("kimi-code/k3.1-pro", None), "critical": ("kimi-code/k3.1-pro", None),
         "lead": ("kimi-code/k3.1-pro", None),
     },
