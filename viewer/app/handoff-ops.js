@@ -3,7 +3,7 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { appError, atomicWrite, json } = require('./state.js');
+const { appError, atomicWrite } = require('./state.js');
 
 const TAKING_BACK = 'An earlier cancelled import or undo is still being taken back; try again in a few minutes';
 const revokePath = (hub) => path.join(hub.stateDir, 'revoke.json');
@@ -38,7 +38,7 @@ async function preclaim(hub, thread, op) {
   }
 }
 async function abandon(hub, thread) {
-  if (thread.handoff_op.kind === 'create') await fs.unlink(hub.threadPath(thread.id)).catch((error) => { if (error.code !== 'ENOENT') throw error; });
+  if (thread.handoff_op.kind === 'create') { await fs.unlink(hub.threadPath(thread.id)).catch((error) => { if (error.code !== 'ENOENT') throw error; }); delete thread.handoff_op; }
   else { delete thread.handoff_op; await hub.save(thread); }
 }
 async function claim(hub, thread, reimport) {
@@ -60,4 +60,113 @@ async function claim(hub, thread, reimport) {
   throw new Error(`Couldn't update the branch on GitHub: ${result.error || 'unknown error'}`);
 }
 
-module.exports = { operation, preclaim, claim, abandon, revokes, revokeLock, writeRevokes, request, checked, TAKING_BACK };
+async function runLocked(hub, thread, reimport = false) {
+  const op = thread.handoff_op;
+  if (!op) throw appError(409, 'No unfinished import or undo');
+  hub.runningHandoffOps.add(thread.id);
+  try {
+    await revokeLock(hub, async () => {
+      const entries = await revokes(hub);
+      const keep = entries.filter((entry) => !(entry.thread_id === thread.id && entry.sha === op.claim_sha));
+      if (keep.length !== entries.length) await writeRevokes(hub, keep);
+    });
+    if (!op.claim_landed) await claim(hub, thread, reimport);
+    if (!op.applied) {
+      for (const session of thread.sessions || []) {
+        if (!session.live) continue;
+        try { await require('./sessions.js').stopManagedSession(hub, thread, session); }
+        catch (error) {
+          if (error.status !== 404 || error.message !== 'unknown managed session') throw error;
+          session.live = false; session.status = 'stopped'; session.ended_at = new Date().toISOString(); await hub.save(thread);
+        }
+      }
+      let running = await checked(hub, thread, 'running');
+      if (running.names?.length) await checked(hub, thread, 'kill', { names: running.names });
+      running = await checked(hub, thread, 'running');
+      if (running.names?.length) throw new Error("Couldn't stop the agent working here");
+      const branch = `wc/${thread.id}`;
+      const inspect = await checked(hub, thread, 'inspect', { branch, head: op.claim_sha, slug: thread.slug, ...(thread.worktree ? { worktree: thread.worktree } : {}) });
+      if (inspect.worktree_exists) await checked(hub, thread, 'fast-forward', { worktree: thread.worktree, branch, head: op.claim_sha });
+      else { thread.worktree = null; await hub.save(thread); await checked(hub, thread, 'set-branch', { branch, sha: op.claim_sha }); }
+      await checked(hub, thread, 'reopen');
+      if (op.carried) thread.imported = { at: op.started_at, ...op.carried };
+      if (op.kind === 'advance') {
+        for (const card of thread.cards || []) { card.answered = true; card.retracted_by = 'import'; card.retracted_note = 'Replaced by an import'; card.retracted_at = new Date().toISOString(); }
+        thread.pinned = {};
+      }
+      thread.handed_off = null; thread.archived = false; thread.checkout_sha = op.claim_sha; op.applied = true; op.last_error = null;
+      await hub.save(thread);
+    }
+    delete thread.handoff_op; await hub.save(thread);
+    await fs.unlink(path.join(hub.stateDir, 'handoffs', `${thread.id}.json`)).catch((error) => { if (error.code !== 'ENOENT') throw error; });
+    return { outcome: op.kind === 'create' ? 'created' : op.kind === 'advance' ? 'advanced' : 'undone', id: thread.id, ...(reimport ? { note: "Finished the earlier import; import this file again if it's newer" } : {}) };
+  } catch (error) {
+    if (thread.handoff_op) { thread.handoff_op.last_error = error.message; await hub.save(thread); }
+    throw appError(409, error.message);
+  } finally { hub.runningHandoffOps.delete(thread.id); }
+}
+async function runOperation(hub, id, { reimport = false } = {}) {
+  const result = await hub.withThread(id, async () => runLocked(hub, await hub.thread(id), reimport));
+  await hub.restartLead(id).catch(() => {});
+  return result;
+}
+async function startCreate(hub, { file, machine, project }) {
+  const id = file.thread.id;
+  await hub.withThread(id, async () => {
+    const now = new Date().toISOString();
+    const thread = { id, title: file.thread.title, slug: file.thread.slug, machine, project, branch: `wc/${id}`, stub: false, context: '', depends_on_parent: false, waiting_on_parent: false, sessions: [], cards: [], asides: [], pinned: {}, queues: {}, sent: [], archived: false, created_at: now, updated_at: now, handoff_op: operation('create', file.head, file) };
+    await hub.save(thread);
+  });
+  return runOperation(hub, id);
+}
+async function startAdvance(hub, thread, file) {
+  await hub.withThread(thread.id, async () => { const current = await hub.thread(thread.id); current.handoff_op = operation('advance', file.head, file); await hub.save(current); });
+  return runOperation(hub, thread.id);
+}
+async function undo(hub, id) {
+  await hub.withThread(id, async () => {
+    const thread = await hub.thread(id);
+    if (thread.handoff_op) { if (thread.handoff_op.kind !== 'undo') throw appError(409, 'Retry the unfinished import first'); return; }
+    if (!thread.handed_off) throw appError(409, 'This thread has not been handed off');
+    thread.handoff_op = operation('undo', thread.handed_off.head, null); await hub.save(thread);
+  });
+  return runOperation(hub, id);
+}
+async function cancel(hub, id) {
+  return hub.withThread(id, async () => {
+    const thread = await hub.thread(id), op = thread.handoff_op;
+    if (!op) throw appError(409, 'No unfinished import or undo');
+    if (op.claim_landed) throw appError(409, 'The claim has already landed');
+    if (op.claim_sha) await revokeLock(hub, async () => {
+      const entries = await revokes(hub);
+      entries.push({ thread_id: id, project: thread.project, machine: thread.machine, branch: `wc/${id}`, parent: op.parent, sha: op.claim_sha, until: new Date(Date.now() + 86400000).toISOString() });
+      await writeRevokes(hub, entries);
+    });
+    await abandon(hub, thread); return { outcome: 'cancelled', id };
+  });
+}
+async function sweepEntry(hub, target) {
+  return hub.withThread(target.thread_id, () => revokeLock(hub, async () => {
+    const entries = await revokes(hub), index = entries.findIndex((entry) => entry.thread_id === target.thread_id && entry.sha === target.sha);
+    if (index < 0) return;
+    const entry = entries[index];
+    const thread = await hub.thread(entry.thread_id).catch((error) => { if (error.status === 404) return null; throw error; });
+    if (thread?.handoff_op?.claim_sha === entry.sha || (entry.last_result !== 'failed' && Date.parse(entry.until) <= Date.now())) entries.splice(index, 1);
+    else {
+      let result;
+      try { result = await hub.client.handoff(entry.machine, { action: 'claim-revoke', thread_id: entry.thread_id, project: entry.project, branch: entry.branch, parent: entry.parent, sha: entry.sha }); }
+      catch (error) { result = { result: 'failed', error: error.message }; }
+      if (result.result === 'gone') entries.splice(index, 1);
+      else { entry.last_result = result.result; if (result.result === 'failed') entry.error = result.error || 'unknown error'; else delete entry.error; if (result.result === 'revoked') entry.until = new Date(Date.now() + 86400000).toISOString(); }
+    }
+    await writeRevokes(hub, entries);
+  }));
+}
+async function sweep(hub) { for (const entry of await revokes(hub)) await sweepEntry(hub, entry); }
+function startSweep(hub) { sweep(hub).catch(() => {}); const timer = setInterval(() => sweep(hub).catch(() => {}), 600000); timer.unref(); }
+async function dismiss(hub, target) {
+  return hub.withThread(target.thread_id, () => revokeLock(hub, async () => {
+    const entries = await revokes(hub); await writeRevokes(hub, entries.filter((entry) => !(entry.thread_id === target.thread_id && entry.sha === target.sha && entry.last_result === 'failed'))); return { ok: true };
+  }));
+}
+module.exports = { operation, preclaim, claim, abandon, revokes, revokeLock, writeRevokes, request, checked, TAKING_BACK, runLocked, runOperation, startCreate, startAdvance, undo, cancel, sweepEntry, sweep, startSweep, dismiss };

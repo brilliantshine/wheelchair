@@ -44,6 +44,7 @@ async function handle(hub, request, response, url, machineAuthenticated) {
   if (bits[0] === 'machine') {
     return handleMachine(hub, request, response, bits, body, machineAuthenticated);
   }
+  if (bits[0] === 'handoff-revokes' && bits[1] === 'dismiss' && request.method === 'POST') return send(response, 200, await require('./handoff-ops.js').dismiss(hub, body));
   if (bits[0] === 'threads') return handleThreads(hub, request, response, url, bits, body);
   if (bits[0] === 'features' && request.method === 'GET') {
     return send(response, 200, await hub.features());
@@ -418,7 +419,8 @@ async function handleThreads(hub, request, response, url, bits, body) {
       const doneCard = (cards || []).some((card) => card.kind === 'done' && !card.replaced);
       return { ...summary, handed_off: thread.handed_off || null, done_card: doneCard, sessions: thread.sessions.map(({ name, role, live, ready, turn_ended, created_at }) => ({ name, role, live, ready, turn_ended, created_at })) };
     });
-    return send(response, 200, { threads });
+    const revoke_notices = (await require('./handoff-ops.js').revokes(hub)).filter((entry) => entry.last_result === 'failed').map((entry) => ({ thread_id: entry.thread_id, sha: entry.sha, text: `Couldn't take back a cancelled pick-up on ${entry.project} ${entry.branch}: ${entry.error}` }));
+    return send(response, 200, { threads, revoke_notices });
   }
   if (bits.length === 1 && request.method === 'POST') {
     const thread = await hub.createThread(body);
@@ -509,6 +511,9 @@ async function handleThreads(hub, request, response, url, bits, body) {
     const clean = (thread) => ({ ...thread, sessions: thread.sessions.map(publicSession) });
     return send(response, 200, result.waiting ? { ...result, thread: clean(result.thread) } : clean(result));
   }
+  if (request.method === 'POST' && bits.length === 3 && bits[2] === 'undo-handoff') return send(response, 200, await hub.undoHandoff(id));
+  if (request.method === 'POST' && bits.length === 3 && bits[2] === 'retry-handoff') return send(response, 200, await hub.runHandoffOperation(id));
+  if (request.method === 'POST' && bits.length === 3 && bits[2] === 'cancel-handoff') return send(response, 200, await hub.cancelHandoff(id));
   if (request.method === 'POST' && bits[2] === 'restart') {
     return send(response, 201, publicSession(await hub.restartLead(id)));
   }
