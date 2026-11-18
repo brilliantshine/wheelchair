@@ -5,29 +5,42 @@ mode: two-part   # thorough | two-part | proof-of-concept
 created: 2026-11-18
 ---
 
-# Wheelchair for local projects
-
-Draft: still being collected from the conversation.
+# Custom MCP tools for a project's agents
 
 ## What we're building
 
-To be written once the scope of this thread is chosen.
+A way to give a project its own MCP tools (for example a bridge into a game engine) so
+that every agent wheelchair starts for that project can use them, without setting each
+tool up by hand in every CLI account.
 
 ## Why — the problem
 
-Wheelchair runs agents headless and finishes by pushing to GitHub. That makes it hard to
-use for local applications such as a game in an engine: agents can't see the app run,
-results only arrive as a pull request, and a project can't give its agents custom MCP
-tools.
+Wheelchair is hard to use for local work like a game in an engine. One reason is that
+agents only get whatever MCP tools happen to be set up in the account they run under, and
+a project has no way to say "agents working on me need this tool". So an agent working on
+a game cannot reach the engine, and every account and machine would need to be set up by
+hand.
+
+This is the first of three pieces. The other two (agents seeing the running app, and
+trying a thread's work in your own checkout) are their own threads.
 
 ## What good looks like
 
-To be written.
+- Collin sets up an MCP tool once for a project.
+- Any new thread in that project, on any CLI wheelchair supports, has agents that can see
+  and call that tool, without touching account settings.
+- Projects without custom tools behave exactly as today.
+- If a tool can't start (missing program, wrong path), Collin finds out plainly rather
+  than agents silently going without it.
 
 ## Not doing
 
-To be written.
+- Letting agents see or drive a running app (separate thread).
+- Applying a thread's work to Collin's own checkout (separate thread).
+- Writing or shipping any particular MCP server, such as a game-engine bridge.
+- Installing the programs a tool needs on the machine; that stays Collin's job.
 
 ## Constraints
 
-To be written.
+- Must work for the CLIs wheelchair runs (Claude Code, Codex, Antigravity).
+- Must not change anything for existing projects that set up no tools.
