@@ -836,7 +836,7 @@
       }
       case 'check': {
         box.appendChild(el('h3', '', 'Check it yourself'));
-        box.appendChild(prose('check-update', card.update));
+        box.appendChild(el('div', 'check-update', card.update));
         const steps = card.steps || [];
         const ol = el('ol', 'check-steps');
         steps.forEach((s, i) => {

@@ -135,6 +135,17 @@ for (const [label, size] of SIZES) {
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
     });
 
+    test('the update is plain text: backticks and asterisks show literally', async ({ page }) => {
+      const { id } = await ctx.make({ cli: 'claude' });
+      await postDone(ctx, id, H1, ghBin);
+      const update = 'Run `cd /opt/_release_/bin` then **merge** it.';
+      const c = await ctx.post(id, { ...check(H1, [APP]), update });
+      await open(page, id);
+      const card = page.locator(`#card-${c.id}`);
+      await expect(card.locator('.check-update')).toHaveText(update);
+      expect(await card.locator('code, strong').count()).toBe(0);
+    });
+
     test('no buttons when the done card sits at the import cutoff; buttons when strictly after', async ({ page }) => {
       const { id } = await ctx.make({ cli: 'claude' });
       await postDone(ctx, id, H1, ghBin);
