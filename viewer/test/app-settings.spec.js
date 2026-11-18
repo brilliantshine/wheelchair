@@ -281,6 +281,18 @@ test.describe('desktop', () => {
 test.describe('phone', () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
+  test('the Settings link shows a gear, is wide enough to tap, and opens Settings', async ({ page }) => {
+    await openPage(page, context, '/app/features');
+    const link = page.locator('#app-nav .seg a[href="/wheelchair/app/settings"]');
+    await expect(link.locator('.gear')).toBeVisible();
+    await expect(link.locator('.lbl')).toBeHidden();
+    const box = await link.boundingBox();
+    expect(box.width).toBeGreaterThanOrEqual(24);
+    expect(box.x + box.width).toBeLessThanOrEqual(390);
+    await link.click();
+    await expect(page).toHaveURL(/\/app\/settings/);
+  });
+
   test('the sections are tabs above the section and the page never scrolls sideways', async ({ page }) => {
     await openPage(page, context, '/app/settings');
     const tabs = page.locator('#sections a');

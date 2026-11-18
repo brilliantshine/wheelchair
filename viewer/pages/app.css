@@ -53,6 +53,7 @@ code, .mono { font-family: var(--mono); }
   display: inline-flex; align-items: center; gap: 6px; min-height: 30px; }
 #app-nav .seg a[aria-current="page"] { background: var(--line); color: var(--ink); font-weight: 600; }
 #app-nav .seg .count { color: var(--dim); }
+#app-nav .seg .gear { display: none; }
 #app-nav .spacer { flex: 1 1 20px; }
 #app-nav .needs-count { color: var(--warn); font-weight: 600; font-size: 13px; padding: 6px 12px; border-radius: 999px;
   background: var(--warn-bg); border: 1px solid var(--warn-line); white-space: nowrap; }
