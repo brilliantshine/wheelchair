@@ -99,6 +99,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 70 | During the first 5 minutes after a push with no checks, the poll keeps polling instead of stopping on a ready state | Avoids a tight loop of GitHub calls | review-round-12 |
 | 71 | A rejected starting push merges, verifies if needed, pushes, opens the PR if missing; the window starts at the successful push | Item 6 assumes an existing PR | review-round-12 |
 | 72 | The pre-PR `needs` card names what failed: the push, or opening the PR | PR creation runs after a successful push | review-round-12 |
+| 73 | One window rule: a successful push of your new commits starts a new 30-minute window; others' fast-forwards don't; Keep going and restart start one; the 5-minute no-checks grace counts from the window start | Competing deadlines; pushes not by the lead | review-round-13 |
+| 74 | "Keep going" resumes where the `needs` card was posted; an unverified local repair returns to fix-and-verify | Never poll or post `done` for a stale commit | review-round-13 |
+| 75 | Pushes use `wc.js git push -u origin HEAD:wc/<thread-id>` | Thread branches have no upstream | review-round-13 |
 
 ## Spec
 
@@ -194,6 +197,10 @@ outside a merge, unchanged.
   is unreachable" means try again.
 - `protocol/app/lead.md`: steps 1, 8 (item 2) and 9 (item 4) send the lead to a new section,
   "Making the pull request mergeable", before posting `done`. Its content (D38):
+  0. **Windows (D73).** A new 30-minute window starts whenever a push of yours that adds
+     commits succeeds (the first push, a repair, a re-verified merge, a recovered rejected push).
+     Someone else's fast-forward keeps the current window. "Keep going" and a restart start a new
+     one.
   1. **The pushed commit** is `git rev-parse origin/wc/<thread-id>` read right after a
      successful `wc.js git push`; it is the `head` of the `done` card.
   2. **Wait.** Run one foreground shell command that polls
@@ -202,7 +209,7 @@ outside a merge, unchanged.
      `mergeStateStatus` `CLEAN`, `HAS_HOOKS`, `DIRTY` or `BEHIND`; a failed check; `BLOCKED` with no
      failed or pending check; 10 minutes. Exception: a "ready" state (`CLEAN`, `HAS_HOOKS`, or
      `BLOCKED` with nothing failed or pending) with no checks at all, less than 5 minutes after the
-     push, does not stop the command; it keeps polling every 60 seconds (D39, D70). (Failed and pending as defined in the Spec table;
+     current window started, does not stop the command; it keeps polling every 60 seconds (D39, D70). (Failed and pending as defined in the Spec table;
      include the definitions in lead.md.) A gh error inside the loop is ignored. Repeat while the
      30-minute window from the push lasts (D4).
   3. **Ready:** post `done` with `head`. (The poll already waited out the first 5 minutes when
@@ -229,8 +236,8 @@ outside a merge, unchanged.
      `wc.js git merge origin/wc/<thread-id>`. If it reports conflicts, resolve them as in 7
      (edit, `wc.js git commit --paths <resolved files>`), then continue (D59). If that brought in only their commits (a fast-forward,
      nothing of yours unpushed), the new tip is the pushed commit: back to 2 in the same window,
-     no verifier (their push is theirs). Otherwise re-verify the merge as in 7, push, back to 2 in
-     the same window. It does not count toward the budget (D40). If that verifier fails, post
+     no verifier (their push is theirs). Otherwise re-verify the merge as in 7, push, back to 2 with a
+     new window (new commits of yours trigger CI afresh). It does not count toward the budget (D40). If that verifier fails, post
      the `needs` card in 8 (D45).
   7. **Repair.** Conflicts or behind: `wc.js git fetch`, `wc.js git merge origin/<default
      branch>`. If the merge succeeded, git already made the merge commit. If it reports
@@ -248,7 +255,9 @@ outside a merge, unchanged.
      check or a conflict, is one failed attempt. After two, or when a window ends without an
      accepted `done`, a posted stub (4) or a closed PR (5) (D51, D58), or on a "GitHub login can't read"
      refusal, post a `needs` card saying what blocks `done` and that he can merge the PR himself
-     regardless. "Keep going" (which closes the card) resets the budget with a new window. If the
+     regardless. "Keep going" (which closes the card) resets the budget and
+     resumes where the card was posted: an unverified local repair goes back to 7's
+     fix-and-verify (never to polling); otherwise 2 with a new window (D74). If the
      card is still open when `done` is accepted, resolve it (D56).
   9. **After a restart** (D61, supersedes D41/D57/D60). Restarts are rare, so only the plain
      cases are handled alone; anything else goes to Collin. Applies when the thread is finishing
@@ -274,11 +283,14 @@ outside a merge, unchanged.
 - Within this section, and for the push and `wc.js git pr` that start it in steps 1, 8 and 9
   (D67: the rule reaches no other git use), every `wc.js git` call returns JSON with `ok`; check
   it, since a failed git command still exits 0 (`machine/service.js:1308`) (D59).
+  - Every push in this section, and the push that starts it, is
+    `wc.js git push -u origin HEAD:wc/<thread-id>` (thread branches are created without an
+    upstream, `machine/service.js:485-487`) (D75).
   - A push rejected because the remote branch moved (non-fast-forward): `wc.js git fetch`,
     `wc.js git merge origin/wc/<thread-id>` (conflicts resolved as in 7), and verify as in 6 if
     the merge was more than a fast-forward; then push again. If this was the push that starts the
     section, carry on with that start (open the PR with `wc.js git pr` if none exists yet) and
-    the window starts when that push succeeds; otherwise return to 2 in the same window (D68,
+    the window starts when that push succeeds; otherwise return to 2 with a window per 0 (D68,
     revised by D71).
   - Any other failure that is not a merge conflict (a failed fetch, a merge that stops for another
     reason, another push or PR-creation failure): retry once after a minute; if it fails again,
@@ -606,3 +618,9 @@ Collin: "Keep going" — budget reset.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | 5-minute grace start unclear for pushes not by the lead | upheld | D73 |
+| mechanics | blocking | Push without upstream fails | downgraded → minor | Steps 1 and 8 already push today with the lead's own arguments; named explicitly anyway (D75) |
+| mechanics | major | Competing window deadlines after a recovered repair push | upheld | D73 |
+| mechanics | major | "Keep going" after failed verifications resumes at polling | upheld | D74 |
+
+**Budget:** three triaged rounds (11, 12, 13) since Collin's last decision without a clean one; stopped for Collin. Fixes applied.
