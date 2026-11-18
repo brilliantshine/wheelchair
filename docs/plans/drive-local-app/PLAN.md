@@ -89,7 +89,7 @@ to stdout, exit 0. Every failure is a non-2xx status other than `503` with `{err
 | Op | Arguments | Does | Returns |
 |---|---|---|---|
 | `start` | `[--size WxH]` (default `1280x800`, each side 200–2560, which keeps a screenshot under the image card's 25 MB limit) | Starts the caller's screen if it has none; idempotent (a second `start` returns the existing screen, ignoring `--size`) | `{ok, display: ":N", size}` |
-| `run` | `[--env KEY=VALUE]... -- <command> [args...]` | Starts the screen if needed, then launches the command on it (see "Launching apps") | `{ok, app: <n>, log}` |
+| `run` | `[--env KEY=VALUE]... -- <command> [args...]` | Starts the screen if needed, then launches the command on it (see "Launching apps") | `{ok, app: <n>, log, focused}` |
 | `shot` | `[--window <id>]` | Captures the whole screen, or only that window's rectangle (geometry from `xdotool getwindowgeometry`, clipped to the screen; `422` if the window is gone or wholly off screen), as PNG | `{ok, path, width, height}` |
 | `windows` | none | Lists visible app windows, titled or not | `{ok, windows: [{id, name, x, y, width, height}]}` (`name` is `""` for untitled) |
 | `move` | `<x> <y>` | Moves the pointer | `{ok}` |
