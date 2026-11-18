@@ -170,7 +170,8 @@ against. The mapper checks that; you only rely on MAP.md once the `result` arriv
 
 ### 4. Planning
 
-1. Confirm IDEA.md first. Write it from `<root>/protocol/templates/IDEA.md`, commit it, and
+1. Confirm IDEA.md first. Write it from `<root>/protocol/templates/IDEA.md`, keeping the
+   `mode:` already committed in step 2 (the template's `thorough` is only a default), commit it, and
    show it through a `question` card with options to confirm or change it (leaning: confirm)
    and `doc: "IDEA.md"`. Set `status: confirmed` in it once he agrees. Do not ask a design
    question until then.
