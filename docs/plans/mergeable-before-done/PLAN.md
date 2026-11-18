@@ -92,6 +92,10 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 63 | Restart: uncommitted changes other than an unfinished merge go to Collin's question first | Never leave a half-made fix silently | review-round-10 |
 | 64 | Restart's not-waiting test: a `done` whose `head` contains the local tip, a legacy `done`, or a closed PR | Avoid spurious questions and duplicate `done` | review-round-10 |
 | 65 | "Keep going" on a git-failure `needs` card redoes the failed operation first | A push or PR creation can fail before a PR exists | review-round-10 |
+| 66 | Restart's uncommitted-change check ignores untracked files | Scratch and test output are common | review-round-11 |
+| 67 | The git-failure rule applies only within the new section and the push/PR that start it | IDEA non-goal: nothing before the push changes | review-round-11 |
+| 68 | A non-fast-forward push rejection fetches and goes through item 6 before pushing again | Retrying the same push can never succeed | review-round-11 |
+| 69 | The git-failure `needs` card before a PR exists says nothing was pushed and Keep going retries | The usual wording mentions merging a PR that doesn't exist | review-round-11 |
 
 ## Spec
 
@@ -244,8 +248,9 @@ outside a merge, unchanged.
   9. **After a restart** (D61, supersedes D41/D57/D60). Restarts are rare, so only the plain
      cases are handled alone; anything else goes to Collin. Applies when the thread is finishing
      (the plan's `status` is `done` or there is no plan, and the branch has a PR). In this order:
-     1. `git status`: abort an unfinished merge (`wc.js git merge --abort`). Any other
-        uncommitted change (an edit cut off mid-fix) → 5, before anything else (D63).
+     1. `git status --untracked-files=no`: abort an unfinished merge (`wc.js git merge --abort`).
+        Any other change to a tracked file (an edit cut off mid-fix) → 5, before anything else
+        (D63; untracked files are ignored, D66).
      2. `wc.js git fetch` and `wc.js git fetch origin pull/<number>/head`; read the PR's `state`
         and head; your local tip is `HEAD`.
      3. Not waiting, nothing to do, when: an accepted `done` card's `head` is your local tip or
@@ -261,12 +266,17 @@ outside a merge, unchanged.
         fix were never pushed" or "the pull request was merged without the last fix"), with the
         options that fit (push them after a check, drop them, start a follow-up thread, leave it),
         and do what he picks using items 6-8.
-- Every `wc.js git` call returns JSON with `ok`; check it, since a failed git command still
-  exits 0 (`machine/service.js:1308`) (D59). A failure that is not a merge conflict (a failed
-  fetch, a merge that stops for another reason, a rejected push): retry once after a minute;
-  if it fails again, post the `needs` card in 8 with git's message (D62). On "Keep going",
-  redo the failed operation first (for a push or PR creation before any PR exists, that is the
-  push or `wc.js git pr`), then carry on from where it failed (D65).
+- Within this section, and for the push and `wc.js git pr` that start it in steps 1, 8 and 9
+  (D67: the rule reaches no other git use), every `wc.js git` call returns JSON with `ok`; check
+  it, since a failed git command still exits 0 (`machine/service.js:1308`) (D59).
+  - A push rejected because the remote branch moved (non-fast-forward): `wc.js git fetch`,
+    then item 6 (merge their commits, verify if needed), then push again (D68).
+  - Any other failure that is not a merge conflict (a failed fetch, a merge that stops for another
+    reason, another push or PR-creation failure): retry once after a minute; if it fails again,
+    post the `needs` card in 8 with git's message (D62). If no PR exists yet, that card says
+    nothing was pushed or opened yet and that "Keep going" retries; it does not mention merging
+    the PR (D69). On "Keep going", redo the failed operation first (applying the
+    non-fast-forward rule above), then carry on from where it failed (D65).
 - Step 8 still commits `status: done` before the push, so the PR carries it.
 - Step 9's existing item 4 (`OPEN` / `MERGED` with the pushed head / `MERGED` with an older
   head / `CLOSED` by then, `protocol/app/lead.md:354-359`) is **replaced** by a pointer to the
@@ -557,6 +567,20 @@ Collin: "Keep going" — budget reset.
 **Lanes:** intent lens (provider per start); mechanics lens (other family); cross-family: yes.
 
 **Changed since the last round:** restart: uncommitted edits go to the question (D63); not-waiting test (D64); "Keep going" after a git failure redoes the operation (D65); legacy-`done` risk row clarified.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Untracked files trigger restart questions | upheld | D66 |
+| intent | minor | `needs` wording before a PR exists | upheld | D69 |
+| intent | minor | Git-failure rule reaches past this feature | upheld | D67 |
+| mechanics | blocking | Non-fast-forward push rejection loops | upheld | D68 |
+| mechanics | minor | `needs` wording before a PR exists (same as intent) | upheld | D69 |
+
+### Round 12 — 2026-11-18
+
+**Lanes:** intent lens (provider per start); mechanics lens (other family); cross-family: yes.
+
+**Changed since the last round:** restart ignores untracked files (D66); git-failure rule scoped (D67), non-fast-forward push (D68), wording before a PR exists (D69).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
