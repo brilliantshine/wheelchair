@@ -78,3 +78,26 @@ Worker reports with full pasted output: `docs/plans/local-projects/reports/T1.md
 - A stray real tmux session `wc-t-worker-1` (created about 2 days before this build, running `claude` in a deleted test temp folder) is a leak from some earlier test run. It is not from this build and was left alone.
 
 ## Remediation rounds
+
+### Remediation 1 — 2026-11-18
+
+Verification attempt 1 (claude verifier, commit b4b7761) returned FAIL with one must-fix gap. A Codex worker in the default sandboxed mode (`-a never`) saw the project tool but could not call it ("MCP tool call requires approval, but approval policy is never"). Gap text and task: `REMEDIATION-1.md`.
+
+Fix (T3, light / gpt-6-luna): `machine/adapters/codex.js:82` adds `-c mcp_servers.project_<name>.default_tools_approval_mode="approve"` before `enabled=true`, for stdio and http servers. `machine/test/project-mcp-codex.test.js:25`, `:27` assert it. `README.md:172` says project tools are pre-approved on Codex. The verifier had already confirmed this override on a real codex-cli 0.169.0 worker: the call succeeded and the env pass-through reached the server.
+
+Trust note: the override pre-approves every tool of a committed project server on Codex. This matches Claude's `enableAllProjectMcpServers` for the same roles. Those roles already run arbitrary shell commands in the worktree (Spec, Edge cases).
+
+Validation after the fix (sub-lead, on the merged branch):
+
+```
+$ node --test machine/test/project-mcp.test.js machine/test/project-mcp-codex.test.js
+# pass 12
+# fail 0
+$ bash machine/test/run.sh
+# pass 166
+# fail 0
+$ node --test viewer/test/*.test.js
+# pass 632
+# fail 0
+```
+
