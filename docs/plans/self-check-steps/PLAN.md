@@ -389,7 +389,7 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 3 — 2026-11-18
 
-**Lanes:** intent: see table; mechanics: see table; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 2:**
 - `merged` field and eyebrow removed; `update` says whether to merge.
@@ -411,6 +411,25 @@ exit. Downgrades and declines cite evidence.
 | mechanics | major | Second COMMIT mismatch undefined | upheld | Second mismatch → all steps untried with the reason |
 | mechanics | major | Planned-build repair verifier remit and verdict loop undefined | upheld | Repair re-verify is combined (Spec, gap, steps); FAIL counts an attempt, PASS ends the loop |
 | mechanics | major | Retried done recorded twice at one head | upheld | One check card per head covers both |
+
+### Round 4 — 2026-11-18
+
+Collin chose "Keep going" after three rounds without a clean one; budget reset.
+
+**Lanes:** intent: see table; mechanics: see table; cross-family: yes.
+
+**Changed since Round 3:**
+- Protocol-only changes: steps name a behaviour to watch for in a later thread; no
+  merge-proving steps.
+- Second `COMMIT:` mismatch → all steps untried.
+- Planned-build repair re-verify is combined; its verdict drives the two-attempt loop.
+- One check card per head covers a done recorded twice.
+- Restart: lead picks the latest non-retracted done in its context, the hub's refusal is
+  the eligibility check; a work-wrong step found after done is posted untried and reported
+  in the reply, with no commits.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
