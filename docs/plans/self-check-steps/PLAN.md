@@ -164,7 +164,8 @@ verifier section). Which verifiers carry the steps:
   the local `HEAD` after the sub-lead's result, which in a lighter mode may be a later
   commit than the one the sub-lead verified (only plan files differ); that is fine. Before
   using a report, the lead checks its `COMMIT:` line equals the commit it meant to try; if
-  not, it starts one fresh verifier and uses that report.
+  not, it starts one fresh verifier; if that report's `COMMIT:` also differs, every step is
+  posted `tried: false`, `why_not` "an agent could not try them on this exact version".
 - Commits the lead does not verify (someone else's fast-forward, a done at a merged head
   with others' commits) keep the STEP results from the last verifier (Accepted Risks).
 
@@ -186,9 +187,11 @@ verifier section). Which verifiers carry the steps:
   "Making the pull request mergeable" 7 and 8, which never pushes a failed repair). The
   question below is not used there. If Collin chooses "push it as it is", the step is
   posted `tried: false`, `why_not` "an agent saw something different: <short>".
-- Steps-only reports (planned build): `DIFFERS (work wrong)` → a gap (Decision 8). The lead fixes
-  it in the worktree itself (no sub-lead or workers), commits, and starts a fresh verifier
-  briefed with the Spec or request, the gap and all steps. If it still fails after two
+- Steps-only reports (planned build, before `done`): `DIFFERS (work wrong)` → a gap
+  (Decision 8). The lead fixes it in the worktree itself (no sub-lead or workers), commits,
+  and starts a fresh **combined** verifier briefed with the plan slug (Spec), the gap and
+  all steps. A FAIL verdict (any GAP, including a step reported work-wrong) is a failed
+  attempt; a PASS ends the loop and its STEP lines count. If it still fails after two
   fix attempts, or the fix needs parallel workers, the lead posts a `question` card with
   two options: "Finish with that step marked" (the step is posted `tried: false`, `why_not`
   "an agent saw something different: <short>") and "Finish and start a follow-up thread"
@@ -202,17 +205,23 @@ verifier section). Which verifiers carry the steps:
 - A small fix Collin chose to drop (reverted, no `done`) gets no check card.
 
 **Posting.** Immediately after a `done` card is accepted, post the `check` card with that
-done card's `head` (including a done at a merged head other than the pushed commit). Order
+done card's `head`. One check card per head: if a retried `done` was recorded twice at the
+same head, the one check card covers both (including a done at a merged head other than the pushed commit). Order
 in a two-part thread: `done`, then `check`, then the follow-up `stub`. The `check` card is
 never a condition for `done`; `done` keeps its own gate unchanged.
 
 **Restart.** A restarted lead has lost its draft and the STEP results. After
 `[wc:context restart]`, and again after any `done` the restarted lead itself posts before
 it has steps in hand, the lead posts a missing check card only when all of these hold: the
-current done card (as defined for the hub) has a `head`;
+latest done card in its context that has no `retracted_at` has a `head`;
 no `check` card has that `head`; and the local `HEAD` equals that `head`. Then it drafts
 the steps and has them tried by a steps-only verifier on `HEAD` before posting (a
-duplicate refusal means the original arrived; stop there). Otherwise it posts none for
+duplicate refusal means the original arrived; any other head refusal means that done card
+is not current, for example before an import cutoff the lead cannot see; stop there in both
+cases). A step reported `DIFFERS (work wrong)` here, after `done` was accepted, is posted
+`tried: false`, `why_not` "an agent saw something different: <short>", and the lead says so
+in its reply; Collin can report it as a problem (step 9). The lead commits nothing on this
+path. Otherwise it posts none for
 that done card; the next `done` gets its own. A stub that missed the merge ("Making the
 pull request mergeable" 4, exit 1) posts no check card.
 
@@ -397,6 +406,11 @@ exit. Downgrades and declines cite evidence.
 |------|----------|---------|--------------|------------|
 | intent | minor | Use one steps-only verifier on the final head just before done on every path | declined | Final head is known only after the PR is ready; a step showing the work wrong would then force a repair push and another verifier anyway. Trying before the push keeps a broken step out of the PR; the extra rules are bounded and specified |
 | intent | minor | Protocol-change fallback grep only proves the merge landed | upheld | Protocol changes name a behaviour to watch for in a later thread, marked untried when it cannot be staged; merge-proving steps forbidden |
+| mechanics | blocking | Restart backfill finding work wrong after done accepted has no outcome | upheld | Posted untried with the reason, said in the reply; no commits on that path; Collin may report it (step 9) |
+| mechanics | major | Restarted lead cannot see the import cutoff | upheld | Lead uses the latest non-retracted done in its context; the hub's refusal is the eligibility check |
+| mechanics | major | Second COMMIT mismatch undefined | upheld | Second mismatch → all steps untried with the reason |
+| mechanics | major | Planned-build repair verifier remit and verdict loop undefined | upheld | Repair re-verify is combined (Spec, gap, steps); FAIL counts an attempt, PASS ends the loop |
+| mechanics | major | Retried done recorded twice at one head | upheld | One check card per head covers both |
 
 ## Prior Work
 
