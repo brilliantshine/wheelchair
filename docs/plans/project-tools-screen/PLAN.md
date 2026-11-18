@@ -55,6 +55,9 @@ None.
 | 28 | Save status by browser-made save id, read from local state only; `saved` terminal state for key-only | Identifies the lost request; works when GitHub is slow | review-round-5 |
 | 29 | Push and fetch URLs must name the same GitHub repository | PR and push must target one repo | review-round-5 |
 | 30 | "Add a key" by name on the keys list | Re-entering a removed or not-yet-stored key without a PR | review-round-5 |
+| 31 | Supersedes 26: the per-id save status (Log 28) replaces any per-project last-save record | Avoid building both | review-round-6 |
+| 32 | Read token binds the project identity and GitHub repository; Save pushes only to the one validated URL | No write to a retargeted alias or a second push URL | review-round-6 |
+| 33 | Unset and held-back keys are key warnings, not skip reasons | Adapters still start the tool | review-round-6 |
 
 ## Spec
 
@@ -73,7 +76,9 @@ project's tools and lets him add, change and remove them. Works at phone width.
 ### Reading
 - The machine resolves the GitHub repository (`owner/name`) from both
   `git remote get-url origin` and `git remote get-url --push origin` in the project; if they
-  name different GitHub repositories, the section says so and allows only key changes; a non-GitHub origin shows "pull requests need a GitHub origin" and allows
+  name different GitHub repositories, or the remote has more than one push URL
+  (`git config --get-all remote.origin.pushurl`), the section says so and allows only key
+  changes; Save pushes to that one validated URL explicitly, never to the name `origin`; a non-GitHub origin shows "pull requests need a GitHub origin" and allows
   only key changes. Every `gh` call passes `--repo <owner/name>` and runs non-interactively.
 - The machine fetches the current default branch (resolved as below) with an explicit
   refspec, and reads `.mcp.json` from it. That is the **source**; Collin's working checkout is
@@ -92,10 +97,14 @@ project's tools and lets him add, change and remove them. Works at phone width.
   keeps a local record per save id (the last 20 per project): running, then `saved` (keys only,
   no PR), `opened` (PR link) or `failed` (reason; for a pushed branch with no PR, the branch
   name and compare link). A separate status route returns one record by id from local state
-  only, with no git or GitHub calls and the normal 5-second hub timeout. While a save runs or
-  after its reply was lost, the screen polls that route every 3 seconds, shows "Saving…" with
-  Save disabled, then does one full reload when the record ends. An id the machine never saw
-  shows "Save didn't reach the machine" and re-enables Save.
+  only, with no git or GitHub calls and the normal 5-second hub timeout. The browser keeps
+  the id of an unfinished Save in localStorage (per machine and project) until it has a final
+  result, so a reloaded or evicted tab can recover it. The screen polls only after the Save
+  reply was lost or timed out (never alongside a live Save request), every 3 seconds, showing
+  "Saving…" with Save disabled, and does one full reload when the record ends. An id the
+  machine doesn't know is never read as "didn't happen": the screen shows "Couldn't confirm
+  this save; check Waiting to merge before saving again", clears the stored id and
+  re-enables Save.
 - The file is read from the source with `git ls-tree` / `git cat-file`. Missing: empty
   list. An entry that is not a regular blob (symlink, submodule, tree) is unreadable, reason
   "not a regular file; edit it by hand or Start over". Session launch is unchanged and may
@@ -103,7 +112,8 @@ project's tools and lets him add, change and remove them. Works at phone width.
   the same reasons.
 - Unreadable file: the section shows the reason, offers no editing, and offers "Start over"
   (an empty tool list, saved as below, writing a regular file in place of whatever was there).
-- The read returns a **read token**: the default branch name, the git blob id of `.mcp.json`
+- The read returns a **read token**: the project identity (git common directory) and the
+  validated GitHub repository, the default branch name, the git blob id of `.mcp.json`
   on it as its tree mode plus object id (or "absent"), and the key store's revision (a counter the machine bumps on every key write). The screen sends it back
   unchanged on Save and Remove.
 - Each tool shows its name, kind (command or web address), what it runs, and its settings
@@ -139,13 +149,16 @@ project's tools and lets him add, change and remove them. Works at phone width.
   a managed key and is never injected, so a key value can't reach a tool's own argv through
   Claude's expansion; such a reference is shown read-only. Read, Save and launch use one shared
   function for this rule. A name referenced both ways is refused on Save ("<name> is also used
-  in <field>"), and on Read is listed among that tool's skip reasons ("<name> is held back:
-  also used in <field>").
+  in <field>") only when an entry added or edited in this Save creates the conflict; an
+  existing conflict in untouched entries doesn't block. On Read it is shown as a key warning
+  on that tool ("<name> is held back: also used in <field>").
 - A hand-written reference in an eligible place to a non-reserved name is a key: set or not
   set, settable. A reference to a reserved name is left to the session's normal environment:
   not a key, no flag.
-- A key shown "not set" on this machine is also listed among the tool's skip reasons
-  ("needs <name>, not set on this machine").
+- A key shown "not set" on this machine is shown as a key warning on the tool ("needs <name>,
+  not set on this machine"). Key warnings are separate from skip reasons: the adapters still
+  start the tool, which then runs without that value unless the session's normal
+  environment has one.
 - Key names must match `^[A-Za-z_][A-Za-z0-9_]*$`. Reserved names, refused by form and machine
   API and shown as "can't be set here: it would change how the agent itself runs":
   - process and loader: `PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `TERM`, `TMPDIR`, `PWD`,
@@ -188,7 +201,9 @@ project's tools and lets him add, change and remove them. Works at phone width.
 - One save or removal per project at a time on the machine (a lock); a second waits.
 - Order, with nothing written until step 3:
   1. Key-store revision differs from the read token: refuse "changed since you opened it"
-     (the screen reloads). If the tool list changed, also fetch the default branch and refuse
+     (the screen reloads). The token's project identity must match the project the request
+     names, and for tool changes its GitHub repository must match a fresh resolution;
+     otherwise refuse the same way. If the tool list changed, also fetch the default branch and refuse
      the same way if its name or its `.mcp.json` blob id (or absence) differs; other new
      commits on it don't matter. A key-only Save does not fetch.
   2. If the tool list changed: serialize the candidate (2-space JSON, trailing newline) and run
@@ -209,8 +224,12 @@ project's tools and lets him add, change and remove them. Works at phone width.
      <name> on GitHub blocks saving; rename or delete it"; never touch it.
   6. Run `gh pr create --repo R --head <branch> --base <default branch> --title "Update
      project tools" --body "Saved from the wheelchair app's Project tools screen."`. If that
-     fails, the screen shows the error, the branch name and GitHub's compare link so Collin can
-     open the PR himself; nothing retries it.
+     fails or times out, confirm with `gh pr list --repo R --head <branch> --base <default
+     branch> --state all --json url`: a PR found means `opened` with its link. None found
+     means `failed` with the error, the branch name and GitHub's compare link so Collin can
+     open it himself. If confirmation also fails, `failed` with "couldn't confirm whether the
+     pull request was opened; check Waiting to merge" plus the compare link. Creation is never
+     retried.
   7. Remove the temporary worktree.
 - Every Save makes its own branch and PR; two saves never share anything. Two waiting PRs may
   conflict with each other; GitHub shows that and Collin closes one.
@@ -227,7 +246,7 @@ project's tools and lets him add, change and remove them. Works at phone width.
 - Deadlines: the hub calls the new read, save and remove routes with a 120-second timeout
   (`viewer/app/machine-client.js:64` takes a timeout argument; the default is 5 seconds). If
   Save times out or the connection drops, the screen reloads and shows the last-save record
-  by polling the save status, never retrying on its own.
+  by polling the save status (Reading, "Save status"), never retrying on its own.
 
 ### Not doing
 Running or testing a tool; changing which roles or CLIs get tools; changing running threads;
@@ -401,7 +420,7 @@ Decision Log 24-27.
 
 ### Round 6 — 2026-11-18
 
-**Lanes:** intent — pending; mechanics — pending; cross-family: pending.
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 5:** Reading (push and fetch URL check, "Save status" by save id from
 local state, token uses tree mode + object id, wording); Keys (one shared held-back rule for
@@ -411,6 +430,16 @@ polling); Validation; Accepted Risks row (round 5); Decision Log 28-30.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Both-ways conflict in untouched entries blocks every Save | upheld | Refused only when this Save creates it |
+| intent | major | Status poll races the live Save request | upheld | Poll only after a lost reply |
+| intent | minor | Save id lost with the tab | upheld | localStorage |
+| intent | minor | Log 26 not marked superseded | upheld | Log 31 |
+| mechanics | blocking | RE-RAISE: multiple push URLs | upheld | Log 32 |
+| mechanics | blocking | RE-RAISE: lost push fallback passes an equal-sha branch | declined: step 4 makes a fresh commit in this Save, so a remote branch at that sha can only be this push's | — |
+| mechanics | blocking | Token not bound to the project | upheld | Log 32 |
+| mechanics | major | RE-RAISE: unknown id read as "didn't reach" | upheld | "Couldn't confirm" wording |
+| mechanics | major | PR created but response lost | upheld | `gh pr list --head` confirmation |
+| mechanics | major | Unset/held-back keys aren't real skips | upheld | Log 33 |
 
 ## Implementation Tasks
 
@@ -420,5 +449,6 @@ polling); Validation; Accepted Risks row (round 5); Decision Log 28-30.
 ## Log
 
 Round 3 was the third round without a clean result since Collin's last decision; budget stop. The `wc-tools` shared-branch design (Log 9, 12, 18) drew findings in all three rounds. Put to Collin; he chose one PR per save (Log 23). Budget reset.
+Round 6 was the third round without a clean result since that decision (rounds 4-6); budget stop. Recurring: recovering a Save whose reply was lost (rounds 4-6) and GitHub destination checks (rounds 5-6). Round 6 fixes applied before asking.
 
 Watch List items 1-6 (Antigravity note, Codex flags, project identity, unknown fields, key values in argv, second save) were settled as Decision Log 4-9.
