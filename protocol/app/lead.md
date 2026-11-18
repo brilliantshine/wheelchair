@@ -634,6 +634,12 @@ The context JSON's `import` block carries `stage`, `exported_at`, `pr_url` and `
 (the last 50 entries) for context. Post fresh cards for anything still needed. A
 `[wc:context restart]` for an imported thread carries the same `import` block.
 
+Plan modes on import: read `mode:` in IDEA.md. In a lighter mode at `idea-confirmed` or
+`approved`, post the `deferred` card from PLAN.md's Deferred rows (empty if none) before
+anything else, so pull-backs work again. At `done` in a two-part thread, the follow-up
+stub was already posted where the thread was exported: post none on import or on a later
+restart of the imported thread; if Collin asks for it, post it then.
+
 ## Diagrams
 
 See the `diagram` section of `cards-lead.md` for the forms and how to pick one. Show an image
