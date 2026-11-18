@@ -114,6 +114,8 @@ nothing.
 - The thread list's waiting count (`viewer/app/views.js:135`) and the aside's `waiting()`
   (`viewer/pages/aside.js:16`) do not count a check card with Fix it now / Leave it as
   waiting. The Spec does not ask for it.
+- A Fix it now press still queued when a newer `done` is posted can be acted on for the newer
+  version: accepted by Collin (PLAN.md Decision 20, Accepted Risks).
 - Flaky unrelated tests noted above.
 
 ## Remediation rounds
@@ -190,3 +192,18 @@ Lane: R6 light claude-haiku-5-5.
 Validation on `f91546a`: `npm test` exit 0, 636/636; `protocol-rules.test.js` 35/35;
 sub-lead/worker diff empty. No viewer or machine code changed since `32c7580`, whose browser
 run was exit 0, 790 passed, 28 skipped.
+
+### Remediation 4 (after verification attempt 4 on `5e693f8`)
+
+Gaps (gpt verifier; claude verifier passed), see `REMEDIATION-4.md`.
+
+| Gap | Outcome | Where |
+|-----|---------|-------|
+| The check card's `update` was rendered as Markdown; the Spec says plain text | fixed: rendered as plain text, wrapping kept; browser test asserts no markup | `viewer/pages/thread.js` `case 'check'` (`check-update`); `viewer/test/app-check-card.spec.js` |
+| A Fix it now press still queued when a newer `done` is posted can be acted on for the newer version | survived two fix attempts (R5, R6); sent to the lead. Collin accepted it as a risk: Decision 20 and an Accepted Risks row in PLAN.md. No code change | `PLAN.md` Decision Log 20, Accepted Risks |
+
+Lane: R7 light claude-haiku-5-5.
+
+Validation on the tip before attempt 5: `cd viewer && npm test` exit 0, `# tests 636`,
+`# pass 636`, `# fail 0`; `npm --prefix viewer run test:browser` exit 0, 794 passed,
+28 skipped (3.3m).
