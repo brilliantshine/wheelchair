@@ -250,3 +250,23 @@ test('Advance stops an idle live lead before restarting', async () => {
   assert.ok(requests.some((r) => r.route === '/v1/sessions/lead' && r.method === 'DELETE'));
   assert.equal((await f.hub.thread(file.thread.id)).sessions[0].live, false); assert.equal(f.restarts, 1);
 });
+
+test('Create starts a real imported lead with import context', async (t) => {
+  const { setup, close, api } = require('./helpers/app.js');
+  const { Hub } = require('../app/hub.js');
+  const c = await setup(); t.after(() => close(c));
+  await api(c, '/settings/balancing', { method: 'PUT', body: { lead_order: ['gpt'] } });
+  const sha = 'b'.repeat(40);
+  Object.assign(c.machine.handoffReplies, {
+    inspect: { repository: file.repository, remote_has_branch: true, remote_contains_head: true, remote_tip: file.head, plan_status: 'approved', worktree_exists: false },
+    known: { known: false, local_branch: false, checked_out: [] },
+    'claim-commit': { sha }, 'claim-push': { result: 'landed' }, running: { names: [] }, 'set-branch': { result: 'ok' }, reopen: { result: 'ok' },
+  });
+  const response = await fetch(`${c.server.url}/api/threads/import?machine=hub&project=%2Ftmp%2Fproject`, { method: 'POST', headers: { 'x-graph-token': c.server.token, origin: new URL(c.server.url).origin }, body: bytes() });
+  assert.equal(response.status, 200); assert.equal((await response.json()).outcome, 'created');
+  const thread = await new Hub({ stateDir: c.state }).thread(file.thread.id);
+  const lead = thread.sessions.find((session) => session.role === 'lead');
+  assert.ok(lead); assert.match(lead.queue[0].text, /^\[wc:context import\]/);
+  const start = c.machine.calls.find((call) => call.path === '/v1/sessions' && call.method === 'POST');
+  assert.deepEqual(start.body.from_remote_branch, { sha });
+});
