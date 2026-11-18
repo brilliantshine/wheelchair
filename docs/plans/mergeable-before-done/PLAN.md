@@ -410,6 +410,9 @@ outside a merge, unchanged.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | tricky — hub done gate (`pr-gate.js`, hub.acceptCard), `done.head` schema, gate tests, existing done-posting tests | viewer/app/card.js, pr-gate.js, hub.js, cards.js; viewer/test/app-done-gate.test.js + existing tests posting done | standard | | node --test viewer/test/*.test.js | in progress |
+| T2 | Machine: `done` never spooled (30 s relay, 503), merge-completing `wc.js git commit`, machine tests | machine/service.js, machine/test/ | standard | | bash machine/test/run.sh | in progress |
+| T3 | Protocol text: lead.md "Making the pull request mergeable" + pointers from steps 1/8/9; cards-lead.md `done.head`; protocol-rules test | protocol/app/lead.md, protocol/app/cards-lead.md, viewer/test/protocol-rules.test.js | standard, claude (claude-sonnet-5-5) | | node --test viewer/test/protocol-rules.test.js | in progress |
 
 ## Log
 
