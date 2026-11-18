@@ -448,11 +448,11 @@ check `ok` in every `wc.js git` JSON result: git failures still exit 0.
   on with that start, opening the PR with `wc.js git pr` if needed; the window starts when
   the push succeeds. Otherwise return to 2 with a window as in 0.
 - For any other failure that is not a merge conflict, retry once after a minute; if it
-  fails again, post the `needs` card in 8 with git's message. Before a PR exists, say what
-  did not happen (the push, or opening the PR after a successful push) and that "Keep
-  going" retries it; do not mention merging the PR. On "Keep going", redo the failed
-  operation first, applying the non-fast-forward rule above, then carry on from where it
-  failed.
+  fails again, post the `needs` card in 8 with git's message.
+  If no PR exists yet, that card says what did not happen
+  (the push, or opening the PR after a successful push) and that "Keep going" retries it;
+  do not mention merging the PR. On "Keep going", redo the failed operation first,
+  applying the non-fast-forward rule above, then carry on from where it failed.
 
 ## Asking Collin to run something as root
 

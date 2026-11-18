@@ -3,6 +3,7 @@
 import json, os, subprocess, sys, time
 url, pushed, window_start = sys.argv[1], sys.argv[2], int(sys.argv[3])
 started = time.monotonic()
+stopped = False
 while True:
     remaining = 600 - (time.monotonic() - started)
     if remaining <= 0:
@@ -33,6 +34,7 @@ while True:
             print(result.stdout, flush=True)
             if stop_reason:
                 print(f'STOP: {stop_reason}', flush=True)
+                stopped = True
                 break
         except (ValueError, KeyError, TypeError):
             pass
@@ -43,5 +45,5 @@ while True:
     if time.monotonic() - started >= 600:
         break
 
-if time.monotonic() - started >= 600:
+if not stopped:
     print('STOP: time limit', flush=True)
