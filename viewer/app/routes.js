@@ -412,11 +412,11 @@ async function handleThreads(hub, request, response, url, bits, body) {
     // (cards, sent messages, briefs), which is most of the bytes and none of the list.
     const lean = url.searchParams.get('view') === 'list';
     const threads = all.map((thread) => {
-      if (!lean) return { ...thread, sessions: thread.sessions.map(publicSession) };
+      if (!lean) return { ...thread, handed_off: thread.handed_off || null, sessions: thread.sessions.map(publicSession) };
       const { cards, sent, delivered_ids, context, pinned, archive, queues, sudo_index, ...summary } = thread;
       // A small fix writes no plan, so it has no stage; its done card is what says it finished.
       const doneCard = (cards || []).some((card) => card.kind === 'done' && !card.replaced);
-      return { ...summary, done_card: doneCard, sessions: thread.sessions.map(({ name, role, live, ready, turn_ended, created_at }) => ({ name, role, live, ready, turn_ended, created_at })) };
+      return { ...summary, handed_off: thread.handed_off || null, done_card: doneCard, sessions: thread.sessions.map(({ name, role, live, ready, turn_ended, created_at }) => ({ name, role, live, ready, turn_ended, created_at })) };
     });
     return send(response, 200, { threads });
   }
@@ -426,6 +426,12 @@ async function handleThreads(hub, request, response, url, bits, body) {
   }
   if (!bits[1]) throw appError(404, 'route not found');
   const id = bits[1];
+  if (request.method === 'GET' && bits[2] === 'handoff' && bits.length === 3) return send(response, 200, await hub.handoffBanner(id));
+  if (request.method === 'GET' && bits[2] === 'handoff-file' && bits.length === 3) {
+    const file = await hub.handoffFile(id);
+    response.writeHead(200, { 'content-type': 'application/json', 'content-disposition': `attachment; filename="${file.filename}"` });
+    return response.end(file.bytes);
+  }
   if (request.method === 'POST' && bits[2] === 'export' && bits.length === 3) {
     const file = await hub.exportThread(id);
     response.writeHead(200, { 'content-type': 'application/json', 'content-disposition': `attachment; filename="${file.filename}"` });

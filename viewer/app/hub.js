@@ -40,6 +40,8 @@ class Hub {
     this.runningHandoffOps = new Set();
     this.uploadsInFlight = new Map();
     this.handoffStatus = new Map();
+    this.handoffStatusAt = new Map();
+    this.handoffInspect = new Map();
     this.nameQueue = Promise.resolve();
     const configuredRetry = Number(queueRetryInterval ?? process.env.WHEELCHAIR_QUEUE_RETRY_MS ?? 5_000);
     this.queueRetryInterval = Number.isFinite(configuredRetry) && configuredRetry > 0 ? configuredRetry : 5_000;
@@ -51,6 +53,7 @@ class Hub {
 
   async init() {
     await this.state.init();
+    await handoff.sweepFiles(this);
     for (const [name, machine] of Object.entries(await this.state.machines())) {
       if (machine.last_seen) this.lastSeen.set(name, machine.last_seen);
     }
@@ -161,17 +164,26 @@ class Hub {
     return this.mergePolling;
   }
   exportThread(id) { return handoff.exportThread(this, id); }
+  handoffBanner(id) { return this.withThread(id, async () => handoff.banner(this, await this.thread(id))); }
+  handoffFile(id) { return this.withThread(id, async () => { const thread = await this.thread(id); return { bytes: await handoff.savedFile(this, thread), filename: handoff.handoffFileName(thread.title) }; }); }
   frozen(thread) { return handoff.frozen(this, thread); }
   quietReason(thread) { return handoff.quietReason(this, thread); }
   exportReason(thread, status, options) { return handoff.exportReason(this, thread, status, options); }
   async handoffStatusRead(thread) {
-    if (!thread.worktree || !thread.slug) return null;
+    if (!thread.worktree || !thread.slug) return this.handoffStatus.get(thread.id) || null;
+    const previous = this.handoffStatus.get(thread.id) || null;
+    const lastAttempt = this.handoffStatusAt.get(thread.id);
+    if (lastAttempt !== undefined && Date.now() - lastAttempt < 60_000) return previous;
+    this.handoffStatusAt.set(thread.id, Date.now());
     try {
-      const status = await this.client.handoff(thread.machine, { action: 'status', thread_id: thread.id, project: thread.project, worktree: thread.worktree, slug: thread.slug, ...((thread.cards || []).slice().reverse().find((c) => c.kind === 'done' && !c.replaced && c.pr_url)?.pr_url || thread.imported?.pr_url ? { pr_url: (thread.cards || []).slice().reverse().find((c) => c.kind === 'done' && !c.replaced && c.pr_url)?.pr_url || thread.imported.pr_url } : {}) });
-      if (status.result === 'failed') return null;
+      const status = await this.client.handoff(thread.machine, {
+        action: 'status', thread_id: thread.id, project: thread.project,
+        worktree: thread.worktree, slug: thread.slug,
+      });
+      if (status.result === 'failed') return previous;
       this.handoffStatus.set(thread.id, status);
       return status;
-    } catch { return null; }
+    } catch { return previous; }
   }
   chat(id) { return this.withThread(id, async () => {
     const result = await chat.chat(this, id);

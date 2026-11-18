@@ -117,6 +117,8 @@ test('frozen threads refuse mutation entry points and never deliver queued work'
       frozen.sessions[0].limited_until = '2000-01-01T00:00:00.000Z'; await hub.save(frozen);
       await require('../app/sessions.js').releaseLimits(hub);
       assert.equal((await hub.thread(made.id)).sessions[0].queue.length, before);
+      await hub.event({ thread_id: made.id, session: target.name, type: 'limit-hit', limited_until: '2000-01-01T00:00:00.000Z' });
+      assert.equal((await hub.thread(made.id)).sessions[0].queue.length, before);
       delete frozen[field]; await hub.save(frozen);
     }
     const archivedThread = await hub.thread(made.id); archivedThread.handed_off = {}; await hub.save(archivedThread);
@@ -182,4 +184,60 @@ test('export route returns a downloadable JSON file', async () => {
     const response = await fetch(`${c.server.url}/api/threads/${made.id}/export`, { method: 'POST', headers: { 'x-graph-token': c.server.token, origin: new URL(c.server.url).origin } });
     assert.equal(response.status, 200); assert.equal(response.headers.get('content-type'), 'application/json'); assert.equal(response.headers.get('content-disposition'), 'attachment; filename="my-plan.wheelchair.json"'); assert.equal(validateHandoffFile(await response.text()).ok, true);
   } finally { await close(c); }
+});
+
+test('banner reports remote states and caches inspection', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path');
+  const { hub } = await exportFixture(); await hub.exportThread(id); const thread = await hub.thread(id); let calls = 0;
+  hub.client.handoff = async () => { calls++; return { remote_tip: thread.handed_off.head }; };
+  assert.equal((await hub.handoffBanner(id)).state, 'unchanged'); assert.equal((await hub.handoffBanner(id)).state, 'unchanged'); assert.equal(calls, 1);
+  hub.handoffInspect.clear(); hub.client.handoff = async () => ({ remote_tip: 'b'.repeat(40), picked_up_at: at });
+  assert.deepEqual(await hub.handoffBanner(id), { state: 'moved', at: thread.handed_off.at, picked_up_at: at });
+  await fs.writeFile(path.join(hub.stateDir, 'revoke.json'), JSON.stringify([{ thread_id: id, sha: 'b'.repeat(40) }]));
+  hub.handoffInspect.clear(); assert.equal((await hub.handoffBanner(id)).state, 'own-cancelled');
+  hub.handoffInspect.clear(); hub.client.handoff = async () => { throw new Error('offline'); }; assert.equal((await hub.handoffBanner(id)).state, 'inspect-failed');
+});
+test('download recovery selects matching head, and startup sweeps stray files', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const handoff = require('../app/handoff.js');
+  const { hub } = await exportFixture(); const result = await hub.exportThread(id); const dir = path.join(hub.stateDir, 'handoffs'); const base = path.join(dir, `${id}.json`);
+  const old = JSON.parse(result.bytes); old.head = 'b'.repeat(40); await fs.writeFile(base, JSON.stringify(old)); await fs.writeFile(`${base}.new`, result.bytes);
+  assert.equal(JSON.parse((await hub.handoffFile(id)).bytes).head, 'a'.repeat(40));
+  await fs.writeFile(`${base}.new`, result.bytes); await fs.writeFile(path.join(dir, 'stray.json'), '{}'); await fs.writeFile(path.join(dir, 'stray.json.new'), '{}');
+  const op = await hub.thread(id); op.id = '123456abcdef'; delete op.handed_off; op.handoff_op = {}; await hub.save(op); await fs.writeFile(path.join(dir, `${op.id}.json`), '{}');
+  await handoff.sweepFiles(hub);
+  assert.equal(JSON.parse(await fs.readFile(base)).head, 'a'.repeat(40));
+  await assert.rejects(fs.stat(`${base}.new`), { code: 'ENOENT' }); await assert.rejects(fs.stat(path.join(dir, 'stray.json')), { code: 'ENOENT' }); await assert.rejects(fs.stat(path.join(dir, 'stray.json.new')), { code: 'ENOENT' }); assert.ok(await fs.stat(path.join(dir, `${op.id}.json`)));
+});
+test('download waits for export to finish its rename', async () => {
+  const { hub, status } = await exportFixture(); let release; let pushed;
+  const started = new Promise((resolve) => { pushed = resolve; }); const gate = new Promise((resolve) => { release = resolve; });
+  hub.client.handoff = async (machine, request) => { if (request.action === 'status') return status; pushed(); await gate; return { head: status.head, repository: status.repository }; };
+  const exporting = hub.exportThread(id); await started; const downloading = hub.handoffFile(id); release();
+  const [exported, downloaded] = await Promise.all([exporting, downloading]); assert.ok(exported.bytes.equals(downloaded.bytes));
+});
+
+test('an admitted upload blocks export until its stream completes', async () => {
+  const http = require('node:http'); const { setup, close, api, thread: makeThread } = require('./helpers/app.js'); const { Hub } = require('../app/hub.js');
+  const c = await setup();
+  try {
+    const made = await makeThread(c); const hub = new Hub({ stateDir: c.state }); const thread = await hub.thread(made.id);
+    thread.slug = 'plan'; thread.sessions[0].turn_ended = true; thread.sessions[0].queue = []; await hub.save(thread);
+    c.machine.handoffReplies.status = { dirty: false, branch: `wc/${made.id}`, head: 'a'.repeat(40), repository: 'github.com/owner/repo', plan_status: 'approved' };
+    const target = new URL(`${c.server.url}/api/threads/${made.id}/uploads?name=part`);
+    let finish; const completed = new Promise((resolve, reject) => { finish = http.request(target, { method: 'POST', headers: { 'x-graph-token': c.server.token, origin: new URL(c.server.url).origin, 'content-length': 4 } }, (response) => { response.resume(); response.on('end', resolve); }); finish.on('error', reject); });
+    finish.write('ab');
+    let view;
+    for (let i = 0; i < 100; i++) { view = await api(c, `/threads/${made.id}/chat`); if (view.body.thread.export.reason === 'A file is still uploading') break; await new Promise((resolve) => setTimeout(resolve, 10)); }
+    assert.equal(view.body.thread.export.reason, 'A file is still uploading'); finish.end('cd'); await completed;
+  } finally { await close(c); }
+});
+
+test('page status reads omit pull requests, cache for a minute, and retain a previous result on failure', async () => {
+  const { hub, status } = await exportFixture('done'); const thread = await hub.thread(id); const calls = [];
+  hub.client.handoff = async (machine, input) => { calls.push(input); return status; };
+  assert.equal(await hub.handoffStatusRead(thread), status); assert.equal(await hub.handoffStatusRead(thread), status);
+  assert.equal(calls.length, 1); assert.equal(Object.hasOwn(calls[0], 'pr_url'), false);
+  hub.handoffStatusAt.set(id, Date.now() - 61_000);
+  hub.client.handoff = async () => { calls.push({ failed: true }); throw new Error('offline'); };
+  assert.equal(await hub.handoffStatusRead(thread), status); assert.equal(await hub.handoffStatusRead(thread), status); assert.equal(calls.length, 2);
 });

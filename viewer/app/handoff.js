@@ -193,5 +193,64 @@ async function exportThread(hub, id) {
   });
 }
 
-module.exports = { historyText, buildHandoffFile, validateHandoffFile, handoffFileName, unfinished, frozen, refuseFrozen, quietReason, stageFor, exportReason, exportThread };
+async function savedFile(hub, thread) {
+  const fs = require('node:fs/promises'); const path = require('node:path');
+  const { appError } = require('./state.js');
+  if (!thread.handed_off) throw appError(404, 'handoff file not found');
+  const base = path.join(hub.stateDir, 'handoffs', `${thread.id}.json`);
+  const read = async (file) => {
+    const bytes = await fs.readFile(file).catch(() => null);
+    if (!bytes) return null;
+    const checked = validateHandoffFile(bytes);
+    return checked.ok && checked.file.head === thread.handed_off.head ? bytes : null;
+  };
+  const next = await read(`${base}.new`);
+  if (next) {
+    try { await fs.rename(`${base}.new`, base); }
+    catch (error) { const current = await read(base); if (!current || !current.equals(next)) throw error; await fs.unlink(`${base}.new`).catch(() => {}); }
+    return next;
+  }
+  const bytes = await read(base);
+  if (!bytes) throw appError(404, 'handoff file not found');
+  return bytes;
+}
+async function sweepFiles(hub) {
+  const fs = require('node:fs/promises'); const path = require('node:path');
+  const dir = path.join(hub.stateDir, 'handoffs');
+  const names = await fs.readdir(dir).catch((error) => { if (error.code === 'ENOENT') return []; throw error; });
+  const threads = new Map((await hub.allThreads()).map((thread) => [thread.id, thread]));
+  for (const name of names) {
+    const match = name.match(/^(.*)\.json(?:\.new)?$/);
+    if (!match) continue;
+    const thread = threads.get(match[1]);
+    if (!thread?.handed_off && !thread?.handoff_op) await fs.unlink(path.join(dir, name)).catch(() => {});
+  }
+  for (const thread of threads.values()) if (thread.handed_off) await hub.withThread(thread.id, async () => {
+    const current = await hub.thread(thread.id);
+    if (current.handed_off) await savedFile(hub, current).catch(() => {});
+  });
+}
+async function banner(hub, thread) {
+  const fs = require('node:fs/promises'); const path = require('node:path');
+  const { appError } = require('./state.js');
+  if (!thread.handed_off) throw appError(404, 'thread has not been handed off');
+  const cache = hub.handoffInspect.get(thread.id);
+  if (cache && cache.head === thread.handed_off.head && Date.now() - cache.time < 60_000) return cache.value;
+  const value = { state: 'inspect-failed', at: thread.handed_off.at };
+  try {
+    const result = await hub.client.handoff(thread.machine, { action: 'inspect', thread_id: thread.id, project: thread.project, branch: `wc/${thread.id}`, head: thread.handed_off.head, slug: thread.slug, fallback_head: thread.handed_off.head, ...(thread.worktree ? { worktree: thread.worktree } : {}) });
+    if (result.result === 'failed') throw new Error(result.error);
+    if (result.remote_tip === thread.handed_off.head) value.state = 'unchanged';
+    else {
+      let entries = [];
+      try { const parsed = JSON.parse(await fs.readFile(path.join(hub.stateDir, 'revoke.json'), 'utf8')); if (Array.isArray(parsed)) entries = parsed; } catch {}
+      value.state = entries.some((entry) => entry.thread_id === thread.id && entry.sha === result.remote_tip) ? 'own-cancelled' : 'moved';
+      if (result.picked_up_at) value.picked_up_at = result.picked_up_at;
+    }
+  } catch { /* Undo repeats the check. */ }
+  hub.handoffInspect.set(thread.id, { head: thread.handed_off.head, time: Date.now(), value });
+  return value;
+}
+
+module.exports = { historyText, buildHandoffFile, validateHandoffFile, handoffFileName, unfinished, frozen, refuseFrozen, quietReason, stageFor, exportReason, exportThread, savedFile, sweepFiles, banner };
 

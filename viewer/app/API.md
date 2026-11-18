@@ -22,6 +22,9 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 | `POST /threads/:id/cards/:cardId/press` | `{action,value?}` | `{queued:true,text}` for lead actions and records `answered_action` and `answered_value` on an answered card; `keep` resolves an open app `merged` card as Kept without a live lead and returns `{queued:false}`; other actions on it return 400 and repeating keep returns 422. `recheck` updates an approval in place, and `start-building` first re-checks Ready. Any press on a retracted card returns 422 `this card was withdrawn`. On an open lead `needs` card, `keep-going` and `talk` (value: the card title) also close it as `resolved_by:"collin"`; a `system` or answered needs card is refused with 422. `answered` (value: Collin's own words, trimmed) works only on an open `question` card: 400 for another kind or empty text, 422 once answered; it reaches the lead as `[card <id>] answered: <text>` |
 | `POST /threads/:id/cards/:cardId/dismiss` | — | `{ok:true}`; closes an open `needs` card a lead posted (`resolved_by:"collin"`, shown dimmed as resolved). The thread page no longer shows a Dismiss button; it uses the press actions above. A `system` needs card is refused with 422, an unknown card with 404 |
 | `POST /threads/:id/open` | `{start_now?:boolean}` | a started stub, or `{waiting:true,thread}` |
+| `POST /threads/:id/export` | — | `200` JSON file with attachment filename; checks eligibility, pushes and freezes the thread. A refusal is `409` with the reason in `detail` |
+| `GET /threads/:id/handoff` | — | `{state:"unchanged"|"moved"|"inspect-failed"|"own-cancelled",at,picked_up_at?}`; remote inspection is cached for 60 seconds |
+| `GET /threads/:id/handoff-file` | — | Saved JSON file with attachment filename; `404` if no saved file matches the handed-off head |
 | `POST /threads/:id/restart` | — | replacement lead session; its restart context is queued first |
 | `POST /threads/:id/archive` | — | the machine archive response |
 | `GET /threads/:id/doc?file=PLAN.md` | — | `{content}` from the archived branch, read-only |
@@ -53,7 +56,7 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 
 `Thread` has `id`, `project`, `cli`, `machine`, `stub`, `context`, `parent`,
 `depends_on_parent`, `waiting_on_parent`, `sessions`, `cards`, `pinned`, `queues`, `sent`,
-`worktree`, `branch`, `slug`, `archived`, and optional `merge_noticed_url` and `merge_noticed_at` (the reported PR URL and its ISO notice time). Card records retain their card fields plus `id`,
+`worktree`, `branch`, `slug`, `archived`, and `handed_off` (`null` or `{at,head,stage}`); chat `thread.export` is `{ok,reason}`. It has optional `merge_noticed_url` and `merge_noticed_at` (the reported PR URL and its ISO notice time). Card records retain their card fields plus `id`,
 `session`, `at`, `created_at`, `answered`, `answered_action`, `answered_value`, and `system`.
 A closed `needs` card, or a question the lead resolved after an answer in chat, also has
 `resolved_by` (a lead's session name, or `collin` for a needs dismissal), `resolved_note` and
