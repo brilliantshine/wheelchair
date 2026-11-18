@@ -1407,8 +1407,10 @@ test('handoff validates input, authorization, and waits for the archive lock', a
     const repo = await project(root); const id = '012345abcdef';
     const call = body => api(env, 'POST', '/v1/handoff', body, hubHeader);
     assert.equal((await api(env, 'POST', '/v1/handoff', { action: 'running', thread_id: id })).status, 401);
+    const malformed = await fetch(`${env.base}/v1/handoff`, { method: 'POST', headers: hubHeader, body: '{' }); const badJson = await malformed.json();
+    assert.equal(malformed.status, 422, JSON.stringify(badJson)); assert.equal(badJson.result, 'failed', JSON.stringify(badJson));
     for (const body of [
-      { action: 'running', thread_id: 'bad' }, { action: 'bogus', thread_id: id },
+      { action: 'running', thread_id: 'bad' }, { action: 'running', thread_id: 123456789012 }, { action: 'bogus', thread_id: id },
       { action: 'inspect', thread_id: id, project: repo, branch: 'main', head: 'a'.repeat(40), slug: 'ok' },
       { action: 'inspect', thread_id: id, project: repo, branch: `wc/${id}`, head: 'bad', slug: 'ok' },
       { action: 'inspect', thread_id: id, project: repo, branch: `wc/${id}`, head: 'a'.repeat(40), slug: '../bad' },
@@ -1459,12 +1461,15 @@ test('handoff status, exact push, and inspect read committed state and ancestry'
     assert.equal(body.remote_has_branch, false, JSON.stringify(body)); assert.equal(body.pr_state, null, JSON.stringify(body));
     git(['-C', worktree, 'checkout', '--', 'docs/plans/sample/IDEA.md']);
     body = await call('push', { worktree, branch, sha: old }); assert.equal(body.head, old, JSON.stringify(body));
+    await write(path.join(env.fake.bin, 'gh'), '#!/bin/sh\necho unavailable >&2\nexit 1\n', 0o755);
     body = await call('status', { worktree, slug: 'sample', pr_url: 'https://example.test/pr' });
     assert.equal(body.dirty, false, JSON.stringify(body)); assert.equal(body.remote_tip, old, JSON.stringify(body));
     assert.equal(body.pr_state, null, JSON.stringify(body)); assert.ok(body.pr_error, JSON.stringify(body));
     await write(path.join(env.fake.bin, 'gh'), '#!/bin/sh\necho "{\\"state\\":\\"OPEN\\"}"\n', 0o755);
     body = await call('status', { worktree, slug: 'sample', pr_url: 'https://example.test/pr' }); assert.equal(body.pr_state, 'OPEN', JSON.stringify(body));
     git(['-C', worktree, 'commit', '--allow-empty', '-m', 'next']); const newer = git(['-C', worktree, 'rev-parse', 'HEAD']).stdout.trim();
+    body = await call('push', { worktree, branch, sha: old }); assert.equal(body.head, old, JSON.stringify(body));
+    assert.equal(git(['--git-dir', path.join(root, 'origin.git'), 'rev-parse', `refs/heads/${branch}`]).stdout.trim(), old);
     await call('push', { worktree, branch, sha: newer });
     body = await call('inspect', { branch, head: old, worktree, slug: 'sample' });
     assert.equal(body.relation, 'behind', JSON.stringify(body)); assert.equal(body.remote_contains_head, true, JSON.stringify(body)); assert.ok(body.picked_up_at, JSON.stringify(body));

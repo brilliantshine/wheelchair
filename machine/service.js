@@ -478,7 +478,7 @@ class MachineService {
     const queued = this.inRepoQueue(path.resolve(repo), async () => {
       if (input.from_remote_branch !== undefined) {
         const sha = input.from_remote_branch?.sha;
-        if (typeof sha !== 'string' || !/^[0-9a-f]{40}$/.test(sha) || !/^wc\/[0-9a-f]{12}$/.test(branch) || input.role !== 'lead') die('invalid remote branch checkout');
+        if (typeof sha !== 'string' || !/^[0-9a-f]{40}$/.test(sha) || !/^wc\/[0-9a-f]{12}$/.test(branch)) die('invalid remote branch checkout');
         const remote = await this.fetchHandoffBranch(repo, branch);
         const ancestor = async (a, b) => (await commandAsync('git', ['-C', repo, 'merge-base', '--is-ancestor', a, b])).ok;
         if (!remote.remote_has_branch || !await ancestor(sha, remote.remote_tip)) die('requested commit is not on the remote branch');
@@ -492,7 +492,9 @@ class MachineService {
           const symbolic = await commandAsync('git', ['-C', destination, 'symbolic-ref', '--quiet', '--short', 'HEAD']);
           const current = await commandAsync('git', ['-C', destination, 'rev-parse', '--verify', 'HEAD']);
           const top = await commandAsync('git', ['-C', destination, 'rev-parse', '--show-toplevel']);
-          if (!symbolic.ok || symbolic.stdout.trim() !== branch || !current.ok || !top.ok || path.resolve(top.stdout.trim()) !== path.resolve(destination) || !await ancestor(current.stdout.trim(), sha)) die(`the checkout folder for ${branch} is in an unexpected state`);
+          const worktrees = await run('worktree', 'list', '--porcelain');
+          const registered = worktrees.split('\n').includes(`worktree ${path.resolve(destination)}`);
+          if (!registered || !symbolic.ok || symbolic.stdout.trim() !== branch || !current.ok || !top.ok || path.resolve(top.stdout.trim()) !== path.resolve(destination) || !await ancestor(current.stdout.trim(), sha)) die(`the checkout folder for ${branch} is in an unexpected state`);
           await run('-C', destination, 'merge', '--ff-only', sha);
         } else {
           const local = await commandAsync('git', ['-C', repo, 'rev-parse', '--verify', `refs/heads/${branch}`]);
@@ -1222,7 +1224,7 @@ class MachineService {
     const invalid = message => { throw Object.assign(new Error(message), { status: 422, handoff: true }); };
     if (!input || typeof input !== 'object' || Array.isArray(input)) invalid('invalid request');
     const { action, thread_id: id } = input;
-    if (!/^[0-9a-f]{12}$/.test(id || '')) invalid('invalid thread_id');
+    if (typeof id !== 'string' || !/^[0-9a-f]{12}$/.test(id)) invalid('invalid thread_id');
     const fields = {
       status: ['worktree', 'slug'], push: ['worktree', 'branch', 'sha'],
       inspect: ['branch', 'head', 'slug'], 'claim-commit': ['parent', 'message'],
@@ -1239,7 +1241,7 @@ class MachineService {
     if (input.message !== undefined && (typeof input.message !== 'string' || !input.message.trim())) invalid('invalid message');
     if (input.pr_url !== undefined && (typeof input.pr_url !== 'string' || !input.pr_url)) invalid('invalid pr_url');
     if (action === 'kill' && (!Array.isArray(input.names) || input.names.some(name => typeof name !== 'string' || !name.startsWith(`wc-${id}-`)))) invalid('invalid names');
-    if (input.worktree !== undefined && (typeof input.worktree !== 'string' || !Object.values(this.sessions).some(s => s.thread_id === id && s.created_worktree && s.worktree && path.resolve(s.worktree) === path.resolve(input.worktree)))) invalid('invalid worktree');
+    if (input.worktree !== undefined && (typeof input.worktree !== 'string' || !path.isAbsolute(input.worktree) || !Object.values(this.sessions).some(s => s.thread_id === id && s.created_worktree && s.worktree && path.resolve(s.worktree) === path.resolve(input.worktree)))) invalid('invalid worktree');
     const gitAction = !['reopen', 'running', 'kill'].includes(action);
     let repo;
     if (gitAction) {
@@ -1486,7 +1488,12 @@ class MachineService {
         response.writeHead(200, { 'content-type': type || 'application/octet-stream', 'x-content-type-options': 'nosniff', ...(!type ? { 'content-disposition': 'attachment' } : {}) });
         file.createReadStream().on('error', () => response.destroy()).pipe(response); return;
       }
-      if (request.method === 'POST' && url.pathname === '/v1/handoff') { await this.authorize(request, 'hub'); return send(response, 200, await this.handoff(await bodyOf(request))); }
+      if (request.method === 'POST' && url.pathname === '/v1/handoff') {
+        await this.authorize(request, 'hub');
+        let input;
+        try { input = await bodyOf(request); } catch (error) { if (error.status === 400) throw Object.assign(error, { status: 422, handoff: true }); throw error; }
+        return send(response, 200, await this.handoff(input));
+      }
       if (request.method === 'POST' && url.pathname === '/v1/archive') { await this.authorize(request, 'hub'); return send(response, 200, await this.archive((await bodyOf(request)).thread_id)); }
       if (pathBits[0] === 'v1' && pathBits[1] === 'sessions' && pathBits[2]) {
         const name = decodeURIComponent(pathBits[2]); await this.authorize(request, 'hub');
