@@ -697,7 +697,7 @@ Filled by Stage 3. One row per worker brief.
 | R4 | Remediation 2: note rejects every line terminator (adds U+000B, U+000C) | viewer/app/card.js, viewer/test/app-check-card.test.js | light / gpt-6-luna | wc-2daed8b3ee7f-worker-7 | `node --test viewer/test/*.test.js` | done |
 | R5 | Remediation 2: fix press after a newer done; restart replay (Decision 19) | protocol/app/lead.md | light / claude-haiku-5-5 | wc-2daed8b3ee7f-worker-8 | protocol-rules test | done |
 | R6 | Remediation 3: same-head retried done is not stale; a stub after the press counts as handled on restart (Decision 19 refined) | protocol/app/lead.md | light / claude-haiku-5-5 | wc-2daed8b3ee7f-worker-9 | protocol-rules test | done |
-| R7 | Remediation 4: check card `update` shown as plain text | viewer/pages/thread.js, thread.css, viewer/test/app-check-card.spec.js | light / claude-haiku-5-5 | wc-2daed8b3ee7f-worker-10 | check-card browser spec | in progress |
+| R7 | Remediation 4: check card `update` shown as plain text | viewer/pages/thread.js, thread.css, viewer/test/app-check-card.spec.js | light / claude-haiku-5-5 | wc-2daed8b3ee7f-worker-10 | check-card browser spec | done |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -743,3 +743,5 @@ anything a future session needs that fits nowhere above.
 - 2026-11-18 — Choice: R6, lead.md Posting/Restart: rewrapped so each new phrase sits whole on one line; some lines run ~99 columns.
 - 2026-11-18 — R6 accepted (band: scout; 17-line word diff read inline, exactly the brief's text): protocol-rules 35/35. On f91546a `npm test` 636/636; no viewer or machine code changed since the 32c7580 browser run.
 - 2026-11-18 — Verification attempt 4 on 5e693f8: claude PASS, gpt FAIL (2 gaps). Queued Fix-it-now press for the wrong version survived two fix attempts (R5, R6): sent to the lead as a plan defect (REMEDIATION-4.md). Lead: fix the Markdown `update` gap meanwhile (R7).
+- 2026-11-18 — Choice: R7, app-check-card.spec.js: plain-text test placed after the long-path test; no-markup assertion scoped to the whole card.
+- 2026-11-18 — R7 accepted (band: scout; 16-line diff read inline, exactly the brief): check-card browser spec re-run on the merged tip.
