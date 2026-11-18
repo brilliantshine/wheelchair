@@ -12,6 +12,7 @@ The secret is never inherited by a tmux session.
 | `POST /v1/uploads?thread_id=<id>&name=<filename>` | hub | Streams a raw file up to 25 MiB into the writable lead thread’s uploads directory; returns `201 {path}`. Refuses a closed or unwritable thread with 409, and an oversized file with 413. `&vouched=1` (always sent by the hub, which has already checked the thread is open with a live lead) admits the thread even with no lead session here yet, as when its lead is waiting for room or starting. A thread whose archive this service finished (uploads removed) is refused either way; one whose archive was cut short by a rebase or a failed removal is not. |
 | `GET /v1/uploads/<thread-id>/<file>` | hub | Streams a stored file, with image MIME types for PNG, JPEG, GIF and WebP; other files are octet-stream attachments. Sends `X-Content-Type-Options: nosniff`. |
 | `POST /v1/archive` | hub | `{ "thread_id": "…" }`; stop the thread's sessions, locally commit or retain its service-created worktrees as appropriate, remove clean worktrees, and forget its sessions. A session whose worktree is retained stays as a non-running `archived_pending` record so a later archive can remove it after the problem is resolved. Returns `200 { "stopped": [names], "committed": [{ "worktree", "commit" }], "removed": [paths], "kept": [{ "worktree", "reason" }], "uploads_removed": true|false|null, "uploads_error"?: "…" }`. Uploads are removed unless a rebase is in progress (null); false and the error indicate removal failed. |
+| `POST /v1/handoff` | hub | Handoff git, ownership and session operations; see [Handoff actions](#handoff-actions). |
 | `DELETE /v1/sessions/:name` | hub | Stop a managed session. |
 | `GET /v1/sessions/:name/pane` | hub | Current pane text, with its color escape codes. `?history=<n>` (0–2000) adds the last n lines of scrollback (`capture-pane -S -<n>`); anything else is 400. |
 | `POST /v1/sessions/:name/submit` | hub | `{ "text": "…" }`; bracketed paste followed by Enter. |
@@ -31,6 +32,47 @@ The secret is never inherited by a tmux session.
 | `POST /v1/agent/hooks` | hook | Turn-end or permission-prompt event. A relayed permission prompt is followed by a `prompt-cleared` event once the pane shows the input screen again. |
 | `POST /v1/agent/git` | agent | `{operation,args,paths,message}` in that agent's worktree only. `commit` requires `paths`. `worktree-remove` (sub-lead only): `args[0]` names a stopped or not-running worker of the same thread whose branch is fully merged into the caller's `HEAD`; runs `git worktree remove` without `--force`; otherwise `400`. |
 | `POST /v1/agent/session` | agent | Forward a session start/stop/list request (including `attempt_id`) to the hub; retries for 90 seconds. |
+
+### Handoff actions
+
+All requests carry `action` and `thread_id` (12 lowercase hex characters). Git actions also
+carry `project`, an absolute repository path accepted by `GET /v1/projects?check=`. Branches
+match `wc/<12 lowercase hex characters>`, SHAs have 40 lowercase hex characters, slugs match
+`^[a-z0-9][a-z0-9-]*$`, and a supplied `worktree` must be an absolute path of a worktree the
+machine created for that thread. For `inspect` and `known`, the thread checkout path under
+`<stateDir>/worktrees/<project-name>/wc/<thread_id>` is also accepted after its session or
+folder is gone. A `status` pull request URL must match `https://github.com/<owner>/<repo>/pull/<number>`.
+Invalid input returns `422 {result: "failed", error}`; all
+action outcomes, including refusals and git failures, return HTTP 200. An action-level failure
+is `{result: "failed", error}`. Requests take the archive's per-thread lock before the
+per-repository queue.
+
+The following request fields are in addition to `action`, `thread_id`, and, for git actions,
+`project`. A `?` marks an optional field.
+
+| Action | Request fields | Success or action-specific response |
+|---|---|---|
+| `status` | `worktree, slug, pr_url?` | `{dirty, branch, head, remote_has_branch, remote_tip, idea_status, plan_status, map_committed, repository, pr_state, pr_error?}` |
+| `push` | `worktree, branch, sha` | `{head, repository}`; failure includes git's last error line. |
+| `inspect` | `branch, head, worktree?, slug, fallback_head?` | `{repository, remote_has_branch, remote_tip, remote_contains_head, picked_up_at, local_head, worktree_exists, relation, idea_status, plan_status, map_committed}`; `relation` is `same`, `behind`, `ahead`, `diverged`, or null. |
+| `claim-commit` | `parent, message` | `{sha}` |
+| `claim-state` | `branch, parent, sha` | `{result: "landed"\|"parent"\|"moved"\|"unknown", remote_tip?, picked_up_at?, error?}` |
+| `claim-push` | `branch, parent, sha` | `{result: "landed"\|"moved"\|"unknown", remote_tip?, picked_up_at?, error?}`; `unknown` may include git's last error line. |
+| `claim-revoke` | `branch, parent, sha` | `{result: "revoked"\|"waiting"\|"gone"\|"failed", error?}` |
+| `reopen` | none | `{ok: true}` |
+| `fast-forward` | `worktree, branch, head` | `{result: "ok"\|"failed", error?}` |
+| `set-branch` | `branch, sha` | `{result: "ok"\|"failed", error?}` |
+| `running` | none | `{names: [...]}` |
+| `kill` | `names: [...]` | `{names: [...]}` of names still starting or running; every requested name must start with `wc-<thread_id>-`. |
+| `known` | `head` | `{known, local_branch, local_ancestor, checked_out}`; `checked_out` is an array of all absolute checkout paths, empty when none; `local_ancestor` is null when the local branch is absent. |
+
+`status` and `inspect` report `remote_has_branch: false` and `remote_tip: null` when the
+remote branch is absent. `repository` is the normalized GitHub origin or null. Statuses and
+`map_committed` reflect committed plan files, at HEAD for `status` and at the supplied `head`
+for `inspect`. A failed `gh` lookup returns `pr_state: null` and `pr_error`. `fallback_head`
+is the hub's handed-off head. Claim results other than `unknown` include the observed
+`remote_tip`; the revoke push uses an exact lease on the claim. `known` includes sessions,
+worktrees, and durable archiving or archived markers. `reopen` clears both markers.
 
 Every queued card and event has a `delivery_id`, the UUID in its spool filename. The service sends
 queued cards and events in order, retrying every 5 seconds while either spool is non-empty, to

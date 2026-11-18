@@ -193,8 +193,10 @@ IDEA.md is stable, not frozen. A new hard constraint may be added to its Constra
 change to What, Why, What good looks like or Not doing is a scope change: propose it,
 get his agreement, log it with source `idea-change`.
 
-You commit only IDEA.md, PLAN.md and the plan's graphs (`wc.js git commit` with those
-exact paths). The mapper commits MAP.md and `docs/maps/`.
+Before ending any turn that changed IDEA.md or PLAN.md, commit the changed files with
+`wc.js git commit`, so a planning pause is committed and exportable. You commit only
+IDEA.md, PLAN.md and the plan's graphs (with those exact paths). The mapper commits
+MAP.md and `docs/maps/`.
 
 ### 5. Review, silent
 
@@ -508,6 +510,21 @@ If you yourself died, the app starts a new lead (the Restart button) and types
 carry on from the step you find. Your reply to that message is shown, so say briefly that
 you are back and where things stand. Run `session list` and `session stop` any session
 whose purpose is gone.
+
+### Imported threads
+
+On `[wc:context import]`, your reply is shown: say the thread was imported and where it
+stands. Run `session list`, then read the plan documents on the branch and resume at the
+step named by `stage`:
+
+- `idea-confirmed`: planning, step 4. Read IDEA.md, MAP.md and any PLAN.md on the branch,
+  and ask the open questions again.
+- `approved`: approval, step 6. Post a fresh approval card with a fresh Ready check.
+- `done`: after done, step 9.
+
+The context JSON's `import` block carries `stage`, `exported_at`, `pr_url` and `history`
+(the last 50 entries) for context. Post fresh cards for anything still needed. A
+`[wc:context restart]` for an imported thread carries the same `import` block.
 
 ## Diagrams
 
