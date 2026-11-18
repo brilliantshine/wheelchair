@@ -285,10 +285,16 @@ The hub then, inside `withThread(<file thread id>)`:
    `stage`, `branch === "wc/" + thread.id`, the `pr_url` presence rule, and each history
    entry's fields, types and limits. Failure: 422 "This isn't a handoff file wheelchair
    can read: <what>".
-   Then, if a thread with the file's id exists here with a saved `handoff_op`, the hub runs
-   that operation again and stops (steps 2-4 are skipped, since the saved operation
-   carries everything it needs). The response is that operation's outcome, with note
-   "Finished the earlier import or undo; import this file again if it's newer".
+   Then, if a thread with the file's id exists here with a saved `handoff_op`: for a saved
+   Create or Advance, the hub runs that operation again and stops (steps 2-4 are skipped,
+   since the saved operation carries everything it needs); the response is that
+   operation's outcome (`created` or `advanced`), with note "Finished the earlier import;
+   import this file again if it's newer". For a saved Undo, nothing runs: `opened`, note
+   "An undo of this thread didn't finish; press Retry on it, then import this file again".
+   When the thread exists (with or without a saved operation), the picked machine and
+   project are ignored: steps 2-4 and Advance use the thread's own machine and project,
+   and the response note starts "This thread lives on <machine>, <project>" when they
+   differ from the picker's.
 2. **Matches the repository**: the machine reports the project's normalized origin.
    Mismatch: 422 "This file is for <file repo>, but that project is <project repo>".
 3. **Inspects the branch** (`/v1/handoff` `inspect`): fetch; `origin/wc/<id>` must exist and
@@ -305,7 +311,6 @@ The hub then, inside `withThread(<file thread id>)`:
 | No such thread, and the picked project's local `wc/<id>` branch is checked out (in the project clone or any worktree) | Refused 409 "Branch wc/<id> is checked out in <path>; switch away from it, then import again" |
 | No such thread, and the picked project has a local `wc/<id>` branch that is not an ancestor of `head` | Refused 409 "This project already has a branch wc/<id> that differs from the file; delete it if you don't need it, then import again". A local branch that is an ancestor of `head` and not checked out is fine: Create uses it |
 | No such thread, and none of the three rows above matched | **Create** |
-| Exists on another machine or project than the picker chose | **Open**, note "This thread lives on <machine>, <project>", plus " It's handed off: press Undo on it to carry on." when it is handed off and the remote tip is still `handed_off.head` |
 | Exists; its head equals `head`, or `head` is an ancestor of its head | **Open**, change nothing. Note: "You already have this thread here", plus " It's handed off: press Undo on it to carry on here." when it is handed off and the tip is unchanged; or "This file is older than the thread here" |
 | Exists; its head is a strict ancestor of `head` | **Advance** |
 | Exists; neither is an ancestor of the other | **Open**, change nothing; note "This thread and the file have each moved on separately, so nothing was changed. Bring the branches together yourself, then import again." |
@@ -328,10 +333,14 @@ flight; 409 "The thread here isn't on its branch" if its worktree exists and is 
 its worktree exists and is dirty. Then it saves `handoff_op` and runs the operation.
 
 **Before any claim** (Create, Advance and Undo, checked again on every Retry while
-`claim_landed` is false): when the thread has no recorded worktree that exists, the
-project's local `wc/<id>` branch must not be checked out anywhere (`known` reports where);
-otherwise 409 "Branch wc/<id> is checked out in <path>; switch away from it, then try
-again", and nothing is claimed.
+`claim_landed` is false):
+- when the thread has a recorded worktree that exists, it must be on `wc/<id>` (409 "The
+  thread here isn't on its branch") and clean (409 "The thread here has uncommitted
+  changes");
+- otherwise, the project's local `wc/<id>` branch must not be checked out anywhere
+  (`known` reports where): 409 "Branch wc/<id> is checked out in <path>; switch away from
+  it, then try again".
+Nothing is claimed when either fails.
 
 Responses: `{outcome: "created"|"advanced"|"opened", id, note?}`. The page navigates to
 the thread for `created` and `advanced`; for `opened` it shows the note and an "Open the
@@ -364,7 +373,7 @@ recovery.
 
 **The operation record.** Before its first step, an operation saves
 `thread.handoff_op: {kind: "create"|"advance"|"undo", carried, parent, claim_sha,
-last_error, claim_landed, applied, last_push_at, started_at}`; `started_at` is set once and becomes `imported.at` in Apply, so
+last_error, claim_landed, applied, started_at}`; `started_at` is set once and becomes `imported.at` in Apply, so
 a Retry never moves that cutoff on the thread record (for Create, in the same save that first
 creates the record). `carried` is the validated carried state from the file,
 `{stage, exported_at, history, pr_url}` (null for undo); Create's record already holds the
@@ -397,8 +406,9 @@ instead of "export again from wherever it is now".
    `/v1/handoff` `fast-forward` to `claim_sha`. Otherwise clear `worktree` on the record and
    move the project's local `wc/<id>` ref to `claim_sha` (`/v1/handoff` `set-branch`); the
    lead start builds the worktree (step 6).
-4. **Apply.** Skipped (with 2 and 3) when `applied` is true. First, if the thread is archived, call `/v1/handoff` `reopen` (idempotent);
-   if it fails, the step fails before anything is saved. Then set the carried state
+4. **Apply.** Skipped (with 2 and 3) when `applied` is true. First, call `/v1/handoff`
+   `reopen` (idempotent) **always**, whatever the hub's `archived` flag says, since a
+   machine may have finished an archive whose reply the hub never got; if it fails, the step fails before anything is saved. Then set the carried state
    (Create, Advance), retract cards and clear pins (Advance), clear `handed_off` and
    `archived`, set `checkout_sha: claim_sha` and `handoff_op.applied: true`, and save, all in
    one save. Every assignment is the same on a
@@ -413,18 +423,18 @@ instead of "export again from wherever it is now".
    the lead with `from_remote_branch: {sha: checkout_sha}`. Once the lead's worktree is recorded, the hub
    registers the plan directory (`hub.registerPlan`, as `findSlug` does at
    `viewer/app/views.js:105`), since an imported thread's slug is set before any worktree
-   exists and `findSlug` would skip it. If the start fails, or the hub
+   exists and `findSlug` would skip it. Registration is also repaired at hub start: every
+   thread with a slug and a recorded worktree is registered. If the start fails, or the hub
    stops before it, the thread shows the dead-lead panel with Restart: the panel's
    condition (`viewer/pages/thread.js:270-277`) becomes "not archived, not frozen, no live
    lead, and either a lead was ever started or the thread was imported".
 
-**Partial starts.** The hub marks a session live before the machine call that launches it
-(`viewer/app/sessions.js:277-300`). When the hub starts, every session of any role marked
-live whose start result was never saved is handled as a dead session: the hub calls the
-machine's `kill` for its name (so nothing it launched keeps running), marks it not live,
-and sends its starter the usual "your session died" notice
-(`viewer/app/sessions.js:698-723`); for a lead, the dead-lead panel offers Restart, which
-moves its queued context to the new lead. Nothing is adopted.
+**Partial lead starts.** The hub marks a session live before the machine call that
+launches it (`viewer/app/sessions.js:277-300`). When the hub starts, a **lead** session
+marked live whose start result was never saved is marked not live, so the dead-lead panel
+offers Restart; Restart (below) kills anything that start left on the machine, refuses
+while any survives, and moves its queued context to the new lead. Nothing is adopted.
+Other roles are unchanged from today.
 
 **Restart order.** `restartLead` is changed for every thread: it first asks the machine
 (`running`) for tmux sessions of the thread's lead names that the hub does not count as
@@ -452,16 +462,13 @@ and its thread id is not in that set.
   finish."), the saved `last_error` when there is one, and a **Retry** button:
   `POST /threads/:id/retry-handoff` runs the saved operation again from its record;
 - offers **Cancel** next to Retry only while `claim_landed` and `applied` are both false.
-  When `claim_sha` is null, Cancel abandons at once. Otherwise, if the last `claim-push`
-  attempt (`handoff_op.last_push_at`, saved before each attempt) is less than 5 minutes old,
-  Cancel refuses ("A pick-up may still be going through; try again in a few minutes"). The
-  machine bounds every claim push to well under that (see `claim-push`): the machine
-  service's children survive its restart (`KillMode=process`, `install.sh:401`), so the
-  bound has to live in the push itself, not in the queue. After that it calls `claim-state`
-  (read-only, through the machine's per-repository queue, so any earlier push still
-  running there finishes first): `landed` → save `claim_landed: true` and refuse ("The
-  pick-up already went through; press Retry"); `parent` or `moved` → abandon; `unknown` →
-  refuse ("Couldn't check GitHub; try again"). Abandoning here gives no 409: Create deletes
+  When `claim_sha` is null, Cancel abandons at once. Otherwise it calls the machine's
+  `claim-cancel`, which first records `claim_sha` as cancelled (durably, so no later or
+  delayed `claim-push` for that sha will push), then reports: `busy` when a push for that
+  sha is still running → refuse ("A pick-up may still be going through; try again in a
+  minute"); otherwise the `claim-state` result: `landed` → save `claim_landed: true` and
+  refuse ("The pick-up already went through; press Retry"); `parent` or `moved` → abandon;
+  `unknown` → refuse ("Couldn't check GitHub; try again"). Abandoning here gives no 409: Create deletes
   its record, Advance and Undo clear `handoff_op`;
 - is also reached by importing a file for that thread id (Import step 1), which runs
   the saved operation and ignores the new file;
@@ -493,6 +500,9 @@ and its thread id is not in that set.
     with "Couldn't check the pull request").
   - `push` `{worktree, branch, sha}` → `git push origin <sha>:refs/heads/<branch>` (non-
     forced); returns `{head, repository}`.
+  - Every action that fetches uses one helper,
+    `git fetch origin +refs/heads/<branch>:refs/remotes/origin/<branch>`, so a
+    single-branch clone still gets the thread's branch and a tracking ref.
   - `inspect` `{project, branch, head, worktree?, slug}` → fetch; returns `{repository,
     remote_tip, remote_has_branch, remote_contains_head, picked_up_at, local_head,
     worktree_exists, relation, idea_status, plan_status}`. `local_head` follows the "its
@@ -510,11 +520,16 @@ and its thread id is not in that set.
     else → `moved` with `remote_tip` and `picked_up_at`; fetch failure or a missing branch
     → `unknown` (a missing branch is not proof of anything).
   - `claim-push` `{project, branch, parent, sha}` → `claim-state`; if `parent`, run step 2
-    of Claims and then `claim-state` again. Time bounds, so Cancel's 5-minute wait is
-    safe: the machine notes when it received the request and skips the push (result
-    `unknown`) if more than 60 seconds passed before the push would start; the push runs
-    as `timeout -s KILL 120 git push ...`, so it cannot outlive 120 seconds, even across a
-    machine-service restart. The result comes only from the last
+    of Claims and then `claim-state` again. Before pushing it checks the cancelled list
+    and pushes nothing for a cancelled sha (result from `claim-state` only). While the push
+    runs, its pid is in a durable `claim-pushes` record; the push runs as
+    `perl -e 'alarm shift; exec @ARGV' 120 git push ...` (perl is present on Linux and
+    macOS; the alarm survives `exec`), so it cannot outlive 120 seconds, even across a
+    machine-service restart, which leaves children running (`KillMode=process`,
+    `install.sh:401`).
+  - `claim-cancel` `{project, branch, parent, sha}` → adds `sha` to the durable cancelled
+    list; if `claim-pushes` names a live pid for `sha`, `{result: "busy"}`; else the
+    `claim-state` result. The result comes only from the last
     `claim-state`, never from the push's exit code: `landed` → `landed`; `parent` or
     `unknown` → `unknown`; `moved` → `moved`.
   - Every `/v1/handoff` outcome, including refusals, is a 200 with a JSON body (except 422
@@ -623,8 +638,15 @@ New tests, then the suites:
     `import`, with marker `[wc:context import]` only for the first lead after `imported.at`;
     a failed start shows the ordinary Restart; restart enqueues the context before starting; an imported thread with no
     sessions shows Restart; a lead with no recorded worktree starts from `checkout_sha`;
-  - partial start at hub start: marked not live and Restart offered; Restart kills the
-    leftover start and moves its queued context; Cancel with `claim-state` each
+  - partial lead start at hub start: marked not live and Restart offered; Restart kills the
+    leftover start and moves its queued context; other roles untouched; Cancel with
+    `claim-cancel` (busy, landed, parent, moved, unknown) and a delayed `claim-push` after
+    Cancel pushing nothing; claim push killed at 120 s by the perl alarm on Linux and
+    macOS; inspect in a single-branch clone; Apply calls `reopen` even when the hub thinks
+    the thread is open; Advance and Undo refused before claiming when the branch is checked
+    out elsewhere or the worktree is detached; re-import with a saved Undo opens with its
+    note; existing thread on another machine inspected and advanced there; plans registered
+    at hub start; Cancel with `claim-state` each
     result; Create refused when the local branch is checked out; archive records survive a
     machine restart;
   - frozen: every entry point in Frozen threads refused while handed off and while an
@@ -661,7 +683,7 @@ npm --prefix viewer run test:browser
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | A machine's archive records never expire, so a hub that lost its own state can't import its old threads on that machine (it can on another machine, or after removing the id from the machine's archive file by hand) | A hub losing its state is a disaster case; expiry would reopen the same-machine sharing problem | 9 |
-| Restart and the hub's start-up now handle unsaved session starts for every thread, not only imported ones | The rule is small, and the existing session tests exercise it | 9 |
+| Restart and the hub's start-up now handle unsaved lead starts for every thread, not only imported ones; unsaved starts of other roles behave as today | The rule is small and lead-only; other roles' crash windows predate this feature | 9, 11 |
 
 ## Review Rounds
 
@@ -951,7 +973,7 @@ npm --prefix viewer run test:browser
 
 ### Round 11 — 2026-11-17
 
-**Lanes:** intent and mechanics; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 10:**
 - Machine: durable `archiving` and `archived` markers; claim push time bounds (60 s start window, `timeout -s KILL 120`); `claim-state` fetches into a tracking ref; upstream set with `git config`.
@@ -959,6 +981,35 @@ npm --prefix viewer run test:browser
 - Checked-out-branch check before every claim (Create, Advance, Undo).
 - Import step 1 owns the Finish behaviour and note; dead row removed.
 - Plan directory registered once an imported thread's worktree is recorded.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | A newer file can't advance a thread that lives on another machine or project | upheld | Existing threads use their own machine and project; the picker is ignored |
+| intent | minor | Re-import with a saved Undo has no defined outcome | upheld | Step 1 runs only saved Create/Advance; saved Undo opens with a note |
+| intent | minor | Advance/Undo checked-out refusal untested | upheld | Validation added |
+| mechanics | blocking | GNU `timeout` missing on macOS | upheld | `perl -e 'alarm ...'` wrapper |
+| mechanics | blocking | Cancel's wait measured from the hub, push window from the machine | upheld | `claim-cancel` records a durable cancel before checking; cancelled shas never push; running pushes tracked by pid |
+| mechanics | blocking | Single-branch clone fails `inspect` | upheld | One fetch helper with an explicit refspec for every action |
+| mechanics | blocking | Lost archive reply leaves the machine marker set | upheld | Apply always calls `reopen` |
+| mechanics | blocking | Startup kills and notices for all roles can overlap a restarted sub-lead | upheld | Partial-start rule narrowed to leads; other roles unchanged |
+| mechanics | blocking | Interrupted worker replacement lacks branch and worktree | upheld | Same: no change for non-lead roles |
+| mechanics | blocking | Undo skips occupancy check when its worktree exists but is detached | upheld | Pre-claim checks for every operation cover detached and dirty worktrees |
+| mechanics | major | Plan registration path useless for a hub on another host | declined | Ordinary threads register the same machine path (`viewer/app/views.js:61,105`); not new to imports |
+| mechanics | major | Crash between worktree save and plan registration | upheld | Registration repaired at hub start |
+| mechanics | major | Re-import finishing an Undo has no response mapping | upheld | Same fix as the intent finding |
+
+### Round 12 — 2026-11-17
+
+**Lanes:** intent and mechanics; cross-family: yes.
+
+**Changed since Round 11:**
+- Import step 1: saved Create/Advance only; saved Undo opens with a note; existing threads use their own machine and project (other-machine Open row removed).
+- Pre-claim checks for every operation (worktree on branch and clean, or branch not checked out elsewhere).
+- Cancel via machine `claim-cancel` (durable cancelled list, running-push pids); `last_push_at` removed.
+- Claim push bounded by a perl alarm; one fetch helper with explicit refspec.
+- Apply always calls `reopen`.
+- Partial starts narrowed to leads.
+- Plan registration repaired at hub start.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
