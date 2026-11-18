@@ -136,6 +136,37 @@ The app accepts the card only when GitHub says this thread's pull request, at `h
 A "Start a thread about it" press comes back as
 `[card <id>] start thread about: <left_as_is text>`; you answer it with a `stub` card.
 
+### `check`
+
+Post after the current done card. One check per done head; a duplicate refusal means it was posted.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `head` | string | yes | Current done card's 40-character lowercase hex head |
+| `update` | string | yes | How to get the merged change running; at most 300 characters |
+| `steps` | array | yes | 1 to 6 steps |
+
+Each step:
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `where` | `app` \| `machine` | yes | Where to follow it |
+| `do` | string | yes | What to do; at most 300 characters |
+| `see` | string | yes | What to see; at most 300 characters |
+| `command` | string | no | Machine only; exact command with full paths, at most 1000 characters; may span lines |
+| `agent` | `matched` \| `not-tried` \| `broken` | yes | Whether an agent saw the expected result, could not try it, or found it broken |
+| `note` | string | unless matched | Why it was not tried or what broke; one line, at most 300 characters; forbidden when matched |
+
+Shown as “Check it yourself”, the update, then numbered steps labeled “In the app” or
+“On the machine”, with a command block and Copy, “You should see:”, and, where relevant,
+“Not tried by an agent: <note>” or “An agent tried this and it didn't work: <note>”.
+“Fix it now” and “Leave it” appear only for a broken step, until answered or superseded.
+
+The hub refuses a missing current done, a head other than the latest current done, or a
+second check for that head. Presses accept only `fix` and `leave`, only with a broken step,
+a current head, an unanswered card and a live lead. They answer the card and send
+`[card <id>] fix what the check found` or `[card <id>] leave it` to the lead.
+
 ### `merged`
 
 The app posts this card when the thread's pull request is merged. It carries `kind`,

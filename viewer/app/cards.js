@@ -48,6 +48,11 @@ function retractCard(card, by, note) {
   card.retracted_at = new Date().toISOString();
 }
 
+function currentDone(thread) {
+  return [...(thread.cards || [])].reverse().find((card) => card.kind === 'done' && !card.retracted_at
+    && (!thread.imported?.at || Date.parse(card.created_at || card.at) > Date.parse(thread.imported.at)));
+}
+
 async function acceptCard(hub, payload) {
   const result = await hub.updateThread(payload.thread_id, async (thread) => {
     const session = hub.session(thread, payload.session);
@@ -110,6 +115,13 @@ async function acceptCard(hub, payload) {
       if (offers.length > 1 || (offers.length === 1 && offers[0].answered_value !== 'keep talking first' && !offers[0].retracted_at)) {
         throw appError(422, 'the offer was already asked');
       }
+    }
+
+    if (checked.card.kind === 'check') {
+      const done = currentDone(thread);
+      if (!done) throw appError(422, 'post the done card first');
+      if (done.head !== checked.card.head) throw appError(422, 'check head must match the latest done card');
+      if (thread.cards.some((item) => item.kind === 'check' && !item.retracted_at && item.head === checked.card.head)) throw appError(422, 'this done card already has a check card');
     }
 
     if (checked.card.kind === 'sudo') {
@@ -222,4 +234,4 @@ async function sudoOutcome(hub, body) {
   });
 }
 
-module.exports = { SINGLETONS, addCard, acceptCard, applySudoState, resolveCard, retractCard, sudoOutcome, validSudoStatus };
+module.exports = { currentDone, SINGLETONS, addCard, acceptCard, applySudoState, resolveCard, retractCard, sudoOutcome, validSudoStatus };

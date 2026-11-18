@@ -3,6 +3,8 @@
 Checked against: `92c2db2211096a2360b7b93f7bb1623805f6209d` (origin/main)
 Files covered: `protocol/app/lead.md`, `protocol/app/sub-lead.md`, `protocol/app/verifier.md`, `protocol/app/cards-lead.md`, `viewer/app/wc.js`, `viewer/app/card.js`, `viewer/app/cards.js`, `viewer/app/routes.js`, `viewer/app/hub.js`, `viewer/app/threads.js`, `machine/service.js`, `.github/workflows/macos.yml`, `viewer/test/app-machines.test.js`, `viewer/test/app-merged.test.js`, `viewer/test/app-merged.spec.js`, `viewer/test/protocol-rules.test.js`, `machine/test/service.test.js`.
 
+> Historical map: covered files changed since the checked commit. In particular, the claim below that no acceptance gate exists is obsolete; see [done-card.md](done-card.md) for the current done-card gate and finishing paths. Other paths here have not been revalidated.
+
 ```text
 build and verify -> lead pushes and opens PR -> lead posts done -> machine spool -> hub saves card
                                                                      -> GitHub reports merged -> app posts merged

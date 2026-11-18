@@ -2,7 +2,7 @@
 
 // The handoff is data, not a live card or session record.
 const LIMIT = 10 * 1024 * 1024;
-const KINDS = new Set(['message', 'press', 'offer', 'idea', 'question', 'approval', 'progress', 'needs', 'done', 'diagram', 'image', 'stub', 'sudo', 'title', 'resolve', 'retract', 'result', 'merged']);
+const KINDS = new Set(['message', 'press', 'offer', 'idea', 'question', 'approval', 'progress', 'needs', 'done', 'check', 'diagram', 'image', 'stub', 'sudo', 'title', 'resolve', 'retract', 'result', 'merged']);
 const object = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const keys = (value, required, optional = []) => object(value)
   && required.every((key) => Object.hasOwn(value, key))
@@ -39,6 +39,7 @@ function historyText(card) {
     case 'idea': return lines((card.bullets || []).map((bullet) => bullet.text));
     case 'approval': return lines((card.objections || []).map((item) => lines(item.finding, item.reason)), answer);
     case 'done': return lines(card.title, card.can_do || [], card.left_as_is || [], card.pr_url);
+    case 'check': return lines(card.update, (card.steps || []).map((step, i) => lines(`${i + 1}. [${step.where}] ${step.do} — see: ${step.see}`, step.command, step.agent === 'not-tried' ? `(not tried: ${step.note})` : step.agent === 'broken' ? `(didn't work: ${step.note})` : '')));
     case 'needs': return lines(card.title, card.body);
     case 'offer': return lines(card.summary, answer);
     case 'stub': case 'diagram': case 'image': return card.title || '';

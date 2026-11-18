@@ -321,6 +321,20 @@ async function press(hub, id, cardId, input) {
     await hub.save(thread);
     return { queued: false };
   }
+  if (card.kind === 'check') {
+    if (!['fix', 'leave'].includes(input.action)) throw appError(400, 'a check card has no buttons');
+    if (!card.steps.some((step) => step.agent === 'broken')) throw appError(400, 'this check card has nothing to fix');
+    if (require('./cards.js').currentDone(thread)?.head !== card.head) throw appError(422, 'a newer version was finished since');
+    if (card.answered) throw appError(422, 'card is already answered');
+    const lead = [...thread.sessions].reverse().find((item) => item.role === 'lead' && item.live);
+    if (!lead) throw appError(409, 'no live lead');
+    card.answered = true;
+    card.answered_action = input.action;
+    card.answered_value = input.value ?? null;
+    const text = input.action === 'fix' ? 'fix what the check found' : 'leave it';
+    await hub.enqueue(thread, lead.name, `[card ${card.id}] ${text}`, 'card');
+    return { queued: true, text };
+  }
   if (input.action === 'removed') {
     if (!['idea', 'deferred'].includes(card.kind)) throw appError(400, 'removed requires an idea or deferred card');
     if (!(card.bullets || []).some((bullet) => bullet.text === input.value)) throw appError(400, 'removed text must match a bullet');
