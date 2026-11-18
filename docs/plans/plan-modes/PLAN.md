@@ -148,7 +148,7 @@ Restart before IDEA.md is written (the mode question not yet answered, or answer
 moments before the lead died): the restarted lead reads the cards it is given. If the
 mode question was answered with a press, it uses that mode; if answered in its box or
 resolved with a note, it uses the mode only if the text names exactly one, and otherwise
-asks the follow-up question above. If it is open but the restart context's recent
+uses `thorough` as above. If it is open but the restart context's recent
 messages hold a later message from Collin that clearly chooses exactly one mode (not a
 question about it or an objection), it treats that as his answer (resolving the card);
 if in doubt, it leaves the card open. Otherwise, if it is open, it leaves it open and waits. If it was never posted, it
