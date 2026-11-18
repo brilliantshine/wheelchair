@@ -96,6 +96,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 67 | The git-failure rule applies only within the new section and the push/PR that start it | IDEA non-goal: nothing before the push changes | review-round-11 |
 | 68 | A non-fast-forward push rejection fetches and goes through item 6 before pushing again | Retrying the same push can never succeed | review-round-11 |
 | 69 | The git-failure `needs` card before a PR exists says nothing was pushed and Keep going retries | The usual wording mentions merging a PR that doesn't exist | review-round-11 |
+| 70 | During the first 5 minutes after a push with no checks, the poll keeps polling instead of stopping on a ready state | Avoids a tight loop of GitHub calls | review-round-12 |
+| 71 | A rejected starting push merges, verifies if needed, pushes, opens the PR if missing; the window starts at the successful push | Item 6 assumes an existing PR | review-round-12 |
+| 72 | The pre-PR `needs` card names what failed: the push, or opening the PR | PR creation runs after a successful push | review-round-12 |
 
 ## Spec
 
@@ -197,11 +200,13 @@ outside a merge, unchanged.
      `gh pr view <url> --json state,mergeStateStatus,headRefOid,statusCheckRollup` every 60
      seconds and stops on any of: `state` not `OPEN`; `headRefOid` not the pushed commit;
      `mergeStateStatus` `CLEAN`, `HAS_HOOKS`, `DIRTY` or `BEHIND`; a failed check; `BLOCKED` with no
-     failed or pending check; 10 minutes. (Failed and pending as defined in the Spec table;
+     failed or pending check; 10 minutes. Exception: a "ready" state (`CLEAN`, `HAS_HOOKS`, or
+     `BLOCKED` with nothing failed or pending) with no checks at all, less than 5 minutes after the
+     push, does not stop the command; it keeps polling every 60 seconds (D39, D70). (Failed and pending as defined in the Spec table;
      include the definitions in lead.md.) A gh error inside the loop is ignored. Repeat while the
      30-minute window from the push lasts (D4).
-  3. **Ready:** if there are no checks at all and less than 5 minutes have passed since the push,
-     keep waiting (CI may not have started; D39). Then post `done` with `head`.
+  3. **Ready:** post `done` with `head`. (The poll already waited out the first 5 minutes when
+     there are no checks; D39.)
      **Posting `done`, wherever this section says so (D43):** if `card.js` fails with "try
      again", "still working out" or "checks not passed yet", wait 2 minutes and go back to 2
      within the same window (for a merged PR, just post again after 2 minutes, until the window
@@ -270,12 +275,16 @@ outside a merge, unchanged.
   (D67: the rule reaches no other git use), every `wc.js git` call returns JSON with `ok`; check
   it, since a failed git command still exits 0 (`machine/service.js:1308`) (D59).
   - A push rejected because the remote branch moved (non-fast-forward): `wc.js git fetch`,
-    then item 6 (merge their commits, verify if needed), then push again (D68).
+    `wc.js git merge origin/wc/<thread-id>` (conflicts resolved as in 7), and verify as in 6 if
+    the merge was more than a fast-forward; then push again. If this was the push that starts the
+    section, carry on with that start (open the PR with `wc.js git pr` if none exists yet) and
+    the window starts when that push succeeds; otherwise return to 2 in the same window (D68,
+    revised by D71).
   - Any other failure that is not a merge conflict (a failed fetch, a merge that stops for another
     reason, another push or PR-creation failure): retry once after a minute; if it fails again,
     post the `needs` card in 8 with git's message (D62). If no PR exists yet, that card says
-    nothing was pushed or opened yet and that "Keep going" retries; it does not mention merging
-    the PR (D69). On "Keep going", redo the failed operation first (applying the
+    what did not happen (the push, or opening the pull request after a successful push) and that
+    "Keep going" retries it; it does not mention merging the PR (D69, revised by D72). On "Keep going", redo the failed operation first (applying the
     non-fast-forward rule above), then carry on from where it failed (D65).
 - Step 8 still commits `status: done` before the push, so the PR carries it.
 - Step 9's existing item 4 (`OPEN` / `MERGED` with the pushed head / `MERGED` with an older
@@ -581,6 +590,19 @@ Collin: "Keep going" — budget reset.
 **Lanes:** intent lens (provider per start); mechanics lens (other family); cross-family: yes.
 
 **Changed since the last round:** restart ignores untracked files (D66); git-failure rule scoped (D67), non-fast-forward push (D68), wording before a PR exists (D69).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Window start after a rejected starting push | upheld | D71 |
+| mechanics | major | Rejected starting push routed to item 6, which assumes a PR | upheld | D71 |
+| mechanics | minor | "Nothing was pushed" wrong when PR creation fails | upheld | D72 |
+| mechanics | minor | Grace period ends the poll at once, tight loop | upheld | D70 |
+
+### Round 13 — 2026-11-18
+
+**Lanes:** intent lens (provider per start); mechanics lens (other family); cross-family: yes.
+
+**Changed since the last round:** poll grace period (D70); rejected starting push (D71); pre-PR `needs` wording (D72).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
