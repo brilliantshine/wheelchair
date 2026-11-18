@@ -81,6 +81,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 52 | Supersedes D48: restart handles `MERGED` (no `done` naming its head) via item 4; `CLOSED` → nothing | A PR merged mid-wait still gets its `done` and merged notice | review-round-6 |
 | 53 | Restart reconciles an advanced PR branch via item 6 before polling | Keeps verification on the real tip | review-round-6 |
 | 54 | Step 9 item 4's PR-state handling is replaced by the new section | One rule per case | review-round-6 |
+| 55 | Merged-missed (stub inline in item 4) and Closed end the wait without a `needs` card | Those outcomes are final | review-round-7 |
+| 56 | Resolve the finishing `needs` card only if still open | "Keep going" already closes it | review-round-7 |
+| 57 | Supersedes D53's order: restart aborts an unfinished merge, then asks Collin about unpushed local commits, then uses the local tip as the pushed commit and reconciles via 4/6 | Never pushes unknown work; gives the merged path a pushed commit | review-round-7 |
 
 ## Spec
 
@@ -192,15 +195,18 @@ outside a merge, unchanged.
      within the same window (for a merged PR, just post again after 2 minutes, until the window
      ends). "Conflicts", "moved on" → 7. "Is at <commit>, not <commit>" → 6 (or 4 if merged).
      "Closed" → 5. "GitHub login can't read" → the `needs` card in 8.
-  4. **Merged:** at the pushed commit → post `done`. At another commit: fetch the PR's final
-     head explicitly (`wc.js git fetch origin pull/<number>/head`, which GitHub keeps even after
-     the branch is deleted), then run `git merge-base --is-ancestor <pushed commit> <merged head>`.
+  4. **Merged:** at the pushed commit → post `done`; the wait ends. At another commit: fetch the
+     PR's final head explicitly (`wc.js git fetch origin pull/<number>/head`, which GitHub keeps
+     even after the branch is deleted), then run
+     `git merge-base --is-ancestor <pushed commit> <merged head>`.
      Exit 0: the work landed (for example Collin updated the branch, then merged): post `done`
-     with `head` = the merged head (D44). Exit 1: step 9's "the fix missed" rule (a `stub` with
-     the fix's own commits; skip it if a `stub` card in the thread already lists them); no
-     `done`. A failed fetch or any other exit: post the `needs` card in 8 saying the merge
-     couldn't be matched to the work; never a stub on a lookup failure (D49).
-  5. **Closed:** step 9's `CLOSED` rule: say so, change nothing.
+     with `head` = the merged head (D44). Exit 1: the fix missed the merge: post a `stub` card
+     (`depends_on_parent: true`, `commits` = this fix's own commits, not merge commits, a summary
+     saying the fix missed the merged pull request) unless a `stub` card in the thread already
+     lists those commits; no `done`; the wait ends (D55). A failed fetch or any other exit: post
+     the `needs` card in 8 saying the merge couldn't be matched to the work; never a stub on a
+     lookup failure (D49).
+  5. **Closed:** say so in a reply, change nothing; the wait ends with no `needs` card (D55).
   6. **Head changed while open** (someone pushed to the branch): `wc.js git fetch`,
      `wc.js git merge origin/wc/<thread-id>`. If that brought in only their commits (a fast-forward,
      nothing of yours unpushed), the new tip is the pushed commit: back to 2 in the same window,
@@ -211,30 +217,32 @@ outside a merge, unchanged.
      branch>`. If the merge succeeded, git already made the merge commit. If it reports
      conflicts, edit the conflicted files and `wc.js git commit --paths <resolved files>`
      (completes the merge, D16) (D46). A failed check: a CheckRun's `detailsUrl` contains
-     `/actions/runs/<run id>/`; run `gh run view <run id> --log-failed`, fix the cause,
-     `wc.js git commit`. A failed StatusContext, or a CheckRun without an Actions run id, comes
-     from outside GitHub Actions: open its `targetUrl`/`detailsUrl` if readable; if you cannot
-     tell what failed, post the `needs` card in 8 naming the check (D47). Then a fresh verifier
-     on the new commit by step 9's provider rule, briefed with Collin's request (small fix: no
-     plan) or the plan's Spec, plus what the repair changed (D25). On a pass, push and go back to
-     2 with a new window. Whenever you cannot tell what a failed check needs (no logs from
-     `gh run view`, an unreadable URL), post the `needs` card in 8 naming the check (D50). On a
-     fail, that is one failed attempt: fix again locally and re-verify
-     (never push an unverified commit, never poll for the unpushed one) (D45).
+     `/actions/runs/<run id>/`; run `gh run view <run id> --log-failed`; otherwise open the
+     check's `targetUrl`/`detailsUrl`. Fix the cause and `wc.js git commit`. Whenever you cannot
+     tell what a failed check needs (no logs, an unreadable URL), post the `needs` card in 8
+     naming the check (D47, D50). Then a fresh verifier on the new commit by step 9's provider
+     rule, briefed with Collin's request (small fix: no plan) or the plan's Spec, plus what the
+     repair changed (D25). On a pass, push and go back to 2 with a new window. On a fail, that is
+     one failed attempt: fix again locally and re-verify (never push an unverified commit, never
+     poll for the unpushed one) (D45).
   8. **Budget (D26).** A repair that fails its verifier, or whose push still ends in a failed
      check or a conflict, is one failed attempt. After two, or when a window ends without an
-     accepted `done` (D51),
-     or on a "GitHub login can't read" refusal, post a `needs` card saying what blocks `done` and
-     that he can merge the PR himself regardless. "Keep going" resets the budget with a new window.
-     Resolve the `needs` card once `done` is accepted.
-  9. **After a restart** (D41, supersedes D27/D35): if the thread is finishing (the plan's
-     `status` is `done` or there is no plan, and the branch has a PR) and no `done` card names the
-     PR's current head (D48, revised by D52): if the PR is `MERGED`, go to 4; if `CLOSED`, nothing.
-     If `OPEN`: `wc.js git fetch`; if `origin/wc/<thread-id>` is not your local tip, handle it as
-     6 first (D53). Then: look at `git status`; abort an unfinished merge
-     (`wc.js git merge --abort`); do not push local commits you cannot account for, ask Collin with
-     a `question` card instead. Then resume at 2 with a new window. A latest `done` card with no
-     `head` (from before this change) means not waiting.
+     accepted `done` (D51) and without ending by 4 or 5, or on a "GitHub login can't read"
+     refusal, post a `needs` card saying what blocks `done` and that he can merge the PR himself
+     regardless. "Keep going" (which closes the card) resets the budget with a new window. If the
+     card is still open when `done` is accepted, resolve it (D56).
+  9. **After a restart** (D41, supersedes D27/D35; order per D57). Applies when the thread is
+     finishing (the plan's `status` is `done` or there is no plan, and the branch has a PR) and
+     no `done` card names the PR's current head. A latest `done` card with no `head` (from before
+     this change) means not waiting. In this order:
+     1. `git status`: abort an unfinished merge (`wc.js git merge --abort`).
+     2. `wc.js git fetch` and `wc.js git fetch origin pull/<number>/head`. If `git log
+        <PR head>..HEAD` is non-empty (local commits the PR does not have), stop: ask Collin with a
+        `question` card (push them after a verifier, or drop them with `wc.js git revert`); never
+        push them unasked.
+     3. Otherwise your local tip is the last commit you pushed; use it as "the pushed commit".
+        PR `MERGED` → 4. `CLOSED` → nothing. `OPEN` and the PR head is not your local tip (someone
+        pushed) → 6. Then resume at 2 with a new window.
 - Step 8 still commits `status: done` before the push, so the PR carries it.
 - Step 9's existing item 4 (`OPEN` / `MERGED` with the pushed head / `MERGED` with an older
   head / `CLOSED` by then, `protocol/app/lead.md:354-359`) is **replaced** by a pointer to the
@@ -462,3 +470,13 @@ Prior note: the full gate keeps producing blocking edge cases (spool delivery, r
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Restart reconciles before checking unpushed commits/unfinished merge | upheld | D57 |
+| intent | minor | Merged-missed and Closed paths would trigger a spurious `needs` card | upheld | D55 |
+| intent | minor | Restart has no "pushed commit" for the merged path | upheld | D57 |
+| intent | minor | Item 7 states the diagnosis fallback twice | upheld | merged into one sentence |
+| mechanics | blocking | Restart can push unaccounted commits (same as intent major) | upheld | D57 |
+| mechanics | major | MERGED restart path lacks the last pushed commit | upheld | D57 |
+| mechanics | minor | Item 4 cites a replaced step 9 rule | upheld | D55, stub instructions inline |
+| mechanics | minor | Resolve `needs` only if still open | upheld | D56 |
+
+**Budget:** three triaged rounds (5, 6, 7) since Collin's last decision without a clean one; stopped for Collin. Fixes already applied.
