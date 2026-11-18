@@ -952,6 +952,9 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — Choice: R2, `viewer/test/app-hub.test.js:1868-1890`: the check was added to the existing Kimi start test (a Claude 400 check, then the Kimi xhigh start under a `high` ceiling), with `max_tier: 'standard'` set in the test's preferences (scout-found; report said none).
+- 2026-11-18 — R2 accepted (band: scout): viewer 643/643 re-run by the sub-lead. Gap 4 hub half fixed.
+
 - 2026-11-18 — Choice: R4, `test-support/smoke/kimi-live.js`: check 5 asserts the footer names `K2.8 Preview` (how Kimi displays the light pin `kimi-code/kimi-for-coding`) and that the machine session has no effort; the bypass-mode preference change was dropped with the old effort checks, so check 6 now runs in the default mode (scout-found, not reported). The sub-lead removed the leftover `effort: 'low'` from check 7's worker start.
 - 2026-11-18 — R4 accepted (band: scout): the worker's only live run failed on its first guess of the display name; the sub-lead ran `KIMI_LIVE_CHECKS=5` once on the corrected script: `5 pinned light model | PASS | … Ask When Needed  K2.8 Preview thinking: max … "effort":null`, cleanup clean, `1 passed; 0 failed`. Gap 9 fixed.
 
