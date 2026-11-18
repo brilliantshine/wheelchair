@@ -103,3 +103,27 @@ test('a selection in the chat survives a card update and the chat catches up onc
     await expect(page.locator('#chat .card-progress')).toContainText('passed');
   } finally { await page.unrouteAll({ behavior: 'ignoreErrors' }); await ctx.close(); }
 });
+
+test('one copy of a pinned card holds its ids when the pins fold or open with chat text selected', async ({ page }) => {
+  const ctx = await startWorld();
+  try {
+    const made = await ctx.make({ cli: 'claude' });
+    const now = new Date().toISOString();
+    await ctx.timedTranscript(made.id, [['human', 'Hello', now], ['assistant', 'Some words to select.', now]]);
+    const ap = await ctx.post(made.id, { kind: 'approval', ready: { ok: true, missing: [] }, objections: [] });
+    await signIn(page, ctx); await page.goto(`${ctx.server.url}/app/thread?id=${made.id}`);
+    await expect(page.locator('#chat .card-approval')).toHaveCount(1);
+    const targets = () => page.evaluate((id) => [document.querySelectorAll('#card-' + CSS.escape(id)).length, document.querySelectorAll('#start-building').length], ap.id);
+    expect(await targets()).toEqual([1, 1]);
+    await page.evaluate(() => { const node = document.querySelector('.bubble.assistant p').firstChild; const r = document.createRange(); r.selectNodeContents(node); const s = getSelection(); s.removeAllRanges(); s.addRange(r); });
+    await page.evaluate(() => document.querySelector('#pinned .pin-toggle').click());
+    await expect(page.locator('#pinned .card-approval')).toHaveCount(0);
+    expect(await page.evaluate(() => getSelection().toString())).toBe('Some words to select.');
+    expect(await targets()).toEqual([1, 1]);
+    await expect(page.locator(`#chat #card-${ap.id}`)).toHaveCount(1);
+    await page.evaluate(() => document.querySelector('#pinned .pin-toggle').click());
+    await expect(page.locator('#pinned .card-approval')).toHaveCount(1);
+    expect(await targets()).toEqual([1, 1]);
+    await expect(page.locator(`#pinned #card-${ap.id}`)).toHaveCount(1);
+  } finally { await page.evaluate(() => { try { localStorage.removeItem('wheelchair.pinsFolded'); } catch (e) {} }).catch(() => {}); await page.unrouteAll({ behavior: 'ignoreErrors' }); await ctx.close(); }
+});

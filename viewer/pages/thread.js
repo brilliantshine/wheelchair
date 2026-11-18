@@ -281,6 +281,16 @@
   // Every card shows in the conversation at its time, pinned or not. While the pins are open, a
   // pinned card's copy here drops its element ids, so links and lookups land on the pinned copy.
   function pinnedIds() { return new Set(data.pinned.map((c) => c.id)); }
+  // Ids stay unique: a chat copy holds them only while its card is not drawn in the pins (pins
+  // folded, or the card unpinned before the chat redrew). Runs after every render, because the
+  // pins and the chat redraw separately (the chat waits while text in it is selected).
+  function placeIds() {
+    for (const node of chatEl.querySelectorAll('[data-chat-id]')) {
+      const inPins = pinnedEl.querySelector('#' + CSS.escape(node.dataset.chatId));
+      if (inPins && node.id) node.removeAttribute('id');
+      else if (!inPins && !node.id) node.id = node.dataset.chatId;
+    }
+  }
 
   function renderChat() {
     const items = data.items;
@@ -292,8 +302,7 @@
       return true;
     });
     const cards = data.cards;
-    // Folded pins draw no cards, so the chat copy keeps its ids for links and lookups.
-    const pinned = pinsFolded ? new Set() : pinnedIds();
+    const pinned = pinnedIds();
     let next = 0;
     const cardsBefore = (when) => {
       while (next < cards.length) {
@@ -302,7 +311,8 @@
         const card = cards[next++];
         const n = renderCard(card);
         if (!n) continue;
-        if (pinned.has(card.id)) for (const node of [n, ...n.querySelectorAll('[id]')]) node.removeAttribute('id');
+        // A pinned card's chat copy keeps its ids aside; placeIds() decides which copy holds them.
+        if (pinned.has(card.id)) for (const node of [n, ...n.querySelectorAll('[id]')]) { node.dataset.chatId = node.id; node.removeAttribute('id'); }
         const prev = chatEl.lastElementChild;
         if (!(prev && prev.classList.contains('assistant'))) chatEl.appendChild(leadBy());
         chatEl.appendChild(n);
@@ -963,6 +973,7 @@
     const workingText = (t.lead_name || 'The lead') + ' is working';
     if ($('working-label').textContent !== workingText) { $('working-label').textContent = workingText; workingEl.setAttribute('aria-label', workingText); }
     if (workingEl.hidden === working) { workingEl.hidden = !working; if (working && nearBottom) changed = true; }
+    placeIds();
     if (window.WCAside) window.WCAside.update(data, changed);
     if (changed && nearBottom) window.scrollTo(0, document.body.scrollHeight);
     const queuedTotal = Math.max(data.queued, pending.length);
