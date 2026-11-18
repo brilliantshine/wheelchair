@@ -311,6 +311,20 @@ validation list updated. Decisions 11-12.
 | mechanics | major | Stale record has no defined Try behaviour | upheld (dup of intent 1) | Fixed in the Q5 redesign |
 | mechanics | major | Browser POST omits `dismiss` and `version` | upheld (dup of intent 3) | Fixed in the Q5 redesign |
 
+### Round 3 — 2026-11-18
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 2:** Collin chose (Decision 13) to drop setting aside his own
+changes: Try now refuses a copy with changes, and leftovers from trying are backed up to
+private pinned commits and cleared path by path ("Back up the leftovers"). The whole
+Behaviour, record shape (`active`/`pending`/`backups`), refusals, reconcile, Dismiss,
+hub and machine contracts, non-goals and validation list were rewritten; one Accepted
+Risk added.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 Parts of the Spec already built before this plan reached Stage 3 — adopted from outside
