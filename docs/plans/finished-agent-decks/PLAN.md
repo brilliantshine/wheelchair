@@ -15,7 +15,10 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-(Filled after mapping.)
+### Q1: What colors a round's square: what reviewers raised, or what the lead upheld?
+- **Context:** Reviewer reports already list one `SEVERITY:` line per objection and verifier reports one `GAP:` line per problem (`protocol/app/reviewer.md:66`, `protocol/app/verifier.md:104`), stored with each session's result. Separately, the lead's review progress line records per round how many findings it upheld after triage (`found`, `protocol/app/lead.md:300-305`); declined findings are not counted there.
+- **Options:** A) raw count from the reports (every objection a reviewer wrote, including ones the lead threw out); B) the lead's upheld count for that round, with the listed objection text still taken from the reports.
+- **Recommendation:** B: it measures whether the plan is converging, not how chatty a reviewer was; and it is the same number the progress line already shows.
 
 ## Watch List
 
@@ -36,6 +39,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | # | Decision | Rationale | Source |
 |---|----------|-----------|--------|
 | 1 | Mode: two-part | Collin picked it on the mode card | user |
+| 2 | Round numbers are recorded at start: reviewer and verifier `session start` take a round number, stored on the session | MAP: no existing record ties a session to a round; attempt ids are per start, not per round (MAP.md) | defaulted |
+| 3 | Objection and problem text comes from the stored report's `SEVERITY:` / `GAP:` lines | Reports already use these exact line forms | defaulted |
+| 4 | Decks group only what the tree shows today; closed asides, which the tree never shows (`viewer/app/agents.js:115`), stay out | Adding them is a separate change to which agents appear | defaulted |
 
 ## Spec
 
