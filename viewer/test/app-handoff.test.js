@@ -61,3 +61,31 @@ test('machine client sends scripted handoff actions and times out', async (t) =>
   client.handoffTimeout = 10;
   await assert.rejects(client.handoff('hub', { action: 'inspect', thread_id: id }), /The machine didn't answer in time/);
 });
+
+test('export reasons follow their order and committed stopping points', () => {
+  const { exportReason, quietReason, stageFor } = require('../app/handoff.js');
+  const hub = { runningHandoffOps: new Set(), uploadsInFlight: new Map() };
+  const thread = { id, sessions: [{ name: 'lead', role: 'lead', live: false, queue: [] }], cards: [], asides: [] };
+  const status = { repository: 'github.com/owner/repo', branch: `wc/${id}`, idea_status: 'confirmed', plan_status: null, map_committed: true, head: 'a', remote_tip: 'a' };
+  const reason = () => exportReason(hub, thread, status, { pressed: true });
+  assert.equal(reason(), null);
+  thread.archived = true; assert.equal(reason(), "Archived threads can't be exported"); delete thread.archived;
+  thread.handed_off = {}; assert.equal(reason(), 'Already handed off'); delete thread.handed_off;
+  thread.handoff_op = {}; assert.equal(reason(), "An import or undo didn't finish"); delete thread.handoff_op;
+  thread.cards.push({ kind: 'merged' }); assert.match(reason(), /merged or closed/); thread.cards = [];
+  status.repository = null; assert.match(reason(), /origin isn't on GitHub/); status.repository = 'github.com/owner/repo';
+  thread.asides.push({ status: 'open' }); assert.equal(reason(), 'Agents are still working'); thread.asides = [];
+  thread.sessions.push({ role: 'worker', live: true }); assert.equal(reason(), 'Agents are still working'); thread.sessions.pop();
+  thread.sessions[0].queue.push({}); assert.equal(reason(), 'The lead is busy'); thread.sessions[0].queue = [];
+  thread.sessions.push({ role: 'worker', live: false, queue: [{}] }); assert.equal(reason(), null); thread.sessions.pop();
+  thread.sessions[0].live = true; thread.sessions[0].turn_ended = false; assert.equal(quietReason(hub, thread), 'The lead is busy'); thread.sessions[0].turn_ended = true;
+  thread.cards.push({ kind: 'sudo', state: 'running' }); assert.equal(reason(), 'A root command is waiting'); thread.cards = [];
+  hub.uploadsInFlight.set(id, 1); assert.equal(reason(), 'A file is still uploading'); hub.uploadsInFlight.clear();
+  status.dirty = true; assert.equal(reason(), "Some changes aren't committed yet"); status.dirty = false;
+  status.map_committed = false; assert.match(reason(), /Not at a stopping point/); status.map_committed = true;
+  thread.cards.push({ id: 'a', kind: 'question', doc: 'IDEA.md', answered: true, at });
+  thread.cards.push({ id: 'b', kind: 'question', answered: true, at: '2026-11-18T12:00:00.000Z' });
+  assert.equal(stageFor(thread, status), null); thread.cards[1].retracted_at = at; assert.equal(stageFor(thread, status), 'idea-confirmed');
+  status.plan_status = 'done'; thread.cards.push({ kind: 'done', pr_url: 'url' }); status.remote_tip = 'b'; assert.equal(reason(), 'A fix is still being checked');
+  status.remote_tip = 'a'; status.pr_state = 'CLOSED'; assert.match(reason(), /merged or closed/);
+});

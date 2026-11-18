@@ -81,4 +81,45 @@ function buildHandoffFile(thread, { head, stage, repository, pr_url }) {
   return file;
 }
 
-module.exports = { historyText, buildHandoffFile, validateHandoffFile, handoffFileName };
+const NOT_POINT = 'Not at a stopping point: export after the idea is confirmed, once the plan is approved, or when it’s done'.replace('it’s', "it's");
+function unfinished(hub, thread) { return Boolean(thread.handoff_op && !hub.runningHandoffOps?.has(thread.id)); }
+function frozen(hub, thread) { return Boolean(thread.handed_off || unfinished(hub, thread)); }
+function quietReason(hub, thread) {
+  const sessions = thread.sessions || [];
+  if (sessions.some((s) => s.role !== 'lead' && s.live) || (thread.asides || []).some((aside) => aside.status === 'open' || aside.turn)) return 'Agents are still working';
+  if (sessions.some((s) => (s.role === 'lead' && s.live && s.turn_ended !== true)
+    || ((s.live || s.status === 'pending' || s.role === 'lead') && (s.queue || thread.queues?.[s.name] || []).length))) return 'The lead is busy';
+  if ((thread.cards || []).some((card) => card.kind === 'sudo' && ['waiting', 'running'].includes(card.state))) return 'A root command is waiting';
+  if ((hub.uploadsInFlight?.get(thread.id) || 0) > 0) return 'A file is still uploading';
+  return null;
+}
+function answerAt(card, thread) {
+  if (card.retracted_at || !card.answered) return null;
+  const sent = (thread.sent || []).filter((item) => item.source === 'card' && item.text?.startsWith(`[card ${card.id}] `)).at(-1);
+  return sent?.at || card.resolved_at || card.at || card.created_at;
+}
+function stageFor(thread, status) {
+  const cards = thread.cards || [];
+  if (status.plan_status === 'approved' && !cards.some((c) => c.kind === 'approval' && !c.retracted_at && c.answered_action === 'start-building')) return 'approved';
+  if (status.plan_status === 'done' && ([...cards].reverse().find((c) => c.kind === 'done' && !c.replaced && c.pr_url)?.pr_url || thread.imported?.pr_url)) return 'done';
+  if (status.idea_status !== 'confirmed' || !status.map_committed || ![null, undefined, 'planning'].includes(status.plan_status)) return null;
+  const questions = cards.filter((card) => card.kind === 'question' && answerAt(card, thread));
+  const anchor = questions.filter((card) => card.doc === 'IDEA.md').map((card) => answerAt(card, thread)).sort().at(-1) || thread.imported?.at;
+  if (questions.some((card) => !anchor || answerAt(card, thread) > anchor)) return null;
+  return 'idea-confirmed';
+}
+function exportReason(hub, thread, status, { pressed = false } = {}) {
+  if (thread.archived) return "Archived threads can't be exported";
+  if (thread.handed_off) return 'Already handed off';
+  if (unfinished(hub, thread)) return "An import or undo didn't finish";
+  if ((thread.cards || []).some((card) => card.kind === 'merged') || (pressed && status?.pr_state && status.pr_state !== 'OPEN')) return 'The pull request is merged or closed; nothing left to hand off';
+  if (status && !status.repository) return "This project's origin isn't on GitHub";
+  const quiet = quietReason(hub, thread);
+  if (quiet) return quiet;
+  if (status?.dirty) return "Some changes aren't committed yet";
+  if (pressed && status && stageFor(thread, status) === 'done' && status.head !== status.remote_tip) return 'A fix is still being checked';
+  if (!status || status.branch !== `wc/${thread.id}` || !stageFor(thread, status)) return NOT_POINT;
+  return null;
+}
+module.exports = { historyText, buildHandoffFile, validateHandoffFile, handoffFileName, unfinished, frozen, quietReason, stageFor, exportReason };
+

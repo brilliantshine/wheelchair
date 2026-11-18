@@ -10,6 +10,7 @@ const chat = require('./chat.js');
 const sessions = require('./sessions.js');
 const threads = require('./threads.js');
 const views = require('./views.js');
+const handoff = require('./handoff.js');
 const { handle } = require('./routes.js');
 
 class Hub {
@@ -36,6 +37,9 @@ class Hub {
     this.threadsDir = this.state.threadsDir;
     this.lastSeen = new Map();
     this.threadLocks = new Map();
+    this.runningHandoffOps = new Set();
+    this.uploadsInFlight = new Map();
+    this.handoffStatus = new Map();
     this.nameQueue = Promise.resolve();
     const configuredRetry = Number(queueRetryInterval ?? process.env.WHEELCHAIR_QUEUE_RETRY_MS ?? 5_000);
     this.queueRetryInterval = Number.isFinite(configuredRetry) && configuredRetry > 0 ? configuredRetry : 5_000;
@@ -156,7 +160,26 @@ class Hub {
     this.mergePolling = threads.pollMerged(this).finally(() => { this.mergePolling = null; });
     return this.mergePolling;
   }
-  chat(id) { return this.withThread(id, () => chat.chat(this, id)); }
+  frozen(thread) { return handoff.frozen(this, thread); }
+  quietReason(thread) { return handoff.quietReason(this, thread); }
+  exportReason(thread, status, options) { return handoff.exportReason(this, thread, status, options); }
+  async handoffStatusRead(thread) {
+    if (!thread.worktree || !thread.slug) return null;
+    try {
+      const status = await this.client.handoff(thread.machine, { action: 'status', thread_id: thread.id, project: thread.project, worktree: thread.worktree, slug: thread.slug, ...((thread.cards || []).slice().reverse().find((c) => c.kind === 'done' && !c.replaced && c.pr_url)?.pr_url || thread.imported?.pr_url ? { pr_url: (thread.cards || []).slice().reverse().find((c) => c.kind === 'done' && !c.replaced && c.pr_url)?.pr_url || thread.imported.pr_url } : {}) });
+      if (status.result === 'failed') return null;
+      this.handoffStatus.set(thread.id, status);
+      return status;
+    } catch { return null; }
+  }
+  chat(id) { return this.withThread(id, async () => {
+    const result = await chat.chat(this, id);
+    const thread = await this.thread(id);
+    const status = await this.handoffStatusRead(thread) || this.handoffStatus.get(id);
+    const reason = this.exportReason(thread, status);
+    result.thread.export = { ok: !reason, reason };
+    return result;
+  }); }
   features() { return views.features(this); }
   sessions() { return views.sessions(this); }
   findSessionMachine(name) { return views.findSessionMachine(this, name); }

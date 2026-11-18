@@ -67,27 +67,36 @@ async function handle(hub, request, response, url, machineAuthenticated) {
 }
 
 async function upload(hub, request, response, url, id) {
-  const thread = await hub.thread(id);
-  const lead = thread.sessions.find((session) => session.role === 'lead' && session.live);
-  if (thread.archived || !lead) throw appError(409, 'no live lead or thread is archived');
   const length = request.headers['content-length'];
   if (typeof length !== 'string' || !/^\d+$/.test(length) || Number(length) > UPLOAD_LIMIT) throw appError(413, 'missing or oversized content-length');
-  const query = new URLSearchParams({ thread_id: id, name: url.searchParams.get('name') || '' });
-  // The checks above are the gate. A lead waiting for room or starting has no session on the
-  // machine yet, so tell the machine the thread is open rather than have it judge the lead.
-  query.set('vouched', '1');
-  let result;
+  const thread = await hub.withThread(id, async () => {
+    const current = await hub.thread(id);
+    const lead = current.sessions.find((session) => session.role === 'lead' && session.live);
+    if (current.archived || !lead) throw appError(409, 'no live lead or thread is archived');
+    hub.uploadsInFlight.set(id, (hub.uploadsInFlight.get(id) || 0) + 1);
+    return current;
+  });
+  const query = new URLSearchParams({ thread_id: id, name: url.searchParams.get('name') || '', vouched: '1' });
   try {
-    result = await hub.client.stream(thread.machine, `/v1/uploads?${query}`, 'POST', request);
+    const result = await hub.client.stream(thread.machine, `/v1/uploads?${query}`, 'POST', request);
+    response.writeHead(result.status, { 'content-type': result.headers['content-type'] || 'application/json' });
+    await new Promise((resolve) => {
+      response.once('finish', resolve);
+      response.once('close', resolve);
+      result.body.on('error', () => { response.destroy(); resolve(); });
+      result.body.pipe(response);
+    });
   } catch (error) {
     if (error.status || !error.machineConnection) throw error;
     if (response.headersSent) response.destroy();
     else if (response.writable && !response.destroyed) send(response, 409, { error: 'upload cancelled by the machine' });
-    return;
+  } finally {
+    await hub.withThread(id, () => {
+      const remaining = (hub.uploadsInFlight.get(id) || 1) - 1;
+      if (remaining) hub.uploadsInFlight.set(id, remaining);
+      else hub.uploadsInFlight.delete(id);
+    });
   }
-  response.writeHead(result.status, { 'content-type': result.headers['content-type'] || 'application/json' });
-  result.body.on('error', () => response.destroy());
-  result.body.pipe(response);
 }
 
 // Spec "Hub", Routes: everything the New thread screen needs for one machine in one answer.
