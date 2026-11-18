@@ -207,6 +207,15 @@ test('Codex command line has session-name notify and inline projects trust', asy
 test('Claude trust dialog is answered Down then Enter', async () => {
   const env = await service(await temp(), { pane: trustDialog }); try { await start(env); const calls = await log(env); assert.match(calls, /send-keys -t wc-t-lead Down/); assert.match(calls, /send-keys -t wc-t-lead Enter/); } finally { await env.close(); }
 });
+const themePicker = " Let's get started.\n\n Choose the text style that looks best with your terminal\n To change this later, run /theme\n\n     Auto (match terminal)\n ❯ ✔ Dark mode\n     Light mode\n";
+const securityNotes = ' Security notes:\n 1. Claude can make mistakes.\n Press Enter to continue…\n';
+test('Claude first-run theme picker and security notes are answered with Enter alone, and are not ready', async () => {
+  for (const pane of [themePicker, securityNotes]) {
+    const env = await service(await temp(), { pane }); try { await start(env); const calls = await log(env); assert.match(calls, /send-keys -t wc-t-lead Enter/); assert.doesNotMatch(calls, /send-keys -t wc-t-lead Down/); assert.notEqual(env.instance.sessions['wc-t-lead'].status, 'ready'); } finally { await env.close(); }
+  }
+  const adapter = require('../adapters/claude');
+  assert.equal(adapter.readyText({ permission_mode: 'bypass' }, themePicker + '⏵⏵ bypass permissions on\n❯ \n'), false);
+});
 test('session is stuck after 30 seconds then becomes ready', async () => {
   const env = await service(await temp(), { pane: 'loading' }); try { await start(env); const session = env.instance.sessions['wc-t-lead']; session.created_at = new Date(Date.now() - 31_000).toISOString(); await env.instance.checkReady(session); assert.equal(session.status, 'stuck'); await write(env.fake.pane, readyClaude); await env.instance.checkReady(session); assert.equal(session.status, 'ready'); } finally { await env.close(); }
 });
@@ -1643,5 +1652,34 @@ test('archive saves the in-progress marker before stopping and clears it on fail
     assert.ok(observed.archiving.includes(id), JSON.stringify(observed));
     const markers = JSON.parse(await fs.readFile(path.join(env.state, 'archive-markers.json'), 'utf8'));
     assert.equal(markers.archiving.includes(id), false, JSON.stringify(markers)); assert.equal(env.instance.archivingThreads.has(id), false);
+  } finally { await env.close(); }
+});
+
+test('approval warnings are machine owned and never await a refresh', async () => {
+  const env = await service(await temp());
+  try {
+    await start(env);
+    await start(env, { role: 'worker', thread_id: 'w', token: 'worker-token' });
+    let release; let scans = 0;
+    env.instance.scanStartupWarning = async () => { scans++; if (scans === 1) await new Promise(r => { release = r; }); return null; };
+    env.instance.startupWarning = 'machine warning';
+    const headers = agentHeader('alpha');
+    await api(env, 'POST', '/v1/agent/cards', { kind: 'approval', warnings: ['forged'] }, headers);
+    assert.equal(env.instance.startupWarningRerun, false);
+    await api(env, 'POST', '/v1/agent/cards', { kind: 'approval', warnings: ['forged'] }, headers);
+    assert.equal(env.instance.startupWarningRerun, true);
+    await api(env, 'POST', '/v1/agent/cards', { kind: 'idea', warnings: ['forged'] }, headers);
+    await api(env, 'POST', '/v1/agent/cards', { kind: 'approval', warnings: ['forged'] }, agentHeader('worker-token'));
+    const files = (await fs.readdir(path.join(env.state, 'spool', 'cards'))).sort();
+    const cards = await Promise.all(files.map(file => fs.readFile(path.join(env.state, 'spool', 'cards', file), 'utf8').then(JSON.parse)));
+    assert.equal(cards.filter(c => c.warnings?.[0] === 'machine warning').length, 2);
+    assert.equal(cards.filter(c => !('warnings' in c)).length, 2);
+    release();
+    while (env.instance.startupWarningRunning) await new Promise(resolve => setImmediate(resolve));
+    assert.equal(scans, 2);
+    await api(env, 'POST', '/v1/agent/cards', { kind: 'idea', warnings: ['forged'] }, headers);
+    const after = (await fs.readdir(path.join(env.state, 'spool', 'cards'))).sort();
+    const last = JSON.parse(await fs.readFile(path.join(env.state, 'spool', 'cards', after.at(-1)), 'utf8'));
+    assert.equal('warnings' in last, false);
   } finally { await env.close(); }
 });

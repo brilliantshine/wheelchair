@@ -344,9 +344,18 @@
     const when = Date.parse(time); const cutoff = Date.parse(thread().imported.at);
     return !Number.isFinite(when) || !Number.isFinite(cutoff) || when >= cutoff;
   }
-  function unpinnedCards() {
-    const ids = new Set(data.pinned.map((c) => c.id));
-    return data.cards.filter((c) => !ids.has(c.id) && sinceImport(c.created_at || c.at));
+  // Every card shows in the conversation at its time, pinned or not. While the pins are open, a
+  // pinned card's copy here drops its element ids, so links and lookups land on the pinned copy.
+  function pinnedIds() { return new Set(data.pinned.map((c) => c.id)); }
+  // Ids stay unique: a chat copy holds them only while its card is not drawn in the pins (pins
+  // folded, or the card unpinned before the chat redrew). Runs after every render, because the
+  // pins and the chat redraw separately (the chat waits while text in it is selected).
+  function placeIds() {
+    for (const node of chatEl.querySelectorAll('[data-chat-id]')) {
+      const inPins = pinnedEl.querySelector('#' + CSS.escape(node.dataset.chatId));
+      if (inPins && node.id) node.removeAttribute('id');
+      else if (!inPins && !node.id) node.id = node.dataset.chatId;
+    }
   }
 
   function renderChat() {
@@ -358,14 +367,18 @@
       if (at >= 0) { humans.splice(at, 1); return false; }
       return true;
     });
-    const cards = unpinnedCards();
+    const cards = data.cards.filter((c) => sinceImport(c.created_at || c.at));
+    const pinned = pinnedIds();
     let next = 0;
     const cardsBefore = (when) => {
       while (next < cards.length) {
         const cardAt = Date.parse(cards[next].at);
         if (when !== undefined && !(cardAt < when)) break;
-        const n = renderCard(cards[next++]);
+        const card = cards[next++];
+        const n = renderCard(card);
         if (!n) continue;
+        // A pinned card's chat copy keeps its ids aside; placeIds() decides which copy holds them.
+        if (pinned.has(card.id)) for (const node of [n, ...n.querySelectorAll('[id]')]) { node.dataset.chatId = node.id; node.removeAttribute('id'); }
         const prev = chatEl.lastElementChild;
         if (!(prev && prev.classList.contains('assistant'))) chatEl.appendChild(leadBy());
         chatEl.appendChild(n);
@@ -692,6 +705,17 @@
         }
         status.appendChild(words);
         r.appendChild(status);
+        if (Array.isArray(card.warnings) && card.warnings.length) {
+          const notice = el('div', 'ready-status no approval-warnings');
+          notice.appendChild(el('span', 'dotmark amber'));
+          const warningWords = el('div');
+          warningWords.appendChild(el('div', 'ready-no', 'Heads-up'));
+          const list = el('ul');
+          for (const warning of card.warnings) list.appendChild(el('li', '', warning));
+          warningWords.appendChild(list);
+          notice.appendChild(warningWords);
+          r.appendChild(notice);
+        }
         box.appendChild(r);
         break;
       }
@@ -988,6 +1012,12 @@
     waitEl.textContent = text;
   }
 
+  function selectingInChat() {
+    const sel = window.getSelection();
+    return Boolean(sel && !sel.isCollapsed && sel.rangeCount && chatEl.contains(sel.anchorNode));
+  }
+  document.addEventListener('selectionchange', () => { if (data && !selectingInChat()) render(); });
+
   function render() {
     if (!data) return;
     const t = thread();
@@ -1002,12 +1032,16 @@
     const nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
     let changed = false;
     const leadNow = leadSession();
-    sync('chat', [data.items, pending, leadNow && [leadNow.queue, leadNow.ready, leadNow.permission_open, leadNow.needs_open, leadNow.limited_until], sendingNow, slug(), t.archived, t.handed_off, t.handoff_op, t.imported, unpinnedCards(), cardErrors, declining], () => { renderChat(); changed = true; });
+    // Text selected in the chat (for an aside) would vanish with a redraw, so the redraw waits
+    // until the selection is gone; the selectionchange listener above calls render() then.
+    const chatSig = JSON.stringify([data.items, pending, leadNow && [leadNow.queue, leadNow.ready, leadNow.permission_open, leadNow.needs_open, leadNow.limited_until], sendingNow, slug(), t.archived, t.handed_off, t.handoff_op, t.imported, data.cards, data.pinned.map((c) => c.id), pinsFolded, ideaOpen, cardErrors, declining]);
+    if (sigs.chat !== chatSig && !selectingInChat()) { sigs.chat = chatSig; renderChat(); changed = true; }
     const workingEl = $('working');
     const working = leadWorking() && !t.archived;
     const workingText = (t.lead_name || 'The lead') + ' is working';
     if ($('working-label').textContent !== workingText) { $('working-label').textContent = workingText; workingEl.setAttribute('aria-label', workingText); }
     if (workingEl.hidden === working) { workingEl.hidden = !working; if (working && nearBottom) changed = true; }
+    placeIds();
     if (window.WCAside) window.WCAside.update(data, changed);
     if (changed && nearBottom) window.scrollTo(0, document.body.scrollHeight);
     const queuedTotal = Math.max(data.queued, pending.length);
