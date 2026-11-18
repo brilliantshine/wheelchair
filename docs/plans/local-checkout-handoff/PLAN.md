@@ -15,7 +15,10 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-None.
+### Q5: Keep automatic set-aside of his own changes?
+- **Context:** Round 2 showed `git stash` can delete files (ignored files, files an engine writes mid-stash) and races on the shared stash list; making it safe is a large, fragile build.
+- **Options:** (a) keep it, with a much bigger build and "close your engine first"; (b) refuse whenever his copy has changes, both ways; (c) refuse on Try if his copy has changes, and on Switch back save the trial's leftovers to a private backup then clear only those files.
+- **Recommendation:** (c).
 
 ## Watch List
 
@@ -267,6 +270,22 @@ validation list updated. Decisions 11-12.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | blocking | Stale `trying` record reused by the next Try | upheld | Pending Q5 (reworks stale handling) |
+| intent | major | Commits made while trying lost when Try moves away | upheld | Pending Q5 |
+| intent | major | Hub/machine contracts omit `dismiss` and `version` | upheld | Pending Q5 |
+| intent | minor | After a clash the only pointer to his changes is one error line | upheld | Pending Q5 |
+| intent | minor | Kept sets pile up unseen | upheld | Pending Q5 |
+| intent | minor | Main-working-tree refusal blocks his own linked worktree | upheld (agents' copies are all under `<stateDir>/worktrees`, `machine/service.js:488-490`) | Pending Q5 |
+| mechanics | blocking | Stash's internal reset can delete an ignored file before the switch | user-decision | Q5: stash-based set-aside is the root cause |
+| mechanics | blocking | Stash's broad clean can delete a file an engine writes mid-stash | user-decision | Q5 |
+| mechanics | blocking | Clean check treats protected ignored paths as dirt | user-decision | Q5 |
+| mechanics | blocking | Journal cannot tell which operation to recover | upheld | Pending Q5 |
+| mechanics | blocking | Back applies the stash when HEAD moved somewhere else | upheld | Pending Q5 |
+| mechanics | blocking | `stash drop` printed sha cannot verify what was deleted | user-decision | Q5 |
+| mechanics | major | Submodule pointer changes strand a trial | upheld | Pending Q5 |
+| mechanics | major | Detached return commit and refresh commits unpinned | upheld | Pending Q5 |
+| mechanics | major | Stale record has no defined Try behaviour | upheld (dup of intent 1) | Pending Q5 |
+| mechanics | major | Browser POST omits `dismiss` and `version` | upheld (dup of intent 3) | Pending Q5 |
 
 ## Prior Work
 
