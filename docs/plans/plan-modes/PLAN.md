@@ -15,8 +15,6 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q3: Who decides what is deferred, and does Collin see each deferral?
-
 ### Q4: Is the follow-up plan reviewed in this thread, or only in the new one?
 
 ### Q5: Can the mode change partway through planning?
@@ -43,6 +41,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 |   |          |           | user / defaulted / adopted / idea-change / review-round-N |
 | D1 | The lead suggests a mode with a one-line reason when a thread becomes a feature; Collin accepts it or picks another | The lead has read the request and can tell a proof of concept from lasting work; Collin keeps the final say | user |
 | D2 | In two-part and proof-of-concept, plan review still runs. Findings that would build the wrong thing or cannot be built must be fixed; findings that only make it sturdier are deferred to the follow-up plan (two-part) or accepted as risks (proof of concept) | Keeps the check that stops a wrong build, drops only the hardening Collin chose to postpone | user |
+| D3 | Deferred items show on a pinned running list, like "Your idea so far", updated as items are added in planning or review. Removing one pulls it back into the first build | Collin sees deferrals as they happen and can reverse one with a press, without a card per item | user |
 
 ## Spec
 
@@ -69,6 +68,13 @@ build the wrong thing or cannot be built is fixed in the Spec as today. A findin
 makes the feature sturdier (edge cases, hardening, polish) is not fixed: in `two-part` it is
 moved to the follow-up plan, in `proof-of-concept` to Accepted Risks. Either counts as
 resolved for the clean test.
+
+### Seeing what is deferred
+
+In the lighter modes, a pinned list shows every deferred item as it is added, during
+planning or review (D3). It works like the idea card: each item has a remove button, and
+removing one pulls that item back into the first build's Spec. In `proof-of-concept` the
+list shows what is being accepted as risk.
 
 ## Accepted Risks
 
