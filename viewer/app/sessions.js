@@ -362,7 +362,10 @@ async function startSession(hub, thread, input) {
   }
   if (started.default_branch) thread.default_branch = started.default_branch;
   await hub.save(thread);
-  if (role === 'lead' && thread.slug && thread.worktree && hub.registerPlan) await hub.registerPlan(require('node:path').join(thread.worktree, 'docs', 'plans', thread.slug));
+  if (role === 'lead' && thread.slug && thread.worktree && hub.registerPlan) {
+    try { await hub.registerPlan(require('node:path').join(thread.worktree, 'docs', 'plans', thread.slug)); }
+    catch (error) { console.error('Could not register plan:', error); }
+  }
   return session;
 }
 

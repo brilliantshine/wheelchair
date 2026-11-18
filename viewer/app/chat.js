@@ -256,7 +256,7 @@ async function chat(hub, id) {
   const shown = toolSteps === 'hide' ? items.filter((item) => item.type !== 'tool') : items;
   // The pull request each thread produced, from its latest done card, so the page can link it
   // and a stub can link the one it waits on.
-  const prOf = (item) => item ? require('./handoff.js').donePr(item) : null;
+  const prOf = (item) => item ? require('./handoff.js').donePr(item, { includeReplaced: true }) : null;
   const parent = thread.parent ? await hub.thread(thread.parent).catch(() => null) : null;
   const publicThread = {
     ...thread,

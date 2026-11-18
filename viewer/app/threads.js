@@ -6,7 +6,7 @@ const { promisify } = require('node:util');
 const crypto = require('node:crypto');
 const { appError } = require('./state.js');
 const { truncateTitle } = require('./card.js');
-const { publicSession, startSession, newSessionName } = require('./sessions.js');
+const { publicSession, startSession, newSessionName, deliver } = require('./sessions.js');
 const { check: readyCheck, same: sameReady } = require('./ready.js');
 
 const ARCHIVED_DOCUMENTS = new Set(['MAP.md', 'IDEA.md', 'PLAN.md']);
@@ -127,6 +127,12 @@ async function restartLead(hub, id) {
   if (liveLead) {
     throw appError(409, 'lead is still live');
   }
+  if (thread.checkout_sha && thread.worktree) {
+    try {
+      const inspected = await hub.client.handoff(thread.machine, { action: 'inspect', thread_id: thread.id, project: thread.project, branch: `wc/${thread.id}`, head: thread.checkout_sha, slug: thread.slug, worktree: thread.worktree });
+      if (inspected.worktree_exists === false) { thread.worktree = null; await hub.save(thread); }
+    } catch {}
+  }
   const state = {
     slug: thread.slug,
     cards: thread.cards.filter((card) => !card.replaced),
@@ -152,12 +158,14 @@ async function restartLead(hub, id) {
     thread.queues ||= {};
     for (const session of ended) { session.queue = []; delete thread.queues[session.name]; }
     for (const name of names) delete thread.queues[name];
-    const pending = { name: newSessionName(thread, 'lead'), role: 'lead', token: crypto.randomBytes(32).toString('hex'), started_by: null, attempt_id: null, status: 'pending', live: false, ready: false, created_at: new Date().toISOString(), queue: [{ text: context, source: 'context', at: new Date().toISOString() }, ...queued] };
+    const pending = { name: newSessionName(thread, 'lead'), role: 'lead', token: crypto.randomBytes(32).toString('hex'), started_by: null, attempt_id: null, status: 'pending', live: false, ready: false, created_at: new Date().toISOString(), queue: [{ text: context, source: 'context', at: new Date().toISOString() }, ...queued.filter((message) => message.source !== 'context')] };
     thread.sessions.push(pending);
     thread.queues[pending.name] = pending.queue;
     for (const card of thread.cards) if (card.kind === 'needs' && ['Sessions ended', "The lead's turn failed"].includes(card.title) && !card.answered) card.answered = true;
     await hub.save(thread);
-    return startSession(hub, thread, { role: 'lead', cli: thread.cli, brief: '', tier: 'top', worktree: thread.worktree, branch: thread.branch, ...(!thread.worktree && thread.checkout_sha ? { from_remote_branch: { sha: thread.checkout_sha } } : {}), _waiting: pending });
+    const lead = await startSession(hub, thread, { role: 'lead', cli: thread.cli, brief: '', tier: 'top', worktree: thread.worktree, branch: thread.branch, ...(!thread.worktree && thread.checkout_sha ? { from_remote_branch: { sha: thread.checkout_sha } } : {}), _waiting: pending });
+    await deliver(hub, thread, lead);
+    return lead;
   }
   // The thread keeps its worktree across leads; asking for a new one would fail on the
   // existing wc/<thread-id> branch.
@@ -380,7 +388,7 @@ async function dismiss(hub, id, cardId) {
 }
 
 function mergedPr(thread) {
-  return require('./handoff.js').donePr(thread);
+  return require('./handoff.js').donePr(thread, { valid: (url) => typeof url === 'string' && Boolean(url.trim()) });
 }
 
 async function pollMerged(hub) {

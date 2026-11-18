@@ -58,13 +58,16 @@ class Hub {
       let changed = false;
       if (thread.imported) for (const session of thread.sessions || []) {
         if (session.role === 'lead' && session.live && session.status === 'starting' && !Object.hasOwn(session, 'first_message')) {
-          session.live = false; changed = true;
+          session.live = false; session.status = 'ended'; changed = true;
         }
       }
       if (changed) await this.save(thread);
     }
     if (this.registerPlan) for (const thread of await this.allThreads()) {
-      if (thread.slug && thread.worktree) await this.registerPlan(require('node:path').join(thread.worktree, 'docs', 'plans', thread.slug));
+      if (thread.slug && thread.worktree) {
+        try { await this.registerPlan(path.join(thread.worktree, 'docs', 'plans', thread.slug)); }
+        catch (error) { console.error('Could not register plan:', error); }
+      }
     }
     for (const [name, machine] of Object.entries(await this.state.machines())) {
       if (machine.last_seen) this.lastSeen.set(name, machine.last_seen);

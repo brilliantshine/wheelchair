@@ -102,8 +102,8 @@ function answerAt(card, thread) {
   const sent = (thread.sent || []).filter((item) => item.source === 'card' && item.text?.startsWith(`[card ${card.id}] `)).at(-1);
   return sent?.at || card.resolved_at || card.at || card.created_at;
 }
-function donePr(thread) {
-  return [...(thread.cards || [])].reverse().find((card) => card.kind === 'done' && !card.replaced && card.pr_url && (!thread.imported || Date.parse(card.created_at || card.at) > Date.parse(thread.imported.at)))?.pr_url || thread.imported?.pr_url || null;
+function donePr(thread, { includeReplaced = false, valid = (url) => Boolean(url) } = {}) {
+  return [...(thread.cards || [])].reverse().find((card) => card.kind === 'done' && (includeReplaced && !thread.imported || !card.replaced) && valid(card.pr_url) && (!thread.imported || Date.parse(card.created_at || card.at) > Date.parse(thread.imported.at)))?.pr_url || thread.imported?.pr_url || null;
 }
 function stageFor(thread, status) {
   const cards = thread.cards || [];
