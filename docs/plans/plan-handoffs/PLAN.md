@@ -324,6 +324,10 @@ The hub then, inside `withThread(<file thread id>)`:
    For Create and Advance, the remote tip must also **equal** `head`. A tip past `head`
    means someone already picked the work up: 409 "This was already picked up elsewhere on
    <committer date of the first commit after head>; export again from wherever it is now".
+   Except when the tip is exactly a claim on this hub's revoke list whose `parent` is
+   `head`: then 409 "An earlier cancelled import is still being undone; try again in a few
+   minutes", and the hub runs that entry's revoke at once. The Claim step's abandon check
+   uses the same exception.
 
 **Create** saves a new record (the file's `id`, `title`, `slug`, the picked machine and
 project, `branch: wc/<id>`, no sessions) together with its `handoff_op`, then runs the
@@ -448,9 +452,12 @@ worktree is recorded, and that path adopts a checkout a lost start left behind.
 (`running`) for tmux sessions of the thread's lead names that the hub does not count as
 live (starting or running), kills them (`kill`), and refuses with 409 "The previous agent
 is still stopping; try again in a minute" if `kill` reports any left. It moves any queued
-context from those names to the new one; then it picks the new lead's name
-(`newSessionName`), puts the context message in that name's queue and saves, **then**
-starts the session. A crash after the start still leaves the context queued for the lead;
+context from those names, **and from any lead session record the hub holds that is not
+live and has a non-empty queue** (a crash after an earlier restart's save but before its
+start), to the new one; then it picks the new lead's name (`newSessionName`), creates that
+session's record (not live, status `pending`) with the context message in its queue, saves,
+**then** starts the session, which turns the same record live. An export's quiet test
+ignores queues of sessions that are not live and not `pending`. A crash after the start still leaves the context queued for the lead;
 a crash before it leaves a thread with no live lead, which shows Restart.
 
 **What the lead is told.** Restart's context JSON gains, for a thread with `imported`, an
@@ -469,17 +476,27 @@ and its thread id is not in that set.
 - shows, instead of the composer, a panel "The import didn't finish." (or "The undo didn't
   finish."), the saved `last_error` when there is one, and a **Retry** button:
   `POST /threads/:id/retry-handoff` runs the saved operation again from its record;
-- offers **Cancel** next to Retry while `applied` is false. Cancel never waits on or asks
-  about a push that may still be under way. Instead, when `claim_sha` is set, it first
-  adds `{thread_id, project, machine, branch, parent, sha: claim_sha, until: now + 24
-  hours}` to the hub's durable revoke list (`handoffs/revoke.json`), then abandons the
-  operation without the 409: Create deletes its record, Advance and Undo clear
-  `handoff_op`. When `claim_sha` is null, it just abandons.
-- **Revoking.** At hub start and every 10 minutes, the hub calls `claim-revoke` for each
-  entry on the revoke list: `revoked` or `gone` removes the entry; `waiting` keeps it until
-  `until`, then removes it. So a pick-up commit that lands after Cancel, from a push that
-  was slow, retried or outlived a restart, is taken back off GitHub, and only if nothing
-  was built on it.
+- offers **Cancel** next to Retry while `claim_landed` is false. Until the claim is known
+  to have landed, Checkout has not run, so nothing local has changed and Cancel has
+  nothing local to undo. Cancel never waits on or asks about a push that may still be under
+  way. Instead, when `claim_sha` is set, it first adds `{thread_id, project, machine,
+  branch, parent, sha: claim_sha, until: now + 24 hours}` to the hub's durable revoke list
+  (`revoke.json` in the hub state directory, outside `handoffs/`, so the start-up sweep
+  never touches it), then abandons the operation without the 409: Create deletes its
+  record, Advance and Undo clear `handoff_op`. When `claim_sha` is null, it just abandons.
+- **Revoking.** At hub start and every 10 minutes, the hub runs each entry on the revoke
+  list, inside `hub.withThread(thread_id)`:
+  - if a thread with that id still has a saved `handoff_op` whose `claim_sha` is the
+    entry's `sha` (a crash between saving the entry and abandoning), the operation wins:
+    the entry is removed and nothing is revoked; Collin can Cancel again;
+  - otherwise it calls `claim-revoke`: `revoked` and `waiting` keep the entry (a second,
+    overlapping push of the same claim could still land later, and is revoked the same
+    way); `gone` removes it; `failed` keeps it and saves the error on the entry;
+  - at `until` the entry is removed, except one whose last result was `failed`: that one
+    stays, and the threads list shows a notice "Couldn't take back a cancelled pick-up on
+    <repository> <branch>: <error>" with a Dismiss button that removes it.
+  So a pick-up commit that lands after Cancel, from a push that was slow, retried or
+  outlived a restart, is taken back off GitHub, and only if nothing was built on it.
 - is also reached by importing a file for that thread id (Import step 1), which runs
   the saved operation and ignores the new file;
 - for an Undo, makes the handed-off banner show "The undo didn't finish" with Retry,
@@ -513,7 +530,9 @@ and its thread id is not in that set.
   - Every action that fetches uses one helper,
     `git fetch origin +refs/heads/<branch>:refs/remotes/origin/<branch>`, so a
     single-branch clone still gets the thread's branch and a tracking ref. The helper
-    first checks `git ls-remote --heads origin <branch>`: when the branch does not exist on
+    first runs `git ls-remote origin refs/heads/<branch>` and looks for a line whose ref is
+    exactly `refs/heads/<branch>` (ls-remote matches by suffix, so `backup/wc/<id>` must not
+    count): when the branch does not exist on
     GitHub, it reports `remote_has_branch: false` with `remote_tip: null` and skips the
     fetch; that is not an error (a thread's first export runs `status` before the push
     that creates the branch). A network failure is still an error.
@@ -578,9 +597,17 @@ and its thread id is not in that set.
     is marked cancelled, so its start stops before launching tmux and returns an error;
     a running one gets `tmux kill-session -t <name>`. Returns the names still starting or
     running.
-  - Calls for a thread also hold the machine's per-thread lock that archive holds
-    (`machine/service.js:725-741`), so a handoff action never runs while an archive of that
-    thread is still in progress, even when the hub gave up waiting for the archive's reply.
+  - Every `/v1/handoff` request carries `thread_id` (required, `^[0-9a-f]{12}$`), and every
+    action that runs git also carries `project`. Each action first takes the machine's
+    per-thread lock that archive holds, keyed by `thread_id` (`machine/service.js:725-741`),
+    then the per-repository queue keyed by `project`. So a handoff action never runs while
+    an archive of that thread is still in progress, even when the hub gave up waiting for
+    the archive's reply. `running` and `kill` need only `thread_id`: they list and kill tmux
+    sessions by the `wc-<thread_id>-` name prefix, whether or not the machine has a session
+    record.
+  - `claim-revoke` also returns `{result: "failed", error}` when its lease push is rejected
+    and a re-read shows the tip is still exactly `sha` (for example, the repository refuses
+    non-fast-forward updates).
   - Calls run in the machine's per-repository queue (the one `createWorktree` uses,
     `machine/service.js:461`), and the hub calls `/v1/handoff` with a 120-second timeout
     instead of the machine client's default (`viewer/app/machine-client.js:42`). A timeout
@@ -655,7 +682,13 @@ New tests, then the suites:
     sessions shows Restart; a lead with no recorded worktree starts from `checkout_sha`;
   - partial lead start at hub start: marked not live and Restart offered; Restart kills the
     leftover start and moves its queued context; ordinary threads' starts untouched;
-    Cancel adds the claim to the revoke list and abandons; `claim-revoke` (tip is the
+    Cancel offered only before the claim is known to have landed; Cancel adds the claim to
+    the revoke list (outside `handoffs/`, survives the start-up sweep) and abandons; a
+    saved operation with the same claim wins over its revoke entry; a revoked entry keeps
+    watching until 24 h and revokes a second landing; a rejected revoke is kept and shown
+    on the threads list; import while our cancelled claim is the tip says "still being
+    undone"; restart moves queues from not-live lead records; ls-remote exact ref match;
+    every handoff action takes the thread lock and the repository queue; `claim-revoke` (tip is the
     claim → branch back on `parent`; tip `parent` → waiting until 24 h; descendant or other
     tip → gone, nothing pushed; lease failure re-read); a claim that lands after Cancel is
     revoked by the sweep; inspect in a single-branch clone; first export with no remote
@@ -1042,7 +1075,7 @@ npm --prefix viewer run test:browser
 
 ### Round 13 — 2026-11-17
 
-**Lanes:** intent and mechanics; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 12:**
 - Cancel redesigned: revoke list in the hub, sweep at start and every 10 minutes for 24 hours, machine `claim-revoke` with a lease on the exact claim; `claim-cancel`, pid records and the perl time bound removed.
@@ -1051,6 +1084,32 @@ npm --prefix viewer run test:browser
 - Fetch helper: a branch missing on GitHub is reported, not an error.
 - Handoff actions hold the machine's per-thread archive lock.
 - Partial-start and restart changes limited to imported threads (decision 31).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | blocking | Cancel after Checkout leaves local state at the claim | upheld | Cancel only while `claim_landed` is false |
+| intent | major | Start-up sweep deletes the revoke list | upheld | `revoke.json` moved out of `handoffs/` |
+| intent | minor | Re-import during a pending revoke says "picked up elsewhere" | upheld | Own revoke-listed claim gets "still being undone" and an immediate revoke |
+| mechanics | blocking | Crash between saving the revoke entry and abandoning | upheld | A saved operation with the same claim wins; entry removed |
+| mechanics | blocking | Entry dropped after the first revoke; an overlapping push lands later | upheld | Entries kept until 24 h after any revoke |
+| mechanics | blocking | Cancel after Checkout | upheld | Same fix as the intent finding |
+| mechanics | major | No outcome for a rejected revoke push | upheld | `failed` result kept and shown on the threads list |
+| mechanics | major | Lock keys missing from request schemas | upheld | `thread_id` on every request, `project` on git actions; lock then queue |
+| mechanics | major | Restart context stranded on a never-started name | upheld | Restart creates a `pending` record with the queue; moves queues from not-live lead records |
+| mechanics | minor | ls-remote suffix match | upheld | Exact ref match |
+
+### Round 14 — 2026-11-17
+
+**Lanes:** intent and mechanics; cross-family: yes.
+
+**Changed since Round 13:**
+- Cancel only while `claim_landed` is false.
+- Revoke list moved to `revoke.json`; sweep rules (operation wins, keep after revoke, `failed` kept and shown, expiry).
+- `claim-revoke` `failed` result.
+- Import and Claim: own revoke-listed claim gets "still being undone".
+- `/v1/handoff` requests carry `thread_id` (and `project`); lock then queue; `running`/`kill` by name prefix.
+- Restart: `pending` session record holds the context before start; queues moved from not-live lead records.
+- ls-remote exact ref match.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
