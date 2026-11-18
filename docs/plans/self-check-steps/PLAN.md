@@ -86,7 +86,7 @@ changed). Steps are for after merging (Decision 5).
 
 ### The `check` card
 
-Lead-only, shown, not pinned, no presses. Fields:
+Lead-only, shown, not pinned; presses only as in "Two buttons" below. Fields:
 
 | Field | Type | Required | Rule |
 |---|---|---|---|
@@ -192,8 +192,10 @@ the done head are kept.
 - A step with no STEP line → `agent: not-tried`, `note` "an agent did not report on it".
   Two lines for one step: use the less favourable (DIFFERS (work wrong), DIFFERS (meets
   intent), COULD NOT TRY, MATCH).
-- A failed try is a `VERDICT: BLOCKED` report, a verifier start that fails, or a verifier
-  that dies or ends without a report. The lead fixes what it can and starts a fresh
+- A failed try is a `VERDICT: BLOCKED` report, a verifier start the hub refuses, or a
+  verifier that dies or ends without a report. A start that ends in "hub unavailable" or
+  no answer is not a failed try: it is re-run with the same `--attempt` id, as lead.md
+  already requires, so the hub recovers the original session instead of starting a second. The lead fixes what it can and starts a fresh
   verifier. After two failed tries for the same head, every step not yet resolved is posted
   `agent: not-tried`, `note` "an agent could not set up to try it: <short reason>", and the
   lead carries on (check card, then any stub).
@@ -201,8 +203,12 @@ the done head are kept.
 **Posting.** Post the `check` card with the done card's `head`. One check card per head: if
 a retried `done` was recorded twice at the same head, the one check card covers both. A
 `broken` step gives the card its "Fix it now" button; no separate question is posted. On
-`[card <id>] fix what the check found`, the lead handles it as a problem Collin reported
-(step 9, which checks the PR state first), using the broken steps' notes as the report. In
+`[card <id>] fix what the check found`, the lead first checks that the card's `head` is
+still the current done head (a newer done may have been posted while the press was
+queued); if not, it says in a line that a newer version has replaced it and does nothing.
+Otherwise it handles it as a problem Collin reported (step 9, which checks the PR state
+first), using the broken steps' notes as the report. `[card <id>] leave it` gets a one-line
+reply and nothing else. In
 a two-part thread the follow-up `stub` is posted after the check card. The `check` card is
 never a condition for `done`.
 
@@ -210,6 +216,8 @@ A new `done` accepted while a steps verifier for an older head is running: the l
 that verifier, posts no check card for the older head, and starts over for the new one.
 
 **Restart.** After `[wc:context restart]`:
+- The lead runs `session list` and stops any live steps verifier the dead lead started (its
+  report would go to the dead lead); any steps it was trying are tried afresh below.
 - If the latest done card in its context without `retracted_at` has a `head` and no `check`
   card has that `head`, and the local `HEAD` equals that `head` or is an ancestor of it
   (fast-forward as above), the lead writes and tries the steps as above and posts. A duplicate refusal means the original arrived; any other
@@ -224,13 +232,15 @@ that verifier, posts no check card for the older head, and starts over for the n
 `check` until the pull request is merged and installed, and installed verifiers do not have
 the new verifier rules. That thread's lead tries its steps as above with the verifier rules
 written out in full in the brief, and, instead of a check card, posts a `needs`
-card titled "Check it yourself" whose `body` is the `update` text and whose `items` are
+card titled "Check it yourself" whose `body` starts "For version <first 12 characters of
+the done head>." and then gives the `update` text and whose `items` are
 the steps, one per item ("In the app: <do> — you should see: <see>", with any command,
 and "Not tried by an agent: <note>" or "An agent tried this and it didn't work: <note>"
 where it applies). If a step is broken, the `body` ends "Keep going fixes what didn't
-work"; then "Keep going" is handled like "Fix it now", and otherwise it just closes the
-card. On a restart in that thread, an existing `needs` card titled "Check it yourself" for
-the current done counts as its check card: the lead does not post another.
+work"; then "Keep going" is handled like "Fix it now" (with the same current-head check,
+reading the version from the body), and otherwise it just closes the card. On a restart in
+that thread, an existing "Check it yourself" `needs` card whose body names the current
+done head counts as its check card: the lead does not post another.
 
 ### How the verifier tries steps (`protocol/app/verifier.md`)
 
@@ -575,6 +585,11 @@ Collin decided Q5 (try the steps after Done); budget reset.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | blocking | Counting every start error can create two sessions for one attempt | upheld | Ambiguous starts re-run with the same `--attempt`; only refused starts, deaths and missing reports count |
+| mechanics | major | Fix press delivered after a newer done | upheld | Lead re-checks the card's head when handling the press |
+| mechanics | major | Restart leaves the dead lead's steps verifier live | upheld | Restarted lead stops it and tries afresh |
+| mechanics | major | First-release needs card has no head | upheld | Body starts "For version <head>"; restart and Keep going match on it |
+| mechanics | minor | "no presses" and validation still contradict the buttons | upheld | Card definition points at the button rules; validation already aligned this round |
 | intent | major | Validation grep still names the removed question | upheld | Grep criterion names the button press handling |
 | intent | minor | Accepted Risk still says "a question" | upheld | Reworded to the buttons |
 | intent | minor | "the lead shows" the button invites a lead step | upheld | Reworded: such a card has the buttons |
