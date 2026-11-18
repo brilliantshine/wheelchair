@@ -42,7 +42,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 13 | Codex: a project server whose name matches a server in the account's own Codex config is skipped with a warning, instead of overriding it | `-c` overrides merge field by field into the account table (env keys survive, mixed transports are rejected); skipping is the only safe rule | review-round-2 |
 | 14 | One open `Project tools problem` card per thread, keyed on its warning lines, closed by the hub when a later tools-getting start has no warnings | Avoid a stack of identical cards; system cards cannot be closed by hand | review-round-2 |
 | 15 | Supersedes 5 and 14 where they differ: Claude rules as in the Spec (rejected entries always disabled). The card's lines are kept per CLI; each tools-getting start replaces its own CLI's lines; the card closes when no lines are left | A clean start on one CLI must not clear another CLI's problems; deleting or emptying the file must clear them | review-round-3 |
-| 16 | Supersedes 6, 10, 14 and 15 for this part: no program check and no `Project tools problem` notice. Skips and problems are written as lines to the machine service's log only. Telling Collin about broken or skipped tools moves to the follow-up (D4). IDEA.md's "finds out plainly" bullet moves to the follow-up | Three review rounds churned on notice delivery and the program check, not on loading tools; Collin chose to move them | idea-change |
+| 16 | Supersedes 6, 10, 14 and 15 for this part: no program check and no `Project tools problem` notice. Skips and problems are written as lines to the machine service's log only. Telling Collin about broken or skipped tools moves to the follow-up (D4). IDEA.md's "finds out plainly" bullet moves to the follow-up. This also covers Decision 7's "say so": the Antigravity line goes to the log only | Three review rounds churned on notice delivery and the program check, not on loading tools; Collin chose to move them | idea-change |
+| 17 | Supersedes 13: Codex project servers are registered under the name `project_<name>` instead of probing the account's config for collisions | The probe could not reliably see the pane's environment (default account `CODEX_HOME`); a prefix makes collisions practically impossible with no probe, timeout or parsing | review-round-4 |
 
 ## Spec
 
@@ -63,11 +64,14 @@ means today's behaviour, byte for byte: same settings file, same argv.
 ### Reading the file (machine side)
 
 - In `startIn` (`machine/service.js`, before `commandFor`), read `<worktree>/.mcp.json`.
-  Pass the validated server map (or `null`) to the adapter's `command` through its
-  `context`, and collect a `warnings` array (used only for the log, below).
+  Pass to the adapter's `command` through its `context`: `mcp = null` when the file is
+  missing or unreadable, otherwise `{ names: [every key in mcpServers], servers: {valid
+  entries only} }`. Collect a `warnings` array (used only for the log, below).
 - Missing file: no servers, no warnings.
-- Unparseable JSON, or `mcpServers` missing, not an object, or an array: no servers, one
-  warning (`.mcp.json could not be read: <reason>`). The session still starts.
+- Any read error other than "not found" (permissions, a directory named `.mcp.json`),
+  unparseable JSON, or `mcpServers` missing, not an object, or an array: `mcp = null`, one
+  warning (`.mcp.json could not be read: <reason>`). Never throw; the session still starts.
+  Do not reuse a reader that throws (`machine/service.js:73-76`).
 - Each entry is validated on its own; a bad entry is dropped with a warning naming it and
   never affects its siblings. An entry is valid when it is an object and either:
   - stdio (`type` absent or `"stdio"`): `command` is a non-empty string; `args`, if
@@ -80,6 +84,8 @@ means today's behaviour, byte for byte: same settings file, same argv.
   nothing.
 - Each warning is written as one line to the machine service's stderr
   (`console.error`), prefixed with the session name: `<session>: project tools: <warning>`.
+  Names and reasons from the file are inserted with `JSON.stringify`, so a line break in
+  a name cannot split the line.
   Nothing is added to the start response, the hub or the thread.
 - What is read is the file on disk in the session's worktree at start, which is also what
   Claude Code reads, so both always agree.
@@ -100,17 +106,13 @@ means today's behaviour, byte for byte: same settings file, same argv.
   - Name must match `[A-Za-z0-9_-]+`, otherwise skip with a warning (no quoting).
   - Any `${...}` in `command`, `args`, `url`, or in an `env` value that is not exactly
     `${KEY}` for its own key `KEY`: skip the server with a warning.
-  - stdio: `mcp_servers.<name>.command=<toml string>`, `.args=[...]` (empty array if
+  - stdio: `mcp_servers.project_<name>.command=<toml string>`, `.args=[...]` (empty array if
     absent), `.env={K="v",...}` with the literal entries (empty table if none),
     `.env_vars=[...]` with the pass-through keys (empty array if none), `.enabled=true`.
-  - http: `mcp_servers.<name>.url=<toml string>`, `.enabled=true`.
-  - Name collisions: when the file has servers, run `codex -c <the session's trust
-    override> mcp list --json` in the worktree, with the session's login environment, so
-    it sees the same config the session will (account `config.toml` and any trusted
-    project `.codex/config.toml`). Deadline 10 seconds. A project server whose name is
-    already listed is skipped with a warning (`tool "<name>" is also set up in Codex's own
-    config, so that version is used; remove it there to use the project's`). A non-zero
-    exit, a timeout or output that isn't a JSON array: add no project servers and warn once.
+  - http: `mcp_servers.project_<name>.url=<toml string>`, `.enabled=true`.
+  - Every key is written as `mcp_servers.project_<name>.…`, so a project server can never
+    merge into a server of the same name in Codex's own config. Agents see the tool under
+    `project_<name>` in Codex and `<name>` in Claude Code.
   - Skip with a warning: servers with `headers` (deferred, D3).
 - Role doesn't get tools: add nothing. The account's `config.toml` is never written.
 - No expanded value ever enters the argv, so `session.command` and `session list --full`
@@ -151,15 +153,16 @@ means today's behaviour, byte for byte: same settings file, same argv.
 ### Validation
 
 - `bash machine/test/run.sh` and `cd viewer && npm test` pass.
-- New tests in `machine/test/` cover, for Claude and Codex: no file (settings and argv
+- New tests in `machine/test/` cover, for Claude and Codex (and Antigravity where named): no file (settings and argv
   identical to today's), a worker with a stdio and an http server, a reviewer with servers
   (Claude `disabledMcpjsonServers`, Codex none), bad JSON, an array as `mcpServers`, a bad
   entry next to a good one, every entry invalid (Claude disables them all, no
   `enableAllProjectMcpServers`), an `env` pass-through `${KEY}` becoming `env_vars`,
   another `${...}` skipping the server (Codex), a dotted name skipped (Codex), a `headers`
-  server skipped (Codex), a Codex name collision skipped, the collision probe's cwd, trust
-  override, environment, timeout and bad output, no expanded value in the argv, and a
-  warning line reaching the service log.
+  server skipped (Codex), the `project_` prefix (Codex), no expanded value in the argv, an
+  unreadable `.mcp.json` (a directory) not stopping the start, a name with a line break
+  logged on one line, the Antigravity warning in the log, and a warning line reaching the
+  service log.
 - Manual: in a scratch repo with `.mcp.json` naming a tiny stdio server with one tool,
   start a Claude worker and a Codex worker; each reaches ready without a prompt, `/mcp`
   inside each session shows the server connected, and each calls the tool once.
@@ -169,7 +172,7 @@ means today's behaviour, byte for byte: same settings file, same argv.
 | # | Item | Why it can wait | Source | Notes for the follow-up |
 |---|------|-----------------|--------|-------------------------|
 | D1 | Antigravity support | Claude Code and Codex cover normal use; Antigravity has no per-session config | planning | `agy --settings` rejects `mcpServers` (verified). Servers live in global `~/.gemini/config/mcp_config.json` or `plugins/<name>/mcp_config.json`. Try a per-session config home (e.g. `XDG_CONFIG_HOME`/`HOME` override) or a per-session plugin dir |
-| D2 | Real connection health check for tools | A missing-program check covers the common failure | planning | `claude mcp list` reports Connected/Failed; `codex mcp list` and `agy mcp list` only list config |
+| D2 | Real connection health check for tools | Tools load without it; an agent that can't reach a tool says so | planning | `claude mcp list` reports Connected/Failed; `codex mcp list` and `agy mcp list` only list config |
 | D4 | Telling Collin when a tool is broken or skipped, including a check that each tool's program exists | Tools load without it; an agent that can't reach a tool says so | review-round-3 (Collin's choice) | Review rounds 1-3 in this PLAN.md worked through a design: per-CLI warning lines on the thread, one system `needs` card keyed on them, closed when a CLI's clean start clears its lines, applied on `startSession`, queued promotion and `resumeUnanswered`; program check PATH from `tmux show-environment -g PATH`, with `update-environment` and a restart-gap as known limits. Warnings already reach the machine log (Decision 16) |
 | D3 | Codex: servers with `headers`, other transport types, or `${...}` beyond env pass-through | Stdio and plain http cover typical local tools | planning | Check Codex keys such as `http_headers` / `bearer_token_env_var` |
 
@@ -253,12 +256,35 @@ means today's behaviour, byte for byte: same settings file, same argv.
 
 ### Round 4 — 2026-11-18
 
-**Lanes:** intent: pending; mechanics: pending; cross-family: pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since the last round:**
 - Program check and the `Project tools problem` notice removed from this part and moved to Deferred D4 (Decision 16, Collin's choice). Warnings are only logged by the machine service.
 - The two Accepted Risks about the notice and program check were removed with them (now notes on D4).
 - Validation list trimmed to match.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Decision 7 "say so" not superseded by 16 | upheld | Decision 16 now covers it |
+| intent | minor | Antigravity warning lost from Validation | upheld | Restored |
+| intent | minor | D2's reason cites the moved program check | upheld | Reason updated |
+| mechanics | blocking | Adapter context loses rejected names Claude must disable | downgraded to minor | A worker would see the Claude rules need the names and pass them; context shape now spelled out |
+| mechanics | blocking (re-raise) | Collision probe can't see the pane's `CODEX_HOME` for the default account | upheld | Probe removed; `project_` prefix (Decision 17) |
+| mechanics | major | Probe output rows not validated | upheld | Moot: probe removed (Decision 17) |
+| mechanics | major | Filesystem errors on reading `.mcp.json` undefined | upheld | Any read error is "could not be read"; never throw |
+| mechanics | minor | Line breaks in names split log lines | upheld | `JSON.stringify` names |
+| mechanics | minor | D2 rationale stale | upheld | Same fix as intent |
+
+### Round 5 — 2026-11-18
+
+**Lanes:** intent: pending; mechanics: pending; cross-family: pending.
+
+**Changed since the last round:**
+- Codex: collision probe removed; servers registered as `project_<name>` (Decision 17).
+- Adapter context shape spelled out (`mcp = null` or `{names, servers}`).
+- Any read error on `.mcp.json` is "could not be read"; never throws.
+- Log lines use `JSON.stringify` for names.
+- Decision 16 covers Decision 7; D2 reason; Validation list (Antigravity warning restored).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
