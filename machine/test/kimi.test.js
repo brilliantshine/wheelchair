@@ -165,21 +165,45 @@ test('service launch and login include absolute home and executable', async () =
   fs.mkdirSync(bin); const old = { PATH: process.env.PATH, HOME: process.env.HOME, KIMI_CODE_HOME: process.env.KIMI_CODE_HOME };
   const file = path.join(root, '.kimi-code/bin/kimi'); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, '#!/bin/sh\necho 2.6.3\n', { mode: 0o755 });
   fs.writeFileSync(path.join(bin, 'systemd-run'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
-  fs.writeFileSync(path.join(bin, 'tmux'), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'tmux'), `#!/bin/sh\nprintf '%s\\n' "$@" >> '${log}'\n`, { mode: 0o755 });
   try {
-    process.env.PATH = `${bin}:${old.PATH}`; process.env.HOME = root; process.env.KIMI_CODE_HOME = path.relative(process.cwd(), fixture());
+    process.env.PATH = `${bin}:/usr/bin:/bin`; process.env.HOME = root; process.env.KIMI_CODE_HOME = path.relative(process.cwd(), fixture());
     const machine = Object.create(MachineService.prototype);
     Object.assign(machine, { stateDir: root, config: { host: '127.0.0.1', port: 0 }, sessions: {}, logins: {}, cancelledStarts: new Set(), startingNames: new Map(), startingBranches: new Set() });
     machine.createWorktree = async () => ({ worktree: root });
     machine.persistSessions = async () => {}; machine.checkReady = async () => {};
     const input = { cli: 'kimi', role: 'worker', thread_id: 'test', token: 'token', brief: 'brief', role_prompt: 'rules', effort: 'medium', permission_mode: 'bypass' };
+    const calls = []; machine.tmux = args => { calls.push(args); return { ok: true, stdout: '' }; };
     const session = await machine.start(input);
+    const yolo = await machine.start({ ...input, thread_id: 'yolo', permission_mode: 'auto' });
     await machine.startLogin({ account: 'default-kimi', cli: 'kimi' });
-    const lines = fs.readFileSync(log, 'utf8').split('\n');
-    const launch = lines.find(line => line.includes('new-session') && line.includes('wc-test-worker'));
-    const login = lines.find(line => line.includes('new-session') && line.includes('wc-login-default-kimi'));
-    for (const line of [launch, login]) { assert.ok(line.includes(`KIMI_CODE_HOME=${path.resolve(process.env.KIMI_CODE_HOME)}`)); assert.ok(line.includes(file)); assert.match(line, new RegExp(file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + "'?(?: '?--auto| '?login)")); }
-    assert.ok(launch.indexOf('KIMI_MODEL_THINKING_EFFORT=high') > launch.indexOf('KIMI_CODE_HOME='));
+    // All words are shell-quoted by the service; decode both levels of the login wrapper.
+    const words = text => {
+      const result = []; let word = '', quote = false, started = false;
+      for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        if (ch === "'") { quote = !quote; started = true; }
+        else if (!quote && ch === '\\') { word += text[++i]; started = true; }
+        else if (!quote && /\s/.test(ch)) { if (started) { result.push(word); word = ''; started = false; } }
+        else { word += ch; started = true; }
+      }
+      if (started) result.push(word); return result;
+    };
+    const commands = calls.filter(args => args[0] === 'new-session');
+    const launchText = fs.readFileSync(log, 'utf8').split('\n').find(line => line.startsWith("'env'"));
+    const launch = words(launchText);
+    const loginWrapper = words(commands.find(args => args.includes('wc-login-default-kimi')).at(-1));
+    const login = words(loginWrapper[2].split(';')[0]);
+    for (const command of [launch, login]) {
+      assert.equal(command[0], 'env');
+      assert.ok(command.includes(`KIMI_CODE_HOME=${path.resolve(process.env.KIMI_CODE_HOME)}`));
+      const executable = command.findIndex((word, i) => i > 0 && !/^[A-Za-z_][A-Za-z0-9_]*=/.test(word));
+      assert.equal(command[executable], file);
+    }
+    assert.deepEqual(session.command, [file, '--auto']);
+    assert.deepEqual(yolo.command, [file, '--yolo']);
+    assert.deepEqual(login.slice(-3), [file, 'login', '--region', 'global'].slice(-3));
+    assert.ok(launch.includes('KIMI_MODEL_THINKING_EFFORT=high'));
     assert.match(session.pending_initial, /^\[wc:role\] Role: worker\nSession: wc-test-worker\n/);
     assert.equal(session.account_dir, null);
   } finally {
@@ -208,6 +232,16 @@ test('service login endpoints use exact targets for prefix sibling and stale req
     machine.tmux = args => { calls.push(args); return { ok: false, stdout: '' }; };
     const stale = await fetch(`http://127.0.0.1:${port}/v1/logins/team/keys`, { method: 'POST', headers: { 'x-wheelchair-machine-secret': 'secret', 'content-type': 'application/json' }, body: JSON.stringify({ keys: 'x' }) });
     assert.equal(stale.status, 409); assert.equal(calls.at(-1)[2], '=wc-login-team:');
+    const staleCode = await fetch(`http://127.0.0.1:${port}/v1/logins/team/code`, { method: 'POST', headers: { 'x-wheelchair-machine-secret': 'secret', 'content-type': 'application/json' }, body: JSON.stringify({ code: '1234' }) });
+    assert.equal(staleCode.status, 409); assert.equal(calls.at(-1)[2], '=wc-login-team:');
+    const saved = { resolveCli: kimi.resolveCli, loginCommand: kimi.loginCommand, seed: kimi.seed };
+    try {
+      kimi.resolveCli = () => '/fake/kimi'; kimi.loginCommand = () => ['/fake/kimi', 'login']; kimi.seed = () => {};
+      machine.tmux = args => { calls.push(args); return { ok: true, stdout: '' }; };
+      await machine.startLogin({ account:'team', cli:'kimi', dir:'~/.wheelchair/accounts/team' });
+    } finally { Object.assign(kimi, saved); }
+    assert.ok(calls.some(args => args[0] === 'kill-session' && args.at(-1) === '=wc-login-team'));
+    assert.ok(calls.every(args => !args.includes('=wc-login-team-backup') && !args.includes('=wc-login-team-backup:')));
   } finally { await new Promise(resolve => machine.server.close(resolve)); }
 });
 
@@ -219,6 +253,8 @@ test('status lists multiple Kimi accounts and version problem suppresses account
     fs.symlinkSync('/bin/sh', path.join(bin, 'sh'));
     for (const cli of ['claude', 'codex', 'agy']) fs.writeFileSync(path.join(bin, cli), '#!/bin/sh\necho test\n', { mode: 0o755 });
     process.env.PATH = bin;
+    const global = fixture(); fs.cpSync(global, path.join(root, '.kimi-code'), { recursive: true });
+    assert.equal(kimi.loginStatus(null).logged_in, true);
     for (const id of ['team', 'team-backup']) {
       const dir = path.join(root, '.wheelchair/accounts', id); fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(path.join(dir, 'wheelchair-account.json'), JSON.stringify({ id, cli: 'kimi' }));
@@ -283,8 +319,8 @@ test('array tables, unsupported effort and unrelated credentials are ignored', (
   assert.equal(kimi.command({}, { effort: 'high' }, '', { accountDir: dir }).env, undefined);
   assert.equal(kimi.loginStatus(dir).authenticated, false);
 });
-test('missing executable refuses Kimi login', () => {
+test('missing executable refuses Kimi login', async () => {
   const oldPath = process.env.PATH, oldHome = process.env.HOME;
-  try { process.env.PATH = '/usr/bin:/bin'; process.env.HOME = makeTempSync('kimi-no-bin-'); assert.throws(() => kimi.loginCommand(), /Kimi Code is not installed/); }
+  try { process.env.PATH = '/usr/bin:/bin'; process.env.HOME = makeTempSync('kimi-no-bin-'); assert.throws(() => kimi.loginCommand(), /Kimi Code is not installed/); const machine = Object.create(MachineService.prototype); await assert.rejects(machine.startLogin({account:'default-kimi', cli:'kimi'}), /Kimi Code is not installed/); }
   finally { process.env.PATH = oldPath; process.env.HOME = oldHome; }
 });

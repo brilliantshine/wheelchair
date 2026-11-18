@@ -689,18 +689,34 @@ class MachineService {
           if (Date.now() - Date.parse(session.ready_at) >= 120000) await this.fatalKimi(session, "Couldn't find Kimi Code's log for this session");
           continue;
         }
-        let handle;
+        let data, stat, handle, ioError, otherError;
+        const offset = session.kimi_offset || 0;
+        try { handle = await fsp.open(file, 'r'); } catch (error) { ioError = error; }
+        if (handle) {
+          try {
+            try { stat = await handle.stat(); } catch (error) { ioError = error; }
+            if (!ioError && stat.dev === session.kimi_log_id?.dev && stat.ino === session.kimi_log_id?.ino && stat.size >= offset) {
+              let buffer;
+              try { buffer = Buffer.alloc(stat.size - offset); } catch (error) { otherError = error; }
+              if (buffer) {
+                try { const { bytesRead } = await handle.read(buffer, 0, buffer.length, offset); data = buffer.subarray(0, bytesRead); }
+                catch (error) { ioError = error; }
+              }
+            }
+          } finally { await handle.close().catch(error => this.log(error)); }
+        }
+        if (otherError) { this.log(otherError); continue; }
+        if (ioError) {
+          if (session.kimi_missing_since === undefined) { session.kimi_missing_since = Date.now(); await this.persistSessions(); }
+          if (Date.now() - session.kimi_missing_since >= 30000) await this.fatalKimi(session, "Kimi Code's log for this session disappeared or was replaced");
+          continue;
+        }
         try {
-          handle = await fsp.open(file, 'r');
-          const stat = await handle.stat();
-          const offset = session.kimi_offset || 0;
-          if (stat.dev !== session.kimi_log_id?.dev || stat.ino !== session.kimi_log_id?.ino || stat.size < offset) {
+          if (!data) {
             await this.fatalKimi(session, "Kimi Code's log for this session disappeared or was replaced"); continue;
           }
-          delete session.kimi_missing_since;
-          const buffer = Buffer.alloc(stat.size - offset);
-          const { bytesRead } = await handle.read(buffer, 0, buffer.length, offset);
-          const data = buffer.subarray(0, bytesRead); const end = data.lastIndexOf(10);
+          if (session.kimi_missing_since !== undefined) { delete session.kimi_missing_since; await this.persistSessions(); }
+          const end = data.lastIndexOf(10);
           if (end < 0 || await this.kimiSpoolWaiting(session)) continue;
           const rows = data.subarray(0, end + 1).toString('utf8').split('\n').map(line => { try { return JSON.parse(line); } catch { return null; } });
           const turns = rows.filter(row => row?.type === 'turn.ended' && row.agentId === 'main' && Number.isInteger(row.turnId) && (session.kimi_last_turn === undefined || row.turnId > session.kimi_last_turn)).sort((a,b) => a.turnId-b.turnId);
@@ -720,10 +736,7 @@ class MachineService {
             await this.persistSessions();
           }
           if (!await this.kimiSpoolWaiting(session)) { session.kimi_offset = offset + end + 1; await this.persistSessions(); }
-        } catch (error) {
-          if (!session.kimi_missing_since) session.kimi_missing_since = Date.now();
-          if (Date.now() - session.kimi_missing_since >= 30000) await this.fatalKimi(session, "Kimi Code's log for this session disappeared or was replaced");
-        } finally { if (handle) await handle.close(); }
+        } catch (error) { this.log(error); }
       }
     } finally { this.kimiPolling = false; }
   }
@@ -892,11 +905,18 @@ class MachineService {
     try {
     await this.persistArchiveMarkers();
     const sessions = Object.values(this.sessions).filter(session => !session.name.startsWith('wc-login-') && session.thread_id === threadId);
-    const stopped = [];
-    for (const session of sessions) {
-      if (session.archived_pending) continue;
+    const stopped = []; const pending = [];
+    // Confirm fatal stops before touching any other session or worktree. A retry can
+    // then archive the entire thread without a partially processed checkout.
+    for (const session of sessions.filter(session => session.end_reason && !session.archived_pending)) {
       const result = await this.stop(session.name);
-      if (result?.pending) return { stopped, committed: [], removed: [], kept: [{ worktree: session.worktree, reason: session.end_reason }], uploads_removed: false };
+      if (result?.pending) pending.push(session);
+      else stopped.push(session.name);
+    }
+    if (pending.length) return { pending: true, stopped, committed: [], removed: [], kept: pending.map(session => ({ worktree: session.worktree, reason: session.end_reason })), uploads_removed: null };
+    for (const session of sessions) {
+      if (session.archived_pending || session.end_reason) continue;
+      await this.stop(session.name);
       stopped.push(session.name);
     }
     const worktrees = [...new Map(sessions
@@ -976,12 +996,11 @@ class MachineService {
   }
   async copyTranscriptNow(session, source) {
     if (!source || (session.cli === 'kimi' && session.end_reason)) return { offset: 0, lines: [] };
-    const stat = session.cli === 'kimi' ? { size: 0, ino: 0 } : await fsp.stat(source);
+    let stat = session.cli === 'kimi' ? null : await fsp.stat(source);
     const current = session.transcript_source;
-    const changed = current && (current.path !== source || stat.size < current.offset || stat.ino !== current.ino);
-    let begin = changed ? 0 : (current?.offset || 0);
+    let begin = session.cli === 'kimi' ? (current?.offset || 0) : (current && (current.path !== source || stat.size < current.offset || stat.ino !== current.ino) ? 0 : (current?.offset || 0));
     const file = await fsp.open(source, 'r'); let text;
-    try { if (session.cli === 'kimi') { const opened = await file.stat(); if (opened.dev !== session.kimi_log_id?.dev || opened.ino !== session.kimi_log_id?.ino || opened.size < (current?.offset || 0) || session.end_reason) return { offset: current?.offset || 0, lines: [] }; begin = current?.offset || 0; stat.size = opened.size; } const size = stat.size - begin; const buffer = Buffer.alloc(Math.max(size, 0)); await file.read(buffer, 0, buffer.length, begin); text = buffer.toString('utf8'); } finally { await file.close(); }
+    try { if (session.cli === 'kimi') { stat = await file.stat(); if (stat.dev !== session.kimi_log_id?.dev || stat.ino !== session.kimi_log_id?.ino || stat.size < begin || session.end_reason) return { offset: begin, lines: [] }; } const size = stat.size - begin; const buffer = Buffer.alloc(Math.max(size, 0)); await file.read(buffer, 0, buffer.length, begin); text = buffer.toString('utf8'); } finally { await file.close(); }
     // A JSONL record isn't durable until its newline arrives.  Leave an unfinished
     // tail for the next read instead of copying a fragment and advancing past it.
     const newline = text.lastIndexOf('\n');
