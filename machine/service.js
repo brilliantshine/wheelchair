@@ -1344,7 +1344,12 @@ class MachineService {
       }
       const dirs = await fsp.readdir(path.join(this.stateDir, 'worktrees')).catch(() => []);
       let worktreeKnown = false;
-      for (const project of dirs) if (await fsp.stat(path.join(this.stateDir, 'worktrees', project, 'wc', input.thread_id)).catch(() => null)) { worktreeKnown = true; break; }
+      for (const project of dirs) {
+        const projectDir = path.join(this.stateDir, 'worktrees', project);
+        if (await fsp.stat(path.join(projectDir, 'wc', input.thread_id)).catch(() => null)) { worktreeKnown = true; break; }
+        const names = await fsp.readdir(projectDir).catch(() => []);
+        if (names.some(name => name.startsWith(`wc-${input.thread_id}-`))) { worktreeKnown = true; break; }
+      }
       const known = worktreeKnown || Object.values(this.sessions).some(session => session.thread_id === input.thread_id) || this.archivedThreads.has(input.thread_id) || !!this.archivingThreads?.has(input.thread_id);
       return { known, local_branch: local.ok, local_ancestor: local.ok ? await ancestor(local.stdout.trim(), head) : null, checked_out };
     }

@@ -1530,6 +1530,10 @@ test('handoff local branch operations guard divergence and report ownership', as
     body = await call('set-branch', { branch, sha: next }); assert.equal(body.result, 'ok', JSON.stringify(body));
     body = await call('known', { head: old }); assert.equal(body.local_ancestor, false, JSON.stringify(body)); assert.equal(body.checked_out, null, JSON.stringify(body));
     git(['-C', repo, 'branch', '-D', branch]); body = await call('known', { head: old }); assert.equal(body.local_branch, false, JSON.stringify(body)); assert.equal(body.local_ancestor, null, JSON.stringify(body));
+    const orphan = '999999999999'; const orphanPath = path.join(env.state, 'worktrees', 'project', `wc-${orphan}-w1`);
+    git(['-C', repo, 'worktree', 'add', '--detach', orphanPath, old]);
+    const orphanResult = await api(env, 'POST', '/v1/handoff', { action: 'known', thread_id: orphan, project: repo, head: old }, hubHeader);
+    assert.equal(orphanResult.body.known, true, JSON.stringify(orphanResult.body));
   } finally { await env.close(); }
 });
 
