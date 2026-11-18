@@ -230,7 +230,8 @@ async function startSession(hub, thread, input) {
     };
     if (title) waiting.title = title;
     if (typeof input.brief === 'string') waiting.brief = input.brief;
-    Object.assign(waiting, { status: 'waiting', waiting_until: selection.wait.until, waiting_reason: selection.wait.reason, waiting_provider: selection.wait.provider, pending_start: input._waiting ? waiting.pending_start : { ...input } });
+    const { _waiting, ...startInput } = input;
+    Object.assign(waiting, { live: true, status: 'waiting', waiting_until: selection.wait.until, waiting_reason: selection.wait.reason, waiting_provider: selection.wait.provider, pending_start: waiting.pending_start || startInput });
     if (!input._waiting) thread.sessions.push(waiting);
     if (role === 'lead' && !thread.lead_name) await hub.saveWithLeadName(thread);
     else await hub.save(thread);
@@ -294,7 +295,7 @@ async function startSession(hub, thread, input) {
   if (title) session.title = title;
   if (typeof input.brief === 'string') session.brief = input.brief;
   if (!input._waiting) thread.sessions.push(session);
-  Object.assign(session, { model: resolved.model, effort: input.effort || resolved.effort || null, status: 'starting', cli, provider: selection.provider, account: selection.account.id, template_id: layers.template?.id || null, ...(role === 'lead' ? { style_version: settings.style_version } : {}) });
+  Object.assign(session, { live: true, model: resolved.model, effort: input.effort || resolved.effort || null, status: 'starting', cli, provider: selection.provider, account: selection.account.id, template_id: layers.template?.id || null, ...(role === 'lead' ? { style_version: settings.style_version } : {}) });
   if (selection.note) session.note = selection.note;
   delete session.pending_start; delete session.waiting_until; delete session.waiting_reason; delete session.waiting_provider;
   if (role === 'lead' && !thread.lead_name) await hub.saveWithLeadName(thread);
@@ -313,6 +314,7 @@ async function startSession(hub, thread, input) {
       project_dir: thread.project,
       project: require('node:path').basename(thread.project),
       worktree: input.worktree,
+      from_remote_branch: input.from_remote_branch,
       branch: input.branch,
       brief: input.brief || '',
       model: resolved.model,
@@ -361,6 +363,10 @@ async function startSession(hub, thread, input) {
   }
   if (started.default_branch) thread.default_branch = started.default_branch;
   await hub.save(thread);
+  if (role === 'lead' && thread.slug && thread.worktree && hub.registerPlan) {
+    try { await hub.registerPlan(require('node:path').join(thread.worktree, 'docs', 'plans', thread.slug)); }
+    catch (error) { console.error('Could not register plan:', error); }
+  }
   return session;
 }
 
@@ -763,7 +769,10 @@ async function retryWaiting(hub) {
     await hub.withThread(item.thread, async () => {
       const thread = await hub.thread(item.thread);
       const target = thread.sessions.find((s) => s.name === item.name && s.live && s.status === 'waiting');
-      if (target) await startSession(hub, thread, { ...target.pending_start, _waiting: target });
+      if (target) {
+        const started = await startSession(hub, thread, { ...target.pending_start, _waiting: target });
+        if (thread.imported && started.role === 'lead' && started.status !== 'waiting') await deliver(hub, thread, started);
+      }
     }).catch(() => {});
   }
 }
@@ -808,6 +817,7 @@ module.exports = {
   sendNow,
   releaseLimits,
   publicSession,
+  newSessionName,
   resolveModel,
   session,
   sessionRequest,

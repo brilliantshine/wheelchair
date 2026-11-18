@@ -54,6 +54,21 @@ class Hub {
   async init() {
     await this.state.init();
     await handoff.sweepFiles(this);
+    for (const thread of await this.allThreads()) {
+      let changed = false;
+      if (thread.imported) for (const session of thread.sessions || []) {
+        if (session.role === 'lead' && session.live && session.status === 'starting' && !Object.hasOwn(session, 'first_message')) {
+          session.live = false; session.status = 'ended'; session.ended_at = new Date().toISOString(); changed = true;
+        }
+      }
+      if (changed) await this.save(thread);
+    }
+    if (this.registerPlan) for (const thread of await this.allThreads()) {
+      if (!thread.archived && thread.slug && thread.worktree) {
+        try { await this.registerPlan(path.join(thread.worktree, 'docs', 'plans', thread.slug)); }
+        catch (error) { console.error('Could not register plan:', error); }
+      }
+    }
     require('./handoff-ops.js').startSweep(this);
     for (const [name, machine] of Object.entries(await this.state.machines())) {
       if (machine.last_seen) this.lastSeen.set(name, machine.last_seen);
