@@ -11,11 +11,6 @@ the north star this plan serves. Mapping: `MAP.md` and `docs/maps/local-project-
 
 ## Open Questions
 
-### Q1: Where does a project's tool list live?
-- **Context:** Claude Code already reads a checked-in `.mcp.json` at the repo root; Codex and Antigravity have their own config formats. Wheelchair's hub already has project-scoped settings (`viewer/app/routes.js:340-348`) but the machine start payload has no MCP field (`viewer/app/sessions.js:304-330`).
-- **Options:** (a) the repo's own `.mcp.json`, which wheelchair translates for Codex and Antigravity; (b) a per-project list in wheelchair's Settings, kept out of the repo; (c) both, Settings overriding the repo.
-- **Recommendation:** (a). One file, versioned with the project, works for Collin's own Claude Code outside wheelchair too, no new settings UI.
-
 ### Q2: Which agents get the tools?
 - **Context:** Reviewers and the mapper are read-only by role; an engine bridge can change things. Asides and usage probes deliberately disable MCP (`machine/adapters/claude.js:54-55`, `machine/adapters/codex.js:28`).
 - **Options:** (a) every agent; (b) agents that build or check (lead, sub-lead, workers, verifiers), not reviewers, mapper or asides.
@@ -37,10 +32,14 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 |---|----------|-----------|--------|
 | 1 | Mode two-part | Collin's pick; get something usable, harden in a follow-up | user |
 | 2 | This thread builds custom MCP tools only; seeing the app run and trying results locally became separate stub threads | Collin's pick of the three pieces | user |
+| 3 | A project's tools are defined in the repo's own `.mcp.json` (Claude Code format); wheelchair translates it for Codex and Antigravity. No new settings UI | One versioned file, also works for Claude Code outside wheelchair | user |
 
 ## Spec
 
-To be written as decisions land.
+### Source of truth
+
+- A project's tools are the servers in `.mcp.json` at the root of the session's worktree, in Claude Code's format. No file means no tools and today's behaviour, unchanged.
+- Wheelchair adds no settings screen for tools. Codex and Antigravity sessions get the same servers translated into their own config, scoped to the session, without editing the account's global config.
 
 ## Deferred
 
