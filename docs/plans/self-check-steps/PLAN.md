@@ -15,15 +15,6 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q2: How the steps are shown
-- **Context:** MAP.md: the done card holds `can_do`/`left_as_is` lists and is only accepted
-  once GitHub says the PR is ready (`viewer/app/card.js:125-132`, `viewer/app/pr-gate.js`).
-  A new field needs schema, protocol, page and handoff changes; a new kind also needs role,
-  pin and kind handling (`viewer/app/cards.js:9-34`, `viewer/app/handoff.js:34-46`).
-- **Options:** a "Check it yourself" section on the done card; a separate card posted right
-  after done.
-- **Recommendation:** a section on the done card: one card, same gate, less to build.
-
 ### Q3: Are the steps tried before he sees them?
 - **Context:** PLAN validation commands and verifier reports describe agent checks, not
   steps a person follows; small fixes have no plan (MAP.md). The lead writes the steps
@@ -52,6 +43,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 |---|----------|-----------|--------|
 | 1 | Plan mode: thorough | Collin's pick on the mode card | user |
 | 2 | Steps fit the change, phone first: a change visible in the app gets steps done in the app on a phone; only a change with nothing to see there (scripts, machine service, protocol docs) gets commands to run on the machine | Most changes show in the app; the rest can only be checked by running something | user |
+| 3 | The steps are a card of their own, posted right after the done card, not a section of it | Easier to spot and lays out step by step; Collin picked it over the leaning (part of Done) | user |
 
 ## Spec
 
@@ -69,6 +61,14 @@ Spec is still churning. See `protocol/diagrams.md`.
 - Only a change with nothing to see in the app (scripts, the machine service, protocol
   documents) gets commands to run on the machine, each with the output to look for.
 - One set of steps may mix both when the change has both kinds of part; phone steps first.
+
+
+### How the steps are shown
+
+- A new shown card kind, posted by the lead right after each accepted `done` card (all
+  three done paths: small fix, planned build, fix after done). It lists numbered steps, each
+  saying what to do and what Collin should see. Details (name, fields, pinning, gating,
+  handoff) are settled in the Spec's final pass.
 
 ## Accepted Risks
 
