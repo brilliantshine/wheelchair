@@ -47,6 +47,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 10 | No buttons for "it worked" or "it didn't" on the check card; he reports a problem by typing in the thread as today | IDEA.md: not recording whether he did them | defaulted |
 | 11 | Protocol-only changes (how agents behave) get `where: app` steps about what he will see agents do; machine commands are for scripts and the machine service. Supersedes the "protocol docs" example in Decision 2's wording | Collin's pick was "if you can see it in the app, phone steps"; agent behaviour shows in a thread, and the "protocol docs" example was the lead's wording, not on his card | review-round-4 |
 | 12 | A step an agent tried and saw fail is shown as "An agent tried this and saw something else", distinct from "Not tried by an agent" | He should be able to tell what was actually checked (IDEA.md) | review-round-4 |
+| 13 | Supersedes 7 and 8. Steps ride on verifiers that already run (planned build: the sub-lead's, from a `### Check steps` subsection the lead writes in the final Spec; fixes: the fix's verifier; repairs: the repair verifier). A step showing the work is wrong is a GAP in that verifier's existing loop; the feature adds no fix loop. Only a reworded step gets a steps-only re-try, which never opens a loop. The sub-lead protocol gains three small rules | Rounds 1 to 4 kept finding conflicts between a new steps fix loop and the existing ones; reusing the existing loops removes the conflicts. Round 1's "drift" objection is handled by the rewording rule | review-round-4 |
 
 ## Spec
 
@@ -132,6 +133,10 @@ Other app touch points:
 
 ### How the lead writes and tries the steps (`protocol/app/lead.md`)
 
+The rule throughout: **steps ride on verifiers that already run, and a step showing the
+work is wrong is a GAP in that verifier's existing fix loop.** This feature adds no fix
+loop of its own (Decision 13).
+
 **Writing.** The lead drafts 1 to 6 steps (usually 3 to 5; a sentence or two per field,
 readable on a phone) from what the change is for: IDEA.md's "What good looks like" for a
 planned build, Collin's request for a small fix, the reported problem for an after-done fix
@@ -141,98 +146,91 @@ the output to look for. `update` says how this project picks up a merged change;
 lead does not know, it says so plainly and gives its best guess marked as such. When the
 done card is for an already merged pull request, `update` leaves out the merge.
 
-When the lead drafts:
-- Small fix and after-done fix: before starting the fix's verifier, so the draft goes in
-  that verifier's brief.
-- Planned build: after the sub-lead's `result` (sub-lead stopped as today).
+**Where the draft lives and which verifier tries it.**
+- Planned build: the lead writes the draft as a `### Check steps` subsection of the Spec in
+  the final pass (with the path map, below), so plan reviewers see it. The sub-lead's
+  verifiers try them as part of verification (they already read PLAN.md); the sub-lead
+  copies each passing attempt's STEP lines into COMPLETION.md and its build `result`. A
+  work-wrong step is a GAP in the sub-lead's remediation loop, unchanged.
+- Small fix and after-done fix: the lead drafts before starting the fix's verifier and puts
+  the steps in that verifier's brief; a work-wrong step is a GAP in that path's existing
+  loop (two attempts, then "push it as it is, or drop it").
+- Repair and merge re-verifies ("Making the pull request mergeable" 6 and 7): the verifier
+  gets all current steps; a work-wrong step is a GAP in that budget, which never pushes a
+  failed repair.
+- Brief contents for any verifier carrying steps: the numbered steps and a **path map**
+  from the installed paths the machine commands use to the worktree (for example
+  `/home/collin/projects/personal/wheelchair` → the worktree).
 
-**Trying (Decision 4).** Steps are tried by verifiers, reported as STEP lines (see the
-verifier section). Which verifiers carry the steps:
-- Small fix and after-done fix: the verifier the lead already starts gets the steps in the
-  same brief ("check the fix, and try these steps"). One session, one report: the fix's
-  verdict is handled first by today's rules; the STEP lines are used from the report whose
-  verdict the lead acts on (a PASS, or the last report when Collin chose "push it as it
-  is").
-- Planned build: before setting `status: done`, the lead starts one **steps-only** verifier
-  on the sub-lead's verified commit (`--not-provider <lead's provider>` when
-  `review_families` is `both`, else no provider flag), briefed with the plan slug and the
-  draft steps, and told it is steps-only. It posts no progress line.
-- Every later verifier the lead starts before the next `done` (a repair or merge re-verify
-  in "Making the pull request mergeable" 6 and 7, or a re-verify after a step showed the
-  work wrong) also gets all current steps.
-- **Which results count.** A report that covers every step replaces all earlier results.
-  A report on a subset (a re-try of missing or reworded steps) replaces only those step
-  numbers. A reworded step's earlier result is discarded when it is reworded; only its
-  re-try counts.
-- **Which commit.** A verifier checks the branch tip when it starts
-  (`viewer/app/sessions.js:625-630`). For the planned build's steps-only verifier this is
-  the local `HEAD` after the sub-lead's result, which in a lighter mode may be a later
-  commit than the one the sub-lead verified (only plan files differ); that is fine. Before
-  using a report, the lead checks its `COMMIT:` line equals the commit it meant to try; if
-  not, it starts one fresh verifier; if that report's `COMMIT:` also differs, every step is
-  posted `agent: not-tried`, `note` "an agent could not try them on this exact version".
-- Commits the lead does not verify (someone else's fast-forward, a done at a merged head
-  with others' commits) keep the STEP results from the last verifier (Accepted Risks).
+**Which results count.** The STEP lines from the report whose verdict the lead (or
+sub-lead) acts on: the PASS, or the last report when Collin chose "push it as it is".
+Every later verifier carrying the steps replaces them. Commits nobody verifies (someone
+else's fast-forward; a merged head with others' commits) keep the last results (Accepted
+Risks).
 
-**Using the STEP lines.**
+**Which commit.** A verifier checks the branch tip when it starts
+(`viewer/app/sessions.js:625-630`) and names it on its `COMMIT:` line. A report whose
+`COMMIT:` is not the commit the lead meant to check counts for nothing, neither its verdict
+nor its STEP lines, and is not a failed attempt: the lead starts a fresh verifier. After two
+such mismatches in a row the lead posts a `needs` card saying the branch keeps moving and
+it cannot get a check on the current version ("Keep going" retries).
+
+**Turning STEP lines into the card.**
 - `MATCH` → `agent: matched`.
-- `COULD NOT TRY` (including "ran a safe stand-in") → `agent: not-tried`, `note` in
-  Collin's words from the reason.
-- Brief contents for any verifier carrying steps: the numbered steps, the path map for
-  machine commands, and (for steps-only) the plan slug so it can judge intent.
-- `DIFFERS (meets intent)`: the verifier judged that what it saw is what the Spec or
-  request wants, so the step was worded wrong. The lead rewords the step; every reworded
-  step is re-tried once by a fresh steps-only verifier on the same commit before it can be
-  `agent: matched`; still not matching → `agent: differed`, `note` what it saw.
-- Combined reports (small fix, after-done fix, and the repair and merge re-verifies): a
-  step that shows the work is wrong is reported by the verifier as a `GAP` as well, so it
-  goes through that path's existing fix loop, attempt count and outcome (the small-fix and
-  after-done "push it as it is, or drop it" question; the repair budget and `needs` card in
-  "Making the pull request mergeable" 7 and 8, which never pushes a failed repair). The
-  question below is not used there. If Collin chooses "push it as it is", the step is
-  posted `agent: differed`, `note` what it saw.
-- Steps-only reports (planned build, before `done`): `DIFFERS (work wrong)` → a gap
-  (Decision 8). The lead fixes it in the worktree itself (no sub-lead or workers), commits,
-  and starts a fresh **combined** verifier briefed with the plan slug (Spec), the gap and
-  all steps. A FAIL verdict (any GAP, including a step reported work-wrong) is a failed
-  attempt; a PASS ends the loop and its STEP lines count. If it still fails after two
-  fix attempts, or the fix needs parallel workers, the lead posts a `question` card with
-  two options: "Finish with that step marked" (the step is posted `agent: differed`, `note` what it saw) and "Finish and start a follow-up thread"
-  (the same, plus a `stub` with `depends_on_parent: true` naming the gap). Either way the
-  thread then finishes as usual. Nothing is reverted on this path.
-- A report missing a step's line: one fresh steps-only verifier tries just the missing
-  steps; still missing → `agent: not-tried`, `note` "an agent did not report on it". Two
-  lines for one step: use the less favourable (DIFFERS (work wrong), DIFFERS (meets intent), COULD NOT TRY, MATCH).
-- `VERDICT: BLOCKED` is a setup problem, as today: fix it and start a fresh verifier; not
-  a failed attempt.
+- `COULD NOT TRY` (including "ran a safe stand-in") → `agent: not-tried`, `note` the reason
+  in Collin's words.
+- `DIFFERS (meets intent)` (the step was worded wrong) → the lead rewords it and starts one
+  steps-only verifier for the reworded steps on the same commit. Its result: MATCH →
+  `matched`; COULD NOT TRY → `not-tried`; any DIFFERS → `differed`, `note` what it saw.
+  This re-try never opens a fix loop.
+- `DIFFERS (work wrong)` → already a GAP (above). It reaches the card only when Collin chose
+  "push it as it is": `agent: differed`, `note` what it saw.
+- A step with no STEP line → `agent: not-tried`, `note` "an agent did not report on it".
+  Two lines for one step: use the less favourable (DIFFERS (work wrong), DIFFERS (meets
+  intent), COULD NOT TRY, MATCH).
+- `VERDICT: BLOCKED` is a setup problem, as today: fix it and start a fresh verifier.
 - A small fix Collin chose to drop (reverted, no `done`) gets no check card.
 
 **Posting.** Immediately after a `done` card is accepted, post the `check` card with that
 done card's `head`. One check card per head: if a retried `done` was recorded twice at the
-same head, the one check card covers both (including a done at a merged head other than the pushed commit). Order
-in a two-part thread: `done`, then `check`, then the follow-up `stub`. The `check` card is
-never a condition for `done`; `done` keeps its own gate unchanged.
+same head, the one check card covers both (including a done at a merged head other than
+the pushed commit). Order in a two-part thread: `done`, then `check`, then the follow-up
+`stub`. The `check` card is never a condition for `done`; `done` keeps its own gate.
 
-**Restart.** A restarted lead has lost its draft and the STEP results. After
-`[wc:context restart]`, and again after any `done` the restarted lead itself posts before
-it has steps in hand, the lead posts a missing check card only when all of these hold: the
-latest done card in its context that has no `retracted_at` has a `head`;
-no `check` card has that `head`; and the local `HEAD` equals that `head`. Then it drafts
-the steps and has them tried by a steps-only verifier on `HEAD` before posting (a
-duplicate refusal means the original arrived; any other head refusal means that done card
-is not current, for example before an import cutoff the lead cannot see; stop there in both
-cases). A step reported `DIFFERS (work wrong)` here, after `done` was accepted, is posted
-`agent: differed`, `note` what it saw, and the lead posts a
-`question` card: "Fix it now" (handled as a problem Collin reported, step 9, which checks
-the PR state first) or "Leave it". The lead commits nothing before he answers. Otherwise it posts none for
-that done card; the next `done` gets its own. A stub that missed the merge ("Making the
-pull request mergeable" 4, exit 1) posts no check card.
+**Restart.**
+- Before `done`, planned build: the steps are in PLAN.md and the results in COMPLETION.md;
+  nothing is lost.
+- Before `done`, small fix or after-done fix: today's restart rules apply to the fix; the
+  restarted lead has no steps, so it falls to the rule below once `done` is posted.
+- After `[wc:context restart]`, and after any `done` the restarted lead posts without steps
+  in hand: the lead posts a missing check card only when the latest done card in its
+  context without `retracted_at` has a `head`, no `check` card has that `head`, and the
+  local `HEAD` equals that `head`. It drafts the steps (for a planned build, from PLAN.md's
+  `### Check steps` and COMPLETION.md's STEP lines when they are for that head, without a
+  re-try) and otherwise has them tried by one steps-only verifier on `HEAD`, then posts. A
+  duplicate refusal means the original arrived; any other head refusal means that done card
+  is not current (for example before an import cutoff); stop there in both cases. A step
+  this verifier reports `DIFFERS (work wrong)` is posted `agent: differed`, and the lead
+  posts a `question` card: "Fix it now" (handled as a problem Collin reported, step 9,
+  which checks the PR state first) or "Leave it". The lead commits nothing before he
+  answers.
+- A stub that missed the merge ("Making the pull request mergeable" 4, exit 1) posts no
+  check card.
 
 **Imported threads.** No check card is posted on import.
 
+### Sub-lead changes (`protocol/app/sub-lead.md`)
+
+- Its verifiers' briefs say the plan has `### Check steps` to try (when it does).
+- On each passing verification attempt, copy the verifier's STEP lines into COMPLETION.md
+  (a "Check steps" section naming the commit) and include them in the build `result`
+  summary.
+- A step a verifier reports `DIFFERS (work wrong)` is a GAP like any other; no other change
+  to remediation, attempts or escalation.
+
 ### How the verifier tries steps (`protocol/app/verifier.md`)
 
-A new section, used only when the brief includes check steps:
+A new section, used when the brief or the plan's `### Check steps` gives steps:
 - **Remit.** A brief that says "steps only" asks only for the steps: do not verify the
   Spec. Otherwise check the work as today and also try the steps.
 - Try each step against the commit being checked, in the throwaway worktree. Run any app in
@@ -241,28 +239,27 @@ A new section, used only when the brief includes check steps:
   helpers, and start it from the worktree on a free port (never 7374) with its own temporary
   data. For wheelchair that means `viewer/server.js` with a free `--port`, a temporary
   `--cache-root` **and** a temporary `--state-dir` (without `--state-dir` it opens the live
-  app state: `viewer/test/helpers/server.js:66-74`). App steps are
-  followed in a headless browser at phone size (390×844), using the project's Playwright if
-  it has one, otherwise any headless browser available on the machine.
+  app state: `viewer/test/helpers/server.js:66-74`). App steps are followed in a headless
+  browser at phone size (390×844), using the project's Playwright if it has one, otherwise
+  any headless browser available on the machine.
 - If the project gives no safe way to run its app in isolation (it needs real accounts,
   devices, paid services or its live data), report those steps COULD NOT TRY with that
   reason; do not improvise against live systems.
-- Machine commands are run exactly as written unless they would touch Collin's live state
-  or install system-wide. Reading Collin's installed copy counts as live state: it shows
-  the old version until he merges. The brief may give a **path map** (for example
-  `/home/collin/projects/personal/wheelchair` → the worktree); running a command with only
-  those path prefixes swapped counts as running it as written, and can MATCH. Then you may run a safe stand-in, but the step is
+- Machine commands are run exactly as written, with only the path map's prefixes swapped
+  (that still counts as written and can MATCH). Reading Collin's installed copy counts as
+  live state: it shows the old version until he merges. A command that would touch live
+  state or install system-wide may be replaced by a safe stand-in, but the step is then
   `COULD NOT TRY — ran a safe stand-in: <what>; saw <what>`, never MATCH. MATCH means the
   step was followed as written and showed what `see` says.
 - A step that needs state the isolated app lacks (for example a thread at Done) may be set
   up in the isolated copy; if it cannot be, COULD NOT TRY with the reason.
 - The `update` text is not run.
 - **Report.** `COMMIT:` first as today. A steps-only report's verdict is `VERDICT: PASS`
-  when every step has a line, or `VERDICT: BLOCKED`; it has no GAP lines. A combined report
-  keeps today's verdict and GAP lines. Then exactly one line per step, numbered as in the
-  brief: `STEP <n>: MATCH|DIFFERS (meets intent)|DIFFERS (work wrong)|COULD NOT TRY —
-  <what it saw or why>`, judging "meets intent" against the Spec or request in the brief.
-  In a combined report, every `DIFFERS (work wrong)` step also gets a GAP line.
+  or `VERDICT: BLOCKED`, with no GAP lines. A combined report keeps today's verdict and GAP
+  lines. Then exactly one line per step, numbered as given:
+  `STEP <n>: MATCH|DIFFERS (meets intent)|DIFFERS (work wrong)|COULD NOT TRY — <what it saw
+  or why>`, judging intent against the Spec or request. In a combined report every
+  `DIFFERS (work wrong)` step also gets a GAP line.
 
 ### Non-goals
 
@@ -270,10 +267,11 @@ A new section, used only when the brief includes check steps:
 - No preview of the unmerged branch (Decision 5).
 - No change to the done card, its fields, its GitHub gate or "Making the pull request
   mergeable", beyond giving its verifiers the steps and posting `check` after `done`.
+- No fix loop of its own (Decision 13).
 - No check cards posted on import. A thread finished before this ships gets none, except
-  that a lead restarted in one may post one under the restart rule (harmless, and not
-  worth telling apart).
-- The sub-lead and worker protocols do not change.
+  that a lead restarted in one may post one under the restart rule (harmless).
+- Worker protocol does not change; the sub-lead change is limited to the three bullets
+  above.
 
 ### Edge cases
 
@@ -286,6 +284,26 @@ A new section, used only when the brief includes check steps:
   from Collin's side; detail belongs to the verifier, not the card.
 - Largest valid card (6 steps at the limits plus `update`) is about 12,000 characters of
   history text, under the handoff's 20,000-character entry limit; no truncation expected.
+
+### Check steps
+
+For this feature's own check card. Path map: `/home/collin/projects/personal/wheelchair` →
+the worktree.
+
+`update`: "Merge the pull request, then on the machine run
+`cd /home/collin/projects/personal/wheelchair && git pull && ./install.sh` (my best guess at
+how the app picks up the change)."
+
+1. `app` — Start a small thread (for example, fix a typo in a README) and let it finish.
+   See: right after the Done card, a "Check it yourself" card with numbered steps, each
+   labelled "In the app" or "On the machine", saying what to do and what you should see.
+2. `app` — On a step with a command, tap Copy. See: the command is copied; nothing new
+   appears in the thread.
+3. `app` — Look at the check card on your phone. See: nothing makes the page scroll
+   sideways; a long command scrolls inside its own box.
+
+Verifiers may stage step 1 in the isolated app by posting a done and a check card into a
+test thread, as the browser tests do; a real thread finishing cannot be staged.
 
 ### Validation
 
@@ -308,9 +326,11 @@ A new section, used only when the brief includes check steps:
   block with Copy, "You should see:", the "Not tried by an agent" line and the "An agent tried this and saw something else"
   line; no buttons
   other than Copy; at 390px wide the page has no horizontal scroll.
-- `grep -n "check" protocol/app/cards.md protocol/app/cards-lead.md protocol/app/lead.md protocol/app/verifier.md`
+- `grep -n -i "check" protocol/app/cards.md protocol/app/cards-lead.md protocol/app/lead.md protocol/app/verifier.md protocol/app/sub-lead.md`
   shows the new kind row, its section, the lead's writing/trying/posting rules on all three
-  done paths, the restart rule, and the verifier's steps section with the STEP format.
+  done paths (including the planned build's `### Check steps` in the final Spec pass), the
+  restart rule, the verifier's steps section with the STEP format, and the sub-lead's
+  three changes.
 
 ## Accepted Risks
 
@@ -420,7 +440,7 @@ exit. Downgrades and declines cite evidence.
 
 Collin chose "Keep going" after three rounds without a clean one; budget reset.
 
-**Lanes:** intent: see table; mechanics: see table; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 3:**
 - Protocol-only changes: steps name a behaviour to watch for in a later thread; no
@@ -437,6 +457,30 @@ Collin chose "Keep going" after three rounds without a clean one; budget reset.
 | intent | major | Protocol-only rule contradicts Decision 2's "protocol docs → machine commands" | upheld | "protocol documents" dropped from the machine bullet; protocol steps are `where: app`; Decision 11 (Collin's card never listed protocol docs) |
 | intent | minor | A step that failed is shown as "Not tried" | upheld | `tried`/`why_not` replaced by `agent` (matched / not-tried / differed) and `note`; differed has its own warning line; Decision 12 |
 | intent | minor | Restart-found defect waits for Collin to retype it | upheld | Lead posts a question card: Fix it now (step 9) or Leave it |
+| mechanics | blocking | Failed planned-build repair can still be pushed; finish options ignore it | upheld | Decision 13: no steps fix loop; work-wrong steps are GAPs in the sub-lead's remediation, which already handles surviving gaps |
+| mechanics | blocking | Second COMMIT mismatch leaves the work verdict unresolved | upheld | A mismatched report counts for nothing (verdict or steps) and is not an attempt; after two in a row, a needs card |
+| mechanics | major | No restart rule for a planned-build repair before done | upheld | Decision 13: steps in PLAN.md, results in COMPLETION.md, loop owned by the sub-lead and its existing restart rules |
+| mechanics | major | Missing-step re-try finding work wrong on a small fix has no route | upheld | Missing step lines are posted not-tried; no re-try |
+| mechanics | minor | Reworded step re-try COULD NOT TRY shown as differed | upheld | Re-try mapping explicit: MATCH matched, COULD NOT TRY not-tried, DIFFERS differed |
+
+### Round 5 — 2026-11-18
+
+**Lanes:** intent: see table; mechanics: see table; cross-family: yes.
+
+**Changed since Round 4:**
+- Decision 13 (supersedes 7 and 8): no steps fix loop. Planned build: lead writes
+  `### Check steps` in the final Spec; the sub-lead's verifiers try them; work-wrong steps
+  are GAPs in existing loops. Sub-lead gains three small rules. Lead section rewritten
+  (draft location, which results count, which commit, turning STEP lines into the card,
+  restart). Verifier section tidied.
+- Step fields `tried`/`why_not` replaced by `agent` (matched / not-tried / differed) and
+  `note` (Decision 12); new "An agent tried this and saw something else" line.
+- Protocol-only changes get `where: app` steps (Decision 11).
+- Restart-found defect → question card (Fix it now / Leave it).
+- This plan's own `### Check steps` added.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
