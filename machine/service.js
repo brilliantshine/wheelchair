@@ -640,9 +640,8 @@ class MachineService {
     try { pane = this.pane(session.name); } catch { return false; }
     const prompt = adapters[session.cli]?.answerPrompts(session, pane);
     if (prompt) {
-      this.tmux(['send-keys', '-t', session.name, 'Down']);
-      this.tmux(['send-keys', '-t', session.name, 'Enter']);
-      if (prompt === 'trust') { session.trust_answered = true; await this.persistSessions(); }
+      for (const key of prompt.keys) this.tmux(['send-keys', '-t', session.name, key]);
+      if (prompt.step === 'trust') { session.trust_answered = true; await this.persistSessions(); }
       return false;
     }
     if (this.readyText(session, pane)) {
