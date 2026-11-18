@@ -278,10 +278,9 @@
   }
 
   // ---- chat ----
-  function unpinnedCards() {
-    const ids = new Set(data.pinned.map((c) => c.id));
-    return data.cards.filter((c) => !ids.has(c.id));
-  }
+  // Every card shows in the conversation at its time, pinned or not. A pinned card's copy here
+  // drops its element ids, so links and lookups by id land on the pinned copy.
+  function pinnedIds() { return new Set(data.pinned.map((c) => c.id)); }
 
   function renderChat() {
     const items = data.items;
@@ -292,14 +291,17 @@
       if (at >= 0) { humans.splice(at, 1); return false; }
       return true;
     });
-    const cards = unpinnedCards();
+    const cards = data.cards;
+    const pinned = pinnedIds();
     let next = 0;
     const cardsBefore = (when) => {
       while (next < cards.length) {
         const cardAt = Date.parse(cards[next].at);
         if (when !== undefined && !(cardAt < when)) break;
-        const n = renderCard(cards[next++]);
+        const card = cards[next++];
+        const n = renderCard(card);
         if (!n) continue;
+        if (pinned.has(card.id)) for (const node of [n, ...n.querySelectorAll('[id]')]) node.removeAttribute('id');
         const prev = chatEl.lastElementChild;
         if (!(prev && prev.classList.contains('assistant'))) chatEl.appendChild(leadBy());
         chatEl.appendChild(n);
@@ -945,7 +947,7 @@
     const nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
     let changed = false;
     const leadNow = leadSession();
-    sync('chat', [data.items, pending, leadNow && [leadNow.queue, leadNow.ready, leadNow.permission_open, leadNow.needs_open, leadNow.limited_until], sendingNow, slug(), t.archived, unpinnedCards(), cardErrors, declining], () => { renderChat(); changed = true; });
+    sync('chat', [data.items, pending, leadNow && [leadNow.queue, leadNow.ready, leadNow.permission_open, leadNow.needs_open, leadNow.limited_until], sendingNow, slug(), t.archived, data.cards, data.pinned.map((c) => c.id), cardErrors, declining], () => { renderChat(); changed = true; });
     const workingEl = $('working');
     const working = leadWorking() && !t.archived;
     const workingText = (t.lead_name || 'The lead') + ' is working';
