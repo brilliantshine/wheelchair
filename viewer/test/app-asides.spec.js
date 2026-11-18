@@ -83,3 +83,23 @@ test('archiving makes all aside controls read-only and hides creation controls',
     await expect(page.getByRole('button', { name: 'Ask about this message' })).toHaveCount(0);
   } finally { await page.unrouteAll({ behavior: 'ignoreErrors' }); await ctx.close(); }
 });
+
+test('a selection in the chat survives a card update and the chat catches up once it clears', async ({ page }) => {
+  const ctx = await startWorld();
+  try {
+    const made = await ctx.make({ cli: 'claude' });
+    const now = new Date().toISOString();
+    await ctx.timedTranscript(made.id, [['human', 'Hello', now], ['assistant', 'Some words to select.', now]]);
+    await ctx.post(made.id, { kind: 'progress', stage: 'review', pass: 1, phase: 'checking', machines: [], choice_waiting: false });
+    await signIn(page, ctx); await page.goto(`${ctx.server.url}/app/thread?id=${made.id}`);
+    await expect(page.locator('#chat .card-progress')).toContainText('reviewers reading');
+    await page.evaluate(() => { const node = document.querySelector('.bubble.assistant p').firstChild; const r = document.createRange(); r.selectNodeContents(node); const s = getSelection(); s.removeAllRanges(); s.addRange(r); document.dispatchEvent(new Event('selectionchange')); });
+    await expect(page.locator('.aside-selection')).toBeVisible();
+    await ctx.post(made.id, { kind: 'progress', stage: 'review', pass: 1, phase: 'clean', machines: [], choice_waiting: false });
+    await expect(page.locator('#pinned .card-progress')).toContainText('passed');
+    expect(await page.evaluate(() => getSelection().toString())).toBe('Some words to select.');
+    await expect(page.locator('#chat .card-progress')).toContainText('reviewers reading');
+    await page.evaluate(() => getSelection().removeAllRanges());
+    await expect(page.locator('#chat .card-progress')).toContainText('passed');
+  } finally { await page.unrouteAll({ behavior: 'ignoreErrors' }); await ctx.close(); }
+});

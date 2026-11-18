@@ -935,6 +935,12 @@
     waitEl.textContent = text;
   }
 
+  function selectingInChat() {
+    const sel = window.getSelection();
+    return Boolean(sel && !sel.isCollapsed && sel.rangeCount && chatEl.contains(sel.anchorNode));
+  }
+  document.addEventListener('selectionchange', () => { if (data && !selectingInChat()) render(); });
+
   function render() {
     if (!data) return;
     const t = thread();
@@ -948,7 +954,10 @@
     const nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
     let changed = false;
     const leadNow = leadSession();
-    sync('chat', [data.items, pending, leadNow && [leadNow.queue, leadNow.ready, leadNow.permission_open, leadNow.needs_open, leadNow.limited_until], sendingNow, slug(), t.archived, data.cards, data.pinned.map((c) => c.id), pinsFolded, ideaOpen, cardErrors, declining], () => { renderChat(); changed = true; });
+    // Text selected in the chat (for an aside) would vanish with a redraw, so the redraw waits
+    // until the selection is gone; the selectionchange listener above calls render() then.
+    const chatSig = JSON.stringify([data.items, pending, leadNow && [leadNow.queue, leadNow.ready, leadNow.permission_open, leadNow.needs_open, leadNow.limited_until], sendingNow, slug(), t.archived, data.cards, data.pinned.map((c) => c.id), pinsFolded, ideaOpen, cardErrors, declining]);
+    if (sigs.chat !== chatSig && !selectingInChat()) { sigs.chat = chatSig; renderChat(); changed = true; }
     const workingEl = $('working');
     const working = leadWorking() && !t.archived;
     const workingText = (t.lead_name || 'The lead') + ' is working';
