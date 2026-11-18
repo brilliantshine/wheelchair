@@ -112,25 +112,32 @@ async function runOperation(hub, id, { reimport = false } = {}) {
 }
 async function startCreate(hub, { file, machine, project }) {
   const id = file.thread.id;
-  await hub.withThread(id, async () => {
+  const result = await hub.withThread(id, async () => {
     const now = new Date().toISOString();
     const thread = { id, title: file.thread.title, slug: file.thread.slug, machine, project, branch: `wc/${id}`, stub: false, context: '', depends_on_parent: false, waiting_on_parent: false, sessions: [], cards: [], asides: [], pinned: {}, queues: {}, sent: [], archived: false, created_at: now, updated_at: now, handoff_op: operation('create', file.head, file) };
     await hub.save(thread);
+    return runLocked(hub, thread);
   });
-  return runOperation(hub, id);
+  await hub.restartLead(id).catch(() => {}); return result;
 }
 async function startAdvance(hub, thread, file) {
-  await hub.withThread(thread.id, async () => { const current = await hub.thread(thread.id); current.handoff_op = operation('advance', file.head, file); await hub.save(current); });
-  return runOperation(hub, thread.id);
+  const result = await hub.withThread(thread.id, async () => {
+    const current = await hub.thread(thread.id); current.handoff_op = operation('advance', file.head, file); await hub.save(current);
+    return runLocked(hub, current);
+  });
+  await hub.restartLead(thread.id).catch(() => {}); return result;
 }
 async function undo(hub, id) {
-  await hub.withThread(id, async () => {
+  const result = await hub.withThread(id, async () => {
     const thread = await hub.thread(id);
-    if (thread.handoff_op) { if (thread.handoff_op.kind !== 'undo') throw appError(409, 'Retry the unfinished import first'); return; }
-    if (!thread.handed_off) throw appError(409, 'This thread has not been handed off');
-    thread.handoff_op = operation('undo', thread.handed_off.head, null); await hub.save(thread);
+    if (thread.handoff_op) { if (thread.handoff_op.kind !== 'undo') throw appError(409, 'Retry the unfinished import first'); }
+    else {
+      if (!thread.handed_off) throw appError(409, 'This thread has not been handed off');
+      thread.handoff_op = operation('undo', thread.handed_off.head, null); await hub.save(thread);
+    }
+    return runLocked(hub, thread);
   });
-  return runOperation(hub, id);
+  await hub.restartLead(id).catch(() => {}); return result;
 }
 async function cancel(hub, id) {
   return hub.withThread(id, async () => {
