@@ -42,7 +42,7 @@ test('banner states, undo, download and retry', async ({ page }) => {
   await expect(page.locator('#handoff')).toContainText('Handed off');
   await page.getByRole('button', { name: 'Undo hand-off' }).click(); await expect(page.locator('#error')).toHaveText('Cannot undo.');
   const download = page.waitForEvent('download'); await page.getByRole('button', { name: 'Download the file again' }).click(); expect((await download).suggestedFilename()).toBe('again.json');
-  for (const [next, text, undo] of [['moved', 'Picked up elsewhere', false], ['own-cancelled', 'earlier cancelled import', true], ['inspect-failed', 'Handed off', true]]) {
+  for (const [next, text, undo] of [['moved', 'Picked up elsewhere', false], ['own-cancelled', 'An earlier cancelled import or undo is still being taken back; try again in a few minutes', true], ['inspect-failed', 'Handed off', true]]) {
     state = next; await page.reload(); await expect(page.locator('#handoff')).toContainText(text); await expect(page.getByRole('button', { name: 'Undo hand-off' })).toHaveCount(undo ? 1 : 0);
   }
   await page.unroute('**/api/threads/*/chat');
@@ -142,4 +142,40 @@ test('import cutoff keeps missing or invalid times and uses card creation time',
   await expect(page.locator('#chat')).toContainText('untimed item'); await expect(page.locator('#chat')).toContainText('invalid item');
   await expect(page.locator('#chat')).toContainText('new card'); await expect(page.locator('#chat')).toContainText('untimed card');
   await expect(page.locator('#chat')).not.toContainText('old item'); await expect(page.locator('#chat')).not.toContainText('old card');
+});
+
+test('export refusal shows the sentence and closes confirmation', async ({ page }) => {
+  const id = await thread(page, { export: { ok: true } });
+  await page.route('**/api/threads/*/export', (route) => route.fulfill({ status: 409, json: { error: 'Export refused.' } }));
+  await page.goto(`${ctx.server.url}/app/thread?id=${id}`);
+  await page.getByRole('button', { name: 'Export', exact: true }).click();
+  await page.getByRole('button', { name: 'Confirm', exact: true }).click();
+  await expect(page.locator('#error')).toHaveText('Export refused.');
+  await expect(page.getByRole('button', { name: 'Confirm', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Export', exact: true })).toBeVisible();
+});
+
+test('failed handoff inspection keeps the banner and frozen controls', async ({ page }) => {
+  const made = await ctx.make({ cli: 'claude' });
+  await page.route('**/api/threads/*/chat', async (route) => {
+    const response = await route.fetch(); const data = await response.json();
+    data.thread.handed_off = { at: '2026-01-01T00:00:00Z', head: 'a', stage: 'idea' };
+    data.thread.sessions.forEach((s) => { if (s.role === 'lead') s.live = false; });
+    data.cards = [{ id: 'offer', kind: 'offer', at: '2026-01-01', summary: 'Frozen offer' }]; data.pinned = [];
+    await route.fulfill({ response, json: data });
+  });
+  await page.route('**/api/threads/*/handoff', (route) => route.fulfill({ status: 503, json: { error: 'Offline.' } }));
+  await page.goto(`${ctx.server.url}/app/thread?id=${made.id}`);
+  await expect(page.locator('#handoff')).toContainText('Handed off');
+  await expect(page.getByRole('button', { name: 'Undo hand-off' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Download the file again' })).toBeVisible();
+  await expect(page.locator('#msg')).toBeDisabled(); await expect(page.locator('#attach')).toBeDisabled();
+  await expect(page.locator('#chat .card-offer button').first()).toBeDisabled(); await expect(page.locator('#dead')).toBeHidden();
+});
+
+test('retry has no Cancel when cancellation is unavailable', async ({ page }) => {
+  const id = await thread(page, { handoff_op: { kind: 'advance', last_error: 'Waiting.', can_cancel: false } });
+  await page.goto(`${ctx.server.url}/app/thread?id=${id}`);
+  await expect(page.locator('#handoff-retry')).toContainText('Waiting.');
+  await expect(page.locator('#handoff-retry').getByRole('button', { name: 'Cancel' })).toHaveCount(0);
 });

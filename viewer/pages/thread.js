@@ -162,7 +162,7 @@
     {
       const wrap = el('div', 'export-action');
       if (exportAsk) {
-        wrap.append(el('span', 'dim', 'Export and hand off? This thread stops taking work here.'), button('Confirm', 'primary small', async () => { try { await download(T + '/export', 'POST'); exportAsk = false; await poll(); } catch (e) { showError(e.message); } }), button('Cancel', 'small', () => { exportAsk = false; renderHead(); }));
+        wrap.append(el('span', 'dim', 'Export and hand off? This thread stops taking work here.'), button('Confirm', 'primary small', async () => { try { await download(T + '/export', 'POST'); exportAsk = false; await poll(); } catch (e) { exportAsk = false; renderHead(); showError(e.message); } }), button('Cancel', 'small', () => { exportAsk = false; renderHead(); }));
       } else {
         const exportButton = button('Export', 'small', () => { exportAsk = true; renderHead(); }, !(t.export && t.export.ok) || t.archived || frozen());
         if (exportButton.disabled && t.export && t.export.reason) exportButton.title = t.export.reason;
@@ -1028,7 +1028,7 @@
       data = out; showError('');
       const key = out.thread.handed_off && JSON.stringify(out.thread.handed_off);
       if (key && key !== handoffKey) {
-        try { const response = await fetch(T + '/handoff'); const state = await response.json(); if (!response.ok) throw new Error(state.detail || state.error || 'http ' + response.status); handoffState = state; handoffKey = key; } catch (e) { showError(e.message); }
+        try { const response = await fetch(T + '/handoff'); const state = await response.json(); if (!response.ok) throw new Error(state.detail || state.error || 'http ' + response.status); handoffState = state; handoffKey = key; } catch (e) { handoffState = { state: 'inspect-failed', at: out.thread.handed_off.at }; handoffKey = key; }
       } else if (!key) { handoffState = null; handoffKey = null; }
       render();
     } catch (e) { showError('Could not load the thread: ' + e.message); }
