@@ -685,7 +685,7 @@ Filled by Stage 3. One row per worker brief.
 | T2 | lead.md after-done check-step rules + pointers; verifier.md steps-only section | protocol/app/lead.md, protocol/app/verifier.md | standard / claude-sonnet-5-5 | wc-2daed8b3ee7f-worker-2 | grep -i check; protocol-rules test | done |
 | T3 | `tricky` check card rendering, Copy, Fix it now/Leave it buttons, CSS, browser test | viewer/pages/thread.js, viewer/pages/thread.css, new viewer/test/*.spec.js | standard / claude-sonnet-5-5 | wc-2daed8b3ee7f-worker-3 | `npm --prefix viewer run test:browser` | done |
 | R1 | Remediation 1: check card update wrapping; buttons honour the import cutoff | viewer/pages/thread.js, thread.css, viewer/test/app-check-card.spec.js | standard / claude-sonnet-5-5 | wc-2daed8b3ee7f-worker-4 | `npm --prefix viewer run test:browser` | in progress |
-| R2 | Remediation 1: note rejects U+2028/U+2029/U+0085 | viewer/app/card.js, viewer/test/app-check-card.test.js | light / gpt-6-luna | wc-2daed8b3ee7f-worker-5 | `node --test viewer/test/*.test.js` | in progress |
+| R2 | Remediation 1: note rejects U+2028/U+2029/U+0085 | viewer/app/card.js, viewer/test/app-check-card.test.js | light / gpt-6-luna | wc-2daed8b3ee7f-worker-5 | `node --test viewer/test/*.test.js` | done |
 | R3 | Remediation 1: lead may start the steps-only verifier after any done | protocol/app/lead.md | light / claude-haiku-5-5 | wc-2daed8b3ee7f-worker-6 | protocol-rules test | done |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
@@ -717,3 +717,5 @@ anything a future session needs that fits nowhere above.
 - 2026-11-18 — Verification attempt 1 on 2344766: claude PASS, gpt FAIL (4 gaps); REMEDIATION-1.md, tasks R1-R3.
 - 2026-11-18 — Choice: R3, lead.md:69: the widened verifier sentence kept on one line (~104 chars) to avoid rewrapping the bullet.
 - 2026-11-18 — R3 accepted (band: scout; 4-line diff exactly the brief's text, read inline): protocol-rules 35/35 in its worktree.
+- 2026-11-18 — Choice: R2, card.js: regex written with `\u` escapes (raw separators are invalid in a regex literal).
+- 2026-11-18 — R2 accepted (band: scout; 4-line diff read inline): I ran `node --test viewer/test/*.test.js` in its worktree, exit 0, 636/636 (the worker's own full run did not finish). Sub-lead edit after merge: the test's raw U+2028/U+2029 characters replaced with `\u` escapes so they are visible.
