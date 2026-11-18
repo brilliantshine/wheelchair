@@ -47,7 +47,34 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 10 | No buttons for "it worked" or "it didn't" on the check card; he reports a problem by typing in the thread as today | IDEA.md: not recording whether he did them | defaulted |
 | 11 | Protocol-only changes (how agents behave) get `where: app` steps about what he will see agents do; machine commands are for scripts and the machine service. Supersedes the "protocol docs" example in Decision 2's wording | Collin's pick was "if you can see it in the app, phone steps"; agent behaviour shows in a thread, and the "protocol docs" example was the lead's wording, not on his card | review-round-4 |
 | 12 | A step an agent tried and saw fail is shown as "An agent tried this and saw something else", distinct from "Not tried by an agent" | He should be able to tell what was actually checked (IDEA.md) | review-round-4 |
-| 13 | Supersedes 7 and 8. Steps ride on verifiers that already run (planned build: the sub-lead's, from a `### Check steps` subsection the lead writes in the final Spec; fixes: the fix's verifier; repairs: the repair verifier). A step showing the work is wrong is a GAP in that verifier's existing loop; the feature adds no fix loop. Only a reworded step gets a steps-only re-try, which never opens a loop. The sub-lead protocol gains three small rules | Rounds 1 to 4 kept finding conflicts between a new steps fix loop and the existing ones; reusing the existing loops removes the conflicts. Round 1's "drift" objection is handled by the rewording rule | review-round-4 |
+| 13 | Supersedes 7 and 8. Steps ride on verifiers that already run (planned build: the sub-lead's, from a `### Validation
+
+- `cd viewer && npm test` passes, including new node tests:
+  - `card.js` validation: accepts a valid card; refuses each missing required field,
+    `command` with `where: app`, `note` with `agent: matched`, missing `note` with
+    `not-tried` or `differed`, an unknown `agent` value, 0 or 7 steps, over-length fields, unknown
+    fields, a non-lead role.
+  - hub acceptance: refused with no done card; refused when the only done card is retracted
+    or created before the thread's import cutoff; refused when `head` differs from the latest
+    done; accepted when it matches; refused as a duplicate for the same head; accepted
+    after a second done only with the second head.
+  - press: every action on a `check` card is refused with 400 and leaves it unanswered and
+    nothing enqueued.
+  - handoff: a thread with a `check` card at the size limits exports, the file validates,
+    and its `historyText` is untruncated and matches the format above.
+- `cd viewer && npx playwright test` passes, including a new browser test (its server
+  started with a temporary `stateDir` as well as a temporary cache root): a posted check
+  card renders the heading, the update text, numbered steps with "In the app"/"On the machine" labels, the command
+  block with Copy, "You should see:", the "Not tried by an agent" line and the "An agent tried this and saw something else"
+  line; no buttons
+  other than Copy; at 390px wide the page has no horizontal scroll.
+- `grep -n -i "check" protocol/app/cards.md protocol/app/cards-lead.md protocol/app/lead.md protocol/app/verifier.md`
+  shows the new kind row, its section, the lead's after-done writing/trying/posting rules
+  (all three done paths), the "Fix it now / Leave it" question, the restart rules, and the
+  verifier's steps-only section with the STEP format.
+- `git diff origin/main -- protocol/app/sub-lead.md protocol/app/worker.md` is empty.
+
+### Check steps` subsection the lead writes in the final Spec; fixes: the fix's verifier; repairs: the repair verifier). A step showing the work is wrong is a GAP in that verifier's existing loop; the feature adds no fix loop. Only a reworded step gets a steps-only re-try, which never opens a loop. The sub-lead protocol gains three small rules | Rounds 1 to 4 kept finding conflicts between a new steps fix loop and the existing ones; reusing the existing loops removes the conflicts. Round 1's "drift" objection is handled by the rewording rule | review-round-4 |
 | 14 | Supersedes 7, 8 and 13. The steps are tried once, after the `done` card is accepted, by one steps-only verifier on the done head; then the check card is posted. A step showing the work broken is shown as `differed` and the lead asks "Fix it now" (step 9) or "Leave it". No verification path before Done changes; the sub-lead protocol does not change | Collin's pick on Q5 (leaning). Removes carrying step results through fix, repair, merge and restart paths, which rounds 1 to 5 kept finding holes in | user |
 
 ## Spec
@@ -145,9 +172,8 @@ planned build, Collin's request for a small fix, the reported problem for an aft
 Each `see` is something he can observe, not "it works". Commands use full paths and name
 the output to look for. `update` says how this project picks up a merged change; when the
 lead does not know, it says so plainly and gives its best guess marked as such. When the
-done card is for an already merged pull request, `update` leaves out the merge. For a
-planned build the lead may draft the steps earlier, as a `### Check steps` subsection of
-the Spec in the final pass, so plan reviewers see them; that is a draft, not a result.
+done card is for an already merged pull request, `update` leaves out the merge. Steps are
+never written into the Spec (verifiers grade every Spec item).
 
 **Trying.** Immediately after a `done` card is accepted, the lead starts one fresh
 **steps-only** verifier (`--not-provider <lead's provider>` when `review_families` is
@@ -255,9 +281,10 @@ A new section, for a brief that says "steps only":
 - Largest valid card (6 steps at the limits plus `update`) is about 12,000 characters of
   history text, under the handoff's 20,000-character entry limit; no truncation expected.
 
-### Check steps
+## Check steps for this thread
 
-For this feature's own check card. Path map: `/home/collin/projects/personal/wheelchair` →
+Not part of the Spec: verifiers and workers ignore this section. The lead uses it after
+`done` under the first-release rule. Path map: `/home/collin/projects/personal/wheelchair` →
 the worktree.
 
 `update`: "Merge the pull request, then on the machine run
@@ -268,40 +295,14 @@ how the app picks up the change)."
    shows in a later thread; a verifier reports it COULD NOT TRY.
    See: right after the Done card, a "Check it yourself" card with numbered steps, each
    labelled "In the app" or "On the machine", saying what to do and what you should see.
-2. `app` — On a step with a command, tap Copy. See: the button reads "Copied" for a
+2. `app` — On the first check card you get after updating that has a step with a command,
+   tap Copy. See: the button reads "Copied" for a
    moment; nothing new appears in the thread.
-3. `app` — Look at the check card on your phone. See: nothing makes the page scroll
+3. `app` — Look at that same check card on your phone. See: nothing makes the page scroll
    sideways; a long command scrolls inside its own box.
 
 Verifiers may stage a done and a check card in a test thread of the isolated app for
 steps 2 and 3 (they check how the card looks and behaves), as the browser tests do.
-
-### Validation
-
-- `cd viewer && npm test` passes, including new node tests:
-  - `card.js` validation: accepts a valid card; refuses each missing required field,
-    `command` with `where: app`, `note` with `agent: matched`, missing `note` with
-    `not-tried` or `differed`, an unknown `agent` value, 0 or 7 steps, over-length fields, unknown
-    fields, a non-lead role.
-  - hub acceptance: refused with no done card; refused when the only done card is retracted
-    or created before the thread's import cutoff; refused when `head` differs from the latest
-    done; accepted when it matches; refused as a duplicate for the same head; accepted
-    after a second done only with the second head.
-  - press: every action on a `check` card is refused with 400 and leaves it unanswered and
-    nothing enqueued.
-  - handoff: a thread with a `check` card at the size limits exports, the file validates,
-    and its `historyText` is untruncated and matches the format above.
-- `cd viewer && npx playwright test` passes, including a new browser test (its server
-  started with a temporary `stateDir` as well as a temporary cache root): a posted check
-  card renders the heading, the update text, numbered steps with "In the app"/"On the machine" labels, the command
-  block with Copy, "You should see:", the "Not tried by an agent" line and the "An agent tried this and saw something else"
-  line; no buttons
-  other than Copy; at 390px wide the page has no horizontal scroll.
-- `grep -n -i "check" protocol/app/cards.md protocol/app/cards-lead.md protocol/app/lead.md protocol/app/verifier.md`
-  shows the new kind row, its section, the lead's after-done writing/trying/posting rules
-  (all three done paths), the "Fix it now / Leave it" question, the restart rules, and the
-  verifier's steps-only section with the STEP format.
-- `git diff origin/main -- protocol/app/sub-lead.md protocol/app/worker.md` is empty.
 
 ## Accepted Risks
 
@@ -484,6 +485,8 @@ Collin decided Q5 (try the steps after Done); budget reset.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Early `### Check steps` in the Spec brings back before-Done grading | upheld | Early draft option removed; steps never go in the Spec; this plan's own steps moved to a non-Spec section verifiers ignore |
+| intent | minor | Own steps 2 and 3 do not say which card to use | upheld | They name the first check card after updating that has a command |
 
 ## Prior Work
 
