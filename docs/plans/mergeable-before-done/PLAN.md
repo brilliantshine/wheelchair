@@ -412,3 +412,17 @@ remain; that refusal is returned as today. Outside a merge, behaviour is unchang
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Machine could refuse to spool `done` instead of D29/D30 machinery | user-decision | Part of the simplification fork put to Collin |
+| intent | minor | No re-post interval after "try again" refusals | upheld | pending fork |
+| intent | minor | Collin's own pushes re-verified without budget | upheld | pending fork |
+| mechanics | blocking | Installed gh 2.46.0 has no `gh pr checks --json` | upheld | confirmed locally; pending fork |
+| mechanics | blocking | `BLOCKED` may hide a required check with no rollup entry | upheld | pending fork |
+| mechanics | blocking | Review-required repo with no checks: gate accepts, lead never posts | upheld | pending fork |
+| mechanics | blocking | Lost direct-relay response → drain sees duplicate, no accepted message | upheld | pending fork |
+| mechanics | blocking | Spooled wait can't both receive messages and keep its deadline | upheld | pending fork |
+| mechanics | blocking | Restart may push unfinished local commits | upheld | pending fork |
+| mechanics | blocking | Restart may post `done` for someone else's merged commit unverified | upheld | pending fork |
+| mechanics | major | Ready → pending race between poll and gate | upheld | pending fork |
+| mechanics | major | Restart doesn't recover an uncommitted merge | upheld | pending fork |
+
+**Fork for Collin (user-decision):** the full gate keeps producing blocking edge cases (spool delivery, restart recovery, check evidence). Put to Collin: lighter enforcement, keep hardening, or rule only.
