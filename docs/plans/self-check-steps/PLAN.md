@@ -15,7 +15,16 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-None.
+### Q5: Try the steps after Done instead of before the push?
+- **Context:** Rounds 1 to 5 keep finding conflicts in carrying step results through the
+  existing fix, repair, merge and restart paths (round 5: two verifiers disagreeing,
+  deferred gaps, extra merge verifiers, results lost on restart, this feature's own
+  bootstrap). Trying the steps once, on the exact Done version, right after Done removes
+  all of that bookkeeping.
+- **Options:** (a) after Done: one steps-only verifier on the done head, then the check
+  card; a step showing the work broken is shown as such and comes with a "Fix it now /
+  Leave it" question; (b) keep trying before the push (current Spec), with more review.
+- **Recommendation:** (a).
 
 ## Watch List
 
@@ -484,6 +493,14 @@ Collin chose "Keep going" after three rounds without a clean one; budget reset.
 | intent | minor | COMMIT-mismatch rule changes how work verdicts are handled, against the non-goal | upheld | Work verdict as today; mismatch only voids STEP lines (one steps-only re-try, then all not-tried); needs card dropped |
 | intent | minor | Copy gives no visible confirmation, so step 2's `see` is not observable | upheld | Button reads "Copied" for about two seconds; step 2 updated |
 | intent | minor | Step 1 makes him start a real thread and PR | upheld | Step 1 points at the next thread he finishes anyway |
+| mechanics | blocking | Two passing verifiers' STEP lines: which wins | user-decision | Q5 (try after Done) removes multi-verifier results |
+| mechanics | blocking | Lighter-mode "Defer them and finish" leaves no STEP route | user-decision | Q5 |
+| mechanics | major | COMMIT-mismatch re-try finding work wrong has no outcome | user-decision | Q5 |
+| mechanics | major | After-done merge re-verifier not covered | user-decision | Q5 |
+| mechanics | major | Restart cannot rely on COMPLETION.md results | user-decision | Q5 |
+| mechanics | major | Crash between check card and its question loses the question | upheld | To fix in either design: on restart, a check card with a `differed` step and no later question about it gets the question |
+| mechanics | major | This feature's own thread cannot post a check card before its PR is installed | upheld | To fix in either design: first-release exception, steps given in the lead's reply after done; verifier briefs carry the rules in full |
+| mechanics | major | Own step 1 could MATCH via a fixture that bypasses the lead | upheld | To fix: step 1 is not-tried ("only shows in a later thread"); fixtures only for rendering steps |
 
 ## Prior Work
 
