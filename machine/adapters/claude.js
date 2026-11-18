@@ -66,6 +66,11 @@ module.exports = {
     const entry = () => [{ hooks: [{ type: 'command', command: hook }] }];
     const toolEntry = () => [{ matcher: '*', hooks: [{ type: 'command', command: hook, async: true }] }];
     const settings = { cleanupPeriodDays: 30, promptSuggestionEnabled: false, ...(session.permission_mode === 'bypass' ? { skipDangerousModePermissionPrompt: true } : {}), hooks: { Stop: entry(), Notification: entry(), StopFailure: entry(), PreToolUse: toolEntry(), PostToolUse: toolEntry(), PostToolUseFailure: toolEntry() }, statusLine: { type: 'command', command: `${c.quote(path.join(c.root, 'machine', 'statusline.sh'))} claude ${c.quote(session.name)}` } };
+    if (context.mcp?.names.length) {
+      const rejected = context.tools ? context.mcp.names.filter(name => !Object.hasOwn(context.mcp.servers, name)) : context.mcp.names;
+      if (rejected.length) settings.disabledMcpjsonServers = rejected;
+      if (context.tools && Object.keys(context.mcp.servers).length) settings.enableAllProjectMcpServers = true;
+    }
     return { settingsPath, settings, argv: ['claude', '--session-id', session.cli_session_id, '--settings', settingsPath, '--permission-mode', session.permission_mode === 'bypass' ? 'bypassPermissions' : 'auto', ...(input.model ? ['--model', input.model] : []), ...(session.effort ? ['--effort', session.effort] : []), '--append-system-prompt-file', context.promptPath, '--disallowedTools', DISALLOWED_TOOLS.join(',')] };
   },
   firstMessage(input) { return input.brief || input.first_message || ''; },

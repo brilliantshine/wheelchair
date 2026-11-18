@@ -29,7 +29,7 @@ module.exports = {
   },
   command(input, session, worktree, context) {
     const settingsPath = path.join(context.stateDir, 'settings', `${session.name}.json`);
-    return { settingsPath, settings: { trustedWorkspaces: [worktree] }, argv: ['agy', '--settings', settingsPath, ...(session.permission_mode === 'bypass' ? ['--dangerously-skip-permissions'] : ['--mode', 'auto']), ...(input.model ? ['--model', input.model] : []), ...(session.effort ? ['--effort', session.effort] : [])] };
+    return { ...(context.tools && context.mcp?.names.length ? { warnings: ["project tools aren't supported on Antigravity yet; this agent runs without them"] } : {}), settingsPath, settings: { trustedWorkspaces: [worktree] }, argv: ['agy', '--settings', settingsPath, ...(session.permission_mode === 'bypass' ? ['--dangerously-skip-permissions'] : ['--mode', 'auto']), ...(input.model ? ['--model', input.model] : []), ...(session.effort ? ['--effort', session.effort] : [])] };
   },
   firstMessage(input, promptPath) { const first = input.brief || input.first_message || ''; return `[wc:role] Role: ${input.role}\nRead ${promptPath} before responding: it holds your role rules and card rules. Read it again only if it is no longer in your context.\n\n${first}`; },
   readyText(session, pane) { return pane.includes('? for shortcuts') && !onboarding.some(s => pane.includes(s)); },
