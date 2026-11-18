@@ -117,9 +117,9 @@ Collin picks the project and the machine, then writes in plain words.
   provider flag if it is `claude`, `gpt`, or `gemini`, and a brief that says what Collin asked for;
   its `result` names the commit it checked. A failed check gets one more attempt; a
   gap surviving two attempts comes to Collin as a `question` card (push the fix as it is,
-  or drop it, which you do with `wc.js git revert`). Then push, open the pull request
-  (`wc.js git push`, `wc.js git pr`), and post a `done` card. Say in your reply what
-  changed.
+  or drop it, which you do with `wc.js git revert`). Then push with `wc.js git push -u origin HEAD:wc/<thread-id>`, open the pull request
+  with `wc.js git pr`, and follow **Making the pull request mergeable** before posting
+  `done`. Say in your reply what changed.
 - **Anything bigger** gets an `offer` card: "Take it into planning?" Taking it into planning,
   or typing instead of answering, makes the thread a feature. "Keep talking first"
   means not yet: keep talking; do not create the plan directory, start mapping or post an
@@ -318,10 +318,10 @@ On `[card <id>] start building`:
 After the sub-lead's `result` and once it is stopped:
 
 1. Set `status: done` in PLAN.md, commit it, push the branch, and open the pull request
-   (`wc.js git push`, `wc.js git pr`). The `done` status is committed before the push, so
+   (`wc.js git push -u origin HEAD:wc/<thread-id>`, `wc.js git pr`). The `done` status is committed before the push, so
    the pull request carries it. Never merge.
-2. Post a `done` card: what he can do now, what was left as is (each gets a "Start a
-   thread about it"), and the pull request link.
+2. Follow **Making the pull request mergeable** before posting a `done` card: what he can
+   do now, what was left as is (each gets a "Start a thread about it"), and the pull request link.
 3. Sub-lead and worker sessions are stopped; their transcripts stay.
 
 ### 9. After done
@@ -350,16 +350,148 @@ When Collin reports a problem, first run `gh pr view --json state`:
      card says the fix failed its check and was pushed at his request): run
      `wc.js git fetch`. If `origin/wc/<thread-id>` has commits this branch lacks (he
      updated the pull request branch), merge them with `wc.js git merge` and re-verify
-     first. Then push and check `gh pr view --json state,headRefOid`.
-  4. `OPEN`, or `MERGED` with `headRefOid` equal to the pushed commit: the fix is in. Post a
-     new `done` card for the fix (what changed, what was re-checked, the pull request
-     link), so he always sees it. `MERGED` with an older head: the fix missed. Post a
-     `stub` card whose `commits` are the fix's own commits (not merge commits); the stub's
-     lead re-applies them with `wc.js git cherry-pick`. `CLOSED` by then: say so, no stub
-     unless he asks.
+     first. Then push with `wc.js git push -u origin HEAD:wc/<thread-id>`.
+  4. Follow **Making the pull request mergeable** before posting a new `done` card for the
+     fix, saying what changed, what was re-checked and the pull request link.
 
 No thread ever pushes to another thread's branch. Every stub starts from the default
 branch and opens its own pull request.
+
+## Making the pull request mergeable
+
+0. **Windows.** Start a new 30-minute window whenever your push adds commits (the first
+   push, a repair, a re-verified merge or a recovered rejected push). Someone else's
+   fast-forward keeps the current window. "Keep going" and a restart start a new window.
+1. **Pushed commit.** Read `git rev-parse origin/wc/<thread-id>` immediately after a
+   successful `wc.js git push`; use this remote tip as the `done` card's `head`.
+2. **Wait.** Run the following foreground command with the PR URL, pushed commit and
+   current window's start time (Unix seconds). It prints each successful response, polls
+   every 60 seconds, and stops after 10 minutes or on a condition requiring action. A gh
+   error is ignored. Repeat while the 30-minute window lasts.
+
+   ```sh
+   python3 - "<pr-url>" "<pushed-commit>" "<window-start-unix-seconds>" <<'PY_POLL'
+   import json, subprocess, sys, time
+   url, pushed, window_start = sys.argv[1], sys.argv[2], int(sys.argv[3])
+   started = time.monotonic()
+   while True:
+       remaining = 600 - (time.monotonic() - started)
+       if remaining <= 0:
+           break
+       try:
+           result = subprocess.run(['gh', 'pr', 'view', url, '--json',
+               'state,mergeStateStatus,headRefOid,statusCheckRollup'],
+               capture_output=True, text=True, timeout=remaining)
+       except (OSError, subprocess.TimeoutExpired):
+           result = None
+       if result and result.returncode == 0:
+           try:
+               pr = json.loads(result.stdout)
+               checks = pr.get('statusCheckRollup') or []
+               def failed(c):
+                   return (c.get('__typename') == 'CheckRun' and c.get('status') == 'COMPLETED'
+                           and c.get('conclusion') not in ('SUCCESS', 'NEUTRAL', 'SKIPPED')) or (c.get('__typename') == 'StatusContext' and c.get('state') in ('FAILURE', 'ERROR'))
+               def pending(c):
+                   return (c.get('__typename') == 'CheckRun' and c.get('status') != 'COMPLETED') or (c.get('__typename') == 'StatusContext' and c.get('state') in ('PENDING', 'EXPECTED'))
+               state = pr['mergeStateStatus']
+               ready = state in ('CLEAN', 'HAS_HOOKS') or (state == 'BLOCKED' and not any(failed(c) or pending(c) for c in checks))
+               stop = (pr['state'] != 'OPEN' or pr['headRefOid'] != pushed or state in ('DIRTY', 'BEHIND') or any(failed(c) for c in checks) or (ready and (checks or time.time() - window_start >= 300)))
+               print(result.stdout, flush=True)
+               if stop:
+                   break
+           except (ValueError, KeyError, TypeError):
+               pass
+       remaining = 600 - (time.monotonic() - started)
+       if remaining <= 0:
+           break
+       time.sleep(min(60, remaining))
+       if time.monotonic() - started >= 600:
+           break
+   PY_POLL
+   ```
+
+   A check is a `statusCheckRollup` entry. A CheckRun is failed if `COMPLETED` with a
+   conclusion other than `SUCCESS`, `NEUTRAL` or `SKIPPED`, and pending if not
+   `COMPLETED`. A StatusContext is failed for `FAILURE` or `ERROR`, pending for `PENDING`
+   or `EXPECTED`; otherwise it passed. `CLEAN` and `HAS_HOOKS` are ready; `DIRTY` means
+   conflicts; `BEHIND` needs the base merged in; `UNSTABLE` means wait or repair a failure;
+   `BLOCKED` is ready only with no failed or pending checks (a rule such as review may
+   remain for Collin); `UNKNOWN`, `DRAFT` and other states mean wait. A ready state with
+   no checks waits five minutes from the window start, polling every 60 seconds throughout.
+3. **Ready:** post `done` with `head`. Wherever this section says to post `done`, a
+   `card.js` refusal saying "try again", "still working out" or "checks not passed yet"
+   means wait two minutes and return to 2 within the same window; for a merged PR, retry
+   posting every two minutes until the window ends. "Conflicts" or "moved on" → 7;
+   "is at <commit>, not <commit>" → 6 (or 4 if merged); "closed" → 5; "GitHub login
+   can't read" → the `needs` card in 8.
+4. **Merged:** at the pushed commit, post `done`, retrying as in 3 until accepted or the
+   window ends; a window ending here gets the `needs` card in 8. At another commit, fetch
+   `wc.js git fetch origin pull/<number>/head` and run `git merge-base --is-ancestor
+   <pushed commit> <merged head>`. Exit 0 means the work landed: post `done` with the
+   merged head, retrying as above. Exit 1 means the fix missed the merge: post a `stub`
+   with `depends_on_parent: true`, the fix's own commits (not merge commits), and a summary
+   saying it missed the merged PR, unless a stub already lists those commits. No `done`;
+   the stub ends the wait. A failed fetch or any other exit → the `needs` card in 8 saying
+   the merge could not be matched to the work, never a stub for a lookup failure.
+5. **Closed:** say so in a reply and change nothing. The wait ends without a `needs` card.
+6. **Head changed while open:** `wc.js git fetch`, then `wc.js git merge
+   origin/wc/<thread-id>`. Resolve conflicts as in 7 and commit the resolved files. If this
+   brought in only their commits (a fast-forward, with nothing of yours unpushed), the new
+   tip is the pushed commit: return to 2 in the same window, without a verifier. Otherwise
+   re-verify the merge as in 7, push, and return to 2 with a new window. This does not count
+   toward the budget; if the verifier fails, post the `needs` card in 8.
+7. **Repair.** For conflicts or behind, `wc.js git fetch`, then `wc.js git merge
+   origin/<default branch>`. A successful merge already made its commit. On conflicts, edit
+   the files and `wc.js git commit --paths <resolved files>` to complete it. For a failed
+   check, get the run id from a CheckRun `detailsUrl` containing `/actions/runs/<run id>/`
+   and run `gh run view <run id> --log-failed`; otherwise open its `targetUrl` or
+   `detailsUrl`. If you cannot tell what the check needs, post the `needs` card in 8 naming
+   it. Fix the cause and `wc.js git commit`. Start a fresh verifier on the new commit using
+   step 9's provider rule, briefed with Collin's request for a small fix or the plan's Spec,
+   and what the repair changed. On a pass, push and return to 2 with a new window. On a
+   fail, count one failed attempt, fix locally and re-verify; never push an unverified
+   commit or poll for it.
+8. **Budget.** A repair that fails its verifier, or whose push still ends in a failed check
+   or conflict, is one failed attempt. After two, when a window ends without an accepted
+   `done`, a stub in 4 or a closed PR in 5, or on a "GitHub login can't read" refusal,
+   post a `needs` card saying what blocks `done` and that Collin can merge the PR himself
+   regardless. "Keep going" closes the card, resets the budget and resumes where it was
+   posted: an unverified local repair goes back to 7's fix and verify, never polling;
+   otherwise return to 2 with a new window. Resolve the card if still open when `done` is
+   accepted.
+9. **After a restart**, when finishing (the plan's `status` is `done` or there is no plan,
+   and the branch has a PR), do these in order:
+   1. Run `git status --untracked-files=no`; abort an unfinished merge with `wc.js git
+      merge --abort`. Any other tracked-file change → 5 below before anything else;
+      ignore untracked files.
+   2. `wc.js git fetch` and `wc.js git fetch origin pull/<number>/head`; read the PR's
+      state and head. Your local tip is `HEAD`.
+   3. Nothing to do if an accepted `done` card's `head` is your local tip or contains it
+      (`git merge-base --is-ancestor HEAD <head>` exits 0), regardless of the PR head now;
+      or the latest `done` has no `head`; or the PR is `CLOSED`.
+   4. If the local tip equals the PR head and no `done` names it: `OPEN` → 2 with a new
+      window; `MERGED` → post `done` with that head, retrying as in 3 in a new 30-minute
+      window, then the `needs` card in 8.
+   5. Anything else (local or PR commits the other lacks, a merge at another commit, or a
+      tracked edit): do not push, revert, merge or stub on your own. Ask Collin in a
+      `question` card what differs in plain words, with fitting options (push after a check,
+      drop, start a follow-up thread, leave it); do what he picks using 6–8.
+
+Within this section, and for the push and `wc.js git pr` that start it in steps 1, 8 and 9,
+check `ok` in every `wc.js git` JSON result: git failures still exit 0.
+
+- Every push here and the starting push is `wc.js git push -u origin HEAD:wc/<thread-id>`.
+- If a push is rejected because the remote moved (non-fast-forward), `wc.js git fetch`,
+  merge `origin/wc/<thread-id>` with `wc.js git merge` (resolve conflicts as in 7), and
+  verify as in 6 if more than a fast-forward, then push again. For the starting push, carry
+  on with that start, opening the PR with `wc.js git pr` if needed; the window starts when
+  the push succeeds. Otherwise return to 2 with a window as in 0.
+- For any other failure that is not a merge conflict, retry once after a minute; if it
+  fails again, post the `needs` card in 8 with git's message. Before a PR exists, say what
+  did not happen (the push, or opening the PR after a successful push) and that "Keep
+  going" retries it; do not mention merging the PR. On "Keep going", redo the failed
+  operation first, applying the non-fast-forward rule above, then carry on from where it
+  failed.
 
 ## Asking Collin to run something as root
 
