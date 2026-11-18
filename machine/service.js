@@ -913,7 +913,7 @@ class MachineService {
       if (result?.pending) pending.push(session);
       else stopped.push(session.name);
     }
-    if (pending.length) return { pending: true, stopped, committed: [], removed: [], kept: pending.map(session => ({ worktree: session.worktree, reason: session.end_reason })), uploads_removed: null };
+    if (pending.length) return { pending: true, pending_sessions: pending.map(session => session.name), stopped, committed: [], removed: [], kept: pending.map(session => ({ worktree: session.worktree, reason: session.end_reason })) };
     for (const session of sessions) {
       if (session.archived_pending || session.end_reason) continue;
       await this.stop(session.name);

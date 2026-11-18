@@ -50,7 +50,7 @@ default_pins() {
     "gemini.critical = gemini-3.8-flash-high" \
     "gemini.lead = gemini-3.8-flash-high" \
     "gemini.sub-lead = gemini-3.8-flash-high" \
-    "kimi.light = kimi-code/kimi-for-coding-highspeed" \
+    "kimi.light = kimi-code/kimi-for-coding" \
     "kimi.standard = kimi-code/k3" \
     "kimi.heavy = kimi-code/k3.1-pro" \
     "kimi.critical = kimi-code/k3.1-pro" \
@@ -121,7 +121,7 @@ assert 'show JSON includes Gemini' json_assert 'import json,sys; assert json.loa
 # Kimi defaults and slashed aliases (slashes only for Kimi).
 new_case
 for slot in light standard heavy critical lead sub-lead; do
-  case $slot in light) expected=kimi-code/kimi-for-coding-highspeed ;; standard) expected=kimi-code/k3 ;; *) expected=kimi-code/k3.1-pro ;; esac
+  case $slot in light) expected=kimi-code/kimi-for-coding ;; standard) expected=kimi-code/k3 ;; *) expected=kimi-code/k3.1-pro ;; esac
   run_model kimi "$slot"
   assert "Kimi $slot uses its shipped default" bash -c '[[ $1 == 0 && $2 == "$3" ]]' _ "$status" "$output" "$expected"
 done

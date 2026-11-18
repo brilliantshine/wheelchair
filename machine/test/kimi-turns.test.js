@@ -192,15 +192,23 @@ test('HTTP pending stop, archive and hook preserve pending session and its workt
   machine.sessions[session.name] = session;
   const otherWorktree = path.join(root, 'other'); fs.mkdirSync(otherWorktree);
   const other = { name:'wc-abc-worker-2', thread_id:'abc', cli:'claude', status:'stopped', worktree:otherWorktree, created_worktree:true, role:'worker' }; machine.sessions[other.name] = other; let calls = [];
+  const pendingWorktree = path.join(root, 'pending'); fs.mkdirSync(pendingWorktree);
+  const pending = { name:'wc-abc-worker-4', thread_id:'abc', cli:'kimi', status:'ready', end_reason:'pending too', worktree:pendingWorktree, created_worktree:true, role:'worker' }; machine.sessions[pending.name] = pending;
+  const finishedWorktree = path.join(root, 'finished'); fs.mkdirSync(finishedWorktree);
+  const finished = { name:'wc-abc-worker-3', thread_id:'abc', cli:'kimi', status:'ready', end_reason:'other lost', worktree:finishedWorktree, created_worktree:true, role:'worker' }; machine.sessions[finished.name] = finished;
+  const upload = path.join(root, 'uploads/abc/123-test'); fs.mkdirSync(path.dirname(upload), { recursive:true }); fs.writeFileSync(upload, 'upload');
   machine.tmux = args => { calls.push(args); return { ok:false, stderr:'failure', status:1 }; };
-  machine.liveTmux = () => null;
+  machine.liveTmux = () => new Set([session.name, pending.name]);
   const request = (route, method, body, token = 'secret') => fetch(`http://127.0.0.1:${port}${route}`, { method, headers: { [token === 'token' ? 'x-wheelchair-session-token' : 'x-wheelchair-machine-secret']:token, 'content-type':'application/json' }, ...(body ? { body:JSON.stringify(body) } : {}) });
   try {
     let response = await request('/v1/sessions/wc-abc-worker','DELETE'); assert.equal(response.status,202); assert.deepEqual(await response.json(), {pending:true,end_reason:'lost'});
-    response = await request('/v1/archive','POST',{thread_id:'abc'}); const result = await response.json();
-    assert.equal(result.pending,true); assert.equal(machine.sessions[session.name],session); assert.equal(machine.sessions[other.name],other); assert.ok(fs.existsSync(worktree)); assert.ok(fs.existsSync(otherWorktree));
+    response = await request('/v1/archive','POST',{thread_id:'abc'}); assert.equal(response.status,200); const result = await response.json();
+    assert.deepEqual(result, { pending:true, pending_sessions:[session.name,pending.name], stopped:[finished.name], committed:[], removed:[], kept:[{worktree,reason:'lost'},{worktree:pendingWorktree,reason:'pending too'}] });
+    assert.equal(machine.sessions[session.name],session); assert.equal(machine.sessions[other.name],other); assert.equal(finished.status,'stopped');
+    const saved = JSON.parse(fs.readFileSync(machine.sessionsPath,'utf8')); assert.equal(saved[session.name].status,'ready'); assert.equal(saved[pending.name].status,'ready'); assert.equal(saved[finished.name].status,'stopped');
+    assert.ok(fs.existsSync(worktree)); assert.ok(fs.existsSync(otherWorktree)); assert.ok(fs.existsSync(finishedWorktree)); assert.ok(fs.existsSync(pendingWorktree)); assert.equal(fs.readFileSync(upload,'utf8'),'upload');
     for (const [endpoint,body] of [['submit',{text:'test'}], ['keys',{keys:'x'}]]) { response = await request(`/v1/sessions/${session.name}/${endpoint}`,'POST',body); assert.equal(response.status,409); assert.equal((await response.json()).error,'lost'); }
-    assert.ok(calls.filter(args => args[0] === 'kill-session').every(args => args.at(-1) === '=wc-abc-worker'));
+    assert.ok(calls.filter(args => args[0] === 'kill-session').every(args => [ `=${session.name}`, `=${pending.name}`, `=${finished.name}` ].includes(args.at(-1))));
     const chatSession = { name:'wc-def-worker', thread_id:'def', cli:'kimi', status:'ready', account_dir:root, token:'other-token', created_at:new Date(Date.now()-10000).toISOString(), ready_at:new Date().toISOString() };
     machine.sessions[chatSession.name] = chatSession;
     const chatFile = path.join(root, 'sessions/work/chat/agents/main/wire.jsonl'); fs.mkdirSync(path.dirname(chatFile), {recursive:true});
