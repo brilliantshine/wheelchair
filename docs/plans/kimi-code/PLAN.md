@@ -952,6 +952,11 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — Choice: R1, `machine/service.js`: version results cached for the service's lifetime keyed by executable path + mtime, failures included (a transient timeout keeps Kimi ineligible until the binary changes or the service restarts); `kimiVersionTimeoutMs` service option (default 5000 ms, not in API.md); `status()` still runs the cheap synchronous `command -v kimi` lookup like the other CLIs, only `--version` is async.
+- 2026-11-18 — Choice: R1, `machine/adapters/kimi.js` `promptText`: titles from Kimi's shipped `headerFor` (`Run this command?`, `Write this file?`, `Apply these edits?`, `Stop this task?`, generic `Approve <tool>?`), each only with an `Approve once` option; the plan-review title is excluded (its choices have no `Approve once`). Evidence is the shipped code, not a captured live prompt.
+- 2026-11-18 — Choice: R1, `machine/test/kimi-turns.test.js:156`: the Codex and Antigravity recovery fixtures no longer carry a Kimi footer, since a Kimi footer now wins (gap 3).
+- 2026-11-18 — R1 accepted (band: scout), attempt 2: machine 198/198 re-run by the sub-lead; worker's viewer 643/643 and five clean runs of `app-uploads-archive.test.js`. Gaps 1, 2, 3, 4 (machine half), 5, 6, 8 fixed.
+
 - 2026-11-18 — Choice: R3, `viewer/test/app-kimi-hub.test.js:71-89`: both cases (with and without `end_reason`) in one test with a call-counter fake and a lead fixture; the no-reason case is checked through the total card count (scout-found; report said none).
 - 2026-11-18 — R3 accepted (band: scout): viewer 644/644 re-run by the sub-lead. Gap 7 fixed.
 
