@@ -15,13 +15,6 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q1: Where does Collin run the checks?
-- **Context:** Threads change different things: the app's screens (seen on his phone), the
-  machine service or scripts (seen by running a command), protocol docs (seen by reading a
-  lead's behaviour). He reads threads on a phone.
-- **Options:** phone-only steps; machine commands; whatever fits the change, phone first.
-- **Recommendation:** whatever fits the change, phone first.
-
 ### Q2: How the steps are shown
 - **Context:** MAP.md: the done card holds `can_do`/`left_as_is` lists and is only accepted
   once GitHub says the PR is ready (`viewer/app/card.js:125-132`, `viewer/app/pr-gate.js`).
@@ -58,6 +51,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | # | Decision | Rationale | Source |
 |---|----------|-----------|--------|
 | 1 | Plan mode: thorough | Collin's pick on the mode card | user |
+| 2 | Steps fit the change, phone first: a change visible in the app gets steps done in the app on a phone; only a change with nothing to see there (scripts, machine service, protocol docs) gets commands to run on the machine | Most changes show in the app; the rest can only be checked by running something | user |
 
 ## Spec
 
@@ -67,6 +61,14 @@ non-goals, and concrete validation commands.
 
 A Mermaid diagram of the flow belongs here, added by Stage 2 at approval — not while the
 Spec is still churning. See `protocol/diagrams.md`.
+
+### Where the steps are done
+
+- A change Collin can see in the app gets steps he follows in the app on his phone: what to
+  open or tap, and what he should see.
+- Only a change with nothing to see in the app (scripts, the machine service, protocol
+  documents) gets commands to run on the machine, each with the output to look for.
+- One set of steps may mix both when the change has both kinds of part; phone steps first.
 
 ## Accepted Risks
 
