@@ -289,6 +289,21 @@ Reported severity is the reviewer's opinion; the lead verdict
 (`upheld`/`downgraded`/`declined`/`accepted-risk`/`user-decision`) is what gates the
 exit. Downgrades and declines cite evidence.
 
+### Round 2 — 2026-11-17
+
+**Lanes:** intent: claude; mechanics: other family; cross-family: yes.
+
+**Changed since Round 1:**
+- Clean test in lighter modes ignores findings moved to Deferred (D14).
+- Verifier rule narrowed to "Deferred is out of scope" only.
+- IDEA.md follow-up wording (D15).
+- Deferred card retractable; switch handling (D16); approval retracted on change (D17).
+- Verification deferral path to PASS (D18); mode change during review (D19).
+- Lock and stale presses (D20); unique bullets (D21); restart recovery for mode (D22) and follow-up stub (D23).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 Parts of the Spec already built before this plan reached Stage 3 — adopted from outside
