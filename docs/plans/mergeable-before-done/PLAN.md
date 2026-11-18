@@ -84,6 +84,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 55 | Merged-missed (stub inline in item 4) and Closed end the wait without a `needs` card | Those outcomes are final | review-round-7 |
 | 56 | Resolve the finishing `needs` card only if still open | "Keep going" already closes it | review-round-7 |
 | 57 | Supersedes D53's order: restart aborts an unfinished merge, then asks Collin about unpushed local commits, then uses the local tip as the pushed commit and reconciles via 4/6 | Never pushes unknown work; gives the merged path a pushed commit | review-round-7 |
+| 58 | The merged path ends only on an accepted `done` or a posted stub; transient refusals retry, and a window ending there gets the `needs` card | No path ends without a card | review-round-8 |
+| 59 | Conflicts from merging someone else's push are resolved as in item 7; every `wc.js git` result's `ok` is checked | Wrapper returns git failures with exit 0 | review-round-8 |
+| 60 | Supersedes D57: restart reads PR state first; MERGED decides landed vs missed from the local tip; the unpushed-commits question applies only to an OPEN PR and says where to resume | Missed-merge stub reachable after restart; no pointless question | review-round-8 |
 
 ## Spec
 
@@ -195,20 +198,22 @@ outside a merge, unchanged.
      within the same window (for a merged PR, just post again after 2 minutes, until the window
      ends). "Conflicts", "moved on" → 7. "Is at <commit>, not <commit>" → 6 (or 4 if merged).
      "Closed" → 5. "GitHub login can't read" → the `needs` card in 8.
-  4. **Merged:** at the pushed commit → post `done`; the wait ends. At another commit: fetch the
+  4. **Merged:** at the pushed commit → post `done` (retrying per 3 until accepted or the window
+     ends; a window ending here gets the `needs` card in 8) (D58). At another commit: fetch the
      PR's final head explicitly (`wc.js git fetch origin pull/<number>/head`, which GitHub keeps
      even after the branch is deleted), then run
      `git merge-base --is-ancestor <pushed commit> <merged head>`.
      Exit 0: the work landed (for example Collin updated the branch, then merged): post `done`
-     with `head` = the merged head (D44). Exit 1: the fix missed the merge: post a `stub` card
+     with `head` = the merged head (D44), retried as above. Exit 1: the fix missed the merge: post a `stub` card
      (`depends_on_parent: true`, `commits` = this fix's own commits, not merge commits, a summary
      saying the fix missed the merged pull request) unless a `stub` card in the thread already
-     lists those commits; no `done`; the wait ends (D55). A failed fetch or any other exit: post
+     lists those commits; no `done`; posting the stub ends the wait (D55). A failed fetch or any other exit: post
      the `needs` card in 8 saying the merge couldn't be matched to the work; never a stub on a
      lookup failure (D49).
   5. **Closed:** say so in a reply, change nothing; the wait ends with no `needs` card (D55).
   6. **Head changed while open** (someone pushed to the branch): `wc.js git fetch`,
-     `wc.js git merge origin/wc/<thread-id>`. If that brought in only their commits (a fast-forward,
+     `wc.js git merge origin/wc/<thread-id>`. If it reports conflicts, resolve them as in 7
+     (edit, `wc.js git commit --paths <resolved files>`), then continue (D59). If that brought in only their commits (a fast-forward,
      nothing of yours unpushed), the new tip is the pushed commit: back to 2 in the same window,
      no verifier (their push is theirs). Otherwise re-verify the merge as in 7, push, back to 2 in
      the same window. It does not count toward the budget (D40). If that verifier fails, post
@@ -227,22 +232,30 @@ outside a merge, unchanged.
      poll for the unpushed one) (D45).
   8. **Budget (D26).** A repair that fails its verifier, or whose push still ends in a failed
      check or a conflict, is one failed attempt. After two, or when a window ends without an
-     accepted `done` (D51) and without ending by 4 or 5, or on a "GitHub login can't read"
+     accepted `done`, a posted stub (4) or a closed PR (5) (D51, D58), or on a "GitHub login can't read"
      refusal, post a `needs` card saying what blocks `done` and that he can merge the PR himself
      regardless. "Keep going" (which closes the card) resets the budget with a new window. If the
      card is still open when `done` is accepted, resolve it (D56).
-  9. **After a restart** (D41, supersedes D27/D35; order per D57). Applies when the thread is
+  9. **After a restart** (D41; order per D60, supersedes D57). Applies when the thread is
      finishing (the plan's `status` is `done` or there is no plan, and the branch has a PR) and
      no `done` card names the PR's current head. A latest `done` card with no `head` (from before
      this change) means not waiting. In this order:
      1. `git status`: abort an unfinished merge (`wc.js git merge --abort`).
-     2. `wc.js git fetch` and `wc.js git fetch origin pull/<number>/head`. If `git log
-        <PR head>..HEAD` is non-empty (local commits the PR does not have), stop: ask Collin with a
-        `question` card (push them after a verifier, or drop them with `wc.js git revert`); never
-        push them unasked.
-     3. Otherwise your local tip is the last commit you pushed; use it as "the pushed commit".
-        PR `MERGED` → 4. `CLOSED` → nothing. `OPEN` and the PR head is not your local tip (someone
-        pushed) → 6. Then resume at 2 with a new window.
+     2. `wc.js git fetch` and `wc.js git fetch origin pull/<number>/head`; read the PR's `state`
+        and head.
+     3. `CLOSED` → nothing.
+     4. `MERGED`: if `git merge-base --is-ancestor HEAD <PR head>` exits 0, the work landed: post
+        `done` with `head` = the PR head, retried per 3. Exit 1: the fix missed: post a `stub` card
+        as in 4 with `commits` = `git log --no-merges --format=%H <PR head>..HEAD`, unless a
+        `stub` card already lists them. Any other exit: the `needs` card in 8.
+     5. `OPEN`: if `git log <PR head>..HEAD` is non-empty (local commits the PR lacks), ask Collin
+        with a `question` card: "push them" (fresh verifier as in 7, push, then 2 with a new
+        window) or "drop them" (`wc.js git revert` each, push the reverts with no verifier since
+        they return to verified work, then 2 with a new window); never push them unasked.
+        Otherwise your local tip is the pushed commit; if the PR head differs (someone pushed) → 6;
+        then 2 with a new window.
+- Every `wc.js git` call returns JSON with `ok`; check it, since a failed git command still
+  exits 0 (`machine/service.js:1308`) (D59).
 - Step 8 still commits `status: done` before the push, so the PR carries it.
 - Step 9's existing item 4 (`OPEN` / `MERGED` with the pushed head / `MERGED` with an older
   head / `CLOSED` by then, `protocol/app/lead.md:354-359`) is **replaced** by a pointer to the
@@ -487,6 +500,20 @@ Collin: "Keep going" — budget reset.
 **Lanes:** intent lens (provider per start); mechanics lens (other family); cross-family: yes.
 
 **Changed since the last round:** item 4 (stub inline, wait ends, D55); item 5 (wait ends, D55); item 7 (one diagnosis sentence); item 8 (`needs` card resolve only if open, D56; window end excludes 4/5); item 9 restart rewritten in order (D57).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Unpushed-commit check before PR state makes the missed-merge stub unreachable | upheld | D60 |
+| intent | minor | No resume point after Collin answers the restart question | upheld | D60 |
+| mechanics | blocking | Restart guard makes missed-merge branch unreachable | upheld | D60 |
+| mechanics | blocking | Transient refusal on merged path can end with no card | upheld | D58 |
+| mechanics | major | Conflicts when merging someone else's push have no next step | upheld | D59 |
+
+### Round 9 — 2026-11-18
+
+**Lanes:** intent lens (provider per start); mechanics lens (other family); cross-family: yes.
+
+**Changed since the last round:** merged path end condition and retries (D58); item 6 conflicts and checking `wc.js git` results (D59); restart order rewritten: state first, landed/missed from the local tip, question only for OPEN with resume points (D60).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
