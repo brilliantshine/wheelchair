@@ -77,6 +77,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 40 | Re-send guard keyed by app session only; agent hooks carry only permission prompts for Kimi; poller waits for this session's spool to drain; superseded catch-up turn ends do not release the queue; copier validates the opened file; fatal kill uses an exact target and confirms absence | Review round 13 | review-round-13 |
 | 41 | Kimi agent hooks all ignored; spool-drain gate replaces one-turn-per-tick; `kimi_session_id` kept on the machine only | Review round 14 | review-round-14 |
 | 42 | Superseded catch-up flag dropped (Accepted Risk instead); all Kimi log reads identity-checked on the opened handle; ordinary Stop after a fatal case uses the exact-target path; Kimi chat replies get stable ids | Review round 14 | review-round-14 |
+| 43 | Fatal-stop Stop returns pending and archive waits; raw keys blocked after a fatal case; one shared binding function for chat and poller; recovered Kimi panes are stopped with a reason; chat parser tests use an ordinary turn | Review round 15 | review-round-15 |
 
 ## Spec
 
@@ -340,7 +341,13 @@ main log, the way it already polls Codex rollouts (`pollCodexSteps`,
   `turn.prompt` row with `origin.kind === 'user'` has text starting `[wc:role]` and
   containing the line `Session: <session name>`. On bind it stores `kimi_session_id`
   (the `<kimiSessionId>` directory name) and `source_transcript`, persisted with the
-  session, and returns the path. Bound sessions return `source_transcript`. Every read
+  session, and returns the path. Bound sessions return `source_transcript`. Chat reads
+  (`machine/service.js:920-923`) and the poller share **one** binding function per
+  session (a single in-flight promise, like the copier's `copying` map): it commits
+  `source_transcript`, `kimi_session_id` and `kimi_log_id` together, and its unbound
+  result never overwrites a binding committed meanwhile (the chat route no longer
+  assigns `findTranscript`'s result directly for Kimi). Test: chat and poller binding at
+  once end with one consistent binding. Every read
   (binding and polling) opens the file once, takes `fstat` of that handle and reads
   from it: binding stores the handle's `dev`/`ino` as `kimi_log_id`, and a poll whose
   handle's identity differs from `kimi_log_id` consumes no rows (the fatal case below).
@@ -374,15 +381,28 @@ main log, the way it already polls Codex rollouts (`pollCodexSteps`,
     swapped between `stat` and `open`, and a same-inode truncation, copy nothing.
 
   **Stopping reliably.** Once a fatal case is recorded, the machine refuses any further
-  message submission to that session (typed delivery returns the `end_reason` as an
-  error) and retries the tmux kill on every tick with the exact target `=<name>` (never
+  input to that session: both `submit()` and the terminal's raw keys (`raw()`,
+  `/keys`, `machine/service.js:1545-1546`) return the `end_reason` as an error. It
+  retries the tmux kill on every tick with the exact target `=<name>` (never
   the prefix-matching bare name used by today's `stop()`, `machine/service.js:764`, which
   could hit a sibling such as `<name>-2` once the pane is gone). Only after a successful
   `list-sessions` shows the name absent is the session marked stopped; a failed listing
   changes nothing. An ordinary Stop (`DELETE`, `machine/service.js:1534` → `stop()`) on
   a session with `end_reason` set takes this same path instead of the bare-name kill.
-  Tests: with `<name>` gone and `<name>-2` live, the retry kills nothing; a Stop during
-  a pending fatal kill does not mark the session stopped early.
+  While absence is unconfirmed, that Stop returns `202 { pending: true, end_reason }`
+  instead of 200: the hub's stop (`viewer/app/sessions.js:676-683`) then leaves the
+  session `live` (its `pollDead` marks it ended once the listing confirms absence), and
+  archive (`machine/service.js:803-812`) leaves such a session in `sessions.json` and
+  does not remove its worktree, reporting the thread as not yet archived so the archive
+  is retried. Tests: with `<name>` gone and `<name>-2` live, the retry kills nothing; a
+  Stop or an archive during a pending fatal kill finalizes nothing early; raw keys are
+  refused after a fatal case.
+- **Recovered panes.** `recoverFromTmux` (`machine/service.js:385-395`) detects a Kimi
+  pane (its footer `context:` line and `│ >` prompt) as `cli: 'kimi'`, but such a record
+  has no account home, start time or binding, so the service cannot follow it: it
+  records `end_reason` "Lost track of this Kimi Code session after a machine restart;
+  restart it" and takes the fatal stop path. Test: a recovered Kimi pane is stopped with
+  that reason.
 
   The hub's ended-session handling (`pollDead`, `viewer/app/sessions.js:705-757`) shows
   the reason. `sessionList()` already spreads the machine record into the `/v1/sessions`
@@ -537,9 +557,11 @@ main log, the way it already polls Codex rollouts (`pollCodexSteps`,
 
 ### Tests (summary)
 
-Each section above names its tests. In addition: viewer `parseKimi` on
-`samples/wire.jsonl` (one turn: human text, one Write tool step with its output, final
-reply "done", no thinking); settings defaults and `review_families: 'kimi'` with the
+Each section above names its tests. In addition: viewer `parseKimi` on a fixture with
+an ordinary (non-`[wc:role]`) user turn shows its human text, one tool step with its
+output and the final reply, no thinking; on `samples/wire.jsonl` (whose only turn is the
+role message) the chat hides that turn as for other CLIs, and the report function still
+extracts "done"; settings defaults and `review_families: 'kimi'` with the
 updated validation message; several Kimi accounts allowed; model pins and installer
 fixtures cover `kimi` (a Kimi-only machine installs).
 
@@ -872,6 +894,12 @@ exit. Downgrades and declines cite evidence.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | — | No findings | — | — |
+| mechanics | blocking | Stop and archive finalize before a fatal kill is confirmed | downgraded (major) | Needs a failing tmux kill; Stop returns 202 pending, archive waits |
+| mechanics | blocking | `parseKimi` test expects a role turn to be shown | downgraded (major) | Test-only conflict; ordinary-turn fixture for rendering, sample for report and hiding |
+| mechanics | major | Chat and poller can race to bind | upheld | One shared binding function commits all fields together |
+| mechanics | major | Terminal raw keys bypass the fatal input block | upheld | `raw()` refused after a fatal case |
+| mechanics | major | Recovered Kimi panes lack account, start time and binding | upheld | Recovered Kimi panes are stopped with a reason |
 
 ## Prior Work
 
@@ -903,6 +931,8 @@ Filled by Stage 3. One row per worker brief.
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
 ## Log
+
+- Review budget reached after round 15 (rounds 13–15 since Collin's Keep going). Round 15's intent reviewer found nothing; the mechanics reviewer still found edge cases around stopping a Kimi agent the app has lost track of, all fixed.
 
 - After round 12, Collin pressed Keep going (round 13, budget reset).
 
