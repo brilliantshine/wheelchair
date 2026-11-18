@@ -696,7 +696,7 @@ Filled by Stage 3. One row per worker brief.
 | R3 | Remediation 1: lead may start the steps-only verifier after any done | protocol/app/lead.md | light / claude-haiku-5-5 | wc-2daed8b3ee7f-worker-6 | protocol-rules test | done |
 | R4 | Remediation 2: note rejects every line terminator (adds U+000B, U+000C) | viewer/app/card.js, viewer/test/app-check-card.test.js | light / gpt-6-luna | wc-2daed8b3ee7f-worker-7 | `node --test viewer/test/*.test.js` | done |
 | R5 | Remediation 2: fix press after a newer done; restart replay (Decision 19) | protocol/app/lead.md | light / claude-haiku-5-5 | wc-2daed8b3ee7f-worker-8 | protocol-rules test | done |
-| R6 | Remediation 3: same-head retried done is not stale; a stub after the press counts as handled on restart (Decision 19 refined) | protocol/app/lead.md | light / claude-haiku-5-5 | wc-2daed8b3ee7f-worker-9 | protocol-rules test | in progress |
+| R6 | Remediation 3: same-head retried done is not stale; a stub after the press counts as handled on restart (Decision 19 refined) | protocol/app/lead.md | light / claude-haiku-5-5 | wc-2daed8b3ee7f-worker-9 | protocol-rules test | done |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -739,3 +739,5 @@ anything a future session needs that fits nowhere above.
 - 2026-11-18 — R5 accepted (band: scout; 18-line word diff read inline, exactly the brief's text). Its worktree was not removed: it holds an untracked `docs/plans/self-check-steps/reports/.r5-test.log`, and I do not force-delete.
 - 2026-11-18 — Remediation 2 merged at 32c7580: `npm test` 636/636; browser suite exit 0, 790 passed, 28 skipped.
 - 2026-11-18 — Verification attempt 3 on 9af6246: claude PASS, gpt FAIL (2 gaps, both refinements of Decision 19's wording: same-head retried done; merged-PR stub on restart). REMEDIATION-3.md; Spec Posting/Restart wording refined to match. Second fix attempt for both.
+- 2026-11-18 — Choice: R6, lead.md Posting/Restart: rewrapped so each new phrase sits whole on one line; some lines run ~99 columns.
+- 2026-11-18 — R6 accepted (band: scout; 17-line word diff read inline, exactly the brief's text): protocol-rules 35/35. On f91546a `npm test` 636/636; no viewer or machine code changed since the 32c7580 browser run.

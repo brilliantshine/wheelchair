@@ -174,3 +174,19 @@ npm --prefix viewer run test:browser: exit 0
 ```
 
 `git diff --stat origin/main -- protocol/app/sub-lead.md protocol/app/worker.md`: prints nothing.
+
+### Remediation 3 (after verification attempt 3 on `9af6246`)
+
+Gaps (gpt verifier; claude verifier passed), see `REMEDIATION-3.md`. Second fix attempt on
+both Decision 19 rules.
+
+| Gap | Fix | Where |
+|-----|-----|-------|
+| A retried `done` at the same head made a valid Fix it now press look stale | stale only if a `done` with a different `head` came after the latest `check` card | `protocol/app/lead.md` step 10 Posting; PLAN.md Spec Posting |
+| On restart, a merged-PR fix (a `stub`) left nothing showing it was handled | a `stub` card created after the press also counts as handled | `protocol/app/lead.md` step 10 Restart; PLAN.md Spec Restart |
+
+Lane: R6 light claude-haiku-5-5.
+
+Validation on `f91546a`: `npm test` exit 0, 636/636; `protocol-rules.test.js` 35/35;
+sub-lead/worker diff empty. No viewer or machine code changed since `32c7580`, whose browser
+run was exit 0, 790 passed, 28 skipped.
