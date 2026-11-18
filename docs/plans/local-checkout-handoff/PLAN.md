@@ -15,11 +15,6 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q1: What does "put the work into my copy" do to it?
-- **Context:** Agents' copies are linked to the project folder; the thread branch is already checked out in the agent's copy, so git will not check out that same branch name in Collin's folder (MAP.md).
-- **Options:** (a) switch his folder to the thread's work in place (on a separate "try" branch or a detached commit); (b) merge the thread's work into whatever branch he is on; (c) a separate folder wheelchair manages per project.
-- **Recommendation:** (a). Engines cache by folder; a separate folder means re-importing; merging is hard to undo.
-
 ### Q2: What if his copy has uncommitted work?
 - **Context:** IDEA constraint: never lose uncommitted, untracked or ignored files.
 - **Options:** refuse and tell him; set it aside automatically and give it back on return.
@@ -53,7 +48,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 
 | # | Decision | Rationale | Source |
 |---|----------|-----------|--------|
-|   |          |           | user / defaulted / adopted / idea-change / review-round-N |
+| 1 | Switch Collin's folder to the thread's work in place; his own branch is left untouched | Same folder keeps engine caches; easy to undo | user |
+| 2 | The switch puts his folder on the thread's latest committed work as a detached commit (no new branch name); uncommitted agent edits are not included | The thread branch is already checked out in the agent's copy, so git will not check it out twice; a detached commit needs no extra branch to clean up | defaulted |
 
 ## Spec
 
@@ -63,6 +59,11 @@ non-goals, and concrete validation commands.
 
 A Mermaid diagram of the flow belongs here, added by Stage 2 at approval — not while the
 Spec is still churning. See `protocol/diagrams.md`.
+
+### Behaviour (growing)
+
+- **Try it here:** switches Collin's folder to the thread's latest committed commit
+  (detached), leaving the branch he was on untouched.
 
 ## Deferred
 
