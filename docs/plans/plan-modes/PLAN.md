@@ -57,7 +57,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D22 | Restart recovers the mode from cards before IDEA.md exists; no silent default | Avoids bypassing Collin's choice | review-round-1 |
 | D23 | A restarted lead in a done two-part thread posts the follow-up stub only if none exists | Neither misses nor duplicates the handoff | review-round-1 |
 | D24 | The empty `deferred` card is posted as soon as a lighter mode is chosen | Keeps the mode visible from the start (IDEA: "the mode in use is clear") | review-round-2 |
-| D25 | Only the first all-deferred re-check in a build is free; later ones count toward the two-attempt rule | Keeps verification bounded as today | review-round-2 |
+| D25 | (superseded by D35) Only the first all-deferred re-check in a build is free; later ones count toward the two-attempt rule | Keeps verification bounded as today | review-round-2 |
 | D26 | All-deferred re-check verifies the post-deferral commit with the normal verifier selection; deferral triage waits for every verifier of the attempt | One snapshot; no lane skipped | review-round-2 |
 | D27 | The lead acts on Start building only for its latest approval card while status is `approved`; a refused retract of an already-pressed approval is fine | A queued press can't be un-recorded at the hub | review-round-2 |
 | D28 | `removed` on `deferred` does not mark it answered; stale pull-backs are ignored by the lead | Keeps the card retractable and pressable | review-round-2 |
@@ -67,7 +67,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D32 | The mode is written only when one supported mode is named; otherwise a follow-up question | No silent fallback from free text | review-round-2 |
 | D33 | Mode and Deferred list are fixed once the lead accepts Start building, not at `implementing` | Closes the window before the sub-lead writes its status | review-round-3 |
 | D34 | A pulled-back item is never deferred again in the thread | Collin's explicit choice must stand | review-round-3 |
-| D35 | A second all-deferred re-check goes to Collin as a question; failing validation commands are never deferrable | Bounded verification with a defined exit; deferral can't mask a failing check | review-round-3 |
+| D35 | (supersedes D25) A second all-deferred re-check goes to Collin as today's surviving-gap question with "defer" as an extra answer; failing validation commands are never deferrable | Bounded verification with a defined exit; deferral can't mask a failing check | review-round-3 |
 | D36 | A mode change or pull-back during a running round waits for that round's triage (supersedes D19 and D30) | No half-triaged round to roll back | review-round-3 |
 | D37 | The lead reconciles the deferred pin from PLAN.md before the done card; a retracted deferred card renders dimmed with no controls | Stale pin after a sub-lead death; clear chat history | review-round-3 |
 
@@ -232,12 +232,13 @@ attempt has reported, as in sub-lead.md step 4–5), before step 5:
 4. If every gap was deferred, there is no remediation: the sub-lead starts a new
    verification attempt on the commit from step 2 (the failed commit plus the Deferred
    rows), using the same verifier selection rules as sub-lead.md step 3.
-   The first such re-check in a build is free; any later one counts as a fix attempt
-   for the two-attempt rule, so verification stays bounded as today.
-A deferred gap itself never counts as a surviving gap. If a build would need a second
-all-deferred re-check, the sub-lead does not start it: it sends the lead the gaps as a
-surviving gap (sub-lead.md step 6), and the lead asks Collin with a `question` card:
-defer them and finish, or fix them.
+   At most one such re-check per build.
+A deferred gap never counts toward the two-attempt rule. If a build would need a second
+all-deferred re-check, the sub-lead does not start it: it stops and messages the lead as
+in sub-lead.md step 6, and the lead asks Collin today's surviving-gap `question` (push as
+it is, or drop), with these gaps deferred as one more answer. "Push as it is" or
+"defer" ends verification without another verifier pass, exactly as "push as it is"
+does today; deferring also adds the rows to PLAN.md.
 
 Never deferrable in verification: a failing validation command from the Spec's
 Validation section, and a gap in an item Collin pulled back. These go to remediation.
@@ -413,6 +414,8 @@ exit. Downgrades and declines cite evidence.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent (claude) | minor | D25 and D35 wording both remain and contradict | upheld | D25 wording removed and marked superseded |
+| intent (claude) | minor | "Defer and finish" exit undefined against today's verification exit | upheld | Folded into today's surviving-gap question (D35) |
 
 ## Prior Work
 
