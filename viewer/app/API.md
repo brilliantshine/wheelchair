@@ -206,3 +206,5 @@ is null or `{kind, last_error, can_cancel}`. A saved undo's handoff banner uses
 The threads list includes `revoke_notices: [{thread_id, sha, text}]` for failed
 cancelled-claim revocations. `POST /handoff-revokes/dismiss` accepts
 `{thread_id, sha}` and removes a matching failed notice.
+
+`POST /threads/import?machine=<machine>&project=<project>` accepts a raw handoff file (at most 10 MB). It returns `{outcome, id, note?}` with outcome `created`, `advanced`, or `opened`; invalid files return 422, conflicts return 409, and oversized bodies return 413.
