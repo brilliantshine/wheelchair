@@ -86,6 +86,7 @@ new_case() {
   linger[$name]=no
   node_stop_status[$name]=0
   tailscale_absent[$name]=0
+  detect_path[$name]=0
   tailscale_ip[$name]=100.64.0.1
   tailscale_ip_status[$name]=0
   serve_status[$name]=$(status_with_handlers '{}')
@@ -158,13 +159,13 @@ EOF
 run_case() {
   local name=$1
   local command_path=$PATH
-  if [[ ${tailscale_absent[$name]} == 1 ]]; then
+  if [[ ${tailscale_absent[$name]} == 1 || ${detect_path[$name]} == 1 ]]; then
     local tool
     for tool in awk basename bash cat chmod cp cut dirname grep head id mkdir mktemp od python3 rm sed tail tr uname; do
       ln -sf "$(command -v "$tool")" "${shim[$name]}/$tool"
     done
     command_path=${shim[$name]}
-    rm -f "${shim[$name]}/tailscale"
+    [[ ${tailscale_absent[$name]} == 1 ]] && rm -f "${shim[$name]}/tailscale"
   fi
   local -a command=(env -u DISPLAY -u WAYLAND_DISPLAY
     "HOME=${home[$name]}" "USER=fixture-user" "PATH=${shim[$name]}:$command_path"
@@ -185,6 +186,13 @@ run_case() {
     "WHEELCHAIR_LOGINCTL_STATUS=${loginctl_status[$name]}"
     "WHEELCHAIR_LINGER=${linger[$name]}"
     "WHEELCHAIR_NODE_STOP_STATUS=${node_stop_status[$name]}")
+  if [[ ${detect_path[$name]} == 1 ]]; then
+    local i
+    for i in "${!command[@]}"; do
+      [[ ${command[$i]} == WHEELCHAIR_PRESENT=* ]] && unset 'command[i]'
+    done
+    command=(env -u WHEELCHAIR_PRESENT "${command[@]:1}")
+  fi
   [[ ${display[$name]} == 1 ]] && command+=(DISPLAY=:fixture)
   set +e
   output[$name]=$(printf '%s' "${input[$name]}" | ${command[@]+"${command[@]}"} "${case_installer[$name]}" ${args[$name]} 2>&1)
@@ -265,6 +273,33 @@ assert 'codex-only install succeeds and reports Codex' bash -c '[[ $1 == 0 && $2
 assert 'codex-only install creates no retired wrappers' no_retired_wrappers "${claude[codex_only]}" "${codex[codex_only]}"
 assert 'codex-only install does not create the absent Claude home' test ! -e "${claude[codex_only]}"
 assert 'codex-only install creates the default model pins' cmp -s <(printf "# wheelchair's model pins. Change them with codex/model.sh.\nclaude.light = claude-haiku-5-5\nclaude.standard = claude-sonnet-5-5\nclaude.heavy = claude-opus-5-5\nclaude.critical = claude-fable-5-2\nclaude.lead = claude-opus-5-5\nclaude.sub-lead = claude-opus-5-5\ngpt.light = gpt-6-luna\ngpt.standard = gpt-5.6-terra\ngpt.heavy = gpt-6.1-sol\ngpt.critical = gpt-6-astra\ngpt.lead = gpt-6.1-sol\ngpt.sub-lead = gpt-6.1-sol\ngemini.light = gemini-3.8-flash-low\ngemini.standard = gemini-3.8-flash-medium\ngemini.heavy = gemini-3.8-flash-high\ngemini.critical = gemini-3.8-flash-high\ngemini.lead = gemini-3.8-flash-high\ngemini.sub-lead = gemini-3.8-flash-high\n") "${home[codex_only]}/.wheelchair/models"
+
+new_case kimi_only
+present[kimi_only]=kimi
+run_case kimi_only
+assert 'kimi-only install succeeds and initializes model pins' bash -c '[[ $1 == 0 && $2 == *"harness found: kimi"* && -f $3 ]]' _ "${status[kimi_only]}" "${output[kimi_only]}" "${home[kimi_only]}/.wheelchair/models"
+
+new_case agy_only
+present[agy_only]=agy
+run_case agy_only
+assert 'agy-only install succeeds and initializes model pins' bash -c '[[ $1 == 0 && $2 == *"harness found: agy"* && -f $3 ]]' _ "${status[agy_only]}" "${output[agy_only]}" "${home[agy_only]}/.wheelchair/models"
+
+new_case kimi_fallback
+detect_path[kimi_fallback]=1
+args[kimi_fallback]=--serve
+mkdir -p "${home[kimi_fallback]}/.kimi-code/bin"
+printf '#!/usr/bin/env bash\nexit 0\n' > "${home[kimi_fallback]}/.kimi-code/bin/kimi"
+chmod +x "${home[kimi_fallback]}/.kimi-code/bin/kimi"
+run_case kimi_fallback
+assert 'fallback kimi is detected without other providers' bash -c '[[ $1 == 0 && $2 == *"harness found: kimi"* ]]' _ "${status[kimi_fallback]}" "${output[kimi_fallback]}"
+assert 'fallback kimi directory reaches the machine service PATH' grep -Fq "${home[kimi_fallback]}/.kimi-code/bin:" "$(machine_unit_path kimi_fallback)"
+
+new_case kimi_on_path
+detect_path[kimi_on_path]=1
+printf '#!/usr/bin/env bash\nexit 0\n' > "${shim[kimi_on_path]}/kimi"
+chmod +x "${shim[kimi_on_path]}/kimi"
+run_case kimi_on_path
+assert 'kimi on PATH is detected without other providers' bash -c '[[ $1 == 0 && $2 == *"harness found: kimi"* ]]' _ "${status[kimi_on_path]}" "${output[kimi_on_path]}"
 
 new_case codex_pins_preserved
 present[codex_pins_preserved]=codex
@@ -354,7 +389,7 @@ assert 'malformed settings survive with warning and successful install' bash -c 
 new_case neither
 present[neither]=''
 run_case neither
-assert 'neither harness exits non-zero and names both missing commands' bash -c '[[ $1 != 0 && $2 == *"neither claude nor codex is on PATH"* ]]' _ "${status[neither]}" "${output[neither]}"
+assert 'no provider exits non-zero and names all missing commands' bash -c '[[ $1 != 0 && $2 == *"no claude, codex, agy or kimi found"* ]]' _ "${status[neither]}" "${output[neither]}"
 assert 'neither harness writes no homes' bash -c '[[ ! -e $1 && ! -e $2 ]]' _ "${claude[neither]}" "${codex[neither]}"
 assert 'neither harness does not run the stale-viewer check' test ! -e "$(log_path neither)"
 
