@@ -1,6 +1,6 @@
 ---
 slug: mergeable-before-done
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-17
 ---
 
@@ -111,6 +111,23 @@ A `done` card is accepted only for this thread's pull request, at the commit the
 when GitHub says it is merged or ready to merge. Agents are told to get it there themselves.
 This is the lighter enforcement Collin chose (D36): one question to GitHub, no queuing of
 `done` cards, rare cases written down as accepted risks rather than handled in code.
+
+### The flow
+
+```mermaid
+flowchart TD
+  A[Work checked and pushed; pull request open] --> B[Agent watches GitHub every minute, up to 30 minutes]
+  B -->|ready to merge| C[Agent posts done]
+  B -->|conflicts or a failed check| D[Agent fixes it, an independent check confirms, push again]
+  D --> B
+  B -->|you merged it| C
+  B -->|closed| E[Agent says so; nothing else]
+  B -->|time runs out or two fixes fail| F[Card for you: what blocks it]
+  F -->|Keep going| B
+  C --> G{App asks GitHub: this thread's pull request, at that commit, merged or ready?}
+  G -->|yes| H[Done card shown]
+  G -->|not yet, try again| B
+```
 
 ### GitHub's merge state
 
