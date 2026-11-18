@@ -391,7 +391,7 @@ class MachineService {
       const pane = this.tmux(['capture-pane', '-p', '-t', name]);
       const where = this.tmux(['display-message', '-p', '-t', name, '#{pane_current_path}']);
       this.sessions[name] = { name, thread_id: parsed[1], role: parsed[2], status: 'ready', recovered: true,
-        cli: pane.ok && pane.stdout.includes('Antigravity CLI') ? 'agy' : pane.ok && pane.stdout.includes('Codex') ? 'codex' : 'claude',
+        cli: pane.ok && /│\s*>/.test(pane.stdout) && pane.stdout.includes('context:') ? 'kimi' : pane.ok && pane.stdout.includes('Antigravity CLI') ? 'agy' : pane.ok && pane.stdout.includes('Codex') ? 'codex' : 'claude',
         worktree: where.ok ? where.stdout.trim() : '', created_worktree: false, token: '', created_at: new Date().toISOString() };
       changed = true;
     }
@@ -560,8 +560,8 @@ class MachineService {
   }
   commandFor(input, session, worktree, promptPath, rolePrompt) {
     const adapter = adapters[input.cli];
-    if (!adapter) die('cli must be claude, codex or agy');
-    return adapter.command(input, session, worktree, { stateDir: this.stateDir, promptPath, rolePrompt });
+    if (!adapter) die('cli must be claude, codex, agy or kimi');
+    return adapter.command(input, session, worktree, { stateDir: this.stateDir, promptPath, rolePrompt, accountDir: session.account_dir });
   }
 
   async start(input) {
@@ -579,7 +579,8 @@ class MachineService {
   }
   async startNamed(input, name) {
     const adapter = adapters[input.cli];
-    if (!adapter) die('cli must be claude, codex or agy');
+    if (!adapter) die('cli must be claude, codex, agy or kimi');
+    if (input.cli === 'kimi') { const status = this.cliStatus('kimi'); if (!status.installed) die('Kimi Code is not installed'); if (status.problem) die(status.problem); }
     const account = input.account || { id: `default-${adapter.provider}`, dir: null };
     if (!account || typeof account.id !== 'string') die('invalid account');
     const dir = accountDir(account.dir, account.id);
@@ -610,9 +611,9 @@ class MachineService {
       cli_session_id: input.cli_session_id || crypto.randomUUID(), status: 'starting', created_at: new Date().toISOString() };
     const built = this.commandFor(input, session, worktree, promptPath, rolePrompt);
     if (built.settingsPath) await atomicWrite(built.settingsPath, `${json(built.settings)}\n`);
-    const commandText = ['env', 'WHEELCHAIR_LANE=1', ...(adapter.sessionNameEnv ? [`WHEELCHAIR_SESSION_NAME=${name}`] : []), `WHEELCHAIR_SESSION_TOKEN=${session.token}`, `WHEELCHAIR_STATE_DIR=${this.stateDir}`, `WHEELCHAIR_MACHINE_ORIGIN=http://${this.config.host}:${this.config.port}`, ...Object.entries(adapter.loginEnv(dir)).map(([key, value]) => `${key}=${value}`), ...built.argv].map(shellQuote).join(' ');
+    const commandText = ['env', 'WHEELCHAIR_LANE=1', ...(adapter.sessionNameEnv ? [`WHEELCHAIR_SESSION_NAME=${name}`] : []), `WHEELCHAIR_SESSION_TOKEN=${session.token}`, `WHEELCHAIR_STATE_DIR=${this.stateDir}`, `WHEELCHAIR_MACHINE_ORIGIN=http://${this.config.host}:${this.config.port}`, ...Object.entries(adapter.loginEnv(dir)).map(([key, value]) => `${key}=${value}`), ...Object.entries(built.env || {}).map(([key, value]) => `${key}=${value}`), ...built.argv].map(shellQuote).join(' ');
     session.command = built.argv;
-    session.pending_initial = adapter.firstMessage(input, promptPath);
+    session.pending_initial = adapter.firstMessage(input, promptPath, name);
     const tmuxArgs = ['new-session', '-d', '-s', name, '-x', '200', '-y', '50', '-c', worktree, commandText];
     // systemd-run scope prevents service restarts killing tmux; installer sets KillMode=process too.
     // Both asynchronous, like the git above: a slow systemd-run must not hold up the service.
@@ -1106,7 +1107,7 @@ class MachineService {
     if (dir) adapter.seed(dir, account);
     await adapter.prepare?.(dir);
     const name = `wc-login-${account}`;
-    this.tmux(['kill-session', '-t', name]);
+    this.tmux(['kill-session', '-t', cli === 'kimi' ? `=${name}` : name]);
     const cmd = ['env', ...Object.entries(adapter.loginEnv(dir)).map(([k, v]) => `${k}=${v}`), ...adapter.loginCommand(dir)].map(shellQuote).join(' ');
     const script = `${cmd}; printf '\n__wc_login_exit %s\n' "$?"; sleep 600`;
     const cwd = adapter.loginCwd?.(this.stateDir);
@@ -1116,15 +1117,23 @@ class MachineService {
     return { state: 'starting' };
   }
   loginPane(account) {
-    this.loginRecord(account);
-    const result = this.tmux(['capture-pane', '-p', '-e', '-t', `wc-login-${account}`]);
+    const record = this.loginRecord(account);
+    const result = this.tmux(['capture-pane', '-p', '-e', '-t', record.cli === 'kimi' ? `=wc-login-${account}:` : `wc-login-${account}`]);
     if (!result.ok) throw Object.assign(new Error('login pane unavailable'), { status: 409 });
     return result.stdout;
   }
   loginState(account) {
     const record = this.loginRecord(account), adapter = adapters[record.cli];
-    const captured = this.tmux(['capture-pane', '-p', '-t', `wc-login-${account}`]);
+    if (record.cli === 'kimi' && record.result) return record.result;
+    const captured = this.tmux(['capture-pane', '-p', '-t', record.cli === 'kimi' ? `=wc-login-${account}:` : `wc-login-${account}`]);
     const pane = captured.ok ? captured.stdout : '';
+    if (record.cli === 'kimi') {
+      const authenticated = adapter.loginStatus(record.dir).authenticated;
+      const marker = pane.match(/__wc_login_exit (\d+)/);
+      if (marker) return record.result = { state: marker[1] === '0' && authenticated ? 'done' : 'failed', url: null, code: null, wantsCode: false, logged_in: authenticated };
+      if (!captured.ok) { const live = this.liveTmux(); if (live && !live.has(`wc-login-${account}`)) return record.result = { state: 'failed', url: null, code: null, wantsCode: false, logged_in: authenticated }; return { state: 'waiting', url: null, code: null, wantsCode: false, logged_in: authenticated }; }
+      const parsed = adapter.parseLogin(pane); return { state: parsed ? 'waiting' : 'starting', url: parsed?.url || null, code: parsed?.code || null, wantsCode: false, logged_in: authenticated };
+    }
     if (!captured.ok || /__wc_login_exit \d+/.test(pane)) {
       const logged_in = adapter.loginStatus(record.dir).logged_in;
       return { state: logged_in ? 'done' : 'failed', url: null, code: null, wantsCode: false, logged_in };
@@ -1152,16 +1161,25 @@ class MachineService {
   }
   status() {
     const defaults = Object.fromEntries(Object.entries(adapters).map(([cli, adapter]) => [cli, adapter.loginStatus(null)]));
-    const claude = this.cliStatus('claude', defaults.claude), codex = this.cliStatus('codex', defaults.codex), agy = this.cliStatus('agy', defaults.agy);
+    const claude = this.cliStatus('claude', defaults.claude), codex = this.cliStatus('codex', defaults.codex), agy = this.cliStatus('agy', defaults.agy), kimi = this.cliStatus('kimi', defaults.kimi);
     const accounts = Object.entries(adapters).map(([cli, adapter]) => ({ id: `default-${adapter.provider}`, cli, ...defaults[cli] }));
     const root = path.join(os.homedir(), '.wheelchair', 'accounts');
     let folders = []; try { folders = fs.readdirSync(root, { withFileTypes: true }); } catch {}
     for (const folder of folders.filter(e => e.isDirectory())) {
       try { const record = JSON.parse(fs.readFileSync(path.join(root, folder.name, 'wheelchair-account.json'), 'utf8')); if (record.id !== folder.name || !adapters[record.cli] || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(record.id)) continue; accounts.push({ id: record.id, cli: record.cli, ...adapters[record.cli].loginStatus(path.join(root, folder.name)) }); } catch {}
     }
-    return { version: this.version, claude, codex, agy, accounts, sessions: this.sessionList() };
+    if (kimi.problem) for (const entry of accounts) if (entry.cli === 'kimi') { entry.logged_in = false; delete entry.problem; }
+    return { version: this.version, claude, codex, agy, kimi, accounts, sessions: this.sessionList() };
   }
   cliStatus(cli, login = adapters[cli].loginStatus(null)) {
+    if (cli === 'kimi') {
+      const executable = adapters.kimi.resolveCli(); if (!executable) return { installed: false, logged_in: false };
+      let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return { installed: false, logged_in: false }; }
+      if (!this.kimiVersion || this.kimiVersion.path !== executable || this.kimiVersion.mtime !== mtime) { const check = command(executable, ['--version']); this.kimiVersion = { path: executable, mtime, output: check.stdout.trim() || check.stderr.trim() }; }
+      const output = this.kimiVersion.output, match = output.match(/\b(\d+)\.(\d+)\.(\d+)\b/);
+      const valid = match && (Number(match[1]) > 2 || Number(match[1]) === 2 && (Number(match[2]) > 6 || Number(match[2]) === 6 && Number(match[3]) >= 3));
+      return { installed: true, logged_in: !!valid && login.logged_in, version: output, ...(!valid ? { problem: `Kimi Code 2.6.3 or newer is needed (found ${output})` } : {}) };
+    }
     const version = command('sh', ['-c', `command -v ${cli}`]);
     if (!version.ok) return { installed: false, logged_in: false };
     const check = command(cli, ['--version']);
@@ -1499,11 +1517,11 @@ class MachineService {
       }
       if (request.method === 'POST' && url.pathname === '/v1/logins') { await this.authorize(request, 'hub'); return send(response, 201, await this.startLogin(await bodyOf(request))); }
       if (pathBits[0] === 'v1' && pathBits[1] === 'logins' && pathBits[2]) {
-        await this.authorize(request, 'hub'); const account = decodeURIComponent(pathBits[2]); this.loginRecord(account);
+        await this.authorize(request, 'hub'); const account = decodeURIComponent(pathBits[2]); const loginRecord = this.loginRecord(account); const loginTarget = loginRecord.cli === 'kimi' ? `=wc-login-${account}:` : `wc-login-${account}`;
         if (request.method === 'GET' && pathBits.length === 3) return send(response, 200, this.loginState(account));
         if (request.method === 'GET' && pathBits[3] === 'pane') return send(response, 200, { text: this.loginPane(account) });
-        if (request.method === 'POST' && pathBits[3] === 'keys') { const input = await bodyOf(request); const r = this.tmux(['send-keys', '-t', `wc-login-${account}`, String(input.keys || '')]); if (!r.ok) throw Object.assign(new Error('tmux keys failed'), { status: 409 }); return send(response, 200, { ok: true }); }
-        if (request.method === 'POST' && pathBits[3] === 'code') { const input = await bodyOf(request); if (typeof input.code !== 'string' || !input.code) die('code required'); const buffer = `wc-${crypto.randomUUID()}`; const a = this.tmux(['load-buffer', '-b', buffer, '-'], { input: input.code }); const b = this.tmux(['paste-buffer', '-p', '-b', buffer, '-t', `wc-login-${account}`]); const c = this.tmux(['send-keys', '-t', `wc-login-${account}`, 'Enter']); if (!a.ok || !b.ok || !c.ok) throw Object.assign(new Error('tmux submit failed'), { status: 409 }); return send(response, 200, { ok: true }); }
+        if (request.method === 'POST' && pathBits[3] === 'keys') { const input = await bodyOf(request); const r = this.tmux(['send-keys', '-t', loginTarget, String(input.keys || '')]); if (!r.ok) throw Object.assign(new Error('tmux keys failed'), { status: 409 }); return send(response, 200, { ok: true }); }
+        if (request.method === 'POST' && pathBits[3] === 'code') { const input = await bodyOf(request); if (typeof input.code !== 'string' || !input.code) die('code required'); const buffer = `wc-${crypto.randomUUID()}`; const a = this.tmux(['load-buffer', '-b', buffer, '-'], { input: input.code }); const b = this.tmux(['paste-buffer', '-p', '-b', buffer, '-t', loginTarget]); const c = this.tmux(['send-keys', '-t', loginTarget, 'Enter']); if (!a.ok || !b.ok || !c.ok) throw Object.assign(new Error('tmux submit failed'), { status: 409 }); return send(response, 200, { ok: true }); }
       }
       if (request.method === 'POST' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); return send(response, 201, await this.start(await bodyOf(request))); }
       if (request.method === 'GET' && url.pathname === '/v1/sessions') { await this.authorize(request, 'hub'); return send(response, 200, this.sessionList()); }
