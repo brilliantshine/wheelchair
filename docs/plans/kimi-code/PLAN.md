@@ -66,6 +66,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 29 | Supersedes part of 26: Kimi accounts no longer special-case a missing CLI | Same as every other CLI; Ready already reports a missing CLI first | review-round-4 |
 | 30 | Kimi commands use the resolved absolute executable path, never PATH inside tmux | tmux panes inherit the server environment, which lacks the service PATH | review-round-4 |
 | 31 | Kimi status separates `authenticated` (sign-in worked) from `logged_in` (eligible for agents); `loginEnv` always passes the effective `KIMI_CODE_HOME`; `cliStatus('kimi')` uses the adapter's resolver | Review round 5 gaps | review-round-5 |
+| 32 | Kimi sign-in succeeds only on this attempt's success and `authenticated`; account problems are shown on the Settings account row; the Kimi home path is absolute; files with multi-line strings are not edited | Review round 6 gaps | review-round-6 |
 
 ## Spec
 
@@ -173,7 +174,10 @@ the reader must tolerate any key order within a table.
 - Each account has its own data directory passed as `KIMI_CODE_HOME`. `loginEnv(dir)`
   **always** returns `{ KIMI_CODE_HOME: <effective home> }`: `dir` for a named account,
   and for the default account (`dir` falsy) the usual home, `c.home('KIMI_CODE_HOME',
-  '.kimi-code')` as seen by the service. So the service (status, hook preparation,
+  '.kimi-code')` as seen by the service, always made absolute with `path.resolve` (a
+  relative override would otherwise resolve against the pane's working directory). That
+  same absolute path is used for status, hook preparation, transcript lookup, launch and
+  sign-in. So the service (status, hook preparation,
   transcript lookup) and every tmux pane (launch, sign-in) always use the same
   directory, even when the service's environment sets `KIMI_CODE_HOME` and the tmux
   server's does not. A test sets `KIMI_CODE_HOME` only in the service and checks both
@@ -201,9 +205,9 @@ the reader must tolerate any key order within a table.
   adapter sets `sessionNameEnv: true` so `WHEELCHAIR_SESSION_NAME` is in the CLI's
   environment, which Kimi passes on to its hook commands.
 - The `permission_mode` setting therefore governs Kimi too (it already governs Claude and
-  Antigravity). Its visible label and accessible label become
-  "Claude, Antigravity and Kimi permission mode" (`viewer/pages/settings.js:481,518-525`),
-  with no other change.
+  Antigravity). Its visible row text becomes "Claude, Antigravity and Kimi sessions" and
+  its accessible label "Claude, Antigravity and Kimi permission mode"
+  (`viewer/pages/settings.js:481,522`), with no other change.
 - **Folder trust.** First launch in a folder shows a "Trust this folder?" screen
   (`❯ Trust and continue` / `Exit`). `answerPrompts(pane)` presses Enter when the pane
   contains `Trust this folder?` and `Trust and continue` (the first, selected option),
@@ -247,6 +251,10 @@ the reader must tolerate any key order within a table.
   it has exactly `event`, `command` and optionally `timeout`; one with any other field
   (such as a `matcher` that could suppress it) is rewritten in place to the exact form. A
   missing one is appended.
+  If the file contains a multi-line string (`"""` or `'''` anywhere), where a
+  header-shaped line could sit inside a value, the adapter treats it exactly like the
+  inline-hooks case below (no edit, same refusal rule) with
+  `problem: "Kimi Code's config.toml has multi-line strings wheelchair can't safely edit"`.
   If the file assigns `hooks` with `=` at the top level (`hooks = []` or an inline array,
   which a later `[[hooks]]` would make invalid TOML), the adapter does not edit the file;
   the Kimi status for that home carries
@@ -254,15 +262,29 @@ the reader must tolerate any key order within a table.
   `logged_in: false`, so Ready names it. Kimi status entries also carry
   `authenticated` (true when the oauth credentials exist, regardless of region or
   hooks). `machine/service.js` `loginState` decides sign-in success from
-  `authenticated` when present, else `logged_in` (other CLIs unchanged), so a sign-in on
-  a home with inline hooks or China region still reports success and the account then
-  shows its `problem`. `seed()` and `prepare()` never throw for this:
+  `authenticated` when present, else `logged_in` (other CLIs unchanged): for Kimi,
+  sign-in is `done` only when this attempt succeeded (the pane shows
+  `Logged in to` or the exit marker `__wc_login_exit 0`) **and** `authenticated` is
+  true; a nonzero exit is `failed` even if older credentials exist. The `logged_in` field
+  `loginState` returns is `authenticated` for Kimi, so the Settings page
+  (`viewer/pages/settings.js:1056`, which needs `state === 'done' && logged_in`) shows
+  "Signed in." on a home with inline hooks or China region.
+- **Showing a problem on the account.** `viewer/app/usage.js` carries each account's
+  `problem` (and `authenticated`) from machine status onto the account it returns. The
+  Settings account row shows the `problem` sentence in place of "signed out" when one is
+  set; its Sign in button stays (signing in again fixes the China-region case). Tests:
+  a browser test where the machine reports a Kimi account with `authenticated: true,
+  logged_in: false, problem: …` shows the sentence; a sign-in on a China-region and on an
+  inline-hooks home ends with "Signed in."; a cancelled re-login (nonzero exit) on a home
+  with old credentials ends as failed. `seed()` and `prepare()` never throw for this:
   they leave the file untouched and return. Agent start (`startNamed`) then re-reads the
   file and refuses to start a Kimi session on that home with the same sentence, so no
   session runs without wheelchair's hooks. Sign-in is not refused: `kimi login` runs as
   usual (it needs no hooks), and the account's status shows the problem afterwards.
   Tests: agent start on a signed-in home with `hooks = []` and with `"hooks" = []` is
-  refused; sign-in on such a home proceeds and leaves the file unchanged. Tests cover: a fresh file, a file with other
+  refused; sign-in on such a home proceeds, and wheelchair's own `seed()`/`prepare()`
+  calls leave the file unchanged (the assertion is made before the fake `kimi login`
+  runs, since a real login writes the file itself). Tests cover: a fresh file, a file with other
   `[[hooks]]` rules, a rerun (no duplicates), and the `hooks = []` refusal.
 - `machine/hook.sh` gets a `kimi` case: session name **only** from
   `WHEELCHAIR_SESSION_NAME` (the hook rule passes no second argument, so do not copy
@@ -581,12 +603,21 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 6 — 2026-11-18
 
-**Lanes:** intent:  / ; mechanics:  / ; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 5:** `cliStatus('kimi')` uses the adapter's `resolveCli()`; `loginEnv` always passes the effective `KIMI_CODE_HOME` (default account included); Kimi status entries add `authenticated`, which `loginState` uses for sign-in success; permission-mode label names Claude, Antigravity and Kimi; one more Accepted Risk.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | blocking | `loginState` still returns `logged_in` = eligible, so the page never says "Signed in." | upheld | Verified `settings.js:1056`; Kimi `loginState` returns `logged_in: authenticated` |
+| intent | major | No way to show an account's problem in Settings | upheld | Verified `usage.js:57,99`; `problem` carried to the account row |
+| intent | minor | Permission label pattern | upheld | Visible "… sessions", accessible "… permission mode" |
+| intent | minor | No test for the `authenticated` split | upheld | Tests added |
+| mechanics | blocking | Cancelled re-login reports success from old credentials | upheld | Verified `service.js:1124`; success needs this attempt's success marker |
+| mechanics | blocking | Relative `KIMI_CODE_HOME` resolves differently in panes | upheld | Verified `common.js:17`; path made absolute |
+| mechanics | major | Problem invisible after sign-in | upheld | Same fix as intent finding 2 |
+| mechanics | major | Header-shaped text inside multi-line strings | upheld | Files with multi-line strings are not edited; reported as a problem |
+| mechanics | minor | Unchanged-file assertion scope | upheld | Scoped to wheelchair's own calls |
 
 ## Prior Work
 
