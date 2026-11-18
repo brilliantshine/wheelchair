@@ -1,72 +1,86 @@
 'use strict';
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
+const path = require('node:path');
 const { createHarness } = require('./harness');
+const nonce = () => `NONCE-${crypto.randomBytes(6).toString('hex')}`;
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 (async () => {
-  let h; const rows = [];
-  const row = (name, ok, detail) => { rows.push({name, ok, detail}); console.log(`${name} | ${ok ? 'PASS' : 'FAIL'} | ${detail}`); };
+  let h, captureTimer; const checks = [], captures = new Map(), names = new Set();
+  const row = (name, ok, detail) => { checks.push({ name, ok }); console.log(`${name} | ${ok ? 'PASS' : 'FAIL'} | ${detail}`); };
+  const selected = process.env.KIMI_LIVE_CHECKS?.split(',');
+  const check = async (name, fn) => { if (selected && !selected.includes(name[0])) { console.log(`${name} | SKIP | not selected`); return; } try { await fn(); } catch (e) { row(name, false, e.stack); } };
   try {
-    h = await createHarness({mode:'live', hubSettings:{lead_order:['kimi'], worker_order:['kimi'], held_back:{worker:false,reviewer:false,verifier:false,mapper:false}, margin:0, leave:0}});
-    const thread = await h.callHub('/api/threads', 'POST', {project:h.paths.clone, machine:'harness', cli:'kimi', title:'Kimi live check'});
-    const id = thread.id, lead = thread.sessions.find(s => s.role === 'lead').name;
-    console.log(`thread=${id} lead=${lead}`);
+    h = await createHarness({ mode: 'live', recordEvents: true, modelPins: 'kimi.lead = kimi-code/k3.1-pro\nkimi.standard = kimi-code/k3\nkimi.heavy = kimi-code/k3.1-pro\n', hubSettings: { lead_order: ['kimi'], worker_order: ['kimi'], held_back: { worker: false, reviewer: false, verifier: false, mapper: false }, margin: 0, leave: 0 } });
+    captureTimer = setInterval(() => {
+      const list = h.tmux('list-sessions', '-F', '#{session_name}');
+      for (const name of list.stdout.trim().split('\n').filter(Boolean)) {
+        names.add(name); const pane = h.tmux('capture-pane', '-pt', `=${name}:0.0`).stdout;
+        if (pane) { const frames = captures.get(name) || []; if (!frames.includes(pane)) frames.push(pane); captures.set(name, frames); }
+      }
+    }, 50);
+    const machine = async name => (await h.callMachine('/v1/sessions')).find(s => s.name === name);
+    const waitBound = name => h.waitFor(async () => { const s = await machine(name); return s?.status === 'ready' && s.source_transcript && s; }, 120000);
+    const wire = file => fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map(JSON.parse);
+    const prompt = async (name, marker) => h.waitFor(async () => { const s = await machine(name); if (!s?.source_transcript) return false; const found = wire(s.source_transcript).find(x => x.agentId === 'main' && x.type === 'turn.prompt' && x.origin?.kind === 'user' && JSON.stringify(x.input).includes(marker)); return found && { s, found }; }, 120000);
+    const ended = async (name, marker, timeout = 120000) => { const { s, found } = await prompt(name, marker); const end = await h.waitFor(() => wire(s.source_transcript).find(x => x.agentId === 'main' && x.type === 'turn.ended' && x.turnId === found.turnId), timeout); await h.waitFor(() => h.events.some(x => x.session === name && x.type === 'turn-ended' && x.turn_id === found.turnId), 30000); return { s, found, end }; };
+    const eventFor = (name, turn) => h.events.filter(x => x.session === name && x.type === 'turn-ended' && x.turn_id === turn);
+    const start = async (role, attempt_id, brief, extra = {}) => { const result = await h.agent({ action: 'start', role, provider: 'kimi', attempt_id, brief, ...extra }); names.add(result.session.name); console.log(`started ${role}=${result.session.name}`); return result.session.name; };
+    const thread = await h.callHub('/api/threads', 'POST', { project: h.paths.clone, machine: 'harness', cli: 'kimi', title: 'Kimi live check' });
+    const id = thread.id, lead = thread.sessions.find(s => s.role === 'lead').name; names.add(lead); console.log(`thread=${id} lead=${lead}`);
     const getThread = async () => (await h.callHub('/api/threads')).threads.find(t => t.id === id);
-    const machine = async n => (await h.callMachine('/v1/sessions')).find(s => s.name === n);
-    try {
-      const ready = await h.waitFor(async () => {const s=await machine(lead); return s?.status === 'ready' && s.source_transcript && s;}, 120000);
-      console.log(`ready=${JSON.stringify({status:ready.status,source_transcript:ready.source_transcript})}`);
-      const pane = h.tmux('capture-pane','-pt',lead).stdout; console.log(`READY PANE\n${pane}`);
-      await h.waitFor(async () => (await machine(lead))?.kimi_last_turn !== undefined, 120000);
-      const prior = (await machine(lead)).kimi_last_turn;
-      await h.callHub(`/api/threads/${id}/messages`,'POST',{text:'Reply exactly: KIMI_LIVE_OK'});
-      await h.waitFor(async()=> {const s=await machine(lead); return s?.kimi_last_turn > prior && s;},120000);
-      const chat=await h.callHub(`/api/threads/${id}/chat`); console.log(`CHAT ${JSON.stringify(chat)}`);
-      assert(JSON.stringify(chat).includes('KIMI_LIVE_OK'));
-      row('1 lead chat',true,lead);
-    } catch(e) { row('1 lead chat',false,e.stack); console.log(`PANE\n${h.tmux('capture-pane','-pt',lead).stdout}`); }
-    let reviewer;
-    try {
-      const response = await fetch(`http://127.0.0.1:${h.ports.hub}/wheelchair/api/machine/session`, {method:'POST',headers:{'content-type':'application/json','x-wheelchair-machine-secret':'harness-machine-secret'},body:JSON.stringify({calling_session:lead,action:'start',role:'reviewer',provider:'kimi',attempt_id:'kimi-review',brief:'Review only this request. Reply with the single sentence KIMI_REVIEW_OK.'})});
-      const started=await response.json(); assert(response.ok,JSON.stringify(started)); reviewer=started.session.name; console.log(`reviewer=${reviewer}`);
-      const result=await h.waitFor(async()=>{const t=await getThread(); return t.cards.find(c=>c.kind==='result' && c.session===reviewer) || t.sent?.find(x=>x.source==='result' && x.text?.includes('KIMI_REVIEW_OK'));},180000);
-      row('2 reviewer result',true,JSON.stringify(result));
-    } catch(e){row('2 reviewer result',false,e.stack);}
-    try {
-      const before=(await machine(lead)).kimi_last_turn;
-      await h.callHub(`/api/threads/${id}/messages`,'POST',{text:'Use your Task tool to delegate a tiny task to a subagent: ask it to return the word OK. After it finishes, reply MAIN_SUBAGENT_DONE.'});
-      const done=await h.waitFor(async()=>{const s=await machine(lead); return s?.kimi_last_turn > before && s;},180000);
-      const wire=fs.readFileSync(done.source_transcript,'utf8').split('\n').filter(Boolean).map(JSON.parse);
-      const rowsForTurn=wire.filter(x=>String(x.turnId ?? x.event?.turnId)===String(done.kimi_last_turn));
-      assert(rowsForTurn.some(x=>/Task|Agent/.test(x.event?.name || '')),'no subagent tool call');
-      assert.equal(rowsForTurn.filter(x=>x.type==='turn.ended').length,1);
-      assert(JSON.stringify(rowsForTurn).includes('MAIN_SUBAGENT_DONE'));
-      row('3 subagent turn',true,`turn=${done.kimi_last_turn} end=${JSON.stringify(rowsForTurn.filter(x=>x.type==='turn.ended'))}`);
-    } catch(e){row('3 subagent turn',false,e.stack);}
-    try {
-      const before=(await machine(lead)).kimi_last_turn;
-      await h.callHub(`/api/threads/${id}/messages`,'POST',{text:'Think carefully for a long time about the nature of mathematics, then give a detailed essay.'});
-      await h.waitFor(async()=>{const s=await machine(lead); const rows=fs.readFileSync(s.source_transcript,'utf8'); return rows.includes('nature of mathematics');},30000);
-      await h.callMachine(`/v1/sessions/${encodeURIComponent(lead)}/keys`,'POST',{keys:'Escape'});
-      const done=await h.waitFor(async()=>{const s=await machine(lead); return s?.kimi_last_turn > before && s;},60000);
-      const ends=fs.readFileSync(done.source_transcript,'utf8').split('\n').filter(Boolean).map(JSON.parse).filter(x=>x.type==='turn.ended' && x.turnId===done.kimi_last_turn);
-      assert.equal(ends[0]?.reason,'cancelled'); row('4 interrupt',true,JSON.stringify(ends));
-    } catch(e){row('4 interrupt',false,e.stack);}
-    let worker;
-    try {
-      const start=await h.agent({action:'start',role:'worker',provider:'kimi',tier:'light',effort:'low',attempt_id:'kimi-low',brief:'Run the shell command `touch smoke-ok`, then reply done.'}); worker=start.session.name; console.log(`effort worker=${worker}`);
-      let captures=[]; const poll=setInterval(()=>{const pane=h.tmux('capture-pane','-pt',worker); if(pane.status===0 && pane.stdout && !captures.includes(pane.stdout)) captures.push(pane.stdout);},100);
-      try {
-        await h.waitFor(()=>captures.some(x=>/thinking:\s*low/i.test(x)),60000);
-        row('5 effort footer',true, captures.find(x=>/thinking:\s*low/i.test(x)).split('\n').find(x=>/thinking:\s*low/i.test(x)).trim());
-        await h.waitFor(()=>captures.some(x=>/approval|allow|permission/i.test(x)),60000);
-        const pane=captures.find(x=>/approval|allow|permission/i.test(x)); console.log(`APPROVAL PANE\n${pane}`);
-        const adapter=require('../../machine/adapters/kimi'); assert(adapter.promptText(pane)); row('approval prompt',true,'promptText matched captured pane');
-      } finally {clearInterval(poll);}
-      const trust=captures.find(x=>x.includes('Trust this folder?')); console.log(`TRUST PANE\n${trust || 'not captured'}`);
-    } catch(e){row('effort or approval',false,e.stack);}
-
-  } catch(e) {row('setup',false,e.stack);}
-  finally {if(h) {const clean=await h.teardown(); console.log(`cleanup ${JSON.stringify(clean)}`);}}
-  console.log(`${rows.filter(r=>r.ok).length} passed; ${rows.filter(r=>!r.ok).length} failed`);
-  process.exitCode=rows.some(r=>!r.ok)?1:0;
-})().catch(e=>{console.error(e);process.exitCode=1;});
+    await waitBound(lead);
+    await h.waitFor(async () => (await machine(lead)).kimi_last_turn !== undefined, 120000);
+    await check('3 subagent turn', async () => {
+      const marker = nonce(), eventStart = h.events.length; await h.callHub(`/api/threads/${id}/messages`, 'POST', { text: `Use your Agent tool to delegate a tiny task to a subagent: ask it to return OK. After it finishes, reply exactly ${marker}.` });
+      const { s, found, end } = await ended(lead, marker, 180000); await sleep(2500);
+      const rows = wire(s.source_transcript), endIndex = rows.findIndex(x => x.agentId === 'main' && x.type === 'turn.ended' && x.turnId === found.turnId);
+      assert.equal(end.reason, 'completed'); assert(rows.slice(0, endIndex).some(x => x.agentId === 'main' && x.type === 'context.append_loop_event' && x.event?.type === 'content.part' && x.event.part?.type === 'text' && x.event.part.text.includes(marker)), 'no main reply before end');
+      const dir = path.dirname(path.dirname(s.source_transcript)); const others = fs.readdirSync(dir).filter(x => x !== 'main'); assert(others.length, 'no subagent logs');
+      const sub = others.map(x => ({ agent: x, file: path.join(dir, x, 'wire.jsonl') })).filter(x => fs.existsSync(x.file)); assert(sub.length, 'no subagent wire');
+      const ends = eventFor(lead, found.turnId); const allEnds = h.events.slice(eventStart).filter(x => x.session === lead && x.type === 'turn-ended'); assert.equal(ends.length, 1); assert.equal(allEnds.length, 1); assert(ends[0].received_at >= end.time);
+      const subEnds = sub.flatMap(x => wire(x.file).filter(r => r.agentId === x.agent && r.type === 'turn.ended')); assert(subEnds.length, 'subagent did not finish');
+      row('3 subagent turn', true, JSON.stringify({ session: lead, nonce: marker, turn_id: found.turnId, end, hub_events_since_prompt: allEnds, subagent_logs: sub.map(x => x.file), subagent_wire_ends: subEnds }));
+    });
+    await check('4 interrupted reviewer', async () => {
+      const marker = nonce(); const response = await fetch(`http://127.0.0.1:${h.ports.hub}/wheelchair/api/machine/session`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-wheelchair-machine-secret': 'harness-machine-secret' }, body: JSON.stringify({ calling_session: lead, action: 'start', role: 'reviewer', provider: 'kimi', attempt_id: 'cancel-review', brief: `Review this long question, thinking in detail before reporting: derive and examine many alternative proofs of the infinitude of primes. Include ${marker} in the report.` }) }); const started = await response.json(); assert(response.ok, JSON.stringify(started)); const reviewer = started.session.name; names.add(reviewer); console.log(`started reviewer=${reviewer}`);
+      const { s, found } = await prompt(reviewer, marker); await h.callMachine(`/v1/sessions/${encodeURIComponent(reviewer)}/keys`, 'POST', { keys: 'Escape' });
+      const done = await ended(reviewer, marker, 60000); await sleep(3000);
+      const t = await getThread(), target = t.sessions.find(x => x.name === reviewer); const sent = t.sent.filter(x => x.source === 'result' && x.text?.includes(reviewer)); const cards = t.cards.filter(x => x.kind === 'result' && x.session === reviewer);
+      assert.equal(done.end.reason, 'cancelled'); assert.equal(target.last_turn_id, found.turnId); assert.equal(target.turn_ended, true); assert.equal(target.quiet_check_at, undefined); assert.equal(sent.length, 0); assert.equal(cards.length, 0);
+      row('4 interrupted reviewer', true, JSON.stringify({ session: reviewer, nonce: marker, turn_id: found.turnId, end: done.end, hub_events: eventFor(reviewer, found.turnId), turn_ended: target.turn_ended, queue: target.queue, quiet_check_at: target.quiet_check_at ?? null, sent, cards, source: s.source_transcript }));
+    });
+    let low;
+    await check('5 low effort', async () => {
+      const marker = nonce(); low = await start('worker', 'effort-low', `Reply exactly ${marker}.`, { tier: 'standard', effort: 'low' }); await waitBound(low);
+      const pane = await h.waitFor(() => (captures.get(low) || []).find(x => /thinking(?::|\b)/i.test(x) && /context:/.test(x)), 30000); const done = await ended(low, marker);
+      const detail = JSON.stringify({ session: low, turn_id: done.found.turnId, footer: pane.split('\n').filter(x => /thinking|context:/.test(x)) }); row('5 low effort', /thinking:\s*low/i.test(pane), detail);
+    });
+    await check('5 xhigh effort and bypass pane', async () => {
+      await h.callHub('/api/settings/preferences', 'PUT', { permission_mode: 'bypass' }); const marker = nonce();
+      const high = await start('worker', 'effort-xhigh', `Reply exactly ${marker}.`, { tier: 'standard', effort: 'xhigh' }); await waitBound(high);
+      const pane = await h.waitFor(() => (captures.get(high) || []).find(x => /Never Ask/.test(x) && /thinking\b/i.test(x) && /context:/.test(x)), 30000); const done = await ended(high, marker);
+      console.log(`BYPASS READY PANE ${high}\n${pane}`); row('5 xhigh effort and bypass pane', /thinking:\s*max/i.test(pane), JSON.stringify({ session: high, turn_id: done.found.turnId, footer: pane.split('\n').filter(x => /thinking|context:/.test(x)) }));
+    });
+    await check('6 folder trust', async () => {
+      const entry = [...captures].flatMap(([name, frames]) => frames.map(pane => ({ name, pane }))).find(x => x.pane.includes('Trust this folder?'));
+      assert(entry, 'trust screen not captured'); console.log(`TRUST PANE ${entry.name}\n${entry.pane}`); const adapter = require('../../machine/adapters/kimi'); assert(adapter.answerPrompts({}, entry.pane)); const s = await machine(entry.name); assert.equal(s.status, 'ready'); row('6 folder trust', true, JSON.stringify({ session: entry.name, answer: adapter.answerPrompts({}, entry.pane), status: s.status }));
+    });
+    await check('7 approval prompt', async () => {
+      await h.callHub('/api/settings/preferences', 'PUT', { permission_mode: 'auto' });
+      const instructions = ['Run this exact shell command: touch /tmp/wheelchair-kimi-live-approval-check. Then reply with', 'Run this exact shell command: git push origin HEAD. Then reply with'];
+      let found;
+      for (let i = 0; i < instructions.length && !found; i++) {
+        const marker = nonce(), worker = await start('worker', `approval-${i}`, `${instructions[i]} ${marker}.`, { tier: 'standard', effort: 'low' }); await waitBound(worker);
+        const end = Date.now() + 30000;
+        while (Date.now() < end) { const s = await machine(worker); const frames = captures.get(worker) || []; const pane = frames.find(x => !x.includes('Trust this folder?') && /(?:approve|approval|allow|permission)/i.test(x) && /[❯>]\s*(?:\d+[.)]\s*)?(?:yes|no\b|allow|deny|reject|approve)/i.test(x)); if (pane) { found = { worker, marker, pane, prompt_open: s.prompt_open }; break; } const rows = wire(s.source_transcript); if (rows.some(x => x.agentId === 'main' && x.type === 'turn.ended' && x.turnId === rows.find(y => y.agentId === 'main' && y.type === 'turn.prompt' && y.origin?.kind === 'user' && JSON.stringify(y.input).includes(marker))?.turnId)) break; await sleep(100); }
+        if (!found) console.log(`approval try ${i + 1}: no prompt observed session=${worker}`);
+      }
+      if (!found) { row('7 approval prompt', false, 'No approval prompt observed; promptText unchanged'); return; }
+      console.log(`APPROVAL PANE ${found.worker}\n${found.pane}`); assert(require('../../machine/adapters/kimi').promptText(found.pane), 'promptText does not match captured pane'); await h.waitFor(async () => (await machine(found.worker)).prompt_open, 10000); row('7 approval prompt', true, JSON.stringify(found));
+    });
+  } catch (e) { row('setup', false, e.stack); }
+  finally { if (captureTimer) clearInterval(captureTimer); if (h) { console.log(`sessions started ${JSON.stringify([...names])}`); const clean = await h.teardown(); console.log(`cleanup ${JSON.stringify(clean)}`); } }
+  console.log(`${checks.filter(x => x.ok).length} passed; ${checks.filter(x => !x.ok).length} failed`); process.exitCode = checks.some(x => !x.ok) ? 1 : 0;
+})().catch(e => { console.error(e); process.exitCode = 1; });

@@ -153,14 +153,15 @@ test('copier does not open source after fatal and ignores swapped opened file', 
 
 test('recovery stops Kimi while leaving Claude and marker-priority panes alone', async () => {
   const { machine } = setup(); machine.sessions = {};
-  const panes = { 'wc-a-worker': '│ >\nAsk When Needed  K3.1 Pro thinking: high  …/clone/wc/db3f0b03dcf6  wc/db3f0b03dcf6\ncontext: 0% (0/256k)', 'wc-b-worker': '│ >\ncontext: 10%', 'wc-c-worker': 'Codex\n│ >\nAsk When Needed K3.1 Pro thinking: high\ncontext: 0%'  };
+  const panes = { 'wc-a-worker': '│ >\nAsk When Needed  K3.1 Pro thinking: high  …/clone/wc/db3f0b03dcf6  wc/db3f0b03dcf6\ncontext: 0% (0/256k)', 'wc-b-worker': '│ >\ncontext: 10%', 'wc-c-worker': 'Codex\n│ >\nAsk When Needed K3.1 Pro thinking: high\ncontext: 0%', 'wc-d-worker': '│ >\nNever Ask  K3 thinking: high  …/worktrees/clone/wc-smoke-w2  wc-smoke-w2\ncontext: 7% (17.5k/256k)', 'wc-e-worker': '│ >\nAsk When Needed  K2.7 Code Highspeed thinking\ncontext: 0% (0/256k)', 'wc-f-worker': 'Antigravity CLI\n│ >\nNever Ask K3 thinking: high\ncontext: 0%', 'wc-g-worker': 'Claude Code\n│ >\ncontext: 10%\n  bypass permissions on'  };
   machine.liveTmux = () => new Set(Object.keys(panes));
   machine.tmux = args => ({ ok:true, stdout: args[0] === 'capture-pane' ? panes[args.at(-1)] : '/tmp' });
   await machine.recoverFromTmux();
   assert.equal(machine.sessions['wc-a-worker'].end_reason, 'Lost track of this Kimi Code session after a machine restart; restart it');
   assert.equal(machine.sessions['wc-b-worker'].cli, 'claude'); assert.equal(machine.sessions['wc-c-worker'].cli, 'codex');
+  assert.equal(machine.sessions['wc-d-worker'].cli, 'kimi'); assert.equal(machine.sessions['wc-e-worker'].cli, 'kimi'); assert.equal(machine.sessions['wc-f-worker'].cli, 'agy'); assert.equal(machine.sessions['wc-g-worker'].cli, 'claude');
   const targets = []; machine.tmux = args => { targets.push(args); return { ok:true, stdout:'' }; }; machine.liveTmux = () => new Set();
-  await machine.pollKimiTurns(); assert.deepEqual(targets[0], ['kill-session','-t','=wc-a-worker']); assert.equal(machine.sessions['wc-a-worker'].status, 'stopped');
+  await machine.pollKimiTurns(); assert.deepEqual(targets, [['kill-session','-t','=wc-a-worker'], ['kill-session','-t','=wc-d-worker'], ['kill-session','-t','=wc-e-worker']]); assert.equal(machine.sessions['wc-a-worker'].status, 'stopped');
 });
 
 test('outage spools one turn at a time and drains in order even when the clock moves backwards', async () => {

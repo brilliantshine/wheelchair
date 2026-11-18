@@ -91,9 +91,7 @@ module.exports = {
   parseLogin(pane) { const url = pane.match(/Opening browser for Kimi device login:\s*(https?:\/\/\S+)/)?.[1]; const code = pane.match(/paste the URL above and enter code:\s*(\S+)/i)?.[1]; return url && code ? { url, code, wantsCode: false } : null; },
   loginDone() { return false; },
   command(input, session, worktree, context) {
-    const config = readConfig(context.accountDir), effort = { low: 'low', medium: 'high', high: 'high', xhigh: 'max', max: 'max' }[session.effort];
-    const supported = config.models[input.model || config.default_model] || [];
-    return { argv: [resolveCli(), session.permission_mode === 'bypass' ? '--auto' : '--yolo', ...(input.model ? ['--model', input.model] : [])], ...(effort && supported.includes(effort) ? { env: { KIMI_MODEL_THINKING_EFFORT: effort } } : {}) };
+    return { argv: [resolveCli(), session.permission_mode === 'bypass' ? '--auto' : '--yolo', ...(input.model ? ['--model', input.model] : [])] };
   },
   firstMessage(input, promptPath, name) { return `[wc:role] Role: ${input.role}\nSession: ${name}\nRead ${promptPath} before responding: it holds your role rules and card rules. Read it again only if it is no longer in your context.\n\n${input.brief || input.first_message || ''}`; },
   readyText(session, pane) { return /│\s*>/.test(pane) && pane.includes('context:') && !pane.includes('Trust this folder?'); },
