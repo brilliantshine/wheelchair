@@ -369,10 +369,13 @@
     const cutoffNow = thread().imported ? thread().imported.at : null;
     if (seenCutoff !== undefined && seenCutoff !== cutoffNow) pending = [];
     seenCutoff = cutoffNow;
-    const humans = items.filter((i) => i.type === 'human' && !i.card).map((i) => i.text);
+    // A pending bubble goes once the transcript has more of its text than when it was sent, so
+    // an earlier message with the same words never stands in for it.
+    const counts = new Map();
+    for (const i of items) if (i.type === 'human' && !i.card) counts.set(i.text, (counts.get(i.text) || 0) + 1);
     pending = pending.filter((p) => {
-      const at = humans.indexOf(p.text);
-      if (at >= 0) { humans.splice(at, 1); return false; }
+      const n = counts.get(p.text) || 0;
+      if (n > (p.seen || 0)) { counts.set(p.text, n - 1); return false; }
       return true;
     });
     const cards = data.cards.filter((c) => sinceImport(c.created_at || c.at));
@@ -434,18 +437,19 @@
     // order, whichever tab each message was sent from.
     const left = waiting.slice();
     const delivered = pending.filter((p) => {
+      if (p.sent) return true;
       const at = left.findIndex((q) => q.text === p.text);
       if (at < 0) return true;
       left.splice(at, 1);
       return false;
     });
-    const shown = [...delivered.map((p) => ({ text: p.text, queued: null })), ...waiting.map((q) => ({ text: q.text, queued: q }))];
+    const shown = [...delivered.map((p) => ({ text: p.text, queued: null, sent: p.sent })), ...waiting.map((q) => ({ text: q.text, queued: q }))];
     const canSendNow = lead && lead.live && lead.ready && !lead.permission_open && !lead.needs_open
       && !(lead.limited_until && Date.parse(lead.limited_until) > Date.now()) && !thread().archived;
     for (const p of shown) {
       const parts = splitAttached(p.text);
       const b = el('div', 'bubble human pending', parts.text);
-      b.appendChild(el('span', 'tag', 'queued'));
+      b.appendChild(el('span', 'tag', p.sent ? 'sent' : 'queued'));
       if (p.queued && canSendNow) {
         const at = p.queued.at;
         b.appendChild(button(sendingNow[at] ? 'Sending…' : 'Send now', 'send-now', () => sendNow(at), Boolean(sendingNow[at])));
@@ -487,6 +491,11 @@
     return row;
   }
 
+  // How many times the transcript (since any import) already shows these words from Collin.
+  function humanCount(text) {
+    return data.items.filter((i) => sinceImport(i.at) && i.type === 'human' && !i.card && i.text === text).length;
+  }
+
   // Hand one queued message to the lead mid-turn instead of waiting for the turn to end.
   async function sendNow(at) {
     sendingNow[at] = true; sigs.chat = null; render();
@@ -494,8 +503,13 @@
     const item = ((lead && lead.queue) || []).find((q) => q.source === 'collin' && q.at === at);
     try {
       await post(T + '/send-now', { at }); showError('');
-      // Keep its bubble until the transcript shows it, as for a message sent from this tab.
-      if (item && !pending.some((p) => p.text === item.text)) pending.push({ text: item.text });
+      // Keep its bubble, marked sent, until the transcript shows it. This tab's own bubble for
+      // it, if any, becomes that bubble; otherwise a new one is added.
+      if (item) {
+        const mine = pending.find((p) => !p.sent && p.text === item.text);
+        if (mine) mine.sent = true;
+        else pending.push({ text: item.text, seen: humanCount(item.text), sent: true });
+      }
     }
     catch (e) { showError('Could not send it now: ' + e.message); }
     finally { delete sendingNow[at]; sigs.chat = null; await poll(); }
@@ -1071,7 +1085,7 @@
     placeIds();
     if (window.WCAside) window.WCAside.update(data, changed);
     if (changed && nearBottom) window.scrollTo(0, document.body.scrollHeight);
-    const queuedTotal = Math.max(data.queued, pending.length);
+    const queuedTotal = Math.max(data.queued, pending.filter((p) => !p.sent).length);
     queuedNote.hidden = queuedTotal === 0;
     queuedNote.textContent = queuedTotal + ' queued: waiting for the lead to finish its turn';
     const canSend = liveLead() && !t.archived && !frozen();
@@ -1153,7 +1167,7 @@
       }
       const message = [text, paths.map((path) => '[attached: ' + path + ']').join('\n')].filter(Boolean).join('\n\n');
       await post(T + '/messages', { text: message });
-      pending.push({ text: message }); msgEl.value = ''; attachments = attachments.filter((file) => !sending.includes(file)); attachmentError.textContent = ''; renderAttachments();
+      pending.push({ text: message, seen: humanCount(message) }); msgEl.value = ''; attachments = attachments.filter((file) => !sending.includes(file)); attachmentError.textContent = ''; renderAttachments();
       sigs.chat = null; await poll(); render();
     } catch (e) { showError(e.message.startsWith('Upload failed:') ? e.message : 'Message not sent: ' + e.message); }
     finally { uploading = false; renderAttachments(); render(); }
