@@ -352,3 +352,14 @@ test('done export supplies its PR URL and rejects a non-open PR', async () => {
   await assert.rejects(hub.exportThread(id), /merged or closed/);
   assert.equal(calls[0].pr_url, 'https://github.com/owner/repo/pull/1'); assert.equal(calls.length, 1);
 });
+
+test('chat holds the thread lock through assembly while status refresh remains outside', async () => {
+  const { hub } = await exportFixture(); let release, started; let mutationRan = false;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const called = new Promise((resolve) => { started = resolve; });
+  hub.call = async (machine, route) => { if (route.endsWith('/transcript')) { started(); await gate; } return {}; };
+  const reading = hub.chat(id); await called;
+  const mutation = hub.withThread(id, async () => { mutationRan = true; const thread = await hub.thread(id); thread.handed_off = { at, head: 'a'.repeat(40), stage: 'approved' }; await hub.save(thread); });
+  await new Promise((resolve) => setImmediate(resolve)); assert.equal(mutationRan, false);
+  release(); await Promise.all([reading, mutation]); assert.equal((await hub.thread(id)).handed_off.head, 'a'.repeat(40));
+});

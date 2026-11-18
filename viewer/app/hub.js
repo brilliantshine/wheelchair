@@ -203,19 +203,19 @@ class Hub {
     } catch { /* Keep the last successful status until the next refresh. */ }
   }
   async chat(id) {
-    // Transcript reads can contact the machine, so assemble chat outside the thread lock.
-    const result = await chat.chat(this, id);
+    // Chat can save a discovered slug, so assemble it under the thread lock.
     const snapshot = await this.withThread(id, async () => {
+      const result = await chat.chat(this, id);
       const thread = await this.thread(id);
       const last = this.handoffStatusAt.get(id);
       const refresh = !thread.archived && !thread.handed_off && thread.worktree && thread.slug && (last === undefined || Date.now() - last >= 60_000);
       if (refresh) this.handoffStatusAt.set(id, Date.now());
-      return { thread, refresh, status: this.handoffStatus.get(id) };
+      const reason = this.exportReason(thread, this.handoffStatus.get(id));
+      result.thread.export = { ok: !reason, reason };
+      return { result, thread, refresh };
     });
     if (snapshot.refresh) this.refreshHandoffStatus(snapshot.thread).catch(() => {});
-    const reason = this.exportReason(snapshot.thread, snapshot.status);
-    result.thread.export = { ok: !reason, reason };
-    return result;
+    return snapshot.result;
   }
   features() { return views.features(this); }
   sessions() { return views.sessions(this); }
