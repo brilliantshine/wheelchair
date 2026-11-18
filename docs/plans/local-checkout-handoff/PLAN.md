@@ -406,6 +406,23 @@ Risk added.
 | mechanics | minor | Status lacks target availability | upheld | `target_available`, `active_thread_id` |
 | mechanics | minor | Status scan can write the index | upheld | `--no-optional-locks` |
 
+### Round 4 — 2026-11-18
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 3:** "Back up the leftovers" rewritten (byte-exact, index copy,
+directory refusal, recorded before clearing); terms: identity, status scan with
+`--no-optional-locks`, protection only for untracked entries, outcome needs a scan;
+record: first-Try state in `pending`, `return_ref`, `common_dir`; folder checks add `git
+am` and unmerged index; submodule check `--ignore-submodules=none`; Try no-op only for
+the same thread; Switch back from any thread page including archived, to the branch's
+current tip, lists files that appear afterwards; status fields `target_available`,
+`active_thread_id`, backup refs and files; Dismiss clears unexpected state; queue key;
+validation list. Decisions 15-16.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 Parts of the Spec already built before this plan reached Stage 3 — adopted from outside
