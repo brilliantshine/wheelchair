@@ -949,16 +949,18 @@ Filled by Stage 3. One row per worker brief.
 | T4 | Kimi chat parser, report function, hub `last_turn_id`, interrupted turns, `end_reason` in ended notices, Stop 202 in hub | `viewer/app/{chat,sessions,threads}.js`, their tests | standard / gpt-6.1-terra | wc-01b8cb1bf051-worker-3 | `node --test viewer/test/*.test.js` | done |
 | T5 | Installer detects Kimi; protocol docs and README | `install.sh`, `install/`, `protocol/`, `README.md` | standard / gpt-6.1-terra | wc-01b8cb1bf051-worker-4 | `bash install/test/run.sh` | done |
 | T7 | Hub archive keeps the thread unarchived and pending sessions live on a machine `pending: true` archive reply (found by T3, outside its boundary) | `viewer/app/threads.js` `archive()`, `viewer/test/app-kimi-archive.test.js` | light / gpt-6-luna | wc-01b8cb1bf051-worker-8 | `node --test viewer/test/*.test.js` | done |
-| T6 | Live checks 1–5 against an isolated machine service and hub from the merged branch (after T1–T5) | `docs/plans/kimi-code/reports/T6.md`; fixes go back as remediation | standard | | live checks + full validation | not started |
+| T6 | Live checks 1–5 against an isolated machine service and hub from the merged branch (after T1–T5) | `docs/plans/kimi-code/reports/T6.md`; fixes go back as remediation | standard / gpt-6.1-terra | wc-01b8cb1bf051-worker-9 | live checks + full validation | running |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
 ## Log
 
+- 2026-11-18 — Merged tree after T3: machine 193/193; viewer 642/642 in three runs, one unnamed failure in a fourth (flaky, passed on re-run). T3 worktree `wc-01b8cb1bf051-w7` kept (its uncommitted files were committed here from it; the service refuses to remove a dirty worktree). T6 dispatched.
+
 - 2026-11-18 — Choice: T3, `machine/service.js` archive: fatal stops are confirmed first, before any other session or worktree is touched, so a retry archives the whole thread cleanly.
 - 2026-11-18 — Choice: T3, `machine/service.js` recovery: provisional Kimi pane pattern `│ >` plus `context:` and "Kimi" on the same line, checked after the agy and Codex markers; T6 confirms it on a real pane.
 - 2026-11-18 — Choice: T3, failed-turn error shape not confirmed (kimi ships as an ELF binary, no readable journal source); implemented per the Spec, T6 to check from a real failure if cheap.
-- 2026-11-18 — T3 accepted (band: self, tricky), attempt 2: machine suite 193/193 re-run by the sub-lead. The worker's archive reply lacked the `pending_sessions` list in the contract the sub-lead set (and sent `uploads_removed: null`); the sub-lead added `pending_sessions`, dropped `uploads_removed` from the pending reply, asserted both in `machine/test/kimi-turns.test.js` and updated `machine/API.md`; machine suite 193/193 after.
+- 2026-11-18 — T3 accepted (band: self, tricky), attempt 2: machine suite 193/193 re-run by the sub-lead. The worker's archive reply lacked the `pending_sessions` list in the contract the sub-lead set (and sent `uploads_removed: null`); the worker had the same fix uncommitted in its worktree after its result (identical `service.js` line, a stronger archive test with two pending and one confirmed fatal session, API text and report update); the sub-lead committed those files from its worktree. Machine suite 193/193 after.
 
 - 2026-11-18 — Choice: T7, `viewer/app/threads.js`: the pending branch returns before the rebase-card logic, so a pending reply that also lists a rebase in progress shows the rebase card only on the retry (implied by the brief's placement; scout-found).
 - 2026-11-18 — Choice: T7, `viewer/test/app-kimi-archive.test.js`: hand-built fixture with a stubbed `hub.call`; also asserts the machine name in the card body (scout-found; report said none).
