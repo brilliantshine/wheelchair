@@ -337,11 +337,20 @@ round where knowing it matters most.
 | mechanics | major | Model discovery has no machine/account rule | upheld | Same fix as intent finding 3 |
 | mechanics | major | Transcript checks impossible through the viewer as written | upheld | Verified `chat.js:125`; parser-level test plus live lead and reviewer checks |
 | mechanics | minor | "Claude permission mode" also governs Kimi | upheld | Label becomes "Claude and Kimi permission mode" |
-| mechanics | minor | No aside browser guard to copy | downgraded | Already minor; API error names the provider label, no browser guard (same as Antigravity) |
+| mechanics | minor | No aside browser guard to copy | upheld | API error names the provider label, no browser guard (same as Antigravity) |
 
 Reported severity is the reviewer's opinion; the lead verdict
 (`upheld`/`downgraded`/`declined`/`accepted-risk`/`user-decision`) is what gates the
 exit. Downgrades and declines cite evidence.
+
+### Round 2 — 2026-11-18
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 1:** login via `--region global` (no link rewrite) plus a China-region Ready line; effort via `KIMI_MODEL_THINKING_EFFORT` gated on `supportEfforts`; hooks gain `Interrupt`, `sessionNameEnv`, spool replay, binding by session name plus transcript `[wc:role]`; minimum version 2.6.3; folder trust by Enter; model aliases with `/` and five-slot pins, no live model list; legacy `worker_order_seen` fallback kept; permission-mode label; asides error wording; tests and live checks rewritten.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
