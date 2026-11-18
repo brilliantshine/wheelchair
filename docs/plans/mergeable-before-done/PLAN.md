@@ -480,3 +480,13 @@ Prior note: the full gate keeps producing blocking edge cases (spool delivery, r
 | mechanics | minor | Resolve `needs` only if still open | upheld | D56 |
 
 **Budget:** three triaged rounds (5, 6, 7) since Collin's last decision without a clean one; stopped for Collin. Fixes already applied.
+Collin: "Keep going" — budget reset.
+
+### Round 8 — 2026-11-18
+
+**Lanes:** intent lens (provider per start); mechanics lens (other family); cross-family: yes.
+
+**Changed since the last round:** item 4 (stub inline, wait ends, D55); item 5 (wait ends, D55); item 7 (one diagnosis sentence); item 8 (`needs` card resolve only if open, D56; window end excludes 4/5); item 9 restart rewritten in order (D57).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
