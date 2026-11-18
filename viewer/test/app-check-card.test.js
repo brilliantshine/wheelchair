@@ -23,7 +23,7 @@ test('check schema validates required fields, limits and cross-field rules', () 
   for (const c of [
     { ...check, head: 'A'.repeat(40) }, { ...check, head: 'a'.repeat(39) }, { ...check, update: 'x'.repeat(301) },
     { ...check, steps: [] }, { ...check, steps: Array(7).fill(step) }, { ...check, extra: 1 },
-    ...[{ extra: 1 }, { where: 'other' }, { do: 'x'.repeat(301) }, { see: 'x'.repeat(301) }, { command: 'x' }, { agent: 'differed' }, { agent: 'unknown' }, { note: 'unwanted' }, { agent: 'broken' }, { agent: 'not-tried' }, { agent: 'broken', note: 'x\ny' }, { agent: 'broken', note: 'x\u2028y' }, { agent: 'broken', note: 'x\u2029y' }, { agent: 'broken', note: 'x'.repeat(301) }, { where: 'machine', command: 'x'.repeat(1001) }].map(change => ({ ...check, steps: [{ ...step, ...change }] })),
+    ...[{ extra: 1 }, { where: 'other' }, { do: 'x'.repeat(301) }, { see: 'x'.repeat(301) }, { command: 'x' }, { agent: 'differed' }, { agent: 'unknown' }, { note: 'unwanted' }, { agent: 'broken' }, { agent: 'not-tried' }, { agent: 'broken', note: 'x\ny' }, { agent: 'broken', note: 'x\u2028y' }, { agent: 'broken', note: 'x\u2029y' }, { agent: 'broken', note: 'x\u000by' }, { agent: 'broken', note: 'x\u000cy' }, { agent: 'broken', note: 'x\u0085y' }, { agent: 'broken', note: 'x'.repeat(301) }, { where: 'machine', command: 'x'.repeat(1001) }].map(change => ({ ...check, steps: [{ ...step, ...change }] })),
   ]) assert.ok(!valid(c), JSON.stringify(c).slice(0, 120));
   assert.ok(!valid(check, 'worker'));
   assert.ok(valid({ ...check, steps: [{ ...step, where: 'machine', command: 'x\ny', agent: 'not-tried', note: 'reason' }] }));
