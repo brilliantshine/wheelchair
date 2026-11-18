@@ -758,6 +758,8 @@ Filled by Stage 3. One row per worker brief.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | App side: `deferred` card kind, press checks, pins, restart `card_kinds`/`stub_summary`, rendering, tests, card docs | viewer/app/{card,cards,threads,chat}.js, viewer/pages/thread.js, viewer/test/**, protocol/app/cards.md, cards-lead.md | standard / claude-sonnet-5-5 | | node --test viewer/test/*.test.js; npm --prefix viewer run test:browser | not-started |
+| T2 | Protocol prose: lead, sub-lead, reviewer, verifier rules; IDEA/PLAN templates (tricky) | protocol/app/{lead,sub-lead,reviewer,verifier}.md, protocol/templates/{IDEA,PLAN}.md | standard / claude-sonnet-5-5 | | node --test viewer/test/protocol-rules.test.js; read-through per mode | not-started |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
