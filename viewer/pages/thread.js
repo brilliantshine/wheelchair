@@ -28,6 +28,9 @@
   let pinsFolded = false;
   try { pinsFolded = localStorage.getItem(PINS_KEY) === '1'; } catch (e) { /* stays open */ }
   let archiveAsk = false;
+  let exportAsk = false;
+  let handoffState = null;
+  let handoffKey = null;
   const mergedArchiveAsk = {};
   let accountNames = null;   // account id -> name, from /settings; null until fetched
   const cardErrors = {};
@@ -112,6 +115,7 @@
     return t.worktree && s ? t.worktree + '/docs/plans/' + s : '';
   }
   function leads() { return thread().sessions.filter((s) => s.role === 'lead'); }
+  function frozen() { return !!(thread().handed_off || thread().handoff_op); }
   function liveLead() { return leads().some((s) => s.live); }
   // Mid-turn: a delivered message the lead has not finished answering.
   function leadWorking() { return leads().some((s) => s.live && s.ready && s.turn_ended === false); }
@@ -155,6 +159,17 @@
     }
     const agents = el('a', 'btn small', 'Agents'); agents.href = '/wheelchair/app/agents?lead=' + encodeURIComponent(id);
     line.appendChild(agents);
+    {
+      const wrap = el('div', 'export-action');
+      if (exportAsk) {
+        wrap.append(el('span', 'dim', 'Export and hand off? This thread stops taking work here.'), button('Confirm', 'primary small', async () => { try { await download(T + '/export', 'POST'); exportAsk = false; await poll(); } catch (e) { exportAsk = false; renderHead(); showError(e.message); } }), button('Cancel', 'small', () => { exportAsk = false; renderHead(); }));
+      } else {
+        const exportButton = button('Export', 'small', () => { exportAsk = true; renderHead(); }, !(t.export && t.export.ok) || t.archived || frozen());
+        if (exportButton.disabled && t.export && t.export.reason) exportButton.title = t.export.reason;
+        wrap.appendChild(exportButton);
+      }
+      line.appendChild(wrap);
+    }
     const stubless = t.stub && !t.sessions.length;
     if (!t.archived) {
       if (!archiveAsk) {
@@ -166,6 +181,52 @@
       }
     }
     headEl.appendChild(line);
+    const reason = $('export-reason');
+    reason.textContent = t.export && t.export.reason || '';
+    reason.hidden = !!(t.archived || frozen() || !t.export || t.export.ok || !t.export.reason);
+  }
+
+  async function download(url, method) {
+    const res = await fetch(url, { method: method || 'GET' });
+    if (!res.ok) { const out = await res.json().catch(() => ({})); throw new Error(out.detail || out.error || 'http ' + res.status); }
+    const disposition = res.headers.get('content-disposition') || '';
+    const match = disposition.match(/filename="([^"\r\n]+)"/i);
+    const urlObject = URL.createObjectURL(await res.blob());
+    const a = el('a'); a.href = urlObject; a.download = match ? match[1] : 'handoff.json'; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(urlObject), 1000);
+  }
+  async function handoffAction(action) {
+    try {
+      const result = await post(T + '/' + action);
+      if (action === 'cancel-handoff' && result.outcome === 'cancelled' && thread().handoff_op && thread().handoff_op.kind === 'create') { location.href = '/wheelchair/app/threads'; return; }
+      handoffKey = null; await poll();
+    } catch (e) { showError(e.message); }
+  }
+  function renderHandoff() {
+    const t = thread(); const banner = $('handoff'); const retry = $('handoff-retry');
+    banner.hidden = !t.handed_off || !handoffState || handoffState.state === 'undo-unfinished' || !!t.handoff_op;
+    banner.textContent = '';
+    if (!banner.hidden) {
+      const state = handoffState.state;
+      const date = (value) => value ? new Date(value).toLocaleString() : '';
+      const message = state === 'moved' ? 'Picked up elsewhere on ' + date(handoffState.picked_up_at) + '. Import a newer file to continue here.' : state === 'own-cancelled' ? 'An earlier cancelled import or undo is still being taken back; try again in a few minutes' : 'Handed off ' + date(handoffState.at) + '. Import a newer file to continue here, or undo.';
+      banner.appendChild(el('p', '', message));
+      if (state !== 'moved') banner.appendChild(button('Undo hand-off', 'small', () => handoffAction('undo-handoff')));
+    }
+    if (t.handed_off && (!handoffState || handoffState.state !== 'undo-unfinished') && !t.handoff_op) banner.appendChild(button('Download the file again', 'small', async () => { try { await download(T + '/handoff-file'); } catch (e) { showError(e.message); } }));
+    retry.hidden = !t.handoff_op; retry.textContent = '';
+    if (t.handoff_op) {
+      const op = t.handoff_op;
+      retry.appendChild(el('p', '', op.kind === 'undo' ? "The undo didn't finish." : "The import didn't finish."));
+      if (op.last_error) retry.appendChild(el('p', '', op.last_error));
+      retry.appendChild(button('Retry', 'primary small', () => handoffAction('retry-handoff')));
+      if (op.can_cancel) retry.appendChild(button('Cancel', 'small', () => { if (window.confirm('Cancel this handoff?')) handoffAction('cancel-handoff'); }));
+      if (t.handed_off) retry.appendChild(button('Download the file again', 'small', async () => { try { await download(T + '/handoff-file'); } catch (e) { showError(e.message); } }));
+    }
+    composerEl.hidden = !!t.handoff_op;
+    const before = $('before-handoff'); before.hidden = !t.imported;
+    const history = $('handoff-history'); history.textContent = '';
+    if (t.imported) for (const entry of t.imported.history || []) history.appendChild(el('p', '', [entry.at, entry.who, entry.text].filter(Boolean).join(' · ')));
   }
 
   // ---- the right column: this thread's files ----
@@ -267,7 +328,7 @@
   }
   function renderDead() {
     const t = thread();
-    const dead = !t.archived && leads().length > 0 && !liveLead();
+    const dead = !t.archived && !frozen() && (leads().length > 0 || t.imported) && !liveLead();
     deadEl.hidden = !dead;
     if (!dead) return;
     deadEl.textContent = '';
@@ -278,13 +339,18 @@
   }
 
   // ---- chat ----
+  function sinceImport(time) {
+    if (!thread().imported) return true;
+    const when = Date.parse(time); const cutoff = Date.parse(thread().imported.at);
+    return !Number.isFinite(when) || !Number.isFinite(cutoff) || when >= cutoff;
+  }
   function unpinnedCards() {
     const ids = new Set(data.pinned.map((c) => c.id));
-    return data.cards.filter((c) => !ids.has(c.id));
+    return data.cards.filter((c) => !ids.has(c.id) && sinceImport(c.created_at || c.at));
   }
 
   function renderChat() {
-    const items = data.items;
+    const items = data.items.filter((i) => sinceImport(i.at));
     chatEl.textContent = '';
     const humans = items.filter((i) => i.type === 'human' && !i.card).map((i) => i.text);
     pending = pending.filter((p) => {
@@ -514,7 +580,7 @@
   function renderCard(card) {
     const box = el('div', 'card card-' + card.kind);
     box.id = 'card-' + card.id; box.dataset.card = card.id; box.dataset.kind = card.kind;
-    const off = card.answered || card.retracted_at || thread().archived;
+    const off = card.answered || card.retracted_at || thread().archived || frozen();
     if (card.answered) box.classList.add('is-answered');
     if (card.retracted_at) box.classList.add('is-retracted');
     if (card.kind === 'question' && card.resolved_by) box.classList.add('is-resolved');
@@ -808,6 +874,7 @@
       const t = answeredTag(card); if (t) box.appendChild(t);
     }
     if (cardErrors[card.id]) box.appendChild(el('div', 'card-error', (card.kind === 'sudo' ? '' : 'Could not send: ') + cardErrors[card.id]));
+    if (frozen()) box.querySelectorAll('button, input, textarea, select').forEach((n) => { n.disabled = true; });
     return box;
   }
 
@@ -846,8 +913,8 @@
   function renderPinned() {
     pinnedEl.textContent = '';
     const order = Object.fromEntries(PINNED_KINDS.map((kind, i) => [kind, i]));
-    const pins = data.pinned.filter((c) => c.kind in order).sort((a, b) => order[a.kind] - order[b.kind])
-      .map((p) => data.cards.find((c) => c.id === p.id) || p);
+    const pins = data.pinned.map((p) => data.cards.find((c) => c.id === p.id) || p)
+      .filter((c) => c.kind in order && sinceImport(c.created_at || c.at)).sort((a, b) => order[a.kind] - order[b.kind]);
     pinnedEl.classList.toggle('folded', pinsFolded);
     if (!pins.length) return;
     const bar = el('div', 'pin-bar');
@@ -924,17 +991,18 @@
   function render() {
     if (!data) return;
     const t = thread();
+    renderHandoff();
     document.title = (t.title || slug() || base(t.project)) + ' - thread';
-    sync('head', [t.title, t.lead_name, t.stub, t.archived, t.worktree, t.branch, t.slug, slug(), archiveAsk, t.pr_url, t.cli, t.machine, t.sessions.map((x) => [x.name, x.live, x.model, x.role, x.created_at])], renderHead);
+    sync('head', [t.title, t.lead_name, t.stub, t.archived, t.worktree, t.branch, t.slug, slug(), archiveAsk, exportAsk, t.export, t.handed_off, t.handoff_op, t.pr_url, t.cli, t.machine, t.sessions.map((x) => [x.name, x.live, x.model, x.role, x.created_at])], renderHead);
     sync('files', [t.worktree, slug(), t.archived, data.cards.filter((c) => c.kind === 'diagram'), (data.asides || []).map((a) => [a.id, a.anchor && a.anchor.quote, a.graphs])], renderFiles);
     sync('stub', [t.stub, t.sessions.length, t.depends_on_parent, t.ready, t.context, t.parent_pr_url], renderStub);
     sync('wait', [waitingLine(), accountNames], renderWait);
-    sync('dead', [t.sessions.map((s) => [s.name, s.live]), t.archived], renderDead);
-    sync('pinned', [data.pinned, data.cards.map((c) => [c.answered, c.answered_value, c.retracted_at]), ideaOpen, pinsFolded, cardErrors], renderPinned);
+    sync('dead', [t.sessions.map((s) => [s.name, s.live]), t.archived, t.handed_off, t.handoff_op, t.imported], renderDead);
+    sync('pinned', [data.pinned, data.cards.map((c) => [c.answered, c.answered_value, c.retracted_at]), ideaOpen, pinsFolded, cardErrors, t.handed_off, t.handoff_op, t.imported], renderPinned);
     const nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
     let changed = false;
     const leadNow = leadSession();
-    sync('chat', [data.items, pending, leadNow && [leadNow.queue, leadNow.ready, leadNow.permission_open, leadNow.needs_open, leadNow.limited_until], sendingNow, slug(), t.archived, unpinnedCards(), cardErrors, declining], () => { renderChat(); changed = true; });
+    sync('chat', [data.items, pending, leadNow && [leadNow.queue, leadNow.ready, leadNow.permission_open, leadNow.needs_open, leadNow.limited_until], sendingNow, slug(), t.archived, t.handed_off, t.handoff_op, t.imported, unpinnedCards(), cardErrors, declining], () => { renderChat(); changed = true; });
     const workingEl = $('working');
     const working = leadWorking() && !t.archived;
     const workingText = (t.lead_name || 'The lead') + ' is working';
@@ -945,7 +1013,7 @@
     const queuedTotal = Math.max(data.queued, pending.length);
     queuedNote.hidden = queuedTotal === 0;
     queuedNote.textContent = queuedTotal + ' queued: waiting for the lead to finish its turn';
-    const canSend = liveLead() && !t.archived;
+    const canSend = liveLead() && !t.archived && !frozen();
     msgEl.disabled = !canSend || uploading; sendBtn.disabled = !canSend || uploading; $('attach').disabled = !canSend || uploading;
     msgEl.placeholder = canSend ? 'Message the lead' : (t.archived ? 'Archived' : 'No live lead');
   }
@@ -958,6 +1026,10 @@
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.detail || out.error || 'http ' + res.status);
       data = out; showError('');
+      const key = out.thread.handed_off && JSON.stringify(out.thread.handed_off);
+      if (key && key !== handoffKey) {
+        try { const response = await fetch(T + '/handoff'); const state = await response.json(); if (!response.ok) throw new Error(state.detail || state.error || 'http ' + response.status); handoffState = state; handoffKey = key; } catch (e) { handoffState = { state: 'inspect-failed', at: out.thread.handed_off.at }; handoffKey = key; }
+      } else if (!key) { handoffState = null; handoffKey = null; }
       render();
     } catch (e) { showError('Could not load the thread: ' + e.message); }
     finally { busy = false; }
