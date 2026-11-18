@@ -141,3 +141,18 @@ timing out; this feature changed no settings code). Each passed 3 of 3 when run 
   that never expire, unsaved starts for non-imported threads) stand as accepted.
 
 ## Remediation rounds
+
+### Remediation 1 (after verification attempt 1, 742d6ad)
+
+Gap: when `gh` fails, pressing Export on a `done` thread reported "The pull request is merged or closed" instead of "Couldn't check the pull request".
+
+Fix (R1-1, gpt / gpt-6.1-terra, standard): `viewer/app/handoff.js:122` now gives the merged-or-closed reason only for a `merged` card or a non-null `pr_state` other than `OPEN`. A new check at `:125`, in the same place in the reason order, returns "Couldn't check the pull request" when Export is pressed at `done` and the status carries `pr_error` or a null `pr_state`. Tests are at `viewer/test/app-handoff.test.js:91-94` (the function, including `CLOSED` still being merged or closed) and `:197-207` (the route returns 409 with that sentence, and nothing is pushed).
+
+Validation after the merge (`683ceab`), `node --test viewer/test/*.test.js`:
+```text
+# tests 616
+# pass 616
+# fail 0
+```
+The two runs before this one each failed one test outside this change: `limits offers to a second request after keep talking first`, then `send now hands a queued message to the lead mid-turn` (`viewer/test/app-hub.test.js:1987`). The second picks its message by timestamp, and two messages posted in the same millisecond share one. It passed 5 of 5 alone. This change touched no machine or page code.
+
