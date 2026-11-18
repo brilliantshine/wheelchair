@@ -1,6 +1,6 @@
 ---
 slug: local-projects
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-18
 ---
 
@@ -44,8 +44,23 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 15 | Supersedes 5 and 14 where they differ: Claude rules as in the Spec (rejected entries always disabled). The card's lines are kept per CLI; each tools-getting start replaces its own CLI's lines; the card closes when no lines are left | A clean start on one CLI must not clear another CLI's problems; deleting or emptying the file must clear them | review-round-3 |
 | 16 | Supersedes 6, 10, 14 and 15 for this part: no program check and no `Project tools problem` notice. Skips and problems are written as lines to the machine service's log only. Telling Collin about broken or skipped tools moves to the follow-up (D4). IDEA.md's "finds out plainly" bullet moves to the follow-up. This also covers Decision 7's "say so": the Antigravity line goes to the log only | Three review rounds churned on notice delivery and the program check, not on loading tools; Collin chose to move them | idea-change |
 | 17 | Supersedes 13: Codex project servers are registered under the name `project_<name>` instead of probing the account's config for collisions | The probe could not reliably see the pane's environment (default account `CODEX_HOME`); a prefix makes collisions practically impossible with no probe, timeout or parsing | review-round-4 |
+| 18 | Housekeeping: Decision 3's "translates it for Codex and Antigravity" reads "for Codex" (Antigravity per Decisions 7 and 16, D1); Watch List row 2's Q3 was settled as Decision 7 | Keep the Log consistent with the Spec | review-round-5 |
+| 19 | `.mcp.json` is read only if it is a regular file of at most 32 KiB; otherwise it is "could not be read" | Never block on a pipe; keep the Codex overrides well under the single-argument limit (128 KiB on Linux) | review-round-5 |
 
 ## Spec
+
+```mermaid
+flowchart TD
+  A[Machine starts a session in its worktree] --> B{.mcp.json: regular file, at most 32 KiB, valid?}
+  B -- missing --> Z[Today's settings and argv, unchanged]
+  B -- unreadable or invalid --> L[Warning to machine log only] --> Z
+  B -- yes --> C{Role gets tools? lead, sub-lead, worker, verifier}
+  C -- no --> D[Claude: disabledMcpjsonServers lists every entry. Codex: nothing added]
+  C -- yes --> E{CLI}
+  E -- Claude --> F[enableAllProjectMcpServers; rejected entries disabled]
+  E -- Codex --> G["-c mcp_servers.project_&lt;name&gt;.* for valid servers; skips logged"]
+  E -- Antigravity --> H[No tools; line in machine log]
+```
 
 ### What this adds
 
@@ -68,6 +83,8 @@ means today's behaviour, byte for byte: same settings file, same argv.
   missing or unreadable, otherwise `{ names: [every key in mcpServers], servers: {valid
   entries only} }`. Collect a `warnings` array (used only for the log, below).
 - Missing file: no servers, no warnings.
+- Before reading, `fs.stat` the path: it must be a regular file of at most 32 KiB, or it
+  counts as unreadable (a pipe, a directory, too large). Never open a non-regular file.
 - Any read error other than "not found" (permissions, a directory named `.mcp.json`),
   unparseable JSON, or `mcpServers` missing, not an object, or an array: `mcp = null`, one
   warning (`.mcp.json could not be read: <reason>`). Never throw; the session still starts.
@@ -112,7 +129,9 @@ means today's behaviour, byte for byte: same settings file, same argv.
   - http: `mcp_servers.project_<name>.url=<toml string>`, `.enabled=true`.
   - Every key is written as `mcp_servers.project_<name>.…`, so a project server can never
     merge into a server of the same name in Codex's own config. Agents see the tool under
-    `project_<name>` in Codex and `<name>` in Claude Code.
+    `project_<name>` in Codex and `<name>` in Claude Code. Project instructions that name a
+    tool should say so (for example "the `engine` tool, `project_engine` on Codex"); the
+    README section (below) tells Collin this.
   - Skip with a warning: servers with `headers` (deferred, D3).
 - Role doesn't get tools: add nothing. The account's `config.toml` is never written.
 - No expanded value ever enters the argv, so `session.command` and `session list --full`
@@ -127,8 +146,6 @@ means today's behaviour, byte for byte: same settings file, same argv.
 
 - Session restart or replacement re-reads the file from its worktree at start.
 - The file changing mid-session has no effect until the next session start.
-- A worker's worktree is cut from the thread branch, so a `.mcp.json` added in a thread is
-  seen by sessions started after the commit that adds it.
 - A project that already commits `.mcp.json` for Collin's own Claude Code counts as a
   project with tools: its servers start, without a prompt, for the roles that get tools.
   The "no change" constraint applies to projects with no `.mcp.json`.
@@ -140,6 +157,9 @@ means today's behaviour, byte for byte: same settings file, same argv.
 - Who may change what runs: any agent that can commit to the thread branch can already run
   any program through its shell, so a `.mcp.json` it edits adds no new power. Roles without
   shell writes (reviewers, mapper) never get project tools.
+- Add a short README section "Project MCP tools": put tools in `.mcp.json` at the repo
+  root (Claude Code format), committed; which roles get them; Codex sees them as
+  `project_<name>`; Antigravity not yet.
 - `.mcp.json` servers already used by Collin's own Claude Code outside wheelchair behave the
   same there; nothing here writes the file.
 
@@ -160,7 +180,7 @@ means today's behaviour, byte for byte: same settings file, same argv.
   `enableAllProjectMcpServers`), an `env` pass-through `${KEY}` becoming `env_vars`,
   another `${...}` skipping the server (Codex), a dotted name skipped (Codex), a `headers`
   server skipped (Codex), the `project_` prefix (Codex), no expanded value in the argv, an
-  unreadable `.mcp.json` (a directory) not stopping the start, a name with a line break
+  unreadable `.mcp.json` (a directory, a named pipe, over 32 KiB) not stopping the start, a name with a line break
   logged on one line, the Antigravity warning in the log, and a warning line reaching the
   service log.
 - Manual: in a scratch repo with `.mcp.json` naming a tiny stdio server with one tool,
@@ -180,6 +200,8 @@ means today's behaviour, byte for byte: same settings file, same argv.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A Codex account that already has its own server named `project_<name>` merges with the project server, and can stop Codex starting if the transports differ | Requires Collin to have hand-named an account server with the prefix; the fix (rename one) is obvious from Codex's error | review-round-5 |
+| `.mcp.json` changing in the milliseconds between the machine reading it and Claude reading it can leave a new server unapproved (a prompt) or approved without wheelchair's checks | Needs another session to commit the file in that window; Claude validates entries itself | review-round-5 |
 
 ## Review Rounds
 
@@ -277,7 +299,7 @@ means today's behaviour, byte for byte: same settings file, same argv.
 
 ### Round 5 — 2026-11-18
 
-**Lanes:** intent: pending; mechanics: pending; cross-family: pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since the last round:**
 - Codex: collision probe removed; servers registered as `project_<name>` (Decision 17).
@@ -288,6 +310,13 @@ means today's behaviour, byte for byte: same settings file, same argv.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | `project_` prefix makes tool names differ per CLI; say so | upheld | Spec note and README section |
+| intent | minor | Decision 3 and Watch List row 2 stale | upheld | Decision 18 |
+| intent | minor | Duplicate, contradictory edge-case bullets | upheld | First one removed |
+| mechanics | blocking (re-raise) | Account server already named `project_<name>` can collide | accepted-risk | Accepted Risks: needs a hand-made account server with the prefix |
+| mechanics | blocking | File can change between wheelchair's read and Claude's | accepted-risk | Accepted Risks: millisecond window, needs a concurrent commit |
+| mechanics | blocking | Reading a named pipe blocks forever | downgraded to minor | Needs a pipe named `.mcp.json` in a worktree; fixed anyway: regular file only (Decision 19) |
+| mechanics | blocking | Huge `.mcp.json` overflows the tmux argument (E2BIG) | downgraded to minor | Real files are a few KiB; fixed anyway: 32 KiB cap (Decision 19) |
 
 ## Implementation Tasks
 
