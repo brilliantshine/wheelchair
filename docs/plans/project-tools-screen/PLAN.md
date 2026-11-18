@@ -44,6 +44,9 @@ None.
 | 17 | Sessions get only the keys their `.mcp.json` references, and only on Claude/Codex tool roles | Less exposure, same outcome | review-round-2 |
 | 18 | `wc-tools` ownership proven by a commit trailer; lease uses the sha seen at read | Never overwrite a foreign branch or a concurrent save | review-round-2 |
 | 19 | Launch reader rejects a symlinked `.mcp.json` too | Settings and launch agree | review-round-2 |
+| 20 | Supersedes 19: launch is unchanged; only Settings refuses a symlinked file | Claude reads the file itself, so rejecting it in the reader doesn't stop launch (`machine/adapters/claude.js:69-74`) | review-round-3 |
+| 21 | Managed keys only in env values and header values; refs elsewhere never injected | Keeps key values out of tool argv via Claude's expansion | review-round-3 |
+| 22 | Default branch resolved live with `ls-remote --symref`; machine commands bounded at 60 s | Renames and hung git/gh | review-round-3 |
 
 ## Spec
 
@@ -65,22 +68,29 @@ project's tools and lets him add, change and remove them. Works at phone width.
   only key changes. Every `gh` call passes `--repo <owner/name>` and runs non-interactively.
 - The machine runs `git fetch origin` (including `wc-tools` if it exists), then looks for an
   open tools PR: `gh pr list --repo R --head wc-tools --base <default branch> --state open
-  --json number,url,headRefOid,isCrossRepository` (default branch found as in
-  `machine/service.js:529-542`), keeping only same-repository results. If one exists the
+  --json number,url,headRefOid,isCrossRepository` (the current remote default, from
+  `git ls-remote --symref origin HEAD`, not the cached `origin/HEAD`; if it differs from the
+  cached one the machine updates `origin/HEAD` with `git remote set-head origin --auto` so new
+  threads, `machine/service.js:529-542`, start from the same branch), keeping only same-repository results. If one exists the
   source ref is `origin/wc-tools` and the section says "Changes waiting to merge" with the
   link; otherwise the source ref is `origin/<default branch>`. Collin's working checkout is
   never read or touched.
 - If `gh` fails (not installed, no login, network), the section still shows the tools from
   the default branch, with "couldn't check for a waiting pull request: <reason>"; tool
-  changes and key removal are disabled until a reload succeeds; setting keys still works.
+  changes and key removal are disabled until a reload succeeds. The read token then records
+  the PR state as `unknown`; a key-only Save with an `unknown` token skips the PR-open
+  comparison in Saving step 1 (setting a key changes no file and no branch) but still checks
+  the key-store revision.
 - The file is read from the source ref with `git ls-tree` / `git cat-file`. Missing: empty
   list. An entry that is not a regular blob (symlink, submodule, tree) is unreadable, reason
-  "not a regular file". Otherwise the same checks as `machine/lib/project-mcp.js` apply, with
+  "not a regular file; edit it by hand or Start over". Session launch is unchanged and may
+  still follow a symlink (Accepted Risks). Otherwise the same checks as `machine/lib/project-mcp.js` apply, with
   the same reasons.
 - Unreadable file: the section shows the reason, offers no editing, and offers "Start over"
   (an empty tool list, saved as below, writing a regular file in place of whatever was there).
 - The read returns a **read token**: the source ref, its sha, and the sha `origin/wc-tools`
-  had at the fetch (or "absent"). The screen sends it back unchanged on Save and Remove.
+  had at the fetch (or "absent"), the PR state (open, none or unknown), and the key store's
+  revision (a counter the machine bumps on every key write). The screen sends it back unchanged on Save and Remove.
 - Each tool shows its name, kind (command or web address), what it runs, and its settings
   (env names; plain values shown, key values shown as "set" or "not set" on this machine).
 - Each tool shows any reason it would be skipped, by the machine's validator or by Codex,
@@ -94,15 +104,11 @@ project's tools and lets him add, change and remove them. Works at phone width.
 - Notes on the section: Antigravity agents don't get project tools; keys are kept on this
   machine only, so another machine running this project needs its own keys entered.
 
-### Launch reader change
-- `readProjectMcp` rejects a `.mcp.json` that is a symlink (checked with `lstat`) with the
-  warning "not a regular file", matching Reading. Settings and session launch give the same
-  answer for the same commit.
-
 ### Editing
 - Add / edit form fields: name; kind (command or web address); for command: command,
   arguments (one per line), settings (name + value, each value marked plain or key); for web
-  address: URL and headers (name + value, plain or key).
+  address: URL and headers (name + value, plain or key). Adding a header shows "Codex agents
+  don't get tools with headers" on the form right away.
 - Remove (a tool) asks for confirmation.
 - Fields the form doesn't know, and entries it can't represent, are kept as they were and
   shown read-only with "edit in the file".
@@ -113,14 +119,23 @@ project's tools and lets him add, change and remove them. Works at phone width.
   `${NAME}` (env value or header value); for env entries the setting name equals the key name
   so Codex passthrough works (`machine/adapters/codex.js:84-92`). Two tools using the same key
   name share one value; the form shows "shared with <other tool>".
-- Any `${NAME}` already in the file, hand-written or not, is treated as a key: shown set or
-  not set, and settable unless reserved.
+- Keys live only in two places: an env value exactly `${NAME}` and a header value containing
+  `${NAME}`. A `${NAME}` anywhere else (command, args, URL) is not a managed key and is never
+  injected, so a key value can't reach a tool's own argv through Claude's expansion; such a
+  reference is shown read-only. A key name used both in an eligible place and elsewhere is
+  refused on Save ("<name> is also used in <field>") and flagged on Read.
+- A hand-written reference in an eligible place to a non-reserved name is a key: set or not
+  set, settable. A reference to a reserved name is left to the session's normal environment:
+  not a key, no flag.
+- A key shown "not set" on this machine is also listed among the tool's skip reasons
+  ("needs <name>, not set on this machine").
 - Key names must match `^[A-Za-z_][A-Za-z0-9_]*$`. Reserved names, refused by form and machine
   API and shown as "can't be set here: it would change how the agent itself runs":
   - process and loader: `PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `TERM`, `TMPDIR`, `PWD`,
     `LANG`, `TZ`, `NODE_OPTIONS`, `NODE_PATH`, `NODE_EXTRA_CA_CERTS`, `PYTHONPATH`,
     `PYTHONHOME`, `SSL_CERT_FILE`, `SSL_CERT_DIR`, `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`
-    (any case); prefixes `LD_`, `DYLD_`, `LC_`, `XDG_`, `TMUX`, `SSH_`, `DBUS_`, `GIT_`;
+    (any case); prefixes `LD_`, `DYLD_`, `LC_`, `XDG_`, `TMUX`, `SSH_`, `DBUS_`, `GIT_`, `GH_`; exact
+    `GITHUB_TOKEN` (they change which account the agent's own `gh` and git use);
   - wheelchair: prefix `WHEELCHAIR_`;
   - the CLIs' own login and config: prefixes `CLAUDE_`, `CODEX_`, `ANTHROPIC_`; exact
     `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID`; and any name an
@@ -144,7 +159,8 @@ project's tools and lets him add, change and remove them. Works at phone width.
 - One save or removal per project at a time on the machine (a lock); a second waits.
 - Order, with nothing written until step 3:
   1. Fetch. Refuse with "changed since you opened it" (the screen reloads) if the source
-     ref's sha, the `wc-tools` sha, or whether a tools PR is open differs from the read token.
+     ref's sha, the `wc-tools` sha, the PR state or the key-store revision differs from the
+     read token.
   2. If the tool list changed: serialize the candidate (2-space JSON, trailing newline) and run
      the reader's checks on it. A whole-file failure blocks Save with the reason. Per-entry
      skip reasons and the Codex size result are warnings and don't block, for edited and
@@ -170,6 +186,10 @@ project's tools and lets him add, change and remove them. Works at phone width.
 - The section shows the PR link and that new threads get the change once it is merged.
 - Errors (push rejected, no `gh` login, PR creation failed) are shown in plain words; keys
   stored in step 3 stay stored.
+- Every git and `gh` command these routes run has a 60-second limit on the machine (kill the
+  child on expiry; `commandAsync` at `machine/service.js:87-99` has none today, so add an
+  optional timeout); the lock and temporary worktree are released in a `finally`, whatever
+  happens.
 - Deadlines: the hub calls the new read, save and remove routes with a 120-second timeout
   (`viewer/app/machine-client.js:64` takes a timeout argument; the default is 5 seconds). If
   Save times out or the connection drops, the screen says "Save may still be finishing" and
@@ -186,8 +206,7 @@ account-level tools; merging the PR.
   environment and absent from argv, `session.command` and persisted sessions; reserved key
   names refused; stale-sha Save refused; leftover `wc-tools` branch recreated and PR retried;
   symlinked `.mcp.json` read as unreadable and replaced by Start over; key-only save opens no PR;
-  a checkout alias and a thread worktree resolve to the same key store; launch rejects a
-  symlinked `.mcp.json`; stale Save writes no keys; Remove refused when the key became
+  a checkout alias and a thread worktree resolve to the same key store; stale Save writes no keys; Remove refused when the key became
   referenced; foreign `wc-tools` branch refused; concurrent lease failure; only referenced,
   non-reserved keys reach Claude/Codex tool roles; gh failure still lists tools.
 - `node --test viewer/test/*.test.js`: hub routes forward keys without storing them; auth and
@@ -200,6 +219,7 @@ account-level tools; merging the PR.
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | A tool that needs a reserved name (for example `OPENAI_API_KEY`) can't get its key from the screen; the screen says why | Setting it would change the CLI's own login or runtime; renaming needs adapter support outside this feature | 2 |
+| Settings refuses a symlinked `.mcp.json` while session launch may still follow it | Rare; making launch refuse it needs Claude-side suppression outside this feature | 3 |
 
 ## Review Rounds
 
@@ -256,7 +276,7 @@ Decision Log 10-14.
 
 ### Round 3 — 2026-11-18
 
-**Lanes:** intent — pending; mechanics — pending; cross-family: pending.
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 2:** Reading (GitHub repo pinning, `gh` flags and failure fallback,
 read token, Codex size check); new "Launch reader change" (symlink rejected at launch);
@@ -267,6 +287,20 @@ deadline and reload-not-retry); Validation; Accepted Risks row 1; Decision Log 1
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Keyed web tools never reach Codex; form silent | upheld | Form note on adding a header |
+| intent | minor | GH_TOKEN / GITHUB_TOKEN not reserved | upheld | Added to reserved list |
+| intent | minor | `${HOME}` refs flagged though they work | upheld | Reserved-name refs aren't keys, no flag |
+| intent | minor | Foreign-branch refusal is a dead end | upheld | Pending: branch design (needs card) |
+| intent | minor | Unset key not shown as a skip reason | upheld | Listed as a skip reason |
+| mechanics | blocking | RE-RAISE: open-PR path and empty range bypass ownership | upheld | Pending: branch design (needs card) |
+| mechanics | blocking | RE-RAISE: race between push and PR creation | upheld | Pending: branch design (needs card) |
+| mechanics | blocking | Stale tracking ref after branch deletion | upheld | Pending: branch design (needs card) |
+| mechanics | blocking | Key-only Save with `gh` unavailable contradicts | upheld | `unknown` PR state in token |
+| mechanics | major | Key-only replay after timeout | downgraded to minor: replays Collin's own earlier value | Key-store revision in token |
+| mechanics | blocking | RE-RAISE: symlink reject doesn't stop Claude | downgraded to major, accepted-risk | Log 20; Accepted Risks |
+| mechanics | blocking | `${NAME}` in args puts values in tool argv | downgraded to major: needs a rule, not a wrong build | Log 21 |
+| mechanics | major | Cached `origin/HEAD` after rename | upheld | Log 22 |
+| mechanics | major | Hung git/gh holds the project lock | upheld | Log 22 |
 
 ## Implementation Tasks
 
@@ -274,5 +308,7 @@ deadline and reload-not-retry); Validation; Accepted Risks row 1; Decision Log 1
 |---|-----------|--------------------|------|-----------|------------|--------|
 
 ## Log
+
+Round 3 was the third round without a clean result since Collin's last decision; budget stop. The `wc-tools` shared-branch design (Log 9, 12, 18) drew findings in all three rounds. Put to Collin.
 
 Watch List items 1-6 (Antigravity note, Codex flags, project identity, unknown fields, key values in argv, second save) were settled as Decision Log 4-9.
