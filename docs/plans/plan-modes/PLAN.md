@@ -216,8 +216,8 @@ it does anything else in review (unless a `Build accepted:` line came first).
 Matching is by bullet text. The lead keeps one item's bullet text identical across
 reposts (same `id`, same `text`), and the `Pending pull-back:` and `Pulled back:` entries
 quote that text exactly. A press whose text already has a `Pulled back:` entry is a
-repeat and changes nothing. The lead never gives a new Deferred item a bullet text that
-an earlier item in this thread used.
+repeat and changes nothing. The lead never gives a Deferred item a bullet text quoted by a
+`Pulled back:` or `Pending pull-back:` entry unless it is that same item.
 
 ### The `deferred` card (D3, D13)
 
@@ -601,6 +601,7 @@ exit. Downgrades and declines cite evidence.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent (claude) | minor | "Never reuse text" is wider than needed | upheld | Narrowed to texts quoted by pull-back entries |
 
 ## Prior Work
 
