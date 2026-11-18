@@ -782,6 +782,21 @@ npm --prefix viewer run test:browser
 | mechanics | major | `set-branch` skips upstream setup | upheld | Both checkout paths set upstream |
 | mechanics | major | System producers can queue work while frozen | upheld | `enqueue` drops messages for frozen threads |
 
+### Round 7 — 2026-11-17
+
+**Lanes:** intent and mechanics; cross-family: yes.
+
+**Changed since Round 6:**
+- Export: `.json.new` recovered by Download again and at hub start.
+- Frozen threads: `enqueue` drops messages for frozen threads.
+- Operations: `claim_landed` and `applied` flags; Stop kills surviving tmux sessions by name; Advance refuses a worktree not on its branch.
+- Restart order: orphan lead sessions killed and their queued context moved first.
+- Import: `known` includes a local `wc/<id>` branch; other-machine note.
+- Machine: claim-push result from last tip read; `kill`; upstream set on both checkout paths.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
