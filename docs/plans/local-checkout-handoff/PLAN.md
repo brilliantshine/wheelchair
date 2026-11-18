@@ -253,6 +253,21 @@ Reported severity is the reviewer's opinion; the lead verdict
 (`upheld`/`downgraded`/`declined`/`accepted-risk`/`user-decision`) is what gates the
 exit. Downgrades and declines cite evidence.
 
+### Round 2 — 2026-11-18
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 1:** Behaviour rewritten: terms (record phases, kept sets pinned
+under `refs/wheelchair/kept/`, drop-by-verified-sha, clean check flags, `git switch
+--no-guess --no-overwrite-ignore`, kept-ignored list); refusals list (service root,
+agents' copies, submodule changes, return-branch preflight); Try judged by actual HEAD;
+Switch back with version check and pinning commits made while trying; status read-only
+under the queue with Dismiss; reconcile of interrupted operations. Record shape and
+validation list updated. Decisions 11-12.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 Parts of the Spec already built before this plan reached Stage 3 — adopted from outside
