@@ -39,6 +39,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 10 | Supersedes 6 and 8: problems are warnings only (no server is removed), and the hub shows them to Collin itself as a system `needs` card; no lead.md change and no `note` plumbing | Intent review: removing on a wrong PATH guess hides a working tool, and relying on the lead to relay misses the lead's own start; the hub already posts a system card for a failed Codex preflight (`viewer/app/sessions.js:253`) | review-round-1 |
 | 11 | Supersedes 9: wheelchair never expands `${...}` into the Codex argv. An `env` entry whose value is exactly `${NAME}` with the same key `NAME` becomes `env_vars=["NAME"]` (Codex reads it from the session's environment; verified on codex-cli 0.169.0); any other `${...}` in `command`, `args`, `env` or `url` skips that server for Codex with a warning | The launch argv is stored as `session.command` and returned by `session list --full`, so expanded secrets would leak | review-round-1 |
 | 12 | Codex server names must match `[A-Za-z0-9_-]+`; others are skipped for Codex with a warning | Codex's `-c` key parser splits on every dot and keeps quotes (verified: `mcp_servers."a.b"` fails to load) | review-round-1 |
+| 13 | Codex: a project server whose name matches a server in the account's own Codex config is skipped with a warning, instead of overriding it | `-c` overrides merge field by field into the account table (env keys survive, mixed transports are rejected); skipping is the only safe rule | review-round-2 |
+| 14 | One open `Project tools problem` card per thread, keyed on its warning lines, closed by the hub when a later tools-getting start has no warnings | Avoid a stack of identical cards; system cards cannot be closed by hand | review-round-2 |
 
 ## Spec
 
@@ -71,6 +73,11 @@ means today's behaviour, byte for byte: same settings file, same argv.
   - http (`type: "http"`): `url` is a non-empty string.
   Anything else (`null`, wrong types, other `type`) is dropped for both CLIs.
 - Warnings never contain an expanded value: they quote the file's own text.
+- Warnings are only collected for roles that get tools (and for the Antigravity case
+  below). Roles that don't get tools still read the file to disable its entries, but report
+  nothing.
+- What is read is the file on disk in the session's worktree at start, which is also what
+  Claude Code reads, so both always agree.
 
 ### Program check (warning only)
 
@@ -78,17 +85,20 @@ For roles that get tools, each valid stdio server's `command` is checked. A fail
 warning (`tool "<name>": program "<command>" not found on <machine>`) and changes nothing
 else: the server is still passed to the CLI.
 - Contains `${`: not checked.
-- No `/`: looked up on the PATH of the machine service process (the CLI inherits it;
-  `commandText` adds variables but leaves PATH alone, `machine/service.js:613`).
+- No `/`: looked up on the PATH the CLI will get. Panes inherit the tmux server's global
+  environment, not the service's, so use `tmux show-environment -g PATH` when a tmux server
+  is already running, and the service process's PATH otherwise (a new tmux server takes
+  it from the service).
 - Relative with a `/`: resolved against the worktree (the CLI's working directory).
 - Absolute: must exist and be executable.
 
 ### Claude Code (`machine/adapters/claude.js` `command`)
 
-- Role gets tools, file has valid servers: add `enableAllProjectMcpServers: true` to `settings`.
-  Entries dropped as invalid go into `disabledMcpjsonServers`.
-- Role doesn't get tools, file has any server entries: add
-  `disabledMcpjsonServers: [<every name in mcpServers>]`.
+- Role gets tools, file has entries: every entry wheelchair rejected (invalid, or a
+  `type` it doesn't support such as `sse`) goes into `disabledMcpjsonServers`, even when
+  none are valid. Add `enableAllProjectMcpServers: true` only when at least one entry is valid.
+- Role doesn't get tools, file has entries: `disabledMcpjsonServers: [<every name in mcpServers>]`.
+- Unparseable file: settings unchanged (Claude cannot read it either).
 - Either way the session never shows the project-server approval prompt. Claude does its
   own `${...}` expansion; wheelchair passes nothing expanded.
 
@@ -102,9 +112,11 @@ else: the server is still passed to the CLI.
     absent), `.env={K="v",...}` with the literal entries (empty table if none),
     `.env_vars=[...]` with the pass-through keys (empty array if none), `.enabled=true`.
   - http: `mcp_servers.<name>.url=<toml string>`, `.enabled=true`.
-  - Always setting these fields means an account server of the same name cannot leak its
-    own args, env or `enabled=false` into the project one; the project definition wins.
-    Other inherited fields (timeouts, tool filters) are accepted.
+  - Name collisions: when the file has servers, run `codex mcp list --json` with the
+    session's login environment (as `machine/lib/aside-turns.js:113` does). A project
+    server whose name is already in the account's config is skipped with a warning
+    (`tool "<name>" is also set up in this Codex account; rename it in .mcp.json`). If the
+    list command fails, add no project servers and warn once.
   - Skip with a warning: servers with `headers` (deferred, D3).
 - Role doesn't get tools: add nothing. The account's `config.toml` is never written.
 - No expanded value ever enters the argv, so `session.command` and `session list --full`
@@ -119,15 +131,19 @@ else: the server is still passed to the CLI.
 
 - The machine returns `mcp_warnings` (array of strings) in its start response and keeps it
   on the session record.
-- When the hub receives a start response with a non-empty `mcp_warnings`, wherever it
-  handles that response (direct start, queued start promoted later, recovered or duplicate
-  start), it posts a system `needs` card in the thread, the same way as the Codex preflight
-  card (`viewer/app/sessions.js:253`):
-  - title: `Project tools problem`
-  - body: the session's title or role, then each warning on its own line, then: `Agents
-    read .mcp.json from the thread's branch, so it must be committed and pushed to take effect.`
-  - Not posted if the thread already has an unanswered system card with the same body.
-- No change to `lead.md`, `wc.js` output or the start `note`.
+- When the hub receives a start response (direct start, or a queued start promoted later):
+  - Non-empty `mcp_warnings`: if the thread has no open system card titled `Project tools
+    problem`, post one (`addCard(..., { system: true })`, as at `viewer/app/sessions.js:253`).
+    If one is open and already lists every warning line, do nothing. Otherwise mark the old
+    one answered and post a new one listing the union of lines.
+  - Body: each warning on its own line, then `Agents read .mcp.json from their own copy of
+    the thread's branch, so a change takes effect once it is committed there.`
+  - Empty `mcp_warnings` from a role that gets tools while the file has servers (the machine
+    returns `mcp_tools: true` in that case): mark any open `Project tools problem` card
+    answered (`card.answered = true`, as the hub does for "Sessions ended",
+    `viewer/app/threads.js:166`).
+- No change to `lead.md`, to the start `note`, or to `wc.js` output except that `--full`
+  output may include the new session fields.
 
 ### Edge cases
 
@@ -135,6 +151,11 @@ else: the server is still passed to the CLI.
 - The file changing mid-session has no effect until the next session start.
 - A worker's worktree is cut from the thread branch, so a `.mcp.json` added in a thread is
   seen by sessions started after the commit that adds it.
+- A project that already commits `.mcp.json` for Collin's own Claude Code counts as a
+  project with tools: its servers start, without a prompt, for the roles that get tools.
+  The "no change" constraint applies to projects with no `.mcp.json`.
+- A session the machine recovers after a service restart, before its record was saved,
+  may come back without its warnings; the next start shows them again (Accepted Risks).
 - `.mcp.json` must be committed and on the branch a session's worktree is cut from (the
   fetched default branch for a new thread). A local, uncommitted or gitignored file is not
   seen; when the file is missing nothing is shown, as for any project without tools.
@@ -161,7 +182,11 @@ else: the server is still passed to the CLI.
   skipped (Codex), a `headers` server skipped (Codex), no expanded value in the argv, and
   the Antigravity warning.
 - A viewer test covers a start response with `mcp_warnings` producing one system `needs`
-  card, and a repeat with the same warnings producing none.
+  card, a repeat with the same warnings producing none, a new warning replacing it with the
+  union, and a clean tools-getting start closing it.
+- Machine tests also cover: a no-tools role reporting no warnings, every entry invalid
+  (Claude disables them all, no `enableAllProjectMcpServers`), a Codex name collision
+  skipped, and the PATH used for the check.
 - Manual: in a scratch repo with `.mcp.json` naming a tiny stdio server with one tool,
   start a Claude worker and a Codex worker; each reaches ready without a prompt, `/mcp`
   inside each session shows the server connected, and each calls the tool once.
@@ -178,6 +203,7 @@ else: the server is still passed to the CLI.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| Warnings for a start interrupted by a machine service restart between tmux start and record save can be lost | Narrow window; only the notice is lost, the tools still load, and the next start re-reports | review-round-2 |
 
 ## Review Rounds
 
@@ -204,7 +230,7 @@ else: the server is still passed to the CLI.
 
 ### Round 2 — 2026-11-18
 
-**Lanes:** intent: pending; mechanics: pending; cross-family: pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since the last round:**
 - Warnings are warning-only (no server removed) and the hub posts a system `needs` card; lead.md, `note` and `session list` plumbing dropped (Decision 10).
@@ -213,6 +239,31 @@ else: the server is still passed to the CLI.
 - New per-entry validation rules; program check rules (PATH, worktree-relative, `${` unchecked).
 - Edge cases: committed-file requirement; thread-edited `.mcp.json` adds no new power.
 - Validation list and manual check updated.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Dedup keyed on the session name lets the same warning post at every start | upheld | One open card keyed on warning lines (Decision 14) |
+| intent | minor | File-level warnings fire for roles that never get tools | upheld | Warnings only for roles that get tools |
+| intent | minor | An existing committed `.mcp.json` now starts servers; say it counts as tools | upheld | Edge case line |
+| mechanics | blocking | Codex `-c` overrides merge into a same-name account server | upheld | Skip on collision (Decision 13) |
+| mechanics | blocking | Worktree file read on restart may be uncommitted; card push text wrong | downgraded to minor | The worktree on disk is what Claude reads too, so both agree; only agents with shell can write it (round 1 decline). Card text and Spec sentence corrected |
+| mechanics | blocking | All entries rejected leaves Claude free to prompt for an SSE entry | upheld | Rejected entries always disabled |
+| mechanics | major | Program check uses the service PATH, but panes get tmux's global env | upheld | Use tmux global PATH when a server runs |
+| mechanics | major | Warning card has no close condition | upheld | Closed by a later clean start (Decision 14) |
+| mechanics | major | Warnings lost if the service restarts mid-start | accepted-risk | Accepted Risks |
+| mechanics | minor | `mcp_warnings` appears in `--full` output | upheld | Spec allows it |
+
+### Round 3 — 2026-11-18
+
+**Lanes:** intent: pending; mechanics: pending; cross-family: pending.
+
+**Changed since the last round:**
+- Codex: same-name account servers make the project server skip with a warning (Decision 13), found via `codex mcp list --json`.
+- Claude: rejected entries are always disabled; `enableAllProjectMcpServers` only with at least one valid entry.
+- Program check PATH comes from the tmux global environment when a server runs.
+- Warnings only for roles that get tools; worktree file on disk is the source for both CLIs.
+- One open `Project tools problem` card per thread, keyed on warning lines, closed by a clean start (Decision 14); `mcp_tools` flag in the start response.
+- Edge cases: existing `.mcp.json` counts as tools; restart-gap accepted risk.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
