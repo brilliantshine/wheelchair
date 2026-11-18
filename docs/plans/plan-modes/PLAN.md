@@ -73,6 +73,10 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D38 | On a second all-deferred failure nothing is saved until Collin answers; "defer and finish" ends with a sub-lead `result` and no further verifier pass | Every answer reaches a defined end | review-round-4 |
 | D39 | Pull-backs are checked on arrival, logged if a round is running, and applied by row before approval or the next brief | A valid pull-back isn't lost to a card repost | review-round-4 |
 | D40 | Every deferral path, including a mode switch, honours `Pulled back:` Decision Log entries | Closes the mode-switch hole in D34 | review-round-4 |
+| D41 | A restarted lead in an approved lighter-mode or changed plan trusts no earlier approval unless a sub-lead exists; it posts a fresh approval | Binds Start building to an approval of the current plan across restarts | review-round-4 |
+| D42 | The all-deferred re-check is recorded in PLAN.md's Log; a restarted sub-lead in `verifying` starts a new attempt on the current commit | Recoverable verification deferral | review-round-4 |
+| D43 | Lead restart carries a stub thread's summary | The follow-up's deferred list survives a lead death before IDEA.md | review-round-4 |
+| D44 | Collin chose "keep going" on the review budget: fix the restart-timing findings and continue reviewing | Collin's call | user |
 
 ## Spec
 
@@ -148,6 +152,14 @@ The moment the lead accepts a Start building press (before it starts the sub-lea
 mode and the Deferred list are fixed: a later request to change the mode, or a
 pull-back, is answered with that and changes nothing. If starting the sub-lead then
 fails, they stay fixed; the lead retries the start as lead.md already says.
+
+Lead restart while PLAN.md says `approved`, in a lighter mode or after a mode change or
+pull-back: if `session list` shows a sub-lead of this thread (live, or ended after writing
+`implementing`), the build was accepted: mode and Deferred stay fixed, and the lead
+carries on from step 7. Otherwise the restarted lead trusts no earlier approval: it
+retracts any open approval card, ignores Start building presses for any approval card it
+did not post itself, and posts a fresh approval card with a fresh Ready check. A thorough
+thread with no mode change or pull-back restarts exactly as today.
 
 ### PLAN.md `## Deferred` (D11)
 
@@ -242,7 +254,15 @@ attempt has reported, as in sub-lead.md step 4–5), before step 5:
 4. If every gap was deferred, there is no remediation: the sub-lead starts a new
    verification attempt on the commit from step 2 (the failed commit plus the Deferred
    rows), using the same verifier selection rules as sub-lead.md step 3.
-   At most one such re-check per build.
+   At most one such re-check per build. When every gap is deferred, step 2's commit also
+   adds the line `All-deferred re-check used` to PLAN.md's Log, so a restarted sub-lead
+   knows the allowance is spent.
+
+Sub-lead restart while PLAN.md says `verifying` in a lighter mode: the new sub-lead reads
+PLAN.md's Deferred rows and Log, and starts a new verification attempt on the current
+commit (the verifier sees whatever Deferred rows were committed). Gaps the earlier
+sub-lead had asked about but not committed are simply found again and triaged again.
+The lead's brief for a replacement sub-lead says this.
 A deferred gap never counts toward the two-attempt rule. If the one all-deferred
 re-check has already run in this build and another attempt fails, the lead does not
 answer step 1 itself; nothing is saved to Deferred yet. It asks Collin a `question`:
@@ -285,6 +305,11 @@ it), then: what was
 ### Where the changes go
 
 - `protocol/app/lead.md`: steps 2, 4, 5, 6, 7, 8 as above; restart reads `mode:`.
+- `viewer/app/threads.js` `restartLead`: when the thread has a stub `context`, the
+  restart message also carries it (as a `stub_summary` field in the thread state JSON,
+  with its `commits` line), so a stub lead that dies before writing IDEA.md does not lose
+  it. lead.md's restart section says to use it as the stub context when present and no
+  IDEA.md exists yet.
 - `protocol/app/reviewer.md`, `verifier.md`, `sub-lead.md`: the rules above.
 - `protocol/app/cards.md` (kind table) and `cards-lead.md` (a `deferred` section).
 - `protocol/templates/IDEA.md` (`mode:` frontmatter line with the three values and default)
@@ -305,7 +330,8 @@ thorough mode, the stub mechanism, the app's slug and document rules.
 
 ### Validation
 
-- `node --test viewer/test/*.test.js` passes, with new tests: `deferred` accepted from a
+- `node --test viewer/test/*.test.js` passes, with new tests: a restart of a stub thread's
+  lead carries `stub_summary` in its context; `deferred` accepted from a
   lead with both modes and an empty list, refused from a sub-lead, refused with an unknown
   mode or extra field; it is pinned and a second replaces the first; it stays in the pins
   after Start building; a `removed` press on it reaches the lead as
@@ -430,12 +456,24 @@ exit. Downgrades and declines cite evidence.
 | intent (claude) | minor | D25 and D35 wording both remain and contradict | upheld | D25 wording removed and marked superseded |
 | intent (claude) | minor | "Defer and finish" exit undefined against today's verification exit | upheld | Folded into today's surviving-gap question (D35) |
 | mechanics (gpt) | blocking | Second all-deferred failure saves rows before asking; answers lack a terminal state | upheld | D38 |
-| mechanics (gpt) | blocking | Lead dies after committing the revised plan as approved, before a new approval card; old pressed card passes the guards | user-decision | Part of the restart-timing fork put to Collin |
-| mechanics (gpt) | major | Lead dies after accepting Start building, before `implementing` | user-decision | Part of the restart-timing fork |
+| mechanics (gpt) | blocking | Lead dies after committing the revised plan as approved, before a new approval card; old pressed card passes the guards | upheld | Collin chose keep going (D44); D41 |
+| mechanics (gpt) | major | Lead dies after accepting Start building, before `implementing` | upheld | D44; D41 |
 | mechanics (gpt) | major | A pull-back waiting for triage can be lost to a card repost | upheld | D39 |
 | mechanics (gpt) | major | Mode switch can re-defer a pulled-back item | upheld | D40 |
-| mechanics (gpt) | major | Sub-lead dies mid verification deferral; re-check state unrecoverable | user-decision | Part of the restart-timing fork |
-| mechanics (gpt) | major | Stub lead's restart loses the stub summary | user-decision | Pre-existing for every stub; part of the restart-timing fork |
+| mechanics (gpt) | major | Sub-lead dies mid verification deferral; re-check state unrecoverable | upheld | D44; D42 |
+| mechanics (gpt) | major | Stub lead's restart loses the stub summary | upheld | D44; D43 |
+
+### Round 5 — 2026-11-17
+
+**Lanes:** intent: claude; mechanics: other family; cross-family: yes.
+
+**Changed since Round 4:**
+- D25 wording removed; second all-deferred failure goes to Collin with defined ends (D35, D38).
+- Pull-backs checked on arrival, applied by row after triage (D39); honoured on every deferral path (D40).
+- Restart rules: approval trust (D41), sub-lead in verifying (D42), stub summary carried on lead restart (D43, small app change).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
