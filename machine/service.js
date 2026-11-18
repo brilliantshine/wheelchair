@@ -17,7 +17,7 @@ const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync, spawn } = require('node:child_process');
+const { spawnSync, spawn, execFile } = require('node:child_process');
 const { pipeline } = require('node:stream/promises');
 const adapters = require('./adapters');
 const { limitedUntil } = require('./lib/limits');
@@ -359,6 +359,7 @@ class MachineService {
     const markers = await readJson(this.archiveMarkersPath, { archiving: [], archived: [] });
     this.archivingThreads = new Set(markers.archiving || []);
     this.archivedThreads = new Set(markers.archived || []);
+    this.checkKimiVersion();
     await this.recoverFromTmux();
     await mkdir(path.join(this.stateDir, 'spool', 'cards'));
     await mkdir(path.join(this.stateDir, 'spool', 'events'));
@@ -393,7 +394,7 @@ class MachineService {
       const pane = this.tmux(['capture-pane', '-p', '-t', name]);
       const where = this.tmux(['display-message', '-p', '-t', name, '#{pane_current_path}']);
       this.sessions[name] = { name, thread_id: parsed[1], role: parsed[2], status: 'ready', recovered: true,
-        cli: pane.ok && pane.stdout.includes('Antigravity CLI') ? 'agy' : pane.ok && pane.stdout.includes('Codex') ? 'codex' : pane.ok && /│\s*>/.test(pane.stdout) && /\b(?:Ask When Needed|Never Ask)\b[^\n]*\bthinking\b/i.test(pane.stdout) && /context:/.test(pane.stdout) ? 'kimi' : 'claude',
+        cli: pane.ok && /│\s*>/.test(pane.stdout) && /^\s*(?:Ask When Needed|Never Ask)\b[^\n]*\bthinking\b/im.test(pane.stdout) && /^\s*context:\s*\d+%/im.test(pane.stdout) ? 'kimi' : pane.ok && pane.stdout.includes('Antigravity CLI') ? 'agy' : pane.ok && pane.stdout.includes('Codex') ? 'codex' : 'claude',
         worktree: where.ok ? where.stdout.trim() : '', created_worktree: false, token: '', created_at: new Date().toISOString() };
       if (this.sessions[name].cli === 'kimi') this.sessions[name].end_reason = 'Lost track of this Kimi Code session after a machine restart; restart it';
       changed = true;
@@ -583,7 +584,7 @@ class MachineService {
   async startNamed(input, name) {
     const adapter = adapters[input.cli];
     if (!adapter) die('cli must be claude, codex, agy or kimi');
-    if (input.cli === 'kimi') { const status = this.cliStatus('kimi'); if (!status.installed) die('Kimi Code is not installed'); if (status.problem) die(status.problem); }
+    if (input.cli === 'kimi') { await this.checkKimiVersion(); const status = this.cliStatus('kimi'); if (!status.installed) die('Kimi Code is not installed'); if (status.problem) die(status.problem); }
     const account = input.account || { id: `default-${adapter.provider}`, dir: null };
     if (!account || typeof account.id !== 'string') die('invalid account');
     const dir = accountDir(account.dir, account.id);
@@ -591,6 +592,7 @@ class MachineService {
     if (dir) adapter.seed(dir, account.id);
     await adapter.prepare?.(dir);
     const options = startOptions(input);
+    if (input.cli === 'kimi') options.effort = null;
     const createdWorktree = !input.worktree;
     const reserved = input.role === 'worker' && input.worktree ? path.resolve(input.worktree) : null;
     if (reserved) this.refuseSharedWorktree(reserved, name);
@@ -721,6 +723,7 @@ class MachineService {
           const rows = data.subarray(0, end + 1).toString('utf8').split('\n').map(line => { try { return JSON.parse(line); } catch { return null; } });
           const turns = rows.filter(row => row?.type === 'turn.ended' && row.agentId === 'main' && Number.isInteger(row.turnId) && (session.kimi_last_turn === undefined || row.turnId > session.kimi_last_turn)).sort((a,b) => a.turnId-b.turnId);
           for (const row of turns) {
+            if (session.kimi_last_turn !== undefined && row.turnId <= session.kimi_last_turn) continue;
             if (await this.kimiSpoolWaiting(session)) break;
             let event = { type: 'turn-ended', turn_id: row.turnId, transcript_path: file };
             if (row.reason === 'cancelled') event.interrupted = true;
@@ -1279,16 +1282,36 @@ class MachineService {
     for (const folder of folders.filter(e => e.isDirectory())) {
       try { const record = JSON.parse(fs.readFileSync(path.join(root, folder.name, 'wheelchair-account.json'), 'utf8')); if (record.id !== folder.name || !adapters[record.cli] || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(record.id)) continue; accounts.push({ id: record.id, cli: record.cli, ...adapters[record.cli].loginStatus(path.join(root, folder.name)) }); } catch {}
     }
+    for (const entry of accounts) delete entry.authenticated;
     if (kimi.problem) for (const entry of accounts) if (entry.cli === 'kimi') { entry.logged_in = false; delete entry.problem; }
     return { version: this.version, claude, codex, agy, kimi, accounts, sessions: this.sessionList() };
+  }
+  checkKimiVersion() {
+    const executable = adapters.kimi.resolveCli();
+    if (!executable) return Promise.resolve();
+    let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return Promise.resolve(); }
+    this.kimiVersions ||= new Map();
+    const key = JSON.stringify([executable, mtime]);
+    if (!this.kimiVersions.has(key)) {
+      const entry = {};
+      entry.promise = new Promise(resolve => execFile(executable, ['--version'], { timeout: 5000 }, (error, stdout, stderr) => {
+        entry.output = stdout.trim() || stderr.trim() || 'no output';
+        entry.failed = !!error;
+        resolve(entry);
+      }));
+      this.kimiVersions.set(key, entry);
+    }
+    return this.kimiVersions.get(key).promise;
   }
   cliStatus(cli, login = adapters[cli].loginStatus(null)) {
     if (cli === 'kimi') {
       const executable = adapters.kimi.resolveCli(); if (!executable) return { installed: false, logged_in: false };
       let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return { installed: false, logged_in: false }; }
-      if (!this.kimiVersion || this.kimiVersion.path !== executable || this.kimiVersion.mtime !== mtime) { const check = command(executable, ['--version']); this.kimiVersion = { path: executable, mtime, output: check.stdout.trim() || check.stderr.trim() }; }
-      const output = this.kimiVersion.output, match = output.match(/\b(\d+)\.(\d+)\.(\d+)\b/);
-      const valid = match && (Number(match[1]) > 2 || Number(match[1]) === 2 && (Number(match[2]) > 6 || Number(match[2]) === 6 && Number(match[3]) >= 3));
+      this.checkKimiVersion();
+      const entry = this.kimiVersions.get(JSON.stringify([executable, mtime]));
+      if (!entry || entry.output === undefined) return { installed: true, logged_in: false, problem: "Checking Kimi Code's version" };
+      const output = entry.output, match = output.match(/\b(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?/);
+      const valid = !entry.failed && match && (Number(match[1]) > 2 || Number(match[1]) === 2 && (Number(match[2]) > 6 || Number(match[2]) === 6 && (Number(match[3]) > 3 || Number(match[3]) === 3 && !match[4])));
       return { installed: true, logged_in: !!valid && login.logged_in, version: output, ...(!valid ? { problem: `Kimi Code 2.6.3 or newer is needed (found ${output})` } : {}) };
     }
     const version = command('sh', ['-c', `command -v ${cli}`]);
