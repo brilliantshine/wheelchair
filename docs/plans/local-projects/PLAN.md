@@ -144,6 +144,15 @@ means today's behaviour, byte for byte: same settings file, same argv.
 
 ## Review Rounds
 
+### Round 1 — 2026-11-18
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: see session; cross-family: yes.
+
+**Changed since the last round:** n/a (first round — whole Spec in scope)
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
