@@ -410,7 +410,7 @@ outside a merge, unchanged.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | tricky — hub done gate (`pr-gate.js`, hub.acceptCard), `done.head` schema, gate tests, existing done-posting tests | viewer/app/card.js, pr-gate.js, hub.js, cards.js; viewer/test/app-done-gate.test.js + existing tests posting done | standard, gpt-6.1-terra | wc-b7adc9776939-worker | node --test viewer/test/*.test.js | in progress |
+| T1 | tricky — hub done gate (`pr-gate.js`, hub.acceptCard), `done.head` schema, gate tests, existing done-posting tests | viewer/app/card.js, pr-gate.js, hub.js, cards.js; viewer/test/app-done-gate.test.js + existing tests posting done | standard, gpt-6.1-terra | wc-b7adc9776939-worker | node --test viewer/test/*.test.js | done |
 | T2 | Machine: `done` never spooled (30 s relay, 503), merge-completing `wc.js git commit`, machine tests | machine/service.js, machine/test/ | standard, gpt-6.1-terra | wc-b7adc9776939-worker-2 | bash machine/test/run.sh | done |
 | T3 | Protocol text: lead.md "Making the pull request mergeable" + pointers from steps 1/8/9; cards-lead.md `done.head`; protocol-rules test | protocol/app/lead.md, protocol/app/cards-lead.md, viewer/test/protocol-rules.test.js | standard, gpt-6.1-terra (Claude unavailable) | wc-b7adc9776939-worker-3 | node --test viewer/test/protocol-rules.test.js | done (follow-up T4) |
 | T4 | Follow-up to T3: move the poll into `viewer/app/pr-wait.py` (the inline heredoc can't be pasted from an indented list), print the stop reason, restore wording drift | viewer/app/pr-wait.py (new), viewer/test/pr-wait.test.js (new), protocol/app/lead.md, protocol/app/cards-lead.md | light | | node --test viewer/test/pr-wait.test.js viewer/test/protocol-rules.test.js | in progress |
@@ -419,6 +419,9 @@ outside a merge, unchanged.
 
 - 2026-11-18 — Choice: T2, machine/service.js: a direct `done` relay gets a generated `delivery_id` (honouring one the client supplied), as the spool path does.
 - 2026-11-18 — Choice: T2, machine/test/service.test.js: the test hub gained a `delay` option for `/cards`; "hub down" is exercised as a hub 503 and as no `hub_url`.
+- 2026-11-18 — Choice: T1, viewer/app/hub.js: `pr-gate.js` is required when a `done` card arrives rather than at load, so the boot-commit test's temporary clone (which copies hub.js alone) still loads.
+- 2026-11-18 — Choice: T1, viewer/test/app-thread-list.test.js and app-threads.spec.js: the fixtures clear the thread's `branch` and `default_branch` and stub gh with a CLEAN view at the card's `head`; these tests check display, not PR identity.
+- 2026-11-18 — T1 accepted (band: self): I read the diff; the worker stopped after two full-suite runs with different unrelated failures. My re-run hung once in app-sudo.test.js (passes alone on both branches); a second full run passed 541/541.
 - 2026-11-18 — Choice: T3, protocol/app/lead.md: the poll is a Python foreground script that prints each response; the merge-state table is written as prose; the section is a `##` heading.
 - 2026-11-18 — T3 accepted (band: scout) with follow-up T4: protocol-rules 35/35 pass. Scout found the indented heredoc poll can't run when pasted, item 0 lost "succeeds", and the pre-PR git-failure wording lost its tie to the `needs` card; T4 fixes these.
 - 2026-11-18 — T2 accepted (band: scout): 142/142 machine tests pass on re-run; timeout and connection-error paths reach the same 503 catch but have no dedicated test.
