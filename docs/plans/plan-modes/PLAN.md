@@ -101,6 +101,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D67 | A restarted round triages only its own sessions' reports and first applies pending pull-backs and unapplied mode changes from recent messages | No stale reports; no lost change | review-round-10 |
 | D68 | A switch to thorough is one commit of IDEA.md and PLAN.md | No half-applied switch | review-round-10 |
 | D69 | A mode answer recovered from chat must be a clear choice | A question about a mode isn't a pick | review-round-10 |
+| D70 | From round 11, any new finding whose failure needs an agent (lead, sub-lead, reviewer) to die or a press to cross a save in a narrow window is accepted as a risk, not fixed. Everything else is still fixed | Ten rounds of narrowing crash-timing cases; today's flow has the same class; none affect how the modes behave | user |
 | D64 | Restart reads a typed mode answer from recent messages; restart reconciles the pin with `mode:` | No re-asking; pin matches the mode | review-round-9 |
 
 ## Spec
@@ -454,6 +455,7 @@ re-raise them.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| Crash-timing cases: an agent dying, or a press crossing a save, in a narrow window can lose or repeat a pull-back, a mode change, an approval or a deferral beyond the restart rules already in the Spec | Collin's decision (D70); rare, same class exists in today's flow | 11 |
 | A replacement lead does not receive a live sub-lead's later `result`, which routes to the sub-lead's original `started_by` | Pre-existing for every build; not introduced by plan modes. Worth its own thread | 5 |
 | A failed parent save after the child thread is saved could let a restarted lead post a second follow-up stub | Shared by every stub today; needs a disk write failure between two consecutive saves | 3 |
 
@@ -689,6 +691,18 @@ exit. Downgrades and declines cite evidence.
 | mechanics (gpt) | major | Mode change acknowledged during review lost on restart | upheld | D67 |
 | mechanics (gpt) | major | Half-applied switch to thorough after a crash | upheld | D68 |
 | mechanics (gpt) | major | Mentioning a mode treated as choosing it | upheld | D69 |
+
+### Round 11 — 2026-11-18
+
+**Lanes:** intent: claude; mechanics: other family; cross-family: yes.
+
+**Changed since Round 10:**
+- Thorough restarts exactly as today; D54/D56/D62/D63 withdrawn (D65).
+- Surviving-gap continuation (D66); restarted round hygiene (D67); single-commit switch to thorough (D68); clear mode choice from chat (D69).
+- Crash-timing cases now an Accepted Risk (D70).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
