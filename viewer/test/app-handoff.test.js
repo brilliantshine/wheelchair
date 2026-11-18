@@ -105,7 +105,8 @@ test('frozen threads refuse mutation entry points and never deliver queued work'
       for (const [route, body] of [
         [`/threads/${made.id}/messages`, { text: 'hi' }], [`/threads/${made.id}/send-now`, { at }],
         [`/threads/${made.id}/cards/no/press`, { action: 'picked', value: 'x' }], [`/threads/${made.id}/cards/no/dismiss`, {}],
-        [`/threads/${made.id}/restart`, {}], [`/threads/${made.id}/asides`, {}], [`/threads/${made.id}/asides/no/messages`, { text: 'hi' }],
+        [`/threads/${made.id}/restart`, {}], [`/threads/${made.id}/open`, {}], [`/threads/${made.id}/asides`, {}], [`/threads/${made.id}/asides/no/messages`, { text: 'hi' }],
+        ...['close', 'retry', 'think-harder', 'summary'].map((action) => [`/threads/${made.id}/asides/no/${action}`, {}]),
         [`/sessions/${lead.name}/keys`, { keys: 'Enter' }],
       ]) { const response = await api(c, route, { method: 'POST', body }); assert.equal(response.status, 409, route); assert.equal(response.body.detail, expected); }
       const posted = await machinePost(c, '/machine/cards', { thread_id: made.id, session: lead.name, kind: 'title', title: 'x' }); assert.equal(posted.status, 409); assert.equal(posted.body.detail, expected);
@@ -240,4 +241,36 @@ test('page status reads omit pull requests, cache for a minute, and retain a pre
   hub.handoffStatusAt.set(id, Date.now() - 61_000);
   hub.client.handoff = async () => { calls.push({ failed: true }); throw new Error('offline'); };
   assert.equal(await hub.handoffStatusRead(thread), status); assert.equal(await hub.handoffStatusRead(thread), status); assert.equal(calls.length, 2);
+});
+
+test('export cancels asides found after the quiet check', async () => {
+  const { hub, status, calls } = await exportFixture();
+  const originalThread = hub.thread.bind(hub); const shared = await originalThread(id);
+  hub.thread = async () => shared;
+  hub.client.handoff = async (machine, request) => {
+    if (request.action === 'status') return status;
+    shared.asides.push({ status: 'open', turn: { id: 'aside-turn' }, pending: [{ text: 'queued' }] });
+    return { head: status.head, repository: status.repository };
+  };
+  await hub.exportThread(id);
+  assert.equal(shared.asides[0].status, 'closed'); assert.equal(shared.asides[0].turn, null); assert.deepEqual(shared.asides[0].pending, []);
+  assert.ok(calls.some((call) => call.route === '/v1/aside-turns/aside-turn'));
+});
+
+test('handoff banner HTTP route reports each state and the thread list marks handoff', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path');
+  const { setup, close, api, thread: makeThread } = require('./helpers/app.js'); const { Hub } = require('../app/hub.js');
+  const c = await setup();
+  try {
+    const made = await makeThread(c); const hub = new Hub({ stateDir: c.state });
+    for (const [index, state] of ['unchanged', 'moved', 'inspect-failed', 'own-cancelled'].entries()) {
+      const current = await hub.thread(made.id); const head = String(index + 1).repeat(40);
+      current.slug = 'plan'; current.handed_off = { at, head, stage: 'approved' }; await hub.save(current);
+      const tip = state === 'unchanged' ? head : 'f'.repeat(40);
+      c.machine.handoffReplies.inspect = state === 'inspect-failed' ? { result: 'failed', error: 'offline' } : { remote_tip: tip, picked_up_at: at };
+      if (state === 'own-cancelled') await fs.writeFile(path.join(c.state, 'revoke.json'), JSON.stringify([{ thread_id: made.id, sha: tip }]));
+      const response = await api(c, `/threads/${made.id}/handoff`); assert.equal(response.status, 200); assert.equal(response.body.state, state);
+    }
+    const list = await api(c, '/threads?view=list'); assert.ok(list.body.threads.find((thread) => thread.id === made.id).handed_off);
+  } finally { await close(c); }
 });
