@@ -952,6 +952,8 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — Verification attempt 2 at `de31e26`: `wc-01b8cb1bf051-verifier-3` (claude-opus-5-5) and `wc-01b8cb1bf051-verifier-4` (gpt-6.2-sol).
+
 - 2026-11-18 — Remediation 1 complete; merged branch `8bbc334` passes every validation command. COMPLETION.md gains "Remediation 1". Verification attempt 2 next.
 
 - 2026-11-18 — Choice: R1, `machine/service.js`: version results cached for the service's lifetime keyed by executable path + mtime, failures included (a transient timeout keeps Kimi ineligible until the binary changes or the service restarts); `kimiVersionTimeoutMs` service option (default 5000 ms, not in API.md); `status()` still runs the cheap synchronous `command -v kimi` lookup like the other CLIs, only `--version` is async.
