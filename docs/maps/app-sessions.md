@@ -3,6 +3,8 @@
 Checked against: `be198998f46768a07d03019a25d1d4fd6890bf71` (origin/main)
 Files covered: `viewer/app/sessions.js`, `viewer/app/threads.js`, `viewer/app/cards.js`, `machine/service.js`
 
+> Local-project paths rechecked against `4cfa20cd5aafa0418afabb829c9a4c73430a435f` in [local-project-runtime](local-project-runtime.md); other contents retain the historical checked-against commit above.
+
 > Historical map: covered files changed since the checked-against commit. The launch, ledger, hooks and approval paths relevant to startup growth were rechecked in `docs/plans/startup-growth-warning/MAP.md` against `c81c022e30a5d3fa11aaf2ed9fbe28b903eab011`; other parts below have not been revalidated for that commit.
 
 ## Flow
