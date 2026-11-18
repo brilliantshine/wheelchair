@@ -717,6 +717,17 @@ exit. Downgrades and declines cite evidence.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Subagents also send Interrupt and StopFailure | upheld | Pending: redesign of turn-end detection |
+| intent | major | Subagent guard needs the transcript before binding; check is in `hookEvent` | upheld | Pending: redesign of turn-end detection |
+| intent | minor | Agent-id branch can never fire on 2.6.3 | upheld | Pending: redesign |
+| intent | minor | Subagent live check not in the numbered list | upheld | Pending: redesign |
+| intent | minor | Replayed subagent Stop passes the check | upheld | Pending: redesign |
+| mechanics | blocking | Open tool call cannot identify a Stop's source | upheld | Pending: redesign of turn-end detection |
+| mechanics | blocking | Which stage resolves the transcript and drops events | upheld | Pending: redesign |
+| mechanics | blocking | Concurrent Kimi writes can still drop wheelchair's hooks | upheld | Pending: rethink of how hooks are installed |
+| mechanics | major | tmux prefix matching on login session names | upheld | Pending |
+| mechanics | major | Login states with unknown liveness / exit 0 but not authenticated | upheld | Pending |
+| mechanics | major | Up and Enter sent separately on the trust screen | upheld | Pending |
 
 ## Prior Work
 
@@ -748,6 +759,8 @@ Filled by Stage 3. One row per worker brief.
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
 ## Log
+
+- Review budget reached again after round 9 (rounds 7–9 since Collin's last Keep going). Recurring source: hook-based turn-end detection and editing Kimi's config.toml. Proposed redesign: turn end read from the main transcript's `turn.ended` events, hooks only as a wake-up.
 
 - Review budget reached after round 6; Collin pressed Keep going (round 7, budget reset).
 
