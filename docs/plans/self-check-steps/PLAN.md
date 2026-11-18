@@ -112,7 +112,7 @@ Rendering (`viewer/pages/thread.js` `renderCard`): heading "Check it yourself", 
 (which says whether to merge first), then an ordered list. Each item shows a small label
 "In the app" or "On the machine", the `do` text, the `command` in a monospace block with a
 Copy button (hidden when `navigator.clipboard` is unavailable; copying never posts
-anything), then "You should see:" and the `see` text. A `not-tried` step shows a muted line
+anything; after a successful copy the button reads "Copied" for about two seconds), then "You should see:" and the `see` text. A `not-tried` step shows a muted line
 "Not tried by an agent: <note>". A `differed` step shows a warning-styled line "An agent
 tried this and saw something else: <note>". All text is set as text, never HTML. It must read at
 phone width (390px) without horizontal page scroll; a long command scrolls inside its own
@@ -169,11 +169,11 @@ else's fast-forward; a merged head with others' commits) keep the last results (
 Risks).
 
 **Which commit.** A verifier checks the branch tip when it starts
-(`viewer/app/sessions.js:625-630`) and names it on its `COMMIT:` line. A report whose
-`COMMIT:` is not the commit the lead meant to check counts for nothing, neither its verdict
-nor its STEP lines, and is not a failed attempt: the lead starts a fresh verifier. After two
-such mismatches in a row the lead posts a `needs` card saying the branch keeps moving and
-it cannot get a check on the current version ("Keep going" retries).
+(`viewer/app/sessions.js:625-630`) and names it on its `COMMIT:` line. The work verdict is
+handled exactly as today. Only the STEP lines depend on the commit: if `COMMIT:` is not the
+commit the lead (or sub-lead) acted on, those STEP lines do not count; the lead starts one
+steps-only verifier for all steps, and if that one's `COMMIT:` also differs, every step is
+posted `agent: not-tried`, `note` "an agent could not try them on this exact version".
 
 **Turning STEP lines into the card.**
 - `MATCH` → `agent: matched`.
@@ -294,11 +294,11 @@ the worktree.
 `cd /home/collin/projects/personal/wheelchair && git pull && ./install.sh` (my best guess at
 how the app picks up the change)."
 
-1. `app` — Start a small thread (for example, fix a typo in a README) and let it finish.
+1. `app` — Open the next thread you finish after updating (any project).
    See: right after the Done card, a "Check it yourself" card with numbered steps, each
    labelled "In the app" or "On the machine", saying what to do and what you should see.
-2. `app` — On a step with a command, tap Copy. See: the command is copied; nothing new
-   appears in the thread.
+2. `app` — On a step with a command, tap Copy. See: the button reads "Copied" for a
+   moment; nothing new appears in the thread.
 3. `app` — Look at the check card on your phone. See: nothing makes the page scroll
    sideways; a long command scrolls inside its own box.
 
@@ -481,6 +481,9 @@ Collin chose "Keep going" after three rounds without a clean one; budget reset.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | COMMIT-mismatch rule changes how work verdicts are handled, against the non-goal | upheld | Work verdict as today; mismatch only voids STEP lines (one steps-only re-try, then all not-tried); needs card dropped |
+| intent | minor | Copy gives no visible confirmation, so step 2's `see` is not observable | upheld | Button reads "Copied" for about two seconds; step 2 updated |
+| intent | minor | Step 1 makes him start a real thread and PR | upheld | Step 1 points at the next thread he finishes anyway |
 
 ## Prior Work
 
