@@ -1,7 +1,6 @@
-{"form":"timeline","explanation":"The proposed order of finishing a feature, from the end of the build to the done card. It leaves out how the app enforces it, which is the open question.","events":[
-{"when":"End of build","label":"Builder pulls in main","detail":"Resolves any merge conflicts itself"},
-{"when":"Then","label":"Independent check","detail":"A fresh verifier checks the merged result"},
+{"form":"timeline","explanation":"The order of finishing, from a checked build to the done card. The app refuses the done card until the last step holds, and there's no override.","events":[
+{"when":"End of build","label":"Independent check passes","detail":"Unchanged from today"},
 {"when":"Then","label":"Push and open pull request"},
-{"when":"Up to 30 min","label":"Wait for GitHub checks","detail":"Past 30 minutes, you get a card instead of silence"},
-{"when":"If red or conflicting","label":"Lead fixes, re-verifies, pushes again","detail":"After two failed tries, you choose: push as is, or drop the fix"},
-{"when":"Green","label":"Done card"}]}
+{"when":"Every minute, up to 30","label":"Lead watches GitHub","detail":"Conflicts with main, and the checks"},
+{"when":"If red or conflicting","label":"Lead fixes, re-checks, pushes again","detail":"Two failed fixes, or 30 minutes, and you get a card saying what blocks it"},
+{"when":"Green and no conflicts","label":"Done card","detail":"The app asks GitHub again and refuses it otherwise"}]}
