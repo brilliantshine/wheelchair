@@ -105,7 +105,7 @@ test('login state distinguishes exit and liveness cases', () => {
 test('recovery recognizes Kimi footer and prompt', async () => {
   const machine = Object.create(MachineService.prototype); machine.sessions = {};
   machine.liveTmux = () => new Set(['wc-test-worker']);
-  machine.tmux = args => ({ ok: true, stdout: args[0] === 'capture-pane' ? '│ >\ncontext: 10% Kimi' : '/tmp' });
+  machine.tmux = args => ({ ok: true, stdout: args[0] === 'capture-pane' ? '│ >\nAsk When Needed  K3.1 Pro thinking: high\ncontext: 0% (0/256k)' : '/tmp' });
   machine.persistSessions = async () => {};
   await machine.recoverFromTmux(); assert.equal(machine.sessions['wc-test-worker'].cli, 'kimi');
 });

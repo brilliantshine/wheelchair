@@ -153,7 +153,7 @@ test('copier does not open source after fatal and ignores swapped opened file', 
 
 test('recovery stops Kimi while leaving Claude and marker-priority panes alone', async () => {
   const { machine } = setup(); machine.sessions = {};
-  const panes = { 'wc-a-worker': '│ >\ncontext: 10% Kimi', 'wc-b-worker': '│ >\ncontext: 10%', 'wc-c-worker': 'Codex\n│ >\ncontext: Kimi' };
+  const panes = { 'wc-a-worker': '│ >\nAsk When Needed  K3.1 Pro thinking: high  …/clone/wc/db3f0b03dcf6  wc/db3f0b03dcf6\ncontext: 0% (0/256k)', 'wc-b-worker': '│ >\ncontext: 10%', 'wc-c-worker': 'Codex\n│ >\nAsk When Needed K3.1 Pro thinking: high\ncontext: 0%'  };
   machine.liveTmux = () => new Set(Object.keys(panes));
   machine.tmux = args => ({ ok:true, stdout: args[0] === 'capture-pane' ? panes[args.at(-1)] : '/tmp' });
   await machine.recoverFromTmux();
