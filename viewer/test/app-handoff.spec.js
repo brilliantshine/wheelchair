@@ -179,3 +179,25 @@ test('retry has no Cancel when cancellation is unavailable', async ({ page }) =>
   await expect(page.locator('#handoff-retry')).toContainText('Waiting.');
   await expect(page.locator('#handoff-retry').getByRole('button', { name: 'Cancel' })).toHaveCount(0);
 });
+
+test('an import moving the cutoff redraws the chat even while text is selected', async ({ page }) => {
+  const id = await ctx.make({ cli: 'claude' }).then((made) => made.id);
+  let imported = false;
+  await page.route('**/api/threads/*/chat', async (route) => {
+    const response = await route.fetch(); const data = await response.json();
+    if (imported) data.thread.imported = { at: '2026-01-01T00:00:00Z', history: [] };
+    data.items = [{ type: 'human', at: '2025-01-01T00:00:00Z', text: 'old item' }, { type: 'human', at: '2027-01-01T00:00:00Z', text: 'new item' }];
+    data.cards = []; data.pinned = [];
+    await route.fulfill({ response, json: data });
+  });
+  await page.goto(`${ctx.server.url}/app/thread?id=${id}`);
+  await expect(page.locator('#chat')).toContainText('old item');
+  await page.evaluate(() => {
+    const node = [...document.querySelectorAll('#chat *')].find((n) => n.childElementCount === 0 && n.textContent.includes('new item'));
+    const range = document.createRange(); range.selectNodeContents(node);
+    const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+  });
+  imported = true;
+  await expect(page.locator('#chat')).not.toContainText('old item', { timeout: 15000 });
+  await expect(page.locator('#chat')).toContainText('new item');
+});

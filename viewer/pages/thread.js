@@ -1035,7 +1035,10 @@
     // Text selected in the chat (for an aside) would vanish with a redraw, so the redraw waits
     // until the selection is gone; the selectionchange listener above calls render() then.
     const chatSig = JSON.stringify([data.items, pending, leadNow && [leadNow.queue, leadNow.ready, leadNow.permission_open, leadNow.needs_open, leadNow.limited_until], sendingNow, slug(), t.archived, t.handed_off, t.handoff_op, t.imported, data.cards, data.pinned.map((c) => c.id), pinsFolded, ideaOpen, cardErrors, declining]);
-    if (sigs.chat !== chatSig && !selectingInChat()) { sigs.chat = chatSig; renderChat(); changed = true; }
+    // An import moving the cutoff (or a hand-off starting) must not wait for the selection:
+    // what came before the import has to leave the chat at once.
+    const cutoff = JSON.stringify([t.imported && t.imported.at, Boolean(t.handed_off)]);
+    if (sigs.chat !== chatSig && (!selectingInChat() || sigs.chatCutoff !== cutoff)) { sigs.chat = chatSig; sigs.chatCutoff = cutoff; renderChat(); changed = true; }
     const workingEl = $('working');
     const working = leadWorking() && !t.archived;
     const workingText = (t.lead_name || 'The lead') + ' is working';
