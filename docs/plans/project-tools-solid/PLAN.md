@@ -299,6 +299,15 @@ exit. Downgrades and declines cite evidence.
 | mechanics | major | Failed read has no check transition | upheld | §6 failed read changes nothing |
 | mechanics | minor | §2 exception and auth fixture | upheld | §2, Validation |
 
+### Round 4 — 2026-11-18
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt; cross-family: yes.
+
+**Changed since Round 3:** §2 private-file exception; §4 http `type`, expansion of all `${NAME}`/`${NAME:-default}` into the private file; §5 no redirects, SSE endpoint same-origin; §6 rewritten: no event, thread worktree by path, generation and join rules, hub-only `GET /v1/project-tools/<thread_id>`; §7 only thread-worktree starts carry `project_tools`, `check_generation`; §8 hub pull on the 60 s timer and 15 s after a start, `pending`; Edge cases; Non-goals; Validation; Accepted Risks; Decisions 19-20.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 Parts of the Spec already built before this plan reached Stage 3 — adopted from outside
