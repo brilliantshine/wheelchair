@@ -86,16 +86,17 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D51 | Mode changes before PLAN.md exists are saved in IDEA.md and logged when PLAN.md is created | Persistence in the IDEA-confirmation window | review-round-6 |
 | D52 | Collin chose "keep going" again: fix the two restart cases and continue | Collin's call | user |
 | D53 | Restart context gains `card_kinds` (all card ids, replaced included) | A delivered pull-back stays identifiable after its card was replaced | review-round-7 |
-| D54 | In an unchanged thorough thread, a restarted lead treats a recorded Start building on the latest approval as accepted | Durable lock with no new commit in thorough | review-round-7 |
+| D54 | (superseded by D65) In an unchanged thorough thread, a restarted lead treats a recorded Start building on the latest approval as accepted | Durable lock with no new commit in thorough | review-round-7 |
 | D55 | IDEA.md (draft) is committed as soon as the mode is answered | The mode always lives in a file, so restarts can't undo a change (supersedes the before-IDEA parts of D51) | review-round-8 |
-| D56 | Thorough restart treats a press as accepted only if PLAN.md wasn't committed after the approval card | A press on an approval of an older plan is stale | review-round-8 |
+| D56 | (superseded by D65) Thorough restart treats a press as accepted only if PLAN.md wasn't committed after the approval card | A press on an approval of an older plan is stale | review-round-8 |
 | D57 | The sub-lead's deferral message lists every gap, marked hardening/must-fix/surviving | The lead can tell all-hardening from mixed failures | review-round-8 |
 | D58 | One bullet text names one item for the life of the thread | No text collision between items | review-round-8 |
 | D59 | With a surviving gap, Collin is asked about it alone; other must-fix gaps go to remediation after his answer | Defined order | review-round-8 |
-| D60 | Restart replay of pull-backs waits for a running round's triage | Consistent with D36 | review-round-8 |
+| D60 | (superseded by D61) Restart replay of pull-backs waits for a running round's triage | Consistent with D36 | review-round-8 |
 | D61 | A lead restart during a running round restarts that round (any mode); supersedes D60's waiting | The dead lead's reviewers report to nobody | review-round-9 |
-| D62 | Step 6 posts the approval card before the `Approve plan` commit; a restart accepts a press only when PLAN.md's last commit is `Approve plan` (replaces D56's clock check) | No clock comparison; ties a press to the reviewed revision | review-round-9 |
-| D63 | "Push as it is" on a surviving gap is logged `Accepted as is:` and kept out of later verifier scope | Remaining fixes can verify to a pass | review-round-9 |
+| D62 | (superseded by D65) Step 6 posts the approval card before the `Approve plan` commit; a restart accepts a press only when PLAN.md's last commit is `Approve plan` (replaces D56's clock check) | No clock comparison; ties a press to the reviewed revision | review-round-9 |
+| D63 | (superseded by D65) "Push as it is" on a surviving gap is logged `Accepted as is:` and kept out of later verifier scope | Remaining fixes can verify to a pass | review-round-9 |
+| D65 | Unchanged thorough threads restart exactly as today (D54, D56, D62 withdrawn); a mode change after restart is fixed if a sub-lead exists, else goes through D17. A build's surviving gap is today's open question and nothing proceeds until Collin answers (D63 withdrawn) | Keeps IDEA's "thorough exactly as today" constraint; avoids inventing build-time push/drop | review-round-10 |
 | D64 | Restart reads a typed mode answer from recent messages; restart reconciles the pin with `mode:` | No re-asking; pin matches the mode | review-round-9 |
 
 ## Spec
@@ -196,17 +197,10 @@ build was accepted: mode and Deferred stay fixed, the lead locks the pin if it i
 locked, and starts the sub-lead if `session list` shows none (as step 7). Otherwise the restarted lead trusts no earlier approval: it
 retracts any open approval card, ignores Start building presses for any approval card it
 did not post itself, and posts a fresh approval card with a fresh Ready check. A thorough
-thread with no mode change or pull-back restarts as today, with one rule for the mode:
-if the latest approval card shows a recorded Start building press (`answered_action:
-start-building` in the restart context) and PLAN.md's latest commit is an approval
-commit (message starting `Approve plan`), the build counts as accepted. Otherwise the
-press is stale and the lead posts a fresh approval card. For this to hold, step 6's order
-changes in every mode: the lead posts the approval card first, then commits
-`status: approved` with a message starting `Approve plan`. So an approval commit always
-follows its own card, and any Spec change after it is a later PLAN.md commit. The mode is fixed
-and the lead does not reopen planning; it starts the sub-lead if `session list` shows
-none. (This also closes a stale-press case that exists in thorough today, after a
-"talk about" Spec change.)
+thread with no mode change or pull-back restarts exactly as today. If Collin then asks
+for a mode change while `session list` shows a sub-lead of this thread, the build has
+started and the mode is fixed; with no sub-lead, the change goes through the retract-and-
+review path above (D17), so no build can start on a plan he has not approved.
 
 ### PLAN.md `## Deferred` (D11)
 
@@ -349,18 +343,13 @@ answer itself; nothing is saved to Deferred yet, and it asks Collin a `question`
   2 (save, commit, message), with the Log line `Deferred and finished at Collin's choice`
   in that same commit, then sends its `result` (`task` `build`, `outcome` `done`,
   `commit` the step-2 commit, summary saying these gaps were deferred at Collin's
-  choice) with no further verifier pass, as "push it as it is" ends a surviving gap
-  today. The `done` card's `note` says so.
+  choice) with no further verifier pass. The `done` card's `note` says so.
 
-When a gap has survived two fix attempts, today's surviving-gap rule comes first for
-that gap (sub-lead.md step 6: stop and message the lead). Hardening gaps in the same
-attempt are still answered "defer" and saved by step 2 before the sub-lead stops; the
-lead then asks Collin today's surviving-gap question about the surviving gap only. Other
-must-fix gaps of that attempt wait; after Collin answers, they go through step 5 as
-usual (unless his answer drops the build's fix, which ends it as today). If he chose
-"push it as it is" for the surviving gap, the sub-lead records `Accepted as is: <gap>`
-in PLAN.md's Log in the same commit as its next remediation, and later verifier briefs
-list those gaps as out of scope, like Deferred items; the `done` card's note names them.
+When a gap has survived two fix attempts, today's surviving-gap rule comes first
+(sub-lead.md step 6: stop and message the lead; lead.md step 7: post a `question` card).
+Hardening gaps in the same attempt are still answered "defer" and saved by step 2 before
+the sub-lead stops. Nothing else proceeds until Collin answers that question, exactly
+as today.
 
 Never deferrable in verification: a failing validation command from the Spec's
 Validation section, and a gap in an item Collin pulled back. These go to remediation.
@@ -425,9 +414,8 @@ it), then: what was
 The offer card, the approval card, the Ready check, the progress line, small fixes,
 thorough mode, the stub mechanism (except the restart context's new `card_kinds` field, and D43's restart fix, which repairs an existing
 gap for every stub, and D50's `removed` check, which also covers `idea` cards but
-refuses only presses the app never sends; D55's early draft IDEA.md commit; D56's
-restart staleness check and step 6's card-then-commit order, which also close an existing
-thorough stale-press case; and D61's restart of a running review round), the app's slug and document rules.
+refuses only presses the app never sends; D55's early draft IDEA.md commit; and D61's restart of a running review
+round, which repairs an existing gap for every mode), the app's slug and document rules.
 
 ### Validation
 
@@ -682,6 +670,9 @@ exit. Downgrades and declines cite evidence.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent (claude) | major | Build-time "push as is / drop" doesn't exist; D59/D63 invent it | upheld | D65 |
+| intent (claude) | minor | D62 reorder changes thorough without Collin's agreement | upheld | D65 withdraws D54/D56/D62 |
+| intent (claude) | minor | Stale references to superseded decisions | upheld | Marked superseded; "Not changing" updated |
 
 ## Prior Work
 
