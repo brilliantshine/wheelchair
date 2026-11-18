@@ -145,3 +145,32 @@ npm --prefix viewer run test:browser: exit 0
   28 skipped
   790 passed (3.3m)
 ```
+
+### Remediation 2 (after verification attempt 2 on `591ec3a`)
+
+Gaps (gpt verifier; claude verifier passed) and fixes, see `REMEDIATION-2.md`:
+
+| Gap | Fix | Where | Test |
+|-----|-----|-------|------|
+| `note` accepts U+000B/U+000C | one-line rule refuses every line terminator: `\n \v \f \r` U+0085 U+2028 U+2029 | `viewer/app/card.js:145` | `app-check-card.test.js` "check schema…" (five refused separators, written as escapes) |
+| A live lead cannot tell a fix press's head | stale if the lead posted a `done` since its latest `check` card; otherwise that card's broken notes (Decision 19) | `protocol/app/lead.md:515-520` | grep |
+| A restarted lead could replay a handled fix | handled unless a later `done` is in the context or the branch has commits past the pressed card's head (then carry on as step 9); Spec wording updated (Decision 19, lead's answer) | `protocol/app/lead.md:528-533`; PLAN.md Spec "Posting" and "Restart" | grep |
+
+Lanes: R4 light gpt-6-luna; R5 light claude-haiku-5-5.
+
+Validation on `32c7580`:
+
+```
+npm test exit 0
+# tests 636
+# pass 636
+# fail 0
+```
+
+```
+npm --prefix viewer run test:browser: exit 0
+  28 skipped
+  790 passed (3.4m)
+```
+
+`git diff --stat origin/main -- protocol/app/sub-lead.md protocol/app/worker.md`: prints nothing.

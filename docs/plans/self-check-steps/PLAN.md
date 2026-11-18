@@ -693,7 +693,7 @@ Filled by Stage 3. One row per worker brief.
 | R2 | Remediation 1: note rejects U+2028/U+2029/U+0085 | viewer/app/card.js, viewer/test/app-check-card.test.js | light / gpt-6-luna | wc-2daed8b3ee7f-worker-5 | `node --test viewer/test/*.test.js` | done |
 | R3 | Remediation 1: lead may start the steps-only verifier after any done | protocol/app/lead.md | light / claude-haiku-5-5 | wc-2daed8b3ee7f-worker-6 | protocol-rules test | done |
 | R4 | Remediation 2: note rejects every line terminator (adds U+000B, U+000C) | viewer/app/card.js, viewer/test/app-check-card.test.js | light / gpt-6-luna | wc-2daed8b3ee7f-worker-7 | `node --test viewer/test/*.test.js` | done |
-| R5 | Remediation 2: fix press after a newer done; restart replay (Decision 19) | protocol/app/lead.md | light / claude-haiku-5-5 | wc-2daed8b3ee7f-worker-8 | protocol-rules test | in progress |
+| R5 | Remediation 2: fix press after a newer done; restart replay (Decision 19) | protocol/app/lead.md | light / claude-haiku-5-5 | wc-2daed8b3ee7f-worker-8 | protocol-rules test | done |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -732,3 +732,6 @@ anything a future session needs that fits nowhere above.
 - 2026-11-18 — Lead answered the restart-replay question: Option 1 (observable rule), Decision 19; Spec Posting and Restart wording updated to match.
 - 2026-11-18 — R4: worker reported choices 'none'; I see none in the diff (worker didn't add choices beyond the brief; I listed 0).
 - 2026-11-18 — R4 accepted (band: scout; 4-line diff read inline): app-check-card.test.js 4/4 and the raw-character scan empty in its worktree.
+- 2026-11-18 — R5: worker reported choices 'none'; I see none in the diff (I listed 0).
+- 2026-11-18 — R5 accepted (band: scout; 18-line word diff read inline, exactly the brief's text). Its worktree was not removed: it holds an untracked `docs/plans/self-check-steps/reports/.r5-test.log`, and I do not force-delete.
+- 2026-11-18 — Remediation 2 merged at 32c7580: `npm test` 636/636; browser suite exit 0, 790 passed, 28 skipped.
