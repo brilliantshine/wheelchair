@@ -67,3 +67,24 @@ test('confirming listing supplies ended reasons and pending stop stays live', as
   assert.match(thread.cards.find(c=>c.title==='Sessions ended').body,/lead reason/);
   assert.equal(worker.end_reason,'worker reason');
 });
+
+
+test('ended workers notify their starter and only those with a reason add a card', async () => {
+  const lead = {name:'lead',role:'lead',live:true,status:'ready',ready:false,queue:[]};
+  const withReason = {name:'worker-reason',role:'worker',started_by:'lead',live:true,status:'ready',queue:[]};
+  const withoutReason = {name:'worker-no-reason',role:'worker',started_by:'lead',live:true,status:'ready',queue:[]};
+  const thread = {id:'t',machine:'m',sessions:[lead,withReason,withoutReason],cards:[],queues:{}};
+  let count = 0;
+  const hub = {allThreads:async()=>[thread],thread:async()=>thread,withThread:async(_id,fn)=>fn(),save:async()=>{},call:async()=> ++count === 1
+    ? [{name:'lead',running:true},{name:'worker-reason',running:false},{name:'worker-no-reason',running:false}]
+    : [{name:'lead',running:true},{name:'worker-reason',running:false,end_reason:'lost log'},{name:'worker-no-reason',running:false}]};
+  await sessions.pollDead(hub);
+  assert.deepEqual(lead.queue.map(item=>item.text), [
+    '[wc:from app] your session worker-reason ended: lost log',
+    '[wc:from app] your session worker-no-reason ended',
+  ]);
+  assert.equal(thread.cards.length,1);
+  assert.equal(thread.cards[0].kind,'needs');
+  assert.equal(thread.cards[0].title,'Session ended');
+  assert.equal(thread.cards[0].body,'worker-reason ended: lost log. Its starter has been told.');
+});
