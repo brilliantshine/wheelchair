@@ -282,6 +282,15 @@ video, no Ready-check change.
 | mechanics | major | Shot counter reset overwrites PNGs | upheld | Counters per session, persisted, never reused |
 | mechanics | minor | Failure output conflicts with wc.js paths | upheld | Non-2xx path: stderr, exit 1 |
 
+### Round 2 — 2026-11-18
+
+**Lanes:** claude / claude-opus-5-5 (intent); gpt (mechanics); cross-family: yes.
+
+**Changed since Round 1:** apps launch only via `screen run` (session launch env + `--env`, `codex sandbox` wrap for sandboxed Codex, reviewers refused); per-screen xauth cookie; per-session op queue and stopping state (409); teardown on tmux found dead and a 60 s sweep; restart adopt-or-teardown from `state.json` (pulled back from Deferred); window listing with empty pattern and empty result; persistent shot/app counters; failure path = non-2xx, stderr, exit 1; validation lists updated.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
