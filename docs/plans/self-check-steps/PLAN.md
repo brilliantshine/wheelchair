@@ -52,6 +52,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 15 | A fourth step state, `broken` ("An agent tried this and it didn't work"), separate from `differed` (saw something else that may still be right). Only `broken` triggers the "Fix what the check found?" question | Keeps "work is wrong" visible to Collin and recoverable after a restart | review-round-6 |
 | 16 | Supersedes the `differed` state in 12 and 15. A reworded step whose re-try still differs but meets intent takes the agent's observation as its `see` and is `matched`; three states remain (matched, not-tried, broken) | Every step Collin gets is one he can follow (IDEA.md) | review-round-7 |
 | 17 | A check card with a `broken` step carries "Fix it now" and "Leave it" buttons (Decision 14's two choices) instead of a separate question card; the hub accepts it once, only while the card's head is the current done head. Decision 10 still holds (no "it worked / it didn't" buttons) | A button on the stored card cannot drift from it: no duplicate, missing or stale question after restarts or newer dones | review-round-7 |
+| 18 | One last review round (9). Findings about crashes or restarts at awkward moments, retrying or recovering verifier sessions, and this thread's first-release stand-in are recorded as accepted risks instead of fixed, unless they would make the feature behave wrongly for Collin (not just leave a check card missing, late or marked not tried) | Collin's choice after rounds 6 to 8; the design has held since Decision 14 | user |
 
 ## Spec
 
@@ -572,7 +573,7 @@ Collin decided Q5 (try the steps after Done); budget reset.
 
 ### Round 8 — 2026-11-18
 
-**Lanes:** intent: see table; mechanics: see table; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 7:**
 - `differed` removed (Decision 16): three step states.
@@ -595,6 +596,24 @@ Collin decided Q5 (try the steps after Done); budget reset.
 | intent | minor | "the lead shows" the button invites a lead step | upheld | Reworded: such a card has the buttons |
 | intent | minor | Decision 17 dropped Collin's "Leave it" | upheld | "Leave it" button added; Decision 17 updated |
 | intent | minor | Agent's observation as `see` may be technical | upheld | Rewritten in Collin's words |
+
+### Round 9 — 2026-11-18
+
+Final round (Decision 18).
+
+**Lanes:** intent: see table; mechanics: see table; cross-family: yes.
+
+**Changed since Round 8:**
+- "Leave it" button beside "Fix it now"; both pressable once, only while the card's head is
+  current; the lead re-checks the head when handling a press.
+- `see` from an agent's observation is rewritten in Collin's words.
+- Ambiguous verifier starts re-run with the same `--attempt`; restarted lead stops the dead
+  lead's steps verifier.
+- First-release needs card names the done head.
+- Wording fixes: card definition, accepted risk, "What Collin gets", validation grep.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
