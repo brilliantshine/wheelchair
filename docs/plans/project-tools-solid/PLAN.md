@@ -58,6 +58,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 18 | Antigravity http header tokens are expanded into the agent's private plugin file (owner-only, deleted when the agent ends); IDEA's no-secrets constraint gains this one exception | Collin's pick "Write it, privately": otherwise token web tools never work on Antigravity | user |
 | 19 | Decision 18 covers every `${NAME}` / `${NAME:-default}` in an Antigravity agent's private file (env aliases, args, url, headers), not only headers | Same reason as Collin's pick: Antigravity cannot rename or read a variable itself; the file is the private exception either way | review-round-3 |
 | 20 | Supersedes 17: no event. The hub pulls check results from a hub-only machine route, by generation; only starts in the thread's own worktree (by path) touch check state or the hub's lines | Removes spoofing, spool replay and restart recovery problems; one checkout owns the result | review-round-3 |
+| 21 | Supersedes 20 where they differ: the machine owns one ordered state per thread (lines and check); the hub pulls it by `seq`; start answers carry none. Any tools-getting start in the thread sets its CLI's lines and may run the check; only thread-worktree starts set `file` or reset | Workers are where Codex and Antigravity run; pulling an ordered state removes snapshot-ordering and hub-restart gaps | review-round-4 |
 
 ## Spec
 
@@ -87,7 +88,8 @@ For each tools-getting server, in addition to today's rules:
   - anything else → skip: "a header uses ${...} that Codex cannot pass through".
   - Header names are TOML-quoted with `tomlString`. Emit `http_headers` / `env_http_headers` only when non-empty. Never emit `bearer_token`.
 - `command` returns, besides `argv`, `redactions`: the argv indexes holding `http_headers` overrides. `startIn` stores `session.command` as argv with each such element's value replaced by `mcp_servers.project_<name>.http_headers=<redacted>`; tmux gets the real argv.
-- Budget: `quotedLength` measures `Buffer.byteLength(..., 'utf8')`; budget stays 64 KiB, still dropped as a whole with the same line.
+- Budget: `quotedLength` measures `Buffer.byteLength(..., 'utf8')`; budget stays 64 KiB, still dropped as a whole with the same line, which names every server whose overrides were dropped.
+- Every skip line an adapter returns is `{ names: [server names], text }` (section 7); the machine log prints `text`.
 
 ### 4. Antigravity (`machine/adapters/agy.js` `command`)
 
@@ -96,7 +98,8 @@ For a tools-getting session with servers:
 - `command` returns the files to write (like `settingsPath`/`settings`); `startIn` writes them before tmux starts. No writes inside `command`.
 - Translation: name kept (agy namespaces it `wheelchair-project_<name>`); stdio → `{command, args, env}`; http → `{type: "http", url, headers}` (`type` is required: verified format).
 - Variables (verified 2026-11-18 on agy 1.5.11: plugin `mcp_config.json` expands nothing — not env, args, url or headers; stdio servers inherit agy's whole environment). Because the file is private (Decision 18), wheelchair expands for agy:
-  - Every `${NAME}` and `${NAME:-default}` in command, args, env, url and headers is expanded when the file is written, from the same environment the check uses (section 5: tmux global environment, else `process.env`).
+  - A stdio `env` entry that passes through (same key, section 2) is left out of the file: the server inherits it from agy's environment, so no secret is written.
+  - Every other `${NAME}` and `${NAME:-default}` in command, args, env, url and headers is expanded when the file is written, from the same environment the check uses (section 5: tmux global environment, else `process.env`).
   - An unset `${NAME}` with no default skips the server: "uses a variable that isn't set: NAME". Any other `${...}` form skips the server: "uses ${...} that Antigravity cannot pass through".
   - Literal values are copied as is.
   - The expanded file is the private per-session file above (0600, in 0700 dirs), deleted by `sweepAgyTools` when the session ends. Expanded values never reach `session.command`, logs, lines or the card.
@@ -127,55 +130,55 @@ For a tools-getting session with servers:
 - `login: true` on a `needs login` result when the server's config has no `Authorization` header and no header with `${...}` in it: the tool expects a login that a CLI keeps itself (OAuth). Such a result is information, not a problem (section 8).
 - Exceptions inside the check are logged with fixed text plus the server name only.
 
-### 6. When the check runs (`machine/service.js`)
+### 6. Machine project-tools state and the check (`machine/service.js`)
 
-- **Thread worktree:** a start is in the thread's worktree when `realpath(worktree)` equals `realpath(<stateDir>/worktrees/<project>/wc/<thread_id>)` (the path `createWorktree` gives the thread branch; `machine/service.js:490-492`). A verifier's own checkout and workers' checkouts never match.
-- Only tools-getting starts in the thread's worktree touch check state. Other starts get CLI lines for the machine log only (section 7).
-- State, per thread, in memory and in `<stateDir>/project-tools/<thread_id>.json` (atomic write): `{ generation, worktree, hash, running, result: null | { generation, at, results } }`.
-- All state changes for a thread go through one serial queue (a promise chain keyed by thread id).
-- At a qualifying start, after the session is registered, in the queue:
-  - Reader confirmed no tools (`reset`, section 7): `generation` += 1; `result = { generation, at: now, results: [] }`; `hash = null`; nothing runs.
-  - Reader failed (`mcp: null` and not a reset): nothing changes; the reader's line shows the problem.
-  - A check is running for the same `worktree` and `hash`: join it (nothing changes).
-  - Else, when there is no result, or `worktree` or `hash` differs, or a result is a problem (not ok and not `login`): `generation` += 1, record `worktree`, `hash`, `running: true`, and start a check in the background tagged with that generation. A check for an older generation still running is left to finish and its result discarded.
-  - Else nothing.
-- On completion, in the queue: if its generation is still current, `result = { generation, at: now, results }`, `running: false`; else discard. A check that throws sets `running: false` for its generation and logs fixed text.
-- At service startup, every state file with `running: true` is set to `running: false` (the check died with the service); the next qualifying start reruns it.
-- New machine route `GET /v1/project-tools/<thread_id>`, authorized for the hub only (`this.authorize(request, 'hub')`, as `/v1/preflight` at `machine/service.js:1494`): answers `{ generation, running, result }`, or `{ generation: 0, running: false, result: null }` when there is no state. Agents cannot write check results: there is no write route and no event.
-- The start answer carries the state's `generation` after the step above, as `project_tools.check_generation` (section 7).
-- The check never delays the start answer.
+The machine owns one state per thread; the hub mirrors it by pulling (section 8). Start answers carry nothing new.
 
-### 7. What the start answer carries
+- **Thread worktree:** a start is in the thread's worktree when `realpath(worktree)` equals `realpath(<stateDir>/worktrees/<project>/wc/<thread_id>)` (the path `createWorktree` gives the thread branch; `machine/service.js:490-492`).
+- State, in memory and in `<stateDir>/project-tools/<thread_id>.json` (atomic write after every change):
+  ```
+  { seq, file: [{names, text}], clis: { claude: [...], codex: [...], agy: [...] },
+    generation, worktree, hash, running, probes: [{pid, started}], result: null | { generation, at, results } }
+  ```
+  `seq` increases by 1 on every change. All changes for a thread go through one serial queue (a promise chain keyed by thread id).
+- At every tools-getting start of the thread (any worktree), in the queue, after the reader and adapter ran and before the session is registered (`this.sessions[name] = session`):
+  1. Lines: `clis[cli]` = this start's adapter skip lines. If the start is in the thread's worktree: `file` = reader lines; and on a reset (reader confirmed no tools: no `.mcp.json`, or a valid file whose `mcpServers` is empty) every `clis[*]` = [], `file` = [], `generation` += 1, `result = { generation, at: now, results: [] }`, `hash = null`.
+  2. Check decision (not on a reset, and only when the reader returned servers): when `result?.generation === generation` and `worktree` and `hash` equal this start's and no result is a problem (not ok and not `login`), reuse it. When `running` and `worktree` and `hash` equal this start's, join. Otherwise `generation` += 1, record this start's `worktree` and `hash`, `running: true`, and mark the check to launch.
+  3. A reader failure (`mcp: null`, not a reset) changes only `file` (thread worktree only) and launches nothing.
+- After registration, a marked check launches in the background, tagged with its generation; the start answer never waits.
+- On completion, in the queue: if its generation is still current, `result = { generation, at: now, results }`; `running: false` either way for the current generation; older generations are discarded. A thrown check logs fixed text and sets `running: false` with no result for that generation, so the next start reruns it (step 2 requires a result for the current generation).
+- Probe processes: each stdio probe's process group id and start time (`ps -o lstart= -p <pid>`) are added to `probes` when spawned and removed when reaped. At service startup, for each recorded probe whose pid still shows the same start time, kill its group (SIGKILL); then clear `probes` and set `running: false` everywhere.
+- New machine route `GET /v1/project-tools/<thread_id>`, authorized for the hub only (`this.authorize(request, 'hub')`, as `/v1/preflight` at `machine/service.js:1494`): answers `{ seq, file, clis, running, result }`, or `{ seq: 0, file: [], clis: {}, running: false, result: null }` when there is none. There is no write route and no event; agents cannot change it.
 
-Computed before the session is registered (`this.sessions[name] = session`), so a retried start that returns the registered session carries it too:
-```
-session.project_tools = { cli: "codex", reset: false, file: [lines], cli_lines: [lines], check_generation: 3 }
-```
-- `file`: reader lines (could not be read, invalid entries). `cli_lines`: this adapter's skip lines. Plain sentences, e.g. `github: skipped on Codex: uses ${...} Codex cannot pass through`.
-- `reset: true` when the reader confirmed there are no tools (no `.mcp.json`, or a valid file whose `mcpServers` is empty) and the start is in the thread's own worktree. A read failure, an invalid file or another worktree is never a reset.
-- Present only for tools-getting starts in the thread's worktree (section 6). Other starts carry none; their lines still go to the machine log as today.
+### 7. Skip lines
+
+- A line is `{ names, text }`: `names` the server names it is about (empty only for whole-file reader lines, which the card keys as `file`); `text` a plain sentence, e.g. `github: skipped on Codex: uses ${...} Codex cannot pass through`.
+- The reader's lines go to `file`; each adapter's to `clis[cli]`.
+- Machine log lines stay as today (`text`).
 
 ### 8. Hub (`viewer/app/sessions.js`)
 
-- Thread record gains `project_tools = { file: [], clis: { claude: [], codex: [], agy: [] }, check: { generation: 0, at: null, results: [] }, pending: 0, card: null, card_names: [] }`.
-- `applyProjectTools(thread, started)` after a successful machine answer in `startSession` (covers queued promotion via `retryWaiting`) and in `resumeUnanswered`, before `hub.save`. When `started.project_tools` exists: `reset: true` clears `file` and every CLI's lines; otherwise replace `file` and `clis[cli]`. Set `pending = max(pending, check_generation)` when `check_generation` > `check.generation`. Delete `project_tools` from the object merged into the session record. Reconcile the card.
-- Pull: on the hub's existing 60-second timer (`viewer/app/hub.js:89`), and once 15 seconds after any start that set `pending`, for each thread with `pending` > `check.generation`, call `GET /v1/project-tools/<thread_id>` on the thread's machine. If `result.generation` > `check.generation`, store `check = result` and reconcile. Then, if `running` is false and `result` (or 0) is older than `pending`, set `pending = check.generation` (the check died; the next start reruns it). Errors leave `pending` for the next tick. Runs inside `hub.withThread`.
+- Thread record gains `project_tools = { seq: 0, state: null, card: null, card_names: [] }`; `state` is the last pulled machine state.
+- Pull `GET /v1/project-tools/<thread_id>` from the thread's machine, inside `hub.withThread`:
+  - right after any successful start of a tools-getting session (`startSession`, which covers queued promotion via `retryWaiting`, and `resumeUnanswered`), and again 15 seconds later;
+  - on the existing 60-second timer (`viewer/app/hub.js:89`) for every thread with a live tools-getting session, or whose last pulled state had `running: true`.
+  - Apply only when the answer's `seq` > stored `seq`: store `seq` and `state`, reconcile the card. Errors are ignored until the next pull. Out-of-order or repeated answers change nothing.
 - Card reconcile:
-  - Problem lines = `file` lines + each CLI's lines + `<name>: <reason>` for each check result that is not ok and not `login`, deduplicated, in that order.
-  - Card identity is the sorted set of server names (plus `file` for reader lines) in the problem lines, not the reason text.
-  - Lines present and identity differs from `card_names` (or no open card): mark the open card answered, add a system `needs` card `{ title: "Project tools problem", body }`, store its id and names. Body: "Some project tools won't work for agents in this thread:" then `• line` per line (first 20, then "and N more"), then, when any check result is ok, "Connects: a, b (not on Codex), c", where "(not on <CLI>)" marks a tool that some CLI's lines say it skips, and, when any is `login`, "Needs a login inside the agent's CLI (not checked): x".
+  - Problem lines = `file` lines + each CLI's lines + `<name>: <reason>` for each check result that is not ok and not `login`, deduplicated by text, in that order.
+  - Card identity is the sorted set of names in the problem lines (`file` for whole-file lines), not the text.
+  - Lines present and identity differs from `card_names` (or no open card): mark the open card answered, add a system `needs` card `{ title: "Project tools problem", body }`, store its id and names. Body: "Some project tools won't work for agents in this thread:" then `• text` per line (first 20, then "and N more"), then, when any check result is ok, "Connects: a, b (not on Codex), c", where "(not on <CLI>)" marks a name in some CLI's lines, and, when any is `login`, "Needs a login inside the agent's CLI (not checked): x".
   - Same identity: keep the card and its id; update its body in place if it changed.
   - No lines: mark the open card answered.
-- `session list`: the hub adds `project_tools: { checked_at, results: [{name, ok, reason}], skipped: {<cli>: [lines]} }` (`checked_at` = `check.at`, the machine's completion or reset time; null before any check) to the thread's lead session entry, and `viewer/app/wc.js`'s compact field allowlist keeps `project_tools`, so the default `wc.js session list` shows it.
+- `session list`: the hub adds `project_tools: { checked_at, results: [{name, ok, reason}], skipped: {<cli>: [text]} }` from `state` (`checked_at` = `result.at`; null before any) to the thread's lead session entry, and `viewer/app/wc.js`'s compact field allowlist keeps `project_tools`, so the default `wc.js session list` shows it.
 
 ### Edge cases
 
-- `.mcp.json` deleted or emptied: the next tools-getting start in the thread's own worktree resets; the card closes. Starts in other checkouts never change the thread's lines.
-- `.mcp.json` unreadable or invalid: its line shows on the card; earlier check results stay until the file is fixed (hash changes → new check).
-- A token exported to tmux after a failure: the next start in the thread's worktree reruns the check in the background; the card closes when the hub pulls the result.
-- A tool fine on Claude but skipped on Codex: the Codex line stays until a Codex start has no skip lines or a reset.
-- A result for a superseded generation is discarded on the machine; the hub only takes a higher generation.
-- A retried start returns the registered session with the same `project_tools`; applying it again changes nothing.
+- `.mcp.json` deleted or emptied: the next tools-getting start in the thread's worktree resets; the card closes. Worker checkouts never reset or change `file`.
+- `.mcp.json` unreadable or invalid in the thread's worktree: its line shows; earlier check results stay until the file is fixed (hash changes → new check).
+- A token exported to tmux after a failure: the next tools-getting start in the thread, in any worktree, reruns the check; the card closes at the next pull.
+- A worker on Codex or Antigravity: its skip lines replace that CLI's lines and show on the card.
+- The check result describes the checkout last checked; checkouts of one thread normally share `.mcp.json`. A start in a checkout with a different file reruns the check there.
+- A retried start answered from the registered session changes no state.
 - The check launches each stdio program once outside any agent; a program with side effects runs one extra time per check.
 - Lines and results never contain variable values, header values or server output.
 
@@ -191,10 +194,10 @@ session.project_tools = { cli: "codex", reset: false, file: [lines], cli_lines: 
 
 - `bash machine/test/run.sh`, new tests:
   - Codex: bearer, env header, literal header (real in argv, `<redacted>` in `session.command`), mixed `${}` header skip, duplicate header skip, sse skip, non-ASCII budget (under 64 Ki UTF-16 units, over 64 KiB bytes → dropped).
-  - Antigravity: plugin files and `--add-dir` for tool roles, none for reviewer; http entry written with `type: "http"`; `${NAME}` and `${NAME:-default}` expanded in env, args, url and headers from a fake tmux environment; unset variable → skip line naming only the variable; other forms skip; files 0600 and dirs 0700; the expanded value absent from `session.command`, the log, `cli_lines` and `project_tools`; sweep deletes the expanded file; sweep removes dirs of sessions not live, keeps live and starting ones, removes nothing when tmux state is unknown; no old warning.
+  - Antigravity: plugin files and `--add-dir` for tool roles, none for reviewer; http entry written with `type: "http"`; `${NAME}` and `${NAME:-default}` expanded in env, args, url and headers from a fake tmux environment; unset variable → skip line naming only the variable; other forms skip; same-key env left out of the file; files 0600 and dirs 0700; the expanded value absent from `session.command`, the log, `cli_lines` and `project_tools`; sweep deletes the expanded file; sweep removes dirs of sessions not live, keeps live and starting ones, removes nothing when tmux state is unknown; no old warning.
   - Check: no redirect followed; SSE endpoint on another origin refused with nothing sent; `ping` from server answered; mismatched ids ignored; legacy SSE full handshake via endpoint (endpoint POST 401 → needs login); fake stdio servers (ok with tools array; ENOENT; exit early; hang → timeout; result without `tools` array → not MCP; server request answered `-32601`; unset variable); fake HTTP server (ok with session id and protocol header asserted on later requests; 401 → needs login, `login: true` only without auth headers); fake SSE server (endpoint event → ok; HTML 200 → not ok); no variable value in any result or log line.
-  - Service: thread-worktree gate by path (a verifier checkout on the same branch does not qualify); generation ordering (a slow older check is discarded after a newer start); an identical start joins the running check; `running` cleared at startup; `GET /v1/project-tools/<id>` refuses agent tokens; reset only from the thread's worktree; failed read changes no state; sweep timer removes a dir after its pane exits; check runs after registration and does not delay the start answer; cache reuse on same worktree and hash; rerun after a problem; no rerun for `login`-only results; rerun on hash or worktree change; one check per (thread, worktree, hash); no check in other worktrees or for non-tool roles; `project_tools` present on a repeated start.
-- `node --test viewer/test/*.test.js`, new tests: card opens; same names with different reasons keep the card and update its body; different names replace it; reset closes it; per-CLI lines kept apart; older generation ignored; pull after `pending` applies a newer result and drops `pending` when the machine says nothing runs; starts in other checkouts ignored; `login` results not problems; applied in `startSession`, a queued promotion and `resumeUnanswered`; `project_tools` not left on the session record; default `wc.js session list` shows `project_tools`.
+  - Service: state changes before registration (a duplicate start right after sees the same `seq`); `seq` increases per change; worker start replaces its CLI's lines but never `file` or resets; reset only from the thread's worktree (by path; a verifier checkout on the same branch does not qualify); generation ordering (a slow older check is discarded); an interrupted check for a new hash reruns at the next start; an identical start joins the running check; recorded probe groups killed at startup only when the start time matches; budget-drop line names every dropped server; `GET /v1/project-tools/<id>` refuses agent tokens; failed read changes no check state; sweep timer removes a dir after its pane exits; check runs after registration and does not delay the start answer; cache reuse on same worktree and hash; rerun after a problem; no rerun for `login`-only results; rerun on hash or worktree change; no check for non-tool roles.
+- `node --test viewer/test/*.test.js`, new tests: card opens; same names with different reasons keep the card and update its body; different names replace it; reset closes it; per-CLI lines kept apart; pull applies only a higher `seq`; pull right after a start, 15 s later, and on the timer for live tools-getting sessions; a hub restart between machine start and reply recovers on the timer; `login` results not problems; applied in `startSession`, a queued promotion and `resumeUnanswered`; default `wc.js session list` shows `project_tools`.
 - `node --test test-support/test/*.test.js` still passes.
 - Manual (hearth only, one model turn): an Antigravity worker in a project with a stdio tool can call it; an Antigravity reviewer in the same thread cannot.
 
@@ -207,7 +210,8 @@ re-raise them.
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | The check and an agent's CLI can run the same stdio server at once; a server holding an exclusive resource (fixed port) may fail in one of them | Several agents in one thread already run their own copies at once; such a server is broken for wheelchair regardless of the check | review-round-1 |
-| An Antigravity skip line for an unset variable stays on the card after Collin sets it, until the next Antigravity start in the thread's worktree | The check line clears sooner; a CLI's lines can only change when that CLI starts | review-round-3 |
+| An Antigravity skip line for an unset variable stays on the card after Collin sets it, until the next Antigravity start in the thread | The check line clears sooner; a CLI's lines can only change when that CLI starts | review-round-3 |
+| The check result describes the checkout last checked; a relative program present in one checkout and not another can make it differ from what another agent sees | Checkouts of a thread share the file; a different file reruns the check | review-round-4 |
 | A tool that needs an OAuth login (`login` result) is never on a card by itself; a Codex or Antigravity agent without that CLI's login silently lacks it | wheelchair cannot see CLI logins; the default `session list` shows it, and Collin logs in per CLI | review-round-2 |
 | `--add-dir` makes the per-session plugin dir part of an Antigravity agent's workspace, so the agent could edit its own `mcp_config.json` | The agent already has a shell and can launch any program; the dir is its own and removed when it ends | review-round-1 |
 
@@ -301,9 +305,27 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 4 — 2026-11-18
 
-**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 3:** §2 private-file exception; §4 http `type`, expansion of all `${NAME}`/`${NAME:-default}` into the private file; §5 no redirects, SSE endpoint same-origin; §6 rewritten: no event, thread worktree by path, generation and join rules, hub-only `GET /v1/project-tools/<thread_id>`; §7 only thread-worktree starts carry `project_tools`, `check_generation`; §8 hub pull on the 60 s timer and 15 s after a start, `pending`; Edge cases; Non-goals; Validation; Accepted Risks; Decisions 19-20.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | blocking | Worker skip lines never reach the thread | upheld | §6 any tools-getting start sets its CLI's lines; Decision 21 |
+| intent | major | Card can't clear: reruns only from thread worktree starts | upheld | §6 any tools-getting start may rerun |
+| intent | minor | Same-key env written to the private file needlessly | upheld | §4 left out |
+| mechanics | blocking | `check_generation` decided after registration | upheld | §6 state changes before registration; start answer no longer carries it |
+| mechanics | blocking | Interrupted check for new hash reuses old clean result | upheld | §6 step 2 requires a current-generation result |
+| mechanics | blocking | Retried start snapshot replays stale lines | upheld | §6/§8 machine-owned state ordered by `seq` |
+| mechanics | major | Hub restart gap strands result | upheld | §8 timer pulls threads with live tools-getting sessions |
+| mechanics | major | Probe processes survive service restart | upheld | §6 `probes` reclaimed at startup |
+| mechanics | major | Budget-drop line has no names | upheld | §3/§7 lines carry names |
+
+### Round 5 — 2026-11-18
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 4:** §3/§7 skip lines carry server names (budget drop names every dropped server); §4 same-key env left out of the private file; §6 rewritten: machine owns one `seq`-ordered state per thread (lines + check), changed in a serial queue before session registration; any tools-getting start sets its CLI's lines and may rerun the check; only thread-worktree starts set `file` or reset; reuse requires a current-generation result; probe process reclaim at startup; §7 now only defines lines; §8 hub pulls the whole state (after start, 15 s later, 60 s timer), applies by `seq`; Edge cases; Validation; Accepted Risks; Decision 21.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
