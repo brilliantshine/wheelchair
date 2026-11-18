@@ -164,8 +164,9 @@
       if (exportAsk) {
         wrap.append(el('span', 'dim', 'Export and hand off? This thread stops taking work here.'), button('Confirm', 'primary small', async () => { try { await download(T + '/export', 'POST'); exportAsk = false; await poll(); } catch (e) { showError(e.message); } }), button('Cancel', 'small', () => { exportAsk = false; renderHead(); }));
       } else {
-        wrap.appendChild(button('Export', 'small', () => { exportAsk = true; renderHead(); }, !(t.export && t.export.ok) || t.archived || frozen()));
-        if (t.export && !t.export.ok && t.export.reason) wrap.appendChild(el('span', 'dim export-reason', t.export.reason));
+        const exportButton = button('Export', 'small', () => { exportAsk = true; renderHead(); }, !(t.export && t.export.ok) || t.archived || frozen());
+        if (exportButton.disabled && t.export && t.export.reason) exportButton.title = t.export.reason;
+        wrap.appendChild(exportButton);
       }
       line.appendChild(wrap);
     }
@@ -180,6 +181,9 @@
       }
     }
     headEl.appendChild(line);
+    const reason = $('export-reason');
+    reason.textContent = t.export && t.export.reason || '';
+    reason.hidden = !!(t.archived || frozen() || !t.export || t.export.ok || !t.export.reason);
   }
 
   async function download(url, method) {
@@ -335,13 +339,18 @@
   }
 
   // ---- chat ----
+  function sinceImport(time) {
+    if (!thread().imported) return true;
+    const when = Date.parse(time); const cutoff = Date.parse(thread().imported.at);
+    return !Number.isFinite(when) || !Number.isFinite(cutoff) || when >= cutoff;
+  }
   function unpinnedCards() {
     const ids = new Set(data.pinned.map((c) => c.id));
-    return data.cards.filter((c) => !ids.has(c.id) && (!thread().imported || Date.parse(c.at) >= Date.parse(thread().imported.at)));
+    return data.cards.filter((c) => !ids.has(c.id) && sinceImport(c.created_at || c.at));
   }
 
   function renderChat() {
-    const items = thread().imported ? data.items.filter((i) => Date.parse(i.at) >= Date.parse(thread().imported.at)) : data.items;
+    const items = data.items.filter((i) => sinceImport(i.at));
     chatEl.textContent = '';
     const humans = items.filter((i) => i.type === 'human' && !i.card).map((i) => i.text);
     pending = pending.filter((p) => {
@@ -904,8 +913,8 @@
   function renderPinned() {
     pinnedEl.textContent = '';
     const order = Object.fromEntries(PINNED_KINDS.map((kind, i) => [kind, i]));
-    const pins = data.pinned.filter((c) => c.kind in order && (!thread().imported || Date.parse(c.at) >= Date.parse(thread().imported.at))).sort((a, b) => order[a.kind] - order[b.kind])
-      .map((p) => data.cards.find((c) => c.id === p.id) || p);
+    const pins = data.pinned.map((p) => data.cards.find((c) => c.id === p.id) || p)
+      .filter((c) => c.kind in order && sinceImport(c.created_at || c.at)).sort((a, b) => order[a.kind] - order[b.kind]);
     pinnedEl.classList.toggle('folded', pinsFolded);
     if (!pins.length) return;
     const bar = el('div', 'pin-bar');
