@@ -688,3 +688,5 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 Free-form running notes: deviations discovered mid-implementation, scope events,
 anything a future session needs that fits nowhere above.
+
+- 2026-11-18 Ready check at approval: hub and machine service answer (`session list`); claude and codex CLIs installed; Codex preflight passes (token fresh). Approved after round 9 per Decision 18; no blocking or major finding was declined or downgraded in any round.
