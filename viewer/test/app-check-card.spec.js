@@ -123,5 +123,36 @@ for (const [label, size] of SIZES) {
       expect(wide).toBe(false);
       expect(await pre.evaluate((n) => n.scrollWidth > n.clientWidth)).toBe(true);
     });
+
+    test('a long path and code span in the update wrap instead of widening the page', async ({ page }) => {
+      const { id } = await ctx.make({ cli: 'claude' });
+      await postDone(ctx, id, H1, ghBin);
+      const path250 = '/home/collin/' + 'seg/'.repeat(59);
+      const update = `${path250}  \`${'codespan'.repeat(3)}\` now.`;
+      const c = await ctx.post(id, { ...check(H1, [APP]), update });
+      await open(page, id);
+      await expect(page.locator(`#card-${c.id} .check-update`)).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+    });
+
+    test('no buttons when the done card sits at the import cutoff; buttons when strictly after', async ({ page }) => {
+      const { id } = await ctx.make({ cli: 'claude' });
+      await postDone(ctx, id, H1, ghBin);
+      const c = await ctx.post(id, check(H1, [BAD]));
+      const cutoff = async (fn) => ctx.patch(id, (t) => {
+        const d = t.cards.find((x) => x.kind === 'done');
+        const at = Date.parse(d.created_at || d.at);
+        t.imported = { at: new Date(fn(at)).toISOString(), history: [] };
+      });
+      await cutoff((at) => at);
+      await open(page, id);
+      await expect(page.locator(`#card-${c.id}`).getByRole('heading', { name: 'Check it yourself' })).toBeVisible();
+      await expect(page.locator(`#card-${c.id}`).getByRole('button', { name: 'Fix it now' })).toHaveCount(0);
+      await expect(page.locator(`#card-${c.id}`).getByRole('button', { name: 'Leave it' })).toHaveCount(0);
+      await cutoff((at) => at - 60000);
+      await page.reload();
+      await expect(page.locator(`#card-${c.id}`).getByRole('button', { name: 'Fix it now' })).toBeVisible();
+      await expect(page.locator(`#card-${c.id}`).getByRole('button', { name: 'Leave it' })).toBeVisible();
+    });
   });
 }
