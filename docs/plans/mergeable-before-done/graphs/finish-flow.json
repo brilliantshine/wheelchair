@@ -1,0 +1,7 @@
+{"form":"timeline","explanation":"The proposed order of finishing a feature, from the end of the build to the done card. It leaves out how the app enforces it, which is the open question.","events":[
+{"when":"End of build","label":"Builder pulls in main","detail":"Resolves any merge conflicts itself"},
+{"when":"Then","label":"Independent check","detail":"A fresh verifier checks the merged result"},
+{"when":"Then","label":"Push and open pull request"},
+{"when":"Up to 30 min","label":"Wait for GitHub checks","detail":"Past 30 minutes, you get a card instead of silence"},
+{"when":"If red or conflicting","label":"Lead fixes, re-verifies, pushes again","detail":"After two failed tries, you choose: push as is, or drop the fix"},
+{"when":"Green","label":"Done card"}]}
