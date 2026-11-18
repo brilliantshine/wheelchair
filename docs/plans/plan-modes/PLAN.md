@@ -139,8 +139,10 @@ the lead's suggestion, `why` a one-line reason (D1). The lead does not post the 
 confirmation card until the mode is answered. As soon as the mode is answered it commits
 IDEA.md (a draft if the rest is not written yet, `status: draft`) with `mode:` set, so
 the mode lives in a file from then on. Only one of the three supported values is written. If the answer was typed into the
-card's box (or in chat) and does not name exactly one mode, the lead asks a follow-up
-`question` card before writing IDEA.md.
+card's box and does not clearly choose one mode, or Collin carries on in chat without
+choosing, the mode is `thorough` (IDEA: thorough is what happens if nothing else is
+chosen); the lead resolves the card if still open, writes `thorough`, and says in its
+reply that he can switch (D5).
 
 Restart before IDEA.md is written (the mode question not yet answered, or answered
 moments before the lead died): the restarted lead reads the cards it is given. If the
@@ -703,6 +705,7 @@ exit. Downgrades and declines cite evidence.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent (claude) | minor | Mode question is a gate, not a thorough default | upheld | An unclear or absent choice means thorough |
 
 ## Prior Work
 
