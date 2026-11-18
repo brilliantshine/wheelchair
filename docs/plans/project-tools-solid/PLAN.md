@@ -56,6 +56,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 16 | Antigravity variable rules are fixed by research, not left to the worker: agy expands nothing in plugin config and stdio servers inherit its environment | Verified 2026-11-18 on agy 1.5.11 | review-round-2 |
 | 17 | Supersedes 12's ordering: check state per thread carries a generation bumped at each qualifying start under a per-thread serial queue; only the current generation publishes; publication is spooled before it is marked done and republished after a restart; agents cannot send the event | Rounds 2 findings on races, restart and spoofing | review-round-2 |
 | 18 | Antigravity http header tokens are expanded into the agent's private plugin file (owner-only, deleted when the agent ends); IDEA's no-secrets constraint gains this one exception | Collin's pick "Write it, privately": otherwise token web tools never work on Antigravity | user |
+| 19 | Decision 18 covers every `${NAME}` / `${NAME:-default}` in an Antigravity agent's private file (env aliases, args, url, headers), not only headers | Same reason as Collin's pick: Antigravity cannot rename or read a variable itself; the file is the private exception either way | review-round-3 |
+| 20 | Supersedes 17: no event. The hub pulls check results from a hub-only machine route, by generation; only starts in the thread's own worktree (by path) touch check state or the hub's lines | Removes spoofing, spool replay and restart recovery problems; one checkout owns the result | review-round-3 |
 
 ## Spec
 
@@ -71,7 +73,7 @@ Builds on local-projects (PR #112, `docs/plans/local-projects/PLAN.md`). Everyth
 
 - An **env** value passes through when it is exactly `${NAME}` and its key is `NAME` (`[A-Za-z_][A-Za-z0-9_]*`). An env alias (`CHILD: ${PARENT}`) does not pass through.
 - A **header** value passes through when it is exactly `${NAME}` (any header name).
-- wheelchair never expands a variable into anything it stores or returns: argv, `session.command`, files under the state dir, logs, card text, check results. Only the connection check (section 5) expands, in memory.
+- wheelchair never expands a variable into anything it stores or returns: argv, `session.command`, files under the state dir, logs, card text, check results. Two places expand: the connection check (section 5), in memory; and an Antigravity agent's private plugin file (section 4, Decision 18), the one file allowed to hold expanded values.
 
 ### 3. Codex (`machine/adapters/codex.js` `command`)
 
@@ -92,12 +94,12 @@ For each tools-getting server, in addition to today's rules:
 For a tools-getting session with servers:
 - Plugin dir: `<stateDir>/agy-tools/<session name>/.agents/plugins/wheelchair-project/`, directories mode 0700, holding `plugin.json` = `{"name":"wheelchair-project","version":"1"}` and `mcp_config.json` = `{"mcpServers":{...}}`, files mode 0600, written atomically. argv gains `--add-dir <stateDir>/agy-tools/<session name>`.
 - `command` returns the files to write (like `settingsPath`/`settings`); `startIn` writes them before tmux starts. No writes inside `command`.
-- Translation: name kept (agy namespaces it `wheelchair-project_<name>`); stdio → `command`, `args`, `env`; http → `url`, `headers`.
-- Variables (verified 2026-11-18 on agy 1.5.11: plugin `mcp_config.json` expands nothing — not env, args, url or headers; stdio servers inherit agy's whole environment):
-  - stdio `env` value that passes through (same key, section 2): omitted, so the server inherits it.
-  - Any other `${...}` in stdio command, args or env, or in an http `url`: skip, "uses ${...} that Antigravity cannot pass through".
-  - http header values: every `${NAME}` and `${NAME:-default}` is expanded when the file is written, from the same environment the check uses (section 5: tmux global environment, else `process.env`). An unset `${NAME}` with no default skips the server: "uses a variable that isn't set: NAME". Any other `${...}` form in a header skips the server. The expanded file is the private per-session file above (0600, in a 0700 dir), deleted by `sweepAgyTools` when the session ends; its values never reach `session.command`, logs or the card (Decision 18).
+- Translation: name kept (agy namespaces it `wheelchair-project_<name>`); stdio → `{command, args, env}`; http → `{type: "http", url, headers}` (`type` is required: verified format).
+- Variables (verified 2026-11-18 on agy 1.5.11: plugin `mcp_config.json` expands nothing — not env, args, url or headers; stdio servers inherit agy's whole environment). Because the file is private (Decision 18), wheelchair expands for agy:
+  - Every `${NAME}` and `${NAME:-default}` in command, args, env, url and headers is expanded when the file is written, from the same environment the check uses (section 5: tmux global environment, else `process.env`).
+  - An unset `${NAME}` with no default skips the server: "uses a variable that isn't set: NAME". Any other `${...}` form skips the server: "uses ${...} that Antigravity cannot pass through".
   - Literal values are copied as is.
+  - The expanded file is the private per-session file above (0600, in 0700 dirs), deleted by `sweepAgyTools` when the session ends. Expanded values never reach `session.command`, logs, lines or the card.
 - Skips: `type: "sse"` ("uses sse, which Antigravity does not support here"); names not matching `[A-Za-z0-9_-]+` (same text as Codex); the same header twice ignoring case.
 - If every server is skipped: no plugin dir and no `--add-dir`.
 - Remove the old "aren't supported on Antigravity yet" warning.
@@ -118,7 +120,8 @@ For a tools-getting session with servers:
   - A JSON-RPC `error` answer to `initialize` or `tools/list` → `answered, but not as an MCP server`.
 - stdio: spawn in its own process group, stdin/stdout piped, stderr ignored, newline-delimited JSON. Kill the group (SIGTERM, SIGKILL after 1 s) when done.
 - http: each message is a POST to `url` with the configured headers (expanded), `Content-Type: application/json`, `Accept: application/json, text/event-stream`. After `initialize`, send `MCP-Session-Id` if the answer had one and `MCP-Protocol-Version: <negotiated version>` on every later request. Bodies are JSON or SSE (`data:` lines holding the JSON-RPC answer). `notifications/initialized` expects 202 or 200. A session id is closed with a DELETE afterwards, errors ignored.
-- sse (legacy 2024-11-05 transport): GET `url` with the configured headers and `Accept: text/event-stream`; require 200, content type `text/event-stream` and an `endpoint` event. Resolve its data against `url`, then run the same three-step handshake by POSTing each message to that endpoint with the configured headers (expect 2xx) and reading answers from the stream. ok only when `tools/list` answers. Close the stream after.
+- Redirects are never followed (`redirect: "manual"`); a 3xx → `server error <status>`.
+- sse (legacy 2024-11-05 transport): GET `url` with the configured headers and `Accept: text/event-stream`; require 200, content type `text/event-stream` and an `endpoint` event. Resolve its data against `url`; an endpoint on a different origin (scheme, host, port) → `answered, but not as an MCP server`, and nothing is sent to it; then run the same three-step handshake by POSTing each message to that endpoint with the configured headers (expect 2xx) and reading answers from the stream. ok only when `tools/list` answers. Close the stream after.
 - Reasons (fixed text; never variable values, header values, server output or exception messages):
   `program not found` (ENOENT), `program could not start`, `exited before answering`, `did not answer within 10 seconds`, `needs login` (HTTP 401/403), `server error <status>`, `could not connect`, `uses a variable that isn't set: NAME`, `answered, but not as an MCP server`.
 - `login: true` on a `needs login` result when the server's config has no `Authorization` header and no header with `${...}` in it: the tool expects a login that a CLI keeps itself (OAuth). Such a result is information, not a problem (section 8).
@@ -126,32 +129,37 @@ For a tools-getting session with servers:
 
 ### 6. When the check runs (`machine/service.js`)
 
-- Only for tools-getting starts in the thread's own worktree (the one on branch `wc/<thread_id>`): lead, sub-lead, and verifiers or workers only if their worktree is that one. Starts in other worktrees get CLI lines but no check and no reset.
-- State: `<stateDir>/project-tools/<thread_id>.json` = `{ generation, worktree, hash, results, at, published }`, atomic write.
-- Per thread, all of the following runs in one serial queue (a promise chain keyed by thread id), so no two steps for a thread interleave:
-  1. At a qualifying start, after the session is registered: read the hash of the file the reader saw. `generation` += 1 and saved.
-  2. If the reader confirmed there are no tools (`reset`, section 7): set `results: []`, `hash: null`, `at: now`, `published: false`, save, publish.
-  3. Else run the check when the state's `worktree` or `hash` differs, or any result is a problem (not ok and not `login`), or `published` is false and results are missing. Otherwise, if `published` is false, publish the saved result; else nothing.
-- The check itself runs outside the queue, in the background; the start never waits. On completion it re-enters the queue: if the thread's `generation` is still the one it started under, save `{results, hash, worktree, at: now, published: false}`, then publish; else discard.
-- Publish: `emitEvent({ type: "project-tools-check", thread_id, session: <starting session name>, seq: generation, at, results, delivery_id: "project-tools-<thread_id>-<generation>" })`; once `emitEvent` has spooled it, set `published: true` and save. A machine restart before that leaves `published: false`, so the next qualifying start republishes; the service also republishes every unpublished state file at startup.
-- A check that throws is logged and leaves the state unchanged.
-- The hook forwarder (`machine/service.js` event handling, ~1017) drops any agent-sent event of type `project-tools-check`; only the publisher above emits it.
+- **Thread worktree:** a start is in the thread's worktree when `realpath(worktree)` equals `realpath(<stateDir>/worktrees/<project>/wc/<thread_id>)` (the path `createWorktree` gives the thread branch; `machine/service.js:490-492`). A verifier's own checkout and workers' checkouts never match.
+- Only tools-getting starts in the thread's worktree touch check state. Other starts get CLI lines for the machine log only (section 7).
+- State, per thread, in memory and in `<stateDir>/project-tools/<thread_id>.json` (atomic write): `{ generation, worktree, hash, running, result: null | { generation, at, results } }`.
+- All state changes for a thread go through one serial queue (a promise chain keyed by thread id).
+- At a qualifying start, after the session is registered, in the queue:
+  - Reader confirmed no tools (`reset`, section 7): `generation` += 1; `result = { generation, at: now, results: [] }`; `hash = null`; nothing runs.
+  - Reader failed (`mcp: null` and not a reset): nothing changes; the reader's line shows the problem.
+  - A check is running for the same `worktree` and `hash`: join it (nothing changes).
+  - Else, when there is no result, or `worktree` or `hash` differs, or a result is a problem (not ok and not `login`): `generation` += 1, record `worktree`, `hash`, `running: true`, and start a check in the background tagged with that generation. A check for an older generation still running is left to finish and its result discarded.
+  - Else nothing.
+- On completion, in the queue: if its generation is still current, `result = { generation, at: now, results }`, `running: false`; else discard. A check that throws sets `running: false` for its generation and logs fixed text.
+- At service startup, every state file with `running: true` is set to `running: false` (the check died with the service); the next qualifying start reruns it.
+- New machine route `GET /v1/project-tools/<thread_id>`, authorized for the hub only (`this.authorize(request, 'hub')`, as `/v1/preflight` at `machine/service.js:1494`): answers `{ generation, running, result }`, or `{ generation: 0, running: false, result: null }` when there is no state. Agents cannot write check results: there is no write route and no event.
+- The start answer carries the state's `generation` after the step above, as `project_tools.check_generation` (section 7).
+- The check never delays the start answer.
 
 ### 7. What the start answer carries
 
 Computed before the session is registered (`this.sessions[name] = session`), so a retried start that returns the registered session carries it too:
 ```
-session.project_tools = { cli: "codex", reset: false, file: [lines], cli_lines: [lines] }
+session.project_tools = { cli: "codex", reset: false, file: [lines], cli_lines: [lines], check_generation: 3 }
 ```
 - `file`: reader lines (could not be read, invalid entries). `cli_lines`: this adapter's skip lines. Plain sentences, e.g. `github: skipped on Codex: uses ${...} Codex cannot pass through`.
 - `reset: true` when the reader confirmed there are no tools (no `.mcp.json`, or a valid file whose `mcpServers` is empty) and the start is in the thread's own worktree. A read failure, an invalid file or another worktree is never a reset.
-- Present only for tools-getting roles. Machine log lines stay as today.
+- Present only for tools-getting starts in the thread's worktree (section 6). Other starts carry none; their lines still go to the machine log as today.
 
 ### 8. Hub (`viewer/app/sessions.js`)
 
-- Thread record gains `project_tools = { file: [], clis: { claude: [], codex: [], agy: [] }, check: { seq: 0, at: null, results: [] }, card: null, card_names: [] }`.
-- `applyProjectTools(thread, started)` after a successful machine answer in `startSession` (covers queued promotion via `retryWaiting`) and in `resumeUnanswered`, before `hub.save`: when `started.project_tools` exists, `reset: true` clears `file` and every CLI's lines (check results are cleared by the reset's own check event); otherwise replace `file` and `clis[cli]`. Delete `project_tools` from the object merged into the session record. Then reconcile the card.
-- Event `project-tools-check` (in `event`, by `thread_id`, needs no live target session; delivery ids already dedupe): apply only if `seq` > stored `check.seq`; then store `seq`, `at` and `results`, and reconcile the card. Accepted only through the machine's authenticated events route (`viewer/app/routes.js` `handleMachine`); the machine never forwards it from an agent (section 6).
+- Thread record gains `project_tools = { file: [], clis: { claude: [], codex: [], agy: [] }, check: { generation: 0, at: null, results: [] }, pending: 0, card: null, card_names: [] }`.
+- `applyProjectTools(thread, started)` after a successful machine answer in `startSession` (covers queued promotion via `retryWaiting`) and in `resumeUnanswered`, before `hub.save`. When `started.project_tools` exists: `reset: true` clears `file` and every CLI's lines; otherwise replace `file` and `clis[cli]`. Set `pending = max(pending, check_generation)` when `check_generation` > `check.generation`. Delete `project_tools` from the object merged into the session record. Reconcile the card.
+- Pull: on the hub's existing 60-second timer (`viewer/app/hub.js:89`), and once 15 seconds after any start that set `pending`, for each thread with `pending` > `check.generation`, call `GET /v1/project-tools/<thread_id>` on the thread's machine. If `result.generation` > `check.generation`, store `check = result` and reconcile. Then, if `running` is false and `result` (or 0) is older than `pending`, set `pending = check.generation` (the check died; the next start reruns it). Errors leave `pending` for the next tick. Runs inside `hub.withThread`.
 - Card reconcile:
   - Problem lines = `file` lines + each CLI's lines + `<name>: <reason>` for each check result that is not ok and not `login`, deduplicated, in that order.
   - Card identity is the sorted set of server names (plus `file` for reader lines) in the problem lines, not the reason text.
@@ -162,10 +170,11 @@ session.project_tools = { cli: "codex", reset: false, file: [lines], cli_lines: 
 
 ### Edge cases
 
-- `.mcp.json` deleted or emptied: the next tools-getting start in the thread's own worktree resets; the card closes. A worker branch without the file changes nothing.
-- A token exported to tmux after a failure: the next start in the thread's worktree reruns the check in the background; the card closes when its event arrives.
+- `.mcp.json` deleted or emptied: the next tools-getting start in the thread's own worktree resets; the card closes. Starts in other checkouts never change the thread's lines.
+- `.mcp.json` unreadable or invalid: its line shows on the card; earlier check results stay until the file is fixed (hash changes → new check).
+- A token exported to tmux after a failure: the next start in the thread's worktree reruns the check in the background; the card closes when the hub pulls the result.
 - A tool fine on Claude but skipped on Codex: the Codex line stays until a Codex start has no skip lines or a reset.
-- A replayed or late check event, or one for a superseded generation, is ignored or never published.
+- A result for a superseded generation is discarded on the machine; the hub only takes a higher generation.
 - A retried start returns the registered session with the same `project_tools`; applying it again changes nothing.
 - The check launches each stdio program once outside any agent; a program with side effects runs one extra time per check.
 - Lines and results never contain variable values, header values or server output.
@@ -173,7 +182,7 @@ session.project_tools = { cli: "codex", reset: false, file: [lines], cli_lines: 
 ### Non-goals
 
 - Live watching of `.mcp.json`; checks between starts; checks in worker-only worktrees.
-- `${...}` forms beyond section 2 on Codex, and beyond section 4's rules on Antigravity (`${NAME:-default}`, aliases, `${}` in args or url): neither CLI expands them and wheelchair will not store expanded values. They stay skipped, with a line on the card.
+- On Codex, `${...}` forms beyond section 2 (`${NAME:-default}`, env aliases, `${}` in command, args or url): Codex does not expand them and wheelchair will not put expanded values in its argv. They stay skipped, with a line on the card. (Antigravity handles them through its private file, section 4.)
 - Fixing tools; editing `.mcp.json`; a settings screen.
 - OAuth flows for tools that need login.
 - Health checks of the account's own (non-project) tools.
@@ -182,10 +191,10 @@ session.project_tools = { cli: "codex", reset: false, file: [lines], cli_lines: 
 
 - `bash machine/test/run.sh`, new tests:
   - Codex: bearer, env header, literal header (real in argv, `<redacted>` in `session.command`), mixed `${}` header skip, duplicate header skip, sse skip, non-ASCII budget (under 64 Ki UTF-16 units, over 64 KiB bytes → dropped).
-  - Antigravity: plugin files and `--add-dir` for tool roles, none for reviewer; skip rules incl. env alias and `${}` in args/url; pass-through env omitted; sweep removes dirs of sessions not live, keeps live and starting ones, removes nothing when tmux state is unknown; no old warning.
-  - Check: `ping` from server answered; mismatched ids ignored; legacy SSE full handshake via endpoint (endpoint POST 401 → needs login); fake stdio servers (ok with tools array; ENOENT; exit early; hang → timeout; result without `tools` array → not MCP; server request answered `-32601`; unset variable); fake HTTP server (ok with session id and protocol header asserted on later requests; 401 → needs login, `login: true` only without auth headers); fake SSE server (endpoint event → ok; HTML 200 → not ok); no variable value in any result or log line.
-  - Service: generation ordering (a slow older check is discarded after a newer start); unpublished state republished at startup and next start; agent-sent `project-tools-check` dropped; reset only from the thread's worktree; sweep timer removes a dir after its pane exits; check runs after registration and does not delay the start answer; cache reuse on same worktree and hash; rerun after a problem; no rerun for `login`-only results; rerun on hash or worktree change; one check per (thread, worktree, hash); no check in other worktrees or for non-tool roles; event emitted with increasing `seq`; `project_tools` present on a repeated start.
-- `node --test viewer/test/*.test.js`, new tests: card opens; same names with different reasons keep the card and update its body; different names replace it; reset closes it; per-CLI lines kept apart; older `seq` ignored; `login` results not problems; applied in `startSession`, a queued promotion and `resumeUnanswered`; `project_tools` not left on the session record; default `wc.js session list` shows `project_tools`.
+  - Antigravity: plugin files and `--add-dir` for tool roles, none for reviewer; http entry written with `type: "http"`; `${NAME}` and `${NAME:-default}` expanded in env, args, url and headers from a fake tmux environment; unset variable → skip line naming only the variable; other forms skip; files 0600 and dirs 0700; the expanded value absent from `session.command`, the log, `cli_lines` and `project_tools`; sweep deletes the expanded file; sweep removes dirs of sessions not live, keeps live and starting ones, removes nothing when tmux state is unknown; no old warning.
+  - Check: no redirect followed; SSE endpoint on another origin refused with nothing sent; `ping` from server answered; mismatched ids ignored; legacy SSE full handshake via endpoint (endpoint POST 401 → needs login); fake stdio servers (ok with tools array; ENOENT; exit early; hang → timeout; result without `tools` array → not MCP; server request answered `-32601`; unset variable); fake HTTP server (ok with session id and protocol header asserted on later requests; 401 → needs login, `login: true` only without auth headers); fake SSE server (endpoint event → ok; HTML 200 → not ok); no variable value in any result or log line.
+  - Service: thread-worktree gate by path (a verifier checkout on the same branch does not qualify); generation ordering (a slow older check is discarded after a newer start); an identical start joins the running check; `running` cleared at startup; `GET /v1/project-tools/<id>` refuses agent tokens; reset only from the thread's worktree; failed read changes no state; sweep timer removes a dir after its pane exits; check runs after registration and does not delay the start answer; cache reuse on same worktree and hash; rerun after a problem; no rerun for `login`-only results; rerun on hash or worktree change; one check per (thread, worktree, hash); no check in other worktrees or for non-tool roles; `project_tools` present on a repeated start.
+- `node --test viewer/test/*.test.js`, new tests: card opens; same names with different reasons keep the card and update its body; different names replace it; reset closes it; per-CLI lines kept apart; older generation ignored; pull after `pending` applies a newer result and drops `pending` when the machine says nothing runs; starts in other checkouts ignored; `login` results not problems; applied in `startSession`, a queued promotion and `resumeUnanswered`; `project_tools` not left on the session record; default `wc.js session list` shows `project_tools`.
 - `node --test test-support/test/*.test.js` still passes.
 - Manual (hearth only, one model turn): an Antigravity worker in a project with a stdio tool can call it; an Antigravity reviewer in the same thread cannot.
 
@@ -198,6 +207,7 @@ re-raise them.
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | The check and an agent's CLI can run the same stdio server at once; a server holding an exclusive resource (fixed port) may fail in one of them | Several agents in one thread already run their own copies at once; such a server is broken for wheelchair regardless of the check | review-round-1 |
+| An Antigravity skip line for an unset variable stays on the card after Collin sets it, until the next Antigravity start in the thread's worktree | The check line clears sooner; a CLI's lines can only change when that CLI starts | review-round-3 |
 | A tool that needs an OAuth login (`login` result) is never on a card by itself; a Codex or Antigravity agent without that CLI's login silently lacks it | wheelchair cannot see CLI logins; the default `session list` shows it, and Collin logs in per CLI | review-round-2 |
 | `--add-dir` makes the per-session plugin dir part of an Antigravity agent's workspace, so the agent could edit its own `mcp_config.json` | The agent already has a shell and can launch any program; the dir is its own and removed when it ends | review-round-1 |
 
@@ -267,12 +277,27 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 3 — 2026-11-18
 
-**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 2:** §4 Antigravity variable rules (fixed by research) and header token expansion into the private file (Decision 18), timer and `finally` cleanup; §5 id matching, `ping`, legacy SSE full handshake; §6 rewritten (generation, per-thread serial queue, `published` flag and republish, forwarder drops agent-sent check events, reset only from the thread worktree); §7 reset scope; §8 `check.at`, body updated in place, "Connects … (not on <CLI>)", `session list` `skipped`; Non-goals; Accepted Risks (login-only tools); Decisions 16-18; IDEA.md Constraints exception.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | §2 and Non-goals contradict Decision 18 | upheld | §2 exception; Non-goals narrowed to Codex |
+| intent | major | agy http entries miss `type` | upheld | §4 `type: "http"` |
+| intent | major | No validation of the secret file exception | upheld | Validation, Antigravity |
+| intent | minor | agy env aliases still skipped though the file is private | upheld | §4 expands everywhere; Decision 19 |
+| intent | minor | agy unset-variable line outlives the fix | accepted-risk | Accepted Risks |
+| mechanics | blocking | agy http `type` missing | upheld | §4 (same as intent 2) |
+| mechanics | blocking | Publisher event blocked by hook route / missing session | upheld | Event removed; hub pull (Decision 20) |
+| mechanics | blocking | Hook spool trust boundary | upheld | Event removed; hub-only route (Decision 20) |
+| mechanics | blocking | SSE endpoint origin and redirects | upheld | §5 same-origin, no redirects |
+| mechanics | major | Restart replay under wrong sequence | upheld | Event removed; `running` cleared at startup |
+| mechanics | major | Overlapping starts for same hash | upheld | §6 join running check |
+| mechanics | major | Thread-worktree identity | upheld | §6 by path |
+| mechanics | major | Worker checkout clears thread lines | upheld | §7/§8 only thread worktree counts |
+| mechanics | major | Failed read has no check transition | upheld | §6 failed read changes nothing |
+| mechanics | minor | §2 exception and auth fixture | upheld | §2, Validation |
 
 ## Prior Work
 
