@@ -119,7 +119,7 @@ line saying why. The hub computes it; first match wins:
 | `merged` card exists, or the PR is not open at export | "The pull request is merged or closed; nothing left to hand off" |
 | origin not on GitHub | "This project's origin isn't on GitHub" |
 | another live session or an aside running | "Agents are still working" |
-| lead mid-turn or anything queued | "The lead is busy" |
+| lead mid-turn, or something queued that could still be delivered (as the quiet test defines) | "The lead is busy" |
 | sudo waiting or running | "A root command is waiting" |
 | upload in flight | "A file is still uploading" |
 | dirty worktree | "Some changes aren't committed yet" |
@@ -259,8 +259,9 @@ The operations themselves bypass the check.
   - unchanged: "Handed off <date>. Import a newer file to continue here, or undo." with an
     **Undo hand-off** button;
   - moved: "Picked up elsewhere on <date>. Import a newer file to continue here." and no
-    Undo. When the tip is an own cancelled claim (Import step 4), the banner instead says "A
-    cancelled undo is still being taken back; try again in a few minutes" and Undo stays;
+    Undo. When the tip is an own cancelled claim (Import step 4), the banner instead says "An
+    earlier cancelled import or undo is still being taken back; try again in a few
+    minutes" and Undo stays (pressing it before the revoke runs gets the same message);
   - inspect failed: the first text, and Undo stays available (undo checks again).
 - `POST /threads/:id/undo-handoff` runs the Undo operation (see Operations and Retry):
   claim on top of `handed_off.head`, stop any live session, fast-forward the worktree to
@@ -320,7 +321,7 @@ The hub then, inside `withThread(<file thread id>)`:
 | No such thread, and the picked project's local `wc/<id>` branch is checked out (in the project clone or any worktree) | Refused 409 "Branch wc/<id> is checked out in <path>; switch away from it, then import again" |
 | No such thread, and the picked project has a local `wc/<id>` branch that is not an ancestor of `head` | Refused 409 "This project already has a branch wc/<id> that differs from the file; delete it if you don't need it, then import again". A local branch that is an ancestor of `head` and not checked out is fine: Create uses it |
 | No such thread, and none of the three rows above matched | **Create** |
-| Exists; its head equals `head`, or `head` is an ancestor of its head | **Open**, change nothing. Note: "You already have this thread here", plus " It's handed off: press Undo on it to carry on here." when it is handed off and the tip is unchanged or an own cancelled claim; or "This file is older than the thread here" |
+| Exists; its head equals `head`, or `head` is an ancestor of its head | **Open**, change nothing. Note: "You already have this thread here", plus " It's handed off: press Undo on it to carry on here." when it is handed off and the tip is unchanged, or " An earlier cancelled import or undo is still being taken back; try again in a few minutes." when the tip is an own cancelled claim; or "This file is older than the thread here" |
 | Exists; its head is a strict ancestor of `head` | **Advance** |
 | Exists; neither is an ancestor of the other | **Open**, change nothing; note "This thread and the file have each moved on separately, so nothing was changed. Bring the branches together yourself, then import again." |
 
@@ -401,7 +402,16 @@ fields (`imported`, `handed_off`, cards, pins, `archived`) are not changed until
 step, so a refused or abandoned operation leaves them as they were. A step that fails
 saves its sentence in `last_error` and the operation stops there.
 
-**Abandoning.** When the Claim step finds someone else moved the branch, the operation is
+**Own cancelled claim at the tip.** When the Claim step's `claim-push` returns `moved`
+and its `remote_tip` is exactly a claim on this hub's revoke list for this thread, the
+operation is **not** abandoned: the step fails with `last_error` "An earlier cancelled
+import or undo is still being taken back; try again in a few minutes", `handoff_op` is
+kept (so the thread shows Retry), and the hub runs that entry's revoke at once. A later
+Retry then finds the tip back on `parent` and claims normally. For an Undo, this is the
+only place the case is met, since Undo has no Import step 4.
+
+**Abandoning.** When the Claim step finds someone else moved the branch (`moved`, and the
+tip is not an own cancelled claim), the operation is
 abandoned: Create deletes the thread record; Advance and Undo clear `handoff_op`. The
 response is "picked up elsewhere" 409; when the operation
 was reached through a re-import (Import step 1), its text ends "import that file again"
@@ -413,7 +423,7 @@ instead of "export again from wherever it is now".
    `claim-push`. If `claim_sha` is set: `claim-push` again. `claim-push` decides its
    result only from the remote tip it reads after its push attempt, never from the push's
    exit code: tip `claim_sha`, or a descendant of it → `landed`: save `claim_landed: true`, go on; tip `parent` → `unknown`; any other tip →
-   `moved`, abandon; tip unreadable → `unknown`. `unknown` fails the step with "Couldn't
+   `moved`, abandon (except an own cancelled claim, above); tip unreadable → `unknown`. `unknown` fails the step with "Couldn't
    update the branch on GitHub: <git's last line from the push or fetch>", keeping
    `claim_sha`, so Retry tries again.
 2. **Stop.** Stop every live session of the thread (Advance and Undo); a stop the machine
@@ -456,10 +466,12 @@ launches it (`viewer/app/sessions.js:277-300`). When the hub starts, a **lead** 
 an **imported** thread (one with `imported`) marked live whose start result was never
 saved is marked not live, so the dead-lead panel
 offers Restart; Restart (below) kills anything that start left on the machine, refuses
-while any survives, and moves its queued context to the new lead. Nothing is adopted.
+while any survives, and moves its queued context to the new lead. The hub never takes over
+a half-started session.
 Other roles, and leads of threads that were never imported, are unchanged from today. An
 thread with `checkout_sha` starts its lead with `from_remote_branch: {sha: checkout_sha}`
-until a worktree is recorded, and that path adopts a checkout a lost start left behind.
+until a worktree is recorded, and that path reuses the checkout folder a lost start left
+behind (`createWorktree`, Machine service changes).
 
 **Restart order.** `restartLead` is changed for imported threads only: it first asks the machine
 (`running`) for tmux sessions of the thread's lead names that the hub does not count as
@@ -512,8 +524,9 @@ and its thread id is not in that set.
     <repository> <branch>: <error>" with a Dismiss button that removes it.
   So a pick-up commit that lands after Cancel, from a push that was slow, retried or
   outlived a restart, is taken back off GitHub, and only if nothing was built on it.
-- is also reached by importing a file for that thread id (Import step 1), which runs
-  the saved operation and ignores the new file;
+- for a saved Create or Advance, is also reached by importing a file for that thread id
+  (Import step 1), which runs the saved operation and ignores the new file; a saved Undo is
+  only pointed to (Import step 1), never run by an import;
 - for an Undo, makes the handed-off banner show "The undo didn't finish" with Retry,
   never "picked up elsewhere", while the remote tip equals `handoff_op.claim_sha`.
 
@@ -574,7 +587,9 @@ and its thread id is not in that set.
   - `claim-push` `{project, branch, parent, sha}` → `claim-state`; if `parent`, run step 2
     of Claims and then `claim-state` again. The result comes only from the last
     `claim-state`, never from the push's exit code: `landed` → `landed`; `parent` or
-    `unknown` → `unknown`; `moved` → `moved`.
+    `unknown` → `unknown`; `moved` → `moved`. Every result except `unknown` includes the
+    last `claim-state`'s `remote_tip`, which the hub needs for the own-cancelled-claim
+    check.
   - `claim-revoke` `{project, branch, parent, sha}` → `claim-state`, then: tip exactly
     `sha` → `git push --force-with-lease=refs/heads/<branch>:<sha> origin
     <parent>:refs/heads/<branch>`, which puts the branch back on `parent` only if the tip
@@ -709,10 +724,10 @@ New tests, then the suites:
     saved operation with the same claim wins over its revoke entry; a revoked entry keeps
     watching until 24 h and revokes a second landing; a rejected revoke is kept and shown
     on the threads list; import while our cancelled claim is the tip says "still being
-    undone" for an own cancelled claim on import, Claim, banner and Open note, with an
+    taken back" for an own cancelled claim on import, Claim, banner and Open note, with an
     immediate revoke; cancelled claims never reused; revoke list
     writes for two threads at once both survive; `revoked` renews `until`; `kill` with exact
-    names leaves a live sub-lead alone; Stop treats "no such session" as stopped; idea point
+    names leaves a live sub-lead alone;  idea point
     needs MAP.md committed; Download again serves the copy matching `handed_off.head`; a
     queued message on a dead lead blocks export, one on an ended worker does not; `kill` uses
     `=name`; Stop treats the machine's 404 as stopped; MAP.md checked at `head` on import;
