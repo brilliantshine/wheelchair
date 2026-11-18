@@ -1,7 +1,7 @@
 ---
 slug: project-tools-screen
 status: confirmed   # draft | confirmed
-mode: thorough   # thorough | two-part | proof-of-concept
+mode: two-part   # thorough | two-part | proof-of-concept
 created: 2026-11-18
 ---
 

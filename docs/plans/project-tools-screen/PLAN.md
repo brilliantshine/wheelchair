@@ -66,8 +66,11 @@ None.
 | 39 | Token split into machine/project, tool baseline and key revision; machine uses a random id of its own; form stays bound to its baseline | Machine has no name; key writes mustn't refresh the tool baseline | review-round-9 |
 | 40 | Reply contract with `push_failed`, field checks, hub pass-through and 504 `transport` | Known failures vs lost replies end to end | review-round-9 |
 | 41 | `tools: null` for key-only; unreadable source writable only via Start over; keys-only shows tools read-only when one fetch URL exists | Close round 9 gaps | review-round-9 |
+| 42 | Mode changed from thorough to two-part; rare-case hardening moved to Deferred rows 1-8 | Collin chose it after nine review rounds kept finding rarer cases | user |
 
 ## Spec
+
+Mode is two-part: rare-case hardening is listed under Deferred and is not built here.
 
 ### What it is
 A "Project tools" section on the Settings page (`viewer/pages/settings.*`). Collin picks a
@@ -82,74 +85,61 @@ project's tools and lets him add, change and remove them. Works at phone width.
   symlinked or aliased picker paths, Save, key status and session launch all use one identity.
 
 ### Reading
-- The machine reads every effective fetch URL (`git remote get-url --all origin`) and push
-  URL (`git remote get-url --push --all origin`). Tool changes are allowed only when there is
-  exactly one of each and both name the same GitHub repository (`owner/name`); otherwise the
-  section is **keys-only** (below). That one push URL is the **validated URL**: every later
-  fetch, push and `ls-remote` in Read and Save uses it explicitly, never the remote name
-  `origin`. Git's own URL rewriting (`insteadOf`) is honored as Collin configured it
-  (Accepted Risks). Every `gh` call passes `--repo <host>/<owner>/<name>`, with the host taken
-  from the validated URL, and runs non-interactively.
-- **Keys-only.** Without a validated URL the section says "Tools can't be edited here: pull
-  requests need a single GitHub origin (<reason>)". If origin has exactly one fetch URL, the
-  tools are still read through it (same private-ref fetch) and shown read-only with their
-  skip reasons and key warnings; otherwise no tool list, and key usage shows "unknown".
-  Setting, adding and removing keys work. Its token has no tool baseline and `keys_only: true`.
-- The machine fetches the current default branch (resolved as below) with
+- The machine reads `git remote get-url origin` and `git remote get-url --push origin`. Tool
+  changes are allowed only when both are github.com URLs naming the same repository
+  (`owner/name`); that push URL is the **validated URL**, used explicitly for every fetch,
+  push and `ls-remote` in Read and Save. Git's own `insteadOf` rewriting is honored (Accepted
+  Risks). Every `gh` call passes `--repo <owner/name>` and runs non-interactively.
+- **Keys-only.** Otherwise the section says "Tools can't be shown or edited here: pull
+  requests need a GitHub origin", shows no tool list, and shows the keys list with every
+  stored key (usage "unknown"). Setting, adding and removing keys work. Its token has no tool
+  baseline.
+- The machine fetches the current default branch with
   `git fetch --no-write-fetch-head --no-tags <validated URL> +refs/heads/<branch>:refs/wheelchair/tools/<random>`,
-  reads the commit from that private ref, and deletes the ref when the request ends; Read and
-  Save never use `FETCH_HEAD` or shared remote-tracking refs. It reads `.mcp.json` from that
-  commit. That is the **source**; Collin's working checkout is
-  never read or touched. The default branch is the current remote default, from
-  `git ls-remote --symref <validated URL> HEAD`, not the cached `origin/HEAD`. The screen does not
-  change the clone's cached `origin/HEAD` or how threads start (`machine/service.js:529-542`);
+  reads the commit from that private ref, and deletes the ref when the request ends. It reads
+  `.mcp.json` from that commit: the **source**. Collin's working checkout is never read or
+  touched. The default branch is the current remote default, from
+  `git ls-remote --symref <validated URL> HEAD`, not the cached `origin/HEAD`. The screen
+  doesn't change the clone's `origin/HEAD` or how threads start (`machine/service.js:529-542`);
   after a default-branch rename the two can differ (Accepted Risks).
 - It lists waiting tools PRs: `gh pr list --repo R --base <default branch> --state open
-  --limit 1000 --json number,url,title,headRefName,isCrossRepository`, keeping same-repository PRs whose
-  head branch starts with `wc-tools/`. The section shows them as "Waiting to merge" with
-  links, and says edits start from the default branch and don't include them.
-- If `gh` fails (not installed, no login, network), the section still shows the tools from
-  the default branch, with "couldn't check for waiting pull requests: <reason>". Editing and
-  Save still work; if `gh` still fails at PR creation, Saving step 6's fallback applies.
-- The file is read from the source with `git ls-tree` / `git cat-file`. Missing: empty
-  list. An entry that is not a regular blob (symlink, submodule, tree) is unreadable, reason
-  "not a regular file; edit it by hand or Start over". Session launch is unchanged and may
-  still follow a symlink (Accepted Risks). Otherwise the same checks as `machine/lib/project-mcp.js` apply, with
-  the same reasons.
-- Unreadable file: the section shows the reason, offers no editing, and offers "Start over":
-  a Save with `start_over: true` and an empty tool list, which counts as a tool-list change
-  (never "nothing to save") and writes a regular file in place of whatever was there. Save
-  accepts `start_over` only if the token's `source_state` is `unreadable` and, after the
-  step 1 fetch, rerunning the reader's checks on the matched source still finds it unreadable.
-  When the source is unreadable, a tool-list Save without `start_over` is refused (400); key-only
-  Saves still work.
-- The read returns a **read token** in two parts:
-  - **machine and project**: a random machine id (generated once and kept in the machine's
-    state directory; the machine refuses a token carrying any other id) and the project
-    identity (git common directory);
-  - **tool baseline**: the validated GitHub repository, `source_state` (`missing`, `ok` or
+  --limit 1000 --json number,url,title,headRefName,isCrossRepository`, keeping
+  same-repository PRs whose head branch starts with `wc-tools/`. The section shows them as
+  "Waiting to merge" with links, and says edits start from the default branch and don't
+  include them.
+- If `gh` fails (not installed, no login, network), the section still shows the tools, with
+  "couldn't check for waiting pull requests: <reason>". Editing and Save still work; a failed
+  PR creation is handled by Saving step 6.
+- The file is read from the source with `git ls-tree` / `git cat-file`. Missing: empty list.
+  An entry that is not a regular blob (symlink, submodule, tree) is unreadable, reason "not a
+  regular file; edit it by hand or Start over". Session launch is unchanged and may still
+  follow a symlink (Accepted Risks). Otherwise the same checks as `machine/lib/project-mcp.js`
+  apply, with the same reasons.
+- Unreadable file: the section shows the reason, offers no editing, and offers "Start over": a
+  Save with `start_over: true` and an empty tool list, which counts as a tool change and writes
+  a regular file in place of whatever was there. Save accepts `start_over` only if the token's
+  `source_state` is `unreadable` and the step 1 fetch still finds it unreadable. On an
+  unreadable source a tool Save without `start_over` is refused (400); key-only Saves work.
+- The read returns a **read token**:
+  - **project**: the project identity;
+  - **tool baseline**: the validated repository, `source_state` (`missing`, `ok` or
     `unreadable`), the default branch name and `.mcp.json`'s tree mode plus object id (or
     "absent"); absent in keys-only mode;
   - **key revision**: a counter the machine bumps on every key write.
   The screen sends it back on Save and Remove.
-- The tool form is bound to the tool baseline it was loaded with. A reply after a key write
-  (`saved`, `removed`, `push_failed`) returns a new key revision, and the screen updates only
-  that part, keeping the form and its baseline. If a later read (reload or lock check) finds a
-  different tool baseline while the form has unsaved edits, the screen says "The tools changed
-  on <default branch>; reload to see them (your unsaved edits will be lost)" and keeps the old
-  baseline until Collin reloads, so a Save from the old form is refused as stale.
-- After `opened` or `pr_failed`, the form reloads from the default branch; the new PR appears
-  under Waiting to merge, or for `pr_failed` the compare link holds the edits.
+- The tool form stays bound to the baseline it was loaded with. A reply after a key write
+  returns the new key revision; the screen updates only that, keeping the form and its
+  baseline. After a Save that pushed a branch, the form reloads from the default branch.
 - Each tool shows its name, kind (command or web address), what it runs, and its settings
   (env names; plain values shown, key values shown as "set" or "not set" on this machine).
-- Each tool shows any reason it would be skipped, by the machine's validator or by Codex,
-  and the section shows the Codex "too large for the command line" result
+- Each tool shows any reason it would be skipped, by the machine's validator or by Codex, and
+  the section shows the Codex "too large for the command line" result
   (`machine/adapters/codex.js:98-101`) when the whole file trips it. The Codex per-entry
   reasons live inline in `command()` today (`machine/adapters/codex.js:63-75`); extract them
   and the aggregate size check into exported functions used by both `command()` and this
   screen. Export the per-entry validator from `machine/lib/project-mcp.js` too (only
-  `readProjectMcp` and `TOOL_ROLES` are exported today, line 44). The viewer gets results
-  from the machine, never its own copy of the rules.
+  `readProjectMcp` and `TOOL_ROLES` are exported today, line 44). The viewer gets results from
+  the machine, never its own copy of the rules.
 - Notes on the section: Antigravity agents don't get project tools; keys are kept on this
   machine only, so another machine running this project needs its own keys entered.
 
@@ -221,118 +211,96 @@ project's tools and lets him add, change and remove them. Works at phone width.
   `.mcp.json` after launch is not guarded against (Accepted Risks).
 
 ### Saving
-- Save sends `tools` (the new list, or `null` for no tool change; keys-only mode and the
-  Keys list always send `null`), keys to set (by name), and the read token. A non-null `tools`
-  is a tool change, decided by comparing it, parsed, with the baseline's parsed list (not
-  bytes); an equal list is treated as `null`.
-- No tool-list change and no keys set: refused, "nothing to save".
+- Save sends `tools` (the new list, or `null` for no tool change; keys-only mode and the Keys
+  list always send `null`), keys to set (by name), and the read token. A non-null `tools` is a
+  tool change, decided by comparing it, parsed, with the baseline's parsed list; an equal list
+  is treated as `null`.
+- No tool change and no keys set: refused, "nothing to save".
 - One save or removal per project at a time on the machine (a lock); a second waits.
 - Order, with nothing written until step 3:
-  1. Project identity or key-store revision differs from the read token: refuse "changed since you opened it"
-     (the screen reloads). The token's project identity must match the project the request
-     names, and for tool changes its GitHub repository must match a fresh resolution;
-     otherwise refuse the same way. If the tool list changed, also fetch the default branch and refuse
-     the same way if its name or its `.mcp.json` blob id (or absence) differs; other new
-     commits on it don't matter. A key-only Save does not fetch.
-  2. If the tool list changed: serialize the candidate (2-space JSON, trailing newline) and run
-     the reader's checks on it. A whole-file failure blocks Save with the reason. Per-entry
-     skip reasons and the Codex size result are warnings and don't block, for edited and
-     untouched entries alike.
-  3. Store the keys being set. If the tool list didn't change, stop here: no PR.
+  1. Project identity or key revision differs from the token: refuse (409) "changed since you
+     opened it"; the screen reloads. For a tool change, also re-resolve the validated
+     repository and fetch the default branch, refusing the same way if the repository, the
+     branch name or `.mcp.json`'s mode and object id (or absence) differ; other new commits
+     don't matter. A key-only Save does not fetch.
+  2. For a tool change: serialize the candidate (2-space JSON, trailing newline) and run the
+     reader's checks on it. A whole-file failure blocks Save (400) with the reason. Per-entry
+     skip reasons and the Codex size result are warnings, for edited and untouched entries.
+  3. Store the keys being set. With no tool change, stop: reply `saved`.
   4. In a temporary worktree (never Collin's checkout) at the default-branch head just
-     fetched, replace `.mcp.json` with a regular file holding the candidate and commit "Update
-     project tools" with the trailer `Wheelchair-Save: <32 random hex>`, so the commit id is
-     unique to this Save.
+     fetched, replace `.mcp.json` with a regular file holding the candidate and commit
+     "Update project tools".
   5. Push to a new branch `wc-tools/<12 random hex>` with
-     `git push --porcelain --force-with-lease=refs/heads/<branch>: <validated URL> HEAD:refs/heads/<branch>`
-     and go on only if the porcelain line for that ref has the `*` (new ref) flag; "up to
-     date" is a failure. If the push errors or its result is unclear, check with
-     `git ls-remote <validated URL> refs/heads/<branch>`: present at our commit means created (go on);
-     absent means failed; anything else fails with "couldn't confirm the push". If the remote refuses because a branch named
-     `wc-tools` (or any ref blocking the `wc-tools/` namespace) exists, show "a branch named
-     <name> on GitHub blocks saving; rename or delete it"; never touch it.
+     `git push --force-with-lease=refs/heads/<branch>: <validated URL> HEAD:refs/heads/<branch>`
+     (an empty lease: the push fails if the branch exists, so nothing is overwritten). A
+     failed push replies `push_failed` with git's message.
   6. Run `gh pr create --repo R --head <branch> --base <default branch> --title "Update
-     project tools" --body "Saved from the wheelchair app's Project tools screen."`. If that
-     fails or times out, confirm with `gh pr list --repo R --head <branch> --base <default
-     branch> --state all --json url,isCrossRepository,headRefOid`, keeping only a
-     same-repository PR whose head is this Save's commit: one found is reported as opened, with its link. None
-     found: the reply shows the error, the branch name and GitHub's compare link so Collin can
-     open it himself. If confirmation also fails: "couldn't confirm whether the pull request
-     was opened; check Waiting to merge" plus the compare link. Creation is never
-     retried.
+     project tools" --body "Saved from the wheelchair app's Project tools screen."`. Success
+     replies `opened`. Failure replies `pr_failed` with the error, the branch name and
+     GitHub's compare link so Collin can open it himself. Creation is never retried.
   7. Remove the temporary worktree.
 - Header keys: the form notes that tools with headers only work for Claude agents (Codex skips
   them), and that Claude may read some credential-like names as empty in remote headers, so
-  Collin should check the tool authenticates. No name list is kept.
+  Collin should check the tool authenticates.
 - Every Save makes its own branch and PR; two saves never share anything. Two waiting PRs may
-  conflict with each other; GitHub shows that and Collin closes one.
-- The section shows the PR link and that new threads get the change once it is merged.
-- Errors (push rejected, no `gh` login, PR creation failed) are shown in plain words; keys
-  stored in step 3 stay stored.
-- Every git and `gh` command these routes run has a 60-second limit on the machine:
-  add an optional timeout to `commandAsync` (`machine/service.js:87-99`) that spawns the child
-  in its own process group, kills the whole group on expiry and settles at once without
-  waiting for `close`; the lock and temporary worktree are released in a `finally`, whatever
-  happens.
+  conflict; GitHub shows that and Collin closes one.
+- The section shows the PR link and that new threads get the change once it is merged. Keys
+  stored in step 3 stay stored whatever happens after.
+- Every git and `gh` command these routes run has a 60-second limit: add an optional timeout
+  to `commandAsync` (`machine/service.js:87-99`) that kills the child on expiry. The lock and
+  temporary worktree are released in a `finally`.
 - The machine runs a Save to the end even if the HTTP request is dropped. It keeps no record
   of saves.
-- Deadlines: the hub calls the new read, save and remove routes with a 120-second timeout
-  (`viewer/app/machine-client.js:64` takes a timeout argument; the default is 5 seconds).
-- Replies. Every Save and Remove reply is JSON with an `outcome` field:
-  - `saved` (keys only, no PR): `key_revision`, `warnings`;
-  - `opened`: `key_revision`, `pr_url`, `warnings`;
-  - `pr_failed` (branch pushed, no PR confirmed): `key_revision`, `branch`, `compare_url`, `error`;
-  - `push_failed` (keys stored in step 3, then commit or push failed): `key_revision`, `error`;
-  - `removed`: `key_revision`;
-  - `refused` (HTTP 409 stale or wrong project/machine, 400 validation): `reason`.
-  The page checks every field its outcome requires (non-empty strings, `key_revision` an
-  integer); a 2xx reply that fails that check, or isn't JSON (the page's `api()` helper turns
-  that into `{}`, `viewer/pages/settings.js:69`), is a **lost reply**.
-- Hub forwarding. The new hub routes pass the machine's status and JSON body through
-  unchanged for 2xx and 4xx (today `MachineClient.call()` throws on non-2xx and keeps only
-  `error`, `viewer/app/machine-client.js:64-77`; add a pass-through variant). A machine
-  timeout or dropped connection becomes HTTP 504 with `{ "transport": true }`, which the
-  page treats as a lost reply; a 4xx `refused` is shown as its `reason`.
-- On a lost reply the screen reloads and shows, never retrying on its own and tracking nothing:
-  - tool change: "Your last save may or may not have gone through; check Waiting to merge
-    before saving again." If `gh` failed on the reload, it names the repository's pull
-    requests page on GitHub instead of Waiting to merge;
-  - key-only: "Check the keys list to see whether your key was saved."
-- Reading reports whether this project's save lock is held; if so the section shows "A save
-  is still running" and disables Save. The screen then polls a lock-status route (local state
-  only, no git or GitHub, 5-second timeout) every 10 seconds and does one full read when the
-  lock is free, applying the baseline rule above so unsaved edits are kept.
+- Replies. JSON with an `outcome`: `saved` (`key_revision`, `warnings`), `opened`
+  (`key_revision`, `pr_url`, `warnings`), `pr_failed` (`key_revision`, `branch`,
+  `compare_url`, `error`), `push_failed` (`key_revision`, `error`), `removed`
+  (`key_revision`), `refused` (409 or 400, `reason`).
+- Hub forwarding. The hub calls the new read, save and remove routes with a 120-second timeout
+  (`viewer/app/machine-client.js:64` takes a timeout argument; the default is 5 seconds) and
+  passes the machine's status and JSON body through unchanged for 2xx and 4xx (today
+  `MachineClient.call()` throws on non-2xx and keeps only `error`,
+  `viewer/app/machine-client.js:64-77`; add a pass-through variant). A `refused` reply is
+  shown as its `reason`.
+- A timeout, dropped connection or unreadable reply shows "Save may still be finishing;
+  reload in a minute and check Waiting to merge before saving again." The screen never
+  retries on its own.
 
 ### Not doing
 Running or testing a tool; changing which roles or CLIs get tools; changing running threads;
-account-level tools; merging the PR.
+account-level tools; merging the PR; everything under Deferred.
 
 ### Validation
-- `bash machine/test/run.sh`: new tests for reading from the remote branch, the temp-worktree
-  commit and PR (fake git remote and fake `gh`), key store mode 600, keys reaching the session
-  environment and absent from argv, `session.command` and persisted sessions; reserved key
-  names refused; Save refused when `.mcp.json`, the key revision, the project identity, the machine or
-  the GitHub repository changed, and `start_over` refused on a readable file; keys-only read
-  without a validated URL; fresh token after a key write lets the next Save through; private
-  fetch ref, `FETCH_HEAD` untouched; `--repo` carries the host; reply outcomes and field checks; `push_failed` after keys stored; tool-list Save on an
-  unreadable source refused without `start_over`; `tools: null` key-only Save never fetches;
-  `--no-tags` leaves shared refs unchanged; hub passes 4xx bodies through and maps timeouts
-  to 504 `transport`; baseline kept across a key write;
-  push without a new-ref `*` flag stops before PR creation (including equal-sha); a blocking
-  `wc-tools` ref shows its message; `${NAME:-x}` in args holds back that key at launch;
-  a dropped Save still runs to the end on the machine;
-  Start over replaces an unreadable file; Remove refused on an identity mismatch; push uses
-  the validated URL only (two push URLs put the section in keys-only mode); fork PR not taken as this Save's; lost reply
-  from an unreadable body; lock-held read; command timeout kills a grandchild holding the pipe;
-  push with lost result confirmed by ls-remote; differing push and fetch repos refused; waiting tools PRs listed and filtered by `wc-tools/` prefix;
-  symlinked `.mcp.json` read as unreadable and replaced by Start over; key-only save opens no PR;
-  PR-create failure shows the compare link;
-  a checkout alias and a thread worktree resolve to the same key store; stale Save writes no keys; Remove refused on a key-store revision change; push refuses an existing branch name; two saves make two PRs; only referenced,
-  non-reserved keys reach Claude/Codex tool roles; gh failure still lists tools.
-- `node --test viewer/test/*.test.js`: hub routes forward keys without storing them; auth and
-  origin checks on the new write routes.
-- `npm --prefix viewer run test:browser`: add, edit, remove, key set/not set, skipped-entry
-  reason and PR link at phone width.
+- `bash machine/test/run.sh` (fake git remote and fake `gh`): reading from the remote default
+  branch via a private ref with `FETCH_HEAD` and tags untouched; keys-only without a GitHub
+  origin; temp-worktree commit, new-branch push and PR; two saves make two PRs; push refuses an
+  existing branch name; `push_failed` and `pr_failed` replies (with compare link); key store
+  mode 600; keys reach Claude/Codex tool-role session environments only when referenced and
+  not reserved, and are absent from argv, `session.command` and persisted sessions;
+  `${NAME:-x}` in args holds back that key at launch; reserved names refused; Save refused on
+  a changed `.mcp.json`, key revision, project identity or repository, but not on unrelated new
+  commits; key-only Save (`tools: null`) never fetches or opens a PR; fresh key revision after
+  a key write lets the next Save through; Start over replaces an unreadable file and is refused
+  on a readable one; tool Save on an unreadable source refused; Remove refused on a key
+  revision or identity change; a checkout alias and a thread worktree share one key store;
+  `gh` failure still lists tools; a dropped Save still runs to the end; command timeout kills
+  the child; waiting tools PRs filtered by `wc-tools/` and same repository.
+- `node --test viewer/test/*.test.js`: hub routes forward keys without storing them, pass 4xx
+  bodies through, use the 120-second timeout; auth and origin checks on the new write routes.
+- `npm --prefix viewer run test:browser`: add, edit, remove, key set/not set, skip reasons and
+  key warnings, waiting PRs and PR link, at phone width.
+
+## Deferred
+
+| # | Item | Why it can wait | Source | Notes for the follow-up |
+|---|------|-----------------|--------|-------------------------|
+| 1 | Recovering from a lost or garbled save reply | Rare (phone drops mid-save); a plain "may still be finishing" message covers it | planning | Review rounds 4-9: per-outcome field checks on replies, hub mapping of timeouts to 504 `transport`, per-case lost-reply messages (tool change vs key-only vs `gh` down). Collin chose no save tracking (Log 34). |
+| 2 | Showing that a save is still running | Only matters when two saves overlap | planning | Rounds 7-9: report the project lock on Read, a local-only lock-status route polled every 10 s, then one full read keeping unsaved edits. |
+| 3 | Tying the read token to one machine | Needs two machines with the same project path and key revision | planning | Round 8-9: a random machine id kept in the machine's state dir, refused on mismatch. |
+| 4 | Origins with several URLs or other GitHub hosts | Unusual git setups | planning | Rounds 6-9: check every fetch and push URL (`git remote get-url --all` / `--push --all`), pass `--repo host/owner/name`, show tools read-only in keys-only mode when one fetch URL exists. |
+| 5 | Confirming a push or pull request whose result was unclear | Only when GitHub's answer is lost | planning | Rounds 4-7: `git push --porcelain` new-ref check, `ls-remote` confirmation, `gh pr list --head` confirmation filtered by same repo and head sha, a `Wheelchair-Save` commit trailer for uniqueness. |
+| 6 | Stopping hung git commands' child processes too | Only when a child process hangs holding the pipe | planning | Round 5: spawn in a process group, kill the group, settle without waiting for `close`. |
+| 7 | Warning when the tools change on main while you edit | The stale check already refuses the Save | planning | Round 9: on a read with a different baseline and unsaved edits, show a banner and keep the old baseline until reload. |
+| 8 | Clear message when a `wc-tools` branch blocks saving | Only if someone made a branch with that name | planning | Round 4: name the blocking ref; never touch it. |
 
 ## Accepted Risks
 
@@ -583,6 +551,20 @@ header note without a name list); Validation; Accepted Risks (round 8); Decision
 | mechanics | major | Tool change detection; key-only representation | upheld | `tools: null`, parsed compare |
 | mechanics | minor | RE-RAISE: fetch follows tags | upheld | `--no-tags` |
 
+### Round 10 — 2026-11-18
+
+**Lanes:** intent — pending; mechanics — pending; cross-family: pending.
+
+**Changed since Round 9:** mode is now two-part (Log 42). The Spec was rewritten to the
+everyday design and eight hardening items moved to Deferred: lost-reply recovery, save-running
+display, machine-bound token, multi-URL origins, unclear push/PR confirmation, process-group
+kill, main-changed banner, blocking-branch message. Reading (single origin URL pair, keys-only
+without tool list), Saving (empty-lease push, `push_failed`/`pr_failed` replies, plain
+lost-reply message) and Validation were simplified to match.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
@@ -592,6 +574,6 @@ header note without a name list); Validation; Accepted Risks (round 8); Decision
 
 Round 3 was the third round without a clean result since Collin's last decision; budget stop. The `wc-tools` shared-branch design (Log 9, 12, 18) drew findings in all three rounds. Put to Collin; he chose one PR per save (Log 23). Budget reset.
 Round 6 was the third round without a clean result since that decision (rounds 4-6); budget stop. Recurring: recovering a Save whose reply was lost (rounds 4-6) and GitHub destination checks (rounds 5-6). Round 6 fixes applied before asking. Collin chose no save tracking (Log 34). Budget reset.
-Round 9 was the third round without a clean result since that decision (rounds 7-9); budget stop. Recurring: lost-reply and reply-contract handling, token binding, destination checks. All findings fixed before asking.
+Round 9 was the third round without a clean result since that decision (rounds 7-9); budget stop. Recurring: lost-reply and reply-contract handling, token binding, destination checks. All findings fixed before asking. Collin chose two-part mode (Log 42). Budget reset.
 
 Watch List items 1-6 (Antigravity note, Codex flags, project identity, unknown fields, key values in argv, second save) were settled as Decision Log 4-9.
