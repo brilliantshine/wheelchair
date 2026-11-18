@@ -61,6 +61,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 24 | Machine status entries may carry `problem`; Ready shows it; placement skips entries not logged in | Version floor and China region must reach Ready and placement without new hub rules | review-round-2 |
 | 25 | Turn ends that are interrupted or unverified release the turn but deliver no report | A partial reviewer report must not be published; an unbound turn must not hold the queue | review-round-2 |
 | 26 | A Kimi account is ineligible when the CLI is missing; a home with inline `hooks =` refuses session start; failure events get the bound-session check; an interrupted review gets no "no report" reminder | Review round 3 gaps | review-round-3 |
+| 27 | Keep all hardening in this plan (stay thorough) and review again | Collin, after three rounds without a clean one | user |
 
 ## Spec
 
@@ -499,6 +500,15 @@ exit. Downgrades and declines cite evidence.
 | mechanics | blocking | `hooks =` refusal not enforced at start | upheld | `startNamed` refuses, tested |
 | mechanics | major | Ready problem precedence and display names | upheld | Settings-order rule; names resolved in the hub |
 | mechanics | major | StopFailure skips the bound-session check | upheld | Carries `conversation_id`; check applied before forwarding |
+
+### Round 4 — 2026-11-18
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 3:** restored "Reading a Kimi home's config" with a parsing contract and the observed config shape; accounts ineligible when `kimi` is missing; `startNamed` refuses a home with inline `hooks =`; Ready problem precedence (Settings order, names resolved in the hub, `problem` never names an account; China-region text changed); StopFailure carries `conversation_id` and gets the bound-session check; no "no report" reminder after an interrupt; Kimi report function joins all text parts of the final step; Decision 23 marked as superseding 14; one more Accepted Risk.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
