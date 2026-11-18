@@ -61,6 +61,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 31 | The restart reorder (28) and partial-start handling apply to imported threads only; supersedes 28 | Changing start-up for every thread pulled pre-existing crash windows into this feature | review-round-12 |
 | 32 | Cancel never waits on an in-flight push: it records the claim on a hub revoke list and abandons; a sweep takes a late-landing claim back off GitHub with a lease that only matches that exact commit. Supersedes the `claim-cancel`, pid and time-bound design | Collin chose to keep going on Cancel; this removes the need to know whether a push is still running | review-round-12 |
 | 33 | Cancelled claims are never reused: an import or undo meeting its own cancelled claim waits for the revoke ("try again in a few minutes") | Adopting them (round 14) opened crash, cross-clone and late-revoke gaps; waiting a few minutes in a rare case is simpler | review-round-15 |
+| 34 | Remaining rare crash-timing cases are accepted risks; one last consistency-only review pass, then approval | Collin chose accept and approve; findings had narrowed to crashes at exact moments | user |
 
 ## Spec
 
@@ -761,6 +762,8 @@ npm --prefix viewer run test:browser
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A crash, machine restart or lost reply at one exact moment inside Export, an operation, Cancel, the revoke sweep or Restart may still leave a thread needing a Retry, a second try, or a fix by hand (on GitHub or in the hub state), beyond the cases this Spec handles | Fifteen review rounds closed the cases found; the rest need precise crash timing. Collin chose to accept them (decision 34); build testing covers more | 15 |
+| Two wheelchair apps, or several clones of one repository, on the same machine handling the same thread are only partly guarded (the machine's ownership markers and the checked-out-branch checks) | Rare setup; the guards cover the normal ways it happens | 15 |
 | A machine's archive records never expire, so a hub that lost its own state can't import its old threads on that machine (it can on another machine, or after removing the id from the machine's archive file by hand) | A hub losing its state is a disaster case; expiry would reopen the same-machine sharing problem | 9 |
 | Unsaved session starts after a hub crash behave as today for every thread except an imported thread's lead | Those crash windows predate this feature and are outside its scope | 9, 11, 12 |
 
@@ -1181,6 +1184,18 @@ npm --prefix viewer run test:browser
 | mechanics | major | No MAP.md field in `status` or `inspect` | upheld | `map_committed` on both |
 | mechanics | major | Download again races Export's rename | upheld | Download again under the thread lock; rename tolerates identical content |
 | mechanics | blocking | Never-imported thread's Undo loses its checkout after a crash | upheld | `checkout_sha` used by every restart while no worktree exists |
+
+### Round 16 — 2026-11-17
+
+**Lanes:** intent and mechanics; cross-family: yes.
+
+**Changed since Round 15:** scope set by Collin (decision 34): consistency of the latest fixes only.
+- Adoption removed; own cancelled claim gets "still being taken back" everywhere.
+- Quiet test: only deliverable queues block export.
+- `kill` with `=name`; Stop treats the machine's 404 as stopped; `map_committed`; Download again under the thread lock; `checkout_sha` for every restart without a worktree.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
