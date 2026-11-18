@@ -49,8 +49,9 @@
     a.href = href;
     if (key === 'settings') {
       // Phones show a small gear in place of the word (app.css, 480px block); the name stays.
+      // Hidden by CSS above 480px, not by the hidden attribute: app.css's [hidden] rule is
+      // !important and would keep it hidden on phones too, leaving an empty button.
       const gear = el('span', 'gear');
-      gear.hidden = true;
       gear.setAttribute('aria-hidden', 'true');
       gear.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
         + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle>'
