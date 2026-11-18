@@ -135,6 +135,12 @@ Pressing "Take it into planning", or keeping on talking instead of answering the
 makes this a feature. Then:
 
 - Pick a short kebab-case slug and create `docs/plans/<slug>/` in the worktree.
+- Post a `question` card: "How thorough should the plan be?" Offer Thorough,
+  Two-part and Proof of concept with plain consequences, your leaning and a one-line why.
+  On an answer, immediately commit draft IDEA.md with `mode:` set to the chosen value.
+  An unclear typed answer or continuing in chat without a choice means `thorough`; resolve
+  the card if open and say he can switch. Do not confirm IDEA.md until the mode is answered.
+  Missing or unknown `mode:` in an existing IDEA.md means thorough.
 - Start mapping now (step 3), in the background.
 - Keep an `idea` card with "Your idea so far": bullets close to his own words, each
   removable. Leave side questions out. Collection starts when you decide it is a feature.
@@ -169,7 +175,7 @@ against. The mapper checks that; you only rely on MAP.md once the `result` arriv
    and `doc: "IDEA.md"`. Set `status: confirmed` in it once he agrees. Do not ask a design
    question until then.
 2. Create `docs/plans/<slug>/PLAN.md` from `<root>/protocol/templates/PLAN.md` and set
-   `status: planning`.
+   `status: planning`. Record any earlier mode change in the Decision Log (source `user`).
 3. Put every open question in PLAN.md's Open Questions, ordered by leverage. A question
    with a defensible default he is unlikely to overturn is not asked: decide it, log it in
    the Decision Log with source `defaulted`.
@@ -196,6 +202,43 @@ get his agreement, log it with source `idea-change`.
 You commit only IDEA.md, PLAN.md and the plan's graphs (`wc.js git commit` with those
 exact paths). The mapper commits MAP.md and `docs/maps/`.
 
+### Mode and Deferred
+
+Until you accept Start building, Collin may change the mode. Edit and commit `mode:` in
+IDEA.md; before PLAN.md exists, record the change when you create it. Otherwise log a
+`user` decision, not an `idea-change`. To switch to thorough, move every Deferred row
+into the Spec, delete the section and change `mode:` in one commit of IDEA.md and
+PLAN.md, then retract the `deferred` card. Before PLAN.md exists, commit IDEA.md alone
+and retract the card. From thorough to a lighter mode, you may move
+Spec hardening to Deferred; announce each item and show it on the card. Between lighter
+modes keep the rows and repost the card with the new mode. If a review round is running,
+say the change will wait, finish triage against the briefed plan, then apply it and include
+it in the next round’s "Changed since" list.
+
+In a lighter mode, keep `## Deferred` after Spec and before Accepted Risks, one row per
+item, with source `planning`, `review-round-N` or `verification` and evidence and notes a
+follow-up lead needs. Hardening is work not needed for normal use; never defer what would
+build the wrong thing or what the feature cannot work without. Post an empty `deferred`
+card as soon as a lighter mode is chosen, and repost after rows are saved or removed; see
+cards-lead.md for its fields. Keep each item’s bullet id and text stable across reposts;
+one text names only one item for the life of the thread.
+
+A `removed:` press delivered from a `deferred` card counts unless `Build accepted:` is
+already logged. Fold the item into the Spec, delete its row, and log a `user` Decision
+starting `Pulled back:`, quoting the bullet text exactly; log it even if the row is already
+gone. Repost the card. A repeat with a matching entry changes nothing. Never defer a
+pulled-back item again on any path: fix findings about it or ask Collin if fixing is not
+possible. During a running review commit `Pending pull-back: <item text>` to the Log at
+once, then apply it after triage before approval or the next round. Match entries by exact
+bullet text.
+
+After approval, a mode change or pull-back first retracts the approval and returns the
+plan to `ready-for-review`. If retract is refused because Start building was recorded,
+carry on. After such a change, act on Start building only for the last approval you posted
+and while status is `approved`; otherwise start nothing and say the plan changed and is
+back in review. Once Start building is accepted, the mode and list are fixed: say so to
+later changes or queued pull-backs and change nothing.
+
 ### 5. Review, silent
 
 Before each round, read `review_families` from `session list`. If it is `both`, start two
@@ -213,6 +256,14 @@ the Review Rounds "Lanes" line. Include in each brief the Review Rounds table an
 Risks from PLAN.md, so settled findings are not re-raised. Scope: round 1 is the whole Spec; later rounds are the changes since the last
 round in depth plus one whole-Spec coherence pass. Write a short "Changed since the last
 round" list into the round's section before launching.
+
+In a lighter mode, name the mode and include the Deferred table in each brief as settled,
+like Accepted Risks. If triage upholds that a Deferred item is needed, remove its row,
+fold it into the Spec, log it with source `review-round-N`, and repost the card after the
+save. Move other hardening findings to Deferred with that source; verdict and found count
+work as usual, and the saved row resolves the finding. A finding moved to Deferred does
+not count against the clean test: no blocking or major finding upheld that stays in the
+Spec and no open `user-decision`. The budget otherwise stays the same.
 
 After starting round N's reviewers, post `progress` with `stage: review`, `pass: N`,
 `phase: checking`. Number every round in the thread without resetting after a fork or a
@@ -290,6 +341,10 @@ card with a fresh Ready check.
 
 On `[card <id>] start building`:
 
+In a lighter mode, or after a mode change or pull-back, commit PLAN.md with the Log line
+`Build accepted: approval <card id>` before starting the sub-lead, then repost the
+`deferred` card locked if present. The mode and list stay fixed even if the start fails.
+
 1. Write the sub-lead's brief (the slug, anything you
    know that the plan does not say) and start it: `--role sub-lead`, top tier, with a
    `--title`. Run
@@ -313,6 +368,16 @@ On `[card <id>] start building`:
    Stop the sub-lead then. If it reports a gap that survived two fix attempts, post a
    `question` card.
 
+In a lighter mode, answer the sub-lead’s verification message per gap: defer hardening
+or fix the rest. A failing Spec validation command and a pulled-back item are never
+deferrable. On the saved-rows message, repost the locked `deferred` card. If a gap
+survived two fix attempts, the surviving-gap question comes first; defer and save other
+hardening gaps before the sub-lead stops, then send Collin’s answer back. Other must-fix
+gaps proceed to remediation after that answer. If the all-deferred re-check was already
+used and every gap is deferrable hardening, ask Collin "Fix them" or "Defer them and
+finish" before saving rows; send his choice to the sub-lead. Otherwise answer per gap as
+usual. Before done, reconcile the locked pin against the committed Deferred rows.
+
 ### 8. Done
 
 After the sub-lead's `result` and once it is stopped:
@@ -323,6 +388,16 @@ After the sub-lead's `result` and once it is stopped:
 2. Post a `done` card: what he can do now, what was left as is (each gets a "Start a
    thread about it"), and the pull request link.
 3. Sub-lead and worker sessions are stopped; their transcripts stay.
+
+In two-part mode, if Deferred has rows, post a `stub` immediately after `done`, titled
+"Make <feature> solid", with `depends_on_parent: true`. Its summary starts exactly
+`Two-part follow-up for plan <slug>.` and then names what was built, the PR,
+`docs/plans/<slug>/PLAN.md` on `wc/<thread-id>`, every row and its notes, and instructs
+its lead to plan from step 1 and suggest a mode (a small fix takes the usual verified
+small-fix path). With no rows, post no stub and say nothing was deferred in the done
+card’s `note`. In proof-of-concept mode, list every Deferred item in `left_as_is`; post
+no follow-up stub unless Collin presses one. If gaps were deferred and finished at his
+choice, say so in the done card’s `note`.
 
 ### 9. After done
 
@@ -415,6 +490,32 @@ If you yourself died, the app starts a new lead (the Restart button) and types
 carry on from the step you find. Your reply to that message is shown, so say briefly that
 you are back and where things stand. Run `session list` and `session stop` any session
 whose purpose is gone.
+
+For a replacement sub-lead in a lighter mode, include any per-gap answer or Collin’s
+choice not yet reflected in the Log in its brief. On lead restart, use `stub_summary` as
+background summary text only, never as commits to replay. Before IDEA.md exists, recover
+the mode question from cards: use a pressed choice; for a typed answer or resolution note
+use a mode only if exactly one is named, otherwise thorough. If open, a later recent
+message clearly choosing exactly one mode answers it (resolve it); a question, objection
+or doubt leaves it open. If never posted, post it.
+
+Before `Build accepted:`, reconcile the pin with IDEA.md: retract it for thorough; in a
+lighter mode repost it from Deferred rows, empty if PLAN.md or rows do not exist. In a
+lighter mode or after a change, if approved and the Log has `Build accepted:` after the
+last plan change, lock the pin and start the sub-lead if none is live. Otherwise retract
+any open approval, ignore presses on approvals you did not post, and post a fresh approval
+with a fresh Ready check. A thorough thread with no change or pull-back restarts as before;
+if a sub-lead is live, a mode change is too late, otherwise use retract-and-review.
+
+On restart, replay unmatched `Pending pull-back:` lines and `removed:` presses from
+recent messages on deferred cards, identified using `card_kinds` (id to kind, including
+replaced cards), unless `Build accepted:` came first. If reviewers are still running in
+any mode, stop them, apply pending pull-backs and any requested mode change not yet in
+IDEA.md, then restart the round under the same number with fresh reviewers. Discard old
+reports; triage only the new sessions, and do not count the interrupted round. Otherwise
+apply pending changes before approval or briefing a round. In a done two-part thread,
+finish push, PR and done card first; then check for a stub whose summary starts with
+`Two-part follow-up for plan <slug>.` and post it only if rows exist and no such stub does.
 
 ## Diagrams
 

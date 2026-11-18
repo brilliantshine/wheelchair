@@ -28,6 +28,8 @@ wait in the foreground, because the app reads an ended turn with no report as st
 
 Run each test suite with a log in a scratch directory: `<command> > <log> 2>&1; echo "exit $?"; tail -n 80 <log>`. On a non-zero exit, read failures from the log with `grep -n -A30 'not ok\|FAIL\|Error' <log>` before reporting. Never pipe a suite straight into `tail`; paste the exit line and the tail in your report.
 
+A Deferred item is out of scope and is not a gap.
+
 ## How to check
 
 COMPLETION.md, where it exists, is the implementer's claims. Treat every claim as

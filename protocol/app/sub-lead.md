@@ -28,6 +28,13 @@ them.
 ## Starting, and resuming after a restart
 
 1. Read IDEA.md, then the whole PLAN.md, then MAP.md.
+1a. In a lighter mode, if `status: verifying`, read the Log before changing status. If it
+   contains `Deferred and finished at Collin's choice`, send the done result described
+   below and do nothing else. If your brief carries that choice, save those rows with that
+   Log line, commit and message the lead, then send that result without a new attempt.
+   Otherwise leave `verifying` in place, apply any per-gap answer in your brief not yet
+   logged, and start a new verification attempt on the current committed tip.
+   `All-deferred re-check used` means the allowance is spent.
 2. Set `status: implementing` in PLAN.md as your first act, and commit it
    (`wc.js git commit` with the exact path).
 3. **Resuming.** If `status` was already `implementing` when you started, an earlier
@@ -221,6 +228,7 @@ When every task is done and the full validation passes:
    start's output has a `note` saying its provider was not honoured, start no second verifier.
    If the second start's output has such a note (it landed on the first verifier's provider),
    stop the second verifier at once.
+   In a lighter mode its brief also names the mode and includes the Deferred table.
    Its brief gives it the PLAN.md and COMPLETION.md paths (its role rules are already in its
    starting instructions, so the brief never tells it to read its role file), and says nothing
    of this conversation. Its report arrives as a `result`; stop it
@@ -231,6 +239,27 @@ When every task is done and the full validation passes:
 4. **PASS**: once every verifier of the attempt passes, post `phase: clean`, then send the
    lead a `result` (`task` `build`, `outcome` `done`, `report` COMPLETION.md, `commit` the
    commit verified).
+4a. In a lighter mode, after all verifiers report a failure and before remediation, merge
+   duplicates and send the lead one `message` with `asks: true` listing every gap, each
+   marked `hardening` or `must-fix`, any surviving two fix attempts, and the evidence.
+   Apply the lead's per-gap defer/fix answers: never defer a failing Spec validation
+   command or a pulled-back item. Save deferred gaps in PLAN.md Deferred with source
+   `verification`, commit PLAN.md, then message the lead the commit and rows saved.
+   If gaps remain, run step 5 only on those; count and list only those gaps. Deferred gaps
+   never count toward the two-attempt rule.
+
+   If all gaps were deferred, commit `All-deferred re-check used` in the same save and
+   start a fresh verification attempt on that commit using step 3's selection rules. Use
+   this re-check at most once per build. If it was already used, the lead answers per gap
+   as usual, except when every gap is deferrable hardening: wait for Collin's choice.
+   "Fix them" sends every gap to remediation. "Defer them and finish" saves and commits
+   the rows with `Deferred and finished at Collin's choice` in the same commit, messages
+   the lead, and sends a build `result` with outcome `done`, that commit, and a summary
+   saying the gaps were deferred at Collin's choice, with no further verification.
+
+   A surviving gap takes precedence: save other deferred hardening first, then stop and
+   message the lead as in step 6. After Collin answers, act on his answer for that gap;
+   other must-fix gaps go through step 5. Nothing else proceeds while he decides.
 5. **FAIL**: post `phase: fixing` with `found` equal to the distinct gaps in the attempt's
    reports and `fixed: 0`; re-post as `fixed` rises with each accepted remediation task.
    With two verifiers, merge duplicate gaps before counting them. Write

@@ -23,6 +23,9 @@ wait in the foreground, because the app reads an ended turn with no report as st
 Then `docs/plans/<slug>/PLAN.md`. Verify claims against the source, not the plan's own
 account of it.
 
+In a lighter mode, do not raise a Deferred item as missing. Raise one the feature
+cannot work without as a finding against its deferral.
+
 ## The two lenses
 
 - **Mechanics lens.** Attack the Spec: ambiguity a worker could misread, missing lifecycle

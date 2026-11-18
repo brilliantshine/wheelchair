@@ -1,6 +1,7 @@
 ---
 slug: <slug>
 status: draft   # draft | confirmed
+mode: thorough   # thorough | two-part | proof-of-concept
 created: <YYYY-MM-DD>
 ---
 
