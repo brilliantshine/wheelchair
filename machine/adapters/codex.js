@@ -18,6 +18,14 @@ function parseUsage(response) {
   if (!five_hour && !week) throw new Error('no usage windows');
   return { five_hour, week, ...(limits.planType ? { plan_type: limits.planType } : {}), ...(limits.rateLimitReachedType != null ? { reached: true } : {}) };
 }
+// TOML basic string. JSON.stringify is not enough: TOML forbids raw U+007F and other control
+// characters that JSON leaves unescaped, and Codex then rejects the whole configuration.
+const tomlString = value => `"${String(value).replace(/[\\"\u0000-\u001f\u007f]/g, ch => ch === '\\' ? '\\\\' : ch === '"' ? '\\"' : `\\u${ch.charCodeAt(0).toString(16).padStart(4, '0')}`)}"`;
+// The whole tmux command is one argument; Linux caps one argument at 128 KiB. Shell quoting can
+// grow the overrides about fourfold, so they are measured after quoting and dropped as a whole
+// when over budget, rather than letting the session fail to start.
+const PROJECT_OVERRIDE_BUDGET = 64 * 1024;
+const quotedLength = value => `'${String(value).replace(/'/g, `'\\''`)}'`.length + 1;
 module.exports = {
   provider: 'gpt', loginEnv, parseUsage,
   usageProbe(dir, options = {}) { return run('codex', ['app-server'], { ...options, env: { ...process.env, ...loginEnv(dir) }, parse: parseUsage, messages: [
@@ -53,6 +61,7 @@ module.exports = {
     const access = input.role === 'reviewer' ? ['-s', 'read-only', '-a', 'never'] : session.codex_mode === 'unrestricted' ? ['--dangerously-bypass-approvals-and-sandbox'] : ['-s', 'workspace-write', '-a', 'never', '-c', 'sandbox_workspace_write.network_access=true'];
     const argv = ['codex', ...access, '-c', notify, '-c', trust, ...(input.model ? ['-m', input.model] : []), ...(session.effort ? ['-c', `model_reasoning_effort=${session.effort}`] : [])];
     const warnings = [];
+    const projectStart = argv.length;
     if (context?.tools && context.mcp) {
       for (const name of Object.keys(context.mcp.servers)) {
         const entry = context.mcp.servers[name];
@@ -70,21 +79,25 @@ module.exports = {
         if (reason) { warnings.push(`server ${JSON.stringify(name)} skipped on Codex: ${reason}`); continue; }
         const prefix = `mcp_servers.project_${name}`;
         const add = (key, value) => argv.push('-c', `${prefix}.${key}=${value}`);
-        if (entry.type === 'http') add('url', JSON.stringify(entry.url));
+        if (entry.type === 'http') add('url', tomlString(entry.url));
         else {
           const literal = [], passthrough = [];
           for (const [key, value] of Object.entries(entry.env || {})) {
-            if (value === `\${${key}}` && /^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) passthrough.push(JSON.stringify(key));
-            else literal.push(`${JSON.stringify(key)}=${JSON.stringify(value)}`);
+            if (value === `\${${key}}` && /^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) passthrough.push(tomlString(key));
+            else literal.push(`${tomlString(key)}=${tomlString(value)}`);
           }
-          add('command', JSON.stringify(entry.command));
-          add('args', `[${(entry.args || []).map(value => JSON.stringify(value)).join(',')}]`);
+          add('command', tomlString(entry.command));
+          add('args', `[${(entry.args || []).map(tomlString).join(',')}]`);
           add('env', `{${literal.join(',')}}`);
           add('env_vars', `[${passthrough.join(',')}]`);
         }
         add('default_tools_approval_mode', '"approve"');
         add('enabled', 'true');
       }
+    }
+    if (argv.slice(projectStart).reduce((sum, value) => sum + quotedLength(value), 0) > PROJECT_OVERRIDE_BUDGET) {
+      argv.length = projectStart;
+      warnings.push('project tools skipped on Codex: .mcp.json is too large to pass on the command line');
     }
     return { argv, warnings };
   },

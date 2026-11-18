@@ -75,3 +75,17 @@ test('an http entry with stray stdio-shaped keys does not stop its siblings', ()
   assert.deepEqual(result.argv.slice(base.length), pairs('mcp_servers.project_remote.url="https://example.test/mcp"', 'mcp_servers.project_remote.default_tools_approval_mode="approve"', 'mcp_servers.project_remote.enabled=true', 'mcp_servers.project_local.command="node"', 'mcp_servers.project_local.args=[]', 'mcp_servers.project_local.env={}', 'mcp_servers.project_local.env_vars=[]', 'mcp_servers.project_local.default_tools_approval_mode="approve"', 'mcp_servers.project_local.enabled=true'));
   assert.deepEqual(result.warnings, []);
 });
+
+test('control characters are escaped as TOML, not JSON', () => {
+  const result = call({ odd: { command: 'n', args: ['a\u007fb', 'q"\\z', 'tab\there'], env: { 'K\u0001': 'v\u007f' } } });
+  assert.ok(result.argv.includes('mcp_servers.project_odd.args=["a\\u007fb","q\\"\\\\z","tab\\u0009here"]'));
+  assert.ok(result.argv.includes('mcp_servers.project_odd.env={"K\\u0001"="v\\u007f"}'));
+  assert.ok(!result.argv.some(value => /[\u0000-\u001f\u007f]/.test(value)));
+});
+
+test('overrides too large for one command-line argument are dropped as a whole', () => {
+  const big = "'".repeat(20000);
+  const result = call({ a: { command: 'n', args: [big] }, b: { command: 'n', args: [big] }, ok: { command: 'go' } });
+  assert.deepEqual(result.argv, base);
+  assert.deepEqual(result.warnings, ['project tools skipped on Codex: .mcp.json is too large to pass on the command line']);
+});
