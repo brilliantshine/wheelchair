@@ -61,6 +61,8 @@ None.
 | 34 | Supersedes 26, 28 and 31: no save tracking; after a lost reply the screen reloads and tells Collin to check Waiting to merge | Lost replies are rare and the list shows whether it landed | user |
 | 35 | Exactly one fetch and one push URL, same GitHub repo; all git calls use that URL | One destination, checked once | review-round-7 |
 | 36 | `start_over` flag; per-Save commit trailer; Remove checks identity; lock-held shown on Read | Close gaps from round 7 | review-round-7 |
+| 37 | Keys-only mode without a single GitHub origin; replies carry a fresh token and a defined `outcome` | Defines fallback and the reply contract | review-round-8 |
+| 38 | Token bound to the machine; private fetch ref; `--repo` with host; Git `insteadOf` honored | Close round 8 destination gaps without overriding Collin's git config | review-round-8 |
 
 ## Spec
 
@@ -80,13 +82,22 @@ project's tools and lets him add, change and remove them. Works at phone width.
 - The machine reads every effective fetch URL (`git remote get-url --all origin`) and push
   URL (`git remote get-url --push --all origin`). Tool changes are allowed only when there is
   exactly one of each and both name the same GitHub repository (`owner/name`); otherwise the
-  section says why and allows only key changes ("pull requests need a single GitHub origin").
-  That one push URL is the **validated URL**: every later fetch, push and `ls-remote` in Read
-  and Save uses it explicitly, never the remote name `origin`. Every `gh` call passes `--repo <owner/name>` and runs non-interactively.
-- The machine fetches the current default branch (resolved as below) with an explicit
-  refspec, and reads `.mcp.json` from it. That is the **source**; Collin's working checkout is
+  section is **keys-only** (below). That one push URL is the **validated URL**: every later
+  fetch, push and `ls-remote` in Read and Save uses it explicitly, never the remote name
+  `origin`. Git's own URL rewriting (`insteadOf`) is honored as Collin configured it
+  (Accepted Risks). Every `gh` call passes `--repo <host>/<owner>/<name>`, with the host taken
+  from the validated URL, and runs non-interactively.
+- **Keys-only.** Without a validated URL the section shows "Tools can't be shown or edited:
+  pull requests need a single GitHub origin (<reason>)", no tool list, and the keys list with
+  every stored key, usage shown as "unknown". Setting, adding and removing keys work. Its read
+  token carries only the machine, project identity, key-store revision and `keys_only: true`.
+- The machine fetches the current default branch (resolved as below) with
+  `git fetch --no-write-fetch-head <validated URL> +refs/heads/<branch>:refs/wheelchair/tools/<random>`,
+  reads the commit from that private ref, and deletes the ref when the request ends; Read and
+  Save never use `FETCH_HEAD` or shared remote-tracking refs. It reads `.mcp.json` from that
+  commit. That is the **source**; Collin's working checkout is
   never read or touched. The default branch is the current remote default, from
-  `git ls-remote --symref origin HEAD`, not the cached `origin/HEAD`. The screen does not
+  `git ls-remote --symref <validated URL> HEAD`, not the cached `origin/HEAD`. The screen does not
   change the clone's cached `origin/HEAD` or how threads start (`machine/service.js:529-542`);
   after a default-branch rename the two can differ (Accepted Risks).
 - It lists waiting tools PRs: `gh pr list --repo R --base <default branch> --state open
@@ -104,11 +115,18 @@ project's tools and lets him add, change and remove them. Works at phone width.
 - Unreadable file: the section shows the reason, offers no editing, and offers "Start over":
   a Save with `start_over: true` and an empty tool list, which counts as a tool-list change
   (never "nothing to save") and writes a regular file in place of whatever was there. Save
-  refuses `start_over` unless the read token says the file was unreadable.
-- The read returns a **read token**: the project identity (git common directory) and the
-  validated GitHub repository, the default branch name, the git blob id of `.mcp.json`
+  accepts `start_over` only if the token's `source_state` is `unreadable` and, after the
+  step 1 fetch, rerunning the reader's checks on the matched source still finds it unreadable.
+- The read returns a **read token**: the machine name, the project identity (git common
+  directory), the validated GitHub repository, `source_state` (`missing`, `ok` or
+  `unreadable`), the default branch name, the git blob id of `.mcp.json`
   on it as its tree mode plus object id (or "absent"), and the key store's revision (a counter the machine bumps on every key write). The screen sends it back
-  unchanged on Save and Remove.
+  unchanged on Save and Remove. The machine refuses a token whose machine name isn't its own;
+  the hub refuses one whose machine differs from the request's.
+- Every successful Save and Remove reply includes a fresh read token. The screen keeps it, so
+  a key write followed by another Save or Remove isn't refused as stale, and keeps Collin's
+  unsaved form edits. After a Save that opened a PR, the form reloads from the default branch
+  and the new PR appears under Waiting to merge.
 - Each tool shows its name, kind (command or web address), what it runs, and its settings
   (env names; plain values shown, key values shown as "set" or "not set" on this machine).
 - Each tool shows any reason it would be skipped, by the machine's validator or by Codex,
@@ -228,9 +246,8 @@ project's tools and lets him add, change and remove them. Works at phone width.
      retried.
   7. Remove the temporary worktree.
 - Header keys: the form notes that tools with headers only work for Claude agents (Codex skips
-  them), and that Claude reads some credential-like names as empty in remote headers (see
-  https://code.claude.com/docs/en/mcp, "credential variables that read as empty"); a header
-  key whose name is on that list gets a key warning.
+  them), and that Claude may read some credential-like names as empty in remote headers, so
+  Collin should check the tool authenticates. No name list is kept.
 - Every Save makes its own branch and PR; two saves never share anything. Two waiting PRs may
   conflict with each other; GitHub shows that and Collin closes one.
 - The section shows the PR link and that new threads get the change once it is merged.
@@ -245,16 +262,23 @@ project's tools and lets him add, change and remove them. Works at phone width.
   of saves.
 - Deadlines: the hub calls the new read, save and remove routes with a 120-second timeout
   (`viewer/app/machine-client.js:64` takes a timeout argument; the default is 5 seconds).
-- A Save reply counts only if it is complete JSON with `ok: true` and the expected fields.
-  The page's `api()` helper turns an unreadable body into `{}` (`viewer/pages/settings.js:69`);
-  the new section must treat that, a timeout or a dropped connection as a **lost reply**.
+- Replies. Every Save and Remove reply is JSON with an `outcome` field:
+  - `saved` (keys only, no PR): `token`, `warnings`;
+  - `opened`: `token`, `pr_url`, `warnings`;
+  - `pr_failed` (branch pushed, no PR confirmed): `token`, `branch`, `compare_url`, `error`;
+  - `removed`: `token`;
+  - `refused` (HTTP 409 for stale or wrong-project token, 400 for validation): `reason`.
+  A 2xx reply with no `outcome`, or a body that isn't JSON (the page's `api()` helper turns
+  that into `{}`, `viewer/pages/settings.js:69`), a timeout or a dropped connection is a
+  **lost reply**. A 4xx/5xx with a readable `reason` or `error` is shown as that message, not
+  as a lost reply.
 - On a lost reply the screen reloads and shows, never retrying on its own and tracking nothing:
   - tool change: "Your last save may or may not have gone through; check Waiting to merge
     before saving again." If `gh` failed on the reload, it names the repository's pull
     requests page on GitHub instead of Waiting to merge;
   - key-only: "Check the keys list to see whether your key was saved."
 - Reading reports whether this project's save lock is held; if so the section shows "A save
-  is still running" and disables Save until a reload finds the lock free.
+  is still running", disables Save, and re-reads every 10 seconds until the lock is free.
 
 ### Not doing
 Running or testing a tool; changing which roles or CLIs get tools; changing running threads;
@@ -264,7 +288,10 @@ account-level tools; merging the PR.
 - `bash machine/test/run.sh`: new tests for reading from the remote branch, the temp-worktree
   commit and PR (fake git remote and fake `gh`), key store mode 600, keys reaching the session
   environment and absent from argv, `session.command` and persisted sessions; reserved key
-  names refused; Save refused only when `.mcp.json` or the key revision changed;
+  names refused; Save refused when `.mcp.json`, the key revision, the project identity, the machine or
+  the GitHub repository changed, and `start_over` refused on a readable file; keys-only read
+  without a validated URL; fresh token after a key write lets the next Save through; private
+  fetch ref, `FETCH_HEAD` untouched; `--repo` carries the host; reply outcomes;
   push without a new-ref `*` flag stops before PR creation (including equal-sha); a blocking
   `wc-tools` ref shows its message; `${NAME:-x}` in args holds back that key at launch;
   a dropped Save still runs to the end on the machine;
@@ -285,6 +312,7 @@ account-level tools; merging the PR.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| Git `insteadOf` rewriting can send fetch and push somewhere other than the URL text that was validated | It is Collin's own git config and he set it on purpose; overriding it would break his setup | 8 |
 | An agent that edits its own worktree's `.mcp.json` after launch can make Claude expand a key into a tool's argv | The agent already holds the key in its environment; no extra exposure | 5 |
 | Removing a key a waiting PR or a pushed branch still needs leaves that tool without its key until re-entered | Removal is an explicit, warned action; every automatic check had a race | 4 |
 | After a default-branch rename, the screen uses the new default while threads may start from the clone's cached one | Thread startup is existing behavior outside this feature | 4 |
@@ -478,13 +506,40 @@ held-back keys are key warnings, not skip reasons (Log 33); PR-create confirmati
 
 ### Round 8 — 2026-11-18
 
-**Lanes:** intent — pending; mechanics — pending; cross-family: pending.
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 7:** Reading (all fetch/push URLs, single validated URL used for every
 git call, `start_over` flag, lock-held state); Keys (Remove checks identity); Saving (step 1
 identity, step 4 `Wheelchair-Save` trailer, step 5 validated URL, step 6 same-repo + head sha
 filter, header-key notes, complete-reply rule, per-case lost-reply messages); Validation;
 Decision Log 35-36.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | No fresh token after a write; form state after PR | upheld | Fresh token in replies; form behavior defined (Log 37) |
+| intent | major | Fallback can't read tools | upheld | Keys-only mode (Log 37) |
+| intent | minor | `ls-remote --symref origin` | upheld | Uses validated URL |
+| intent | minor | Refuse header names on Claude's list | declined: Claude publishes no exact list (mechanics finding 8) | General note instead |
+| intent | minor | "Still running" needs manual reload | upheld | Re-read every 10 s |
+| intent | minor | Validation list stale | upheld | Updated |
+| mechanics | blocking | RE-RAISE: `origin` in default-branch discovery; `insteadOf` rewriting | upheld for `origin`; `insteadOf` accepted-risk | Log 38; Accepted Risks |
+| mechanics | blocking | RE-RAISE: `GH_HOST` changes the `gh` host | upheld | `--repo host/owner/name` |
+| mechanics | blocking | Keys-only Read undefined | upheld | Log 37 |
+| mechanics | major | Shared `FETCH_HEAD` | upheld | Private ref, `--no-write-fetch-head` |
+| mechanics | major | RE-RAISE: token not bound to machine | upheld | Log 38 |
+| mechanics | major | Start over readability not in token | upheld | `source_state` + recheck |
+| mechanics | major | No reply contract | upheld | Replies list |
+| mechanics | minor | RE-RAISE: header list not published | upheld | List dropped |
+
+### Round 9 — 2026-11-18
+
+**Lanes:** intent — pending; mechanics — pending; cross-family: pending.
+
+**Changed since Round 8:** Reading (keys-only mode, `--repo` with host, `insteadOf` honored,
+private fetch ref with `--no-write-fetch-head`, validated URL for `ls-remote --symref`,
+`source_state`, token bound to the machine, fresh token in replies and form behavior after a
+PR, lock re-read every 10 s); Saving (Start over recheck, reply contract with `outcome`,
+header note without a name list); Validation; Accepted Risks (round 8); Decision Log 37-38.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
