@@ -2,7 +2,13 @@
 slug: plan-handoffs
 date: 2026-11-17
 implemented-by: "standard (gpt / gpt-6.1-terra) for T1-T7; T1 and T2 second attempts at effort xhigh; T5 asked for claude, placed on gpt by the hub (sub-lead: claude-opus-5-5)"
-verified-by: []   # Stage 4 appends; Stage 3 leaves this empty.
+verified-by:
+  - round: 1
+    lane: verifier claude / claude-opus-5-5 (FAIL, 1 gap, at 742d6ad)
+    checks: standard gpt / gpt-6.1-terra
+  - round: 2
+    lane: verifier claude / claude-opus-5-5 (PASS, at e1fe73c)
+    checks: standard gpt / gpt-6.1-terra
 ---
 
 # Completion Report — Plan handoffs: export and import a thread
@@ -155,4 +161,12 @@ Validation after the merge (`683ceab`), `node --test viewer/test/*.test.js`:
 # fail 0
 ```
 The two runs before this one each failed one test outside this change: `limits offers to a second request after keep talking first`, then `send now hands a queued message to the lead mid-turn` (`viewer/test/app-hub.test.js:1987`). The second picks its message by timestamp, and two messages posted in the same millisecond share one. It passed 5 of 5 alone. This change touched no machine or page code.
+
+### Verification attempt 2 (e1fe73c): PASS
+
+Node suite 616/616 and machine suite green. The browser suite exited 1 with 740 passed, 28 skipped and 6 failed. All six are the "lead waiting line" tests in `viewer/test/app-accounts.spec.js:519-534` in both browsers. They expect `about <n>`, but at 21:08 PST, now plus 3 hours falls after midnight and the page prints a weekday. This branch does not touch that spec or `waitingLine`, and the tests pass under another time zone (verifier's re-run with `TZ=Pacific/Kiritimati`: 10 passed). Every handoff spec test passed.
+
+Verifier notes (not gaps), kept as residual risks:
+- Export builds history from `thread.sent`, which holds only the last 500 sent messages (older ones are in `<id>.sent.jsonl`). A very long thread's file leaves out its earliest messages, with no omission note.
+- On an archived thread the Export reason shows only as the disabled button's tooltip, not as a line under it.
 
