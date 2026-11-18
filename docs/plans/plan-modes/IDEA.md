@@ -1,6 +1,7 @@
 ---
 slug: plan-modes
 status: confirmed   # draft | confirmed
+mode: thorough   # thorough | two-part | proof-of-concept
 created: 2026-11-17
 ---
 
