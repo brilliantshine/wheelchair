@@ -54,6 +54,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 17 | A check card with a `broken` step carries "Fix it now" and "Leave it" buttons (Decision 14's two choices) instead of a separate question card; the hub accepts it once, only while the card's head is the current done head. Decision 10 still holds (no "it worked / it didn't" buttons) | A button on the stored card cannot drift from it: no duplicate, missing or stale question after restarts or newer dones | review-round-7 |
 | 18 | One last review round (9). Findings about crashes or restarts at awkward moments, retrying or recovering verifier sessions, and this thread's first-release stand-in are recorded as accepted risks instead of fixed, unless they would make the feature behave wrongly for Collin (not just leave a check card missing, late or marked not tried) | Collin's choice after rounds 6 to 8; the design has held since Decision 14 | user |
 | 19 | Fix it now presses are judged by what the lead can observe. A live lead treats a fix press as stale if it has posted a `done` since its latest `check` card, and uses that card's broken notes. A restarted lead handles a fix press unless a later `done` is in the context or the branch has commits past the pressed card's head (then it carries on that fix). Supersedes "with no lead reply after it" | Verification attempt 2: the press carries only the card id, and the restart context has no lead replies, so the Spec's checks could not be made | verification (decided by lead under Decision 18's intent) |
+| 20 | A Fix it now press still queued when a newer `done` (different `head`) is posted may be acted on for the newer version; accepted as a risk, no code change. Under Decision 18 | Verification attempt 4: the gap survived two fix attempts (R5, R6); the press carries only the card id. Collin chose to accept it rather than put the version in the press text | user |
 
 ## Spec
 
@@ -407,6 +408,7 @@ re-raise them.
 | A handoff exported by an updated hub with a `check` entry is refused by a hub still on the old code | Handoffs move between machines of one install kept at the same version (the Ready check compares versions) | 9 |
 | A check card still queued when the thread is archived or handed off is refused and lost | Archive and handoff end the thread's work; the done card and PR remain | 1 |
 | Other items can appear between `done` and `check` in the conversation | The card names what it checks; the gap is the time to try the steps | 1 |
+| A Fix it now press still queued (lead mid-turn) when a newer `done` with a different `head` is posted can be read as a press on the newer version's check | The press text carries only the card id; Collin accepted it (Decision 20) rather than add the version to the press. Rare: needs a press and a newer done in the same lead turn | verification 4 |
 
 ## Review Rounds
 
@@ -745,3 +747,4 @@ anything a future session needs that fits nowhere above.
 - 2026-11-18 — Verification attempt 4 on 5e693f8: claude PASS, gpt FAIL (2 gaps). Queued Fix-it-now press for the wrong version survived two fix attempts (R5, R6): sent to the lead as a plan defect (REMEDIATION-4.md). Lead: fix the Markdown `update` gap meanwhile (R7).
 - 2026-11-18 — Choice: R7, app-check-card.spec.js: plain-text test placed after the long-path test; no-markup assertion scoped to the whole card.
 - 2026-11-18 — R7 accepted (band: scout; 16-line diff read inline, exactly the brief): check-card browser spec re-run on the merged tip.
+- 2026-11-18 — Lead relayed Collin's answer on the queued-press gap: accept it. Decision 20 and an Accepted Risk row added; no code change.
