@@ -332,3 +332,16 @@ remain; that refusal is returned as today. Outside a merge, behaviour is unchang
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | `BLOCKED` covers rules only Collin can clear (reviews, conversations); stricter than IDEA | upheld | pending (budget stop) |
+| intent | major | Restart signal treats merged-missed, closed and legacy-done threads as waiting | upheld | pending |
+| intent | minor | PR closed while waiting has no next step | upheld | pending |
+| mechanics | blocking | Checks only on test merge commit invisible to rollup | downgraded → minor | Actions `pull_request` runs report on the head commit; only third-party CI posting to the merge commit hits this |
+| mechanics | blocking | Workflow listing reads only the first page | downgraded → minor | Needs >30 workflows; fix is `--paginate` |
+| mechanics | blocking | Spooled `done` returns 202; lead can't tell accepted from pending | upheld | pending |
+| mechanics | blocking | Concurrent deliveries: refusal-first ordering still double-handles | upheld | pending (in-flight map per delivery id) |
+| mechanics | blocking | `gh pr checks` exit 1 also means no checks / API error | upheld | pending (use `--json bucket`) |
+| mechanics | blocking | Restart may submit an unpushed local repair as `head` | upheld | pending |
+| mechanics | major | Legacy `done` cards without `head` look pending on restart | upheld | pending (same as intent restart finding) |
+| mechanics | major | PR head changes or closes during the wait: no next step | upheld | pending |
+
+**Budget:** three triaged rounds without a clean one; stopped for Collin (needs card).
