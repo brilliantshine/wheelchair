@@ -15,10 +15,6 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q4: Is the follow-up plan reviewed in this thread, or only in the new one?
-
-### Q5: Can the mode change partway through planning?
-
 ## Watch List
 
 Things noticed that need looking into — not yet decisions for the user. Written down the
@@ -42,6 +38,11 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D1 | The lead suggests a mode with a one-line reason when a thread becomes a feature; Collin accepts it or picks another | The lead has read the request and can tell a proof of concept from lasting work; Collin keeps the final say | user |
 | D2 | In two-part and proof-of-concept, plan review still runs. Findings that would build the wrong thing or cannot be built must be fixed; findings that only make it sturdier are deferred to the follow-up plan (two-part) or accepted as risks (proof of concept) | Keeps the check that stops a wrong build, drops only the hardening Collin chose to postpone | user |
 | D3 | Deferred items show on a pinned running list, like "Your idea so far", updated as items are added in planning or review. Removing one pulls it back into the first build | Collin sees deferrals as they happen and can reverse one with a press, without a card per item | user |
+| D4 | The follow-up plan is a head start: this thread hands over the deferred items with notes, and the new thread plans them with its own questions and full review | Planning it fully here would slow the first build; it plans better against built code | user |
+| D5 | The mode can change during planning when Collin asks. Moving to thorough pulls every deferred item back into the Spec; moving to a lighter mode lets the lead sort Spec items into deferred. Once building starts, the mode is fixed | Obvious behaviour; locking it only at build start keeps the build's scope stable | defaulted |
+| D6 | The follow-up thread's lead suggests its mode like any feature (D1) | Same rule everywhere | defaulted |
+| D7 | A gap found in verification that is not needed for the feature to work may be deferred by the lead (two-part: to the follow-up; proof of concept: to Accepted Risks) and added to the running list; a gap that stops it working is fixed as today | Matches IDEA.md: verification unchanged, big extras may land in the follow-up | defaulted |
+| D8 | In proof of concept, the done card's "left as is" lists the accepted risks, each with the usual "Start a thread about it" | Collin can still pick one up later without a follow-up plan existing | defaulted |
 
 ## Spec
 
@@ -75,6 +76,25 @@ In the lighter modes, a pinned list shows every deferred item as it is added, du
 planning or review (D3). It works like the idea card: each item has a remove button, and
 removing one pulls that item back into the first build's Spec. In `proof-of-concept` the
 list shows what is being accepted as risk.
+
+### Changing the mode
+
+Collin can change the mode during planning (D5). Moving to `thorough` pulls every deferred
+item back into the Spec; moving to a lighter mode lets the lead move Spec items to deferred.
+Once building starts the mode is fixed.
+
+### During verification
+
+A gap that stops the feature working is fixed as today. A gap that only makes it sturdier
+may be deferred by the lead (D7) and added to the running list.
+
+### Done
+
+- `two-part`: when the thread is done, a new thread is created holding the follow-up plan
+  as a head start: the deferred items with notes (D4). It builds on this thread's work.
+  Its lead suggests a mode like any feature (D6) and plans the items with full review.
+- `proof-of-concept`: no follow-up. The done card's "left as is" lists the accepted risks,
+  each with "Start a thread about it" (D8).
 
 ## Accepted Risks
 
