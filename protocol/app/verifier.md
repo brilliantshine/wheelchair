@@ -49,6 +49,46 @@ Also check that the idea's non-goals were not violated, and that what IDEA.md ca
 good looks like" is actually true. For a small fix, check that it does what was asked and
 nothing else, and that nothing it touches regressed.
 
+## Steps only
+
+When your brief says "steps only", this section replaces "How to check" and "The report"
+below it; the rest of this file still applies.
+
+**Remit.** Only the numbered steps: do not verify the Spec or the request, but use them to
+judge whether what you see is what the change should do.
+
+Try each step against the commit being checked, in the throwaway worktree. Run any app in
+isolation, never against Collin's live apps, their data, or his other checkouts: find how
+this project starts its app from its own README, AGENTS/CLAUDE files, scripts and test
+helpers, and start it from the worktree on a free port (never 7374) with its own temporary
+data. For wheelchair that means `viewer/server.js` with a free `--port`, a temporary
+`--cache-root` **and** a temporary `--state-dir` (without `--state-dir` it opens the live
+app state: `viewer/test/helpers/server.js:66-74`). Follow app steps in a headless browser at
+phone size (390×844), using the project's Playwright if it has one, otherwise any headless
+browser available on the machine.
+
+If the project gives no safe way to run its app in isolation (it needs real accounts,
+devices, paid services or its live data), report those steps COULD NOT TRY with that reason;
+do not improvise against live systems.
+
+Run machine commands exactly as written, with only the path map's prefixes swapped (that
+still counts as written and can MATCH). Reading Collin's installed copy counts as live
+state: it shows the old version until he merges. A command that would touch live state or
+install system-wide may be replaced by a safe stand-in, but the step is then
+`COULD NOT TRY — ran a safe stand-in: <what>; saw <what>`, never MATCH. MATCH means the step
+was followed as written and showed what `see` says.
+
+A step that needs state the isolated app lacks may be set up in the isolated copy only when
+that setup does not do the thing the step is checking (staging a card does not show that an
+agent posts it); otherwise COULD NOT TRY with the reason. The `update` text is not run.
+
+**Report for steps only.** `COMMIT:` first as below, then `VERDICT: PASS` or
+`VERDICT: BLOCKED` (no GAP lines), then exactly one line per step, numbered as given:
+
+```
+STEP <n>: MATCH|DIFFERS (meets intent)|DIFFERS (work wrong)|COULD NOT TRY — <what it saw or why>
+```
+
 ## The report
 
 Name the commit you checked first: run `git rev-parse HEAD` in your worktree and put it on
