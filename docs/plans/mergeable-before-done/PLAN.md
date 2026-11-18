@@ -62,249 +62,189 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 33 | The lead decides a check failed only from `gh pr checks --json name,bucket` showing `fail`/`cancel`; gh errors and empty lists never start a repair | `gh pr checks` exit 1 also means no checks or an API error | review-round-3 |
 | 34 | Closed while waiting → step 9's CLOSED rule; head changed while open → step 9's updated-branch merge, re-verify, new window | Every exit of the wait has a next step | review-round-3 |
 | 35 | Supersedes D27: restart checks local unpushed commits first, then PR state; CLOSED, missed-merge with an existing stub, and legacy `done` without `head` are not waiting | Avoid re-posting `done` or duplicate stubs | review-round-3 |
+| 36 | Lighter enforcement: the app asks GitHub once whether this thread's PR at the pushed commit is merged or ready to merge; rare cases become accepted risks | Collin picked "Lighter enforcement" after four review rounds of gate edge cases | user |
+| 37 | `done` cards are never spooled: the machine relays directly (30 s) and answers 503 "try again" when the hub is unreachable or other cards are queued. Supersedes D7, D19's relay part, D23's message part, D29, D30 | Removes delivery tracking; the lead retries inside its window | user (via D36) |
+| 38 | Supersedes D24/D33/D34: the lead's section as written in the Spec (poll `gh pr view` incl. `statusCheckRollup`; no `gh pr checks --json`, absent in gh 2.46.0) | Simpler; works with the installed gh | user (via D36) |
+| 39 | Supersedes D14/D21: no workflow probe; the lead waits 5 minutes after a push before treating "no checks" as ready | Keeps the gate to one call | user (via D36) |
+| 40 | Someone else's push to the branch is merged, re-verified and pushed without counting toward the budget or resetting the window | Bounded by the window | review-round-4 |
+| 41 | Supersedes D35: restart resumes the wait when finishing and no `done` card names the PR head; unaccounted local commits go to Collin as a question, an unfinished merge is aborted | Simple, never pushes unknown work | user (via D36) |
 
 ## Spec
 
 ### Goal in one line
 
-A `done` card is accepted only for this thread's pull request at the commit the lead pushed,
-when GitHub reports it merged, or open and ready to merge with its checks passed (GitHub's own
-judgement, not ours). Agents are told to get it there themselves.
+A `done` card is accepted only for this thread's pull request, at the commit the lead pushed,
+when GitHub says it is merged or ready to merge. Agents are told to get it there themselves.
+This is the lighter enforcement Collin chose (D36): one question to GitHub, no queuing of
+`done` cards, rare cases written down as accepted risks rather than handled in code.
 
-### The one signal: GitHub's merge state (D20)
+### GitHub's merge state
 
-GitHub computes, for an open PR, `mergeStateStatus` (via
-`gh pr view <url> --json mergeStateStatus`). It already accounts for conflicts, the test merge
-commit, re-runs, required checks and branch rules, so neither the app nor the lead
-re-implements check logic. Values and what they mean here:
+`gh pr view <url> --json mergeStateStatus` (works in the installed gh 2.46.0) gives GitHub's own
+judgement for an open PR:
 
 | `mergeStateStatus` | Meaning here |
 |---|---|
-| `CLEAN`, `HAS_HOOKS` | Ready to merge, checks passing |
-| `DIRTY` | Conflicts with the base branch: fix |
-| `UNSTABLE` | Mergeable, but some check is pending or failed: wait, or fix a failure |
-| `BEHIND` | Base moved and the repo requires up-to-date branches: merge base in (as a conflict fix) |
-| `BLOCKED` | A branch rule blocks it. Accepted when every check passed (the block is then a rule only Collin clears, e.g. a review); otherwise wait or fix (D28) |
-| `UNKNOWN`, `DRAFT`, missing | Not ready: wait (`DRAFT` never happens; agents open non-draft PRs) |
+| `CLEAN`, `HAS_HOOKS` | Ready: no conflicts, checks passing |
+| `DIRTY` | Conflicts with the base branch: repair |
+| `BEHIND` | Base moved and the repo requires up-to-date branches: merge base in (a repair) |
+| `UNSTABLE` | Some check pending or failed: wait, or repair a failure |
+| `BLOCKED` | A branch rule blocks it. Ready if no check is pending or failed (the block is then a rule only Collin clears, such as a required review) |
+| `UNKNOWN`, `DRAFT`, other | Not ready yet: wait |
 
-`CLEAN` with **no checks at all** can also mean CI has not registered yet; see the gate's
-empty-checks rule (D14, revised by D21).
+A **check** is an entry of `statusCheckRollup`. It is *failed* when it is a CheckRun with
+`status === 'COMPLETED'` and `conclusion` not in `SUCCESS`, `NEUTRAL`, `SKIPPED`, or a
+StatusContext with `state` `FAILURE` or `ERROR`; *pending* when a CheckRun's `status` is not
+`COMPLETED` or a StatusContext's `state` is `PENDING` or `EXPECTED`; otherwise *passed*.
 
-### Part A: the hub gate (code)
+### Part A: code
 
-Files: `viewer/app/hub.js` (`acceptCard`, line 143), `viewer/app/cards.js`,
-`viewer/app/card.js` (schema), `machine/service.js` (relay timeout, merge commit), and a new
-`viewer/app/pr-gate.js` exporting `async function checkPr(thread, card)` →
-`{ ok: true }` or `{ ok: false, reason }`, plus the pure `judgePr(view, thread, card,
-workflowCount)` for tests.
+**1. `done` card field (D22).** `head`: required, the full commit id the lead pushed
+(`/^[0-9a-f]{40}$/`). Add to `card.js`'s `done` schema (`viewer/app/card.js:116-122`).
 
-**New `done` field (D22).** `head`: required string, the full 40-hex commit the lead pushed
-and wants accepted (`/^[0-9a-f]{40}$/`). Add it to `card.js`'s `done` schema
-(`viewer/app/card.js:116-122`) and to `cards-lead.md`.
+**2. `done` cards are never queued (D37).** In the machine's card handler
+(`machine/service.js:1272-1305`), for `input.kind === 'done'` only:
+- If other cards are waiting in the spool, try `drainSpool('cards')` first (as now). If any
+  remain, answer 503 `{ error: "the app is unreachable; the done card was not recorded; try again in a minute" }`.
+- Relay directly without writing a spool file, with a 30-second timeout (`requestJson`'s 5th
+  argument; default is 5 s, `machine/service.js:183`). 2xx and 4xx pass through as today. A 5xx,
+  timeout or connection error answers 503 with the same message. No `hub_url` configured: same 503.
+- Other card kinds are unchanged.
+`card.js` already turns a non-2xx into a non-zero exit with the body (`viewer/app/card.js:267-269`),
+so the lead sees the refusal directly. No `[wc:from app]` messages are sent (supersedes D7).
 
-**Where it runs (D19, revised by D23).** For `payload.kind === 'done'` only, `hub.acceptCard`
-runs the gate before taking `withThread`:
-1. Read a snapshot with `hub.state.thread(payload.thread_id)` (`viewer/app/state.js:107`, pure
-   read; never `hub.thread()`, which may save). Never save the snapshot. If
-   `payload.delivery_id` is already in its `delivered_ids`, skip the gate.
-2. `checkPr(snapshot, payload)`.
-3. Ok: continue with the existing `withThread(… cards.acceptCard …)`, unchanged.
-4. Refused: inside `withThread`, read the thread with `hub.state.thread`. If
-   `payload.delivery_id` is now in `delivered_ids`, return the existing duplicate answer
-   `{ ok: true, duplicate: true }` and queue nothing. Otherwise, if the thread is not archived
-   and the posting session exists, call
-   `hub.enqueue(thread, payload.session, "[wc:from app] your done card was refused: <reason>", 'app')`
-   (D7). Then throw `appError(422, reason)`.
-5. **One evaluation per delivery (D29).** The hub keeps an in-memory `Map` from
-   `delivery_id` to the promise of steps 1–4 for that delivery. A second arrival of the same
-   `delivery_id` while the first is in flight awaits that promise instead of running its own:
-   if the first accepted, it returns `{ ok: true, duplicate: true }`; if the first refused, it
-   throws the same 422 and queues nothing more. The entry is deleted when the promise settles.
-   A card with no `delivery_id` is evaluated alone.
-6. **Spooled deliveries report back (D30).** The machine's spool drain
-   (`machine/service.js:902-923`) adds `from_spool: true` to the payload it relays (the direct
-   relay does not). When the hub accepts a `done` card whose payload has `from_spool: true`, it
-   enqueues `[wc:from app] your done card was accepted` to the posting session (same conditions
-   as the refusal message). `from_spool` is stripped before validation like `delivery_id`. So a
-   lead whose `card.js done` printed a spooled answer always learns the outcome by message.
-   `card.js` prints the machine's response body on success (today it prints nothing,
-   `viewer/app/card.js:267-270`), so `{"ok":true,"spooled":true}` is visible.
+**3. The gate (hub).** New `viewer/app/pr-gate.js` exporting `async function checkPr(thread, card)`
+→ `{ ok: true }` or `{ ok: false, reason }`, and a pure `judgePr(view, thread, card)` for tests.
+In `hub.acceptCard` (`viewer/app/hub.js:143`), for `payload.kind === 'done'` only, run the gate
+**before** `withThread`, on a snapshot from `hub.state.thread(payload.thread_id)` (a pure read,
+`viewer/app/state.js:107`; never `hub.thread()`, which may save). Never save the snapshot. On ok,
+continue with the existing `withThread(… cards.acceptCard …)`. On refusal, throw
+`appError(422, reason)`; nothing else changes.
 
-**Deadlines (D23).** Each gh call has an 8-second timeout; at most two calls run (below), so
-the gate spends ≤16 s on GitHub. The machine's `cards` relay — the direct relay
-(`machine/service.js:1289`) and the spool drain (`:913`) — passes a 45-second timeout to
-`requestJson` (default 5 s, `machine/service.js:183`). Other relays keep 5 s.
-
-**GitHub errors.** Spawn error, timeout, non-zero exit or unparsable output → refuse
-"couldn't reach GitHub to check the pull request; try again in a minute: <first stderr line>".
-Stderr matching
-`/authentication|gh auth login|HTTP 401|HTTP 403|HTTP 404|Could not resolve to/i` → refuse
-"the app's GitHub login can't read this pull request or repository: <first stderr line>".
-
-**The decision**, in order:
-1. `pr_url` must match `^https://github\.com/([^/\s]+)/([^/\s]+)/pull/\d+$`; else refuse "the
-   pull request link is not a GitHub pull request" (no gh call).
-2. Call 1: `gh pr view <url> --json state,mergeStateStatus,headRefName,baseRefName,headRefOid,statusCheckRollup`.
-3. Identity (D13): `thread.branch` set and `headRefName !== thread.branch` → refuse "that pull
-   request is not this thread's (its branch is <headRefName>)". `thread.default_branch` set and
-   `baseRefName !== thread.default_branch` → refuse "that pull request targets <baseRefName>, not
-   <default_branch>". `headRefOid !== card.head` → refuse "the pull request's latest commit is
-   <short headRefOid>, not <short head>; it changed or the push did not land" (D22). Identity
-   comes before the merged check, so a merge of a different head is refused.
+The decision, in order:
+1. `pr_url` must match `^https://github\.com/[^/\s]+/[^/\s]+/pull/\d+$`; else refuse "the pull
+   request link is not a GitHub pull request" (no gh call).
+2. One call: `gh pr view <url> --json state,mergeStateStatus,headRefName,baseRefName,headRefOid,statusCheckRollup`,
+   `execFile`, 15-second timeout, the hub's own environment (as `pollMerged`,
+   `viewer/app/threads.js:372`). Stderr matching
+   `/authentication|gh auth login|HTTP 401|HTTP 403|HTTP 404|Could not resolve to/i` → refuse
+   "the app's GitHub login can't read this pull request: <first stderr line>". Any other error,
+   timeout or unparsable output → refuse "couldn't reach GitHub to check the pull request; try
+   again in a minute".
+3. Identity (D13, D22): `thread.branch` set and `headRefName !== thread.branch` → refuse "that
+   pull request is not this thread's (its branch is <headRefName>)"; `thread.default_branch` set
+   and `baseRefName !== thread.default_branch` → refuse "that pull request targets <baseRefName>";
+   `headRefOid !== card.head` → refuse "the pull request is at <first 7 of headRefOid>, not
+   <first 7 of head>".
 4. `state === 'MERGED'` → ok (D8). `state !== 'OPEN'` → refuse "the pull request is closed".
-5. `mergeStateStatus`:
-   - `DIRTY` → refuse "the pull request conflicts with <base>; merge it in and resolve the conflicts".
-   - `BEHIND` → refuse "<base> moved on and must be merged in first".
-   - `UNSTABLE` → refuse "checks are not all passing: <summary>", where summary lists rollup
-     entries whose state is failed or pending (CheckRun: `name` with `conclusion`, or "running"
-     when `status !== 'COMPLETED'`; StatusContext: `context` with `state`), at most five, then
-     "and N more". The summary is for reading only; the decision is GitHub's.
-   - `BLOCKED` (D28) → classify every rollup entry: CheckRun passing when `status ===
-     'COMPLETED'` and `conclusion` is `SUCCESS`, `NEUTRAL` or `SKIPPED`; StatusContext passing when
-     `state === 'SUCCESS'`. If any entry is not passing → refuse "checks are not all passing:
-     <summary>". If all pass → step 6 (the block is a rule only Collin clears, such as a required
-     review, and does not stop `done`).
-   - `UNKNOWN`, `DRAFT`, missing, or anything not listed → refuse "GitHub is still working out
-     whether it can merge; try again in a minute".
-   - `CLEAN` or `HAS_HOOKS` → step 6.
-   The summary format above is shared by `UNSTABLE` and `BLOCKED`.
-6. Empty checks (D21): if `statusCheckRollup` is non-empty → ok. If empty, call 2:
-   `gh api --paginate repos/<owner>/<repo>/actions/workflows --jq '.workflows[] | select(.state=="active") | .id'`
-   and count the non-empty output lines (all pages, D31)
-   (positive evidence; any error is mapped as above, so a 404 refuses, never passes).
-   Result `0` → ok. Greater than `0` → refuse "no checks have started yet on the latest commit;
-   try again in a minute". Unparsable → the "couldn't reach GitHub" refusal.
+5. `CLEAN` or `HAS_HOOKS` → ok. `BLOCKED` with no failed or pending check → ok (D28).
+6. Otherwise refuse with: `DIRTY` "the pull request conflicts with <base>"; `BEHIND` "<base> moved
+   on and must be merged in"; `UNSTABLE` or `BLOCKED` "checks not passed yet: <up to five
+   'name: failed|running' items>"; anything else "GitHub is still working out whether it can
+   merge; try again in a minute".
 
-No caching: every `done` post asks GitHub again.
+No caching. No workflow probe (supersedes D14/D21; see Accepted Risks).
 
-**Finishing a conflicted merge (machine, D16).** `wc.js git commit` runs `git commit -m <msg>
--- <paths>` (`machine/service.js:993`), which git refuses during a merge. Change: if
-`git rev-parse -q --verify MERGE_HEAD` succeeds in the worktree, run `git add -- <paths>` as
-now, then `git commit -m <msg>` without a pathspec. Git still refuses while unmerged paths
-remain; that refusal is returned as today. Outside a merge, behaviour is unchanged.
+**4. Finishing a conflicted merge (D16).** `wc.js git commit` runs `git commit -m <msg> --
+<paths>` (`machine/service.js:993`), which git refuses during a merge. Change: if
+`git rev-parse -q --verify MERGE_HEAD` succeeds in the worktree, run `git add -- <paths>` as now,
+then `git commit -m <msg>` with no pathspec. Git still refuses while unmerged paths remain;
+outside a merge, unchanged.
 
-### Part B: the protocol (text)
+### Part B: protocol text
 
 - `protocol/app/sub-lead.md`, `protocol/app/verifier.md`: no change (D11).
-- `protocol/app/cards-lead.md`, `done`: add `head` to the field table; one paragraph: the app
-  refuses the card unless GitHub reports this thread's PR, at `head`, merged, or open and ready
-  to merge with checks passing; the reason comes back from `card.js` and also as a
-  `[wc:from app] your done card was refused: …` message.
-- `protocol/app/lead.md`: a new section "Making the pull request mergeable" (D24), which steps
-  1, 8 and 9 use after push and PR, instead of posting `done` straight away. Its content:
-  Throughout, **the pushed commit** is `git rev-parse origin/wc/<thread-id>` read right after
-  a successful `wc.js git push` (never local `HEAD`, D32).
-  1. **Wait.** Run one foreground shell command that every 60 seconds runs
-     `gh pr view <url> --json state,mergeStateStatus,headRefOid` and
-     `gh pr checks <url> --json name,bucket` (D33), and exits when: `state` is not `OPEN`;
-     `headRefOid` is not the pushed commit; `mergeStateStatus` is `CLEAN`, `HAS_HOOKS`, `DIRTY`
-     or `BEHIND`; any check has `bucket == "fail"` or `"cancel"`; `mergeStateStatus` is `BLOCKED`
-     and the checks list is non-empty with every `bucket` `pass` or `skipping`; or 10 minutes
-     pass. A `gh` error inside the loop is not a failure: keep polling. Repeat the command while
-     the window lasts. The window is 30 minutes from the push (D4).
-  2. **Ready** (`CLEAN`/`HAS_HOOKS`, or `BLOCKED` with every check passed): post `done` with
-     `head` = the pushed commit. `card.js` printing `"spooled":true` means not yet judged: wait
-     for the `[wc:from app] your done card was accepted` or `… refused: …` message (D30). If
-     refused with a "try again" reason, keep waiting within the same window; any other reason,
-     act on it below.
-  3. **Merged while waiting:** if `headRefOid` is the pushed commit, post `done` as in 2.
-     Otherwise follow step 9's "the fix missed" rule (a `stub` with the fix's own commits); do
-     not post `done`.
-  4. **Closed while waiting:** follow step 9's `CLOSED` rule: say so in a reply, change nothing,
-     resolve any open `needs` card for this wait (D34).
-  5. **Head changed while open** (someone, usually Collin, pushed to the branch): step 9's rule
-     for an updated branch: `wc.js git fetch`, `wc.js git merge origin/wc/<thread-id>`; if the
-     merge brought commits, have them re-verified as in 6 and push; then a new window (D34).
-  6. **Repair.** Conflicts or behind (`DIRTY`/`BEHIND`): `wc.js git fetch`, `wc.js git merge
-     origin/<default branch>`, edit the conflicted files, `wc.js git commit --paths <resolved
-     files> --message …` (this completes the merge, D16). A failed check (a check with
-     `bucket == "fail"` or `"cancel"`; never repair on a `gh` error or an empty list): read its
-     log (`gh run view <id> --log-failed`) and fix the cause, committing with `wc.js git commit`.
-     Either way, start a fresh verifier on the new commit by step 9's provider rule, briefed with
-     what Collin asked for (a small fix has no plan; give his request) or the plan's Spec, plus
-     what this repair changed (D25). On a pass, push and go back to 1 with a new window.
-  7. **Budget (D26).** Each repair that fails its verifier, or whose push still ends in a failed
-     check or a conflict, is one failed attempt. After two failed attempts, or when a window ends
-     without "ready", or on a credentials refusal, post a `needs` card: what blocks `done`, in
-     plain words, and that he can merge the pull request himself regardless. "Keep going" resets
-     the budget and starts a new window. "Talk about it" gets the explanation and, when there is
-     a real choice, a `question` card. Resolve the `needs` card once `done` is accepted.
-  8. **After a restart** (D35, supersedes D27): `wc.js git fetch`, then:
-     - Local commits not on `origin/wc/<thread-id>` (`git log origin/wc/<thread-id>..HEAD`
-       non-empty): an interrupted repair. Verify them as in 6, push, then 1.
-     - Otherwise read `gh pr view --json state,headRefOid` for the thread's PR (from the latest
-       `done` card's `pr_url`, else `gh pr view --json url` on the branch). No PR: not waiting.
-     - `OPEN`, and the pushed commit is not the `head` of the latest accepted `done` card (or
-       there is no `done` card): waiting; go to 1 with a new window.
-     - `MERGED` with `headRefOid` = pushed commit and no accepted `done` card with that `head`:
-       post `done` as in 2. `MERGED` with another head: if no `stub` card in the thread already
-       lists these commits, step 9's missed-fix stub; else nothing.
-     - `CLOSED`, or the latest `done` card has no `head` (it predates this change): not waiting.
-- Step 8 still commits `status: done` before the push, so the PR carries it; the feature list
-  shows Done while the lead waits (accepted risk). Step 1, step 8 item 2 and step 9 item 4 each
-  send the lead to the new section before posting `done`.
+- `protocol/app/cards-lead.md`, `done`: add `head` to the table, and one paragraph: the app
+  accepts the card only when GitHub says this thread's PR, at `head`, is merged or ready to
+  merge; otherwise `card.js` fails with the reason; a `done` card is never queued, so "the app
+  is unreachable" means try again.
+- `protocol/app/lead.md`: steps 1, 8 (item 2) and 9 (item 4) send the lead to a new section,
+  "Making the pull request mergeable", before posting `done`. Its content (D38):
+  1. **The pushed commit** is `git rev-parse origin/wc/<thread-id>` read right after a
+     successful `wc.js git push`; it is the `head` of the `done` card.
+  2. **Wait.** Run one foreground shell command that polls
+     `gh pr view <url> --json state,mergeStateStatus,headRefOid,statusCheckRollup` every 60
+     seconds and stops on any of: `state` not `OPEN`; `headRefOid` not the pushed commit;
+     `mergeStateStatus` `CLEAN`, `HAS_HOOKS`, `DIRTY` or `BEHIND`; a failed check; `BLOCKED` with no
+     failed or pending check; 10 minutes. (Failed and pending as defined in the Spec table;
+     include the definitions in lead.md.) A gh error inside the loop is ignored. Repeat while the
+     30-minute window from the push lasts (D4).
+  3. **Ready:** if there are no checks at all and less than 5 minutes have passed since the push,
+     keep waiting (CI may not have started; D39). Then post `done` with `head`. If `card.js` fails
+     with a "try again" reason, wait 2 minutes and go back to 2 within the same window; with
+     another reason, act on it below.
+  4. **Merged:** at the pushed commit → post `done`. At another commit → step 9's "the fix
+     missed" rule (a `stub` with the fix's own commits); no `done`.
+  5. **Closed:** step 9's `CLOSED` rule: say so, change nothing.
+  6. **Head changed while open** (someone pushed to the branch): `wc.js git fetch`,
+     `wc.js git merge origin/wc/<thread-id>`, re-verify as in 7, push, back to 2 in the same
+     window. It does not count toward the budget (D40).
+  7. **Repair.** Conflicts or behind: `wc.js git fetch`, `wc.js git merge origin/<default
+     branch>`, edit the conflicted files, `wc.js git commit --paths <resolved files>` (completes the
+     merge). A failed check: `gh run view <run id> --log-failed`, fix the cause, `wc.js git commit`.
+     Then a fresh verifier on the new commit by step 9's provider rule, briefed with Collin's
+     request (small fix: no plan) or the plan's Spec, plus what the repair changed (D25). On a
+     pass, push and go back to 2 with a new window.
+  8. **Budget (D26).** A repair that fails its verifier, or whose push still ends in a failed
+     check or a conflict, is one failed attempt. After two, or when a window ends without "ready",
+     or on a "GitHub login can't read" refusal, post a `needs` card saying what blocks `done` and
+     that he can merge the PR himself regardless. "Keep going" resets the budget with a new window.
+     Resolve the `needs` card once `done` is accepted.
+  9. **After a restart** (D41, supersedes D27/D35): if the thread is finishing (a PR exists for
+     the branch, and the plan's `status` is `done` or there is no plan) and no `done` card names
+     the PR's current head: look at `git status`; abort an unfinished merge
+     (`wc.js git merge --abort`); do not push local commits you cannot account for, ask Collin with
+     a `question` card instead. Then resume at 2 with a new window. A latest `done` card with no
+     `head` (from before this change) means not waiting.
+- Step 8 still commits `status: done` before the push, so the PR carries it.
 
 ### Edge cases
 
-- Repo with no active workflows and no checks: accepted (D21).
-- Repo with active workflows that never run on pull requests: refused forever; the lead's
-  `needs` card covers it (accepted risk).
+- Repo without CI: no checks; `CLEAN` → accepted after the lead's 5-minute wait (D39).
+- Repo requiring a review: `BLOCKED` with checks passed → accepted (D28).
 - Main moves after `done`: not re-checked (D5).
-- After-done fix that Collin merges while the lead waits: accepted when the merged head is the
-  lead's `head`; refused otherwise, and the lead stubs it (D22).
-- The same card delivered twice at once (direct relay and spool drain): evaluated once; the
-  second awaits the first (D29), in either order.
-- Repo that requires a review or resolved conversations: `BLOCKED` with all checks passed is
-  accepted (D28).
+- Collin merges while the lead waits: accepted if merged at the pushed commit (D8, D22).
+- Hub down when `done` is posted: `card.js` fails with "try again"; the window and the `needs`
+  card bound the wait.
 
 ### Non-goals
 
-- Agents never merge the pull request.
-- No new CI checks; no change to `.github/workflows/`.
-- No override for Collin (D10).
-- No re-checking after `done`; `pollMerged` is unchanged.
+- Agents never merge the pull request. No new CI checks. No override (D10).
+- No re-checking after `done`; `pollMerged` unchanged.
+- No queuing, delivery tracking or acceptance messages for `done` cards.
 
 ### Validation
 
 - New `viewer/test/app-done-gate.test.js`, stubbing `gh` on `PATH` as
-  `viewer/test/app-merged.test.js:17-27` does. Cases: merged at `head` → accepted; merged at
-  another head → refused; open `CLEAN` with checks → accepted; `HAS_HOOKS` → accepted; `CLEAN`
-  with no checks and 0 active workflows → accepted; `CLEAN` no checks and 1 active workflow →
-  refused "no checks have started"; workflows call fails with HTTP 404 → refused credentials;
-  `DIRTY`, `BEHIND`, `UNSTABLE` (summary names the failed check), `BLOCKED`, `UNKNOWN` →
-  refused with their reasons; wrong head branch, wrong base, closed → refused; non-GitHub URL →
-  refused without calling gh; gh non-zero exit → "couldn't reach GitHub"; auth stderr →
-  credentials reason; every refusal queues `[wc:from app] your done card was refused: ...` for
-  the posting session; a duplicate `delivery_id` does not call gh; a refusal whose delivery id
-  was accepted meanwhile returns duplicate and queues nothing; a slow gh stub (3 s) does not
-  block another card on the same thread; the snapshot is never written (thread file unchanged
-  by a refused card except the queued message). Also: `BLOCKED` with all rollup entries passing
-  → accepted; `BLOCKED` with a pending entry → refused; two concurrent deliveries of one
-  `delivery_id` call gh once, in both orders (accept-first and refuse-first), and queue at most
-  one message; a `done` with `from_spool: true` that is accepted queues "your done card was
-  accepted"; workflows listing across two pages with the active one on page 2 → refused "no
-  checks have started" (stub `--paginate` output).
-- `viewer/test/app-cards.test.js` (or the existing card schema test): `done` without `head`, or
-  with a non-40-hex `head`, is refused. `card.js` prints the machine's JSON body on success.
-- `machine/test/service.test.js`: a card relay whose hub answers 422 after 6 seconds returns
-  422 to the agent, not a spooled 202; a spooled card drained against a slow refusing hub moves
-  to rejected storage; the drain adds `from_spool: true`, the direct relay does not. `wc.js git commit` during a conflicted merge, after resolving, completes
-  the merge commit; with unmerged paths left, it is refused.
+  `viewer/test/app-merged.test.js:17-27`. Cases: merged at `head` → accepted; merged at another
+  commit → refused; `CLEAN` → accepted; `HAS_HOOKS` → accepted; `BLOCKED` all passed → accepted;
+  `BLOCKED` with a pending check → refused; `DIRTY`, `BEHIND`, `UNSTABLE` (reason names the failed
+  check), `UNKNOWN` → refused with their reasons; wrong branch, wrong base, closed → refused;
+  non-GitHub URL → refused without calling gh; gh non-zero exit → "couldn't reach GitHub"; auth
+  stderr → login reason; a slow gh stub (3 s) does not block another card on the same thread; a
+  refused card leaves the thread file unchanged.
+- Card schema test: `done` without `head`, or with a non-40-hex `head`, is refused.
+- `machine/test/service.test.js`: a `done` card with the hub down returns 503 "try again" and
+  leaves no spool file; a `done` card while other cards are spooled and the hub stays down → 503;
+  a `done` whose hub answers 422 after 6 seconds returns 422; other kinds still spool. `wc.js git
+  commit` during a conflicted merge, after resolving, completes the merge; with unmerged paths
+  left, refused.
 - Existing tests that post `done` cards keep passing (add `head` and a gh stub as needed).
-- `viewer/test/protocol-rules.test.js`: assert lead.md has the "Making the pull request
-  mergeable" section and that steps 1, 8 and 9 refer to it; cards-lead.md's `done` lists `head`.
+- `viewer/test/protocol-rules.test.js`: lead.md has "Making the pull request mergeable" and steps
+  1, 8 and 9 refer to it; cards-lead.md's `done` lists `head`.
 - Commands: `node --test viewer/test/*.test.js`, `bash machine/test/run.sh`.
 
 ## Accepted Risks
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
-| On a direct relay the lead sees a refusal twice (card.js error and the app message) | Needed for the spooled case; harmless duplicate | planning |
-| CI that reports only on GitHub's test merge commit (not the head) leaves the rollup empty; with active workflows the gate refuses forever | GitHub Actions `pull_request` checks attach to the head commit; the `needs` card covers third-party CI | 3 |
-| In `BLOCKED`, a failed run followed by a successful re-run may both appear and refuse | Errs toward refusing; the `needs` card covers it | 3 |
-| A thread finished before this change and then given an after-done fix can't be recognised as waiting after a restart | Transitional; only threads with a legacy `done` card | 3 |
-| A repo whose workflows never run on pull requests can never pass the gate (empty rollup, workflow files present) | Rare; the lead's `needs` card tells Collin, who can merge the PR regardless | 1 |
-| The feature list shows Done while the lead waits for checks | `status: done` must be committed before the push so the PR carries it; a needs card covers the stuck case | 1 |
+| `done` accepted before CI has registered any check (`CLEAN`, empty rollup) | The lead waits 5 minutes after a push first; lighter enforcement (D36) | 4 |
+| `BLOCKED` with a required check that has not reported yet can be accepted | Rare; lighter enforcement | 4 |
+| A `done` accepted whose response was lost, then re-posted, appears twice | Harmless notice duplicate | 4 |
+| A thread with a `done` card from before this change, given an after-done fix, isn't recognised as waiting after a restart | Transitional | 3 |
+| CI that reports only on GitHub's test merge commit is invisible to the rollup | GitHub Actions reports on the head commit | 3 |
+| A repo whose workflows never pass on PRs can never reach `done` | `needs` card covers it; Collin can merge regardless | 1 |
+| The feature list shows Done while the lead waits for checks | `status: done` is committed before the push so the PR carries it | 1 |
 
 ## Review Rounds
 
@@ -413,16 +353,27 @@ remain; that refusal is returned as today. Outside a merge, behaviour is unchang
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
 | intent | minor | Machine could refuse to spool `done` instead of D29/D30 machinery | user-decision | Part of the simplification fork put to Collin |
-| intent | minor | No re-post interval after "try again" refusals | upheld | pending fork |
-| intent | minor | Collin's own pushes re-verified without budget | upheld | pending fork |
+| intent | minor | No re-post interval after "try again" refusals | upheld | moot under D36-D41 |
+| intent | minor | Collin's own pushes re-verified without budget | upheld | moot under D36-D41 |
 | mechanics | blocking | Installed gh 2.46.0 has no `gh pr checks --json` | upheld | confirmed locally; pending fork |
-| mechanics | blocking | `BLOCKED` may hide a required check with no rollup entry | upheld | pending fork |
-| mechanics | blocking | Review-required repo with no checks: gate accepts, lead never posts | upheld | pending fork |
-| mechanics | blocking | Lost direct-relay response → drain sees duplicate, no accepted message | upheld | pending fork |
-| mechanics | blocking | Spooled wait can't both receive messages and keep its deadline | upheld | pending fork |
-| mechanics | blocking | Restart may push unfinished local commits | upheld | pending fork |
-| mechanics | blocking | Restart may post `done` for someone else's merged commit unverified | upheld | pending fork |
-| mechanics | major | Ready → pending race between poll and gate | upheld | pending fork |
-| mechanics | major | Restart doesn't recover an uncommitted merge | upheld | pending fork |
+| mechanics | blocking | `BLOCKED` may hide a required check with no rollup entry | upheld | moot under D36-D41 |
+| mechanics | blocking | Review-required repo with no checks: gate accepts, lead never posts | upheld | moot under D36-D41 |
+| mechanics | blocking | Lost direct-relay response → drain sees duplicate, no accepted message | upheld | moot under D36-D41 |
+| mechanics | blocking | Spooled wait can't both receive messages and keep its deadline | upheld | moot under D36-D41 |
+| mechanics | blocking | Restart may push unfinished local commits | upheld | moot under D36-D41 |
+| mechanics | blocking | Restart may post `done` for someone else's merged commit unverified | upheld | moot under D36-D41 |
+| mechanics | major | Ready → pending race between poll and gate | upheld | moot under D36-D41 |
+| mechanics | major | Restart doesn't recover an uncommitted merge | upheld | moot under D36-D41 |
 
-**Fork for Collin (user-decision):** the full gate keeps producing blocking edge cases (spool delivery, restart recovery, check evidence). Put to Collin: lighter enforcement, keep hardening, or rule only.
+**Fork for Collin (user-decision):** answered "Lighter enforcement" (D36); the round 4 findings are moot or settled by the rewritten Spec.
+
+Prior note: the full gate keeps producing blocking edge cases (spool delivery, restart recovery, check evidence). Put to Collin: lighter enforcement, keep hardening, or rule only.
+
+### Round 5 — 2026-11-17
+
+**Lanes:** intent lens (provider per start); mechanics lens (other family); cross-family: yes.
+
+**Changed since the last round:** the Spec was rewritten to the lighter enforcement (D36-D41): one gh call gate, no workflow probe, `done` never spooled (503 "try again"), no app messages, lead section simplified, restart rule simplified, Accepted Risks rewritten. Review the whole Spec in depth.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
