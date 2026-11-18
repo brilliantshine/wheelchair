@@ -223,3 +223,24 @@ test('a message sent before an import does not come back as queued after it', as
   await expect(page.locator('#chat .bubble.human.pending')).toHaveCount(0, { timeout: 15000 });
   await expect(page.locator('#chat')).not.toContainText('sent before import');
 });
+
+test('an import drops pending bubbles even without a transcript, and old text does not swallow a new message', async ({ page }) => {
+  const id = await ctx.make({ cli: 'claude' }).then((made) => made.id);
+  let stage = 0;
+  await page.route('**/api/threads/*/messages', (route) => route.fulfill({ status: 200, json: { ok: true } }));
+  await page.route('**/api/threads/*/chat', async (route) => {
+    const response = await route.fetch(); const data = await response.json();
+    if (stage >= 1) data.thread.imported = { at: '2026-01-01T00:00:00Z', history: [] };
+    data.items = stage >= 1 ? [{ type: 'human', at: '2025-01-01T00:00:00Z', text: 'same words' }] : [];
+    data.cards = []; data.pinned = [];
+    await route.fulfill({ response, json: data });
+  });
+  await page.goto(`${ctx.server.url}/app/thread?id=${id}`);
+  await page.locator('#msg').fill('before the import'); await page.locator('#send').click();
+  await expect(page.locator('#chat .bubble.human.pending')).toContainText('before the import');
+  stage = 1;
+  await expect(page.locator('#chat .bubble.human.pending')).toHaveCount(0, { timeout: 15000 });
+  await page.locator('#msg').fill('same words'); await page.locator('#send').click();
+  await page.waitForTimeout(3000);
+  await expect(page.locator('#chat .bubble.human.pending')).toContainText('same words');
+});

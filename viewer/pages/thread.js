@@ -19,6 +19,7 @@
   const msgEl = $('msg'); const sendBtn = $('send');
 
   let data = null;
+  let seenCutoff;            // the import cutoff the chat last drew with (undefined before the first draw)
   let pending = [];          // messages posted but not yet seen in the transcript
   let sigs = {};
   let ideaOpen = false;
@@ -361,9 +362,13 @@
   function renderChat() {
     const items = data.items.filter((i) => sinceImport(i.at));
     chatEl.textContent = '';
-    // Reconcile pending bubbles against the whole transcript, before the import cutoff hides
-    // anything: a message delivered before an import is delivered, not still queued.
-    const humans = data.items.filter((i) => i.type === 'human' && !i.card).map((i) => i.text);
+    // An import that moves the cutoff makes every bubble sent before it moot (Advance needs an
+    // empty queue), so this tab's pending bubbles are dropped then, transcript or not; after
+    // that, only messages since the import can match one.
+    const cutoffNow = thread().imported ? thread().imported.at : null;
+    if (seenCutoff !== undefined && seenCutoff !== cutoffNow) pending = [];
+    seenCutoff = cutoffNow;
+    const humans = items.filter((i) => i.type === 'human' && !i.card).map((i) => i.text);
     pending = pending.filter((p) => {
       const at = humans.indexOf(p.text);
       if (at >= 0) { humans.splice(at, 1); return false; }
