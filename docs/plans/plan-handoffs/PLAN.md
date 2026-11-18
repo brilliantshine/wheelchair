@@ -1,6 +1,6 @@
 ---
 slug: plan-handoffs
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-17
 ---
 
@@ -64,6 +64,30 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 34 | Remaining rare crash-timing cases are accepted risks; one last consistency-only review pass, then approval | Collin chose accept and approve; findings had narrowed to crashes at exact moments | user |
 
 ## Spec
+
+```mermaid
+flowchart TD
+  A[Thread at a stopping point:<br/>idea confirmed, plan approved, or done] --> B{Quiet and clean?}
+  B -- no --> B1[Export greyed out, with the reason]
+  B -- yes --> C[Export: push the branch, save the file,<br/>mark the thread handed off, stop its agents]
+  C --> D[Handed-off thread: read-only,<br/>Undo or Download again]
+  C --> E[File goes to the other app]
+  E --> F{Import: is this thread already here?}
+  F -- no --> G[Create: put a pick-up commit on GitHub,<br/>build the thread, start the lead]
+  F -- "yes, same or older" --> H[Open the existing thread, change nothing]
+  F -- "yes, and the file is ahead" --> I[Advance: pick-up commit, bring the thread forward]
+  F -- "yes, but both moved on" --> H
+  G --> J{Did every step finish?}
+  I --> J
+  J -- no --> K[Thread shows Retry, or Cancel before the pick-up lands]
+  K --> J
+  J -- yes --> L[Lead starts and says where things stand]
+  D -- Undo --> M[Take-back commit on GitHub, lead restarts here]
+```
+
+The diagram repeats the sections below: export points and quiet test, the file, claims,
+operations with Retry and Cancel, and the import table. It leaves out the machine-side
+checks and the revoke sweep.
 
 Terms: the **source** thread is the one exported; the **file** is the export; the
 **importing app** is the hub the file is imported into (it may be the same hub). The hub
