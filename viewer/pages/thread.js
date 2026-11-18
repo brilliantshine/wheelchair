@@ -516,6 +516,7 @@
   // One press at a time per card: a question or offer greys out the moment it is tapped, so a
   // double tap sends nothing twice. A card answered elsewhere (another tab) just shows as answered.
   const pressing = {};
+  const copied = {};         // check card step key -> true for ~2s after a successful Copy
   async function press(card, action, value, node) {
     if (pressing[card.id]) return;
     const once = card.kind === 'question' || card.kind === 'offer';
@@ -831,6 +832,48 @@
         link.href = safeUrl(card.pr_url); link.target = '_blank'; link.rel = 'noopener';
         a.appendChild(link); inset.appendChild(a);
         box.appendChild(inset);
+        break;
+      }
+      case 'check': {
+        box.appendChild(el('h3', '', 'Check it yourself'));
+        box.appendChild(prose('', card.update));
+        const steps = card.steps || [];
+        const ol = el('ol', 'check-steps');
+        steps.forEach((s, i) => {
+          const li = el('li', 'check-step');
+          li.appendChild(el('span', 'check-where', s.where === 'machine' ? 'On the machine' : 'In the app'));
+          li.appendChild(el('div', 'check-do', s.do));
+          if (s.command) {
+            const wrap = el('div', 'check-cmd');
+            wrap.appendChild(el('pre', 'check-pre', s.command));
+            const clip = typeof navigator !== 'undefined' && navigator.clipboard;
+            if (clip && typeof clip.writeText === 'function') {
+              const key = card.id + ':' + i;
+              wrap.appendChild(button(copied[key] ? 'Copied' : 'Copy', 'small', async () => {
+                try { await navigator.clipboard.writeText(s.command); } catch (e) { return; }
+                copied[key] = true; sigs.chat = null; render();
+                setTimeout(() => { delete copied[key]; sigs.chat = null; render(); }, 2000);
+              }));
+            }
+            li.appendChild(wrap);
+          }
+          const see = el('div', 'check-see');
+          see.appendChild(el('span', 'check-see-label', 'You should see:'));
+          see.appendChild(document.createTextNode(' ' + s.see));
+          li.appendChild(see);
+          if (s.agent === 'not-tried') li.appendChild(el('div', 'dim check-note', 'Not tried by an agent: ' + s.note));
+          else if (s.agent === 'broken') li.appendChild(el('div', 'check-note check-broken', "An agent tried this and it didn't work: " + s.note));
+          ol.appendChild(li);
+        });
+        box.appendChild(ol);
+        const dones = data.cards.filter((c) => c.kind === 'done' && !c.retracted_at);
+        const curDone = dones.length ? dones[dones.length - 1] : null;
+        if (steps.some((s) => s.agent === 'broken') && !off && curDone && curDone.head === card.head) {
+          const a = el('div', 'actions');
+          a.appendChild(button('Fix it now', 'primary', () => press(card, 'fix')));
+          a.appendChild(button('Leave it', '', () => press(card, 'leave')));
+          box.appendChild(a);
+        }
         break;
       }
       case 'diagram': {
