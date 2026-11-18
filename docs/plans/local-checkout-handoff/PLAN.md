@@ -45,6 +45,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 8 | Pressing "Try it in my copy" asks for one confirmation naming the folder and machine | A mis-tap on a phone rewrites his working folder | defaulted |
 | 9 | Pressing "Try it" again for the thread already in place moves to its newest commit | Agents keep committing; he needs a way to refresh | defaulted |
 | 10 | The control lives on the thread page for any thread whose branch exists in the folder, at any stage, and shows which thread (if any) the folder is currently showing | He may want to try work before it is done; one place to look | defaulted |
+| 11 | Every git change is journalled in the record first; switches never overwrite ignored files or guess names; set-aside changes are pinned under `refs/wheelchair/kept/`; outcomes are judged by where HEAD actually is, not git's exit code; Switch back carries the record version | Mechanics findings 1-11, round 1 | review-round-1 |
+| 12 | Refuse folders that run wheelchair itself, agents' copies, and folders with submodule changes | Intent finding 1 and mechanics findings 10-11, round 1 | review-round-1 |
 
 ## Spec
 
@@ -57,61 +59,109 @@ Spec is still churning. See `protocol/diagrams.md`.
 
 ### Behaviour
 
-Terms: **the folder** is `thread.project` on `thread.machine` (`viewer/app/threads.js:20-25`).
-**Trying** means the folder's HEAD is detached at a thread's commit and a try record
-exists for the folder. **The return point** is the branch (or commit, if the folder was
-already detached) HEAD was on before the first try.
+Terms:
+- **The folder** is `thread.project` on `thread.machine` (`viewer/app/threads.js:20-25`).
+- **The record** is the folder's try record (see Where it lives). It is written before
+  any git change and updated after each step (**phase**), so an interrupted operation can
+  be finished or undone.
+- **The return point** is the exact local branch (`refs/heads/<name>`), or the commit if
+  the folder was already detached, that HEAD was on before the first Try.
+- **Trying** means a record exists in phase `trying`, HEAD is detached, and HEAD equals
+  the record's `commit`.
+- **A kept set** is a stash entry wheelchair makes. It always has a unique label
+  `wheelchair <nonce>: <words>` (nonce: 8 random hex chars) and is pinned with
+  `git update-ref refs/wheelchair/kept/<sha> <sha>` right after it is made, so it stays
+  reachable whatever happens to the shared stash list. Restoring is always by sha
+  (`git stash apply --index <sha>`), never by `stash@{n}`.
+- **Dropping a kept set** (only after a successful restore): find its current index by
+  sha in `git stash list --format='%H'`; if absent, just delete the pin. Otherwise run
+  `git stash drop stash@{n}` and read the sha git prints ("Dropped ... (<sha>)"). If that
+  sha is not ours, put the dropped entry straight back with
+  `git stash store -m "<its subject>" <dropped sha>` and leave ours in the list. Then
+  delete our pin. Agents never stash through the machine (`machine/service.js:1044`).
+- **Clean check**: `git status --porcelain=v1 --untracked-files=all
+  --ignore-submodules=none`, empty means clean.
+- **Switches** always use `git switch --no-guess --no-overwrite-ignore <branch>` or
+  `git switch --detach --no-overwrite-ignore <commit>`, so an ignored file is never
+  overwritten (git refuses instead) and a name is never guessed or read as a path.
+- **Kept-ignored list**: at the first Try, `git ls-files --others --ignored
+  --exclude-standard --directory` (directories collapsed) is saved in the record. Any
+  stash made while trying excludes those paths (`:(exclude,top)<path>` pathspecs), so an
+  ignored file that a thread's changed ignore rules make look untracked stays in place.
 
-1. **Try it in my copy** (thread page). After a confirmation naming the folder and
-   machine, and saying it brings in the thread's merged work so far (work agents have
-   not yet merged into the thread is not included), the machine, holding `inRepoQueue(folder)` (`machine/service.js:547`):
-   1. Refuses, changing nothing, if: the folder is not the top level of a non-bare
-      working tree (`git rev-parse --show-toplevel` must equal the resolved folder, and
-      `--is-bare-repository` false); a merge, rebase, cherry-pick, revert or bisect is in
-      progress; `refs/heads/wc/<thread-id>` does not exist.
-   2. If not already trying: records the return point (`git symbolic-ref -q HEAD`, else
-      `git rev-parse HEAD`).
-   3. If the working tree has tracked or untracked changes (`git status --porcelain`,
-      ignored files excluded): `git stash push --include-untracked -m <label>` and records
-      the stash commit's sha. Label: `wheelchair: my changes before trying thread <id>`
-      when not yet trying, otherwise `wheelchair: changes while trying thread <prev id>`.
-      Every stash wheelchair makes is also pinned with
-      `git update-ref refs/wheelchair/kept/<stash sha> <stash sha>`, so it stays
-      reachable even if the stash list is popped or cleared; the pin is deleted only when
-      that stash is successfully restored and dropped.
-   4. `git checkout --detach <sha of wc/<thread-id>>`.
-   5. If checkout fails: restores what step 3 stashed (`git stash apply --index <sha>`,
-      then drop that entry by finding the sha in `git stash list --format=%H`, and delete
-      its pin), leaves
-      the try record as it was before the press, and reports git's last error line.
-   6. Writes the try record and reports: thread id, commit, and whether changes were set
-      aside.
-   Ignored files are never touched by wheelchair (git itself refuses a checkout that would
-   overwrite one, and step 5 handles that).
-2. **Switch back.** Shown while the folder is trying any thread, on every thread page of
-   that folder. Under the same queue:
-   1. If the working tree has changes, stash them as `wheelchair: changes while trying
-      thread <id>` (kept, not restored) and report the label.
-   2. `git checkout <return point>` (branch name, or `--detach <sha>`).
-   3. Apply the "before trying" stash, if any, with `git stash apply --index <sha>` (by
-      sha, so it works even if the entry left the stash list). On success drop that entry
-      if still listed, and delete its pin. On conflict or failure: run no cleanup command
-      (no `checkout --`, no `reset`); leave the stash entry and whatever apply wrote in
-      place, and report "your earlier changes are kept in stash `<label>`; restoring
-      them hit a clash in <files>".
-   4. Deletes the try record.
-3. **Status.** The thread page shows, for its folder: nothing (not trying), "Your copy is
-   showing this thread's merged work as of <short commit>" (with a "Get newest" if
-   `wc/<id>` moved past the tried commit),
-   or "Your copy is showing another thread: <title>". Read-only: `git rev-parse HEAD`,
-   the try record, `git rev-parse wc/<id>`; never fetches.
-4. **Drift.** If the folder's HEAD no longer equals the recorded tried commit (Collin
-   switched branches himself), the try record is stale: status shows nothing, Switch back
-   is hidden, and any "before trying" stash stays untouched (still pinned). If the stale
-   record has a `before_stash`, status shows once "Your earlier changes are kept in stash
-   `<label>`" before the record is deleted; otherwise the record is deleted silently.
-5. **Errors** reach Collin as one plain sentence under the control: machine unreachable,
-   refusal reason from 1.1, or git's last error line.
+Refusals (checked before any git change; nothing changes; the reason is shown):
+- not a git working tree top level (`git rev-parse --show-toplevel` must equal the real
+  path of the folder) or a bare repository;
+- not the repository's main working tree (`git rev-parse --git-dir` must equal
+  `--git-common-dir`), or the folder lies under `<stateDir>/worktrees`: agents' copies
+  are never switched;
+- the folder's real path equals or contains the real path of the running service's own
+  source root (`ROOT`, `machine/service.js:29`; the hub makes the same check with its own
+  root when `thread.machine` is the hub's machine): "This folder runs wheelchair itself;
+  switching it would swap the running app for untested code.";
+- a merge, rebase, cherry-pick, revert or bisect is in progress;
+- a submodule has changes (`git submodule status` shows `+`/`-`/`U`, or the clean check
+  shows a submodule path): "Changes inside a submodule can't be set aside safely.";
+- for Try: `refs/heads/wc/<thread-id>` does not exist;
+- for Switch back: the return branch no longer exists, or is checked out in another
+  worktree (`git worktree list --porcelain`). The folder stays on the thread's work and
+  the record is kept.
+
+1. **Try it in my copy.** After a confirmation naming the folder and machine, and saying
+   it brings in the thread's merged work so far (work agents have not yet merged into the
+   thread is not included), the machine, holding `inRepoQueue(folder)`
+   (`machine/service.js:547`), first reconciles any interrupted operation (5), runs the
+   refusals, then:
+   1. If no record: writes one in phase `starting` with the return point and the
+      kept-ignored list.
+   2. If not clean: makes a kept set (`git stash push --include-untracked -m <label>`,
+      with the kept-ignored exclusions when already trying), labelled "my changes before
+      trying thread <id>" (first Try; saved as `before_stash`) or "changes while trying
+      thread <prev id>" (added to `kept`). Records it. Runs the clean check again; if
+      still not clean, restores what was just kept, sets the record back, and refuses
+      ("Some changes couldn't be set aside").
+   3. Records the target commit (sha of `wc/<thread-id>`) in phase `switching`, then
+      switches detached to it.
+   4. Whatever git's exit code, reads HEAD. If HEAD is the target: success (a nonzero
+      exit, for example a failing post-checkout hook, is reported as a warning with git's
+      last line). If HEAD did not move: restores what step 2 kept (and drops it), puts the
+      record back as it was before the press (deleting it if this was the first Try), and
+      reports git's last line. If HEAD is anywhere else: keeps the record and the kept
+      sets and reports that the copy is in an unexpected state.
+   5. On success: phase `trying`, `thread_id`, `commit`, new `version` (random id).
+   Pressing Try for the thread already in place moves to its newest commit the same way.
+2. **Switch back.** The request carries the record `version` it was shown; a different
+   version is refused ("Your copy changed since this page loaded") and the page reloads
+   status. Under the same queue, after reconcile and refusals:
+   1. If HEAD (still detached) differs from `commit` (he committed while trying), pins
+      HEAD as `refs/wheelchair/kept/<sha>` and reports it, so the commits stay reachable.
+   2. If not clean: makes a kept set "changes while trying thread <id>" (excluding the
+      kept-ignored list) and reports its label. Phase `returning`.
+   3. Switches to the return point. If HEAD did not move: restores step 2's set, keeps
+      the record in `trying`, reports git's line.
+   4. Restores `before_stash` by sha. On success drops it. On a clash: runs no cleanup
+      command, leaves the set and whatever apply wrote, reports "Your earlier changes are
+      kept in stash `<label>`; restoring them clashed in <files>".
+   5. Deletes the record.
+3. **Status** (read-only, GET): taken under the folder's queue so it never sees a half
+   step. Shows one of: nothing; "Your copy is showing this thread's merged work as of
+   <short commit>" (plus "Get newest" if `wc/<id>` moved on); "Your copy is showing
+   another thread: <title>"; "Your copy moved since you tried <thread>" (detached, other
+   commit) with Switch back; or, for a stale record (4), "Your earlier changes are kept in
+   stash `<label>`" with a Dismiss button. Returns the record `version`. Never fetches,
+   never writes.
+4. **Stale.** If HEAD is attached to a branch while the record is `trying` (he switched
+   himself), the record is stale: Switch back is hidden; if it has `before_stash` or
+   `kept`, status names them; Dismiss (a write, version-checked) deletes the record. Kept
+   sets and pins stay.
+5. **Reconcile** (start of every write): a record in `starting` with HEAD unchanged →
+   restore any kept set made and delete the record; `switching` with HEAD at the target →
+   finish as success; `switching` with HEAD unmoved → undo as 1.4; `returning` with HEAD
+   at the return point → continue from 2.4; `returning` with HEAD unmoved → back to
+   `trying`. Anything else is left alone and reported as an unexpected state.
+6. **Errors** reach Collin as one plain sentence under the control: machine
+   unreachable, a refusal, or git's last line. After any write error or timeout, the page
+   re-reads status rather than assuming the outcome.
 
 ### Where it lives
 
@@ -120,9 +170,11 @@ already detached) HEAD was on before the first try.
   (`machine/service.js:403-420,1602-1604`), input `{action, thread_id, project}`;
   `project` validated with `projects({check})` (`machine/service.js:1198-1232`).
   `thread_id` must match `^[0-9a-f]{12}$`. Try records live in
-  `<stateDir>/tries/<sha256 of resolved folder path>.json`:
-  `{folder, return_point: {kind: "branch"|"commit", value}, before_stash: sha|null,
-  thread_id, commit}`. Agents can never call it (no agent-token route).
+  `<stateDir>/tries/<sha256 of real folder path>.json`, written atomically (temp file
+  then rename): `{folder, version, phase: "starting"|"switching"|"trying"|"returning",
+  return_point: {kind: "branch"|"commit", value}, kept_ignored: [path], before_stash:
+  {sha, label}|null, kept: [{sha, label}], thread_id, commit}`. Actions `try` and `back`
+  and `dismiss`; `back` and `dismiss` require `version`. Agents can never call it (no agent-token route).
 - **Hub** (`viewer/app/routes.js`, `viewer/app/machine-client.js:53-108`): browser routes
   `GET /api/threads/<id>/try` and `POST /api/threads/<id>/try` (`{action:"try"|"back"}`),
   under the normal browser write auth (`viewer/server.js:1292-1298`), resolving
@@ -142,8 +194,15 @@ configurable folder; including uncommitted agent edits; changing agent git rules
   repo with a linked worktree on `wc/<id>`: try from clean branch; try with tracked,
   untracked and ignored files (ignored untouched, others restored on back); try A then B
   then back (original return point and stash); back with changes made while trying (kept
-  in a labelled stash); checkout failure restores the stash; refusal during a merge;
-  drift; stash-apply clash leaves the stash entry.
+  in a labelled, pinned stash); a tracked path colliding with an ignored file in each
+  direction (refused, file intact); a thread commit that removes an ignore rule (the
+  ignored file stays in place on back); `status.showUntrackedFiles=no` set; a dirty
+  submodule (refused); a project folder that is a linked worktree or under the
+  worktrees dir (refused); the service root (refused); a failing post-checkout hook
+  (success with warning); interruption after each phase (reconcile); a commit made while
+  trying (pinned); return branch deleted or checked out elsewhere (refused, record kept);
+  a foreign stash pushed between list and drop (foreign entry restored); a stale
+  `version` on back (refused); stash-apply clash leaves the stash entry and pin.
 - `node --test viewer/test/*.test.js`: route tests that thread id resolves machine and
   project from the record and that unauthenticated writes are refused.
 - `npm --prefix viewer run test:browser`: the panel shows status, confirmation, and an
@@ -178,6 +237,17 @@ round where knowing it matters most.
 | intent | minor | Status overstates: unmerged worker branches are not included | upheld | Confirmation and status say "merged work as of <commit>" |
 | intent | minor | Drift silently drops the pointer to his set-aside changes | upheld | One-time status line naming the stash (Behaviour 4) |
 | intent | minor | Shared stash list can lose the entry | upheld | Pinned under `refs/wheelchair/kept/` (1.3, 1.5, 2.3) |
+| mechanics | blocking | Checkout overwrites ignored files by default | upheld (git-checkout(1): `--overwrite-ignore` is default) | `--no-overwrite-ignore` on every switch |
+| mechanics | blocking | Thread removing an ignore rule moves an ignored file into the trial stash | downgraded to major: file is stashed, not lost | Kept-ignored list excluded from trial stashes |
+| mechanics | blocking | No journal; crash leaves detached copy without Switch back | downgraded to major: changes stay in the stash | Record phases written first; reconcile (5) |
+| mechanics | blocking | Failing post-checkout hook misread as no switch | downgraded to major: same, and hooks are rare | Outcome judged by actual HEAD (1.4) |
+| mechanics | blocking | `stash@{n}` races across linked worktrees | downgraded to major: agents cannot stash via the machine (`machine/service.js:1044`) | Restore by sha; drop verifies printed sha and re-stores a foreign entry |
+| mechanics | major | Switch back has no preflight; plain checkout guesses names | upheld | Refusals for missing/elsewhere branch; `git switch --no-guess` |
+| mechanics | major | SHA-only drift detection | upheld | Trying needs detached HEAD; moved-detached pins HEAD on back |
+| mechanics | major | Status GET writes and is unlocked | upheld | GET read-only under queue; Dismiss is a write |
+| mechanics | major | Stale tab can undo a newer trial | upheld | `version` on back/dismiss; re-read status after errors |
+| mechanics | major | Untracked hidden by config; submodule changes not stashed | upheld | `--untracked-files=all`; submodule refusal; clean re-check |
+| mechanics | major | A managed agent worktree passes project validation | upheld | Main-working-tree and worktrees-dir refusals |
 
 Reported severity is the reviewer's opinion; the lead verdict
 (`upheld`/`downgraded`/`declined`/`accepted-risk`/`user-decision`) is what gates the
