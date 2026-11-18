@@ -66,8 +66,10 @@ changed). Steps are for after merging (Decision 5).
   documents) gets commands to run on the machine, each with the output to look for.
 - One card may mix both; app steps first.
 - A protocol-only change (how agents behave) is checked by what he would see agents do in
-  a thread, when that is observable; otherwise by a machine command (for example a `grep`
-  of the rule in the installed file) with the line to look for. Machine commands point at
+  a thread: a step names the behaviour to watch for and when it shows up ("next time a
+  thread finishes, a Check it yourself card follows Done"). If no agent could stage that
+  in isolation, the step is `tried: false` with `why_not` "only shows in a later thread".
+  Never a step that only proves the merge landed (such as grepping for the new text). Machine commands point at
   the installed paths Collin will have after updating; the lead gives the verifier a path
   map from those paths to the worktree so it can try them.
 
@@ -393,6 +395,8 @@ exit. Downgrades and declines cite evidence.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Use one steps-only verifier on the final head just before done on every path | declined | Final head is known only after the PR is ready; a step showing the work wrong would then force a repair push and another verifier anyway. Trying before the push keeps a broken step out of the PR; the extra rules are bounded and specified |
+| intent | minor | Protocol-change fallback grep only proves the merge landed | upheld | Protocol changes name a behaviour to watch for in a later thread, marked untried when it cannot be staged; merge-proving steps forbidden |
 
 ## Prior Work
 
