@@ -122,6 +122,7 @@ re-raise them.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| After a Spec change during "Talk about it" (no retract), a reviewer deck still reads "then approved" until the next round's checking card | The lead starts the next round right away, so the window is minutes; the hub cannot read PLAN.md status | 3 |
 | After a lead restart mid-round, a stale report's single finding can be shown as the round's one objection | Rare (restart mid-round with exactly one leftover finding); only the text is wrong, the count and color are right | 2 |
 
 ## Review Rounds
@@ -180,7 +181,7 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 3 — 2026-11-18
 
-**Lanes:** intent: pending; mechanics: pending; cross-family: pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 2:**
 - §1: unanswered-retry wording; new verification attempt numbering rule (highest verifier `round` + 1) and cards.md `pass` wording.
@@ -191,6 +192,7 @@ exit. Downgrades and declines cite evidence.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | "then approved" lingers after a Spec change during Talk about it | accepted-risk | Moved to Accepted Risks: window lasts until the next round starts |
 
 ## Prior Work
 
