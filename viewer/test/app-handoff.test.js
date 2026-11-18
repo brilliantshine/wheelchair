@@ -88,7 +88,10 @@ test('export reasons follow their order and committed stopping points', () => {
   thread.cards.push({ id: 'b', kind: 'question', answered: true, at: '2026-11-18T12:00:00.000Z' });
   assert.equal(stageFor(thread, status), null); thread.cards[1].retracted_at = at; assert.equal(stageFor(thread, status), 'idea-confirmed');
   status.plan_status = 'done'; status.pr_state = 'OPEN'; thread.cards.push({ kind: 'done', pr_url: 'url' }); status.remote_tip = 'b'; assert.equal(reason(), 'A fix is still being checked');
-  status.remote_tip = 'a'; status.pr_state = 'CLOSED'; assert.match(reason(), /merged or closed/);
+  status.remote_tip = 'a'; status.pr_state = 'CLOSED'; assert.equal(reason(), 'The pull request is merged or closed; nothing left to hand off');
+  status.pr_state = null; status.pr_error = 'gh: not authenticated'; assert.equal(reason(), "Couldn't check the pull request");
+  delete status.pr_error; assert.equal(reason(), "Couldn't check the pull request");
+  status.pr_state = 'OPEN'; status.pr_error = 'gh: not authenticated'; assert.equal(reason(), "Couldn't check the pull request");
 });
 
 test('frozen threads refuse mutation entry points and never deliver queued work', async () => {
@@ -188,6 +191,19 @@ test('export route returns a downloadable JSON file', async () => {
     c.machine.handoffReplies.push = { head: 'a'.repeat(40), repository: 'github.com/owner/repo' };
     const response = await fetch(`${c.server.url}/api/threads/${made.id}/export`, { method: 'POST', headers: { 'x-graph-token': c.server.token, origin: new URL(c.server.url).origin } });
     assert.equal(response.status, 200); assert.equal(response.headers.get('content-type'), 'application/json'); assert.equal(response.headers.get('content-disposition'), 'attachment; filename="my-plan.wheelchair.json"'); assert.equal(validateHandoffFile(await response.text()).ok, true);
+  } finally { await close(c); }
+});
+
+test('export route reports a failed PR check without pushing', async () => {
+  const { setup, close, api, thread: makeThread } = require('./helpers/app.js'); const { Hub } = require('../app/hub.js');
+  const c = await setup();
+  try {
+    const made = await makeThread(c); const hub = new Hub({ stateDir: c.state }); const thread = await hub.thread(made.id);
+    thread.cards.push({ kind: 'done', pr_url: 'https://github.com/owner/repo/pull/1', at }); await hub.save(thread);
+    c.machine.handoffReplies.status = { branch: `wc/${made.id}`, repository: 'github.com/owner/repo', plan_status: 'done', pr_state: null, pr_error: 'gh: not authenticated' };
+    const response = await api(c, `/threads/${made.id}/export`, { method: 'POST', body: {} });
+    assert.equal(response.status, 409); assert.equal(response.body.detail, "Couldn't check the pull request");
+    assert.equal(c.machine.calls.some((call) => call.path === '/v1/handoff' && call.body?.action === 'push'), false);
   } finally { await close(c); }
 });
 
