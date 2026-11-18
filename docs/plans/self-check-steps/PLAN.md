@@ -50,6 +50,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 13 | Supersedes 7 and 8. Steps ride on verifiers that already run (planned build: the sub-lead's, from a `### Check steps` subsection the lead writes in the final Spec; fixes: the fix's verifier; repairs: the repair verifier). A step showing the work is wrong is a GAP in that verifier's existing loop; the feature adds no fix loop. Only a reworded step gets a steps-only re-try, which never opens a loop. The sub-lead protocol gains three small rules | Rounds 1 to 4 kept finding conflicts between a new steps fix loop and the existing ones; reusing the existing loops removes the conflicts. Round 1's "drift" objection is handled by the rewording rule | review-round-4 |
 | 14 | Supersedes 7, 8 and 13. The steps are tried once, after the `done` card is accepted, by one steps-only verifier on the done head; then the check card is posted. A step showing the work broken is shown as `differed` and the lead asks "Fix it now" (step 9) or "Leave it". No verification path before Done changes; the sub-lead protocol does not change | Collin's pick on Q5 (leaning). Removes carrying step results through fix, repair, merge and restart paths, which rounds 1 to 5 kept finding holes in | user |
 | 15 | A fourth step state, `broken` ("An agent tried this and it didn't work"), separate from `differed` (saw something else that may still be right). Only `broken` triggers the "Fix what the check found?" question | Keeps "work is wrong" visible to Collin and recoverable after a restart | review-round-6 |
+| 16 | Supersedes the `differed` state in 12 and 15. A reworded step whose re-try still differs but meets intent takes the agent's observation as its `see` and is `matched`; three states remain (matched, not-tried, broken) | Every step Collin gets is one he can follow (IDEA.md) | review-round-7 |
 
 ## Spec
 
@@ -60,8 +61,9 @@ exactly that version), the lead posts a `check` card: "Check it yourself".
 It says first how to get the change running (merge, then how this project updates), then
 gives numbered steps. Each step says where it is done (in the app, or on the machine), what
 to do, and what he should see. Steps an agent followed say nothing extra; a step no agent
-could try carries "Not tried by an agent" and the reason; a step an agent tried and saw
-something else carries "An agent tried this and saw something else" and what it saw. All three done paths get one:
+could try carries "Not tried by an agent" and the reason; a step an agent tried and found
+not working carries "An agent tried this and it didn't work" and what it saw, and the lead
+then asks "Fix what the check found?" ("Fix it now" or "Leave it"). All three done paths get one:
 small fix, planned build, and a fix after done (whose steps cover only what that fix
 changed). Steps are for after merging (Decision 5).
 
@@ -99,8 +101,8 @@ Each step:
 | `do` | string | yes | What to do, at most 300 chars |
 | `see` | string | yes | What he should see if it worked, at most 300 chars |
 | `command` | string | no | Only with `where: machine`; the exact command, full paths, at most 1000 chars; may span lines |
-| `agent` | `matched` \| `not-tried` \| `differed` \| `broken` | yes | `matched`: an agent followed the step and saw `see`. `not-tried`: no agent could follow it as written. `differed`: an agent followed it and saw something else that may still be right. `broken`: an agent followed it and judged the change does not do what it should |
-| `note` | string | unless `agent` is `matched` | Forbidden with `matched`. For `not-tried`, why; for `differed` and `broken`, what the agent saw. One line, at most 300 chars |
+| `agent` | `matched` \| `not-tried` \| `broken` | yes | `matched`: an agent followed the step and saw `see`. `not-tried`: no agent could follow it as written. `broken`: an agent followed it and judged the change does not do what it should |
+| `note` | string | unless `agent` is `matched` | Forbidden with `matched`. For `not-tried`, why; for `broken`, what the agent saw. One line, at most 300 chars |
 
 Unknown fields are refused, as for every kind. The card is posted through the normal
 spooled path (not synchronous like `done`); the head and duplicate rules are checked at the
@@ -116,8 +118,7 @@ Rendering (`viewer/pages/thread.js` `renderCard`): heading "Check it yourself", 
 "In the app" or "On the machine", the `do` text, the `command` in a monospace block with a
 Copy button (hidden when `navigator.clipboard` is unavailable; copying never posts
 anything; after a successful copy the button reads "Copied" for about two seconds), then "You should see:" and the `see` text. A `not-tried` step shows a muted line
-"Not tried by an agent: <note>". A `differed` step shows a warning-styled line "An agent
-tried this and saw something else: <note>". A `broken` step shows a warning-styled line "An
+"Not tried by an agent: <note>". A `broken` step shows a warning-styled line "An
 agent tried this and it didn't work: <note>". All text is set as text, never HTML. It must read at
 phone width (390px) without horizontal page scroll; a long command scrolls inside its own
 block.
@@ -128,7 +129,7 @@ Other app touch points:
   unless `agent` is `matched`, forbidden with it).
 - `viewer/app/handoff.js`: add `check` to `KINDS`; `historyText` returns the `update` line
   and one line per step: `<n>. [app|machine] <do> — see: <see>`, plus the command and
-  "(not tried: <note>)", "(an agent saw: <note>)" or "(didn't work: <note>)" where present.
+  "(not tried: <note>)" or "(didn't work: <note>)" where present.
 - `machine/service.js`: no change beyond what the generic card path already does (confirm
   `check` is spooled and forwarded like other shown kinds).
 - `protocol/app/cards.md`: add `check` to the kinds table (shown, lead, not pinned).
@@ -170,8 +171,9 @@ not the done head, the lead starts one more; if that one also differs, every ste
   in Collin's words.
 - `DIFFERS (meets intent)` (the step was worded wrong) → the lead rewords it and starts one
   steps-only verifier for the reworded steps on the same head. Its result: MATCH →
-  `matched`; COULD NOT TRY → `not-tried`; DIFFERS (meets intent) → `differed`; DIFFERS
-  (work wrong) → `broken`; `note` what it saw.
+  `matched`; COULD NOT TRY → `not-tried`; DIFFERS (meets intent) → the lead sets `see` to
+  what the agent saw and the step is `matched` (the agent saw it and judged it right);
+  DIFFERS (work wrong) → `broken`, `note` what it saw.
 - `DIFFERS (work wrong)` → `agent: broken`, `note` what it saw.
 - A step with no STEP line → `agent: not-tried`, `note` "an agent did not report on it".
   Two lines for one step: use the less favourable (DIFFERS (work wrong), DIFFERS (meets
@@ -209,8 +211,10 @@ that verifier, posts no check card for the older head, and starts over for the n
 the new verifier rules. That thread's lead tries its steps as above with the verifier rules
 written out in full in the brief, and, instead of a check card, posts a `needs`
 card titled "Check it yourself" whose `body` is the `update` text and whose `items` are
-the steps, one per item ("In the app: <do> — you should see: <see>", with any command and
-agent note). A `needs` card is shown by the installed app; "Keep going" just closes it.
+the steps, one per item ("In the app: <do> — you should see: <see>", with any command,
+and "Not tried by an agent: <note>" or "An agent tried this and it didn't work: <note>"
+where it applies). A `broken` step there gets the same "Fix what the check found?"
+question, posted after the `needs` card. A `needs` card is shown by the installed app; "Keep going" just closes it.
 
 ### How the verifier tries steps (`protocol/app/verifier.md`)
 
@@ -271,7 +275,7 @@ A new section, for a brief that says "steps only":
 - `cd viewer && npm test` passes, including new node tests:
   - `card.js` validation: accepts a valid card; refuses each missing required field,
     `command` with `where: app`, `note` with `agent: matched`, missing `note` with
-    `not-tried`, `differed` or `broken`, an unknown `agent` value, 0 or 7 steps, over-length fields, unknown
+    `not-tried` or `broken`, an unknown `agent` value (including `differed`), 0 or 7 steps, over-length fields, unknown
     fields, a non-lead role.
   - hub acceptance: refused with no done card; refused when the only done card is retracted
     or created before the thread's import cutoff; refused when `head` differs from the latest
@@ -286,7 +290,7 @@ A new section, for a brief that says "steps only":
 - `cd viewer && npx playwright test` passes, including a new browser test (its server
   started with a temporary `stateDir` as well as a temporary cache root): a posted check
   card renders the heading, the update text, numbered steps with "In the app"/"On the machine" labels, the command
-  block with Copy (pressing it, with clipboard permission granted, shows "Copied"), "You should see:", the "Not tried by an agent", "An agent tried this and saw something else" and "An agent
+  block with Copy (pressing it, with clipboard permission granted, shows "Copied"), "You should see:", the "Not tried by an agent" and "An agent
   tried this and it didn't work" lines; no buttons
   other than Copy; at 390px wide the page has no horizontal scroll.
 - `grep -n -i "check" protocol/app/cards.md protocol/app/cards-lead.md protocol/app/lead.md protocol/app/verifier.md`
@@ -524,6 +528,9 @@ Collin decided Q5 (try the steps after Done); budget reset.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | "What Collin gets" omits `broken` and its question | upheld | Summary updated |
+| intent | minor | `differed` leaves him a step whose `see` the agent did not see | upheld | Decision 16: observation becomes `see`; `differed` removed |
+| intent | minor | First-release stand-in has no rule for `broken` | upheld | Items carry the broken line; the question is posted after the `needs` card |
 
 ## Prior Work
 
