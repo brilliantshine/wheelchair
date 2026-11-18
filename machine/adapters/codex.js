@@ -47,7 +47,43 @@ module.exports = {
     let reading = null; for (const line of complete.trimEnd().split('\n')) reading = this.usageFrom(line) || reading;
     return { reading };
   },
-  command(input, session, worktree) { const trust = `projects={${JSON.stringify(worktree)}={trust_level="trusted"}}`; const notify = `notify=[${JSON.stringify(path.join(c.root, 'machine', 'hook.sh'))},"codex",${JSON.stringify(session.name)}]`; const access = input.role === 'reviewer' ? ['-s', 'read-only', '-a', 'never'] : session.codex_mode === 'unrestricted' ? ['--dangerously-bypass-approvals-and-sandbox'] : ['-s', 'workspace-write', '-a', 'never', '-c', 'sandbox_workspace_write.network_access=true']; return { argv: ['codex', ...access, '-c', notify, '-c', trust, ...(input.model ? ['-m', input.model] : []), ...(session.effort ? ['-c', `model_reasoning_effort=${session.effort}`] : [])] }; },
+  command(input, session, worktree, context) {
+    const trust = `projects={${JSON.stringify(worktree)}={trust_level="trusted"}}`;
+    const notify = `notify=[${JSON.stringify(path.join(c.root, 'machine', 'hook.sh'))},"codex",${JSON.stringify(session.name)}]`;
+    const access = input.role === 'reviewer' ? ['-s', 'read-only', '-a', 'never'] : session.codex_mode === 'unrestricted' ? ['--dangerously-bypass-approvals-and-sandbox'] : ['-s', 'workspace-write', '-a', 'never', '-c', 'sandbox_workspace_write.network_access=true'];
+    const argv = ['codex', ...access, '-c', notify, '-c', trust, ...(input.model ? ['-m', input.model] : []), ...(session.effort ? ['-c', `model_reasoning_effort=${session.effort}`] : [])];
+    const warnings = [];
+    if (context?.tools && context.mcp) {
+      for (const name of Object.keys(context.mcp.servers)) {
+        const entry = context.mcp.servers[name];
+        let reason;
+        if (!/^[A-Za-z0-9_-]+$/.test(name)) reason = 'its name must use only letters, digits, _ and -';
+        else if (Object.hasOwn(entry, 'headers')) reason = 'servers with headers are not supported on Codex yet';
+        else if ([entry.command, ...(entry.args || []), entry.url].some(value => value?.includes('${')) ||
+          Object.entries(entry.env || {}).some(([key, value]) => value.includes('${') &&
+            (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || value !== `\${${key}}`))) {
+          reason = 'it uses ${...} that Codex cannot pass through';
+        }
+        if (reason) { warnings.push(`server ${JSON.stringify(name)} skipped on Codex: ${reason}`); continue; }
+        const prefix = `mcp_servers.project_${name}`;
+        const add = (key, value) => argv.push('-c', `${prefix}.${key}=${value}`);
+        if (entry.type === 'http') add('url', JSON.stringify(entry.url));
+        else {
+          const literal = [], passthrough = [];
+          for (const [key, value] of Object.entries(entry.env || {})) {
+            if (value === `\${${key}}` && /^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) passthrough.push(JSON.stringify(key));
+            else literal.push(`${JSON.stringify(key)}=${JSON.stringify(value)}`);
+          }
+          add('command', JSON.stringify(entry.command));
+          add('args', `[${(entry.args || []).map(value => JSON.stringify(value)).join(',')}]`);
+          add('env', `{${literal.join(',')}}`);
+          add('env_vars', `[${passthrough.join(',')}]`);
+        }
+        add('enabled', 'true');
+      }
+    }
+    return { argv, warnings };
+  },
   firstMessage(input, promptPath) { const first = input.brief || input.first_message || ''; return `[wc:role] Role: ${input.role}\nRead ${promptPath} before responding: it holds your role rules and card rules. Read it again only if it is no longer in your context.\n\n${first}`; },
   readyText(session, pane) { return pane.includes('Ask Codex to do anything'); }, answerPrompts() { return null; },
   async findTranscript(session, dir) { if (!session.codex_thread_id) return null; const find = async directory => { for (const entry of await fs.promises.readdir(directory, { withFileTypes: true }).catch(() => [])) { const file = path.join(directory, entry.name); if (entry.isDirectory()) { const hit = await find(file); if (hit) return hit; } else if (entry.name.endsWith(`-${session.codex_thread_id}.jsonl`)) return file; } return null; }; return find(path.join(dir || usual(), 'sessions')); },
