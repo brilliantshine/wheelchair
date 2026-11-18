@@ -48,6 +48,14 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D13 | The running list is a new lead-only card kind, `deferred`, pinned like `idea` | The idea card is already pinned for a different list; a second kind keeps both visible | defaulted |
 | D14 | In a lighter mode, a review finding moved to Deferred does not keep a round from being clean | Otherwise each round's new hardening findings would keep review running as long as thorough, defeating "a working build sooner" | review-round-1 |
 | D15 | IDEA.md reworded: the two-part follow-up thread starts with the deferred items and notes, ready to plan, not a written plan | Matches D4 | idea-change |
+| D16 | Switching to thorough retracts the `deferred` card (made retractable); switching between lighter modes reposts it | An empty repost could not be told apart from a lighter mode with nothing deferred | review-round-1 |
+| D17 | Mode change or pull-back after approval retracts the approval card first; a late start-building press is ignored with a reply | Otherwise Start building stays live on a plan back in review | review-round-1 |
+| D18 | Verification gaps the lead defers are committed to Deferred by the sub-lead; remaining gaps go through remediation; if all are deferred a fresh verifier re-checks with no remediation, not counted as a fix attempt | Defines a path to PASS when gaps are deferred | review-round-1 |
+| D19 | Mode change or pull-back during a running round stops it; the round restarts under the same number, untriaged and uncounted | Reviewers would otherwise report on a superseded plan | review-round-1 |
+| D20 | Locked or stale `deferred` cards refuse `removed` presses at the hub; the lead ignores a late one; the card is locked before the sub-lead starts | Closes the window between Start building and the locked repost | review-round-1 |
+| D21 | Deferred bullet ids and texts must be unique within the card | The press carries the text, so duplicates would be ambiguous | review-round-1 |
+| D22 | Restart recovers the mode from cards before IDEA.md exists; no silent default | Avoids bypassing Collin's choice | review-round-1 |
+| D23 | A restarted lead in a done two-part thread posts the follow-up stub only if none exists | Neither misses nor duplicates the handoff | review-round-1 |
 
 ## Spec
 
@@ -82,8 +90,13 @@ the lead posts a `question` card (D9): "How thorough should the plan be?", optio
 Thorough / Two-part / Proof of concept, each `consequence` in plain words, `leaning` set to
 the lead's suggestion, `why` a one-line reason (D1). The lead does not post the IDEA.md
 confirmation card until the mode is answered. It writes `mode:` into IDEA.md when it writes
-IDEA.md (default `thorough` if the card was never answered, for example on a restart with
-no answer recorded).
+IDEA.md.
+
+Restart before IDEA.md is written: the restarted lead reads the cards it is given. If the
+mode question was answered (pressed, answered in its box, or resolved with a note), it
+uses that answer. If it is open, it leaves it open and waits. If it was never posted, it
+posts it. `thorough` is assumed only when reading an IDEA.md with no `mode:` line (plans
+from before this feature).
 
 ### Changing the mode (D5)
 
@@ -91,12 +104,21 @@ While PLAN.md `status:` is `planning`, `ready-for-review` or `approved`, Collin 
 chat to change the mode. The lead edits `mode:` in IDEA.md (not a scope change; no
 Decision Log `idea-change` entry, a `user` entry instead) and:
 - to `thorough`: moves every Deferred item back into the Spec, deletes the section, and
-  retracts nothing (the `deferred` card is reposted empty, see below);
+  retracts the `deferred` card (see below);
 - from `thorough` to a lighter mode: may move Spec items to Deferred, each announced in
   its reply and shown on the `deferred` card;
-- between the two lighter modes: the Deferred section stays; only its meaning changes.
-A change after `approved` returns the plan to `ready-for-review` (step 5), as any Spec
-change after approval does today. From `implementing` on, the mode is fixed; a request to
+- between the two lighter modes: the Deferred section stays; only its meaning changes,
+  and the `deferred` card is reposted with the new `mode`.
+
+A mode change or a pull-back (below) after `approved` first retracts the open approval
+card, then returns the plan to `ready-for-review` (step 5). If a `[card <id>] start
+building` press for that approval reaches the lead after the change, the lead starts
+nothing and says in its reply that the plan changed and is back in review.
+
+A mode change or a pull-back while a review round's reviewers are running stops those
+reviewers. That round is not triaged and does not count toward the budget (like a round
+ended by a dead reviewer); it keeps its number and restarts with fresh reviewers briefed
+with the new mode and Deferred table, re-posting `phase: checking`. From `implementing` on, the mode is fixed; a request to
 change it is answered with that.
 
 ### PLAN.md `## Deferred` (D11)
@@ -119,7 +141,7 @@ New lead-only kind, pinned (one per thread, a new one replaces the old in the pi
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `mode` | `two-part` \| `proof-of-concept` | yes | Sets the heading |
-| `bullets` | array of `{id, text}` | yes, may be empty | One per Deferred row; `id` stable (`d1`, `d2`), `text` short and in Collin's terms |
+| `bullets` | array of `{id, text}` | yes, may be empty | One per Deferred row; `id` stable (`d1`, `d2`), `text` short and in Collin's terms. Both `id` and `text` must be unique within the card, or the card is refused |
 | `locked` | boolean | no | True once building starts: no remove buttons |
 
 Shown heading: "Saved for the follow-up · N things" (two-part) or "Skipped for this proof
@@ -132,11 +154,20 @@ true or the thread archived, no remove buttons. It stays pinned for the life of 
 (unlike `idea`, it is not hidden once building starts), and is never shown in a thread
 whose mode is thorough, because no lead posts one there.
 
+`deferred` is added to the kinds `retract` accepts (cards-lead.md refusal 2 and the
+retractable check in `viewer/app/card.js`). Retracting it removes it from the pin, as for
+any retracted pinned card. This is how a change to thorough clears it.
+
+The hub refuses a `removed` press on a `deferred` card whose `locked` is true, or on one
+that has been replaced or retracted, with the same refusal shape as other stale presses.
+
 Lead behaviour: post it the first time an item is deferred, and again whenever a row is
 added or removed. On a `removed:` press, fold that item back into the Spec, delete its row,
 log it, repost the card. If the plan was `approved`, that Spec change returns it to
-`ready-for-review`. When building starts, repost with `locked: true`. On a change to
-thorough, post it once more with `bullets: []` and then never again.
+`ready-for-review`. On a `[card <id>] start building` press, the lead reposts it with `locked: true` before
+starting the sub-lead. A `removed:` press that still reaches the lead after that (an
+already-queued one) changes nothing: the lead says building has started and the item
+stays deferred. On a change to thorough, retract it.
 
 ### Plan review in the lighter modes (D2)
 
@@ -153,21 +184,30 @@ is clean when triage upholds no blocking or major finding that stays in the Spec
 ### Verification in the lighter modes (D7)
 
 The verifier is briefed with the mode and the Deferred table; verifier.md gains: a
-Deferred item is out of scope and is not a gap. Nothing else about how it checks changes. The sub-lead, before remediating a
-verification report in a lighter mode, sends the lead one `message` (`asks: true`) listing
-each gap it judges hardening. The lead answers per gap: defer or fix. Gaps the lead
-defers are written by the sub-lead into PLAN.md Deferred (source `verification`), since
-the worktree is the sub-lead's; the lead reposts the `deferred` card (still `locked`). The
-rest are remediated as today. A deferred gap is not counted as a failed check.
+Deferred item is out of scope and is not a gap. Nothing else about how it checks changes. On a FAIL in a lighter mode, before step 5 of the sub-lead's "Finishing and verifying":
+1. The sub-lead sends the lead one `message` (`asks: true`) listing each gap it judges
+   hardening, with the verifier's evidence. The lead answers per gap: defer or fix.
+2. The sub-lead writes the deferred gaps into PLAN.md Deferred (source `verification`)
+   and commits PLAN.md (the worktree is the sub-lead's). The lead reposts the `deferred`
+   card (still `locked`) when that message's answer is sent.
+3. If gaps remain to fix, step 5 runs as today on the remaining gaps only: `found` counts
+   only those, and REMEDIATION-N.md lists only those.
+4. If every gap was deferred, there is no remediation: the sub-lead starts a fresh
+   verifier (a new attempt, briefed with the updated Deferred table) on the same commit.
+   That attempt is not a fix attempt for the two-attempt rule.
+A deferred gap never counts toward the two-attempt rule.
 
 ### Done (D4, D6, D8, D12)
 
-- `two-part`: after the `done` card, if Deferred has rows, the lead posts a `stub` card:
+- `two-part`: right after the `done` card, if Deferred has rows, the lead posts a `stub` card:
   title "Make <feature> solid", `depends_on_parent: true`, summary containing: what was
   built and the pull request link, the plan path (`docs/plans/<slug>/PLAN.md` on branch
   `wc/<thread-id>`), every Deferred row with its notes, and the instruction that its lead
   plans these from step 1, suggesting a mode as for any feature. With no rows, no stub,
   and the `done` card's `note` says nothing was deferred.
+  Restart in a two-part thread whose PLAN.md is `done`: before anything else, the lead
+  checks the cards it was given for a `stub` card titled "Make … solid". If none exists
+  and Deferred has rows, it posts it; if one exists, it posts nothing.
 - `proof-of-concept`: the `done` card's `left_as_is` lists every Deferred item (each gets
   the usual "Start a thread about it"). No stub unless Collin presses one.
 - `thorough`: unchanged.
@@ -180,7 +220,9 @@ rest are remediated as today. A deferred gap is not counted as a failed check.
 - `protocol/templates/IDEA.md` (`mode:` frontmatter line with the three values and default)
   and `PLAN.md` (an optional `## Deferred` section with the table and a note that it
   exists only in the lighter modes).
-- `viewer/app/card.js` (kind, `lead` only, fields), `viewer/app/cards.js` (singleton),
+- `viewer/app/card.js` (kind, `lead` only, fields with unique ids and texts, retractable),
+  `viewer/app/cards.js` (singleton), `viewer/app/threads.js` (refuse `removed` on a locked,
+  replaced or retracted `deferred` card),
   `viewer/app/chat.js` `shownPins` (not hidden after build), the press path that routes
   `removed` for `idea` (accept it for `deferred` too), `viewer/pages/thread.js` (pinned
   kind and rendering).
@@ -196,7 +238,9 @@ thorough mode, the stub mechanism, the app's slug and document rules.
   lead with both modes and an empty list, refused from a sub-lead, refused with an unknown
   mode or extra field; it is pinned and a second replaces the first; it stays in the pins
   after Start building; a `removed` press on it reaches the lead as
-  `[card <id>] removed: <text>`.
+  `[card <id>] removed: <text>`; a card with a duplicate bullet id or text is refused; a
+  `removed` press on a locked, replaced or retracted `deferred` card is refused; a
+  `retract` of a `deferred` card succeeds and removes it from the pins.
 - `protocol-rules.test.js` passes with the new kind documented in cards.md/cards-lead.md.
 - `npm --prefix viewer run test:browser` passes, with a test that renders a `deferred` card
   in both modes (heading, hint, bullets, remove button) and with `locked: true` (no remove
@@ -231,6 +275,14 @@ round where knowing it matters most.
 | intent (claude) | major | Hardening findings moved to Deferred still block the clean test, so review may run as long as thorough | upheld | D14; Spec "Plan review in the lighter modes" |
 | intent (claude) | minor | Verifier rule reading "What good looks like" as the working version loosens checks, against IDEA's non-goal | upheld | Rule removed from Spec "Verification in the lighter modes" |
 | intent (claude) | minor | IDEA.md says the follow-up thread holds a written plan; D4/D12 make it a head start | user-decision | Collin agreed; IDEA.md reworded (D15) |
+| mechanics (gpt) | blocking | Switching to thorough leaves a visible empty deferred card; lighter-mode switch needs a repost | downgraded (major) | Real, but a worker would ask, not build wrong; fixed by D16 |
+| mechanics (gpt) | blocking | Approval card stays actionable after a change returns the plan to review | upheld | D17 |
+| mechanics (gpt) | blocking | All verification gaps deferred leaves no path to PASS | upheld | D18 |
+| mechanics (gpt) | major | Mode change during running review has no rule | upheld | D19 |
+| mechanics (gpt) | major | Lock timing and stale removed presses unhandled | upheld | D20 |
+| mechanics (gpt) | major | Pull-back press identifies a row by text; duplicates ambiguous | upheld | D21 |
+| mechanics (gpt) | major | Mode recovery on restart before IDEA.md is written is undefined | upheld | D22 |
+| mechanics (gpt) | major | Restart between done and follow-up stub can miss or duplicate it | upheld | D23 |
 | intent (claude) | minor | IDEA says PoC skips are "recorded as accepted risk" but D11 uses Deferred | declined | Spec table and D11 already state Deferred is the accepted-risk record in proof-of-concept |
 
 Reported severity is the reviewer's opinion; the lead verdict
