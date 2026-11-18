@@ -2,7 +2,13 @@
 slug: local-projects
 date: 2026-11-18
 implemented-by: "standard / gpt-6.1-terra (T1, T2); integration fixes by the sub-lead (claude-opus-5-5)"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude / claude-opus-5-5
+    checks: standard / gpt-6.1-terra (T1, T2)
+  - round: 2
+    lane: claude / claude-opus-5-5
+    checks: standard / gpt-6.1-terra (T1, T2); light / gpt-6-luna (T3)
 ---
 
 # Completion Report — Custom MCP tools for a project's agents
@@ -101,3 +107,4 @@ $ node --test viewer/test/*.test.js
 # fail 0
 ```
 
+Verification attempt 2 (claude verifier, commit 0856802): PASS, no gaps. The manual check ran on real claude 2.1.327 and codex-cli 0.169.0 workers. Both reached ready with no MCP prompt, `/mcp` showed the server connected on each, and each called the tool once (the server logged the env pass-through and the literal env).
