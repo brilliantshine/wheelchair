@@ -61,6 +61,7 @@ in-app page.
 |---|---|---|---|
 | `objections` | array of `{id, finding, severity, reason}` | yes | Every finding a reviewer rated `blocking` or `major` that you declined or downgraded. `severity` is the reviewer's, `blocking` or `major`; `reason` is yours. May be empty. N on the card is the length of this list |
 | `ready` | object `{ok, missing}` | yes | `ok` is true or false; `missing` is an array of plain-language strings naming exactly what is missing (empty when `ok` is true) |
+| `warnings` | array of strings | no | Added by the machine, never by the lead: startup-size warnings. Shown as information; never affects Start building. |
 
 Each objection has a "Talk about this" button; a press comes back as
 `[card <id>] talk about: <finding>`. Start building is enabled only when `ready.ok` is

@@ -626,6 +626,17 @@
         }
         status.appendChild(words);
         r.appendChild(status);
+        if (Array.isArray(card.warnings) && card.warnings.length) {
+          const notice = el('div', 'ready-status no approval-warnings');
+          notice.appendChild(el('span', 'dotmark amber'));
+          const warningWords = el('div');
+          warningWords.appendChild(el('div', 'ready-no', 'Heads-up'));
+          const list = el('ul');
+          for (const warning of card.warnings) list.appendChild(el('li', '', warning));
+          warningWords.appendChild(list);
+          notice.appendChild(warningWords);
+          r.appendChild(notice);
+        }
         box.appendChild(r);
         break;
       }
