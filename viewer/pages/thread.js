@@ -836,7 +836,7 @@
       }
       case 'check': {
         box.appendChild(el('h3', '', 'Check it yourself'));
-        box.appendChild(prose('', card.update));
+        box.appendChild(prose('check-update', card.update));
         const steps = card.steps || [];
         const ol = el('ol', 'check-steps');
         steps.forEach((s, i) => {
@@ -866,8 +866,10 @@
           ol.appendChild(li);
         });
         box.appendChild(ol);
-        const dones = data.cards.filter((c) => c.kind === 'done' && !c.retracted_at);
-        const curDone = dones.length ? dones[dones.length - 1] : null;
+        // Same rule as the hub's currentDone: not retracted, and strictly after the import cutoff.
+        const cutoff = thread().imported && thread().imported.at;
+        const curDone = [...data.cards].reverse().find((c) => c.kind === 'done' && !c.retracted_at
+          && (!cutoff || Date.parse(c.created_at || c.at) > Date.parse(cutoff)));
         if (steps.some((s) => s.agent === 'broken') && !off && curDone && curDone.head === card.head) {
           const a = el('div', 'actions');
           a.appendChild(button('Fix it now', 'primary', () => press(card, 'fix')));

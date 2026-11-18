@@ -340,6 +340,8 @@ a.sent-file:hover { border-color: var(--accent-line); }
 
 /* ---- check card ---- */
 .card-check { min-width: 0; max-width: 100%; }
+.card-check .check-update { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.card-check .check-update code { white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
 .card-check .check-steps { margin: 10px 0 0; padding-left: 22px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .card-check .check-step { min-width: 0; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
 .card-check .check-where { display: inline-block; font-size: 11px; color: var(--dim); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; margin-bottom: 3px; }
