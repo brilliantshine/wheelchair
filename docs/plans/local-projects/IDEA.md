@@ -27,8 +27,8 @@ trying a thread's work in your own checkout) are their own threads.
 ## What good looks like
 
 - Collin sets up an MCP tool once for a project.
-- Any new thread in that project, on any CLI wheelchair supports, has agents that can see
-  and call that tool, without touching account settings.
+- Any new thread in that project, on Claude Code or Codex, has agents that can see and
+  call that tool, without touching account settings.
 - Projects without custom tools behave exactly as today.
 - If a tool can't start (missing program, wrong path), Collin finds out plainly rather
   than agents silently going without it.
@@ -42,5 +42,6 @@ trying a thread's work in your own checkout) are their own threads.
 
 ## Constraints
 
-- Must work for the CLIs wheelchair runs (Claude Code, Codex, Antigravity).
+- Must work for Claude Code and Codex. Antigravity follows in the follow-up thread (it has
+  no per-session tool config).
 - Must not change anything for existing projects that set up no tools.
