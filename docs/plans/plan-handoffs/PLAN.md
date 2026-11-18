@@ -300,10 +300,10 @@ The hub then, inside `withThread(<file thread id>)`:
 
 | Case | Outcome |
 |---|---|
-| No such thread, the machine holds no session, worktree or archive record for this id, and the picked project has no local `wc/<id>` branch or one that is an ancestor of `head` | **Create** |
 | No such thread, but the machine holds sessions, a worktree or an archive record for this id (another wheelchair app on the same machine has or had it) | Refused 409 "This machine already has this thread from another wheelchair app; import it on another machine" |
 | No such thread, and the picked project's local `wc/<id>` branch is checked out (in the project clone or any worktree) | Refused 409 "Branch wc/<id> is checked out in <path>; switch away from it, then import again" |
-| No such thread, and the picked project has a local `wc/<id>` branch that is not an ancestor of `head` | Refused 409 "This project already has a branch wc/<id> that differs from the file; delete it if you don't need it, then import again". A local branch that is an ancestor of `head` is fine: Create uses it |
+| No such thread, and the picked project has a local `wc/<id>` branch that is not an ancestor of `head` | Refused 409 "This project already has a branch wc/<id> that differs from the file; delete it if you don't need it, then import again". A local branch that is an ancestor of `head` and not checked out is fine: Create uses it |
+| No such thread, and none of the three rows above matched | **Create** |
 | Exists with a saved `handoff_op` | **Finish**: run that operation again (see Operations and Retry), ignoring this file; outcome as that operation's, with note "Finished the earlier import or undo; import this file again if it's newer" |
 | Exists on another machine or project than the picker chose | **Open**, note "This thread lives on <machine>, <project>", plus " It's handed off: press Undo on it to carry on." when it is handed off and the remote tip is still `handed_off.head` |
 | Exists; its head equals `head`, or `head` is an ancestor of its head | **Open**, change nothing. Note: "You already have this thread here", plus " It's handed off: press Undo on it to carry on here." when it is handed off and the tip is unchanged; or "This file is older than the thread here" |
@@ -358,7 +358,7 @@ recovery.
 
 **The operation record.** Before its first step, an operation saves
 `thread.handoff_op: {kind: "create"|"advance"|"undo", carried, parent, claim_sha,
-last_error, claim_landed, applied, started_at}`; `started_at` is set once and becomes `imported.at` in Apply, so
+last_error, claim_landed, applied, last_push_at, started_at}`; `started_at` is set once and becomes `imported.at` in Apply, so
 a Retry never moves that cutoff on the thread record (for Create, in the same save that first
 creates the record). `carried` is the validated carried state from the file,
 `{stage, exported_at, history, pr_url}` (null for undo); Create's record already holds the
@@ -410,12 +410,10 @@ instead of "export again from wherever it is now".
    lead, and either a lead was ever started or the thread was imported".
 
 **Partial starts.** The hub marks a session live before the machine call that launches it
-(`viewer/app/sessions.js:277-300`). When the hub starts, and before `restartLead` runs,
-every session marked live whose start result was never saved is reconciled with the
-machine's `running`: if the machine has it running, the hub records it as started (reading
-its worktree and branch from the machine's session list) and its queue, including any
-context queued before the start, is delivered as its first message; if not, the hub marks
-it not live, so the dead-lead panel offers Restart.
+(`viewer/app/sessions.js:277-300`). When the hub starts, every session marked live whose
+start result was never saved is marked not live, so the dead-lead panel offers Restart.
+Restart (below) then kills whatever that start left running or starting on the machine and
+moves its queued context to the new lead. Nothing is adopted.
 
 **Restart order.** `restartLead` is changed for every thread: it first asks the machine
 (`running`) for tmux sessions of the thread's lead names that the hub does not count as
@@ -443,7 +441,10 @@ and its thread id is not in that set.
   finish."), the saved `last_error` when there is one, and a **Retry** button:
   `POST /threads/:id/retry-handoff` runs the saved operation again from its record;
 - offers **Cancel** next to Retry only while `claim_landed` and `applied` are both false.
-  When `claim_sha` is null, Cancel abandons at once. Otherwise it calls `claim-state`
+  When `claim_sha` is null, Cancel abandons at once. Otherwise, if the last `claim-push`
+  attempt (`handoff_op.last_push_at`, saved before each attempt) is less than 5 minutes old,
+  Cancel refuses ("A pick-up may still be going through; try again in a few minutes"), since
+  a push can outlive a machine restart that empties its queue. After that it calls `claim-state`
   (read-only, through the machine's per-repository queue, so any earlier push still
   running there finishes first): `landed` → save `claim_landed: true` and refuse ("The
   pick-up already went through; press Retry"); `parent` or `moved` → abandon; `unknown` →
@@ -505,7 +506,8 @@ and its thread id is not in that set.
     when it revives an archived thread.
   - `fast-forward` `{worktree, branch, head}` → result `failed` with a sentence when the
     worktree is dirty, not on `branch`, or its `HEAD` is not `head` or an ancestor of it;
-    else `git merge --ff-only <head>`, then verifies `HEAD` is exactly `head`.
+    else `git merge --ff-only <head>`, then verifies `HEAD` is exactly `head`, then
+    `git branch --set-upstream-to=origin/<branch>` so a plain push works.
   - `set-branch` `{project, branch, sha}` → when `branch` is absent or an ancestor of `sha`,
     `git branch -f <branch> <sha>`; else `failed` "a local branch <branch> already exists
     and differs".
@@ -519,7 +521,9 @@ and its thread id is not in that set.
   - The machine's archive records become durable: `archivedThreads`
     (`machine/service.js:227`) is saved to a file in the machine's state directory on
     every change and loaded at start, so the "another wheelchair app had it" refusal
-    survives a machine restart. `reopen` removes the id from it and saves.
+    survives a machine restart. Archive (`machine/service.js:740-792`) adds and saves the
+    id **before** it stops sessions or removes anything, so no crash window leaves the
+    thread with neither a worktree nor a record. `reopen` removes the id and saves.
   - `kill` `{names}` → for each name matching `^wc-[0-9a-f]{12}-`: a session still starting
     is marked cancelled, so its start stops before launching tmux and returns an error;
     a running one gets `tmux kill-session -t <name>`. Returns the names still starting or
@@ -596,8 +600,8 @@ New tests, then the suites:
     `import`, with marker `[wc:context import]` only for the first lead after `imported.at`;
     a failed start shows the ordinary Restart; restart enqueues the context before starting; an imported thread with no
     sessions shows Restart; a lead with no recorded worktree starts from `checkout_sha`;
-  - partial start at hub start: running session adopted and its queued context delivered;
-    missing session marked not live and Restart offered; Cancel with `claim-state` each
+  - partial start at hub start: marked not live and Restart offered; Restart kills the
+    leftover start and moves its queued context; Cancel with `claim-state` each
     result; Create refused when the local branch is checked out; archive records survive a
     machine restart;
   - frozen: every entry point in Frozen threads refused while handed off and while an
@@ -633,6 +637,8 @@ npm --prefix viewer run test:browser
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A machine's archive records never expire, so a hub that lost its own state can't import its old threads on that machine (it can on another machine, or after removing the id from the machine's archive file by hand) | A hub losing its state is a disaster case; expiry would reopen the same-machine sharing problem | 9 |
+| Restart and the hub's start-up now handle unsaved session starts for every thread, not only imported ones | The rule is small, and the existing session tests exercise it | 9 |
 
 ## Review Rounds
 
@@ -874,7 +880,7 @@ npm --prefix viewer run test:browser
 
 ### Round 9 — 2026-11-17
 
-**Lanes:** intent and mechanics; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 8:**
 - Operation record carries `carried` state; no incoming file copy; Retry and Finish simplified; Done deletes only the export file.
@@ -885,6 +891,16 @@ npm --prefix viewer run test:browser
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | First-match order makes the checked-out refusal unreachable | upheld | Refusal rows first; Create is the last no-thread row |
+| intent | minor | Partial-start adoption adds an unneeded path | upheld | No adoption; unsaved starts marked not live, Restart cleans up |
+| intent | minor | Partial-start change touches every thread's start-up | accepted-risk | Now one small rule; existing start tests cover it |
+| intent | minor | Durable archive records never expire | accepted-risk | Moved to Accepted Risks |
+| mechanics | blocking | Checked-out ancestor branch reaches Create | upheld | Same fix as the first intent finding |
+| mechanics | blocking | Cancel after a machine restart can race an in-flight push | upheld | Cancel waits 5 minutes after the last push attempt |
+| mechanics | blocking | Partial-start recovery treats a preparing start as launched | upheld | No adoption |
+| mechanics | blocking | Adoption strands context on a ready Claude lead | upheld | No adoption |
+| mechanics | blocking | Archive marker saved after ownership evidence is removed | upheld | Saved before archive stops or removes anything |
+| mechanics | major | Retained worktree has no upstream | upheld | `fast-forward` sets upstream |
 
 ## Prior Work
 
