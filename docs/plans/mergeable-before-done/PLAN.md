@@ -410,11 +410,15 @@ outside a merge, unchanged.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | tricky — hub done gate (`pr-gate.js`, hub.acceptCard), `done.head` schema, gate tests, existing done-posting tests | viewer/app/card.js, pr-gate.js, hub.js, cards.js; viewer/test/app-done-gate.test.js + existing tests posting done | standard | | node --test viewer/test/*.test.js | in progress |
-| T2 | Machine: `done` never spooled (30 s relay, 503), merge-completing `wc.js git commit`, machine tests | machine/service.js, machine/test/ | standard | | bash machine/test/run.sh | in progress |
-| T3 | Protocol text: lead.md "Making the pull request mergeable" + pointers from steps 1/8/9; cards-lead.md `done.head`; protocol-rules test | protocol/app/lead.md, protocol/app/cards-lead.md, viewer/test/protocol-rules.test.js | standard, claude (claude-sonnet-5-5) | | node --test viewer/test/protocol-rules.test.js | in progress |
+| T1 | tricky — hub done gate (`pr-gate.js`, hub.acceptCard), `done.head` schema, gate tests, existing done-posting tests | viewer/app/card.js, pr-gate.js, hub.js, cards.js; viewer/test/app-done-gate.test.js + existing tests posting done | standard, gpt-6.1-terra | wc-b7adc9776939-worker | node --test viewer/test/*.test.js | in progress |
+| T2 | Machine: `done` never spooled (30 s relay, 503), merge-completing `wc.js git commit`, machine tests | machine/service.js, machine/test/ | standard, gpt-6.1-terra | wc-b7adc9776939-worker-2 | bash machine/test/run.sh | done |
+| T3 | Protocol text: lead.md "Making the pull request mergeable" + pointers from steps 1/8/9; cards-lead.md `done.head`; protocol-rules test | protocol/app/lead.md, protocol/app/cards-lead.md, viewer/test/protocol-rules.test.js | standard, gpt-6.1-terra (Claude unavailable) | wc-b7adc9776939-worker-3 | node --test viewer/test/protocol-rules.test.js | in progress |
 
 ## Log
+
+- 2026-11-18 — Choice: T2, machine/service.js: a direct `done` relay gets a generated `delivery_id` (honouring one the client supplied), as the spool path does.
+- 2026-11-18 — Choice: T2, machine/test/service.test.js: the test hub gained a `delay` option for `/cards`; "hub down" is exercised as a hub 503 and as no `hub_url`.
+- 2026-11-18 — T2 accepted (band: scout): 142/142 machine tests pass on re-run; timeout and connection-error paths reach the same 503 catch but have no dedicated test.
 
 ### Round 2 — 2026-11-17
 
