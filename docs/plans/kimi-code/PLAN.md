@@ -943,6 +943,12 @@ Filled by Stage 3. One row per worker brief.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Kimi adapter, config reader, status, version floor, sign-in, launch (machine part 1) | `machine/adapters/`, `machine/service.js`, `machine/test/`, `machine/API.md`, `machine/AGENTS.md` | standard | | `bash machine/test/run.sh` | not started |
+| T2 | Kimi in providers, settings, routes, Ready, usage, asides error, Settings/thread pages, model pins | `viewer/app/{providers,settings,routes,ready,usage,asides}.js`, `viewer/pages/`, `codex/`, related viewer tests, `viewer/app/API.md`, `viewer/AGENTS.md` | standard, claude | | `bash codex/test/run.sh`; `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser` | not started |
+| T3 | tricky: Kimi log binding, `pollKimiTurns`, turn events, fatal stops, exact kill, input refusal, Stop 202, archive, copier identity, recovered panes, agent-hook ignore (machine part 2, after T1) | `machine/adapters/kimi.js`, `machine/service.js`, `machine/test/`, `machine/API.md` | standard | | `bash machine/test/run.sh` | not started |
+| T4 | Kimi chat parser, report function, hub `last_turn_id`, interrupted turns, `end_reason` in ended notices, Stop 202 in hub | `viewer/app/{chat,sessions,threads}.js`, their tests | standard | | `node --test viewer/test/*.test.js` | not started |
+| T5 | Installer detects Kimi; protocol docs and README | `install.sh`, `install/`, `protocol/`, `README.md` | standard | | `bash install/test/run.sh` | not started |
+| T6 | Live checks 1–5 against an isolated machine service and hub from the merged branch (after T1–T5) | `docs/plans/kimi-code/reports/T6.md`; fixes go back as remediation | standard | | live checks + full validation | not started |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
