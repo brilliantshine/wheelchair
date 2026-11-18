@@ -944,7 +944,7 @@ Filled by Stage 3. One row per worker brief.
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Kimi adapter, config reader, status, version floor, sign-in, launch (machine part 1) | `machine/adapters/`, `machine/service.js`, `machine/test/`, `machine/API.md`, `machine/AGENTS.md` | standard / gpt-6.1-terra | wc-01b8cb1bf051-worker-5 (attempt 2; attempt 1 wc-01b8cb1bf051-worker) | `bash machine/test/run.sh` | done |
-| T2 | Kimi in providers, settings, routes, Ready, usage, asides error, Settings/thread pages, model pins | `viewer/app/{providers,settings,routes,ready,usage,asides}.js`, `viewer/pages/`, `codex/`, related viewer tests, `viewer/app/API.md`, `viewer/AGENTS.md` | standard / claude-sonnet-5-5 | wc-01b8cb1bf051-worker-2 | `bash codex/test/run.sh`; `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser` | running |
+| T2 | Kimi in providers, settings, routes, Ready, usage, asides error, Settings/thread pages, model pins | `viewer/app/{providers,settings,routes,ready,usage,asides}.js`, `viewer/pages/`, `codex/`, related viewer tests, `viewer/app/API.md`, `viewer/AGENTS.md` | standard / claude-sonnet-5-5 | wc-01b8cb1bf051-worker-2 | `bash codex/test/run.sh`; `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser` | done |
 | T3 | tricky: Kimi log binding, `pollKimiTurns`, turn events, fatal stops, exact kill, input refusal, Stop 202, archive, copier identity, recovered panes, agent-hook ignore (machine part 2, after T1) | `machine/adapters/kimi.js`, `machine/service.js`, `machine/test/`, `machine/API.md` | standard / gpt-6.1-terra | wc-01b8cb1bf051-worker-6 | `bash machine/test/run.sh` | running |
 | T4 | Kimi chat parser, report function, hub `last_turn_id`, interrupted turns, `end_reason` in ended notices, Stop 202 in hub | `viewer/app/{chat,sessions,threads}.js`, their tests | standard / gpt-6.1-terra | wc-01b8cb1bf051-worker-3 | `node --test viewer/test/*.test.js` | done |
 | T5 | Installer detects Kimi; protocol docs and README | `install.sh`, `install/`, `protocol/`, `README.md` | standard / gpt-6.1-terra | wc-01b8cb1bf051-worker-4 | `bash install/test/run.sh` | done |
@@ -953,6 +953,12 @@ Filled by Stage 3. One row per worker brief.
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
 ## Log
+
+- 2026-11-18 — Choice: T2, `viewer/app/usage.js`: per-machine values stay the strings `signed_in`/`signed_out`/`unknown`, only the problem form is an object; a separate `problems` map on machine accounts, also applied to the legacy status shape; a per-CLI Kimi problem applies to every Kimi account on that machine (but a `logged_in: true` entry still shows signed in — cannot happen with T1's machine, which forces `logged_in: false` under the floor).
+- 2026-11-18 — Choice: T2, `viewer/pages/settings.js`: models-table sub-label "Kimi CLI"; separate `KIMI_MODEL_VALUE` (64-char segments) beside the unchanged `MODEL_VALUE`; Kimi plan list `[['unknown','Not sure']]`; `.mstate.problem` styled like signed out; account row `data-state="problem"`; Kimi sign-in card shows the raw URL as link text like GPT.
+- 2026-11-18 — Choice: T2, `codex/model.sh`: separate `KIMI_VALUE` and `value_ok(provider, model)` instead of widening `VALUE`; a slashed non-Kimi pin in the pin file is malformed.
+- 2026-11-18 — Choice: T2, `viewer/app/ready.js`: the per-CLI `problem` branch applies to any CLI's row and skips the Codex preflight when present (scout-found, not reported).
+- 2026-11-18 — T2 accepted (band: bigger-scout): codex 118/0, viewer 637/0, browser 772 passed / 28 skipped, re-run by the sub-lead. Thin spots for verification: placement asserted via `usage.rank` only; no test of the Kimi asides error text; legacy-save test is unit-level on `settings.normalize`.
 
 - 2026-11-18 — Choice: T1, `machine/service.js` `startNamed`: refuses a Kimi start with "Kimi Code is not installed" when no binary resolves, before account validation.
 - 2026-11-18 — Choice: T1, `machine/adapters/kimi.js` `promptText`: provisional `(tool|command) approval required` until T6 captures the real prompt.
