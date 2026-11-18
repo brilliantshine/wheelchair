@@ -286,8 +286,9 @@ The hub then, inside `withThread(<file thread id>)`:
    entry's fields, types and limits. Failure: 422 "This isn't a handoff file wheelchair
    can read: <what>".
    Then, if a thread with the file's id exists here with a saved `handoff_op`, the hub runs
-   that operation again (the "Finish" row) and stops; steps 2 and 3 are skipped, since the
-   saved operation carries everything it needs.
+   that operation again and stops (steps 2-4 are skipped, since the saved operation
+   carries everything it needs). The response is that operation's outcome, with note
+   "Finished the earlier import or undo; import this file again if it's newer".
 2. **Matches the repository**: the machine reports the project's normalized origin.
    Mismatch: 422 "This file is for <file repo>, but that project is <project repo>".
 3. **Inspects the branch** (`/v1/handoff` `inspect`): fetch; `origin/wc/<id>` must exist and
@@ -304,7 +305,6 @@ The hub then, inside `withThread(<file thread id>)`:
 | No such thread, and the picked project's local `wc/<id>` branch is checked out (in the project clone or any worktree) | Refused 409 "Branch wc/<id> is checked out in <path>; switch away from it, then import again" |
 | No such thread, and the picked project has a local `wc/<id>` branch that is not an ancestor of `head` | Refused 409 "This project already has a branch wc/<id> that differs from the file; delete it if you don't need it, then import again". A local branch that is an ancestor of `head` and not checked out is fine: Create uses it |
 | No such thread, and none of the three rows above matched | **Create** |
-| Exists with a saved `handoff_op` | **Finish**: run that operation again (see Operations and Retry), ignoring this file; outcome as that operation's, with note "Finished the earlier import or undo; import this file again if it's newer" |
 | Exists on another machine or project than the picker chose | **Open**, note "This thread lives on <machine>, <project>", plus " It's handed off: press Undo on it to carry on." when it is handed off and the remote tip is still `handed_off.head` |
 | Exists; its head equals `head`, or `head` is an ancestor of its head | **Open**, change nothing. Note: "You already have this thread here", plus " It's handed off: press Undo on it to carry on here." when it is handed off and the tip is unchanged; or "This file is older than the thread here" |
 | Exists; its head is a strict ancestor of `head` | **Advance** |
@@ -326,6 +326,12 @@ or not live, nothing is queued, no sudo card is waiting or running, and no uploa
 flight; 409 "The thread here isn't on its branch" if its worktree exists and is not on
 `wc/<id>`; and 409 "The thread here has uncommitted changes" if
 its worktree exists and is dirty. Then it saves `handoff_op` and runs the operation.
+
+**Before any claim** (Create, Advance and Undo, checked again on every Retry while
+`claim_landed` is false): when the thread has no recorded worktree that exists, the
+project's local `wc/<id>` branch must not be checked out anywhere (`known` reports where);
+otherwise 409 "Branch wc/<id> is checked out in <path>; switch away from it, then try
+again", and nothing is claimed.
 
 Responses: `{outcome: "created"|"advanced"|"opened", id, note?}`. The page navigates to
 the thread for `created` and `advanced`; for `opened` it shows the note and an "Open the
@@ -372,7 +378,7 @@ saves its sentence in `last_error` and the operation stops there.
 **Abandoning.** When the Claim step finds someone else moved the branch, the operation is
 abandoned: Create deletes the thread record; Advance and Undo clear `handoff_op`. The
 response is "picked up elsewhere" 409; when the operation
-was reached through a re-import (the Finish row), its text ends "import that file again"
+was reached through a re-import (Import step 1), its text ends "import that file again"
 instead of "export again from wherever it is now".
 
 **Steps**, in order (Undo has no carried state):
@@ -404,15 +410,20 @@ instead of "export again from wherever it is now".
    thread is renamed instead, as above).
 6. **Start the lead**, outside the operation: the restart path (`restartLead`,
    `viewer/app/threads.js:122-159`). When the thread has no recorded worktree, restart starts
-   the lead with `from_remote_branch: {sha: checkout_sha}`. If the start fails, or the hub
+   the lead with `from_remote_branch: {sha: checkout_sha}`. Once the lead's worktree is recorded, the hub
+   registers the plan directory (`hub.registerPlan`, as `findSlug` does at
+   `viewer/app/views.js:105`), since an imported thread's slug is set before any worktree
+   exists and `findSlug` would skip it. If the start fails, or the hub
    stops before it, the thread shows the dead-lead panel with Restart: the panel's
    condition (`viewer/pages/thread.js:270-277`) becomes "not archived, not frozen, no live
    lead, and either a lead was ever started or the thread was imported".
 
 **Partial starts.** The hub marks a session live before the machine call that launches it
-(`viewer/app/sessions.js:277-300`). When the hub starts, every session marked live whose
-start result was never saved is marked not live, so the dead-lead panel offers Restart.
-Restart (below) then kills whatever that start left running or starting on the machine and
+(`viewer/app/sessions.js:277-300`). When the hub starts, every session of any role marked
+live whose start result was never saved is handled as a dead session: the hub calls the
+machine's `kill` for its name (so nothing it launched keeps running), marks it not live,
+and sends its starter the usual "your session died" notice
+(`viewer/app/sessions.js:698-723`); for a lead, the dead-lead panel offers Restart, which
 moves its queued context to the new lead. Nothing is adopted.
 
 **Restart order.** `restartLead` is changed for every thread: it first asks the machine
@@ -443,14 +454,16 @@ and its thread id is not in that set.
 - offers **Cancel** next to Retry only while `claim_landed` and `applied` are both false.
   When `claim_sha` is null, Cancel abandons at once. Otherwise, if the last `claim-push`
   attempt (`handoff_op.last_push_at`, saved before each attempt) is less than 5 minutes old,
-  Cancel refuses ("A pick-up may still be going through; try again in a few minutes"), since
-  a push can outlive a machine restart that empties its queue. After that it calls `claim-state`
+  Cancel refuses ("A pick-up may still be going through; try again in a few minutes"). The
+  machine bounds every claim push to well under that (see `claim-push`): the machine
+  service's children survive its restart (`KillMode=process`, `install.sh:401`), so the
+  bound has to live in the push itself, not in the queue. After that it calls `claim-state`
   (read-only, through the machine's per-repository queue, so any earlier push still
   running there finishes first): `landed` → save `claim_landed: true` and refuse ("The
   pick-up already went through; press Retry"); `parent` or `moved` → abandon; `unknown` →
   refuse ("Couldn't check GitHub; try again"). Abandoning here gives no 409: Create deletes
   its record, Advance and Undo clear `handoff_op`;
-- is also reached by importing a file for that thread id (the "Finish" row), which runs
+- is also reached by importing a file for that thread id (Import step 1), which runs
   the saved operation and ignores the new file;
 - for an Undo, makes the handed-off banner show "The undo didn't finish" with Retry,
   never "picked up elsewhere", while the remote tip equals `handoff_op.claim_sha`.
@@ -462,7 +475,8 @@ and its thread id is not in that set.
   local `wc/<id>` exists: `git worktree add -b <branch> <dest> <sha>`. If it exists and is
   an ancestor of `sha`: `git worktree add <dest> <branch>` then
   `git -C <dest> merge --ff-only <sha>`. Both paths then run
-  `git -C <dest> branch --set-upstream-to=origin/<branch>`, so a plain push works.
+  `git -C <dest> config branch.<branch>.remote origin` and
+  `git -C <dest> config branch.<branch>.merge refs/heads/<branch>`, so a plain push works.
   Otherwise fail with "a local branch <branch> already exists and differs". Before
   either, if the destination directory (`stateDir/worktrees/<project>/<branch>`) already
   exists and is a git worktree on `<branch>` whose `HEAD` is `sha` or an ancestor of it,
@@ -489,13 +503,18 @@ and its thread id is not in that set.
     (null when absent).
   - `claim-commit` `{project, parent, message}` → step 1 of Claims; returns `{sha}`.
   - `claim-state` `{project, branch, parent, sha}` → read-only:
-    `git fetch origin refs/heads/<branch>` (bringing the tip's objects into the clone), then
+    `git fetch origin +refs/heads/<branch>:refs/remotes/origin/<branch>` (bringing the tip's
+    objects and a tracking ref into the clone, also in a single-branch clone), then
     compares `FETCH_HEAD`: equal to `sha` or a descendant of it (`git merge-base
     --is-ancestor <sha> FETCH_HEAD`) → `landed`; equal to `parent` → `parent`; anything
     else → `moved` with `remote_tip` and `picked_up_at`; fetch failure or a missing branch
     → `unknown` (a missing branch is not proof of anything).
   - `claim-push` `{project, branch, parent, sha}` → `claim-state`; if `parent`, run step 2
-    of Claims and then `claim-state` again. The result comes only from the last
+    of Claims and then `claim-state` again. Time bounds, so Cancel's 5-minute wait is
+    safe: the machine notes when it received the request and skips the push (result
+    `unknown`) if more than 60 seconds passed before the push would start; the push runs
+    as `timeout -s KILL 120 git push ...`, so it cannot outlive 120 seconds, even across a
+    machine-service restart. The result comes only from the last
     `claim-state`, never from the push's exit code: `landed` → `landed`; `parent` or
     `unknown` → `unknown`; `moved` → `moved`.
   - Every `/v1/handoff` outcome, including refusals, is a 200 with a JSON body (except 422
@@ -507,7 +526,7 @@ and its thread id is not in that set.
   - `fast-forward` `{worktree, branch, head}` → result `failed` with a sentence when the
     worktree is dirty, not on `branch`, or its `HEAD` is not `head` or an ancestor of it;
     else `git merge --ff-only <head>`, then verifies `HEAD` is exactly `head`, then
-    `git branch --set-upstream-to=origin/<branch>` so a plain push works.
+    the same two `git config` upstream settings, so a plain push works.
   - `set-branch` `{project, branch, sha}` → when `branch` is absent or an ancestor of `sha`,
     `git branch -f <branch> <sha>`; else `failed` "a local branch <branch> already exists
     and differs".
@@ -518,12 +537,16 @@ and its thread id is not in that set.
     worktree or archive record for the id; whether the project has a local `wc/<id>`
     branch, whether it is an ancestor of `head`, and where it is checked out
     (`git worktree list --porcelain`) (used by Create's refusal rows).
-  - The machine's archive records become durable: `archivedThreads`
-    (`machine/service.js:227`) is saved to a file in the machine's state directory on
-    every change and loaded at start, so the "another wheelchair app had it" refusal
-    survives a machine restart. Archive (`machine/service.js:740-792`) adds and saves the
-    id **before** it stops sessions or removes anything, so no crash window leaves the
-    thread with neither a worktree nor a record. `reopen` removes the id and saves.
+  - Durable ownership markers, in a file in the machine's state directory, saved on every
+    change and loaded at start: `archiving` (ids whose archive has started) and
+    `archived` (ids whose archive finished; the same set as `archivedThreads`,
+    `machine/service.js:227`). Archive (`machine/service.js:740-792`) adds the id to
+    `archiving` and saves **before** it stops sessions or removes anything. When archive
+    finishes, the id moves to `archived`; when archive ends with the thread kept open (a
+    kept rebase or failed upload removal, `machine/service.js:784-789`), the id is removed
+    from `archiving` and not added to `archived`, so uploads keep working exactly as
+    today. Upload refusal reads only `archived`; `known` reads both. `reopen` removes the
+    id from both and saves.
   - `kill` `{names}` → for each name matching `^wc-[0-9a-f]{12}-`: a session still starting
     is marked cancelled, so its start stops before launching tmux and returns an error;
     a running one gets `tmux kill-session -t <name>`. Returns the names still starting or
@@ -904,7 +927,7 @@ npm --prefix viewer run test:browser
 
 ### Round 10 — 2026-11-17
 
-**Lanes:** intent and mechanics; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 9:**
 - Import table: refusal rows before Create; Create is the last no-thread row.
@@ -912,6 +935,30 @@ npm --prefix viewer run test:browser
 - Cancel waits 5 minutes after the last push attempt (`last_push_at`).
 - Machine: archive record saved before archive cleanup; `fast-forward` sets upstream.
 - Two Accepted Risks added.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | blocking | Saving the archive record before cleanup breaks uploads for threads whose archive is kept open | upheld | Separate durable `archiving` and `archived` markers; uploads read only `archived` |
+| intent | major | Partial-starts rule covers all roles but cleanup only leads | upheld | Unsaved starts of any role are killed and reported dead through the usual notice |
+| intent | minor | Cancel wait rests on an unverified claim | upheld | Bound moved into the push itself (60 s start window, `timeout` 120 s), reason stated against `KillMode=process` |
+| intent | minor | Dead "Finish" row in the import table | upheld | Row removed; note moved to step 1 |
+| mechanics | blocking | Cancel can race a push that survives a machine restart | upheld | Same fix as the Cancel intent finding |
+| mechanics | blocking | Archive record saved before cleanup refuses uploads after a kept archive | upheld | Same fix as the archive intent finding |
+| mechanics | blocking | Orphaned non-lead sessions keep running | upheld | Same fix as the partial-starts intent finding |
+| mechanics | blocking | Advance and Undo can claim before finding the branch checked out elsewhere | upheld | Checked-out check runs before every claim |
+| mechanics | major | Upstream step needs a tracking ref missing in single-branch clones | upheld | `claim-state` fetches into a tracking ref; upstream set with `git config` |
+| mechanics | major | Imported thread's plan pages return 403 | upheld | Plan registered once the lead's worktree is recorded |
+
+### Round 11 — 2026-11-17
+
+**Lanes:** intent and mechanics; cross-family: yes.
+
+**Changed since Round 10:**
+- Machine: durable `archiving` and `archived` markers; claim push time bounds (60 s start window, `timeout -s KILL 120`); `claim-state` fetches into a tracking ref; upstream set with `git config`.
+- Partial starts: any role, killed and reported dead through the usual notice.
+- Checked-out-branch check before every claim (Create, Advance, Undo).
+- Import step 1 owns the Finish behaviour and note; dead row removed.
+- Plan directory registered once an imported thread's worktree is recorded.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
