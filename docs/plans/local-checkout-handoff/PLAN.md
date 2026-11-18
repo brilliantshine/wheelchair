@@ -460,6 +460,21 @@ validation list. Decisions 15-16.
 | mechanics | minor | `write-tree` rewrites the real index's cache-tree | upheld | Temporary index copy |
 | mechanics | minor | File named `--stdin` | upheld | `--` before paths |
 
+### Round 5 — 2026-11-18
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 4:** outcome rule (HEAD unmoved always "nothing moved"); status
+scan gets `--no-renames` and runs only in writes; Status is metadata-only with
+`refused` and a Finish (`recover`) action; Dismiss keeps the return commit as a backup;
+queue keyed by the folder's real path with version checks inside it; identity adds
+device and inode; Back up the leftovers: missing parents allowed, temporary index copy,
+`--` before paths, per-path index check before clearing; contracts add `recover`;
+validation list. Decision 17.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 Parts of the Spec already built before this plan reached Stage 3 — adopted from outside
