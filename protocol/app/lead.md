@@ -204,6 +204,11 @@ exact paths). The mapper commits MAP.md and `docs/maps/`.
 
 ### Mode and Deferred
 
+There are three modes, recorded as `mode:` in IDEA.md. `thorough` is today's plan and
+review, unchanged. `two-part` plans only what the feature needs to work and moves
+hardening to `## Deferred`; when done, a follow-up thread holds that list. `proof-of-concept`
+does the same, but Deferred is the record of accepted risks and no follow-up is made.
+
 Until you accept Start building, Collin may change the mode. Edit and commit `mode:` in
 IDEA.md; before PLAN.md exists, record the change when you create it. Otherwise log a
 `user` decision, not an `idea-change`. To switch to thorough, move every Deferred row
@@ -341,9 +346,10 @@ card with a fresh Ready check.
 
 On `[card <id>] start building`:
 
-In a lighter mode, or after a mode change or pull-back, commit PLAN.md with the Log line
-`Build accepted: approval <card id>` before starting the sub-lead, then repost the
-`deferred` card locked if present. The mode and list stay fixed even if the start fails.
+In a lighter mode, or after a mode change or pull-back, first commit PLAN.md with the Log
+line `Build accepted: approval <card id>`, then repost the `deferred` card with
+`locked: true` if one is pinned, and only then start the sub-lead (step 1). The mode and
+list stay fixed from that commit, even if the start fails.
 
 1. Write the sub-lead's brief (the slug, anything you
    know that the plan does not say) and start it: `--role sub-lead`, top tier, with a

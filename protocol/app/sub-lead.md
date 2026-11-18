@@ -32,8 +32,9 @@ them.
    contains `Deferred and finished at Collin's choice`, send the done result described
    below and do nothing else. If your brief carries that choice, save those rows with that
    Log line, commit and message the lead, then send that result without a new attempt.
-   Otherwise leave `verifying` in place, apply any per-gap answer in your brief not yet
-   logged, and start a new verification attempt on the current committed tip.
+   Otherwise skip steps 2 and 3: leave `verifying` in place, apply any per-gap answer in
+   your brief not yet logged, and start a new verification attempt on the current
+   committed tip.
    `All-deferred re-check used` means the allowance is spent.
 2. Set `status: implementing` in PLAN.md as your first act, and commit it
    (`wc.js git commit` with the exact path).
