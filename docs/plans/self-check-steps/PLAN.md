@@ -683,7 +683,7 @@ Filled by Stage 3. One row per worker brief.
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | `check` kind: schema (card.js), hub acceptance (cards.js), press (threads.js), handoff, cards.md/cards-lead.md, node tests | viewer/app/{card,cards,threads,handoff}.js, protocol/app/cards.md, cards-lead.md, viewer/test/protocol-rules.test.js, new viewer/test/*.test.js | standard / gpt-6.1-terra | wc-2daed8b3ee7f-worker | `node --test viewer/test/*.test.js` | done |
 | T2 | lead.md after-done check-step rules + pointers; verifier.md steps-only section | protocol/app/lead.md, protocol/app/verifier.md | standard / claude-sonnet-5-5 | wc-2daed8b3ee7f-worker-2 | grep -i check; protocol-rules test | done |
-| T3 | `tricky` check card rendering, Copy, Fix it now/Leave it buttons, CSS, browser test | viewer/pages/thread.js, viewer/pages/thread.css, new viewer/test/*.spec.js | standard / claude-sonnet-5-5 | wc-2daed8b3ee7f-worker-3 | `npm --prefix viewer run test:browser` | in progress |
+| T3 | `tricky` check card rendering, Copy, Fix it now/Leave it buttons, CSS, browser test | viewer/pages/thread.js, viewer/pages/thread.css, new viewer/test/*.spec.js | standard / claude-sonnet-5-5 | wc-2daed8b3ee7f-worker-3 | `npm --prefix viewer run test:browser` | done |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -705,3 +705,9 @@ anything a future session needs that fits nowhere above.
 - 2026-11-18 — Choice: T1, cards-lead.md `check` section: adds "Post after the current done card", says buttons show "until answered or superseded", lists refusals without their exact messages.
 - 2026-11-18 — Choice: T1, cards.md: both press forms in one bullet; tests in new `viewer/test/app-check-card.test.js`.
 - 2026-11-18 — T1 accepted (band: scout): I re-ran `node --test viewer/test/*.test.js` in its worktree: exit 0, 636/636 pass. Noted for COMPLETION risks: a spooled check card's 422 refusal (including the duplicate) is dropped to `spool/rejected` rather than returned to the lead (generic spool behaviour, `machine/service.js:973-985`); `views.js:135` and `aside.js:16` do not count a check card with a broken step as waiting (Spec silent).
+- 2026-11-18 — Choice: T3, thread.js: Fix it now / Leave it also hidden while the thread is frozen (uses the card's existing `off` flag).
+- 2026-11-18 — Choice: T3, thread.js: `update` rendered through the markdown `prose` helper (text nodes, so backticks show as code); steps set as text.
+- 2026-11-18 — Choice: T3, thread.js: "Copied" state kept per card and step, survives re-renders, cleared after 2 s.
+- 2026-11-18 — Choice: T3, thread.js: the page's current done card is the last non-retracted `done` in the page's card list; no import cutoff on the page (pre-cutoff dones are never newer than post-cutoff ones).
+- 2026-11-18 — Choice: T3, app-check-card.spec.js: fake `gh` reads its head from a file so a second done can be posted; thread `branch`/`default_branch` nulled as in app-threads.spec.js.
+- 2026-11-18 — T3 accepted (band: self, tricky): read the full diff; re-ran `npm --prefix viewer run test:browser` in its worktree: exit 0, 782 passed, 28 skipped (16 app-check-card runs, all pass).
