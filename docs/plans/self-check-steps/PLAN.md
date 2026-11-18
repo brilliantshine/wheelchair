@@ -67,7 +67,9 @@ changed). Steps are for after merging (Decision 5).
 - One card may mix both; app steps first.
 - A protocol-only change (how agents behave) is checked by what he would see agents do in
   a thread, when that is observable; otherwise by a machine command (for example a `grep`
-  of the rule in the installed file) with the line to look for.
+  of the rule in the installed file) with the line to look for. Machine commands point at
+  the installed paths Collin will have after updating; the lead gives the verifier a path
+  map from those paths to the worktree so it can try them.
 
 ### The `check` card
 
@@ -77,7 +79,6 @@ Lead-only, shown, not pinned, no presses. Fields:
 |---|---|---|---|
 | `head` | string | yes | 40-char lowercase hex. Must equal the `head` of the most recent `done` card in the thread (done cards are never replaced or retracted: `viewer/app/cards.js:9,22-31`, `viewer/app/card.js:224-233`); the hub refuses otherwise (422 `check head must match the latest done card`), refuses when the thread has no `done` card (422 `post the done card first`), and refuses a second check card for the same `head` (422 `this done card already has a check card`) |
 | `update` | string | yes | How to get the merged change running, e.g. "Merge the pull request, then on the machine run `cd /home/collin/projects/personal/wheelchair && git pull && ./install.sh`". At most 300 chars |
-| `merged` | boolean | no | true when the done card was posted for an already merged pull request; `update` then leaves out the merge |
 | `steps` | array | yes | 1 to 6 items, each `{where, do, see, command?, tried, why_not?}` |
 
 Each step:
@@ -100,8 +101,8 @@ The duplicate rule makes posting idempotent: a lead that gets
 No presses: `press` in `viewer/app/threads.js` refuses every action on a `check` card
 (400 `a check card has no buttons`), before anything is marked answered or enqueued.
 
-Rendering (`viewer/pages/thread.js` `renderCard`): heading "Check it yourself", an eyebrow
-"After you merge" (or "Already merged" when `merged` is true), the `update` text, then an ordered list. Each item shows a small label
+Rendering (`viewer/pages/thread.js` `renderCard`): heading "Check it yourself", the `update` text
+(which says whether to merge first), then an ordered list. Each item shows a small label
 "In the app" or "On the machine", the `do` text, the `command` in a monospace block with a
 Copy button (hidden when `navigator.clipboard` is unavailable; copying never posts
 anything), then "You should see:" and the `see` text. An untried step shows a muted line
@@ -131,8 +132,7 @@ planned build, Collin's request for a small fix, the reported problem for an aft
 Each `see` is something he can observe, not "it works". Commands use full paths and name
 the output to look for. `update` says how this project picks up a merged change; when the
 lead does not know, it says so plainly and gives its best guess marked as such. When the
-done card is for an already merged pull request, `update` leaves out the merge and the
-card sets `merged: true`.
+done card is for an already merged pull request, `update` leaves out the merge.
 
 When the lead drafts:
 - Small fix and after-done fix: before starting the fix's verifier, so the draft goes in
@@ -160,11 +160,19 @@ verifier section). Which verifiers carry the steps:
 - `MATCH` → `tried: true`.
 - `COULD NOT TRY` (including "ran a safe stand-in") → `tried: false`, `why_not` in
   Collin's words from the reason.
-- `DIFFERS`, and what it saw is what the change should do (the step was worded wrong) →
-  the lead rewrites `see` to what was seen. If `do` must change, those steps are re-tried
-  once by a fresh steps-only verifier on the same commit; a step still not matching is
-  posted `tried: false`, `why_not` "an agent saw something different".
-- `DIFFERS`, and what it saw shows the work is wrong → a gap (Decision 8). The lead fixes
+- Brief contents for any verifier carrying steps: the numbered steps, the path map for
+  machine commands, and (for steps-only) the plan slug so it can judge intent.
+- `DIFFERS (meets intent)`: the verifier judged that what it saw is what the Spec or
+  request wants, so the step was worded wrong. The lead rewords the step; every reworded
+  step is re-tried once by a fresh steps-only verifier on the same commit before it can be
+  `tried: true`; still not matching → `tried: false`, `why_not` "an agent saw something
+  different".
+- Combined reports (small fix, after-done fix, and the repair and merge re-verifies): a
+  step that shows the work is wrong is reported by the verifier as a `GAP` as well, so it
+  goes through today's single fix loop and today's question (push as it is, or drop); the
+  question below is not used there. If Collin chooses "push it as it is", the step is
+  posted `tried: false`, `why_not` "an agent saw something different: <short>".
+- Steps-only reports (planned build): `DIFFERS (work wrong)` → a gap (Decision 8). The lead fixes
   it in the worktree itself (no sub-lead or workers), commits, and starts a fresh verifier
   briefed with the Spec or request, the gap and all steps. If it still fails after two
   fix attempts, or the fix needs parallel workers, the lead posts a `question` card with
@@ -174,7 +182,7 @@ verifier section). Which verifiers carry the steps:
   thread then finishes as usual. Nothing is reverted on this path.
 - A report missing a step's line: one fresh steps-only verifier tries just the missing
   steps; still missing → `tried: false`, `why_not` "an agent did not report on it". Two
-  lines for one step: use the less favourable (DIFFERS, then COULD NOT TRY, then MATCH).
+  lines for one step: use the less favourable (DIFFERS (work wrong), DIFFERS (meets intent), COULD NOT TRY, MATCH).
 - `VERDICT: BLOCKED` is a setup problem, as today: fix it and start a fresh verifier; not
   a failed attempt.
 - A small fix Collin chose to drop (reverted, no `done`) gets no check card.
@@ -210,7 +218,10 @@ A new section, used only when the brief includes check steps:
   devices, paid services or its live data), report those steps COULD NOT TRY with that
   reason; do not improvise against live systems.
 - Machine commands are run exactly as written unless they would touch Collin's live state
-  or install system-wide. Then you may run a safe stand-in, but the step is
+  or install system-wide. Reading Collin's installed copy counts as live state: it shows
+  the old version until he merges. The brief may give a **path map** (for example
+  `/home/collin/projects/personal/wheelchair` → the worktree); running a command with only
+  those path prefixes swapped counts as running it as written, and can MATCH. Then you may run a safe stand-in, but the step is
   `COULD NOT TRY — ran a safe stand-in: <what>; saw <what>`, never MATCH. MATCH means the
   step was followed as written and showed what `see` says.
 - A step that needs state the isolated app lacks (for example a thread at Done) may be set
@@ -219,8 +230,9 @@ A new section, used only when the brief includes check steps:
 - **Report.** `COMMIT:` first as today. A steps-only report's verdict is `VERDICT: PASS`
   when every step has a line, or `VERDICT: BLOCKED`; it has no GAP lines. A combined report
   keeps today's verdict and GAP lines. Then exactly one line per step, numbered as in the
-  brief: `STEP <n>: MATCH|DIFFERS|COULD NOT TRY — <what it saw or why>`. A DIFFERS step is
-  not by itself a GAP; a GAP is only about the work.
+  brief: `STEP <n>: MATCH|DIFFERS (meets intent)|DIFFERS (work wrong)|COULD NOT TRY —
+  <what it saw or why>`, judging "meets intent" against the Spec or request in the brief.
+  In a combined report, every `DIFFERS (work wrong)` step also gets a GAP line.
 
 ### Non-goals
 
@@ -250,7 +262,7 @@ A new section, used only when the brief includes check steps:
 - `cd viewer && npm test` passes, including new node tests:
   - `card.js` validation: accepts a valid card; refuses each missing required field,
     `command` with `where: app`, `why_not` with `tried: true`, missing `why_not` with
-    `tried: false`, 0 or 7 steps, over-length fields, a non-boolean `merged`, unknown
+    `tried: false`, 0 or 7 steps, over-length fields, unknown
     fields, a non-lead role.
   - hub acceptance: refused with no done card; refused when `head` differs from the latest
     done; accepted when it matches; refused as a duplicate for the same head; accepted
@@ -260,8 +272,7 @@ A new section, used only when the brief includes check steps:
   - handoff: a thread with a `check` card at the size limits exports, the file validates,
     and its `historyText` is untruncated and matches the format above.
 - `cd viewer && npx playwright test` passes, including a new browser test: a posted check
-  card renders the heading, "After you merge" (and "Already merged" with `merged: true`),
-  the update text, numbered steps with "In the app"/"On the machine" labels, the command
+  card renders the heading, the update text, numbered steps with "In the app"/"On the machine" labels, the command
   block with Copy, "You should see:", and the "Not tried by an agent" line; no buttons
   other than Copy; at 390px wide the page has no horizontal scroll.
 - `grep -n "check" protocol/app/cards.md protocol/app/cards-lead.md protocol/app/lead.md protocol/app/verifier.md`
@@ -336,6 +347,10 @@ exit. Downgrades and declines cite evidence.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Machine steps reading installed state cannot pass before merge; DIFFERS from not-yet-merged has no rule | upheld | Reading the installed copy is live state; lead gives a path map (installed → worktree); a prefix-swapped run counts as written |
+| intent | minor | Lead grades its own DIFFERS by rewriting `see` and posting tried | upheld | Verifier classifies DIFFERS (meets intent / work wrong); every reworded step is re-tried before `tried: true` |
+| intent | minor | Two failure loops on combined paths | upheld | Combined reports also raise a GAP for work-wrong steps; today's loop and question apply; new question only for steps-only |
+| intent | minor | `merged` flag only switches the eyebrow | upheld | Field and eyebrow removed; `update` says whether to merge |
 
 ## Prior Work
 
