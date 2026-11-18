@@ -760,6 +760,7 @@ Filled by Stage 3. One row per worker brief.
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | App side: `deferred` card kind, press checks, pins, restart `card_kinds`/`stub_summary`, rendering, tests, card docs | viewer/app/{card,cards,threads,chat}.js, viewer/pages/thread.js, viewer/test/**, protocol/app/cards.md, cards-lead.md | standard / gpt-6.1-terra (claude asked; hub fell back) | wc-2919fc337eba-worker | node --test viewer/test/*.test.js; npm --prefix viewer run test:browser | running |
 | T2 | Protocol prose: lead, sub-lead, reviewer, verifier rules; IDEA/PLAN templates (tricky) | protocol/app/{lead,sub-lead,reviewer,verifier}.md, protocol/templates/{IDEA,PLAN}.md | standard / gpt-6.1-terra (claude asked; hub fell back) | wc-2919fc337eba-worker-2 | node --test viewer/test/protocol-rules.test.js; read-through per mode | done |
+| T3 | Three wording fixes from the T2 read: mode definitions, Start building order, sub-lead verifying restart | protocol/app/lead.md, protocol/app/sub-lead.md | light / provider chosen by hub (waiting for room) | wc-2919fc337eba-worker-3 | node --test viewer/test/protocol-rules.test.js | running |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
