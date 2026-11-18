@@ -303,6 +303,7 @@ test('limits offers to a second request after keep talking first', async () => {
     assert.equal(second.status, 202);
     const chat = await api(context, `/threads/${made.id}/chat`);
     assert.equal(chat.body.pinned.find((item) => item.kind === 'offer').id, second.body.id);
+    assert.ok(chat.body.cards.some((item) => item.id === first.body.id), 'the answered first offer stays in the conversation');
     const third = await card(context, made.id, lead.name, { kind: 'offer', summary: 'Third offer.' });
     assert.equal(third.status, 422);
     assert.equal(third.body.detail, 'the offer was already asked');

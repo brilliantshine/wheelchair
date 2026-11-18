@@ -278,8 +278,8 @@
   }
 
   // ---- chat ----
-  // Every card shows in the conversation at its time, pinned or not. A pinned card's copy here
-  // drops its element ids, so links and lookups by id land on the pinned copy.
+  // Every card shows in the conversation at its time, pinned or not. While the pins are open, a
+  // pinned card's copy here drops its element ids, so links and lookups land on the pinned copy.
   function pinnedIds() { return new Set(data.pinned.map((c) => c.id)); }
 
   function renderChat() {
@@ -292,7 +292,8 @@
       return true;
     });
     const cards = data.cards;
-    const pinned = pinnedIds();
+    // Folded pins draw no cards, so the chat copy keeps its ids for links and lookups.
+    const pinned = pinsFolded ? new Set() : pinnedIds();
     let next = 0;
     const cardsBefore = (when) => {
       while (next < cards.length) {
@@ -947,7 +948,7 @@
     const nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
     let changed = false;
     const leadNow = leadSession();
-    sync('chat', [data.items, pending, leadNow && [leadNow.queue, leadNow.ready, leadNow.permission_open, leadNow.needs_open, leadNow.limited_until], sendingNow, slug(), t.archived, data.cards, data.pinned.map((c) => c.id), cardErrors, declining], () => { renderChat(); changed = true; });
+    sync('chat', [data.items, pending, leadNow && [leadNow.queue, leadNow.ready, leadNow.permission_open, leadNow.needs_open, leadNow.limited_until], sendingNow, slug(), t.archived, data.cards, data.pinned.map((c) => c.id), pinsFolded, ideaOpen, cardErrors, declining], () => { renderChat(); changed = true; });
     const workingEl = $('working');
     const working = leadWorking() && !t.archived;
     const workingText = (t.lead_name || 'The lead') + ' is working';
