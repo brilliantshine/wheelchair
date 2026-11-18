@@ -11,11 +11,6 @@ the north star this plan serves. Mapping: `MAP.md` and `docs/maps/local-project-
 
 ## Open Questions
 
-### Q2: Which agents get the tools?
-- **Context:** Reviewers and the mapper are read-only by role; an engine bridge can change things. Asides and usage probes deliberately disable MCP (`machine/adapters/claude.js:54-55`, `machine/adapters/codex.js:28`).
-- **Options:** (a) every agent; (b) agents that build or check (lead, sub-lead, workers, verifiers), not reviewers, mapper or asides.
-- **Recommendation:** (b).
-
 ## Watch List
 
 | # | Noticed | What needs looking into | Raised to user? | Outcome |
@@ -33,6 +28,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 1 | Mode two-part | Collin's pick; get something usable, harden in a follow-up | user |
 | 2 | This thread builds custom MCP tools only; seeing the app run and trying results locally became separate stub threads | Collin's pick of the three pieces | user |
 | 3 | A project's tools are defined in the repo's own `.mcp.json` (Claude Code format); wheelchair translates it for Codex and Antigravity. No new settings UI | One versioned file, also works for Claude Code outside wheelchair | user |
+| 4 | Lead, sub-lead, workers and verifiers get the project's tools; reviewers, the mapper, asides and usage probes do not | Read-only roles must not be able to change things through a tool | user |
 
 ## Spec
 
@@ -40,6 +36,11 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 
 - A project's tools are the servers in `.mcp.json` at the root of the session's worktree, in Claude Code's format. No file means no tools and today's behaviour, unchanged.
 - Wheelchair adds no settings screen for tools. Codex and Antigravity sessions get the same servers translated into their own config, scoped to the session, without editing the account's global config.
+
+### Who gets the tools
+
+- Lead, sub-lead, workers and verifiers: yes.
+- Reviewers, mapper, asides and usage probes: no. They run with project MCP servers switched off, as asides and probes already do.
 
 ## Deferred
 
