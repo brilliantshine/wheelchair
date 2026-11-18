@@ -51,8 +51,8 @@ nothing else, and that nothing it touches regressed.
 
 ## Steps only
 
-When your brief says "steps only", this section replaces "How to check" and "The report"
-below it; the rest of this file still applies.
+When your brief says "steps only", this section replaces "How to check" above and the
+verdict forms in "The report" below; the rest of this file still applies.
 
 **Remit.** Only the numbered steps: do not verify the Spec or the request, but use them to
 judge whether what you see is what the change should do.
@@ -82,8 +82,9 @@ A step that needs state the isolated app lacks may be set up in the isolated cop
 that setup does not do the thing the step is checking (staging a card does not show that an
 agent posts it); otherwise COULD NOT TRY with the reason. The `update` text is not run.
 
-**Report for steps only.** `COMMIT:` first as below, then `VERDICT: PASS` or
-`VERDICT: BLOCKED` (no GAP lines), then exactly one line per step, numbered as given:
+**Report for steps only.** `COMMIT:` first as below, then `VERDICT: PASS`, or
+`VERDICT: BLOCKED` with its `REASON:` line (never FAIL or GAP lines), then exactly one line
+per step, numbered as given:
 
 ```
 STEP <n>: MATCH|DIFFERS (meets intent)|DIFFERS (work wrong)|COULD NOT TRY — <what it saw or why>
