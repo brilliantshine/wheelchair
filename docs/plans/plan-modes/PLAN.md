@@ -80,6 +80,10 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D45 | Accepting Start building commits `Build accepted: approval <id>` to PLAN.md's Log before the sub-lead starts; restart uses that line instead of the sub-lead's existence (refines D41) | A durable record of acceptance | review-round-5 |
 | D46 | "Defer and finish" commits a Log line so a restarted sub-lead finishes without re-verifying; D42 is narrowed to reading Log lines on top of sub-lead.md's existing restart | Keeps Collin's terminal choice; adds no new reconciliation | review-round-5 |
 | D47 | Every pull-back press that reaches the lead counts (the hub already refuses stale and locked cards) unless the build was accepted; pending ones are logged by item text and replayed on restart (refines D28, D39) | No accepted press is lost; simpler rule | review-round-5 |
+| D48 | Sub-lead restart in `verifying` reads the Log before touching status, then finishes or re-verifies on the tip; the lead's brief carries any answer not yet in the Log | Fills a resume path sub-lead.md lacks; keeps Collin's choice | review-round-6 |
+| D49 | Restarted lead also replays undelivered pull-backs from recent messages; items match by stable bullet text; repeats are ignored | No delivered press lost; stable mapping | review-round-6 |
+| D50 | Hub accepts `removed` only on `idea`/`deferred` cards with a matching bullet text | The lead can rely on what reaches it | review-round-6 |
+| D51 | Mode changes before PLAN.md exists are saved in IDEA.md and logged when PLAN.md is created | Persistence in the IDEA-confirmation window | review-round-6 |
 
 ## Spec
 
@@ -128,7 +132,10 @@ from before this feature).
 ### Changing the mode (D5)
 
 Until the lead accepts a Start building press (D27), Collin may ask in chat to change the
-mode. The lead edits `mode:` in IDEA.md (not a scope change; no
+mode. Before IDEA.md is written, the lead simply writes the new mode when it writes
+IDEA.md. After IDEA.md is written but before PLAN.md exists, it edits and commits
+`mode:` in IDEA.md, and records the change in PLAN.md's Decision Log when it creates
+PLAN.md. From then on, as below. The lead edits `mode:` in IDEA.md (not a scope change; no
 Decision Log `idea-change` entry, a `user` entry instead) and:
 - to `thorough`: moves every Deferred item back into the Spec, deletes the section, and
   retracts the `deferred` card (see below);
@@ -192,8 +199,14 @@ thorough, the item is already in the Spec; the lead still logs the `Pulled back:
 If a pull-back arrives during a review round, the lead commits `Pending pull-back: <item
 text>` to PLAN.md's Log at once and applies it after that round's triage, before posting
 an approval card or briefing the next round. A restarted lead applies every `Pending
-pull-back:` line that has no matching `Pulled back:` Decision Log entry before it does
-anything else in review.
+pull-back:` line, and every `removed:` press on a `deferred` card in the restart
+context's recent messages, that has no matching `Pulled back:` Decision Log entry, before
+it does anything else in review (unless a `Build accepted:` line came first).
+
+Matching is by bullet text. The lead keeps one item's bullet text identical across
+reposts (same `id`, same `text`), and the `Pending pull-back:` and `Pulled back:` entries
+quote that text exactly. A press whose text already has a `Pulled back:` entry is a
+repeat and changes nothing.
 
 ### The `deferred` card (D3, D13)
 
@@ -268,11 +281,15 @@ attempt has reported, as in sub-lead.md step 4–5), before step 5:
    adds the line `All-deferred re-check used` to PLAN.md's Log, so a restarted sub-lead
    knows the allowance is spent.
 
-Sub-lead restart while PLAN.md says `verifying` in a lighter mode: it resumes as
-sub-lead.md already says for any restart (this feature adds no new reconciliation), and
-additionally reads PLAN.md's Log: `All-deferred re-check used` means the allowance is
-spent, and `Deferred and finished at Collin's choice` means it sends its `result` as in
-"Defer them and finish" below, with no new verification attempt.
+Sub-lead restart while PLAN.md says `verifying` in a lighter mode (sub-lead.md gains this
+case in "Starting, and resuming after a restart"): before touching `status:`, the new
+sub-lead reads PLAN.md's Log. If it has `Deferred and finished at Collin's choice`, it
+sends its `result` as in "Defer them and finish" below and does nothing else. Otherwise
+it leaves `status: verifying` as is and starts a new verification attempt on the
+current committed tip (sub-lead.md step 3), with `All-deferred re-check used` meaning the
+allowance is spent. The lead's brief for the replacement names any verification answer
+the lead already gave (a per-gap defer/fix answer or Collin's choice) that the Log does
+not yet show, so the replacement applies it rather than asking again.
 A deferred gap never counts toward the two-attempt rule. If the one all-deferred
 re-check has already run in this build and another attempt fails, the lead answers step
 1 as usual (defer the hardening gaps, fix the rest; remediation runs for the rest) in
@@ -329,6 +346,9 @@ it), then: what was
 - `protocol/templates/IDEA.md` (`mode:` frontmatter line with the three values and default)
   and `PLAN.md` (an optional `## Deferred` section with the table and a note that it
   exists only in the lighter modes).
+- `viewer/app/threads.js` `press`: a `removed` press is accepted only on an `idea` or
+  `deferred` card and only when its value equals one of that card's bullet texts;
+  otherwise 400 with a reason.
 - `viewer/app/card.js` (kind, `lead` only, fields with unique ids and texts, retractable),
   `viewer/app/cards.js` (singleton), `viewer/app/threads.js` (refuse `removed` on a
   locked `deferred` card; replaced and retracted cards are already refused for every kind
@@ -352,6 +372,7 @@ gap for every stub), the app's slug and document rules.
   after Start building; a `removed` press on it reaches the lead as
   `[card <id>] removed: <text>`; a card with a duplicate bullet id or text is refused; a
   `removed` press on a locked, replaced or retracted `deferred` card is refused; a
+  `removed` press on another kind, or with text matching no bullet, is refused; a
   `retract` of a `deferred` card succeeds and removes it from the pins.
 - `protocol-rules.test.js` passes with the new kind documented in cards.md/cards-lead.md.
 - `npm --prefix viewer run test:browser` passes, with a test that renders a `deferred` card
@@ -515,6 +536,24 @@ exit. Downgrades and declines cite evidence.
 |------|----------|---------|--------------|------------|
 | intent (claude) | minor | `Build accepted:` commit would change thorough's step 7 | upheld | Limited to lighter modes or after a mode change or pull-back |
 | intent (claude) | minor | Mixed failure after the re-check forces hardening fixes | upheld | Step 1 runs as usual; question only when every gap is deferrable |
+| mechanics (gpt) | blocking | Sub-lead `verifying` resume path doesn't exist | upheld | D48 |
+| mechanics (gpt) | major | "Defer and finish" lost if the sub-lead dies before committing | downgraded (minor) | The lead holds the answer; its replacement brief carries it (D48) |
+| mechanics (gpt) | major | Delivered pull-back lost before its pending line is committed | downgraded (minor) | Restart context already includes recent card presses (`threads.js` `restartLead` `recent_messages`); D49 makes the lead replay them |
+| mechanics (gpt) | major | No stable text-to-row mapping for pull-backs | upheld | D49 |
+| mechanics (gpt) | major | Hub doesn't check kind or bullet text on `removed` | upheld | D50 |
+| mechanics (gpt) | major | Mode change before PLAN.md exists has no persistence rule | upheld | D51 |
+
+### Round 7 — 2026-11-17
+
+**Lanes:** intent: claude; mechanics: other family; cross-family: yes.
+
+**Changed since Round 6:**
+- `Build accepted:` commit limited to lighter modes or after a change.
+- Mixed failure after the re-check: step 1 as usual.
+- Sub-lead `verifying` restart path (D48); pull-back replay and matching (D49); hub `removed` checks (D50); mode persistence before PLAN.md (D51).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
