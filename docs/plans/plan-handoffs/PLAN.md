@@ -58,6 +58,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 28 | Restart (for every thread) queues its context before starting the session | A crash after start can no longer leave a lead without its context | review-round-5 |
 | 29 | An operation keeps the validated carried state in its record instead of a copy of the file | Removes every missing-file case; the thread record holds that state after Apply anyway | review-round-8 |
 | 30 | The machine keeps its archive records on disk | Makes the same-machine refusal (27) survive a machine restart | review-round-8 |
+| 31 | The restart reorder (28) and partial-start handling apply to imported threads only; supersedes 28 | Changing start-up for every thread pulled pre-existing crash windows into this feature | review-round-12 |
 
 ## Spec
 
@@ -328,18 +329,20 @@ project, `branch: wc/<id>`, no sessions) together with its `handoff_op`, then ru
 operation. **Advance** first refuses 409 "The thread here is busy" unless the existing
 thread has no live session other than the lead, no aside open or running, the lead is idle
 or not live, nothing is queued, no sudo card is waiting or running, and no upload is in
-flight; 409 "The thread here isn't on its branch" if its worktree exists and is not on
-`wc/<id>`; and 409 "The thread here has uncommitted changes" if
-its worktree exists and is dirty. Then it saves `handoff_op` and runs the operation.
+flight. Then it runs the pre-claim checks below, saves `handoff_op` and runs the
+operation.
 
 **Before any claim** (Create, Advance and Undo, checked again on every Retry while
 `claim_landed` is false):
 - when the thread has a recorded worktree that exists, it must be on `wc/<id>` (409 "The
-  thread here isn't on its branch") and clean (409 "The thread here has uncommitted
-  changes");
+  thread here isn't on its branch"), clean (409 "The thread here has uncommitted
+  changes"), and its `HEAD` must be `parent` or an ancestor of it (409 "The thread here
+  has commits that aren't in the file");
 - otherwise, the project's local `wc/<id>` branch must not be checked out anywhere
   (`known` reports where): 409 "Branch wc/<id> is checked out in <path>; switch away from
-  it, then try again".
+  it, then try again"; and, when it exists, it must be `parent` or an ancestor of it (409
+  "This project already has a branch wc/<id> that differs from the file; delete it if you
+  don't need it, then try again").
 Nothing is claimed when either fails.
 
 Responses: `{outcome: "created"|"advanced"|"opened", id, note?}`. The page navigates to
@@ -397,7 +400,8 @@ instead of "export again from wherever it is now".
    result only from the remote tip it reads after its push attempt, never from the push's
    exit code: tip `claim_sha`, or a descendant of it → `landed`: save `claim_landed: true`, go on; tip `parent` → `unknown`; any other tip →
    `moved`, abandon; tip unreadable → `unknown`. `unknown` fails the step with "Couldn't
-   update the branch on GitHub", keeping `claim_sha`, so Retry tries again.
+   update the branch on GitHub: <git's last line from the push or fetch>", keeping
+   `claim_sha`, so Retry tries again.
 2. **Stop.** Stop every live session of the thread (Advance and Undo). Then ask the
    machine (`/v1/handoff` `running`) which tmux sessions named `wc-<id>-*` still exist,
    kill each by name (`/v1/handoff` `kill`), and ask again. Any left fails the step with
@@ -430,13 +434,16 @@ instead of "export again from wherever it is now".
    lead, and either a lead was ever started or the thread was imported".
 
 **Partial lead starts.** The hub marks a session live before the machine call that
-launches it (`viewer/app/sessions.js:277-300`). When the hub starts, a **lead** session
-marked live whose start result was never saved is marked not live, so the dead-lead panel
+launches it (`viewer/app/sessions.js:277-300`). When the hub starts, a **lead** session of
+an **imported** thread (one with `imported`) marked live whose start result was never
+saved is marked not live, so the dead-lead panel
 offers Restart; Restart (below) kills anything that start left on the machine, refuses
 while any survives, and moves its queued context to the new lead. Nothing is adopted.
-Other roles are unchanged from today.
+Other roles, and leads of threads that were never imported, are unchanged from today. An
+imported thread's lead always starts with `from_remote_branch: {sha: checkout_sha}` until a
+worktree is recorded, and that path adopts a checkout a lost start left behind.
 
-**Restart order.** `restartLead` is changed for every thread: it first asks the machine
+**Restart order.** `restartLead` is changed for imported threads only: it first asks the machine
 (`running`) for tmux sessions of the thread's lead names that the hub does not count as
 live (starting or running), kills them (`kill`), and refuses with 409 "The previous agent
 is still stopping; try again in a minute" if `kill` reports any left. It moves any queued
@@ -502,7 +509,11 @@ and its thread id is not in that set.
     forced); returns `{head, repository}`.
   - Every action that fetches uses one helper,
     `git fetch origin +refs/heads/<branch>:refs/remotes/origin/<branch>`, so a
-    single-branch clone still gets the thread's branch and a tracking ref.
+    single-branch clone still gets the thread's branch and a tracking ref. The helper
+    first checks `git ls-remote --heads origin <branch>`: when the branch does not exist on
+    GitHub, it reports `remote_has_branch: false` with `remote_tip: null` and skips the
+    fetch; that is not an error (a thread's first export runs `status` before the push
+    that creates the branch). A network failure is still an error.
   - `inspect` `{project, branch, head, worktree?, slug}` → fetch; returns `{repository,
     remote_tip, remote_has_branch, remote_contains_head, picked_up_at, local_head,
     worktree_exists, relation, idea_status, plan_status}`. `local_head` follows the "its
@@ -566,6 +577,9 @@ and its thread id is not in that set.
     is marked cancelled, so its start stops before launching tmux and returns an error;
     a running one gets `tmux kill-session -t <name>`. Returns the names still starting or
     running.
+  - Calls for a thread also hold the machine's per-thread lock that archive holds
+    (`machine/service.js:725-741`), so a handoff action never runs while an archive of that
+    thread is still in progress, even when the hub gave up waiting for the archive's reply.
   - Calls run in the machine's per-repository queue (the one `createWorktree` uses,
     `machine/service.js:461`), and the hub calls `/v1/handoff` with a 120-second timeout
     instead of the machine client's default (`viewer/app/machine-client.js:42`). A timeout
@@ -683,7 +697,7 @@ npm --prefix viewer run test:browser
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | A machine's archive records never expire, so a hub that lost its own state can't import its old threads on that machine (it can on another machine, or after removing the id from the machine's archive file by hand) | A hub losing its state is a disaster case; expiry would reopen the same-machine sharing problem | 9 |
-| Restart and the hub's start-up now handle unsaved lead starts for every thread, not only imported ones; unsaved starts of other roles behave as today | The rule is small and lead-only; other roles' crash windows predate this feature | 9, 11 |
+| Unsaved session starts after a hub crash behave as today for every thread except an imported thread's lead | Those crash windows predate this feature and are outside its scope | 9, 11, 12 |
 
 ## Review Rounds
 
@@ -1000,7 +1014,7 @@ npm --prefix viewer run test:browser
 
 ### Round 12 — 2026-11-17
 
-**Lanes:** intent and mechanics; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 11:**
 - Import step 1: saved Create/Advance only; saved Undo opens with a note; existing threads use their own machine and project (other-machine Open row removed).
@@ -1013,6 +1027,15 @@ npm --prefix viewer run test:browser
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Claim failure hides git's reason | upheld | `last_error` carries git's last line |
+| intent | minor | Advance repeats the pre-claim checks | upheld | Advance keeps only the busy check and points to the pre-claim checks |
+| mechanics | blocking | Cancel and machine disagree on `parent` after a durable cancel | user-decision | Cancel safety net, to Collin |
+| mechanics | blocking | Perl alarm doesn't bound transport helpers | user-decision | Cancel safety net, to Collin |
+| mechanics | blocking | Crash between spawning the push and saving its pid | user-decision | Cancel safety net, to Collin |
+| mechanics | blocking | Fetch helper fails when the branch isn't on GitHub yet (first export) | upheld | Missing remote branch reported, not an error |
+| mechanics | blocking | Clean but divergent checkout or local ref passes pre-claim checks | upheld | Pre-claim checks require HEAD or local ref to be `parent` or its ancestor |
+| mechanics | blocking | Handoff actions can race a running archive | upheld | Handoff actions hold the machine's per-thread archive lock |
+| mechanics | blocking | Partial-start rule strands ordinary threads | upheld | Partial-start and restart changes limited to imported threads |
 
 ## Prior Work
 
