@@ -264,8 +264,11 @@ commit (the verifier sees whatever Deferred rows were committed). Gaps the earli
 sub-lead had asked about but not committed are simply found again and triaged again.
 The lead's brief for a replacement sub-lead says this.
 A deferred gap never counts toward the two-attempt rule. If the one all-deferred
-re-check has already run in this build and another attempt fails, the lead does not
-answer step 1 itself; nothing is saved to Deferred yet. It asks Collin a `question`:
+re-check has already run in this build and another attempt fails, the lead answers step
+1 as usual, except: when every gap in that attempt is one it would defer (hardening, and
+deferrable under the rule below), it does not answer itself; nothing is saved to Deferred
+yet, and it asks Collin a `question`. When any gap needs fixing, the lead answers "fix"
+for every gap of the attempt and step 5 runs; no question. The question:
 - "Fix them": the lead answers "fix" for every gap; step 5 runs as today.
 - "Defer them and finish": the lead answers "defer" for every gap; the sub-lead does step
   2 (save, commit, message), then sends its `result` (`task` `build`, `outcome` `done`,
@@ -326,7 +329,8 @@ it), then: what was
 ### Not changing
 
 The offer card, the approval card, the Ready check, the progress line, small fixes,
-thorough mode, the stub mechanism, the app's slug and document rules.
+thorough mode, the stub mechanism (except D43's restart fix, which repairs an existing
+gap for every stub), the app's slug and document rules.
 
 ### Validation
 
@@ -474,6 +478,8 @@ exit. Downgrades and declines cite evidence.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent (claude) | major | "Defer and finish" could push non-hardening or never-deferrable gaps | upheld | The question is asked only when every gap is deferrable hardening; otherwise all are fixed |
+| intent (claude) | minor | D43 conflicts with "Not changing: the stub mechanism" | upheld | Named as an exception |
 
 ## Prior Work
 
