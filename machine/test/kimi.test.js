@@ -13,7 +13,7 @@ function fixture() {
 }
 test('Kimi config, authentication, region, and effort', () => {
   const dir = fixture(); assert.deepEqual(kimi.loginStatus(dir), { logged_in: true, authenticated: true });
-  assert.deepEqual(kimi.command({}, { effort: 'medium' }, '', { accountDir: dir }).env, { KIMI_MODEL_THINKING_EFFORT: 'high' });
+  assert.equal(kimi.command({}, { effort: 'medium' }, '', { accountDir: dir }).env, undefined);
   assert.equal(kimi.command({ model: 'kimi-code/light' }, { effort: 'max' }, '', { accountDir: dir }).env, undefined);
   const file = path.join(dir, 'config.toml'); fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('auth.kimi.ai', 'auth.kimi.com'));
   assert.match(kimi.loginStatus(dir).problem, /China/);
@@ -69,12 +69,12 @@ test('China or absent oauth host prevents eligibility despite authentication', (
   }
 });
 
-test('launch effort mapping and exact role message', () => {
+test('launch keeps model default effort and exact role message', () => {
   const dir = fixture();
-  for (const [effort, mapped] of Object.entries({ low: 'low', medium: 'high', high: 'high', xhigh: 'max', max: 'max' })) {
+  for (const effort of ['low', 'medium', 'high', 'xhigh', 'max']) {
     const built = kimi.command({}, { effort, permission_mode: 'bypass' }, '', { accountDir: dir });
     assert.deepEqual(built.argv.slice(1), ['--auto']);
-    assert.deepEqual(built.env, { KIMI_MODEL_THINKING_EFFORT: mapped });
+    assert.equal(built.env, undefined);
   }
   const built = kimi.command({ model: 'kimi-code/light' }, { effort: 'max' }, '', { accountDir: dir });
   assert.deepEqual(built.argv.slice(1), ['--yolo', '--model', 'kimi-code/light']); assert.equal(built.env, undefined);
@@ -105,7 +105,7 @@ test('login state distinguishes exit and liveness cases', () => {
 test('recovery recognizes Kimi footer and prompt', async () => {
   const machine = Object.create(MachineService.prototype); machine.sessions = {};
   machine.liveTmux = () => new Set(['wc-test-worker']);
-  machine.tmux = args => ({ ok: true, stdout: args[0] === 'capture-pane' ? '│ >\ncontext: 10% Kimi' : '/tmp' });
+  machine.tmux = args => ({ ok: true, stdout: args[0] === 'capture-pane' ? '│ >\nAsk When Needed  K3.1 Pro thinking: high\ncontext: 0% (0/256k)' : '/tmp' });
   machine.persistSessions = async () => {};
   await machine.recoverFromTmux(); assert.equal(machine.sessions['wc-test-worker'].cli, 'kimi');
 });
@@ -203,7 +203,7 @@ test('service launch and login include absolute home and executable', async () =
     assert.deepEqual(session.command, [file, '--auto']);
     assert.deepEqual(yolo.command, [file, '--yolo']);
     assert.deepEqual(login.slice(-3), [file, 'login', '--region', 'global'].slice(-3));
-    assert.ok(launch.includes('KIMI_MODEL_THINKING_EFFORT=high'));
+    assert.ok(!launch.includes('KIMI_MODEL_THINKING_EFFORT='));
     assert.match(session.pending_initial, /^\[wc:role\] Role: worker\nSession: wc-test-worker\n/);
     assert.equal(session.account_dir, null);
   } finally {
@@ -286,10 +286,10 @@ test('start allocates the name passed to the role message', async () => {
   assert.match(session.pending_initial, /^\[wc:role\] Role: worker\nSession: wc-allocated-worker\n/);
 });
 
-test('service command passes named account directory to effort lookup', () => {
+test('service command leaves named account model effort at its default', () => {
   const dir = fixture(), machine = Object.create(MachineService.prototype);
   const built = machine.commandFor({ cli: 'kimi' }, { account_dir: dir, effort: 'low' }, '/work', '/prompt', '');
-  assert.deepEqual(built.env, { KIMI_MODEL_THINKING_EFFORT: 'low' });
+  assert.equal(built.env, undefined);
 });
 
 test('fake tmux login polls cover exit markers and liveness', () => {

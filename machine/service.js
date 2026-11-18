@@ -393,7 +393,7 @@ class MachineService {
       const pane = this.tmux(['capture-pane', '-p', '-t', name]);
       const where = this.tmux(['display-message', '-p', '-t', name, '#{pane_current_path}']);
       this.sessions[name] = { name, thread_id: parsed[1], role: parsed[2], status: 'ready', recovered: true,
-        cli: pane.ok && pane.stdout.includes('Antigravity CLI') ? 'agy' : pane.ok && pane.stdout.includes('Codex') ? 'codex' : pane.ok && /│\s*>/.test(pane.stdout) && /context:.*(?:Kimi|kimi)/i.test(pane.stdout) ? 'kimi' : 'claude',
+        cli: pane.ok && pane.stdout.includes('Antigravity CLI') ? 'agy' : pane.ok && pane.stdout.includes('Codex') ? 'codex' : pane.ok && /│\s*>/.test(pane.stdout) && /\b(?:Ask When Needed|Never Ask)\b[^\n]*\bthinking\b/i.test(pane.stdout) && /context:/.test(pane.stdout) ? 'kimi' : 'claude',
         worktree: where.ok ? where.stdout.trim() : '', created_worktree: false, token: '', created_at: new Date().toISOString() };
       if (this.sessions[name].cli === 'kimi') this.sessions[name].end_reason = 'Lost track of this Kimi Code session after a machine restart; restart it';
       changed = true;
