@@ -261,14 +261,18 @@ The operations themselves bypass the check.
   - moved: "Picked up elsewhere on <date>. Import a newer file to continue here." and no
     Undo. When the tip is an own cancelled claim (Import step 4), the banner instead says "An
     earlier cancelled import or undo is still being taken back; try again in a few
-    minutes" and Undo stays (pressing it before the revoke runs gets the same message);
+    minutes" and Undo stays. Pressing it starts the Undo operation, whose Claim step then
+    fails as in "Own cancelled claim at the tip"; from then on the saved-Undo rule below
+    applies;
   - inspect failed: the first text, and Undo stays available (undo checks again).
 - `POST /threads/:id/undo-handoff` runs the Undo operation (see Operations and Retry):
   claim on top of `handed_off.head`, stop any live session, fast-forward the worktree to
   the claim (or rebuild it when missing), clear `handed_off` and `archived`, then start a
   lead with the restart context. Undo is offered on archived handed-off threads too. If the claim step
   abandons, 409 "This was picked up elsewhere on <date>; import a newer file to continue
-  here".
+  here". If any step fails (including the own-cancelled-claim case), 409 with the step's
+  `last_error`, and the operation stays saved for Retry. The same rule holds for the
+  import route and `retry-handoff`.
 - While handed off, the page offers **Download the file again**
   (`GET /threads/:id/handoff-file`, the saved `handoffs/<id>.json`), so a lost download
   never needs a second export. Download again runs inside `hub.withThread(id)`, so it never
@@ -512,10 +516,10 @@ and its thread id is not in that set.
   (`revoke.json` in the hub state directory, outside `handoffs/`, so the start-up sweep
   never touches it), then abandons the operation without the 409: Create deletes its
   record, Advance and Undo clear `handoff_op`. When `claim_sha` is null, it just abandons.
-- **Revoking.** At hub start, every 10 minutes, and when Import step 4 or the Claim step
-  schedules one entry (the only two places that trigger a revoke; the banner and the Open
-  note only display), the hub runs each entry on the revoke
-  list, inside `hub.withThread(thread_id)`. Every read-modify-write of `revoke.json`
+- **Revoking.** At hub start and every 10 minutes, the hub sweeps the whole revoke list.
+  Separately, Import step 4 and the Claim step each schedule an immediate revoke of the one
+  matching entry (the only two places that do; the banner and the Open note only
+  display). Each entry, in a sweep or alone, runs inside `hub.withThread(thread_id)`. Every read-modify-write of `revoke.json`
   (Cancel, sweep, Dismiss) also holds one hub-wide `revoke` lock, taken after the
   thread lock, so writes for different threads never overwrite each other:
   - if a thread with that id still has a saved `handoff_op` whose `claim_sha` is the
@@ -540,18 +544,20 @@ and its thread id is not in that set.
 
 ### Machine service changes (`machine/service.js`)
 
-- `createWorktree` (`machine/service.js:425-478`) gains `input.from_remote_branch: {sha}`:
-  after the fetch, `sha` must be an ancestor of or equal to `origin/<branch>`. If no
-  local `wc/<id>` exists: `git worktree add -b <branch> <dest> <sha>`. If it exists and is
-  an ancestor of `sha`: `git worktree add <dest> <branch>` then
-  `git -C <dest> merge --ff-only <sha>`. Both paths then run
-  `git -C <dest> config branch.<branch>.remote origin` and
-  `git -C <dest> config branch.<branch>.merge refs/heads/<branch>`, so a plain push works.
-  Otherwise fail with "a local branch <branch> already exists and differs". Before
-  either, if the destination directory (`stateDir/worktrees/<project>/<branch>`) already
-  exists and is a git worktree on `<branch>` whose `HEAD` is `sha` or an ancestor of it,
-  reuse it: fast-forward to `sha` and use it. A destination that exists in any other state
-  fails with "the checkout folder for <branch> is in an unexpected state". The worktree
+- `createWorktree` (`machine/service.js:425-478`) gains `input.from_remote_branch: {sha}`.
+  After the fetch, `sha` must be an ancestor of or equal to `origin/<branch>`. Then, in
+  this order:
+  1. If the destination directory (`stateDir/worktrees/<project>/<branch>`) exists: when it
+     is a git worktree on `<branch>` whose `HEAD` is `sha` or an ancestor of it, reuse it
+     (`git -C <dest> merge --ff-only <sha>`); in any other state fail with "the checkout
+     folder for <branch> is in an unexpected state".
+  2. Else, if no local `<branch>` exists: `git worktree add -b <branch> <dest> <sha>`.
+  3. Else, if the local `<branch>` is an ancestor of `sha`: `git worktree add <dest>
+     <branch>` then `git -C <dest> merge --ff-only <sha>`.
+  4. Else fail with "a local branch <branch> already exists and differs".
+  After 1, 2 or 3, always run `git -C <dest> config branch.<branch>.remote origin` and
+  `git -C <dest> config branch.<branch>.merge refs/heads/<branch>`, so a plain push works
+  even from a reused folder. The worktree
   counts as created by this start for archive ownership, as the default path does
   (`machine/service.js:531-540`). The default path is unchanged.
 - New hub-only endpoint `POST /v1/handoff`, authorized like `/v1/archive`
@@ -720,7 +726,9 @@ New tests, then the suites:
     sweep removes; Advance refused leaves `imported`, cards and pins unchanged; Retry with
     no file kept between steps (Retry works from `handoff_op.carried`); archive refused while unfinished; the Retry panel
     shows `last_error`; unfinished undo banner shows Retry, not "picked up elsewhere";
-    re-import with an unfinished operation runs it without inspecting the new file;
+    re-import with a saved Create or Advance validates the file, then runs the saved
+    operation without inspecting the branch; re-import with a saved Undo returns `opened`
+    with its note and leaves the operation untouched;
   - lead start after an operation: no lead runs during it; restart context includes
     `import`, with marker `[wc:context import]` only for the first lead after `imported.at`;
     a failed start shows the ordinary Restart; restart enqueues the context before starting; an imported thread with no
@@ -735,7 +743,8 @@ New tests, then the suites:
     import, banner and Open note, and at the Claim step fails the step (operation kept,
     Retry later) rather than abandoning; only Import step 4 and the Claim step schedule a
     revoke, after the thread lock is released (no deadlock); Advance busy ignores queues on
-    ended non-leads; banner with a saved Undo shows only Retry; an idle open aside gives
+    ended non-leads; banner with a saved Undo hides Undo and shows the Retry panel (with Cancel while the
+    claim isn't known to have landed); an idle open aside gives
     "Agents are still working"; claim-push returns
     `remote_tip`; the busy reason ignores queues on ended non-leads; re-import with a saved
     Undo does not run it; cancelled claims never reused; revoke list
@@ -1266,6 +1275,12 @@ npm --prefix viewer run test:browser
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | major | Revoke triggers vs whole-list sweep unclear | downgraded (minor) | Either reading is correct behaviour (sweeping the whole list is only extra work); a worker need not stop. Clarified anyway |
+| mechanics | major | Validation's re-import line contradicts Import step 1 | downgraded (minor) | Import step 1 is explicit and governs; the Validation line was stale wording. Fixed |
+| mechanics | minor | Saved-Undo banner test omits Cancel | upheld | Test wording fixed |
+| intent | minor | Revoke trigger sentence contradicts itself | upheld | Rewritten |
+| intent | minor | Reused checkout folder may lack upstream; order hard to follow | upheld | Ordered steps; upstream set after every path |
+| intent | minor | Undo response when its Claim step fails unstated | upheld | 409 with `last_error`, operation kept |
 
 ## Prior Work
 
