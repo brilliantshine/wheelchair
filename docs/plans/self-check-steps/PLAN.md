@@ -45,6 +45,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 8 | A step that shows the work itself is wrong is fixed by the lead in the worktree, like an after-done fix, before any push | The sub-lead's result already handed the worktree back; restarting a sub-lead for one gap costs more than the fix | defaulted |
 | 9 | A step no agent could try is still shown, marked "Not tried by an agent" with the reason | Hiding it loses a check Collin can still do; marking it keeps the card honest | defaulted |
 | 10 | No buttons for "it worked" or "it didn't" on the check card; he reports a problem by typing in the thread as today | IDEA.md: not recording whether he did them | defaulted |
+| 11 | Protocol-only changes (how agents behave) get `where: app` steps about what he will see agents do; machine commands are for scripts and the machine service. Supersedes the "protocol docs" example in Decision 2's wording | Collin's pick was "if you can see it in the app, phone steps"; agent behaviour shows in a thread, and the "protocol docs" example was the lead's wording, not on his card | review-round-4 |
+| 12 | A step an agent tried and saw fail is shown as "An agent tried this and saw something else", distinct from "Not tried by an agent" | He should be able to tell what was actually checked (IDEA.md) | review-round-4 |
 
 ## Spec
 
@@ -54,7 +56,8 @@ Right after every accepted `done` card, the lead posts a `check` card: "Check it
 It says first how to get the change running (merge, then how this project updates), then
 gives numbered steps. Each step says where it is done (in the app, or on the machine), what
 to do, and what he should see. Steps an agent followed say nothing extra; a step no agent
-could try carries "Not tried by an agent" and the reason. All three done paths get one:
+could try carries "Not tried by an agent" and the reason; a step an agent tried and saw
+something else carries "An agent tried this and saw something else" and what it saw. All three done paths get one:
 small fix, planned build, and a fix after done (whose steps cover only what that fix
 changed). Steps are for after merging (Decision 5).
 
@@ -62,14 +65,15 @@ changed). Steps are for after merging (Decision 5).
 
 - A change Collin can see in an app (wheelchair's own app, or the project's) gets steps he
   follows there on his phone: what to open or tap, and what he should see.
-- Only a change with nothing to see in an app (scripts, the machine service, protocol
-  documents) gets commands to run on the machine, each with the output to look for.
+- Only a change with nothing to see in an app (scripts, the machine service) gets commands
+  to run on the machine, each with the output to look for.
 - One card may mix both; app steps first.
-- A protocol-only change (how agents behave) is checked by what he would see agents do in
-  a thread: a step names the behaviour to watch for and when it shows up ("next time a
+- A protocol-only change (how agents behave) shows in the app, so its steps are
+  `where: app` (Decision 11): they check what he would see agents do in a thread: a step names the behaviour to watch for and when it shows up ("next time a
   thread finishes, a Check it yourself card follows Done"). If no agent could stage that
-  in isolation, the step is `tried: false` with `why_not` "only shows in a later thread".
-  Never a step that only proves the merge landed (such as grepping for the new text). Machine commands point at
+  in isolation, the step is `agent: not-tried` with `note` "only shows in a later thread".
+  Never a step that only proves the merge landed (such as grepping for the new text).
+- Machine commands point at
   the installed paths Collin will have after updating; the lead gives the verifier a path
   map from those paths to the worktree so it can try them.
 
@@ -81,7 +85,7 @@ Lead-only, shown, not pinned, no presses. Fields:
 |---|---|---|---|
 | `head` | string | yes | 40-char lowercase hex. Must equal the `head` of the thread's **current done card**: the most recent `done` card that is not retracted and, when the thread has an import cutoff (`thread.imported.at`), was created after it. Done cards are never replaced, and a lead cannot retract one (`viewer/app/card.js:224-233`), but a handoff Advance retracts every card (`viewer/app/handoff-ops.js:103-105`), and cards before the cutoff are hidden from Collin; the hub refuses otherwise (422 `check head must match the latest done card`), refuses when the thread has no current done card (422 `post the done card first`), and refuses a second check card for the same `head` (422 `this done card already has a check card`) |
 | `update` | string | yes | How to get the merged change running, e.g. "Merge the pull request, then on the machine run `cd /home/collin/projects/personal/wheelchair && git pull && ./install.sh`". At most 300 chars |
-| `steps` | array | yes | 1 to 6 items, each `{where, do, see, command?, tried, why_not?}` |
+| `steps` | array | yes | 1 to 6 items, each `{where, do, see, command?, agent, note?}` |
 
 Each step:
 
@@ -91,8 +95,8 @@ Each step:
 | `do` | string | yes | What to do, at most 300 chars |
 | `see` | string | yes | What he should see if it worked, at most 300 chars |
 | `command` | string | no | Only with `where: machine`; the exact command, full paths, at most 1000 chars; may span lines |
-| `tried` | boolean | yes | true when an agent followed the step and saw `see` |
-| `why_not` | string | when `tried` is false | Forbidden when `tried` is true. One line, at most 300 chars |
+| `agent` | `matched` \| `not-tried` \| `differed` | yes | `matched`: an agent followed the step and saw `see`. `not-tried`: no agent could follow it as written. `differed`: an agent followed it and saw something else |
+| `note` | string | unless `agent` is `matched` | Forbidden with `matched`. For `not-tried`, why; for `differed`, what the agent saw. One line, at most 300 chars |
 
 Unknown fields are refused, as for every kind. The card is posted through the normal
 spooled path (not synchronous like `done`); the head and duplicate rules are checked at the
@@ -107,18 +111,19 @@ Rendering (`viewer/pages/thread.js` `renderCard`): heading "Check it yourself", 
 (which says whether to merge first), then an ordered list. Each item shows a small label
 "In the app" or "On the machine", the `do` text, the `command` in a monospace block with a
 Copy button (hidden when `navigator.clipboard` is unavailable; copying never posts
-anything), then "You should see:" and the `see` text. An untried step shows a muted line
-"Not tried by an agent: <why_not>". All text is set as text, never HTML. It must read at
+anything), then "You should see:" and the `see` text. A `not-tried` step shows a muted line
+"Not tried by an agent: <note>". A `differed` step shows a warning-styled line "An agent
+tried this and saw something else: <note>". All text is set as text, never HTML. It must read at
 phone width (390px) without horizontal page scroll; a long command scrolls inside its own
 block.
 
 Other app touch points:
 - `viewer/app/card.js`: add `check` to `shown`, `roles` (`['lead']`) and `fields`, with the
-  rules above and the cross-field checks (`command` only with `machine`; `why_not` required
-  iff `tried` is false).
+  rules above and the cross-field checks (`command` only with `machine`; `note` required
+  unless `agent` is `matched`, forbidden with it).
 - `viewer/app/handoff.js`: add `check` to `KINDS`; `historyText` returns the `update` line
   and one line per step: `<n>. [app|machine] <do> — see: <see>`, plus the command and
-  "(not tried: <why_not>)" where present.
+  "(not tried: <note>)" or "(an agent saw: <note>)" where present.
 - `machine/service.js`: no change beyond what the generic card path already does (confirm
   `check` is spooled and forwarded like other shown kinds).
 - `protocol/app/cards.md`: add `check` to the kinds table (shown, lead, not pinned).
@@ -165,40 +170,38 @@ verifier section). Which verifiers carry the steps:
   commit than the one the sub-lead verified (only plan files differ); that is fine. Before
   using a report, the lead checks its `COMMIT:` line equals the commit it meant to try; if
   not, it starts one fresh verifier; if that report's `COMMIT:` also differs, every step is
-  posted `tried: false`, `why_not` "an agent could not try them on this exact version".
+  posted `agent: not-tried`, `note` "an agent could not try them on this exact version".
 - Commits the lead does not verify (someone else's fast-forward, a done at a merged head
   with others' commits) keep the STEP results from the last verifier (Accepted Risks).
 
 **Using the STEP lines.**
-- `MATCH` → `tried: true`.
-- `COULD NOT TRY` (including "ran a safe stand-in") → `tried: false`, `why_not` in
+- `MATCH` → `agent: matched`.
+- `COULD NOT TRY` (including "ran a safe stand-in") → `agent: not-tried`, `note` in
   Collin's words from the reason.
 - Brief contents for any verifier carrying steps: the numbered steps, the path map for
   machine commands, and (for steps-only) the plan slug so it can judge intent.
 - `DIFFERS (meets intent)`: the verifier judged that what it saw is what the Spec or
   request wants, so the step was worded wrong. The lead rewords the step; every reworded
   step is re-tried once by a fresh steps-only verifier on the same commit before it can be
-  `tried: true`; still not matching → `tried: false`, `why_not` "an agent saw something
-  different".
+  `agent: matched`; still not matching → `agent: differed`, `note` what it saw.
 - Combined reports (small fix, after-done fix, and the repair and merge re-verifies): a
   step that shows the work is wrong is reported by the verifier as a `GAP` as well, so it
   goes through that path's existing fix loop, attempt count and outcome (the small-fix and
   after-done "push it as it is, or drop it" question; the repair budget and `needs` card in
   "Making the pull request mergeable" 7 and 8, which never pushes a failed repair). The
   question below is not used there. If Collin chooses "push it as it is", the step is
-  posted `tried: false`, `why_not` "an agent saw something different: <short>".
+  posted `agent: differed`, `note` what it saw.
 - Steps-only reports (planned build, before `done`): `DIFFERS (work wrong)` → a gap
   (Decision 8). The lead fixes it in the worktree itself (no sub-lead or workers), commits,
   and starts a fresh **combined** verifier briefed with the plan slug (Spec), the gap and
   all steps. A FAIL verdict (any GAP, including a step reported work-wrong) is a failed
   attempt; a PASS ends the loop and its STEP lines count. If it still fails after two
   fix attempts, or the fix needs parallel workers, the lead posts a `question` card with
-  two options: "Finish with that step marked" (the step is posted `tried: false`, `why_not`
-  "an agent saw something different: <short>") and "Finish and start a follow-up thread"
+  two options: "Finish with that step marked" (the step is posted `agent: differed`, `note` what it saw) and "Finish and start a follow-up thread"
   (the same, plus a `stub` with `depends_on_parent: true` naming the gap). Either way the
   thread then finishes as usual. Nothing is reverted on this path.
 - A report missing a step's line: one fresh steps-only verifier tries just the missing
-  steps; still missing → `tried: false`, `why_not` "an agent did not report on it". Two
+  steps; still missing → `agent: not-tried`, `note` "an agent did not report on it". Two
   lines for one step: use the less favourable (DIFFERS (work wrong), DIFFERS (meets intent), COULD NOT TRY, MATCH).
 - `VERDICT: BLOCKED` is a setup problem, as today: fix it and start a fresh verifier; not
   a failed attempt.
@@ -219,9 +222,9 @@ the steps and has them tried by a steps-only verifier on `HEAD` before posting (
 duplicate refusal means the original arrived; any other head refusal means that done card
 is not current, for example before an import cutoff the lead cannot see; stop there in both
 cases). A step reported `DIFFERS (work wrong)` here, after `done` was accepted, is posted
-`tried: false`, `why_not` "an agent saw something different: <short>", and the lead says so
-in its reply; Collin can report it as a problem (step 9). The lead commits nothing on this
-path. Otherwise it posts none for
+`agent: differed`, `note` what it saw, and the lead posts a
+`question` card: "Fix it now" (handled as a problem Collin reported, step 9, which checks
+the PR state first) or "Leave it". The lead commits nothing before he answers. Otherwise it posts none for
 that done card; the next `done` gets its own. A stub that missed the merge ("Making the
 pull request mergeable" 4, exit 1) posts no check card.
 
@@ -288,8 +291,8 @@ A new section, used only when the brief includes check steps:
 
 - `cd viewer && npm test` passes, including new node tests:
   - `card.js` validation: accepts a valid card; refuses each missing required field,
-    `command` with `where: app`, `why_not` with `tried: true`, missing `why_not` with
-    `tried: false`, 0 or 7 steps, over-length fields, unknown
+    `command` with `where: app`, `note` with `agent: matched`, missing `note` with
+    `not-tried` or `differed`, an unknown `agent` value, 0 or 7 steps, over-length fields, unknown
     fields, a non-lead role.
   - hub acceptance: refused with no done card; refused when the only done card is retracted
     or created before the thread's import cutoff; refused when `head` differs from the latest
@@ -302,7 +305,8 @@ A new section, used only when the brief includes check steps:
 - `cd viewer && npx playwright test` passes, including a new browser test (its server
   started with a temporary `stateDir` as well as a temporary cache root): a posted check
   card renders the heading, the update text, numbered steps with "In the app"/"On the machine" labels, the command
-  block with Copy, "You should see:", and the "Not tried by an agent" line; no buttons
+  block with Copy, "You should see:", the "Not tried by an agent" line and the "An agent tried this and saw something else"
+  line; no buttons
   other than Copy; at 390px wide the page has no horizontal scroll.
 - `grep -n "check" protocol/app/cards.md protocol/app/cards-lead.md protocol/app/lead.md protocol/app/verifier.md`
   shows the new kind row, its section, the lead's writing/trying/posting rules on all three
@@ -430,6 +434,9 @@ Collin chose "Keep going" after three rounds without a clean one; budget reset.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Protocol-only rule contradicts Decision 2's "protocol docs → machine commands" | upheld | "protocol documents" dropped from the machine bullet; protocol steps are `where: app`; Decision 11 (Collin's card never listed protocol docs) |
+| intent | minor | A step that failed is shown as "Not tried" | upheld | `tried`/`why_not` replaced by `agent` (matched / not-tried / differed) and `note`; differed has its own warning line; Decision 12 |
+| intent | minor | Restart-found defect waits for Collin to retype it | upheld | Lead posts a question card: Fix it now (step 9) or Leave it |
 
 ## Prior Work
 
