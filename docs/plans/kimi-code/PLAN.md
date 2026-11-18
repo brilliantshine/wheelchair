@@ -952,6 +952,8 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — Status verifying at `8b5af87`. Verification attempt 1: `wc-01b8cb1bf051-verifier` (claude-opus-5-5) and `wc-01b8cb1bf051-verifier-2` (gpt-6.2-sol); review_families both, builders claude and gpt.
+
 - 2026-11-18 — Choice: T8, `viewer/app/sessions.js`: an `effort` on a Kimi session start is ignored (stored null, not sent), not refused; but `checkEffort` still runs first, so an effort above the Settings ceiling is refused for Kimi too (scout-found, not reported).
 - 2026-11-18 — Choice: T8, `codex/model.sh`: `effort <provider>` usage text still lists kimi (the command accepts it and prints nothing); an existing `kimi.* @effort` pin line now reads as malformed.
 - 2026-11-18 — Choice: T8, `viewer/test/app-hub.test.js`: Kimi session-start test placed there, with the fake machine's kimi marked installed and logged in.
