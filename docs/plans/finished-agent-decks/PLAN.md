@@ -43,6 +43,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 6 | A round with no counted progress line gets a grey "not counted" square | Happens for an interrupted round or one still in triage; inventing a number would mislead | defaulted |
 | 7 | Objection text is shown only when the upheld count is 1 and the round's reports hold exactly one finding line; otherwise the count | Raw text can't be matched to the upheld finding otherwise | defaulted |
 | 8 | Reviewer decks are titled "Plan review", verifier decks "Checks"; other decks take their newest agent's title | Agent titles vary per start; the proposal's example titles are role-based | defaulted |
+| 10 | Verifier deck title uses the newest verifier's title (supersedes the verifier half of #8) | Matches the proposal's "Checked parts 1–4" example | review-round-1 |
 | 9 | Popover shows the latest 5 rounds (or agents) before "Show all" | Proposal says "the latest few" | defaulted |
 
 ## Spec
@@ -68,13 +69,13 @@ Per reviewer/verifier node add `report: { findings: <int>, first: <string|null> 
 - Among one parent's children, finished nodes with the same `role` form a deck when there are 2 or more. A single finished node stays a normal box. Live (working, waiting, idle) nodes are never in a deck. "Finished" is the existing page definition.
 - The deck replaces those boxes, placed at the position of its newest member in the existing creation order. A deck's own children (agents its members started) are drawn under the deck, merged and decked by the same rule.
 - Deck card: role, count (`×40`), one-line title, and "finished <relative time>" from the newest member's `ended_at` (falling back to its last activity time when absent). Drawn with two offset outlines behind it (CSS only), dashed like finished boxes.
-- Title: reviewer → "Plan review · N rounds" plus ", then approved" when the highest round's entry is `clean`; verifier → "Checks · N rounds" plus ", passed" when the highest round's entry is `clean`. N = number of distinct `round` values among members. Members with no `round` are not counted in N; if no member has a round, reviewer/verifier decks use the other-deck title. Other decks: the newest member's title (role when it has none).
+- Title: reviewer → "Plan review · N rounds" plus ", then approved" when the highest round's entry is `clean`; verifier → "<newest member's title> · N rounds" plus ", passed" (e.g. "Checked parts 1–4 · 3 rounds"; "Checks" when it has no title) when the highest round's entry is `clean`. N = number of distinct `round` values among members. Members with no `round` are not counted in N; if no member has a round, reviewer/verifier decks use the other-deck title. Other decks: the newest member's title (role when it has none).
 - Hide finished agents ON: behaviour unchanged (decks never shown; a selected finished agent and needed ancestors still shown as boxes).
 
 ### 4. Round squares
 - Reviewer and verifier decks with at least one member `round` show one square per distinct round, oldest to newest, wrapping to further lines.
 - Color from `rounds.<review|verify>[N].found`: 5+ red `#d9645a`, 3–4 orange `#e0904a`, 1–2 yellow `#d9c45a`, 0 green `#4ea87b`; no entry → grey, meaning not counted.
-- The square row has an accessible label: "<N> rounds; objections fell from <first counted> to <last counted>" (verifiers: "problems"); with fewer than two counted rounds, "<N> rounds".
+- The square row has an accessible label: "<N> rounds; objections went from <first counted> to <last counted>" (verifiers: "problems"); with fewer than two counted rounds, "<N> rounds".
 
 ### 5. Deck popover
 - Clicking a deck (button, keyboard-activatable) opens a popover anchored under it; Escape, clicking outside or clicking the deck again closes it. Only one open at a time. It survives the 5-second refresh (stays open, content updates).
@@ -118,9 +119,9 @@ re-raise them.
 
 ## Review Rounds
 
-### Round 1 — <date>
+### Round 1 — 2026-11-18
 
-**Lanes:** <family / model>; <family / model>; cross-family: <yes|no>.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 Written for every round, including one where the table below stays empty. The table gets a row
 per finding, so a clean round would otherwise leave no record of which gate ran — which is the
@@ -132,6 +133,10 @@ round where knowing it matters most.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | API `report` field duplicates what the page could parse from `result_summary` | declined | Parsing in the API keeps it under the Node unit tests (`viewer/test/app-agents.test.js`) and the page stays drawing-only; no extra behaviour |
+| intent | minor | Accessible label says "fell" even when counts rise | upheld | §4 now says "went from X to Y" |
+| intent | minor | Verifier deck title "Checks" drifts from proposal's "Checked parts 1–4" | upheld | §3 uses newest verifier's title; Decision 10 |
+| intent | minor | Dropping asides from decks not approved by Collin | declined | Told to Collin in chat when the default was made, with the reason (closed asides never reach the tree, `viewer/app/agents.js:115`); IDEA Not doing covers changes to which agents appear |
 
 Reported severity is the reviewer's opinion; the lead verdict
 (`upheld`/`downgraded`/`declined`/`accepted-risk`/`user-decision`) is what gates the
