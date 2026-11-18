@@ -476,6 +476,37 @@ class MachineService {
     // Two fetches into one repo at once can fail on ref locks, so starts in the same repo take
     // turns here; starts in other repos, and every other request, carry on meanwhile.
     const queued = this.inRepoQueue(path.resolve(repo), async () => {
+      if (input.from_remote_branch !== undefined) {
+        const sha = input.from_remote_branch?.sha;
+        if (typeof sha !== 'string' || !/^[0-9a-f]{40}$/.test(sha) || !/^wc\/[0-9a-f]{12}$/.test(branch) || input.role !== 'lead') die('invalid remote branch checkout');
+        const remote = await this.fetchHandoffBranch(repo, branch);
+        const ancestor = async (a, b) => (await commandAsync('git', ['-C', repo, 'merge-base', '--is-ancestor', a, b])).ok;
+        if (!remote.remote_has_branch || !await ancestor(sha, remote.remote_tip)) die('requested commit is not on the remote branch');
+        const run = async (...args) => {
+          const result = await commandAsync('git', ['-C', repo, ...args]);
+          if (!result.ok) die(result.stderr.trim() || 'git command failed');
+          return result.stdout.trim();
+        };
+        const exists = await fsp.lstat(destination).then(() => true, error => { if (error.code === 'ENOENT') return false; throw error; });
+        if (exists) {
+          const symbolic = await commandAsync('git', ['-C', destination, 'symbolic-ref', '--quiet', '--short', 'HEAD']);
+          const current = await commandAsync('git', ['-C', destination, 'rev-parse', '--verify', 'HEAD']);
+          const top = await commandAsync('git', ['-C', destination, 'rev-parse', '--show-toplevel']);
+          if (!symbolic.ok || symbolic.stdout.trim() !== branch || !current.ok || !top.ok || path.resolve(top.stdout.trim()) !== path.resolve(destination) || !await ancestor(current.stdout.trim(), sha)) die(`the checkout folder for ${branch} is in an unexpected state`);
+          await run('-C', destination, 'merge', '--ff-only', sha);
+        } else {
+          const local = await commandAsync('git', ['-C', repo, 'rev-parse', '--verify', `refs/heads/${branch}`]);
+          if (!local.ok) await run('worktree', 'add', '-b', branch, destination, sha);
+          else if (await ancestor(local.stdout.trim(), sha)) {
+            await run('worktree', 'add', destination, branch);
+            await run('-C', destination, 'merge', '--ff-only', sha);
+          } else die(`a local branch ${branch} already exists and differs`);
+        }
+        await run('-C', destination, 'config', `branch.${branch}.remote`, 'origin');
+        await run('-C', destination, 'config', `branch.${branch}.merge`, `refs/heads/${branch}`);
+        await linkInstalledPackages(repo, destination);
+        return { worktree: destination, defaultBranch: await this.defaultBranch(repo), branch };
+      }
       const fetch = await commandAsync('git', ['-C', repo, 'fetch', 'origin']);
       if (!fetch.ok) die(fetch.stderr.trim() || 'git fetch failed');
       const defaultBranch = await this.defaultBranch(repo);

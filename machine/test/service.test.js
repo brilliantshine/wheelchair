@@ -1574,3 +1574,22 @@ test('a kept-open archive clears archiving and continues to accept uploads', asy
     const uploaded = await fetch(`${env.base}/v1/uploads?thread_id=${id}&name=test.txt&vouched=1`, { method: 'POST', headers: hubHeader, body: 'hello' }); assert.equal(uploaded.status, 201, await uploaded.text());
   } finally { await env.close(); }
 });
+
+test('imported worktree creates, advances, reuses, and rejects unsafe states', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true }); try {
+    const repo = await project(root); const parent = git(['-C', repo, 'rev-parse', 'HEAD']).stdout.trim();
+    git(['-C', repo, 'commit', '--allow-empty', '-m', 'remote tip']); const tip = git(['-C', repo, 'rev-parse', 'HEAD']).stdout.trim();
+    const create = (id, sha) => env.instance.createWorktree({ role: 'lead', thread_id: id, project_dir: repo, project: 'project', from_remote_branch: { sha } }, `wc-${id}-lead`);
+    const push = id => git(['-C', repo, 'push', 'origin', `${tip}:refs/heads/wc/${id}`]);
+    const a = '111111111111'; push(a); let result = await create(a, tip); assert.equal(git(['-C', result.worktree, 'rev-parse', 'HEAD']).stdout.trim(), tip);
+    assert.equal(git(['-C', result.worktree, 'config', `branch.wc/${a}.merge`]).stdout.trim(), `refs/heads/wc/${a}`);
+    result = await create(a, tip); assert.equal(git(['-C', result.worktree, 'config', `branch.wc/${a}.remote`]).stdout.trim(), 'origin');
+    const b = '222222222222'; push(b); git(['-C', repo, 'branch', `wc/${b}`, parent]); result = await create(b, tip); assert.equal(git(['-C', result.worktree, 'rev-parse', 'HEAD']).stdout.trim(), tip);
+    const c = '333333333333'; push(c); git(['-C', repo, 'checkout', '--detach', parent]); git(['-C', repo, 'commit', '--allow-empty', '-m', 'diverged']); git(['-C', repo, 'branch', `wc/${c}`, 'HEAD']);
+    await assert.rejects(create(c, tip), /already exists and differs/);
+    const d = '444444444444'; push(d); await assert.rejects(create(d, 'f'.repeat(40)), /not on the remote branch/);
+    const e = '555555555555'; push(e); await fs.mkdir(path.join(env.state, 'worktrees', 'project', 'wc', e), { recursive: true }); await assert.rejects(create(e, tip), /unexpected state/);
+    const f = '666666666666'; push(f); const session = await start(env, { thread_id: f, token: 'remote-token', project_dir: repo, project: 'project', serviceWorktree: true, from_remote_branch: { sha: tip } });
+    assert.equal(session.created_worktree, true); const archived = await api(env, 'POST', '/v1/archive', { thread_id: f }, hubHeader); assert.ok(archived.body.removed.includes(session.worktree), JSON.stringify(archived.body));
+  } finally { await env.close(); }
+});
