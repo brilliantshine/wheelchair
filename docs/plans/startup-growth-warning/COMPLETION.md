@@ -2,7 +2,10 @@
 slug: startup-growth-warning
 date: 2026-11-17
 implemented-by: "T1 standard / gpt-6.1-terra; T2 standard / gpt-6.1-terra (asked Claude, hub routed to GPT); integrated by sub-lead claude-opus-5-5"
-verified-by: []   # Stage 4 appends; Stage 3 leaves this empty.
+verified-by:
+  - round: 1
+    lane: verifier / claude-opus-5-5
+    checks: standard / gpt-6.1-terra (T1, T2)
 ---
 
 # Completion Report — Warn when agent sessions start bigger again
