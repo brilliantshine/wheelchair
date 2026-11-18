@@ -87,6 +87,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 58 | The merged path ends only on an accepted `done` or a posted stub; transient refusals retry, and a window ending there gets the `needs` card | No path ends without a card | review-round-8 |
 | 59 | Conflicts from merging someone else's push are resolved as in item 7; every `wc.js git` result's `ok` is checked | Wrapper returns git failures with exit 0 | review-round-8 |
 | 60 | Supersedes D57: restart reads PR state first; MERGED decides landed vs missed from the local tip; the unpushed-commits question applies only to an OPEN PR and says where to resume | Missed-merge stub reachable after restart; no pointless question | review-round-8 |
+| 61 | Supersedes D41/D57/D60: restart handles only the plain cases (done already names the tip; tip equals PR head) and asks Collin with a `question` card for anything else | Rounds 5-9 kept finding restart corner cases; the lighter design (D36) accepts rare cases | review-round-9 |
+| 62 | A `wc.js git` failure other than a conflict: retry once, then the `needs` card | Every git failure has a next step | review-round-9 |
 
 ## Spec
 
@@ -236,26 +238,27 @@ outside a merge, unchanged.
      refusal, post a `needs` card saying what blocks `done` and that he can merge the PR himself
      regardless. "Keep going" (which closes the card) resets the budget with a new window. If the
      card is still open when `done` is accepted, resolve it (D56).
-  9. **After a restart** (D41; order per D60, supersedes D57). Applies when the thread is
-     finishing (the plan's `status` is `done` or there is no plan, and the branch has a PR) and
-     no `done` card names the PR's current head. A latest `done` card with no `head` (from before
-     this change) means not waiting. In this order:
+  9. **After a restart** (D61, supersedes D41/D57/D60). Restarts are rare, so only the plain
+     cases are handled alone; anything else goes to Collin. Applies when the thread is finishing
+     (the plan's `status` is `done` or there is no plan, and the branch has a PR). In this order:
      1. `git status`: abort an unfinished merge (`wc.js git merge --abort`).
      2. `wc.js git fetch` and `wc.js git fetch origin pull/<number>/head`; read the PR's `state`
-        and head.
-     3. `CLOSED` → nothing.
-     4. `MERGED`: if `git merge-base --is-ancestor HEAD <PR head>` exits 0, the work landed: post
-        `done` with `head` = the PR head, retried per 3. Exit 1: the fix missed: post a `stub` card
-        as in 4 with `commits` = `git log --no-merges --format=%H <PR head>..HEAD`, unless a
-        `stub` card already lists them. Any other exit: the `needs` card in 8.
-     5. `OPEN`: if `git log <PR head>..HEAD` is non-empty (local commits the PR lacks), ask Collin
-        with a `question` card: "push them" (fresh verifier as in 7, push, then 2 with a new
-        window) or "drop them" (`wc.js git revert` each, push the reverts with no verifier since
-        they return to verified work, then 2 with a new window); never push them unasked.
-        Otherwise your local tip is the pushed commit; if the PR head differs (someone pushed) → 6;
-        then 2 with a new window.
+        and head; your local tip is `HEAD`.
+     3. An accepted `done` card names your local tip, and the local tip is the PR head or (PR
+        `MERGED`) an ancestor of it → not waiting; nothing to do. The PR is `CLOSED` → nothing.
+     4. Local tip equals the PR head and no `done` names it: `OPEN` → 2 with a new window;
+        `MERGED` → post `done` with that `head`, retrying per 3 within a new 30-minute window, then
+        the `needs` card in 8.
+     5. Anything else (local commits the PR lacks, PR commits your branch lacks, or a merge at a
+        commit that is not your tip): do not push, revert, merge or stub on your own. Post a
+        `question` card that says in plain words what differs (for example "two commits of the
+        fix were never pushed" or "the pull request was merged without the last fix"), with the
+        options that fit (push them after a check, drop them, start a follow-up thread, leave it),
+        and do what he picks using items 6-8.
 - Every `wc.js git` call returns JSON with `ok`; check it, since a failed git command still
-  exits 0 (`machine/service.js:1308`) (D59).
+  exits 0 (`machine/service.js:1308`) (D59). A failure that is not a merge conflict (a failed
+  fetch, a merge that stops for another reason, a rejected push): retry once after a minute;
+  if it fails again, post the `needs` card in 8 with git's message (D62).
 - Step 8 still commits `status: done` before the push, so the PR carries it.
 - Step 9's existing item 4 (`OPEN` / `MERGED` with the pushed head / `MERGED` with an older
   head / `CLOSED` by then, `protocol/app/lead.md:354-359`) is **replaced** by a pointer to the
@@ -311,6 +314,7 @@ outside a merge, unchanged.
 | `BLOCKED` with a required check that has not reported yet can be accepted | Rare; lighter enforcement | 4 |
 | A `done` accepted whose response was lost, then re-posted, appears twice | Harmless notice duplicate | 4 |
 | A thread with a `done` card from before this change, given an after-done fix, isn't recognised as waiting after a restart | Transitional | 3 |
+| A restart in any but the plain cases asks Collin instead of recovering alone | Restarts mid-wait are rare; one question is cheaper than more rules (D61) | 9 |
 | CI that reports only on GitHub's test merge commit is invisible to the rollup | GitHub Actions reports on the head commit | 3 |
 | A repo whose workflows never pass on PRs can never reach `done` | `needs` card covers it; Collin can merge regardless | 1 |
 | A lead already running when this ships has old instructions; its `done` without `head` is refused by schema ("head" missing), and it needs a restart to pick up the new section | One-time rollout; the refusal names the missing field | 5 |
@@ -514,6 +518,21 @@ Collin: "Keep going" — budget reset.
 **Lanes:** intent lens (provider per start); mechanics lens (other family); cross-family: yes.
 
 **Changed since the last round:** merged path end condition and retries (D58); item 6 conflicts and checking `wc.js git` results (D59); restart order rewritten: state first, landed/missed from the local tip, question only for OPEN with resume points (D60).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Restart re-posts `done` for a thread already done when Collin updated and merged | upheld | D61 item 9.3 |
+| mechanics | blocking | Interrupted after-done fix hidden by an existing `done` naming the PR head | upheld | D61: local tip ≠ PR head → question |
+| mechanics | blocking | Restart answers can push onto a diverged branch; reverting merges | upheld | D61: diverged → question, Collin's pick via 6-8 |
+| mechanics | blocking | Restart stub may include default-branch commits | upheld | D61: no stub on restart without Collin |
+| mechanics | major | Merged restart path has no retry deadline | upheld | D61 item 9.4: new window |
+| mechanics | major | Non-conflict git failures in item 6 lack a next step | upheld | D62 |
+
+### Round 10 — 2026-11-18
+
+**Lanes:** intent lens (provider per start); mechanics lens (other family); cross-family: yes.
+
+**Changed since the last round:** restart (item 9) cut to plain cases plus a question to Collin (D61); git failures other than conflicts (D62); one new Accepted Risk.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
