@@ -233,8 +233,9 @@ a retried `done` was recorded twice at the same head, the one check card covers 
 `broken` step gives the card its "Fix it now" button; no separate question is posted. On
 `[card <id>] fix what the check found`, the lead first checks that the card's `head` is
 still the current done head (a newer done may have been posted while the press was
-queued): the press does not name the head, so if the lead has posted a `done` since its
-latest `check` card, a newer version has replaced it; it says so in a line and does nothing.
+queued): the press does not name the head, so if the lead has posted a `done` with a
+different `head` since its latest `check` card, a newer version has replaced it (a retried
+`done` at the same head does not); it says so in a line and does nothing.
 Otherwise it handles it as a problem Collin reported (step 9, which checks the PR state
 first), using its latest check card's broken steps' notes as the report (Decision 19). `[card <id>] leave it` gets a one-line
 reply and nothing else. In
@@ -249,8 +250,9 @@ that verifier, posts no check card for the older head, and starts over for the n
   report would go to the dead lead); any steps it was trying are tried afresh below.
 - A `fix what the check found` press in the context's recent messages is handled now, as on
   "Posting" (current-head check first, using the pressed card's `head` from the context's
-  cards), unless a later `done` card is in the context (already fixed) or the local branch
-  has commits past that card's `head` (a fix in progress: carry on from them as step 9). The
+  cards), unless the context has a `done` card with a different `head` or a `stub` card
+  created after the press (already handled: fixed, or a follow-up thread for a merged pull
+  request), or the local branch has commits past that card's `head` (a fix in progress: carry on from them as step 9). The
   restart context carries no lead replies (Decision 19).
 - If the latest done card in its context without `retracted_at` has a `head` and no `check`
   card has that `head`, and the local `HEAD` equals that `head` or is an ancestor of it
@@ -694,6 +696,7 @@ Filled by Stage 3. One row per worker brief.
 | R3 | Remediation 1: lead may start the steps-only verifier after any done | protocol/app/lead.md | light / claude-haiku-5-5 | wc-2daed8b3ee7f-worker-6 | protocol-rules test | done |
 | R4 | Remediation 2: note rejects every line terminator (adds U+000B, U+000C) | viewer/app/card.js, viewer/test/app-check-card.test.js | light / gpt-6-luna | wc-2daed8b3ee7f-worker-7 | `node --test viewer/test/*.test.js` | done |
 | R5 | Remediation 2: fix press after a newer done; restart replay (Decision 19) | protocol/app/lead.md | light / claude-haiku-5-5 | wc-2daed8b3ee7f-worker-8 | protocol-rules test | done |
+| R6 | Remediation 3: same-head retried done is not stale; a stub after the press counts as handled on restart (Decision 19 refined) | protocol/app/lead.md | light / claude-haiku-5-5 | wc-2daed8b3ee7f-worker-9 | protocol-rules test | in progress |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -735,3 +738,4 @@ anything a future session needs that fits nowhere above.
 - 2026-11-18 — R5: worker reported choices 'none'; I see none in the diff (I listed 0).
 - 2026-11-18 — R5 accepted (band: scout; 18-line word diff read inline, exactly the brief's text). Its worktree was not removed: it holds an untracked `docs/plans/self-check-steps/reports/.r5-test.log`, and I do not force-delete.
 - 2026-11-18 — Remediation 2 merged at 32c7580: `npm test` 636/636; browser suite exit 0, 790 passed, 28 skipped.
+- 2026-11-18 — Verification attempt 3 on 9af6246: claude PASS, gpt FAIL (2 gaps, both refinements of Decision 19's wording: same-head retried done; merged-PR stub on restart). REMEDIATION-3.md; Spec Posting/Restart wording refined to match. Second fix attempt for both.
