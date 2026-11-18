@@ -359,56 +359,17 @@ branch and opens its own pull request.
 
 ## Making the pull request mergeable
 
-0. **Windows.** Start a new 30-minute window whenever your push adds commits (the first
+0. **Windows.** Start a new 30-minute window whenever a push of yours that adds commits succeeds (the first
    push, a repair, a re-verified merge or a recovered rejected push). Someone else's
    fast-forward keeps the current window. "Keep going" and a restart start a new window.
 1. **Pushed commit.** Read `git rev-parse origin/wc/<thread-id>` immediately after a
    successful `wc.js git push`; use this remote tip as the `done` card's `head`.
 2. **Wait.** Run the following foreground command with the PR URL, pushed commit and
    current window's start time (Unix seconds). It prints each successful response, polls
-   every 60 seconds, and stops after 10 minutes or on a condition requiring action. A gh
+   every 60 seconds, and stops after 10 minutes, or when the PR is not `OPEN`, its head is not the pushed commit, it is `DIRTY` or `BEHIND`, a check failed, or it is ready (`CLEAN`, `HAS_HOOKS`, or `BLOCKED` with nothing failed or pending). A gh
    error is ignored. Repeat while the 30-minute window lasts.
 
-   ```sh
-   python3 - "<pr-url>" "<pushed-commit>" "<window-start-unix-seconds>" <<'PY_POLL'
-   import json, subprocess, sys, time
-   url, pushed, window_start = sys.argv[1], sys.argv[2], int(sys.argv[3])
-   started = time.monotonic()
-   while True:
-       remaining = 600 - (time.monotonic() - started)
-       if remaining <= 0:
-           break
-       try:
-           result = subprocess.run(['gh', 'pr', 'view', url, '--json',
-               'state,mergeStateStatus,headRefOid,statusCheckRollup'],
-               capture_output=True, text=True, timeout=remaining)
-       except (OSError, subprocess.TimeoutExpired):
-           result = None
-       if result and result.returncode == 0:
-           try:
-               pr = json.loads(result.stdout)
-               checks = pr.get('statusCheckRollup') or []
-               def failed(c):
-                   return (c.get('__typename') == 'CheckRun' and c.get('status') == 'COMPLETED'
-                           and c.get('conclusion') not in ('SUCCESS', 'NEUTRAL', 'SKIPPED')) or (c.get('__typename') == 'StatusContext' and c.get('state') in ('FAILURE', 'ERROR'))
-               def pending(c):
-                   return (c.get('__typename') == 'CheckRun' and c.get('status') != 'COMPLETED') or (c.get('__typename') == 'StatusContext' and c.get('state') in ('PENDING', 'EXPECTED'))
-               state = pr['mergeStateStatus']
-               ready = state in ('CLEAN', 'HAS_HOOKS') or (state == 'BLOCKED' and not any(failed(c) or pending(c) for c in checks))
-               stop = (pr['state'] != 'OPEN' or pr['headRefOid'] != pushed or state in ('DIRTY', 'BEHIND') or any(failed(c) for c in checks) or (ready and (checks or time.time() - window_start >= 300)))
-               print(result.stdout, flush=True)
-               if stop:
-                   break
-           except (ValueError, KeyError, TypeError):
-               pass
-       remaining = 600 - (time.monotonic() - started)
-       if remaining <= 0:
-           break
-       time.sleep(min(60, remaining))
-       if time.monotonic() - started >= 600:
-           break
-   PY_POLL
-   ```
+   Run `python3 <root>/viewer/app/pr-wait.py <pr-url> <pushed-commit> <window-start-unix-seconds>` in the foreground, with a shell timeout of at least 11 minutes. It prints each response and ends with a `STOP:` line naming why it stopped.
 
    A check is a `statusCheckRollup` entry. A CheckRun is failed if `COMPLETED` with a
    conclusion other than `SUCCESS`, `NEUTRAL` or `SKIPPED`, and pending if not
