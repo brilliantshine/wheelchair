@@ -41,14 +41,18 @@ async function handle(hub, request, response, url, machineAuthenticated) {
   if (request.method === 'POST' && bits[0] === 'threads' && bits[1] && bits[2] === 'uploads' && bits.length === 3) return upload(hub, request, response, url, bits[1]);
   if (request.method === 'POST' && bits.length === 2 && bits[0] === 'threads' && bits[1] === 'import') {
     const limit = 10 * 1024 * 1024;
-    if (Number(request.headers['content-length']) > limit) { request.resume(); throw appError(413, 'file is over 10 MB'); }
-    const chunks = []; let size = 0;
-    for await (const chunk of request) {
-      size += chunk.length;
-      if (size > limit) { request.resume(); throw appError(413, 'file is over 10 MB'); }
-      chunks.push(chunk);
-    }
-    return send(response, 200, await hub.importHandoff(Buffer.concat(chunks), url.searchParams.get('machine') || 'hub', url.searchParams.get('project')));
+    if (Number(request.headers['content-length']) > limit) { request.pause(); throw appError(413, 'file is over 10 MB'); }
+    const bytes = await new Promise((resolve, reject) => {
+      const chunks = []; let size = 0;
+      request.on('data', (chunk) => {
+        size += chunk.length;
+        if (size > limit) { request.pause(); reject(appError(413, 'file is over 10 MB')); return; }
+        chunks.push(chunk);
+      });
+      request.once('end', () => resolve(Buffer.concat(chunks)));
+      request.once('error', reject);
+    });
+    return send(response, 200, await hub.importHandoff(bytes, url.searchParams.get('machine') || 'hub', url.searchParams.get('project')));
   }
   const write = ['POST', 'PUT', 'DELETE'].includes(request.method);
   const body = write ? await readBody(request) : {};
