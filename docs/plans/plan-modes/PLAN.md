@@ -47,6 +47,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D12 | The two-part follow-up thread is an ordinary `stub` card posted at done, `depends_on_parent: true`, whose summary carries the Deferred items and links to this plan and pull request. No second plan directory | Avoids the app's one-new-plan-directory slug rule and document allowlist (MAP.md); a head start (D4) needs only the list | defaulted |
 | D13 | The running list is a new lead-only card kind, `deferred`, pinned like `idea` | The idea card is already pinned for a different list; a second kind keeps both visible | defaulted |
 | D14 | In a lighter mode, a review finding moved to Deferred does not keep a round from being clean | Otherwise each round's new hardening findings would keep review running as long as thorough, defeating "a working build sooner" | review-round-1 |
+| D15 | IDEA.md reworded: the two-part follow-up thread starts with the deferred items and notes, ready to plan, not a written plan | Matches D4 | idea-change |
 
 ## Spec
 
@@ -229,7 +230,7 @@ round where knowing it matters most.
 |------|----------|---------|--------------|------------|
 | intent (claude) | major | Hardening findings moved to Deferred still block the clean test, so review may run as long as thorough | upheld | D14; Spec "Plan review in the lighter modes" |
 | intent (claude) | minor | Verifier rule reading "What good looks like" as the working version loosens checks, against IDEA's non-goal | upheld | Rule removed from Spec "Verification in the lighter modes" |
-| intent (claude) | minor | IDEA.md says the follow-up thread holds a written plan; D4/D12 make it a head start | user-decision | IDEA wording change proposed to Collin |
+| intent (claude) | minor | IDEA.md says the follow-up thread holds a written plan; D4/D12 make it a head start | user-decision | Collin agreed; IDEA.md reworded (D15) |
 | intent (claude) | minor | IDEA says PoC skips are "recorded as accepted risk" but D11 uses Deferred | declined | Spec table and D11 already state Deferred is the accepted-risk record in proof-of-concept |
 
 Reported severity is the reviewer's opinion; the lead verdict
