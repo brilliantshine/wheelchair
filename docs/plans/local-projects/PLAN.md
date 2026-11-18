@@ -324,7 +324,7 @@ means today's behaviour, byte for byte: same settings file, same argv.
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Read `.mcp.json` (`machine/lib/project-mcp.js`), service wiring and log lines, Claude and Antigravity adapters, README section | `machine/lib/project-mcp.js`, `machine/service.js` (startIn/commandFor), `machine/adapters/claude.js`, `machine/adapters/agy.js`, `machine/test/project-mcp.test.js`, `README.md`, `machine/AGENTS.md` | standard / gpt-6.1-terra | wc-21cc83a58882-worker | `node --test machine/test/project-mcp.test.js`; `bash machine/test/run.sh`; `node --test viewer/test/*.test.js` | done |
 | T2 | Codex adapter: project servers as `-c mcp_servers.project_<name>.*` overrides, skips as warnings | `machine/adapters/codex.js` (command), `machine/test/project-mcp-codex.test.js` | standard / gpt-6.1-terra | wc-21cc83a58882-worker-2 | `node --test machine/test/project-mcp-codex.test.js`; `bash machine/test/run.sh` | done |
-| T3 | Remediation 1: Codex project servers get `default_tools_approval_mode="approve"` | `machine/adapters/codex.js`, `machine/test/project-mcp-codex.test.js`, `README.md` (one sentence) | light / gpt-6-luna | | `node --test machine/test/project-mcp-codex.test.js`; `bash machine/test/run.sh` | dispatched |
+| T3 | Remediation 1: Codex project servers get `default_tools_approval_mode="approve"` | `machine/adapters/codex.js`, `machine/test/project-mcp-codex.test.js`, `README.md` (one sentence) | light / gpt-6-luna | wc-21cc83a58882-worker-3 | `node --test machine/test/project-mcp-codex.test.js`; `bash machine/test/run.sh` | dispatched |
 
 ## Log
 
