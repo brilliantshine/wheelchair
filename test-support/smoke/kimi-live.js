@@ -12,7 +12,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   const selected = process.env.KIMI_LIVE_CHECKS?.split(',');
   const check = async (name, fn) => { if (selected && !selected.includes(name[0])) { console.log(`${name} | SKIP | not selected`); return; } try { await fn(); } catch (e) { row(name, false, e.stack); } };
   try {
-    h = await createHarness({ mode: 'live', recordEvents: true, modelPins: 'kimi.lead = kimi-code/k3.1-pro\nkimi.standard = kimi-code/k3\nkimi.heavy = kimi-code/k3.1-pro\n', hubSettings: { lead_order: ['kimi'], worker_order: ['kimi'], held_back: { worker: false, reviewer: false, verifier: false, mapper: false }, margin: 0, leave: 0 } });
+    h = await createHarness({ mode: 'live', recordEvents: true, modelPins: 'kimi.lead = kimi-code/k3.1-pro\nkimi.standard = kimi-code/k3\nkimi.light = kimi-code/kimi-for-coding\nkimi.heavy = kimi-code/k3.1-pro\n', hubSettings: { lead_order: ['kimi'], worker_order: ['kimi'], held_back: { worker: false, reviewer: false, verifier: false, mapper: false }, margin: 0, leave: 0 } });
     captureTimer = setInterval(() => {
       const list = h.tmux('list-sessions', '-F', '#{session_name}');
       for (const name of list.stdout.trim().split('\n').filter(Boolean)) {
@@ -51,17 +51,12 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
       assert.equal(done.end.reason, 'cancelled'); assert.equal(target.last_turn_id, found.turnId); assert.equal(target.turn_ended, true); assert.equal(target.quiet_check_at, undefined); assert.equal(sent.length, 0); assert.equal(cards.length, 0);
       row('4 interrupted reviewer', true, JSON.stringify({ session: reviewer, nonce: marker, turn_id: found.turnId, end: done.end, hub_events: eventFor(reviewer, found.turnId), turn_ended: target.turn_ended, queue: target.queue, quiet_check_at: target.quiet_check_at ?? null, sent, cards, source: s.source_transcript }));
     });
-    let low;
-    await check('5 low effort', async () => {
-      const marker = nonce(); low = await start('worker', 'effort-low', `Reply exactly ${marker}.`, { tier: 'standard', effort: 'low' }); await waitBound(low);
-      const pane = await h.waitFor(() => (captures.get(low) || []).find(x => /thinking(?::|\b)/i.test(x) && /context:/.test(x)), 30000); const done = await ended(low, marker);
-      const detail = JSON.stringify({ session: low, turn_id: done.found.turnId, footer: pane.split('\n').filter(x => /thinking|context:/.test(x)) }); row('5 low effort', /thinking:\s*low/i.test(pane), detail);
-    });
-    await check('5 xhigh effort and bypass pane', async () => {
-      await h.callHub('/api/settings/preferences', 'PUT', { permission_mode: 'bypass' }); const marker = nonce();
-      const high = await start('worker', 'effort-xhigh', `Reply exactly ${marker}.`, { tier: 'standard', effort: 'xhigh' }); await waitBound(high);
-      const pane = await h.waitFor(() => (captures.get(high) || []).find(x => /Never Ask/.test(x) && /thinking\b/i.test(x) && /context:/.test(x)), 30000); const done = await ended(high, marker);
-      console.log(`BYPASS READY PANE ${high}\n${pane}`); row('5 xhigh effort and bypass pane', /thinking:\s*max/i.test(pane), JSON.stringify({ session: high, turn_id: done.found.turnId, footer: pane.split('\n').filter(x => /thinking|context:/.test(x)) }));
+    await check('5 pinned light model', async () => {
+      const marker = nonce(); const worker = await start('worker', 'pinned-light', `Reply exactly ${marker}.`, { tier: 'light' }); await waitBound(worker);
+      const pane = await h.waitFor(() => (captures.get(worker) || []).find(x => /^\s*(?:Ask When Needed|Never Ask).*\bthinking\b/im.test(x) && /context:/.test(x)), 30000); const done = await ended(worker, marker);
+      const footer = pane.split('\n').find(x => /^\s*(?:Ask When Needed|Never Ask).*\bthinking\b/i.test(x));
+      assert.match(footer, /\bK2\.8 Preview\s+thinking\b/i); assert.equal((await machine(worker)).effort, null);
+      row('5 pinned light model', true, JSON.stringify({ session: worker, turn_id: done.found.turnId, footer, effort: (await machine(worker)).effort }));
     });
     await check('6 folder trust', async () => {
       const entry = [...captures].flatMap(([name, frames]) => frames.map(pane => ({ name, pane }))).find(x => x.pane.includes('Trust this folder?'));
