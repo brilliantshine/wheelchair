@@ -79,6 +79,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 42 | Superseded catch-up flag dropped (Accepted Risk instead); all Kimi log reads identity-checked on the opened handle; ordinary Stop after a fatal case uses the exact-target path; Kimi chat replies get stable ids | Review round 14 | review-round-14 |
 | 43 | Fatal-stop Stop returns pending and archive waits; raw keys blocked after a fatal case; one shared binding function for chat and poller; recovered Kimi panes are stopped with a reason; chat parser tests use an ordinary turn | Review round 15 | review-round-15 |
 | 44 | Plan approved after round 15 without a further round; remaining rare failure paths are covered by the build's tests, verification and live checks | Collin, after the round-15 budget stop | user |
+| 45 | Kimi light pin is kimi-code/kimi-for-coding; the highspeed model is refused by the subscription (403). Supersedes the light pin in 16 and 19 | A live turn on `kimi-code/kimi-for-coding-highspeed` ended with `provider.auth_error` 403; `kimi-for-coding` is the account's own `default_model` | verification |
+| 46 | Kimi has no effort control: KIMI_MODEL_THINKING_EFFORT applies only to env-defined models; tiers differ by model only. Supersedes 15 and 18 | The live check found the variable has no effect on an account login; the only other route is `[thinking]` in `config.toml`, which Decision 35 forbids editing | verification |
 
 ## Spec
 
@@ -107,7 +109,7 @@ flowchart TD
 ### Identity
 
 - Provider id `kimi`, CLI `kimi`, label "Kimi Code". Registry entry in
-  `viewer/app/providers.js`: `effort: true, preflight: false, typesRoleMessage: true,
+  `viewer/app/providers.js`: `effort: false` (Decision 46), `preflight: false, typesRoleMessage: true,
   asideFork: false, singleAccount: false`. Adapter `machine/adapters/kimi.js`, registered
   under key `kimi` in `machine/adapters/index.js`.
 - Kimi counts as its own family: `review_families` accepts `kimi` everywhere it accepts
@@ -178,8 +180,8 @@ Status, sign-in checks and launch never spawn the kimi CLI to learn about an acc
   rewrites this file itself).
 - It extracts only: the top-level string `default_model` (before any table header);
   from table `providers."managed:kimi-code".oauth` the strings `key`
-  and `oauth_host` (the `services.*.oauth` tables also have `key` and are ignored); from
-  each table `models."<alias>"` the array `support_efforts` (absent for some models).
+  and `oauth_host` (the `services.*.oauth` tables also have `key` and are ignored) (Decision 46: `support_efforts` is no
+  longer read).
 - **File states.**
   - Absent (`ENOENT`): nothing configured (not signed in, no efforts).
   - Exists but cannot be read (any other error): not trusted; status
@@ -298,24 +300,17 @@ key = "oauth/kimi-code"
 
 - argv: `<resolved kimi>`, then `--auto` when `session.permission_mode === 'bypass'`,
   else `--yolo`; then `--model <input.model>` when set. No other flags. Working directory
-  is the worktree. Env adds `loginEnv(accountDir)` and, for effort, the launch `env`
-  below.
+  is the worktree. Env adds `loginEnv(accountDir)`.
 - The `permission_mode` setting already governs Claude and Antigravity and now Kimi: its
   visible row text becomes "Claude, Antigravity and Kimi sessions" and its accessible
   label "Claude, Antigravity and Kimi permission mode" (`viewer/pages/settings.js:481,522`).
-- **Effort:** per process, never through `/effort` (which saves the choice as the
-  account's default model and effort). When `session.effort` is set, the adapter maps
-  low→low, medium→high, high→high, xhigh→max, max→max and sets
-  `KIMI_MODEL_THINKING_EFFORT=<level>` only when the launched model's `support_efforts`
-  (from the config reader) contains the mapped level; the launched model is
-  `input.model` when set, else the home's `default_model`; otherwise no variable (observed:
-  the light pin `kimi-code/kimi-for-coding-highspeed` has none). Mechanism:
-  `adapter.command(input, session, worktree, context)` may return an `env` object;
-  `context` gains the session's account home (`accountDir`, null for the default), and
-  `machine/service.js` merges `built.env` into the tmux command's `env …` prefix after
-  `loginEnv`. Other adapters return no `env`. The live check confirms the footer shows
-  `thinking: <level>`; if the variable has no effect, the worker removes it, leaves effort
-  at the model default, and says so in its report.
+- **Effort:** none (Decision 46). `KIMI_MODEL_THINKING_EFFORT` is read by kimi 2.6.3 only for
+  models defined by environment variables, which an account login cannot use, and the only
+  other route is `[thinking]` in `config.toml`, which this change never edits. Kimi tiers
+  differ by model pin only; the adapter sets no effort variable and reads no
+  `support_efforts`. (The generic mechanism stays: `adapter.command()` may return an `env`
+  object that `machine/service.js` merges after `loginEnv`, and `context.accountDir` is the
+  session's account home; Kimi uses neither for effort.)
 - **Folder trust.** First launch in a folder shows "Trust this folder?" with options
   `Trust and continue` and `Exit`, the selected one marked `❯`. `answerPrompts(session,
   pane)` (existing contract, `machine/service.js:694`): with `❯` on `Trust and continue`
@@ -536,13 +531,14 @@ main log, the way it already polls Codex rollouts (`pollCodexSteps`,
   reloads, and sees it.
 - `codex/model.sh` gains `kimi` in `PROVIDERS`, its usage text and the reader's provider
   alternation, with defaults for every required slot: light
-  `kimi-code/kimi-for-coding-highspeed`, standard `kimi-code/k3`, heavy
+  `kimi-code/kimi-for-coding` (Decision 45), standard `kimi-code/k3`, heavy
   `kimi-code/k3.1-pro`, critical `kimi-code/k3.1-pro`, lead `kimi-code/k3.1-pro`
   (sub-lead inherits lead). `show --json` succeeds with Kimi present.
 - Settings shows Kimi's model per slot as it does Antigravity's (`options()` in
-  `viewer/app/settings.js:271-279` unchanged: no live model list). Kimi slots get the
-  app's usual five efforts; the API accepts them for `kimi` as for `gemini`
-  (`viewer/app/routes.js:249`).
+  `viewer/app/settings.js:271-279` unchanged: no live model list). Kimi slots have no
+  effort (Decision 46): Settings shows no effort select for Kimi, the API refuses an effort
+  for `kimi` with "Kimi Code has no effort setting", `model.sh` refuses one, and a Kimi
+  session is stored and started with no effort even if its start request names one.
 - An account whose model list lacks the pinned alias: the session starts with
   `--model <alias>` anyway and Kimi's own error shows, as for other CLIs.
 
@@ -591,7 +587,7 @@ outcomes in the report):
 3. A Kimi turn that uses a subagent ends exactly once at the hub, after the main agent's
    reply.
 4. Pressing Esc mid-turn releases the session with no report delivered.
-5. An effort-setting launch shows the expected `thinking:` level in the footer.
+5. A launch on a pinned model shows that model in the footer (Decision 46: no effort).
 
 ### Validation commands
 
@@ -949,11 +945,16 @@ Filled by Stage 3. One row per worker brief.
 | T4 | Kimi chat parser, report function, hub `last_turn_id`, interrupted turns, `end_reason` in ended notices, Stop 202 in hub | `viewer/app/{chat,sessions,threads}.js`, their tests | standard / gpt-6.1-terra | wc-01b8cb1bf051-worker-3 | `node --test viewer/test/*.test.js` | done |
 | T5 | Installer detects Kimi; protocol docs and README | `install.sh`, `install/`, `protocol/`, `README.md` | standard / gpt-6.1-terra | wc-01b8cb1bf051-worker-4 | `bash install/test/run.sh` | done |
 | T7 | Hub archive keeps the thread unarchived and pending sessions live on a machine `pending: true` archive reply (found by T3, outside its boundary) | `viewer/app/threads.js` `archive()`, `viewer/test/app-kimi-archive.test.js` | light / gpt-6-luna | wc-01b8cb1bf051-worker-8 | `node --test viewer/test/*.test.js` | done |
+| T8 | Kimi has no effort (Decision 46): `effort: false`, no effort select, API and `model.sh` refuse a Kimi effort, Kimi sessions start with none | `viewer/app/providers.js`, `viewer/app/sessions.js` (effort), `viewer/app/routes.js` (models route), `viewer/pages/settings.js`, `codex/`, `viewer/app/API.md`, their tests | standard / claude-sonnet-5-5 | wc-01b8cb1bf051-worker-11 | `bash codex/test/run.sh`; `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser` | running |
 | T6 | Live checks 1–5 against an isolated machine service and hub from the merged branch (after T1–T5) | `docs/plans/kimi-code/reports/T6.md`; fixes go back as remediation | standard xhigh / gpt-6.1-terra (rung 1: effort, after guardrail) | wc-01b8cb1bf051-worker-10 (attempt 2; attempt 1 wc-01b8cb1bf051-worker-9) | live checks + full validation | running (attempt 2) |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
 ## Log
+
+- 2026-11-18 — Lead's decision after T6 attempt 2 found `KIMI_MODEL_THINKING_EFFORT` has no effect: Kimi has no effort (Decision 46). Spec's Identity, Config reader, Launch effort, Models and live check 5 updated. Machine-side removal sent to worker-10 (owns `machine/adapters/kimi.js`); hub, Settings and `model.sh` side is new task T8.
+
+- 2026-11-18 — Lead's answer: light pin becomes `kimi-code/kimi-for-coding` (Decision 45). Changed by the sub-lead in `codex/model.sh`, `codex/test/run.sh` and the installer pin fixture (`install/test/run.sh:275`); no other code or test named the old pin. Codex 118/0. Live script failures were in the script; approval prompt may be recorded as unverified if it cannot be triggered.
 
 - 2026-11-18 — T6 attempt 1 (wc-01b8cb1bf051-worker-9, `f527ebc`) hit its fails-twice guardrail: its live script matched "the next turn to end" rather than the submitted prompt. Real results: check 1 (Kimi lead chat) and check 2 (Kimi reviewer result reaches the lead) PASS; checks 3 and 4 correct in the logs but not asserted (and 4 ran on a lead, not a reviewer); check 5 not done. Real ready footer captured; recovery pattern changed to it (but misses a footer with no thinking level). A real failed turn row: `error: { code: "provider.auth_error", message, name, details: { statusCode: 403 }, retryable }` — matches the Spec's shape.
 - 2026-11-18 — Plan defect found live: the Spec's light pin `kimi-code/kimi-for-coding-highspeed` is refused by Collin's subscription (403 `provider.auth_error`). Asked the lead whether to change the light default to `kimi-code/k3`.
