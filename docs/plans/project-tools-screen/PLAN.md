@@ -254,6 +254,20 @@ Decision Log 10-14.
 | mechanics | major | Read omits Codex size check | upheld | Reading shows it |
 | mechanics | major | 5-second hub timeout | upheld | 120 s deadline and reload-not-retry |
 
+### Round 3 — 2026-11-18
+
+**Lanes:** intent — pending; mechanics — pending; cross-family: pending.
+
+**Changed since Round 2:** Reading (GitHub repo pinning, `gh` flags and failure fallback,
+read token, Codex size check); new "Launch reader change" (symlink rejected at launch);
+Keys (hand-written refs, narrowed reserved list, only referenced keys to Claude/Codex tool
+roles, Save sets only, rechecked Remove); Saving (per-project lock, checks before key writes,
+trailer ownership of `wc-tools`, lease from read token, non-interactive PR create, 120 s
+deadline and reload-not-retry); Validation; Accepted Risks row 1; Decision Log 15-19.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
