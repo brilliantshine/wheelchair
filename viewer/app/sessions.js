@@ -157,6 +157,7 @@ function newSessionName(thread, role) {
 // Spec §2: a requested worker effort, checked once the provider is known and before preflight.
 function checkEffort(settings, role, cli, effort) {
   if (role !== 'worker' || effort === undefined) return;
+  if (PROVIDERS[providerOf(cli)]?.effort === false) return;
   if (cli === 'codex' && effort === 'max') throw appError(400, "GPT's highest effort is xhigh");
   const efforts = ['low', 'medium', 'high', 'xhigh', 'max'];
   const ceiling = settings.escalation.max_effort;

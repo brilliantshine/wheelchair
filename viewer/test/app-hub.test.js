@@ -1871,6 +1871,10 @@ test('a Kimi worker started with an effort stores none and sends none to the mac
     context.machine.status.accounts.push({ id: 'default-kimi', cli: 'kimi', logged_in: true });
     const made = await thread(context);
     const sub = await startSublead(context, made, made.sessions[0], 'kimi-effort');
+    await api(context, '/settings/preferences', { method: 'PUT', body: { escalation: { max_tier: 'standard', max_effort: 'high' } } });
+    const claude = await machinePost(context, '/machine/session', { calling_session: sub.name, action: 'start', role: 'worker', provider: 'claude', tier: 'standard', effort: 'xhigh', attempt_id: 'kimi-effort-c' });
+    assert.equal(claude.status, 400);
+    assert.equal(claude.body.detail, 'effort xhigh is above the highest effort in Settings (high)');
     const result = await machinePost(context, '/machine/session', { calling_session: sub.name, action: 'start', role: 'worker', provider: 'kimi', tier: 'standard', effort: 'xhigh', attempt_id: 'kimi-effort-w' });
     assert.equal(result.status, 200, JSON.stringify(result.body));
     assert.equal(result.body.session.provider, 'kimi', JSON.stringify(result.body));
