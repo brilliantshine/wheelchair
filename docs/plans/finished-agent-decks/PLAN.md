@@ -152,6 +152,20 @@ Reported severity is the reviewer's opinion; the lead verdict
 (`upheld`/`downgraded`/`declined`/`accepted-risk`/`user-decision`) is what gates the
 exit. Downgrades and declines cite evidence.
 
+### Round 2 — 2026-11-18
+
+**Lanes:** intent: pending; mechanics: pending; cross-family: pending.
+
+**Changed since Round 1:**
+- §1: retry/dedupe wording replaced (new session carries its own `--round`).
+- §3: deck is the parent for its members' merged children; "then approved" / "passed" defined from approval and later progress cards; API `approved` / `passed` flags; verifier deck title from newest verifier's title.
+- §4: accessible label "went from X to Y".
+- §5: single-objection text uses only the round's current members.
+- Validation: polling case with an open deck.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 Parts of the Spec already built before this plan reached Stage 3 — adopted from outside
