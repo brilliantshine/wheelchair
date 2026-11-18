@@ -63,7 +63,8 @@ exists for the folder. **The return point** is the branch (or commit, if the fol
 already detached) HEAD was on before the first try.
 
 1. **Try it in my copy** (thread page). After a confirmation naming the folder and
-   machine, the machine, holding `inRepoQueue(folder)` (`machine/service.js:547`):
+   machine, and saying it brings in the thread's merged work so far (work agents have
+   not yet merged into the thread is not included), the machine, holding `inRepoQueue(folder)` (`machine/service.js:547`):
    1. Refuses, changing nothing, if: the folder is not the top level of a non-bare
       working tree (`git rev-parse --show-toplevel` must equal the resolved folder, and
       `--is-bare-repository` false); a merge, rebase, cherry-pick, revert or bisect is in
@@ -74,9 +75,14 @@ already detached) HEAD was on before the first try.
       ignored files excluded): `git stash push --include-untracked -m <label>` and records
       the stash commit's sha. Label: `wheelchair: my changes before trying thread <id>`
       when not yet trying, otherwise `wheelchair: changes while trying thread <prev id>`.
+      Every stash wheelchair makes is also pinned with
+      `git update-ref refs/wheelchair/kept/<stash sha> <stash sha>`, so it stays
+      reachable even if the stash list is popped or cleared; the pin is deleted only when
+      that stash is successfully restored and dropped.
    4. `git checkout --detach <sha of wc/<thread-id>>`.
    5. If checkout fails: restores what step 3 stashed (`git stash apply --index <sha>`,
-      then drop that entry by finding the sha in `git stash list --format=%H`), leaves
+      then drop that entry by finding the sha in `git stash list --format=%H`, and delete
+      its pin), leaves
       the try record as it was before the press, and reports git's last error line.
    6. Writes the try record and reports: thread id, commit, and whether changes were set
       aside.
@@ -87,20 +93,23 @@ already detached) HEAD was on before the first try.
    1. If the working tree has changes, stash them as `wheelchair: changes while trying
       thread <id>` (kept, not restored) and report the label.
    2. `git checkout <return point>` (branch name, or `--detach <sha>`).
-   3. Apply the "before trying" stash, if any, with `git stash apply --index <sha>`. On
-      success drop that entry (by sha). On conflict or failure: run no cleanup command
+   3. Apply the "before trying" stash, if any, with `git stash apply --index <sha>` (by
+      sha, so it works even if the entry left the stash list). On success drop that entry
+      if still listed, and delete its pin. On conflict or failure: run no cleanup command
       (no `checkout --`, no `reset`); leave the stash entry and whatever apply wrote in
       place, and report "your earlier changes are kept in stash `<label>`; restoring
       them hit a clash in <files>".
    4. Deletes the try record.
 3. **Status.** The thread page shows, for its folder: nothing (not trying), "Your copy is
-   showing this thread" (with a "Get newest" if `wc/<id>` moved past the tried commit),
+   showing this thread's merged work as of <short commit>" (with a "Get newest" if
+   `wc/<id>` moved past the tried commit),
    or "Your copy is showing another thread: <title>". Read-only: `git rev-parse HEAD`,
    the try record, `git rev-parse wc/<id>`; never fetches.
 4. **Drift.** If the folder's HEAD no longer equals the recorded tried commit (Collin
    switched branches himself), the try record is stale: status shows nothing, Switch back
-   is hidden, the record is deleted on the next status read, and any "before trying"
-   stash stays in his stash list untouched.
+   is hidden, and any "before trying" stash stays untouched (still pinned). If the stale
+   record has a `before_stash`, status shows once "Your earlier changes are kept in stash
+   `<label>`" before the record is deleted; otherwise the record is deleted silently.
 5. **Errors** reach Collin as one plain sentence under the control: machine unreachable,
    refusal reason from 1.1, or git's last error line.
 
@@ -165,6 +174,10 @@ round where knowing it matters most.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Trying a thread could switch the folder wheelchair itself runs from | upheld (install.sh:384,397 run from `$ROOT`) | Refusal added to 1.1 |
+| intent | minor | Status overstates: unmerged worker branches are not included | upheld | Confirmation and status say "merged work as of <commit>" |
+| intent | minor | Drift silently drops the pointer to his set-aside changes | upheld | One-time status line naming the stash (Behaviour 4) |
+| intent | minor | Shared stash list can lose the entry | upheld | Pinned under `refs/wheelchair/kept/` (1.3, 1.5, 2.3) |
 
 Reported severity is the reviewer's opinion; the lead verdict
 (`upheld`/`downgraded`/`declined`/`accepted-risk`/`user-decision`) is what gates the
