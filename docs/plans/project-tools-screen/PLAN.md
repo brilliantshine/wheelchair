@@ -14,14 +14,6 @@ get buried as this file grows.
 
 ## Open Questions
 
-### Q1: How does a saved change reach the branch threads start from?
-- **Context:** Threads start from `origin/<default branch>` (`machine/service.js:529-542`), so
-  editing a local checkout does nothing. No app path commits to a project's default branch today.
-- **Options:** (a) the machine commits and pushes straight to the default branch; (b) the
-  machine pushes a branch and opens a pull request Collin merges; (c) the screen starts a
-  small-fix thread that makes the change through the normal lead flow.
-- **Recommendation:** (b): reviewable, works with branch protection, one tap to merge on GitHub.
-
 ### Q2: Where do a tool's keys live?
 - **Context:** No per-project secret store exists; `.mcp.json` is committed. Codex passes
   `${SAME_NAME}` env through from the CLI environment (`machine/adapters/codex.js:84-92`).
@@ -31,7 +23,7 @@ get buried as this file grows.
 
 ### Q3: Where does the screen live in the app?
 - **Options:** a new Projects page; a section in Settings.
-- **Recommendation:** decide after Q1/Q2; possibly defaulted.
+- **Recommendation:** decide after Q2; possibly defaulted.
 
 ## Watch List
 
@@ -47,10 +39,16 @@ get buried as this file grows.
 | # | Decision | Rationale | Source |
 |---|----------|-----------|--------|
 | 1 | Mode is thorough | Collin picked it | user |
+| 2 | Save delivers changes as a pull request against the project's default branch; Collin merges it | Reviewable, works with protected branches | user |
 
 ## Spec
 
 To be written as decisions land.
+
+### Saving
+- Save on the screen makes the machine commit the new `.mcp.json` on a fresh branch cut
+  from `origin/<default branch>`, push it, and open a pull request against the default branch.
+- The screen shows the pull request link. New threads get the change only after it is merged.
 
 ## Accepted Risks
 
