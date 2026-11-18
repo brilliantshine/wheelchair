@@ -1,6 +1,6 @@
 ---
 slug: mergeable-before-done
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-17
 ---
 
@@ -414,12 +414,14 @@ outside a merge, unchanged.
 | T2 | Machine: `done` never spooled (30 s relay, 503), merge-completing `wc.js git commit`, machine tests | machine/service.js, machine/test/ | standard, gpt-6.1-terra | wc-b7adc9776939-worker-2 | bash machine/test/run.sh | done |
 | T3 | Protocol text: lead.md "Making the pull request mergeable" + pointers from steps 1/8/9; cards-lead.md `done.head`; protocol-rules test | protocol/app/lead.md, protocol/app/cards-lead.md, viewer/test/protocol-rules.test.js | standard, gpt-6.1-terra (Claude unavailable) | wc-b7adc9776939-worker-3 | node --test viewer/test/protocol-rules.test.js | done (follow-up T4) |
 | T4 | Follow-up to T3: move the poll into `viewer/app/pr-wait.py` (the inline heredoc can't be pasted from an indented list), print the stop reason, restore wording drift | viewer/app/pr-wait.py (new), viewer/test/pr-wait.test.js (new), protocol/app/lead.md, protocol/app/cards-lead.md | light, gpt-6-luna | wc-b7adc9776939-worker-4 | node --test viewer/test/pr-wait.test.js viewer/test/protocol-rules.test.js | done (one edit missed → T5) |
-| T5 | Follow-up to T4 (T4 claimed an edit it didn't make): the pre-PR wording in lead.md's git-failure bullet; print only one `STOP:` line in pr-wait.py | protocol/app/lead.md, viewer/app/pr-wait.py | light (brief rewritten with exact strings; rung: rewrite, no step up) | | node --test viewer/test/pr-wait.test.js viewer/test/protocol-rules.test.js | in progress |
+| T5 | Follow-up to T4 (T4 claimed an edit it didn't make): the pre-PR wording in lead.md's git-failure bullet; print only one `STOP:` line in pr-wait.py | protocol/app/lead.md, viewer/app/pr-wait.py | light, gpt-6-luna (brief rewritten with exact strings; rung: rewrite, no step up) | wc-b7adc9776939-worker-5 | node --test viewer/test/pr-wait.test.js viewer/test/protocol-rules.test.js | done |
 
 ## Log
 
 - 2026-11-18 — Choice: T2, machine/service.js: a direct `done` relay gets a generated `delivery_id` (honouring one the client supplied), as the spool path does.
 - 2026-11-18 — Choice: T2, machine/test/service.test.js: the test hub gained a `delay` option for `/cards`; "hub down" is exercised as a hub 503 and as no `hub_url`.
+- 2026-11-18 — Choice: T5, protocol/app/lead.md: the re-wrapped git-failure paragraph breaks at sentence ends.
+- 2026-11-18 — T5 accepted (band: scout): wording fixed and only one `STOP:` line printed; full validation 548/548 viewer, 142/142 machine. Status set to verifying.
 - 2026-11-18 — T4: worker didn't fully report its choices (wrote "none"); scout listed 2: the stop reason is a chained conditional, and the time-limit line printed after the loop (which can double a `STOP:` line).
 - 2026-11-18 — T4 accepted (band: scout) with follow-up T5: 40/40 pass on re-run; edit 4 (pre-PR `needs` wording) was claimed but not made.
 - 2026-11-18 — Choice: T1, viewer/app/hub.js: `pr-gate.js` is required when a `done` card arrives rather than at load, so the boot-commit test's temporary clone (which copies hub.js alone) still loads.
