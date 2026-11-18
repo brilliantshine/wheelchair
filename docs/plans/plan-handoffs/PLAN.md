@@ -118,7 +118,7 @@ line saying why. The hub computes it; first match wins:
 | unfinished operation | "An import or undo didn't finish" |
 | `merged` card exists, or the PR is not open at export | "The pull request is merged or closed; nothing left to hand off" |
 | origin not on GitHub | "This project's origin isn't on GitHub" |
-| another live session or an aside running | "Agents are still working" |
+| another live session, or an aside open or running | "Agents are still working" |
 | lead mid-turn, or something queued that could still be delivered (as the quiet test defines) | "The lead is busy" |
 | sudo waiting or running | "A root command is waiting" |
 | upload in flight | "A file is still uploading" |
@@ -334,7 +334,8 @@ The hub then, inside `withThread(<file thread id>)`:
    <committer date of the first commit after head>; export again from wherever it is now".
    Except when the tip is exactly a claim on this hub's revoke list for this thread (an
    **own cancelled claim**): then 409 "An earlier cancelled import or undo is still being
-   taken back; try again in a few minutes", and the hub runs that entry's revoke at once.
+   taken back; try again in a few minutes", and the hub schedules that entry's revoke to
+   run right after this request releases the thread lock (see Revoking).
    The Claim step's abandon check, the handed-off banner and the Open note use the same
    exception, so none of them calls an own cancelled claim "picked up elsewhere". Cancelled
    claims are never reused: the revoke list and operations never act on the same claim.
@@ -343,7 +344,8 @@ The hub then, inside `withThread(<file thread id>)`:
 project, `branch: wc/<id>`, no sessions) together with its `handoff_op`, then runs the
 operation. **Advance** first refuses 409 "The thread here is busy" unless the existing
 thread has no live session other than the lead, no aside open or running, the lead is idle
-or not live, nothing is queued, no sudo card is waiting or running, and no upload is in
+or not live, nothing is queued that could still be delivered (as the Export points quiet
+test defines), no sudo card is waiting or running, and no upload is in
 flight. Then it runs the pre-claim checks below, saves `handoff_op` and runs the
 operation.
 
@@ -406,7 +408,8 @@ saves its sentence in `last_error` and the operation stops there.
 and its `remote_tip` is exactly a claim on this hub's revoke list for this thread, the
 operation is **not** abandoned: the step fails with `last_error` "An earlier cancelled
 import or undo is still being taken back; try again in a few minutes", `handoff_op` is
-kept (so the thread shows Retry), and the hub runs that entry's revoke at once. A later
+kept (so the thread shows Retry), and the hub schedules that entry's revoke to run right
+after the operation releases the thread lock. A later
 Retry then finds the tip back on `parent` and claims normally. For an Undo, this is the
 only place the case is met, since Undo has no Import step 4.
 
@@ -509,7 +512,9 @@ and its thread id is not in that set.
   (`revoke.json` in the hub state directory, outside `handoffs/`, so the start-up sweep
   never touches it), then abandons the operation without the 409: Create deletes its
   record, Advance and Undo clear `handoff_op`. When `claim_sha` is null, it just abandons.
-- **Revoking.** At hub start and every 10 minutes, the hub runs each entry on the revoke
+- **Revoking.** At hub start, every 10 minutes, and when Import step 4 or the Claim step
+  schedules one entry (the only two places that trigger a revoke; the banner and the Open
+  note only display), the hub runs each entry on the revoke
   list, inside `hub.withThread(thread_id)`. Every read-modify-write of `revoke.json`
   (Cancel, sweep, Dismiss) also holds one hub-wide `revoke` lock, taken after the
   thread lock, so writes for different threads never overwrite each other:
@@ -527,8 +532,11 @@ and its thread id is not in that set.
 - for a saved Create or Advance, is also reached by importing a file for that thread id
   (Import step 1), which runs the saved operation and ignores the new file; a saved Undo is
   only pointed to (Import step 1), never run by an import;
-- for an Undo, makes the handed-off banner show "The undo didn't finish" with Retry,
-  never "picked up elsewhere", while the remote tip equals `handoff_op.claim_sha`.
+- for an Undo: whenever a saved Undo operation exists, the handed-off banner shows only
+  "The undo didn't finish", its `last_error` and the Retry (and Cancel) panel, whatever the
+  remote tip is; the Undo button is hidden, and `POST /threads/:id/undo-handoff` runs that
+  saved operation (a Retry) instead of starting a second one. The tip-based banner states
+  apply only when no Undo operation is saved.
 
 ### Machine service changes (`machine/service.js`)
 
@@ -542,7 +550,7 @@ and its thread id is not in that set.
   Otherwise fail with "a local branch <branch> already exists and differs". Before
   either, if the destination directory (`stateDir/worktrees/<project>/<branch>`) already
   exists and is a git worktree on `<branch>` whose `HEAD` is `sha` or an ancestor of it,
-  adopt it: fast-forward to `sha` and use it. A destination that exists in any other state
+  reuse it: fast-forward to `sha` and use it. A destination that exists in any other state
   fails with "the checkout folder for <branch> is in an unexpected state". The worktree
   counts as created by this start for archive ownership, as the default path does
   (`machine/service.js:531-540`). The default path is unchanged.
@@ -725,7 +733,10 @@ New tests, then the suites:
     watching until 24 h and revokes a second landing; a rejected revoke is kept and shown
     on the threads list; an own cancelled claim at the tip gives "still being taken back" on
     import, banner and Open note, and at the Claim step fails the step (operation kept,
-    Retry later) rather than abandoning, each with an immediate revoke; claim-push returns
+    Retry later) rather than abandoning; only Import step 4 and the Claim step schedule a
+    revoke, after the thread lock is released (no deadlock); Advance busy ignores queues on
+    ended non-leads; banner with a saved Undo shows only Retry; an idle open aside gives
+    "Agents are still working"; claim-push returns
     `remote_tip`; the busy reason ignores queues on ended non-leads; re-import with a saved
     Undo does not run it; cancelled claims never reused; revoke list
     writes for two threads at once both survive; `revoked` renews `until`; `kill` with exact
@@ -1232,6 +1243,26 @@ npm --prefix viewer run test:browser
 - Claim step: own cancelled claim at the tip fails the step and revokes at once; `claim-push` returns `remote_tip`.
 - Banner and Open note wording for an own cancelled claim; busy reason matches the quiet test; Retry section: a saved Undo is never run by an import.
 - Wording: "reuses the checkout folder"; validation text updated.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Immediate revoke inside the thread lock deadlocks | upheld | Scheduled after the lock is released |
+| intent | major | Advance busy check still counts undeliverable queues | upheld | Same rule as the quiet test |
+| intent | minor | Banner precedence with a saved Undo after an own cancelled claim | upheld | A saved Undo shows only Retry; Undo button runs it |
+| intent | minor | "adopt" wording in `createWorktree` | upheld | "reuse" |
+| mechanics | major | Banner precedence for a saved Undo | upheld | Same as the intent finding |
+| mechanics | major | Which places trigger a revoke | upheld | Only Import step 4 and the Claim step; banner and Open note display only |
+| mechanics | major | Idle open aside has no reason row | upheld | Row covers open or running asides |
+
+### Round 18 — 2026-11-17
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 17:** consistency-only scope (decision 34).
+- Revoke triggered only by Import step 4 and the Claim step, scheduled after the thread lock is released.
+- Advance busy check uses the quiet test's queue rule; reason row covers idle open asides.
+- A saved Undo operation: banner shows only Retry; the Undo route runs it.
+- `createWorktree` wording.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
