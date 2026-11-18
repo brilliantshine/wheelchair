@@ -88,6 +88,32 @@ async function sudoThread(context, extra = {}) {
 const outcome = (context, body) => machinePost(context, '/machine/sudo-outcome', { request_id: RID, delivery_id: `d-${Math.random()}`, ...body });
 const press = (context, made, id, body) => api(context, `/threads/${made.id}/cards/${id}/press`, { method: 'POST', body });
 
+test('approval warnings are optional machine-only bounded non-empty strings', () => {
+  const approval = { kind: 'approval', objections: [], ready: { ok: true, missing: [] } };
+  const machine = { machine: true };
+  assert.deepEqual(validate('approval', { ...approval, warnings: ['growth'] }, 'lead'),
+    { ok: false, reason: 'unknown field: warnings' });
+  assert.equal(validate('approval', approval, 'lead', machine).ok, true);
+  for (let n = 1; n <= 10; n += 1) {
+    assert.equal(validate('approval', { ...approval, warnings: Array(n).fill('growth') }, 'lead', machine).ok, true);
+  }
+  for (const warnings of [[], [''], ['  '], Array(11).fill('growth'), 'growth']) {
+    assert.equal(validate('approval', { ...approval, warnings }, 'lead', machine).ok, false);
+  }
+});
+
+test('the hub stores machine approval warnings', async () => {
+  const context = await setup();
+  try {
+    const made = await thread(context);
+    const warnings = ['Startup grew'];
+    const posted = await post(context, made, { kind: 'approval', objections: [], ready: { ok: true, missing: [] }, warnings });
+    assert.equal(posted.status, 202);
+    const chat = await api(context, `/threads/${made.id}/chat`);
+    assert.deepEqual(chat.body.cards.find((item) => item.kind === 'approval').warnings, warnings);
+  } finally { await close(context); }
+});
+
 test('sudo validation: the agent sends only command, does and why', () => {
   assert.equal(validate('sudo', { kind: 'sudo', ...base }, 'lead').ok, true);
   for (const extra of [{ request_id: RID }, { url: 'https://x.test/r/1' }, { editable: [] }]) {

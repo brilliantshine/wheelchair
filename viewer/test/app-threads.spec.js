@@ -460,6 +460,7 @@ for (const [label, size] of SIZES) {
       const off = await ctx.post(made.id, { kind: 'offer', summary: 'Plan it?' });
       await open(page, made.id);
       await expect(page.locator('.card-approval')).toContainText('Plan approved, 0 objections');
+      await expect(page.locator('.approval-warnings')).toHaveCount(0);
       const btn = page.locator('#start-building');
       await expect(btn).toBeEnabled();
       let req = page.waitForRequest((r) => r.url().endsWith(`/cards/${ap.id}/press`));
@@ -468,6 +469,18 @@ for (const [label, size] of SIZES) {
       req = page.waitForRequest((r) => r.url().endsWith(`/cards/${off.id}/press`));
       await page.getByRole('button', { name: 'Take it into planning' }).click();
       expect((await req).postDataJSON()).toEqual({ action: 'picked', value: 'take it into planning' });
+    });
+
+    test('approval: machine warnings show as text without disabling Start building', async ({ page }) => {
+      const made = await ctx.make({ cli: 'claude' });
+      await ctx.post(made.id, { kind: 'approval', ready: { ok: true, missing: [] }, objections: [],
+        warnings: ['Startup grew', '<b>Literal warning</b>'] });
+      await open(page, made.id);
+      const notice = page.locator('.approval-warnings');
+      await expect(notice).toContainText('Heads-up');
+      await expect(notice.locator('li')).toHaveText(['Startup grew', '<b>Literal warning</b>']);
+      await expect(notice.locator('b')).toHaveCount(0);
+      await expect(page.locator('#start-building')).toBeEnabled();
     });
 
     test('approval: Re-check button shows while not Ready', async ({ page }) => {
