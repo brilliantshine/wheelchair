@@ -65,6 +65,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 28 | Kimi account plans: `{ unknown: 1 }` only | No published Kimi plan ratios; per-account weight still adjustable | defaulted |
 | 29 | Supersedes part of 26: Kimi accounts no longer special-case a missing CLI | Same as every other CLI; Ready already reports a missing CLI first | review-round-4 |
 | 30 | Kimi commands use the resolved absolute executable path, never PATH inside tmux | tmux panes inherit the server environment, which lacks the service PATH | review-round-4 |
+| 31 | Kimi status separates `authenticated` (sign-in worked) from `logged_in` (eligible for agents); `loginEnv` always passes the effective `KIMI_CODE_HOME`; `cliStatus('kimi')` uses the adapter's resolver | Review round 5 gaps | review-round-5 |
 
 ## Spec
 
@@ -169,9 +170,14 @@ the reader must tolerate any key order within a table.
 
 ### Accounts and data directory
 
-- Each account has its own data directory passed as `KIMI_CODE_HOME` (`loginEnv(dir)`
-  returns `{ KIMI_CODE_HOME: dir }`, empty when `dir` is falsy). The usual home is
-  `KIMI_CODE_HOME` or `~/.kimi-code`, via `c.home('KIMI_CODE_HOME', '.kimi-code')`.
+- Each account has its own data directory passed as `KIMI_CODE_HOME`. `loginEnv(dir)`
+  **always** returns `{ KIMI_CODE_HOME: <effective home> }`: `dir` for a named account,
+  and for the default account (`dir` falsy) the usual home, `c.home('KIMI_CODE_HOME',
+  '.kimi-code')` as seen by the service. So the service (status, hook preparation,
+  transcript lookup) and every tmux pane (launch, sign-in) always use the same
+  directory, even when the service's environment sets `KIMI_CODE_HOME` and the tmux
+  server's does not. A test sets `KIMI_CODE_HOME` only in the service and checks both
+  pane commands carry it.
 - Multiple Kimi accounts are allowed (`singleAccount: false`). `seed()` follows the Claude
   and Codex pattern (writes `wheelchair-account.json`); it never copies credentials.
 - A fresh account directory has no `config.toml` provider and no credentials until it is
@@ -183,15 +189,21 @@ the reader must tolerate any key order within a table.
   service's PATH, so Kimi commands never rely on PATH inside a pane. The adapter resolves
   the executable once per call: `command -v kimi` in the service's PATH, else
   `~/.kimi-code/bin/kimi` if it exists and is executable (the official installer's
-  location). Launch argv and `loginCommand()` both start with that absolute path. A test
+  location). The adapter exports this as `resolveCli()`, and `machine/service.js`'s
+  `cliStatus('kimi')` uses it (instead of `command -v kimi`) for both the installed
+  check and the cached `--version`, so Ready, launch and login always agree on whether
+  and where Kimi is installed. Launch argv and `loginCommand()` both start with that
+  absolute path. A test
   covers launch and login when the pane's PATH lacks the kimi directory.
 - argv: `<resolved kimi>`, then `--auto` when `session.permission_mode === 'bypass'`, else `--yolo`;
   then `--model <input.model>` when set. No other flags. Working directory is the
   worktree (Kimi has no work-dir flag). Env adds `loginEnv(accountDir)`, and the
   adapter sets `sessionNameEnv: true` so `WHEELCHAIR_SESSION_NAME` is in the CLI's
   environment, which Kimi passes on to its hook commands.
-- The `permission_mode` setting therefore governs Kimi too: its Settings label becomes
-  "Claude and Kimi permission mode" (`viewer/pages/settings.js:481`), with no other change.
+- The `permission_mode` setting therefore governs Kimi too (it already governs Claude and
+  Antigravity). Its visible label and accessible label become
+  "Claude, Antigravity and Kimi permission mode" (`viewer/pages/settings.js:481,518-525`),
+  with no other change.
 - **Folder trust.** First launch in a folder shows a "Trust this folder?" screen
   (`❯ Trust and continue` / `Exit`). `answerPrompts(pane)` presses Enter when the pane
   contains `Trust this folder?` and `Trust and continue` (the first, selected option),
@@ -239,7 +251,12 @@ the reader must tolerate any key order within a table.
   which a later `[[hooks]]` would make invalid TOML), the adapter does not edit the file;
   the Kimi status for that home carries
   `problem: "Kimi Code's config.toml sets hooks = …; change it to [[hooks]] tables"` and
-  `logged_in: false`, so Ready names it. `seed()` and `prepare()` never throw for this:
+  `logged_in: false`, so Ready names it. Kimi status entries also carry
+  `authenticated` (true when the oauth credentials exist, regardless of region or
+  hooks). `machine/service.js` `loginState` decides sign-in success from
+  `authenticated` when present, else `logged_in` (other CLIs unchanged), so a sign-in on
+  a home with inline hooks or China region still reports success and the account then
+  shows its `problem`. `seed()` and `prepare()` never throw for this:
   they leave the file untouched and return. Agent start (`startNamed`) then re-reads the
   file and refuses to start a Kimi session on that home with the same sentence, so no
   session runs without wheelchair's hooks. Sign-in is not refused: `kimi login` runs as
@@ -441,6 +458,7 @@ re-raise them.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A top-level hooks key written with TOML escapes (for example `"ho\u006fks" = []`) is not detected, and appending `[[hooks]]` would make that file invalid | Nobody writes keys that way; Kimi itself rewrites `config.toml` with hook arrays as `[[hooks]]` tables | 5 |
 | Placement can pick a Kimi account on a machine where the `kimi` binary was removed after login | Same for every CLI today; Ready reports the missing CLI | 4 |
 | Another Stop hook Collin adds could block Kimi's turn end after wheelchair's hook has already reported it | Wheelchair adds no blocking hooks; Claude Code's Stop hooks behave the same and the app treats them the same way | 3 |
 | A delayed or replayed Stop could deliver a report from a later turn, since the report is the last assistant text in the transcript | Same behavior as Claude, Codex and Antigravity today (`viewer/app/chat.js` `lastAssistantText`); reviewers and verifiers run one turn | 2 |
@@ -551,6 +569,21 @@ exit. Downgrades and declines cite evidence.
 **Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 4:** `PLANS.kimi`; report function keyed by step `uuid` (no `ASSISTANT_CONTENT.kimi`); missing-CLI special case dropped (Accepted Risk); version cached by binary path and mtime; quoted `"hooks" =` detection; owned hook rules rewritten to exact form; absolute kimi executable path for launch and login; per-CLI status row carries only machine-wide problems; inline-hooks refusal at agent start only, sign-in proceeds.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Ready and launch disagree on where kimi is | upheld | `cliStatus('kimi')` uses the adapter's `resolveCli()` |
+| mechanics | blocking | Sign-in reported failed on a home with inline hooks | upheld | Verified `service.js:1124-1135`; `authenticated` field drives sign-in success |
+| mechanics | blocking | Default account home can differ between service and panes | upheld | Verified `loginEnv(null)` passes nothing; effective home always passed |
+| mechanics | blocking | Escaped TOML keys evade the hooks detector | accepted-risk | Contrived; Kimi writes `[[hooks]]` itself; Accepted Risks |
+| mechanics | major | Status uses `command -v`, not the fallback | upheld | Same fix as intent finding |
+| mechanics | minor | Permission label omits Antigravity | upheld | Label names all three, visible and accessible |
+
+### Round 6 — 2026-11-18
+
+**Lanes:** intent:  / ; mechanics:  / ; cross-family: yes.
+
+**Changed since Round 5:** `cliStatus('kimi')` uses the adapter's `resolveCli()`; `loginEnv` always passes the effective `KIMI_CODE_HOME` (default account included); Kimi status entries add `authenticated`, which `loginState` uses for sign-in success; permission-mode label names Claude, Antigravity and Kimi; one more Accepted Risk.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
