@@ -58,6 +58,14 @@ test.describe('desktop', () => {
     await expect(page.locator('.covers')).not.toContainText('Phone notifications');
   });
 
+  test('the Kimi row has no effort select while Claude keeps one', async ({ page }) => {
+    await openPage(page, context, '/app/settings#models');
+    await expect(page.getByLabel('Kimi Code standard model', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Kimi Code standard effort', { exact: true })).toHaveCount(0);
+    await expect(page.locator('tr[data-provider="kimi"] select.effort')).toHaveCount(0);
+    await expect(page.getByLabel('Claude standard effort', { exact: true })).toHaveCount(1);
+  });
+
   test('a slashed Kimi alias saves through Other, survives a reload, and other providers refuse a slash', async ({ page }) => {
     await openPage(page, context, '/app/settings#models');
     await expect(page.locator('tr[data-provider="kimi"]')).toContainText('Kimi Code');

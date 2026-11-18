@@ -1865,6 +1865,24 @@ test('worker effort overrides and escalation ceilings reject before starting', a
   });
 });
 
+test('a Kimi worker started with an effort stores none and sends none to the machine', async () => {
+  await withContext(async (context) => {
+    context.machine.status.kimi = { installed: true, logged_in: true };
+    context.machine.status.accounts.push({ id: 'default-kimi', cli: 'kimi', logged_in: true });
+    const made = await thread(context);
+    const sub = await startSublead(context, made, made.sessions[0], 'kimi-effort');
+    const result = await machinePost(context, '/machine/session', { calling_session: sub.name, action: 'start', role: 'worker', provider: 'kimi', tier: 'standard', effort: 'xhigh', attempt_id: 'kimi-effort-w' });
+    assert.equal(result.status, 200, JSON.stringify(result.body));
+    assert.equal(result.body.session.provider, 'kimi', JSON.stringify(result.body));
+    assert.equal(result.body.session.effort ?? null, null);
+    const body = context.machine.calls.filter((call) => call.path === '/v1/sessions' && call.method === 'POST').at(-1)?.body;
+    assert.ok(body, 'the machine start call was recorded');
+    assert.equal(Object.hasOwn(body, 'effort'), false);
+    const stored = (await api(context, `/threads/${made.id}/chat`)).body.thread.sessions.find((s) => s.name === result.body.session.name);
+    assert.equal(stored.effort ?? null, null);
+  });
+});
+
 test('wc session start includes effort only when supplied', () => {
   const { sessionRequest } = require('../app/wc.js');
   const args = ['--role', 'worker', '--attempt', 'one', '--brief-file', __filename];

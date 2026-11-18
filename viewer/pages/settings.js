@@ -13,7 +13,7 @@
     ['critical', 'Critical', "Can't afford to get wrong"],
   ];
   const PROVIDERS = [['claude', 'Claude', 'Claude Code'], ['gpt', 'GPT', 'Codex'], ['gemini', 'Antigravity', 'Antigravity CLI'], ['kimi', 'Kimi Code', 'Kimi CLI']];
-  const EFFORTS = { claude: ['low', 'medium', 'high', 'xhigh', 'max'], gpt: ['low', 'medium', 'high', 'xhigh'], gemini: ['low', 'medium', 'high', 'xhigh', 'max'], kimi: ['low', 'medium', 'high', 'xhigh', 'max'] };
+  const EFFORTS = { claude: ['low', 'medium', 'high', 'xhigh', 'max'], gpt: ['low', 'medium', 'high', 'xhigh'], gemini: ['low', 'medium', 'high', 'xhigh', 'max'] };
   const MODEL_VALUE = /^[a-z0-9][a-z0-9._-]*$/;
   const KIMI_MODEL_VALUE = /^[a-z0-9][a-z0-9._-]{0,63}(\/[a-z0-9][a-z0-9._-]{0,63})?$/;
   const NONE = '__none';
@@ -431,7 +431,7 @@
     const body = PROVIDERS.map(([provider, name, cli]) => h('tr', { class: provider === 'gpt' ? 'gpt' : '', 'data-provider': provider },
       h('th', { scope: 'row' }, h('span', { class: 'prov', text: name }), h('span', { class: 'prov-sub', text: cli })),
       TIERS.map(([slot, label]) => {
-        const td = h('td', { 'data-label': label }, modelPicker(provider, slot, { allowNone: true, withEffort: true }));
+        const td = h('td', { 'data-label': label }, modelPicker(provider, slot, { allowNone: true, withEffort: Boolean(EFFORTS[provider]) }));
         if (provider === 'gpt') for (const item of tierItems(slot)) td.append(headsUpLine(item));
         return td;
       })));
@@ -504,7 +504,7 @@
         h('div', { class: 'box rows' },
           PROVIDERS.flatMap(([provider, name]) => [['lead', 'Leads run on'], ['sub-lead', 'Sub-leads run on']].map(([slot, title]) => h('div', { class: 'row-line' },
             h('div', { class: 'what' }, h('span', { text: title }), h('span', { class: 'hint', text: `${name} model` })),
-            h('div', { class: 'ctl wide' }, modelPicker(provider, slot, { allowNone: false, withEffort: true })))))
+            h('div', { class: 'ctl wide' }, modelPicker(provider, slot, { allowNone: false, withEffort: Boolean(EFFORTS[provider]) })))))
           .concat([leadOrderRow(), leadNamesRow()]))),
       h('section', { 'aria-labelledby': 'escalation' },
         h('h2', { id: 'escalation', text: 'Escalation' }),
