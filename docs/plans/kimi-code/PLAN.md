@@ -62,6 +62,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 25 | Turn ends that are interrupted or unverified release the turn but deliver no report | A partial reviewer report must not be published; an unbound turn must not hold the queue | review-round-2 |
 | 26 | A Kimi account is ineligible when the CLI is missing; a home with inline `hooks =` refuses session start; failure events get the bound-session check; an interrupted review gets no "no report" reminder | Review round 3 gaps | review-round-3 |
 | 27 | Keep all hardening in this plan (stay thorough) and review again | Collin, after three rounds without a clean one | user |
+| 28 | Kimi account plans: `{ unknown: 1 }` only | No published Kimi plan ratios; per-account weight still adjustable | defaulted |
+| 29 | Supersedes part of 26: Kimi accounts no longer special-case a missing CLI | Same as every other CLI; Ready already reports a missing CLI first | review-round-4 |
+| 30 | Kimi commands use the resolved absolute executable path, never PATH inside tmux | tmux panes inherit the server environment, which lacks the service PATH | review-round-4 |
 
 ## Spec
 
@@ -93,12 +96,15 @@ them gains Kimi** unless this Spec says otherwise. Facts below were observed on 
   bare semver). Below 2.6.3, the Kimi CLI status and every Kimi account entry report
   `logged_in: false` with `problem: "Kimi Code is older than 2.6.3; run kimi upgrade"`,
   and session start for a Kimi session on that machine is refused with the same
-  sentence. When `kimi` is not on the service PATH, every Kimi account entry likewise
-  reports `logged_in: false` with `problem: "kimi is not installed"`, so placement never
-  picks a Kimi account on a machine without the CLI.
+  sentence. The version is cached by the resolved binary path plus its mtime, so
+  `kimi --version` (about 0.7 s) runs only when the binary changes, not on every status
+  call.
 - **How problems reach Ready.** Machine status entries (the per-CLI status and each
   `accounts[]` entry) may carry an optional `problem` string, which never names an
-  account. `viewer/app/ready.js` keeps its rule (some unpaused account of the thread's
+  account. The per-CLI row carries only machine-wide problems (the version floor); every
+  per-home problem (China region, inline hooks) goes on that home's `accounts[]` entry,
+  including the default home's, never on the per-CLI row. `viewer/app/ready.js` keeps
+  its rule (some unpaused account of the thread's
   provider is logged in). When the rule fails: if the per-CLI status has a `problem`,
   that is the missing line; otherwise the first account, in Settings order, that is in
   Settings, unpaused, not retired, and whose status entry carries `problem`, gives the
@@ -123,8 +129,9 @@ has a 3-second budget). `machine/adapters/kimi.js` has a small line reader for
 - It extracts only: from table `providers."managed:kimi-code".oauth` the strings `key`
   and `oauth_host` (the `services.*.oauth` tables also have `key` and are ignored); from
   each table `models."<alias>"` the array `support_efforts` (absent for some models);
-  and whether any line before the first table header matches `^\s*hooks\s*=`
-  (a top-level inline hooks assignment).
+  and whether any line before the first table header matches
+  `^\s*(hooks|"hooks"|'hooks')\s*=` (a top-level inline hooks assignment, bare or
+  quoted key).
 - A missing or unreadable file means "nothing configured": not logged in, no efforts,
   no inline hooks.
 Unit tests run it on a fixture copying the logged-in shape below (with dummy values),
@@ -172,7 +179,13 @@ the reader must tolerate any key order within a table.
 
 ### Launch
 
-- argv: `kimi`, then `--auto` when `session.permission_mode === 'bypass'`, else `--yolo`;
+- **Executable path.** tmux panes inherit the tmux server's environment, not the
+  service's PATH, so Kimi commands never rely on PATH inside a pane. The adapter resolves
+  the executable once per call: `command -v kimi` in the service's PATH, else
+  `~/.kimi-code/bin/kimi` if it exists and is executable (the official installer's
+  location). Launch argv and `loginCommand()` both start with that absolute path. A test
+  covers launch and login when the pane's PATH lacks the kimi directory.
+- argv: `<resolved kimi>`, then `--auto` when `session.permission_mode === 'bypass'`, else `--yolo`;
   then `--model <input.model>` when set. No other flags. Working directory is the
   worktree (Kimi has no work-dir flag). Env adds `loginEnv(accountDir)`, and the
   adapter sets `sessionNameEnv: true` so `WHEELCHAIR_SESSION_NAME` is in the CLI's
@@ -217,16 +230,22 @@ the reader must tolerate any key order within a table.
   so only `event`, `command` and optionally `timeout` are written. Rewriting is idempotent
   (no duplicate entries on repeat), keeps every other line of the file, keeps the file
   mode, and writes atomically (temp + rename). Hooks are global per home; there is no
-  project-level hook file. A wheelchair rule is identified by its `event` plus its
-  `command` path; a missing one of the three is appended, an existing one left as is.
+  project-level hook file. A wheelchair rule is a `[[hooks]]` table whose `command` is
+  wheelchair's hook path and whose `event` is one of the three. It is left as is only if
+  it has exactly `event`, `command` and optionally `timeout`; one with any other field
+  (such as a `matcher` that could suppress it) is rewritten in place to the exact form. A
+  missing one is appended.
   If the file assigns `hooks` with `=` at the top level (`hooks = []` or an inline array,
   which a later `[[hooks]]` would make invalid TOML), the adapter does not edit the file;
   the Kimi status for that home carries
   `problem: "Kimi Code's config.toml sets hooks = …; change it to [[hooks]] tables"` and
-  `logged_in: false`, so Ready names it, and `startNamed` refuses to start a Kimi
-  session on that home with the same sentence (checked at start, not from cached
-  status), so no session ever runs without wheelchair's hooks. A test starts a session on
-  a home with `hooks = []` and gets the refusal. Tests cover: a fresh file, a file with other
+  `logged_in: false`, so Ready names it. `seed()` and `prepare()` never throw for this:
+  they leave the file untouched and return. Agent start (`startNamed`) then re-reads the
+  file and refuses to start a Kimi session on that home with the same sentence, so no
+  session runs without wheelchair's hooks. Sign-in is not refused: `kimi login` runs as
+  usual (it needs no hooks), and the account's status shows the problem afterwards.
+  Tests: agent start on a signed-in home with `hooks = []` and with `"hooks" = []` is
+  refused; sign-in on such a home proceeds and leaves the file unchanged. Tests cover: a fresh file, a file with other
   `[[hooks]]` rules, a rerun (no duplicates), and the `hooks = []` refusal.
 - `machine/hook.sh` gets a `kimi` case: session name **only** from
   `WHEELCHAIR_SESSION_NAME` (the hook rule passes no second argument, so do not copy
@@ -271,7 +290,8 @@ the reader must tolerate any key order within a table.
 
 ### Transcript reading
 
-- `viewer/app/chat.js` gets `parseKimi`, `PARSERS.kimi` and `ASSISTANT_CONTENT.kimi`.
+- `viewer/app/chat.js` gets `parseKimi` and `PARSERS.kimi` (the report path is
+  below; no `ASSISTANT_CONTENT.kimi`).
   wire.jsonl is one JSON object per line with a `type`:
   - `turn.prompt` with `origin.kind === 'user'` starts a turn; its human text is the
     joined `input[].text` (type `text`), passed through `unwrap` as other parsers do.
@@ -285,17 +305,18 @@ the reader must tolerate any key order within a table.
   - Everything else is ignored. Times come from each row's `time` (ms).
   - A file with none of these rows shows "Couldn't read this Kimi Code transcript".
 - A reviewer's or verifier's report: Kimi gets its own report function in `chat.js`
-  (not a one-row `ASSISTANT_CONTENT` entry, since one reply spans several rows). It takes
-  the last `step.begin`…`step.end` step (by `event.stepUuid`) that has any
-  `content.part` text parts, in the last turn, and joins **all** its text parts in order
-  (by `event.block`) with no separator. `lastAssistantText('kimi', raw)` dispatches to
+  (not a one-row `ASSISTANT_CONTENT` entry, since one reply spans several rows). A step
+  is identified by the `event.uuid` of its `step.begin`/`step.end` events; a
+  `content.part` belongs to the step whose `uuid` equals the part's `event.stepUuid`. In
+  the last turn, it takes the last step that has any text parts and joins **all** of them
+  in order (by `event.block`) with no separator. On the sample this yields "done". `lastAssistantText('kimi', raw)` dispatches to
   it. A test uses a fixture whose final step has two text parts and expects both.
 - Conversation id handling in `viewer/app/sessions.js:552,722` and
   `viewer/app/asides.js:41` gains Kimi using `kimi_session_id`.
 
 ### Login
 
-- `loginCommand()` → `['kimi', 'login', '--region', 'global']`, run with
+- `loginCommand()` → `['<resolved kimi>', 'login', '--region', 'global']`, run with
   `loginEnv(dir)`. `--region global` signs in through kimi.ai and points the account at
   `https://api.kimi.ai/coding/v1` (the default, `mainland-cn`, uses kimi.com; Collin is
   outside China). It prints `Opening browser for Kimi device login: <url>` and
@@ -322,6 +343,10 @@ the reader must tolerate any key order within a table.
 
 ### Models
 
+- **Account plans.** `PLANS.kimi = { unknown: 1 }` in `viewer/app/settings.js:34`;
+  Kimi accounts weigh equally unless Collin sets a per-account weight. Every place that
+  looks up `PLANS[provider]` works for `kimi`, and saving settings with a Kimi account
+  succeeds (tested).
 - Kimi model ids are aliases with one `/` (`kimi-code/k3`). The model value check becomes
   `^[a-z0-9][a-z0-9._-]{0,63}(/[a-z0-9][a-z0-9._-]{0,63})?$` for provider `kimi` only, in
   `viewer/app/routes.js:247`, `codex/model.sh`'s `VALUE` check and its pin-file reader
@@ -416,6 +441,7 @@ re-raise them.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| Placement can pick a Kimi account on a machine where the `kimi` binary was removed after login | Same for every CLI today; Ready reports the missing CLI | 4 |
 | Another Stop hook Collin adds could block Kimi's turn end after wheelchair's hook has already reported it | Wheelchair adds no blocking hooks; Claude Code's Stop hooks behave the same and the app treats them the same way | 3 |
 | A delayed or replayed Stop could deliver a report from a later turn, since the report is the last assistant text in the transcript | Same behavior as Claude, Codex and Antigravity today (`viewer/app/chat.js` `lastAssistantText`); reviewers and verifiers run one turn | 2 |
 
@@ -509,6 +535,16 @@ exit. Downgrades and declines cite evidence.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | No Kimi account plan entry; `PLANS[kimi]` lookups throw | upheld | Verified `settings.js:34`; `PLANS.kimi = { unknown: 1 }`, Decision 28 |
+| intent | minor | `ASSISTANT_CONTENT.kimi` contradicts the report function | upheld | Removed |
+| intent | minor | Missing-CLI rule is Kimi-only | upheld | Rule dropped; Accepted Risk, Decision 29 |
+| intent | minor | `kimi --version` costs 0.7 s per status | upheld | Cached by binary path and mtime |
+| mechanics | blocking | Steps are keyed by `event.uuid`, not `stepUuid` | upheld | Verified sample line 21; Spec joins `stepUuid` to `uuid` |
+| mechanics | blocking | Quoted `"hooks" = []` missed | upheld | Reader matches bare and quoted keys; tested |
+| mechanics | blocking | Existing wheelchair rule with a `matcher` kept | upheld | Owned rules rewritten to exact form |
+| mechanics | blocking | tmux panes lack the service PATH | upheld | Verified `service.js:613,1110`; absolute executable path, Decision 30 |
+| mechanics | major | Per-CLI row could carry per-home problems | upheld | Per-CLI row carries machine-wide problems only |
+| mechanics | major | Inline-hooks refusal would break sign-in | upheld | `seed`/`prepare` never throw; only agent start refuses; tests for both |
 
 ## Prior Work
 
