@@ -57,9 +57,10 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 20 | Kimi hooks carry the app session name (`sessionNameEnv`), bind by that name plus the transcript's `[wc:role]` prompt, and also handle `Interrupt` | Several sessions share one worktree; titles are asynchronous; Interrupt replaces Stop | review-round-1 |
 | 21 | Minimum Kimi version 2.6.3, enforced by Ready and session start | 2.6.3 fixed Stop hooks not firing after each turn | review-round-1 |
 | 22 | Folder trust answered by pressing Enter on the screen; nothing written into `workspace-trust/` | Its key format is internal | review-round-1 |
-| 23 | Kimi account facts (login, region, efforts) come from reading `config.toml`, never from spawning the CLI; region from `oauth_host`, credentials file from the oauth `key` | `provider list` costs ~1s per call; the `region` file stays `mainland-cn` after a global login; the global credential file name is scoped | review-round-2 |
+| 23 | Supersedes 14: Kimi account facts (login, region, efforts) come from reading `config.toml`, never from spawning the CLI; region from `oauth_host`, credentials file from the oauth `key` | `provider list` costs ~1s per call; the `region` file stays `mainland-cn` after a global login; the global credential file name is scoped | review-round-2 |
 | 24 | Machine status entries may carry `problem`; Ready shows it; placement skips entries not logged in | Version floor and China region must reach Ready and placement without new hub rules | review-round-2 |
 | 25 | Turn ends that are interrupted or unverified release the turn but deliver no report | A partial reviewer report must not be published; an unbound turn must not hold the queue | review-round-2 |
+| 26 | A Kimi account is ineligible when the CLI is missing; a home with inline `hooks =` refuses session start; failure events get the bound-session check; an interrupted review gets no "no report" reminder | Review round 3 gaps | review-round-3 |
 
 ## Spec
 
@@ -91,14 +92,72 @@ them gains Kimi** unless this Spec says otherwise. Facts below were observed on 
   bare semver). Below 2.6.3, the Kimi CLI status and every Kimi account entry report
   `logged_in: false` with `problem: "Kimi Code is older than 2.6.3; run kimi upgrade"`,
   and session start for a Kimi session on that machine is refused with the same
-  sentence.
+  sentence. When `kimi` is not on the service PATH, every Kimi account entry likewise
+  reports `logged_in: false` with `problem: "kimi is not installed"`, so placement never
+  picks a Kimi account on a machine without the CLI.
 - **How problems reach Ready.** Machine status entries (the per-CLI status and each
-  `accounts[]` entry) may carry an optional `problem` string. `viewer/app/ready.js`
-  keeps its rule (some unpaused account of the thread's provider is logged in); when the
-  rule fails and a matching status entry carries `problem`, the missing line is that
-  `problem` instead of "<label> is not logged in". Placement (`viewer/app/usage.js`) is
+  `accounts[]` entry) may carry an optional `problem` string, which never names an
+  account. `viewer/app/ready.js` keeps its rule (some unpaused account of the thread's
+  provider is logged in). When the rule fails: if the per-CLI status has a `problem`,
+  that is the missing line; otherwise the first account, in Settings order, that is in
+  Settings, unpaused, not retired, and whose status entry carries `problem`, gives the
+  line `<account display name from Settings>: <problem>` (the name is resolved in the
+  hub). With none, the usual "<label> is not logged in". Placement (`viewer/app/usage.js`) is
   unchanged: an entry with `logged_in: false` is not eligible. So with one global and one
   China-region Kimi account, sessions go to the global one and Ready passes.
+
+### Reading a Kimi home's config
+
+Status, login checks and launch never spawn the kimi CLI to learn about an account
+(`kimi provider list --json` takes about a second per call, and the machine's status call
+has a 3-second budget). `machine/adapters/kimi.js` has a small line reader for
+`$KIMI_CODE_HOME/config.toml` (no TOML library; the machine has no dependencies):
+- A table header is a line matching `^\s*\[([^\[\]]+)\]\s*(#.*)?$`; the header text is
+  compared after trimming, with quoted segments kept exactly (for example
+  `providers."managed:kimi-code".oauth`). `[[…]]` array-of-table headers start a table
+  the reader ignores.
+- Inside a table, a line `name = "string"` gives a string; `name = [ "a", "b" ]` on one
+  line gives an array of strings. A value the reader cannot parse (multi-line array,
+  other types) is ignored. `#` comments and blank lines are skipped.
+- It extracts only: from table `providers."managed:kimi-code".oauth` the strings `key`
+  and `oauth_host` (the `services.*.oauth` tables also have `key` and are ignored); from
+  each table `models."<alias>"` the array `support_efforts` (absent for some models);
+  and whether any line before the first table header matches `^\s*hooks\s*=`
+  (a top-level inline hooks assignment).
+- A missing or unreadable file means "nothing configured": not logged in, no efforts,
+  no inline hooks.
+Unit tests run it on a fixture copying the logged-in shape below (with dummy values),
+including the `services.*.oauth` tables, a model with and one without
+`support_efforts`, and on an empty home.
+
+Observed shape after `kimi login --region global`:
+
+```toml
+default_model = "kimi-code/kimi-for-coding"
+
+[providers."managed:kimi-code"]
+type = "kimi"
+api_key = ""
+base_url = "https://api.kimi.ai/coding/v1"
+
+[providers."managed:kimi-code".oauth]
+storage = "file"
+key = "oauth/kimi-code-env-0e4f99c69cc27850"
+oauth_host = "https://auth.kimi.ai"
+
+[models."kimi-code/k3"]
+provider = "managed:kimi-code"
+model = "k3"
+support_efforts = [ "low", "high", "max" ]
+default_effort = "high"
+
+[services.moonshot_search.oauth]
+storage = "file"
+key = "oauth/kimi-code"
+```
+
+Kimi itself rewrites `config.toml` (keeping non-empty hook arrays as `[[hooks]]`), so
+the reader must tolerate any key order within a table.
 
 ### Accounts and data directory
 
@@ -163,7 +222,10 @@ them gains Kimi** unless this Spec says otherwise. Facts below were observed on 
   which a later `[[hooks]]` would make invalid TOML), the adapter does not edit the file;
   the Kimi status for that home carries
   `problem: "Kimi Code's config.toml sets hooks = …; change it to [[hooks]] tables"` and
-  `logged_in: false`, so Ready names it. Tests cover: a fresh file, a file with other
+  `logged_in: false`, so Ready names it, and `startNamed` refuses to start a Kimi
+  session on that home with the same sentence (checked at start, not from cached
+  status), so no session ever runs without wheelchair's hooks. A test starts a session on
+  a home with `hooks = []` and gets the refusal. Tests cover: a fresh file, a file with other
   `[[hooks]]` rules, a rerun (no duplicates), and the `hooks = []` refusal.
 - `machine/hook.sh` gets a `kimi` case: session name **only** from
   `WHEELCHAIR_SESSION_NAME` (the hook rule passes no second argument, so do not copy
@@ -176,7 +238,10 @@ them gains Kimi** unless this Spec says otherwise. Facts below were observed on 
 - `hookEvent(raw)`:
   - `Stop` → `{ type: 'turn-ended', conversation_id: raw.session_id }`.
   - `StopFailure` → `limit-hit` when its error text matches
-    `quota|rate.?limit|429`, else `turn-failed` with the error text. The worker reads the
+    `quota|rate.?limit|429`, else `turn-failed` with the error text; both carry
+    `conversation_id: raw.session_id`. Before a Kimi `limit-hit` or `turn-failed` reaches
+    the hub, `machine/service.js` applies the same bound-session check as for turn ends:
+    a session already bound to a different `kimi_session_id` gets `{ ignored: true }`. The worker reads the
     real StopFailure and Interrupt field names from Kimi's hook event reference
     (https://moonshotai.github.io/kimi-code/en/customization/hooks#event-reference) and the
     binary, and records them in its report.
@@ -199,8 +264,9 @@ them gains Kimi** unless this Spec says otherwise. Facts below were observed on 
 - **Hub handling** (`viewer/app/sessions.js`, turn-ended path): when the event has
   `interrupted` or `unverified`, the hub releases the turn (queued messages, permission
   hold) but **skips report extraction** (`deliverReport`) and does not mark a reviewer or
-  verifier finished, so the existing "turn ended with no report" reminder applies. A test
-  covers each flag with a reviewer session.
+  verifier finished. For `unverified` the existing "turn ended with no report" reminder
+  applies (`quiet.arm`). For `interrupted` the hub does not arm that reminder: Collin
+  stopped the turn on purpose. A test covers each flag with a reviewer session.
 
 ### Transcript reading
 
@@ -217,8 +283,12 @@ them gains Kimi** unless this Spec says otherwise. Facts below were observed on 
     `event.result.output`.
   - Everything else is ignored. Times come from each row's `time` (ms).
   - A file with none of these rows shows "Couldn't read this Kimi Code transcript".
-- A reviewer's or verifier's report (last assistant message of the turn) is the joined
-  text parts of the last step that has any text, in the last turn.
+- A reviewer's or verifier's report: Kimi gets its own report function in `chat.js`
+  (not a one-row `ASSISTANT_CONTENT` entry, since one reply spans several rows). It takes
+  the last `step.begin`…`step.end` step (by `event.stepUuid`) that has any
+  `content.part` text parts, in the last turn, and joins **all** its text parts in order
+  (by `event.block`) with no separator. `lastAssistantText('kimi', raw)` dispatches to
+  it. A test uses a fixture whose final step has two text parts and expects both.
 - Conversation id handling in `viewer/app/sessions.js:552,722` and
   `viewer/app/asides.js:41` gains Kimi using `kimi_session_id`.
 
@@ -244,8 +314,7 @@ them gains Kimi** unless this Spec says otherwise. Facts below were observed on 
     `$KIMI_CODE_HOME/region` file is **not** read: it is a weaker installer marker and
     stays `mainland-cn` after a global login.
   - a China-region account reports `logged_in: false` with
-    `problem: "Kimi Code account <name> is signed in to the China region; log it in again"`
-    (`<name>` is "default" for the default home).
+    `problem: "signed in to Kimi's China region; log in again"`.
   - an empty home has no `[providers…]` table: not logged in, no problem.
 - Ready check: no Kimi-specific code beyond the `problem` rule above; missing CLI shows
   "kimi is not installed" as for other CLIs.
@@ -346,6 +415,7 @@ re-raise them.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| Another Stop hook Collin adds could block Kimi's turn end after wheelchair's hook has already reported it | Wheelchair adds no blocking hooks; Claude Code's Stop hooks behave the same and the app treats them the same way | 3 |
 | A delayed or replayed Stop could deliver a report from a later turn, since the report is the last assistant text in the transcript | Same behavior as Claude, Codex and Antigravity today (`viewer/app/chat.js` `lastAssistantText`); reviewers and verifiers run one turn | 2 |
 
 ## Review Rounds
@@ -371,7 +441,7 @@ round where knowing it matters most.
 | mechanics | blocking | Model aliases with `/` fail validation | upheld | Verified `routes.js:247`, `model.sh:38,80`; widened for `kimi` only, with save-and-reload test |
 | mechanics | blocking | Pins miss `critical` and `lead` | upheld | Verified `model.sh:15`; all five slots specified |
 | mechanics | blocking | Hook has no session name; spool needs it | upheld | Verified `hook.sh:26`, `service.js:613`; `sessionNameEnv: true`, spool replay test |
-| mechanics | blocking | Field is `supportEfforts`, not `support_efforts` | upheld | Verified locally; Spec uses `supportEfforts` |
+| mechanics | blocking | Field is `supportEfforts`, not `support_efforts` | upheld | Verified locally; Spec uses `supportEfforts` (round 3 note: the Spec now reads `support_efforts`, the snake_case key in `config.toml`; camelCase is only the CLI JSON) |
 | mechanics | major | `/effort` async, confirm screen, persists | upheld | Same fix as intent finding 2 |
 | mechanics | major | Binding on session title is fragile | upheld | Bind by session name + transcript `[wc:role]`; turn always released |
 | mechanics | major | Interrupt replaces Stop | upheld | Interrupt hook releases the turn; no report for an interrupted review |
@@ -418,6 +488,17 @@ exit. Downgrades and declines cite evidence.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | "Reading a Kimi home's config" section missing | upheld | Lost in a round 2 edit; restored with a parsing contract and the observed config shape |
+| intent | minor | Decision 23 does not say it supersedes 14 | upheld | Marked |
+| intent | minor | Round 1 record says `supportEfforts` | upheld | Note appended to that row |
+| intent | minor | Interrupted reviewer gets the "no report" nudge | upheld | No reminder armed on `interrupted` |
+| mechanics | major | Missing parsing contract for the config reader | upheld | Same fix as intent finding 1 |
+| mechanics | blocking | Stop is a proposed end other Stop hooks may block | accepted-risk | No other Kimi hooks are configured; same behavior as Claude Code Stop hooks; Accepted Risks |
+| mechanics | blocking | Report extractor keeps only the last row | upheld | Verified `chat.js:228`; Kimi report function joins all text parts of the step, multipart test |
+| mechanics | blocking | Missing binary leaves accounts eligible | upheld | Accounts report `problem: kimi is not installed` |
+| mechanics | blocking | `hooks =` refusal not enforced at start | upheld | `startNamed` refuses, tested |
+| mechanics | major | Ready problem precedence and display names | upheld | Settings-order rule; names resolved in the hub |
+| mechanics | major | StopFailure skips the bound-session check | upheld | Carries `conversation_id`; check applied before forwarding |
 
 ## Prior Work
 
