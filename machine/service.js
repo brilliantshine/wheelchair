@@ -1262,6 +1262,42 @@ class MachineService {
       if (state.remote_tip !== input.sha) return { result: 'gone' };
       return { result: 'failed', error: (pushed.stderr || pushed.stdout).trim().split('\n').pop() || 'git push failed' };
     }
+    const setUpstream = async target => {
+      await run('-C', target, 'config', `branch.${branch}.remote`, 'origin');
+      await run('-C', target, 'config', `branch.${branch}.merge`, `refs/heads/${branch}`);
+    };
+    if (action === 'fast-forward') {
+      if (await run('-C', worktree, 'status', '--porcelain')) return { result: 'failed', error: 'The worktree has uncommitted changes.' };
+      const current = await git('-C', worktree, 'symbolic-ref', '--quiet', '--short', 'HEAD');
+      if (!current.ok || current.stdout.trim() !== branch) return { result: 'failed', error: `The worktree is not on ${branch}.` };
+      const old = await run('-C', worktree, 'rev-parse', 'HEAD');
+      if (!await ancestor(old, head)) return { result: 'failed', error: 'The worktree has diverged.' };
+      await run('-C', worktree, 'merge', '--ff-only', head);
+      if (await run('-C', worktree, 'rev-parse', 'HEAD') !== head) return { result: 'failed', error: 'The worktree did not reach the requested head.' };
+      await setUpstream(worktree);
+      return { result: 'ok' };
+    }
+    if (action === 'set-branch') {
+      const local = await git('rev-parse', '--verify', `refs/heads/${branch}`);
+      if (local.ok && !await ancestor(local.stdout.trim(), input.sha)) return { result: 'failed', error: `a local branch ${branch} already exists and differs` };
+      await run('branch', '-f', branch, input.sha);
+      return { result: 'ok' };
+    }
+    if (action === 'known') {
+      const name = `wc/${input.thread_id}`;
+      const local = await git('rev-parse', '--verify', `refs/heads/${name}`);
+      const listed = await run('worktree', 'list', '--porcelain');
+      let checked_out = null; let current = null;
+      for (const line of listed.split('\n')) {
+        if (line.startsWith('worktree ')) current = line.slice(9);
+        else if (line === `branch refs/heads/${name}`) checked_out = current;
+      }
+      const dirs = await fsp.readdir(path.join(this.stateDir, 'worktrees')).catch(() => []);
+      let worktreeKnown = false;
+      for (const project of dirs) if (await fsp.stat(path.join(this.stateDir, 'worktrees', project, 'wc', input.thread_id)).catch(() => null)) { worktreeKnown = true; break; }
+      const known = worktreeKnown || Object.values(this.sessions).some(session => session.thread_id === input.thread_id) || this.archivedThreads.has(input.thread_id) || !!this.archivingThreads?.has(input.thread_id);
+      return { known, local_branch: local.ok, local_ancestor: local.ok ? await ancestor(local.stdout.trim(), head) : null, checked_out };
+    }
     if (action === 'status') {
       const symbolic = await git('-C', worktree, 'symbolic-ref', '--quiet', '--short', 'HEAD');
       const current = symbolic.ok ? symbolic.stdout.trim() : null;

@@ -1508,3 +1508,22 @@ test('handoff claims use exact leases, state checks, and safe revocation', async
     body = await call('claim-push', args); assert.equal(body.result, 'unknown', JSON.stringify(body));
   } finally { await env.close(); }
 });
+
+test('handoff local branch operations guard divergence and report ownership', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true }); try {
+    const id = '012345abcdef'; const { repo, worktree } = await startedWorktree(env, root, id); const branch = `wc/${id}`;
+    const call = async (action, fields) => { const response = await api(env, 'POST', '/v1/handoff', { action, thread_id: id, project: repo, ...fields }, hubHeader); assert.equal(response.status, 200, JSON.stringify(response.body)); return response.body; };
+    const old = git(['-C', worktree, 'rev-parse', 'HEAD']).stdout.trim();
+    git(['-C', repo, 'commit', '--allow-empty', '-m', 'new']); const next = git(['-C', repo, 'rev-parse', 'HEAD']).stdout.trim();
+    let body = await call('known', { head: next }); assert.deepEqual(body, { known: true, local_branch: true, local_ancestor: true, checked_out: worktree }, JSON.stringify(body));
+    await write(path.join(worktree, 'dirty'), 'x'); body = await call('fast-forward', { worktree, branch, head: next }); assert.equal(body.result, 'failed', JSON.stringify(body)); await fs.unlink(path.join(worktree, 'dirty'));
+    body = await call('fast-forward', { worktree, branch, head: next }); assert.equal(body.result, 'ok', JSON.stringify(body));
+    assert.equal(git(['-C', worktree, 'config', `branch.${branch}.remote`]).stdout.trim(), 'origin'); assert.equal(git(['-C', worktree, 'config', `branch.${branch}.merge`]).stdout.trim(), `refs/heads/${branch}`);
+    body = await call('fast-forward', { worktree, branch, head: old }); assert.equal(body.result, 'failed', JSON.stringify(body));
+    git(['-C', worktree, 'checkout', '--detach']); body = await call('fast-forward', { worktree, branch, head: next }); assert.equal(body.result, 'failed', JSON.stringify(body));
+    body = await call('set-branch', { branch, sha: old }); assert.equal(body.result, 'failed', JSON.stringify(body));
+    body = await call('set-branch', { branch, sha: next }); assert.equal(body.result, 'ok', JSON.stringify(body));
+    body = await call('known', { head: old }); assert.equal(body.local_ancestor, false, JSON.stringify(body)); assert.equal(body.checked_out, null, JSON.stringify(body));
+    git(['-C', repo, 'branch', '-D', branch]); body = await call('known', { head: old }); assert.equal(body.local_branch, false, JSON.stringify(body)); assert.equal(body.local_ancestor, null, JSON.stringify(body));
+  } finally { await env.close(); }
+});
