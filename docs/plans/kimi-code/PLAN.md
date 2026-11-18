@@ -943,7 +943,7 @@ Filled by Stage 3. One row per worker brief.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | Kimi adapter, config reader, status, version floor, sign-in, launch (machine part 1) | `machine/adapters/`, `machine/service.js`, `machine/test/`, `machine/API.md`, `machine/AGENTS.md` | standard / gpt-6.1-terra | wc-01b8cb1bf051-worker-5 (attempt 2; attempt 1 wc-01b8cb1bf051-worker) | `bash machine/test/run.sh` | running (attempt 2) |
+| T1 | Kimi adapter, config reader, status, version floor, sign-in, launch (machine part 1) | `machine/adapters/`, `machine/service.js`, `machine/test/`, `machine/API.md`, `machine/AGENTS.md` | standard / gpt-6.1-terra | wc-01b8cb1bf051-worker-5 (attempt 2; attempt 1 wc-01b8cb1bf051-worker) | `bash machine/test/run.sh` | done |
 | T2 | Kimi in providers, settings, routes, Ready, usage, asides error, Settings/thread pages, model pins | `viewer/app/{providers,settings,routes,ready,usage,asides}.js`, `viewer/pages/`, `codex/`, related viewer tests, `viewer/app/API.md`, `viewer/AGENTS.md` | standard / claude-sonnet-5-5 | wc-01b8cb1bf051-worker-2 | `bash codex/test/run.sh`; `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser` | running |
 | T3 | tricky: Kimi log binding, `pollKimiTurns`, turn events, fatal stops, exact kill, input refusal, Stop 202, archive, copier identity, recovered panes, agent-hook ignore (machine part 2, after T1) | `machine/adapters/kimi.js`, `machine/service.js`, `machine/test/`, `machine/API.md` | standard | | `bash machine/test/run.sh` | not started |
 | T4 | Kimi chat parser, report function, hub `last_turn_id`, interrupted turns, `end_reason` in ended notices, Stop 202 in hub | `viewer/app/{chat,sessions,threads}.js`, their tests | standard / gpt-6.1-terra | wc-01b8cb1bf051-worker-3 | `node --test viewer/test/*.test.js` | done |
@@ -953,6 +953,11 @@ Filled by Stage 3. One row per worker brief.
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
 ## Log
+
+- 2026-11-18 — Choice: T1, `machine/service.js` `startNamed`: refuses a Kimi start with "Kimi Code is not installed" when no binary resolves, before account validation.
+- 2026-11-18 — Choice: T1, `machine/adapters/kimi.js` `promptText`: provisional `(tool|command) approval required` until T6 captures the real prompt.
+- 2026-11-18 — Choice: T1, `machine/adapters/kimi.js`: `seed` symlinks `<home>/AGENTS.md` like Codex; ready text excludes only `Trust this folder?`; `loginCommand` gives a null executable when kimi is missing; single-slot version cache, nothing cached for invalid output; `accountDir` passed to every adapter's context (scout-found, not reported).
+- 2026-11-18 — T1 accepted (band: bigger-scout), attempt 2: machine suite 175/175 re-run by the sub-lead, `kimi.test.js` 21/21. Carried into T3's brief: Kimi recovery detection (`│ >` + `context:`) could claim a Claude pane; `loginCommand` with no binary; vacuous version-floor `logged_in` assertion; service-level launch/login test does not remove the kimi dir from PATH; `team-backup` sibling and stale kill/code not exercised; no test of `[[…]]` ignored, of a model listing efforts but not the mapped level, or of a non-matching credentials file.
 
 - 2026-11-18 — T1 attempt 1 (wc-01b8cb1bf051-worker, commit `bb314d0` on `wc-01b8cb1bf051-w1`) not accepted: the worker reported the required tests largely missing (4 tests), trust screen captured blank and the approval prompt not captured. Rewritten brief with an explicit 12-item test list and 5 known defects in the draft (recovery detection pattern, kept login result reset, exact login targets, broad `promptText`); attempt 2 cherry-picks the draft. Same tier (brief rewrite first, no escalation). Approval-prompt capture moved to T6.
 
