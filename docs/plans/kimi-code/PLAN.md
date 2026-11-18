@@ -803,6 +803,15 @@ exit. Downgrades and declines cite evidence.
 | mechanics | major | `pollDead` reads the reason from the first listing | upheld | Reason taken from the confirming listing |
 | mechanics | major | Failed tmux kill strands the session | upheld | Kill retried each tick; submissions refused meanwhile |
 
+### Round 13 — 2026-11-18
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 12:** fixed delivery id dropped, only the hub's per-session `last_turn_id` guards re-sends (shared `hook()` and spool unchanged); version-floor problem shown on the account row; `Session:` line matched in decoded JSON string values; machine strips `turn_id`/`kimi_session_id` from agent-authenticated hook events; at most one turn per session per poll tick; persisted `kimi_log_id` checked by the chat copier; `pollDead` takes `end_reason` from the confirming listing; tmux kill retried each tick with submissions refused meanwhile.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 Parts of the Spec already built before this plan reached Stage 3 — adopted from outside
@@ -833,6 +842,8 @@ Filled by Stage 3. One row per worker brief.
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
 ## Log
+
+- After round 12, Collin pressed Keep going (round 13, budget reset).
 
 - Review budget reached after round 12 (rounds 10–12 since Collin chose "Read Kimi's log"). Severity is falling but each round still finds blocking edge cases in log following and session stopping.
 
