@@ -96,6 +96,8 @@ def parse_pins(text):
             if model == "none":
                 if effort is not None:
                     return None
+            elif effort is not None and provider == "kimi":
+                return None
             elif effort is not None and effort not in (GPT_EFFORTS if provider == "gpt" else EFFORTS):
                 return None
             key = provider, slot
@@ -387,6 +389,9 @@ def main(root, argv):
         _, provider, raw_slot, model, *tail = argv
         slot = slot_for(provider, raw_slot)
         effort = tail[0] if tail else None
+        if provider == "kimi" and effort is not None:
+            print("Kimi Code has no effort setting", file=sys.stderr)
+            sys.exit(2)
         if provider == "gpt" and effort is not None and effort not in GPT_EFFORTS:
             print("GPT effort must be one of: low, medium, high, xhigh", file=sys.stderr)
             die_usage()

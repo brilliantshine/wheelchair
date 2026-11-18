@@ -44,11 +44,14 @@ test('Kimi through the Settings API: accounts, preferences, effort and slashed m
     assert.equal((await api(context, '/settings/preferences', { method: 'PUT', body: { review_families: 'kimi' } })).body.review_families, 'kimi');
     const bad = await api(context, '/settings/preferences', { method: 'PUT', body: { review_families: 'nope' } });
     assert.equal(bad.body.detail, 'review_families must be both, claude, gpt, gemini or kimi');
-    const saved = await api(context, '/settings/models', { method: 'PUT', body: { provider: 'kimi', slot: 'heavy', model: 'kimi-code/k3-custom', effort: 'max' } });
+    const saved = await api(context, '/settings/models', { method: 'PUT', body: { provider: 'kimi', slot: 'heavy', model: 'kimi-code/k3-custom' } });
     assert.equal(saved.status, 200);
-    assert.deepEqual(saved.body.models.kimi.heavy, { model: 'kimi-code/k3-custom', effort: 'max' });
+    assert.deepEqual(saved.body.models.kimi.heavy, { model: 'kimi-code/k3-custom', effort: null });
+    const withEffort = await api(context, '/settings/models', { method: 'PUT', body: { provider: 'kimi', slot: 'heavy', model: 'kimi-code/k3-custom', effort: 'max' } });
+    assert.equal(withEffort.status, 400);
+    assert.equal(withEffort.body.detail, 'Kimi Code has no effort setting');
     const shown = JSON.parse(execFileSync(MODEL_SH, ['show', '--json'], { env: { ...process.env, WHEELCHAIR_MODELS: context.models, WHEELCHAIR_MODELS_CACHE: context.modelsCache }, encoding: 'utf8' }));
-    assert.deepEqual(shown.kimi.heavy, { model: 'kimi-code/k3-custom', effort: 'max' });
+    assert.deepEqual(shown.kimi.heavy, { model: 'kimi-code/k3-custom', effort: null });
     assert.equal(shown.malformed, false);
     assert.equal((await api(context, '/settings')).body.models.kimi.heavy.model, 'kimi-code/k3-custom');
     // The slashed form is for Kimi only; two slashes are never valid.

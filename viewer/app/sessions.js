@@ -295,7 +295,9 @@ async function startSession(hub, thread, input) {
   if (title) session.title = title;
   if (typeof input.brief === 'string') session.brief = input.brief;
   if (!input._waiting) thread.sessions.push(session);
-  Object.assign(session, { live: true, model: resolved.model, effort: input.effort || resolved.effort || null, status: 'starting', cli, provider: selection.provider, account: selection.account.id, template_id: layers.template?.id || null, ...(role === 'lead' ? { style_version: settings.style_version } : {}) });
+  // A provider without an effort setting (Kimi) never carries one, even when the start request did.
+  const sessionEffort = PROVIDERS[selection.provider].effort ? (input.effort || resolved.effort || null) : null;
+  Object.assign(session, { live: true, model: resolved.model, effort: sessionEffort, status: 'starting', cli, provider: selection.provider, account: selection.account.id, template_id: layers.template?.id || null, ...(role === 'lead' ? { style_version: settings.style_version } : {}) });
   if (selection.note) session.note = selection.note;
   delete session.pending_start; delete session.waiting_until; delete session.waiting_reason; delete session.waiting_provider;
   if (role === 'lead' && !thread.lead_name) await hub.saveWithLeadName(thread);
@@ -318,7 +320,7 @@ async function startSession(hub, thread, input) {
       branch: input.branch,
       brief: input.brief || '',
       model: resolved.model,
-      ...((input.effort || resolved.effort) ? { effort: input.effort || resolved.effort } : {}),
+      ...(sessionEffort ? { effort: sessionEffort } : {}),
       permission_mode: settings.permission_mode,
       codex_mode: settings.codex_mode,
       role_layers: layers.text,
@@ -342,7 +344,7 @@ async function startSession(hub, thread, input) {
   const identity = { name: session.name, attempt_id: session.attempt_id, started_by: session.started_by, queue: session.queue };
   Object.assign(session, started, {
     ...identity,
-    model: resolved.model, effort: input.effort || resolved.effort || null,
+    model: resolved.model, effort: sessionEffort,
     token,
     provider: selection.provider,
     account: selection.account.id,
