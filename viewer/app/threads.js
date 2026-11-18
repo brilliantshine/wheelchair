@@ -142,6 +142,7 @@ async function restartLead(hub, id) {
   // existing wc/<thread-id> branch.
   const lead = await startSession(hub, thread, {
     role: 'lead', cli: thread.cli, brief: '', tier: 'top', worktree: thread.worktree, branch: thread.branch,
+    ...(!thread.worktree && thread.checkout_sha ? { from_remote_branch: { sha: thread.checkout_sha } } : {}),
   });
   const endedLeads = thread.sessions.filter((session) => session.role === 'lead' && !session.live);
   // Move, not copy: each ended lead's waiting messages go to the new lead once, and an older

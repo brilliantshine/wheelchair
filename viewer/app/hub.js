@@ -54,6 +54,9 @@ class Hub {
   async init() {
     await this.state.init();
     await handoff.sweepFiles(this);
+    if (this.registerPlan) for (const thread of await this.allThreads()) {
+      if (thread.slug && thread.worktree) await this.registerPlan(require('node:path').join(thread.worktree, 'docs', 'plans', thread.slug));
+    }
     for (const [name, machine] of Object.entries(await this.state.machines())) {
       if (machine.last_seen) this.lastSeen.set(name, machine.last_seen);
     }

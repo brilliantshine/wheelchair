@@ -313,6 +313,7 @@ async function startSession(hub, thread, input) {
       project_dir: thread.project,
       project: require('node:path').basename(thread.project),
       worktree: input.worktree,
+      from_remote_branch: input.from_remote_branch,
       branch: input.branch,
       brief: input.brief || '',
       model: resolved.model,
@@ -361,6 +362,7 @@ async function startSession(hub, thread, input) {
   }
   if (started.default_branch) thread.default_branch = started.default_branch;
   await hub.save(thread);
+  if (role === 'lead' && thread.slug && thread.worktree && hub.registerPlan) await hub.registerPlan(require('node:path').join(thread.worktree, 'docs', 'plans', thread.slug));
   return session;
 }
 
