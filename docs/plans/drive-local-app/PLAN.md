@@ -40,11 +40,14 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 13 | Pulled cleanup after a machine service restart back from Deferred into the Spec | `./install.sh` restarts the service with `KillMode=process`, so every install would orphan live screens (install.sh:401,410) | review-round-1 |
 | 14 | Apps launch only through `screen run`, run by the service with the session's launch environment plus `--env`, inside `codex sandbox` for a sandboxed Codex session; reviewers refused | Keeps each agent's own limits; a Codex agent's own background process dies with its command (checked on hearth) | review-round-1 |
 | 15 | Each screen gets an access cookie (`-auth`) | Stops a mistyped display reaching another session's screen | review-round-1 |
-| 16 | Per-session op queue; stopping sessions refuse new screens; teardown also when tmux is found dead and on a 60 s sweep | Closes start/stop races and sessions that die without `stop()` | review-round-1 |
+| 16 | Per-session op queue; stopping sessions refuse new screens; teardown on a 60 s sweep (superseded in part by 21–22) | Closes start/stop races and sessions that die without `stop()` | review-round-1 |
 | 17 | Screen processes identified by an environment marker scoped to the state dir; a service restart tears every screen down instead of re-adopting | Durable identity through PID reuse, exited launchers and interrupted spawns; simpler than adoption | review-round-2 |
 | 18 | `--env` applies inside the sandbox via `env`; launch environment rebuilt at run time, never with the session token | Keeps caller overrides out of the sandbox launcher; works for sessions started before install | review-round-2 |
 | 19 | Validated, literal xdotool arguments; one `xdotool key` call per token | xdotool chains commands, including `exec` | review-round-2 |
 | 20 | Screen failures use 422, never 503 | `wc.js` turns 503 into "hub unavailable" (viewer/app/wc.js:171) | review-round-2 |
+| 21 | Each screen lives in its own systemd user slice; teardown and startup cleanup act on the slice (supersedes the environment marker in 17) | Kills every descendant whatever it does to its environment, with no PID reuse window | review-round-3 |
+| 22 | Session stop and archive tear down immediately (SIGKILL) without waiting in the queue; `screen stop` and the sweep are graceful | Stays inside the hub's 5 s timeout and finishes before a verifier worktree is removed | review-round-3 |
+| 23 | `type` text capped at 400 characters, timeout scaled; key tokens that are xdotool command names refused; command names with `=` refused; windows are viewable top-level children of the root; auto-focus picks a new window only | Closes the round 3 argument and window findings | review-round-3 |
 
 ## Spec
 
@@ -58,7 +61,8 @@ with the session.
 
 Linux only (including WSL2, untested). Tools used: `Xvfb` (the invisible screen), `xauth`
 and `mcookie` (a per-screen access cookie), `ffmpeg` with the `x11grab` device
-(screenshots), `xdotool` (input and window listing), `xwininfo` (the root window id).
+(screenshots), `xdotool` (input), `xwininfo` (window listing), and `systemd-run` /
+`systemctl --user` (one cgroup per screen, for teardown).
 Checked on hearth on 2026-11-18: Xvfb + ffmpeg captured a PNG of an `xmessage` window;
 Playwright's Chromium launched on the screen in `--app` mode received a `xdotool click`
 (title changed) and `xdotool type` (input received keys); a command inside Codex's
@@ -102,14 +106,23 @@ has none.
 **Argument safety.** xdotool accepts chained commands (including `exec`), so the service never
 forwards caller text where xdotool could read it as a command or option. It validates every
 argument and builds argv itself: coordinates and window ids must be decimal integers; each
-`key` token must match `^[A-Za-z0-9_]+(\+[A-Za-z0-9_]+)*$` and is sent as its own
-`xdotool key -- <token>` call; `type` sends `xdotool type --delay 20 -- <text>` as a single
-argument (text up to 4096 characters, no NUL). Anything else is `400`.
+`key` token must match `^[A-Za-z0-9_]+(\+[A-Za-z0-9_]+)*$`, and a token that equals any xdotool command name
+(compared case-insensitively against the list xdotool 3.20160805 accepts, e.g. `exec`,
+`key`, `type`, `search`, `windowkill`, `mousemove`, `sleep`) is refused; all tokens are
+checked before any key is sent, then each is sent as its own `xdotool key -- <token>` call.
+`type` sends `xdotool type --delay 20 -- <text>` as a single argument; text is 1–400
+characters with no NUL, and its timeout is 10 s plus 30 ms per character. Anything else is
+`400`.
 
-**Window listing:** `xdotool search --onlyvisible --name ''` (the empty pattern matches
-untitled windows too), minus the root window (its id from `xwininfo -root`), then
-`getwindowname` and `getwindowgeometry` per id. A search that exits non-zero with no output
-means no windows: return `windows: []`. The auto-focus in `run` also ignores the root window.
+**Window listing:** app windows are the viewable top-level windows: the direct children of
+the root window whose map state is `IsViewable`, from `xwininfo -root -children` and
+`xwininfo -id <id>` per child (name `""` when it has none; geometry from the same output).
+With no window manager, every app's top-level window is a direct child of the root, and child
+widgets are not listed. No children means `windows: []`.
+
+**Auto-focus on `run`:** the service lists app windows just before launching, then polls every
+250 ms for up to 5 s for a viewable top-level window not in that list, and focuses the first
+one found. With several apps on one screen, a later `run` focuses only its own new window.
 
 ### Launching apps
 
@@ -124,12 +137,13 @@ not torn down). `start` returns the display for information only.
   own environment plus the session's added variables, including the account login env),
   except `WHEELCHAIR_SESSION_TOKEN`, which the app never gets. This works for sessions
   started before this feature was installed. Then `DISPLAY=:N`, `XAUTHORITY=<cookie file>` and
-  the screen marker (below). Nothing new is persisted.
+  the screen's slice placement (below). Nothing new is persisted.
 - **Caller overrides** (`--env KEY=VALUE`, keys matching `^[A-Za-z_][A-Za-z0-9_]*$`; `DISPLAY`,
   `XAUTHORITY`, `WHEELCHAIR_SCREEN` and `WHEELCHAIR_SESSION_TOKEN` refused with `400`) apply
   only to the app itself: the service runs `env KEY=VALUE ... <command> [args...]` (as argv,
   no shell) as the launched command, so for a sandboxed Codex session they take effect inside
-  the sandbox and never on the sandbox launcher. The agent's shell-local changes (an activated
+  the sandbox and never on the sandbox launcher. A command whose first word contains `=` is
+  refused with `400` (`env` would read it as another assignment). The agent's shell-local changes (an activated
   toolchain, an edited `PATH`) are not carried: pass them with `--env`, or launch
   `sh -c '<activate>; exec <app>'`.
 - **Permissions:** the app runs with the caller's own execution limits. For a Codex session
@@ -145,21 +159,28 @@ not torn down). `start` returns the display for information only.
 - **Ownership:** at most one screen per session name. State (display number, Xvfb pid, cookie
   file, app numbers, pids and process groups, shot and app counters) is kept in memory and
   written to `<stateDir>/screens/<thread>/<session>/state.json` after every change.
-- **Screen marker:** every process the service starts for a screen (Xvfb, and each app or its
-  sandbox launcher) gets the environment variable
-  `WHEELCHAIR_SCREEN=<stateDir>|<thread>|<session>`, inherited by its children. A process
-  belongs to a screen exactly when `/proc/<pid>/environ` holds that variable with that value
-  (same user, so readable). This is the durable identity used for teardown and startup cleanup;
-  it survives PID reuse, launchers that exited leaving children, and a restart between spawn
-  and the `state.json` write. The `<stateDir>` part keeps a test service (own temp state dir)
-  from touching real screens.
+- **One cgroup per screen:** every process the service starts for a screen (Xvfb, and each
+  app or its sandbox launcher) is started with `systemd-run --user --scope
+  --slice=<screen slice> --unit=<unit>` so it and all its descendants live in that screen's
+  slice, whatever they do to their environment or process ids. Names: `<s>` is the first 12 hex
+  characters of sha256 of the state dir, `<id>` the first 12 of sha256 of `<thread>/<session>`;
+  the parent slice is `wcscreen-<s>.slice`, the screen slice `wcscreen-<s>-<id>.slice` (a
+  child of the parent, by systemd's dash rule), units `wcscreen-<s>-<id>-x.scope` and
+  `wcscreen-<s>-<id>-app<n>.scope`. `systemd-run --scope` runs the command as the scope's
+  own process, so `-displayfd` and pipes work as usual. Teardown acts on the slice, so it
+  survives PID reuse, launchers that exited leaving children, children that dropped any
+  any environment variable, and a restart between spawn and the `state.json` write. The `<s>` part keeps a test
+  service (own temp state dir) from touching real screens. If `systemctl --user` cannot be
+  reached, `start` and `run` fail `422 screens need a systemd user session on this machine`.
 - **Who may call, and ordering:** ops for one session run one at a time (a per-session
   queue). Inside the queue, before `start` or `run` creates anything, the service checks: the
   session record exists, is not a reviewer, is not `stopped`, its thread is not archiving, and
   its tmux session is live by `liveTmux()` (`null`, meaning tmux could not be asked, gives
   `422 could not check the session; try again`, never "dead"). A failed check is `409`.
-  Session stop and archive mark the session `stopped` (as `stop()` already does) before they
-  enqueue teardown, so anything queued after it is refused; that refusal is permanent. The
+  Session stop and archive do not wait in the queue: `stop()` marks the session `stopped`
+  (as it already does) and then kills the screen slice at once (below), so an op in flight
+  fails and anything queued is refused; that refusal is permanent. A `start` or `run` that
+  finds the session's tmux gone also kills the screen slice before returning `409`. The
   `screen stop` op is not a session stop: it tears down in queue order and a later `start` or
   `run` makes a fresh screen.
 - **Starting a screen:** make a cookie with `mcookie` and write it with `xauth -f <dir>/xauth
@@ -168,10 +189,10 @@ not torn down). `start` returns the display for information only.
   -screen 0 <W>x<H>x24 -nolisten tcp` (the local unix socket stays, since clients need it). The
   display number comes from `-displayfd`, so it never collides with screens already in use
   (tests on hearth use `:99`/`:100`). Wait for it with a 10 s timeout, else tear down by
-  marker and return `422 screen did not start`. Then add the same cookie under `:N` to the
+  slice and return `422 screen did not start`. Then add the same cookie under `:N` to the
   same file, which is what clients use as `XAUTHORITY`.
-- **Missing tools:** before starting, check `Xvfb`, `xauth`, `mcookie`, `ffmpeg`, `xdotool` and
-  `xwininfo` on PATH; if any is missing, return `422 missing on this machine: <names>` with no
+- **Missing tools:** before starting, check `Xvfb`, `xauth`, `mcookie`, `ffmpeg`, `xdotool`,
+  `xwininfo`, `systemd-run` and `systemctl` on PATH; if any is missing, return `422 missing on this machine: <names>` with no
   partial state. On a non-Linux machine return `422 screens only work on Linux machines for
   now`.
 - **Files:** screenshots go to `<stateDir>/screens/<thread>/<session>/shot-<n>.png`. The shot
@@ -184,17 +205,22 @@ not torn down). `start` returns the display for information only.
   -frames:v 1 <tmp>` with `DISPLAY` and `XAUTHORITY` set, 15 s timeout.
 - **Input:** each op runs `xdotool` with `DISPLAY` and `XAUTHORITY` set, 10 s timeout; a
   non-zero exit returns `422` with the last stderr line.
-- **Teardown:** find every process carrying this screen's marker; SIGTERM them, SIGKILL any
-  left after 3 s; delete the cookie file; keep shots and logs. It runs on the `screen stop`
-  op, in `MachineService.stop(name)` (reached by session stop and `archive()`), and in a 60 s
-  sweep that tears down screens whose session tmux is confirmed gone (`liveTmux()` returned a
-  set without it; a `null` answer skips that sweep). `archive()` also removes
-  `<stateDir>/screens/<thread>/` alongside the uploads it removes. A screen whose Xvfb died is
-  treated as no screen (its apps are torn down; the next `start` makes a new one).
+- **Teardown:** two strengths, both on the screen slice. *Graceful* (the `screen stop` op,
+  and the sweep): `systemctl --user kill --signal=SIGTERM <screen slice>`, then after 3 s
+  `systemctl --user kill --signal=SIGKILL <screen slice>` and `systemctl --user stop <screen
+  slice>`. *Immediate* (`MachineService.stop(name)`, reached by session stop and `archive()`):
+  SIGKILL and stop at once, synchronously, before `stop()` removes a verifier's worktree;
+  this adds well under a second per screen, so session stop and archive stay inside the hub's
+  existing 5 s request timeout (`viewer/app/machine-client.js:64`). Both delete the cookie
+  file and keep shots and logs. The sweep runs every 60 s and tears down screens whose
+  session tmux is confirmed gone (`liveTmux()` returned a set without it; a `null` answer
+  skips that sweep). `archive()` also removes `<stateDir>/screens/<thread>/` alongside the
+  uploads it removes. A screen whose Xvfb died is treated as no screen (its slice is torn
+  down; the next `start` makes a new one).
 - **Service restart:** the service runs with `KillMode=process` (`install.sh:401`) and
   `./install.sh` restarts it, so screens would outlive a restart. At startup the service tears
-  down every screen: it kills every process whose marker starts with `<its stateDir>|`, then
-  marks each `state.json` as having no screen (counters kept). Agents get "no screen" and
+  down every screen: SIGKILL and stop on its parent slice `wcscreen-<s>.slice`, then mark
+  each `state.json` as having no screen (counters kept). Agents get "no screen" and
   `run` again.
 - **Isolation:** the route only acts on the caller's own screen and takes no display or
   session argument. The per-screen cookie stops a session reaching another screen by a
@@ -239,25 +265,30 @@ manager, no video, no Ready-check change.
 - `bash machine/test/run.sh` — includes new tests with fake `Xvfb` (writes a display number to
   the `-displayfd` fd), fake `xauth`, `mcookie`, `ffmpeg` (writes a PNG), `xdotool`,
   `xwininfo` and `codex` in the fake bin dir, covering: start and idempotent start; run spawns
-  with `DISPLAY`, `XAUTHORITY`, the marker and the rebuilt session environment without the
-  token, `--env` only inside `env ...` after the sandbox launcher's `--`, and the `codex
+  with `DISPLAY`, `XAUTHORITY` and the rebuilt session environment without the token, inside
+  `systemd-run --user --scope` with the screen's slice and unit names, `--env` only inside `env ...` after the sandbox launcher's `--`, and the `codex
   sandbox` wrap for a non-unrestricted Codex session only; reviewer refused 403; key tokens
-  and type text that look like xdotool commands or options (`exec`, `--window`) refused or
-  sent literally; shot paths never reused across `screen stop`/`start` and a service restart;
-  windows parsing, root excluded, empty search gives `[]`; missing-tool error naming each
+  that are xdotool command names in any case (`exec`, `EXEC`, `windowkill`) refused before
+  any key is sent; type text that looks like an option (`--window`) sent literally; type
+  text over 400 characters refused; a command whose first word contains `=` refused; shot paths never reused across `screen stop`/`start` and a service restart;
+  windows from `xwininfo` output: only viewable direct children of the root, none gives `[]`;
+  auto-focus picks only a window that was not there before the launch; missing-tool error naming each
   missing tool, status 422; op without a screen; one session cannot reach another's screen;
   `start` after session stop refused 409, `start` after `screen stop` allowed; `start` when
-  tmux shows the session gone refused 409, when tmux cannot be asked 422; teardown by marker
-  on `screen stop`, session stop, the sweep and archive (screens dir removed); startup kills
-  marked processes of its own state dir only.
+  tmux shows the session gone refused 409 with the slice killed, when tmux cannot be asked
+  422; graceful teardown on `screen stop` and the sweep, immediate teardown on session stop
+  (before a verifier worktree is removed) and archive (screens dir removed); startup stops
+  only its own state dir's parent slice; no `systemctl --user` gives 422.
 - A live check script `machine/test/screen-live.sh` (skips with exit 0 and a `SKIP:` line when
-  any of the six tools is missing): drives the screen code against real Xvfb; launches
+  any of the tools is missing or `systemctl --user` cannot be reached): drives the screen code against real Xvfb; launches
   Playwright's Chromium in `--app` mode on a `data:` page whose title changes on click and on
-  key input, plus one untitled window (e.g. a second Chromium `--app` page with an empty
-  `<title>`); asserts the `shot` PNG exists and is non-empty, `windows` lists both by their
-  actual window ids and not the root, a `click` changes the window title, `type` changes it
-  again, a client without the cookie is refused, and after `stop` no process carrying the
-  test's marker remains. Run: `bash machine/test/screen-live.sh`.
+  key input, then a second `run` of an untitled window (a second Chromium `--app` page with
+  an empty `<title>`); asserts the `shot` PNG exists and is non-empty, `windows` lists exactly
+  those two top-level windows, the second `run` focused its own window, a `click` changes the
+  first window's title, `type` of 400 characters arrives whole (the page title shows its
+  length), a client without the cookie is refused, an app that starts a child which clears its
+  environment and outlives its parent is gone after `screen stop`, and after `stop` the
+  screen's slice has no processes. Run: `bash machine/test/screen-live.sh`.
 
 ## Deferred
 
@@ -331,6 +362,16 @@ manager, no video, no Ready-check change.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | `type` 4096 chars vs 10 s timeout | upheld | 400 chars, scaled timeout; Decision 23 |
+| intent | minor | Decision 16 says dead tmux triggers teardown; Spec doesn't | upheld | Dead tmux on start/run now kills the slice; Decision 16 wording fixed |
+| intent | minor | Verifier screen vs worktree removal order | upheld | Immediate teardown before worktree removal; Decision 22 |
+| mechanics | blocking | Key tokens can be xdotool command names | upheld | Refused case-insensitively before sending; Decision 23 |
+| mechanics | blocking | `env` reads a command name with `=` as assignment | upheld | Refused 400; Decision 23 |
+| mechanics | blocking | Marker-only teardown misses children that drop it or hide environ | upheld | Per-screen systemd slice; Decision 21 |
+| mechanics | blocking | PID reuse between read and signal | upheld | Slice-level kill; Decision 21 |
+| mechanics | blocking | Queued teardown exceeds hub 5 s timeout | upheld | Immediate teardown outside the queue; Decision 22 |
+| mechanics | blocking | `type` length vs timeout (same as intent) | upheld | Decision 23 |
+| mechanics | major | Search lists child widgets; second run's focus undefined | upheld | Top-level viewable children; new-window diff; Decision 23 |
 
 ## Prior Work
 
