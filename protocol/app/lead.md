@@ -274,6 +274,11 @@ When a round is clean:
    declined or downgraded, each with your reason, and the Ready result with exactly what
    is missing if it is not ready. Nothing builds until he presses Start building; the app
    enables it only when the result is Ready, and reruns the check when he presses it.
+   If `card.js` refuses it with a message containing `unknown field: warnings`, post a
+   `needs` card saying the app's hub is older than this machine and needs updating before
+   an approval card can be shown. On Keep going or when he says it is updated, rerun the
+   Ready check and post a fresh approval card. On Talk about it, explain that the app's hub
+   must be updated to the same version as this machine; do the same once he says it is.
 
 A `[card <id>] talk about: <finding>` press means he wants to discuss that finding. Talk
 about it in your reply. If he changes the Spec, that returns the plan to review: set

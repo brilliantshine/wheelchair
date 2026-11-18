@@ -43,7 +43,13 @@ function parseUsage(raw, now = Date.now()) {
   return { five_hour, week, ...([five_hour, week].some(w => w && w.used >= 100) ? { reached: true } : {}) };
 }
 const DISALLOWED_TOOLS = ['Artifact', 'Workflow', 'ScheduleWakeup', 'SendFeedback', 'ShareOnboardingGuide', 'ReportFindings', 'ListAgents', 'ArtifactComments', 'ArtifactData', 'CronCreate', 'CronDelete', 'CronList', 'RemoteTrigger', 'PushNotification', 'PublishPlugin', 'DesignSync', 'EnterWorktree', 'ExitWorktree', 'EnterPlanMode', 'ExitPlanMode', 'AskUserQuestion', 'EndConversation'];
+// Typical first-call size measured 2026-11-17 (Claude Code 2.1.326-327,
+// claude-opus-5-5: lead 39.6k-40.7k, reviewer 21.4k-22.8k); raise a value
+// when that role's starting text grows.
+const STARTUP_TYPICAL = { lead: 41000, reviewer: 23000 };
+const STARTUP_MARGIN = 5000;
 module.exports = {
+  STARTUP_TYPICAL, STARTUP_MARGIN,
   provider: 'claude', loginEnv, parseUsage,
   usageProbe(dir, options = {}) { return run('claude', ['-p', '/usage', '--output-format', 'json', '--no-session-persistence', '--strict-mcp-config', '--setting-sources', '', '--settings', JSON.stringify({ env: { ANTHROPIC_BASE_URL: closedPort } })], { ...options, env: { ...process.env, ...loginEnv(dir), ANTHROPIC_BASE_URL: closedPort }, parse: parseUsage }); },
   asideArgv(input, context) { return ['claude', '-p', '--output-format', 'json', '--model', input.model, ...(input.effort ? ['--effort', input.effort] : []), ...(input.access === 'full' ? ['--permission-mode', 'bypassPermissions'] : ['--permission-mode', 'dontAsk', '--tools', 'Read,Grep,Glob']), '--strict-mcp-config', '--system-prompt-snapshot', 'off', '--append-system-prompt', context.prompt, '--resume', input.from, ...(input.mode === 'fork' ? ['--fork-session', '--session-id', input.new_id] : [])]; },
