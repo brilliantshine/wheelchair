@@ -51,6 +51,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 14 | Supersedes 7, 8 and 13. The steps are tried once, after the `done` card is accepted, by one steps-only verifier on the done head; then the check card is posted. A step showing the work broken is shown as `differed` and the lead asks "Fix it now" (step 9) or "Leave it". No verification path before Done changes; the sub-lead protocol does not change | Collin's pick on Q5 (leaning). Removes carrying step results through fix, repair, merge and restart paths, which rounds 1 to 5 kept finding holes in | user |
 | 15 | A fourth step state, `broken` ("An agent tried this and it didn't work"), separate from `differed` (saw something else that may still be right). Only `broken` triggers the "Fix what the check found?" question | Keeps "work is wrong" visible to Collin and recoverable after a restart | review-round-6 |
 | 16 | Supersedes the `differed` state in 12 and 15. A reworded step whose re-try still differs but meets intent takes the agent's observation as its `see` and is `matched`; three states remain (matched, not-tried, broken) | Every step Collin gets is one he can follow (IDEA.md) | review-round-7 |
+| 17 | A check card with a `broken` step carries one "Fix it now" button instead of a separate question card; the hub accepts it once, only while the card's head is the current done head. Decision 10 still holds (no "it worked / it didn't" buttons) | A button on the stored card cannot drift from it: no duplicate, missing or stale question after restarts or newer dones | review-round-7 |
 
 ## Spec
 
@@ -63,7 +64,7 @@ gives numbered steps. Each step says where it is done (in the app, or on the mac
 to do, and what he should see. Steps an agent followed say nothing extra; a step no agent
 could try carries "Not tried by an agent" and the reason; a step an agent tried and found
 not working carries "An agent tried this and it didn't work" and what it saw, and the lead
-then asks "Fix what the check found?" ("Fix it now" or "Leave it"). All three done paths get one:
+then shows a "Fix it now" button on the card. All three done paths get one:
 small fix, planned build, and a fix after done (whose steps cover only what that fix
 changed). Steps are for after merging (Decision 5).
 
@@ -110,8 +111,15 @@ hub when the card is accepted (`viewer/app/cards.js` `acceptCard`, under the thr
 The duplicate rule makes posting idempotent: a lead that gets
 `this done card already has a check card` treats it as posted.
 
-No presses: `press` in `viewer/app/threads.js` refuses every action on a `check` card
-(400 `a check card has no buttons`), before anything is marked answered or enqueued.
+One button, only when needed (Decision 17): a check card with at least one `broken` step
+shows a "Fix it now" button under the steps. `press` in `viewer/app/threads.js` accepts
+exactly one action on a `check` card, `fix`, and only when: the card has a `broken` step
+(else 400 `this check card has nothing to fix`), its `head` is still the thread's current
+done head (else 422 `a newer version was finished since`), and it is not already answered
+(else 422 `card is already answered`). An accepted press marks the card answered and
+reaches the lead as `[card <id>] fix what the check found`. Every other action is refused
+with 400 `a check card has no buttons`, before anything is marked answered or enqueued.
+After a press, or once the card's head is no longer current, the button is hidden.
 
 Rendering (`viewer/pages/thread.js` `renderCard`): heading "Check it yourself", the `update` text
 (which says whether to merge first), then an ordered list. Each item shows a small label
@@ -133,6 +141,7 @@ Other app touch points:
 - `machine/service.js`: no change beyond what the generic card path already does (confirm
   `check` is spooled and forwarded like other shown kinds).
 - `protocol/app/cards.md`: add `check` to the kinds table (shown, lead, not pinned).
+  Add `[card <id>] fix what the check found` to the press forms.
 - `protocol/app/cards-lead.md`: a `check` section with the fields, rendering summary and
   refusals.
 
@@ -153,8 +162,9 @@ never written into the Spec (verifiers grade every Spec item).
 
 **Trying.** Immediately after a `done` card is accepted, the lead makes the local branch tip
 the done head: if `HEAD` already equals it, nothing to do; if `HEAD` is an ancestor of it
-(the merged-PR path, which fetched the newer PR head), `wc.js git merge <done head>`
-fast-forwards to it; otherwise every step is posted `agent: not-tried`, `note` "an agent
+(the merged-PR path, which fetched the newer PR head), the lead runs
+`wc.js git merge --ff-only <done head>` and then confirms `git rev-parse HEAD` equals the
+done head; if `HEAD` is not an ancestor, the merge fails, or `HEAD` still differs, every step is posted `agent: not-tried`, `note` "an agent
 could not try them on this exact version", without a verifier. Then the lead starts one fresh
 **steps-only** verifier (`--not-provider <lead's provider>` when `review_families` is
 `both`, else no provider flag), briefed with the numbered steps, a **path map** from the
@@ -162,8 +172,10 @@ installed paths the machine commands use to the worktree (for example
 `/home/collin/projects/personal/wheelchair` → the worktree), the plan slug or Collin's
 request (so it can judge intent), and the done head. It posts no progress line. The
 verifier checks the branch tip (`viewer/app/sessions.js:625-630`); if its `COMMIT:` line is
-not the done head, the lead starts one more; if that one also differs, every step is posted
-`agent: not-tried`, `note` "an agent could not try them on this exact version".
+not the done head, the lead starts one more; if that one also differs, the steps that
+verifier was trying (all of them, or the reworded subset) are posted `agent: not-tried`,
+`note` "an agent could not try them on this exact version"; results already obtained on
+the done head are kept.
 
 **Turning STEP lines into the card.**
 - `MATCH` → `agent: matched`.
@@ -178,17 +190,19 @@ not the done head, the lead starts one more; if that one also differs, every ste
 - A step with no STEP line → `agent: not-tried`, `note` "an agent did not report on it".
   Two lines for one step: use the less favourable (DIFFERS (work wrong), DIFFERS (meets
   intent), COULD NOT TRY, MATCH).
-- `VERDICT: BLOCKED` is a setup problem: fix it if the lead can and start a fresh verifier.
-  After two BLOCKED reports for the same head, every step not yet resolved is posted
+- A failed try is a `VERDICT: BLOCKED` report, a verifier start that fails, or a verifier
+  that dies or ends without a report. The lead fixes what it can and starts a fresh
+  verifier. After two failed tries for the same head, every step not yet resolved is posted
   `agent: not-tried`, `note` "an agent could not set up to try it: <short reason>", and the
   lead carries on (check card, then any stub).
 
 **Posting.** Post the `check` card with the done card's `head`. One check card per head: if
-a retried `done` was recorded twice at the same head, the one check card covers both. If
-any step is `broken`, then post a `question` card whose `question` is exactly "Fix what the
-check found?", with options "Fix it now" (handled as a problem Collin reported, step 9,
-which checks the PR state first) and "Leave it" (nothing changes). In a two-part thread the follow-up `stub` is posted after the check
-card (and its question, if any). The `check` card is never a condition for `done`.
+a retried `done` was recorded twice at the same head, the one check card covers both. A
+`broken` step gives the card its "Fix it now" button; no separate question is posted. On
+`[card <id>] fix what the check found`, the lead handles it as a problem Collin reported
+(step 9, which checks the PR state first), using the broken steps' notes as the report. In
+a two-part thread the follow-up `stub` is posted after the check card. The `check` card is
+never a condition for `done`.
 
 A new `done` accepted while a steps verifier for an older head is running: the lead stops
 that verifier, posts no check card for the older head, and starts over for the new one.
@@ -199,8 +213,6 @@ that verifier, posts no check card for the older head, and starts over for the n
   (fast-forward as above), the lead writes and tries the steps as above and posts. A duplicate refusal means the original arrived; any other
   head refusal means that done card is not current (for example before an import cutoff);
   stop there in both cases. Otherwise it posts none for that done card.
-- If the check card for that done head has a `broken` step and no "Fix what the check
-  found?" question was posted after it, the lead posts that question.
 - A stub that missed the merge ("Making the pull request mergeable" 4, exit 1) posts no
   check card.
 
@@ -213,8 +225,10 @@ written out in full in the brief, and, instead of a check card, posts a `needs`
 card titled "Check it yourself" whose `body` is the `update` text and whose `items` are
 the steps, one per item ("In the app: <do> — you should see: <see>", with any command,
 and "Not tried by an agent: <note>" or "An agent tried this and it didn't work: <note>"
-where it applies). A `broken` step there gets the same "Fix what the check found?"
-question, posted after the `needs` card. A `needs` card is shown by the installed app; "Keep going" just closes it.
+where it applies). If a step is broken, the `body` ends "Keep going fixes what didn't
+work"; then "Keep going" is handled like "Fix it now", and otherwise it just closes the
+card. On a restart in that thread, an existing `needs` card titled "Check it yourself" for
+the current done counts as its check card: the lead does not post another.
 
 ### How the verifier tries steps (`protocol/app/verifier.md`)
 
@@ -250,7 +264,8 @@ A new section, for a brief that says "steps only":
 
 ### Non-goals
 
-- No pass/fail buttons or tracking of whether he followed the steps (Decision 10).
+- No pass/fail buttons or tracking of whether he followed the steps (Decision 10); the only
+  button is "Fix it now" on a card with a broken step (Decision 17).
 - No preview of the unmerged branch (Decision 5).
 - No change to anything before `done`: the work's verification, repairs, the done card,
   its fields, its GitHub gate and "Making the pull request mergeable".
@@ -283,16 +298,20 @@ A new section, for a brief that says "steps only":
     after a second done only with the second head.
   - `viewer/test/protocol-rules.test.js`: `leadKinds` includes `check`, and the test
     passes with the new `### \`check\`` section in cards-lead.md.
-  - press: every action on a `check` card is refused with 400 and leaves it unanswered and
-    nothing enqueued.
+  - press: on a check card with no `broken` step every action is refused with 400; on one
+    with a `broken` step, `fix` is accepted once (card answered, lead message enqueued),
+    refused when a newer done exists (422) or already answered (422), and any other action
+    is refused with 400; refused presses leave the card unanswered and enqueue nothing.
   - handoff: a thread with a `check` card at the size limits exports, the file validates,
     and its `historyText` is untruncated and matches the format above.
 - `cd viewer && npx playwright test` passes, including a new browser test (its server
   started with a temporary `stateDir` as well as a temporary cache root): a posted check
   card renders the heading, the update text, numbered steps with "In the app"/"On the machine" labels, the command
-  block with Copy (pressing it, with clipboard permission granted, shows "Copied"), "You should see:", the "Not tried by an agent" and "An agent
-  tried this and it didn't work" lines; no buttons
-  other than Copy; at 390px wide the page has no horizontal scroll.
+  block with Copy (the test stubs `navigator.clipboard.writeText` with `page.addInitScript`
+  so it runs in both Chromium and Firefox; pressing Copy shows "Copied" and the stub received
+  the command), "You should see:", the "Not tried by an agent" and "An agent
+  tried this and it didn't work" lines; a "Fix it now" button only on a card with a
+  broken step, gone after a newer done; no other buttons besides Copy; at 390px wide the page has no horizontal scroll.
 - `grep -n -i "check" protocol/app/cards.md protocol/app/cards-lead.md protocol/app/lead.md protocol/app/verifier.md`
   shows the new kind row, its section, the lead's after-done writing/trying/posting rules
   (all three done paths), the "Fix it now / Leave it" question, the restart rules, and the
@@ -515,7 +534,7 @@ Collin decided Q5 (try the steps after Done); budget reset.
 
 ### Round 7 — 2026-11-18
 
-**Lanes:** intent: see table; mechanics: see table; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 6:**
 - Early `### Check steps` in the Spec removed; this plan's own steps moved to a non-Spec
@@ -528,9 +547,32 @@ Collin decided Q5 (try the steps after Done); budget reset.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | blocking | Question can describe a check card the hub never stored | upheld | Decision 17: "Fix it now" button on the stored card; no question card |
+| mechanics | blocking | Clipboard permission grant fails in Firefox | upheld | Test stubs `navigator.clipboard.writeText` via `addInitScript` in both browsers |
+| mechanics | major | Fast-forward not guaranteed | upheld | `--ff-only`, confirm `HEAD`, fallback all not-tried |
+| mechanics | major | First-release fallback has no restart rule | upheld | Existing "Check it yourself" needs card counts as the check card; its Keep going is the fix |
+| mechanics | major | Old question stays actionable after a newer done | upheld | Button only while the card's head is current; hub refuses otherwise |
+| mechanics | major | Exact-head fallback could erase earlier results for a subset re-try | upheld | Fallback covers only the steps that verifier was trying; earlier results kept |
+| mechanics | major | Verifier start failures or deaths not bounded | upheld | Counted as failed tries with BLOCKED; two per head → not-tried, carry on |
 | intent | minor | "What Collin gets" omits `broken` and its question | upheld | Summary updated |
 | intent | minor | `differed` leaves him a step whose `see` the agent did not see | upheld | Decision 16: observation becomes `see`; `differed` removed |
 | intent | minor | First-release stand-in has no rule for `broken` | upheld | Items carry the broken line; the question is posted after the `needs` card |
+
+### Round 8 — 2026-11-18
+
+**Lanes:** intent: see table; mechanics: see table; cross-family: yes.
+
+**Changed since Round 7:**
+- `differed` removed (Decision 16): three step states.
+- "Fix it now" button on a check card with a broken step replaces the question card
+  (Decision 17): press rules, hub refusals, press form, rendering, tests.
+- `--ff-only` fast-forward with a `HEAD` check; exact-head fallback limited to the steps
+  being tried; failed starts and deaths count as failed tries.
+- First release: broken steps and restart handled through the "Check it yourself" needs card.
+- Browser test stubs the clipboard for both browsers.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
