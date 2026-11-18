@@ -15,13 +15,17 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q3: Are the steps tried before he sees them?
-- **Context:** PLAN validation commands and verifier reports describe agent checks, not
-  steps a person follows; small fixes have no plan (MAP.md). The lead writes the steps
-  either way; the open point is whether a verifier follows them first.
-- **Options:** lead writes them, unchecked; the verifier also follows the steps and the lead
-  fixes any that do not match.
-- **Recommendation:** the verifier follows them, so a step never shows something untrue.
+### Q4: Before or after merging?
+- **Context:** At done the change lives only on the pull request branch. The app on his
+  phone (wheelchair or a project's own app) runs the merged, installed code, so phone steps
+  cannot show the change until he merges and updates. The machine is reachable from his
+  phone over Tailscale (README.md:20-28), so a preview is possible but costly: each project
+  runs differently, it needs a port, a lifetime and publishing.
+- **Options:** steps are for after he merges and updates (the card says so); the lead runs
+  a preview of the branch he opens from the card, so he checks before merging; phone steps
+  after merging, machine steps before.
+- **Recommendation:** after merging; the verifier having tried the steps is the
+  before-merge check. A preview can be its own thread.
 
 ## Watch List
 
@@ -44,6 +48,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 1 | Plan mode: thorough | Collin's pick on the mode card | user |
 | 2 | Steps fit the change, phone first: a change visible in the app gets steps done in the app on a phone; only a change with nothing to see there (scripts, machine service, protocol docs) gets commands to run on the machine | Most changes show in the app; the rest can only be checked by running something | user |
 | 3 | The steps are a card of their own, posted right after the done card, not a section of it | Easier to spot and lays out step by step; Collin picked it over the leaning (part of Done) | user |
+| 4 | An agent follows the steps before Collin sees them: a verifier tries each step and reports what it saw; the lead fixes any step that does not match | The point is not having to trust; untried steps would be one more thing to trust | user |
 
 ## Spec
 
@@ -69,6 +74,13 @@ Spec is still churning. See `protocol/diagrams.md`.
   three done paths: small fix, planned build, fix after done). It lists numbered steps, each
   saying what to do and what Collin should see. Details (name, fields, pinning, gating,
   handoff) are settled in the Spec's final pass.
+
+### Steps are tried first
+
+- Before the check card is posted, a verifier follows every step and reports, per step,
+  what it saw. The lead corrects any step whose text does not match what is really there.
+  Phone steps are tried in a browser on the machine at phone size. Details settled in the
+  Spec's final pass.
 
 ## Accepted Risks
 
