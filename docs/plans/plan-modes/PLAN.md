@@ -1,6 +1,6 @@
 ---
 slug: plan-modes
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-17
 ---
 
@@ -112,6 +112,27 @@ non-goals, and concrete validation commands.
 
 A Mermaid diagram of the flow belongs here, added by Stage 2 at approval — not while the
 Spec is still churning. See `protocol/diagrams.md`.
+
+```mermaid
+flowchart TD
+  A[Thread becomes a feature] --> B[Lead suggests a mode; Collin picks]
+  B --> C{Which mode?}
+  C -- Thorough --> T[Plan and review as today]
+  C -- Two-part or Proof of concept --> L[Plan what is needed to work; hardening goes on the pinned deferred list]
+  L --> R[Review: wrong-build findings fixed, hardening deferred]
+  R --> P[Collin may pull items back until building starts]
+  P --> AP[Approval, then build]
+  T --> AP
+  AP --> V[Verify; hardening gaps may be deferred, must-fix gaps fixed]
+  V --> D{Mode at done}
+  D -- Two-part --> F[New thread with the deferred list as a head start]
+  D -- Proof of concept --> K[Done card lists skipped items as accepted risks]
+  D -- Thorough --> N[Done as today]
+```
+
+The picture above says what the sections below say: the mode is chosen first, the two
+lighter modes defer hardening onto a pinned list during planning, review and verification,
+and at done two-part opens a follow-up thread while proof of concept lists what it skipped.
 
 ### Modes
 
@@ -383,7 +404,8 @@ exactly `Two-part follow-up for plan <slug>.` (the handoff marker; no other stub
 it), then: what was
   built and the pull request link, the plan path (`docs/plans/<slug>/PLAN.md` on branch
   `wc/<thread-id>`), every Deferred row with its notes, and the instruction that its lead
-  plans these from step 1, suggesting a mode as for any feature. With no rows, no stub,
+  plans these from step 1, suggesting a mode as for any feature (if the whole list turns
+  out to be a small fix, step 1's small-fix path applies, verified as usual). With no rows, no stub,
   and the `done` card's `note` says nothing was deferred.
   Restart in a two-part thread whose PLAN.md is `done`: the lead first finishes step 8
   as today (push, open the pull request if `gh pr view` finds none, post the `done` card
@@ -706,6 +728,9 @@ exit. Downgrades and declines cite evidence.
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
 | intent (claude) | minor | Mode question is a gate, not a thorough default | upheld | An unclear or absent choice means thorough |
+| mechanics (gpt) | blocking | Sub-lead has no defined action after Collin answers a surviving-gap question | declined | Same as today's build flow (lead.md step 7.6 only says post a question; the answer goes back as a `message`); this plan adds nothing new there, and changing it would change thorough, against IDEA's constraint |
+| mechanics (gpt) | major | Clear typed mode answer leaves the picker open | declined | lead.md already requires resolving a question card he answers by typing ("How you talk to Collin": "resolve that card with a one-line note of his answer") |
+| mechanics (gpt) | major | One-small-fix follow-up would bypass planning via step 1 | downgraded (minor) | A small follow-up taking the verified small-fix path is the intended behaviour; said explicitly in "Done" |
 
 ## Prior Work
 
