@@ -71,6 +71,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 34 | Only the main agent's Stop ends a turn; hook prep guards against concurrent writes; sign-in results are kept per attempt; folder trust checks which option is selected | Review round 8 gaps | review-round-8 |
 | 35 | Turn ends are read from the main agent's own log (`agents/main/wire.jsonl` `turn.ended` rows), polled by the machine service; no Kimi hooks and no edits to Kimi's `config.toml`. Supersedes 6, 20, 21 (version floor was for hooks), 25 (`unverified`), and the hook-config parts of 26, 32, 34 | Collin picked "Read Kimi's log" after round 9: hook signals cannot tell the main agent from subagents, and editing a file Kimi rewrites can't be made safe | user |
 | 36 | Log binding by a `Session: <name>` line in Kimi's role message; turn ends handled once per `turnId` with a persisted offset; protocol major-version guard | Needed by Decision 35 | defaulted |
+| 37 | Version floor 2.6.3 restored as a machine-wide problem (guards against the old Python `kimi`); binding in `findTranscript`; fixed `delivery_id` per Kimi turn; fatal log problems stop the session instead of failing a turn; unknown turn-end reasons become `turn-failed` | Review round 10 | review-round-10 |
 
 ## Spec
 
@@ -78,8 +79,8 @@ Kimi Code is added as a fourth provider. Antigravity (`gemini`/`agy`) is the clo
 pattern; MAP.md lists every hard-coded provider list with file:line, and **every one of
 them gains Kimi** unless this Spec says otherwise. Facts below were observed on kimi 2.6.3
 (`~/.kimi-code/bin/kimi`) on this machine; a real session log is in `samples/wire.jsonl`
-(large entries trimmed). `samples/hooks.jsonl` is kept for reference only: **this design
-uses no Kimi hooks** and never edits Kimi's `config.toml`.
+(large entries trimmed). `samples/hooks.jsonl` records a hook design that was **dropped**
+(Decision 35): this design uses no Kimi hooks and never edits Kimi's `config.toml`.
 
 ### Identity
 
@@ -111,8 +112,13 @@ kimi` in the service's PATH, else `~/.kimi-code/bin/kimi` if it exists and is ex
 (the official installer's location), else none. `machine/service.js` `cliStatus('kimi')`
 uses `resolveCli()` (instead of `command -v kimi`) for the installed check and for
 `--version`, which is cached by resolved path plus the binary's mtime (`kimi --version`
-takes about 0.7 s). Launch argv and `loginCommand()` both start with the resolved
-absolute path. A test covers launch and login when the pane's PATH lacks the kimi
+takes about 0.7 s). **Version floor:** a resolved binary whose `--version` is not a
+semver of at least 2.6.3 (the version this log format was observed on; the old Python
+`kimi-cli` also installs a `kimi`) gives the per-CLI row
+`problem: "Kimi Code 2.6.3 or newer is needed (found <output>)"` and every Kimi account
+on that machine `logged_in: false` with the same problem, so Ready names it and placement
+skips the machine. This is the only per-CLI-row problem for Kimi. Launch argv and
+`loginCommand()` both start with the resolved absolute path. A test covers launch and login when the pane's PATH lacks the kimi
 directory.
 
 ### Accounts and data directory
@@ -145,7 +151,8 @@ Status, sign-in checks and launch never spawn the kimi CLI to learn about an acc
   gives an array of strings. Anything else (multi-line arrays, other types) is ignored, as
   are `#` comments and blank lines. Key order within a table does not matter (Kimi
   rewrites this file itself).
-- It extracts only: from table `providers."managed:kimi-code".oauth` the strings `key`
+- It extracts only: the top-level string `default_model` (before any table header);
+  from table `providers."managed:kimi-code".oauth` the strings `key`
   and `oauth_host` (the `services.*.oauth` tables also have `key` and are ignored); from
   each table `models."<alias>"` the array `support_efforts` (absent for some models).
 - **File states.**
@@ -203,8 +210,8 @@ key = "oauth/kimi-code"
   - An empty home: not authenticated, not logged in, no problem.
 - Machine status entries (the per-CLI row and each `accounts[]` entry) may carry an
   optional `problem` string, which never names an account. For Kimi the per-CLI row never
-  carries one; all Kimi problems are per home, on that home's `accounts[]` entry
-  (including the default home's).
+  carries one except the version floor; all other Kimi problems are per home, on that
+  home's `accounts[]` entry (including the default home's).
 - `viewer/app/ready.js` keeps its rule (some unpaused account of the thread's provider is
   logged in). When it fails and the CLI is installed: the first account in Settings order
   that is in Settings, unpaused and not retired, and whose status entry has a `problem`,
@@ -234,9 +241,11 @@ key = "oauth/kimi-code"
 - `parseLogin(pane)` returns `{ url, code, wantsCode: false }`, the link and code
   exactly as printed.
 - **Completion** (Kimi path of `machine/service.js` `loginState`; other CLIs unchanged):
-  - Kimi tmux targets use exact-match form (`=wc-login-<account>`) for capture, kill and
-    has-session, so accounts whose ids share a prefix never touch each other's pane
-    (tested with ids `team` and `team-backup`).
+  - Kimi login panes are addressed with tmux's exact-match form (`=wc-login-<account>`)
+    in every operation: capture, kill, has-session, and the terminal's `keys` and `code`
+    endpoints (`machine/service.js:1501-1506`), so accounts whose ids share a prefix never
+    touch each other's pane (tested with ids `team` and `team-backup`, including a stale
+    terminal for `team` after it is gone).
   - `loginDone` returns false for Kimi; completion comes only from the wrapper's exit
     marker `__wc_login_exit <n>`, which stays on the pane (the wrapper sleeps after it).
     Exit 0 and `authenticated` → `done`; exit 0 and not `authenticated` → `failed`;
@@ -269,7 +278,8 @@ key = "oauth/kimi-code"
   account's default model and effort). When `session.effort` is set, the adapter maps
   low→low, medium→high, high→high, xhigh→max, max→max and sets
   `KIMI_MODEL_THINKING_EFFORT=<level>` only when the launched model's `support_efforts`
-  (from the config reader) contains the mapped level; otherwise no variable (observed:
+  (from the config reader) contains the mapped level; the launched model is
+  `input.model` when set, else the home's `default_model`; otherwise no variable (observed:
   the light pin `kimi-code/kimi-for-coding-highspeed` has none). Mechanism:
   `adapter.command(input, session, worktree, context)` may return an `env` object;
   `context` gains the session's account home (`accountDir`, null for the default), and
@@ -290,6 +300,9 @@ key = "oauth/kimi-code"
 - **Role message:** typed (`typesRoleMessage: true`). Kimi's `firstMessage` is
   Antigravity's format with one extra line right after the first:
   `[wc:role] Role: <role>` then `Session: <session name>`, then the rest as in `agy.js`.
+  `machine/service.js` passes the allocated session name to every adapter's
+  `firstMessage(input, promptPath, sessionName)` (other adapters ignore it), so the line
+  is right even when the start request omitted `name` (tested).
   The session line is how the app finds this session's log (below).
 - **Permission prompts:** with `--yolo` Kimi may ask; `promptText(pane)` detects Kimi's
   approval prompt so the existing permission card flow fires. The worker captures the
@@ -305,40 +318,61 @@ main log, the way it already polls Codex rollouts (`pollCodexSteps`,
 - **The log.** `<effective home>/sessions/<workDirKey>/<kimiSessionId>/agents/main/wire.jsonl`,
   one JSON object per line with a `type`. Subagents write their own files under
   `agents/<other>/`, which are never read, so subagent activity cannot end a turn.
-- **Binding.** A new timer, `pollKimiTurns`, every 1 s. For each live Kimi session not yet
-  bound, it lists `<effective home>/sessions/*/*/agents/main/wire.jsonl` files modified at
-  or after the session's `created_at`, and binds to the one whose first `turn.prompt`
-  row with `origin.kind === 'user'` has text starting `[wc:role]` and containing the line
-  `Session: <session name>`. On bind it stores `kimi_session_id` (the `<kimiSessionId>`
-  directory name) and `source_transcript` (the file path), persisted with the session. If
-  no file is bound 120 s after the role message was typed, the service emits one
-  `turn-failed` with error "Couldn't find Kimi Code's log for this session" (the existing
-  failed-turn handling then applies).
-- **Reading.** For a bound session, the timer reads only bytes after the persisted offset
+- **Binding** lives in the adapter's `findTranscript(session)` (the method every adapter
+  has; `machine/service.js:920` calls it), so opening a Kimi chat before binding works.
+  For an unbound session it lists `<effective home>/sessions/*/*/agents/main/wire.jsonl`
+  files modified at or after the session's `created_at`. For each candidate it first
+  reads the metadata row: compatible means `protocol_version` has major `1` and
+  `min_protocol_version` (when present) is at most `1.5`, the version this reader was
+  written against. Among compatible candidates it binds to the one whose first
+  `turn.prompt` row with `origin.kind === 'user'` has text starting `[wc:role]` and
+  containing the line `Session: <session name>`. On bind it stores `kimi_session_id`
+  (the `<kimiSessionId>` directory name) and `source_transcript`, persisted with the
+  session, and returns the path. Bound sessions return `source_transcript`.
+- **Polling.** A timer, `pollKimiTurns`, every 1 s, calls `findTranscript` for unbound
+  live Kimi sessions and reads bound ones. Ticks never overlap (a tick that finds the
+  previous one still running returns), and each session is read by one tick at a time.
+- **Fatal log problems.** If a session is still unbound 120 s after it became `ready`
+  (role message submitted or not), or the only candidates found are incompatible, the
+  service records `kimi_failure` ("Couldn't find Kimi Code's log for this session", or
+  "Kimi Code's log format changed (protocol <v>); update wheelchair"), stops reading,
+  and **stops the session** (kills its tmux session) instead of emitting a turn failure,
+  so no queued work is sent to a session the app can no longer follow. The hub's
+  existing ended-session handling (`viewer/app/sessions.js:742`) then tells whoever
+  started it, with the `kimi_failure` text carried on the session record so the notice
+  says why; the starter restarts it as for any dead session. A restarted session is a new
+  session and binds afresh.
+- **Reading.** For a bound session, a tick reads only bytes after the persisted offset
   (`kimi_offset`, complete lines only) and looks for rows
   `{"type":"turn.ended","agentId":"main","turnId":<n>,"reason":<r>,…}` (observed
-  `reason: "completed"`). A row whose `agentId` is not `main` is ignored. Each `turnId`
-  is acted on once: the highest handled `turnId` (`kimi_last_turn`) is persisted with the
-  offset, so a service restart catches up on turns that ended while it was down, once,
-  and never repeats one.
+  `reason: "completed"`). A row whose `agentId` is not `main` is ignored.
+- **Exactly once.** Each Kimi turn end gets a fixed `delivery_id`,
+  `kimi:<app session name>:<kimi_session_id>:<turnId>`. The tick hands the event to
+  `hook()` (which delivers or spools it), and only then persists `kimi_offset` and
+  `kimi_last_turn`. After a crash between the two, the restart re-reads the same row and
+  sends the same `delivery_id`; the hub already drops repeated delivery ids
+  (`viewer/app/sessions.js:497-502`). `hook()` and the spool keep a provided
+  `delivery_id` instead of assigning a new one. Rows with `turnId` at or below
+  `kimi_last_turn` are skipped. A restart therefore catches up on turns that ended while
+  the service was down, once.
 - **Events.** For each new `turn.ended`, the service calls its existing `hook(session,
   event)` path (so copying, spooling when the hub is down, and forwarding stay exactly as
-  for other CLIs) with `transcript_path` set to the bound file and:
-  - `reason: "completed"` → `{ type: 'turn-ended', conversation_id: kimi_session_id,
-    turn_id: n }`;
+  for other CLIs) with `transcript_path` set to the bound file, the fixed `delivery_id`,
+  and:
+  - `reason: "completed"` → `{ type: 'turn-ended', kimi_session_id, turn_id: n }` (the
+    hub's turn-end loop at `viewer/app/sessions.js:552` copies `kimi_session_id` like the
+    other ids);
   - `reason: "cancelled"` (Collin pressed Esc or Ctrl-C) → the same with
     `interrupted: true`;
   - `reason: "failed"` → `limit-hit` when the failure text matches
-    `quota|rate.?limit|429`, else `turn-failed` with that text. The failure text comes
-    from the `turn.ended` row or the nearest preceding error row in the same turn; the
-    worker triggers or finds a real failed turn (or reads Kimi's wire format in the
-    binary), records the field names in the report, and tests against that shape.
-  - Any other `reason` → `turn-ended` with `interrupted: true` (releases the turn, no
-    report), logged.
-- **Format guard.** The log's first row is `{"type":"metadata","protocol_version":"1.5",…}`.
-  If the bound file's `protocol_version` major is not `1`, the service emits one
-  `turn-failed` "Kimi Code's log format changed (protocol <v>); update wheelchair" and
-  stops reading that session.
+    `quota|rate.?limit|429`, else `turn-failed` with that text. The failure text is built
+    from the `turn.ended` row's `error` only: if it is a string, that string; if an
+    object, its `message` followed by each nested `cause`'s `message` (joined with
+    `: `); if absent, "Kimi Code turn failed". No earlier rows are consulted, so nothing
+    needs to survive between polls. The worker confirms this shape against a real failed
+    turn or Kimi's journal writer and records it in the report.
+  - Any other `reason` → `turn-failed` with "Kimi Code turn ended (<reason>)", so the
+    starter is told.
 - **Hub handling** (`viewer/app/sessions.js`, turn-ended path): an `interrupted`
   turn end releases the turn (queued messages, permission hold) but skips report
   extraction (`deliverReport`), does not mark a reviewer or verifier finished, and does
@@ -348,11 +382,14 @@ main log, the way it already polls Codex rollouts (`pollCodexSteps`,
 - **Report for a turn.** A turn end carries `turn_id`; the hub passes it to the Kimi
   report function, which reads only that turn (see Transcript reading).
 - Tests (fake `kimi` and a fake sessions folder): two app sessions in one worktree each
-  bind their own log by the `Session:` line; a subagent file under `agents/<other>/`
-  never produces a turn end; `completed`, `cancelled` and `failed` rows produce the three
-  event kinds; a restart with a persisted offset emits a missed turn once and nothing
-  twice; a hub outage spools the event and delivers it later; no bind in 120 s emits the
-  failure; a `protocol_version` of `2.0` emits the format failure.
+  bind their own log by the `Session:` line; a chat opened before binding works; a
+  subagent file under `agents/<other>/` never produces a turn end; `completed`,
+  `cancelled`, `failed` (string, object with nested cause, absent) and an unknown reason
+  produce the right events; a restart with a persisted offset emits a missed turn once;
+  a crash after spooling but before saving the offset re-sends the same `delivery_id`
+  and the hub drops it; a hub outage spools and delivers later; no bind in 120 s stops
+  the session with the reason; a candidate with `protocol_version` `2.0` or
+  `min_protocol_version` `1.9` is not bound and stops the session with the format reason.
 
 ### Transcript reading
 
@@ -464,6 +501,9 @@ re-raise them.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| If the role message's paste or Enter fails right after the session is marked ready, the session waits and is then stopped by the 120 s binding deadline | The paste-after-ready gap exists for every CLI today; for Kimi the deadline turns it into a visible stopped session | 10 |
+| A transient failure reading the transcript when a reviewer's turn ends delivers no report, and the "no report" reminder follows | Same for every CLI today (`viewer/app/sessions.js:375-380`) | 10 |
+| If Collin types `/new` or `/sessions` in a Kimi session's terminal, the app keeps following the old conversation | Only Collin can do it, from the terminal; agents never type slash commands | 10 |
 | Placement can pick a Kimi account on a machine where the `kimi` binary was removed after login | Same for every CLI today; Ready reports the missing CLI | 4 |
 
 ## Review Rounds
@@ -657,6 +697,31 @@ exit. Downgrades and declines cite evidence.
 **Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 9:** the Spec was rewritten around reading turn ends from Kimi's main log (Decision 35): no hooks, no `config.toml` edits, binding by a `Session:` line, `pollKimiTurns`, once-per-`turnId` with persisted offset, protocol guard, report by `turn_id`. Sign-in: exact tmux targets, missing-marker states. Folder trust: Up then Enter on a later poll. Three Accepted Risks removed. **Scope: the whole Spec in depth** (it was rewritten).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Version floor dropped with the hooks | upheld | Restored as a machine-wide problem, Decision 37 |
+| intent | minor | Unknown reason silently interrupts | upheld | Becomes `turn-failed` |
+| intent | minor | Binding outside `findTranscript` | upheld | Binding moved into `findTranscript` |
+| intent | minor | Generalise the Codex poller | declined | Design preference; the Kimi poller is small and its Codex counterpart has different step semantics |
+| intent | minor | `samples/hooks.jsonl` invites hooks back | upheld | Marked as a dropped design |
+| mechanics | blocking | Offset and spool have no shared commit point | upheld | Fixed `delivery_id` per turn, offset saved after hand-off; hub dedupe verified at `sessions.js:497-502` |
+| mechanics | blocking | Role submit failure leaves Kimi waiting | accepted-risk | Existing gap for every CLI; deadline now runs from `ready`, so it ends in a stopped session |
+| mechanics | blocking | Log-discovery failure releases queued work | upheld | Fatal log problems stop the session; ended-session notice carries the reason |
+| mechanics | major | `firstMessage` lacks the allocated name | upheld | Service passes the name to `firstMessage` |
+| mechanics | major | Protocol guard after binding; min version ignored | upheld | Metadata checked per candidate before matching, incl. `min_protocol_version` |
+| mechanics | major | `/new` switches conversation | accepted-risk | Only Collin can do it from the terminal |
+| mechanics | major | Error fallback needs state across polls | upheld | Failure text from the `turn.ended` row's `error` only, structured form specified |
+| mechanics | major | Transient transcript read loses a report | accepted-risk | Same for every CLI today |
+| mechanics | major | Login `keys`/`code` endpoints use prefix matching | upheld | Exact targets in every login pane operation |
+| mechanics | major | Effort without `--model` | upheld | Reader extracts `default_model` |
+| mechanics | minor | `conversation_id` vs `kimi_session_id` | upheld | Event carries `kimi_session_id` |
+
+### Round 11 — 2026-11-18
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 10:** version floor restored (machine-wide); binding moved into `findTranscript` with a per-candidate metadata check; non-overlapping poll ticks; fatal log problems stop the session; fixed `delivery_id` per turn with offset saved after hand-off; failure text from `turn.ended.error`; unknown reasons become `turn-failed`; `firstMessage` gets the session name; `default_model` read for effort; exact tmux targets in every login pane operation; event carries `kimi_session_id`; three new Accepted Risks.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
