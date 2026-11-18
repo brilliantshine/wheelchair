@@ -333,7 +333,13 @@ async function press(hub, id, cardId, input) {
   if (card.kind === 'needs') {
     require('./cards.js').resolveCard(card, 'collin', input.action === 'keep-going' ? 'Keep going' : 'Talking it over');
   }
-  if (card.kind === 'approval' && input.action === 'start-building' && thread.pinned.approval?.id === card.id) delete thread.pinned.approval;
+  if (card.kind === 'approval' && input.action === 'start-building' && thread.pinned.approval?.id === card.id) {
+    delete thread.pinned.approval;
+    // Once building starts the idea list has done its job; it stays in the conversation.
+    delete thread.pinned.idea;
+  }
+  // An answered offer leaves the pin; it stays in the conversation.
+  if (card.kind === 'offer' && thread.pinned.offer?.id === card.id) delete thread.pinned.offer;
   await hub.enqueue(thread, lead.name, `[card ${card.id}] ${suffixes[input.action]}`, 'card');
   return { queued: true, text: suffixes[input.action] };
 }
