@@ -948,11 +948,14 @@ Filled by Stage 3. One row per worker brief.
 | T3 | tricky: Kimi log binding, `pollKimiTurns`, turn events, fatal stops, exact kill, input refusal, Stop 202, archive, copier identity, recovered panes, agent-hook ignore (machine part 2, after T1) | `machine/adapters/kimi.js`, `machine/service.js`, `machine/test/`, `machine/API.md` | standard xhigh / gpt-6.1-terra (rung 1: effort, after guardrail) | wc-01b8cb1bf051-worker-7 (attempt 2; attempt 1 wc-01b8cb1bf051-worker-6) | `bash machine/test/run.sh` | running (attempt 2) |
 | T4 | Kimi chat parser, report function, hub `last_turn_id`, interrupted turns, `end_reason` in ended notices, Stop 202 in hub | `viewer/app/{chat,sessions,threads}.js`, their tests | standard / gpt-6.1-terra | wc-01b8cb1bf051-worker-3 | `node --test viewer/test/*.test.js` | done |
 | T5 | Installer detects Kimi; protocol docs and README | `install.sh`, `install/`, `protocol/`, `README.md` | standard / gpt-6.1-terra | wc-01b8cb1bf051-worker-4 | `bash install/test/run.sh` | done |
+| T7 | Hub archive keeps the thread unarchived and pending sessions live on a machine `pending: true` archive reply (found by T3, outside its boundary) | `viewer/app/threads.js` `archive()`, `viewer/test/app-kimi-archive.test.js` | light / gpt-6-luna | wc-01b8cb1bf051-worker-8 | `node --test viewer/test/*.test.js` | running |
 | T6 | Live checks 1–5 against an isolated machine service and hub from the merged branch (after T1–T5) | `docs/plans/kimi-code/reports/T6.md`; fixes go back as remediation | standard | | live checks + full validation | not started |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
 ## Log
+
+- 2026-11-18 — T3 attempt 2 found the hub's archive (`viewer/app/threads.js`) ends every session on `uploads_removed: false`, so a pending fatal stop could not keep the thread unarchived. Contract set by the sub-lead: machine archive replies `{ pending: true, pending_sessions, stopped, committed: [], removed: [], kept }` with no `uploads_removed`; new task T7 (light) builds the hub side.
 
 - 2026-11-18 — T3 attempt 1 (wc-01b8cb1bf051-worker-6, draft `bc43efc` on `wc-01b8cb1bf051-w6`) hit its fails-twice guardrail on a launch/login test-quoting assertion, with most Spec tests unwritten. Sub-lead read the draft (band: self, tricky): design follows the Spec; defects found — Kimi copier saves a fake `ino` 0, poller treats any tick error (including `hook()`) as an unreadable log, archive returns early on the first pending session, recovery pattern unconfirmed. Escalation rung 1 (reason: guardrail hit): rewritten brief with 5 defects, the failing test's fix and a 19-item test list, effort raised to xhigh at Standard (`wc-01b8cb1bf051-worker-7`).
 
