@@ -682,7 +682,7 @@ Filled by Stage 3. One row per worker brief.
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | `check` kind: schema (card.js), hub acceptance (cards.js), press (threads.js), handoff, cards.md/cards-lead.md, node tests | viewer/app/{card,cards,threads,handoff}.js, protocol/app/cards.md, cards-lead.md, viewer/test/protocol-rules.test.js, new viewer/test/*.test.js | standard / gpt-6.1-terra | wc-2daed8b3ee7f-worker | `node --test viewer/test/*.test.js` | in progress |
-| T2 | lead.md after-done check-step rules + pointers; verifier.md steps-only section | protocol/app/lead.md, protocol/app/verifier.md | standard / claude-sonnet-5-5 | wc-2daed8b3ee7f-worker-2 | grep -i check; protocol-rules test | in progress |
+| T2 | lead.md after-done check-step rules + pointers; verifier.md steps-only section | protocol/app/lead.md, protocol/app/verifier.md | standard / claude-sonnet-5-5 | wc-2daed8b3ee7f-worker-2 | grep -i check; protocol-rules test | done |
 | T3 | `tricky` check card rendering, Copy, Fix it now/Leave it buttons, CSS, browser test | viewer/pages/thread.js, viewer/pages/thread.css, new viewer/test/*.spec.js | standard / claude | — | `npm --prefix viewer run test:browser` | not started (after T1) |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
@@ -693,3 +693,8 @@ Free-form running notes: deviations discovered mid-implementation, scope events,
 anything a future session needs that fits nowhere above.
 
 - 2026-11-18 Ready check at approval: hub and machine service answer (`session list`); claude and codex CLIs installed; Codex preflight passes (token fresh). Approved after round 9 per Decision 18; no blocking or major finding was declined or downgraded in any round.
+- 2026-11-18 — Choice: T2, verifier.md: "Steps only" section placed before "## The report" and replaces "How to check" and the verdict forms for a steps-only brief.
+- 2026-11-18 — Choice: T2, lead.md: "Where the steps are done" rules written as a paragraph inside the new `### 10. Check it yourself`.
+- 2026-11-18 — Choice: T2, lead.md step 9 item 4: pointer also says the fix's steps cover only what the fix changed.
+- 2026-11-18 — Choice: T2, lead.md briefing list: the steps verifier's brief carries the words "steps only" (from the task brief, not the Spec).
+- 2026-11-18 — T2 accepted (band: scout): every Spec rule present per scout read; report summarised rather than pasted validation output, so I re-ran `node --test viewer/test/protocol-rules.test.js` (35 pass) and the sub-lead/worker diff (empty). Sub-lead fix after merge: verifier.md steps-only lead-in said "The report below it" for both sections and dropped BLOCKED's `REASON:` line; reworded.
