@@ -84,6 +84,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D49 | Restarted lead also replays undelivered pull-backs from recent messages; items match by stable bullet text; repeats are ignored | No delivered press lost; stable mapping | review-round-6 |
 | D50 | Hub accepts `removed` only on `idea`/`deferred` cards with a matching bullet text | The lead can rely on what reaches it | review-round-6 |
 | D51 | Mode changes before PLAN.md exists are saved in IDEA.md and logged when PLAN.md is created | Persistence in the IDEA-confirmation window | review-round-6 |
+| D52 | Collin chose "keep going" again: fix the two restart cases and continue | Collin's call | user |
+| D53 | Restart context gains `card_kinds` (all card ids, replaced included) | A delivered pull-back stays identifiable after its card was replaced | review-round-7 |
+| D54 | In an unchanged thorough thread, a restarted lead treats a recorded Start building on the latest approval as accepted | Durable lock with no new commit in thorough | review-round-7 |
 
 ## Spec
 
@@ -174,7 +177,12 @@ build was accepted: mode and Deferred stay fixed, the lead locks the pin if it i
 locked, and starts the sub-lead if `session list` shows none (as step 7). Otherwise the restarted lead trusts no earlier approval: it
 retracts any open approval card, ignores Start building presses for any approval card it
 did not post itself, and posts a fresh approval card with a fresh Ready check. A thorough
-thread with no mode change or pull-back restarts exactly as today.
+thread with no mode change or pull-back restarts as today, with one rule for the mode:
+if the latest approval card shows a recorded Start building press (`answered_action:
+start-building` in the restart context), the build counts as accepted. The mode is fixed
+and the lead does not reopen planning; it starts the sub-lead if `session list` shows
+none. (A stale press is possible only after a change, which the `Build accepted:` line
+covers.)
 
 ### PLAN.md `## Deferred` (D11)
 
@@ -348,6 +356,10 @@ it), then: what was
 ### Where the changes go
 
 - `protocol/app/lead.md`: steps 2, 4, 5, 6, 7, 8 as above; restart reads `mode:`.
+- `viewer/app/threads.js` `restartLead`: the thread state JSON gains `card_kinds`, a map
+  from every card id in the thread (replaced ones included) to its kind, so a restarted
+  lead can tell which card a delivered `[card <id>] removed:` press was for (a
+  `deferred` press counts by D49; an `idea` press is handled as today).
 - `viewer/app/threads.js` `restartLead`: when the thread has a stub `context`, the
   restart message also carries the summary text only (as a `stub_summary` field in the
   thread state JSON, without the `commits` line), so a stub lead that dies before writing
@@ -373,14 +385,15 @@ it), then: what was
 ### Not changing
 
 The offer card, the approval card, the Ready check, the progress line, small fixes,
-thorough mode, the stub mechanism (except D43's restart fix, which repairs an existing
+thorough mode, the stub mechanism (except the restart context's new `card_kinds` field, and D43's restart fix, which repairs an existing
 gap for every stub, and D50's `removed` check, which also covers `idea` cards but
 refuses only presses the app never sends), the app's slug and document rules.
 
 ### Validation
 
 - `node --test viewer/test/*.test.js` passes, with new tests: a restart of a stub thread's
-  lead carries `stub_summary` in its context; `deferred` accepted from a
+  lead carries `stub_summary` in its context; a restart's context carries `card_kinds`
+  including a replaced `deferred` card; `deferred` accepted from a
   lead with both modes and an empty list, refused from a sub-lead, refused with an unknown
   mode or extra field; it is pinned and a second replaces the first; it stays in the pins
   after Start building; a `removed` press on it reaches the lead as
@@ -570,12 +583,24 @@ exit. Downgrades and declines cite evidence.
 |------|----------|---------|--------------|------------|
 | intent (claude) | major | Card handling skipped for mode changes before IDEA.md/PLAN.md | upheld | Card rules apply from when the card is first posted |
 | intent (claude) | minor | D50 touches `idea` presses in thorough threads, unnamed exception | upheld | Named in "Not changing" |
-| mechanics (gpt) | blocking | Restarted lead can't tell a delivered pull-back from an idea removal when the card was replaced | user-decision | Restart-timing fork put to Collin |
+| mechanics (gpt) | blocking | Restarted lead can't tell a delivered pull-back from an idea removal when the card was replaced | upheld | D52; D53 |
 | mechanics (gpt) | blocking | Replacement sub-lead re-verifies despite Collin's "defer and finish" | upheld | Replacement applies it with no new attempt |
-| mechanics (gpt) | major | Never-changed thorough thread has no durable lock if the lead dies after accepting Start building | user-decision | Restart-timing fork put to Collin |
+| mechanics (gpt) | major | Never-changed thorough thread has no durable lock if the lead dies after accepting Start building | upheld | D52; D54 |
 | mechanics (gpt) | major | Precedence between a surviving gap and new hardening gaps | upheld | Surviving-gap rule first; hardening saved before stopping |
 | mechanics (gpt) | major | Review upholding a Deferred item as needed leaves its row | upheld | Row removed in the same save |
 | mechanics (gpt) | minor | Pull-back dedup is thread-wide but text uniqueness only per card | upheld | Texts never reused in a thread |
+
+### Round 8 — 2026-11-17
+
+**Lanes:** intent: claude; mechanics: other family; cross-family: yes.
+
+**Changed since Round 7:**
+- Deferred card rules apply from first posting; D50 named in "Not changing".
+- Replacement sub-lead applies "defer and finish"; surviving-gap precedence; review pulling a Deferred item back removes its row; bullet texts never reused.
+- Restart context `card_kinds` (D53); unchanged-thorough restart lock (D54).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
