@@ -391,6 +391,25 @@ test('stamps when Collin last wrote in a thread, and only for his messages', asy
   });
 });
 
+test('stamps when Collin answers a card, so the thread moves up the list', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context);
+    const lead = made.sessions[0];
+    const stampOf = async () => (await api(context, '/threads')).body.threads.find((t) => t.id === made.id).collin_at;
+    const question = await card(context, made.id, lead.name, {
+      kind: 'question', fits: 'This settles the approach.', question: 'Which?',
+      options: [{ id: 'a', label: 'A', consequence: 'Use A.' }, { id: 'b', label: 'B', consequence: 'Use B.' }],
+      leaning: 'a', why: 'It is simpler.',
+    });
+    const before = await stampOf();
+    assert.equal((await api(context, `/threads/${made.id}/cards/${question.body.id}/press`, {
+      method: 'POST', body: { action: 'picked', value: 'A' },
+    })).status, 202);
+    const stamped = await stampOf();
+    assert.ok(stamped && stamped !== before);
+  });
+});
+
 test('posts a permission need and holds the session queue while the prompt is open', async () => {
   await withContext(async (context) => {
     const made = await thread(context);

@@ -418,7 +418,7 @@ async function enqueue(hub, thread, name, text, source = 'app', first = false, {
   target.queue ||= [];
   thread.queues ||= {};
   const message = { text, source, at: new Date().toISOString(), ...(quietTag ? { quiet: quietTag } : {}), ...(about ? { about } : {}) };
-  // The thread list orders threads by when Collin last wrote in them, not by any activity.
+  // The thread list orders threads by when Collin last wrote or pressed a card in them (see threads.js press), not by any activity.
   if (source === 'collin') thread.collin_at = message.at;
   if (first) target.queue.unshift(message);
   else target.queue.push(message);
