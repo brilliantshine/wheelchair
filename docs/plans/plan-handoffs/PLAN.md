@@ -226,6 +226,10 @@ refusal is 409 with "handed off" or "Retry the unfinished import first":
 - messages, uploads, card presses and dismissals, card posts from any session of the
   thread, session starts (including `restart`), aside creation and aside messages,
   terminal keys (`POST /sessions/:name/keys`, `viewer/app/routes.js:520`);
+- `enqueue` (`viewer/app/sessions.js:408`) drops any message for a session of a frozen
+  thread, whoever produces it (turn-failed notices, dead-session polls, starters), except
+  the operations' own restart context, so nothing made during the freeze reaches a later
+  lead;
 - queue delivery: `canDeliver` (`viewer/app/sessions.js:428`) delivers nothing to a
   session of a frozen thread;
 - nothing enqueues `Continue.` for one, from the rate-limit release
@@ -255,7 +259,9 @@ The operations themselves bypass the check.
   here".
 - While handed off, the page offers **Download the file again**
   (`GET /threads/:id/handoff-file`, the saved `handoffs/<id>.json`), so a lost download
-  never needs a second export. The saved file is deleted when the hand-off is undone or the
+  never needs a second export. If only `handoffs/<id>.json.new` exists (a crash between the
+  save and the rename), Download again renames it first; the hub does the same for every
+  handed-off thread when it starts. The saved file is deleted when the hand-off is undone or the
   thread is advanced by an import (Done step), not when it is archived.
 - A handed-off thread can be archived like any thread; its Undo stays available.
 - The threads list shows a "handed off" label on such threads.
@@ -290,10 +296,10 @@ The hub then, inside `withThread(<file thread id>)`:
 
 | Case | Outcome |
 |---|---|
-| No such thread, and the machine holds no session, worktree or archive record for this id | **Create** |
-| No such thread, but the machine holds sessions, a worktree or an archive record for this id (another wheelchair app on the same machine has it) | Refused 409 "This machine already has this thread from another wheelchair app; import it on another machine" |
+| No such thread, and the machine holds no session, worktree, archive record or local `wc/<id>` branch in the picked project for this id | **Create** |
+| No such thread, but the machine holds sessions, a worktree or an archive record for this id (another wheelchair app on the same machine has or had it) | Refused 409 "This machine already has this thread from another wheelchair app; import it on another machine" |
 | Exists with a saved `handoff_op` | **Finish**: run that operation again (see Operations and Retry), ignoring this file; outcome as that operation's, with note "Finished the earlier import or undo; import this file again if it's newer" |
-| Exists on another machine or project than the picker chose | **Open**, note "This thread lives on <machine>, <project>" |
+| Exists on another machine or project than the picker chose | **Open**, note "This thread lives on <machine>, <project>", plus " It's handed off: press Undo on it to carry on." when it is handed off |
 | Exists; its head equals `head`, or `head` is an ancestor of its head | **Open**, change nothing. Note: "You already have this thread here", plus " It's handed off: press Undo on it to carry on here." when it is handed off and the tip is unchanged; or "This file is older than the thread here" |
 | Exists; its head is a strict ancestor of `head` | **Advance** |
 | Exists; neither is an ancestor of the other | **Open**, change nothing; note "This thread and the file have each moved on separately, so nothing was changed. Bring the branches together yourself, then import again." |
@@ -311,7 +317,8 @@ project, `branch: wc/<id>`, no sessions) together with its `handoff_op`, then ru
 operation. **Advance** first refuses 409 "The thread here is busy" unless the existing
 thread has no live session other than the lead, no aside open or running, the lead is idle
 or not live, nothing is queued, no sudo card is waiting or running, and no upload is in
-flight; and 409 "The thread here has uncommitted changes" if
+flight; 409 "The thread here isn't on its branch" if its worktree exists and is not on
+`wc/<id>`; and 409 "The thread here has uncommitted changes" if
 its worktree exists and is dirty. Then it saves `handoff_op` and runs the operation.
 
 Responses: `{outcome: "created"|"advanced"|"opened", id, note?}`. The page navigates to
@@ -345,7 +352,7 @@ recovery.
 
 **The operation record.** Before its first step, an operation saves
 `thread.handoff_op: {kind: "create"|"advance"|"undo", file, parent, claim_sha,
-last_error, started_at}`; `started_at` is set once and becomes `imported.at` in Apply, so
+last_error, claim_landed, applied, started_at}`; `started_at` is set once and becomes `imported.at` in Apply, so
 a Retry never moves that cutoff on the thread record (for Create, in the same save that first
 creates the record). `file` is the path of a copy of the imported file the hub writes to
 `handoffs/incoming-<id>.json` before that save (null for undo); `parent` is the commit the
@@ -362,23 +369,25 @@ instead of "export again from wherever it is now".
 
 **Steps**, in order (Undo has no carried state):
 
-1. **Claim.** If `claim_sha` is null: `claim-commit` on `parent`, save `claim_sha`, then
+1. **Claim.** Skipped when `claim_landed` is true. If `claim_sha` is null: `claim-commit` on `parent`, save `claim_sha`, then
    `claim-push`. If `claim_sha` is set: `claim-push` again. `claim-push` decides its
    result only from the remote tip it reads after its push attempt, never from the push's
-   exit code: tip `claim_sha` → `landed`, go on; tip `parent` → `unknown`; any other tip →
+   exit code: tip `claim_sha` → `landed`: save `claim_landed: true`, go on; tip `parent` → `unknown`; any other tip →
    `moved`, abandon; tip unreadable → `unknown`. `unknown` fails the step with "Couldn't
    update the branch on GitHub", keeping `claim_sha`, so Retry tries again.
-2. **Stop.** Stop every live session of the thread (Advance and Undo), then ask the
-   machine (`/v1/handoff` `running`) which tmux sessions named `wc-<id>-*` still exist. Any
-   left fails the step with "Couldn't stop the agent working here".
+2. **Stop.** Stop every live session of the thread (Advance and Undo). Then ask the
+   machine (`/v1/handoff` `running`) which tmux sessions named `wc-<id>-*` still exist,
+   kill each by name (`/v1/handoff` `kill`), and ask again. Any left fails the step with
+   "Couldn't stop the agent working here".
 3. **Checkout.** If the thread's worktree directory exists and is a git worktree:
    `/v1/handoff` `fast-forward` to `claim_sha`. Otherwise clear `worktree` on the record and
    move the project's local `wc/<id>` ref to `claim_sha` (`/v1/handoff` `set-branch`); the
    lead start builds the worktree (step 6).
-4. **Apply.** First, if the thread is archived, call `/v1/handoff` `reopen` (idempotent);
+4. **Apply.** Skipped (with 2 and 3) when `applied` is true. First, if the thread is archived, call `/v1/handoff` `reopen` (idempotent);
    if it fails, the step fails before anything is saved. Then set the carried state
    (Create, Advance), retract cards and clear pins (Advance), clear `handed_off` and
-   `archived`, set `checkout_sha: claim_sha`, and save. Every assignment is the same on a
+   `archived`, set `checkout_sha: claim_sha` and `handoff_op.applied: true`, and save, all in
+   one save. Every assignment is the same on a
    re-run.
 5. **Done.** Clear `handoff_op` and save. Then delete `handoffs/incoming-<id>.json` and
    `handoffs/<id>.json`. A crash between the save and the deletes leaves only stray files;
@@ -391,7 +400,10 @@ instead of "export again from wherever it is now".
    condition (`viewer/pages/thread.js:270-277`) becomes "not archived, not frozen, no live
    lead, and either a lead was ever started or the thread was imported".
 
-**Restart order.** `restartLead` is changed for every thread: it picks the new lead's name
+**Restart order.** `restartLead` is changed for every thread: it first asks the machine
+(`running`) for tmux sessions of the thread's lead names that the hub does not count as
+live, kills them (`kill`) and moves any queued context from those names to the new one;
+then it picks the new lead's name
 (`newSessionName`), puts the context message in that name's queue and saves, **then**
 starts the session. A crash after the start still leaves the context queued for the lead;
 a crash before it leaves a thread with no live lead, which shows Restart.
@@ -426,9 +438,10 @@ and its thread id is not in that set.
 
 - `createWorktree` (`machine/service.js:425-478`) gains `input.from_remote_branch: {sha}`:
   after the fetch, `sha` must be an ancestor of or equal to `origin/<branch>`. If no
-  local `wc/<id>` exists: `git worktree add -b <branch> <dest> <sha>` then
-  `git -C <dest> branch --set-upstream-to=origin/<branch>`. If it exists and is an ancestor
-  of `sha`: `git worktree add <dest> <branch>` then `git -C <dest> merge --ff-only <sha>`.
+  local `wc/<id>` exists: `git worktree add -b <branch> <dest> <sha>`. If it exists and is
+  an ancestor of `sha`: `git worktree add <dest> <branch>` then
+  `git -C <dest> merge --ff-only <sha>`. Both paths then run
+  `git -C <dest> branch --set-upstream-to=origin/<branch>`, so a plain push works.
   Otherwise fail with "a local branch <branch> already exists and differs". Before
   either, if the destination directory (`stateDir/worktrees/<project>/<branch>`) already
   exists and is a git worktree on `<branch>` whose `HEAD` is `sha` or an ancestor of it,
@@ -456,9 +469,9 @@ and its thread id is not in that set.
   - `claim-commit` `{project, parent, message}` → step 1 of Claims; returns `{sha}`.
   - `claim-push` `{project, branch, parent, sha}` → reads the remote tip
     (`git ls-remote`); tip == `sha`: `{result: "landed"}`; tip == `parent`: run step 2 of
-    Claims and read the tip again: `landed` if it is now `sha`; any other tip:
-    `{result: "moved", remote_tip, picked_up_at}`; any git or network failure:
-    `{result: "unknown", error}`.
+    Claims and read the tip again. The result comes only from the tip read last, never from
+    the push's exit code: tip `sha` → `landed`; tip `parent` → `unknown`; any other tip →
+    `{result: "moved", remote_tip, picked_up_at}`; tip unreadable → `unknown`.
   - Every `/v1/handoff` outcome, including refusals, is a 200 with a JSON body (except 422
     for invalid input), so the hub's machine client (`viewer/app/machine-client.js:64-76`)
     never drops the body.
@@ -473,8 +486,11 @@ and its thread id is not in that set.
     and differs".
   - `running` `{thread_id}` → the names of tmux sessions `wc-<thread_id>-*` that exist
     (`tmux has-session`).
-  - `known` `{thread_id}` → whether the machine holds any session record, worktree or
-    archive record for the id (used by Create's refusal row).
+  - `known` `{thread_id, project}` → whether the machine holds any session record,
+    worktree or archive record for the id, or the project has a local `wc/<id>` branch
+    (the one durable signal; used by Create's refusal row).
+  - `kill` `{names}` → `tmux kill-session -t <name>` for each name matching
+    `^wc-[0-9a-f]{12}-`; returns the names still running.
   - Calls run in the machine's per-repository queue (the one `createWorktree` uses,
     `machine/service.js:461`), and the hub calls `/v1/handoff` with a 120-second timeout
     instead of the machine client's default (`viewer/app/machine-client.js:42`). A timeout
@@ -741,7 +757,7 @@ npm --prefix viewer run test:browser
 
 ### Round 6 — 2026-11-17
 
-**Lanes:** intent and mechanics; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 5:**
 - New Frozen threads section: one guard for handed-off and unfinished threads, used by every entry point.
@@ -754,6 +770,17 @@ npm --prefix viewer run test:browser
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Other-machine Open note lacks the Undo hint | upheld | Note adds it when handed off |
+| intent | minor | `known` forgets archived ids after a machine restart | upheld | `known` also counts a local `wc/<id>` branch |
+| mechanics | blocking | Crash before rename leaves only `.json.new` | upheld | Download again and hub start rename it |
+| mechanics | blocking | Stop detects survivors but never kills them | upheld | `kill` by name, then recheck |
+| mechanics | blocking | Detached checkout passes Advance's checks, then fails every Retry | upheld | Advance refuses a worktree not on `wc/<id>` before claiming |
+| mechanics | blocking | Ambiguous restart start can launch a second lead | upheld | Restart kills orphan lead tmux sessions and moves their queued context first |
+| mechanics | blocking | Retry after Apply treats a later tip as someone else's pickup | upheld | `claim_landed` and `applied` flags skip finished steps |
+| mechanics | major | Machine and hub claim outcomes conflict | upheld | Machine contract now matches: result from the last tip read |
+| mechanics | major | Create refusal not durable across machine restarts | upheld | Same fix as intent |
+| mechanics | major | `set-branch` skips upstream setup | upheld | Both checkout paths set upstream |
+| mechanics | major | System producers can queue work while frozen | upheld | `enqueue` drops messages for frozen threads |
 
 ## Prior Work
 
