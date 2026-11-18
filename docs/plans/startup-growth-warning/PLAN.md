@@ -1,6 +1,6 @@
 ---
 slug: startup-growth-warning
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-17
 ---
 
@@ -400,3 +400,4 @@ flowchart TD
 - 2026-11-17 — Choice: T2, viewer/app/card.js: no per-string length cap on `warnings`; machine fields are selected only for `approval` with `machine: true`.
 - 2026-11-17 — Choice: T2, protocol/app/lead.md: wording of the "Talk about it" reply on the hub-update needs card.
 - 2026-11-17 — T2 accepted (band: scout). Scout found no deviations. Re-ran app-sudo + protocol-rules node tests (55 pass, 0 fail) and app-threads.spec.js in Chromium and Firefox (154 passed).
+- 2026-11-17 — Integrated validation green (machine 138 pass; viewer node 536 pass; browser 722 pass after one unrelated settings-spec flake). Sub-lead added the `machine/AGENTS.md` row for `lib/startup-warning.js`. COMPLETION.md written; status verifying.
