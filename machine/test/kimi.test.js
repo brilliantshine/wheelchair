@@ -146,8 +146,8 @@ test('version cache checks semver and invalidates when mtime changes', async () 
     version('2.6.2'); await machine.checkKimiVersion(); assert.equal(machine.cliStatus('kimi').problem, 'Kimi Code 2.6.3 or newer is needed (found 2.6.2)');
     machine.cliStatus('kimi'); assert.equal(fs.readFileSync(count, 'utf8').trim().split('\n').length, 1);
     version('unknown'); await machine.checkKimiVersion(); assert.match(machine.cliStatus('kimi').problem, /found unknown/);
-    for (const v of ['2.6.3', '2.6.4-rc.1', '2.10.0', '2.6.3+build']) { version(v); await machine.checkKimiVersion(); assert.equal(machine.cliStatus('kimi').problem, undefined); }
-    version('2.6.3-rc.1'); await machine.checkKimiVersion(); assert.match(machine.cliStatus('kimi').problem, /found 2.6.3-rc.1/);
+    for (const v of ['2.6.3', 'kimi 2.6.3', 'kimi, version 2.10.0', '2.6.4-rc.1', '2.10.0', '2.6.3+build']) { version(v); await machine.checkKimiVersion(); assert.equal(machine.cliStatus('kimi').problem, undefined); }
+    for (const v of ['kimi 2.6.3foo', 'kimi 2.6.3.0', '2.6.3-rc.1', '2.6.2']) { version(v); await machine.checkKimiVersion(); assert.equal(machine.cliStatus('kimi').problem, `Kimi Code 2.6.3 or newer is needed (found ${v})`); }
     version('2.6.2'); await assert.rejects(machine.startNamed({ cli: 'kimi' }, 'wc-test-worker'), /Kimi Code 2.6.3 or newer is needed \(found 2.6.2\)/);
   } finally { process.env.PATH = old; }
 });
@@ -354,7 +354,8 @@ test('missing executable refuses Kimi login', async () => {
 
 test('actual approval screens require both title and option', () => {
   for (const title of ['Run this command?', 'Write this file?', 'Apply these edits?', 'Stop this task?', 'Approve SomeTool?']) assert.equal(kimi.promptText(`${title}\n  Approve once\n  Reject`), true, title);
-  for (const text of ['I approve', 'Reject', 'Run this command', 'Run this command?', 'Ready to build with this plan?\n  Approve once\n  Reject']) assert.equal(kimi.promptText(text), false, text);
+  assert.equal(kimi.promptText('Ready to build with this plan?\n❯ Approve\n  Reject\n  Revise plan'), true);
+  for (const text of ['I approve', 'Reject', 'Run this command', 'Run this command?', 'The assistant asks: Ready to build with this plan?']) assert.equal(kimi.promptText(text), false, text);
 });
 test('recovery prioritizes anchored Kimi markers over reply text', async () => {
   const machine = Object.create(MachineService.prototype); machine.sessions = {}; machine.persistSessions = async () => {};
