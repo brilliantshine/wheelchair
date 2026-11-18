@@ -324,3 +324,5 @@ means today's behaviour, byte for byte: same settings file, same argv.
 |---|-----------|--------------------|------|-----------|------------|--------|
 
 ## Log
+
+- 2026-11-18 Ready check: hub and machine service answer (`session list`); Claude Code 2.1.327 and codex-cli 0.169.0 installed; Codex preflight passed.
