@@ -183,3 +183,116 @@ test('undo and cancel routes enforce saved operation and frozen archive', async 
     assert.equal((await ops.revokes(hub))[0].sha, sha); assert.equal((await hub.thread(id)).handoff_op, undefined);
   } finally { await close(c); }
 });
+
+test('lost push response saves the claim and retries without another commit', async () => {
+  const { makeTemp } = require('../../test-support/run-dir.js'); const { Hub } = require('../app/hub.js');
+  const hub = new Hub({ stateDir: await makeTemp('handoff-lost-') }); await hub.state.init();
+  await hub.save({ id, machine: 'hub', project: '/repo', slug: 'plan', sessions: [], cards: [], pinned: {}, handoff_op: ops.operation('undo', parent, null) });
+  let pushes = 0, commits = 0;
+  hub.client.handoff = async (_, input) => {
+    if (input.action === 'claim-commit') { commits++; return { sha }; }
+    if (input.action === 'claim-push' && !pushes++) throw new Error('timeout');
+    return ({ inspect: { worktree_exists: false, repository: 'github.com/o/r' }, known: { checked_out: [] }, 'claim-push': { result: 'landed' }, running: { names: [] }, 'set-branch': { result: 'ok' }, reopen: { ok: true } })[input.action];
+  }; hub.restartLead = async () => {};
+  await assert.rejects(ops.runOperation(hub, id), /timeout/);
+  const saved = await hub.thread(id); assert.equal(saved.handoff_op.claim_sha, sha); assert.match(saved.handoff_op.last_error, /timeout/); assert.equal(saved.handoff_op.repository, 'github.com/o/r');
+  await ops.runOperation(hub, id); assert.equal(commits, 1);
+});
+
+test('moved claim abandons each kind and uses re-import wording', async () => {
+  const { makeTemp } = require('../../test-support/run-dir.js'); const { Hub } = require('../app/hub.js');
+  for (const kind of ['create', 'advance', 'undo']) {
+    const hub = new Hub({ stateDir: await makeTemp('handoff-abandon-') }); await hub.state.init();
+    await hub.save({ id, machine: 'hub', project: '/repo', slug: 'plan', sessions: [], cards: [], pinned: {}, handoff_op: ops.operation(kind, parent, null), handed_off: { head: parent } });
+    hub.client.handoff = async (_, input) => ({ inspect: { worktree_exists: false }, known: { checked_out: [] }, 'claim-commit': { sha }, 'claim-push': { result: 'moved', remote_tip: 'c'.repeat(40), picked_up_at: '2026-01-01' } })[input.action];
+    await assert.rejects(ops.runOperation(hub, id, { reimport: true }), kind === 'undo' ? /picked up elsewhere on 2026-01-01/ : /import that file again/);
+    if (kind === 'create') await assert.rejects(hub.thread(id), { status: 404 });
+    else { const thread = await hub.thread(id); assert.equal(thread.handoff_op, undefined); assert.equal(thread.handed_off.head, parent); }
+  }
+});
+
+test('checkout failure is saved and reopen is called on open threads', async () => {
+  const { makeTemp } = require('../../test-support/run-dir.js'); const { Hub } = require('../app/hub.js');
+  const hub = new Hub({ stateDir: await makeTemp('handoff-checkout-') }); await hub.state.init();
+  const op = ops.operation('undo', parent, null); op.claim_sha = sha; op.claim_landed = true;
+  await hub.save({ id, machine: 'hub', project: '/repo', worktree: '/work', slug: 'plan', sessions: [], cards: [], pinned: {}, archived: false, handoff_op: op });
+  let fails = true, reopened = 0;
+  hub.client.handoff = async (_, input) => {
+    if (input.action === 'fast-forward') return fails ? { result: 'failed', error: 'HEAD past claim' } : { result: 'ok' };
+    if (input.action === 'reopen') { reopened++; return { ok: true }; }
+    return ({ running: { names: [] }, inspect: { worktree_exists: true } })[input.action];
+  }; hub.restartLead = async () => {};
+  await assert.rejects(ops.runOperation(hub, id), /HEAD past claim/); assert.match((await hub.thread(id)).handoff_op.last_error, /HEAD past claim/);
+  fails = false; await ops.runOperation(hub, id); assert.equal(reopened, 1);
+});
+
+test('revoke expiry, machine exceptions, repeated revocation, and dismissal', async () => {
+  const { makeTemp } = require('../../test-support/run-dir.js'); const { Hub } = require('../app/hub.js');
+  const hub = new Hub({ stateDir: await makeTemp('handoff-expiry-') }); await hub.state.init();
+  const entry = { thread_id: id, project: '/repo', machine: 'hub', repository: 'github.com/o/r', branch: `wc/${id}`, parent, sha, until: new Date(Date.now() + 100000).toISOString() };
+  await ops.writeRevokes(hub, [entry]); let calls = 0;
+  hub.client.handoff = async () => { calls++; return { result: 'revoked' }; };
+  await ops.sweep(hub); let [saved] = await ops.revokes(hub); assert.ok(Date.parse(saved.until) > Date.now() + 80000000);
+  await ops.sweep(hub); assert.equal(calls, 2);
+  hub.client.handoff = async () => { throw new Error('offline'); }; await ops.sweep(hub);
+  [saved] = await ops.revokes(hub); assert.equal(saved.last_result, 'waiting'); assert.equal(saved.error, 'offline');
+  await ops.dismiss(hub, saved); assert.equal((await ops.revokes(hub)).length, 1);
+  saved.until = new Date(0).toISOString(); await ops.writeRevokes(hub, [saved]); await ops.sweep(hub); assert.equal((await ops.revokes(hub)).length, 0);
+  entry.until = new Date(0).toISOString(); entry.last_result = 'failed'; entry.error = 'lease'; await ops.writeRevokes(hub, [entry]);
+  hub.client.handoff = async () => ({ result: 'failed', error: 'lease' }); await ops.sweep(hub); assert.equal((await ops.revokes(hub)).length, 1);
+  await ops.dismiss(hub, entry); assert.equal((await ops.revokes(hub)).length, 0);
+});
+
+test('faults at every operation step converge to the uninterrupted record', async () => {
+  const { makeTemp } = require('../../test-support/run-dir.js'); const { Hub } = require('../app/hub.js');
+  async function run(kind, failure) {
+    const hub = new Hub({ stateDir: await makeTemp('handoff-converge-') }); await hub.state.init();
+    const op = ops.operation(kind, parent, kind === 'undo' ? null : { stage: 'approved', exported_at: 'date', history: [], repository: 'github.com/o/r' }); op.started_at = '2026-01-01T00:00:00.000Z';
+    await hub.save({ id, machine: 'hub', project: '/repo', slug: 'plan', sessions: [], cards: [], pinned: {}, handoff_op: op });
+    let failed = false, commits = 0, starts = 0, calls = 0;
+    hub.client.handoff = async (_, input) => {
+      if (input.action === 'claim-commit') { commits++; return { sha }; }
+      if (input.action === 'running' && failure === 'kill' && !failed) return { names: [`wc-${id}-lead`] };
+      if (input.action === failure && !failed) { failed = true; return input.action === 'claim-push' ? { result: 'unknown', error: 'fault' } : { result: 'failed', error: 'fault' }; }
+      return ({ inspect: { worktree_exists: false }, known: { checked_out: [] }, 'claim-push': { result: 'landed' }, running: { names: [] }, 'set-branch': { result: 'ok' }, reopen: { ok: true } })[input.action];
+    };
+    const save = hub.save.bind(hub);
+    hub.save = async (thread) => { if (failure === 'done' && !failed && !thread.handoff_op) { failed = true; throw new Error('fault'); } return save(thread); };
+    hub.restartLead = async () => { starts++; assert.equal((await hub.thread(id)).handoff_op, undefined); };
+    if (failure) { await assert.rejects(ops.runOperation(hub, id), /fault/); assert.equal(starts, 0); }
+    await ops.runOperation(hub, id); const result = await hub.thread(id); delete result.updated_at; assert.equal(commits, 1); assert.equal(starts, 1); return result;
+  }
+  for (const kind of ['create', 'advance', 'undo']) {
+    const baseline = await run(kind, null);
+    for (const failure of ['claim-push', 'running', 'kill', 'set-branch', 'reopen', 'done']) assert.deepEqual(await run(kind, failure), baseline, `${kind}/${failure}`);
+  }
+});
+
+test('undo retry and cancellation routes report moved claims and enforce claim boundary', async () => {
+  const { setup, close, api } = require('./helpers/app.js'); const { Hub } = require('../app/hub.js'); const c = await setup();
+  try {
+    const hub = new Hub({ stateDir: c.state });
+    const thread = { id, machine: 'hub', project: '/repo', slug: 'plan', branch: `wc/${id}`, title: 'test', sessions: [], cards: [], asides: [], pinned: {}, queues: {}, sent: [], handed_off: { head: parent, at: '2026-11-17T12:00:00Z' }, archived: true };
+    await hub.save(thread);
+    Object.assign(c.machine.handoffReplies, { inspect: { worktree_exists: false, repository: 'github.com/o/r' }, known: { checked_out: [] }, 'claim-commit': { sha }, 'claim-push': { result: 'moved', remote_tip: 'c'.repeat(40), picked_up_at: '2026-01-01' } });
+    let r = await api(c, `/threads/${id}/undo-handoff`, { method: 'POST' }); assert.equal(r.status, 409); assert.match(r.body.detail, /picked up elsewhere on 2026-01-01/);
+    thread.handoff_op = ops.operation('undo', parent, null); thread.handoff_op.claim_sha = sha; thread.handoff_op.claim_landed = true; await hub.save(thread);
+    r = await api(c, `/threads/${id}/cancel-handoff`, { method: 'POST' }); assert.equal(r.status, 409);
+    Object.assign(c.machine.handoffReplies, { running: { names: [] }, 'set-branch': { result: 'ok' }, reopen: { ok: true } });
+    r = await api(c, `/threads/${id}/undo-handoff`, { method: 'POST' }); assert.equal(r.status, 200); assert.equal(r.body.outcome, 'undone');
+    thread.handoff_op = ops.operation('undo', parent, null); thread.handoff_op.claim_sha = sha; thread.handoff_op.claim_landed = true; await hub.save(thread);
+    r = await api(c, `/threads/${id}/retry-handoff`, { method: 'POST' }); assert.equal(r.status, 200);
+    thread.handoff_op = ops.operation('undo', parent, null); thread.handoff_op.claim_sha = sha; thread.handoff_op.repository = 'github.com/o/r'; await hub.save(thread);
+    r = await api(c, `/threads/${id}/cancel-handoff`, { method: 'POST' }); assert.equal(r.status, 200); assert.equal((await ops.revokes(hub))[0].repository, 'github.com/o/r');
+  } finally { await close(c); }
+});
+
+test('failed revoke notice uses repository and survives handoff file sweep', async () => {
+  const { setup, close, api } = require('./helpers/app.js'); const { Hub } = require('../app/hub.js'); const handoff = require('../app/handoff.js'); const c = await setup();
+  try {
+    const hub = new Hub({ stateDir: c.state }); const entry = { thread_id: id, project: '/repo', machine: 'hub', repository: 'github.com/o/r', branch: `wc/${id}`, parent, sha, until: new Date(0).toISOString(), last_result: 'failed', error: 'lease' };
+    await ops.writeRevokes(hub, [entry]); await handoff.sweepFiles(hub); assert.equal((await ops.revokes(hub)).length, 1);
+    let r = await api(c, '/threads?view=list'); assert.match(r.body.revoke_notices[0].text, /github.com\/o\/r wc\/abcdef123456: lease/);
+    r = await api(c, '/handoff-revokes/dismiss', { method: 'POST', body: { thread_id: id, sha } }); assert.equal(r.status, 200); assert.deepEqual(await ops.revokes(hub), []);
+  } finally { await close(c); }
+});

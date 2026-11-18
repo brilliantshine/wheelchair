@@ -165,9 +165,9 @@ class Hub {
     return this.mergePolling;
   }
   runHandoffOperation(id, options) { return require('./handoff-ops.js').runOperation(this, id, options); }
-  createHandoffLocked(input) { return require('./handoff-ops.js').createLocked(this, input); }
-  advanceHandoffLocked(thread, file) { return require('./handoff-ops.js').advanceLocked(this, thread, file); }
-  runHandoffLocked(thread, reimport) { return require('./handoff-ops.js').runLocked(this, thread, reimport); }
+  createLocked(input) { return require('./handoff-ops.js').createLocked(this, input); }
+  advanceLocked(thread, file) { return require('./handoff-ops.js').advanceLocked(this, thread, file); }
+  runLocked(thread, reimport) { return require('./handoff-ops.js').runLocked(this, thread, reimport); }
   startHandoffCreate(input) { return require('./handoff-ops.js').startCreate(this, input); }
   startHandoffAdvance(thread, file) { return require('./handoff-ops.js').startAdvance(this, thread, file); }
   undoHandoff(id) { return require('./handoff-ops.js').undo(this, id); }
