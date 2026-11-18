@@ -1520,7 +1520,11 @@ test('handoff local branch operations guard divergence and report ownership', as
     const call = async (action, fields) => { const response = await api(env, 'POST', '/v1/handoff', { action, thread_id: id, project: repo, ...fields }, hubHeader); assert.equal(response.status, 200, JSON.stringify(response.body)); return response.body; };
     const old = git(['-C', worktree, 'rev-parse', 'HEAD']).stdout.trim();
     git(['-C', repo, 'commit', '--allow-empty', '-m', 'new']); const next = git(['-C', repo, 'rev-parse', 'HEAD']).stdout.trim();
-    let body = await call('known', { head: next }); assert.deepEqual(body, { known: true, local_branch: true, local_ancestor: true, checked_out: worktree }, JSON.stringify(body));
+    let body = await call('known', { head: next }); assert.deepEqual(body, { known: true, local_branch: true, local_ancestor: true, checked_out: [worktree] }, JSON.stringify(body));
+    const duplicate = path.join(root, 'second\ncheckout');
+    git(['-C', repo, 'worktree', 'add', '--force', duplicate, branch]);
+    body = await call('known', { head: next }); assert.deepEqual(new Set(body.checked_out), new Set([worktree, duplicate]), JSON.stringify(body));
+    git(['-C', repo, 'worktree', 'remove', '--force', duplicate]);
     await write(path.join(worktree, 'dirty'), 'x'); body = await call('fast-forward', { worktree, branch, head: next }); assert.equal(body.result, 'failed', JSON.stringify(body)); await fs.unlink(path.join(worktree, 'dirty'));
     body = await call('fast-forward', { worktree, branch, head: next }); assert.equal(body.result, 'ok', JSON.stringify(body));
     assert.equal(git(['-C', worktree, 'config', `branch.${branch}.remote`]).stdout.trim(), 'origin'); assert.equal(git(['-C', worktree, 'config', `branch.${branch}.merge`]).stdout.trim(), `refs/heads/${branch}`);
@@ -1528,7 +1532,7 @@ test('handoff local branch operations guard divergence and report ownership', as
     git(['-C', worktree, 'checkout', '--detach']); body = await call('fast-forward', { worktree, branch, head: next }); assert.equal(body.result, 'failed', JSON.stringify(body));
     body = await call('set-branch', { branch, sha: old }); assert.equal(body.result, 'failed', JSON.stringify(body));
     body = await call('set-branch', { branch, sha: next }); assert.equal(body.result, 'ok', JSON.stringify(body));
-    body = await call('known', { head: old }); assert.equal(body.local_ancestor, false, JSON.stringify(body)); assert.equal(body.checked_out, null, JSON.stringify(body));
+    body = await call('known', { head: old }); assert.equal(body.local_ancestor, false, JSON.stringify(body)); assert.deepEqual(body.checked_out, [], JSON.stringify(body));
     git(['-C', repo, 'branch', '-D', branch]); body = await call('known', { head: old }); assert.equal(body.local_branch, false, JSON.stringify(body)); assert.equal(body.local_ancestor, null, JSON.stringify(body));
     const orphan = '999999999999'; const orphanPath = path.join(env.state, 'worktrees', 'project', `wc-${orphan}-w1`);
     git(['-C', repo, 'worktree', 'add', '--detach', orphanPath, old]);

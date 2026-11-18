@@ -1336,11 +1336,11 @@ class MachineService {
     if (action === 'known') {
       const name = `wc/${input.thread_id}`;
       const local = await git('rev-parse', '--verify', `refs/heads/${name}`);
-      const listed = await run('worktree', 'list', '--porcelain');
-      let checked_out = null; let current = null;
-      for (const line of listed.split('\n')) {
+      const listed = await run('worktree', 'list', '--porcelain', '-z');
+      const checked_out = []; let current = null;
+      for (const line of listed.split('\0')) {
         if (line.startsWith('worktree ')) current = line.slice(9);
-        else if (line === `branch refs/heads/${name}`) checked_out = current;
+        else if (current !== null && line === `branch refs/heads/${name}`) checked_out.push(current);
       }
       const dirs = await fsp.readdir(path.join(this.stateDir, 'worktrees')).catch(() => []);
       let worktreeKnown = false;
