@@ -1,6 +1,7 @@
 'use strict';
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const fsc = require('node:fs').constants;
 
 const TOOL_ROLES = new Set(['lead', 'sub-lead', 'worker', 'verifier']);
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -16,8 +17,16 @@ async function readProjectMcp(worktree) {
     }
     if (!info.isFile()) return failure('not a regular file');
     if (info.size > 32768) return failure('larger than 32 KiB');
-    let text;
-    try { text = await fs.readFile(file, 'utf8'); } catch (error) { return failure(error.code || 'read failed'); }
+    // Opened non-blocking and checked again on the open handle, so a file swapped for a pipe
+    // after the stat above can neither block the start nor be read.
+    let text, handle;
+    try {
+      handle = await fs.open(file, fsc.O_RDONLY | fsc.O_NONBLOCK);
+      const opened = await handle.stat();
+      if (!opened.isFile()) return failure('not a regular file');
+      if (opened.size > 32768) return failure('larger than 32 KiB');
+      text = await handle.readFile('utf8');
+    } catch (error) { return failure(error.code || 'read failed'); } finally { await handle?.close().catch(() => {}); }
     let data;
     try { data = JSON.parse(text); } catch { return failure('invalid JSON'); }
     if (!object(data) || !object(data.mcpServers)) return failure('mcpServers is not an object');
