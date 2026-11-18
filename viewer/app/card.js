@@ -142,7 +142,7 @@ const fields = {
       && (step.command === undefined || (step.where === 'machine' && text(step.command) && step.command.length <= 1000))
       && ['matched', 'not-tried', 'broken'].includes(step.agent)
       && (step.agent === 'matched' ? step.note === undefined
-        : text(step.note) && step.note.length <= 300 && !/[\r\n]/.test(step.note)), 1) && value.length <= 6,
+        : text(step.note) && step.note.length <= 300 && !/[\r\n\u2028\u2029\u0085]/.test(step.note)), 1) && value.length <= 6,
   },
   diagram: { plan: text, graph: text, title: text, format: (value) => value === undefined || ['graph', 'form', 'html'].includes(value) },
   image: { path: (value) => text(value) && path.isAbsolute(value), title: text },
