@@ -954,6 +954,10 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — Choice: Q1, `machine/service.js:1313`: the version line may read `<name> [version] <x.y.z>` (an optional `version` word after the name).
+- 2026-11-18 — Choice: Q1, `machine/adapters/kimi.js:65`: an explicit null or empty `min_protocol_version` is incompatible (all 28 real local logs carry `"1.5"`); `promptText` now also matches the plan-review screen (`Ready to build with this plan?` with an `Approve` choice line), superseding R1's exclusion of it (scout-found, not reported).
+- 2026-11-18 — Q1 accepted (band: scout): machine 200/200 re-run by the sub-lead. Remediation 2 gaps 1, 3, 4, 5 fixed; gap 2 settled by Decision 47. Thin spot: the offset test covers the break path only, not a drain right before the post-loop check.
+
 - 2026-11-18 — Lead's answer on remediation 2 gap 2: no code change; flowchart reworded into two branches and Decision 47 appended. Gap 2 settled by the plan.
 
 - 2026-11-18 — Verification attempt 2: Claude PASS, GPT FAIL with 5 gaps (REMEDIATION-2.md). Q1 (gpt, `wc-01b8cb1bf051-worker-17`) fixes gaps 1, 3, 4, 5; gap 2 (rate-limit notice to the starter) sent to the lead as a plan question, since the hub limit-hit handling is shared and unchanged for every CLI.
