@@ -1,6 +1,6 @@
 ---
 slug: kimi-code
-status: draft   # draft | confirmed
+status: confirmed   # draft | confirmed
 mode: thorough
 created: 2026-11-18
 ---
