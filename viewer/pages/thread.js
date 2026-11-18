@@ -369,14 +369,15 @@
     const cutoffNow = thread().imported ? thread().imported.at : null;
     if (seenCutoff !== undefined && seenCutoff !== cutoffNow) pending = [];
     seenCutoff = cutoffNow;
-    // A pending bubble goes once the transcript has more of its text than when it was sent, so
-    // an earlier message with the same words never stands in for it.
+    // A pending bubble goes once the transcript has more of its words than just before it was
+    // sent, so an earlier message with the same words never stands in for it. The row that
+    // clears one is its own: later bubbles with the same words count it as already seen.
     const counts = new Map();
     for (const i of items) if (i.type === 'human' && !i.card) counts.set(i.text, (counts.get(i.text) || 0) + 1);
-    pending = pending.filter((p) => {
-      const n = counts.get(p.text) || 0;
-      if (n > (p.seen || 0)) { counts.set(p.text, n - 1); return false; }
-      return true;
+    pending = pending.filter((p, index) => {
+      if ((counts.get(p.text) || 0) <= (p.seen || 0)) return true;
+      for (const later of pending.slice(index + 1)) if (later.text === p.text) later.seen = (later.seen || 0) + 1;
+      return false;
     });
     const cards = data.cards.filter((c) => sinceImport(c.created_at || c.at));
     const pinned = pinnedIds();
@@ -501,14 +502,18 @@
     sendingNow[at] = true; sigs.chat = null; render();
     const lead = leadSession();
     const item = ((lead && lead.queue) || []).find((q) => q.source === 'collin' && q.at === at);
+    const seen = item ? humanCount(item.text) : 0;   // counted before sending: the reply may lag the transcript
     try {
-      await post(T + '/send-now', { at }); showError('');
+      const out = await post(T + '/send-now', { at });
+      // Not handed over: it stays first in the queue and goes when the turn ends.
+      if (!out || !out.sent) { showError('Could not send it now; it will go when the lead finishes its turn.'); return; }
+      showError('');
       // Keep its bubble, marked sent, until the transcript shows it. This tab's own bubble for
       // it, if any, becomes that bubble; otherwise a new one is added.
       if (item) {
         const mine = pending.find((p) => !p.sent && p.text === item.text);
         if (mine) mine.sent = true;
-        else pending.push({ text: item.text, seen: humanCount(item.text), sent: true });
+        else pending.push({ text: item.text, seen, sent: true });
       }
     }
     catch (e) { showError('Could not send it now: ' + e.message); }
@@ -1166,8 +1171,9 @@
         } catch (e) { throw new Error('Upload failed: ' + e.message); }
       }
       const message = [text, paths.map((path) => '[attached: ' + path + ']').join('\n')].filter(Boolean).join('\n\n');
+      const seen = humanCount(message);   // counted before sending: the reply may lag the transcript
       await post(T + '/messages', { text: message });
-      pending.push({ text: message, seen: humanCount(message) }); msgEl.value = ''; attachments = attachments.filter((file) => !sending.includes(file)); attachmentError.textContent = ''; renderAttachments();
+      pending.push({ text: message, seen }); msgEl.value = ''; attachments = attachments.filter((file) => !sending.includes(file)); attachmentError.textContent = ''; renderAttachments();
       sigs.chat = null; await poll(); render();
     } catch (e) { showError(e.message.startsWith('Upload failed:') ? e.message : 'Message not sent: ' + e.message); }
     finally { uploading = false; renderAttachments(); render(); }
