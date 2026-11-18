@@ -51,6 +51,7 @@ function retractCard(card, by, note) {
 async function acceptCard(hub, payload) {
   const result = await hub.updateThread(payload.thread_id, async (thread) => {
     const session = hub.session(thread, payload.session);
+    require('./handoff.js').refuseFrozen(hub, thread);
     if (thread.archived) throw appError(409, 'thread is archived');
     thread.delivered_ids ||= [];
     if (payload.delivery_id && thread.delivered_ids.includes(payload.delivery_id)) {

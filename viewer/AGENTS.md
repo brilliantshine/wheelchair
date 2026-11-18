@@ -19,6 +19,9 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 | `app/quiet.js` | The quiet-turn detector: who owes a report, the reminders to an agent and its starter, and the system `needs` card, run on the queue retry timer. |
 | `app/settings.js` | The Settings store (`settings.json` in the hub state dir), templates and writing style, the `role_layers` text sent at session start, and the style preview; models are read and written only through `codex/model.sh`. |
 | `app/asides.js` | Aside records, prompts, turn lifecycle and graph handling. |
+| `app/handoff.js` | Thread handoffs: the export file format and its validator, history text, the export points and quiet test, the frozen guard, export itself, the handed-off banner, Download again and the `handoffs/` start-up sweep. |
+| `app/handoff-ops.js` | Handoff operations (Create, Advance, Undo): the saved operation record, pre-claim checks, claims, Retry and Cancel, and the cancelled-claim revoke list and sweep. |
+| `app/handoff-import.js` | `POST /threads/import`: validation, repository, branch and stage checks, and the outcome table that opens, creates or advances a thread. |
 | `app/chat.js`, `threads.js`, `views.js` | Transcript assembly, thread lifecycle, and view data. |
 | `app/routes.js`, `hub.js`, `API.md` | App HTTP dispatch, module composition, and the page-facing JSON contract. |
 | `app/names.js`, `agents.js` | Lead name allocation and the public agent tree and machine reachability view. |

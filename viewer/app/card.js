@@ -127,6 +127,7 @@ const fields = {
     can_do: (value) => array(value, text),
     left_as_is: (value) => array(value, text),
     pr_url: text,
+    head: (value) => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value),
     note: (value) => value === undefined || text(value),
   },
   diagram: { plan: text, graph: text, title: text, format: (value) => value === undefined || ['graph', 'form', 'html'].includes(value) },

@@ -27,3 +27,7 @@
   .add-row { grid-template-columns: minmax(0, 1fr); }
   .add-row button, #nt-go { width: 100%; }
 }
+
+.new-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 899px) { .new-actions > button { flex: 1 1 160px; } }
+@media (max-width: 899px) { .new-actions > button { flex-basis: 100%; } }

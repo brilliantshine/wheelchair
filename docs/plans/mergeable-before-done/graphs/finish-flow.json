@@ -1,0 +1,6 @@
+{"form":"timeline","explanation":"The order of finishing, from a checked build to the done card. The app refuses the done card until the last step holds, and there's no override.","events":[
+{"when":"End of build","label":"Independent check passes","detail":"Unchanged from today"},
+{"when":"Then","label":"Push and open pull request"},
+{"when":"Every minute, up to 30","label":"Lead watches GitHub","detail":"Conflicts with main, and the checks"},
+{"when":"If red or conflicting","label":"Lead fixes, re-checks, pushes again","detail":"Two failed fixes, or 30 minutes, and you get a card saying what blocks it"},
+{"when":"Green and no conflicts","label":"Done card","detail":"The app asks GitHub again and refuses it otherwise"}]}

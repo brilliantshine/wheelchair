@@ -6,7 +6,7 @@ const { promisify } = require('node:util');
 const crypto = require('node:crypto');
 const { appError } = require('./state.js');
 const { truncateTitle } = require('./card.js');
-const { publicSession, startSession } = require('./sessions.js');
+const { publicSession, startSession, newSessionName, deliver } = require('./sessions.js');
 const { check: readyCheck, same: sameReady } = require('./ready.js');
 
 const ARCHIVED_DOCUMENTS = new Set(['MAP.md', 'IDEA.md', 'PLAN.md']);
@@ -106,6 +106,7 @@ async function createStub(hub, parent, card) {
 
 async function openStub(hub, id, input = {}) {
   const thread = await hub.thread(id);
+  require('./handoff.js').refuseFrozen(hub, thread);
   if (!thread.stub || thread.sessions.length) return thread;
   if (thread.depends_on_parent && !thread.ready && !input.start_now) {
     thread.waiting_on_parent = true;
@@ -121,9 +122,16 @@ async function openStub(hub, id, input = {}) {
 
 async function restartLead(hub, id) {
   const thread = await hub.thread(id);
+  require('./handoff.js').refuseFrozen(hub, thread);
   const liveLead = thread.sessions.some((session) => session.role === 'lead' && session.live);
   if (liveLead) {
     throw appError(409, 'lead is still live');
+  }
+  if (thread.checkout_sha && thread.worktree) {
+    try {
+      const inspected = await hub.client.handoff(thread.machine, { action: 'inspect', thread_id: thread.id, project: thread.project, branch: `wc/${thread.id}`, head: thread.checkout_sha, slug: thread.slug, worktree: thread.worktree });
+      if (inspected.worktree_exists === false) { thread.worktree = null; await hub.save(thread); }
+    } catch {}
   }
   const state = {
     slug: thread.slug,
@@ -135,11 +143,37 @@ async function restartLead(hub, id) {
       .filter((message) => message.source === 'collin' || message.source === 'card')
       .slice(-20),
   };
-  const context = `[wc:context restart] Thread state:\n${JSON.stringify(state)}`;
+  if (thread.imported) state.import = { stage: thread.imported.stage, exported_at: thread.imported.exported_at, pr_url: thread.imported.pr_url, history: (thread.imported.history || []).slice(-50) };
+  const firstImport = thread.imported && !thread.sessions.some((session) => session.role === 'lead' && Object.hasOwn(session, 'first_message') && Date.parse(session.created_at) > Date.parse(thread.imported.at));
+  const context = `[wc:context ${firstImport ? 'import' : 'restart'}] Thread state:\n${JSON.stringify(state)}`;
+  if (thread.imported) {
+    const running = await hub.client.handoff(thread.machine, { action: 'running', thread_id: thread.id });
+    const prefix = `wc-${thread.id}-lead`;
+    const names = (running.names || []).filter((name) => (name === prefix || /^-\d+$/.test(name.slice(prefix.length))) && name.startsWith(prefix) && !thread.sessions.some((session) => session.name === name && session.live));
+    if (names.length) {
+      const killed = await hub.client.handoff(thread.machine, { action: 'kill', thread_id: thread.id, names });
+      if ((killed.names || []).some((name) => names.includes(name))) throw appError(409, 'The previous agent is still stopping; try again in a minute');
+    }
+    const ended = thread.sessions.filter((session) => session.role === 'lead' && !session.live);
+    const queued = ended.flatMap((session) => session.queue || thread.queues?.[session.name] || []);
+    for (const name of names) if (!ended.some((session) => session.name === name)) queued.push(...(thread.queues?.[name] || []));
+    thread.queues ||= {};
+    for (const session of ended) { session.queue = []; delete thread.queues[session.name]; }
+    for (const name of names) delete thread.queues[name];
+    const pending = { name: newSessionName(thread, 'lead'), role: 'lead', token: crypto.randomBytes(32).toString('hex'), started_by: null, attempt_id: null, status: 'pending', live: false, ready: false, created_at: new Date().toISOString(), queue: [{ text: context, source: 'context', at: new Date().toISOString() }, ...queued.filter((message) => message.source !== 'context')] };
+    thread.sessions.push(pending);
+    thread.queues[pending.name] = pending.queue;
+    for (const card of thread.cards) if (card.kind === 'needs' && ['Sessions ended', "The lead's turn failed"].includes(card.title) && !card.answered) card.answered = true;
+    await hub.save(thread);
+    const lead = await startSession(hub, thread, { role: 'lead', cli: thread.cli, brief: '', tier: 'top', worktree: thread.worktree, branch: thread.branch, ...(!thread.worktree && thread.checkout_sha ? { from_remote_branch: { sha: thread.checkout_sha } } : {}), _waiting: pending });
+    if (lead.status !== 'waiting') await deliver(hub, thread, lead);
+    return lead;
+  }
   // The thread keeps its worktree across leads; asking for a new one would fail on the
   // existing wc/<thread-id> branch.
   const lead = await startSession(hub, thread, {
     role: 'lead', cli: thread.cli, brief: '', tier: 'top', worktree: thread.worktree, branch: thread.branch,
+    ...(!thread.worktree && thread.checkout_sha ? { from_remote_branch: { sha: thread.checkout_sha } } : {}),
   });
   const endedLeads = thread.sessions.filter((session) => session.role === 'lead' && !session.live);
   // Move, not copy: each ended lead's waiting messages go to the new lead once, and an older
@@ -162,6 +196,7 @@ async function restartLead(hub, id) {
 
 async function archive(hub, id) {
   const thread = await hub.thread(id);
+  if (require('./handoff.js').unfinished(hub, thread)) throw appError(409, 'Retry the unfinished import first');
   for (const aside of thread.asides || []) {
     if (aside.status === 'open') require('./asides.js').close(aside);
     if (aside.turn) {
@@ -273,6 +308,7 @@ async function pressSudo(hub, thread, card, input) {
 
 async function press(hub, id, cardId, input) {
   const thread = await hub.thread(id);
+  require('./handoff.js').refuseFrozen(hub, thread);
   const card = thread.cards.find((item) => item.id === cardId && !item.replaced);
   if (!card) throw appError(404, 'card not found');
   if (card.retracted_at) throw appError(422, 'this card was withdrawn');
@@ -353,6 +389,7 @@ async function press(hub, id, cardId, input) {
 
 async function dismiss(hub, id, cardId) {
   const thread = await hub.thread(id);
+  require('./handoff.js').refuseFrozen(hub, thread);
   const found = require('./card.js').resolvable(thread, cardId);
   if (!found.ok) throw appError(found.reason === 'no such card in this thread' ? 404 : 422, found.reason);
   require('./cards.js').resolveCard(found.card, 'collin', null);
@@ -364,8 +401,7 @@ async function dismiss(hub, id, cardId) {
 }
 
 function mergedPr(thread) {
-  return [...(thread.cards || [])].reverse().find((card) =>
-    card.kind === 'done' && !card.replaced && typeof card.pr_url === 'string' && card.pr_url.trim())?.pr_url || null;
+  return require('./handoff.js').donePr(thread, { valid: (url) => typeof url === 'string' && Boolean(url.trim()) });
 }
 
 async function pollMerged(hub) {
