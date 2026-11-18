@@ -39,6 +39,13 @@ function uploadName(name) {
   return stem + ext;
 }
 
+// Canonical identity shared by SSH and HTTPS GitHub origins.
+function normalizeGithubOrigin(origin) {
+  if (typeof origin !== 'string') return null;
+  const match = /^(?:git@github\.com:|https:\/\/github\.com\/|ssh:\/\/git@github\.com\/)([a-z0-9_.-]+)\/([a-z0-9_.-]+?)(?:\.git)?$/i.exec(origin);
+  return match ? `github.com/${match[1]}/${match[2]}`.toLowerCase() : null;
+}
+
 // A refusal of the request itself: 400, so the hub and agents report it rather than retry.
 function die(message) { throw Object.assign(new Error(message), { status: 400 }); }
 function safeName(value, label) {
@@ -1151,6 +1158,41 @@ class MachineService {
     }
     return out;
   }
+  async handoff(input) {
+    const invalid = message => { throw Object.assign(new Error(message), { status: 422, handoff: true }); };
+    if (!input || typeof input !== 'object' || Array.isArray(input)) invalid('invalid request');
+    const { action, thread_id: id } = input;
+    if (!/^[0-9a-f]{12}$/.test(id || '')) invalid('invalid thread_id');
+    const fields = {
+      status: ['worktree', 'slug'], push: ['worktree', 'branch', 'sha'],
+      inspect: ['branch', 'head', 'slug'], 'claim-commit': ['parent', 'message'],
+      'claim-state': ['branch', 'parent', 'sha'], 'claim-push': ['branch', 'parent', 'sha'],
+      'claim-revoke': ['branch', 'parent', 'sha'], reopen: [],
+      'fast-forward': ['worktree', 'branch', 'head'], 'set-branch': ['branch', 'sha'],
+      running: [], kill: ['names'], known: ['head'],
+    };
+    if (!Object.hasOwn(fields, action)) invalid('invalid action');
+    for (const field of fields[action]) if (input[field] === undefined || input[field] === null) invalid(`${field} required`);
+    for (const field of ['branch']) if (input[field] !== undefined && (typeof input[field] !== 'string' || !/^wc\/[0-9a-f]{12}$/.test(input[field]))) invalid(`invalid ${field}`);
+    for (const field of ['sha', 'parent', 'head', 'fallback_head']) if (input[field] !== undefined && (typeof input[field] !== 'string' || !/^[0-9a-f]{40}$/.test(input[field]))) invalid(`invalid ${field}`);
+    if (input.slug !== undefined && (typeof input.slug !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(input.slug))) invalid('invalid slug');
+    if (input.message !== undefined && (typeof input.message !== 'string' || !input.message.trim())) invalid('invalid message');
+    if (input.pr_url !== undefined && (typeof input.pr_url !== 'string' || !input.pr_url)) invalid('invalid pr_url');
+    if (action === 'kill' && (!Array.isArray(input.names) || input.names.some(name => typeof name !== 'string' || !name.startsWith(`wc-${id}-`)))) invalid('invalid names');
+    if (input.worktree !== undefined && (typeof input.worktree !== 'string' || !Object.values(this.sessions).some(s => s.thread_id === id && s.created_worktree && s.worktree && path.resolve(s.worktree) === path.resolve(input.worktree)))) invalid('invalid worktree');
+    const gitAction = !['reopen', 'running', 'kill'].includes(action);
+    let repo;
+    if (gitAction) {
+      if (typeof input.project !== 'string' || !path.isAbsolute(input.project)) invalid('invalid project');
+      const checked = await this.projects(new URLSearchParams({ check: input.project }));
+      if (!checked.checked.ok) invalid('invalid project');
+      repo = path.resolve(input.project);
+    }
+    return this.withThreadLock(id, () => gitAction
+      ? this.inRepoQueue(repo, () => this.handoffAction(input, repo))
+      : this.handoffAction(input, repo));
+  }
+  async handoffAction() { return { result: 'failed', error: 'Action is not implemented.' }; }
   async handle(request, response) {
     const url = new URL(request.url, 'http://machine.local');
     const pathBits = url.pathname.split('/').filter(Boolean);
@@ -1231,6 +1273,7 @@ class MachineService {
         response.writeHead(200, { 'content-type': type || 'application/octet-stream', 'x-content-type-options': 'nosniff', ...(!type ? { 'content-disposition': 'attachment' } : {}) });
         file.createReadStream().on('error', () => response.destroy()).pipe(response); return;
       }
+      if (request.method === 'POST' && url.pathname === '/v1/handoff') { await this.authorize(request, 'hub'); return send(response, 200, await this.handoff(await bodyOf(request))); }
       if (request.method === 'POST' && url.pathname === '/v1/archive') { await this.authorize(request, 'hub'); return send(response, 200, await this.archive((await bodyOf(request)).thread_id)); }
       if (pathBits[0] === 'v1' && pathBits[1] === 'sessions' && pathBits[2]) {
         const name = decodeURIComponent(pathBits[2]); await this.authorize(request, 'hub');
@@ -1287,7 +1330,7 @@ class MachineService {
       if (request.method === 'POST' && url.pathname === '/v1/agent/git') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.git(agent, await bodyOf(request))); }
       if (request.method === 'POST' && url.pathname === '/v1/agent/session') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.forwardSession(agent, await bodyOf(request))); }
       throw Object.assign(new Error('not found'), { status: 404 });
-    } catch (error) { if (!response.destroyed && !response.headersSent) send(response, error.status || 500, { error: error.message || String(error) }); }
+    } catch (error) { if (!response.destroyed && !response.headersSent) send(response, error.status || 500, { ...(error.handoff ? { result: 'failed' } : {}), error: error.message || String(error) }); }
   }
   async listen() {
     await this.init();
@@ -1308,4 +1351,4 @@ if (require.main === module) {
   const options = parseArgs(process.argv.slice(2));
   new MachineService(options).listen().catch(error => { process.stderr.write(`machine: ${error.message}\n`); process.exitCode = 1; });
 }
-module.exports = { MachineService, command, DEFAULT_STATE };
+module.exports = { MachineService, command, DEFAULT_STATE, normalizeGithubOrigin };
