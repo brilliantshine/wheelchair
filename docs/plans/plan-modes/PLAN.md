@@ -93,6 +93,10 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D58 | One bullet text names one item for the life of the thread | No text collision between items | review-round-8 |
 | D59 | With a surviving gap, Collin is asked about it alone; other must-fix gaps go to remediation after his answer | Defined order | review-round-8 |
 | D60 | Restart replay of pull-backs waits for a running round's triage | Consistent with D36 | review-round-8 |
+| D61 | A lead restart during a running round restarts that round (any mode); supersedes D60's waiting | The dead lead's reviewers report to nobody | review-round-9 |
+| D62 | Step 6 posts the approval card before the `Approve plan` commit; a restart accepts a press only when PLAN.md's last commit is `Approve plan` (replaces D56's clock check) | No clock comparison; ties a press to the reviewed revision | review-round-9 |
+| D63 | "Push as it is" on a surviving gap is logged `Accepted as is:` and kept out of later verifier scope | Remaining fixes can verify to a pass | review-round-9 |
+| D64 | Restart reads a typed mode answer from recent messages; restart reconciles the pin with `mode:` | No re-asking; pin matches the mode | review-round-9 |
 
 ## Spec
 
@@ -136,7 +140,9 @@ Restart before IDEA.md is written (the mode question not yet answered, or answer
 moments before the lead died): the restarted lead reads the cards it is given. If the
 mode question was answered with a press, it uses that mode; if answered in its box or
 resolved with a note, it uses the mode only if the text names exactly one, and otherwise
-asks the follow-up question above. If it is open, it leaves it open and waits. If it was never posted, it
+asks the follow-up question above. If it is open but the restart context's recent
+messages hold a later message from Collin that names exactly one mode, it treats that as
+his answer (resolving the card). Otherwise, if it is open, it leaves it open and waits. If it was never posted, it
 posts it. `thorough` is assumed only when reading an IDEA.md with no `mode:` line (plans
 from before this feature).
 
@@ -179,6 +185,11 @@ then starts the sub-lead. From that commit the mode and the Deferred list are fi
 pull-back, is answered with that and changes nothing. If starting the sub-lead then
 fails, they stay fixed; the lead retries the start as lead.md already says.
 
+Any lead restart before `Build accepted:` reconciles the pin with IDEA.md's `mode:`:
+thorough means any open `deferred` card is retracted; a lighter mode means the
+`deferred` card is reposted from PLAN.md's Deferred rows (empty if there are none or
+PLAN.md does not exist yet).
+
 Lead restart while PLAN.md says `approved`, in a lighter mode or after a mode change or
 pull-back: if PLAN.md's Log has a `Build accepted:` line after the last plan change, the
 build was accepted: mode and Deferred stay fixed, the lead locks the pin if it is not
@@ -187,10 +198,12 @@ retracts any open approval card, ignores Start building presses for any approval
 did not post itself, and posts a fresh approval card with a fresh Ready check. A thorough
 thread with no mode change or pull-back restarts as today, with one rule for the mode:
 if the latest approval card shows a recorded Start building press (`answered_action:
-start-building` in the restart context) and PLAN.md has no commit after that card was
-posted (`git log -1 --format=%cI -- docs/plans/<slug>/PLAN.md` earlier than the card's
-`created_at`), the build counts as accepted. If PLAN.md changed after the card, the
-press is stale: the lead posts a fresh approval card. The mode is fixed
+start-building` in the restart context) and PLAN.md's latest commit is an approval
+commit (message starting `Approve plan`), the build counts as accepted. Otherwise the
+press is stale and the lead posts a fresh approval card. For this to hold, step 6's order
+changes in every mode: the lead posts the approval card first, then commits
+`status: approved` with a message starting `Approve plan`. So an approval commit always
+follows its own card, and any Spec change after it is a later PLAN.md commit. The mode is fixed
 and the lead does not reopen planning; it starts the sub-lead if `session list` shows
 none. (This also closes a stale-press case that exists in thorough today, after a
 "talk about" Spec change.)
@@ -214,16 +227,20 @@ fixed, or come to Collin as a `question` card if fixing is not possible.
 Which pull-backs count: the hub accepts a `removed` press only on the current,
 unlocked `deferred` card, so every `removed:` press that reaches the lead counts, unless
 PLAN.md's Log already has a `Build accepted:` line (then the lead says building has
-started and changes nothing). If the item's row is gone because the plan switched to
-thorough, the item is already in the Spec; the lead still logs the `Pulled back:` entry.
+started and changes nothing). If the item's row is already gone for any reason (a switch to
+thorough, or triage restored it), the item is already in the Spec; the lead still logs
+the `Pulled back:` entry with that bullet text.
 
 If a pull-back arrives during a review round, the lead commits `Pending pull-back: <item
 text>` to PLAN.md's Log at once and applies it after that round's triage, before posting
 an approval card or briefing the next round. A restarted lead applies every `Pending
 pull-back:` line, and every `removed:` press on a `deferred` card in the restart
 context's recent messages, that has no matching `Pulled back:` Decision Log entry (unless
-a `Build accepted:` line came first). If a review round's reviewers are still running,
-it applies them after that round's triage; otherwise at once. Either way, before posting
+a `Build accepted:` line came first). If a review round's reviewers are still
+running when a lead restarts (in any mode), the restarted lead stops them and restarts
+that round with fresh reviewers under the same number, untriaged and not counted toward
+the budget (their reports would go to the dead lead). It applies pending pull-backs
+before briefing the restarted round. Either way, before posting
 an approval card or briefing a round.
 
 Matching is by bullet text. The lead keeps one item's bullet text identical across
@@ -340,7 +357,10 @@ that gap (sub-lead.md step 6: stop and message the lead). Hardening gaps in the 
 attempt are still answered "defer" and saved by step 2 before the sub-lead stops; the
 lead then asks Collin today's surviving-gap question about the surviving gap only. Other
 must-fix gaps of that attempt wait; after Collin answers, they go through step 5 as
-usual (unless his answer drops the build's fix, which ends it as today).
+usual (unless his answer drops the build's fix, which ends it as today). If he chose
+"push it as it is" for the surviving gap, the sub-lead records `Accepted as is: <gap>`
+in PLAN.md's Log in the same commit as its next remediation, and later verifier briefs
+list those gaps as out of scope, like Deferred items; the `done` card's note names them.
 
 Never deferrable in verification: a failing validation command from the Spec's
 Validation section, and a gap in an item Collin pulled back. These go to remediation.
@@ -405,8 +425,9 @@ it), then: what was
 The offer card, the approval card, the Ready check, the progress line, small fixes,
 thorough mode, the stub mechanism (except the restart context's new `card_kinds` field, and D43's restart fix, which repairs an existing
 gap for every stub, and D50's `removed` check, which also covers `idea` cards but
-refuses only presses the app never sends; D55's early draft IDEA.md commit; and D56's
-restart staleness check, which also closes an existing thorough stale-press case), the app's slug and document rules.
+refuses only presses the app never sends; D55's early draft IDEA.md commit; D56's
+restart staleness check and step 6's card-then-commit order, which also close an existing
+thorough stale-press case; and D61's restart of a running review round), the app's slug and document rules.
 
 ### Validation
 
@@ -642,6 +663,25 @@ exit. Downgrades and declines cite evidence.
 |------|----------|---------|--------------|------------|
 | intent (claude) | minor | D56 changes thorough restart; stated reason wrong | upheld | Named as an exception; reason corrected |
 | intent (claude) | minor | D55 changes when thorough commits IDEA.md | upheld | Named as an exception |
+| mechanics (gpt) | blocking | D56 clock comparison unreliable | upheld | D62 |
+| mechanics (gpt) | blocking | Replacement lead never gets the running round's reports | upheld | D61 |
+| mechanics (gpt) | blocking | No exit after "push as is" with other must-fix gaps | upheld | D63 |
+| mechanics (gpt) | major | Typed mode answer lost on restart | upheld | D64 |
+| mechanics (gpt) | major | Pending pull-back whose row triage removed | upheld | `Pulled back:` logged whenever the row is gone |
+| mechanics (gpt) | major | Pin and committed mode diverge after a crash | upheld | D64 |
+
+### Round 10 — 2026-11-17
+
+**Lanes:** intent: claude; mechanics: other family; cross-family: yes.
+
+**Changed since Round 9:**
+- Exceptions named for D55/D56; D56 replaced by card-then-commit approval order (D62).
+- Lead restart restarts a running round (D61).
+- "Push as is" with remaining fixes (D63).
+- Typed mode answer on restart; pin reconciled with mode (D64); `Pulled back:` whenever the row is gone.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
