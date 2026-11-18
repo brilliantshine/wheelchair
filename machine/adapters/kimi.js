@@ -13,9 +13,9 @@ function resolveCli() {
 function readConfig(dir) {
   let text;
   try { text = fs.readFileSync(path.join(home(dir), 'config.toml'), 'utf8'); }
-  catch (e) { return e.code === 'ENOENT' ? { models: {} } : { models: {}, problem: "Kimi Code's config.toml can't be read" }; }
-  if (text.includes('"""') || text.includes("'''")) return { models: {}, problem: "Kimi Code's config.toml has multi-line strings wheelchair can't read" };
-  const result = { models: {} }; let table = '';
+  catch (e) { return e.code === 'ENOENT' ? {} : { problem: "Kimi Code's config.toml can't be read" }; }
+  if (text.includes('"""') || text.includes("'''")) return { problem: "Kimi Code's config.toml has multi-line strings wheelchair can't read" };
+  const result = {}; let table = '';
   for (const line of text.split(/\r?\n/)) {
     const header = line.match(/^\s*\[([^\[\]]+)\]\s*(?:#.*)?$/);
     if (header) { table = header[1].trim(); continue; }
@@ -24,8 +24,6 @@ function readConfig(dir) {
     let value; try { value = JSON.parse(kv[2]); } catch { continue; }
     if (!table && table !== null && kv[1] === 'default_model' && typeof value === 'string') result.default_model = value;
     if (table === 'providers."managed:kimi-code".oauth' && ['key', 'oauth_host'].includes(kv[1]) && typeof value === 'string') result[kv[1]] = value;
-    const model = table?.match(/^models\."([^"]+)"$/);
-    if (model && kv[1] === 'support_efforts' && Array.isArray(value) && value.every(v => typeof v === 'string')) result.models[model[1]] = value;
   }
   return result;
 }

@@ -51,8 +51,8 @@ test('config reader rejects untrusted files and ignores service oauth', t => {
   const dir = fixture(), file = path.join(dir, 'config.toml');
   const config = kimi.readConfig(dir);
   assert.equal(config.key, 'oauth/dummy');
-  assert.deepEqual(config.models, { 'kimi-code/k3': ['low', 'high', 'max'] });
-  assert.deepEqual(kimi.readConfig(makeTempSync('kimi-empty-')), { models: {} });
+  assert.equal('models' in config, false);
+  assert.deepEqual(kimi.readConfig(makeTempSync('kimi-empty-')), {});
   fs.appendFileSync(file, '\ntext = """\n[providers."managed:kimi-code".oauth]\nkey = "oauth/fake"\n"""\n');
   assert.match(kimi.readConfig(dir).problem, /multi-line/);
   assert.deepEqual(kimi.loginStatus(dir), { logged_in: false, authenticated: true, problem: "Kimi Code's config.toml has multi-line strings wheelchair can't read" });
@@ -313,8 +313,8 @@ test('fake tmux login polls cover exit markers and liveness', () => {
 
 test('array tables, unsupported effort and unrelated credentials are ignored', () => {
   const dir = fixture(), file = path.join(dir, 'config.toml');
-  fs.appendFileSync(file, '\n[[models."kimi-code/k3"]]\nsupport_efforts = ["max"]\n');
-  assert.deepEqual(kimi.readConfig(dir).models['kimi-code/k3'], ['low', 'high', 'max']);
+  fs.appendFileSync(file, '\n[[providers."managed:kimi-code".oauth]]\nkey = "oauth/array-table"\n');
+  assert.equal(kimi.readConfig(dir).key, 'oauth/dummy');
   fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('[ "low", "high", "max" ]', '[ "low" ]').replace('oauth/dummy', 'oauth/missing'));
   assert.equal(kimi.command({}, { effort: 'high' }, '', { accountDir: dir }).env, undefined);
   assert.equal(kimi.loginStatus(dir).authenticated, false);
