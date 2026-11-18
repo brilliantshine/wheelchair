@@ -15,7 +15,10 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-_Being drawn up from MAP.md._
+### Q1: How do we learn Kimi's undocumented formats?
+- **Context:** The kimi CLI is not installed on this machine. Kimi's docs give the Stop hook's fields (`session_id`, `cwd`, `turn_id`, `finish_reason`, no transcript path) and the session layout (`$KIMI_CODE_HOME/sessions/<workDirKey>/<sessionId>/agents/main/wire.jsonl`), but not the wire.jsonl event schema, how `workDirKey` is derived, the TUI's ready text, or the `kimi login` screen text. The chat view, turn-end binding and login flow all depend on these.
+- **Options:** install kimi here (user-level) and have Collin log in, so a worker captures real samples; build from docs and fakes only; Collin installs it himself.
+- **Recommendation:** install it here and capture real samples before the build.
 
 ## Watch List
 
@@ -38,6 +41,14 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 1 | Mode: thorough | Collin's pick | user |
 | 2 | Kimi can run any role (lead, sub-lead, worker, reviewer, verifier, mapper) | Collin's pick; matches how Gemini was added | user |
 | 3 | Kimi is signed in with a Kimi account login, not an API key | Collin's pick; Ready check mirrors the other CLIs | user |
+| 4 | Provider id `kimi`, label "Kimi Code", binary `kimi` | Matches the registry pattern (`viewer/app/providers.js:3`) | defaulted |
+| 5 | Each Kimi account gets its own `KIMI_CODE_HOME`, like `CLAUDE_CONFIG_DIR`/`CODEX_HOME` | Kimi documents `KIMI_CODE_HOME` as its data directory; keeps multi-account handling the same as Claude and Codex | defaulted |
+| 6 | Turn end comes from Kimi's `Stop` hook, registered as a `[[hooks]]` rule in each account's `config.toml` | Kimi's documented hook; Antigravity does the same with its hooks file | defaulted |
+| 7 | Permission modes: bypass maps to `--auto` ("Never Ask"), auto maps to `--yolo` ("Ask When Needed") | Closest documented equivalents | defaulted |
+| 8 | No effort choice for Kimi | Kimi documents no thinking/effort flag | defaulted |
+| 9 | Asides and usage polling stay Claude/GPT only; Kimi is left out like Antigravity | Both are capability-limited today (MAP.md); IDEA does not ask for them | defaulted |
+| 10 | `review_families` gains `kimi`; `both` keeps meaning "two different families" | Kimi counts as its own family (IDEA.md) | defaulted |
+| 11 | Installer detects `kimi` and adds it to the service PATH; it no longer refuses a machine with none of Claude/Codex if Kimi or agy is present | MAP.md: `install.sh:40-48,368-371` | defaulted |
 
 ## Spec
 
