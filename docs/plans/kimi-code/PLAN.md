@@ -952,6 +952,9 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — Choice: R4, `test-support/smoke/kimi-live.js`: check 5 asserts the footer names `K2.8 Preview` (how Kimi displays the light pin `kimi-code/kimi-for-coding`) and that the machine session has no effort; the bypass-mode preference change was dropped with the old effort checks, so check 6 now runs in the default mode (scout-found, not reported). The sub-lead removed the leftover `effort: 'low'` from check 7's worker start.
+- 2026-11-18 — R4 accepted (band: scout): the worker's only live run failed on its first guess of the display name; the sub-lead ran `KIMI_LIVE_CHECKS=5` once on the corrected script: `5 pinned light model | PASS | … Ask When Needed  K2.8 Preview thinking: max … "effort":null`, cleanup clean, `1 passed; 0 failed`. Gap 9 fixed.
+
 - 2026-11-18 — Verification attempt 1: both verifiers FAIL; 9 distinct gaps after merging duplicates (REMEDIATION-1.md). Remediation dispatched: R1 machine gaps (gpt, `wc-01b8cb1bf051-worker-12`), R2 hub effort refusal (claude, `-worker-13`), R4 live check 5 (gpt, `-worker-14`); R3 starter card (gpt) follows R2 in the same file.
 
 - 2026-11-18 — Status verifying at `8b5af87`. Verification attempt 1: `wc-01b8cb1bf051-verifier` (claude-opus-5-5) and `wc-01b8cb1bf051-verifier-2` (gpt-6.2-sol); review_families both, builders claude and gpt.
