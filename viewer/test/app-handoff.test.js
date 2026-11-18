@@ -46,3 +46,18 @@ test('history accumulates, orders and trims entries, and names downloads', () =>
   assert.ok(Buffer.byteLength(JSON.stringify(file)) <= 10 * 1024 * 1024); assert.match(file.history[0].text, /earlier entries/); assert.ok(valid(file));
   assert.equal(handoffFileName('Hello, WORLD!'), 'hello-world.wheelchair.json'); assert.equal(handoffFileName('!!!'), 'thread.wheelchair.json'); assert.equal(handoffFileName('a'.repeat(120)), `${'a'.repeat(60)}.wheelchair.json`);
 });
+
+test('machine client sends scripted handoff actions and times out', async (t) => {
+  const { startMachine } = require('./helpers/app-machine.js');
+  const { MachineClient } = require('../app/machine-client.js');
+  const machine = await startMachine();
+  t.after(() => machine.stop());
+  const client = new MachineClient({ machine: async () => ({ port: machine.port, secret: machine.secret }) });
+  machine.handoffReplies.status = [(input) => ({ head: input.thread_id }), { head: 'second' }];
+  assert.deepEqual(await client.handoff('hub', { action: 'status', thread_id: id, project: '/repo' }), { head: id });
+  assert.deepEqual(await client.handoff('hub', { action: 'status', thread_id: id }), { head: 'second' });
+  assert.equal(machine.calls.filter((call) => call.path === '/v1/handoff').length, 2);
+  machine.handoffReplies.inspect = async () => { await new Promise((resolve) => setTimeout(resolve, 50)); return { remote_tip: 'x' }; };
+  client.handoffTimeout = 10;
+  await assert.rejects(client.handoff('hub', { action: 'inspect', thread_id: id }), /The machine didn't answer in time/);
+});
