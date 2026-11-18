@@ -22,9 +22,9 @@ test('missing project tools leave the existing command unchanged', () => {
 
 test('translates stdio and http servers in order', () => {
   const result = call({ local: { command: 'node', args: ['a.js', 'a"b'], env: { LITERAL: 'hello', KEY: '${KEY}' } }, remote: { type: 'http', url: 'https://example.test/mcp' } });
-  assert.deepEqual(result.argv, [...base, ...pairs('mcp_servers.project_local.command="node"', 'mcp_servers.project_local.args=["a.js","a\\"b"]', 'mcp_servers.project_local.env={"LITERAL"="hello"}', 'mcp_servers.project_local.env_vars=["KEY"]', 'mcp_servers.project_local.enabled=true', 'mcp_servers.project_remote.url="https://example.test/mcp"', 'mcp_servers.project_remote.enabled=true')]);
+  assert.deepEqual(result.argv, [...base, ...pairs('mcp_servers.project_local.command="node"', 'mcp_servers.project_local.args=["a.js","a\\"b"]', 'mcp_servers.project_local.env={"LITERAL"="hello"}', 'mcp_servers.project_local.env_vars=["KEY"]', 'mcp_servers.project_local.default_tools_approval_mode="approve"', 'mcp_servers.project_local.enabled=true', 'mcp_servers.project_remote.url="https://example.test/mcp"', 'mcp_servers.project_remote.default_tools_approval_mode="approve"', 'mcp_servers.project_remote.enabled=true')]);
   assert.deepEqual(result.warnings, []);
-  assert.deepEqual(call({ empty: { command: 'go' } }).argv.slice(base.length), pairs('mcp_servers.project_empty.command="go"', 'mcp_servers.project_empty.args=[]', 'mcp_servers.project_empty.env={}', 'mcp_servers.project_empty.env_vars=[]', 'mcp_servers.project_empty.enabled=true'));
+  assert.deepEqual(call({ empty: { command: 'go' } }).argv.slice(base.length), pairs('mcp_servers.project_empty.command="go"', 'mcp_servers.project_empty.args=[]', 'mcp_servers.project_empty.env={}', 'mcp_servers.project_empty.env_vars=[]', 'mcp_servers.project_empty.default_tools_approval_mode="approve"', 'mcp_servers.project_empty.enabled=true'));
 });
 
 test('reviewer receives neither overrides nor warnings', () => {
