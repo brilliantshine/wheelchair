@@ -312,6 +312,8 @@ async function press(hub, id, cardId, input) {
   const card = thread.cards.find((item) => item.id === cardId && !item.replaced);
   if (!card) throw appError(404, 'card not found');
   if (card.retracted_at) throw appError(422, 'this card was withdrawn');
+  // A press is Collin acting in the thread, so it moves the thread up the list like a message.
+  thread.collin_at = new Date().toISOString();
   if (card.kind === 'merged') {
     if (input.action !== 'keep') throw appError(400, 'a merged card takes keep');
     if (card.answered) throw appError(422, 'card is already answered');
@@ -393,6 +395,7 @@ async function dismiss(hub, id, cardId) {
   const found = require('./card.js').resolvable(thread, cardId);
   if (!found.ok) throw appError(found.reason === 'no such card in this thread' ? 404 : 422, found.reason);
   require('./cards.js').resolveCard(found.card, 'collin', null);
+  thread.collin_at = new Date().toISOString();
   await hub.save(thread);
   // A dismissal is Collin's answer, like a press: the live lead hears it so it stops waiting.
   const lead = [...thread.sessions].reverse().find((item) => item.role === 'lead' && item.live);
