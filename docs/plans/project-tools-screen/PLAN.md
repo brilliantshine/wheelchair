@@ -67,6 +67,8 @@ None.
 | 40 | Reply contract with `push_failed`, field checks, hub pass-through and 504 `transport` | Known failures vs lost replies end to end | review-round-9 |
 | 41 | `tools: null` for key-only; unreadable source writable only via Start over; keys-only shows tools read-only when one fetch URL exists | Close round 9 gaps | review-round-9 |
 | 42 | Mode changed from thorough to two-part; rare-case hardening moved to Deferred rows 1-8 | Collin chose it after nine review rounds kept finding rarer cases | user |
+| 43 | Supersedes the deferred parts of 35, 36, 38, 39, 40 and 41 (all-URL checks, commit trailer, lock-held display, machine-bound token, field checks and 504 `transport`, read-only tools in keys-only mode): see Deferred | Two-part mode | review-round-10 |
+| 44 | `failed` outcome for errors after validation; Read falls back to keys when GitHub is unreachable; Save round-trips the raw document; key headers have a prefix field; key writes return `keys` | Close round 10 gaps | review-round-10 |
 
 ## Spec
 
@@ -110,6 +112,12 @@ project's tools and lets him add, change and remove them. Works at phone width.
 - If `gh` fails (not installed, no login, network), the section still shows the tools, with
   "couldn't check for waiting pull requests: <reason>". Editing and Save still work; a failed
   PR creation is handled by Saving step 6.
+- If the `ls-remote` or fetch fails or times out (offline, GitHub down, auth), the section says
+  "Couldn't reach GitHub: <reason>", shows no tool list, and works like keys-only (keys list
+  with usage "unknown"; set, add and remove work) until a reload succeeds.
+- The read also returns the source document as parsed JSON (all top-level fields and every
+  raw `mcpServers` entry, including ones the validator skips). The form edits a copy of the
+  raw entries; the validator's output is used only for skip reasons.
 - The file is read from the source with `git ls-tree` / `git cat-file`. Missing: empty list.
   An entry that is not a regular blob (symlink, submodule, tree) is unreadable, reason "not a
   regular file; edit it by hand or Start over". Session launch is unchanged and may still
@@ -128,7 +136,8 @@ project's tools and lets him add, change and remove them. Works at phone width.
   - **key revision**: a counter the machine bumps on every key write.
   The screen sends it back on Save and Remove.
 - The tool form stays bound to the baseline it was loaded with. A reply after a key write
-  returns the new key revision; the screen updates only that, keeping the form and its
+  returns the new key revision and a `keys` list (each name with set or not set); the screen
+  updates the revision and every key status and key warning from it, keeping the form and its
   baseline. After a Save that pushed a branch, the form reloads from the default branch.
 - Each tool shows its name, kind (command or web address), what it runs, and its settings
   (env names; plain values shown, key values shown as "set" or "not set" on this machine).
@@ -146,11 +155,17 @@ project's tools and lets him add, change and remove them. Works at phone width.
 ### Editing
 - Add / edit form fields: name; kind (command or web address); for command: command,
   arguments (one per line), settings (name + value, each value marked plain or key); for web
-  address: URL and headers (name + value, plain or key). Adding a header shows "Codex agents
-  don't get tools with headers" on the form right away.
+  address: URL and headers (name + value, plain or key). A key header has a "text before the
+  key" field, so `Authorization` can be `Bearer ` + key, written as `Bearer ${NAME}`; a key
+  setting is written as exactly `${NAME}`. Adding a header shows, on the form right away:
+  "Codex agents don't get tools with headers. Claude may read some credential-like names as
+  empty in headers, so check the tool signs in."
+
 - Remove (a tool) asks for confirmation.
 - Fields the form doesn't know, and entries it can't represent, are kept as they were and
-  shown read-only with "edit in the file".
+  shown read-only with "edit in the file". Save sends the whole `mcpServers` object built from
+  the raw entries (edited ones replaced, the rest untouched); the machine keeps every other
+  top-level field of the source document as it was.
 - A tool name already used is refused.
 
 ### Keys
@@ -211,9 +226,9 @@ project's tools and lets him add, change and remove them. Works at phone width.
   `.mcp.json` after launch is not guarded against (Accepted Risks).
 
 ### Saving
-- Save sends `tools` (the new list, or `null` for no tool change; keys-only mode and the Keys
+- Save sends `tools` (the new `mcpServers` object, or `null` for no tool change; keys-only mode and the Keys
   list always send `null`), keys to set (by name), and the read token. A non-null `tools` is a
-  tool change, decided by comparing it, parsed, with the baseline's parsed list; an equal list
+  tool change, decided by comparing it with the source's parsed `mcpServers`; an equal object
   is treated as `null`.
 - No tool change and no keys set: refused, "nothing to save".
 - One save or removal per project at a time on the machine (a lock); a second waits.
@@ -232,16 +247,16 @@ project's tools and lets him add, change and remove them. Works at phone width.
      "Update project tools".
   5. Push to a new branch `wc-tools/<12 random hex>` with
      `git push --force-with-lease=refs/heads/<branch>: <validated URL> HEAD:refs/heads/<branch>`
-     (an empty lease: the push fails if the branch exists, so nothing is overwritten). A
-     failed push replies `push_failed` with git's message.
+     (an empty lease: the push fails if the branch exists, so nothing is overwritten). 
   6. Run `gh pr create --repo R --head <branch> --base <default branch> --title "Update
      project tools" --body "Saved from the wheelchair app's Project tools screen."`. Success
      replies `opened`. Failure replies `pr_failed` with the error, the branch name and
      GitHub's compare link so Collin can open it himself. Creation is never retried.
   7. Remove the temporary worktree.
-- Header keys: the form notes that tools with headers only work for Claude agents (Codex skips
-  them), and that Claude may read some credential-like names as empty in remote headers, so
-  Collin should check the tool authenticates.
+- Any failure after step 3 and before a branch is pushed (fetch, temporary worktree, commit,
+  push, a 60-second limit) replies `failed` with the current key revision, `keys` and the
+  error; keys stored in step 3 stay stored. A failure in step 1 or 2 replies `refused` or
+  `failed` before anything is written.
 - Every Save makes its own branch and PR; two saves never share anything. Two waiting PRs may
   conflict; GitHub shows that and Collin closes one.
 - The section shows the PR link and that new threads get the change once it is merged. Keys
@@ -251,17 +266,19 @@ project's tools and lets him add, change and remove them. Works at phone width.
   temporary worktree are released in a `finally`.
 - The machine runs a Save to the end even if the HTTP request is dropped. It keeps no record
   of saves.
-- Replies. JSON with an `outcome`: `saved` (`key_revision`, `warnings`), `opened`
-  (`key_revision`, `pr_url`, `warnings`), `pr_failed` (`key_revision`, `branch`,
-  `compare_url`, `error`), `push_failed` (`key_revision`, `error`), `removed`
-  (`key_revision`), `refused` (409 or 400, `reason`).
+- Replies. JSON with an `outcome`: `saved` (`key_revision`, `keys`, `warnings`), `opened`
+  (`key_revision`, `keys`, `pr_url`, `warnings`), `pr_failed` (`key_revision`, `keys`,
+  `branch`, `compare_url`, `error`), `failed` (HTTP 502; `key_revision`, `keys`, `error`),
+  `removed` (`key_revision`, `keys`), `refused` (409 or 400, `reason`). `failed` and
+  `pr_failed` show their error in plain words.
 - Hub forwarding. The hub calls the new read, save and remove routes with a 120-second timeout
   (`viewer/app/machine-client.js:64` takes a timeout argument; the default is 5 seconds) and
-  passes the machine's status and JSON body through unchanged for 2xx and 4xx (today
+  passes the machine's status and JSON body through unchanged whenever the machine answered
+  with JSON (2xx, 4xx and the `failed` 502) (today
   `MachineClient.call()` throws on non-2xx and keeps only `error`,
   `viewer/app/machine-client.js:64-77`; add a pass-through variant). A `refused` reply is
   shown as its `reason`.
-- A timeout, dropped connection or unreadable reply shows "Save may still be finishing;
+- A hub timeout, dropped connection or a reply without a known `outcome` shows "Save may still be finishing;
   reload in a minute and check Waiting to merge before saving again." The screen never
   retries on its own.
 
@@ -273,7 +290,10 @@ account-level tools; merging the PR; everything under Deferred.
 - `bash machine/test/run.sh` (fake git remote and fake `gh`): reading from the remote default
   branch via a private ref with `FETCH_HEAD` and tags untouched; keys-only without a GitHub
   origin; temp-worktree commit, new-branch push and PR; two saves make two PRs; push refuses an
-  existing branch name; `push_failed` and `pr_failed` replies (with compare link); key store
+  existing branch name; `failed` (offline fetch, commit or push failure, with the new key revision) and `pr_failed`
+  (with compare link) replies; Read with GitHub unreachable falls back to the keys list;
+  editing one tool keeps read-only entries and other top-level fields byte-for-byte in meaning;
+  `Bearer ${NAME}` header round-trips; key writes return `keys`; key store
   mode 600; keys reach Claude/Codex tool-role session environments only when referenced and
   not reserved, and are absent from argv, `session.command` and persisted sessions;
   `${NAME:-x}` in args holds back that key at launch; reserved names refused; Save refused on
@@ -553,7 +573,7 @@ header note without a name list); Validation; Accepted Risks (round 8); Decision
 
 ### Round 10 — 2026-11-18
 
-**Lanes:** intent — pending; mechanics — pending; cross-family: pending.
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 9:** mode is now two-part (Log 42). The Spec was rewritten to the
 everyday design and eight hardening items moved to Deferred: lost-reply recovery, save-running
@@ -561,6 +581,25 @@ display, machine-bound token, multi-URL origins, unclear push/PR confirmation, p
 kill, main-changed banner, blocking-branch message. Reading (single origin URL pair, keys-only
 without tool list), Saving (empty-lease push, `push_failed`/`pr_failed` replies, plain
 lost-reply message) and Validation were simplified to match.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | No reply or Read behavior when GitHub/network is unreachable | upheld | `failed` outcome; Read fallback (Log 44) |
+| intent | minor | Deferred Log rows not marked superseded | upheld | Log 43 |
+| intent | minor | Header note duplicated | upheld | One note under Editing |
+| mechanics | major | RE-RAISE: worktree/commit failure after keys stored | upheld | `failed` outcome |
+| mechanics | major | Key header encoding (`Bearer ${NAME}`) | upheld | Prefix field |
+| mechanics | major | Save could drop raw entries and top-level fields | upheld | Raw document round-trip |
+| mechanics | minor | Key status after a key write | upheld | `keys` in replies |
+
+### Round 11 — 2026-11-18
+
+**Lanes:** intent — pending; mechanics — pending; cross-family: pending.
+
+**Changed since Round 10:** Reading (GitHub-unreachable fallback, raw parsed document returned,
+`keys` refresh after key writes); Editing (key header prefix field, single header note, raw
+round-trip); Saving (`tools` is the `mcpServers` object, `failed` outcome replaces
+`push_failed`, hub passes JSON 502 through); Validation; Decision Log 43-44.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
