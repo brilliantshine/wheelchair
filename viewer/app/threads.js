@@ -129,6 +129,8 @@ async function restartLead(hub, id) {
     slug: thread.slug,
     cards: thread.cards.filter((card) => !card.replaced),
     pinned: thread.pinned,
+    card_kinds: Object.fromEntries(thread.cards.map((card) => [card.id, card.kind])),
+    ...(thread.context ? { stub_summary: thread.context } : {}),
     recent_messages: (thread.sent || [])
       .filter((message) => message.source === 'collin' || message.source === 'card')
       .slice(-20),
@@ -281,6 +283,11 @@ async function press(hub, id, cardId, input) {
     await hub.save(thread);
     return { queued: false };
   }
+  if (input.action === 'removed') {
+    if (!['idea', 'deferred'].includes(card.kind)) throw appError(400, 'removed requires an idea or deferred card');
+    if (!(card.bullets || []).some((bullet) => bullet.text === input.value)) throw appError(400, 'removed text must match a bullet');
+    if (card.kind === 'deferred' && card.locked) throw appError(422, 'this card is locked');
+  }
   if (card.kind === 'sudo') return pressSudo(hub, thread, card, input);
   if (input.action === 'recheck') {
     if (card.kind !== 'approval') throw appError(400, 're-check requires an approval card');
@@ -324,7 +331,7 @@ async function press(hub, id, cardId, input) {
     'start-thread': `start thread about: ${input.value}`,
   };
   if (!(input.action in suffixes)) throw appError(400, 'unknown card press');
-  if (!(card.kind === 'approval' && input.action === 'talk')) {
+  if (!(card.kind === 'approval' && input.action === 'talk') && !(card.kind === 'deferred' && input.action === 'removed')) {
     card.answered = true;
     card.answered_action = input.action;
     card.answered_value = input.value ?? null;

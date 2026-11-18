@@ -2032,7 +2032,7 @@ test('retract validates targets, removes pins and refuses stale presses', async 
   assert.equal(validate('retract', { card: 'x', note: 'one\ntwo' }, 'lead').ok, false);
   assert.equal(validate('retract', { card: 'x', note: 'No longer needed' }, 'worker').ok, false);
   const targets = { cards: [{ id: 'x', kind: 'idea' }, { id: 's', kind: 'needs', system: true }, { id: 'a', kind: 'question', answered: true }, { id: 'r', kind: 'offer', replaced: true }] };
-  for (const [id, reason] of [['x', 'only a question, offer, approval, needs or sudo card can be retracted'], ['s', 'a system needs card closes itself'], ['a', 'card is already answered'], ['r', 'no such card in this thread']]) assert.equal(retractable(targets, id).reason, reason);
+  for (const [id, reason] of [['x', 'only a question, offer, approval, needs, sudo or deferred card can be retracted'], ['s', 'a system needs card closes itself'], ['a', 'card is already answered'], ['r', 'no such card in this thread']]) assert.equal(retractable(targets, id).reason, reason);
   await withContext(async (context) => {
     const made = await thread(context); const other = await thread(context); const lead = made.sessions[0].name;
     const foreign = await openNeed(context, other);
@@ -2104,5 +2104,59 @@ test('a non-lead cannot retract, and a retracted offer stays in the conversation
     assert.equal(first.replaced, undefined);
     assert.equal(first.retracted_note, 'Talking first');
     assert.equal(chat.pinned.find((item) => item.kind === 'offer').id, second.id);
+  });
+});
+
+test('deferred validates, stays pinned and accepts only valid pull-backs', async () => {
+  const bullets = [{ id: 'a', text: 'First' }, { id: 'b', text: 'Second' }];
+  const base = { kind: 'deferred', mode: 'two-part', bullets };
+  for (const mode of ['two-part', 'proof-of-concept']) assert.equal(validate('deferred', { ...base, mode, bullets: [] }, 'lead').ok, true);
+  for (const bad of [{ ...base, mode: 'other' }, { ...base, extra: true }, { ...base, bullets: [bullets[0], { id: 'a', text: 'Other' }] }, { ...base, bullets: [bullets[0], { id: 'c', text: 'First' }] }]) assert.equal(validate('deferred', bad, 'lead').ok, false);
+  assert.equal(validate('deferred', base, 'sub-lead').ok, false);
+  await withContext(async (context) => {
+    const made = await thread(context); const lead = made.sessions[0].name;
+    const first = (await card(context, made.id, lead, base)).body;
+    const second = (await card(context, made.id, lead, base)).body;
+    const press = (id, value) => api(context, `/threads/${made.id}/cards/${id}/press`, { method: 'POST', body: { action: 'removed', value } });
+    assert.equal((await press(first.id, 'First')).status, 404);
+    assert.equal((await press(second.id, 'missing')).status, 400);
+    const idea = (await card(context, made.id, lead, { kind: 'idea', bullets })).body;
+    assert.equal((await press(idea.id, 'missing')).status, 400);
+    const question = (await card(context, made.id, lead, { kind: 'question', fits: 'Fits', question: 'Q?', options: [{ id: 'a', label: 'A', consequence: 'A' }, { id: 'b', label: 'B', consequence: 'B' }], leaning: 'a', why: 'Why' })).body;
+    assert.equal((await press(question.id, 'First')).status, 400);
+    assert.equal((await press(second.id, 'First')).status, 202);
+    assert.equal((await press(second.id, 'Second')).status, 202);
+    let hub = new Hub({ stateDir: context.state }); let state = await hub.thread(made.id);
+    assert.equal(state.cards.find((c) => c.id === second.id).answered, undefined);
+    assert.ok(state.sessions[0].queue.some((m) => m.text === `[card ${second.id}] removed: First`));
+    assert.equal(state.pinned.deferred.id, second.id);
+    assert.equal((await card(context, made.id, lead, { kind: 'retract', card: second.id, note: 'Withdrawn' })).status, 202);
+    assert.equal((await press(second.id, 'First')).status, 422);
+    state = await hub.thread(made.id); assert.equal(state.pinned.deferred, undefined);
+    const locked = (await card(context, made.id, lead, { ...base, locked: true })).body;
+    assert.equal((await press(locked.id, 'First')).status, 422);
+    context.machine.status.version = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+    const approval = (await card(context, made.id, lead, { kind: 'approval', objections: [], ready: { ok: true, missing: [] } })).body;
+    await api(context, `/threads/${made.id}/cards/${approval.id}/press`, { method: 'POST', body: { action: 'start-building' } });
+    state = await hub.thread(made.id); assert.equal(state.pinned.deferred.id, locked.id);
+    assert.ok((await api(context, `/threads/${made.id}/chat`)).body.pinned.some((c) => c.id === locked.id));
+  });
+});
+
+test('restart context preserves stub summary and all card kinds', async () => {
+  await withContext(async (context) => {
+    const made = await thread(context); const oldLead = made.sessions[0];
+    const a = (await card(context, made.id, oldLead.name, { kind: 'deferred', mode: 'two-part', bullets: [] })).body;
+    const b = (await card(context, made.id, oldLead.name, { kind: 'deferred', mode: 'two-part', bullets: [] })).body;
+    const hub = new Hub({ stateDir: context.state }); const before = await hub.thread(made.id);
+    before.context = 'Summary only'; before.commits = ['abc']; await hub.save(before);
+    context.machine.sessions.get(oldLead.name).running = false;
+    await hub.init(); await hub.pollDead();
+    const restarted = await api(context, `/threads/${made.id}/restart`, { method: 'POST', body: {} });
+    const after = await hub.thread(made.id);
+    const message = after.sessions.find((s) => s.name === restarted.body.name).queue.find((m) => m.source === 'context').text;
+    const state = JSON.parse(message.replace(/^\[wc:context restart] Thread state:\n/, ''));
+    assert.equal(state.stub_summary, 'Summary only'); assert.equal(state.card_kinds[a.id], 'deferred'); assert.equal(state.card_kinds[b.id], 'deferred');
+    assert.doesNotMatch(message, /commits|cherry-pick/i);
   });
 });

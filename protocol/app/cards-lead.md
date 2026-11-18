@@ -30,6 +30,18 @@ Each bullet has a remove button. A press comes back as `[card <id>] removed: <bu
 post the card again without that bullet. With more than three bullets the app folds the
 card to show the newest two, so order them oldest first.
 
+### `deferred`
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `mode` | `two-part` \| `proof-of-concept` | yes | How the items are treated |
+| `bullets` | array of `{id, text}` | yes | May be empty; ids and texts must each be unique within the card |
+| `locked` | boolean | no | Hides remove buttons when true |
+
+The heading is “Saved for the follow-up · N things” in two-part mode, with “These go into a new thread when this one is done.”; in proof-of-concept mode it is “Skipped for this proof of concept · N things”, with “These are accepted as risks; nothing will fix them later.” An empty list says “Nothing deferred yet”. Like idea, lists over three fold. A remove press arrives as `[card <id>] removed: <bullet text>` and does not mark the card answered.
+
+The hub refuses `removed` on kinds other than idea or deferred, or when the text does not match a bullet (400). A locked deferred card refuses it (422); replaced and withdrawn cards refuse presses as usual.
+
 ### `question`
 
 One decision for Collin. Also used to confirm IDEA.md.
@@ -241,7 +253,7 @@ Only a lead may retract, and any lead of the thread may retract an earlier lead'
 The hub checks these refusals in order (422):
 
 1. `no such card in this thread`: missing, in another thread, or replaced.
-2. `only a question, offer, approval, needs or sudo card can be retracted`.
+2. `only a question, offer, approval, needs, sudo or deferred card can be retracted`.
 3. `a system needs card closes itself`.
 4. `card is already answered`: including a previous retraction, resolution or press; sudo
    cards are checked by state instead.

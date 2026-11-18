@@ -5,7 +5,7 @@
   const id = new URLSearchParams(location.search).get('id') || '';
   const T = API + '/threads/' + encodeURIComponent(id);
   const POLL_MS = 2000;
-  const PINNED_KINDS = ['offer', 'idea', 'approval', 'progress'];
+  const PINNED_KINDS = ['offer', 'idea', 'deferred', 'approval', 'progress'];
   // The offer's buttons press these fixed values; one map renders the buttons and marks the picked one.
   const OFFER_CHOICES = [
     ['take it into planning', 'Take it into planning', 'primary small'],
@@ -450,7 +450,7 @@
       await post(T + '/cards/' + encodeURIComponent(card.id) + '/press',
         value === undefined ? { action } : { action, value });
       delete cardErrors[card.id];
-      card.answered = true;
+      if (!(card.kind === 'deferred' && action === 'removed')) card.answered = true;
     } catch (e) {
       if (once && /already answered/.test(e.message)) card.answered = true;
       else { if (once) card.answered = false; cardErrors[card.id] = e.message; }
@@ -547,19 +547,25 @@
         box.append(pin, text, a);
         break;
       }
-      case 'idea': {
+      case 'idea':
+      case 'deferred': {
+        const deferred = card.kind === 'deferred';
         const all = card.bullets || [];
-        head(box, 'Your idea so far · ' + all.length + (all.length === 1 ? ' thing' : ' things') + " you've said", 'blue');
-        box.appendChild(el('div', 'hint', 'Your words, not the idea doc. Planning writes the doc from these.'));
+        const label = card.mode === 'two-part' ? 'Saved for the follow-up' : 'Skipped for this proof of concept';
+        head(box, deferred ? label + ' · ' + all.length + (all.length === 1 ? ' thing' : ' things') : 'Your idea so far · ' + all.length + (all.length === 1 ? ' thing' : ' things') + " you've said", 'blue');
+        box.appendChild(el('div', 'hint', deferred ? (card.mode === 'two-part' ? 'These go into a new thread when this one is done.' : 'These are accepted as risks; nothing will fix them later.') : 'Your words, not the idea doc. Planning writes the doc from these.'));
+        if (deferred && !all.length) box.appendChild(el('div', 'dim', 'Nothing deferred yet'));
         const fold = all.length > 3 && !ideaOpen;
         const shown = fold ? all.slice(-2) : all;
         if (fold) box.appendChild(el('div', 'dim fold-note', (all.length - 2) + ' earlier points folded'));
         for (const b of shown) {
           const row = el('div', 'bullet'); row.dataset.bullet = b.id;
           row.appendChild(el('span', 'bullet-text', b.text));
-          const rm = button('×', 'x', () => press(card, 'removed', b.text), thread().archived);
-          rm.setAttribute('aria-label', 'Remove'); rm.title = 'Remove';
-          row.appendChild(rm);
+          if (!deferred || !(card.locked || thread().archived || card.retracted_at)) {
+            const rm = button('×', 'x', () => press(card, 'removed', b.text), thread().archived);
+            rm.setAttribute('aria-label', deferred ? 'Pull back in' : 'Remove'); rm.title = deferred ? 'Pull back in' : 'Remove';
+            row.appendChild(rm);
+          }
           box.appendChild(row);
         }
         if (all.length > 3) {
@@ -853,6 +859,7 @@
   function pinLabel(card) {
     if (card.kind === 'offer') return card.answered ? 'Planning offer' : 'Planning offer: needs you';
     if (card.kind === 'approval') return card.answered ? 'Plan approved' : 'Plan approved: needs you';
+    if (card.kind === 'deferred') return (card.mode === 'two-part' ? 'Saved for the follow-up' : 'Skipped for this proof of concept') + ' · ' + (card.bullets || []).length + ((card.bullets || []).length === 1 ? ' thing' : ' things');
     if (card.kind === 'idea') {
       const n = (card.bullets || []).length;
       return 'Your idea · ' + n + (n === 1 ? ' thing' : ' things');
