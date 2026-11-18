@@ -22,10 +22,11 @@ test('startup repairs only partial imported lead starts and registers plans', as
   const base = { project: '/repo', machine: 'hub', cards: [], pinned: {}, queues: {}, sent: [], slug: 'plan', worktree: '/work', archived: false };
   await hub.save({ ...base, id: 'aaaaaaaaaaaa', imported: { at: '2026-01-01' }, sessions: [session('lead'), session('worker'), session('lead', { name: 'saved', first_message: true })] });
   await hub.save({ ...base, id: 'bbbbbbbbbbbb', sessions: [session('lead')] });
+  await hub.save({ ...base, id: 'cccccccccccc', archived: true, sessions: [] });
   await hub.init();
   t.after(() => { for (const key of ['asideTimer', 'pollTimer', 'queueRetryTimer', 'waitTimer', 'usageTimer', 'usageStartTimer']) clearTimeout(hub[key]); });
   const imported = await hub.thread('aaaaaaaaaaaa');
-  assert.equal(imported.sessions[0].live, false);
+  assert.equal(imported.sessions[0].live, false); assert.ok(!Number.isNaN(Date.parse(imported.sessions[0].ended_at)));
   assert.equal(imported.sessions[1].live, true);
   assert.equal(imported.sessions[2].live, true);
   assert.equal((await hub.thread('bbbbbbbbbbbb')).sessions[0].live, true);
@@ -150,4 +151,55 @@ test('imported Claude lead receives context immediately on start', async (t) => 
   c.machine.handoffReplies.running = { names: [] };
   const lead = await hub.restartLead(made.id);
   assert.match(c.machine.sessions.get(lead.name).submits[0], /^\[wc:context import\]/);
+});
+
+test('imported waiting lead retries with checkout SHA and delivers context', async (t) => {
+  const { setup, close, thread: makeThread } = require('./helpers/app.js'); const { Hub } = require('../app/hub.js');
+  const settings = require('../app/settings.js'); const { retryWaiting } = require('../app/sessions.js');
+  const c = await setup(); t.after(() => close(c)); const made = await makeThread(c, { cli: 'claude' });
+  const hub = new Hub({ stateDir: c.state }); await hub.state.init();
+  const thread = await hub.thread(made.id); thread.sessions[0].live = false; thread.imported = { at: '2099-01-01', history: [] }; thread.worktree = null; thread.checkout_sha = 'd'.repeat(40); await hub.save(thread);
+  await settings.update(hub, (s) => { s.accounts.forEach((a) => { a.paused = true; }); });
+  c.machine.handoffReplies.running = { names: [] };
+  const waiting = await hub.restartLead(made.id);
+  assert.equal(waiting.live, true); assert.equal(waiting.status, 'waiting');
+  assert.deepEqual(waiting.pending_start.from_remote_branch, { sha: thread.checkout_sha });
+  assert.match(waiting.queue[0].text, /^\[wc:context import\]/);
+  assert.equal(c.machine.sessions.has(waiting.name), false);
+  await settings.update(hub, (s) => { s.accounts.forEach((a) => { a.paused = false; }); });
+  await retryWaiting(hub);
+  const started = (await hub.thread(made.id)).sessions.find((s) => s.name === waiting.name);
+  assert.equal(started.status, 'ready');
+  const request = c.machine.calls.filter((x) => x.path === '/v1/sessions' && x.method === 'POST').at(-1);
+  assert.deepEqual(request.body.from_remote_branch, { sha: thread.checkout_sha });
+  assert.match(c.machine.sessions.get(waiting.name).submits[0], /^\[wc:context import\]/);
+});
+
+test('failed pending start retains non-context queue for the next restart and failed inspect is tolerated', async (t) => {
+  const { setup, close, thread: makeThread } = require('./helpers/app.js'); const { Hub } = require('../app/hub.js');
+  const c = await setup(); t.after(() => close(c)); const made = await makeThread(c); const hub = new Hub({ stateDir: c.state }); await hub.state.init();
+  const thread = await hub.thread(made.id); thread.sessions[0].live = false; thread.sessions[0].queue = [{ text: 'keep me', source: 'collin' }];
+  thread.imported = { at: '2099-01-01', history: [] }; thread.slug = 'plan'; thread.checkout_sha = 'e'.repeat(40); await hub.save(thread);
+  c.machine.handoffReplies.running = { names: [] }; c.machine.handoffReplies.inspect = { result: 'failed', error: 'offline' }; c.machine.startOk = false;
+  await assert.rejects(hub.restartLead(made.id), /start refused/);
+  const failed = (await hub.thread(made.id)).sessions.at(-1); assert.equal(failed.status, 'failed'); assert.equal(failed.live, false); assert.equal(failed.queue[1].text, 'keep me');
+  c.machine.startOk = true; const next = await hub.restartLead(made.id);
+  assert.equal(next.queue[1].text, 'keep me'); assert.equal(next.queue.filter((m) => m.source === 'context').length, 1);
+  const request = c.machine.calls.filter((x) => x.path === '/v1/sessions' && x.method === 'POST').at(-1);
+  assert.equal(request.body.worktree, thread.worktree); assert.equal(request.body.from_remote_branch, undefined);
+});
+
+test('ordinary chat and merge watcher retain their different done-card rules', async (t) => {
+  const { setup, close, thread: makeThread } = require('./helpers/app.js'); const { Hub } = require('../app/hub.js');
+  const { makeTemp } = require('../../test-support/run-dir.js'); const fs = require('node:fs/promises'); const path = require('node:path');
+  const c = await setup(); t.after(() => close(c)); const made = await makeThread(c); const hub = new Hub({ stateDir: c.state }); await hub.state.init();
+  const thread = await hub.thread(made.id); const older = 'https://github.com/o/r/pull/1'; const replaced = 'https://github.com/o/r/pull/2';
+  thread.cards.push({ kind: 'done', pr_url: older }, { kind: 'done', pr_url: replaced, replaced: true }, { kind: 'done', pr_url: '   ' }); await hub.save(thread);
+  assert.equal((await hub.chat(made.id)).thread.pr_url, '   ');
+  thread.cards.pop(); await hub.save(thread); assert.equal((await hub.chat(made.id)).thread.pr_url, replaced);
+  thread.cards.push({ kind: 'done', pr_url: '   ' }); await hub.save(thread);
+  const dir = await makeTemp('handoff-gh-'); const oldPath = process.env.PATH; const log = path.join(dir, 'calls');
+  await fs.writeFile(path.join(dir, 'gh'), `#!/bin/sh\nprintf '%s' "$3" > '${log}'\nprintf '{"state":"MERGED"}'\n`, { mode: 0o755 });
+  process.env.PATH = `${dir}:${oldPath}`; t.after(() => { process.env.PATH = oldPath; });
+  await hub.pollMerged(); assert.equal(await fs.readFile(log, 'utf8'), older);
 });

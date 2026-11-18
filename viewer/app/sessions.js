@@ -230,7 +230,8 @@ async function startSession(hub, thread, input) {
     };
     if (title) waiting.title = title;
     if (typeof input.brief === 'string') waiting.brief = input.brief;
-    Object.assign(waiting, { status: 'waiting', waiting_until: selection.wait.until, waiting_reason: selection.wait.reason, waiting_provider: selection.wait.provider, pending_start: input._waiting ? waiting.pending_start : { ...input } });
+    const { _waiting, ...startInput } = input;
+    Object.assign(waiting, { live: true, status: 'waiting', waiting_until: selection.wait.until, waiting_reason: selection.wait.reason, waiting_provider: selection.wait.provider, pending_start: waiting.pending_start || startInput });
     if (!input._waiting) thread.sessions.push(waiting);
     if (role === 'lead' && !thread.lead_name) await hub.saveWithLeadName(thread);
     else await hub.save(thread);
@@ -768,7 +769,10 @@ async function retryWaiting(hub) {
     await hub.withThread(item.thread, async () => {
       const thread = await hub.thread(item.thread);
       const target = thread.sessions.find((s) => s.name === item.name && s.live && s.status === 'waiting');
-      if (target) await startSession(hub, thread, { ...target.pending_start, _waiting: target });
+      if (target) {
+        const started = await startSession(hub, thread, { ...target.pending_start, _waiting: target });
+        if (thread.imported && started.role === 'lead' && started.status !== 'waiting') await deliver(hub, thread, started);
+      }
     }).catch(() => {});
   }
 }

@@ -164,7 +164,7 @@ async function restartLead(hub, id) {
     for (const card of thread.cards) if (card.kind === 'needs' && ['Sessions ended', "The lead's turn failed"].includes(card.title) && !card.answered) card.answered = true;
     await hub.save(thread);
     const lead = await startSession(hub, thread, { role: 'lead', cli: thread.cli, brief: '', tier: 'top', worktree: thread.worktree, branch: thread.branch, ...(!thread.worktree && thread.checkout_sha ? { from_remote_branch: { sha: thread.checkout_sha } } : {}), _waiting: pending });
-    await deliver(hub, thread, lead);
+    if (lead.status !== 'waiting') await deliver(hub, thread, lead);
     return lead;
   }
   // The thread keeps its worktree across leads; asking for a new one would fail on the
