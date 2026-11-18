@@ -75,18 +75,19 @@ Lead-only, shown, not pinned, no presses. Fields:
 
 | Field | Type | Required | Rule |
 |---|---|---|---|
-| `head` | string | yes | 40-char lowercase hex. Must equal the `head` of the most recent non-replaced `done` card in the thread; the hub refuses otherwise (422 `check head must match the latest done card`), and refuses when the thread has no `done` card (422 `post the done card first`) |
-| `update` | string | yes | How to get the merged change running, e.g. "Merge the pull request, then on the machine run `cd /home/collin/projects/personal/wheelchair && git pull && ./install.sh`". At most 600 chars |
-| `steps` | array | yes | 1 to 10 items, each `{where, do, see, command?, tried, why_not?}` |
+| `head` | string | yes | 40-char lowercase hex. Must equal the `head` of the most recent `done` card in the thread (done cards are never replaced or retracted: `viewer/app/cards.js:9,22-31`, `viewer/app/card.js:224-233`); the hub refuses otherwise (422 `check head must match the latest done card`), and refuses when the thread has no `done` card (422 `post the done card first`) |
+| `update` | string | yes | How to get the merged change running, e.g. "Merge the pull request, then on the machine run `cd /home/collin/projects/personal/wheelchair && git pull && ./install.sh`". At most 300 chars |
+| `merged` | boolean | no | true when the done card was posted for an already merged pull request; `update` then leaves out the merge |
+| `steps` | array | yes | 1 to 6 items, each `{where, do, see, command?, tried, why_not?}` |
 
 Each step:
 
 | Field | Type | Required | Rule |
 |---|---|---|---|
 | `where` | `app` \| `machine` | yes | |
-| `do` | string | yes | What to do, at most 600 chars |
-| `see` | string | yes | What he should see if it worked, at most 600 chars |
-| `command` | string | no | Only with `where: machine`; the exact command, full paths, at most 2000 chars; may span lines |
+| `do` | string | yes | What to do, at most 300 chars |
+| `see` | string | yes | What he should see if it worked, at most 300 chars |
+| `command` | string | no | Only with `where: machine`; the exact command, full paths, at most 1000 chars; may span lines |
 | `tried` | boolean | yes | true when an agent followed the step and saw `see` |
 | `why_not` | string | when `tried` is false | Forbidden when `tried` is true. One line, at most 300 chars |
 
@@ -95,7 +96,7 @@ spooled path (not synchronous like `done`); the head rule is checked at the hub 
 card is accepted (`viewer/app/cards.js` `acceptCard`, under the thread lock).
 
 Rendering (`viewer/pages/thread.js` `renderCard`): heading "Check it yourself", an eyebrow
-"After you merge", the `update` text, then an ordered list. Each item shows a small label
+"After you merge" (or "Already merged" when `merged` is true), the `update` text, then an ordered list. Each item shows a small label
 "In the app" or "On the machine", the `do` text, the `command` in a monospace block with a
 Copy button (hidden when `navigator.clipboard` is unavailable; copying never posts
 anything), then "You should see:" and the `see` text. An untried step shows a muted line
@@ -118,13 +119,15 @@ Other app touch points:
 
 ### How the lead writes and tries the steps (`protocol/app/lead.md`)
 
-Writing: after the work's own verification passes, the lead drafts 1 to 10 steps from what
+Writing: after the work's own verification passes, the lead drafts 1 to 6 steps (usually
+3 to 5; a sentence or two per field, readable on a phone) from what
 the change is for (IDEA.md's "What good looks like" for a feature; Collin's request for a
 small fix; the reported problem for an after-done fix). Steps follow "Where the steps are
 done". Each `see` is something he can observe, not "it works". Commands use full paths and
 name the output to look for. `update` says how this project picks up a merged change; when
 the lead does not know (no README guidance, nothing obvious), it says so plainly and gives
-its best guess marked as such.
+its best guess marked as such. When the done card is for an already merged pull request,
+`update` starts from updating (no merge step) and the card sets `merged: true`.
 
 Trying (Decision 4), before the push that leads to `done`:
 - Small fix and after-done fix: the verifier the lead already starts gets the draft steps
@@ -165,10 +168,16 @@ Imported threads: no check card is posted retroactively on import.
 
 A new section, used only when the brief includes check steps:
 - Try each step against the commit being checked, in the throwaway worktree. Run any app in
-  isolation: start it from the worktree on a free port that is not 7374, with its own temp
-  state directory (as `viewer/test/helpers/server.js` does), never against Collin's live app,
-  its state under `~/.local/state/wheelchair/`, or his projects. App steps are followed in a
-  headless browser at phone size (390×844), using the repo's Playwright. Machine commands
+  isolation, never against Collin's live apps, their data, or his other checkouts: find how
+  this project starts its app from its own README, AGENTS/CLAUDE files, scripts and test
+  helpers, and start it from the worktree on a free port (never 7374) with its own temporary
+  data. For wheelchair this is what `viewer/test/helpers/server.js` does. App steps are
+  followed in a headless browser at phone size (390×844), using the project's Playwright if
+  it has one, otherwise any headless browser available on the machine.
+- If the project gives no safe way to run its app in isolation (it needs real accounts,
+  devices, paid services or its live data), report those steps COULD NOT TRY with that
+  reason; do not improvise against live systems. In such projects many app steps will be
+  posted "Not tried by an agent"; that is expected (see Accepted Risks). Machine commands
   are run as written unless they would touch Collin's live state or install system-wide;
   then try the closest isolated equivalent and say so, or report COULD NOT TRY.
 - A step that needs state the isolated app lacks (for example a thread at Done) may be
@@ -192,14 +201,15 @@ A new section, used only when the brief includes check steps:
   ones stay in the conversation unchanged.
 - A `check` with a head matching an older, not latest, done card is refused.
 - An archived or handed-off thread refuses `check` like any card.
-- More than 10 steps needed: the lead picks the 10 that best show the change works.
+- More than 6 steps seem needed: the lead picks the few that best show the change works
+  from Collin's side; detail belongs to the verifier, not the card.
 
 ### Validation
 
 - `cd viewer && npm test` passes, including new node tests:
   - `card.js` validation: accepts a valid card; refuses each missing required field,
     `command` with `where: app`, `why_not` with `tried: true`, missing `why_not` with
-    `tried: false`, 0 or 11 steps, over-length fields, unknown fields, a non-lead role.
+    `tried: false`, 0 or 7 steps, over-length fields, a non-boolean `merged`, unknown fields, a non-lead role.
   - hub acceptance: refused with no done card; refused when `head` differs from the latest
     done; accepted when it matches; accepted after a second done only with the second head.
   - handoff: a thread with a `check` card exports and the file validates; `historyText`
@@ -220,6 +230,7 @@ re-raise them.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| In projects that cannot run their app in isolation, many app steps reach Collin marked "Not tried by an agent" | Trying them would mean touching live systems; the mark keeps the card honest and the steps are still useful to him | 1 |
 
 ## Review Rounds
 
@@ -237,6 +248,12 @@ round where knowing it matters most.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Verifier's try-the-steps rules only fit wheelchair; other projects' app steps would all be untried | upheld | Project-neutral isolation rule in the verifier section; COULD NOT TRY when no safe isolated run; accepted risk recorded |
+| intent | minor | Limits (10 steps, 600/2000 chars) and writing rule ignore the phone constraint | upheld | 1–6 steps, usually 3–5; do/see 300, command 1000, update 300; brevity rule |
+| intent | minor | Put steps in the plan so the sub-lead's verifier tries them; saves a session | declined | Steps describe what was actually built (labels, screens, output) and are written after it; plan-time steps would drift and turn wording mismatches into verification gaps. One extra session per feature is the cost of keeping the sub-lead protocol unchanged |
+| intent | minor | Work-is-wrong branch turns steps into another gate; just mark and tell Collin | declined | A step showing the work is wrong is a defect found before push; shipping it marked contradicts IDEA's "not have to trust" and lead.md already fixes defects found before Done the same way. Adding a check is not replacing the automatic checks |
+| intent | minor | "After you merge" and the update text are wrong when done is posted for an already merged PR | upheld | Optional `merged` flag; label "Already merged"; update leaves out the merge |
+| intent | minor | Hub head check is unnecessary; "non-replaced" never applies to done | upheld (wording) | Wording fixed: done cards are never replaced or retracted. Hub check kept: it is small and stops a card attached to the wrong done |
 
 Reported severity is the reviewer's opinion; the lead verdict
 (`upheld`/`downgraded`/`declined`/`accepted-risk`/`user-decision`) is what gates the
