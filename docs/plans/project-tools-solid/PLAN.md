@@ -15,11 +15,6 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q1: How does the connection check work?
-- **Context:** Research (2026-11-18): `codex mcp list` and `codex mcp get` only read config; `claude mcp list` connects but is text-only, takes ~6 s, and skips project servers until approved under `~/.claude`; `agy mcp list` does not even show workspace-plugin servers. No CLI gives a cheap, reliable status.
-- **Options:** (a) wheelchair connects to each tool itself (MCP handshake plus tool list) once per thread when `.mcp.json` changes, same answer for every CLI; (b) wheelchair connects at every tools-getting session start; (c) no connection check, only "program exists".
-- **Recommendation:** (a).
-
 ### Q2: Antigravity mechanism (pending research)
 - **Context:** A workspace plugin at `<cwd>/.agents/plugins/<name>/` (`plugin.json` + `mcp_config.json`) loads servers with no HOME change (verified, model turn reached the tool). But leads and reviewers share one worktree, and reviewers must not get tools (local-projects Decision 4). A follow-up check for a per-session on/off switch is running. Fallback is a per-session fake HOME with a copied login token, which isolates conversation history and anything else under HOME.
 
@@ -45,6 +40,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | # | Decision | Rationale | Source |
 |---|----------|-----------|--------|
 | 1 | Mode thorough | Collin's pick; this thread is already the follow-up | user |
+| 2 | Connection check: wheelchair itself connects to each project tool (MCP handshake + tool list), once per thread when a tools-getting agent first starts and again whenever `.mcp.json` changes; one result shared by every CLI | Collin's pick: catches bad tokens and URLs without slowing every agent start. No CLI offers a reliable check (research 2026-11-18) | user |
+| 3 | Problems reach Collin as one system `needs` card per thread listing plain-language lines, closed by the hub when a later check or start leaves no lines (design carried from local-projects review rounds 1-3 / D4) | Already worked through three review rounds; system cards close themselves | defaulted |
 
 ## Spec
 
