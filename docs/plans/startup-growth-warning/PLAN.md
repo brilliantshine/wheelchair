@@ -385,7 +385,7 @@ flowchart TD
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | tricky: machine side: STARTUP_TYPICAL/MARGIN, background refreshStartupWarning (single flight, coalesced rerun), card route strip + enrich, API.md, machine tests | machine/service.js, machine/lib/startup-warning.js, machine/adapters/claude.js, machine/API.md, machine/test/** | standard / gpt-6.1-terra | wc-723c2d1f57db-worker | bash machine/test/run.sh; node --test viewer/test/*.test.js | done |
-| T2 | viewer/protocol side: card.js machine-only warnings, thread page Heads-up, cards-lead.md row, lead.md 6.3 refusal rule, viewer node + browser tests | viewer/app/card.js (cards.js, threads.js only if needed), viewer/pages/thread.js + its CSS, viewer/test/**, protocol/app/cards-lead.md, protocol/app/lead.md | standard / gpt-6.1-terra (asked claude; none had room) | wc-723c2d1f57db-worker-2 | node --test viewer/test/*.test.js; npm --prefix viewer run test:browser | in progress |
+| T2 | viewer/protocol side: card.js machine-only warnings, thread page Heads-up, cards-lead.md row, lead.md 6.3 refusal rule, viewer node + browser tests | viewer/app/card.js (cards.js, threads.js only if needed), viewer/pages/thread.js + its CSS, viewer/test/**, protocol/app/cards-lead.md, protocol/app/lead.md | standard / gpt-6.1-terra (asked claude; none had room) | wc-723c2d1f57db-worker-2 | node --test viewer/test/*.test.js; npm --prefix viewer run test:browser | done |
 
 ## Log
 
@@ -395,3 +395,8 @@ flowchart TD
 - 2026-11-17 — Choice: T1, machine/service.js: the scan function is held on the instance (`scanStartupWarning`) so tests can stall it or make it throw.
 - 2026-11-17 — Choice: T1, machine/lib/startup-warning.js: the scan lives in a new helper module; ledger lines are sorted by comparing their `at` strings, and the 100-start cap applies after filtering (seen in diff, not listed by the worker).
 - 2026-11-17 — T1 accepted (band: self, tricky). Diff matches Spec; re-ran `bash machine/test/run.sh`: 138 pass, 0 fail. Viewer suite on T1's branch: one flaky failure (app-hub.test.js "send now hands a queued message to the lead mid-turn") under full-suite load; the file passes alone on both base and T1 (111/111). Full viewer suite re-run after integration.
+- 2026-11-17 — Choice: T2, viewer/pages/thread.js: the Heads-up panel reuses the Ready notice classes (`ready-status no`, `ready-no`) for its amber style, plus a new `approval-warnings` class.
+- 2026-11-17 — Choice: T2, viewer/pages/thread.js: the Heads-up list also shows on a retracted or answered approval card (not gated).
+- 2026-11-17 — Choice: T2, viewer/app/card.js: no per-string length cap on `warnings`; machine fields are selected only for `approval` with `machine: true`.
+- 2026-11-17 — Choice: T2, protocol/app/lead.md: wording of the "Talk about it" reply on the hub-update needs card.
+- 2026-11-17 — T2 accepted (band: scout). Scout found no deviations. Re-ran app-sudo + protocol-rules node tests (55 pass, 0 fail) and app-threads.spec.js in Chromium and Firefox (154 passed).
