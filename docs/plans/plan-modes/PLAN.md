@@ -759,7 +759,7 @@ Filled by Stage 3. One row per worker brief.
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | App side: `deferred` card kind, press checks, pins, restart `card_kinds`/`stub_summary`, rendering, tests, card docs | viewer/app/{card,cards,threads,chat}.js, viewer/pages/thread.js, viewer/test/**, protocol/app/cards.md, cards-lead.md | standard / gpt-6.1-terra (claude asked; hub fell back) | wc-2919fc337eba-worker | node --test viewer/test/*.test.js; npm --prefix viewer run test:browser | running |
-| T2 | Protocol prose: lead, sub-lead, reviewer, verifier rules; IDEA/PLAN templates (tricky) | protocol/app/{lead,sub-lead,reviewer,verifier}.md, protocol/templates/{IDEA,PLAN}.md | standard / gpt-6.1-terra (claude asked; hub fell back) | wc-2919fc337eba-worker-2 | node --test viewer/test/protocol-rules.test.js; read-through per mode | running |
+| T2 | Protocol prose: lead, sub-lead, reviewer, verifier rules; IDEA/PLAN templates (tricky) | protocol/app/{lead,sub-lead,reviewer,verifier}.md, protocol/templates/{IDEA,PLAN}.md | standard / gpt-6.1-terra (claude asked; hub fell back) | wc-2919fc337eba-worker-2 | node --test viewer/test/protocol-rules.test.js; read-through per mode | done |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -767,3 +767,6 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 Free-form running notes: deviations discovered mid-implementation, scope events,
 anything a future session needs that fits nowhere above.
+
+- 2026-11-18 — Choice: T2: report lists none. Seen in the diff (self read): lead.md rules placed in a new "### Mode and Deferred" section after step 4 plus paragraphs in steps 5, 7, 8 and restart; sub-lead.md uses new sub-steps 1a and 4a; IDEA template defaults `mode: thorough`.
+- 2026-11-18 — T2 accepted (band: self, tricky): protocol rules for modes in lead, sub-lead, reviewer, verifier and templates; protocol-rules and full node suite re-run, pass. Small gaps (no mode definitions in lead.md; sub-lead 1a vs step 2 on a verifying restart; Start building order) go to T3.
