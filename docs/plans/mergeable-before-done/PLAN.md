@@ -550,3 +550,13 @@ Collin: "Keep going" — budget reset.
 | mechanics | major | Git failure before a PR exists: "Keep going" has nothing to poll | upheld | D65 |
 
 **Budget:** three triaged rounds (8, 9, 10) since Collin's last decision without a clean one; stopped for Collin. Fixes applied.
+Collin: "Keep going" — budget reset.
+
+### Round 11 — 2026-11-18
+
+**Lanes:** intent lens (provider per start); mechanics lens (other family); cross-family: yes.
+
+**Changed since the last round:** restart: uncommitted edits go to the question (D63); not-waiting test (D64); "Keep going" after a git failure redoes the operation (D65); legacy-`done` risk row clarified.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
