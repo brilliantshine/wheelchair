@@ -49,6 +49,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 22 | Session stop and archive tear down immediately (SIGKILL) without waiting in the queue; `screen stop` and the sweep are graceful | Stays inside the hub's 5 s timeout and finishes before a verifier worktree is removed | review-round-3 |
 | 23 | `type` text capped at 400 characters, timeout scaled; key tokens that are xdotool command names refused; command names with `=` refused; windows are viewable top-level children of the root; auto-focus picks a new window only | Closes the round 3 argument and window findings | review-round-3 |
 | 24 | Key names come from a fixed list (letters, digits, F-keys, navigation and editing keys, common punctuation, with ctrl/alt/shift/super combos); supersedes the command-name blocklist in 23. Codex sandbox wrap kept | Collin's pick ("Only the fixed key list") after three review rounds without a clean pass | user |
+| 25 | Thread-level slice under the parent; generation fence on launches; sweep stops unheld slices; `systemctl` calls 2 s deadline, archive carries on | Closes registration races, restart stragglers and the archive time budget | review-round-4 |
+| 26 | `--expand-environment=no` on systemd 254+ | systemd 258 expands `$` in scope commands by default | review-round-4 |
+| 27 | Each modifier at most once; `--hold` for held keys and lone modifiers; `type` limited to printable ASCII, newline and tab; auto-focus only a window owned by the app's scope; screen size capped at 2560 | Round 4 findings | review-round-4 |
 
 ## Spec
 
@@ -85,7 +88,7 @@ to stdout, exit 0. Every failure is a non-2xx status other than `503` with `{err
 
 | Op | Arguments | Does | Returns |
 |---|---|---|---|
-| `start` | `[--size WxH]` (default `1280x800`, each side 200–3840) | Starts the caller's screen if it has none; idempotent (a second `start` returns the existing screen, ignoring `--size`) | `{ok, display: ":N", size}` |
+| `start` | `[--size WxH]` (default `1280x800`, each side 200–2560, which keeps a screenshot under the image card's 25 MB limit) | Starts the caller's screen if it has none; idempotent (a second `start` returns the existing screen, ignoring `--size`) | `{ok, display: ":N", size}` |
 | `run` | `[--env KEY=VALUE]... -- <command> [args...]` | Starts the screen if needed, then launches the command on it (see "Launching apps") | `{ok, app: <n>, log}` |
 | `shot` | `[--window <id>]` | Captures the whole screen, or only that window's rectangle (geometry from `xdotool getwindowgeometry`, clipped to the screen; `422` if the window is gone or wholly off screen), as PNG | `{ok, path, width, height}` |
 | `windows` | none | Lists visible app windows, titled or not | `{ok, windows: [{id, name, x, y, width, height}]}` (`name` is `""` for untitled) |
@@ -93,7 +96,7 @@ to stdout, exit 0. Every failure is a non-2xx status other than `503` with `{err
 | `click` | `<x> <y> [--button left\|middle\|right] [--double]` | Moves the pointer, then clicks | `{ok}` |
 | `drag` | `<x1> <y1> <x2> <y2>` | Press at the first point, move, release at the second | `{ok}` |
 | `type` | `<text>` | Types the text literally into the focused window | `{ok}` |
-| `key` | `<keys...>` | Presses key names or chords (`Return`, `ctrl+s`, `Left`) in order | `{ok}` |
+| `key` | `[--hold <ms>] <keys...>` | Presses key names or chords (`Return`, `ctrl+s`, `Left`) in order; with `--hold` (50–5000 ms) each is held down that long before release, for game controls | `{ok}` |
 | `focus` | `<window id>` | Focuses that window (`xdotool windowfocus`) | `{ok}` |
 | `stop` | none | Tears down the caller's apps and screen (see "Teardown"); the session may `start` again afterwards | `{ok}` |
 | `status` | none | Whether the caller has a screen, its display and size, and each app's number, state (`running`/`exited`) and log | `{ok, running, ...}` |
@@ -108,15 +111,19 @@ has none.
 forwards caller text where xdotool could read it as a command or option. It validates every
 argument and builds argv itself: coordinates and window ids must be decimal integers; each
 `key` token must match a fixed list: zero or more modifiers from `ctrl`, `alt`, `shift`, `super`
-joined by `+`, then one key from: `a`–`z`, `A`–`Z`, `0`–`9`, `F1`–`F12`, `Return`, `Escape`,
+(each at most once) joined by `+`, then one key from: `a`–`z`, `A`–`Z`, `0`–`9`, `F1`–`F12`, `Return`, `Escape`,
 `Tab`, `space`, `BackSpace`, `Delete`, `Insert`, `Home`, `End`, `Page_Up`, `Page_Down`, `Up`,
 `Down`, `Left`, `Right`, `minus`, `equal`, `comma`, `period`, `slash`, `semicolon`,
 `apostrophe`, `bracketleft`, `bracketright`, `backslash`, `grave` (e.g. `ctrl+shift+s`,
 `Return`). Matching is exact and case-sensitive, so no token can name an xdotool command. All
 tokens are checked before any key is sent, then each is sent as its own `xdotool key --
-<token>` call.
+<token>` call. With `--hold`, a token may also be a lone modifier (`shift`), and each is sent
+as `xdotool keydown -- <token>`, a wait of the hold time, then `xdotool keyup -- <token>`
+(keyup is also sent if the wait is interrupted); the timeout grows by the hold time.
 `type` sends `xdotool type --delay 20 -- <text>` as a single argument; text is 1–400
-characters with no NUL, and its timeout is 10 s plus 30 ms per character. Anything else is
+characters of printable ASCII (space to `~`), newline and tab only, so every character maps
+to a key on the default US layout and none is silently skipped; its timeout is 10 s plus
+30 ms per character. Anything else is
 `400`.
 
 **Window listing:** app windows are the viewable top-level windows: the direct children of
@@ -125,9 +132,12 @@ the root window whose map state is `IsViewable`, from `xwininfo -root -children`
 With no window manager, every app's top-level window is a direct child of the root, and child
 widgets are not listed. No children means `windows: []`.
 
-**Auto-focus on `run`:** the service lists app windows just before launching, then polls every
-250 ms for up to 5 s for a viewable top-level window not in that list, and focuses the first
-one found. With several apps on one screen, a later `run` focuses only its own new window.
+**Auto-focus on `run`** (best effort): the service lists app windows just before launching,
+then polls every 250 ms for up to 5 s for a viewable top-level window not in that list whose
+owner is this app: `xdotool getwindowpid <id>` gives a pid, and `/proc/<pid>/cgroup` names this
+app's scope unit. It focuses the first such window. A window with no pid, or one owned by
+another app (say a late dialog from an earlier app), is never auto-focused. `run` returns
+`focused: <id>` or `focused: null`; agents check `windows` and `focus` explicitly when null.
 
 ### Launching apps
 
@@ -144,7 +154,7 @@ not torn down). `start` returns the display for information only.
   started before this feature was installed. Then `DISPLAY=:N`, `XAUTHORITY=<cookie file>` and
   the screen's slice placement (below). Nothing new is persisted.
 - **Caller overrides** (`--env KEY=VALUE`, keys matching `^[A-Za-z_][A-Za-z0-9_]*$`; `DISPLAY`,
-  `XAUTHORITY`, `WHEELCHAIR_SCREEN` and `WHEELCHAIR_SESSION_TOKEN` refused with `400`) apply
+  `XAUTHORITY` and `WHEELCHAIR_SESSION_TOKEN` refused with `400`) apply
   only to the app itself: the service runs `env KEY=VALUE ... <command> [args...]` (as argv,
   no shell) as the launched command, so for a sandboxed Codex session they take effect inside
   the sandbox and never on the sandbox launcher. A command whose first word contains `=` is
@@ -166,15 +176,19 @@ not torn down). `start` returns the display for information only.
   written to `<stateDir>/screens/<thread>/<session>/state.json` after every change.
 - **One cgroup per screen:** every process the service starts for a screen (Xvfb, and each
   app or its sandbox launcher) is started with `systemd-run --user --scope
-  --slice=<screen slice> --unit=<unit>` so it and all its descendants live in that screen's
+  --expand-environment=no --slice=<screen slice> --unit=<unit>` so it and all its descendants live in that screen's
   slice, whatever they do to their environment or process ids. Names: `<s>` is the first 12 hex
-  characters of sha256 of the state dir, `<id>` the first 12 of sha256 of `<thread>/<session>`;
-  the parent slice is `wcscreen-<s>.slice`, the screen slice `wcscreen-<s>-<id>.slice` (a
-  child of the parent, by systemd's dash rule), units `wcscreen-<s>-<id>-x.scope` and
-  `wcscreen-<s>-<id>-app<n>.scope`. `systemd-run --scope` runs the command as the scope's
+  characters of sha256 of the state dir, `<t>` the thread id, `<id>` the first 12 of sha256
+  of the session name; the parent slice is `wcscreen-<s>.slice`, the thread slice
+  `wcscreen-<s>-<t>.slice`, the screen slice `wcscreen-<s>-<t>-<id>.slice` (each a child of
+  the one before, by systemd's dash rule), units `wcscreen-<s>-<t>-<id>-x.scope` and
+  `wcscreen-<s>-<t>-<id>-app<n>.scope`. `--expand-environment=no` keeps arguments and `--env`
+  values literal (systemd 258 starts expanding `$` in scope commands by default); the flag
+  exists from systemd 254, so on an older systemd the service omits it (those versions do not
+  expand), choosing by the number in `systemd-run --version`. `systemd-run --scope` runs the command as the scope's
   own process, so `-displayfd` and pipes work as usual. Teardown acts on the slice, so it
   survives PID reuse, launchers that exited leaving children, children that dropped any
-  any environment variable, and a restart between spawn and the `state.json` write. The `<s>` part keeps a test
+  environment variable, and a restart between spawn and the `state.json` write. The `<s>` part keeps a test
   service (own temp state dir) from touching real screens. If `systemctl --user` cannot be
   reached, `start` and `run` fail `422 screens need a systemd user session on this machine`.
 - **Who may call, and ordering:** ops for one session run one at a time (a per-session
@@ -185,7 +199,14 @@ not torn down). `start` returns the display for information only.
   Session stop and archive do not wait in the queue: `stop()` marks the session `stopped`
   (as it already does) and then kills the screen slice at once (below), so an op in flight
   fails and anything queued is refused; that refusal is permanent. A `start` or `run` that
-  finds the session's tmux gone also kills the screen slice before returning `409`. The
+  finds the session's tmux gone also kills the screen slice before returning `409`.
+- **Fencing launches:** each screen has a generation number, bumped by every teardown. A
+  `start` or `run` notes the generation before spawning; once `systemd-run` has registered the
+  scope (the spawned process is running), it checks the session is not `stopped` and the
+  generation is unchanged; if either changed, it kills its own scope and returns `409`. The
+  sweep is the backstop: every 60 s it lists units under `wcscreen-<s>.slice` (`systemctl --user
+  list-units --all 'wcscreen-<s>-*'`) and stops any screen slice the service does not hold as
+  a live screen, which catches a launcher that registered after a teardown or a restart. The
   `screen stop` op is not a session stop: it tears down in queue order and a later `start` or
   `run` makes a fresh screen.
 - **Starting a screen:** make a cookie with `mcookie` and write it with `xauth -f <dir>/xauth
@@ -214,9 +235,13 @@ not torn down). `start` returns the display for information only.
   and the sweep): `systemctl --user kill --signal=SIGTERM <screen slice>`, then after 3 s
   `systemctl --user kill --signal=SIGKILL <screen slice>` and `systemctl --user stop <screen
   slice>`. *Immediate* (`MachineService.stop(name)`, reached by session stop and `archive()`):
-  SIGKILL and stop at once, synchronously, before `stop()` removes a verifier's worktree;
-  this adds well under a second per screen, so session stop and archive stay inside the hub's
-  existing 5 s request timeout (`viewer/app/machine-client.js:64`). Both delete the cookie
+  SIGKILL and stop at once, synchronously, before `stop()` removes a verifier's worktree.
+  `archive()` first does one SIGKILL and stop on the thread slice `wcscreen-<s>-<t>.slice`,
+  covering every screen of the thread in one call, then stops its sessions (each `stop()`
+  then finds no screen and returns at once). Each `systemctl` call has a 2 s deadline; on
+  timeout or failure the service logs it and carries on (worktree removal and archive proceed;
+  the sweep retries the slice), so session stop and archive stay inside the hub's 5 s request
+  timeout (`viewer/app/machine-client.js:64`). Both delete the cookie
   file and keep shots and logs. The sweep runs every 60 s and tears down screens whose
   session tmux is confirmed gone (`liveTmux()` returned a set without it; a `null` answer
   skips that sweep). `archive()` also removes `<stateDir>/screens/<thread>/` alongside the
@@ -273,11 +298,19 @@ manager, no video, no Ready-check change.
   with `DISPLAY`, `XAUTHORITY` and the rebuilt session environment without the token, inside
   `systemd-run --user --scope` with the screen's slice and unit names, `--env` only inside `env ...` after the sandbox launcher's `--`, and the `codex
   sandbox` wrap for a non-unrestricted Codex session only; reviewer refused 403; key tokens
-  outside the fixed list (`exec`, `EXEC`, `windowkill`, `ctrl+`) refused before any key is
-  sent; every listed key and a modifier combo accepted; type text that looks like an option (`--window`) sent literally; type
+  outside the fixed list (`exec`, `EXEC`, `windowkill`, `ctrl+`) and repeated modifiers
+  (`ctrl+ctrl+a`) refused before any key is sent; every listed key and a modifier combo
+  accepted; `--hold` sends keydown, then keyup, and allows a lone modifier; type text with a
+  non-ASCII or control character other than newline and tab refused; `--size` over 2560
+  refused; type text that looks like an option (`--window`) sent literally; type
   text over 400 characters refused; a command whose first word contains `=` refused; shot paths never reused across `screen stop`/`start` and a service restart;
   windows from `xwininfo` output: only viewable direct children of the root, none gives `[]`;
-  auto-focus picks only a window that was not there before the launch; missing-tool error naming each
+  auto-focus picks only a new window whose pid is in this app's scope, never another app's
+  late window, and returns `focused: null` when none qualifies; `systemd-run` gets
+  `--expand-environment=no` on systemd 254 and later and not before; a launch whose scope
+  registers after a teardown (generation bumped) kills its own scope and returns 409; the
+  sweep stops a screen slice the service does not hold; archive kills the thread slice once
+  and carries on when a `systemctl` call times out; missing-tool error naming each
   missing tool, status 422; op without a screen; one session cannot reach another's screen;
   `start` after session stop refused 409, `start` after `screen stop` allowed; `start` when
   tmux shows the session gone refused 409 with the slice killed, when tmux cannot be asked
@@ -287,9 +320,11 @@ manager, no video, no Ready-check change.
 - A live check script `machine/test/screen-live.sh` (skips with exit 0 and a `SKIP:` line when
   any of the tools is missing or `systemctl --user` cannot be reached): drives the screen code against real Xvfb; launches
   Playwright's Chromium in `--app` mode on a `data:` page whose title changes on click and on
-  key input, then a second `run` of an untitled window (a second Chromium `--app` page with
-  an empty `<title>`); asserts the `shot` PNG exists and is non-empty, `windows` lists exactly
-  those two top-level windows, the second `run` focused its own window, a `click` changes the
+  key input, then a second `run` of `xmessage`, whose window name the test then clears
+  directly with `xdotool set_window --name ''` (a genuinely unnamed X window), plus an app
+  argument containing a literal `$HOME` that must arrive unexpanded; asserts the `shot` PNG exists and is non-empty, `windows` lists exactly
+  those two top-level windows by their ids, the second with `name: ""`, the second `run`
+  focused its own window, a `click` changes the
   first window's title, `type` of 400 characters arrives whole (the page title shows its
   length), a client without the cookie is refused, an app that starts a child which clears its
   environment and outlives its parent is gone after `screen stop`, and after `stop` the
@@ -383,6 +418,25 @@ manager, no video, no Ready-check change.
 **Lanes:** claude / claude-opus-5-5 (intent); gpt (mechanics); cross-family: yes. Budget reset by Collin's decision 24.
 
 **Changed since Round 3:** each screen in its own systemd user slice, teardown and startup cleanup act on the slice (Decision 21); session stop and archive tear down immediately outside the queue, `screen stop` and the sweep gracefully (22); `type` capped at 400 characters with scaled timeout, command first word with `=` refused, windows = viewable top-level children of the root via `xwininfo`, auto-focus picks only a new window (23); key names from a fixed list (24); `systemd-run`/`systemctl` added to required tools; validation updated.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Keys can only be tapped, games need held keys | upheld | `--hold`; Decision 27 |
+| intent | minor | Leftover `WHEELCHAIR_SCREEN` refusal and typo | upheld | Removed |
+| mechanics | blocking | Scope can register after teardown; restart straggler | upheld | Generation fence and sweep of unheld slices; Decision 25 |
+| mechanics | blocking | Repeated modifiers reach xdotool parser overflow | upheld | Each modifier once; Decision 27 |
+| mechanics | blocking | systemd 258 expands `$` in scope commands | upheld | `--expand-environment=no` on 254+; Decision 26 |
+| mechanics | major | Archive has no total time budget | upheld | One thread-slice kill, 2 s per call, carry on; Decision 25 |
+| mechanics | major | Auto-focus can grab another app's window | upheld | Ownership by scope via window pid; best effort; Decision 27 |
+| mechanics | major | Chromium fixture may not be untitled | upheld | xmessage with name cleared; asserts `name: ""` |
+| mechanics | minor | `type` can silently skip unmappable characters | upheld | Printable ASCII, newline, tab only |
+| mechanics | minor | 3840² PNG can exceed image card limit | upheld | Size capped at 2560 |
+
+### Round 5 — 2026-11-18
+
+**Lanes:** claude / claude-opus-5-5 (intent); gpt (mechanics); cross-family: yes.
+
+**Changed since Round 4:** thread-level slice and one-call archive teardown with 2 s per `systemctl` call; generation fence on launches and sweep of unheld slices (25); `--expand-environment=no` on systemd 254+ (26); modifiers at most once, `key --hold`, `type` limited to printable ASCII/newline/tab, auto-focus only windows owned by the app's scope with `focused` in the reply, `--size` capped at 2560 (27); live fixture uses xmessage with its name cleared and a literal `$HOME` argument; leftover marker refusal removed.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
