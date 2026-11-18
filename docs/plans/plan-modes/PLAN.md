@@ -70,6 +70,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D35 | (supersedes D25) A second all-deferred re-check goes to Collin as today's surviving-gap question with "defer" as an extra answer; failing validation commands are never deferrable | Bounded verification with a defined exit; deferral can't mask a failing check | review-round-3 |
 | D36 | A mode change or pull-back during a running round waits for that round's triage (supersedes D19 and D30) | No half-triaged round to roll back | review-round-3 |
 | D37 | The lead reconciles the deferred pin from PLAN.md before the done card; a retracted deferred card renders dimmed with no controls | Stale pin after a sub-lead death; clear chat history | review-round-3 |
+| D38 | On a second all-deferred failure nothing is saved until Collin answers; "defer and finish" ends with a sub-lead `result` and no further verifier pass | Every answer reaches a defined end | review-round-4 |
+| D39 | Pull-backs are checked on arrival, logged if a round is running, and applied by row before approval or the next brief | A valid pull-back isn't lost to a card repost | review-round-4 |
+| D40 | Every deferral path, including a mode switch, honours `Pulled back:` Decision Log entries | Closes the mode-switch hole in D34 | review-round-4 |
 
 ## Spec
 
@@ -157,9 +160,16 @@ One row per item:
 `Source` is `planning`, `review-round-N` or `verification`. `Notes` are what the
 follow-up's lead will need (file:line, the case that breaks, the reviewer's evidence).
 Pulling an item back deletes its row and folds it into the Spec, with a Decision Log entry
-(source `user`). An item Collin pulled back is never deferred again in this thread, by
-review triage or verification: findings about it are fixed, or come to Collin as a
-`question` card if fixing is not possible.
+(source `user`) whose Decision starts `Pulled back:` and names the item. Every deferral
+path (planning, a mode switch, review triage, verification) checks those entries first:
+an item Collin pulled back is never deferred again in this thread. Findings about it are
+fixed, or come to Collin as a `question` card if fixing is not possible.
+
+A pull-back press is checked when it arrives: it counts if its card was the latest
+`deferred` card at that moment and the item is still a row. If it arrives during a review
+round, the lead writes `Pending pull-back: <row #>` to PLAN.md's Log at once and applies
+it by row number after triage, before posting an approval card or briefing the next
+round, even if triage has since reposted the card.
 
 ### The `deferred` card (D3, D13)
 
@@ -233,12 +243,15 @@ attempt has reported, as in sub-lead.md step 4–5), before step 5:
    verification attempt on the commit from step 2 (the failed commit plus the Deferred
    rows), using the same verifier selection rules as sub-lead.md step 3.
    At most one such re-check per build.
-A deferred gap never counts toward the two-attempt rule. If a build would need a second
-all-deferred re-check, the sub-lead does not start it: it stops and messages the lead as
-in sub-lead.md step 6, and the lead asks Collin today's surviving-gap `question` (push as
-it is, or drop), with these gaps deferred as one more answer. "Push as it is" or
-"defer" ends verification without another verifier pass, exactly as "push as it is"
-does today; deferring also adds the rows to PLAN.md.
+A deferred gap never counts toward the two-attempt rule. If the one all-deferred
+re-check has already run in this build and another attempt fails, the lead does not
+answer step 1 itself; nothing is saved to Deferred yet. It asks Collin a `question`:
+- "Fix them": the lead answers "fix" for every gap; step 5 runs as today.
+- "Defer them and finish": the lead answers "defer" for every gap; the sub-lead does step
+  2 (save, commit, message), then sends its `result` (`task` `build`, `outcome` `done`,
+  `commit` the step-2 commit, summary saying these gaps were deferred at Collin's
+  choice) with no further verifier pass, as "push it as it is" ends a surviving gap
+  today. The `done` card's `note` says so.
 
 Never deferrable in verification: a failing validation command from the Spec's
 Validation section, and a gap in an item Collin pulled back. These go to remediation.
@@ -416,6 +429,13 @@ exit. Downgrades and declines cite evidence.
 |------|----------|---------|--------------|------------|
 | intent (claude) | minor | D25 and D35 wording both remain and contradict | upheld | D25 wording removed and marked superseded |
 | intent (claude) | minor | "Defer and finish" exit undefined against today's verification exit | upheld | Folded into today's surviving-gap question (D35) |
+| mechanics (gpt) | blocking | Second all-deferred failure saves rows before asking; answers lack a terminal state | upheld | D38 |
+| mechanics (gpt) | blocking | Lead dies after committing the revised plan as approved, before a new approval card; old pressed card passes the guards | user-decision | Part of the restart-timing fork put to Collin |
+| mechanics (gpt) | major | Lead dies after accepting Start building, before `implementing` | user-decision | Part of the restart-timing fork |
+| mechanics (gpt) | major | A pull-back waiting for triage can be lost to a card repost | upheld | D39 |
+| mechanics (gpt) | major | Mode switch can re-defer a pulled-back item | upheld | D40 |
+| mechanics (gpt) | major | Sub-lead dies mid verification deferral; re-check state unrecoverable | user-decision | Part of the restart-timing fork |
+| mechanics (gpt) | major | Stub lead's restart loses the stub summary | user-decision | Pre-existing for every stub; part of the restart-timing fork |
 
 ## Prior Work
 
