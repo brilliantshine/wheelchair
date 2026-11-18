@@ -723,9 +723,11 @@ New tests, then the suites:
     the revoke list (outside `handoffs/`, survives the start-up sweep) and abandons; a
     saved operation with the same claim wins over its revoke entry; a revoked entry keeps
     watching until 24 h and revokes a second landing; a rejected revoke is kept and shown
-    on the threads list; import while our cancelled claim is the tip says "still being
-    taken back" for an own cancelled claim on import, Claim, banner and Open note, with an
-    immediate revoke; cancelled claims never reused; revoke list
+    on the threads list; an own cancelled claim at the tip gives "still being taken back" on
+    import, banner and Open note, and at the Claim step fails the step (operation kept,
+    Retry later) rather than abandoning, each with an immediate revoke; claim-push returns
+    `remote_tip`; the busy reason ignores queues on ended non-leads; re-import with a saved
+    Undo does not run it; cancelled claims never reused; revoke list
     writes for two threads at once both survive; `revoked` renews `until`; `kill` with exact
     names leaves a live sub-lead alone;  idea point
     needs MAP.md committed; Download again serves the copy matching `handed_off.head`; a
@@ -1202,12 +1204,34 @@ npm --prefix viewer run test:browser
 
 ### Round 16 — 2026-11-17
 
-**Lanes:** intent and mechanics; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 15:** scope set by Collin (decision 34): consistency of the latest fixes only.
 - Adoption removed; own cancelled claim gets "still being taken back" everywhere.
 - Quiet test: only deliverable queues block export.
 - `kill` with `=name`; Stop treats the machine's 404 as stopped; `map_committed`; Download again under the thread lock; `checkout_sha` for every restart without a worktree.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Claim step's handling of an own cancelled claim unspecified | upheld | Fails the step, keeps the operation, revokes at once |
+| intent | minor | `claim-push` lacks `remote_tip` | upheld | Added |
+| intent | minor | Validation uses removed wording | upheld | Updated |
+| intent | minor | Open note sends to a failing Undo | upheld | Note says to wait |
+| intent | minor | "Nothing is adopted" vs "adopts a checkout" | upheld | Reworded |
+| mechanics | blocking | Claim and Undo abandon wording ignores the exception; `claim-push` lacks the tip | upheld | Same fixes as the first two intent findings |
+| mechanics | major | Open note and banner wording | upheld | Note waits; banner names import or undo |
+| mechanics | major | Reason table still says "anything queued" | upheld | Matches the quiet test |
+| mechanics | major | Retry section says re-import runs a saved Undo | upheld | Saved Undo only pointed to |
+| mechanics | minor | Stale "no such session" test wording | upheld | Removed |
+
+### Round 17 — 2026-11-17
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 16:** consistency-only scope (decision 34).
+- Claim step: own cancelled claim at the tip fails the step and revokes at once; `claim-push` returns `remote_tip`.
+- Banner and Open note wording for an own cancelled claim; busy reason matches the quiet test; Retry section: a saved Undo is never run by an import.
+- Wording: "reuses the checkout folder"; validation text updated.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
