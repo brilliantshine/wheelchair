@@ -17,13 +17,17 @@ async function importHandoff(hub, bytes, machine, project) {
   let result;
   try {
     result = await hub.withThread(id, async () => {
+      const lockedValidation = validateHandoffFile(bytes);
+      if (!lockedValidation.ok) throw appError(422, `This isn't a handoff file wheelchair can read: ${lockedValidation.what}`);
       let thread;
       try { thread = await hub.thread(id); } catch (error) { if (error.status !== 404) throw error; }
       const prefix = thread && (thread.machine !== machine || thread.project !== project) ? `This thread lives on ${thread.machine}, ${thread.project}` : '';
       const note = (value) => [prefix, value].filter(Boolean).join(' ');
       if (thread?.handoff_op) {
         if (thread.handoff_op.kind === 'undo') return { outcome: 'opened', id, note: note("An undo of this thread didn't finish; press Retry on it, then import this file again") };
+        const kind = thread.handoff_op.kind;
         const saved = await ops.runLocked(hub, thread, true);
+        if (kind === 'create') await hub.state.addProject(thread.project);
         saved.note = note(saved.note); return saved;
       }
       const targetMachine = thread?.machine || machine, targetProject = thread?.project || project;
