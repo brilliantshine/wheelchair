@@ -89,6 +89,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 60 | Supersedes D57: restart reads PR state first; MERGED decides landed vs missed from the local tip; the unpushed-commits question applies only to an OPEN PR and says where to resume | Missed-merge stub reachable after restart; no pointless question | review-round-8 |
 | 61 | Supersedes D41/D57/D60: restart handles only the plain cases (done already names the tip; tip equals PR head) and asks Collin with a `question` card for anything else | Rounds 5-9 kept finding restart corner cases; the lighter design (D36) accepts rare cases | review-round-9 |
 | 62 | A `wc.js git` failure other than a conflict: retry once, then the `needs` card | Every git failure has a next step | review-round-9 |
+| 63 | Restart: uncommitted changes other than an unfinished merge go to Collin's question first | Never leave a half-made fix silently | review-round-10 |
+| 64 | Restart's not-waiting test: a `done` whose `head` contains the local tip, a legacy `done`, or a closed PR | Avoid spurious questions and duplicate `done` | review-round-10 |
+| 65 | "Keep going" on a git-failure `needs` card redoes the failed operation first | A push or PR creation can fail before a PR exists | review-round-10 |
 
 ## Spec
 
@@ -241,11 +244,14 @@ outside a merge, unchanged.
   9. **After a restart** (D61, supersedes D41/D57/D60). Restarts are rare, so only the plain
      cases are handled alone; anything else goes to Collin. Applies when the thread is finishing
      (the plan's `status` is `done` or there is no plan, and the branch has a PR). In this order:
-     1. `git status`: abort an unfinished merge (`wc.js git merge --abort`).
+     1. `git status`: abort an unfinished merge (`wc.js git merge --abort`). Any other
+        uncommitted change (an edit cut off mid-fix) → 5, before anything else (D63).
      2. `wc.js git fetch` and `wc.js git fetch origin pull/<number>/head`; read the PR's `state`
         and head; your local tip is `HEAD`.
-     3. An accepted `done` card names your local tip, and the local tip is the PR head or (PR
-        `MERGED`) an ancestor of it → not waiting; nothing to do. The PR is `CLOSED` → nothing.
+     3. Not waiting, nothing to do, when: an accepted `done` card's `head` is your local tip or
+        contains it (`git merge-base --is-ancestor HEAD <head>` exits 0), whatever the PR head is
+        now (D5); or the latest `done` card has no `head` (from before this change); or the PR
+        is `CLOSED` (D64).
      4. Local tip equals the PR head and no `done` names it: `OPEN` → 2 with a new window;
         `MERGED` → post `done` with that `head`, retrying per 3 within a new 30-minute window, then
         the `needs` card in 8.
@@ -258,7 +264,9 @@ outside a merge, unchanged.
 - Every `wc.js git` call returns JSON with `ok`; check it, since a failed git command still
   exits 0 (`machine/service.js:1308`) (D59). A failure that is not a merge conflict (a failed
   fetch, a merge that stops for another reason, a rejected push): retry once after a minute;
-  if it fails again, post the `needs` card in 8 with git's message (D62).
+  if it fails again, post the `needs` card in 8 with git's message (D62). On "Keep going",
+  redo the failed operation first (for a push or PR creation before any PR exists, that is the
+  push or `wc.js git pr`), then carry on from where it failed (D65).
 - Step 8 still commits `status: done` before the push, so the PR carries it.
 - Step 9's existing item 4 (`OPEN` / `MERGED` with the pushed head / `MERGED` with an older
   head / `CLOSED` by then, `protocol/app/lead.md:354-359`) is **replaced** by a pointer to the
@@ -313,7 +321,7 @@ outside a merge, unchanged.
 | `done` accepted before CI has registered any check (`CLEAN`, empty rollup) | The lead waits 5 minutes after a push first; lighter enforcement (D36) | 4 |
 | `BLOCKED` with a required check that has not reported yet can be accepted | Rare; lighter enforcement | 4 |
 | A `done` accepted whose response was lost, then re-posted, appears twice | Harmless notice duplicate | 4 |
-| A thread with a `done` card from before this change, given an after-done fix, isn't recognised as waiting after a restart | Transitional | 3 |
+| A thread with a `done` card from before this change, given an after-done fix, isn't recognised as waiting after a restart (9.3 treats a legacy `done` as not waiting) | Transitional | 3 |
 | A restart in any but the plain cases asks Collin instead of recovering alone | Restarts mid-wait are rare; one question is cheaper than more rules (D61) | 9 |
 | CI that reports only on GitHub's test merge commit is invisible to the rollup | GitHub Actions reports on the head commit | 3 |
 | A repo whose workflows never pass on PRs can never reach `done` | `needs` card covers it; Collin can merge regardless | 1 |
@@ -536,3 +544,9 @@ Collin: "Keep going" — budget reset.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | 9.3 misses `done` at the merged head / Update branch after `done` | upheld | D64 |
+| intent | minor | Legacy-`done` accepted risk misdescribes 9.4 | upheld | D64; risk row clarified |
+| mechanics | blocking | Restart ignores uncommitted edits when a `done` names the tip | upheld | D63 |
+| mechanics | major | Git failure before a PR exists: "Keep going" has nothing to poll | upheld | D65 |
+
+**Budget:** three triaged rounds (8, 9, 10) since Collin's last decision without a clean one; stopped for Collin. Fixes applied.
