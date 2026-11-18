@@ -102,10 +102,13 @@ function answerAt(card, thread) {
   const sent = (thread.sent || []).filter((item) => item.source === 'card' && item.text?.startsWith(`[card ${card.id}] `)).at(-1);
   return sent?.at || card.resolved_at || card.at || card.created_at;
 }
+function donePr(thread, { includeReplaced = false, valid = (url) => Boolean(url) } = {}) {
+  return [...(thread.cards || [])].reverse().find((card) => card.kind === 'done' && (includeReplaced && !thread.imported || !card.replaced) && valid(card.pr_url) && (!thread.imported || Date.parse(card.created_at || card.at) > Date.parse(thread.imported.at)))?.pr_url || thread.imported?.pr_url || null;
+}
 function stageFor(thread, status) {
   const cards = thread.cards || [];
   if (status.plan_status === 'approved' && !cards.some((c) => c.kind === 'approval' && !c.retracted_at && c.answered_action === 'start-building')) return 'approved';
-  if (status.plan_status === 'done' && ([...cards].reverse().find((c) => c.kind === 'done' && !c.replaced && c.pr_url)?.pr_url || thread.imported?.pr_url)) return 'done';
+  if (status.plan_status === 'done' && donePr(thread)) return 'done';
   if (status.idea_status !== 'confirmed' || !status.map_committed || ![null, undefined, 'planning'].includes(status.plan_status)) return null;
   const questions = cards.filter((card) => card.kind === 'question' && answerAt(card, thread));
   const anchor = questions.filter((card) => card.doc === 'IDEA.md').map((card) => answerAt(card, thread)).sort().at(-1) || thread.imported?.at;
@@ -133,7 +136,7 @@ async function exportThread(hub, id) {
     let thread = await hub.thread(id);
     let status;
     try {
-      const pr_url = [...(thread.cards || [])].reverse().find((card) => card.kind === 'done' && !card.replaced && card.pr_url)?.pr_url || thread.imported?.pr_url;
+      const pr_url = donePr(thread);
       status = await hub.client.handoff(thread.machine, { action: 'status', thread_id: id, project: thread.project, worktree: thread.worktree, slug: thread.slug, ...(pr_url ? { pr_url } : {}) });
       if (status.result === 'failed') throw new Error(status.error);
       hub.handoffStatus.set(id, status);
@@ -141,7 +144,7 @@ async function exportThread(hub, id) {
     const reason = exportReason(hub, thread, status, { pressed: true });
     if (reason) throw appError(409, reason);
     const stage = stageFor(thread, status);
-    const pr_url = [...(thread.cards || [])].reverse().find((card) => card.kind === 'done' && !card.replaced && card.pr_url)?.pr_url || thread.imported?.pr_url;
+    const pr_url = donePr(thread);
     const file = buildHandoffFile(thread, { head: status.head, stage, repository: status.repository, pr_url });
     const bytes = Buffer.from(JSON.stringify(file));
     const checked = validateHandoffFile(bytes);
@@ -247,5 +250,5 @@ async function banner(hub, thread) {
   return value;
 }
 
-module.exports = { historyText, buildHandoffFile, validateHandoffFile, handoffFileName, unfinished, frozen, refuseFrozen, quietReason, stageFor, exportReason, exportThread, savedFile, sweepFiles, banner };
+module.exports = { donePr, historyText, buildHandoffFile, validateHandoffFile, handoffFileName, unfinished, frozen, refuseFrozen, quietReason, stageFor, exportReason, exportThread, savedFile, sweepFiles, banner };
 
