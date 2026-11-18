@@ -51,7 +51,7 @@ test('operation applies carried state after reopening, and restarts after comple
   hub.restartLead = async () => { const thread = await hub.thread(id); assert.equal(thread.handoff_op, undefined); started = true; };
   await fs.mkdir(path.join(dir, 'handoffs'));
   await fs.writeFile(path.join(dir, 'handoffs', `${id}.json`), '{}');
-  assert.deepEqual(await hub.withThread(id, () => ops.startCreate(hub, { file, machine: 'hub', project: '/repo' })), { outcome: 'created', id });
+  assert.deepEqual(await hub.withThread(id, () => ops.createLocked(hub, { file, machine: 'hub', project: '/repo' })), { outcome: 'created', id });
   assert.equal(started, false); await hub.restartLead(id);
   const thread = await hub.thread(id);
   assert.equal(thread.checkout_sha, sha); assert.equal(thread.imported.stage, 'approved'); assert.equal(started, true);

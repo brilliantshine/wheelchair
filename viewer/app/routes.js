@@ -419,7 +419,7 @@ async function handleThreads(hub, request, response, url, bits, body) {
       const doneCard = (cards || []).some((card) => card.kind === 'done' && !card.replaced);
       return { ...summary, handed_off: thread.handed_off || null, done_card: doneCard, sessions: thread.sessions.map(({ name, role, live, ready, turn_ended, created_at }) => ({ name, role, live, ready, turn_ended, created_at })) };
     });
-    const revoke_notices = (await require('./handoff-ops.js').revokes(hub)).filter((entry) => entry.last_result === 'failed').map((entry) => ({ thread_id: entry.thread_id, sha: entry.sha, text: `Couldn't take back a cancelled pick-up on ${entry.project} ${entry.branch}: ${entry.error}` }));
+    const revoke_notices = (await require('./handoff-ops.js').revokes(hub)).filter((entry) => entry.last_result === 'failed').map((entry) => ({ thread_id: entry.thread_id, sha: entry.sha, text: `Couldn't take back a cancelled pick-up on ${entry.repository || entry.project} ${entry.branch}: ${entry.error}` }));
     return send(response, 200, { threads, revoke_notices });
   }
   if (bits.length === 1 && request.method === 'POST') {

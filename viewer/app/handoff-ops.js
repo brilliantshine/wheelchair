@@ -13,7 +13,7 @@ async function revokes(hub) {
 function revokeLock(hub, fn) { return hub.state.queued(revokePath(hub), fn); }
 async function writeRevokes(hub, entries) { await atomicWrite(revokePath(hub), `${JSON.stringify(entries, null, 2)}\n`); }
 function operation(kind, parent, file) {
-  return { kind, carried: file ? { stage: file.stage, exported_at: file.exported_at, history: file.history, pr_url: file.pr_url || null } : null, parent, claim_sha: null, last_error: null, claim_landed: false, applied: false, started_at: new Date().toISOString() };
+  return { kind, repository: file?.repository || null, carried: file ? { stage: file.stage, exported_at: file.exported_at, history: file.history, pr_url: file.pr_url || null } : null, parent, claim_sha: null, last_error: null, claim_landed: false, applied: false, started_at: new Date().toISOString() };
 }
 function request(hub, thread, action, fields = {}) {
   return hub.client.handoff(thread.machine, { action, thread_id: thread.id, project: thread.project, ...fields });
@@ -26,6 +26,7 @@ async function checked(hub, thread, action, fields) {
 async function preclaim(hub, thread, op) {
   const branch = `wc/${thread.id}`;
   const inspect = await checked(hub, thread, 'inspect', { branch, head: op.parent, slug: thread.slug, ...(thread.worktree ? { worktree: thread.worktree } : {}) });
+  if (!op.repository && inspect.repository) { op.repository = inspect.repository; await hub.save(thread); }
   if (inspect.worktree_exists) {
     const status = await checked(hub, thread, 'status', { worktree: thread.worktree, slug: thread.slug });
     if (status.branch !== branch) throw new Error("The thread here isn't on its branch");
@@ -49,7 +50,9 @@ async function claim(hub, thread, reimport) {
     const result = await checked(hub, thread, 'claim-commit', { parent: op.parent, message });
     op.claim_sha = result.sha; await hub.save(thread);
   }
-  const result = await request(hub, thread, 'claim-push', { branch: `wc/${thread.id}`, parent: op.parent, sha: op.claim_sha });
+  let result;
+  try { result = await request(hub, thread, 'claim-push', { branch: `wc/${thread.id}`, parent: op.parent, sha: op.claim_sha }); }
+  catch (error) { result = { result: 'unknown', error: error.message }; }
   if (result.result === 'landed') { op.claim_landed = true; op.last_error = null; await hub.save(thread); return; }
   if (result.result === 'moved') {
     const own = (await revokes(hub)).find((entry) => entry.thread_id === thread.id && entry.sha === result.remote_tip);
@@ -91,7 +94,7 @@ async function runLocked(hub, thread, reimport = false) {
       await checked(hub, thread, 'reopen');
       if (op.carried) thread.imported = { at: op.started_at, ...op.carried };
       if (op.kind === 'advance') {
-        for (const card of thread.cards || []) { card.answered = true; card.retracted_by = 'import'; card.retracted_note = 'Replaced by an import'; card.retracted_at = new Date().toISOString(); }
+        for (const card of thread.cards || []) require('./cards.js').retractCard(card, 'import', 'Replaced by an import');
         thread.pinned = {};
       }
       thread.handed_off = null; thread.archived = false; thread.checkout_sha = op.claim_sha; op.applied = true; op.last_error = null;
@@ -112,16 +115,24 @@ async function runOperation(hub, id, { reimport = false } = {}) {
 }
 // The import route holds withThread across its decision and these helpers. The caller
 // starts the lead after releasing that lock once the returned operation completed.
-async function startCreate(hub, { file, machine, project }) {
+async function createLocked(hub, { file, machine, project }) {
   const id = file.thread.id, now = new Date().toISOString();
   const thread = { id, title: file.thread.title, slug: file.thread.slug, machine, project, branch: `wc/${id}`, stub: false, context: '', depends_on_parent: false, waiting_on_parent: false, sessions: [], cards: [], asides: [], pinned: {}, queues: {}, sent: [], archived: false, created_at: now, updated_at: now, handoff_op: operation('create', file.head, file) };
   await hub.save(thread);
   return runLocked(hub, thread);
 }
-async function startAdvance(hub, thread, file) {
+async function advanceLocked(hub, thread, file) {
   thread.handoff_op = operation('advance', file.head, file);
   await hub.save(thread);
   return runLocked(hub, thread);
+}
+async function startCreate(hub, input) {
+  const result = await hub.withThread(input.file.thread.id, () => createLocked(hub, input));
+  await hub.restartLead(result.id).catch(() => {}); return result;
+}
+async function startAdvance(hub, thread, file) {
+  const result = await hub.withThread(thread.id, async () => advanceLocked(hub, await hub.thread(thread.id), file));
+  await hub.restartLead(result.id).catch(() => {}); return result;
 }
 async function undo(hub, id) {
   const result = await hub.withThread(id, async () => {
@@ -142,7 +153,7 @@ async function cancel(hub, id) {
     if (op.claim_landed) throw appError(409, 'The claim has already landed');
     if (op.claim_sha) await revokeLock(hub, async () => {
       const entries = await revokes(hub);
-      entries.push({ thread_id: id, project: thread.project, machine: thread.machine, branch: `wc/${id}`, parent: op.parent, sha: op.claim_sha, until: new Date(Date.now() + 86400000).toISOString() });
+      entries.push({ thread_id: id, project: thread.project, machine: thread.machine, repository: op.repository || null, branch: `wc/${id}`, parent: op.parent, sha: op.claim_sha, until: new Date(Date.now() + 86400000).toISOString() });
       await writeRevokes(hub, entries);
     });
     await abandon(hub, thread); return { outcome: 'cancelled', id };
@@ -158,9 +169,9 @@ async function sweepEntry(hub, target) {
     else {
       let result;
       try { result = await hub.client.handoff(entry.machine, { action: 'claim-revoke', thread_id: entry.thread_id, project: entry.project, branch: entry.branch, parent: entry.parent, sha: entry.sha }); }
-      catch (error) { result = { result: 'failed', error: error.message }; }
+      catch (error) { result = { result: 'waiting', error: error.message }; }
       if (result.result === 'gone') entries.splice(index, 1);
-      else { entry.last_result = result.result; if (result.result === 'failed') entry.error = result.error || 'unknown error'; else delete entry.error; if (result.result === 'revoked') entry.until = new Date(Date.now() + 86400000).toISOString(); }
+      else { entry.last_result = result.result; if (result.error) entry.error = result.error; else if (result.result === 'failed') entry.error = 'unknown error'; else delete entry.error; if (result.result === 'revoked') entry.until = new Date(Date.now() + 86400000).toISOString(); }
     }
     await writeRevokes(hub, entries);
   }));
@@ -172,4 +183,4 @@ async function dismiss(hub, target) {
     const entries = await revokes(hub); await writeRevokes(hub, entries.filter((entry) => !(entry.thread_id === target.thread_id && entry.sha === target.sha && entry.last_result === 'failed'))); return { ok: true };
   }));
 }
-module.exports = { operation, preclaim, claim, abandon, revokes, revokeLock, writeRevokes, request, checked, TAKING_BACK, runLocked, runOperation, startCreate, startAdvance, undo, cancel, sweepEntry, sweep, startSweep, dismiss };
+module.exports = { operation, preclaim, claim, abandon, revokes, revokeLock, writeRevokes, request, checked, TAKING_BACK, runLocked, createLocked, advanceLocked, runOperation, startCreate, startAdvance, undo, cancel, sweepEntry, sweep, startSweep, dismiss };

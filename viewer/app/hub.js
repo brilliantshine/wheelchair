@@ -54,7 +54,7 @@ class Hub {
   async init() {
     await this.state.init();
     await handoff.sweepFiles(this);
-    require('./handoff-ops.js').startSweep?.(this);
+    require('./handoff-ops.js').startSweep(this);
     for (const [name, machine] of Object.entries(await this.state.machines())) {
       if (machine.last_seen) this.lastSeen.set(name, machine.last_seen);
     }
@@ -165,6 +165,9 @@ class Hub {
     return this.mergePolling;
   }
   runHandoffOperation(id, options) { return require('./handoff-ops.js').runOperation(this, id, options); }
+  createHandoffLocked(input) { return require('./handoff-ops.js').createLocked(this, input); }
+  advanceHandoffLocked(thread, file) { return require('./handoff-ops.js').advanceLocked(this, thread, file); }
+  runHandoffLocked(thread, reimport) { return require('./handoff-ops.js').runLocked(this, thread, reimport); }
   startHandoffCreate(input) { return require('./handoff-ops.js').startCreate(this, input); }
   startHandoffAdvance(thread, file) { return require('./handoff-ops.js').startAdvance(this, thread, file); }
   undoHandoff(id) { return require('./handoff-ops.js').undo(this, id); }
