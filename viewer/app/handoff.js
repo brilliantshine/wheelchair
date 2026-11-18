@@ -119,7 +119,8 @@ function exportReason(hub, thread, status, { pressed = false } = {}) {
   if (thread.archived) return "Archived threads can't be exported";
   if (thread.handed_off) return 'Already handed off';
   if (unfinished(hub, thread)) return "An import or undo didn't finish";
-  if ((thread.cards || []).some((card) => card.kind === 'merged') || (pressed && status && stageFor(thread, status) === 'done' && status.pr_state !== 'OPEN')) return 'The pull request is merged or closed; nothing left to hand off';
+  if ((thread.cards || []).some((card) => card.kind === 'merged') || (pressed && status && stageFor(thread, status) === 'done' && status.pr_state != null && status.pr_state !== 'OPEN')) return 'The pull request is merged or closed; nothing left to hand off';
+  if (pressed && status && stageFor(thread, status) === 'done' && (status.pr_error || status.pr_state == null)) return "Couldn't check the pull request";
   if (status && !status.repository) return "This project's origin isn't on GitHub";
   const quiet = quietReason(hub, thread);
   if (quiet) return quiet;
