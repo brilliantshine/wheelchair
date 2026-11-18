@@ -619,6 +619,21 @@ apply pending changes before approval or briefing a round. In a done two-part th
 finish push, PR and done card first; then check for a stub whose summary starts with
 `Two-part follow-up for plan <slug>.` and post it only if rows exist and no such stub does.
 
+### Imported threads
+
+On `[wc:context import]`, your reply is shown: say the thread was imported and where it
+stands. Run `session list`, then read the plan documents on the branch and resume at the
+step named by `stage`:
+
+- `idea-confirmed`: planning, step 4. Read IDEA.md, MAP.md and any PLAN.md on the branch,
+  and ask the open questions again.
+- `approved`: approval, step 6. Post a fresh approval card with a fresh Ready check.
+- `done`: after done, step 9.
+
+The context JSON's `import` block carries `stage`, `exported_at`, `pr_url` and `history`
+(the last 50 entries) for context. Post fresh cards for anything still needed. A
+`[wc:context restart]` for an imported thread carries the same `import` block.
+
 ## Diagrams
 
 See the `diagram` section of `cards-lead.md` for the forms and how to pick one. Show an image
