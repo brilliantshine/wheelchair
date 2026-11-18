@@ -2,7 +2,10 @@
 slug: mergeable-before-done
 date: 2026-11-18
 implemented-by: "standard, gpt-6.1-terra (T1, T2, T3); light, gpt-6-luna (T4, T5); sub-lead: claude-opus-5-5"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: top, claude-opus-5-5
+    checks: standard/light, gpt-6.1-terra and gpt-6-luna
 ---
 
 # Completion Report — Pull requests are mergeable before work is called done

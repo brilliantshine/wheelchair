@@ -420,6 +420,7 @@ outside a merge, unchanged.
 
 - 2026-11-18 — Choice: T2, machine/service.js: a direct `done` relay gets a generated `delivery_id` (honouring one the client supplied), as the spool path does.
 - 2026-11-18 — Choice: T2, machine/test/service.test.js: the test hub gained a `delay` option for `/cards`; "hub down" is exercised as a hub 503 and as no `hub_url`.
+- 2026-11-18 — Verification attempt 1 (claude-opus-5-5, cross-family): PASS at 94131f4; 548/548 viewer, 142/142 machine.
 - 2026-11-18 — Choice: T5, protocol/app/lead.md: the re-wrapped git-failure paragraph breaks at sentence ends.
 - 2026-11-18 — T5 accepted (band: scout): wording fixed and only one `STOP:` line printed; full validation 548/548 viewer, 142/142 machine. Status set to verifying.
 - 2026-11-18 — T4: worker didn't fully report its choices (wrote "none"); scout listed 2: the stop reason is a chained conditional, and the time-limit line printed after the loop (which can double a `STOP:` line).
