@@ -54,6 +54,14 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 25 | A repair's verifier is briefed with Collin's request (small fix) or the plan's Spec, plus what the repair changed | Small fixes have no plan | review-round-2 |
 | 26 | Supersedes D12: two failed repair attempts (verifier fail or still red/conflicting after push), an ended 30-minute window, or a credentials refusal → `needs` card; Keep going resets | Every path ends in a card, never silent | review-round-2 |
 | 27 | Supersedes D18's restart signal: waiting = pushed branch tip differs from the latest accepted `done` card's `head` | Works for small fixes and after-done pushes | review-round-2 |
+| 28 | `BLOCKED` with every check passed is accepted; with any check not passed, refused | IDEA asks for no conflicts and passing checks; a required review is Collin's to clear | review-round-3 |
+| 29 | One gate evaluation per `delivery_id` at a time; a concurrent duplicate awaits it | Both orderings of a direct relay racing a spool drain | review-round-3 |
+| 30 | Spool drain marks `from_spool`; an accepted spooled `done` sends the lead an "accepted" message; `card.js` prints the response body | The lead must tell accepted from pending | review-round-3 |
+| 31 | Workflow listing uses `--paginate` | Active workflow on a later page | review-round-3 |
+| 32 | `head` is the remote branch tip read after a successful push, never local `HEAD` | A restart after an unpushed commit must not submit it | review-round-3 |
+| 33 | The lead decides a check failed only from `gh pr checks --json name,bucket` showing `fail`/`cancel`; gh errors and empty lists never start a repair | `gh pr checks` exit 1 also means no checks or an API error | review-round-3 |
+| 34 | Closed while waiting → step 9's CLOSED rule; head changed while open → step 9's updated-branch merge, re-verify, new window | Every exit of the wait has a next step | review-round-3 |
+| 35 | Supersedes D27: restart checks local unpushed commits first, then PR state; CLOSED, missed-merge with an existing stub, and legacy `done` without `head` are not waiting | Avoid re-posting `done` or duplicate stubs | review-round-3 |
 
 ## Spec
 
@@ -76,7 +84,7 @@ re-implements check logic. Values and what they mean here:
 | `DIRTY` | Conflicts with the base branch: fix |
 | `UNSTABLE` | Mergeable, but some check is pending or failed: wait, or fix a failure |
 | `BEHIND` | Base moved and the repo requires up-to-date branches: merge base in (as a conflict fix) |
-| `BLOCKED` | A branch rule blocks it (e.g. unresolved review conversations, a required check pending) |
+| `BLOCKED` | A branch rule blocks it. Accepted when every check passed (the block is then a rule only Collin clears, e.g. a review); otherwise wait or fix (D28) |
 | `UNKNOWN`, `DRAFT`, missing | Not ready: wait (`DRAFT` never happens; agents open non-draft PRs) |
 
 `CLEAN` with **no checks at all** can also mean CI has not registered yet; see the gate's
@@ -102,11 +110,25 @@ runs the gate before taking `withThread`:
 2. `checkPr(snapshot, payload)`.
 3. Ok: continue with the existing `withThread(… cards.acceptCard …)`, unchanged.
 4. Refused: inside `withThread`, read the thread with `hub.state.thread`. If
-   `payload.delivery_id` is now in `delivered_ids` (a concurrent delivery of the same card was
-   accepted), return the existing duplicate answer `{ ok: true, duplicate: true }` and queue
-   nothing. Otherwise, if the thread is not archived and the posting session exists, call
+   `payload.delivery_id` is now in `delivered_ids`, return the existing duplicate answer
+   `{ ok: true, duplicate: true }` and queue nothing. Otherwise, if the thread is not archived
+   and the posting session exists, call
    `hub.enqueue(thread, payload.session, "[wc:from app] your done card was refused: <reason>", 'app')`
    (D7). Then throw `appError(422, reason)`.
+5. **One evaluation per delivery (D29).** The hub keeps an in-memory `Map` from
+   `delivery_id` to the promise of steps 1–4 for that delivery. A second arrival of the same
+   `delivery_id` while the first is in flight awaits that promise instead of running its own:
+   if the first accepted, it returns `{ ok: true, duplicate: true }`; if the first refused, it
+   throws the same 422 and queues nothing more. The entry is deleted when the promise settles.
+   A card with no `delivery_id` is evaluated alone.
+6. **Spooled deliveries report back (D30).** The machine's spool drain
+   (`machine/service.js:902-923`) adds `from_spool: true` to the payload it relays (the direct
+   relay does not). When the hub accepts a `done` card whose payload has `from_spool: true`, it
+   enqueues `[wc:from app] your done card was accepted` to the posting session (same conditions
+   as the refusal message). `from_spool` is stripped before validation like `delivery_id`. So a
+   lead whose `card.js done` printed a spooled answer always learns the outcome by message.
+   `card.js` prints the machine's response body on success (today it prints nothing,
+   `viewer/app/card.js:267-270`), so `{"ok":true,"spooled":true}` is visible.
 
 **Deadlines (D23).** Each gh call has an 8-second timeout; at most two calls run (below), so
 the gate spends ≤16 s on GitHub. The machine's `cards` relay — the direct relay
@@ -137,14 +159,18 @@ Stderr matching
      entries whose state is failed or pending (CheckRun: `name` with `conclusion`, or "running"
      when `status !== 'COMPLETED'`; StatusContext: `context` with `state`), at most five, then
      "and N more". The summary is for reading only; the decision is GitHub's.
-   - `BLOCKED` → refuse "GitHub says a branch rule blocks merging (for example a required check
-     still running or unresolved review comments)" plus the same summary if any entry is
-     failed or pending.
+   - `BLOCKED` (D28) → classify every rollup entry: CheckRun passing when `status ===
+     'COMPLETED'` and `conclusion` is `SUCCESS`, `NEUTRAL` or `SKIPPED`; StatusContext passing when
+     `state === 'SUCCESS'`. If any entry is not passing → refuse "checks are not all passing:
+     <summary>". If all pass → step 6 (the block is a rule only Collin clears, such as a required
+     review, and does not stop `done`).
    - `UNKNOWN`, `DRAFT`, missing, or anything not listed → refuse "GitHub is still working out
      whether it can merge; try again in a minute".
    - `CLEAN` or `HAS_HOOKS` → step 6.
+   The summary format above is shared by `UNSTABLE` and `BLOCKED`.
 6. Empty checks (D21): if `statusCheckRollup` is non-empty → ok. If empty, call 2:
-   `gh api repos/<owner>/<repo>/actions/workflows --jq '[.workflows[] | select(.state=="active")] | length'`
+   `gh api --paginate repos/<owner>/<repo>/actions/workflows --jq '.workflows[] | select(.state=="active") | .id'`
+   and count the non-empty output lines (all pages, D31)
    (positive evidence; any error is mapped as above, so a 404 refuses, never passes).
    Result `0` → ok. Greater than `0` → refuse "no checks have started yet on the latest commit;
    try again in a minute". Unparsable → the "couldn't reach GitHub" refusal.
@@ -166,37 +192,54 @@ remain; that refusal is returned as today. Outside a merge, behaviour is unchang
   `[wc:from app] your done card was refused: …` message.
 - `protocol/app/lead.md`: a new section "Making the pull request mergeable" (D24), which steps
   1, 8 and 9 use after push and PR, instead of posting `done` straight away. Its content:
+  Throughout, **the pushed commit** is `git rev-parse origin/wc/<thread-id>` read right after
+  a successful `wc.js git push` (never local `HEAD`, D32).
   1. **Wait.** Run one foreground shell command that every 60 seconds runs
-     `gh pr view <url> --json state,mergeStateStatus,headRefOid` and exits when `state` is not
-     `OPEN`, or `mergeStateStatus` is `CLEAN`, `HAS_HOOKS`, `DIRTY` or `BEHIND`, or any check
-     shows failed in `gh pr checks <url>` (exit code 1), or after 10 minutes. Repeat the command
-     while the window lasts. The window is 30 minutes from the push (D4).
-  2. **Ready** (`CLEAN`/`HAS_HOOKS`): post `done` with `head` = the pushed commit
-     (`git rev-parse HEAD`). If the app refuses it with a "try again" reason, keep waiting
-     within the same window; with any other reason, act on it as below.
-  3. **Merged while waiting:** post `done` with `head` = the pushed commit. If the app refuses it
-     because the head differs, follow step 9's "the fix missed" rule (a `stub` with the fix's
-     own commits).
-  4. **Conflicts or behind** (`DIRTY`/`BEHIND`): `wc.js git fetch`, `wc.js git merge
+     `gh pr view <url> --json state,mergeStateStatus,headRefOid` and
+     `gh pr checks <url> --json name,bucket` (D33), and exits when: `state` is not `OPEN`;
+     `headRefOid` is not the pushed commit; `mergeStateStatus` is `CLEAN`, `HAS_HOOKS`, `DIRTY`
+     or `BEHIND`; any check has `bucket == "fail"` or `"cancel"`; `mergeStateStatus` is `BLOCKED`
+     and the checks list is non-empty with every `bucket` `pass` or `skipping`; or 10 minutes
+     pass. A `gh` error inside the loop is not a failure: keep polling. Repeat the command while
+     the window lasts. The window is 30 minutes from the push (D4).
+  2. **Ready** (`CLEAN`/`HAS_HOOKS`, or `BLOCKED` with every check passed): post `done` with
+     `head` = the pushed commit. `card.js` printing `"spooled":true` means not yet judged: wait
+     for the `[wc:from app] your done card was accepted` or `… refused: …` message (D30). If
+     refused with a "try again" reason, keep waiting within the same window; any other reason,
+     act on it below.
+  3. **Merged while waiting:** if `headRefOid` is the pushed commit, post `done` as in 2.
+     Otherwise follow step 9's "the fix missed" rule (a `stub` with the fix's own commits); do
+     not post `done`.
+  4. **Closed while waiting:** follow step 9's `CLOSED` rule: say so in a reply, change nothing,
+     resolve any open `needs` card for this wait (D34).
+  5. **Head changed while open** (someone, usually Collin, pushed to the branch): step 9's rule
+     for an updated branch: `wc.js git fetch`, `wc.js git merge origin/wc/<thread-id>`; if the
+     merge brought commits, have them re-verified as in 6 and push; then a new window (D34).
+  6. **Repair.** Conflicts or behind (`DIRTY`/`BEHIND`): `wc.js git fetch`, `wc.js git merge
      origin/<default branch>`, edit the conflicted files, `wc.js git commit --paths <resolved
-     files> --message …` (this completes the merge, D16). **A failed check:** read its log
-     (`gh run view <id> --log-failed`) and fix the cause, committing with `wc.js git commit`.
-     Either way, start a fresh verifier on the new commit by step 9's provider rule, briefed
-     with what Collin asked for (a small fix has no plan; give his request) or the plan's Spec,
-     plus what this repair changed (D25). On a pass, push and go back to 1 with a new 30-minute
-     window.
-  5. **Budget (D12, revised by D26).** Count repairs in this finishing: each repair that fails
-     its verifier, or whose push still ends in a failed check or a conflict, is one failed
-     attempt. After two failed attempts, or when a window ends without "ready", or on a
-     credentials refusal, stop and post a `needs` card: what blocks `done`, in plain words, and
-     that he can merge the pull request himself regardless. "Keep going" resets the budget and
-     starts a new window. A "talk about it" press gets the explanation and, when there is a
-     real choice, a `question` card. Resolve the `needs` card once `done` is accepted.
-  6. **After a restart** (D18, revised by D27): the lead is waiting whenever the branch's
-     pushed tip (`git rev-parse origin/wc/<thread-id>`) is not the `head` of the latest
-     accepted `done` card in the thread (or there is none) and a PR exists
-     (`gh pr view --json url`). Resume at 1 with a new window. This works for small fixes,
-     features and after-done fixes alike.
+     files> --message …` (this completes the merge, D16). A failed check (a check with
+     `bucket == "fail"` or `"cancel"`; never repair on a `gh` error or an empty list): read its
+     log (`gh run view <id> --log-failed`) and fix the cause, committing with `wc.js git commit`.
+     Either way, start a fresh verifier on the new commit by step 9's provider rule, briefed with
+     what Collin asked for (a small fix has no plan; give his request) or the plan's Spec, plus
+     what this repair changed (D25). On a pass, push and go back to 1 with a new window.
+  7. **Budget (D26).** Each repair that fails its verifier, or whose push still ends in a failed
+     check or a conflict, is one failed attempt. After two failed attempts, or when a window ends
+     without "ready", or on a credentials refusal, post a `needs` card: what blocks `done`, in
+     plain words, and that he can merge the pull request himself regardless. "Keep going" resets
+     the budget and starts a new window. "Talk about it" gets the explanation and, when there is
+     a real choice, a `question` card. Resolve the `needs` card once `done` is accepted.
+  8. **After a restart** (D35, supersedes D27): `wc.js git fetch`, then:
+     - Local commits not on `origin/wc/<thread-id>` (`git log origin/wc/<thread-id>..HEAD`
+       non-empty): an interrupted repair. Verify them as in 6, push, then 1.
+     - Otherwise read `gh pr view --json state,headRefOid` for the thread's PR (from the latest
+       `done` card's `pr_url`, else `gh pr view --json url` on the branch). No PR: not waiting.
+     - `OPEN`, and the pushed commit is not the `head` of the latest accepted `done` card (or
+       there is no `done` card): waiting; go to 1 with a new window.
+     - `MERGED` with `headRefOid` = pushed commit and no accepted `done` card with that `head`:
+       post `done` as in 2. `MERGED` with another head: if no `stub` card in the thread already
+       lists these commits, step 9's missed-fix stub; else nothing.
+     - `CLOSED`, or the latest `done` card has no `head` (it predates this change): not waiting.
 - Step 8 still commits `status: done` before the push, so the PR carries it; the feature list
   shows Done while the lead waits (accepted risk). Step 1, step 8 item 2 and step 9 item 4 each
   send the lead to the new section before posting `done`.
@@ -209,8 +252,10 @@ remain; that refusal is returned as today. Outside a merge, behaviour is unchang
 - Main moves after `done`: not re-checked (D5).
 - After-done fix that Collin merges while the lead waits: accepted when the merged head is the
   lead's `head`; refused otherwise, and the lead stubs it (D22).
-- The same card delivered twice at once (direct relay and spool drain): one accepted, the other
-  answers duplicate; no false refusal message (D23).
+- The same card delivered twice at once (direct relay and spool drain): evaluated once; the
+  second awaits the first (D29), in either order.
+- Repo that requires a review or resolved conversations: `BLOCKED` with all checks passed is
+  accepted (D28).
 
 ### Non-goals
 
@@ -233,12 +278,17 @@ remain; that refusal is returned as today. Outside a merge, behaviour is unchang
   the posting session; a duplicate `delivery_id` does not call gh; a refusal whose delivery id
   was accepted meanwhile returns duplicate and queues nothing; a slow gh stub (3 s) does not
   block another card on the same thread; the snapshot is never written (thread file unchanged
-  by a refused card except the queued message).
+  by a refused card except the queued message). Also: `BLOCKED` with all rollup entries passing
+  → accepted; `BLOCKED` with a pending entry → refused; two concurrent deliveries of one
+  `delivery_id` call gh once, in both orders (accept-first and refuse-first), and queue at most
+  one message; a `done` with `from_spool: true` that is accepted queues "your done card was
+  accepted"; workflows listing across two pages with the active one on page 2 → refused "no
+  checks have started" (stub `--paginate` output).
 - `viewer/test/app-cards.test.js` (or the existing card schema test): `done` without `head`, or
-  with a non-40-hex `head`, is refused.
+  with a non-40-hex `head`, is refused. `card.js` prints the machine's JSON body on success.
 - `machine/test/service.test.js`: a card relay whose hub answers 422 after 6 seconds returns
   422 to the agent, not a spooled 202; a spooled card drained against a slow refusing hub moves
-  to rejected storage. `wc.js git commit` during a conflicted merge, after resolving, completes
+  to rejected storage; the drain adds `from_spool: true`, the direct relay does not. `wc.js git commit` during a conflicted merge, after resolving, completes
   the merge commit; with unmerged paths left, it is refused.
 - Existing tests that post `done` cards keep passing (add `head` and a gh stub as needed).
 - `viewer/test/protocol-rules.test.js`: assert lead.md has the "Making the pull request
@@ -250,6 +300,9 @@ remain; that refusal is returned as today. Outside a merge, behaviour is unchang
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | On a direct relay the lead sees a refusal twice (card.js error and the app message) | Needed for the spooled case; harmless duplicate | planning |
+| CI that reports only on GitHub's test merge commit (not the head) leaves the rollup empty; with active workflows the gate refuses forever | GitHub Actions `pull_request` checks attach to the head commit; the `needs` card covers third-party CI | 3 |
+| In `BLOCKED`, a failed run followed by a successful re-run may both appear and refuse | Errs toward refusing; the `needs` card covers it | 3 |
+| A thread finished before this change and then given an after-done fix can't be recognised as waiting after a restart | Transitional; only threads with a legacy `done` card | 3 |
 | A repo whose workflows never run on pull requests can never pass the gate (empty rollup, workflow files present) | Rare; the lead's `needs` card tells Collin, who can merge the PR regardless | 1 |
 | The feature list shows Done while the lead waits for checks | `status: done` must be committed before the push so the PR carries it; a needs card covers the stuck case | 1 |
 
@@ -332,16 +385,30 @@ remain; that refusal is returned as today. Outside a merge, behaviour is unchang
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
-| intent | major | `BLOCKED` covers rules only Collin can clear (reviews, conversations); stricter than IDEA | upheld | pending (budget stop) |
-| intent | major | Restart signal treats merged-missed, closed and legacy-done threads as waiting | upheld | pending |
-| intent | minor | PR closed while waiting has no next step | upheld | pending |
+| intent | major | `BLOCKED` covers rules only Collin can clear (reviews, conversations); stricter than IDEA | upheld | D28 |
+| intent | major | Restart signal treats merged-missed, closed and legacy-done threads as waiting | upheld | D35 |
+| intent | minor | PR closed while waiting has no next step | upheld | D34 |
 | mechanics | blocking | Checks only on test merge commit invisible to rollup | downgraded → minor | Actions `pull_request` runs report on the head commit; only third-party CI posting to the merge commit hits this |
-| mechanics | blocking | Workflow listing reads only the first page | downgraded → minor | Needs >30 workflows; fix is `--paginate` |
-| mechanics | blocking | Spooled `done` returns 202; lead can't tell accepted from pending | upheld | pending |
-| mechanics | blocking | Concurrent deliveries: refusal-first ordering still double-handles | upheld | pending (in-flight map per delivery id) |
-| mechanics | blocking | `gh pr checks` exit 1 also means no checks / API error | upheld | pending (use `--json bucket`) |
-| mechanics | blocking | Restart may submit an unpushed local repair as `head` | upheld | pending |
-| mechanics | major | Legacy `done` cards without `head` look pending on restart | upheld | pending (same as intent restart finding) |
-| mechanics | major | PR head changes or closes during the wait: no next step | upheld | pending |
+| mechanics | blocking | Workflow listing reads only the first page | downgraded → minor | Needs >30 workflows; fixed anyway (D31) |
+| mechanics | blocking | Spooled `done` returns 202; lead can't tell accepted from pending | upheld | D30 |
+| mechanics | blocking | Concurrent deliveries: refusal-first ordering still double-handles | upheld | D29 |
+| mechanics | blocking | `gh pr checks` exit 1 also means no checks / API error | upheld | D33 |
+| mechanics | blocking | Restart may submit an unpushed local repair as `head` | upheld | D32 |
+| mechanics | major | Legacy `done` cards without `head` look pending on restart | upheld | D35 |
+| mechanics | major | PR head changes or closes during the wait: no next step | upheld | D34 |
 
-**Budget:** three triaged rounds without a clean one; stopped for Collin (needs card).
+**Budget:** three triaged rounds without a clean one; stopped for Collin (needs card). Collin: "Keep going" — budget reset.
+
+### Round 4 — 2026-11-17
+
+**Lanes:** intent lens (provider per start); mechanics lens (other family); cross-family: yes.
+
+**Changed since the last round:**
+- D28: `BLOCKED` accepted when all checks passed.
+- D29: one gate evaluation per delivery id; D30: spooled `done` gets an accepted message, `card.js` prints the body, drain marks `from_spool`.
+- D31: paginated workflow listing.
+- Lead section rewritten (items 1-8): pushed commit from the remote tip (D32); failed-check detection via `gh pr checks --json bucket` (D33); closed / head-changed exits (D34); restart rules (D35).
+- Three new Accepted Risks (round 3).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
