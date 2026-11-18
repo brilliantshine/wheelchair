@@ -681,9 +681,9 @@ Filled by Stage 3. One row per worker brief.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | `check` kind: schema (card.js), hub acceptance (cards.js), press (threads.js), handoff, cards.md/cards-lead.md, node tests | viewer/app/{card,cards,threads,handoff}.js, protocol/app/cards.md, cards-lead.md, viewer/test/protocol-rules.test.js, new viewer/test/*.test.js | standard / gpt-6.1-terra | wc-2daed8b3ee7f-worker | `node --test viewer/test/*.test.js` | in progress |
+| T1 | `check` kind: schema (card.js), hub acceptance (cards.js), press (threads.js), handoff, cards.md/cards-lead.md, node tests | viewer/app/{card,cards,threads,handoff}.js, protocol/app/cards.md, cards-lead.md, viewer/test/protocol-rules.test.js, new viewer/test/*.test.js | standard / gpt-6.1-terra | wc-2daed8b3ee7f-worker | `node --test viewer/test/*.test.js` | done |
 | T2 | lead.md after-done check-step rules + pointers; verifier.md steps-only section | protocol/app/lead.md, protocol/app/verifier.md | standard / claude-sonnet-5-5 | wc-2daed8b3ee7f-worker-2 | grep -i check; protocol-rules test | done |
-| T3 | `tricky` check card rendering, Copy, Fix it now/Leave it buttons, CSS, browser test | viewer/pages/thread.js, viewer/pages/thread.css, new viewer/test/*.spec.js | standard / claude | — | `npm --prefix viewer run test:browser` | not started (after T1) |
+| T3 | `tricky` check card rendering, Copy, Fix it now/Leave it buttons, CSS, browser test | viewer/pages/thread.js, viewer/pages/thread.css, new viewer/test/*.spec.js | standard / claude-sonnet-5-5 | wc-2daed8b3ee7f-worker-3 | `npm --prefix viewer run test:browser` | in progress |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -698,3 +698,10 @@ anything a future session needs that fits nowhere above.
 - 2026-11-18 — Choice: T2, lead.md step 9 item 4: pointer also says the fix's steps cover only what the fix changed.
 - 2026-11-18 — Choice: T2, lead.md briefing list: the steps verifier's brief carries the words "steps only" (from the task brief, not the Spec).
 - 2026-11-18 — T2 accepted (band: scout): every Spec rule present per scout read; report summarised rather than pasted validation output, so I re-ran `node --test viewer/test/protocol-rules.test.js` (35 pass) and the sub-lead/worker diff (empty). Sub-lead fix after merge: verifier.md steps-only lead-in said "The report below it" for both sections and dropped BLOCKED's `REASON:` line; reworded.
+- 2026-11-18 — T1: worker's report said choices "none"; the scout's diff read lists 10, logged below.
+- 2026-11-18 — Choice: T1, threads.js press: `answered_value` set to `input.value ?? null` (null for fix/leave); return shape `{ queued: true, text }`.
+- 2026-11-18 — Choice: T1, card.js: one-line `note` enforced as no `\r`/`\n`; `update` length measured on the raw string; the 6-step cap sits in the `steps` predicate.
+- 2026-11-18 — Choice: T1, cards.js: `check` acceptance block placed after `offer`, before `sudo`; `currentDone` exported from cards.js and reached from threads.js by lazy require.
+- 2026-11-18 — Choice: T1, cards-lead.md `check` section: adds "Post after the current done card", says buttons show "until answered or superseded", lists refusals without their exact messages.
+- 2026-11-18 — Choice: T1, cards.md: both press forms in one bullet; tests in new `viewer/test/app-check-card.test.js`.
+- 2026-11-18 — T1 accepted (band: scout): I re-ran `node --test viewer/test/*.test.js` in its worktree: exit 0, 636/636 pass. Noted for COMPLETION risks: a spooled check card's 422 refusal (including the duplicate) is dropped to `spool/rejected` rather than returned to the lead (generic spool behaviour, `machine/service.js:973-985`); `views.js:135` and `aside.js:16` do not count a check card with a broken step as waiting (Spec silent).
