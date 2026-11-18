@@ -353,6 +353,21 @@ exit. Downgrades and declines cite evidence.
 | mechanics (gpt) | major | Title match can't identify the handoff stub | upheld | D31 |
 | mechanics (gpt) | major | Free-text mode answer can fall back silently | upheld | D32 |
 
+### Round 3 — 2026-11-17
+
+**Lanes:** intent: claude; mechanics: other family; cross-family: yes.
+
+**Changed since Round 2:**
+- Empty deferred card posted when a lighter mode is chosen (D24); bounded re-checks (D25); after-the-fact acceptance of verification deferrals stated.
+- Verification deferral: snapshot, all reports, selection rules (D26); commit-then-repost (D29).
+- Start building only on the latest approval while approved (D27).
+- `removed` doesn't mark `deferred` answered; stale pull-backs (D28).
+- Restarted round uses only its own reports (D30).
+- Handoff stub marker and restart order (D31); unambiguous mode answer (D32).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 Parts of the Spec already built before this plan reached Stage 3 — adopted from outside
