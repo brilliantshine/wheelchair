@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 'use strict';
+const { startupWarning } = require('./lib/startup-warning');
 
 /*
  * Wheelchair machine service.  The HTTP API is documented in machine/API.md.
@@ -210,6 +211,11 @@ class MachineService {
     this.config = {};
     this.asideTurns = new AsideTurns(this.stateDir, atomicWrite, accountDir);
     this.sessions = {};
+    this.startupWarning = null;
+    this.startupSamples = new Map();
+    this.startupWarningRunning = false;
+    this.startupWarningRerun = false;
+    this.scanStartupWarning = startupWarning;
     this.stepReads = new Map();
     this.codexStepChunkSize = options.codexStepChunkSize || 8 * 1024 * 1024;
     this.startingWorktrees = new Set();
@@ -236,6 +242,17 @@ class MachineService {
     this.uploadRequests = new Map();
     this.options = options;
     this.sudo = new SudoRequests(this, atomicWrite, readJson, requestJson);
+  }
+
+  async refreshStartupWarning() {
+    if (this.startupWarningRunning) { this.startupWarningRerun = true; return; }
+    this.startupWarningRunning = true;
+    do {
+      this.startupWarningRerun = false;
+      try { this.startupWarning = await this.scanStartupWarning(this.stateDir, this.startupSamples); }
+      catch (error) { this.startupWarning = null; this.log(error); }
+    } while (this.startupWarningRerun);
+    this.startupWarningRunning = false;
   }
 
   async withThreadLock(id, fn) {
@@ -676,9 +693,8 @@ class MachineService {
     try { pane = this.pane(session.name); } catch { return false; }
     const prompt = adapters[session.cli]?.answerPrompts(session, pane);
     if (prompt) {
-      this.tmux(['send-keys', '-t', session.name, 'Down']);
-      this.tmux(['send-keys', '-t', session.name, 'Enter']);
-      if (prompt === 'trust') { session.trust_answered = true; await this.persistSessions(); }
+      for (const key of prompt.keys) this.tmux(['send-keys', '-t', session.name, key]);
+      if (prompt.step === 'trust') { session.trust_answered = true; await this.persistSessions(); }
       return false;
     }
     if (this.readyText(session, pane)) {
@@ -1534,6 +1550,11 @@ class MachineService {
       if (request.method === 'POST' && url.pathname === '/v1/agent/cards') {
         const agent = await this.authorize(request, 'agent');
         let input = await bodyOf(request);
+        delete input.warnings;
+        if (input.kind === 'approval' && agent.role === 'lead') {
+          if (typeof this.startupWarning === 'string') input.warnings = [this.startupWarning];
+          this.refreshStartupWarning();
+        }
         if (input.kind === 'image') input = await this.copyImage(agent, input);
         if (input.kind === 'sudo') {
           if (agent.role !== 'lead') throw Object.assign(new Error('only a lead may post a sudo card'), { status: 403 });
@@ -1574,9 +1595,12 @@ class MachineService {
     // Spec "Machine service on the hub": spools are retried until the hub acknowledges them.
     this.spoolTimer = setInterval(() => { for (const kind of ['events', 'cards']) this.drainSpool(kind).catch(error => this.log(error)); }, this.spoolInterval);
     this.spoolTimer.unref();
+    this.refreshStartupWarning();
+    this.startupWarningTimer = setInterval(() => this.refreshStartupWarning(), 10 * 60 * 1000);
+    this.startupWarningTimer.unref();
     this.sudoTimer = setInterval(() => this.sudo.tick().catch(error => this.log(error)), Number(process.env.WHEELCHAIR_SUDO_POLL_MS || 2000));
     this.sudoTimer.unref();
-    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.pollTimer); clearInterval(this.stepsTimer); clearInterval(this.trustTimer); clearInterval(this.sudoTimer); });
+    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.startupWarningTimer); clearInterval(this.pollTimer); clearInterval(this.stepsTimer); clearInterval(this.trustTimer); clearInterval(this.sudoTimer); });
     process.stdout.write(`machine service listening on ${this.config.host}:${this.config.port}\n`);
     await this.drainSpool('events'); await this.drainSpool('cards');
   }

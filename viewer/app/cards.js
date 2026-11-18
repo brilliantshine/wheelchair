@@ -21,7 +21,8 @@ function addCard(thread, card, meta = {}) {
   };
   if (SINGLETONS.has(card.kind)) {
     const old = [...thread.cards].reverse().find((item) => item.kind === card.kind && !item.replaced && !item.retracted_at);
-    if (old) old.replaced = true;
+    // An answered offer is history: a second offer leaves it in the conversation.
+    if (old && !(card.kind === 'offer' && old.answered)) old.replaced = true;
     thread.pinned[card.kind] = record;
   }
   if (card.kind === 'approval') {

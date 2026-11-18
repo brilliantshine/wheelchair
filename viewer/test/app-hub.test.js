@@ -303,6 +303,7 @@ test('limits offers to a second request after keep talking first', async () => {
     assert.equal(second.status, 202);
     const chat = await api(context, `/threads/${made.id}/chat`);
     assert.equal(chat.body.pinned.find((item) => item.kind === 'offer').id, second.body.id);
+    assert.ok(chat.body.cards.some((item) => item.id === first.body.id), 'the answered first offer stays in the conversation');
     const third = await card(context, made.id, lead.name, { kind: 'offer', summary: 'Third offer.' });
     assert.equal(third.status, 422);
     assert.equal(third.body.detail, 'the offer was already asked');
@@ -795,6 +796,8 @@ test('queues a card press as a lead message', async () => {
       body: { action: 'picked', value: 'take it into planning' },
     });
     assert.equal(pressed.status, 202);
+    const stored = await (new Hub({ stateDir: context.state })).thread(made.id);
+    assert.equal(stored.pinned.offer, undefined, 'a pressed offer leaves the pin');
     await event(context, made.id, lead.name, 'turn-ended');
     assert.match(context.machine.sessions.get(lead.name).submits[0], /^\[card /);
   });
@@ -1319,6 +1322,7 @@ test('talking about an approval keeps it open for Needs you and Start building',
     const approval = await card(context, made.id, made.sessions[0].name, {
       kind: 'approval', objections: [], ready: { ok: true, missing: [] },
     });
+    await card(context, made.id, made.sessions[0].name, { kind: 'idea', bullets: [{ id: 'b1', text: 'dark mode' }] });
     const talked = await api(context, `/threads/${made.id}/cards/${approval.body.id}/press`, {
       method: 'POST', body: { action: 'talk', value: 'One more concern.' },
     });
@@ -1333,6 +1337,7 @@ test('talking about an approval keeps it open for Needs you and Start building',
     assert.equal(started.status, 202);
     stored = await (new Hub({ stateDir: context.state })).thread(made.id);
     assert.equal(stored.cards.find((card) => card.id === approval.body.id).answered, true);
+    assert.equal(stored.pinned.idea, undefined, 'the idea list leaves the pin once building starts');
   });
 });
 

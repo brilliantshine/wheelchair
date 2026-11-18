@@ -142,6 +142,11 @@ const fields = {
   },
 };
 
+const approvalMachineFields = {
+  ...fields.approval,
+  warnings: (value) => value === undefined || (array(value, text, 1) && value.length <= 10),
+};
+
 // `options.machine` is true only where the hub accepts a card the machine service posted.
 function validate(kind, card, role, options = {}) {
   if (!fields[kind]) return { ok: false, reason: `unknown card kind: ${kind}` };
@@ -149,7 +154,8 @@ function validate(kind, card, role, options = {}) {
   if (card.kind !== undefined && card.kind !== kind) {
     return { ok: false, reason: 'kind must equal the command-line kind' };
   }
-  const spec = kind === 'sudo' && options.machine ? sudoMachineFields : fields[kind];
+  const spec = options.machine && kind === 'sudo' ? sudoMachineFields
+    : options.machine && kind === 'approval' ? approvalMachineFields : fields[kind];
   const allowed = new Set([...Object.keys(spec), 'kind']);
   for (const key of Object.keys(card)) {
     if (!allowed.has(key)) return { ok: false, reason: `unknown field: ${key}` };

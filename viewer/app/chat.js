@@ -242,6 +242,16 @@ function lastAssistantText(cli, raw) {
   return last;
 }
 
+// Threads from before an answered offer and a started build left the pin still carry them there.
+function shownPins(thread) {
+  const built = thread.cards.some((card) => card.kind === 'approval' && card.answered_action === 'start-building');
+  return Object.values(thread.pinned).filter((card) => {
+    if (card.kind === 'offer') return !thread.cards.find((item) => item.id === card.id)?.answered;
+    if (card.kind === 'idea') return !built;
+    return true;
+  });
+}
+
 async function chat(hub, id) {
   const thread = await hub.thread(id);
   await require('./views.js').findSlug(hub, thread);
@@ -269,7 +279,7 @@ async function chat(hub, id) {
     asides: (thread.asides || []).map(require('./asides.js').brief),
     items: shown,
     cards: thread.cards.filter((card) => !card.replaced),
-    pinned: Object.values(thread.pinned),
+    pinned: shownPins(thread),
     queued: Object.values(thread.queues).flat().length,
   };
 }

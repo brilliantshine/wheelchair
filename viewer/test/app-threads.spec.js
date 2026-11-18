@@ -422,7 +422,7 @@ for (const [label, size] of SIZES) {
       await expect(page.locator('.card-diagram a', { hasText: 'Open full size' })).toHaveAttribute('href', /\/app\/picture\?thread=.*&card=/);
       // Start building disabled until Ready
       await expect(page.locator('#start-building')).toBeDisabled();
-      await expect(page.locator('.card-approval')).toContainText('Codex is signed out');
+      await expect(page.locator('#pinned .card-approval')).toContainText('Codex is signed out');
       await noSideScroll(page);
 
       const pressTo = (cardId) => page.waitForRequest((r) =>
@@ -435,7 +435,7 @@ for (const [label, size] of SIZES) {
       await expect(qc.locator('.answered-tag')).toBeVisible();
 
       req = pressTo(ap.id);
-      await page.getByRole('button', { name: 'Talk about this' }).click();
+      await page.locator('#pinned').getByRole('button', { name: 'Talk about this' }).click();
       expect((await req).postDataJSON()).toEqual({ action: 'talk', value: 'Moves lose work' });
 
       req = pressTo(dn.id);
@@ -450,7 +450,7 @@ for (const [label, size] of SIZES) {
       expect((await req).postDataJSON()).toEqual({ action: 'start-thread', value: 'Use it' });
 
       req = pressTo(ideaCard.id);
-      await page.locator('.card-idea').getByRole('button', { name: 'Remove' }).click();
+      await page.locator('#pinned .card-idea').getByRole('button', { name: 'Remove' }).click();
       expect((await req).postDataJSON()).toEqual({ action: 'removed', value: 'dark mode' });
     });
 
@@ -459,15 +459,28 @@ for (const [label, size] of SIZES) {
       const ap = await ctx.post(made.id, { kind: 'approval', ready: { ok: true, missing: [] }, objections: [] });
       const off = await ctx.post(made.id, { kind: 'offer', summary: 'Plan it?' });
       await open(page, made.id);
-      await expect(page.locator('.card-approval')).toContainText('Plan approved, 0 objections');
+      await expect(page.locator('#pinned .card-approval')).toContainText('Plan approved, 0 objections');
+      await expect(page.locator('.approval-warnings')).toHaveCount(0);
       const btn = page.locator('#start-building');
       await expect(btn).toBeEnabled();
       let req = page.waitForRequest((r) => r.url().endsWith(`/cards/${ap.id}/press`));
       await btn.click();
       expect((await req).postDataJSON()).toEqual({ action: 'start-building' });
       req = page.waitForRequest((r) => r.url().endsWith(`/cards/${off.id}/press`));
-      await page.getByRole('button', { name: 'Take it into planning' }).click();
+      await page.locator('#pinned').getByRole('button', { name: 'Take it into planning' }).click();
       expect((await req).postDataJSON()).toEqual({ action: 'picked', value: 'take it into planning' });
+    });
+
+    test('approval: machine warnings show as text without disabling Start building', async ({ page }) => {
+      const made = await ctx.make({ cli: 'claude' });
+      await ctx.post(made.id, { kind: 'approval', ready: { ok: true, missing: [] }, objections: [],
+        warnings: ['Startup grew', '<b>Literal warning</b>'] });
+      await open(page, made.id);
+      const notice = page.locator('#pinned .approval-warnings');
+      await expect(notice).toContainText('Heads-up');
+      await expect(notice.locator('li')).toHaveText(['Startup grew', '<b>Literal warning</b>']);
+      await expect(notice.locator('b')).toHaveCount(0);
+      await expect(page.locator('#pinned #start-building')).toBeEnabled();
     });
 
     test('approval: Re-check button shows while not Ready', async ({ page }) => {
@@ -475,7 +488,7 @@ for (const [label, size] of SIZES) {
       const ap = await ctx.post(made.id, { kind: 'approval', ready: { ok: false, missing: ['x'] }, objections: [] });
       await open(page, made.id);
       const req = page.waitForRequest((r) => r.url().endsWith(`/cards/${ap.id}/press`));
-      await page.getByRole('button', { name: 'Re-check' }).click();
+      await page.locator('#pinned').getByRole('button', { name: 'Re-check' }).click();
       expect((await req).postDataJSON()).toEqual({ action: 'recheck' });
     });
 
@@ -484,18 +497,18 @@ for (const [label, size] of SIZES) {
       const bullets = ['one', 'two', 'three', 'four'].map((text, i) => ({ id: `b${i}`, text }));
       await ctx.post(made.id, { kind: 'idea', bullets });
       await open(page, made.id);
-      const rows = page.locator('.card-idea .bullet');
+      const rows = page.locator('#pinned .card-idea .bullet');
       await expect(rows).toHaveCount(2);
       await expect(rows).toHaveText([/three/, /four/]);
-      await page.getByRole('button', { name: 'Show all 4' }).click();
+      await page.locator('#pinned').getByRole('button', { name: 'Show all 4' }).click();
       await expect(rows).toHaveCount(4);
-      await page.getByRole('button', { name: 'Fold' }).click();
+      await page.locator('#pinned').getByRole('button', { name: 'Fold' }).click();
       await expect(rows).toHaveCount(2);
       // three bullets are not folded
       const other = await ctx.make({ cli: 'claude' });
       await ctx.post(other.id, { kind: 'idea', bullets: bullets.slice(0, 3) });
       await open(page, other.id);
-      await expect(page.locator('.card-idea .bullet')).toHaveCount(3);
+      await expect(page.locator('#pinned .card-idea .bullet')).toHaveCount(3);
     });
 
     test('stub: a dependent stub waits by itself; start now anyway opens the lead', async ({ page }) => {
@@ -754,12 +767,15 @@ for (const [label, size] of SIZES) {
       const made = await ctx.make({ cli: 'claude' });
       const off = await ctx.post(made.id, { kind: 'offer', summary: 'You want dark mode.' });
       await open(page, made.id);
-      const card = page.locator('#pinned .card-offer');
+      let card = page.locator('#pinned .card-offer');
       await expect(card.getByRole('button', { name: 'Take it into planning' })).toBeEnabled();
       const keep = card.getByRole('button', { name: 'Keep talking first' });
       const req = page.waitForRequest((r) => r.url().endsWith(`/cards/${off.id}/press`));
       await keep.click();
       expect((await req).postDataJSON()).toEqual({ action: 'picked', value: 'keep talking first' });
+      // A pressed offer leaves the pin and stays in the conversation.
+      await expect(page.locator('#pinned .card-offer')).toHaveCount(0);
+      card = page.locator('#chat .card-offer');
       await expect(card.locator('.answered-tag')).toHaveText(/You picked Keep talking first/);
       await expect(card.getByRole('button', { name: 'Take it into planning' })).toBeDisabled();
       await expect(card.getByRole('button', { name: 'Keep talking first' })).toBeDisabled();
@@ -770,8 +786,10 @@ for (const [label, size] of SIZES) {
       const made = await ctx.make({ cli: 'claude' });
       await ctx.post(made.id, { kind: 'offer', summary: 'You want dark mode.' });
       await open(page, made.id);
-      const card = page.locator('#pinned .card-offer');
+      let card = page.locator('#pinned .card-offer');
       await card.getByRole('button', { name: 'Take it into planning' }).click();
+      await expect(page.locator('#pinned .card-offer')).toHaveCount(0);
+      card = page.locator('#chat .card-offer');
       await expect(card.locator('.answered-tag')).toHaveText(/You picked Take it into planning/);
       await expect(card.locator('button.picked')).toHaveText(/Take it into planning/);
     });
