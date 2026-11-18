@@ -1294,7 +1294,7 @@ class MachineService {
     const key = JSON.stringify([executable, mtime]);
     if (!this.kimiVersions.has(key)) {
       const entry = {};
-      entry.promise = new Promise(resolve => execFile(executable, ['--version'], { timeout: 5000 }, (error, stdout, stderr) => {
+      entry.promise = new Promise(resolve => execFile(executable, ['--version'], { timeout: this.options?.kimiVersionTimeoutMs ?? 5000 }, (error, stdout, stderr) => {
         entry.output = stdout.trim() || stderr.trim() || 'no output';
         entry.failed = !!error;
         resolve(entry);

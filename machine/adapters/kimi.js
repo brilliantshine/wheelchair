@@ -94,6 +94,6 @@ module.exports = {
   firstMessage(input, promptPath, name) { return `[wc:role] Role: ${input.role}\nSession: ${name}\nRead ${promptPath} before responding: it holds your role rules and card rules. Read it again only if it is no longer in your context.\n\n${input.brief || input.first_message || ''}`; },
   readyText(session, pane) { return /│\s*>/.test(pane) && pane.includes('context:') && !pane.includes('Trust this folder?'); },
   answerPrompts(session, pane) { if (!pane.includes('Trust this folder?')) return null; if (/❯\s*Trust and continue/.test(pane)) return { step: 'trust', keys: ['Enter'] }; if (/❯\s*Exit/.test(pane)) return { step: 'trust-select', keys: ['Up'] }; return null; },
-  promptText(pane) { return /(?:Run this command\?|Write this file\?|Apply these edits\?|Stop this task\?|Ready to build with this plan\?|Approve [^\n?]+\?)/.test(pane) && /\bApprove once\b/.test(pane); },
+  promptText(pane) { return /(?:Run this command\?|Write this file\?|Apply these edits\?|Stop this task\?|Approve [^\n?]+\?)/.test(pane) && /\bApprove once\b/.test(pane); },
   async findTranscript(session, dir) { return findTranscript(session, dir); }, hookEvent() { return null; }, usageFrom() { return null; },
 };

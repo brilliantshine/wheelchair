@@ -152,6 +152,32 @@ test('version cache checks semver and invalidates when mtime changes', async () 
   } finally { process.env.PATH = old; }
 });
 
+test('version timeout and nonzero exit make authenticated Kimi accounts ineligible', async () => {
+  const root = makeTempSync('kimi-version-failures-'), bin = path.join(root, 'bin'), file = path.join(bin, 'kimi');
+  const old = { HOME: process.env.HOME, PATH: process.env.PATH, KIMI_CODE_HOME: process.env.KIMI_CODE_HOME };
+  fs.mkdirSync(bin); fs.symlinkSync('/bin/sh', path.join(bin, 'sh'));
+  for (const cli of ['claude', 'codex', 'agy']) fs.writeFileSync(path.join(bin, cli), '#!/bin/sh\necho test\n', { mode: 0o755 });
+  try {
+    process.env.HOME = root; process.env.PATH = `${bin}:/usr/bin:/bin`; process.env.KIMI_CODE_HOME = fixture();
+    assert.equal(kimi.loginStatus(null).logged_in, true);
+    const machine = Object.create(MachineService.prototype); machine.options = { kimiVersionTimeoutMs: 100 }; machine.sessions = {}; machine.liveTmux = () => new Set();
+    fs.writeFileSync(file, '#!/bin/sh\necho 2.6.3\nexec sleep 2\n', { mode: 0o755 });
+    await machine.checkKimiVersion();
+    let status = machine.status();
+    assert.equal(status.kimi.problem, 'Kimi Code 2.6.3 or newer is needed (found 2.6.3)');
+    let accounts = status.accounts.filter(account => account.cli === 'kimi');
+    assert.ok(accounts.length > 0); assert.ok(accounts.every(account => account.logged_in === false));
+    fs.writeFileSync(file, '#!/bin/sh\nexit 1\n'); fs.utimesSync(file, new Date(), new Date(Date.now() + 2000));
+    await machine.checkKimiVersion();
+    status = machine.status();
+    assert.equal(status.kimi.problem, 'Kimi Code 2.6.3 or newer is needed (found no output)');
+    accounts = status.accounts.filter(account => account.cli === 'kimi');
+    assert.ok(accounts.length > 0); assert.ok(accounts.every(account => account.logged_in === false));
+  } finally {
+    process.env.HOME = old.HOME; process.env.PATH = old.PATH; if (old.KIMI_CODE_HOME === undefined) delete process.env.KIMI_CODE_HOME; else process.env.KIMI_CODE_HOME = old.KIMI_CODE_HOME;
+  }
+});
+
 test('seed writes account metadata without copying credentials', () => {
   const root = makeTempSync('kimi-seed-'), old = process.env.KIMI_CODE_HOME, source = fixture(), target = path.join(root, 'account');
   try {
@@ -327,8 +353,8 @@ test('missing executable refuses Kimi login', async () => {
 });
 
 test('actual approval screens require both title and option', () => {
-  for (const title of ['Run this command?', 'Write this file?', 'Apply these edits?', 'Stop this task?', 'Ready to build with this plan?', 'Approve SomeTool?']) assert.equal(kimi.promptText(`${title}\n  Approve once\n  Reject`), true, title);
-  for (const text of ['I approve', 'Reject', 'Run this command', 'Run this command?']) assert.equal(kimi.promptText(text), false, text);
+  for (const title of ['Run this command?', 'Write this file?', 'Apply these edits?', 'Stop this task?', 'Approve SomeTool?']) assert.equal(kimi.promptText(`${title}\n  Approve once\n  Reject`), true, title);
+  for (const text of ['I approve', 'Reject', 'Run this command', 'Run this command?', 'Ready to build with this plan?\n  Approve once\n  Reject']) assert.equal(kimi.promptText(text), false, text);
 });
 test('recovery prioritizes anchored Kimi markers over reply text', async () => {
   const machine = Object.create(MachineService.prototype); machine.sessions = {}; machine.persistSessions = async () => {};
@@ -343,14 +369,16 @@ test('HTTP status stays responsive while a slow version check runs and launch aw
   fs.writeFileSync(path.join(bin, 'systemd-run'), '#!/bin/sh\nexit 1\n', { mode: 0o755 }); fs.writeFileSync(path.join(bin, 'tmux'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
   const secret = path.join(root, 'secret'); fs.writeFileSync(secret, 'secret');
   process.env.HOME = root; process.env.PATH = `${bin}:/usr/bin:/bin`; delete process.env.KIMI_CODE_HOME;
-  const machine = new MachineService({ stateDir: root, host: '127.0.0.1', port: 0, secretFile: secret });
+  const http = require('node:http'), probe = http.createServer(); await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve));
+  const freePort = probe.address().port; await new Promise(resolve => probe.close(resolve));
+  const machine = new MachineService({ stateDir: root, host: '127.0.0.1', port: freePort, secretFile: secret });
   machine.createWorktree = async () => ({ worktree: root }); machine.checkReady = async () => {}; machine.tmux = () => ({ ok: true, stdout: '' });
   try {
     await machine.listen(); const port = machine.server.address().port;
     const headers = { 'x-wheelchair-machine-secret': 'secret', 'content-type': 'application/json' };
     const start = Date.now(); const response = await fetch(`http://127.0.0.1:${port}/v1/status`, { headers }); const status = await response.json();
     assert.ok(Date.now() - start < 1000); assert.equal(status.kimi.problem, "Checking Kimi Code's version"); assert.ok(status.accounts.filter(a => a.cli === 'kimi').every(a => !a.logged_in && !('authenticated' in a)));
-    let done = false; const launch = fetch(`http://127.0.0.1:${port}/v1/sessions`, { method: 'POST', headers, body: JSON.stringify({ cli: 'kimi', role: 'worker', thread_id: 'slow', token: 'token', brief: 'brief', role_prompt: 'rules', effort: 'medium' }) }).then(async r => { done = true; assert.equal(r.status, 200); return r.json(); });
+    let done = false; const launch = fetch(`http://127.0.0.1:${port}/v1/sessions`, { method: 'POST', headers, body: JSON.stringify({ cli: 'kimi', role: 'worker', thread_id: 'slow', token: 'token', brief: 'brief', role_prompt: 'rules', effort: 'medium' }) }).then(async r => { done = true; assert.equal(r.status, 201); return r.json(); });
     await new Promise(resolve => setTimeout(resolve, 250)); assert.equal(done, false);
     const session = await launch; assert.equal(session.effort, null); assert.equal(machine.sessions[session.name].effort, null);
     const after = await (await fetch(`http://127.0.0.1:${port}/v1/status`, { headers })).json(); assert.equal(after.kimi.version, '2.6.3'); assert.equal(after.kimi.problem, undefined);
