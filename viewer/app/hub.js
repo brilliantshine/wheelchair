@@ -54,6 +54,15 @@ class Hub {
   async init() {
     await this.state.init();
     await handoff.sweepFiles(this);
+    for (const thread of await this.allThreads()) {
+      let changed = false;
+      if (thread.imported) for (const session of thread.sessions || []) {
+        if (session.role === 'lead' && session.live && session.status === 'starting' && !Object.hasOwn(session, 'first_message')) {
+          session.live = false; changed = true;
+        }
+      }
+      if (changed) await this.save(thread);
+    }
     if (this.registerPlan) for (const thread of await this.allThreads()) {
       if (thread.slug && thread.worktree) await this.registerPlan(require('node:path').join(thread.worktree, 'docs', 'plans', thread.slug));
     }

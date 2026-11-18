@@ -136,7 +136,7 @@ async function restartLead(hub, id) {
       .slice(-20),
   };
   if (thread.imported) state.import = { stage: thread.imported.stage, exported_at: thread.imported.exported_at, pr_url: thread.imported.pr_url, history: (thread.imported.history || []).slice(-50) };
-  const firstImport = thread.imported && !thread.sessions.some((session) => session.role === 'lead' && Date.parse(session.created_at) > Date.parse(thread.imported.at));
+  const firstImport = thread.imported && !thread.sessions.some((session) => session.role === 'lead' && Object.hasOwn(session, 'first_message') && Date.parse(session.created_at) > Date.parse(thread.imported.at));
   const context = `[wc:context ${firstImport ? 'import' : 'restart'}] Thread state:\n${JSON.stringify(state)}`;
   if (thread.imported) {
     const running = await hub.client.handoff(thread.machine, { action: 'running', thread_id: thread.id });
@@ -144,7 +144,7 @@ async function restartLead(hub, id) {
     const names = (running.names || []).filter((name) => (name === prefix || /^-\d+$/.test(name.slice(prefix.length))) && name.startsWith(prefix) && !thread.sessions.some((session) => session.name === name && session.live));
     if (names.length) {
       const killed = await hub.client.handoff(thread.machine, { action: 'kill', thread_id: thread.id, names });
-      if ((killed.names || []).length) throw appError(409, 'The previous agent is still stopping; try again in a minute');
+      if ((killed.names || []).some((name) => names.includes(name))) throw appError(409, 'The previous agent is still stopping; try again in a minute');
     }
     const ended = thread.sessions.filter((session) => session.role === 'lead' && !session.live);
     const queued = ended.flatMap((session) => session.queue || thread.queues?.[session.name] || []);
