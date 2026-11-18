@@ -1,6 +1,6 @@
 ---
 slug: kimi-code
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-18
 ---
 
@@ -78,6 +78,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 41 | Kimi agent hooks all ignored; spool-drain gate replaces one-turn-per-tick; `kimi_session_id` kept on the machine only | Review round 14 | review-round-14 |
 | 42 | Superseded catch-up flag dropped (Accepted Risk instead); all Kimi log reads identity-checked on the opened handle; ordinary Stop after a fatal case uses the exact-target path; Kimi chat replies get stable ids | Review round 14 | review-round-14 |
 | 43 | Fatal-stop Stop returns pending and archive waits; raw keys blocked after a fatal case; one shared binding function for chat and poller; recovered Kimi panes are stopped with a reason; chat parser tests use an ordinary turn | Review round 15 | review-round-15 |
+| 44 | Plan approved after round 15 without a further round; remaining rare failure paths are covered by the build's tests, verification and live checks | Collin, after the round-15 budget stop | user |
 
 ## Spec
 
@@ -87,6 +88,21 @@ them gains Kimi** unless this Spec says otherwise. Facts below were observed on 
 (`~/.kimi-code/bin/kimi`) on this machine; a real session log is in `samples/wire.jsonl`
 (large entries trimmed). `samples/hooks.jsonl` records a hook design that was **dropped**
 (Decision 35): this design uses no Kimi hooks and never edits Kimi's `config.toml`.
+
+How a Kimi agent's turn reaches the app (each step is specified below):
+
+```mermaid
+flowchart TD
+  A[App starts kimi in tmux with the account's home, model and effort] --> B[Role message sent, with a Session: name line]
+  B --> C[Machine service looks for the Kimi log holding that line]
+  C -- found in time --> D[Every second: read new lines of the main agent's log]
+  C -- not found in 120 s, or log format changed --> X[Stop the agent and tell its starter why]
+  D -- log missing, shrunk or replaced --> X
+  D -- turn ended --> E{how did it end?}
+  E -- completed --> F[Turn ended: hub takes the report and sends queued messages]
+  E -- cancelled --> G[Turn released, no report]
+  E -- failed --> H[Rate limit, or turn failed: starter is told]
+```
 
 ### Identity
 
@@ -931,6 +947,8 @@ Filled by Stage 3. One row per worker brief.
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
 ## Log
+
+- After round 15, Collin chose "Approve now" (Decision 44).
 
 - Review budget reached after round 15 (rounds 13–15 since Collin's Keep going). Round 15's intent reviewer found nothing; the mechanics reviewer still found edge cases around stopping a Kimi agent the app has lost track of, all fixed.
 
