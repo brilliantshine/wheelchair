@@ -684,7 +684,7 @@ Filled by Stage 3. One row per worker brief.
 | T1 | `check` kind: schema (card.js), hub acceptance (cards.js), press (threads.js), handoff, cards.md/cards-lead.md, node tests | viewer/app/{card,cards,threads,handoff}.js, protocol/app/cards.md, cards-lead.md, viewer/test/protocol-rules.test.js, new viewer/test/*.test.js | standard / gpt-6.1-terra | wc-2daed8b3ee7f-worker | `node --test viewer/test/*.test.js` | done |
 | T2 | lead.md after-done check-step rules + pointers; verifier.md steps-only section | protocol/app/lead.md, protocol/app/verifier.md | standard / claude-sonnet-5-5 | wc-2daed8b3ee7f-worker-2 | grep -i check; protocol-rules test | done |
 | T3 | `tricky` check card rendering, Copy, Fix it now/Leave it buttons, CSS, browser test | viewer/pages/thread.js, viewer/pages/thread.css, new viewer/test/*.spec.js | standard / claude-sonnet-5-5 | wc-2daed8b3ee7f-worker-3 | `npm --prefix viewer run test:browser` | done |
-| R1 | Remediation 1: check card update wrapping; buttons honour the import cutoff | viewer/pages/thread.js, thread.css, viewer/test/app-check-card.spec.js | standard / claude-sonnet-5-5 | wc-2daed8b3ee7f-worker-4 | `npm --prefix viewer run test:browser` | in progress |
+| R1 | Remediation 1: check card update wrapping; buttons honour the import cutoff | viewer/pages/thread.js, thread.css, viewer/test/app-check-card.spec.js | standard / claude-sonnet-5-5 | wc-2daed8b3ee7f-worker-4 | `npm --prefix viewer run test:browser` | done |
 | R2 | Remediation 1: note rejects U+2028/U+2029/U+0085 | viewer/app/card.js, viewer/test/app-check-card.test.js | light / gpt-6-luna | wc-2daed8b3ee7f-worker-5 | `node --test viewer/test/*.test.js` | done |
 | R3 | Remediation 1: lead may start the steps-only verifier after any done | protocol/app/lead.md | light / claude-haiku-5-5 | wc-2daed8b3ee7f-worker-6 | protocol-rules test | done |
 
@@ -719,3 +719,5 @@ anything a future session needs that fits nowhere above.
 - 2026-11-18 — R3 accepted (band: scout; 4-line diff exactly the brief's text, read inline): protocol-rules 35/35 in its worktree.
 - 2026-11-18 — Choice: R2, card.js: regex written with `\u` escapes (raw separators are invalid in a regex literal).
 - 2026-11-18 — R2 accepted (band: scout; 4-line diff read inline): I ran `node --test viewer/test/*.test.js` in its worktree, exit 0, 636/636 (the worker's own full run did not finish). Sub-lead edit after merge: the test's raw U+2028/U+2029 characters replaced with `\u` escapes so they are visible.
+- 2026-11-18 — Choice: R1, app-check-card.spec.js: the wrap test uses a ~250-char path plus a 24-char code span (update is capped at 300); the cutoff test moves `imported.at` to the done card's own time, then 60 s before it.
+- 2026-11-18 — R1 accepted (band: self, tricky; 41 lines read): on the merged tip 786c0fa, `npm test` 636/636 and `npm --prefix viewer run test:browser` exit 0, 790 passed, 28 skipped.

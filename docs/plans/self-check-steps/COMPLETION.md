@@ -114,8 +114,34 @@ nothing.
 - The thread list's waiting count (`viewer/app/views.js:135`) and the aside's `waiting()`
   (`viewer/pages/aside.js:16`) do not count a check card with Fix it now / Leave it as
   waiting. The Spec does not ask for it.
-- The page decides "current done" as the last non-retracted `done` card it has, without the
-  import cutoff; the hub's press check applies the cutoff, so a stale button would be refused.
 - Flaky unrelated tests noted above.
 
 ## Remediation rounds
+
+### Remediation 1 (after verification attempt 1 on `2344766`)
+
+Gaps (gpt verifier; claude verifier passed) and fixes, see `REMEDIATION-1.md`:
+
+| Gap | Fix | Where | Test |
+|-----|-----|-------|------|
+| Long path/code in `update` widens the page at 390px | update block gets `check-update`; wraps anywhere, inline code too | `viewer/pages/thread.js:839`, `viewer/pages/thread.css:343-344` | `app-check-card.spec.js` "a long path and code span in the update wrap…" |
+| Page shows Fix it now / Leave it when the done card is at the import cutoff | page uses the hub's rule: not retracted and strictly after `imported.at` | `viewer/pages/thread.js:869-872` | `app-check-card.spec.js` "no buttons when the done card sits at the import cutoff…" |
+| `note` accepts U+2028/U+2029 | one-line rule also refuses U+2028, U+2029, U+0085 | `viewer/app/card.js:145` | `app-check-card.test.js` "check schema…" (two new refused cases) |
+| lead.md's session rules did not allow the steps-only verifier after a planned build | verifier bullet adds "or a steps-only one after any `done`, step 10" | `protocol/app/lead.md:68-69` | `protocol-rules.test.js`; grep |
+
+Lanes: R1 standard claude-sonnet-5-5; R2 light gpt-6-luna; R3 light claude-haiku-5-5.
+
+Validation on `786c0fa`:
+
+```
+npm test exit 0
+# tests 636
+# pass 636
+# fail 0
+```
+
+```
+npm --prefix viewer run test:browser: exit 0
+  28 skipped
+  790 passed (3.3m)
+```
