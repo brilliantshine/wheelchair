@@ -68,6 +68,13 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 39 | Supersedes D14/D21: no workflow probe; the lead waits 5 minutes after a push before treating "no checks" as ready | Keeps the gate to one call | user (via D36) |
 | 40 | Someone else's push to the branch is merged, re-verified and pushed without counting toward the budget or resetting the window | Bounded by the window | review-round-4 |
 | 41 | Supersedes D35: restart resumes the wait when finishing and no `done` card names the PR head; unaccounted local commits go to Collin as a question, an unfinished merge is aborted | Simple, never pushes unknown work | user (via D36) |
+| 42 | The hub validates a `done` card's schema before the gate; an invalid card skips the gate | Gate must never read a missing `head` | review-round-5 |
+| 43 | One retry rule for every `done` post, naming each refusal reason's next step | Merged path and not-ready refusals had no action | review-round-5 |
+| 44 | Merged at a later commit that contains the pushed one counts as landed; `done` uses the merged head | "Update branch" then merge is not a missed fix | review-round-5 |
+| 45 | A repair that fails its verifier is fixed again locally and re-verified, never pushed or polled; a failed verifier after someone else's push → `needs` card | Defines the next action after a failed verification | review-round-5 |
+| 46 | After `wc.js git merge`, commit only when it reported conflicts | A clean merge already commits | review-round-5 |
+| 47 | Failed-check diagnosis: Actions run id from `detailsUrl`; non-Actions checks via their URL, else `needs` card | The poll returns no run id | review-round-5 |
+| 48 | Restart resumes only for an `OPEN` PR | A merged or closed PR has nothing left to finish | review-round-5 |
 
 ## Spec
 
@@ -115,8 +122,11 @@ so the lead sees the refusal directly. No `[wc:from app]` messages are sent (sup
 
 **3. The gate (hub).** New `viewer/app/pr-gate.js` exporting `async function checkPr(thread, card)`
 → `{ ok: true }` or `{ ok: false, reason }`, and a pure `judgePr(view, thread, card)` for tests.
-In `hub.acceptCard` (`viewer/app/hub.js:143`), for `payload.kind === 'done'` only, run the gate
-**before** `withThread`, on a snapshot from `hub.state.thread(payload.thread_id)` (a pure read,
+In `hub.acceptCard` (`viewer/app/hub.js:143`), for `payload.kind === 'done'` only, first
+validate the card exactly as `cards.acceptCard` does (`validate('done', input, role, { machine:
+true })`, `viewer/app/cards.js:59`, with `session`, `thread_id` and `delivery_id` stripped and the
+role from the snapshot's session); if it is invalid, skip the gate and let the existing path
+refuse it (D42). Then run the gate **before** `withThread`, on a snapshot from `hub.state.thread(payload.thread_id)` (a pure read,
 `viewer/app/state.js:107`; never `hub.thread()`, which may save). Never save the snapshot. On ok,
 continue with the existing `withThread(… cards.acceptCard …)`. On refusal, throw
 `appError(422, reason)`; nothing else changes.
@@ -170,29 +180,43 @@ outside a merge, unchanged.
      include the definitions in lead.md.) A gh error inside the loop is ignored. Repeat while the
      30-minute window from the push lasts (D4).
   3. **Ready:** if there are no checks at all and less than 5 minutes have passed since the push,
-     keep waiting (CI may not have started; D39). Then post `done` with `head`. If `card.js` fails
-     with a "try again" reason, wait 2 minutes and go back to 2 within the same window; with
-     another reason, act on it below.
-  4. **Merged:** at the pushed commit → post `done`. At another commit → step 9's "the fix
-     missed" rule (a `stub` with the fix's own commits); no `done`.
+     keep waiting (CI may not have started; D39). Then post `done` with `head`.
+     **Posting `done`, wherever this section says so (D43):** if `card.js` fails with "try
+     again", "still working out" or "checks not passed yet", wait 2 minutes and go back to 2
+     within the same window (for a merged PR, just post again after 2 minutes, until the window
+     ends). "Conflicts", "moved on" → 7. "Is at <commit>, not <commit>" → 6 (or 4 if merged).
+     "Closed" → 5. "GitHub login can't read" → the `needs` card in 8.
+  4. **Merged:** at the pushed commit → post `done`. At another commit: `wc.js git fetch`; if
+     `git merge-base --is-ancestor <pushed commit> <merged head>` succeeds, the work landed (for
+     example Collin updated the branch, then merged): post `done` with `head` = the merged head
+     (D44). Otherwise step 9's "the fix missed" rule (a `stub` with the fix's own commits); no `done`.
   5. **Closed:** step 9's `CLOSED` rule: say so, change nothing.
   6. **Head changed while open** (someone pushed to the branch): `wc.js git fetch`,
-     `wc.js git merge origin/wc/<thread-id>`, re-verify as in 7, push, back to 2 in the same
-     window. It does not count toward the budget (D40).
+     `wc.js git merge origin/wc/<thread-id>`. If that brought in only their commits (a fast-forward,
+     nothing of yours unpushed), the new tip is the pushed commit: back to 2 in the same window,
+     no verifier (their push is theirs). Otherwise re-verify the merge as in 7, push, back to 2 in
+     the same window. It does not count toward the budget (D40). If that verifier fails, post
+     the `needs` card in 8 (D45).
   7. **Repair.** Conflicts or behind: `wc.js git fetch`, `wc.js git merge origin/<default
-     branch>`, edit the conflicted files, `wc.js git commit --paths <resolved files>` (completes the
-     merge). A failed check: `gh run view <run id> --log-failed`, fix the cause, `wc.js git commit`.
-     Then a fresh verifier on the new commit by step 9's provider rule, briefed with Collin's
-     request (small fix: no plan) or the plan's Spec, plus what the repair changed (D25). On a
-     pass, push and go back to 2 with a new window.
+     branch>`. If the merge succeeded, git already made the merge commit. If it reports
+     conflicts, edit the conflicted files and `wc.js git commit --paths <resolved files>`
+     (completes the merge, D16) (D46). A failed check: a CheckRun's `detailsUrl` contains
+     `/actions/runs/<run id>/`; run `gh run view <run id> --log-failed`, fix the cause,
+     `wc.js git commit`. A failed StatusContext, or a CheckRun without an Actions run id, comes
+     from outside GitHub Actions: open its `targetUrl`/`detailsUrl` if readable; if you cannot
+     tell what failed, post the `needs` card in 8 naming the check (D47). Then a fresh verifier
+     on the new commit by step 9's provider rule, briefed with Collin's request (small fix: no
+     plan) or the plan's Spec, plus what the repair changed (D25). On a pass, push and go back to
+     2 with a new window. On a fail, that is one failed attempt: fix again locally and re-verify
+     (never push an unverified commit, never poll for the unpushed one) (D45).
   8. **Budget (D26).** A repair that fails its verifier, or whose push still ends in a failed
      check or a conflict, is one failed attempt. After two, or when a window ends without "ready",
      or on a "GitHub login can't read" refusal, post a `needs` card saying what blocks `done` and
      that he can merge the PR himself regardless. "Keep going" resets the budget with a new window.
      Resolve the `needs` card once `done` is accepted.
-  9. **After a restart** (D41, supersedes D27/D35): if the thread is finishing (a PR exists for
-     the branch, and the plan's `status` is `done` or there is no plan) and no `done` card names
-     the PR's current head: look at `git status`; abort an unfinished merge
+  9. **After a restart** (D41, supersedes D27/D35): if the thread is finishing (the branch's PR
+     is `OPEN`, and the plan's `status` is `done` or there is no plan) and no `done` card names
+     the PR's current head (D48): look at `git status`; abort an unfinished merge
      (`wc.js git merge --abort`); do not push local commits you cannot account for, ask Collin with
      a `question` card instead. Then resume at 2 with a new window. A latest `done` card with no
      `head` (from before this change) means not waiting.
@@ -223,8 +247,11 @@ outside a merge, unchanged.
   non-GitHub URL → refused without calling gh; gh non-zero exit → "couldn't reach GitHub"; auth
   stderr → login reason; a slow gh stub (3 s) does not block another card on the same thread; a
   refused card leaves the thread file unchanged.
-- Card schema test: `done` without `head`, or with a non-40-hex `head`, is refused.
-- `machine/test/service.test.js`: a `done` card with the hub down returns 503 "try again" and
+- Card schema test: `done` without `head`, or with a non-40-hex `head`, is refused; through the
+  hub, such a card is refused by schema without calling gh.
+- `machine/test/service.test.js`: the existing spool tests that use a `done` card
+  (`machine/test/service.test.js:277,289`) switch to an ordinary kind such as `progress`, so they
+  still cover rejection and drain order. Then: a `done` card with the hub down returns 503 "try again" and
   leaves no spool file; a `done` card while other cards are spooled and the hub stays down → 503;
   a `done` whose hub answers 422 after 6 seconds returns 422; other kinds still spool. `wc.js git
   commit` during a conflicted merge, after resolving, completes the merge; with unmerged paths
@@ -244,6 +271,7 @@ outside a merge, unchanged.
 | A thread with a `done` card from before this change, given an after-done fix, isn't recognised as waiting after a restart | Transitional | 3 |
 | CI that reports only on GitHub's test merge commit is invisible to the rollup | GitHub Actions reports on the head commit | 3 |
 | A repo whose workflows never pass on PRs can never reach `done` | `needs` card covers it; Collin can merge regardless | 1 |
+| A lead already running when this ships has old instructions; its `done` without `head` is refused by schema ("head" missing), and it needs a restart to pick up the new section | One-time rollout; the refusal names the missing field | 5 |
 | The feature list shows Done while the lead waits for checks | `status: done` is committed before the push so the PR carries it | 1 |
 
 ## Review Rounds
@@ -374,6 +402,25 @@ Prior note: the full gate keeps producing blocking edge cases (spool delivery, r
 **Lanes:** intent lens (provider per start); mechanics lens (other family); cross-family: yes.
 
 **Changed since the last round:** the Spec was rewritten to the lighter enforcement (D36-D41): one gh call gate, no workflow probe, `done` never spooled (503 "try again"), no app messages, lead section simplified, restart rule simplified, Accepted Risks rewritten. Review the whole Spec in depth.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Restart fires on merged PRs, causing bogus stubs | upheld | D48 |
+| intent | minor | Merged at a descendant commit treated as missed | upheld | D44 |
+| intent | minor | Not-ready refusals have no named action | upheld | D43 |
+| mechanics | blocking | Gate reads fields before schema validation | upheld | D42 |
+| mechanics | blocking | Clean `BEHIND` merge has no paths to commit | downgraded → major | A worker would see git made the commit; fixed (D46) |
+| mechanics | major | No next action after a failed repair verifier | upheld | D45 |
+| mechanics | major | Failed-check run id not in poll output; non-Actions checks | upheld | D47 |
+| mechanics | major | Merged path has no retry rule | upheld | D43 |
+| mechanics | major | Live leads at rollout have old instructions | accepted-risk | One-time; schema refusal names `head` |
+| mechanics | minor | Machine spool tests use `done` | upheld | Validation: switch to `progress` |
+
+### Round 6 — 2026-11-17
+
+**Lanes:** intent lens (provider per start); mechanics lens (other family); cross-family: yes.
+
+**Changed since the last round:** schema validation before the gate (D42); one retry rule for `done` posts (D43); merged at a descendant commit (D44); failed repair verification and someone else's push (D45); clean merge commit (D46); failed-check diagnosis (D47); restart only for `OPEN` (D48); machine spool test fixtures; one new Accepted Risk (rollout).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
