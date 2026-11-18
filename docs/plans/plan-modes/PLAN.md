@@ -151,7 +151,9 @@ applied after that round's triage is finished, never during it; the lead says so
 reply. The round runs and is triaged as normal against the plan its reviewers were
 briefed with; the change then goes into the next round's "Changed since" list.
 
-The moment the lead accepts a Start building press, it commits PLAN.md with the Log line
+In a lighter mode, or a thorough thread after a mode change or pull-back (thorough
+otherwise keeps today's step 7 with no commit), the moment the lead accepts a Start
+building press, it commits PLAN.md with the Log line
 `Build accepted: approval <card id>` (it still owns the worktree), then locks the pin,
 then starts the sub-lead. From that commit the mode and the Deferred list are fixed: a later request to change the mode, or a
 pull-back, is answered with that and changes nothing. If starting the sub-lead then
@@ -273,10 +275,9 @@ spent, and `Deferred and finished at Collin's choice` means it sends its `result
 "Defer them and finish" below, with no new verification attempt.
 A deferred gap never counts toward the two-attempt rule. If the one all-deferred
 re-check has already run in this build and another attempt fails, the lead answers step
-1 as usual, except: when every gap in that attempt is one it would defer (hardening, and
-deferrable under the rule below), it does not answer itself; nothing is saved to Deferred
-yet, and it asks Collin a `question`. When any gap needs fixing, the lead answers "fix"
-for every gap of the attempt and step 5 runs; no question. The question:
+1 as usual (defer the hardening gaps, fix the rest; remediation runs for the rest) in
+every case but one: when every gap in that attempt is deferrable hardening, it does not
+answer itself; nothing is saved to Deferred yet, and it asks Collin a `question`:
 - "Fix them": the lead answers "fix" for every gap; step 5 runs as today.
 - "Defer them and finish": the lead answers "defer" for every gap; the sub-lead does step
   2 (save, commit, message), with the Log line `Deferred and finished at Collin's choice`
@@ -512,6 +513,8 @@ exit. Downgrades and declines cite evidence.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent (claude) | minor | `Build accepted:` commit would change thorough's step 7 | upheld | Limited to lighter modes or after a mode change or pull-back |
+| intent (claude) | minor | Mixed failure after the re-check forces hardening fixes | upheld | Step 1 runs as usual; question only when every gap is deferrable |
 
 ## Prior Work
 
