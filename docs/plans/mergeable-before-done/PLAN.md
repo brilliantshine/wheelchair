@@ -18,7 +18,7 @@ get buried as this file grows. Code map: `MAP.md` and `docs/maps/pr-finishing.md
 
 | # | Noticed | What needs looking into | Raised to user? | Outcome |
 |---|---------|-------------------------|-----------------|---------|
-| 1 | A `done` card spooled during a hub outage is acked to the agent, then a later 4xx goes to rejected storage (`machine/service.js:883-888,911-923`) | How a gate refusal reaches the lead in that case | no | Settled: Decision 7 |
+| 1 | A `done` card spooled during a hub outage is acked to the agent, then a later 4xx goes to rejected storage (`machine/service.js:883-888,911-923`) | How a gate refusal reaches the lead in that case | no | Settled: Decision 37 (no queuing of `done`) |
 | 2 | After-done fix on an already-merged PR still posts `done` (`protocol/app/lead.md:354-357`) | Gate must not refuse that case | no | Settled: Decision 8 |
 
 ## Decision Log
@@ -75,6 +75,12 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 46 | After `wc.js git merge`, commit only when it reported conflicts | A clean merge already commits | review-round-5 |
 | 47 | Failed-check diagnosis: Actions run id from `detailsUrl`; non-Actions checks via their URL, else `needs` card | The poll returns no run id | review-round-5 |
 | 48 | Restart resumes only for an `OPEN` PR | A merged or closed PR has nothing left to finish | review-round-5 |
+| 49 | Merged-at-another-commit: fetch `pull/<n>/head`; exit 1 → stub (once); lookup failure → `needs` card, never a stub | Squash-merge and deleted branches | review-round-6 |
+| 50 | Any failed check the lead can't diagnose → `needs` card | Logs may be unavailable | review-round-6 |
+| 51 | The window's deadline is an accepted `done`, not "ready" | A ready PR during a hub outage must still end in a card | review-round-6 |
+| 52 | Supersedes D48: restart handles `MERGED` (no `done` naming its head) via item 4; `CLOSED` → nothing | A PR merged mid-wait still gets its `done` and merged notice | review-round-6 |
+| 53 | Restart reconciles an advanced PR branch via item 6 before polling | Keeps verification on the real tip | review-round-6 |
+| 54 | Step 9 item 4's PR-state handling is replaced by the new section | One rule per case | review-round-6 |
 
 ## Spec
 
@@ -186,10 +192,14 @@ outside a merge, unchanged.
      within the same window (for a merged PR, just post again after 2 minutes, until the window
      ends). "Conflicts", "moved on" → 7. "Is at <commit>, not <commit>" → 6 (or 4 if merged).
      "Closed" → 5. "GitHub login can't read" → the `needs` card in 8.
-  4. **Merged:** at the pushed commit → post `done`. At another commit: `wc.js git fetch`; if
-     `git merge-base --is-ancestor <pushed commit> <merged head>` succeeds, the work landed (for
-     example Collin updated the branch, then merged): post `done` with `head` = the merged head
-     (D44). Otherwise step 9's "the fix missed" rule (a `stub` with the fix's own commits); no `done`.
+  4. **Merged:** at the pushed commit → post `done`. At another commit: fetch the PR's final
+     head explicitly (`wc.js git fetch origin pull/<number>/head`, which GitHub keeps even after
+     the branch is deleted), then run `git merge-base --is-ancestor <pushed commit> <merged head>`.
+     Exit 0: the work landed (for example Collin updated the branch, then merged): post `done`
+     with `head` = the merged head (D44). Exit 1: step 9's "the fix missed" rule (a `stub` with
+     the fix's own commits; skip it if a `stub` card in the thread already lists them); no
+     `done`. A failed fetch or any other exit: post the `needs` card in 8 saying the merge
+     couldn't be matched to the work; never a stub on a lookup failure (D49).
   5. **Closed:** step 9's `CLOSED` rule: say so, change nothing.
   6. **Head changed while open** (someone pushed to the branch): `wc.js git fetch`,
      `wc.js git merge origin/wc/<thread-id>`. If that brought in only their commits (a fast-forward,
@@ -207,27 +217,36 @@ outside a merge, unchanged.
      tell what failed, post the `needs` card in 8 naming the check (D47). Then a fresh verifier
      on the new commit by step 9's provider rule, briefed with Collin's request (small fix: no
      plan) or the plan's Spec, plus what the repair changed (D25). On a pass, push and go back to
-     2 with a new window. On a fail, that is one failed attempt: fix again locally and re-verify
+     2 with a new window. Whenever you cannot tell what a failed check needs (no logs from
+     `gh run view`, an unreadable URL), post the `needs` card in 8 naming the check (D50). On a
+     fail, that is one failed attempt: fix again locally and re-verify
      (never push an unverified commit, never poll for the unpushed one) (D45).
   8. **Budget (D26).** A repair that fails its verifier, or whose push still ends in a failed
-     check or a conflict, is one failed attempt. After two, or when a window ends without "ready",
+     check or a conflict, is one failed attempt. After two, or when a window ends without an
+     accepted `done` (D51),
      or on a "GitHub login can't read" refusal, post a `needs` card saying what blocks `done` and
      that he can merge the PR himself regardless. "Keep going" resets the budget with a new window.
      Resolve the `needs` card once `done` is accepted.
-  9. **After a restart** (D41, supersedes D27/D35): if the thread is finishing (the branch's PR
-     is `OPEN`, and the plan's `status` is `done` or there is no plan) and no `done` card names
-     the PR's current head (D48): look at `git status`; abort an unfinished merge
+  9. **After a restart** (D41, supersedes D27/D35): if the thread is finishing (the plan's
+     `status` is `done` or there is no plan, and the branch has a PR) and no `done` card names the
+     PR's current head (D48, revised by D52): if the PR is `MERGED`, go to 4; if `CLOSED`, nothing.
+     If `OPEN`: `wc.js git fetch`; if `origin/wc/<thread-id>` is not your local tip, handle it as
+     6 first (D53). Then: look at `git status`; abort an unfinished merge
      (`wc.js git merge --abort`); do not push local commits you cannot account for, ask Collin with
      a `question` card instead. Then resume at 2 with a new window. A latest `done` card with no
      `head` (from before this change) means not waiting.
 - Step 8 still commits `status: done` before the push, so the PR carries it.
+- Step 9's existing item 4 (`OPEN` / `MERGED` with the pushed head / `MERGED` with an older
+  head / `CLOSED` by then, `protocol/app/lead.md:354-359`) is **replaced** by a pointer to the
+  new section; its fetch-and-merge of an updated PR branch (item 3) stays (D54).
 
 ### Edge cases
 
 - Repo without CI: no checks; `CLEAN` → accepted after the lead's 5-minute wait (D39).
 - Repo requiring a review: `BLOCKED` with checks passed → accepted (D28).
 - Main moves after `done`: not re-checked (D5).
-- Collin merges while the lead waits: accepted if merged at the pushed commit (D8, D22).
+- Collin merges while the lead waits: accepted if merged at the pushed commit (D8, D22), or at a
+  later commit that contains it (D44).
 - Hub down when `done` is posted: `card.js` fails with "try again"; the window and the `needs`
   card bound the wait.
 
@@ -250,8 +269,10 @@ outside a merge, unchanged.
 - Card schema test: `done` without `head`, or with a non-40-hex `head`, is refused; through the
   hub, such a card is refused by schema without calling gh.
 - `machine/test/service.test.js`: the existing spool tests that use a `done` card
-  (`machine/test/service.test.js:277,289`) switch to an ordinary kind such as `progress`, so they
-  still cover rejection and drain order. Then: a `done` card with the hub down returns 503 "try again" and
+  (`machine/test/service.test.js:277,289`) switch to `idea`, which the fake hub's role table
+  (`machine/test/service.test.js:42`) already limits to leads, so a worker's `idea` is still
+  refused (expected error "worker may not post idea") and the tests still cover rejection and
+  drain order. Then: a `done` card with the hub down returns 503 "try again" and
   leaves no spool file; a `done` card while other cards are spooled and the hub stays down → 503;
   a `done` whose hub answers 422 after 6 seconds returns 422; other kinds still spool. `wc.js git
   commit` during a conflicted merge, after resolving, completes the merge; with unmerged paths
@@ -421,6 +442,23 @@ Prior note: the full gate keeps producing blocking edge cases (spool delivery, r
 **Lanes:** intent lens (provider per start); mechanics lens (other family); cross-family: yes.
 
 **Changed since the last round:** schema validation before the gate (D42); one retry rule for `done` posts (D43); merged at a descendant commit (D44); failed repair verification and someone else's push (D45); clean merge commit (D46); failed-check diagnosis (D47); restart only for `OPEN` (D48); machine spool test fixtures; one new Accepted Risk (rollout).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Restart skips a PR merged mid-wait; no `done` or merged notice | upheld | D52 |
+| intent | minor | Step 9 item 4 vs new item 4 overlap | upheld | D54 |
+| intent | minor | Stale references (Watch List #1, edge case) | upheld | fixed |
+| mechanics | blocking | Ready PR + hub outage reaches window end with no card | upheld | D51 |
+| mechanics | blocking | Squash-merged, deleted branch: ancestry lookup failure → false stub | upheld | D49 |
+| mechanics | major | Restart doesn't reconcile an advanced PR head | upheld | D53 |
+| mechanics | major | No fallback when Actions logs are unavailable | upheld | D50 |
+| mechanics | minor | Spool fixture switch needs role table change | upheld | Validation: use `idea` |
+
+### Round 7 — 2026-11-17
+
+**Lanes:** intent lens (provider per start); mechanics lens (other family); cross-family: yes.
+
+**Changed since the last round:** merged-at-another-commit lookup (D49); undiagnosable check → `needs` (D50); window deadline is an accepted `done` (D51); restart handles `MERGED` and reconciles an advanced branch (D52, D53); step 9 item 4 replaced (D54); spool test fixture uses `idea`; stale references fixed.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
