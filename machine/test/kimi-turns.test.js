@@ -153,7 +153,7 @@ test('copier does not open source after fatal and ignores swapped opened file', 
 
 test('recovery stops Kimi while leaving Claude and marker-priority panes alone', async () => {
   const { machine } = setup(); machine.sessions = {};
-  const panes = { 'wc-a-worker': '│ >\nAsk When Needed  K3.1 Pro thinking: high  …/clone/wc/db3f0b03dcf6  wc/db3f0b03dcf6\ncontext: 0% (0/256k)', 'wc-b-worker': '│ >\ncontext: 10%', 'wc-c-worker': 'Codex\n│ >\nAsk When Needed K3.1 Pro thinking: high\ncontext: 0%', 'wc-d-worker': '│ >\nNever Ask  K3 thinking: high  …/worktrees/clone/wc-smoke-w2  wc-smoke-w2\ncontext: 7% (17.5k/256k)', 'wc-e-worker': '│ >\nAsk When Needed  K2.7 Code Highspeed thinking\ncontext: 0% (0/256k)', 'wc-f-worker': 'Antigravity CLI\n│ >\nNever Ask K3 thinking: high\ncontext: 0%', 'wc-g-worker': 'Claude Code\n│ >\ncontext: 10%\n  bypass permissions on'  };
+  const panes = { 'wc-a-worker': '│ >\nAsk When Needed  K3.1 Pro thinking: high  …/clone/wc/db3f0b03dcf6  wc/db3f0b03dcf6\ncontext: 0% (0/256k)', 'wc-b-worker': '│ >\ncontext: 10%', 'wc-c-worker': 'Codex\n› input\ncontext: 0%', 'wc-d-worker': '│ >\nNever Ask  K3 thinking: high  …/worktrees/clone/wc-smoke-w2  wc-smoke-w2\ncontext: 7% (17.5k/256k)', 'wc-e-worker': '│ >\nAsk When Needed  K2.7 Code Highspeed thinking\ncontext: 0% (0/256k)', 'wc-f-worker': 'Antigravity CLI\n> input', 'wc-g-worker': 'Claude Code\n│ >\ncontext: 10%\n  bypass permissions on'  };
   machine.liveTmux = () => new Set(Object.keys(panes));
   machine.tmux = args => ({ ok:true, stdout: args[0] === 'capture-pane' ? panes[args.at(-1)] : '/tmp' });
   await machine.recoverFromTmux();
@@ -239,4 +239,9 @@ test('sign-in refuses when no Kimi binary is installed', async () => {
     const machine = Object.create(MachineService.prototype);
     await assert.rejects(machine.startLogin({account:'default-kimi',cli:'kimi'}), /Kimi Code is not installed/);
   } finally { process.env.PATH = oldPath; process.env.HOME = oldHome; }
+});
+test('duplicate turn ends in one read hand off once', async () => {
+  const { machine, session, log, metadata, prompt } = setup();
+  log('duplicate', [metadata, prompt(session.name), ...[0, 0, 1].map(turnId => ({ type: 'turn.ended', agentId: 'main', turnId, reason: 'completed' }))]);
+  await machine.pollKimiTurns(); assert.deepEqual(machine.events.map(event => event.turn_id), [0, 1]);
 });
