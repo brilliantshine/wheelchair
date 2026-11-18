@@ -902,6 +902,20 @@ npm --prefix viewer run test:browser
 | mechanics | blocking | Archive marker saved after ownership evidence is removed | upheld | Saved before archive stops or removes anything |
 | mechanics | major | Retained worktree has no upstream | upheld | `fast-forward` sets upstream |
 
+### Round 10 — 2026-11-17
+
+**Lanes:** intent and mechanics; cross-family: yes.
+
+**Changed since Round 9:**
+- Import table: refusal rows before Create; Create is the last no-thread row.
+- Partial starts: no adoption; unsaved starts marked not live at hub start; Restart cleans up.
+- Cancel waits 5 minutes after the last push attempt (`last_push_at`).
+- Machine: archive record saved before archive cleanup; `fast-forward` sets upstream.
+- Two Accepted Risks added.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
