@@ -135,7 +135,9 @@ Until the lead accepts a Start building press (D27), Collin may ask in chat to c
 mode. Before IDEA.md is written, the lead simply writes the new mode when it writes
 IDEA.md. After IDEA.md is written but before PLAN.md exists, it edits and commits
 `mode:` in IDEA.md, and records the change in PLAN.md's Decision Log when it creates
-PLAN.md. From then on, as below. The lead edits `mode:` in IDEA.md (not a scope change; no
+PLAN.md. From then on, as below. The `deferred` card rules below (retract on a switch
+to thorough, repost with the new `mode` between lighter modes) apply from the moment the
+card is first posted, whether or not IDEA.md or PLAN.md exist yet. The lead edits `mode:` in IDEA.md (not a scope change; no
 Decision Log `idea-change` entry, a `user` entry instead) and:
 - to `thorough`: moves every Deferred item back into the Spec, deletes the section, and
   retracts the `deferred` card (see below);
@@ -361,7 +363,8 @@ it), then: what was
 
 The offer card, the approval card, the Ready check, the progress line, small fixes,
 thorough mode, the stub mechanism (except D43's restart fix, which repairs an existing
-gap for every stub), the app's slug and document rules.
+gap for every stub, and D50's `removed` check, which also covers `idea` cards but
+refuses only presses the app never sends), the app's slug and document rules.
 
 ### Validation
 
@@ -554,6 +557,8 @@ exit. Downgrades and declines cite evidence.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent (claude) | major | Card handling skipped for mode changes before IDEA.md/PLAN.md | upheld | Card rules apply from when the card is first posted |
+| intent (claude) | minor | D50 touches `idea` presses in thorough threads, unnamed exception | upheld | Named in "Not changing" |
 
 ## Prior Work
 
