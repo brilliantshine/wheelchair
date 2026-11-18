@@ -757,6 +757,9 @@ async function pollDead(hub) {
           if (target.started_by) {
             const text = `[wc:from app] your session ${target.name} ended${target.end_reason ? `: ${target.end_reason}` : ''}`;
             await enqueue(hub, thread, target.started_by, text, 'app');
+            if (target.end_reason) {
+              addCard(thread, { kind: 'needs', title: 'Session ended', body: `${target.name} ended: ${target.end_reason}. Its starter has been told.` }, { system: true });
+            }
           } else if (target.role === 'lead') {
             addCard(
               thread,
