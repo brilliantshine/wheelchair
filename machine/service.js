@@ -229,10 +229,10 @@ class MachineService {
     this.drains = new Map();
     this.threadLocks = new Map();
     this.closingThreads = new Map();
-    // Threads archived since this service started. A vouched upload queued behind an archive
-    // would otherwise be admitted; ids are never reused, and a restart drops
-    // any upload still in flight, so memory is enough.
+    this.archiveMarkersPath = path.join(this.stateDir, 'archive-markers.json');
+    this.archivingThreads = new Set();
     this.archivedThreads = new Set();
+    this.archiveMarkerWrites = Promise.resolve();
     this.uploadRequests = new Map();
     this.options = options;
     this.sudo = new SudoRequests(this, atomicWrite, readJson, requestJson);
@@ -248,6 +248,12 @@ class MachineService {
       release();
       if (this.threadLocks.get(id) === current) this.threadLocks.delete(id);
     }
+  }
+  async persistArchiveMarkers() {
+    const write = () => atomicWrite(this.archiveMarkersPath, `${json({ archiving: [...this.archivingThreads], archived: [...this.archivedThreads] })}\n`);
+    const pending = this.archiveMarkerWrites.then(write, write);
+    this.archiveMarkerWrites = pending.catch(() => {});
+    return pending;
   }
   async reserveUpload(id, name) {
     const dir = path.join(this.stateDir, 'uploads', threadName(id));
@@ -333,6 +339,9 @@ class MachineService {
     await this.asideTurns.load();
     await this.sudo.load();
     this.sessions = await readJson(this.sessionsPath, {});
+    const markers = await readJson(this.archiveMarkersPath, { archiving: [], archived: [] });
+    this.archivingThreads = new Set(markers.archiving || []);
+    this.archivedThreads = new Set(markers.archived || []);
     await this.recoverFromTmux();
     await mkdir(path.join(this.stateDir, 'spool', 'cards'));
     await mkdir(path.join(this.stateDir, 'spool', 'events'));
@@ -739,6 +748,8 @@ class MachineService {
     this.closingThreads.set(threadId, (this.closingThreads.get(threadId) || 0) + 1);
     for (const request of this.uploadRequests.get(threadId) || []) request.destroy();
     try { return await this.withThreadLock(threadId, async () => {
+    this.archivingThreads.add(threadId);
+    await this.persistArchiveMarkers();
     const sessions = Object.values(this.sessions).filter(session => !session.name.startsWith('wc-login-') && session.thread_id === threadId);
     const stopped = [];
     for (const session of sessions) {
@@ -800,6 +811,8 @@ class MachineService {
       try { await fsp.rm(path.join(this.stateDir, 'uploads', threadId), { recursive: true, force: true }); uploads_removed = true; this.archivedThreads.add(threadId); }
       catch (error) { uploads_removed = false; uploads_error = error.message; }
     }
+    this.archivingThreads.delete(threadId);
+    await this.persistArchiveMarkers();
     return { stopped, committed, removed, kept, uploads_removed, ...(uploads_error ? { uploads_error } : {}) };
     }); } finally {
       const remaining = this.closingThreads.get(threadId) - 1;
@@ -1301,6 +1314,12 @@ class MachineService {
       for (const project of dirs) if (await fsp.stat(path.join(this.stateDir, 'worktrees', project, 'wc', input.thread_id)).catch(() => null)) { worktreeKnown = true; break; }
       const known = worktreeKnown || Object.values(this.sessions).some(session => session.thread_id === input.thread_id) || this.archivedThreads.has(input.thread_id) || !!this.archivingThreads?.has(input.thread_id);
       return { known, local_branch: local.ok, local_ancestor: local.ok ? await ancestor(local.stdout.trim(), head) : null, checked_out };
+    }
+    if (action === 'reopen') {
+      this.archivingThreads.delete(input.thread_id);
+      this.archivedThreads.delete(input.thread_id);
+      await this.persistArchiveMarkers();
+      return { ok: true };
     }
     if (action === 'running' || action === 'kill') {
       const prefix = `wc-${input.thread_id}-`;

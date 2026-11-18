@@ -1547,3 +1547,30 @@ test('handoff kills exact session names and cancels starts before tmux', async (
     const after = await log(env); assert.doesNotMatch(after, new RegExp(`new-session .* -s ${lead}(?: |\\n)`));
   } finally { if (oldSessions === undefined) delete process.env.FAKE_SESSIONS; else process.env.FAKE_SESSIONS = oldSessions; await env.close(); }
 });
+
+test('archive ownership markers survive restart and reopening clears them', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true }); try {
+    const id = '012345abcdef'; const repo = await project(root); const head = git(['-C', repo, 'rev-parse', 'HEAD']).stdout.trim();
+    let response = await api(env, 'POST', '/v1/archive', { thread_id: id }, hubHeader); assert.equal(response.status, 200, JSON.stringify(response.body));
+    const restarted = new MachineService({ stateDir: env.state, host: '127.0.0.1', port: await port() }); await restarted.init();
+    try {
+      assert.equal(restarted.archivedThreads.has(id), true);
+      let result = await restarted.handoff({ action: 'known', thread_id: id, project: repo, head }); assert.equal(result.known, true, JSON.stringify(result));
+      await assert.rejects(restarted.upload(id, 'a.txt', null, true), /not writable/);
+      result = await restarted.handoff({ action: 'reopen', thread_id: id }); assert.deepEqual(result, { ok: true }, JSON.stringify(result));
+      result = await restarted.handoff({ action: 'known', thread_id: id, project: repo, head }); assert.equal(result.known, false, JSON.stringify(result));
+      const markers = JSON.parse(await fs.readFile(path.join(env.state, 'archive-markers.json'), 'utf8')); assert.deepEqual(markers, { archiving: [], archived: [] });
+    } finally { clearInterval(restarted.pollTimer); clearInterval(restarted.stepsTimer); clearInterval(restarted.trustTimer); }
+  } finally { await env.close(); }
+});
+
+test('a kept-open archive clears archiving and continues to accept uploads', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true }); try {
+    const id = '012345abcdef'; const { worktree } = await startedWorktree(env, root, id);
+    const marker = git(['-C', worktree, 'rev-parse', '--git-path', 'rebase-merge']).stdout.trim();
+    await fs.mkdir(path.resolve(worktree, marker), { recursive: true });
+    const archived = await api(env, 'POST', '/v1/archive', { thread_id: id }, hubHeader); assert.equal(archived.body.kept[0].reason, 'rebase in progress', JSON.stringify(archived.body));
+    assert.equal(env.instance.archivingThreads.has(id), false); assert.equal(env.instance.archivedThreads.has(id), false);
+    const uploaded = await fetch(`${env.base}/v1/uploads?thread_id=${id}&name=test.txt&vouched=1`, { method: 'POST', headers: hubHeader, body: 'hello' }); assert.equal(uploaded.status, 201, await uploaded.text());
+  } finally { await env.close(); }
+});
