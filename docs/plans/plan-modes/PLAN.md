@@ -208,7 +208,8 @@ it does anything else in review (unless a `Build accepted:` line came first).
 Matching is by bullet text. The lead keeps one item's bullet text identical across
 reposts (same `id`, same `text`), and the `Pending pull-back:` and `Pulled back:` entries
 quote that text exactly. A press whose text already has a `Pulled back:` entry is a
-repeat and changes nothing.
+repeat and changes nothing. The lead never gives a new Deferred item a bullet text that
+an earlier item in this thread used.
 
 ### The `deferred` card (D3, D13)
 
@@ -256,7 +257,9 @@ stays deferred. On a change to thorough, retract it.
 Reviewer briefs in a lighter mode name the mode and include the Deferred table as
 settled, like Accepted Risks. reviewer.md gains: in a lighter mode, do not raise a
 Deferred item as missing; do raise a Deferred item that the feature cannot work without
-(that is a finding against the deferral). Lead triage: a finding that is hardening is
+(that is a finding against the deferral). If triage upholds that a Deferred item is
+needed, the lead deletes its row, folds it into the Spec, logs it (source
+`review-round-N`), and reposts the card, in the same save. Lead triage of other findings: a finding that is hardening is
 moved to Deferred with source `review-round-N`; its verdict is `upheld` or `downgraded`
 as usual and it counts as found, and as fixed once its Deferred row is saved. In a
 lighter mode, a finding moved to Deferred does not count against the clean test: a round
@@ -291,7 +294,10 @@ it leaves `status: verifying` as is and starts a new verification attempt on the
 current committed tip (sub-lead.md step 3), with `All-deferred re-check used` meaning the
 allowance is spent. The lead's brief for the replacement names any verification answer
 the lead already gave (a per-gap defer/fix answer or Collin's choice) that the Log does
-not yet show, so the replacement applies it rather than asking again.
+not yet show, so the replacement applies it rather than asking again. If the brief
+carries Collin's "Defer them and finish", the replacement starts no verification: it
+does step 2 for those gaps with the `Deferred and finished at Collin's choice` line and
+sends its `result` as below.
 A deferred gap never counts toward the two-attempt rule. If the one all-deferred
 re-check has already run in this build and another attempt fails, the lead answers step
 1 as usual (defer the hardening gaps, fix the rest; remediation runs for the rest) in
@@ -304,6 +310,11 @@ answer itself; nothing is saved to Deferred yet, and it asks Collin a `question`
   `commit` the step-2 commit, summary saying these gaps were deferred at Collin's
   choice) with no further verifier pass, as "push it as it is" ends a surviving gap
   today. The `done` card's `note` says so.
+
+When a gap has survived two fix attempts, today's surviving-gap rule comes first for
+that gap (sub-lead.md step 6: stop and message the lead). Hardening gaps in the same
+attempt are still answered "defer" and saved by step 2 before the sub-lead stops; the
+lead then asks Collin today's surviving-gap question about the rest.
 
 Never deferrable in verification: a failing validation command from the Spec's
 Validation section, and a gap in an item Collin pulled back. These go to remediation.
@@ -559,6 +570,12 @@ exit. Downgrades and declines cite evidence.
 |------|----------|---------|--------------|------------|
 | intent (claude) | major | Card handling skipped for mode changes before IDEA.md/PLAN.md | upheld | Card rules apply from when the card is first posted |
 | intent (claude) | minor | D50 touches `idea` presses in thorough threads, unnamed exception | upheld | Named in "Not changing" |
+| mechanics (gpt) | blocking | Restarted lead can't tell a delivered pull-back from an idea removal when the card was replaced | user-decision | Restart-timing fork put to Collin |
+| mechanics (gpt) | blocking | Replacement sub-lead re-verifies despite Collin's "defer and finish" | upheld | Replacement applies it with no new attempt |
+| mechanics (gpt) | major | Never-changed thorough thread has no durable lock if the lead dies after accepting Start building | user-decision | Restart-timing fork put to Collin |
+| mechanics (gpt) | major | Precedence between a surviving gap and new hardening gaps | upheld | Surviving-gap rule first; hardening saved before stopping |
+| mechanics (gpt) | major | Review upholding a Deferred item as needed leaves its row | upheld | Row removed in the same save |
+| mechanics (gpt) | minor | Pull-back dedup is thread-wide but text uniqueness only per card | upheld | Texts never reused in a thread |
 
 ## Prior Work
 
