@@ -1,6 +1,6 @@
 ---
 slug: self-check-steps
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-18
 ---
 
@@ -57,6 +57,29 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 ## Spec
 
 ### What Collin gets
+
+```mermaid
+flowchart TD
+  D[Done card accepted] --> FF{Local tip is the done version?}
+  FF -- no, fast-forward fails --> NT[All steps: not tried]
+  FF -- yes --> W[Lead writes 1-6 steps]
+  W --> V[One steps-only checking agent tries them in an isolated copy]
+  V --> R{Each step}
+  R -- saw it --> M[matched]
+  R -- could not try --> N[not tried + reason]
+  R -- worded wrong --> RW[Reword, re-try once]
+  R -- work is wrong --> B[didn't work + what it saw]
+  M --> C[Check it yourself card]
+  N --> C
+  NT --> C
+  RW --> C
+  B --> C
+  C -- has a broken step --> BTN[Fix it now / Leave it]
+  BTN -- Fix it now --> F[Handled like a problem Collin reported]
+```
+
+The picture leaves out restarts, retries and the first-release stand-in; the text below
+covers them.
 
 A few minutes after every accepted `done` card (once an agent has tried the steps on
 exactly that version), the lead posts a `check` card: "Check it yourself".
@@ -200,7 +223,9 @@ the done head are kept.
   already requires, so the hub recovers the original session instead of starting a second. The lead fixes what it can and starts a fresh
   verifier. After two failed tries for the same head, every step not yet resolved is posted
   `agent: not-tried`, `note` "an agent could not set up to try it: <short reason>", and the
-  lead carries on (check card, then any stub).
+  lead carries on (check card).
+- A steps verifier that has not started 30 minutes after the lead asked for it (for example
+  waiting for an account) is stopped and counts as a failed try.
 
 **Posting.** Post the `check` card with the done card's `head`. One check card per head: if
 a retried `done` was recorded twice at the same head, the one check card covers both. A
@@ -211,8 +236,8 @@ queued); if not, it says in a line that a newer version has replaced it and does
 Otherwise it handles it as a problem Collin reported (step 9, which checks the PR state
 first), using the broken steps' notes as the report. `[card <id>] leave it` gets a one-line
 reply and nothing else. In
-a two-part thread the follow-up `stub` is posted after the check card. The `check` card is
-never a condition for `done`.
+a two-part thread the follow-up `stub` is posted right after `done`, as today, without
+waiting for the check card. The `check` card is never a condition for `done` or the stub.
 
 A new `done` accepted while a steps verifier for an older head is running: the lead stops
 that verifier, posts no check card for the older head, and starts over for the new one.
@@ -220,6 +245,8 @@ that verifier, posts no check card for the older head, and starts over for the n
 **Restart.** After `[wc:context restart]`:
 - The lead runs `session list` and stops any live steps verifier the dead lead started (its
   report would go to the dead lead); any steps it was trying are tried afresh below.
+- A `fix what the check found` press in the context's recent messages with no lead reply
+  after it is handled now, as on "Posting" (current-head check first).
 - If the latest done card in its context without `retracted_at` has a `head` and no `check`
   card has that `head`, and the local `HEAD` equals that `head` or is an ancestor of it
   (fast-forward as above), the lead writes and tries the steps as above and posts. A duplicate refusal means the original arrived; any other
@@ -368,6 +395,9 @@ re-raise them.
 | A step that shows the work broken reaches Collin after Done, as a marked step with "Fix it now" and "Leave it" buttons, instead of being fixed first | Collin's choice (Decision 14); Done still means the work passed its own checks | 5 |
 | The check card arrives some minutes after Done | It is tried on exactly the Done version first | 5 |
 | The first-release stand-in `needs` card shows a short version id, and its buttons are "Keep going" / "Talk about it" rather than "Fix it now" / "Leave it" | One-time card in this thread only (Decision 18); "Talk about it" serves as leaving it | 9 |
+| A steps verifier the machine started without acknowledging can run alongside a replacement after a lead restart | Rare session-recovery case (Decision 18); the worst outcome is a duplicate refused by the one-check-per-head rule | 9 |
+| On the first-release stand-in, "Talk about it" closes the card and its fix offer | One-time card (Decision 18); Collin can still ask for the fix in chat | 9 |
+| A handoff exported by an updated hub with a `check` entry is refused by a hub still on the old code | Handoffs move between machines of one install kept at the same version (the Ready check compares versions) | 9 |
 | A check card still queued when the thread is archived or handed off is refused and lost | Archive and handoff end the thread's work; the done card and PR remain | 1 |
 | Other items can appear between `done` and `check` in the conversation | The card names what it checks; the gap is the time to try the steps | 1 |
 
@@ -616,6 +646,11 @@ Final round (Decision 18).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | major | A verifier waiting for an account holds the check card and the two-part stub | upheld | Stub posted right after done as today; a verifier not started in 30 minutes is a failed try |
+| mechanics | major | Fix press accepted, lead dies before acting: nothing happens | upheld | Restarted lead handles an unanswered fix press from recent messages |
+| mechanics | minor | Unacknowledged verifier start survives restart cleanup | accepted-risk | Decision 18 |
+| mechanics | minor | First-release "Talk about it" loses the fix offer | accepted-risk | Decision 18 |
+| mechanics | minor | Handoff with `check` refused by an old hub | accepted-risk | Same-version install |
 | intent | minor | Rewritten `see` never re-tried | upheld | Rewrite keeps every reported detail and adds none |
 | intent | minor | First-release card shows a version id and needs-card buttons | accepted-risk | One-time stand-in (Decision 18) |
 | intent | minor | First-release card has no "Leave it" | accepted-risk | "Talk about it" serves; one-time stand-in (Decision 18) |
