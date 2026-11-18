@@ -68,6 +68,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 31 | Kimi status separates `authenticated` (sign-in worked) from `logged_in` (eligible for agents); `loginEnv` always passes the effective `KIMI_CODE_HOME`; `cliStatus('kimi')` uses the adapter's resolver | Review round 5 gaps | review-round-5 |
 | 32 | Kimi sign-in succeeds only on this attempt's success and `authenticated`; account problems are shown on the Settings account row; the Kimi home path is absolute; files with multi-line strings are not edited | Review round 6 gaps | review-round-6 |
 | 33 | Kimi sign-in completes only from the wrapper's exit marker; account problems are per machine; unreadable or multi-line-string configs are neither read nor edited | Review round 7 gaps | review-round-7 |
+| 34 | Only the main agent's Stop ends a turn; hook prep guards against concurrent writes; sign-in results are kept per attempt; folder trust checks which option is selected | Review round 8 gaps | review-round-8 |
 
 ## Spec
 
@@ -143,8 +144,8 @@ has a 3-second budget). `machine/adapters/kimi.js` has a small line reader for
   write it; agent start on that home is refused with the same sentence.
   Contains a multi-line string delimiter (`"""` or `'''` anywhere): no facts are
   trusted for reading **or** editing (a header- or key-shaped line could sit inside a
-  string): `logged_in: false`, `authenticated: false`, and the multi-line `problem`
-  below; no edit; agent start refused. Tests cover a real OAuth table alongside a
+  string): `logged_in: false`, `authenticated` from the credentials folder (see "Sign-in
+  success versus being usable"), and the multi-line `problem` below; no edit; agent start refused. Tests cover a real OAuth table alongside a
   multi-line value containing a fake one (refused, not misread), and an unreadable
   file (left untouched, start refused).
 Unit tests run it on a fixture copying the logged-in shape below (with dummy values),
@@ -221,9 +222,11 @@ the reader must tolerate any key order within a table.
   (`viewer/pages/settings.js:481,522`), with no other change.
 - **Folder trust.** First launch in a folder shows a "Trust this folder?" screen
   (`❯ Trust and continue` / `Exit`). `answerPrompts(session, pane)` (the existing
-  contract, `machine/service.js:694`) returns `{ step: 'trust', keys: ['Enter'] }` when the
-  pane contains `Trust this folder?` and `Trust and continue` (the first, selected
-  option), and `null` otherwise,
+  contract, `machine/service.js:694`), when the pane contains `Trust this folder?`,
+  returns `{ step: 'trust', keys: ['Enter'] }` if the selection marker is on the trust
+  option (a line matching `❯\s*Trust and continue`), or `{ step: 'trust', keys: ['Up',
+  'Enter'] }` if it is on `Exit` (`❯\s*Exit`), and `null` otherwise. Tests cover both
+  selections,
   as `agy.js` handles its onboarding screens. Nothing is pre-written into Kimi's
   `workspace-trust/` directory (its key format is internal).
 - **Ready text:** the pane shows the input box line `│ >` and the footer's `context:`
@@ -258,29 +261,53 @@ the reader must tolerate any key order within a table.
   `command = "<root>/machine/hook.sh kimi"`. Kimi rejects unknown fields in a hook entry,
   so only `event`, `command` and optionally `timeout` are written. Rewriting is idempotent
   (no duplicate entries on repeat), keeps every other line of the file, keeps the file
-  mode, and writes atomically (temp + rename). Hooks are global per home; there is no
+  mode, and writes atomically (temp + rename). **Concurrent writes:** Kimi (for
+  example a sign-in) may rewrite the file while wheelchair prepares it. Just before
+  publishing, `prepare()` re-reads the file and compares it byte for byte with the
+  snapshot it edited; if it changed, it starts over from the new content, up to three
+  times, then gives up with
+  `problem: "Kimi Code's config.toml kept changing; try again"` (no write, agent start
+  refused until a later prepare succeeds). On the absent-file path it creates the file
+  with an exclusive create (`fs.linkSync(temp, file)`, which fails if the file now
+  exists) and on that failure starts over as an edit. Tests simulate a change between
+  read and publish, and a file appearing on the absent path. Hooks are global per home; there is no
   project-level hook file. A wheelchair rule is a `[[hooks]]` table whose `command` is
   wheelchair's hook path and whose `event` is one of the three. It is left as is only if
-  it has exactly `event`, `command` and optionally `timeout`; one with any other field
-  (such as a `matcher` that could suppress it) is rewritten in place to the exact form. A
+  it has exactly `event`, `command` and optionally a `timeout` that is an integer from 1
+  to 600 (Kimi's allowed range); one with any other field (such as a `matcher` that
+  could suppress it) or an out-of-range or non-integer `timeout` is rewritten in place to
+  the exact form (no `timeout`). A
   missing one is appended.
-  If the file contains a multi-line string (`"""` or `'''` anywhere), where a
-  header-shaped line could sit inside a value, the adapter treats it exactly like the
-  inline-hooks case below (no edit, same refusal rule) with
-  `problem: "Kimi Code's config.toml has multi-line strings wheelchair can't safely edit"`.
-  If the file assigns `hooks` with `=` at the top level (`hooks = []` or an inline array,
-  which a later `[[hooks]]` would make invalid TOML), the adapter does not edit the file;
-  the Kimi status for that home carries
-  `problem: "Kimi Code's config.toml sets hooks = …; change it to [[hooks]] tables"` and
-  `logged_in: false`, so Ready names it. Kimi status entries also carry
-  `authenticated` (true when the oauth credentials exist, regardless of region or
-  hooks). `machine/service.js` `loginState` decides sign-in success from
+- **Configs wheelchair will not edit.** Two cases, besides the unreadable file in
+  "Reading a Kimi home's config":
+  - a multi-line string delimiter anywhere in the file:
+    `problem: "Kimi Code's config.toml has multi-line strings wheelchair can't safely edit"`;
+  - a top-level `hooks` assignment with `=` (bare or quoted key; `hooks = []` or an
+    inline array, which a later `[[hooks]]` would make invalid TOML):
+    `problem: "Kimi Code's config.toml sets hooks = …; change it to [[hooks]] tables"`.
+
+  In both, the home's status is `logged_in: false` with that `problem`, so Ready names
+  it. `seed()` and `prepare()` never throw: they leave the file untouched and return.
+  Agent start (`startNamed`) re-reads the file and refuses to start a Kimi session on that
+  home with the same sentence, so no session runs without wheelchair's hooks. Sign-in is
+  not refused: `kimi login` runs as usual (it needs no hooks).
+  Tests: agent start on a signed-in home with `hooks = []`, with `"hooks" = []`, and with
+  a multi-line string is refused; sign-in on such a home proceeds, and wheelchair's own
+  `seed()`/`prepare()` calls leave the file unchanged (asserted before the fake
+  `kimi login` runs, since a real login writes the file itself).
+- **Sign-in success versus being usable.** Kimi status entries also carry
+  `authenticated`: true when the managed provider's credentials file exists (from the
+  oauth `key`), or, when the config is not trusted for reading (multi-line strings),
+  when any `*.json` file exists in `<home>/credentials/`. It ignores region and hooks
+  problems. `machine/service.js` `loginState` decides sign-in success from
   `authenticated` when present, else `logged_in` (other CLIs unchanged): for Kimi,
   sign-in is `done` only when this attempt's exit marker is `__wc_login_exit 0` **and**
-  `authenticated` is true; a nonzero exit is `failed` even if older credentials exist. The `logged_in` field
-  `loginState` returns is `authenticated` for Kimi, so the Settings page
-  (`viewer/pages/settings.js:1056`, which needs `state === 'done' && logged_in`) shows
-  "Signed in." on a home with inline hooks or China region.
+  `authenticated` is true; a nonzero exit is `failed` even if older credentials exist.
+  The `logged_in` field `loginState` returns is `authenticated` for Kimi, so the Settings
+  page (`viewer/pages/settings.js:1056`, which needs `state === 'done' && logged_in`)
+  shows "Signed in." on a home with a China region, inline hooks or multi-line strings,
+  and the account row then shows the problem (next bullet). `authenticated` is read only
+  by the machine's `loginState`; it is not carried to the hub.
 - **Showing a problem on the account.** The problem is per machine, like sign-in state.
   `viewer/app/usage.js:57` keeps its boolean `accounts[id]` map untouched (placement and
   usage polling read it by truthiness). The per-machine value built at `usage.js:99`
@@ -289,22 +316,12 @@ the reader must tolerate any key order within a table.
   `logged_in: false` and a `problem`. The Settings account row
   (`viewer/pages/settings.js:1141-1150`) shows that machine's sentence in place of
   "signed out"; its Sign in button stays (signing in again fixes the China-region case).
-  `authenticated` is read only by the machine's `loginState`; it is not carried to the
-  hub. A test has one Kimi account on two machines, signed in on one and with a
-  problem on the other, and checks each machine's row and that placement still uses the
-  signed-in machine. Tests:
-  a browser test where the machine reports a Kimi account with `authenticated: true,
-  logged_in: false, problem: …` shows the sentence; a sign-in on a China-region and on an
-  inline-hooks home ends with "Signed in."; a cancelled re-login (nonzero exit) on a home
-  with old credentials ends as failed. `seed()` and `prepare()` never throw for this:
-  they leave the file untouched and return. Agent start (`startNamed`) then re-reads the
-  file and refuses to start a Kimi session on that home with the same sentence, so no
-  session runs without wheelchair's hooks. Sign-in is not refused: `kimi login` runs as
-  usual (it needs no hooks), and the account's status shows the problem afterwards.
-  Tests: agent start on a signed-in home with `hooks = []` and with `"hooks" = []` is
-  refused; sign-in on such a home proceeds, and wheelchair's own `seed()`/`prepare()`
-  calls leave the file unchanged (the assertion is made before the fake `kimi login`
-  runs, since a real login writes the file itself). Tests cover: a fresh file, a file with other
+  Tests: one Kimi account on two machines, signed in on one and with a problem on the
+  other, shows each machine's row correctly and placement uses the signed-in machine; a
+  browser test where the machine reports a Kimi account with `logged_in: false` and a
+  `problem` shows the sentence; sign-in on a China-region, an inline-hooks and a
+  multi-line-string home each ends with "Signed in."; a cancelled re-login (nonzero
+  exit) on a home with old credentials ends as failed. Tests cover: a fresh file, a file with other
   `[[hooks]]` rules, a rerun (no duplicates), and the `hooks = []` refusal.
 - `machine/hook.sh` gets a `kimi` case: session name **only** from
   `WHEELCHAIR_SESSION_NAME` (the hook rule passes no second argument, so do not copy
@@ -315,7 +332,17 @@ the reader must tolerate any key order within a table.
   `client_type`, `session_title`, `turn_id`, `step`, `first_step_of_turn`,
   `finish_reason`, `usage`, `stop_hook_active`. There is **no transcript path**.
 - `hookEvent(raw)`:
-  - `Stop` → `{ type: 'turn-ended', conversation_id: raw.session_id }`.
+  - `Stop` → `{ type: 'turn-ended', conversation_id: raw.session_id }`, but only for
+    the **main agent**. Kimi runs Stop hooks for its built-in subagents too, with the
+    same `session_id`. So before forwarding a Stop, the adapter checks the bound main
+    transcript (`agents/main/wire.jsonl`): if it has a `tool.call` loop event with no
+    later `tool.result` of the same `toolCallId` (the main agent is still waiting on a
+    tool, such as a subagent), the Stop is ignored (`{ ignored: true }`); otherwise it
+    is forwarded. If the payload itself names the agent (the worker checks the 2.6.3
+    payload for an agent id during the live check), a non-main agent id is ignored
+    directly. The live check runs one Kimi turn that uses a subagent and confirms exactly
+    one turn end reaches the hub. Unit test: a transcript with an open `tool.call` makes
+    a Stop ignored.
   - `StopFailure` → `limit-hit` when its error text matches
     `quota|rate.?limit|429`, else `turn-failed` with the error text; both carry
     `conversation_id: raw.session_id`. Before a Kimi `limit-hit` or `turn-failed` reaches
@@ -386,9 +413,15 @@ the reader must tolerate any key order within a table.
 - `loginDone(pane)` returns false for Kimi: completion comes only from the wrapper's
   exit marker (`__wc_login_exit <n>`), which stays on the pane (the wrapper sleeps after
   it) so repeated polls see the same result. Exit 0 and `authenticated` → `done`; any
-  other code → `failed`. The pane is not killed on success by the Kimi path. Tests:
-  repeated polls after a successful login all return `done`; a cancelled login (nonzero
-  exit) on a home with old credentials returns `failed`.
+  other code → `failed`. The pane is not killed on success by the Kimi path. The first
+  terminal result seen (`done` or `failed`) is kept on the login record and returned on
+  every later poll of that attempt, even after the pane is gone; starting a new sign-in
+  for the account clears it. With no marker yet: a failed pane capture while the
+  `wc-login-<account>` tmux session still exists is `waiting` (transient; keep
+  polling); if the tmux session no longer exists and no result was kept, `failed`.
+  Tests: repeated polls after a successful login all return `done`, including after the
+  pane is killed; a cancelled login (nonzero exit) on a home with old credentials returns
+  `failed`; a capture failure with the session alive returns `waiting`.
 - `loginStatus(dir)` (no CLI spawn; see "Reading a Kimi home's config"):
   - logged in when the managed provider's oauth `key` is present and
     `<home>/credentials/<key with the leading "oauth/" removed>.json` exists. Observed
@@ -665,6 +698,22 @@ exit. Downgrades and declines cite evidence.
 **Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 7:** account problems are a third per-machine form in `usage.js` (boolean map untouched; `authenticated` stays on the machine); Kimi sign-in completes only from the wrapper's exit marker, pane kept; config file states (absent, unreadable, multi-line strings) and what each does to reads, edits and start; `answerPrompts(session, pane)` contract for folder trust; new tests.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Multi-line config sign-in reported failed | upheld | `authenticated` from the credentials folder in that case |
+| intent | minor | Refusal text sat under the account-row bullet | upheld | Regrouped into three bullets |
+| mechanics | blocking | Subagent Stop can end the main turn | upheld | Stop ignored while the main transcript has an open tool call; live check with a subagent |
+| mechanics | blocking | Owned rule with `timeout = 0` kept | upheld | Timeout must be 1–600 or the rule is rewritten |
+| mechanics | blocking | Concurrent Kimi write lost by rename | upheld | Re-read and compare before publishing; exclusive create on the absent path |
+| mechanics | major | Missing exit marker ambiguous | upheld | Kept result per attempt; `waiting` on transient capture failure |
+| mechanics | major | Enter could hit `Exit` | upheld | Selection-marker check; Up+Enter when `Exit` selected |
+
+### Round 9 — 2026-11-18
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 8:** multi-line-string homes sign in successfully (`authenticated` from the credentials folder); refusal and sign-in rules regrouped into "Configs wheelchair will not edit", "Sign-in success versus being usable" and "Showing a problem on the account"; Stop forwarded only for the main agent (open tool call check); owned hook `timeout` range; concurrent-write guard in `prepare()`; sign-in result kept per attempt and transient capture failures; folder-trust selection check.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
