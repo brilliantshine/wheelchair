@@ -410,6 +410,15 @@ exit. Downgrades and declines cite evidence.
 | mechanics | major | Report extraction ignores turn id | accepted-risk | Matches every existing CLI; reviewers run one turn |
 | mechanics | minor | Test list asks for superseded rewrite and cwd binding | upheld | Same fix as intent finding 3 |
 
+### Round 3 — 2026-11-18
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 2:** new "Reading a Kimi home's config" section (no CLI spawn; region from `oauth_host`, credentials from oauth `key`); optional `problem` on machine status entries and how Ready and placement use it; version floor via `problem`; effort through a launch-only `env` from `command()` with `accountDir` in context; hook-config merge rules and `hooks =` refusal; hook.sh reads the session name only from env; binding outcomes (`unverified`, `ignored`) and hub handling of `interrupted`/`unverified`; Settings "Other…" field accepts a slashed Kimi alias; machine test list rewritten; one Accepted Risk.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 Parts of the Spec already built before this plan reached Stage 3 — adopted from outside
