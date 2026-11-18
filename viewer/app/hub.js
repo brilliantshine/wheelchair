@@ -10,6 +10,7 @@ const chat = require('./chat.js');
 const sessions = require('./sessions.js');
 const threads = require('./threads.js');
 const views = require('./views.js');
+const handoff = require('./handoff.js');
 const { handle } = require('./routes.js');
 
 class Hub {
@@ -36,6 +37,11 @@ class Hub {
     this.threadsDir = this.state.threadsDir;
     this.lastSeen = new Map();
     this.threadLocks = new Map();
+    this.runningHandoffOps = new Set();
+    this.uploadsInFlight = new Map();
+    this.handoffStatus = new Map();
+    this.handoffStatusAt = new Map();
+    this.handoffInspect = new Map();
     this.nameQueue = Promise.resolve();
     const configuredRetry = Number(queueRetryInterval ?? process.env.WHEELCHAIR_QUEUE_RETRY_MS ?? 5_000);
     this.queueRetryInterval = Number.isFinite(configuredRetry) && configuredRetry > 0 ? configuredRetry : 5_000;
@@ -47,6 +53,7 @@ class Hub {
 
   async init() {
     await this.state.init();
+    await handoff.sweepFiles(this);
     for (const [name, machine] of Object.entries(await this.state.machines())) {
       if (machine.last_seen) this.lastSeen.set(name, machine.last_seen);
     }
@@ -122,7 +129,7 @@ class Hub {
   enqueue(thread, name, text, source, first) {
     return sessions.enqueue(this, thread, name, text, source, first);
   }
-  sendNow(id, at) { return this.withThread(id, async () => sessions.sendNow(this, await this.thread(id), String(at || ''))); }
+  sendNow(id, at) { return this.withThread(id, async () => { const thread = await this.thread(id); handoff.refuseFrozen(this, thread); return sessions.sendNow(this, thread, String(at || '')); }); }
   deliver(thread, name, options) { return sessions.deliver(this, thread, sessions.session(thread, name), options); }
   appendSent(thread, entries) { return this.state.appendSent(thread.id, entries); }
   async event(payload) { const result = await this.withThread(payload.thread_id, () => sessions.event(this, payload)); if (payload.reading && !result.duplicate) await sessions.retryWaiting(this); return result; }
@@ -156,7 +163,60 @@ class Hub {
     this.mergePolling = threads.pollMerged(this).finally(() => { this.mergePolling = null; });
     return this.mergePolling;
   }
-  chat(id) { return this.withThread(id, () => chat.chat(this, id)); }
+  exportThread(id) { return handoff.exportThread(this, id); }
+  async handoffBanner(id) {
+    for (;;) {
+      const snapshot = await this.withThread(id, async () => {
+        const thread = await this.thread(id);
+        if (!thread.handed_off) throw require('./state.js').appError(404, 'thread has not been handed off');
+        const cached = this.handoffInspect.get(id);
+        if (cached && cached.head === thread.handed_off.head && cached.at === thread.handed_off.at && Date.now() - cached.time < 60_000) return { cached: cached.value };
+        return { thread };
+      });
+      if (snapshot.cached) return snapshot.cached;
+      const value = await handoff.banner(this, snapshot.thread);
+      const current = await this.withThread(id, async () => {
+        const thread = await this.thread(id);
+        if (!thread.handed_off) throw require('./state.js').appError(404, 'thread has not been handed off');
+        if (thread.handed_off.head !== snapshot.thread.handed_off.head || thread.handed_off.at !== snapshot.thread.handed_off.at) return false;
+        this.handoffInspect.set(id, { head: thread.handed_off.head, at: thread.handed_off.at, time: Date.now(), value });
+        return true;
+      });
+      if (current) return value;
+    }
+  }
+  handoffFile(id) { return this.withThread(id, async () => { const thread = await this.thread(id); return { bytes: await handoff.savedFile(this, thread), filename: handoff.handoffFileName(thread.title) }; }); }
+  frozen(thread) { return handoff.frozen(this, thread); }
+  quietReason(thread) { return handoff.quietReason(this, thread); }
+  exportReason(thread, status, options) { return handoff.exportReason(this, thread, status, options); }
+  async refreshHandoffStatus(snapshot) {
+    try {
+      const status = await this.client.handoff(snapshot.machine, {
+        action: 'status', thread_id: snapshot.id, project: snapshot.project,
+        worktree: snapshot.worktree, slug: snapshot.slug,
+      });
+      if (status.result === 'failed') return;
+      await this.withThread(snapshot.id, async () => {
+        const current = await this.thread(snapshot.id);
+        if (!current.archived && !current.handed_off && ['machine', 'project', 'worktree', 'slug'].every((key) => current[key] === snapshot[key])) this.handoffStatus.set(snapshot.id, status);
+      });
+    } catch { /* Keep the last successful status until the next refresh. */ }
+  }
+  async chat(id) {
+    // Chat can save a discovered slug, so assemble it under the thread lock.
+    const snapshot = await this.withThread(id, async () => {
+      const result = await chat.chat(this, id);
+      const thread = await this.thread(id);
+      const last = this.handoffStatusAt.get(id);
+      const refresh = !thread.archived && !thread.handed_off && thread.worktree && thread.slug && (last === undefined || Date.now() - last >= 60_000);
+      if (refresh) this.handoffStatusAt.set(id, Date.now());
+      const reason = this.exportReason(thread, this.handoffStatus.get(id));
+      result.thread.export = { ok: !reason, reason };
+      return { result, thread, refresh };
+    });
+    if (snapshot.refresh) this.refreshHandoffStatus(snapshot.thread).catch(() => {});
+    return snapshot.result;
+  }
   features() { return views.features(this); }
   sessions() { return views.sessions(this); }
   findSessionMachine(name) { return views.findSessionMachine(this, name); }

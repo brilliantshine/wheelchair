@@ -95,6 +95,24 @@ class MachineClient {
     }
   }
 
+  // Handoff git actions can take longer than ordinary machine calls; bound the whole call.
+  async handoff(machineName, input) {
+    const limit = this.handoffTimeout || 120_000;
+    let timer;
+    const deadline = new Promise((resolve, reject) => {
+      timer = setTimeout(() => reject(new Error("The machine didn't answer in time")), limit);
+    });
+    try {
+      return await Promise.race([
+        this.call(machineName, '/v1/handoff', 'POST', input, limit).catch((error) => {
+          if (error.message === 'machine timeout') throw new Error("The machine didn't answer in time");
+          throw error;
+        }),
+        deadline,
+      ]);
+    } finally { clearTimeout(timer); }
+  }
+
   async stream(machineName, suffix, method, readable) {
     const machine = await this.state.machine(machineName);
     const secret = await this.secret(machine);

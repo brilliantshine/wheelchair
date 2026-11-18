@@ -67,27 +67,37 @@ async function handle(hub, request, response, url, machineAuthenticated) {
 }
 
 async function upload(hub, request, response, url, id) {
-  const thread = await hub.thread(id);
-  const lead = thread.sessions.find((session) => session.role === 'lead' && session.live);
-  if (thread.archived || !lead) throw appError(409, 'no live lead or thread is archived');
   const length = request.headers['content-length'];
   if (typeof length !== 'string' || !/^\d+$/.test(length) || Number(length) > UPLOAD_LIMIT) throw appError(413, 'missing or oversized content-length');
-  const query = new URLSearchParams({ thread_id: id, name: url.searchParams.get('name') || '' });
-  // The checks above are the gate. A lead waiting for room or starting has no session on the
-  // machine yet, so tell the machine the thread is open rather than have it judge the lead.
-  query.set('vouched', '1');
-  let result;
+  const thread = await hub.withThread(id, async () => {
+    const current = await hub.thread(id);
+    require('./handoff.js').refuseFrozen(hub, current);
+    const lead = current.sessions.find((session) => session.role === 'lead' && session.live);
+    if (current.archived || !lead) throw appError(409, 'no live lead or thread is archived');
+    hub.uploadsInFlight.set(id, (hub.uploadsInFlight.get(id) || 0) + 1);
+    return current;
+  });
+  const query = new URLSearchParams({ thread_id: id, name: url.searchParams.get('name') || '', vouched: '1' });
   try {
-    result = await hub.client.stream(thread.machine, `/v1/uploads?${query}`, 'POST', request);
+    const result = await hub.client.stream(thread.machine, `/v1/uploads?${query}`, 'POST', request);
+    response.writeHead(result.status, { 'content-type': result.headers['content-type'] || 'application/json' });
+    await new Promise((resolve) => {
+      response.once('finish', resolve);
+      response.once('close', resolve);
+      result.body.on('error', () => { response.destroy(); resolve(); });
+      result.body.pipe(response);
+    });
   } catch (error) {
     if (error.status || !error.machineConnection) throw error;
     if (response.headersSent) response.destroy();
     else if (response.writable && !response.destroyed) send(response, 409, { error: 'upload cancelled by the machine' });
-    return;
+  } finally {
+    await hub.withThread(id, () => {
+      const remaining = (hub.uploadsInFlight.get(id) || 1) - 1;
+      if (remaining) hub.uploadsInFlight.set(id, remaining);
+      else hub.uploadsInFlight.delete(id);
+    });
   }
-  response.writeHead(result.status, { 'content-type': result.headers['content-type'] || 'application/json' });
-  result.body.on('error', () => response.destroy());
-  result.body.pipe(response);
 }
 
 // Spec "Hub", Routes: everything the New thread screen needs for one machine in one answer.
@@ -402,11 +412,11 @@ async function handleThreads(hub, request, response, url, bits, body) {
     // (cards, sent messages, briefs), which is most of the bytes and none of the list.
     const lean = url.searchParams.get('view') === 'list';
     const threads = all.map((thread) => {
-      if (!lean) return { ...thread, sessions: thread.sessions.map(publicSession) };
+      if (!lean) return { ...thread, handed_off: thread.handed_off || null, sessions: thread.sessions.map(publicSession) };
       const { cards, sent, delivered_ids, context, pinned, archive, queues, sudo_index, ...summary } = thread;
       // A small fix writes no plan, so it has no stage; its done card is what says it finished.
       const doneCard = (cards || []).some((card) => card.kind === 'done' && !card.replaced);
-      return { ...summary, done_card: doneCard, sessions: thread.sessions.map(({ name, role, live, ready, turn_ended, created_at }) => ({ name, role, live, ready, turn_ended, created_at })) };
+      return { ...summary, handed_off: thread.handed_off || null, done_card: doneCard, sessions: thread.sessions.map(({ name, role, live, ready, turn_ended, created_at }) => ({ name, role, live, ready, turn_ended, created_at })) };
     });
     return send(response, 200, { threads });
   }
@@ -416,10 +426,22 @@ async function handleThreads(hub, request, response, url, bits, body) {
   }
   if (!bits[1]) throw appError(404, 'route not found');
   const id = bits[1];
+  if (request.method === 'GET' && bits[2] === 'handoff' && bits.length === 3) return send(response, 200, await hub.handoffBanner(id));
+  if (request.method === 'GET' && bits[2] === 'handoff-file' && bits.length === 3) {
+    const file = await hub.handoffFile(id);
+    response.writeHead(200, { 'content-type': 'application/json', 'content-disposition': `attachment; filename="${file.filename}"` });
+    return response.end(file.bytes);
+  }
+  if (request.method === 'POST' && bits[2] === 'export' && bits.length === 3) {
+    const file = await hub.exportThread(id);
+    response.writeHead(200, { 'content-type': 'application/json', 'content-disposition': `attachment; filename="${file.filename}"` });
+    return response.end(file.bytes);
+  }
   if (bits[2] === 'asides') {
     const asides = require('./asides.js');
     const result = await hub.withThread(id, async () => {
       const thread = await hub.thread(id);
+      if (request.method !== 'GET') require('./handoff.js').refuseFrozen(hub, thread);
       if (request.method !== 'GET' && thread.archived) throw appError(409, 'this thread is archived');
       if (bits.length === 3 && request.method === 'POST') return { status: 201, body: asides.brief(await asides.create(hub, thread, body)) };
       if (!bits[3]) throw appError(404, 'route not found');
@@ -466,6 +488,7 @@ async function handleThreads(hub, request, response, url, bits, body) {
   if (request.method === 'POST' && bits[2] === 'messages') {
     await hub.withThread(id, async () => {
       const thread = await hub.thread(id);
+      require('./handoff.js').refuseFrozen(hub, thread);
       const lead = [...thread.sessions].reverse().find((item) => item.role === 'lead' && item.live);
       if (!lead) throw appError(409, 'no live lead');
       await hub.enqueue(thread, lead.name, String(body.text || ''), 'collin');
@@ -528,6 +551,7 @@ async function handleSessions(hub, request, response, bits, body) {
     }
     const result = await hub.withThread(thread.id, async () => {
       const current = await hub.thread(thread.id);
+      require('./handoff.js').refuseFrozen(hub, current);
       const sent = await hub.call(
         current.machine,
         `/v1/sessions/${encoded}/keys`,
