@@ -162,3 +162,32 @@ Also: folder trust screen matches `answerPrompts` (PASS); real ready footers cap
 ## Remediation rounds
 
 Appended by Stage 4 loops; never erase earlier content.
+
+### Remediation 1 — 2026-11-18
+
+Verification attempt 1 (`8b5af87`): both verifiers FAIL, 9 distinct gaps (`REMEDIATION-1.md`). Fixes, each by the provider that built the part:
+
+| Gap | Fix | Fixed at | Test |
+|-----|-----|----------|------|
+| 1. `kimi --version` ran inside `/v1/status`, a slow binary stalled status for every provider | Async version check (path + mtime cache, 5 s timeout, started at service start); status reports "Checking Kimi Code's version" until it lands; start awaits it | `machine/service.js:362,584,1285-1316` | `machine/test/kimi.test.js:155,371`; `viewer/test/app-uploads-archive.test.js` five clean runs (R1) |
+| 2. Approval prompt detector was a guess | Titles from Kimi's shipped `headerFor` (`Run this command?`, `Write this file?`, `Apply these edits?`, `Stop this task?`, `Approve <tool>?`), each only with an `Approve once` option | `machine/adapters/kimi.js:97` | `machine/test/kimi.test.js:355` |
+| 3. Recovered Kimi pane mentioning Codex classified as Codex | Kimi checked first with anchored footer lines | `machine/service.js:397` | `machine/test/kimi.test.js:105,359`; `kimi-turns.test.js:154` |
+| 4. Kimi effort refused above the ceiling; machine stored a direct-start effort | Hub skips `checkEffort` for providers without effort; machine forces Kimi effort to null | `viewer/app/sessions.js:160`; `machine/service.js:595` | `viewer/test/app-hub.test.js:1868-1890`; `machine/test/kimi.test.js:366` |
+| 5. Duplicate turn ends in one read handed off twice | Skip ids at or below the last handed off within the batch | `machine/service.js:725-739` | `machine/test/kimi-turns.test.js:243` |
+| 6. `2.6.3-rc.1` passed the floor | Semver precedence (prerelease of 2.6.3 below the floor) | `machine/service.js:1313-1314` | `machine/test/kimi.test.js:139` |
+| 7. No starter card for a fatal stop | `pollDead` adds a "Session ended" needs card when `end_reason` is set | `viewer/app/sessions.js:760-762` | `viewer/test/app-kimi-hub.test.js:71-89` |
+| 8. `authenticated` leaked into `/v1/status` | Removed from status account entries (kept for `loginState`) | `machine/service.js:1285` | `machine/test/kimi.test.js:275,291` |
+| 9. Live check 5 still tested effort | Check 5 asserts the footer names the pinned light model (`K2.8 Preview`) and no effort | `test-support/smoke/kimi-live.js:55-60` | live run by the sub-lead: `5 pinned light model \| PASS`, `1 passed; 0 failed` |
+
+Validation on the merged branch at `8bbc334`:
+
+```
+bash machine/test/run.sh            # tests 198, pass 198, fail 0
+bash codex/test/run.sh              # RESULT 123 passed, 0 failed
+bash install/test/run.sh            # RESULT 192 passed, 0 failed
+node --test viewer/test/*.test.js   # tests 644, pass 644, fail 0
+npm --prefix viewer run test:browser   # 28 skipped, 774 passed (3.2m)
+node --test test-support/test/*.test.js   # tests 9, pass 9, fail 0
+```
+
+Residual after remediation 1: the approval titles come from Kimi's shipped code, not a captured live prompt; a failed or timed-out version check is cached until the binary changes or the service restarts.

@@ -952,6 +952,8 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — Remediation 1 complete; merged branch `8bbc334` passes every validation command. COMPLETION.md gains "Remediation 1". Verification attempt 2 next.
+
 - 2026-11-18 — Choice: R1, `machine/service.js`: version results cached for the service's lifetime keyed by executable path + mtime, failures included (a transient timeout keeps Kimi ineligible until the binary changes or the service restarts); `kimiVersionTimeoutMs` service option (default 5000 ms, not in API.md); `status()` still runs the cheap synchronous `command -v kimi` lookup like the other CLIs, only `--version` is async.
 - 2026-11-18 — Choice: R1, `machine/adapters/kimi.js` `promptText`: titles from Kimi's shipped `headerFor` (`Run this command?`, `Write this file?`, `Apply these edits?`, `Stop this task?`, generic `Approve <tool>?`), each only with an `Approve once` option; the plan-review title is excluded (its choices have no `Approve once`). Evidence is the shipped code, not a captured live prompt.
 - 2026-11-18 — Choice: R1, `machine/test/kimi-turns.test.js:156`: the Codex and Antigravity recovery fixtures no longer carry a Kimi footer, since a Kimi footer now wins (gap 3).
