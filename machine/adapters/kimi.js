@@ -60,9 +60,16 @@ async function findTranscript(session, dir) {
           const rows = text.split('\n').map(line => { try { return JSON.parse(line); } catch { return null; } }).filter(Boolean);
           const meta = rows.find(row => row.type === 'metadata');
           if (!meta) continue;
-          const parts = String(meta.protocol_version || '').split('.').map(Number);
-          const min = String(meta.min_protocol_version || '1.0').split('.').map(Number);
-          const compatible = parts[0] === 1 && (min[0] < 1 || (min[0] === 1 && (min[1] || 0) <= 5));
+          const parseVersion = value => typeof value === 'string' && /^\d+(?:\.\d+)*$/.test(value) ? value.split('.').map(BigInt) : null;
+          const parts = parseVersion(meta.protocol_version);
+          const min = meta.min_protocol_version === undefined ? [1n, 0n] : parseVersion(meta.min_protocol_version);
+          const ceiling = [1n, 5n];
+          let comparison = 0;
+          if (min) for (let i = 0; i < Math.max(min.length, ceiling.length); i++) {
+            const left = min[i] ?? 0n, right = ceiling[i] ?? 0n;
+            if (left !== right) { comparison = left < right ? -1 : 1; break; }
+          }
+          const compatible = parts && parts[0] === 1n && min && comparison <= 0;
           if (!compatible) {
             if (rows.some(row => marker(row, session.name))) throw Object.assign(new Error(`Kimi Code's log format changed (protocol ${meta.protocol_version}); update wheelchair`), { kimiFatal: true });
             continue;
@@ -94,6 +101,6 @@ module.exports = {
   firstMessage(input, promptPath, name) { return `[wc:role] Role: ${input.role}\nSession: ${name}\nRead ${promptPath} before responding: it holds your role rules and card rules. Read it again only if it is no longer in your context.\n\n${input.brief || input.first_message || ''}`; },
   readyText(session, pane) { return /│\s*>/.test(pane) && pane.includes('context:') && !pane.includes('Trust this folder?'); },
   answerPrompts(session, pane) { if (!pane.includes('Trust this folder?')) return null; if (/❯\s*Trust and continue/.test(pane)) return { step: 'trust', keys: ['Enter'] }; if (/❯\s*Exit/.test(pane)) return { step: 'trust-select', keys: ['Up'] }; return null; },
-  promptText(pane) { return /(?:Run this command\?|Write this file\?|Apply these edits\?|Stop this task\?|Approve [^\n?]+\?)/.test(pane) && /\bApprove once\b/.test(pane); },
+  promptText(pane) { return /(?:Run this command\?|Write this file\?|Apply these edits\?|Stop this task\?|Approve [^\n?]+\?)/.test(pane) && /\bApprove once\b/.test(pane) || pane.includes('Ready to build with this plan?') && /^\s*(?:❯\s*)?(?:\d+\.\s*)?Approve\b/m.test(pane); },
   async findTranscript(session, dir) { return findTranscript(session, dir); }, hookEvent() { return null; }, usageFrom() { return null; },
 };

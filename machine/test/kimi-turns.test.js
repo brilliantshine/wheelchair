@@ -49,6 +49,24 @@ test('incompatible marker and missing binding stop with a reason', async () => {
   const { machine, session } = setup(); const now = Date.now(); session.ready_at = new Date(now-119999).toISOString(); const original = Date.now; Date.now = () => now;
   try { await machine.pollKimiTurns(); assert.equal(session.end_reason, undefined); Date.now = () => now + 1; await machine.pollKimiTurns(); assert.equal(session.end_reason, "Couldn't find Kimi Code's log for this session"); assert.equal(machine.sessionList().find(s => s.name === session.name).end_reason, session.end_reason); } finally { Date.now = original; }
 });
+test('protocol versions must be well formed and respect the full minimum', async () => {
+  for (const [meta, compatible] of [
+    [{ protocol_version: '1.5', min_protocol_version: '1.5.1' }, false],
+    [{ protocol_version: '1.5', min_protocol_version: '1.bad' }, false],
+    [{ protocol_version: '1.bad' }, false],
+    [{}, false],
+    [{ protocol_version: '1.5', min_protocol_version: '1.5' }, true],
+    [{ protocol_version: '1.5', min_protocol_version: '1.4.9' }, true],
+    [{ protocol_version: '1.5', min_protocol_version: '1.6' }, false],
+    [{ protocol_version: '1.5', min_protocol_version: '2.0' }, false],
+  ]) {
+    const { machine, session, log, prompt } = setup();
+    const file = log('one', [{ type: 'metadata', ...meta }, prompt(session.name)]);
+    await machine.pollKimiTurns();
+    if (compatible) assert.equal(session.source_transcript, file, JSON.stringify(meta));
+    else assert.match(session.end_reason, /format changed/, JSON.stringify(meta));
+  }
+});
 test('fatal stop refuses input and waits for confirmed absence', async () => {
   const { machine, session } = setup(); session.end_reason = 'lost'; const targets = []; let listingFails = true;
   machine.tmux = args => { targets.push(args); if (args[0] === 'list-sessions') return listingFails ? { ok:false, stderr:'failure', status:1 } : { ok:true, stdout:`${session.name}-2\n` }; return { ok:false, stderr:'gone' }; };
@@ -75,6 +93,17 @@ test('spool gate holds later turns until the previous event drains', async () =>
   await machine.pollKimiTurns(); assert.deepEqual(machine.events.map(e => e.turn_id), [0]);
   await machine.pollKimiTurns(); assert.equal(machine.events.length, 1);
   blocked = false; await machine.pollKimiTurns(); assert.deepEqual(machine.events.map(e => e.turn_id), [0, 1]);
+});
+test('offset stays behind an unhandled turn when the spool drains after breaking', async () => {
+  const { machine, session, log, metadata, prompt } = setup();
+  log('good', [metadata, prompt(session.name), ...[0, 1].map(turnId => ({ type: 'turn.ended', agentId: 'main', turnId, reason: 'completed' }))]);
+  let calls = 0;
+  machine.kimiSpoolWaiting = async () => ++calls === 3;
+  await machine.pollKimiTurns();
+  assert.deepEqual(machine.events.map(e => e.turn_id), [0]);
+  assert.equal(session.kimi_offset || 0, 0);
+  await machine.pollKimiTurns();
+  assert.deepEqual(machine.events.map(e => e.turn_id), [0, 1]);
 });
 test('copier refuses replaced or shortened Kimi logs', async () => {
   const { machine, session, log, metadata, prompt } = setup(); const file = log('good', [metadata, prompt(session.name)]);

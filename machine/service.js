@@ -722,9 +722,10 @@ class MachineService {
           if (end < 0 || await this.kimiSpoolWaiting(session)) continue;
           const rows = data.subarray(0, end + 1).toString('utf8').split('\n').map(line => { try { return JSON.parse(line); } catch { return null; } });
           const turns = rows.filter(row => row?.type === 'turn.ended' && row.agentId === 'main' && Number.isInteger(row.turnId) && (session.kimi_last_turn === undefined || row.turnId > session.kimi_last_turn)).sort((a,b) => a.turnId-b.turnId);
+          let handedOffAll = true;
           for (const row of turns) {
             if (session.kimi_last_turn !== undefined && row.turnId <= session.kimi_last_turn) continue;
-            if (await this.kimiSpoolWaiting(session)) break;
+            if (await this.kimiSpoolWaiting(session)) { handedOffAll = false; break; }
             let event = { type: 'turn-ended', turn_id: row.turnId, transcript_path: file };
             if (row.reason === 'cancelled') event.interrupted = true;
             else if (row.reason === 'failed') {
@@ -738,7 +739,7 @@ class MachineService {
             session.kimi_last_turn = row.turnId;
             await this.persistSessions();
           }
-          if (!await this.kimiSpoolWaiting(session)) { session.kimi_offset = offset + end + 1; await this.persistSessions(); }
+          if (handedOffAll && !await this.kimiSpoolWaiting(session)) { session.kimi_offset = offset + end + 1; await this.persistSessions(); }
         } catch (error) { this.log(error); }
       }
     } finally { this.kimiPolling = false; }
@@ -1310,7 +1311,9 @@ class MachineService {
       this.checkKimiVersion();
       const entry = this.kimiVersions.get(JSON.stringify([executable, mtime]));
       if (!entry || entry.output === undefined) return { installed: true, logged_in: false, problem: "Checking Kimi Code's version" };
-      const output = entry.output, match = output.match(/\b(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?/);
+      const output = entry.output;
+      const firstLine = output.split(/\r?\n/, 1)[0].replace(/^(?:kimi-code|kimi code|kimi)(?:\s+|,\s*)/i, '').replace(/^version\s+/i, '');
+      const match = (firstLine.split(/\s+/)[0] || '').match(/^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/);
       const valid = !entry.failed && match && (Number(match[1]) > 2 || Number(match[1]) === 2 && (Number(match[2]) > 6 || Number(match[2]) === 6 && (Number(match[3]) > 3 || Number(match[3]) === 3 && !match[4])));
       return { installed: true, logged_in: !!valid && login.logged_in, version: output, ...(!valid ? { problem: `Kimi Code 2.6.3 or newer is needed (found ${output})` } : {}) };
     }
