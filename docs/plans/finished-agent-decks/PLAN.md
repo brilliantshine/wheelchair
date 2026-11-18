@@ -70,7 +70,7 @@ Per reviewer/verifier node add `report: { findings: <int>, first: <string|null> 
 - The deck replaces those boxes, placed at the position of its newest member in the existing creation order. The deck is a parent in its own right: the children of all its members are merged into one child list under the deck (sorted by creation), and grouping under it uses the deck as their parent. So the verifiers of two decked sub-leads can share one deck. This is the meaning of "same parent" for agents under a deck.
 - Deck card: role, count (`×40`), one-line title, and "finished <relative time>" from the newest member's `ended_at` (falling back to its last activity time when absent). Drawn with two offset outlines behind it (CSS only), dashed like finished boxes.
 - Title: reviewer → "Plan review · N rounds" plus ", then approved" when *approved* (below); verifier → "<newest member's title> · N rounds" plus ", passed" (e.g. "Checked parts 1–4 · 3 rounds"; "Checks" when it has no title) when *passed*.
-  - *approved*: the thread has a review progress card for the deck's highest round with phase `clean`, an `approval` card (retracted or not) posted after it, and no review progress card for a higher pass. A later round starting (its `checking` card) clears it.
+  - *approved*: the thread has a review progress card for the deck's highest round with phase `clean`, an `approval` card posted after it that has not been retracted, and no review progress card for a higher pass. A later round starting (its `checking` card) clears it.
   - *passed*: the thread has a verify progress card for the deck's highest round with phase `clean`, and no verify progress card for a higher pass.
   - The API exposes what the page needs for this: `rounds.review[N].approved: true` and `rounds.verify[N].passed: true` on the qualifying entry only. N = number of distinct `round` values among members. Members with no `round` are not counted in N; if no member has a round, reviewer/verifier decks use the other-deck title. Other decks: the newest member's title (role when it has none).
 - Hide finished agents ON: behaviour unchanged (decks never shown; a selected finished agent and needed ancestors still shown as boxes).
@@ -154,7 +154,7 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 2 — 2026-11-18
 
-**Lanes:** intent: pending; mechanics: pending; cross-family: pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 1:**
 - §1: retry/dedupe wording replaced (new session carries its own `--round`).
@@ -165,6 +165,8 @@ exit. Downgrades and declines cite evidence.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Retracted approval still earns "then approved" | upheld | §3 now requires an approval not retracted |
+| intent | minor | "Current members" timestamp rule is heavier than needed | declined | Rounds normally have two reviewers; the suggested one-member rule would almost never show text, losing the proposal's "objection text when there's one" |
 
 ## Prior Work
 
