@@ -48,6 +48,10 @@ None.
 | 21 | Managed keys only in env values and header values; refs elsewhere never injected | Keeps key values out of tool argv via Claude's expansion | review-round-3 |
 | 22 | Default branch resolved live with `ls-remote --symref`; machine commands bounded at 60 s | Renames and hung git/gh | review-round-3 |
 | 23 | Supersedes 9, 12 and 18: every Save opens its own PR on a new `wc-tools/<id>` branch; edits start from the default branch; waiting tools PRs are listed | Shared-branch design drew new gaps in all three rounds | user |
+| 24 | Supersedes 10's "not used" rule: any stored key can be removed with a confirming warning; no PR scan | Every scan design had a race; removing is Collin's explicit act and re-entering a key is cheap | review-round-4 |
+| 25 | Stale check compares the `.mcp.json` blob, not the branch sha; key-only Save doesn't fetch | Unrelated merges shouldn't block editing | review-round-4 |
+| 26 | Machine keeps a last-save record per project; the screen shows it after a timeout | Reload can learn a dropped Save's result | review-round-4 |
+| 27 | The screen no longer updates `origin/HEAD`; thread startup unchanged | Out of scope; rename mismatch is an Accepted Risk | review-round-4 |
 
 ## Spec
 
@@ -70,16 +74,20 @@ project's tools and lets him add, change and remove them. Works at phone width.
 - The machine fetches the current default branch (resolved as below) with an explicit
   refspec, and reads `.mcp.json` from it. That is the **source**; Collin's working checkout is
   never read or touched. The default branch is the current remote default, from
-  `git ls-remote --symref origin HEAD`, not the cached `origin/HEAD`; if it differs from the
-  cached one the machine updates it with `git remote set-head origin --auto` so new threads
-  (`machine/service.js:529-542`) start from the same branch.
+  `git ls-remote --symref origin HEAD`, not the cached `origin/HEAD`. The screen does not
+  change the clone's cached `origin/HEAD` or how threads start (`machine/service.js:529-542`);
+  after a default-branch rename the two can differ (Accepted Risks).
 - It lists waiting tools PRs: `gh pr list --repo R --base <default branch> --state open
-  --json number,url,title,headRefName,isCrossRepository`, keeping same-repository PRs whose
+  --limit 1000 --json number,url,title,headRefName,isCrossRepository`, keeping same-repository PRs whose
   head branch starts with `wc-tools/`. The section shows them as "Waiting to merge" with
   links, and says edits start from main and don't include them.
 - If `gh` fails (not installed, no login, network), the section still shows the tools from
-  the default branch, with "couldn't check for waiting pull requests: <reason>"; tool changes
-  and key removal are disabled until a reload succeeds; setting keys still works.
+  the default branch, with "couldn't check for waiting pull requests: <reason>". Editing and
+  Save still work; if `gh` still fails at PR creation, Saving step 6's fallback applies.
+- Reading also returns the project's **last save** record from the machine: running, opened
+  (PR link), or failed (reason, and for a pushed branch with no PR, the branch name and compare
+  link). While one is running the screen shows "Saving…" and disables Save, polling the read
+  every few seconds until it ends.
 - The file is read from the source with `git ls-tree` / `git cat-file`. Missing: empty
   list. An entry that is not a regular blob (symlink, submodule, tree) is unreadable, reason
   "not a regular file; edit it by hand or Start over". Session launch is unchanged and may
@@ -87,8 +95,8 @@ project's tools and lets him add, change and remove them. Works at phone width.
   the same reasons.
 - Unreadable file: the section shows the reason, offers no editing, and offers "Start over"
   (an empty tool list, saved as below, writing a regular file in place of whatever was there).
-- The read returns a **read token**: the default branch name and sha read, and the key
-  store's revision (a counter the machine bumps on every key write). The screen sends it back
+- The read returns a **read token**: the default branch name, the git blob id of `.mcp.json`
+  on it (or "absent", or "not regular"), and the key store's revision (a counter the machine bumps on every key write). The screen sends it back
   unchanged on Save and Remove.
 - Each tool shows its name, kind (command or web address), what it runs, and its settings
   (env names; plain values shown, key values shown as "set" or "not set" on this machine).
@@ -147,30 +155,42 @@ project's tools and lets him add, change and remove them. Works at phone width.
   reserved. They are added to the session environment without putting values in argv,
   `session.command`, persisted session data or logs (for example a launcher that reads the
   file).
-- Save can only set keys. A key is removed only through Remove on a key listed "not used"
-  (referenced by neither the default branch nor any waiting tools PR's `.mcp.json`). On Remove
-  the machine fetches, re-lists waiting tools PRs and rechecks; if any of that can't be
-  checked, the key is now referenced, or the key-store revision differs from the read token,
-  removal is refused.
+- A "Keys on this machine" list shows every stored key and every key the default branch
+  references, each as set or not set, with where main uses it ("used by <tool>" or "not used
+  on main"; a key only a waiting PR uses shows "not used on main"). Any listed key can be set
+  from there, so a key for a tool still waiting to merge can be fixed.
+- Save can only set keys. Remove is a separate button on that list, with a confirmation that
+  names the tools on main using it and warns that waiting pull requests may need it too. The
+  machine checks only the key-store revision before removing; it does not scan PRs (Accepted
+  Risks).
+- At session start, a name referenced in any form (`${NAME}` or `${NAME:-default}`) in a
+  command, args or URL anywhere in that worktree's `.mcp.json` is never injected, even if an
+  eligible field also uses it; the machine logs which names it held back. This is checked at
+  launch on the actual file, not only on Save.
 
 ### Saving
 - Save sends the new tool list, keys to set (by name), and the read token.
 - No tool-list change and no keys set: refused, "nothing to save".
 - One save or removal per project at a time on the machine (a lock); a second waits.
 - Order, with nothing written until step 3:
-  1. Fetch the default branch. Refuse with "changed since you opened it" (the screen
-     reloads) if its name or sha, or the key-store revision, differs from the read token.
+  1. Key-store revision differs from the read token: refuse "changed since you opened it"
+     (the screen reloads). If the tool list changed, also fetch the default branch and refuse
+     the same way if its name or its `.mcp.json` blob id (or absence) differs; other new
+     commits on it don't matter. A key-only Save does not fetch.
   2. If the tool list changed: serialize the candidate (2-space JSON, trailing newline) and run
      the reader's checks on it. A whole-file failure blocks Save with the reason. Per-entry
      skip reasons and the Codex size result are warnings and don't block, for edited and
      untouched entries alike.
   3. Store the keys being set. If the tool list didn't change, stop here: no PR.
-  4. In a temporary worktree (never Collin's checkout) at the default-branch sha from the read
-     token, replace `.mcp.json` with a regular file holding the candidate and commit "Update
+  4. In a temporary worktree (never Collin's checkout) at the default-branch head just
+     fetched, replace `.mcp.json` with a regular file holding the candidate and commit "Update
      project tools".
   5. Push to a new branch `wc-tools/<12 random hex>` with
-     `--force-with-lease=refs/heads/<branch>:` (empty: the push fails if the branch exists, so
-     it never overwrites anything).
+     `git push --porcelain --force-with-lease=refs/heads/<branch>: origin HEAD:refs/heads/<branch>`
+     and go on only if the porcelain line for that ref has the `*` (new ref) flag; "up to
+     date" or any other result is a failure. If the remote refuses because a branch named
+     `wc-tools` (or any ref blocking the `wc-tools/` namespace) exists, show "a branch named
+     <name> on GitHub blocks saving; rename or delete it"; never touch it.
   6. Run `gh pr create --repo R --head <branch> --base <default branch> --title "Update
      project tools" --body "Saved from the wheelchair app's Project tools screen."`. If that
      fails, the screen shows the error, the branch name and GitHub's compare link so Collin can
@@ -185,11 +205,12 @@ project's tools and lets him add, change and remove them. Works at phone width.
   child on expiry; `commandAsync` at `machine/service.js:87-99` has none today, so add an
   optional timeout); the lock and temporary worktree are released in a `finally`, whatever
   happens.
+- The machine records each Save in the project's last-save record (running, then opened or
+  failed) and runs it to the end even if the HTTP request is dropped.
 - Deadlines: the hub calls the new read, save and remove routes with a 120-second timeout
   (`viewer/app/machine-client.js:64` takes a timeout argument; the default is 5 seconds). If
-  Save times out or the connection drops, the screen says "Save may still be finishing" and
-  reloads instead of retrying; a retry opens a second PR if the first landed, which
-  the reload's "Waiting to merge" list shows.
+  Save times out or the connection drops, the screen reloads and shows the last-save record
+  (Reading), never retrying on its own.
 
 ### Not doing
 Running or testing a tool; changing which roles or CLIs get tools; changing running threads;
@@ -199,11 +220,13 @@ account-level tools; merging the PR.
 - `bash machine/test/run.sh`: new tests for reading from the remote branch, the temp-worktree
   commit and PR (fake git remote and fake `gh`), key store mode 600, keys reaching the session
   environment and absent from argv, `session.command` and persisted sessions; reserved key
-  names refused; stale-sha Save refused; waiting tools PRs listed and filtered by `wc-tools/` prefix;
+  names refused; Save refused only when `.mcp.json` or the key revision changed;
+  push without a new-ref `*` flag stops before PR creation (including equal-sha); a blocking
+  `wc-tools` ref shows its message; `${NAME:-x}` in args holds back that key at launch;
+  last-save record survives a dropped request; waiting tools PRs listed and filtered by `wc-tools/` prefix;
   symlinked `.mcp.json` read as unreadable and replaced by Start over; key-only save opens no PR;
   PR-create failure shows the compare link;
-  a checkout alias and a thread worktree resolve to the same key store; stale Save writes no keys; Remove refused when the key became
-  referenced; push refuses an existing branch name; two saves make two PRs; only referenced,
+  a checkout alias and a thread worktree resolve to the same key store; stale Save writes no keys; Remove refused on a key-store revision change; push refuses an existing branch name; two saves make two PRs; only referenced,
   non-reserved keys reach Claude/Codex tool roles; gh failure still lists tools.
 - `node --test viewer/test/*.test.js`: hub routes forward keys without storing them; auth and
   origin checks on the new write routes.
@@ -214,6 +237,8 @@ account-level tools; merging the PR.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| Removing a key a waiting PR or a pushed branch still needs leaves that tool without its key until re-entered | Removal is an explicit, warned action; every automatic check had a race | 4 |
+| After a default-branch rename, the screen uses the new default while threads may start from the clone's cached one | Thread startup is existing behavior outside this feature | 4 |
 | A tool that needs a reserved name (for example `OPENAI_API_KEY`) can't get its key from the screen; the screen says why | Setting it would change the CLI's own login or runtime; renaming needs adapter support outside this feature | 2 |
 | Settings refuses a symlinked `.mcp.json` while session launch may still follow it | Rare; making launch refuse it needs Claude-side suppression outside this feature | 3 |
 
@@ -300,7 +325,7 @@ deadline and reload-not-retry); Validation; Accepted Risks row 1; Decision Log 1
 
 ### Round 4 — 2026-11-18
 
-**Lanes:** intent — pending; mechanics — pending; cross-family: pending.
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 3:** the shared `wc-tools` branch is gone (Log 23): Reading now reads
 only the default branch and lists waiting `wc-tools/*` PRs; read token is default branch +
@@ -310,6 +335,33 @@ tools PRs. Also from round 3 triage: managed keys only in env and header values 
 reserved-name refs aren't keys; unset keys are skip reasons; `GH_`/`GITHUB_TOKEN` reserved;
 header note for Codex; launch reader change dropped (Log 20, Accepted Risks); live default
 branch and 60 s command limits (Log 22).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Any merge to main refuses Save | upheld | Blob compare (Log 25) |
+| intent | minor | `gh` failure needlessly disables editing | upheld | Editing stays on; step 6 fallback |
+| intent | minor | Keys used only by a waiting PR can't be fixed | upheld | Keys list shows all stored keys, settable |
+| mechanics | blocking | RE-RAISE: existing `wc-tools` blocks `wc-tools/*` | downgraded to minor: rare, now a clear message | Saving step 5 |
+| mechanics | blocking | `gh pr list` 30-item limit hides PRs from Remove | downgraded to minor, accepted-risk | Remove no longer scans PRs (Log 24); `--limit 1000` for display |
+| mechanics | blocking | RE-RAISE: Remove race across a merge | accepted-risk | Log 24 |
+| mechanics | blocking | Pushed branch without PR not in key check | accepted-risk | Log 24 |
+| mechanics | blocking | RE-RAISE: same-name exclusion at launch, `${NAME:-x}` | upheld | Checked at launch on the real file, both forms |
+| mechanics | major | RE-RAISE: `unknown` PR state missing | upheld | Moot: `gh` no longer gates Save |
+| mechanics | major | Reload after timeout can't learn the result | upheld | Last-save record (Log 26) |
+| mechanics | major | RE-RAISE: thread startup after rename | downgraded to minor, accepted-risk | Log 27 |
+| mechanics | minor | Empty lease doesn't prove a new branch | upheld | Porcelain `*` check |
+
+### Round 5 — 2026-11-18
+
+**Lanes:** intent — pending; mechanics — pending; cross-family: pending.
+
+**Changed since Round 4:** Reading (no `origin/HEAD` update, `--limit 1000`, `gh` failure no
+longer blocks editing, last-save record, read token uses `.mcp.json` blob id); Keys (keys list
+with all stored keys, Remove is a warned manual action with no PR scan, launch-time hold-back
+for names also in command/args/URL in either `${NAME}` or `${NAME:-x}` form); Saving (step 1
+blob compare, key-only Save doesn't fetch, step 4 builds on the fresh head, step 5 porcelain
+new-ref check and blocking-ref message, last-save record); Accepted Risks rows 3-4 (round 4);
+Decision Log 24-27.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
