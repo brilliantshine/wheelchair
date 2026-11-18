@@ -54,6 +54,7 @@ class Hub {
   async init() {
     await this.state.init();
     await handoff.sweepFiles(this);
+    require('./handoff-ops.js').startSweep(this);
     for (const [name, machine] of Object.entries(await this.state.machines())) {
       if (machine.last_seen) this.lastSeen.set(name, machine.last_seen);
     }
@@ -163,12 +164,21 @@ class Hub {
     this.mergePolling = threads.pollMerged(this).finally(() => { this.mergePolling = null; });
     return this.mergePolling;
   }
+  runHandoffOperation(id, options) { return require('./handoff-ops.js').runOperation(this, id, options); }
+  createLocked(input) { return require('./handoff-ops.js').createLocked(this, input); }
+  advanceLocked(thread, file) { return require('./handoff-ops.js').advanceLocked(this, thread, file); }
+  runLocked(thread, reimport) { return require('./handoff-ops.js').runLocked(this, thread, reimport); }
+  startHandoffCreate(input) { return require('./handoff-ops.js').startCreate(this, input); }
+  startHandoffAdvance(thread, file) { return require('./handoff-ops.js').startAdvance(this, thread, file); }
+  undoHandoff(id) { return require('./handoff-ops.js').undo(this, id); }
+  cancelHandoff(id) { return require('./handoff-ops.js').cancel(this, id); }
   exportThread(id) { return handoff.exportThread(this, id); }
   async handoffBanner(id) {
     for (;;) {
       const snapshot = await this.withThread(id, async () => {
         const thread = await this.thread(id);
         if (!thread.handed_off) throw require('./state.js').appError(404, 'thread has not been handed off');
+        if (thread.handoff_op?.kind === 'undo') return { cached: { state: 'undo-unfinished', at: thread.handed_off.at, last_error: thread.handoff_op.last_error, can_cancel: !thread.handoff_op.claim_landed } };
         const cached = this.handoffInspect.get(id);
         if (cached && cached.head === thread.handed_off.head && cached.at === thread.handed_off.at && Date.now() - cached.time < 60_000) return { cached: cached.value };
         return { thread };
@@ -212,6 +222,7 @@ class Hub {
       if (refresh) this.handoffStatusAt.set(id, Date.now());
       const reason = this.exportReason(thread, this.handoffStatus.get(id));
       result.thread.export = { ok: !reason, reason };
+      result.thread.handoff_op = thread.handoff_op ? { kind: thread.handoff_op.kind, last_error: thread.handoff_op.last_error, can_cancel: !thread.handoff_op.claim_landed } : null;
       return { result, thread, refresh };
     });
     if (snapshot.refresh) this.refreshHandoffStatus(snapshot.thread).catch(() => {});

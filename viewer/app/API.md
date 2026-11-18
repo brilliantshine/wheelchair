@@ -195,3 +195,14 @@ Each Agents API session node includes `context` (`{percent, at}` or null) and `a
 Each node has `question`, null or `{asked_at, to, trail, card_id}` for its latest unanswered asking message. Trail entries are `{who, at, text}` (first line, at most 80 characters); `card_id` identifies the open lead question when present. Each lead record has `question_paths`, arrays of session names from asker to lead for open passed-on question cards.
 
 Message cards accept optional `asks` (boolean) and `passes_on` (string); question cards accept optional `passes_on` (string). A `passes_on` id must name an asking message in the same thread. Asking messages are delivered as `[wc:from <sender>] [question <id>] <text>`.
+
+Handoff recovery: `POST /threads/:id/undo-handoff` starts or retries an undo;
+`POST /threads/:id/retry-handoff` retries a saved operation; and
+`POST /threads/:id/cancel-handoff` cancels before the claim is known to have landed.
+They return `{outcome, id, note?}` or `409 {error}`. The thread view's `handoff_op`
+is null or `{kind, last_error, can_cancel}`. A saved undo's handoff banner uses
+`state: "undo-unfinished"` with `last_error` and `can_cancel`.
+
+The threads list includes `revoke_notices: [{thread_id, sha, text}]` for failed
+cancelled-claim revocations. `POST /handoff-revokes/dismiss` accepts
+`{thread_id, sha}` and removes a matching failed notice.
