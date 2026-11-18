@@ -22,16 +22,22 @@ Log and is deleted from here.
 - **Options:** phone-only steps; machine commands; whatever fits the change, phone first.
 - **Recommendation:** whatever fits the change, phone first.
 
-### Q2: How the steps are shown (a part of the Done card, or a card of their own)
-- **Context:** waits on MAP.md (how done cards are gated and rendered).
-- **Options:** tbd after mapping.
-- **Recommendation:** tbd.
+### Q2: How the steps are shown
+- **Context:** MAP.md: the done card holds `can_do`/`left_as_is` lists and is only accepted
+  once GitHub says the PR is ready (`viewer/app/card.js:125-132`, `viewer/app/pr-gate.js`).
+  A new field needs schema, protocol, page and handoff changes; a new kind also needs role,
+  pin and kind handling (`viewer/app/cards.js:9-34`, `viewer/app/handoff.js:34-46`).
+- **Options:** a "Check it yourself" section on the done card; a separate card posted right
+  after done.
+- **Recommendation:** a section on the done card: one card, same gate, less to build.
 
-### Q3: Who writes the steps and from what
-- **Context:** the plan's validation commands and the verifier's report already describe
-  checks, written for agents. Waits on MAP.md.
-- **Options:** tbd after mapping.
-- **Recommendation:** tbd.
+### Q3: Are the steps tried before he sees them?
+- **Context:** PLAN validation commands and verifier reports describe agent checks, not
+  steps a person follows; small fixes have no plan (MAP.md). The lead writes the steps
+  either way; the open point is whether a verifier follows them first.
+- **Options:** lead writes them, unchecked; the verifier also follows the steps and the lead
+  fixes any that do not match.
+- **Recommendation:** the verifier follows them, so a step never shows something untrue.
 
 ## Watch List
 
