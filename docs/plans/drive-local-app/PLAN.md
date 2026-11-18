@@ -48,6 +48,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 21 | Each screen lives in its own systemd user slice; teardown and startup cleanup act on the slice (supersedes the environment marker in 17) | Kills every descendant whatever it does to its environment, with no PID reuse window | review-round-3 |
 | 22 | Session stop and archive tear down immediately (SIGKILL) without waiting in the queue; `screen stop` and the sweep are graceful | Stays inside the hub's 5 s timeout and finishes before a verifier worktree is removed | review-round-3 |
 | 23 | `type` text capped at 400 characters, timeout scaled; key tokens that are xdotool command names refused; command names with `=` refused; windows are viewable top-level children of the root; auto-focus picks a new window only | Closes the round 3 argument and window findings | review-round-3 |
+| 24 | Key names come from a fixed list (letters, digits, F-keys, navigation and editing keys, common punctuation, with ctrl/alt/shift/super combos); supersedes the command-name blocklist in 23. Codex sandbox wrap kept | Collin's pick ("Only the fixed key list") after three review rounds without a clean pass | user |
 
 ## Spec
 
@@ -106,10 +107,14 @@ has none.
 **Argument safety.** xdotool accepts chained commands (including `exec`), so the service never
 forwards caller text where xdotool could read it as a command or option. It validates every
 argument and builds argv itself: coordinates and window ids must be decimal integers; each
-`key` token must match `^[A-Za-z0-9_]+(\+[A-Za-z0-9_]+)*$`, and a token that equals any xdotool command name
-(compared case-insensitively against the list xdotool 3.20160805 accepts, e.g. `exec`,
-`key`, `type`, `search`, `windowkill`, `mousemove`, `sleep`) is refused; all tokens are
-checked before any key is sent, then each is sent as its own `xdotool key -- <token>` call.
+`key` token must match a fixed list: zero or more modifiers from `ctrl`, `alt`, `shift`, `super`
+joined by `+`, then one key from: `a`–`z`, `A`–`Z`, `0`–`9`, `F1`–`F12`, `Return`, `Escape`,
+`Tab`, `space`, `BackSpace`, `Delete`, `Insert`, `Home`, `End`, `Page_Up`, `Page_Down`, `Up`,
+`Down`, `Left`, `Right`, `minus`, `equal`, `comma`, `period`, `slash`, `semicolon`,
+`apostrophe`, `bracketleft`, `bracketright`, `backslash`, `grave` (e.g. `ctrl+shift+s`,
+`Return`). Matching is exact and case-sensitive, so no token can name an xdotool command. All
+tokens are checked before any key is sent, then each is sent as its own `xdotool key --
+<token>` call.
 `type` sends `xdotool type --delay 20 -- <text>` as a single argument; text is 1–400
 characters with no NUL, and its timeout is 10 s plus 30 ms per character. Anything else is
 `400`.
@@ -268,8 +273,8 @@ manager, no video, no Ready-check change.
   with `DISPLAY`, `XAUTHORITY` and the rebuilt session environment without the token, inside
   `systemd-run --user --scope` with the screen's slice and unit names, `--env` only inside `env ...` after the sandbox launcher's `--`, and the `codex
   sandbox` wrap for a non-unrestricted Codex session only; reviewer refused 403; key tokens
-  that are xdotool command names in any case (`exec`, `EXEC`, `windowkill`) refused before
-  any key is sent; type text that looks like an option (`--window`) sent literally; type
+  outside the fixed list (`exec`, `EXEC`, `windowkill`, `ctrl+`) refused before any key is
+  sent; every listed key and a modifier combo accepted; type text that looks like an option (`--window`) sent literally; type
   text over 400 characters refused; a command whose first word contains `=` refused; shot paths never reused across `screen stop`/`start` and a service restart;
   windows from `xwininfo` output: only viewable direct children of the root, none gives `[]`;
   auto-focus picks only a window that was not there before the launch; missing-tool error naming each
@@ -372,6 +377,15 @@ manager, no video, no Ready-check change.
 | mechanics | blocking | Queued teardown exceeds hub 5 s timeout | upheld | Immediate teardown outside the queue; Decision 22 |
 | mechanics | blocking | `type` length vs timeout (same as intent) | upheld | Decision 23 |
 | mechanics | major | Search lists child widgets; second run's focus undefined | upheld | Top-level viewable children; new-window diff; Decision 23 |
+
+### Round 4 — 2026-11-18
+
+**Lanes:** claude / claude-opus-5-5 (intent); gpt (mechanics); cross-family: yes. Budget reset by Collin's decision 24.
+
+**Changed since Round 3:** each screen in its own systemd user slice, teardown and startup cleanup act on the slice (Decision 21); session stop and archive tear down immediately outside the queue, `screen stop` and the sweep gracefully (22); `type` capped at 400 characters with scaled timeout, command first word with `=` refused, windows = viewable top-level children of the root via `xwininfo`, auto-focus picks only a new window (23); key names from a fixed list (24); `systemd-run`/`systemctl` added to required tools; validation updated.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
