@@ -187,7 +187,8 @@ the done head are kept.
   steps-only verifier for the reworded steps on the same head. Its result: MATCH →
   `matched`; COULD NOT TRY → `not-tried`; DIFFERS (meets intent) → the lead sets `see` to
   what the agent saw, rewritten in Collin's words (something he can see on screen or in
-  output, not markup or internal names), and the step is `matched` (the agent saw it and judged it right);
+  output, not markup or internal names) while keeping every observable detail the agent
+  reported and adding none, and the step is `matched` (the agent saw it and judged it right);
   DIFFERS (work wrong) → `broken`, `note` what it saw.
 - `DIFFERS (work wrong)` → `agent: broken`, `note` what it saw.
 - A step with no STEP line → `agent: not-tried`, `note` "an agent did not report on it".
@@ -366,6 +367,7 @@ re-raise them.
 | In projects that cannot run their app in isolation, many app steps reach Collin marked "Not tried by an agent" | Trying them would mean touching live systems; the mark keeps the card honest and the steps are still useful to him | 1 |
 | A step that shows the work broken reaches Collin after Done, as a marked step with "Fix it now" and "Leave it" buttons, instead of being fixed first | Collin's choice (Decision 14); Done still means the work passed its own checks | 5 |
 | The check card arrives some minutes after Done | It is tried on exactly the Done version first | 5 |
+| The first-release stand-in `needs` card shows a short version id, and its buttons are "Keep going" / "Talk about it" rather than "Fix it now" / "Leave it" | One-time card in this thread only (Decision 18); "Talk about it" serves as leaving it | 9 |
 | A check card still queued when the thread is archived or handed off is refused and lost | Archive and handoff end the thread's work; the done card and PR remain | 1 |
 | Other items can appear between `done` and `check` in the conversation | The card names what it checks; the gap is the time to try the steps | 1 |
 
@@ -614,6 +616,9 @@ Final round (Decision 18).
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Rewritten `see` never re-tried | upheld | Rewrite keeps every reported detail and adds none |
+| intent | minor | First-release card shows a version id and needs-card buttons | accepted-risk | One-time stand-in (Decision 18) |
+| intent | minor | First-release card has no "Leave it" | accepted-risk | "Talk about it" serves; one-time stand-in (Decision 18) |
 
 ## Prior Work
 
