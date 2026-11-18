@@ -77,3 +77,17 @@ for (const role of ['worker', 'verifier']) {
     assert.ok(!read(role).includes('| tail'));
   });
 }
+
+test('lead finishing steps point to mergeability before done', () => {
+  const text = read('lead');
+  assert.ok(text.includes('## Making the pull request mergeable'));
+  for (const step of [1, 8, 9]) {
+    const section = text.match(new RegExp(`^### ${step}\\. [^\\n]*\\n([\\s\\S]*?)(?=^### |^## |(?![\\s\\S]))`, 'm'));
+    assert.ok(section, `step ${step}`);
+    assert.ok(section[1].includes('Making the pull request mergeable'), `step ${step}`);
+  }
+});
+test('done card table lists the pushed head', () => {
+  const section = read('cards-lead').split('### `done`')[1].split('### `merged`')[0];
+  assert.match(section, /^\| `head` \| string \| yes \|/m);
+});

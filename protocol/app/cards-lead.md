@@ -116,7 +116,10 @@ the same treatment: say what you will do now instead of going quiet.
 | `can_do` | array of strings | yes | What he can do now |
 | `left_as_is` | array of strings | yes | What was deliberately not done. Each gets a "Start a thread about it" button. May be empty |
 | `pr_url` | string | yes | The pull request, for the Review pull request link |
+| `head` | string | yes | The full 40-character lowercase hex commit id pushed by the lead: the remote branch tip read after the push |
 | `note` | string | no | Anything he must know, such as "this fix failed its check and was pushed at your request" |
+
+The app accepts the card only when GitHub says this thread's pull request, at `head`, is merged or ready to merge; otherwise `card.js` fails with the reason. A `done` card is never queued, so "the app is unreachable" means try again.
 
 A "Start a thread about it" press comes back as
 `[card <id>] start thread about: <left_as_is text>`; you answer it with a `stub` card.

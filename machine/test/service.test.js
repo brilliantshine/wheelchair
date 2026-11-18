@@ -37,7 +37,7 @@ esac
   await write(pane, paneText);
   return { bin, log, pane };
 }
-async function hubServer(status = 200, { failAfterStore = false } = {}) {
+async function hubServer(status = 200, { failAfterStore = false, delay = 0 } = {}) {
   const calls = []; let current = status; const delivered = new Set();
   const allowed = { idea: ['lead'], done: ['lead'], message: ['lead', 'sub-lead', 'worker', 'mapper'], result: ['worker', 'mapper', 'sub-lead'] };
   const server = http.createServer((request, response) => { let body = ''; request.on('data', c => { body += c; }); request.on('end', () => {
@@ -51,7 +51,9 @@ async function hubServer(status = 200, { failAfterStore = false } = {}) {
       else if (payload.delivery_id) delivered.add(`${payload.thread_id}:${payload.delivery_id}`);
       if (failAfterStore && code === 200 && !answer.duplicate) { code = 500; failAfterStore = false; }
     }
-    calls.push({ path: request.url, body, status: code }); response.writeHead(code, { 'content-type': 'application/json' }); response.end(JSON.stringify(answer));
+    calls.push({ path: request.url, body, status: code });
+    const reply = () => { response.writeHead(code, { 'content-type': 'application/json' }); response.end(JSON.stringify(answer)); };
+    if (delay && request.url.endsWith('/cards')) setTimeout(reply, delay); else reply();
   }); });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   return { url: `http://127.0.0.1:${server.address().port}`, calls, delivered, setStatus: value => { current = value; }, close: () => new Promise(resolve => server.close(resolve)) };
@@ -278,8 +280,8 @@ test('a card stored before a hub 500 is queued and deduplicated on drain', async
 test('a refused card is returned to its worker, retained as rejected, and does not stop a following result', async () => {
   const hub = await hubServer(); const env = await service(await temp(), { config: { hub_url: hub.url } }); try {
     await start(env); await start(env, { role: 'worker', token: 'worker-token' });
-    const refused = await api(env, 'POST', '/v1/agent/cards', { kind: 'done' }, agentHeader('worker-token'));
-    assert.equal(refused.status, 422); assert.match(refused.body.error, /worker may not post done/);
+    const refused = await api(env, 'POST', '/v1/agent/cards', { kind: 'idea' }, agentHeader('worker-token'));
+    assert.equal(refused.status, 422); assert.match(refused.body.error, /worker may not post idea/);
     const rejected = await fs.readdir(path.join(env.state, 'spool', 'rejected', 'cards'));
     assert.equal(rejected.length, 1);
     const accepted = await api(env, 'POST', '/v1/agent/cards', { kind: 'result' }, agentHeader('worker-token'));
@@ -290,13 +292,37 @@ test('a refused card is returned to its worker, retained as rejected, and does n
 test('a refused spooled card moves aside and the following card drains', async () => {
   const hub = await hubServer(503); const env = await service(await temp(), { config: { hub_url: hub.url } }); try {
     await start(env); await start(env, { role: 'worker', token: 'worker-token' });
-    assert.equal((await api(env, 'POST', '/v1/agent/cards', { kind: 'done' }, agentHeader('worker-token'))).status, 202);
+    assert.equal((await api(env, 'POST', '/v1/agent/cards', { kind: 'idea' }, agentHeader('worker-token'))).status, 202);
     assert.equal((await api(env, 'POST', '/v1/agent/cards', { kind: 'result' }, agentHeader('worker-token'))).status, 202);
     hub.setStatus(200); await env.instance.drainSpool('cards');
     assert.equal((await fs.readdir(path.join(env.state, 'spool', 'rejected', 'cards'))).length, 1);
     assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 0);
     const delivered = hub.calls.filter(call => call.path.endsWith('/cards') && call.status === 200).map(call => JSON.parse(call.body).kind);
     assert.deepEqual(delivered, ['result']);
+  } finally { await env.close(); await hub.close(); }
+});
+test('done is never spooled when the hub is unavailable or earlier cards are waiting', async () => {
+  const hub = await hubServer(503); const env = await service(await temp(), { config: { hub_url: hub.url } }); try {
+    await start(env);
+    const cards = path.join(env.state, 'spool', 'cards');
+    const done = () => api(env, 'POST', '/v1/agent/cards', { kind: 'done' }, agentHeader('alpha'));
+    const first = await done(); assert.equal(first.status, 503); assert.match(first.body.error, /try again in a minute/);
+    assert.equal((await fs.readdir(cards)).length, 0);
+    assert.equal((await api(env, 'POST', '/v1/agent/cards', { kind: 'idea' }, agentHeader('alpha'))).status, 202);
+    const second = await done(); assert.equal(second.status, 503); assert.match(second.body.error, /try again in a minute/);
+    assert.equal((await fs.readdir(cards)).length, 1);
+  } finally { await env.close(); await hub.close(); }
+  const offline = await service(await temp()); try {
+    await start(offline);
+    assert.equal((await api(offline, 'POST', '/v1/agent/cards', { kind: 'done' }, agentHeader('alpha'))).status, 503);
+    assert.equal((await fs.readdir(path.join(offline.state, 'spool', 'cards'))).length, 0);
+  } finally { await offline.close(); }
+});
+test('done waits beyond five seconds for a hub refusal', async () => {
+  const hub = await hubServer(422, { delay: 6000 }); const env = await service(await temp(), { config: { hub_url: hub.url } }); try {
+    await start(env);
+    assert.equal((await api(env, 'POST', '/v1/agent/cards', { kind: 'done' }, agentHeader('alpha'))).status, 422);
+    assert.equal((await fs.readdir(path.join(env.state, 'spool', 'cards'))).length, 0);
   } finally { await env.close(); await hub.close(); }
 });
 test('concurrent card drains send each spooled card exactly once', async () => {
@@ -427,6 +453,24 @@ test('agent session forward retries then reports hub unavailable', async () => {
 });
 test('git refuses paths outside the calling worktree', async () => {
   const env = await service(await temp()); try { await start(env); const result = await api(env, 'POST', '/v1/agent/git', { operation: 'commit', paths: ['../outside'], message: 'm' }, { 'x-wheelchair-session-token': 'alpha' }); assert.equal(result.status, 403); } finally { await env.close(); }
+});
+test('git commit completes a resolved merge and refuses remaining conflicts', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true }); try {
+    const { repo, worktree } = await startedWorktree(env, root, 'commit-merge');
+    for (const file of ['one.txt', 'two.txt']) await write(path.join(worktree, file), 'worktree\n');
+    git(['-C', worktree, 'add', 'one.txt', 'two.txt']); git(['-C', worktree, 'commit', '-m', 'worktree']);
+    for (const file of ['one.txt', 'two.txt']) await write(path.join(repo, file), 'main\n');
+    git(['-C', repo, 'add', 'one.txt', 'two.txt']); git(['-C', repo, 'commit', '-m', 'main']);
+    assert.equal(git(['-C', worktree, 'merge', 'main'], { allowFailure: true }).status, 1);
+    await write(path.join(worktree, 'one.txt'), 'resolved one\n');
+    const commit = paths => api(env, 'POST', '/v1/agent/git', { operation: 'commit', paths, message: 'resolve merge' }, agentHeader('commit-merge-token'));
+    const refused = await commit(['one.txt']); assert.equal(refused.body.ok, false);
+    assert.equal(git(['-C', worktree, 'rev-parse', '-q', '--verify', 'MERGE_HEAD']).status, 0);
+    await write(path.join(worktree, 'two.txt'), 'resolved two\n');
+    const completed = await commit(['two.txt']); assert.equal(completed.body.ok, true, completed.body.stderr);
+    assert.notEqual(git(['-C', worktree, 'rev-parse', '-q', '--verify', 'MERGE_HEAD'], { allowFailure: true }).status, 0);
+    assert.equal(git(['-C', worktree, 'rev-list', '--parents', '-n', '1', 'HEAD']).stdout.trim().split(' ').length, 3);
+  } finally { await env.close(); }
 });
 test('git commit refuses no paths', async () => {
   const env = await service(await temp()); try { await start(env); const result = await api(env, 'POST', '/v1/agent/git', { operation: 'commit' }, { 'x-wheelchair-session-token': 'alpha' }); assert.equal(result.status, 400); } finally { await env.close(); }

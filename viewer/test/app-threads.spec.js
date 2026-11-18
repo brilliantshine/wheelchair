@@ -22,7 +22,13 @@ for (const [label, size] of SIZES) {
   test.describe(label, () => {
     test.use({ viewport: size });
     let ctx;
-    test.beforeEach(async ({ page }) => { ctx = await startWorld(); await signIn(page, ctx); });
+    test.beforeEach(async ({ page }) => {
+      const bin = await makeTemp('browser-done-gh-');
+      await fs.writeFile(path.join(bin, 'gh'), `#!/bin/sh\nprintf '%s' '{"state":"OPEN","mergeStateStatus":"CLEAN","headRefOid":"${'a'.repeat(40)}"}'\n`, { mode: 0o755 });
+      const oldPath = process.env.PATH; process.env.PATH = `${bin}:${oldPath}`;
+      try { ctx = await startWorld(); } finally { process.env.PATH = oldPath; }
+      await signIn(page, ctx);
+    });
     test.afterEach(async () => { await ctx.close(); });
 
     const open = (page, id) => page.goto(`${ctx.server.url}/app/thread?id=${id}`);
@@ -381,8 +387,9 @@ for (const [label, size] of SIZES) {
         objections: [{ id: 'o1', finding: 'Moves lose work', severity: 'major', reason: 'Commits happen each step.' }],
       });
       await ctx.post(id, { kind: 'needs', title: 'Sign in', body: 'Codex is signed out.', items: ['beelink'] });
+      await ctx.patch(id, (t) => { t.branch = null; t.default_branch = null; });
       const dn = await ctx.post(id, {
-        kind: 'done', title: 'Built and checked', can_do: ['Use it'], left_as_is: ['Resize terminal'],
+        head: 'a'.repeat(40), kind: 'done', title: 'Built and checked', can_do: ['Use it'], left_as_is: ['Resize terminal'],
         pr_url: 'https://github.com/x/y/pull/1',
       });
       await ctx.post(id, { kind: 'diagram', plan: 'dark', graph: 'flow', title: 'How it flows' });
@@ -523,7 +530,8 @@ for (const [label, size] of SIZES) {
       await expect(page.getByRole('button', { name: 'Open and start' })).toHaveCount(0);
       // No pull request on the parent yet: just the thread link.
       await expect(page.locator('#stub-open a', { hasText: 'Pull request' })).toHaveCount(0);
-      await ctx.post(parent.id, { kind: 'done', title: 'Built', can_do: ['x'], left_as_is: [], pr_url: 'https://github.com/o/r/pull/7' });
+      await ctx.patch(parent.id, (t) => { t.branch = null; t.default_branch = null; });
+      await ctx.post(parent.id, { head: 'a'.repeat(40), kind: 'done', title: 'Built', can_do: ['x'], left_as_is: [], pr_url: 'https://github.com/o/r/pull/7' });
       await expect(page.locator('#stub-open')).toContainText('Builds on Parent, Pull request #7 (not merged yet)');
       await expect(page.locator('#stub-open a', { hasText: 'Pull request #7' })).toHaveAttribute('href', 'https://github.com/o/r/pull/7');
       await open(page, parent.id);

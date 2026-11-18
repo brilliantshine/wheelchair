@@ -3,7 +3,8 @@
 // Spec "State": the hub composes focused modules and owns no transient app state.
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { DEFAULT_STATE, State } = require('./state.js');
+const { DEFAULT_STATE, State, appError } = require('./state.js');
+const { validate } = require('./card.js');
 const { MachineClient } = require('./machine-client.js');
 const cards = require('./cards.js');
 const chat = require('./chat.js');
@@ -163,7 +164,19 @@ class Hub {
     return this.usagePolling;
   }
   retryQueues() { return sessions.retryQueues(this); }
-  acceptCard(payload) { return this.withThread(payload.thread_id, () => cards.acceptCard(this, payload)); }
+  async acceptCard(payload) {
+    if (payload.kind === 'done') {
+      const thread = await this.state.thread(payload.thread_id);
+      const session = this.session(thread, payload.session);
+      const { session: ignoredSession, thread_id: ignoredThread, delivery_id: ignoredDelivery, ...input } = payload;
+      const checked = validate('done', input, session.role, { machine: true });
+      if (checked.ok) {
+        const result = await require('./pr-gate.js').checkPr(thread, checked.card);
+        if (!result.ok) throw appError(422, result.reason);
+      }
+    }
+    return this.withThread(payload.thread_id, () => cards.acceptCard(this, payload));
+  }
   createThread(input) { return threads.createThread(this, input); }
   threadBySession(name) { return threads.threadBySession(this, name); }
   createStub(parent, card) { return threads.createStub(this, parent, card); }
