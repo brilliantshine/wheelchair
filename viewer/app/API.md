@@ -22,6 +22,9 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 | `POST /threads/:id/cards/:cardId/press` | `{action,value?}` | `{queued:true,text}` for lead actions and records `answered_action` and `answered_value` on an answered card; `keep` resolves an open app `merged` card as Kept without a live lead and returns `{queued:false}`; other actions on it return 400 and repeating keep returns 422. `recheck` updates an approval in place, and `start-building` first re-checks Ready. Any press on a retracted card returns 422 `this card was withdrawn`. On an open lead `needs` card, `keep-going` and `talk` (value: the card title) also close it as `resolved_by:"collin"`; a `system` or answered needs card is refused with 422. `answered` (value: Collin's own words, trimmed) works only on an open `question` card: 400 for another kind or empty text, 422 once answered; it reaches the lead as `[card <id>] answered: <text>` |
 | `POST /threads/:id/cards/:cardId/dismiss` | — | `{ok:true}`; closes an open `needs` card a lead posted (`resolved_by:"collin"`, shown dimmed as resolved). The thread page no longer shows a Dismiss button; it uses the press actions above. A `system` needs card is refused with 422, an unknown card with 404 |
 | `POST /threads/:id/open` | `{start_now?:boolean}` | a started stub, or `{waiting:true,thread}` |
+| `POST /threads/:id/export` | — | `200` JSON file with attachment filename; checks eligibility, pushes and freezes the thread. A refusal is `409` with the reason in `detail` |
+| `GET /threads/:id/handoff` | — | `{state:"unchanged"|"moved"|"inspect-failed"|"own-cancelled"|"undo-unfinished",at,picked_up_at?,last_error?,can_cancel?}`; remote inspection is cached for 60 seconds |
+| `GET /threads/:id/handoff-file` | — | Saved JSON file with attachment filename; `404` if no saved file matches the handed-off head |
 | `POST /threads/:id/restart` | — | replacement lead session; its restart context is queued first |
 | `POST /threads/:id/archive` | — | the machine archive response |
 | `GET /threads/:id/doc?file=PLAN.md` | — | `{content}` from the archived branch, read-only |
@@ -53,7 +56,7 @@ browser cookie or an Origin requirement. This is the contract for the page tasks
 
 `Thread` has `id`, `project`, `cli`, `machine`, `stub`, `context`, `parent`,
 `depends_on_parent`, `waiting_on_parent`, `sessions`, `cards`, `pinned`, `queues`, `sent`,
-`worktree`, `branch`, `slug`, `archived`, and optional `merge_noticed_url` and `merge_noticed_at` (the reported PR URL and its ISO notice time). Card records retain their card fields plus `id`,
+`worktree`, `branch`, `slug`, `archived`, and `handed_off` (`null` or `{at,head,stage}`); chat `thread.export` is `{ok,reason}`. It has optional `merge_noticed_url` and `merge_noticed_at` (the reported PR URL and its ISO notice time). Card records retain their card fields plus `id`,
 `session`, `at`, `created_at`, `answered`, `answered_action`, `answered_value`, and `system`.
 A closed `needs` card, or a question the lead resolved after an answer in chat, also has
 `resolved_by` (a lead's session name, or `collin` for a needs dismissal), `resolved_note` and
@@ -192,3 +195,16 @@ Each Agents API session node includes `context` (`{percent, at}` or null) and `a
 Each node has `question`, null or `{asked_at, to, trail, card_id}` for its latest unanswered asking message. Trail entries are `{who, at, text}` (first line, at most 80 characters); `card_id` identifies the open lead question when present. Each lead record has `question_paths`, arrays of session names from asker to lead for open passed-on question cards.
 
 Message cards accept optional `asks` (boolean) and `passes_on` (string); question cards accept optional `passes_on` (string). A `passes_on` id must name an asking message in the same thread. Asking messages are delivered as `[wc:from <sender>] [question <id>] <text>`.
+
+Handoff recovery: `POST /threads/:id/undo-handoff` starts or retries an undo;
+`POST /threads/:id/retry-handoff` retries a saved operation; and
+`POST /threads/:id/cancel-handoff` cancels before the claim is known to have landed.
+They return `{outcome, id, note?}` or `409 {error}`. The thread view's `handoff_op`
+is null or `{kind, last_error, can_cancel}`. A saved undo's handoff banner uses
+`state: "undo-unfinished"` with `last_error` and `can_cancel`.
+
+The threads list includes `revoke_notices: [{thread_id, sha, text}]` for failed
+cancelled-claim revocations. `POST /handoff-revokes/dismiss` accepts
+`{thread_id, sha}` and removes a matching failed notice.
+
+`POST /threads/import?machine=<machine>&project=<project>` accepts a raw handoff file (at most 10 MB). It returns `{outcome, id, note?}` with outcome `created`, `advanced`, or `opened`; invalid files return 422, conflicts return 409, and oversized bodies return 413.

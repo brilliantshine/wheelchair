@@ -32,6 +32,7 @@ async function startMachine(secret = 'machine-test-secret', options = {}) {
     codex: { installed: true, logged_in: true },
     accounts: [{ id: 'default-claude', cli: 'claude', logged_in: true }, { id: 'default-gpt', cli: 'codex', logged_in: true }],
   };
+  const handoffReplies = {};
   let usageReply = { status: 200, delay: 0, reading: null };
   let uploadsDir = options.uploadsDir;
   let preflightOk = true;
@@ -80,6 +81,13 @@ async function startMachine(secret = 'machine-test-secret', options = {}) {
     const write = ['POST', 'PUT'].includes(request.method);
     const input = write ? await readBody(request) : {};
     calls.push({ method: request.method, path: url.pathname, body: input });
+    if (request.method === 'POST' && url.pathname === '/v1/handoff') {
+      let reply = handoffReplies[input.action];
+      if (Array.isArray(reply)) reply = reply.shift();
+      if (typeof reply === 'function') reply = await reply(input);
+      reply ||= { result: 'failed', error: 'handoff action not scripted' };
+      return send(response, reply.status || 200, reply.body === undefined ? reply : reply.body);
+    }
     if (request.method === 'POST' && url.pathname === '/v1/usage') {
       const reply = typeof usageReply === 'function' ? await usageReply(input) : usageReply;
       if (reply.delay) await new Promise((resolve) => setTimeout(resolve, reply.delay));
@@ -148,6 +156,7 @@ async function startMachine(secret = 'machine-test-secret', options = {}) {
     set uploadsDir(value) { uploadsDir = value; },
     sessions,
     calls,
+    handoffReplies,
     status,
     get dropNextStart() { return dropNextStart; },
     set dropNextStart(value) { dropNextStart = value === true ? 1 : Number(value) || 0; },

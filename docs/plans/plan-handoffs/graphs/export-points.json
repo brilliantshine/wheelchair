@@ -1,0 +1,6 @@
+{"form":"timeline","explanation":"A thread's stages in order, with the three proposed export points marked. Building and verifying are never export points because agents are working then.","events":[
+{"when":"Export point","label":"Idea confirmed","detail":"Planning starts; only the lead is running"},
+{"when":"Not exportable","label":"Planning questions and plan review","detail":"Under option B, the pauses between questions would also count"},
+{"when":"Export point","label":"Plan approved","detail":"Waiting for Start building"},
+{"when":"Not exportable","label":"Building and verifying","detail":"Workers and checkers are running"},
+{"when":"Export point","label":"Done","detail":"Pull request open"}]}

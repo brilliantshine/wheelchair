@@ -211,6 +211,7 @@ async function resumeUnanswered(hub, thread, session) {
 }
 
 async function startSession(hub, thread, input) {
+  require('./handoff.js').refuseFrozen(hub, thread);
   const role = input.role;
   const title = typeof input.title === 'string' ? input.title.trim().slice(0, 80) : '';
   if (!SESSION_ROLES.has(role)) throw appError(400, 'unknown role');
@@ -229,7 +230,8 @@ async function startSession(hub, thread, input) {
     };
     if (title) waiting.title = title;
     if (typeof input.brief === 'string') waiting.brief = input.brief;
-    Object.assign(waiting, { status: 'waiting', waiting_until: selection.wait.until, waiting_reason: selection.wait.reason, waiting_provider: selection.wait.provider, pending_start: input._waiting ? waiting.pending_start : { ...input } });
+    const { _waiting, ...startInput } = input;
+    Object.assign(waiting, { live: true, status: 'waiting', waiting_until: selection.wait.until, waiting_reason: selection.wait.reason, waiting_provider: selection.wait.provider, pending_start: waiting.pending_start || startInput });
     if (!input._waiting) thread.sessions.push(waiting);
     if (role === 'lead' && !thread.lead_name) await hub.saveWithLeadName(thread);
     else await hub.save(thread);
@@ -293,7 +295,7 @@ async function startSession(hub, thread, input) {
   if (title) session.title = title;
   if (typeof input.brief === 'string') session.brief = input.brief;
   if (!input._waiting) thread.sessions.push(session);
-  Object.assign(session, { model: resolved.model, effort: input.effort || resolved.effort || null, status: 'starting', cli, provider: selection.provider, account: selection.account.id, template_id: layers.template?.id || null, ...(role === 'lead' ? { style_version: settings.style_version } : {}) });
+  Object.assign(session, { live: true, model: resolved.model, effort: input.effort || resolved.effort || null, status: 'starting', cli, provider: selection.provider, account: selection.account.id, template_id: layers.template?.id || null, ...(role === 'lead' ? { style_version: settings.style_version } : {}) });
   if (selection.note) session.note = selection.note;
   delete session.pending_start; delete session.waiting_until; delete session.waiting_reason; delete session.waiting_provider;
   if (role === 'lead' && !thread.lead_name) await hub.saveWithLeadName(thread);
@@ -312,6 +314,7 @@ async function startSession(hub, thread, input) {
       project_dir: thread.project,
       project: require('node:path').basename(thread.project),
       worktree: input.worktree,
+      from_remote_branch: input.from_remote_branch,
       branch: input.branch,
       brief: input.brief || '',
       model: resolved.model,
@@ -360,6 +363,10 @@ async function startSession(hub, thread, input) {
   }
   if (started.default_branch) thread.default_branch = started.default_branch;
   await hub.save(thread);
+  if (role === 'lead' && thread.slug && thread.worktree && hub.registerPlan) {
+    try { await hub.registerPlan(require('node:path').join(thread.worktree, 'docs', 'plans', thread.slug)); }
+    catch (error) { console.error('Could not register plan:', error); }
+  }
   return session;
 }
 
@@ -407,6 +414,7 @@ function session(thread, name) {
 
 async function enqueue(hub, thread, name, text, source = 'app', first = false, { save = true, deliver: deliverNow = true, quiet: quietTag, about } = {}) {
   const target = session(thread, name);
+  if (require('./handoff.js').frozen(hub, thread)) return target;
   target.queue ||= [];
   thread.queues ||= {};
   const message = { text, source, at: new Date().toISOString(), ...(quietTag ? { quiet: quietTag } : {}), ...(about ? { about } : {}) };
@@ -425,12 +433,12 @@ function held(target) {
 }
 
 // `midTurn` skips only the wait for the turn to end; a held or unready session still waits.
-function canDeliver(target, midTurn = false) {
-  return Boolean(target.live && target.ready && (target.turn_ended || midTurn) && !held(target) && target.queue?.length);
+function canDeliver(hub, thread, target, midTurn = false) {
+  return Boolean(!require('./handoff.js').frozen(hub, thread) && target.live && target.ready && (target.turn_ended || midTurn) && !held(target) && target.queue?.length);
 }
 
 async function deliver(hub, thread, target, { midTurn = false } = {}) {
-  if (!canDeliver(target, midTurn)) return false;
+  if (!canDeliver(hub, thread, target, midTurn)) return false;
   const next = target.queue[0];
   let submitted = next.text;
   let deliveredStyleVersion;
@@ -588,6 +596,7 @@ async function sessionRequest(hub, payload) {
     return { sessions: thread.sessions.map(publicSession), review_families: (await settingsStore.load(hub)).review_families };
   }
   if (payload.action === 'stop') return stopSession(hub, thread, caller, payload.name);
+  if (payload.action === 'start') require('./handoff.js').refuseFrozen(hub, thread);
   if (payload.action === 'start' && payload.effort !== undefined && (caller.role !== 'sub-lead' || payload.role !== 'worker')) throw appError(400, 'effort can only be set for a worker');
   if (payload.action !== 'start' || !ALLOWED_START[caller.role]?.has(payload.role)) {
     throw appError(403, `${caller.role} may not start that session`);
@@ -659,6 +668,12 @@ async function stopSession(hub, thread, caller, name) {
     caller.role === 'lead' && target.started_by && target.role !== 'lead'
   );
   if (!canStop) throw appError(403, 'only the starter may stop this session');
+  return stopManagedSession(hub, thread, target);
+}
+
+// The caller holds the thread lock. Authorization is checked by sessionRequest; export
+// stops its own sessions through the same lifecycle without needing a session caller.
+async function stopManagedSession(hub, thread, target) {
   if (target.status !== 'waiting') await hub.call(thread.machine, `/v1/sessions/${encodeURIComponent(target.name)}`, 'DELETE');
   target.ended_at = new Date().toISOString();
   endTurn(target, target.ended_at);
@@ -754,13 +769,17 @@ async function retryWaiting(hub) {
     await hub.withThread(item.thread, async () => {
       const thread = await hub.thread(item.thread);
       const target = thread.sessions.find((s) => s.name === item.name && s.live && s.status === 'waiting');
-      if (target) await startSession(hub, thread, { ...target.pending_start, _waiting: target });
+      if (target) {
+        const started = await startSession(hub, thread, { ...target.pending_start, _waiting: target });
+        if (thread.imported && started.role === 'lead' && started.status !== 'waiting') await deliver(hub, thread, started);
+      }
     }).catch(() => {});
   }
 }
 async function releaseLimits(hub) {
   for (const listed of await hub.allThreads()) await hub.withThread(listed.id, async () => {
     const thread = await hub.thread(listed.id);
+    if (require('./handoff.js').frozen(hub, thread)) return;
     for (const target of thread.sessions) if (target.live && target.limited_until && Date.parse(target.limited_until) <= Date.now()) {
       delete target.limited_until;
       await enqueue(hub, thread, target.name, 'Continue.', 'app', true);
@@ -777,7 +796,7 @@ async function retryQueues(hub) {
       await hub.withThread(listedThread.id, async () => {
         const thread = await hub.thread(listedThread.id);
         for (const target of thread.sessions) {
-          if (canDeliver(target)) await deliver(hub, thread, target);
+          if (canDeliver(hub, thread, target)) await deliver(hub, thread, target);
         }
       });
     } catch {
@@ -798,8 +817,10 @@ module.exports = {
   sendNow,
   releaseLimits,
   publicSession,
+  newSessionName,
   resolveModel,
   session,
   sessionRequest,
   startSession,
+  stopManagedSession,
 };

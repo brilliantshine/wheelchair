@@ -13,6 +13,7 @@
   };
   const PROVIDER_LABEL = { claude: 'Claude', gpt: 'GPT', gemini: 'Antigravity' };
   let threads = [];
+  let notices = [];
   let titles = {};
   let stages = {};   // thread id -> stage label, from the features data
   let waiting = {};  // thread id -> number of open cards that need you
@@ -66,6 +67,7 @@
         top.appendChild(el('span', 'badge warn', 'waiting for ' + (titles[t.parent] || t.parent_title || t.parent)));
       }
     }
+    if (t.handed_off) top.appendChild(el('span', 'badge', 'handed off'));
     if (t.archived) top.appendChild(el('span', 'badge', 'archived'));
     li.appendChild(top);
     li.appendChild(el('div', 'sub', [
@@ -79,6 +81,19 @@
       .sort((a, b) => stamp(b) - stamp(a));
     listEl.textContent = '';
     emptyEl.hidden = shown.length > 0;
+    for (const notice of notices) {
+      const li = el('li', 'card amber'); li.appendChild(el('p', '', notice.text));
+      const dismiss = el('button', 'small', 'Dismiss'); dismiss.type = 'button';
+      dismiss.addEventListener('click', async () => {
+        dismiss.disabled = true;
+        try {
+          const res = await fetch(API + '/handoff-revokes/dismiss', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ thread_id: notice.thread_id, sha: notice.sha }) });
+          const out = await res.json().catch(() => ({})); if (!res.ok) throw new Error(out.detail || out.error || 'http ' + res.status);
+          notices = notices.filter((n) => n.thread_id !== notice.thread_id || n.sha !== notice.sha); render();
+        } catch (e) { errorEl.hidden = false; errorEl.textContent = e.message; dismiss.disabled = false; }
+      });
+      li.appendChild(dismiss); listEl.appendChild(li);
+    }
     // Groups by project, the project you last wrote in first; most recently written-in first inside each.
     const groups = new Map();
     for (const t of shown) {
@@ -116,7 +131,8 @@
         fetch(API + '/features').then((r) => (r.ok ? r.json() : {})).catch(() => ({})),
       ]);
       if (!res.ok) throw new Error('http ' + res.status);
-      const list = (await res.json()).threads || [];
+      const payload = await res.json();
+      const list = payload.threads || []; notices = payload.revoke_notices || [];
       errorEl.hidden = true;
       apply(list, features);
       try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ threads: list, features })); } catch (e) { /* no cache */ }

@@ -40,6 +40,13 @@ function uploadName(name) {
   return stem + ext;
 }
 
+// Canonical identity shared by SSH and HTTPS GitHub origins.
+function normalizeGithubOrigin(origin) {
+  if (typeof origin !== 'string') return null;
+  const match = /^(?:git@github\.com:|https:\/\/github\.com\/|ssh:\/\/git@github\.com\/)([a-z0-9_.-]+)\/([a-z0-9_.-]+?)(?:\.git)?$/i.exec(origin);
+  return match ? `github.com/${match[1]}/${match[2]}`.toLowerCase() : null;
+}
+
 // A refusal of the request itself: 400, so the hub and agents report it rather than retry.
 function die(message) { throw Object.assign(new Error(message), { status: 400 }); }
 function safeName(value, label) {
@@ -213,6 +220,7 @@ class MachineService {
     this.codexStepChunkSize = options.codexStepChunkSize || 8 * 1024 * 1024;
     this.startingWorktrees = new Set();
     this.startingNames = new Map(); // name -> the start in progress, so a repeated start joins it
+    this.cancelledStarts = new Set();
     this.startingBranches = new Set(); // worker branches named by a start not yet recorded
     this.repoQueues = new Map(); // repo -> tail of its fetch-and-add chain; one git writer per repo at a time
     this.logins = {};
@@ -227,10 +235,10 @@ class MachineService {
     this.drains = new Map();
     this.threadLocks = new Map();
     this.closingThreads = new Map();
-    // Threads archived since this service started. A vouched upload queued behind an archive
-    // would otherwise be admitted; ids are never reused, and a restart drops
-    // any upload still in flight, so memory is enough.
+    this.archiveMarkersPath = path.join(this.stateDir, 'archive-markers.json');
+    this.archivingThreads = new Set();
     this.archivedThreads = new Set();
+    this.archiveMarkerWrites = Promise.resolve();
     this.uploadRequests = new Map();
     this.options = options;
     this.sudo = new SudoRequests(this, atomicWrite, readJson, requestJson);
@@ -257,6 +265,12 @@ class MachineService {
       release();
       if (this.threadLocks.get(id) === current) this.threadLocks.delete(id);
     }
+  }
+  async persistArchiveMarkers() {
+    const write = () => atomicWrite(this.archiveMarkersPath, `${json({ archiving: [...this.archivingThreads], archived: [...this.archivedThreads] })}\n`);
+    const pending = this.archiveMarkerWrites.then(write, write);
+    this.archiveMarkerWrites = pending.catch(() => {});
+    return pending;
   }
   async reserveUpload(id, name) {
     const dir = path.join(this.stateDir, 'uploads', threadName(id));
@@ -342,6 +356,9 @@ class MachineService {
     await this.asideTurns.load();
     await this.sudo.load();
     this.sessions = await readJson(this.sessionsPath, {});
+    const markers = await readJson(this.archiveMarkersPath, { archiving: [], archived: [] });
+    this.archivingThreads = new Set(markers.archiving || []);
+    this.archivedThreads = new Set(markers.archived || []);
     await this.recoverFromTmux();
     await mkdir(path.join(this.stateDir, 'spool', 'cards'));
     await mkdir(path.join(this.stateDir, 'spool', 'events'));
@@ -476,6 +493,39 @@ class MachineService {
     // Two fetches into one repo at once can fail on ref locks, so starts in the same repo take
     // turns here; starts in other repos, and every other request, carry on meanwhile.
     const queued = this.inRepoQueue(path.resolve(repo), async () => {
+      if (input.from_remote_branch !== undefined) {
+        const sha = input.from_remote_branch?.sha;
+        if (typeof sha !== 'string' || !/^[0-9a-f]{40}$/.test(sha) || !/^wc\/[0-9a-f]{12}$/.test(branch)) die('invalid remote branch checkout');
+        const remote = await this.fetchHandoffBranch(repo, branch);
+        const ancestor = async (a, b) => (await commandAsync('git', ['-C', repo, 'merge-base', '--is-ancestor', a, b])).ok;
+        if (!remote.remote_has_branch || !await ancestor(sha, remote.remote_tip)) die('requested commit is not on the remote branch');
+        const run = async (...args) => {
+          const result = await commandAsync('git', ['-C', repo, ...args]);
+          if (!result.ok) die(result.stderr.trim() || 'git command failed');
+          return result.stdout.trim();
+        };
+        const exists = await fsp.lstat(destination).then(() => true, error => { if (error.code === 'ENOENT') return false; throw error; });
+        if (exists) {
+          const symbolic = await commandAsync('git', ['-C', destination, 'symbolic-ref', '--quiet', '--short', 'HEAD']);
+          const current = await commandAsync('git', ['-C', destination, 'rev-parse', '--verify', 'HEAD']);
+          const top = await commandAsync('git', ['-C', destination, 'rev-parse', '--show-toplevel']);
+          const worktrees = await run('worktree', 'list', '--porcelain');
+          const registered = worktrees.split('\n').includes(`worktree ${path.resolve(destination)}`);
+          if (!registered || !symbolic.ok || symbolic.stdout.trim() !== branch || !current.ok || !top.ok || path.resolve(top.stdout.trim()) !== path.resolve(destination) || !await ancestor(current.stdout.trim(), sha)) die(`the checkout folder for ${branch} is in an unexpected state`);
+          await run('-C', destination, 'merge', '--ff-only', sha);
+        } else {
+          const local = await commandAsync('git', ['-C', repo, 'rev-parse', '--verify', `refs/heads/${branch}`]);
+          if (!local.ok) await run('worktree', 'add', '-b', branch, destination, sha);
+          else if (await ancestor(local.stdout.trim(), sha)) {
+            await run('worktree', 'add', destination, branch);
+            await run('-C', destination, 'merge', '--ff-only', sha);
+          } else die(`a local branch ${branch} already exists and differs`);
+        }
+        await run('-C', destination, 'config', `branch.${branch}.remote`, 'origin');
+        await run('-C', destination, 'config', `branch.${branch}.merge`, `refs/heads/${branch}`);
+        await linkInstalledPackages(repo, destination);
+        return { worktree: destination, defaultBranch: await this.defaultBranch(repo), branch };
+      }
       const fetch = await commandAsync('git', ['-C', repo, 'fetch', 'origin']);
       if (!fetch.ok) die(fetch.stderr.trim() || 'git fetch failed');
       const defaultBranch = await this.defaultBranch(repo);
@@ -525,7 +575,7 @@ class MachineService {
     if (this.startingNames.has(name)) return this.startingNames.get(name);
     const starting = this.startNamed(input, name);
     this.startingNames.set(name, starting);
-    try { return await starting; } finally { this.startingNames.delete(name); }
+    try { return await starting; } finally { this.startingNames.delete(name); this.cancelledStarts.delete(name); }
   }
   async startNamed(input, name) {
     const adapter = adapters[input.cli];
@@ -566,8 +616,11 @@ class MachineService {
     const tmuxArgs = ['new-session', '-d', '-s', name, '-x', '200', '-y', '50', '-c', worktree, commandText];
     // systemd-run scope prevents service restarts killing tmux; installer sets KillMode=process too.
     // Both asynchronous, like the git above: a slow systemd-run must not hold up the service.
+    if (this.cancelledStarts.has(name)) die('session start was cancelled');
     const scoped = process.platform === 'darwin' ? { ok: false } : await commandAsync('systemd-run', ['--user', '--scope', 'tmux', ...tmuxArgs]);
+    if (this.cancelledStarts.has(name)) { if (scoped.ok) this.tmux(['kill-session', '-t', `=${name}`]); die('session start was cancelled'); }
     const result = scoped.ok ? scoped : await commandAsync('tmux', tmuxArgs);
+    if (this.cancelledStarts.has(name)) { if (result.ok) this.tmux(['kill-session', '-t', `=${name}`]); die('session start was cancelled'); }
     if (!result.ok) die(result.stderr.trim() || 'tmux session failed to start');
     this.sessions[name] = session;
     await this.persistSessions();
@@ -744,6 +797,9 @@ class MachineService {
     this.closingThreads.set(threadId, (this.closingThreads.get(threadId) || 0) + 1);
     for (const request of this.uploadRequests.get(threadId) || []) request.destroy();
     try { return await this.withThreadLock(threadId, async () => {
+    this.archivingThreads.add(threadId);
+    try {
+    await this.persistArchiveMarkers();
     const sessions = Object.values(this.sessions).filter(session => !session.name.startsWith('wc-login-') && session.thread_id === threadId);
     const stopped = [];
     for (const session of sessions) {
@@ -806,6 +862,10 @@ class MachineService {
       catch (error) { uploads_removed = false; uploads_error = error.message; }
     }
     return { stopped, committed, removed, kept, uploads_removed, ...(uploads_error ? { uploads_error } : {}) };
+    } finally {
+      this.archivingThreads.delete(threadId);
+      await this.persistArchiveMarkers();
+    }
     }); } finally {
       const remaining = this.closingThreads.get(threadId) - 1;
       if (remaining) this.closingThreads.set(threadId, remaining); else this.closingThreads.delete(threadId);
@@ -1167,6 +1227,218 @@ class MachineService {
     }
     return out;
   }
+  async fetchHandoffBranch(repo, branch) {
+    const ref = `refs/heads/${branch}`;
+    const listed = await commandAsync('git', ['-C', repo, 'ls-remote', 'origin', ref]);
+    if (!listed.ok) throw new Error(listed.stderr.trim() || 'git ls-remote failed');
+    const line = listed.stdout.split('\n').map(row => row.split(/\s+/)).find(parts => parts[1] === ref);
+    if (!line) return { remote_has_branch: false, remote_tip: null };
+    const fetched = await commandAsync('git', ['-C', repo, 'fetch', 'origin', `+${ref}:refs/remotes/origin/${branch}`]);
+    if (!fetched.ok) throw new Error(fetched.stderr.trim() || 'git fetch failed');
+    const tip = await commandAsync('git', ['-C', repo, 'rev-parse', 'FETCH_HEAD']);
+    if (!tip.ok) throw new Error(tip.stderr.trim() || 'git rev-parse failed');
+    return { remote_has_branch: true, remote_tip: tip.stdout.trim() };
+  }
+  async handoff(input) {
+    const invalid = message => { throw Object.assign(new Error(message), { status: 422, handoff: true }); };
+    if (!input || typeof input !== 'object' || Array.isArray(input)) invalid('invalid request');
+    const { action, thread_id: id } = input;
+    if (typeof id !== 'string' || !/^[0-9a-f]{12}$/.test(id)) invalid('invalid thread_id');
+    const fields = {
+      status: ['worktree', 'slug'], push: ['worktree', 'branch', 'sha'],
+      inspect: ['branch', 'head', 'slug'], 'claim-commit': ['parent', 'message'],
+      'claim-state': ['branch', 'parent', 'sha'], 'claim-push': ['branch', 'parent', 'sha'],
+      'claim-revoke': ['branch', 'parent', 'sha'], reopen: [],
+      'fast-forward': ['worktree', 'branch', 'head'], 'set-branch': ['branch', 'sha'],
+      running: [], kill: ['names'], known: ['head'],
+    };
+    if (!Object.hasOwn(fields, action)) invalid('invalid action');
+    for (const field of fields[action]) if (input[field] === undefined || input[field] === null) invalid(`${field} required`);
+    for (const field of ['branch']) if (input[field] !== undefined && (typeof input[field] !== 'string' || !/^wc\/[0-9a-f]{12}$/.test(input[field]))) invalid(`invalid ${field}`);
+    for (const field of ['sha', 'parent', 'head', 'fallback_head']) if (input[field] !== undefined && (typeof input[field] !== 'string' || !/^[0-9a-f]{40}$/.test(input[field]))) invalid(`invalid ${field}`);
+    if (input.slug !== undefined && (typeof input.slug !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(input.slug))) invalid('invalid slug');
+    if (input.message !== undefined && (typeof input.message !== 'string' || !input.message.trim())) invalid('invalid message');
+    if (input.pr_url !== undefined && (typeof input.pr_url !== 'string' || !/^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/[0-9]+$/.test(input.pr_url))) invalid('invalid pr_url');
+    if (action === 'kill' && (!Array.isArray(input.names) || input.names.some(name => typeof name !== 'string' || !name.startsWith(`wc-${id}-`)))) invalid('invalid names');
+    const gitAction = !['reopen', 'running', 'kill'].includes(action);
+    let repo;
+    if (gitAction) {
+      if (typeof input.project !== 'string' || !path.isAbsolute(input.project)) invalid('invalid project');
+      const checked = await this.projects(new URLSearchParams({ check: input.project }));
+      if (!checked.checked.ok) invalid('invalid project');
+      repo = path.resolve(input.project);
+    }
+    if (input.worktree !== undefined) {
+      if (typeof input.worktree !== 'string' || !path.isAbsolute(input.worktree)) invalid('invalid worktree');
+      const target = path.resolve(input.worktree);
+      const recorded = Object.values(this.sessions).some(s => s.thread_id === id && s.created_worktree && s.worktree && path.resolve(s.worktree) === target);
+      const expected = repo && path.join(this.stateDir, 'worktrees', path.basename(repo), 'wc', id);
+      if (!recorded && !(['inspect', 'known'].includes(action) && target === expected)) invalid('invalid worktree');
+    }
+    try {
+      return await this.withThreadLock(id, () => gitAction
+        ? this.inRepoQueue(repo, () => this.handoffAction(input, repo))
+        : this.handoffAction(input, repo));
+    } catch (error) { return { result: 'failed', error: error.message }; }
+  }
+  async handoffAction(input, repo) {
+    const git = (...args) => commandAsync('git', ['-C', repo, ...args]);
+    const run = async (...args) => {
+      const result = await git(...args);
+      if (!result.ok) throw new Error((result.stderr || result.stdout).trim().split('\n').pop() || 'git command failed');
+      return result.stdout.trim();
+    };
+    const ancestor = async (a, b) => (await git('merge-base', '--is-ancestor', a, b)).ok;
+    const repository = async () => normalizeGithubOrigin(await run('remote', 'get-url', 'origin'));
+    const statuses = async (ref, slug) => {
+      const show = async name => git('show', `${ref}:docs/plans/${slug}/${name}.md`);
+      const [idea, plan, map] = await Promise.all(['IDEA', 'PLAN', 'MAP'].map(show));
+      const status = result => result.ok ? (result.stdout.match(/^status:\s*([^\s#]+)/m)?.[1] || null) : null;
+      return { idea_status: status(idea), plan_status: status(plan), map_committed: map.ok };
+    };
+    const { action, branch, head, worktree, slug } = input;
+    const claimState = async () => {
+      let remote;
+      try { remote = await this.fetchHandoffBranch(repo, branch); }
+      catch (error) { return { result: 'unknown', error: error.message }; }
+      const tip = remote.remote_tip;
+      if (!remote.remote_has_branch) return { result: 'unknown' };
+      if (tip === input.sha || await ancestor(input.sha, tip)) return { result: 'landed', remote_tip: tip };
+      if (tip === input.parent) return { result: 'parent', remote_tip: tip };
+      let picked_up_at = null;
+      if (await ancestor(input.parent, tip)) {
+        const commits = await run('rev-list', '--reverse', '--ancestry-path', `${input.parent}..${tip}`);
+        if (commits) picked_up_at = await run('show', '-s', '--format=%cI', commits.split('\n')[0]);
+      }
+      return { result: 'moved', remote_tip: tip, picked_up_at };
+    };
+    if (action === 'claim-commit') return { sha: await run('commit-tree', `${input.parent}^{tree}`, '-p', input.parent, '-m', input.message) };
+    if (action === 'claim-state') return claimState();
+    if (action === 'claim-push') {
+      let state = await claimState(); let pushed;
+      if (state.result === 'parent') {
+        pushed = await git('push', `--force-with-lease=refs/heads/${branch}:${input.parent}`, 'origin', `${input.sha}:refs/heads/${branch}`);
+        state = await claimState();
+      }
+      if (state.result === 'parent' || state.result === 'unknown') {
+        const error = pushed && !pushed.ok ? (pushed.stderr || pushed.stdout).trim().split('\n').pop() : state.error;
+        return { result: 'unknown', ...(error ? { error } : {}) };
+      }
+      return state;
+    }
+    if (action === 'claim-revoke') {
+      let state = await claimState();
+      if (state.result === 'unknown' || state.remote_tip === input.parent) return { result: 'waiting' };
+      if (state.remote_tip !== input.sha) return { result: 'gone' };
+      const pushed = await git('push', `--force-with-lease=refs/heads/${branch}:${input.sha}`, 'origin', `${input.parent}:refs/heads/${branch}`);
+      if (pushed.ok) return { result: 'revoked' };
+      state = await claimState();
+      if (state.result === 'unknown' || state.remote_tip === input.parent) return { result: 'waiting' };
+      if (state.remote_tip !== input.sha) return { result: 'gone' };
+      return { result: 'failed', error: (pushed.stderr || pushed.stdout).trim().split('\n').pop() || 'git push failed' };
+    }
+    const setUpstream = async target => {
+      await run('-C', target, 'config', `branch.${branch}.remote`, 'origin');
+      await run('-C', target, 'config', `branch.${branch}.merge`, `refs/heads/${branch}`);
+    };
+    if (action === 'fast-forward') {
+      if (await run('-C', worktree, 'status', '--porcelain')) return { result: 'failed', error: 'The worktree has uncommitted changes.' };
+      const current = await git('-C', worktree, 'symbolic-ref', '--quiet', '--short', 'HEAD');
+      if (!current.ok || current.stdout.trim() !== branch) return { result: 'failed', error: `The worktree is not on ${branch}.` };
+      const old = await run('-C', worktree, 'rev-parse', 'HEAD');
+      if (!await ancestor(old, head)) return { result: 'failed', error: 'The worktree has diverged.' };
+      await run('-C', worktree, 'merge', '--ff-only', head);
+      if (await run('-C', worktree, 'rev-parse', 'HEAD') !== head) return { result: 'failed', error: 'The worktree did not reach the requested head.' };
+      await setUpstream(worktree);
+      return { result: 'ok' };
+    }
+    if (action === 'set-branch') {
+      const local = await git('rev-parse', '--verify', `refs/heads/${branch}`);
+      if (local.ok && !await ancestor(local.stdout.trim(), input.sha)) return { result: 'failed', error: `a local branch ${branch} already exists and differs` };
+      await run('branch', '-f', branch, input.sha);
+      return { result: 'ok' };
+    }
+    if (action === 'known') {
+      const name = `wc/${input.thread_id}`;
+      const local = await git('rev-parse', '--verify', `refs/heads/${name}`);
+      const listed = await run('worktree', 'list', '--porcelain', '-z');
+      const checked_out = []; let current = null;
+      for (const line of listed.split('\0')) {
+        if (line.startsWith('worktree ')) current = line.slice(9);
+        else if (current !== null && line === `branch refs/heads/${name}`) checked_out.push(current);
+      }
+      const dirs = await fsp.readdir(path.join(this.stateDir, 'worktrees')).catch(() => []);
+      let worktreeKnown = false;
+      for (const project of dirs) {
+        const projectDir = path.join(this.stateDir, 'worktrees', project);
+        if (await fsp.stat(path.join(projectDir, 'wc', input.thread_id)).catch(() => null)) { worktreeKnown = true; break; }
+        const names = await fsp.readdir(projectDir).catch(() => []);
+        if (names.some(name => name.startsWith(`wc-${input.thread_id}-`))) { worktreeKnown = true; break; }
+      }
+      const known = worktreeKnown || Object.values(this.sessions).some(session => session.thread_id === input.thread_id) || this.archivedThreads.has(input.thread_id) || !!this.archivingThreads?.has(input.thread_id);
+      return { known, local_branch: local.ok, local_ancestor: local.ok ? await ancestor(local.stdout.trim(), head) : null, checked_out };
+    }
+    if (action === 'reopen') {
+      this.archivingThreads.delete(input.thread_id);
+      this.archivedThreads.delete(input.thread_id);
+      await this.persistArchiveMarkers();
+      return { ok: true };
+    }
+    if (action === 'running' || action === 'kill') {
+      const prefix = `wc-${input.thread_id}-`;
+      const running = () => {
+        const live = this.liveTmux();
+        if (!live) throw new Error('Could not list tmux sessions.');
+        return [...new Set([...this.startingNames.keys(), ...live].filter(name => name.startsWith(prefix)))];
+      };
+      if (action === 'kill') {
+        for (const name of input.names) {
+          if (this.startingNames.has(name)) this.cancelledStarts.add(name);
+          if (running().includes(name)) this.tmux(['kill-session', '-t', `=${name}`]);
+        }
+      }
+      return { names: running() };
+    }
+    if (action === 'status') {
+      const symbolic = await git('-C', worktree, 'symbolic-ref', '--quiet', '--short', 'HEAD');
+      const current = symbolic.ok ? symbolic.stdout.trim() : null;
+      const actualHead = await run('-C', worktree, 'rev-parse', 'HEAD');
+      const dirty = !!(await run('-C', worktree, 'status', '--porcelain'));
+      const remote = await this.fetchHandoffBranch(repo, `wc/${input.thread_id}`);
+      let pr_state = null; let pr_error;
+      if (input.pr_url) {
+        const gh = await commandAsync('gh', ['pr', 'view', '--json', 'state', '--', input.pr_url], { cwd: repo });
+        if (gh.ok) { try { pr_state = JSON.parse(gh.stdout).state || null; } catch { pr_error = 'Invalid pull request response.'; } }
+        else pr_error = gh.stderr.trim() || 'Could not check pull request.';
+      }
+      return { dirty, branch: current, head: actualHead, ...remote, ...await statuses(actualHead, slug), repository: await repository(), pr_state, ...(pr_error ? { pr_error } : {}) };
+    }
+    if (action === 'push') {
+      await run('-C', worktree, 'push', 'origin', `${input.sha}:refs/heads/${branch}`);
+      return { head: input.sha, repository: await repository() };
+    }
+    if (action === 'inspect') {
+      const remote = await this.fetchHandoffBranch(repo, branch);
+      const contains = remote.remote_has_branch && await ancestor(head, remote.remote_tip);
+      let picked_up_at = null;
+      if (contains && remote.remote_tip !== head) {
+        const commits = await run('rev-list', '--reverse', '--ancestry-path', `${head}..${remote.remote_tip}`);
+        if (commits) picked_up_at = await run('show', '-s', '--format=%cI', commits.split('\n')[0]);
+      }
+      let local_head = null; let worktree_exists = false;
+      if (worktree) {
+        const top = await git('-C', worktree, 'rev-parse', '--show-toplevel');
+        const actual = await git('-C', worktree, 'rev-parse', '--verify', 'HEAD');
+        if (top.ok && path.resolve(top.stdout.trim()) === path.resolve(worktree) && actual.ok) { worktree_exists = true; local_head = actual.stdout.trim(); }
+      }
+      if (!local_head) { const local = await git('rev-parse', '--verify', `refs/heads/${branch}`); if (local.ok) local_head = local.stdout.trim(); }
+      if (!local_head) local_head = input.fallback_head || null;
+      let relation = null;
+      if (local_head) relation = local_head === head ? 'same' : await ancestor(head, local_head) ? 'behind' : await ancestor(local_head, head) ? 'ahead' : 'diverged';
+      return { repository: await repository(), ...remote, remote_contains_head: !!contains, picked_up_at, local_head, worktree_exists, relation, ...await statuses(head, slug) };
+    }
+    return { result: 'failed', error: 'Action is not implemented.' };
+  }
   async handle(request, response) {
     const url = new URL(request.url, 'http://machine.local');
     const pathBits = url.pathname.split('/').filter(Boolean);
@@ -1247,6 +1519,12 @@ class MachineService {
         response.writeHead(200, { 'content-type': type || 'application/octet-stream', 'x-content-type-options': 'nosniff', ...(!type ? { 'content-disposition': 'attachment' } : {}) });
         file.createReadStream().on('error', () => response.destroy()).pipe(response); return;
       }
+      if (request.method === 'POST' && url.pathname === '/v1/handoff') {
+        await this.authorize(request, 'hub');
+        let input;
+        try { input = await bodyOf(request); } catch (error) { if (error.status === 400) throw Object.assign(error, { status: 422, handoff: true }); throw error; }
+        return send(response, 200, await this.handoff(input));
+      }
       if (request.method === 'POST' && url.pathname === '/v1/archive') { await this.authorize(request, 'hub'); return send(response, 200, await this.archive((await bodyOf(request)).thread_id)); }
       if (pathBits[0] === 'v1' && pathBits[1] === 'sessions' && pathBits[2]) {
         const name = decodeURIComponent(pathBits[2]); await this.authorize(request, 'hub');
@@ -1308,7 +1586,7 @@ class MachineService {
       if (request.method === 'POST' && url.pathname === '/v1/agent/git') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.git(agent, await bodyOf(request))); }
       if (request.method === 'POST' && url.pathname === '/v1/agent/session') { const agent = await this.authorize(request, 'agent'); return send(response, 200, await this.forwardSession(agent, await bodyOf(request))); }
       throw Object.assign(new Error('not found'), { status: 404 });
-    } catch (error) { if (!response.destroyed && !response.headersSent) send(response, error.status || 500, { error: error.message || String(error) }); }
+    } catch (error) { if (!response.destroyed && !response.headersSent) send(response, error.status || 500, { ...(error.handoff ? { result: 'failed' } : {}), error: error.message || String(error) }); }
   }
   async listen() {
     await this.init();
@@ -1332,4 +1610,4 @@ if (require.main === module) {
   const options = parseArgs(process.argv.slice(2));
   new MachineService(options).listen().catch(error => { process.stderr.write(`machine: ${error.message}\n`); process.exitCode = 1; });
 }
-module.exports = { MachineService, command, DEFAULT_STATE };
+module.exports = { MachineService, command, DEFAULT_STATE, normalizeGithubOrigin };
