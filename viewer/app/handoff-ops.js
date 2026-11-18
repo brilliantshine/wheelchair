@@ -110,22 +110,18 @@ async function runOperation(hub, id, { reimport = false } = {}) {
   await hub.restartLead(id).catch(() => {});
   return result;
 }
+// The import route holds withThread across its decision and these helpers. The caller
+// starts the lead after releasing that lock once the returned operation completed.
 async function startCreate(hub, { file, machine, project }) {
-  const id = file.thread.id;
-  const result = await hub.withThread(id, async () => {
-    const now = new Date().toISOString();
-    const thread = { id, title: file.thread.title, slug: file.thread.slug, machine, project, branch: `wc/${id}`, stub: false, context: '', depends_on_parent: false, waiting_on_parent: false, sessions: [], cards: [], asides: [], pinned: {}, queues: {}, sent: [], archived: false, created_at: now, updated_at: now, handoff_op: operation('create', file.head, file) };
-    await hub.save(thread);
-    return runLocked(hub, thread);
-  });
-  await hub.restartLead(id).catch(() => {}); return result;
+  const id = file.thread.id, now = new Date().toISOString();
+  const thread = { id, title: file.thread.title, slug: file.thread.slug, machine, project, branch: `wc/${id}`, stub: false, context: '', depends_on_parent: false, waiting_on_parent: false, sessions: [], cards: [], asides: [], pinned: {}, queues: {}, sent: [], archived: false, created_at: now, updated_at: now, handoff_op: operation('create', file.head, file) };
+  await hub.save(thread);
+  return runLocked(hub, thread);
 }
 async function startAdvance(hub, thread, file) {
-  const result = await hub.withThread(thread.id, async () => {
-    const current = await hub.thread(thread.id); current.handoff_op = operation('advance', file.head, file); await hub.save(current);
-    return runLocked(hub, current);
-  });
-  await hub.restartLead(thread.id).catch(() => {}); return result;
+  thread.handoff_op = operation('advance', file.head, file);
+  await hub.save(thread);
+  return runLocked(hub, thread);
 }
 async function undo(hub, id) {
   const result = await hub.withThread(id, async () => {
