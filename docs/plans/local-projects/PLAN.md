@@ -19,7 +19,7 @@ None.
 |---|---------|-------------------------|-----------------|---------|
 | 1 | Claude Code asks for approval of project `.mcp.json` servers interactively | A session in tmux could stall on that prompt | no | Settled: pre-approve via `enableAllProjectMcpServers` in the per-session `--settings` file (verified); see Spec. Decision 5 |
 | 2 | Codex and Antigravity config locations | Per-session MCP config without touching global config | no | Codex: `-c mcp_servers.<name>.*` per invocation (verified). Antigravity: none found; promoted to Q3, settled as Decision 7 |
-| 3 | IDEA asks for plain failure reporting | How a tool that fails to start is detected and shown | no | Settled by default, Decision 6, superseded by Decisions 10 and 15 |
+| 3 | IDEA asks for plain failure reporting | How a tool that fails to start is detected and shown | no | Settled by default, Decision 6; superseded by 10 and 15; moved to the follow-up by Decision 16 |
 
 ## Decision Log
 
@@ -42,6 +42,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 13 | Codex: a project server whose name matches a server in the account's own Codex config is skipped with a warning, instead of overriding it | `-c` overrides merge field by field into the account table (env keys survive, mixed transports are rejected); skipping is the only safe rule | review-round-2 |
 | 14 | One open `Project tools problem` card per thread, keyed on its warning lines, closed by the hub when a later tools-getting start has no warnings | Avoid a stack of identical cards; system cards cannot be closed by hand | review-round-2 |
 | 15 | Supersedes 5 and 14 where they differ: Claude rules as in the Spec (rejected entries always disabled). The card's lines are kept per CLI; each tools-getting start replaces its own CLI's lines; the card closes when no lines are left | A clean start on one CLI must not clear another CLI's problems; deleting or emptying the file must clear them | review-round-3 |
+| 16 | Supersedes 6, 10, 14 and 15 for this part: no program check and no `Project tools problem` notice. Skips and problems are written as lines to the machine service's log only. Telling Collin about broken or skipped tools moves to the follow-up (D4). IDEA.md's "finds out plainly" bullet moves to the follow-up | Three review rounds churned on notice delivery and the program check, not on loading tools; Collin chose to move them | idea-change |
 
 ## Spec
 
@@ -63,7 +64,7 @@ means today's behaviour, byte for byte: same settings file, same argv.
 
 - In `startIn` (`machine/service.js`, before `commandFor`), read `<worktree>/.mcp.json`.
   Pass the validated server map (or `null`) to the adapter's `command` through its
-  `context`, and collect a `warnings` array.
+  `context`, and collect a `warnings` array (used only for the log, below).
 - Missing file: no servers, no warnings.
 - Unparseable JSON, or `mcpServers` missing, not an object, or an array: no servers, one
   warning (`.mcp.json could not be read: <reason>`). The session still starts.
@@ -75,23 +76,13 @@ means today's behaviour, byte for byte: same settings file, same argv.
   Anything else (`null`, wrong types, other `type`) is dropped for both CLIs.
 - Warnings never contain an expanded value: they quote the file's own text.
 - Warnings are only collected for roles that get tools (and for the Antigravity case
-  below). Roles that don't get tools still read the file to disable its entries, but report
+  below). Roles that don't get tools still read the file to disable its entries, but log
   nothing.
+- Each warning is written as one line to the machine service's stderr
+  (`console.error`), prefixed with the session name: `<session>: project tools: <warning>`.
+  Nothing is added to the start response, the hub or the thread.
 - What is read is the file on disk in the session's worktree at start, which is also what
   Claude Code reads, so both always agree.
-
-### Program check (warning only)
-
-For roles that get tools, each valid stdio server's `command` is checked. A failure adds a
-warning (`tool "<name>": program "<command>" not found on <machine>`) and changes nothing
-else: the server is still passed to the CLI.
-- Contains `${`: not checked.
-- No `/`: looked up on the PATH the CLI will get. Panes inherit the tmux server's global
-  environment, not the service's, so use `tmux show-environment -g PATH` when a tmux server
-  is already running, and the service process's PATH otherwise (a new tmux server takes
-  it from the service).
-- Relative with a `/`: resolved against the worktree (the CLI's working directory).
-- Absolute: must exist and be executable.
 
 ### Claude Code (`machine/adapters/claude.js` `command`)
 
@@ -130,28 +121,6 @@ else: the server is still passed to the CLI.
 - No change to its argv. If the file has servers and the role would get tools, add the
   warning `project tools aren't supported on Antigravity yet; this agent runs without them`.
 
-### Where warnings go
-
-- The machine returns `mcp_warnings` (array of strings) in its start response and keeps it
-  on the session record.
-- The machine also returns `mcp_checked: true` for every start of a role that gets tools
-  (whether or not a file exists), and the CLI.
-- The hub keeps, on the thread, the current warning lines per CLI (`claude`, `codex`,
-  `agy`). Every successful start response with `mcp_checked: true` replaces that CLI's lines
-  with its `mcp_warnings` (empty clears them). This applies on every path where the hub
-  handles a successful machine start: `startSession`, the queued promotion
-  (`viewer/app/sessions.js:773`) and `resumeUnanswered` (`viewer/app/sessions.js:185`).
-  Put it in one helper they all call.
-- Then, if the set of lines changed:
-  - Mark any open system card titled `Project tools problem` answered (`card.answered =
-    true`, as at `viewer/app/threads.js:166`).
-  - If any lines remain, post a new one (`addCard(..., { system: true })`, as at
-    `viewer/app/sessions.js:253`): each line prefixed with its CLI (`Codex: ...`), then
-    `Agents read .mcp.json from their own folder of the thread's branch: new agents see
-    committed changes; a restarted agent sees its folder as it is.`
-- No change to `lead.md`, to the start `note`, or to `wc.js` output except that `--full`
-  output may include the new session fields.
-
 ### Edge cases
 
 - Session restart or replacement re-reads the file from its worktree at start.
@@ -161,8 +130,6 @@ else: the server is still passed to the CLI.
 - A project that already commits `.mcp.json` for Collin's own Claude Code counts as a
   project with tools: its servers start, without a prompt, for the roles that get tools.
   The "no change" constraint applies to projects with no `.mcp.json`.
-- A session the machine recovers after a service restart, before its record was saved,
-  may come back without its warnings; the next start shows them again (Accepted Risks).
 - A newly cut worktree sees `.mcp.json` as committed on the branch it is cut from (the
   fetched default branch for a new thread; the thread branch for workers and verifiers). A
   reused worktree (lead restart, sub-lead, a worker replacement) sees the file on disk,
@@ -177,6 +144,7 @@ else: the server is still passed to the CLI.
 ### Non-goals
 
 - Any settings screen for tools; writing `.mcp.json`; installing programs.
+- Telling Collin about broken or skipped tools, and checking that a tool's program exists (deferred, D4).
 - Real connection health checks (deferred).
 - Antigravity support (deferred).
 
@@ -186,18 +154,12 @@ else: the server is still passed to the CLI.
 - New tests in `machine/test/` cover, for Claude and Codex: no file (settings and argv
   identical to today's), a worker with a stdio and an http server, a reviewer with servers
   (Claude `disabledMcpjsonServers`, Codex none), bad JSON, an array as `mcpServers`, a bad
-  entry next to a good one, a missing command (warned, still passed), an `env` pass-through
-  `${KEY}` becoming `env_vars`, another `${...}` skipping the server (Codex), a dotted name
-  skipped (Codex), a `headers` server skipped (Codex), no expanded value in the argv, and
-  the Antigravity warning.
-- A viewer test covers a start response with `mcp_warnings` producing one system `needs`
-  card, a repeat with the same warnings producing none, a new warning replacing it with the
-  union, a clean start on one CLI leaving another CLI's lines, a start finding no file
-  clearing that CLI's lines, and the same handling on the `resumeUnanswered` path.
-- Machine tests also cover: a no-tools role reporting no warnings, every entry invalid
-  (Claude disables them all, no `enableAllProjectMcpServers`), a Codex name collision
-  skipped, the collision probe's cwd, trust override and environment, its timeout and bad
-  output, and the PATH used for the check.
+  entry next to a good one, every entry invalid (Claude disables them all, no
+  `enableAllProjectMcpServers`), an `env` pass-through `${KEY}` becoming `env_vars`,
+  another `${...}` skipping the server (Codex), a dotted name skipped (Codex), a `headers`
+  server skipped (Codex), a Codex name collision skipped, the collision probe's cwd, trust
+  override, environment, timeout and bad output, no expanded value in the argv, and a
+  warning line reaching the service log.
 - Manual: in a scratch repo with `.mcp.json` naming a tiny stdio server with one tool,
   start a Claude worker and a Codex worker; each reaches ready without a prompt, `/mcp`
   inside each session shows the server connected, and each calls the tool once.
@@ -208,14 +170,13 @@ else: the server is still passed to the CLI.
 |---|------|-----------------|--------|-------------------------|
 | D1 | Antigravity support | Claude Code and Codex cover normal use; Antigravity has no per-session config | planning | `agy --settings` rejects `mcpServers` (verified). Servers live in global `~/.gemini/config/mcp_config.json` or `plugins/<name>/mcp_config.json`. Try a per-session config home (e.g. `XDG_CONFIG_HOME`/`HOME` override) or a per-session plugin dir |
 | D2 | Real connection health check for tools | A missing-program check covers the common failure | planning | `claude mcp list` reports Connected/Failed; `codex mcp list` and `agy mcp list` only list config |
+| D4 | Telling Collin when a tool is broken or skipped, including a check that each tool's program exists | Tools load without it; an agent that can't reach a tool says so | review-round-3 (Collin's choice) | Review rounds 1-3 in this PLAN.md worked through a design: per-CLI warning lines on the thread, one system `needs` card keyed on them, closed when a CLI's clean start clears its lines, applied on `startSession`, queued promotion and `resumeUnanswered`; program check PATH from `tmux show-environment -g PATH`, with `update-environment` and a restart-gap as known limits. Warnings already reach the machine log (Decision 16) |
 | D3 | Codex: servers with `headers`, other transport types, or `${...}` beyond env pass-through | Stdio and plain http cover typical local tools | planning | Check Codex keys such as `http_headers` / `bearer_token_env_var` |
 
 ## Accepted Risks
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
-| Warnings for a start interrupted by a machine service restart between tmux start and record save can be lost | Narrow window; only the notice is lost, the tools still load, and the next start re-reports | review-round-2 |
-| The program check's PATH can differ from the pane's if a tmux config adds PATH to `update-environment` | Unusual config; the result is only a wrong warning, never a removed tool | review-round-3 |
 
 ## Review Rounds
 
@@ -289,6 +250,18 @@ else: the server is still passed to the CLI.
 | mechanics | blocking (re-raise) | `resumeUnanswered` success path drops warnings | upheld as major | Shared helper on all three paths |
 | mechanics | minor (re-raise) | tmux `update-environment` can override PATH | accepted-risk | Accepted Risks |
 | mechanics | minor (re-raise) | Reused worktrees see uncommitted edits; text says commit | upheld | Edge case and card text corrected |
+
+### Round 4 — 2026-11-18
+
+**Lanes:** intent: pending; mechanics: pending; cross-family: pending.
+
+**Changed since the last round:**
+- Program check and the `Project tools problem` notice removed from this part and moved to Deferred D4 (Decision 16, Collin's choice). Warnings are only logged by the machine service.
+- The two Accepted Risks about the notice and program check were removed with them (now notes on D4).
+- Validation list trimmed to match.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Implementation Tasks
 

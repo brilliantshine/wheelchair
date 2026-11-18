@@ -30,8 +30,8 @@ trying a thread's work in your own checkout) are their own threads.
 - Any new thread in that project, on Claude Code or Codex, has agents that can see and
   call that tool, without touching account settings.
 - Projects without custom tools behave exactly as today.
-- If a tool can't start (missing program, wrong path), Collin finds out plainly rather
-  than agents silently going without it.
+- Later, in the follow-up thread: if a tool can't start (missing program, wrong path),
+  Collin finds out plainly rather than agents silently going without it.
 
 ## Not doing
 
