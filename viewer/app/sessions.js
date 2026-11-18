@@ -294,7 +294,7 @@ async function startSession(hub, thread, input) {
   if (title) session.title = title;
   if (typeof input.brief === 'string') session.brief = input.brief;
   if (!input._waiting) thread.sessions.push(session);
-  Object.assign(session, { model: resolved.model, effort: input.effort || resolved.effort || null, status: 'starting', cli, provider: selection.provider, account: selection.account.id, template_id: layers.template?.id || null, ...(role === 'lead' ? { style_version: settings.style_version } : {}) });
+  Object.assign(session, { live: true, model: resolved.model, effort: input.effort || resolved.effort || null, status: 'starting', cli, provider: selection.provider, account: selection.account.id, template_id: layers.template?.id || null, ...(role === 'lead' ? { style_version: settings.style_version } : {}) });
   if (selection.note) session.note = selection.note;
   delete session.pending_start; delete session.waiting_until; delete session.waiting_reason; delete session.waiting_provider;
   if (role === 'lead' && !thread.lead_name) await hub.saveWithLeadName(thread);
@@ -810,6 +810,7 @@ module.exports = {
   sendNow,
   releaseLimits,
   publicSession,
+  newSessionName,
   resolveModel,
   session,
   sessionRequest,
