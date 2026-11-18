@@ -74,6 +74,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 37 | Version floor 2.6.3 restored as a machine-wide problem (guards against the old Python `kimi`); binding in `findTranscript`; fixed `delivery_id` per Kimi turn; fatal log problems stop the session instead of failing a turn; unknown turn-end reasons become `turn-failed` | Review round 10 | review-round-10 |
 | 38 | Generic `end_reason` on machine sessions shown in ended notices and the lead's "Sessions ended" card; hub keeps a per-session `last_turn_id`; fixed delivery ids only on the internal path; version floor also checked at agent start; bound-log loss stops the session | Review round 11 | review-round-11 |
 | 39 | Supersedes the fixed delivery id in 37/38: the hub's per-session `last_turn_id` is the only re-send guard; poller hands off one turn per tick; bound-log identity persisted and checked by chat copies; fatal stops retry the kill and block submissions | Review round 12 | review-round-12 |
+| 40 | Re-send guard keyed by app session only; agent hooks carry only permission prompts for Kimi; poller waits for this session's spool to drain; superseded catch-up turn ends do not release the queue; copier validates the opened file; fatal kill uses an exact target and confirms absence | Review round 13 | review-round-13 |
 
 ## Spec
 
@@ -348,9 +349,11 @@ main log, the way it already polls Codex rollouts (`pollCodexSteps`,
   - still unbound 120 s after the session became `ready` (role message submitted or not):
     "Couldn't find Kimi Code's log for this session", unless the next case applies;
   - an incompatible candidate (by its metadata row) that carries this session's marker:
-    each line is decoded as JSON and any string value in it containing the line
-    `Session: <session name>` (newline-delimited after decoding) counts (tested with a
-    serialized multi-line prompt): "Kimi Code's log format changed (protocol <v>); update
+    each line is decoded as JSON and any string value in it that **starts with
+    `[wc:role]`** and contains the line `Session: <session name>` (newline-delimited
+    after decoding) counts, so a log that merely quotes the name in assistant text or a
+    tool call does not (tested with a serialized multi-line prompt, and with an unrelated
+    incompatible log quoting the line mid-text): "Kimi Code's log format changed (protocol <v>); update
     wheelchair". An incompatible candidate without that line is someone else's and is
     ignored; candidates not yet showing a user prompt stay pending until the deadline;
   - a bound log that is missing or unreadable on every tick for 30 s, or whose size drops
@@ -358,13 +361,19 @@ main log, the way it already polls Codex rollouts (`pollCodexSteps`,
     disappeared or was replaced". A single failed read is retried on the next tick. The
     identity (`dev` and `ino`) is persisted at bind time as `kimi_log_id`, and the
     transcript copier used by chat reads (`machine/service.js:885-925`) checks it too
-    for Kimi sessions: it copies nothing from a file whose identity differs, before or
-    after the session stops.
+    for Kimi sessions, on the **opened** handle (`fstat` after `open`, not the earlier
+    path `stat`): it copies nothing when the identity differs or the size is below the
+    copier's own offset (no restart from byte zero for Kimi). Once `end_reason` is set
+    the copier never reads the source again; chat serves the retained copy. Tests: a file
+    swapped between `stat` and `open`, and a same-inode truncation, copy nothing.
 
   **Stopping reliably.** Once a fatal case is recorded, the machine refuses any further
   message submission to that session (typed delivery returns the `end_reason` as an
-  error) and retries the tmux kill on every tick until tmux no longer lists the pane;
-  only then is the session marked stopped.
+  error) and retries the tmux kill on every tick with the exact target `=<name>` (never
+  the prefix-matching bare name used by today's `stop()`, `machine/service.js:764`, which
+  could hit a sibling such as `<name>-2` once the pane is gone). Only after a successful
+  `list-sessions` shows the name absent is the session marked stopped; a failed listing
+  changes nothing. Test: with `<name>` gone and `<name>-2` live, the retry kills nothing.
 
   The hub's ended-session handling (`pollDead`, `viewer/app/sessions.js:705-757`) shows
   the reason. `sessionList()` already spreads the machine record into the `/v1/sessions`
@@ -389,15 +398,20 @@ main log, the way it already polls Codex rollouts (`pollCodexSteps`,
   Rows with `turnId` at or below `kimi_last_turn` (when present) are skipped. A tick
   hands off **at most one** turn end per session, the lowest unhandled `turnId`, so
   catch-up after a restart delivers turns in order, at least one tick (1 s) apart, and
-  spool files can never sort two turns of one session out of order. A crash
+  never runs ahead of the hub: while `spool/events` holds a file for this session, the
+  tick hands off nothing for it (so a wall-clock jump cannot reorder spool file names;
+  tested with two pending turns and the clock moved back). A crash
   between hand-off and saving can re-send a turn end (with a new `delivery_id`, as
   today; shared `hook()` and spool code are unchanged). The hub guards against that: it
   keeps a per-session `last_turn_id` for events that carry `turn_id`, and ignores a
-  `turn-ended`, `turn-failed` or `limit-hit` whose `turn_id` is at or below it for the
-  same `kimi_session_id`. Events without `turn_id` (other CLIs) are unaffected. Only the
-  poller may set `turn_id` and `kimi_session_id`: the machine strips both from events
-  arriving through the agent-authenticated hook endpoint (`machine/service.js:1599`)
-  before `hook()`, so an agent cannot move the watermark (tested). A
+  `turn-ended`, `turn-failed` or `limit-hit` whose `turn_id` is at or below it. The key
+  is the app session alone (a session binds one Kimi log for life; a replaced log stops
+  it). Events without `turn_id` (other CLIs) are unaffected. Only the poller reports
+  Kimi lifecycle: for a Kimi session, the agent-authenticated hook endpoint
+  (`machine/service.js:1599`) passes only `prompt` events (permission prompts) to
+  `hook()`, with `transcript_path`, `turn_id` and `kimi_session_id` removed; every other
+  type is answered `{ ignored: true }`. So an agent can neither end a turn, move the
+  watermark nor rebind the transcript (tested). A
   restart therefore catches up on turns that ended while the service was down, once.
   Tests: turn 0 produces a turn end for a fresh session; a crash after spooling but
   before saving the offset re-sends the turn end and the hub drops it.
@@ -422,6 +436,12 @@ main log, the way it already polls Codex rollouts (`pollCodexSteps`,
     turn or Kimi's journal writer and records it in the report.
   - Any other `reason` → `turn-failed` with "Kimi Code turn ended (<reason>)", so the
     starter is told.
+- **Catch-up.** When the poller hands off a turn end and the log already holds a later
+  user `turn.prompt` row after it (Collin typed in the terminal while the service was
+  down), the event carries `superseded: true`. The hub treats a superseded turn end like
+  any other for reports and cards, but does not mark the session idle or release its
+  queue; only a non-superseded turn end does. Test: two missed turns with queued work
+  submit exactly one queued message, after the second.
 - **Hub handling** (`viewer/app/sessions.js`, turn-ended path): an `interrupted`
   turn end releases the turn (queued messages, permission hold) but skips report
   extraction (`deliverReport`), does not mark a reviewer or verifier finished, and does
@@ -808,6 +828,23 @@ exit. Downgrades and declines cite evidence.
 **Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 12:** fixed delivery id dropped, only the hub's per-session `last_turn_id` guards re-sends (shared `hook()` and spool unchanged); version-floor problem shown on the account row; `Session:` line matched in decoded JSON string values; machine strips `turn_id`/`kimi_session_id` from agent-authenticated hook events; at most one turn per session per poll tick; persisted `kimi_log_id` checked by the chat copier; `pollDead` takes `end_reason` from the confirming listing; tmux kill retried each tick with submissions refused meanwhile.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Re-send guard keyed by `kimi_session_id` in shared hub code | upheld | Guard keyed by app session only |
+| mechanics | blocking | Wall-clock spool names can reorder turns | downgraded (minor) | Needs a backward clock jump during a hub outage; poller now hands off nothing while this session has a spooled event |
+| mechanics | blocking | Incompatible log quoting the `Session:` line stops a healthy session | downgraded (minor) | Needs a Kimi format change plus a log quoting the exact name; marker now must sit in a string starting `[wc:role]` |
+| mechanics | blocking | Agent hook path can still end a Kimi turn or rebind the transcript | downgraded (major) | Agents can already fake hook events for other CLIs; Kimi agent hooks now pass only permission prompts |
+| mechanics | blocking | Copier stat/open race and same-inode truncation | downgraded (major) | Identity checked on the opened handle; no byte-zero restart; no reads after `end_reason` |
+| mechanics | blocking | Kill retry by prefix target can hit a sibling | downgraded (major) | Exact `=<name>` target; stopped only after a listing confirms absence |
+| mechanics | blocking | Failure outcomes lack `kimi_session_id` for the guard | declined | Guard is keyed by app session only (intent finding this round); every outcome already carries `turn_id` |
+| mechanics | major | Catch-up of two missed turns releases the queue twice | downgraded (minor) | Needs terminal typing during an outage; superseded turn ends no longer release the queue |
+
+### Round 14 — 2026-11-18
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+**Changed since Round 13:** hub re-send guard keyed by app session only; for Kimi sessions the agent hook endpoint passes only permission `prompt` events (no turn ends, no `transcript_path`, ids removed); poller hands off nothing while this session has a spooled event; incompatible-log marker must sit in a string starting `[wc:role]`; copier checks identity on the opened handle, never restarts from byte zero for Kimi, and stops reading after `end_reason`; fatal kill uses exact `=<name>` and marks stopped only after a listing confirms absence; superseded catch-up turn ends (`superseded: true`) do not release the queue.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
