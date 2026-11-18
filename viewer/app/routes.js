@@ -426,6 +426,11 @@ async function handleThreads(hub, request, response, url, bits, body) {
   }
   if (!bits[1]) throw appError(404, 'route not found');
   const id = bits[1];
+  if (request.method === 'POST' && bits[2] === 'export' && bits.length === 3) {
+    const file = await hub.exportThread(id);
+    response.writeHead(200, { 'content-type': 'application/json', 'content-disposition': `attachment; filename="${file.filename}"` });
+    return response.end(file.bytes);
+  }
   if (bits[2] === 'asides') {
     const asides = require('./asides.js');
     const result = await hub.withThread(id, async () => {

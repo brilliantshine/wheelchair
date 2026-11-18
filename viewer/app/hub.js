@@ -160,6 +160,7 @@ class Hub {
     this.mergePolling = threads.pollMerged(this).finally(() => { this.mergePolling = null; });
     return this.mergePolling;
   }
+  exportThread(id) { return handoff.exportThread(this, id); }
   frozen(thread) { return handoff.frozen(this, thread); }
   quietReason(thread) { return handoff.quietReason(this, thread); }
   exportReason(thread, status, options) { return handoff.exportReason(this, thread, status, options); }

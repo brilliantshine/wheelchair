@@ -86,7 +86,7 @@ test('export reasons follow their order and committed stopping points', () => {
   thread.cards.push({ id: 'a', kind: 'question', doc: 'IDEA.md', answered: true, at });
   thread.cards.push({ id: 'b', kind: 'question', answered: true, at: '2026-11-18T12:00:00.000Z' });
   assert.equal(stageFor(thread, status), null); thread.cards[1].retracted_at = at; assert.equal(stageFor(thread, status), 'idea-confirmed');
-  status.plan_status = 'done'; thread.cards.push({ kind: 'done', pr_url: 'url' }); status.remote_tip = 'b'; assert.equal(reason(), 'A fix is still being checked');
+  status.plan_status = 'done'; status.pr_state = 'OPEN'; thread.cards.push({ kind: 'done', pr_url: 'url' }); status.remote_tip = 'b'; assert.equal(reason(), 'A fix is still being checked');
   status.remote_tip = 'a'; status.pr_state = 'CLOSED'; assert.match(reason(), /merged or closed/);
 });
 
@@ -121,5 +121,65 @@ test('frozen threads refuse mutation entry points and never deliver queued work'
     }
     const archivedThread = await hub.thread(made.id); archivedThread.handed_off = {}; await hub.save(archivedThread);
     assert.equal((await api(c, `/threads/${made.id}/archive`, { method: 'POST', body: {} })).status, 200);
+  } finally { await close(c); }
+});
+
+async function exportFixture(stage = 'approved') {
+  const { Hub } = require('../app/hub.js');
+  const { makeTemp } = require('../../test-support/run-dir.js');
+  const hub = new Hub({ stateDir: await makeTemp('handoff-'), codeVersion: '' }); await hub.state.init();
+  const thread = { id, title: 'A'.repeat(120), slug: 'plan', project: '/repo', machine: 'hub', worktree: '/work', sessions: [{ name: 'lead', role: 'lead', live: true, ready: true, turn_ended: true, queue: [] }], cards: [], asides: [], queues: {}, pinned: {}, sent: [] };
+  const status = { dirty: false, branch: `wc/${id}`, head: 'a'.repeat(40), repository: 'github.com/owner/repo', idea_status: 'confirmed', map_committed: true, plan_status: stage === 'idea-confirmed' ? null : stage, remote_tip: 'a'.repeat(40), pr_state: 'OPEN' };
+  if (stage === 'done') thread.cards.push({ kind: 'done', title: 'done', can_do: [], left_as_is: [], pr_url: 'https://github.com/owner/repo/pull/1', at, created_at: at });
+  const calls = [];
+  hub.client.handoff = async (machine, request) => { calls.push(request); return request.action === 'status' ? status : { head: status.head, repository: status.repository }; };
+  hub.call = async (machine, route) => { calls.push({ route }); return {}; };
+  await hub.save(thread);
+  return { hub, thread, status, calls };
+}
+test('exports each stopping point, validates before pushing and freezes the thread', async () => {
+  for (const stage of ['idea-confirmed', 'approved', 'done']) {
+    const { hub, calls } = await exportFixture(stage);
+    const result = await hub.exportThread(id);
+    const checked = validateHandoffFile(result.bytes); assert.equal(checked.ok, true); assert.equal(checked.file.stage, stage);
+    assert.equal(result.filename, `${'a'.repeat(60)}.wheelchair.json`);
+    assert.equal((await hub.thread(id)).handed_off.head, checked.file.head);
+    assert.equal((await hub.thread(id)).sessions[0].live, false);
+    assert.deepEqual(calls.filter((call) => call.action).map((call) => call.action), ['status', 'push']);
+    assert.ok(calls.some((call) => call.route?.endsWith('/lead')));
+  }
+  const { hub, calls } = await exportFixture(); const thread = await hub.thread(id); thread.title = 'x'.repeat(121); await hub.save(thread);
+  await assert.rejects(hub.exportThread(id), /Could not build/); assert.deepEqual(calls.map((call) => call.action), ['status']);
+});
+test('push and save failures preserve retryability; a saved handoff survives lost save reply', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path');
+  for (const mode of ['push', 'before', 'after', 'stop']) {
+    const { hub, status } = await exportFixture(); const originalSave = hub.save.bind(hub);
+    if (mode === 'push') hub.client.handoff = async (machine, request) => request.action === 'status' ? status : { result: 'failed', error: 'rejected' };
+    if (mode === 'before') hub.save = async (thread) => { if (thread.handed_off) throw new Error('before'); return originalSave(thread); };
+    if (mode === 'after') { let once = true; hub.save = async (thread) => { if (thread.handed_off && once) { once = false; await originalSave(thread); throw new Error('after'); } return originalSave(thread); }; }
+    if (mode === 'stop') hub.call = async () => { throw new Error('stop failed'); };
+    if (mode === 'push' || mode === 'before') {
+      await assert.rejects(hub.exportThread(id), mode === 'push' ? /Couldn't push/ : /export didn't finish/);
+      assert.equal((await hub.thread(id)).handed_off, undefined);
+      await assert.rejects(fs.stat(path.join(hub.stateDir, 'handoffs', `${id}.json.new`)), { code: 'ENOENT' });
+      hub.save = originalSave; hub.client.handoff = async (machine, request) => request.action === 'status' ? status : { head: status.head, repository: status.repository };
+      assert.ok((await hub.exportThread(id)).bytes.length);
+    } else {
+      assert.ok((await hub.exportThread(id)).bytes.length); assert.ok((await hub.thread(id)).handed_off);
+    }
+  }
+});
+
+test('export route returns a downloadable JSON file', async () => {
+  const { setup, close, thread: makeThread } = require('./helpers/app.js'); const { Hub } = require('../app/hub.js');
+  const c = await setup();
+  try {
+    const made = await makeThread(c); const hub = new Hub({ stateDir: c.state }); const thread = await hub.thread(made.id);
+    thread.slug = 'plan'; thread.title = 'My plan'; thread.sessions[0].turn_ended = true; thread.sessions[0].queue = []; await hub.save(thread);
+    c.machine.handoffReplies.status = { dirty: false, branch: `wc/${made.id}`, head: 'a'.repeat(40), repository: 'github.com/owner/repo', plan_status: 'approved' };
+    c.machine.handoffReplies.push = { head: 'a'.repeat(40), repository: 'github.com/owner/repo' };
+    const response = await fetch(`${c.server.url}/api/threads/${made.id}/export`, { method: 'POST', headers: { 'x-graph-token': c.server.token, origin: new URL(c.server.url).origin } });
+    assert.equal(response.status, 200); assert.equal(response.headers.get('content-type'), 'application/json'); assert.equal(response.headers.get('content-disposition'), 'attachment; filename="my-plan.wheelchair.json"'); assert.equal(validateHandoffFile(await response.text()).ok, true);
   } finally { await close(c); }
 });

@@ -116,7 +116,7 @@ function exportReason(hub, thread, status, { pressed = false } = {}) {
   if (thread.archived) return "Archived threads can't be exported";
   if (thread.handed_off) return 'Already handed off';
   if (unfinished(hub, thread)) return "An import or undo didn't finish";
-  if ((thread.cards || []).some((card) => card.kind === 'merged') || (pressed && status?.pr_state && status.pr_state !== 'OPEN')) return 'The pull request is merged or closed; nothing left to hand off';
+  if ((thread.cards || []).some((card) => card.kind === 'merged') || (pressed && status && stageFor(thread, status) === 'done' && status.pr_state !== 'OPEN')) return 'The pull request is merged or closed; nothing left to hand off';
   if (status && !status.repository) return "This project's origin isn't on GitHub";
   const quiet = quietReason(hub, thread);
   if (quiet) return quiet;
@@ -125,5 +125,73 @@ function exportReason(hub, thread, status, { pressed = false } = {}) {
   if (!status || status.branch !== `wc/${thread.id}` || !stageFor(thread, status)) return NOT_POINT;
   return null;
 }
-module.exports = { historyText, buildHandoffFile, validateHandoffFile, handoffFileName, unfinished, frozen, refuseFrozen, quietReason, stageFor, exportReason };
+async function exportThread(hub, id) {
+  const fs = require('node:fs/promises');
+  const path = require('node:path');
+  const { appError } = require('./state.js');
+  return hub.withThread(id, async () => {
+    let thread = await hub.thread(id);
+    let status;
+    try {
+      const pr_url = [...(thread.cards || [])].reverse().find((card) => card.kind === 'done' && !card.replaced && card.pr_url)?.pr_url || thread.imported?.pr_url;
+      status = await hub.client.handoff(thread.machine, { action: 'status', thread_id: id, project: thread.project, worktree: thread.worktree, slug: thread.slug, ...(pr_url ? { pr_url } : {}) });
+      if (status.result === 'failed') throw new Error(status.error);
+      hub.handoffStatus.set(id, status);
+    } catch (error) { throw appError(409, error.message || 'Could not check the worktree'); }
+    const reason = exportReason(hub, thread, status, { pressed: true });
+    if (reason) throw appError(409, reason);
+    const stage = stageFor(thread, status);
+    const pr_url = [...(thread.cards || [])].reverse().find((card) => card.kind === 'done' && !card.replaced && card.pr_url)?.pr_url || thread.imported?.pr_url;
+    const file = buildHandoffFile(thread, { head: status.head, stage, repository: status.repository, pr_url });
+    const bytes = Buffer.from(JSON.stringify(file));
+    const checked = validateHandoffFile(bytes);
+    if (!checked.ok) throw appError(500, `Could not build the handoff file: ${checked.what}`);
+    let pushed;
+    try { pushed = await hub.client.handoff(thread.machine, { action: 'push', thread_id: id, project: thread.project, worktree: thread.worktree, branch: `wc/${id}`, sha: status.head }); }
+    catch (error) { throw appError(409, `Couldn't push the branch to GitHub: ${error.message}`); }
+    if (pushed.result === 'failed') throw appError(409, `Couldn't push the branch to GitHub: ${pushed.error}`);
+    const dir = path.join(hub.stateDir, 'handoffs');
+    const next = path.join(dir, `${id}.json.new`), dest = path.join(dir, `${id}.json`);
+    try {
+      await fs.mkdir(dir, { recursive: true, mode: 0o700 });
+      await fs.writeFile(next, bytes, { mode: 0o600 });
+      thread.handed_off = { at: file.exported_at, head: file.head, stage: file.stage };
+      for (const aside of thread.asides || []) {
+        if (aside.status === 'open') require('./asides.js').close(aside);
+        if (aside.turn) { const pending = thread.pending_cancels ||= []; if (!pending.includes(aside.turn.id)) pending.push(aside.turn.id); }
+        aside.turn = null;
+      }
+      try { await hub.save(thread); }
+      catch (error) {
+        const stored = await hub.thread(id);
+        if (stored.handed_off?.head !== file.head) throw error;
+        thread = stored;
+      }
+    } catch {
+      await fs.unlink(next).catch(() => {});
+      throw appError(500, "The branch was pushed, but the export didn't finish; try again");
+    }
+    try { await fs.rename(next, dest); }
+    catch (error) {
+      const existing = await fs.readFile(dest).catch(() => null);
+      if (!existing || !existing.equals(bytes)) throw error;
+      await fs.unlink(next).catch(() => {});
+    }
+    for (const turnId of [...(thread.pending_cancels || [])]) {
+      try { await hub.call(thread.machine, `/v1/aside-turns/${encodeURIComponent(turnId)}`, 'DELETE'); }
+      catch (error) { if (error.status !== 404) continue; }
+      thread.pending_cancels = thread.pending_cancels.filter((value) => value !== turnId);
+    }
+    for (const session of thread.sessions || []) if (session.live) {
+      try {
+        if (session.status !== 'waiting') await hub.call(thread.machine, `/v1/sessions/${encodeURIComponent(session.name)}`, 'DELETE');
+        session.live = false; session.status = 'stopped'; session.ended_at = new Date().toISOString();
+      } catch { /* Frozen even if the machine could not stop it. */ }
+    }
+    await hub.save(thread).catch(() => {});
+    return { bytes, filename: handoffFileName(thread.title) };
+  });
+}
+
+module.exports = { historyText, buildHandoffFile, validateHandoffFile, handoffFileName, unfinished, frozen, refuseFrozen, quietReason, stageFor, exportReason, exportThread };
 
