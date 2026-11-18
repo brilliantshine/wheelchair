@@ -24,3 +24,34 @@ test('rejects a mismatched repository and missing branch', async () => {
     await assert.rejects(importHandoff(hub, Buffer.from(JSON.stringify(file)), 'hub', '/project'));
   }
 });
+
+test('saved undo opens without inspecting or running it', async () => {
+  const thread = { id: file.thread.id, machine: 'hub', project: '/project', handoff_op: { kind: 'undo' } };
+  const { hub, calls } = fixture(thread);
+  const result = await importHandoff(hub, Buffer.from(JSON.stringify(file)), 'hub', '/project');
+  assert.match(result.note, /undo.*didn't finish/); assert.equal(thread.handoff_op.kind, 'undo'); assert.equal(calls.length, 0);
+});
+test('checks the file stage at the exported head', async () => {
+  for (const [stage, inspect] of [['approved', { plan_status: 'planning' }], ['idea-confirmed', { idea_status: 'confirmed', map_committed: false, plan_status: null }]]) {
+    const { hub } = fixture(null, inspect);
+    await assert.rejects(importHandoff(hub, Buffer.from(JSON.stringify({ ...file, stage })), 'hub', '/project'), { status: 422 });
+  }
+});
+test('opens older and diverged files without changing the thread', async () => {
+  for (const [relation, text] of [['behind', /older/], ['diverged', /separately/]]) {
+    const thread = { id: file.thread.id, machine: 'hub', project: '/project' };
+    const { hub } = fixture(thread, { relation });
+    const result = await importHandoff(hub, Buffer.from(JSON.stringify(file)), 'hub', '/project');
+    assert.equal(result.outcome, 'opened'); assert.match(result.note, text);
+  }
+});
+test('refuses advancing a busy thread', async () => {
+  const thread = { id: file.thread.id, machine: 'hub', project: '/project', sessions: [{ role: 'worker', live: true }] };
+  const { hub } = fixture(thread, { relation: 'ahead' });
+  await assert.rejects(importHandoff(hub, Buffer.from(JSON.stringify(file)), 'hub', '/project'), { status: 409, message: 'The thread here is busy' });
+});
+test('refuses an advanced remote tip', async () => {
+  const thread = { id: file.thread.id, machine: 'hub', project: '/project' };
+  const { hub } = fixture(thread, { relation: 'ahead', remote_tip: 'b'.repeat(40), picked_up_at: 'today' });
+  await assert.rejects(importHandoff(hub, Buffer.from(JSON.stringify(file)), 'hub', '/project'), { status: 409, message: /picked up elsewhere on today/ });
+});
