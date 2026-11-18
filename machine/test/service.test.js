@@ -1388,3 +1388,40 @@ test('live Codex turn end flushes every bounded chunk before the turn event', as
     assert.equal(session.steps_offset, Buffer.byteLength(data));
   } finally { await hub.close(); }
 });
+
+test('handoff normalizes GitHub origins', () => {
+  const { normalizeGithubOrigin } = require('../service');
+  for (const [origin, expected] of [
+    ['git@github.com:Owner/Repo.git', 'github.com/owner/repo'],
+    ['https://github.com/Owner/Repo', 'github.com/owner/repo'],
+    ['https://github.com/Owner/Repo.git', 'github.com/owner/repo'],
+    ['ssh://git@github.com/Owner/Repo.git', 'github.com/owner/repo'],
+    ['ssh://git@github.com/Owner/Repo', 'github.com/owner/repo'],
+    ['https://example.com/Owner/Repo', null], ['', null], [null, null],
+  ]) assert.equal(normalizeGithubOrigin(origin), expected, String(origin));
+});
+
+test('handoff validates input, authorization, and waits for the archive lock', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true }); try {
+    const repo = await project(root); const id = '012345abcdef';
+    const call = body => api(env, 'POST', '/v1/handoff', body, hubHeader);
+    assert.equal((await api(env, 'POST', '/v1/handoff', { action: 'running', thread_id: id })).status, 401);
+    for (const body of [
+      { action: 'running', thread_id: 'bad' }, { action: 'bogus', thread_id: id },
+      { action: 'inspect', thread_id: id, project: repo, branch: 'main', head: 'a'.repeat(40), slug: 'ok' },
+      { action: 'inspect', thread_id: id, project: repo, branch: `wc/${id}`, head: 'bad', slug: 'ok' },
+      { action: 'inspect', thread_id: id, project: repo, branch: `wc/${id}`, head: 'a'.repeat(40), slug: '../bad' },
+      { action: 'status', thread_id: id, project: repo, worktree: repo, slug: 'ok' },
+      { action: 'known', thread_id: id, project: '/missing', head: 'a'.repeat(40) },
+      { action: 'kill', thread_id: id, names: ['wc-other-lead'] },
+    ]) { const result = await call(body); assert.equal(result.status, 422, JSON.stringify(result.body)); assert.equal(result.body.result, 'failed', JSON.stringify(result.body)); }
+    env.instance.sessions[`wc-${id}-lead`] = { name: `wc-${id}-lead`, thread_id: id };
+    let release; const originalStop = env.instance.stop.bind(env.instance);
+    env.instance.stop = async name => { await new Promise(resolve => { release = resolve; }); return originalStop(name); };
+    const held = env.instance.archive(id);
+    while (!release) await new Promise(resolve => setImmediate(resolve));
+    let finished = false; const pending = call({ action: 'running', thread_id: id }).then(result => { finished = true; return result; });
+    await new Promise(resolve => setTimeout(resolve, 50)); assert.equal(finished, false);
+    release(); await held; assert.equal((await pending).status, 200);
+  } finally { await env.close(); }
+});
