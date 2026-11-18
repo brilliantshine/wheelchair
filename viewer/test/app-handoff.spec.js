@@ -201,3 +201,25 @@ test('an import moving the cutoff redraws the chat even while text is selected',
   await expect(page.locator('#chat')).not.toContainText('old item', { timeout: 15000 });
   await expect(page.locator('#chat')).toContainText('new item');
 });
+
+test('a message sent before an import does not come back as queued after it', async ({ page }) => {
+  const id = await ctx.make({ cli: 'claude' }).then((made) => made.id);
+  let imported = false;
+  await page.route('**/api/threads/*/messages', (route) => route.fulfill({ status: 200, json: { ok: true } }));
+  await page.route('**/api/threads/*/chat', async (route) => {
+    const response = await route.fetch(); const data = await response.json();
+    if (imported) {
+      data.thread.imported = { at: '2026-01-01T00:00:00Z', history: [] };
+      data.items = [{ type: 'human', at: '2025-01-01T00:00:00Z', text: 'sent before import' }];
+    }
+    data.cards = []; data.pinned = [];
+    await route.fulfill({ response, json: data });
+  });
+  await page.goto(`${ctx.server.url}/app/thread?id=${id}`);
+  await page.locator('#msg').fill('sent before import');
+  await page.locator('#send').click();
+  await expect(page.locator('#chat .bubble.human.pending')).toContainText('sent before import');
+  imported = true;
+  await expect(page.locator('#chat .bubble.human.pending')).toHaveCount(0, { timeout: 15000 });
+  await expect(page.locator('#chat')).not.toContainText('sent before import');
+});

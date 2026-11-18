@@ -361,7 +361,9 @@
   function renderChat() {
     const items = data.items.filter((i) => sinceImport(i.at));
     chatEl.textContent = '';
-    const humans = items.filter((i) => i.type === 'human' && !i.card).map((i) => i.text);
+    // Reconcile pending bubbles against the whole transcript, before the import cutoff hides
+    // anything: a message delivered before an import is delivered, not still queued.
+    const humans = data.items.filter((i) => i.type === 'human' && !i.card).map((i) => i.text);
     pending = pending.filter((p) => {
       const at = humans.indexOf(p.text);
       if (at >= 0) { humans.splice(at, 1); return false; }
