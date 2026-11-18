@@ -56,6 +56,8 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 26 | No lead runs during an operation; the lead starts afterwards through the ordinary restart path, whose context always carries the import block | Removes every lead-related recovery case from the operation | review-round-4 |
 | 27 | Importing on a machine that already holds the thread for another wheelchair app is refused | Two hubs sharing one machine would share sessions, worktrees and archive state by thread id; rare, and a refusal is clear | review-round-5 |
 | 28 | Restart (for every thread) queues its context before starting the session | A crash after start can no longer leave a lead without its context | review-round-5 |
+| 29 | An operation keeps the validated carried state in its record instead of a copy of the file | Removes every missing-file case; the thread record holds that state after Apply anyway | review-round-8 |
+| 30 | The machine keeps its archive records on disk | Makes the same-machine refusal (27) survive a machine restart | review-round-8 |
 
 ## Spec
 
@@ -285,7 +287,7 @@ The hub then, inside `withThread(<file thread id>)`:
    can read: <what>".
    Then, if a thread with the file's id exists here with a saved `handoff_op`, the hub runs
    that operation again (the "Finish" row) and stops; steps 2 and 3 are skipped, since the
-   saved operation uses its own saved file.
+   saved operation carries everything it needs.
 2. **Matches the repository**: the machine reports the project's normalized origin.
    Mismatch: 422 "This file is for <file repo>, but that project is <project repo>".
 3. **Inspects the branch** (`/v1/handoff` `inspect`): fetch; `origin/wc/<id>` must exist and
@@ -300,6 +302,7 @@ The hub then, inside `withThread(<file thread id>)`:
 |---|---|
 | No such thread, the machine holds no session, worktree or archive record for this id, and the picked project has no local `wc/<id>` branch or one that is an ancestor of `head` | **Create** |
 | No such thread, but the machine holds sessions, a worktree or an archive record for this id (another wheelchair app on the same machine has or had it) | Refused 409 "This machine already has this thread from another wheelchair app; import it on another machine" |
+| No such thread, and the picked project's local `wc/<id>` branch is checked out (in the project clone or any worktree) | Refused 409 "Branch wc/<id> is checked out in <path>; switch away from it, then import again" |
 | No such thread, and the picked project has a local `wc/<id>` branch that is not an ancestor of `head` | Refused 409 "This project already has a branch wc/<id> that differs from the file; delete it if you don't need it, then import again". A local branch that is an ancestor of `head` is fine: Create uses it |
 | Exists with a saved `handoff_op` | **Finish**: run that operation again (see Operations and Retry), ignoring this file; outcome as that operation's, with note "Finished the earlier import or undo; import this file again if it's newer" |
 | Exists on another machine or project than the picker chose | **Open**, note "This thread lives on <machine>, <project>", plus " It's handed off: press Undo on it to carry on." when it is handed off and the remote tip is still `handed_off.head` |
@@ -354,19 +357,21 @@ operation is complete, by the ordinary restart path, so lead start-up never need
 recovery.
 
 **The operation record.** Before its first step, an operation saves
-`thread.handoff_op: {kind: "create"|"advance"|"undo", file, parent, claim_sha,
+`thread.handoff_op: {kind: "create"|"advance"|"undo", carried, parent, claim_sha,
 last_error, claim_landed, applied, started_at}`; `started_at` is set once and becomes `imported.at` in Apply, so
 a Retry never moves that cutoff on the thread record (for Create, in the same save that first
-creates the record). `file` is the path of a copy of the imported file the hub writes to
-`handoffs/incoming-<id>.json` before that save (null for undo); `parent` is the commit the
+creates the record). `carried` is the validated carried state from the file,
+`{stage, exported_at, history, pr_url}` (null for undo); Create's record already holds the
+file's title and slug. No copy of the file is kept: Apply reads `carried`, so Retry never
+needs the file. `parent` is the commit the
 claim goes on (`head` for imports, `handed_off.head` for undo). The thread's existing
 fields (`imported`, `handed_off`, cards, pins, `archived`) are not changed until the Apply
 step, so a refused or abandoned operation leaves them as they were. A step that fails
 saves its sentence in `last_error` and the operation stops there.
 
 **Abandoning.** When the Claim step finds someone else moved the branch, the operation is
-abandoned: Create deletes the thread record; Advance and Undo clear `handoff_op`. Then the
-incoming copy is deleted. The response is "picked up elsewhere" 409; when the operation
+abandoned: Create deletes the thread record; Advance and Undo clear `handoff_op`. The
+response is "picked up elsewhere" 409; when the operation
 was reached through a re-import (the Finish row), its text ends "import that file again"
 instead of "export again from wherever it is now".
 
@@ -392,8 +397,8 @@ instead of "export again from wherever it is now".
    `archived`, set `checkout_sha: claim_sha` and `handoff_op.applied: true`, and save, all in
    one save. Every assignment is the same on a
    re-run.
-5. **Done.** Clear `handoff_op` and save. Then delete `handoffs/incoming-<id>.json` and
-   `handoffs/<id>.json`. A crash between the save and the deletes leaves only stray files;
+5. **Done.** Clear `handoff_op` and save. Then delete `handoffs/<id>.json`. A crash
+   between the save and the delete leaves only a stray file;
    when the hub starts, it deletes `handoffs/*.json` and `handoffs/*.json.new` files that
    belong to no handed-off thread and no saved operation (a `.json.new` of a handed-off
    thread is renamed instead, as above).
@@ -403,6 +408,14 @@ instead of "export again from wherever it is now".
    stops before it, the thread shows the dead-lead panel with Restart: the panel's
    condition (`viewer/pages/thread.js:270-277`) becomes "not archived, not frozen, no live
    lead, and either a lead was ever started or the thread was imported".
+
+**Partial starts.** The hub marks a session live before the machine call that launches it
+(`viewer/app/sessions.js:277-300`). When the hub starts, and before `restartLead` runs,
+every session marked live whose start result was never saved is reconciled with the
+machine's `running`: if the machine has it running, the hub records it as started (reading
+its worktree and branch from the machine's session list) and its queue, including any
+context queued before the start, is delivered as its first message; if not, the hub marks
+it not live, so the dead-lead panel offers Restart.
 
 **Restart order.** `restartLead` is changed for every thread: it first asks the machine
 (`running`) for tmux sessions of the thread's lead names that the hub does not count as
@@ -428,21 +441,14 @@ and its thread id is not in that set.
   ("An import or undo didn't finish");
 - shows, instead of the composer, a panel "The import didn't finish." (or "The undo didn't
   finish."), the saved `last_error` when there is one, and a **Retry** button:
-  `POST /threads/:id/retry-handoff` runs the saved operation again, reading the file from
-  `handoff_op.file`. The file is needed only by Apply. If that copy is gone and `applied`
-  is true, Retry carries on without it. If it is gone and the claim has not landed, the
-  operation is abandoned with "The saved file is missing; import it again". If it is gone
-  and the claim landed but Apply has not run, the step fails with "The saved file is
-  missing; import the same file again", keeping the operation; importing a file whose
-  `thread.id` and `head` match the operation (`head` == `parent`) then supplies it through
-  the Finish row, which saves it as the new incoming copy;
+  `POST /threads/:id/retry-handoff` runs the saved operation again from its record;
 - offers **Cancel** next to Retry only while `claim_landed` and `applied` are both false.
-  Cancel first runs `claim-push`'s tip read through the machine's per-repository queue,
-  so any earlier push still running there finishes first. If the result is `landed`,
-  Cancel saves `claim_landed: true` and refuses ("The pick-up already went through; press
-  Retry"). Otherwise (`claim_sha` null, or the tip is `parent`) it abandons the operation
-  as above, without the 409: Create deletes its record, Advance and Undo clear
-  `handoff_op`;
+  When `claim_sha` is null, Cancel abandons at once. Otherwise it calls `claim-state`
+  (read-only, through the machine's per-repository queue, so any earlier push still
+  running there finishes first): `landed` → save `claim_landed: true` and refuse ("The
+  pick-up already went through; press Retry"); `parent` or `moved` → abandon; `unknown` →
+  refuse ("Couldn't check GitHub; try again"). Abandoning here gives no 409: Create deletes
+  its record, Advance and Undo clear `handoff_op`;
 - is also reached by importing a file for that thread id (the "Finish" row), which runs
   the saved operation and ignores the new file;
 - for an Undo, makes the handed-off banner show "The undo didn't finish" with Retry,
@@ -481,11 +487,16 @@ and its thread id is not in that set.
     the tip is past it. Statuses are read with `git show <head>:docs/plans/<slug>/...`
     (null when absent).
   - `claim-commit` `{project, parent, message}` → step 1 of Claims; returns `{sha}`.
-  - `claim-push` `{project, branch, parent, sha}` → reads the remote tip
-    (`git ls-remote`); tip == `sha`: `{result: "landed"}`; tip == `parent`: run step 2 of
-    Claims and read the tip again. The result comes only from the tip read last, never from
-    the push's exit code: tip `sha` or a descendant of it → `landed`; tip `parent` → `unknown`; any other tip →
-    `{result: "moved", remote_tip, picked_up_at}`; tip unreadable → `unknown`.
+  - `claim-state` `{project, branch, parent, sha}` → read-only:
+    `git fetch origin refs/heads/<branch>` (bringing the tip's objects into the clone), then
+    compares `FETCH_HEAD`: equal to `sha` or a descendant of it (`git merge-base
+    --is-ancestor <sha> FETCH_HEAD`) → `landed`; equal to `parent` → `parent`; anything
+    else → `moved` with `remote_tip` and `picked_up_at`; fetch failure or a missing branch
+    → `unknown` (a missing branch is not proof of anything).
+  - `claim-push` `{project, branch, parent, sha}` → `claim-state`; if `parent`, run step 2
+    of Claims and then `claim-state` again. The result comes only from the last
+    `claim-state`, never from the push's exit code: `landed` → `landed`; `parent` or
+    `unknown` → `unknown`; `moved` → `moved`.
   - Every `/v1/handoff` outcome, including refusals, is a 200 with a JSON body (except 422
     for invalid input), so the hub's machine client (`viewer/app/machine-client.js:64-76`)
     never drops the body.
@@ -502,8 +513,13 @@ and its thread id is not in that set.
     starting (a start request received, tmux not yet launched) or that exist in tmux
     (`tmux has-session`).
   - `known` `{thread_id, project, head}` → whether the machine holds any session record,
-    worktree or archive record for the id, and whether the project has a local `wc/<id>`
-    branch and if so whether it is an ancestor of `head` (used by Create's refusal rows).
+    worktree or archive record for the id; whether the project has a local `wc/<id>`
+    branch, whether it is an ancestor of `head`, and where it is checked out
+    (`git worktree list --porcelain`) (used by Create's refusal rows).
+  - The machine's archive records become durable: `archivedThreads`
+    (`machine/service.js:227`) is saved to a file in the machine's state directory on
+    every change and loaded at start, so the "another wheelchair app had it" refusal
+    survives a machine restart. `reopen` removes the id from it and saves.
   - `kill` `{names}` → for each name matching `^wc-[0-9a-f]{12}-`: a session still starting
     is marked cancelled, so its start stops before launching tmux and returns an error;
     a running one gets `tmux kill-session -t <name>`. Returns the names still starting or
@@ -556,9 +572,9 @@ New tests, then the suites:
 - `viewer/test/app-handoff.test.js` (hub, with the existing fake machine):
   - export refused with each reason in the table, including a dead lead that is
     otherwise quiet being **allowed**; export at each point returns a valid file, marks
-    handed off, cancels asides, stops sessions; push failure changes nothing; a save
-    failure after the push leaves the thread unchanged, removes the `.new` file and can be
-    exported again; a failed stop still hands off; history built and trimmed;
+    handed off, cancels asides, stops sessions; push failure changes nothing; a save that
+    throws before writing leaves the thread unchanged, removes the `.new` file and can be
+    exported again; a save that throws after writing (record on disk) completes the export; a failed stop still hands off; history built and trimmed;
   - handed-off thread refuses each listed route, delivers nothing from its queue, and the
     rate-limit release enqueues nothing; banner states (unchanged, moved, inspect failed);
     undo claims and restarts; undo refused when the claim is refused;
@@ -573,13 +589,17 @@ New tests, then the suites:
     `claim_sha` and saves `last_error`; abandon when the tip moved (re-import wording
     differs); crash between Done's save and the file deletes leaves files the start-up
     sweep removes; Advance refused leaves `imported`, cards and pins unchanged; Retry with
-    the incoming copy missing abandons; archive refused while unfinished; the Retry panel
+    no file kept between steps (Retry works from `handoff_op.carried`); archive refused while unfinished; the Retry panel
     shows `last_error`; unfinished undo banner shows Retry, not "picked up elsewhere";
     re-import with an unfinished operation runs it without inspecting the new file;
   - lead start after an operation: no lead runs during it; restart context includes
     `import`, with marker `[wc:context import]` only for the first lead after `imported.at`;
     a failed start shows the ordinary Restart; restart enqueues the context before starting; an imported thread with no
     sessions shows Restart; a lead with no recorded worktree starts from `checkout_sha`;
+  - partial start at hub start: running session adopted and its queued context delivered;
+    missing session marked not live and Restart offered; Cancel with `claim-state` each
+    result; Create refused when the local branch is checked out; archive records survive a
+    machine restart;
   - frozen: every entry point in Frozen threads refused while handed off and while an
     operation is unfinished; Stop fails when a tmux session survives; Checkout refuses a
     HEAD past the claim; Apply's `reopen` failure saves nothing; `imported.at` unchanged by
@@ -829,7 +849,7 @@ npm --prefix viewer run test:browser
 
 ### Round 8 — 2026-11-17
 
-**Lanes:** intent and mechanics; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 7:**
 - Export step 4: re-read the record when the save throws.
@@ -838,6 +858,30 @@ npm --prefix viewer run test:browser
 - Operations: descendant of the claim counts as landed; start-up sweep covers `.json.new`; missing saved file rules; Cancel only before landing/applying, after a queued tip read.
 - Restart: `running` includes starting sessions; `kill` cancels starts; restart refuses while any remain.
 - Machine: `known` with `head`; project paths validated with the new-thread check.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | The incoming-file copy causes contradictory missing-file rules | upheld | Carried state saved inside `handoff_op`; no file copy, no missing-file rules |
+| intent | minor | Ancestor-branch exception reopens decision 27's gap after a machine restart | upheld | Machine archive records made durable |
+| mechanics | blocking | Retry can abandon a landed import when the file copy is missing | upheld | Removed with the file copy |
+| mechanics | blocking | Create claims, then can't move a checked-out local branch | upheld | Create refused before claiming when the branch is checked out |
+| mechanics | blocking | Crash after tmux start but before the start is saved | upheld | Partial starts reconciled with the machine at hub start |
+| mechanics | major | Cancel has no read-only claim check | upheld | `claim-state` action with four results; Cancel outcome for each |
+| mechanics | major | `ls-remote` can't prove a descendant without the objects | upheld | `claim-state` fetches the branch first; failures are `unknown` |
+| mechanics | major | Same-machine ownership gap after a service restart | upheld | Same fix as the intent finding |
+| mechanics | major | Finish can replace the file with a different payload | upheld | Removed with the file copy |
+| mechanics | minor | Export test misses the save-threw-after-write timing | upheld | Both timings tested |
+
+### Round 9 — 2026-11-17
+
+**Lanes:** intent and mechanics; cross-family: yes.
+
+**Changed since Round 8:**
+- Operation record carries `carried` state; no incoming file copy; Retry and Finish simplified; Done deletes only the export file.
+- Machine `claim-state` (fetch, then compare) and `claim-push` built on it; Cancel outcomes.
+- Partial starts reconciled at hub start.
+- Create refused when the local branch is checked out; `known` reports occupancy.
+- Machine archive records are durable.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
