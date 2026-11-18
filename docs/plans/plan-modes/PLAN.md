@@ -15,11 +15,6 @@ get buried as this file grows.
 Ordered by leverage; discussed one at a time. A settled question moves to the Decision
 Log and is deleted from here.
 
-### Q2: How much review do the lighter modes get?
-- **Context:** Today's review runs rounds until clean (no blocking/major upheld). The lighter modes exist partly to cut that cost.
-- **Options:** same review on the smaller first part; fewer rounds; blocking-only gate; no review in proof of concept.
-- **Recommendation:** TBD after Q1.
-
 ### Q3: Who decides what is deferred, and does Collin see each deferral?
 
 ### Q4: Is the follow-up plan reviewed in this thread, or only in the new one?
@@ -47,6 +42,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 |---|----------|-----------|--------|
 |   |          |           | user / defaulted / adopted / idea-change / review-round-N |
 | D1 | The lead suggests a mode with a one-line reason when a thread becomes a feature; Collin accepts it or picks another | The lead has read the request and can tell a proof of concept from lasting work; Collin keeps the final say | user |
+| D2 | In two-part and proof-of-concept, plan review still runs. Findings that would build the wrong thing or cannot be built must be fixed; findings that only make it sturdier are deferred to the follow-up plan (two-part) or accepted as risks (proof of concept) | Keeps the check that stops a wrong build, drops only the hardening Collin chose to postpone | user |
 
 ## Spec
 
@@ -65,6 +61,14 @@ Three modes: `thorough` (default, today's behaviour unchanged), `two-part`, `pro
 
 When a thread becomes a feature, the lead suggests a mode with a one-line reason and
 Collin accepts it or picks another (D1). With no choice made, the mode is `thorough`.
+
+### Plan review in the lighter modes
+
+Review runs in every mode (D2). In `two-part` and `proof-of-concept`, a finding that would
+build the wrong thing or cannot be built is fixed in the Spec as today. A finding that only
+makes the feature sturdier (edge cases, hardening, polish) is not fixed: in `two-part` it is
+moved to the follow-up plan, in `proof-of-concept` to Accepted Risks. Either counts as
+resolved for the clean test.
 
 ## Accepted Risks
 
