@@ -1,6 +1,6 @@
 ---
 slug: startup-growth-warning
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-17
 ---
 
@@ -63,6 +63,21 @@ result: if a role is more than 5,000 over typical, one warning line saying by ho
 thread page shows it under the Ready result as a "Heads-up". The card is never held for the
 check, nothing about it can disable or consume Start building, and any failure just means
 no warning.
+
+```mermaid
+flowchart TD
+  A[Claude lead or reviewer session runs its first turn] --> B[machine keeps a copy of its transcript]
+  C[service start, every 10 minutes, or an approval card arrives] --> D[background check reads the last 5 lead and 5 reviewer sessions]
+  B --> D
+  D --> E{middle value more than 5,000 over the usual size?}
+  E -- yes --> F[remember one warning line]
+  E -- no, or the check failed --> G[remember no warning]
+  H[lead posts an approval card] --> I[machine adds the remembered warning, without waiting]
+  F --> I
+  G --> I
+  I --> J[thread shows it as Heads-up under the Ready result]
+  J --> K[Start building depends only on Ready]
+```
 
 ### Typical sizes (machine)
 
@@ -128,11 +143,15 @@ no warning.
   `card.ready`; `warnings` stays as attached. A fresh approval card gets a fresh check.
 - `protocol/app/lead.md` step 6.3 (the approval card): if `card.js` refuses the approval
   card and the refusal mentions `unknown field: warnings` (it arrives wrapped, e.g.
-  `machine refused card (400): {"error":"unknown field: warnings"}`), post a `needs` card
-  saying the app's hub is older than this machine and needs updating before an approval
-  card can be shown. When he answers it (Keep going, or says it is updated), rerun the
-  Ready check and post a fresh approval card.
-- `machine/API.md`: note that lead approval cards may gain `warnings`.
+  `machine refused card (422): {"error":"app-error","detail":"unknown field: warnings"}`),
+  post a `needs` card saying the app's hub is older than this machine and needs updating
+  before an approval card can be shown. On Keep going, or when he says it is updated,
+  rerun the Ready check and post a fresh approval card. On Talk about it, explain in a line
+  that the app's hub must be updated to the same version as this machine, and do the same
+  once he says it is.
+- `machine/API.md`: note that lead approval cards may gain `warnings`, and change the ledger
+  sentence "the ledger is append-only and not read at runtime" to say it is append-only and
+  read in the background for the startup-size warning (last 512 KB only).
 
 ### Boundaries and non-goals
 
@@ -344,7 +363,7 @@ no warning.
 
 ### Round 9 — 2026-11-17
 
-**Lanes:** pending.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 8:**
 - Lead step 6.3: match the refusal by substring; after Collin answers, rerun Ready and post a fresh approval card
@@ -352,6 +371,9 @@ no warning.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | major | "Talk about it" on the hub-update card undefined | downgraded (minor) | The shared rule already covers it (`protocol/app/cards-lead.md:101-106`: explain and ask only a real decision); one clause added anyway |
+| mechanics | minor | Refusal example has the wrong status and shape | upheld | Example corrected |
+| mechanics | minor | API.md still says the ledger is never read at runtime | upheld | API.md edit added |
 
 ## Prior Work
 
@@ -364,3 +386,5 @@ no warning.
 |---|-----------|--------------------|------|-----------|------------|--------|
 
 ## Log
+
+- 2026-11-17 — Approved after round 9. Ready check: machine and viewer services active, started 15:13 from the canonical clone at c81c022 (main, committed 15:12); hub and service answer `wc.js session list`; Claude Code 2.1.327 installed and Claude and GPT sessions started today; Codex preflight passes (token fresh).
