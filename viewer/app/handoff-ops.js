@@ -23,28 +23,35 @@ async function checked(hub, thread, action, fields) {
   if (result.result === 'failed') throw new Error(result.error || `Couldn't ${action}`);
   return result;
 }
-async function preclaim(hub, thread, op) {
+async function preclaim(hub, thread, parent) {
   const branch = `wc/${thread.id}`;
-  const inspect = await checked(hub, thread, 'inspect', { branch, head: op.parent, slug: thread.slug, ...(thread.worktree ? { worktree: thread.worktree } : {}) });
-  if (!op.repository && inspect.repository) { op.repository = inspect.repository; await hub.save(thread); }
+  const inspect = await checked(hub, thread, 'inspect', { branch, head: parent, slug: thread.slug, ...(thread.worktree ? { worktree: thread.worktree } : {}) });
   if (inspect.worktree_exists) {
     const status = await checked(hub, thread, 'status', { worktree: thread.worktree, slug: thread.slug });
     if (status.branch !== branch) throw new Error("The thread here isn't on its branch");
     if (status.dirty) throw new Error('The thread here has uncommitted changes');
     if (!['same', 'ahead'].includes(inspect.relation)) throw new Error("The thread here has commits that aren't in the file");
   } else {
-    const known = await checked(hub, thread, 'known', { head: op.parent });
+    const known = await checked(hub, thread, 'known', { head: parent });
     if (known.checked_out?.length) throw new Error(`Branch ${branch} is checked out in ${known.checked_out[0]}; switch away from it, then try again`);
     if (known.local_branch && !known.local_ancestor) throw new Error(`This project already has a branch ${branch} that differs from the file; delete it if you don't need it, then try again`);
   }
+  return inspect.repository || null;
+}
+async function firstPreclaim(hub, thread, parent) {
+  try { return await preclaim(hub, thread, parent); }
+  catch (error) { throw appError(409, error.message); }
 }
 async function abandon(hub, thread) {
   if (thread.handoff_op.kind === 'create') { await fs.unlink(hub.threadPath(thread.id)).catch((error) => { if (error.code !== 'ENOENT') throw error; }); delete thread.handoff_op; }
   else { delete thread.handoff_op; await hub.save(thread); }
 }
-async function claim(hub, thread, reimport) {
+async function claim(hub, thread, reimport, prechecked = false) {
   const op = thread.handoff_op;
-  await preclaim(hub, thread, op);
+  if (!prechecked) {
+    const repository = await preclaim(hub, thread, op.parent);
+    if (!op.repository && repository) { op.repository = repository; await hub.save(thread); }
+  }
   if (!op.claim_sha) {
     const message = `handoff: ${op.kind === 'undo' ? 'taken back' : 'picked up'} ${new Date().toISOString()} ${crypto.randomBytes(4).toString('hex')}`;
     const result = await checked(hub, thread, 'claim-commit', { parent: op.parent, message });
@@ -63,7 +70,7 @@ async function claim(hub, thread, reimport) {
   throw new Error(`Couldn't update the branch on GitHub: ${result.error || 'unknown error'}`);
 }
 
-async function runLocked(hub, thread, reimport = false) {
+async function runLocked(hub, thread, reimport = false, prechecked = false) {
   const op = thread.handoff_op;
   if (!op) throw appError(409, 'No unfinished import or undo');
   hub.runningHandoffOps.add(thread.id);
@@ -73,7 +80,7 @@ async function runLocked(hub, thread, reimport = false) {
       const keep = entries.filter((entry) => !(entry.thread_id === thread.id && entry.sha === op.claim_sha));
       if (keep.length !== entries.length) await writeRevokes(hub, keep);
     });
-    if (!op.claim_landed) await claim(hub, thread, reimport);
+    if (!op.claim_landed) await claim(hub, thread, reimport, prechecked);
     if (!op.applied) {
       for (const session of thread.sessions || []) {
         if (!session.live) continue;
@@ -117,14 +124,17 @@ async function runOperation(hub, id, { reimport = false } = {}) {
 // starts the lead after releasing that lock once the returned operation completed.
 async function createLocked(hub, { file, machine, project }) {
   const id = file.thread.id, now = new Date().toISOString();
-  const thread = { id, title: file.thread.title, slug: file.thread.slug, machine, project, branch: `wc/${id}`, stub: false, context: '', depends_on_parent: false, waiting_on_parent: false, sessions: [], cards: [], asides: [], pinned: {}, queues: {}, sent: [], archived: false, created_at: now, updated_at: now, handoff_op: operation('create', file.head, file) };
+  const thread = { id, title: file.thread.title, slug: file.thread.slug, machine, project, branch: `wc/${id}`, stub: false, context: '', depends_on_parent: false, waiting_on_parent: false, sessions: [], cards: [], asides: [], pinned: {}, queues: {}, sent: [], archived: false, created_at: now, updated_at: now };
+  await firstPreclaim(hub, thread, file.head);
+  thread.handoff_op = operation('create', file.head, file);
   await hub.save(thread);
-  return runLocked(hub, thread);
+  return runLocked(hub, thread, false, true);
 }
 async function advanceLocked(hub, thread, file) {
+  await firstPreclaim(hub, thread, file.head);
   thread.handoff_op = operation('advance', file.head, file);
   await hub.save(thread);
-  return runLocked(hub, thread);
+  return runLocked(hub, thread, false, true);
 }
 async function startCreate(hub, input) {
   const result = await hub.withThread(input.file.thread.id, () => createLocked(hub, input));
@@ -140,7 +150,10 @@ async function undo(hub, id) {
     if (thread.handoff_op) { if (thread.handoff_op.kind !== 'undo') throw appError(409, 'Retry the unfinished import first'); }
     else {
       if (!thread.handed_off) throw appError(409, 'This thread has not been handed off');
-      thread.handoff_op = operation('undo', thread.handed_off.head, null); await hub.save(thread);
+      const repository = await firstPreclaim(hub, thread, thread.handed_off.head);
+      thread.handoff_op = operation('undo', thread.handed_off.head, null);
+      thread.handoff_op.repository = repository; await hub.save(thread);
+      return runLocked(hub, thread, false, true);
     }
     return runLocked(hub, thread);
   });

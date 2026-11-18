@@ -39,6 +39,27 @@ async function handle(hub, request, response, url, machineAuthenticated) {
   const suffix = url.pathname.slice('/wheelchair/api/'.length);
   const bits = suffix.split('/').filter(Boolean);
   if (request.method === 'POST' && bits[0] === 'threads' && bits[1] && bits[2] === 'uploads' && bits.length === 3) return upload(hub, request, response, url, bits[1]);
+  if (request.method === 'POST' && bits.length === 2 && bits[0] === 'threads' && bits[1] === 'import') {
+    const limit = 10 * 1024 * 1024;
+    const oversized = () => {
+      request.pause();
+      response.setHeader('Connection', 'close');
+      response.once('finish', () => request.destroy());
+      return appError(413, 'file is over 10 MB');
+    };
+    if (Number(request.headers['content-length']) > limit) throw oversized();
+    const bytes = await new Promise((resolve, reject) => {
+      const chunks = []; let size = 0;
+      request.on('data', (chunk) => {
+        size += chunk.length;
+        if (size > limit) { reject(oversized()); return; }
+        chunks.push(chunk);
+      });
+      request.once('end', () => resolve(Buffer.concat(chunks)));
+      request.once('error', reject);
+    });
+    return send(response, 200, await hub.importHandoff(bytes, url.searchParams.get('machine') || 'hub', url.searchParams.get('project')));
+  }
   const write = ['POST', 'PUT', 'DELETE'].includes(request.method);
   const body = write ? await readBody(request) : {};
   if (bits[0] === 'machine') {

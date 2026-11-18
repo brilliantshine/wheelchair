@@ -187,6 +187,7 @@ class Hub {
   startHandoffAdvance(thread, file) { return require('./handoff-ops.js').startAdvance(this, thread, file); }
   undoHandoff(id) { return require('./handoff-ops.js').undo(this, id); }
   cancelHandoff(id) { return require('./handoff-ops.js').cancel(this, id); }
+  importHandoff(bytes, machine, project) { return require('./handoff-import.js').importHandoff(this, bytes, machine, project); }
   exportThread(id) { return handoff.exportThread(this, id); }
   async handoffBanner(id) {
     for (;;) {

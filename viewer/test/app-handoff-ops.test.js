@@ -296,3 +296,33 @@ test('failed revoke notice uses repository and survives handoff file sweep', asy
     r = await api(c, '/handoff-revokes/dismiss', { method: 'POST', body: { thread_id: id, sha } }); assert.equal(r.status, 200); assert.deepEqual(await ops.revokes(hub), []);
   } finally { await close(c); }
 });
+
+test('first preclaim refusals do not save operations; retry retains its error', async () => {
+  const { makeTemp } = require('../../test-support/run-dir.js');
+  const { Hub } = require('../app/hub.js');
+  const handoff = require('../app/handoff.js');
+  const hub = new Hub({ stateDir: await makeTemp('handoff-first-check-') }); await hub.state.init();
+  hub.client.handoff = async (_, input) => input.action === 'inspect' ? { worktree_exists: true, relation: 'ahead', repository: 'github.com/o/r' } : input.action === 'status' ? { branch: `wc/${id}`, dirty: true } : { checked_out: ['/other'] };
+  const file = { thread: { id, title: 'Title', slug: 'plan' }, head: parent, stage: 'approved', repository: 'github.com/o/r', history: [] };
+  await assert.rejects(hub.withThread(id, () => ops.createLocked(hub, { file, machine: 'hub', project: '/repo' })), { status: 409 });
+  await assert.rejects(hub.thread(id), { status: 404 });
+  const thread = { id, machine: 'hub', project: '/repo', slug: 'plan', worktree: '/work', sessions: [], cards: [], pinned: {}, handed_off: { head: parent } };
+  await hub.save(thread);
+  await assert.rejects(hub.withThread(id, async () => ops.advanceLocked(hub, await hub.thread(id), file)), { status: 409, message: 'The thread here has uncommitted changes' });
+  let saved = await hub.thread(id); assert.equal(saved.handoff_op, undefined); assert.equal(handoff.unfinished(hub, saved), false);
+  await assert.rejects(ops.undo(hub, id), { status: 409, message: 'The thread here has uncommitted changes' });
+  saved = await hub.thread(id); assert.equal(saved.handoff_op, undefined);
+  saved.handoff_op = ops.operation('undo', parent, null); await hub.save(saved);
+  await assert.rejects(ops.runOperation(hub, id), { status: 409, message: 'The thread here has uncommitted changes' });
+  saved = await hub.thread(id); assert.equal(saved.handoff_op.kind, 'undo'); assert.equal(saved.handoff_op.last_error, 'The thread here has uncommitted changes');
+});
+
+test('first Undo saves inspect repository before its claim', async () => {
+  const { makeTemp } = require('../../test-support/run-dir.js');
+  const { Hub } = require('../app/hub.js');
+  const hub = new Hub({ stateDir: await makeTemp('handoff-undo-repo-') }); await hub.state.init();
+  await hub.save({ id, machine: 'hub', project: '/repo', slug: 'plan', sessions: [], cards: [], pinned: {}, handed_off: { head: parent } });
+  hub.client.handoff = async (_, input) => ({ inspect: { worktree_exists: false, repository: 'github.com/o/r' }, known: { checked_out: [] }, 'claim-commit': { result: 'failed', error: 'offline' } })[input.action];
+  await assert.rejects(ops.undo(hub, id), /offline/);
+  assert.equal((await hub.thread(id)).handoff_op.repository, 'github.com/o/r');
+});
