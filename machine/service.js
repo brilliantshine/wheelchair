@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 const { startupWarning } = require('./lib/startup-warning');
+const { TOOL_ROLES, readProjectMcp } = require('./lib/project-mcp');
 
 /*
  * Wheelchair machine service.  The HTTP API is documented in machine/API.md.
@@ -558,10 +559,10 @@ class MachineService {
     const match = shown.stdout.match(/^\s*HEAD branch:\s*(\S+)\s*$/m);
     return match ? match[1] : 'main';
   }
-  commandFor(input, session, worktree, promptPath, rolePrompt) {
+  commandFor(input, session, worktree, promptPath, rolePrompt, mcp) {
     const adapter = adapters[input.cli];
     if (!adapter) die('cli must be claude, codex or agy');
-    return adapter.command(input, session, worktree, { stateDir: this.stateDir, promptPath, rolePrompt });
+    return adapter.command(input, session, worktree, { stateDir: this.stateDir, promptPath, rolePrompt, mcp, tools: TOOL_ROLES.has(input.role) });
   }
 
   async start(input) {
@@ -608,7 +609,9 @@ class MachineService {
       worktree, created_worktree: createdWorktree, attempt_id: input.attempt_id || null, started_by: input.started_by || null,
       branch: created.branch || input.branch || null, default_branch: created.defaultBranch || input.default_branch || input.defaultBranch || null,
       cli_session_id: input.cli_session_id || crypto.randomUUID(), status: 'starting', created_at: new Date().toISOString() };
-    const built = this.commandFor(input, session, worktree, promptPath, rolePrompt);
+    const { mcp, warnings } = await readProjectMcp(worktree);
+    const built = this.commandFor(input, session, worktree, promptPath, rolePrompt, mcp);
+    if (TOOL_ROLES.has(input.role)) for (const warning of [...warnings, ...(built.warnings || [])]) console.error(`${session.name}: project tools: ${warning}`);
     if (built.settingsPath) await atomicWrite(built.settingsPath, `${json(built.settings)}\n`);
     const commandText = ['env', 'WHEELCHAIR_LANE=1', ...(adapter.sessionNameEnv ? [`WHEELCHAIR_SESSION_NAME=${name}`] : []), `WHEELCHAIR_SESSION_TOKEN=${session.token}`, `WHEELCHAIR_STATE_DIR=${this.stateDir}`, `WHEELCHAIR_MACHINE_ORIGIN=http://${this.config.host}:${this.config.port}`, ...Object.entries(adapter.loginEnv(dir)).map(([key, value]) => `${key}=${value}`), ...built.argv].map(shellQuote).join(' ');
     session.command = built.argv;
