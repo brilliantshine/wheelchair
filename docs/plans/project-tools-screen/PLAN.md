@@ -58,6 +58,7 @@ None.
 | 31 | Supersedes 26: the per-id save status (Log 28) replaces any per-project last-save record | Avoid building both | review-round-6 |
 | 32 | Read token binds the project identity and GitHub repository; Save pushes only to the one validated URL | No write to a retargeted alias or a second push URL | review-round-6 |
 | 33 | Unset and held-back keys are key warnings, not skip reasons | Adapters still start the tool | review-round-6 |
+| 34 | Supersedes 26, 28 and 31: no save tracking; after a lost reply the screen reloads and tells Collin to check Waiting to merge | Lost replies are rare and the list shows whether it landed | user |
 
 ## Spec
 
@@ -93,18 +94,6 @@ project's tools and lets him add, change and remove them. Works at phone width.
 - If `gh` fails (not installed, no login, network), the section still shows the tools from
   the default branch, with "couldn't check for waiting pull requests: <reason>". Editing and
   Save still work; if `gh` still fails at PR creation, Saving step 6's fallback applies.
-- **Save status.** The browser makes a random save id before sending a Save. The machine
-  keeps a local record per save id (the last 20 per project): running, then `saved` (keys only,
-  no PR), `opened` (PR link) or `failed` (reason; for a pushed branch with no PR, the branch
-  name and compare link). A separate status route returns one record by id from local state
-  only, with no git or GitHub calls and the normal 5-second hub timeout. The browser keeps
-  the id of an unfinished Save in localStorage (per machine and project) until it has a final
-  result, so a reloaded or evicted tab can recover it. The screen polls only after the Save
-  reply was lost or timed out (never alongside a live Save request), every 3 seconds, showing
-  "Saving…" with Save disabled, and does one full reload when the record ends. An id the
-  machine doesn't know is never read as "didn't happen": the screen shows "Couldn't confirm
-  this save; check Waiting to merge before saving again", clears the stored id and
-  re-enables Save.
 - The file is read from the source with `git ls-tree` / `git cat-file`. Missing: empty
   list. An entry that is not a regular blob (symlink, submodule, tree) is unreadable, reason
   "not a regular file; edit it by hand or Start over". Session launch is unchanged and may
@@ -225,10 +214,10 @@ project's tools and lets him add, change and remove them. Works at phone width.
   6. Run `gh pr create --repo R --head <branch> --base <default branch> --title "Update
      project tools" --body "Saved from the wheelchair app's Project tools screen."`. If that
      fails or times out, confirm with `gh pr list --repo R --head <branch> --base <default
-     branch> --state all --json url`: a PR found means `opened` with its link. None found
-     means `failed` with the error, the branch name and GitHub's compare link so Collin can
-     open it himself. If confirmation also fails, `failed` with "couldn't confirm whether the
-     pull request was opened; check Waiting to merge" plus the compare link. Creation is never
+     branch> --state all --json url`: a PR found is reported as opened, with its link. None
+     found: the reply shows the error, the branch name and GitHub's compare link so Collin can
+     open it himself. If confirmation also fails: "couldn't confirm whether the pull request
+     was opened; check Waiting to merge" plus the compare link. Creation is never
      retried.
   7. Remove the temporary worktree.
 - Every Save makes its own branch and PR; two saves never share anything. Two waiting PRs may
@@ -241,12 +230,13 @@ project's tools and lets him add, change and remove them. Works at phone width.
   in its own process group, kills the whole group on expiry and settles at once without
   waiting for `close`; the lock and temporary worktree are released in a `finally`, whatever
   happens.
-- The machine records each Save under its save id (Reading, "Save status") and runs it to
-  the end even if the HTTP request is dropped.
+- The machine runs a Save to the end even if the HTTP request is dropped. It keeps no record
+  of saves.
 - Deadlines: the hub calls the new read, save and remove routes with a 120-second timeout
   (`viewer/app/machine-client.js:64` takes a timeout argument; the default is 5 seconds). If
-  Save times out or the connection drops, the screen reloads and shows the last-save record
-  by polling the save status (Reading, "Save status"), never retrying on its own.
+  Save times out or the connection drops, the screen reloads and shows "Your last save may or
+  may not have gone through; check Waiting to merge before saving again." It never retries on
+  its own and tracks nothing.
 
 ### Not doing
 Running or testing a tool; changing which roles or CLIs get tools; changing running threads;
@@ -259,8 +249,7 @@ account-level tools; merging the PR.
   names refused; Save refused only when `.mcp.json` or the key revision changed;
   push without a new-ref `*` flag stops before PR creation (including equal-sha); a blocking
   `wc-tools` ref shows its message; `${NAME:-x}` in args holds back that key at launch;
-  save status by id survives a dropped request and needs no network;
-  key-only Save ends `saved`; unknown id; command timeout kills a grandchild holding the pipe;
+  a dropped Save still runs to the end on the machine; command timeout kills a grandchild holding the pipe;
   push with lost result confirmed by ls-remote; differing push and fetch repos refused; waiting tools PRs listed and filtered by `wc-tools/` prefix;
   symlinked `.mcp.json` read as unreadable and replaced by Start over; key-only save opens no PR;
   PR-create failure shows the compare link;
@@ -441,6 +430,20 @@ polling); Validation; Accepted Risks row (round 5); Decision Log 28-30.
 | mechanics | major | PR created but response lost | upheld | `gh pr list --head` confirmation |
 | mechanics | major | Unset/held-back keys aren't real skips | upheld | Log 33 |
 
+### Round 7 — 2026-11-18
+
+**Lanes:** intent — pending; mechanics — pending; cross-family: pending.
+
+**Changed since Round 6:** save tracking removed (Log 34): no save ids, status route or
+localStorage; a lost reply reloads with a "check Waiting to merge" message. From round 6
+triage: single validated push URL and token bound to project identity and GitHub repository
+(Log 32); both-ways key conflicts refused only when this Save creates them; unset and
+held-back keys are key warnings, not skip reasons (Log 33); PR-create confirmation via
+`gh pr list --head`.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
@@ -449,6 +452,6 @@ polling); Validation; Accepted Risks row (round 5); Decision Log 28-30.
 ## Log
 
 Round 3 was the third round without a clean result since Collin's last decision; budget stop. The `wc-tools` shared-branch design (Log 9, 12, 18) drew findings in all three rounds. Put to Collin; he chose one PR per save (Log 23). Budget reset.
-Round 6 was the third round without a clean result since that decision (rounds 4-6); budget stop. Recurring: recovering a Save whose reply was lost (rounds 4-6) and GitHub destination checks (rounds 5-6). Round 6 fixes applied before asking.
+Round 6 was the third round without a clean result since that decision (rounds 4-6); budget stop. Recurring: recovering a Save whose reply was lost (rounds 4-6) and GitHub destination checks (rounds 5-6). Round 6 fixes applied before asking. Collin chose no save tracking (Log 34). Budget reset.
 
 Watch List items 1-6 (Antigravity note, Codex flags, project identity, unknown fields, key values in argv, second save) were settled as Decision Log 4-9.
