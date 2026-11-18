@@ -947,12 +947,17 @@ Filled by Stage 3. One row per worker brief.
 | T2 | Kimi in providers, settings, routes, Ready, usage, asides error, Settings/thread pages, model pins | `viewer/app/{providers,settings,routes,ready,usage,asides}.js`, `viewer/pages/`, `codex/`, related viewer tests, `viewer/app/API.md`, `viewer/AGENTS.md` | standard / claude-sonnet-5-5 | wc-01b8cb1bf051-worker-2 | `bash codex/test/run.sh`; `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser` | running |
 | T3 | tricky: Kimi log binding, `pollKimiTurns`, turn events, fatal stops, exact kill, input refusal, Stop 202, archive, copier identity, recovered panes, agent-hook ignore (machine part 2, after T1) | `machine/adapters/kimi.js`, `machine/service.js`, `machine/test/`, `machine/API.md` | standard | | `bash machine/test/run.sh` | not started |
 | T4 | Kimi chat parser, report function, hub `last_turn_id`, interrupted turns, `end_reason` in ended notices, Stop 202 in hub | `viewer/app/{chat,sessions,threads}.js`, their tests | standard / gpt-6.1-terra | wc-01b8cb1bf051-worker-3 | `node --test viewer/test/*.test.js` | done |
-| T5 | Installer detects Kimi; protocol docs and README | `install.sh`, `install/`, `protocol/`, `README.md` | standard / gpt-6.1-terra | wc-01b8cb1bf051-worker-4 | `bash install/test/run.sh` | running |
+| T5 | Installer detects Kimi; protocol docs and README | `install.sh`, `install/`, `protocol/`, `README.md` | standard / gpt-6.1-terra | wc-01b8cb1bf051-worker-4 | `bash install/test/run.sh` | done |
 | T6 | Live checks 1–5 against an isolated machine service and hub from the merged branch (after T1–T5) | `docs/plans/kimi-code/reports/T6.md`; fixes go back as remediation | standard | | live checks + full validation | not started |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
 ## Log
+
+- 2026-11-18 — Choice: T5, `install.sh` service PATH: the `agy` directory is added too, beside codex, claude and kimi.
+- 2026-11-18 — Choice: T5, `install.sh`: prints "harness found: agy"/"harness found: kimi"; no-provider error reworded to "no claude, codex, agy or kimi found"; model-init success line still says "codex models: initialized" on non-Codex machines (scout-found, not reported).
+- 2026-11-18 — Choice: T5, `install/test/run.sh`: a `detect_path` seam (shim-only PATH, `WHEELCHAIR_PRESENT` unset) for real detection, plus a kimi-on-PATH case beyond the brief (scout-found, not reported).
+- 2026-11-18 — T5 accepted (band: scout). Installer suite: 191 pass, 1 fail — "real wheelchair directory is byte-identical after suite", caused by the live Codex account `~/.wheelchair/accounts/work1` (`logs_2.sqlite-wal/-shm`) being written by running GPT workers during the suite; the base branch passed it in a quiet moment. Environmental, not this change. Protocol rules test 35/35.
 
 - 2026-11-18 — Choice: T4, Sessions ended card: reason added where the card is actually created, `viewer/app/sessions.js` pollDead, not `threads.js:174-177` (which only clears cards).
 - 2026-11-18 — Choice: T4, stop: `stopManagedSession` returns the machine's pending result to every caller, so handoff export and handoff ops continue with a pending Kimi session left live (scout-found, not reported).
