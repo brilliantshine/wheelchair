@@ -46,6 +46,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D11 | Deferred items live in one `## Deferred` section of PLAN.md in both lighter modes. In proof-of-concept that section is the record of accepted hardening risks (refines D2's "Accepted Risks"); Accepted Risks keeps its existing meaning | One place for the running list, the reviewers, the verifier and the handoff to read | defaulted |
 | D12 | The two-part follow-up thread is an ordinary `stub` card posted at done, `depends_on_parent: true`, whose summary carries the Deferred items and links to this plan and pull request. No second plan directory | Avoids the app's one-new-plan-directory slug rule and document allowlist (MAP.md); a head start (D4) needs only the list | defaulted |
 | D13 | The running list is a new lead-only card kind, `deferred`, pinned like `idea` | The idea card is already pinned for a different list; a second kind keeps both visible | defaulted |
+| D14 | In a lighter mode, a review finding moved to Deferred does not keep a round from being clean | Otherwise each round's new hardening findings would keep review running as long as thorough, defeating "a working build sooner" | review-round-1 |
 
 ## Spec
 
@@ -143,14 +144,15 @@ settled, like Accepted Risks. reviewer.md gains: in a lighter mode, do not raise
 Deferred item as missing; do raise a Deferred item that the feature cannot work without
 (that is a finding against the deferral). Lead triage: a finding that is hardening is
 moved to Deferred with source `review-round-N`; its verdict is `upheld` or `downgraded`
-as usual and it counts as found, and as fixed once its Deferred row is saved. The clean
-test and budget are unchanged.
+as usual and it counts as found, and as fixed once its Deferred row is saved. In a
+lighter mode, a finding moved to Deferred does not count against the clean test: a round
+is clean when triage upholds no blocking or major finding that stays in the Spec and no
+`user-decision` is open. The budget rule is otherwise unchanged.
 
 ### Verification in the lighter modes (D7)
 
 The verifier is briefed with the mode and the Deferred table; verifier.md gains: a
-Deferred item is out of scope and is not a gap; IDEA.md's "What good looks like" is read
-as the working version, not the hardened one. The sub-lead, before remediating a
+Deferred item is out of scope and is not a gap. Nothing else about how it checks changes. The sub-lead, before remediating a
 verification report in a lighter mode, sends the lead one `message` (`asks: true`) listing
 each gap it judges hardening. The lead answers per gap: defer or fix. Gaps the lead
 defers are written by the sub-lead into PLAN.md Deferred (source `verification`), since
@@ -213,7 +215,7 @@ re-raise them.
 
 ### Round 1 — 2026-11-17
 
-**Lanes:** <family / model>; <family / model>; cross-family: <yes|no>.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 Written for every round, including one where the table below stays empty. The table gets a row
 per finding, so a clean round would otherwise leave no record of which gate ran — which is the
@@ -225,6 +227,10 @@ round where knowing it matters most.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent (claude) | major | Hardening findings moved to Deferred still block the clean test, so review may run as long as thorough | upheld | D14; Spec "Plan review in the lighter modes" |
+| intent (claude) | minor | Verifier rule reading "What good looks like" as the working version loosens checks, against IDEA's non-goal | upheld | Rule removed from Spec "Verification in the lighter modes" |
+| intent (claude) | minor | IDEA.md says the follow-up thread holds a written plan; D4/D12 make it a head start | user-decision | IDEA wording change proposed to Collin |
+| intent (claude) | minor | IDEA says PoC skips are "recorded as accepted risk" but D11 uses Deferred | declined | Spec table and D11 already state Deferred is the accepted-risk record in proof-of-concept |
 
 Reported severity is the reviewer's opinion; the lead verdict
 (`upheld`/`downgraded`/`declined`/`accepted-risk`/`user-decision`) is what gates the
