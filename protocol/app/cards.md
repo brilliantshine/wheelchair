@@ -42,6 +42,7 @@ Rules for every card:
 | `progress` | yes | sub-lead, lead | yes |
 | `needs` | yes | lead | no |
 | `done` | yes | lead | no |
+| `check` | yes | lead | no |
 | `merged` | yes | app | no |
 | `diagram` | yes | lead | no |
 | `image` | yes | lead | no |
@@ -157,6 +158,7 @@ The press forms, in full:
 - `[card <id>] answered: <text>`, his own words in a question card's box
 - `[card <id>] removed: <bullet text>`
 - `[card <id>] talk about: <finding>`
+- `[card <id>] fix what the check found` and `[card <id>] leave it`
 - `[card <id>] start building`
 - `[card <id>] start thread about: <text>`
 - `[card <id>] keep going` and `[card <id>] talk about: <needs card title>`, on your `needs` card
