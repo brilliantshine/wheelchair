@@ -100,12 +100,14 @@ test('frozen threads refuse mutation entry points and never deliver queued work'
     const hub = new Hub({ stateDir: c.state });
     for (const field of ['handed_off', 'handoff_op']) {
       const current = await hub.thread(made.id);
+      current.cards.push({ id: 'real-question', kind: 'question', question: 'Ready?', options: [], answered: false, at });
+      current.cards.push({ id: 'real-needs', kind: 'needs', title: 'Help', body: 'Help', answered: false, at });
       current[field] = {}; current.sessions[0].queue = [{ text: 'waiting', source: 'collin', at }]; current.sessions[0].ready = true; current.sessions[0].turn_ended = true;
       await hub.save(current);
       const expected = field === 'handed_off' ? 'handed off' : 'Retry the unfinished import first';
       for (const [route, body] of [
         [`/threads/${made.id}/messages`, { text: 'hi' }], [`/threads/${made.id}/send-now`, { at }],
-        [`/threads/${made.id}/cards/no/press`, { action: 'picked', value: 'x' }], [`/threads/${made.id}/cards/no/dismiss`, {}],
+        [`/threads/${made.id}/cards/real-question/press`, { action: 'picked', value: 'x' }], [`/threads/${made.id}/cards/real-needs/dismiss`, {}],
         [`/threads/${made.id}/restart`, {}], [`/threads/${made.id}/open`, {}], [`/threads/${made.id}/asides`, {}], [`/threads/${made.id}/asides/no/messages`, { text: 'hi' }],
         ...['close', 'retry', 'think-harder', 'summary'].map((action) => [`/threads/${made.id}/asides/no/${action}`, {}]),
         [`/sessions/${lead.name}/keys`, { keys: 'Enter' }],
@@ -119,6 +121,7 @@ test('frozen threads refuse mutation entry points and never deliver queued work'
       frozen.sessions[0].limited_until = '2000-01-01T00:00:00.000Z'; await hub.save(frozen);
       await require('../app/sessions.js').releaseLimits(hub);
       assert.equal((await hub.thread(made.id)).sessions[0].queue.length, before);
+      assert.equal((await hub.thread(made.id)).sessions[0].limited_until, '2000-01-01T00:00:00.000Z');
       await hub.event({ thread_id: made.id, session: target.name, type: 'limit-hit', limited_until: '2000-01-01T00:00:00.000Z' });
       assert.equal((await hub.thread(made.id)).sessions[0].queue.length, before);
       delete frozen[field]; await hub.save(frozen);
@@ -200,13 +203,13 @@ test('banner reports remote states and caches inspection', async () => {
   hub.handoffInspect.clear(); hub.client.handoff = async () => { throw new Error('offline'); }; assert.equal((await hub.handoffBanner(id)).state, 'inspect-failed');
 });
 test('download recovery selects matching head, and startup sweeps stray files', async () => {
-  const fs = require('node:fs/promises'); const path = require('node:path'); const handoff = require('../app/handoff.js');
+  const fs = require('node:fs/promises'); const path = require('node:path');
   const { hub } = await exportFixture(); const result = await hub.exportThread(id); const dir = path.join(hub.stateDir, 'handoffs'); const base = path.join(dir, `${id}.json`);
   const old = JSON.parse(result.bytes); old.head = 'b'.repeat(40); await fs.writeFile(base, JSON.stringify(old)); await fs.writeFile(`${base}.new`, result.bytes);
   assert.equal(JSON.parse((await hub.handoffFile(id)).bytes).head, 'a'.repeat(40));
   await fs.writeFile(`${base}.new`, result.bytes); await fs.writeFile(path.join(dir, 'stray.json'), '{}'); await fs.writeFile(path.join(dir, 'stray.json.new'), '{}');
   const op = await hub.thread(id); op.id = '123456abcdef'; delete op.handed_off; op.handoff_op = {}; await hub.save(op); await fs.writeFile(path.join(dir, `${op.id}.json`), '{}');
-  await handoff.sweepFiles(hub);
+  await hub.init();
   assert.equal(JSON.parse(await fs.readFile(base)).head, 'a'.repeat(40));
   await assert.rejects(fs.stat(`${base}.new`), { code: 'ENOENT' }); await assert.rejects(fs.stat(path.join(dir, 'stray.json')), { code: 'ENOENT' }); await assert.rejects(fs.stat(path.join(dir, 'stray.json.new')), { code: 'ENOENT' }); assert.ok(await fs.stat(path.join(dir, `${op.id}.json`)));
 });
@@ -234,14 +237,26 @@ test('an admitted upload blocks export until its stream completes', async () => 
   } finally { await close(c); }
 });
 
-test('page status reads omit pull requests, cache for a minute, and retain a previous result on failure', async () => {
-  const { hub, status } = await exportFixture('done'); const thread = await hub.thread(id); const calls = [];
-  hub.client.handoff = async (machine, input) => { calls.push(input); return status; };
-  assert.equal(await hub.handoffStatusRead(thread), status); assert.equal(await hub.handoffStatusRead(thread), status);
+test('page status refresh is background, cached, skips archived and handed-off threads and retains prior results', async () => {
+  const { hub, status } = await exportFixture('done'); const calls = []; let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  hub.client.handoff = async (machine, input) => { calls.push(input); await gate; return status; };
+  const first = await hub.chat(id); assert.equal(first.thread.export.ok, false);
   assert.equal(calls.length, 1); assert.equal(Object.hasOwn(calls[0], 'pr_url'), false);
+  await hub.withThread(id, async () => {}); // status is still waiting, without owning the lock
+  await hub.chat(id); assert.equal(calls.length, 1);
+  release();
+  for (let i = 0; i < 100 && !hub.handoffStatus.has(id); i++) await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(hub.handoffStatus.get(id), status);
   hub.handoffStatusAt.set(id, Date.now() - 61_000);
   hub.client.handoff = async () => { calls.push({ failed: true }); throw new Error('offline'); };
-  assert.equal(await hub.handoffStatusRead(thread), status); assert.equal(await hub.handoffStatusRead(thread), status); assert.equal(calls.length, 2);
+  const view = await hub.chat(id); assert.equal(view.thread.export.ok, true); await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(hub.handoffStatus.get(id), status); await hub.chat(id); assert.equal(calls.length, 2);
+  for (const field of ['archived', 'handed_off']) {
+    const thread = await hub.thread(id); thread[field] = field === 'archived' ? true : { head: status.head, at }; await hub.save(thread);
+    hub.handoffStatusAt.delete(id); await hub.chat(id); assert.equal(calls.length, 2);
+    delete thread[field]; await hub.save(thread);
+  }
 });
 
 test('export cancels asides found after the quiet check', async () => {
@@ -288,4 +303,52 @@ test('validator rejects each malformed scalar and history limit', () => {
     (f) => { f.history = [{ ...entry, at: 'bad' }]; }, (f) => { f.history = [{ ...entry, kind: 'unknown' }]; },
     (f) => { f.history = [{ ...entry, text: 'x'.repeat(20001) }]; },
   ]) { const changed = structuredClone(file); change(changed); assert.equal(valid(changed), false); }
+});
+
+test('export uses session stop lifecycle and preserves recovery on rename failure', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path');
+  const { hub } = await exportFixture(); const thread = await hub.thread(id);
+  thread.sessions[0].turn_started_at = '2026-11-17T12:00:00.000Z'; thread.sessions[0].quiet_check_at = at; thread.sessions[0].quiet_card = 'quiet';
+  thread.cards.push({ id: 'quiet', kind: 'needs', title: 'Notice', body: 'Waiting', at, answered: false }); await hub.save(thread);
+  hub.renameHandoff = async () => { throw new Error('injected rename failure'); };
+  const result = await hub.exportThread(id); const stored = await hub.thread(id);
+  assert.equal(stored.sessions[0].live, false); assert.equal(stored.sessions[0].quiet_check_at, undefined); assert.equal(stored.cards[0].answered, true);
+  assert.ok(stored.sessions[0].turns[0].ended_at); assert.ok(await fs.stat(path.join(hub.stateDir, 'handoffs', `${id}.json.new`)));
+  assert.ok((await hub.handoffFile(id)).bytes.equals(result.bytes));
+});
+
+test('slow banner inspection does not hold the thread lock', async () => {
+  const { hub } = await exportFixture(); await hub.exportThread(id); let release, started;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const called = new Promise((resolve) => { started = resolve; });
+  hub.client.handoff = async () => { started(); await gate; return { remote_tip: 'a'.repeat(40) }; };
+  const pending = hub.handoffBanner(id); await called;
+  const lock = await Promise.race([hub.withThread(id, async () => 'free'), new Promise((resolve) => setTimeout(() => resolve('blocked'), 500))]);
+  release(); assert.equal(lock, 'free'); assert.equal((await pending).state, 'unchanged');
+});
+
+test('idea answers, retractions, imported anchor, approvals and sudo waiting set export eligibility', () => {
+  const { stageFor, exportReason } = require('../app/handoff.js');
+  const hub = { runningHandoffOps: new Set(), uploadsInFlight: new Map() };
+  const thread = { id, sessions: [], cards: [], sent: [], asides: [] };
+  const status = { branch: `wc/${id}`, repository: 'github.com/owner/repo', idea_status: 'confirmed', map_committed: true, plan_status: null };
+  thread.cards = [{ kind: 'sudo', state: 'waiting' }]; assert.equal(exportReason(hub, thread, status), 'A root command is waiting');
+  const idea = { id: 'idea', kind: 'question', doc: 'IDEA.md', answered: true, at: '2026-11-01T00:00:00.000Z' };
+  const planning = { id: 'plan', kind: 'question', answered: true, answered_action: 'answered', at: '2026-11-02T00:00:00.000Z' };
+  thread.cards = [idea, planning]; thread.sent = [{ source: 'card', text: '[card idea] answered: yes', at: '2026-11-04T00:00:00.000Z' }, { source: 'card', text: '[card plan] answered: answer', at: '2026-11-05T00:00:00.000Z' }];
+  assert.equal(stageFor(thread, status), null);
+  thread.sent[1].at = '2026-11-03T00:00:00.000Z'; assert.equal(stageFor(thread, status), 'idea-confirmed');
+  thread.sent = []; idea.resolved_at = '2026-11-06T00:00:00.000Z'; planning.resolved_at = '2026-11-07T00:00:00.000Z'; assert.equal(stageFor(thread, status), null);
+  planning.retracted_at = '2026-11-08T00:00:00.000Z'; assert.equal(stageFor(thread, status), 'idea-confirmed');
+  thread.cards = [planning]; delete planning.retracted_at; thread.imported = { at: '2026-11-08T00:00:00.000Z' }; assert.equal(stageFor(thread, status), 'idea-confirmed');
+  thread.imported.at = '2026-11-06T00:00:00.000Z'; assert.equal(stageFor(thread, status), null);
+  delete thread.imported; assert.equal(stageFor(thread, status), null);
+  status.plan_status = 'approved'; thread.cards = [{ kind: 'approval', answered: true, answered_action: 'start-building' }]; assert.equal(stageFor(thread, status), null);
+  thread.cards[0].retracted_at = at; assert.equal(stageFor(thread, status), 'approved');
+});
+
+test('done export supplies its PR URL and rejects a non-open PR', async () => {
+  const { hub, calls, status } = await exportFixture('done'); status.pr_state = 'CLOSED';
+  await assert.rejects(hub.exportThread(id), /merged or closed/);
+  assert.equal(calls[0].pr_url, 'https://github.com/owner/repo/pull/1'); assert.equal(calls.length, 1);
 });

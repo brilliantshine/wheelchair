@@ -164,35 +164,59 @@ class Hub {
     return this.mergePolling;
   }
   exportThread(id) { return handoff.exportThread(this, id); }
-  handoffBanner(id) { return this.withThread(id, async () => handoff.banner(this, await this.thread(id))); }
+  async handoffBanner(id) {
+    for (;;) {
+      const snapshot = await this.withThread(id, async () => {
+        const thread = await this.thread(id);
+        if (!thread.handed_off) throw require('./state.js').appError(404, 'thread has not been handed off');
+        const cached = this.handoffInspect.get(id);
+        if (cached && cached.head === thread.handed_off.head && cached.at === thread.handed_off.at && Date.now() - cached.time < 60_000) return { cached: cached.value };
+        return { thread };
+      });
+      if (snapshot.cached) return snapshot.cached;
+      const value = await handoff.banner(this, snapshot.thread);
+      const current = await this.withThread(id, async () => {
+        const thread = await this.thread(id);
+        if (!thread.handed_off) throw require('./state.js').appError(404, 'thread has not been handed off');
+        if (thread.handed_off.head !== snapshot.thread.handed_off.head || thread.handed_off.at !== snapshot.thread.handed_off.at) return false;
+        this.handoffInspect.set(id, { head: thread.handed_off.head, at: thread.handed_off.at, time: Date.now(), value });
+        return true;
+      });
+      if (current) return value;
+    }
+  }
   handoffFile(id) { return this.withThread(id, async () => { const thread = await this.thread(id); return { bytes: await handoff.savedFile(this, thread), filename: handoff.handoffFileName(thread.title) }; }); }
   frozen(thread) { return handoff.frozen(this, thread); }
   quietReason(thread) { return handoff.quietReason(this, thread); }
   exportReason(thread, status, options) { return handoff.exportReason(this, thread, status, options); }
-  async handoffStatusRead(thread) {
-    if (!thread.worktree || !thread.slug) return this.handoffStatus.get(thread.id) || null;
-    const previous = this.handoffStatus.get(thread.id) || null;
-    const lastAttempt = this.handoffStatusAt.get(thread.id);
-    if (lastAttempt !== undefined && Date.now() - lastAttempt < 60_000) return previous;
-    this.handoffStatusAt.set(thread.id, Date.now());
+  async refreshHandoffStatus(snapshot) {
     try {
-      const status = await this.client.handoff(thread.machine, {
-        action: 'status', thread_id: thread.id, project: thread.project,
-        worktree: thread.worktree, slug: thread.slug,
+      const status = await this.client.handoff(snapshot.machine, {
+        action: 'status', thread_id: snapshot.id, project: snapshot.project,
+        worktree: snapshot.worktree, slug: snapshot.slug,
       });
-      if (status.result === 'failed') return previous;
-      this.handoffStatus.set(thread.id, status);
-      return status;
-    } catch { return previous; }
+      if (status.result === 'failed') return;
+      await this.withThread(snapshot.id, async () => {
+        const current = await this.thread(snapshot.id);
+        if (!current.archived && !current.handed_off && ['machine', 'project', 'worktree', 'slug'].every((key) => current[key] === snapshot[key])) this.handoffStatus.set(snapshot.id, status);
+      });
+    } catch { /* Keep the last successful status until the next refresh. */ }
   }
-  chat(id) { return this.withThread(id, async () => {
+  async chat(id) {
+    // Transcript reads can contact the machine, so assemble chat outside the thread lock.
     const result = await chat.chat(this, id);
-    const thread = await this.thread(id);
-    const status = await this.handoffStatusRead(thread) || this.handoffStatus.get(id);
-    const reason = this.exportReason(thread, status);
+    const snapshot = await this.withThread(id, async () => {
+      const thread = await this.thread(id);
+      const last = this.handoffStatusAt.get(id);
+      const refresh = !thread.archived && !thread.handed_off && thread.worktree && thread.slug && (last === undefined || Date.now() - last >= 60_000);
+      if (refresh) this.handoffStatusAt.set(id, Date.now());
+      return { thread, refresh, status: this.handoffStatus.get(id) };
+    });
+    if (snapshot.refresh) this.refreshHandoffStatus(snapshot.thread).catch(() => {});
+    const reason = this.exportReason(snapshot.thread, snapshot.status);
     result.thread.export = { ok: !reason, reason };
     return result;
-  }); }
+  }
   features() { return views.features(this); }
   sessions() { return views.sessions(this); }
   findSessionMachine(name) { return views.findSessionMachine(this, name); }

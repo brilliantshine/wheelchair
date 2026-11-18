@@ -171,11 +171,11 @@ async function exportThread(hub, id) {
       await fs.unlink(next).catch(() => {});
       throw appError(500, "The branch was pushed, but the export didn't finish; try again");
     }
-    try { await fs.rename(next, dest); }
-    catch (error) {
+    try { await (hub.renameHandoff || fs.rename)(next, dest); }
+    catch {
       const existing = await fs.readFile(dest).catch(() => null);
-      if (!existing || !existing.equals(bytes)) throw error;
-      await fs.unlink(next).catch(() => {});
+      if (existing?.equals(bytes)) await fs.unlink(next).catch(() => {});
+      // The handed-off record and matching .new remain available for recovery.
     }
     for (const turnId of [...(thread.pending_cancels || [])]) {
       try { await hub.call(thread.machine, `/v1/aside-turns/${encodeURIComponent(turnId)}`, 'DELETE'); }
@@ -183,10 +183,8 @@ async function exportThread(hub, id) {
       thread.pending_cancels = thread.pending_cancels.filter((value) => value !== turnId);
     }
     for (const session of thread.sessions || []) if (session.live) {
-      try {
-        if (session.status !== 'waiting') await hub.call(thread.machine, `/v1/sessions/${encodeURIComponent(session.name)}`, 'DELETE');
-        session.live = false; session.status = 'stopped'; session.ended_at = new Date().toISOString();
-      } catch { /* Frozen even if the machine could not stop it. */ }
+      try { await require('./sessions.js').stopManagedSession(hub, thread, session); }
+      catch { /* Frozen even if the machine could not stop it. */ }
     }
     await hub.save(thread).catch(() => {});
     return { bytes, filename: handoffFileName(thread.title) };
@@ -234,8 +232,6 @@ async function banner(hub, thread) {
   const fs = require('node:fs/promises'); const path = require('node:path');
   const { appError } = require('./state.js');
   if (!thread.handed_off) throw appError(404, 'thread has not been handed off');
-  const cache = hub.handoffInspect.get(thread.id);
-  if (cache && cache.head === thread.handed_off.head && Date.now() - cache.time < 60_000) return cache.value;
   const value = { state: 'inspect-failed', at: thread.handed_off.at };
   try {
     const result = await hub.client.handoff(thread.machine, { action: 'inspect', thread_id: thread.id, project: thread.project, branch: `wc/${thread.id}`, head: thread.handed_off.head, slug: thread.slug, fallback_head: thread.handed_off.head, ...(thread.worktree ? { worktree: thread.worktree } : {}) });
@@ -248,7 +244,6 @@ async function banner(hub, thread) {
       if (result.picked_up_at) value.picked_up_at = result.picked_up_at;
     }
   } catch { /* Undo repeats the check. */ }
-  hub.handoffInspect.set(thread.id, { head: thread.handed_off.head, time: Date.now(), value });
   return value;
 }
 

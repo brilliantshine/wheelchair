@@ -662,6 +662,12 @@ async function stopSession(hub, thread, caller, name) {
     caller.role === 'lead' && target.started_by && target.role !== 'lead'
   );
   if (!canStop) throw appError(403, 'only the starter may stop this session');
+  return stopManagedSession(hub, thread, target);
+}
+
+// The caller holds the thread lock. Authorization is checked by sessionRequest; export
+// stops its own sessions through the same lifecycle without needing a session caller.
+async function stopManagedSession(hub, thread, target) {
   if (target.status !== 'waiting') await hub.call(thread.machine, `/v1/sessions/${encodeURIComponent(target.name)}`, 'DELETE');
   target.ended_at = new Date().toISOString();
   endTurn(target, target.ended_at);
@@ -764,6 +770,7 @@ async function retryWaiting(hub) {
 async function releaseLimits(hub) {
   for (const listed of await hub.allThreads()) await hub.withThread(listed.id, async () => {
     const thread = await hub.thread(listed.id);
+    if (require('./handoff.js').frozen(hub, thread)) return;
     for (const target of thread.sessions) if (target.live && target.limited_until && Date.parse(target.limited_until) <= Date.now()) {
       delete target.limited_until;
       await enqueue(hub, thread, target.name, 'Continue.', 'app', true);
@@ -805,4 +812,5 @@ module.exports = {
   session,
   sessionRequest,
   startSession,
+  stopManagedSession,
 };
