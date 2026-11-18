@@ -323,9 +323,13 @@ means today's behaviour, byte for byte: same settings file, same argv.
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Read `.mcp.json` (`machine/lib/project-mcp.js`), service wiring and log lines, Claude and Antigravity adapters, README section | `machine/lib/project-mcp.js`, `machine/service.js` (startIn/commandFor), `machine/adapters/claude.js`, `machine/adapters/agy.js`, `machine/test/project-mcp.test.js`, `README.md`, `machine/AGENTS.md` | standard / gpt-6.1-terra | wc-21cc83a58882-worker | `node --test machine/test/project-mcp.test.js`; `bash machine/test/run.sh`; `node --test viewer/test/*.test.js` | dispatched |
-| T2 | Codex adapter: project servers as `-c mcp_servers.project_<name>.*` overrides, skips as warnings | `machine/adapters/codex.js` (command), `machine/test/project-mcp-codex.test.js` | standard / gpt-6.1-terra | wc-21cc83a58882-worker-2 | `node --test machine/test/project-mcp-codex.test.js`; `bash machine/test/run.sh` | dispatched |
+| T2 | Codex adapter: project servers as `-c mcp_servers.project_<name>.*` overrides, skips as warnings | `machine/adapters/codex.js` (command), `machine/test/project-mcp-codex.test.js` | standard / gpt-6.1-terra | wc-21cc83a58882-worker-2 | `node --test machine/test/project-mcp-codex.test.js`; `bash machine/test/run.sh` | done |
 
 ## Log
 
 - 2026-11-18 Ready check: hub and machine service answer (`session list`); Claude Code 2.1.327 and codex-cli 0.169.0 installed; Codex preflight passed.
 - Build accepted: approval 334a1270-6c27-468e-bc91-69408620361d
+- 2026-11-18 — Choice: T2, `machine/adapters/codex.js` command: `warnings` is always returned (empty when tools are off or nothing is skipped); the service logs only for tool roles, so nothing changes.
+- 2026-11-18 — Choice: T2, `machine/adapters/codex.js` command: any `type` other than `"http"` is written as stdio; relies on the reader having already dropped other types.
+- 2026-11-18 — T2: the worker's report said "none" for choices; the scout's list gave the 2 above.
+- 2026-11-18 — T2 accepted (band: scout): Codex `-c mcp_servers.project_<name>.*` overrides and skip warnings; focused tests 6/6 and machine suite 160/160 re-run by the sub-lead.
