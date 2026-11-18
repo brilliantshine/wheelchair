@@ -69,6 +69,7 @@ class Hub {
         catch (error) { console.error('Could not register plan:', error); }
       }
     }
+    require('./handoff-ops.js').startSweep(this);
     for (const [name, machine] of Object.entries(await this.state.machines())) {
       if (machine.last_seen) this.lastSeen.set(name, machine.last_seen);
     }
