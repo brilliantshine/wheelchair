@@ -128,7 +128,8 @@ because a Start building press was already recorded, the lead carries on. The le
 on a `[card <id>] start building` press only when `<id>` is the approval card it posted
 last and PLAN.md `status:` is `approved`; any other such press (a late or stale one)
 starts nothing, and the lead says in its reply that the plan changed and is back in
-review. This rule goes in lead.md step 7 for every mode.
+review. The rule applies only after a mode change or a pull-back; a thorough thread with
+neither keeps today's step 7 unchanged (IDEA constraint).
 
 A mode change or a pull-back while a review round's reviewers are running stops those
 reviewers. That round is not triaged and does not count toward the budget (like a round
@@ -367,6 +368,7 @@ exit. Downgrades and declines cite evidence.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent (claude) | minor | D27 written "for every mode" changes thorough, against IDEA's constraint | upheld | Rule limited to after a mode change or pull-back |
 
 ## Prior Work
 
