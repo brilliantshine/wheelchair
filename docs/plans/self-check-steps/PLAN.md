@@ -692,7 +692,7 @@ Filled by Stage 3. One row per worker brief.
 | R1 | Remediation 1: check card update wrapping; buttons honour the import cutoff | viewer/pages/thread.js, thread.css, viewer/test/app-check-card.spec.js | standard / claude-sonnet-5-5 | wc-2daed8b3ee7f-worker-4 | `npm --prefix viewer run test:browser` | done |
 | R2 | Remediation 1: note rejects U+2028/U+2029/U+0085 | viewer/app/card.js, viewer/test/app-check-card.test.js | light / gpt-6-luna | wc-2daed8b3ee7f-worker-5 | `node --test viewer/test/*.test.js` | done |
 | R3 | Remediation 1: lead may start the steps-only verifier after any done | protocol/app/lead.md | light / claude-haiku-5-5 | wc-2daed8b3ee7f-worker-6 | protocol-rules test | done |
-| R4 | Remediation 2: note rejects every line terminator (adds U+000B, U+000C) | viewer/app/card.js, viewer/test/app-check-card.test.js | light / gpt-6-luna | wc-2daed8b3ee7f-worker-7 | `node --test viewer/test/*.test.js` | in progress |
+| R4 | Remediation 2: note rejects every line terminator (adds U+000B, U+000C) | viewer/app/card.js, viewer/test/app-check-card.test.js | light / gpt-6-luna | wc-2daed8b3ee7f-worker-7 | `node --test viewer/test/*.test.js` | done |
 | R5 | Remediation 2: fix press after a newer done; restart replay (Decision 19) | protocol/app/lead.md | light / claude-haiku-5-5 | wc-2daed8b3ee7f-worker-8 | protocol-rules test | in progress |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
@@ -730,3 +730,5 @@ anything a future session needs that fits nowhere above.
 - 2026-11-18 — R1 accepted (band: self, tricky; 41 lines read): on the merged tip 786c0fa, `npm test` 636/636 and `npm --prefix viewer run test:browser` exit 0, 790 passed, 28 skipped.
 - 2026-11-18 — Verification attempt 2 on 591ec3a: claude PASS, gpt FAIL (3 gaps); REMEDIATION-2.md. Asked the lead about the restart-replay gap (Spec wording not observable).
 - 2026-11-18 — Lead answered the restart-replay question: Option 1 (observable rule), Decision 19; Spec Posting and Restart wording updated to match.
+- 2026-11-18 — R4: worker reported choices 'none'; I see none in the diff (worker didn't add choices beyond the brief; I listed 0).
+- 2026-11-18 — R4 accepted (band: scout; 4-line diff read inline): app-check-card.test.js 4/4 and the raw-character scan empty in its worktree.
