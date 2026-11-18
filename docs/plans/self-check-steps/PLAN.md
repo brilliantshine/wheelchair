@@ -77,7 +77,7 @@ Lead-only, shown, not pinned, no presses. Fields:
 
 | Field | Type | Required | Rule |
 |---|---|---|---|
-| `head` | string | yes | 40-char lowercase hex. Must equal the `head` of the most recent `done` card in the thread (done cards are never replaced or retracted: `viewer/app/cards.js:9,22-31`, `viewer/app/card.js:224-233`); the hub refuses otherwise (422 `check head must match the latest done card`), refuses when the thread has no `done` card (422 `post the done card first`), and refuses a second check card for the same `head` (422 `this done card already has a check card`) |
+| `head` | string | yes | 40-char lowercase hex. Must equal the `head` of the thread's **current done card**: the most recent `done` card that is not retracted and, when the thread has an import cutoff (`thread.imported.at`), was created after it. Done cards are never replaced, and a lead cannot retract one (`viewer/app/card.js:224-233`), but a handoff Advance retracts every card (`viewer/app/handoff-ops.js:103-105`), and cards before the cutoff are hidden from Collin; the hub refuses otherwise (422 `check head must match the latest done card`), refuses when the thread has no current done card (422 `post the done card first`), and refuses a second check card for the same `head` (422 `this done card already has a check card`) |
 | `update` | string | yes | How to get the merged change running, e.g. "Merge the pull request, then on the machine run `cd /home/collin/projects/personal/wheelchair && git pull && ./install.sh`". At most 300 chars |
 | `steps` | array | yes | 1 to 6 items, each `{where, do, see, command?, tried, why_not?}` |
 
@@ -152,7 +152,17 @@ verifier section). Which verifiers carry the steps:
   draft steps, and told it is steps-only. It posts no progress line.
 - Every later verifier the lead starts before the next `done` (a repair or merge re-verify
   in "Making the pull request mergeable" 6 and 7, or a re-verify after a step showed the
-  work wrong) also gets the current steps, and its STEP lines replace the earlier ones.
+  work wrong) also gets all current steps.
+- **Which results count.** A report that covers every step replaces all earlier results.
+  A report on a subset (a re-try of missing or reworded steps) replaces only those step
+  numbers. A reworded step's earlier result is discarded when it is reworded; only its
+  re-try counts.
+- **Which commit.** A verifier checks the branch tip when it starts
+  (`viewer/app/sessions.js:625-630`). For the planned build's steps-only verifier this is
+  the local `HEAD` after the sub-lead's result, which in a lighter mode may be a later
+  commit than the one the sub-lead verified (only plan files differ); that is fine. Before
+  using a report, the lead checks its `COMMIT:` line equals the commit it meant to try; if
+  not, it starts one fresh verifier and uses that report.
 - Commits the lead does not verify (someone else's fast-forward, a done at a merged head
   with others' commits) keep the STEP results from the last verifier (Accepted Risks).
 
@@ -169,7 +179,9 @@ verifier section). Which verifiers carry the steps:
   different".
 - Combined reports (small fix, after-done fix, and the repair and merge re-verifies): a
   step that shows the work is wrong is reported by the verifier as a `GAP` as well, so it
-  goes through today's single fix loop and today's question (push as it is, or drop); the
+  goes through that path's existing fix loop, attempt count and outcome (the small-fix and
+  after-done "push it as it is, or drop it" question; the repair budget and `needs` card in
+  "Making the pull request mergeable" 7 and 8, which never pushes a failed repair). The
   question below is not used there. If Collin chooses "push it as it is", the step is
   posted `tried: false`, `why_not` "an agent saw something different: <short>".
 - Steps-only reports (planned build): `DIFFERS (work wrong)` → a gap (Decision 8). The lead fixes
@@ -192,8 +204,10 @@ done card's `head` (including a done at a merged head other than the pushed comm
 in a two-part thread: `done`, then `check`, then the follow-up `stub`. The `check` card is
 never a condition for `done`; `done` keeps its own gate unchanged.
 
-**Restart.** After `[wc:context restart]`, the lead posts a missing check card only when
-all of these hold: the latest `done` card in the conversation it was given has a `head`;
+**Restart.** A restarted lead has lost its draft and the STEP results. After
+`[wc:context restart]`, and again after any `done` the restarted lead itself posts before
+it has steps in hand, the lead posts a missing check card only when all of these hold: the
+current done card (as defined for the hub) has a `head`;
 no `check` card has that `head`; and the local `HEAD` equals that `head`. Then it drafts
 the steps and has them tried by a steps-only verifier on `HEAD` before posting (a
 duplicate refusal means the original arrived; stop there). Otherwise it posts none for
@@ -211,7 +225,9 @@ A new section, used only when the brief includes check steps:
   isolation, never against Collin's live apps, their data, or his other checkouts: find how
   this project starts its app from its own README, AGENTS/CLAUDE files, scripts and test
   helpers, and start it from the worktree on a free port (never 7374) with its own temporary
-  data. For wheelchair this is what `viewer/test/helpers/server.js` does. App steps are
+  data. For wheelchair that means `viewer/server.js` with a free `--port`, a temporary
+  `--cache-root` **and** a temporary `--state-dir` (without `--state-dir` it opens the live
+  app state: `viewer/test/helpers/server.js:66-74`). App steps are
   followed in a headless browser at phone size (390×844), using the project's Playwright if
   it has one, otherwise any headless browser available on the machine.
 - If the project gives no safe way to run its app in isolation (it needs real accounts,
@@ -264,14 +280,16 @@ A new section, used only when the brief includes check steps:
     `command` with `where: app`, `why_not` with `tried: true`, missing `why_not` with
     `tried: false`, 0 or 7 steps, over-length fields, unknown
     fields, a non-lead role.
-  - hub acceptance: refused with no done card; refused when `head` differs from the latest
+  - hub acceptance: refused with no done card; refused when the only done card is retracted
+    or created before the thread's import cutoff; refused when `head` differs from the latest
     done; accepted when it matches; refused as a duplicate for the same head; accepted
     after a second done only with the second head.
   - press: every action on a `check` card is refused with 400 and leaves it unanswered and
     nothing enqueued.
   - handoff: a thread with a `check` card at the size limits exports, the file validates,
     and its `historyText` is untruncated and matches the format above.
-- `cd viewer && npx playwright test` passes, including a new browser test: a posted check
+- `cd viewer && npx playwright test` passes, including a new browser test (its server
+  started with a temporary `stateDir` as well as a temporary cache root): a posted check
   card renders the heading, the update text, numbered steps with "In the app"/"On the machine" labels, the command
   block with Copy, "You should see:", and the "Not tried by an agent" line; no buttons
   other than Copy; at 390px wide the page has no horizontal scroll.
@@ -331,7 +349,7 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 2 — 2026-11-18
 
-**Lanes:** intent: see table; mechanics: see table; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 1:**
 - Card limits tightened (1–6 steps; 300/300/1000/300 chars), optional `merged` flag and
@@ -351,6 +369,30 @@ exit. Downgrades and declines cite evidence.
 | intent | minor | Lead grades its own DIFFERS by rewriting `see` and posting tried | upheld | Verifier classifies DIFFERS (meets intent / work wrong); every reworded step is re-tried before `tried: true` |
 | intent | minor | Two failure loops on combined paths | upheld | Combined reports also raise a GAP for work-wrong steps; today's loop and question apply; new question only for steps-only |
 | intent | minor | `merged` flag only switches the eyebrow | upheld | Field and eyebrow removed; `update` says whether to merge |
+| mechanics | blocking | Repair verifier FAIL plus a work-wrong step hits two retry rules | upheld | Combined reports (including repairs) raise a GAP; the path's existing loop, count and outcome control; the new question is steps-only |
+| mechanics | major | Restart after push but before done loses the draft | upheld | Restart rule also applies after any done the restarted lead posts without steps in hand: re-draft and re-try on HEAD |
+| mechanics | major | Subset re-tries vs replacement rule | upheld | Full reports replace; subset reports replace only their step numbers; reworded steps keep only the re-try |
+| mechanics | major | Steps-only verifier's commit in lighter modes; COMMIT mismatch | upheld | Verifier checks the branch tip; a later plan-only commit is fine; COMMIT mismatch → one fresh verifier |
+| mechanics | major | Handoff Advance retracts done cards; pre-import dones hidden | upheld | "Current done card" excludes retracted and pre-cutoff cards, for hub and restart; test added; wrong "never retracted" claim removed |
+| mechanics | major | Example isolation misses `--state-dir`, opening live state | upheld | Temporary `--state-dir` required for the verifier and the browser test |
+
+### Round 3 — 2026-11-18
+
+**Lanes:** intent: see table; mechanics: see table; cross-family: yes.
+
+**Changed since Round 2:**
+- `merged` field and eyebrow removed; `update` says whether to merge.
+- Hub's "current done card": not retracted, after the import cutoff.
+- Lead: brief contents and path map; which results count (full vs subset, rewording);
+  which commit a verifier checks; DIFFERS split into "meets intent" / "work wrong";
+  combined reports raise a GAP and keep each path's own loop; restart also covers a done
+  posted by a restarted lead.
+- Verifier: installed copy counts as live state, path map, `--state-dir` isolation, new
+  STEP labels.
+- Validation: import-cutoff and retracted-done tests; browser test with temp `stateDir`.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
