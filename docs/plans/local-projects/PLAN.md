@@ -324,6 +324,7 @@ means today's behaviour, byte for byte: same settings file, same argv.
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Read `.mcp.json` (`machine/lib/project-mcp.js`), service wiring and log lines, Claude and Antigravity adapters, README section | `machine/lib/project-mcp.js`, `machine/service.js` (startIn/commandFor), `machine/adapters/claude.js`, `machine/adapters/agy.js`, `machine/test/project-mcp.test.js`, `README.md`, `machine/AGENTS.md` | standard / gpt-6.1-terra | wc-21cc83a58882-worker | `node --test machine/test/project-mcp.test.js`; `bash machine/test/run.sh`; `node --test viewer/test/*.test.js` | done |
 | T2 | Codex adapter: project servers as `-c mcp_servers.project_<name>.*` overrides, skips as warnings | `machine/adapters/codex.js` (command), `machine/test/project-mcp-codex.test.js` | standard / gpt-6.1-terra | wc-21cc83a58882-worker-2 | `node --test machine/test/project-mcp-codex.test.js`; `bash machine/test/run.sh` | done |
+| T3 | Remediation 1: Codex project servers get `default_tools_approval_mode="approve"` | `machine/adapters/codex.js`, `machine/test/project-mcp-codex.test.js`, `README.md` (one sentence) | light / gpt-6-luna | | `node --test machine/test/project-mcp-codex.test.js`; `bash machine/test/run.sh` | dispatched |
 
 ## Log
 
@@ -342,3 +343,4 @@ means today's behaviour, byte for byte: same settings file, same argv.
 - 2026-11-18 — T1 accepted (band: scout): reader, service wiring and log lines, Claude and Antigravity adapters, README section, router row. Sub-lead re-ran: focused 6/6, machine 160/160; viewer 632/632 on the merged branch.
 - 2026-11-18 — Integration (sub-lead): `machine/lib/project-mcp.js` now opens `.mcp.json` non-blocking and re-checks regular-file and size on the open handle, closing the stat-then-open window the scout flagged.
 - 2026-11-18 — Integration (sub-lead): the existing test `Codex and Antigravity first messages point to prompt files` (`machine/test/service.test.js`) ran Antigravity's `prepare` against the real home and repointed `~/.gemini/config/hooks.json` at whichever worktree ran the suite; it now runs under a temp `HOME`. The real file was restored to the canonical clone's hook by running the canonical `prepare`. Outside the Spec; test-only.
+- 2026-11-18 — Verification attempt 1 (claude verifier) on b4b7761: FAIL, 1 must-fix gap. Codex sandboxed workers (`-a never`) see project tools but cannot call them. Lead: fix, not deferrable. REMEDIATION-1.md, task T3.
