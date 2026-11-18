@@ -949,11 +949,17 @@ Filled by Stage 3. One row per worker brief.
 | T4 | Kimi chat parser, report function, hub `last_turn_id`, interrupted turns, `end_reason` in ended notices, Stop 202 in hub | `viewer/app/{chat,sessions,threads}.js`, their tests | standard / gpt-6.1-terra | wc-01b8cb1bf051-worker-3 | `node --test viewer/test/*.test.js` | done |
 | T5 | Installer detects Kimi; protocol docs and README | `install.sh`, `install/`, `protocol/`, `README.md` | standard / gpt-6.1-terra | wc-01b8cb1bf051-worker-4 | `bash install/test/run.sh` | done |
 | T7 | Hub archive keeps the thread unarchived and pending sessions live on a machine `pending: true` archive reply (found by T3, outside its boundary) | `viewer/app/threads.js` `archive()`, `viewer/test/app-kimi-archive.test.js` | light / gpt-6-luna | wc-01b8cb1bf051-worker-8 | `node --test viewer/test/*.test.js` | done |
-| T6 | Live checks 1–5 against an isolated machine service and hub from the merged branch (after T1–T5) | `docs/plans/kimi-code/reports/T6.md`; fixes go back as remediation | standard / gpt-6.1-terra | wc-01b8cb1bf051-worker-9 | live checks + full validation | running |
+| T6 | Live checks 1–5 against an isolated machine service and hub from the merged branch (after T1–T5) | `docs/plans/kimi-code/reports/T6.md`; fixes go back as remediation | standard xhigh / gpt-6.1-terra (rung 1: effort, after guardrail) | wc-01b8cb1bf051-worker-10 (attempt 2; attempt 1 wc-01b8cb1bf051-worker-9) | live checks + full validation | running (attempt 2) |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
 ## Log
+
+- 2026-11-18 — T6 attempt 1 (wc-01b8cb1bf051-worker-9, `f527ebc`) hit its fails-twice guardrail: its live script matched "the next turn to end" rather than the submitted prompt. Real results: check 1 (Kimi lead chat) and check 2 (Kimi reviewer result reaches the lead) PASS; checks 3 and 4 correct in the logs but not asserted (and 4 ran on a lead, not a reviewer); check 5 not done. Real ready footer captured; recovery pattern changed to it (but misses a footer with no thinking level). A real failed turn row: `error: { code: "provider.auth_error", message, name, details: { statusCode: 403 }, retryable }` — matches the Spec's shape.
+- 2026-11-18 — Plan defect found live: the Spec's light pin `kimi-code/kimi-for-coding-highspeed` is refused by Collin's subscription (403 `provider.auth_error`). Asked the lead whether to change the light default to `kimi-code/k3`.
+- 2026-11-18 — T6 escalation rung 1 (reason: guardrail hit): rewritten brief (nonce-based turn matching, reviewer for the Esc check, k3 for effort, trust and approval captures, recovery pattern with and without a thinking level), effort xhigh at Standard (`wc-01b8cb1bf051-worker-10`).
+
+- 2026-11-18 — Integration fix by the sub-lead: `install/test/run.sh:275` codex-only pin fixture gains the six Kimi pins (T5 wrote it before T2 added Kimi defaults). Installer suite on the merged tree: 191 pass, 1 fail — only the environmental "real wheelchair directory is byte-identical" check (live GPT sessions write `~/.wheelchair/accounts/work1`).
 
 - 2026-11-18 — Merged tree after T3: machine 193/193; viewer 642/642 in three runs, one unnamed failure in a fourth (flaky, passed on re-run). T3 worktree `wc-01b8cb1bf051-w7` kept (its uncommitted files were committed here from it; the service refuses to remove a dirty worktree). T6 dispatched.
 
