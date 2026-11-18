@@ -53,6 +53,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 23 | Done is exportable only while the pull request is open (checked live) and nothing is waiting to be pushed | Keeps an unverified after-done fix or a merged branch out of a handoff | review-round-2 |
 | 24 | Leads commit IDEA/PLAN before ending a planning turn (lead.md step 4) | Makes every planning pause a committed state the export gate can see | review-round-2 |
 | 25 | Create, Advance and Undo are operations of skip-if-done steps under one saved operation record; any interruption is finished by one Retry button (or by importing the file again). Supersedes the step-by-step recovery of 22 | Collin picked one Retry button: one rule covers every crash point | user |
+| 26 | No lead runs during an operation; the lead starts afterwards through the ordinary restart path, whose context always carries the import block | Removes every lead-related recovery case from the operation | review-round-4 |
 
 ## Spec
 
@@ -76,7 +77,9 @@ A thread can be exported at exactly three points. At each, the thread must also 
   `turn_ended === true` (`viewer/app/sessions.js:515-543`); no message is queued for any
   session of the thread;
 - no aside is open or has a turn running (`thread.asides`, `viewer/app/asides.js`);
-- no `sudo` card is in state `waiting`;
+- no `sudo` card is in state `waiting` or `running`;
+- no upload to the thread is in flight (the hub counts uploads per thread from admission
+  to completion, both under `hub.withThread`; `viewer/app/routes.js:69-90`);
 - the worktree has no uncommitted changes (`git status --porcelain` empty, untracked
   files included), and it is on branch `wc/<id>` (`git symbolic-ref --short HEAD`), not
   detached.
@@ -107,7 +110,8 @@ line saying why. The hub computes it; first match wins:
 | origin not on GitHub | "This project's origin isn't on GitHub" |
 | another live session or an aside running | "Agents are still working" |
 | lead mid-turn or anything queued | "The lead is busy" |
-| sudo waiting | "A root command is waiting" |
+| sudo waiting or running | "A root command is waiting" |
+| upload in flight | "A file is still uploading" |
 | dirty worktree | "Some changes aren't committed yet" |
 | `done` with HEAD not equal to the remote tip | "A fix is still being checked" |
 | no point holds | "Not at a stopping point: export after the idea is confirmed, once the plan is approved, or when it's done" |
@@ -127,7 +131,7 @@ field at any level is refused on import:
 | `format` | `"wheelchair-handoff"` |
 | `version` | `1` |
 | `exported_at` | ISO time |
-| `thread` | `{id, title, slug}`; `id` matches `^[0-9a-f]{12}$`; `slug` matches `^[a-z0-9][a-z0-9-]*$`; `title` a string of at most 80 characters |
+| `thread` | `{id, title, slug}`; `id` matches `^[0-9a-f]{12}$`; `slug` matches `^[a-z0-9][a-z0-9-]*$`; `title` a string of at most 120 characters (card titles are cut to 80 plus an ellipsis, `viewer/app/card.js:49-54`) |
 | `repository` | `github.com/<owner>/<repo>` (see Normalization) |
 | `branch` | `wc/<id>` |
 | `head` | 40-hex sha the export push left on `origin/wc/<id>` |
@@ -157,7 +161,7 @@ An entry whose text is over 20,000 characters is cut to 19,990 and ends with "�
 When the entries exceed 2000 or the file 10 MB, the oldest entries are dropped and one
 entry `{at: <the first kept entry's at>, who: "app", kind: "message", text: "<n> earlier
 entries were left out"}` is put first. Export validates the file it built with the
-importer's validator before step 4; a failure is a 500 and nothing changes.
+importer's validator before pushing (Export step 2).
 
 Not in the file: cards as objects, pins, the machine, project path, CLI, provider,
 sessions, transcripts, uploads, asides, queues. Plan decisions travel in PLAN.md's
@@ -189,11 +193,12 @@ commit too; wheelchair cannot enforce that.
 
 1. Re-check the export point and quiet test, including the machine `status` call; on
    failure 409 with the reason sentence.
-2. Ask the machine to push the exact commit the check read, `<checked sha>`, as
+2. Build the file with `head: <checked sha>`, trimming history as below, and validate it
+   with the importer's validator; a failure is a 500 and nothing changes.
+3. Ask the machine to push the exact commit the check read, `<checked sha>`, as
    `git push origin <checked sha>:refs/heads/wc/<id>` (`/v1/handoff` `push`, non-forced). It returns the pushed head and the
    normalized repository. On failure 409 "Couldn't push the branch to GitHub: <git's last
    line>"; nothing changes.
-3. Build the file, trimming history as above.
 4. Write the file to the hub state directory as `handoffs/<id>.json` (replacing any
    earlier one) and save `handed_off: {at, head, stage}` on the record and cancel asides as archive does
    (`viewer/app/threads.js:163-167`). If the save fails, 500 and nothing else changes.
@@ -222,21 +227,21 @@ off? This thread stops taking work here." with Confirm / Cancel; Confirm downloa
   `GET /threads/:id/handoff`, which runs `inspect` (cached for 60 seconds) and reports
   whether the remote tip is still `handed_off.head`:
   - unchanged: "Handed off <date>. Import a newer file to continue here, or undo." with an
-    **Undo hand-off** button (only when not archived);
+    **Undo hand-off** button;
   - moved: "Picked up elsewhere on <date>. Import a newer file to continue here." and no
     Undo;
   - inspect failed: the first text, and Undo stays available (undo checks again).
 - `POST /threads/:id/undo-handoff` runs the Undo operation (see Operations and Retry):
   claim on top of `handed_off.head`, stop any live session, fast-forward the worktree to
-  the claim, clear `handed_off`, start a lead with the restart context. If the claim step
+  the claim (or rebuild it when missing), clear `handed_off` and `archived`, then start a
+  lead with the restart context. Undo is offered on archived handed-off threads too. If the claim step
   abandons, 409 "This was picked up elsewhere on <date>; import a newer file to continue
   here".
 - While handed off, the page offers **Download the file again**
   (`GET /threads/:id/handoff-file`, the saved `handoffs/<id>.json`), so a lost download
-  never needs a second export. The saved file is deleted when the hand-off is undone, the
-  thread is advanced by an import, or it is archived.
-- A handed-off thread can be archived like any thread. An archived handed-off thread shows
-  no Undo; only an import can bring it back.
+  never needs a second export. The saved file is deleted when the hand-off is undone or the
+  thread is advanced by an import (Done step), not when it is archived.
+- A handed-off thread can be archived like any thread; its Undo stays available.
 - The threads list shows a "handed off" label on such threads.
 
 ### Import
@@ -254,6 +259,9 @@ The hub then, inside `withThread(<file thread id>)`:
    `stage`, `branch === "wc/" + thread.id`, the `pr_url` presence rule, and each history
    entry's fields, types and limits. Failure: 422 "This isn't a handoff file wheelchair
    can read: <what>".
+   Then, if a thread with the file's id exists here with a saved `handoff_op`, the hub runs
+   that operation again (the "Finish" row) and stops; steps 2 and 3 are skipped, since the
+   saved operation uses its own saved file.
 2. **Matches the repository**: the machine reports the project's normalized origin.
    Mismatch: 422 "This file is for <file repo>, but that project is <project repo>".
 3. **Inspects the branch** (`/v1/handoff` `inspect`): fetch; `origin/wc/<id>` must exist and
@@ -269,7 +277,7 @@ The hub then, inside `withThread(<file thread id>)`:
 | No such thread | **Create** |
 | Exists with a saved `handoff_op` | **Finish**: run that operation again (see Operations and Retry), ignoring this file; outcome as that operation's |
 | Exists on another machine or project than the picker chose | **Open**, note "This thread lives on <machine>, <project>" |
-| Exists; its head equals `head`, or `head` is an ancestor of its head | **Open**, change nothing. Note: "You already have this thread here", plus " It's handed off: press Undo on it to carry on here." when it is handed off, not archived and the tip is unchanged; or "This file is older than the thread here" |
+| Exists; its head equals `head`, or `head` is an ancestor of its head | **Open**, change nothing. Note: "You already have this thread here", plus " It's handed off: press Undo on it to carry on here." when it is handed off and the tip is unchanged; or "This file is older than the thread here" |
 | Exists; its head is a strict ancestor of `head` | **Advance** |
 | Exists; neither is an ancestor of the other | **Open**, change nothing; note "This thread and the file have each moved on separately, so nothing was changed. Bring the branches together yourself, then import again." |
 
@@ -285,7 +293,8 @@ The hub then, inside `withThread(<file thread id>)`:
 project, `branch: wc/<id>`, no sessions) together with its `handoff_op`, then runs the
 operation. **Advance** first refuses 409 "The thread here is busy" unless the existing
 thread has no live session other than the lead, no aside open or running, the lead is idle
-or not live, and nothing is queued; and 409 "The thread here has uncommitted changes" if
+or not live, nothing is queued, no sudo card is waiting or running, and no upload is in
+flight; and 409 "The thread here has uncommitted changes" if
 its worktree exists and is dirty. Then it saves `handoff_op` and runs the operation.
 
 Responses: `{outcome: "created"|"advanced"|"opened", id, note?}`. The page navigates to
@@ -305,75 +314,86 @@ on. On Advance, the thread's existing cards are all marked answered as retracted
 (`retracted_by: "import"`, note "Replaced by an import") and every pin is cleared, so
 nothing from before can be pressed; the lead posts fresh cards.
 
-The lead's context message is
-`[wc:context import] Thread state:\n<JSON {slug, stage, exported_at, pr_url, history}>`,
-where `history` is the **last 50** entries; the full history stays on the page.
 
 ### Operations and Retry
 
 Create, Advance and Undo are each an **operation**: a fixed list of steps where every step
 first checks whether it is already done and skips it if so. An operation that stops
 partway (crash, lost response, failed step) is finished by running it again from the top;
-that is the only recovery mechanism.
+that is the only recovery mechanism. An operation touches only GitHub, git on the machine
+and the hub record; **no lead runs during an operation**. The lead is started after the
+operation is complete, by the ordinary restart path, so lead start-up never needs its own
+recovery.
 
 **The operation record.** Before its first step, an operation saves
-`thread.handoff_op: {kind: "create"|"advance"|"undo", file, parent, claim_sha, lead_name,
-context_queued, started_at}` on the thread record (for Create, in the same save that first
+`thread.handoff_op: {kind: "create"|"advance"|"undo", file, parent, claim_sha,
+last_error, started_at}` on the thread record (for Create, in the same save that first
 creates the record). `file` is the path of a copy of the imported file the hub writes to
 `handoffs/incoming-<id>.json` before that save (null for undo); `parent` is the commit the
 claim goes on (`head` for imports, `handed_off.head` for undo). The thread's existing
-fields (`imported`, `handed_off`, cards, pins, `archived`) are not changed until the apply
-step, so a refused or abandoned operation leaves them as they were. A completed operation
-clears `handoff_op` and deletes `incoming-<id>.json`.
+fields (`imported`, `handed_off`, cards, pins, `archived`) are not changed until the Apply
+step, so a refused or abandoned operation leaves them as they were. A step that fails
+saves its sentence in `last_error` and the operation stops there.
 
-**Abandoning.** When the claim step finds someone else moved the branch, the operation is
-abandoned: Create deletes the thread record; Advance and Undo clear `handoff_op`; all
-delete the incoming copy; the response is the "picked up elsewhere" 409.
+**Abandoning.** When the Claim step finds someone else moved the branch, the operation is
+abandoned: Create deletes the thread record; Advance and Undo clear `handoff_op`. Then the
+incoming copy is deleted. The response is "picked up elsewhere" 409; when the operation
+was reached through a re-import (the Finish row), its text ends "import that file again"
+instead of "export again from wherever it is now".
 
-**Steps**, in order (Undo skips 4's carried state and uses restart's context instead):
+**Steps**, in order (Undo has no carried state):
 
 1. **Claim.** If `claim_sha` is null: `claim-commit` on `parent`, save `claim_sha`, then
-   `claim-push`. If `claim_sha` is set: read the remote tip; equal to `claim_sha`: done;
-   equal to `parent`: `claim-push` again; anything else: abandon.
-2. **Stop.** Stop every live session of the thread except `lead_name` (Advance and Undo).
+   `claim-push`. If `claim_sha` is set: `claim-push` again, which first reads the remote
+   tip. `claim-push` returns one of: `landed` (tip is or became `claim_sha`): go on;
+   `moved` (tip is neither `parent` nor `claim_sha`): abandon; `unknown` (any other failure,
+   such as no network): fail the step with "Couldn't reach GitHub", keeping `claim_sha`,
+   so Retry asks again.
+2. **Stop.** Stop every live session of the thread (Advance and Undo).
 3. **Checkout.** If the thread's worktree directory exists and is a git worktree on
-   `wc/<id>`: fast-forward it to `claim_sha` (no-op when already there; refused when dirty,
-   which fails the operation with "The thread here has uncommitted changes"). Otherwise
-   leave `worktree` unset for step 5 to build. The machine's `from_remote_branch` adopts an
-   existing checkout at its standard path (below), so a checkout left by a failed start is
-   reused, not duplicated.
-4. **Apply.** Set the carried state, retract cards and clear pins (Advance), clear
-   `handed_off` and `archived`, call `/v1/handoff` `reopen` when the thread was archived,
-   delete `handoffs/<id>.json`; save. Every assignment is the same on a re-run.
-5. **Lead.** If a lead session of the thread is live, use it and record its name in
-   `lead_name`. Otherwise start one (in the existing worktree as restart does, or with
-   `from_remote_branch: {sha: claim_sha}`) and save `lead_name`.
-6. **Context.** If `context_queued` is false: enqueue the context message to `lead_name`
-   and set `context_queued: true` in the **same save** (queues live on the thread record,
-   so both land or neither does). Create and Advance send `[wc:context import]`; Undo
-   sends the restart context (`restartLead`'s JSON, `viewer/app/threads.js:127-136`).
-7. **Done.** Clear `handoff_op`, delete the incoming copy, save.
+   `wc/<id>`: fast-forward it to `claim_sha` (no-op when already there; a dirty worktree
+   fails the step with "The thread here has uncommitted changes"). Otherwise clear
+   `worktree` on the record; the lead start builds one (below).
+4. **Apply.** Set the carried state (Create, Advance), retract cards and clear pins
+   (Advance), clear `handed_off` and `archived`, call `/v1/handoff` `reopen` when the
+   thread was archived, set `checkout_sha: claim_sha`. Every assignment is the same on a
+   re-run.
+5. **Done.** Clear `handoff_op` and save. Then delete `handoffs/incoming-<id>.json` and
+   `handoffs/<id>.json`. A crash between the save and the deletes leaves only stray files;
+   the hub deletes `handoffs/*.json` files that belong to no handed-off thread and no
+   saved operation when it starts.
+6. **Start the lead**, outside the operation: the restart path (`restartLead`,
+   `viewer/app/threads.js:122-159`). When the thread has no recorded worktree, restart starts
+   the lead with `from_remote_branch: {sha: checkout_sha}`. If the start fails, the thread
+   shows the ordinary dead-lead panel with Restart, as for any thread.
+
+**What the lead is told.** Restart's context JSON gains, for a thread with `imported`, an
+`import: {stage, exported_at, pr_url, history}` block (history: last 50 entries), every
+time. The marker is `[wc:context import]` when no lead session of the thread started after
+`imported.at`, otherwise `[wc:context restart]`; the JSON is the same. The lead reads the
+plan documents on the branch either way.
+
+**Session names.** A created thread starts with no sessions, but the machine may still hold
+stopped sessions of that id (another hub on the same machine). Create reads the machine's
+session list and saves the names starting `wc-<id>-` in `thread.reserved_names`;
+`newSessionName` (`viewer/app/sessions.js:146-154`) skips those too.
 
 All of an operation runs inside `hub.withThread(id)`. The hub keeps an in-memory set of
 operations currently running; an operation is **unfinished** when `handoff_op` is saved
-and its id is not in that set.
+and its thread id is not in that set.
 
 **Retry.** An unfinished operation:
-- blocks export ("An import or undo didn't finish") and refuses messages, uploads, presses
-  and asides with 409 "Retry the unfinished import first";
+- blocks export ("An import or undo didn't finish") and refuses messages, uploads,
+  presses, asides and **archive** with 409 "Retry the unfinished import first";
 - shows, instead of the composer, a panel "The import didn't finish." (or "The undo didn't
-  finish.") with a **Retry** button: `POST /threads/:id/retry-handoff` runs the saved
-  operation again, reading the file from `handoff_op.file`. If that copy is gone, the
-  operation is abandoned with "The saved file is missing; import it again";
-- is also reached by importing a file for that thread id (the "Finish" row of the import
-  table), which runs the saved operation and ignores the new file;
+  finish."), the saved `last_error` when there is one, and a **Retry** button:
+  `POST /threads/:id/retry-handoff` runs the saved operation again, reading the file from
+  `handoff_op.file`. If that copy is gone, the operation is abandoned with "The saved file
+  is missing; import it again";
+- is also reached by importing a file for that thread id (the "Finish" row), which runs
+  the saved operation and ignores the new file;
 - for an Undo, makes the handed-off banner show "The undo didn't finish" with Retry,
   never "picked up elsewhere", while the remote tip equals `handoff_op.claim_sha`.
-
-**Later restarts.** Restart for an imported thread includes
-`import: {stage, exported_at, pr_url, history}` (history: last 50 entries) in its context
-JSON, every time. The lead reads the plan documents on the branch either way, so nothing
-needs to know whether the first import message was read.
 
 ### Machine service changes (`machine/service.js`)
 
@@ -396,7 +416,8 @@ needs to know whether the first import message was read.
     `git show HEAD:...`, the origin, and `gh pr view <pr_url> --json state` when `pr_url`
     is given (`pr_state: null` and `pr_error` when gh fails, which blocks a `done` export
     with "Couldn't check the pull request").
-  - `push` `{worktree, branch}` → `git push origin <branch>`; returns `{head, repository}`.
+  - `push` `{worktree, branch, sha}` → `git push origin <sha>:refs/heads/<branch>` (non-
+    forced); returns `{head, repository}`.
   - `inspect` `{project, branch, head, worktree?, slug}` → fetch; returns `{repository,
     remote_tip, remote_has_branch, remote_contains_head, picked_up_at, local_head,
     worktree_exists, relation, idea_status, plan_status}`. `local_head` follows the "its
@@ -406,8 +427,14 @@ needs to know whether the first import message was read.
     the tip is past it. Statuses are read with `git show <head>:docs/plans/<slug>/...`
     (null when absent).
   - `claim-commit` `{project, parent, message}` → step 1 of Claims; returns `{sha}`.
-  - `claim-push` `{project, branch, parent, sha}` → step 2; returns `{landed: true}` or
-    409 `{remote_tip, picked_up_at}`.
+  - `claim-push` `{project, branch, parent, sha}` → reads the remote tip
+    (`git ls-remote`); tip == `sha`: `{result: "landed"}`; tip == `parent`: run step 2 of
+    Claims and read the tip again: `landed` if it is now `sha`; any other tip:
+    `{result: "moved", remote_tip, picked_up_at}`; any git or network failure:
+    `{result: "unknown", error}`.
+  - Every `/v1/handoff` outcome, including refusals, is a 200 with a JSON body (except 422
+    for invalid input), so the hub's machine client (`viewer/app/machine-client.js:64-76`)
+    never drops the body.
   - `reopen` `{thread_id}` → removes the id from the machine's `archivedThreads`
     (`machine/service.js:263-271`, `:783-790`), so uploads work again; Advance calls it
     when it revives an archived thread.
@@ -466,11 +493,20 @@ New tests, then the suites:
     queued; claim refused deletes the record; two concurrent imports of one id serialize;
   - operations: for Create, Advance and Undo, stop the operation after each step in turn
     (fake failures), then Retry: the end state equals an uninterrupted run, with exactly one
-    claim commit, one lead and one context message; claim landed but response lost (tip ==
-    claim_sha) continues; a checkout left by a failed start is adopted; abandon when the tip
-    moved; Advance refused leaves `imported`, cards and pins unchanged; Retry with the
-    incoming copy missing abandons; unfinished undo banner shows Retry, not "picked up
-    elsewhere"; restart of an imported thread includes `import`;
+    claim commit; claim landed but response lost continues; `unknown` claim-push keeps
+    `claim_sha` and saves `last_error`; abandon when the tip moved (re-import wording
+    differs); crash between Done's save and the file deletes leaves files the start-up
+    sweep removes; Advance refused leaves `imported`, cards and pins unchanged; Retry with
+    the incoming copy missing abandons; archive refused while unfinished; the Retry panel
+    shows `last_error`; unfinished undo banner shows Retry, not "picked up elsewhere";
+    re-import with an unfinished operation runs it without inspecting the new file;
+  - lead start after an operation: no lead runs during it; restart context includes
+    `import`, with marker `[wc:context import]` only for the first lead after `imported.at`;
+    a failed start shows the ordinary Restart; a created thread's lead name skips names in
+    `reserved_names`; a lead with no recorded worktree starts from `checkout_sha`;
+  - export builds and validates before pushing (a 120-character title passes); sudo
+    running and upload in flight block export and Advance; undo on an archived handed-off
+    thread rebuilds the worktree;
   - open (same, older, handed-off note, diverged, other machine, archived with retained
     worktree); advance (live, archived without worktree, archived with retained worktree;
     old cards retracted and pins cleared); advance refused when busy, queued, dirty, or
@@ -593,7 +629,7 @@ npm --prefix viewer run test:browser
 
 ### Round 4 — 2026-11-17
 
-**Lanes:** intent and mechanics; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 3:**
 - New "Operations and Retry" section replaces Create/Advance step lists and Recovery: one operation record (`handoff_op`), skip-if-done steps, abandon rule, Retry panel and route, finish via re-import.
@@ -604,6 +640,37 @@ npm --prefix viewer run test:browser
 - Export: branch must be `wc/<id>`, pushes the checked sha; saved file and Download again; history entry cut and omission entry `at`; export self-validates.
 - Idea point: only Collin's answers count; anchor falls back to `imported.at`.
 - Guards: limit event path; machine `reopen`; `from_remote_branch` adopts an existing checkout.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Archived handed-off thread has no way back on its own hub | upheld | Undo allowed on archived handed-off threads; saved file kept on archive |
+| intent | minor | Retry panel never says why the last run failed | upheld | `last_error` saved and shown |
+| intent | minor | Abandon message after re-import says to export again | upheld | Wording says import that file again |
+| mechanics | blocking | Done deletes the file before clearing the operation | upheld | Clear and save first, then delete; start-up sweep |
+| mechanics | blocking | Lead step can adopt a phantom lead or start two | upheld | No lead during an operation; lead started afterwards by the ordinary restart path |
+| mechanics | blocking | Another hub's stopped session name is reused | upheld | `reserved_names` from the machine; `newSessionName` skips them |
+| mechanics | blocking | Context reaches the lead before Done; lead commit looks like outside pickup | upheld | Lead starts only after Done |
+| mechanics | blocking | Lead dies after context saved, before Done | upheld | Removed with the context step; restart always carries `import` |
+| mechanics | blocking | Archive allowed during an unfinished operation | upheld | Archive refused until Retry |
+| mechanics | blocking | Re-import inspects before finding the saved operation | upheld | Saved-operation lookup right after validation |
+| mechanics | blocking | Push endpoint pushes the branch name, not the checked sha | upheld | `push` takes `sha` |
+| mechanics | blocking | Export pushes before validating; 81-character titles | upheld | Build and validate before push; title limit 120 |
+| mechanics | blocking | Advance allows outstanding sudo requests | upheld | Sudo waiting or running counts as busy, for export too |
+| mechanics | major | Claim-push can't report an ambiguous failure; client drops bodies | upheld | `landed`/`moved`/`unknown` results, all 200 |
+| mechanics | major | Uploads not covered by the lock | upheld | In-flight upload counter under the lock; blocks export and Advance |
+
+### Round 5 — 2026-11-17
+
+**Lanes:** intent and mechanics; cross-family: yes.
+
+**Changed since Round 4:**
+- Operations: no lead during an operation; steps are Claim, Stop, Checkout, Apply, Done, then the lead starts via restart; `last_error`; abandon wording; Done order and start-up sweep; archive refused while unfinished; `reserved_names`.
+- Restart context `import` block and marker rule; `checkout_sha` for a missing worktree.
+- Claim-push results `landed`/`moved`/`unknown`; all `/v1/handoff` outcomes are 200 bodies; `push` takes `sha`.
+- Export builds and validates before pushing; title limit 120.
+- Quiet test and Advance: sudo running, uploads in flight.
+- Undo allowed on archived handed-off threads; saved file kept on archive.
+- Import: saved-operation lookup before repository and branch checks.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
