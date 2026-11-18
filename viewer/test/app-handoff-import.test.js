@@ -135,8 +135,11 @@ test('raw route rejects oversized bodies before invoking import', async () => {
   const request = Readable.from([Buffer.alloc(10 * 1024 * 1024 + 1)]);
   request.method = 'POST'; request.headers = {};
   let called = false;
-  await assert.rejects(handle({ importHandoff: async () => { called = true; } }, request, {}, new URL('http://test/wheelchair/api/threads/import?project=%2Fproject')), { status: 413 });
-  assert.equal(called, false);
+  const { EventEmitter } = require('node:events');
+  const response = new EventEmitter(); let connection; response.setHeader = (name, value) => { if (name.toLowerCase() === 'connection') connection = value; };
+  await assert.rejects(handle({ importHandoff: async () => { called = true; } }, request, response, new URL('http://test/wheelchair/api/threads/import?project=%2Fproject')), { status: 413 });
+  assert.equal(called, false); assert.equal(connection, 'close');
+  response.emit('finish'); assert.equal(request.destroyed, true);
 });
 
 test('invalid file shapes fail before any machine handoff call', async () => {
@@ -229,7 +232,7 @@ test('HTTP import returns 413 for an oversized file without recording a thread',
   const c = await setup();
   try {
     const response = await fetch(`${c.server.url}/api/threads/import?machine=hub&project=%2Fproject`, { method: 'POST', headers: { 'x-graph-token': c.server.token, origin: new URL(c.server.url).origin }, body: Buffer.alloc(10 * 1024 * 1024 + 1) });
-    assert.equal(response.status, 413);
+    assert.equal(response.status, 413); assert.equal(response.headers.get('connection'), 'close');
     const { Hub } = require('../app/hub.js');
     assert.deepEqual(await new Hub({ stateDir: c.state }).allThreads(), []);
   } finally { await close(c); }
@@ -269,4 +272,30 @@ test('Create starts a real imported lead with import context', async (t) => {
   assert.ok(lead); assert.match(lead.queue[0].text, /^\[wc:context import\]/);
   const start = c.machine.calls.find((call) => call.path === '/v1/sessions' && call.method === 'POST');
   assert.deepEqual(start.body.from_remote_branch, { sha });
+});
+
+test('same-head archived thread opens unchanged and null relation explains missing checkout', async () => {
+  for (const [relation, expected] of [['same', /already have this thread/], [null, /no checkout to compare with/]]) {
+    const f = await operationFixture({ inspect: { repository: file.repository, remote_has_branch: true, remote_contains_head: true, remote_tip: file.head, plan_status: 'approved', relation } });
+    const thread = { id: file.thread.id, machine: 'hub', project: '/project', archived: true, sessions: [], cards: [], pinned: {} };
+    await f.hub.save(thread); const before = await f.hub.thread(file.thread.id);
+    const result = await importHandoff(f.hub, bytes(), 'hub', '/project');
+    assert.equal(result.outcome, 'opened'); assert.match(result.note, expected);
+    assert.deepEqual(await f.hub.thread(file.thread.id), before);
+  }
+});
+
+test('Undo hint compares the remote tip to the handed-off head', async () => {
+  const otherHead = 'c'.repeat(40);
+  const { hub } = fixture({ id: file.thread.id, machine: 'hub', project: '/project', handed_off: { head: otherHead } }, { relation: 'same', remote_tip: otherHead });
+  const result = await importHandoff(hub, bytes(), 'hub', '/project');
+  assert.match(result.note, /press Undo/);
+});
+
+test('repository and containment errors use the specified status and sentence', async () => {
+  const base = { repository: file.repository, remote_has_branch: true, remote_contains_head: true, remote_tip: file.head, plan_status: 'approved' };
+  for (const [change, status, message] of [[{ repository: null }, 422, "That project's origin isn't on GitHub"], [{ remote_contains_head: false }, 409, "The branch on GitHub doesn't have the exported work"]]) {
+    const f = await operationFixture({ inspect: { ...base, ...change } });
+    await assert.rejects(importHandoff(f.hub, bytes(), 'hub', '/project'), { status, message });
+  }
 });

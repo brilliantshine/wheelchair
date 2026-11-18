@@ -47,10 +47,10 @@ async function importHandoff(hub, bytes, machine, project) {
         if (known.checked_out?.length) throw appError(409, `Branch ${file.branch} is checked out in ${known.checked_out[0]}; switch away from it, then import again`);
         if (known.local_branch && !known.local_ancestor) throw appError(409, `This project already has a branch ${file.branch} that differs from the file; delete it if you don't need it, then import again`);
       } else if (inspect.relation !== 'ahead') {
-        let message = inspect.relation === 'behind' ? 'This file is older than the thread here' : inspect.relation === 'diverged' ? 'This thread and the file have each moved on separately, so nothing was changed. Bring the branches together yourself, then import again.' : 'You already have this thread here';
+        let message = inspect.relation === null ? 'This thread here has no checkout to compare with, so nothing was changed.' : inspect.relation === 'behind' ? 'This file is older than the thread here' : inspect.relation === 'diverged' ? 'This thread and the file have each moved on separately, so nothing was changed. Bring the branches together yourself, then import again.' : 'You already have this thread here';
         if (inspect.relation === 'same') {
           if (own) message += ' An earlier cancelled import or undo is still being taken back; try again in a few minutes.';
-          else if (thread.handed_off && inspect.remote_tip === file.head) message += " It's handed off: press Undo on it to carry on here.";
+          else if (thread.handed_off && inspect.remote_tip === thread.handed_off.head) message += " It's handed off: press Undo on it to carry on here.";
         }
         return { outcome: 'opened', id, note: note(message) };
       }
