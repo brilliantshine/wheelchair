@@ -330,3 +330,10 @@ a.sent-file:hover { border-color: var(--accent-line); }
 .sudo-outcome { margin-top: 12px; font-weight: 600; font-size: 14px; }
 .sudo-outcome.bad { color: var(--bad-text); }
 .sudo-cut { font-size: 12px; margin-top: 6px; }
+
+.export-action { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.export-reason { flex-basis: 100%; font-size: 12px; }
+#handoff, #handoff-retry { margin: 12px; }
+#handoff button, #handoff-retry button { margin: 4px 6px 0 0; }
+#before-handoff { margin: 12px; }
+#handoff-history p { white-space: pre-wrap; overflow-wrap: anywhere; }

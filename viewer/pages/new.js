@@ -63,6 +63,7 @@
     const empty = count === 0;
     projectEl.disabled = empty;
     goEl.disabled = empty || started || sending;
+    $('nt-import').disabled = empty || started || sending;
     $('nt-empty').hidden = !empty;
     const path = empty ? '' : projectEl.value;
     show($('nt-path'), path);
@@ -258,5 +259,20 @@
     location.href = where;
   });
 
+  $('nt-import').addEventListener('click', () => $('handoff-file').click());
+  $('handoff-file').addEventListener('change', async (event) => {
+    const file = event.target.files[0]; event.target.value = '';
+    if (!file || !state || state.machine !== machineEl.value || sending) return;
+    setSending(true); syncProject(projectEl.options.length); show($('form-error'), ''); show($('import-result'), '');
+    try {
+      const result = await call('/threads/import?machine=' + encodeURIComponent(state.machine) + '&project=' + encodeURIComponent(projectEl.value), { method: 'POST', headers: { 'content-type': 'application/json' }, body: file });
+      const where = '/wheelchair/app/thread?id=' + encodeURIComponent(result.id);
+      if (result.outcome === 'opened') {
+        const box = $('import-result'); box.textContent = result.note || ''; box.appendChild(document.createTextNode(' '));
+        const link = el('a', '', 'Open the thread'); link.href = where; box.appendChild(link); box.hidden = false;
+      } else location.href = where;
+    } catch (e) { show($('form-error'), e.message); }
+    finally { setSending(false); syncProject(projectEl.options.length); }
+  });
   load('');
 })();
