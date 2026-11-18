@@ -22,6 +22,7 @@
   let pending = [];          // messages posted but not yet seen in the transcript
   let sigs = {};
   let ideaOpen = false;
+  let deferredOpen = false;
   // Whether the pinned strip is folded to one line. A per-viewer convenience, so it lives in
   // this browser only; storage that throws (private window, blocked site data) just means open.
   const PINS_KEY = 'wheelchair.pinsFolded';
@@ -555,7 +556,8 @@
         head(box, deferred ? label + ' · ' + all.length + (all.length === 1 ? ' thing' : ' things') : 'Your idea so far · ' + all.length + (all.length === 1 ? ' thing' : ' things') + " you've said", 'blue');
         box.appendChild(el('div', 'hint', deferred ? (card.mode === 'two-part' ? 'These go into a new thread when this one is done.' : 'These are accepted as risks; nothing will fix them later.') : 'Your words, not the idea doc. Planning writes the doc from these.'));
         if (deferred && !all.length) box.appendChild(el('div', 'dim', 'Nothing deferred yet'));
-        const fold = all.length > 3 && !ideaOpen;
+        const open = deferred ? deferredOpen : ideaOpen;
+        const fold = all.length > 3 && !open;
         const shown = fold ? all.slice(-2) : all;
         if (fold) box.appendChild(el('div', 'dim fold-note', (all.length - 2) + ' earlier points folded'));
         for (const b of shown) {
@@ -570,8 +572,10 @@
         }
         if (all.length > 3) {
           const a = el('div', 'actions');
-          a.appendChild(button(ideaOpen ? 'Fold' : 'Show all ' + all.length, 'link', () => {
-            ideaOpen = !ideaOpen; sigs.pinned = null; render();
+          a.appendChild(button(open ? 'Fold' : 'Show all ' + all.length, 'link', () => {
+            if (deferred) deferredOpen = !deferredOpen;
+            else ideaOpen = !ideaOpen;
+            sigs.pinned = null; render();
           }));
           box.appendChild(a);
         }
@@ -967,13 +971,13 @@
     sync('stub', [t.stub, t.sessions.length, t.depends_on_parent, t.ready, t.context, t.parent_pr_url], renderStub);
     sync('wait', [waitingLine(), accountNames], renderWait);
     sync('dead', [t.sessions.map((s) => [s.name, s.live]), t.archived], renderDead);
-    sync('pinned', [data.pinned, data.cards.map((c) => [c.answered, c.answered_value, c.retracted_at]), ideaOpen, pinsFolded, cardErrors], renderPinned);
+    sync('pinned', [data.pinned, data.cards.map((c) => [c.answered, c.answered_value, c.retracted_at]), ideaOpen, deferredOpen, pinsFolded, cardErrors], renderPinned);
     const nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
     let changed = false;
     const leadNow = leadSession();
     // Text selected in the chat (for an aside) would vanish with a redraw, so the redraw waits
     // until the selection is gone; the selectionchange listener above calls render() then.
-    const chatSig = JSON.stringify([data.items, pending, leadNow && [leadNow.queue, leadNow.ready, leadNow.permission_open, leadNow.needs_open, leadNow.limited_until], sendingNow, slug(), t.archived, data.cards, data.pinned.map((c) => c.id), pinsFolded, ideaOpen, cardErrors, declining]);
+    const chatSig = JSON.stringify([data.items, pending, leadNow && [leadNow.queue, leadNow.ready, leadNow.permission_open, leadNow.needs_open, leadNow.limited_until], sendingNow, slug(), t.archived, data.cards, data.pinned.map((c) => c.id), pinsFolded, ideaOpen, deferredOpen, cardErrors, declining]);
     if (sigs.chat !== chatSig && !selectingInChat()) { sigs.chat = chatSig; renderChat(); changed = true; }
     const workingEl = $('working');
     const working = leadWorking() && !t.archived;

@@ -2127,7 +2127,7 @@ test('deferred validates, stays pinned and accepts only valid pull-backs', async
     assert.equal((await press(second.id, 'First')).status, 202);
     assert.equal((await press(second.id, 'Second')).status, 202);
     let hub = new Hub({ stateDir: context.state }); let state = await hub.thread(made.id);
-    assert.equal(state.cards.find((c) => c.id === second.id).answered, undefined);
+    assert.equal(state.cards.find((c) => c.id === second.id).answered, false);
     assert.ok(state.sessions[0].queue.some((m) => m.text === `[card ${second.id}] removed: First`));
     assert.equal(state.pinned.deferred.id, second.id);
     assert.equal((await card(context, made.id, lead, { kind: 'retract', card: second.id, note: 'Withdrawn' })).status, 202);
@@ -2145,11 +2145,15 @@ test('deferred validates, stays pinned and accepts only valid pull-backs', async
 
 test('restart context preserves stub summary and all card kinds', async () => {
   await withContext(async (context) => {
-    const made = await thread(context); const oldLead = made.sessions[0];
+    const parent = await thread(context);
+    const stub = (await card(context, parent.id, parent.sessions[0].name, {
+      kind: 'stub', title: 'Follow-up', summary: 'Summary only', depends_on_parent: false, commits: ['1234567'],
+    })).body;
+    const made = (await api(context, `/threads/${stub.thread_id}/open`, { method: 'POST', body: {} })).body;
+    const oldLead = made.sessions[0];
     const a = (await card(context, made.id, oldLead.name, { kind: 'deferred', mode: 'two-part', bullets: [] })).body;
     const b = (await card(context, made.id, oldLead.name, { kind: 'deferred', mode: 'two-part', bullets: [] })).body;
-    const hub = new Hub({ stateDir: context.state }); const before = await hub.thread(made.id);
-    before.context = 'Summary only'; before.commits = ['abc']; await hub.save(before);
+    const hub = new Hub({ stateDir: context.state });
     context.machine.sessions.get(oldLead.name).running = false;
     await hub.init(); await hub.pollDead();
     const restarted = await api(context, `/threads/${made.id}/restart`, { method: 'POST', body: {} });
