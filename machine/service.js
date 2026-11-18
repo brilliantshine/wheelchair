@@ -782,6 +782,7 @@ class MachineService {
     for (const request of this.uploadRequests.get(threadId) || []) request.destroy();
     try { return await this.withThreadLock(threadId, async () => {
     this.archivingThreads.add(threadId);
+    try {
     await this.persistArchiveMarkers();
     const sessions = Object.values(this.sessions).filter(session => !session.name.startsWith('wc-login-') && session.thread_id === threadId);
     const stopped = [];
@@ -844,9 +845,11 @@ class MachineService {
       try { await fsp.rm(path.join(this.stateDir, 'uploads', threadId), { recursive: true, force: true }); uploads_removed = true; this.archivedThreads.add(threadId); }
       catch (error) { uploads_removed = false; uploads_error = error.message; }
     }
-    this.archivingThreads.delete(threadId);
-    await this.persistArchiveMarkers();
     return { stopped, committed, removed, kept, uploads_removed, ...(uploads_error ? { uploads_error } : {}) };
+    } finally {
+      this.archivingThreads.delete(threadId);
+      await this.persistArchiveMarkers();
+    }
     }); } finally {
       const remaining = this.closingThreads.get(threadId) - 1;
       if (remaining) this.closingThreads.set(threadId, remaining); else this.closingThreads.delete(threadId);
@@ -1239,9 +1242,8 @@ class MachineService {
     for (const field of ['sha', 'parent', 'head', 'fallback_head']) if (input[field] !== undefined && (typeof input[field] !== 'string' || !/^[0-9a-f]{40}$/.test(input[field]))) invalid(`invalid ${field}`);
     if (input.slug !== undefined && (typeof input.slug !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(input.slug))) invalid('invalid slug');
     if (input.message !== undefined && (typeof input.message !== 'string' || !input.message.trim())) invalid('invalid message');
-    if (input.pr_url !== undefined && (typeof input.pr_url !== 'string' || !input.pr_url)) invalid('invalid pr_url');
+    if (input.pr_url !== undefined && (typeof input.pr_url !== 'string' || !/^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/[0-9]+$/.test(input.pr_url))) invalid('invalid pr_url');
     if (action === 'kill' && (!Array.isArray(input.names) || input.names.some(name => typeof name !== 'string' || !name.startsWith(`wc-${id}-`)))) invalid('invalid names');
-    if (input.worktree !== undefined && (typeof input.worktree !== 'string' || !path.isAbsolute(input.worktree) || !Object.values(this.sessions).some(s => s.thread_id === id && s.created_worktree && s.worktree && path.resolve(s.worktree) === path.resolve(input.worktree)))) invalid('invalid worktree');
     const gitAction = !['reopen', 'running', 'kill'].includes(action);
     let repo;
     if (gitAction) {
@@ -1249,6 +1251,13 @@ class MachineService {
       const checked = await this.projects(new URLSearchParams({ check: input.project }));
       if (!checked.checked.ok) invalid('invalid project');
       repo = path.resolve(input.project);
+    }
+    if (input.worktree !== undefined) {
+      if (typeof input.worktree !== 'string' || !path.isAbsolute(input.worktree)) invalid('invalid worktree');
+      const target = path.resolve(input.worktree);
+      const recorded = Object.values(this.sessions).some(s => s.thread_id === id && s.created_worktree && s.worktree && path.resolve(s.worktree) === target);
+      const expected = repo && path.join(this.stateDir, 'worktrees', path.basename(repo), 'wc', id);
+      if (!recorded && !(['inspect', 'known'].includes(action) && target === expected)) invalid('invalid worktree');
     }
     try {
       return await this.withThreadLock(id, () => gitAction
@@ -1382,7 +1391,7 @@ class MachineService {
       const remote = await this.fetchHandoffBranch(repo, `wc/${input.thread_id}`);
       let pr_state = null; let pr_error;
       if (input.pr_url) {
-        const gh = await commandAsync('gh', ['pr', 'view', input.pr_url, '--json', 'state'], { cwd: repo });
+        const gh = await commandAsync('gh', ['pr', 'view', '--json', 'state', '--', input.pr_url], { cwd: repo });
         if (gh.ok) { try { pr_state = JSON.parse(gh.stdout).state || null; } catch { pr_error = 'Invalid pull request response.'; } }
         else pr_error = gh.stderr.trim() || 'Could not check pull request.';
       }
@@ -1402,8 +1411,9 @@ class MachineService {
       }
       let local_head = null; let worktree_exists = false;
       if (worktree) {
+        const top = await git('-C', worktree, 'rev-parse', '--show-toplevel');
         const actual = await git('-C', worktree, 'rev-parse', '--verify', 'HEAD');
-        if (actual.ok) { worktree_exists = true; local_head = actual.stdout.trim(); }
+        if (top.ok && path.resolve(top.stdout.trim()) === path.resolve(worktree) && actual.ok) { worktree_exists = true; local_head = actual.stdout.trim(); }
       }
       if (!local_head) { const local = await git('rev-parse', '--verify', `refs/heads/${branch}`); if (local.ok) local_head = local.stdout.trim(); }
       if (!local_head) local_head = input.fallback_head || null;

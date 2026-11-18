@@ -39,7 +39,10 @@ All requests carry `action` and `thread_id` (12 lowercase hex characters). Git a
 carry `project`, an absolute repository path accepted by `GET /v1/projects?check=`. Branches
 match `wc/<12 lowercase hex characters>`, SHAs have 40 lowercase hex characters, slugs match
 `^[a-z0-9][a-z0-9-]*$`, and a supplied `worktree` must be an absolute path of a worktree the
-machine created for that thread. Invalid input returns `422 {result: "failed", error}`; all
+machine created for that thread. For `inspect` and `known`, the thread checkout path under
+`<stateDir>/worktrees/<project-name>/wc/<thread_id>` is also accepted after its session or
+folder is gone. A `status` pull request URL must match `https://github.com/<owner>/<repo>/pull/<number>`.
+Invalid input returns `422 {result: "failed", error}`; all
 action outcomes, including refusals and git failures, return HTTP 200. An action-level failure
 is `{result: "failed", error}`. Requests take the archive's per-thread lock before the
 per-repository queue.

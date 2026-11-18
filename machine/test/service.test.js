@@ -1455,6 +1455,8 @@ test('handoff status, exact push, and inspect read committed state and ancestry'
     git(['-C', worktree, 'add', '.']); git(['-C', worktree, 'commit', '-m', 'plan']);
     const old = git(['-C', worktree, 'rev-parse', 'HEAD']).stdout.trim();
     await write(path.join(worktree, 'docs/plans/sample/IDEA.md'), 'status: draft\n');
+    const badUrl = await api(env, 'POST', '/v1/handoff', { action: 'status', thread_id: id, project: repo, worktree, slug: 'sample', pr_url: '--help' }, hubHeader);
+    assert.equal(badUrl.status, 422, JSON.stringify(badUrl.body));
     let body = await call('status', { worktree, slug: 'sample' });
     assert.equal(body.dirty, true, JSON.stringify(body)); assert.equal(body.idea_status, 'confirmed', JSON.stringify(body));
     assert.equal(body.plan_status, 'approved', JSON.stringify(body)); assert.equal(body.map_committed, true, JSON.stringify(body));
@@ -1462,11 +1464,12 @@ test('handoff status, exact push, and inspect read committed state and ancestry'
     git(['-C', worktree, 'checkout', '--', 'docs/plans/sample/IDEA.md']);
     body = await call('push', { worktree, branch, sha: old }); assert.equal(body.head, old, JSON.stringify(body));
     await write(path.join(env.fake.bin, 'gh'), '#!/bin/sh\necho unavailable >&2\nexit 1\n', 0o755);
-    body = await call('status', { worktree, slug: 'sample', pr_url: 'https://example.test/pr' });
+    body = await call('status', { worktree, slug: 'sample', pr_url: 'https://github.com/owner/repo/pull/1' });
     assert.equal(body.dirty, false, JSON.stringify(body)); assert.equal(body.remote_tip, old, JSON.stringify(body));
     assert.equal(body.pr_state, null, JSON.stringify(body)); assert.ok(body.pr_error, JSON.stringify(body));
-    await write(path.join(env.fake.bin, 'gh'), '#!/bin/sh\necho "{\\"state\\":\\"OPEN\\"}"\n', 0o755);
-    body = await call('status', { worktree, slug: 'sample', pr_url: 'https://example.test/pr' }); assert.equal(body.pr_state, 'OPEN', JSON.stringify(body));
+    await write(path.join(env.fake.bin, 'gh'), '#!/bin/sh\nprintf "gh %s\\n" "$*" >> "$FAKE_LOG"\necho "{\\"state\\":\\"OPEN\\"}"\n', 0o755);
+    body = await call('status', { worktree, slug: 'sample', pr_url: 'https://github.com/owner/repo/pull/1' }); assert.equal(body.pr_state, 'OPEN', JSON.stringify(body));
+    assert.match(await log(env), /gh pr view --json state -- https:\/\/github\.com\/owner\/repo\/pull\/1/);
     git(['-C', worktree, 'commit', '--allow-empty', '-m', 'next']); const newer = git(['-C', worktree, 'rev-parse', 'HEAD']).stdout.trim();
     body = await call('push', { worktree, branch, sha: old }); assert.equal(body.head, old, JSON.stringify(body));
     assert.equal(git(['--git-dir', path.join(root, 'origin.git'), 'rev-parse', `refs/heads/${branch}`]).stdout.trim(), old);
@@ -1502,7 +1505,8 @@ test('handoff claims use exact leases, state checks, and safe revocation', async
     await fs.unlink(hook);
     body = await call('claim-revoke', args); assert.equal(body.result, 'revoked', JSON.stringify(body));
     const replacement = await call('claim-push', { branch, parent, sha: second.sha }); assert.equal(replacement.result, 'landed', JSON.stringify(replacement));
-    body = await call('claim-push', args); assert.equal(body.result, 'moved', JSON.stringify(body)); assert.equal(body.remote_tip, second.sha, JSON.stringify(body));
+    body = await call('claim-state', args); assert.equal(body.result, 'moved', JSON.stringify(body)); assert.ok(body.picked_up_at, JSON.stringify(body));
+    body = await call('claim-push', args); assert.equal(body.result, 'moved', JSON.stringify(body)); assert.equal(body.remote_tip, second.sha, JSON.stringify(body)); assert.ok(body.picked_up_at, JSON.stringify(body));
     body = await call('claim-revoke', args); assert.equal(body.result, 'gone', JSON.stringify(body));
     const child = await call('claim-commit', { parent: second.sha, message: 'child' });
     git(['-C', repo, 'push', 'origin', `${child.sha}:refs/heads/${branch}`]);
@@ -1555,6 +1559,7 @@ test('handoff kills exact session names and cancels starts before tmux', async (
     const worktree = path.join(root, 'waiting'); await fs.mkdir(worktree);
     const pending = api(env, 'POST', '/v1/sessions', { name: lead, role: 'lead', cli: 'claude', thread_id: id, token: 'token', worktree }, hubHeader);
     while (!release) await new Promise(resolve => setImmediate(resolve));
+    body = await call('running'); assert.ok(body.names.includes(lead), JSON.stringify(body));
     body = await call('kill', { names: [lead] }); assert.ok(body.names.includes(lead), JSON.stringify(body));
     release(); const result = await pending; assert.notEqual(result.status, 201, JSON.stringify(result.body)); assert.match(result.body.error, /cancelled/);
     const after = await log(env); assert.doesNotMatch(after, new RegExp(`new-session .* -s ${lead}(?: |\\n)`));
@@ -1602,7 +1607,41 @@ test('imported worktree creates, advances, reuses, and rejects unsafe states', a
     await assert.rejects(create(c, tip), /already exists and differs/);
     const d = '444444444444'; push(d); await assert.rejects(create(d, 'f'.repeat(40)), /not on the remote branch/);
     const e = '555555555555'; push(e); await fs.mkdir(path.join(env.state, 'worktrees', 'project', 'wc', e), { recursive: true }); await assert.rejects(create(e, tip), /unexpected state/);
+    const wrong = '777777777777'; push(wrong); const wrongPath = path.join(env.state, 'worktrees', 'project', 'wc', wrong);
+    git(['-C', repo, 'worktree', 'add', '-b', 'wrong-branch', wrongPath, parent]);
+    await assert.rejects(create(wrong, tip), /unexpected state/);
     const f = '666666666666'; push(f); const session = await start(env, { thread_id: f, token: 'remote-token', project_dir: repo, project: 'project', serviceWorktree: true, from_remote_branch: { sha: tip } });
     assert.equal(session.created_worktree, true); const archived = await api(env, 'POST', '/v1/archive', { thread_id: f }, hubHeader); assert.ok(archived.body.removed.includes(session.worktree), JSON.stringify(archived.body));
+  } finally { await env.close(); }
+});
+
+test('inspect accepts the thread checkout after archive and falls back to the local ref or supplied head', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true }); try {
+    const id = '012345abcdef'; const { repo, worktree } = await startedWorktree(env, root, id); const branch = `wc/${id}`;
+    const fallback = git(['-C', worktree, 'rev-parse', 'HEAD']).stdout.trim();
+    git(['-C', worktree, 'commit', '--allow-empty', '-m', 'thread update']);
+    const head = git(['-C', worktree, 'rev-parse', 'HEAD']).stdout.trim();
+    git(['-C', worktree, 'push', 'origin', `${head}:refs/heads/${branch}`]);
+    const archived = await api(env, 'POST', '/v1/archive', { thread_id: id }, hubHeader);
+    assert.equal(archived.status, 200, JSON.stringify(archived.body)); assert.ok(archived.body.removed.includes(worktree), JSON.stringify(archived.body));
+    const inspect = () => api(env, 'POST', '/v1/handoff', { action: 'inspect', thread_id: id, project: repo, worktree, branch, head, slug: 'sample', fallback_head: fallback }, hubHeader);
+    let response = await inspect(); assert.equal(response.status, 200, JSON.stringify(response.body)); assert.equal(response.body.worktree_exists, false, JSON.stringify(response.body)); assert.equal(response.body.local_head, head, JSON.stringify(response.body));
+    await fs.mkdir(worktree, { recursive: true });
+    response = await inspect(); assert.equal(response.status, 200, JSON.stringify(response.body)); assert.equal(response.body.worktree_exists, false, JSON.stringify(response.body));
+    git(['-C', repo, 'branch', '-D', branch]); response = await inspect(); assert.equal(response.status, 200, JSON.stringify(response.body)); assert.equal(response.body.local_head, fallback, JSON.stringify(response.body));
+    const bad = await api(env, 'POST', '/v1/handoff', { action: 'status', thread_id: id, project: repo, worktree, slug: 'sample' }, hubHeader); assert.equal(bad.status, 422, JSON.stringify(bad.body));
+  } finally { await env.close(); }
+});
+
+test('archive saves the in-progress marker before stopping and clears it on failure', async () => {
+  const root = await temp(); const env = await service(root); try {
+    const id = '012345abcdef'; await start(env, { thread_id: id });
+    let observed = null;
+    env.instance.stop = async () => { observed = JSON.parse(await fs.readFile(path.join(env.state, 'archive-markers.json'), 'utf8')); throw new Error('forced stop failure'); };
+    const response = await api(env, 'POST', '/v1/archive', { thread_id: id }, hubHeader);
+    assert.equal(response.status, 500, JSON.stringify(response.body)); assert.match(response.body.error, /forced stop failure/);
+    assert.ok(observed.archiving.includes(id), JSON.stringify(observed));
+    const markers = JSON.parse(await fs.readFile(path.join(env.state, 'archive-markers.json'), 'utf8'));
+    assert.equal(markers.archiving.includes(id), false, JSON.stringify(markers)); assert.equal(env.instance.archivingThreads.has(id), false);
   } finally { await env.close(); }
 });
