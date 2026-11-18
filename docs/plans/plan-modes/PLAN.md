@@ -65,6 +65,11 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D30 | After a restarted round, only reports from the restart's sessions are triaged | Stale reports can't approve a changed Spec | review-round-2 |
 | D31 | The follow-up stub's summary starts with `Two-part follow-up for plan <slug>.`; a restarted lead finishes publishing before checking for it | Durable marker; the PR link exists first | review-round-2 |
 | D32 | The mode is written only when one supported mode is named; otherwise a follow-up question | No silent fallback from free text | review-round-2 |
+| D33 | Mode and Deferred list are fixed once the lead accepts Start building, not at `implementing` | Closes the window before the sub-lead writes its status | review-round-3 |
+| D34 | A pulled-back item is never deferred again in the thread | Collin's explicit choice must stand | review-round-3 |
+| D35 | A second all-deferred re-check goes to Collin as a question; failing validation commands are never deferrable | Bounded verification with a defined exit; deferral can't mask a failing check | review-round-3 |
+| D36 | A mode change or pull-back during a running round waits for that round's triage (supersedes D19 and D30) | No half-triaged round to roll back | review-round-3 |
+| D37 | The lead reconciles the deferred pin from PLAN.md before the done card; a retracted deferred card renders dimmed with no controls | Stale pin after a sub-lead death; clear chat history | review-round-3 |
 
 ## Spec
 
@@ -112,8 +117,8 @@ from before this feature).
 
 ### Changing the mode (D5)
 
-While PLAN.md `status:` is `planning`, `ready-for-review` or `approved`, Collin may ask in
-chat to change the mode. The lead edits `mode:` in IDEA.md (not a scope change; no
+Until the lead accepts a Start building press (D27), Collin may ask in chat to change the
+mode. The lead edits `mode:` in IDEA.md (not a scope change; no
 Decision Log `idea-change` entry, a `user` entry instead) and:
 - to `thorough`: moves every Deferred item back into the Spec, deletes the section, and
   retracts the `deferred` card (see below);
@@ -131,13 +136,15 @@ starts nothing, and the lead says in its reply that the plan changed and is back
 review. The rule applies only after a mode change or a pull-back; a thorough thread with
 neither keeps today's step 7 unchanged (IDEA constraint).
 
-A mode change or a pull-back while a review round's reviewers are running stops those
-reviewers. That round is not triaged and does not count toward the budget (like a round
-ended by a dead reviewer); it keeps its number and restarts with fresh reviewers briefed
-with the new mode and Deferred table, re-posting `phase: checking`. The lead triages
-only reports from the session names returned by the restart's starts; a report from a
-stopped reviewer of that round is discarded. From `implementing` on, the mode is fixed; a request to
-change it is answered with that.
+A mode change or a pull-back asked for while a review round's reviewers are running is
+applied after that round's triage is finished, never during it; the lead says so in its
+reply. The round runs and is triaged as normal against the plan its reviewers were
+briefed with; the change then goes into the next round's "Changed since" list.
+
+The moment the lead accepts a Start building press (before it starts the sub-lead), the
+mode and the Deferred list are fixed: a later request to change the mode, or a
+pull-back, is answered with that and changes nothing. If starting the sub-lead then
+fails, they stay fixed; the lead retries the start as lead.md already says.
 
 ### PLAN.md `## Deferred` (D11)
 
@@ -149,7 +156,10 @@ One row per item:
 
 `Source` is `planning`, `review-round-N` or `verification`. `Notes` are what the
 follow-up's lead will need (file:line, the case that breaks, the reviewer's evidence).
-Pulling an item back deletes its row and folds it into the Spec, with a Decision Log entry.
+Pulling an item back deletes its row and folds it into the Spec, with a Decision Log entry
+(source `user`). An item Collin pulled back is never deferred again in this thread, by
+review triage or verification: findings about it are fixed, or come to Collin as a
+`question` card if fixing is not possible.
 
 ### The `deferred` card (D3, D13)
 
@@ -177,7 +187,9 @@ A `removed` press on a `deferred` card does not set `answered` on it (in `press`
 skips an approval's `talk`), so the card stays retractable and can take further
 pull-backs. `deferred` is added to the kinds `retract` accepts (cards-lead.md refusal 2
 and `retractable` in `viewer/app/card.js`). Retracting it removes it from the pin, as for
-any retracted pinned card. This is how a change to thorough clears it.
+any retracted pinned card. This is how a change to thorough clears it. A retracted `deferred`
+card stays in the chat dimmed with "Withdrawn · <note>" like other retracted cards, and
+renders with no remove buttons.
 
 The hub refuses a `removed` press on a `deferred` card whose `locked` is true, or on one
 that has been replaced or retracted, with the same refusal shape as other stale presses.
@@ -222,10 +234,18 @@ attempt has reported, as in sub-lead.md step 4–5), before step 5:
    rows), using the same verifier selection rules as sub-lead.md step 3.
    The first such re-check in a build is free; any later one counts as a fix attempt
    for the two-attempt rule, so verification stays bounded as today.
-A deferred gap itself never counts as a surviving gap.
+A deferred gap itself never counts as a surviving gap. If a build would need a second
+all-deferred re-check, the sub-lead does not start it: it sends the lead the gaps as a
+surviving gap (sub-lead.md step 6), and the lead asks Collin with a `question` card:
+defer them and finish, or fix them.
+
+Never deferrable in verification: a failing validation command from the Spec's
+Validation section, and a gap in an item Collin pulled back. These go to remediation.
 
 Gaps deferred during verification are decided by the lead, not Collin: building has
-started and the card is locked. Collin sees them on the `deferred` card as they are added
+started and the card is locked. Before posting the `done` card, the lead reads PLAN.md's Deferred rows and reposts the
+`deferred` card if it differs (covers a sub-lead that died before sending its commit
+message). Collin sees them on the `deferred` card as they are added
 and accepts them after the fact (two-part: the follow-up thread; proof-of-concept: the
 done card's "left as is").
 
@@ -292,6 +312,7 @@ re-raise them.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A failed parent save after the child thread is saved could let a restarted lead post a second follow-up stub | Shared by every stub today; needs a disk write failure between two consecutive saves | 3 |
 
 ## Review Rounds
 
@@ -369,6 +390,29 @@ exit. Downgrades and declines cite evidence.
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
 | intent (claude) | minor | D27 written "for every mode" changes thorough, against IDEA's constraint | upheld | Rule limited to after a mode change or pull-back |
+| mechanics (gpt) | blocking | Mode change can reopen review after the sub-lead was queued | upheld | D33 |
+| mechanics (gpt) | blocking | A pulled-back item can be deferred again | upheld | D34 |
+| mechanics (gpt) | major | No exit for successive all-deferred re-checks | upheld | D35 |
+| mechanics (gpt) | major | A gap behind a failing validation command could be deferred | upheld | D35 |
+| mechanics (gpt) | major | Sub-lead death before notifying leaves the pin stale | downgraded (minor) | Only the pin is stale; PLAN.md is right and the done step reads it. D37 |
+| mechanics (gpt) | major | Partial hub save could duplicate the follow-up thread | accepted-risk | Same failure applies to every stub today (cards.js saves child then parent); needs a disk write failure between two saves |
+| mechanics (gpt) | major | A cancelled round may already have changed the plan | upheld | D36 replaces cancellation with waiting |
+| mechanics (gpt) | minor | Withdrawn deferred card's rendering unspecified | upheld | D37 |
+
+### Round 4 — 2026-11-17
+
+**Lanes:** intent: claude; mechanics: other family; cross-family: yes.
+
+**Changed since Round 3:**
+- D27 limited to after a mode change or pull-back (thorough unchanged).
+- Mode and Deferred fixed once Start building is accepted (D33).
+- Pulled-back items never re-deferred (D34).
+- Second all-deferred re-check goes to Collin; failing validation never deferrable (D35).
+- Mode change during a round waits for triage, replacing cancellation (D36; D19 and D30 superseded).
+- Pin reconciled before done; withdrawn deferred card rendering (D37). New Accepted Risk on duplicate follow-up after a partial save.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
