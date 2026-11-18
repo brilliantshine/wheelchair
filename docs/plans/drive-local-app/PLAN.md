@@ -49,13 +49,15 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 22 | Session stop and archive tear down immediately (SIGKILL) without waiting in the queue; `screen stop` and the sweep are graceful | Stays inside the hub's 5 s timeout and finishes before a verifier worktree is removed | review-round-3 |
 | 23 | `type` text capped at 400 characters, timeout scaled; key tokens that are xdotool command names refused; command names with `=` refused; windows are viewable top-level children of the root; auto-focus picks a new window only | Closes the round 3 argument and window findings | review-round-3 |
 | 24 | Key names come from a fixed list (letters, digits, F-keys, navigation and editing keys, common punctuation, with ctrl/alt/shift/super combos); supersedes the command-name blocklist in 23. Codex sandbox wrap kept | Collin's pick ("Only the fixed key list") after three review rounds without a clean pass | user |
-| 25 | Thread-level slice under the parent; generation fence on launches; sweep stops unheld slices; `systemctl` calls 2 s deadline, archive carries on | Closes registration races, restart stragglers and the archive time budget | review-round-4 |
+| 25 | Thread-level slice under the parent; generation fence on launches; sweep stops unheld slices; `systemctl` calls 2 s deadline (superseded by 31), archive carries on | Closes registration races, restart stragglers and the archive time budget | review-round-4 |
 | 26 | `--expand-environment=no` on systemd 254+ | systemd 258 expands `$` in scope commands by default | review-round-4 |
 | 27 | Each modifier at most once; `--hold` for held keys and lone modifiers; `type` limited to printable ASCII, newline and tab; auto-focus only a window owned by the app's scope; screen size capped at 2560 | Round 4 findings | review-round-4 |
 | 28 | Screen slice names carry the generation; sweep compares names | A replacement screen never shares a slice with one being torn down | review-round-5 |
 | 29 | Auto-focus is best effort: first new window, reported back; no ownership proof (supersedes that part of 27) | Many X apps publish no pid, sandboxed pids differ; the agent sees and can correct focus | review-round-5 |
 | 30 | `--hold` presses its keys together; at most 6 held and 20 tapped per call | Game controls need chords; bounds each op's time | review-round-5 |
 | 31 | Archive: one 1 s-bounded kill on the thread slice and a non-blocking stop | Screens add at most ~1 s to archive | review-round-5 |
+| 32 | Generation reserved in `state.json` before spawn; sweep leaves `starting` screens; thread-slice kill bumps generations; kill + stop share 1 s | Closes sweep/start and restart generation races; one archive budget | review-round-6 |
+| 33 | One deadline per `key` op; releases always attempted; failed release blocks input until `screen stop`; focus failure is still a successful `run` | Bounds input ops; no stuck keys; no duplicate launches | review-round-6 |
 
 ## Spec
 
@@ -125,7 +127,11 @@ tokens are checked before any key is sent, then each is sent as its own `xdotool
 (`shift`), at most 6 tokens are given, and they are pressed together: `xdotool keydown --
 <token>` for each in order, one wait of the hold time, then `xdotool keyup -- <token>` for
 each in reverse order (keyups are also sent if the wait is interrupted or a keydown fails).
-So one `key` op takes at most about 5 s of holding plus its normal timeout.
+**Key op deadline:** one `key` op has a single deadline of 10 s plus the hold time, covering
+all its xdotool calls; when it expires no further keydown or tap is sent. Releases are always
+attempted afterwards, with their own 2 s budget outside that deadline. If any keyup fails or
+times out, the op returns `422 keys may still be held; run wc.js screen stop` and every later
+input op on that screen is refused with the same message until `screen stop`.
 `type` sends `xdotool type --delay 20 -- <text>` as a single argument; text is 1–400
 characters of printable ASCII (space to `~`), newline and tab only, so every character maps
 to a key on the default US layout and none is silently skipped; its timeout is 10 s plus
@@ -144,7 +150,8 @@ focuses the first one that appears. It does not try to prove which app owns the 
 X apps publish no pid, and a sandboxed app's pid is not the service's), so on a screen where
 an earlier app opens a window at the same moment, the wrong one may be focused. `run` returns
 `focused: {id, name}` or `focused: null`, so the agent can see what got focus and `focus`
-another window if needed.
+another window if needed. If the new window vanishes or `xdotool windowfocus` fails, `run`
+still succeeds with `focused: null` (the app did launch; a retry would start a second copy).
 
 ### Launching apps
 
@@ -210,7 +217,11 @@ not torn down). `start` returns the display for information only.
   fails and anything queued is refused; that refusal is permanent. A `start` or `run` that
   finds the session's tmux gone also kills the screen slice before returning `409`.
 - **Fencing launches:** each screen has a generation number, bumped by every teardown and
-  persisted in `state.json` with the counters (never reused, also across restarts). A
+  persisted in `state.json` with the counters (never reused, also across restarts). `start`
+  reserves the new screen's generation by writing it to `state.json` (marked `starting`)
+  before spawning Xvfb, so a restart can never hand the same generation to a replacement; the
+  sweep counts a `starting` generation as held, and a startup or sweep finding a `starting`
+  entry with no live service-side start in progress treats it as not held. A
   `start` or `run` notes the generation before spawning; once `systemd-run` has registered the
   scope (the spawned process is running), it checks the session is not `stopped` and the
   generation is unchanged; if either changed, it kills its own scope and returns `409`. The
@@ -251,11 +262,14 @@ not torn down). `start` returns the display for information only.
   `archive()` first does one `systemctl --user kill --signal=SIGKILL` on the thread slice
   `wcscreen-<s>-<t>.slice`, covering every screen of the thread in one call, and issues the
   matching `systemctl --user stop --no-block`, then stops its sessions (each `stop()` then
-  finds no screen and returns at once). In both paths the kill call has a 1 s deadline and
-  the stop does not wait (`--no-block`); on timeout or failure the service logs it and carries
-  on, and the sweep retries the slice. Screens therefore add at most about 1 s to session
-  stop and archive; the rest of archive's time is as today. Both delete the cookie
-  file and keep shots and logs. The sweep runs every 60 s and tears down screens whose
+  finds no screen and returns at once). The thread-slice kill counts as a teardown of every
+  screen of that thread: it bumps each one's generation (persisted) and drops it from memory,
+  so a launch fenced on any of them kills itself. In both paths the kill and the
+  `stop --no-block` submission share one 1 s deadline; on timeout or failure the service logs
+  it and carries on, and the sweep retries the slice. Screens therefore add at most about 1 s
+  to session stop and archive; the rest of archive's time is as today. Both delete the cookie
+  file. Session stop keeps shots and logs; archive removes them with the thread's screens
+  directory. The sweep runs every 60 s and tears down screens whose
   session tmux is confirmed gone (`liveTmux()` returned a set without it; a `null` answer
   skips that sweep). `archive()` also removes `<stateDir>/screens/<thread>/` alongside the
   uploads it removes. A screen whose Xvfb died is treated as no screen (its slice is torn
@@ -328,7 +342,12 @@ manager, no video, no Ready-check change.
   registers after a teardown (generation bumped) kills its own scope and returns 409; the
   sweep stops a screen slice the service does not hold, including an older generation of a
   session that now has a new screen, and never the current one; archive kills the thread slice once
-  and carries on when the kill call times out; missing-tool error naming each
+  and carries on when either the kill or the stop submission stalls, within 1 s in total;
+  the thread-slice kill bumps every screen generation of the thread; a `start` reserves its
+  generation in `state.json` before spawning and the sweep leaves a `starting` screen alone;
+  a `key` op with a stalled xdotool stops sending at its deadline, still releases held keys,
+  and a failed release refuses later input until `screen stop`; a `run` whose focus fails
+  returns success with `focused: null`; missing-tool error naming each
   missing tool, status 422; op without a screen; one session cannot reach another's screen;
   `start` after session stop refused 409, `start` after `screen stop` allowed; `start` when
   tmux shows the session gone refused 409 with the slice killed, when tmux cannot be asked
@@ -362,7 +381,7 @@ manager, no video, no Ready-check change.
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | Heavy 3D may be slow or fail on the invisible screen (software rendering, no graphics card) | Accepted in IDEA.md constraints | planning |
-| A `run` that races an archive can start an app for an instant before the fence kills it, inside a worktree being archived | The agent's own processes are equally unfenced at that instant; a hold on archive would break the hub's time budget | 5 |
+| A `run` that races an archive can start an app before the fence kills it, inside a worktree being archived; it can run until archive's synchronous git steps finish and the service runs the fence (seconds, not an instant) | The agent's own processes are equally unfenced then; fixing it means reworking archive's synchronous git, outside this feature | 5, 6 |
 | An agent that deliberately reads another session's screen cookie can connect to that screen | All sessions run as the same user; the cookie stops mistakes, not a determined agent | 1 |
 
 ## Review Rounds
@@ -478,6 +497,14 @@ manager, no video, no Ready-check change.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Thread-slice kill doesn't bump generations | upheld | Decision 32 |
+| intent | minor | Decision 31 doesn't supersede 25 | upheld | Marked superseded |
+| intent | minor | Teardown says archive keeps shots | upheld | Wording fixed |
+| mechanics | blocking | Sweep can stop a screen being started; restart can reuse a generation | upheld | Reserved generation before spawn; Decision 32 |
+| mechanics | major | Stop submission not inside the 1 s budget | upheld | Shared 1 s deadline; Decision 32 |
+| mechanics | major | RE-RAISE: archive race lasts while synchronous git runs | accepted-risk | Evidence correct (machine/service.js:817-843); Accepted Risk reworded; fix belongs to archive's git, outside this feature |
+| mechanics | major | Key op has no total deadline; failed keyup | upheld | Decision 33 |
+| mechanics | minor | Focus failure after launch returns 422 | upheld | Success with `focused: null`; Decision 33 |
 
 ## Prior Work
 
