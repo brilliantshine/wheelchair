@@ -97,6 +97,10 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | D62 | (superseded by D65) Step 6 posts the approval card before the `Approve plan` commit; a restart accepts a press only when PLAN.md's last commit is `Approve plan` (replaces D56's clock check) | No clock comparison; ties a press to the reviewed revision | review-round-9 |
 | D63 | (superseded by D65) "Push as it is" on a surviving gap is logged `Accepted as is:` and kept out of later verifier scope | Remaining fixes can verify to a pass | review-round-9 |
 | D65 | Unchanged thorough threads restart exactly as today (D54, D56, D62 withdrawn); a mode change after restart is fixed if a sub-lead exists, else goes through D17. A build's surviving gap is today's open question and nothing proceeds until Collin answers (D63 withdrawn) | Keeps IDEA's "thorough exactly as today" constraint; avoids inventing build-time push/drop | review-round-10 |
+| D66 | After Collin answers a surviving-gap question, the sub-lead acts on it and remaining must-fix gaps go through remediation | Defined continuation | review-round-10 |
+| D67 | A restarted round triages only its own sessions' reports and first applies pending pull-backs and unapplied mode changes from recent messages | No stale reports; no lost change | review-round-10 |
+| D68 | A switch to thorough is one commit of IDEA.md and PLAN.md | No half-applied switch | review-round-10 |
+| D69 | A mode answer recovered from chat must be a clear choice | A question about a mode isn't a pick | review-round-10 |
 | D64 | Restart reads a typed mode answer from recent messages; restart reconciles the pin with `mode:` | No re-asking; pin matches the mode | review-round-9 |
 
 ## Spec
@@ -142,8 +146,9 @@ moments before the lead died): the restarted lead reads the cards it is given. I
 mode question was answered with a press, it uses that mode; if answered in its box or
 resolved with a note, it uses the mode only if the text names exactly one, and otherwise
 asks the follow-up question above. If it is open but the restart context's recent
-messages hold a later message from Collin that names exactly one mode, it treats that as
-his answer (resolving the card). Otherwise, if it is open, it leaves it open and waits. If it was never posted, it
+messages hold a later message from Collin that clearly chooses exactly one mode (not a
+question about it or an objection), it treats that as his answer (resolving the card);
+if in doubt, it leaves the card open. Otherwise, if it is open, it leaves it open and waits. If it was never posted, it
 posts it. `thorough` is assumed only when reading an IDEA.md with no `mode:` line (plans
 from before this feature).
 
@@ -158,7 +163,8 @@ to thorough, repost with the new `mode` between lighter modes) apply from the mo
 card is first posted, whether or not IDEA.md or PLAN.md exist yet. The lead edits `mode:` in IDEA.md (not a scope change; no
 Decision Log `idea-change` entry, a `user` entry instead) and:
 - to `thorough`: moves every Deferred item back into the Spec, deletes the section, and
-  retracts the `deferred` card (see below);
+  edits `mode:`, all in one commit of IDEA.md and PLAN.md; then retracts the `deferred`
+  card (see below);
 - from `thorough` to a lighter mode: may move Spec items to Deferred, each announced in
   its reply and shown on the `deferred` card;
 - between the two lighter modes: the Deferred section stays; only its meaning changes,
@@ -233,8 +239,11 @@ context's recent messages, that has no matching `Pulled back:` Decision Log entr
 a `Build accepted:` line came first). If a review round's reviewers are still
 running when a lead restarts (in any mode), the restarted lead stops them and restarts
 that round with fresh reviewers under the same number, untriaged and not counted toward
-the budget (their reports would go to the dead lead). It applies pending pull-backs
-before briefing the restarted round. Either way, before posting
+the budget (their reports would go to the dead lead). It applies pending pull-backs,
+and any mode change Collin asked for in the restart context's recent messages that
+IDEA.md's `mode:` does not yet show, before briefing the restarted round. It triages
+only reports from the sessions it started for the restarted round; reports from the
+earlier round's reviewers (they can arrive in the transferred queue) are discarded. Either way, before posting
 an approval card or briefing a round.
 
 Matching is by bullet text. The lead keeps one item's bullet text identical across
@@ -348,8 +357,10 @@ answer itself; nothing is saved to Deferred yet, and it asks Collin a `question`
 When a gap has survived two fix attempts, today's surviving-gap rule comes first
 (sub-lead.md step 6: stop and message the lead; lead.md step 7: post a `question` card).
 Hardening gaps in the same attempt are still answered "defer" and saved by step 2 before
-the sub-lead stops. Nothing else proceeds until Collin answers that question, exactly
-as today.
+the sub-lead stops. Nothing else proceeds until Collin answers that question. The lead
+sends his answer to the sub-lead as a `message`; the sub-lead then acts on it for the
+surviving gap, and any other must-fix gaps of that attempt go through step 5 as usual,
+so the build ends, as always, on a passing verification or a further question.
 
 Never deferrable in verification: a failing validation command from the Spec's
 Validation section, and a gap in an item Collin pulled back. These go to remediation.
@@ -673,6 +684,11 @@ exit. Downgrades and declines cite evidence.
 | intent (claude) | major | Build-time "push as is / drop" doesn't exist; D59/D63 invent it | upheld | D65 |
 | intent (claude) | minor | D62 reorder changes thorough without Collin's agreement | upheld | D65 withdraws D54/D56/D62 |
 | intent (claude) | minor | Stale references to superseded decisions | upheld | Marked superseded; "Not changing" updated |
+| mechanics (gpt) | blocking | No continuation after the surviving-gap answer | upheld | D66 |
+| mechanics (gpt) | blocking | Restarted round can triage stale reports | upheld | D67 |
+| mechanics (gpt) | major | Mode change acknowledged during review lost on restart | upheld | D67 |
+| mechanics (gpt) | major | Half-applied switch to thorough after a crash | upheld | D68 |
+| mechanics (gpt) | major | Mentioning a mode treated as choosing it | upheld | D69 |
 
 ## Prior Work
 
