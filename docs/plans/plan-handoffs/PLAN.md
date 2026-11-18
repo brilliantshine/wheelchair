@@ -60,6 +60,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 30 | The machine keeps its archive records on disk | Makes the same-machine refusal (27) survive a machine restart | review-round-8 |
 | 31 | The restart reorder (28) and partial-start handling apply to imported threads only; supersedes 28 | Changing start-up for every thread pulled pre-existing crash windows into this feature | review-round-12 |
 | 32 | Cancel never waits on an in-flight push: it records the claim on a hub revoke list and abandons; a sweep takes a late-landing claim back off GitHub with a lease that only matches that exact commit. Supersedes the `claim-cancel`, pid and time-bound design | Collin chose to keep going on Cancel; this removes the need to know whether a push is still running | review-round-12 |
+| 33 | Cancelled claims are never reused: an import or undo meeting its own cancelled claim waits for the revoke ("try again in a few minutes") | Adopting them (round 14) opened crash, cross-clone and late-revoke gaps; waiting a few minutes in a rare case is simpler | review-round-15 |
 
 ## Spec
 
@@ -80,8 +81,10 @@ A thread can be exported at exactly three points. At each, the thread must also 
 
 - not archived, not handed off, no unfinished operation (see Operations and Retry);
 - no session other than the lead is `live`; the lead is either not live, or live with
-  `turn_ended === true` (`viewer/app/sessions.js:515-543`); no message is queued for any
-  session of the thread;
+  `turn_ended === true` (`viewer/app/sessions.js:515-543`); nothing is queued on a session
+  that could still receive it: any live or `pending` session, or any lead session record
+  (Restart moves ended leads' queues to the next lead). Queues left on ended non-lead
+  sessions are never delivered and do not block export;
 - no aside is open or has a turn running (`thread.asides`, `viewer/app/asides.js`);
 - no `sudo` card is in state `waiting` or `running`;
 - no upload to the thread is in flight (the hub counts uploads per thread from admission
@@ -255,8 +258,8 @@ The operations themselves bypass the check.
   - unchanged: "Handed off <date>. Import a newer file to continue here, or undo." with an
     **Undo hand-off** button;
   - moved: "Picked up elsewhere on <date>. Import a newer file to continue here." and no
-    Undo. A tip that is this hub's own revoke-listed claim on `handed_off.head` counts as
-    unchanged, so Undo stays (and adopts it);
+    Undo. When the tip is an own cancelled claim (Import step 4), the banner instead says "A
+    cancelled undo is still being taken back; try again in a few minutes" and Undo stays;
   - inspect failed: the first text, and Undo stays available (undo checks again).
 - `POST /threads/:id/undo-handoff` runs the Undo operation (see Operations and Retry):
   claim on top of `handed_off.head`, stop any live session, fast-forward the worktree to
@@ -266,8 +269,9 @@ The operations themselves bypass the check.
   here".
 - While handed off, the page offers **Download the file again**
   (`GET /threads/:id/handoff-file`, the saved `handoffs/<id>.json`), so a lost download
-  never needs a second export. Download again serves the copy whose `head` equals
-  `handed_off.head`: if `handoffs/<id>.json.new` matches, it is renamed over `.json` first
+  never needs a second export. Download again runs inside `hub.withThread(id)`, so it never
+  overlaps Export's own rename, and Export's rename succeeds when the destination already
+  holds the same content. It serves the copy whose `head` equals `handed_off.head`: if `handoffs/<id>.json.new` matches, it is renamed over `.json` first
   (a crash between the save and the rename, or an old `.json` that was never deleted); the hub does the same for every
   handed-off thread when it starts. The saved file is deleted when the hand-off is undone or the
   thread is advanced by an import (Done step), not when it is archived.
@@ -315,7 +319,7 @@ The hub then, inside `withThread(<file thread id>)`:
 | No such thread, and the picked project's local `wc/<id>` branch is checked out (in the project clone or any worktree) | Refused 409 "Branch wc/<id> is checked out in <path>; switch away from it, then import again" |
 | No such thread, and the picked project has a local `wc/<id>` branch that is not an ancestor of `head` | Refused 409 "This project already has a branch wc/<id> that differs from the file; delete it if you don't need it, then import again". A local branch that is an ancestor of `head` and not checked out is fine: Create uses it |
 | No such thread, and none of the three rows above matched | **Create** |
-| Exists; its head equals `head`, or `head` is an ancestor of its head | **Open**, change nothing. Note: "You already have this thread here", plus " It's handed off: press Undo on it to carry on here." when it is handed off and the tip is unchanged; or "This file is older than the thread here" |
+| Exists; its head equals `head`, or `head` is an ancestor of its head | **Open**, change nothing. Note: "You already have this thread here", plus " It's handed off: press Undo on it to carry on here." when it is handed off and the tip is unchanged or an own cancelled claim; or "This file is older than the thread here" |
 | Exists; its head is a strict ancestor of `head` | **Advance** |
 | Exists; neither is an ancestor of the other | **Open**, change nothing; note "This thread and the file have each moved on separately, so nothing was changed. Bring the branches together yourself, then import again." |
 
@@ -326,17 +330,12 @@ The hub then, inside `withThread(<file thread id>)`:
    For Create and Advance, the remote tip must also **equal** `head`. A tip past `head`
    means someone already picked the work up: 409 "This was already picked up elsewhere on
    <committer date of the first commit after head>; export again from wherever it is now".
-   Except when the tip is exactly a claim on this hub's revoke list for this thread whose
-   `parent` is `head`: that is this hub's own cancelled pick-up, so the tip counts as
-   `head` here, and the operation **adopts** it (next paragraph).
-
-**Adopting an own cancelled claim.** Whenever an operation (Create, Advance or Undo, on its
-first run or a Retry) is about to claim on `parent` and the revoke list holds an entry for
-this thread with that `parent`, it does so inside `hub.withThread(id)`: it removes the entry,
-sets `claim_sha` to the entry's `sha` and saves, before any `claim-push`. If the tip is that
-`sha`, `claim-push` reports `landed`; if the tip is still `parent`, it pushes that same
-commit. A Retry also removes any revoke entry whose `sha` is its own `claim_sha` before it
-resumes. So an operation and a revoke never both act on one claim.
+   Except when the tip is exactly a claim on this hub's revoke list for this thread (an
+   **own cancelled claim**): then 409 "An earlier cancelled import or undo is still being
+   taken back; try again in a few minutes", and the hub runs that entry's revoke at once.
+   The Claim step's abandon check, the handed-off banner and the Open note use the same
+   exception, so none of them calls an own cancelled claim "picked up elsewhere". Cancelled
+   claims are never reused: the revoke list and operations never act on the same claim.
 
 **Create** saves a new record (the file's `id`, `title`, `slug`, the picked machine and
 project, `branch: wc/<id>`, no sessions) together with its `handoff_op`, then runs the
@@ -417,7 +416,8 @@ instead of "export again from wherever it is now".
    update the branch on GitHub: <git's last line from the push or fetch>", keeping
    `claim_sha`, so Retry tries again.
 2. **Stop.** Stop every live session of the thread (Advance and Undo); a stop the machine
-   answers with "no such session" (its record is gone, for example after an archive whose
+   answers with HTTP 404 "unknown managed session" from its session DELETE route
+   (`machine/service.js:388-391`, `:1235-1237`) (its record is gone, for example after an archive whose
    reply was lost) counts as stopped and the hub marks the session not live. Then ask the
    machine (`/v1/handoff` `running`) which tmux sessions named `wc-<id>-*` still exist,
    kill exactly those names (`/v1/handoff` `kill`), and ask again. Any left fails the step with
@@ -439,8 +439,9 @@ instead of "export again from wherever it is now".
    belong to no handed-off thread and no saved operation (a `.json.new` of a handed-off
    thread is renamed instead, as above).
 6. **Start the lead**, outside the operation: the restart path (`restartLead`,
-   `viewer/app/threads.js:122-159`). When the thread has no recorded worktree, restart starts
-   the lead with `from_remote_branch: {sha: checkout_sha}`. Once the lead's worktree is recorded, the hub
+   `viewer/app/threads.js:122-159`). Whenever a thread has `checkout_sha` and no recorded
+   worktree that exists (any thread an operation touched, imported or not), every later
+   restart starts the lead with `from_remote_branch: {sha: checkout_sha}`. Once the lead's worktree is recorded, the hub
    registers the plan directory (`hub.registerPlan`, as `findSlug` does at
    `viewer/app/views.js:105`), since an imported thread's slug is set before any worktree
    exists and `findSlug` would skip it. Registration is also repaired at hub start: every
@@ -456,8 +457,8 @@ saved is marked not live, so the dead-lead panel
 offers Restart; Restart (below) kills anything that start left on the machine, refuses
 while any survives, and moves its queued context to the new lead. Nothing is adopted.
 Other roles, and leads of threads that were never imported, are unchanged from today. An
-imported thread's lead always starts with `from_remote_branch: {sha: checkout_sha}` until a
-worktree is recorded, and that path adopts a checkout a lost start left behind.
+thread with `checkout_sha` starts its lead with `from_remote_branch: {sha: checkout_sha}`
+until a worktree is recorded, and that path adopts a checkout a lost start left behind.
 
 **Restart order.** `restartLead` is changed for imported threads only: it first asks the machine
 (`running`) for tmux sessions of the thread's lead names that the hub does not count as
@@ -467,9 +468,8 @@ context from those names, **and from any lead session record the hub holds that 
 live and has a non-empty queue** (a crash after an earlier restart's save but before its
 start), to the new one; then it picks the new lead's name (`newSessionName`), creates that
 session's record (not live, status `pending`) with the context message in its queue, saves,
-**then** starts the session, which turns the same record live. The export quiet test is
-unchanged: any queued message, on any session record, blocks export; a stuck `pending`
-record is drained by the next Restart. A crash after the start still leaves the context queued for the lead;
+**then** starts the session, which turns the same record live. A stuck `pending` record's
+queue blocks export (Export points) until the next Restart drains it. A crash after the start still leaves the context queued for the lead;
 a crash before it leaves a thread with no live lead, which shows Restart.
 
 **What the lead is told.** Restart's context JSON gains, for a thread with `imported`, an
@@ -498,7 +498,7 @@ and its thread id is not in that set.
   record, Advance and Undo clear `handoff_op`. When `claim_sha` is null, it just abandons.
 - **Revoking.** At hub start and every 10 minutes, the hub runs each entry on the revoke
   list, inside `hub.withThread(thread_id)`. Every read-modify-write of `revoke.json`
-  (Cancel, sweep, adopting, Dismiss) also holds one hub-wide `revoke` lock, taken after the
+  (Cancel, sweep, Dismiss) also holds one hub-wide `revoke` lock, taken after the
   thread lock, so writes for different threads never overwrite each other:
   - if a thread with that id still has a saved `handoff_op` whose `claim_sha` is the
     entry's `sha` (a crash between saving the entry and abandoning), the operation wins:
@@ -535,7 +535,7 @@ and its thread id is not in that set.
 - New hub-only endpoint `POST /v1/handoff`, authorized like `/v1/archive`
   (`machine/service.js:1234`), with `action`:
   - `status` `{worktree, slug, pr_url?}` → fetch; `{dirty, branch, head, remote_tip,
-    idea_status, plan_status, repository, pr_state}` from `git status --porcelain`,
+    idea_status, plan_status, map_committed, repository, pr_state}` from `git status --porcelain`,
     `git show HEAD:...`, the origin, and `gh pr view <pr_url> --json state` when `pr_url`
     is given (`pr_state: null` and `pr_error` when gh fails, which blocks a `done` export
     with "Couldn't check the pull request").
@@ -552,7 +552,9 @@ and its thread id is not in that set.
     that creates the branch). A network failure is still an error.
   - `inspect` `{project, branch, head, worktree?, slug}` → fetch; returns `{repository,
     remote_tip, remote_has_branch, remote_contains_head, picked_up_at, local_head,
-    worktree_exists, relation, idea_status, plan_status}`. `local_head` follows the "its
+    worktree_exists, relation, idea_status, plan_status, map_committed}` (`map_committed`:
+    `docs/plans/<slug>/MAP.md` exists at `head`; the `idea-confirmed` stage requires it on
+    import as on export). `local_head` follows the "its
     head" order above (the hub supplies `handed_off.head` as a fallback field).
     `relation` is `same`, `behind` (file older), `ahead` (file strictly ahead) or
     `diverged`. `picked_up_at` is the committer date of the first commit after `head` when
@@ -612,7 +614,8 @@ and its thread id is not in that set.
   - `kill` `{thread_id, names}` → only the exact names given, each of which must start
     with `wc-<thread_id>-`; for each: a session still starting
     is marked cancelled, so its start stops before launching tmux and returns an error;
-    a running one gets `tmux kill-session -t <name>`. Returns the names still starting or
+    a running one gets `tmux kill-session -t '=<name>'` (the `=` makes tmux match the name
+    exactly, never as a prefix of `wc-<id>-lead-2`). Returns the names still starting or
     running.
   - Every `/v1/handoff` request carries `thread_id` (required, `^[0-9a-f]{12}$`), and every
     action that runs git also carries `project`. Each action first takes the machine's
@@ -705,12 +708,15 @@ New tests, then the suites:
     saved operation with the same claim wins over its revoke entry; a revoked entry keeps
     watching until 24 h and revokes a second landing; a rejected revoke is kept and shown
     on the threads list; import while our cancelled claim is the tip says "still being
-    undone" is replaced by adopting our own cancelled claim (import, undo, Retry; entry
-    removed first); banner treats our own revoke-listed claim as unchanged; revoke list
+    undone" for an own cancelled claim on import, Claim, banner and Open note, with an
+    immediate revoke; cancelled claims never reused; revoke list
     writes for two threads at once both survive; `revoked` renews `until`; `kill` with exact
     names leaves a live sub-lead alone; Stop treats "no such session" as stopped; idea point
     needs MAP.md committed; Download again serves the copy matching `handed_off.head`; a
-    queued message on a dead lead blocks export; restart moves queues from not-live lead records; ls-remote exact ref match;
+    queued message on a dead lead blocks export, one on an ended worker does not; `kill` uses
+    `=name`; Stop treats the machine's 404 as stopped; MAP.md checked at `head` on import;
+    Download again and Export's rename never collide; Undo of a never-imported archived
+    thread restarts from `checkout_sha` after a hub crash; restart moves queues from not-live lead records; ls-remote exact ref match;
     every handoff action takes the thread lock and the repository queue; `claim-revoke` (tip is the
     claim → branch back on `parent`; tip `parent` → waiting until 24 h; descendant or other
     tip → gone, nothing pushed; lease failure re-read); a claim that lands after Cancel is
@@ -1150,7 +1156,7 @@ npm --prefix viewer run test:browser
 
 ### Round 15 — 2026-11-17
 
-**Lanes:** intent and mechanics; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 14:**
 - Adopting an own cancelled claim (replaces "still being undone"); Retry removes matching revoke entries; banner exception.
@@ -1163,6 +1169,18 @@ npm --prefix viewer run test:browser
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Queues on ended non-leads block export forever | upheld | Only queues that could still be delivered block export |
+| intent | major | Adoption ignores machine and project | upheld | Adoption removed (decision 33) |
+| intent | minor | Adoption ignores operation kind | upheld | Adoption removed |
+| intent | minor | Open note and banner disagree | upheld | One own-cancelled-claim exception used by import, Claim, banner and Open note |
+| mechanics | blocking | Adoption crash window | upheld | Adoption removed |
+| mechanics | blocking | Adopted claim missing from another clone | upheld | Adoption removed |
+| mechanics | blocking | In-flight revoke rewinds an adopted claim | upheld | Adoption removed |
+| mechanics | blocking | tmux `-t` prefix match | upheld | `-t '=<name>'` |
+| mechanics | blocking | Stop matches the wrong missing-session text | upheld | Machine's 404 "unknown managed session" |
+| mechanics | major | No MAP.md field in `status` or `inspect` | upheld | `map_committed` on both |
+| mechanics | major | Download again races Export's rename | upheld | Download again under the thread lock; rename tolerates identical content |
+| mechanics | blocking | Never-imported thread's Undo loses its checkout after a crash | upheld | `checkout_sha` used by every restart while no worktree exists |
 
 ## Prior Work
 
