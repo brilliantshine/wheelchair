@@ -64,6 +64,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 24 | Supersedes 12, 17, 20, 21 where they differ: the check runs during the agent start (bounded ~11 s, only after a change or while a tool has a problem) and its result returns with the start answer as a whole-state snapshot ordered by `seq`. No background check, no hub pulling, no new route | Collin's pick after three review rounds kept finding race and recovery problems in the background design | user |
 | 25 | The check runs before the tmux launch, not alongside it; starts queued behind a check that began after they arrived reuse its result even with problems | Nothing to roll back on cancel, restart or write failure; a burst of starts never runs a hanging check more than once | review-round-6 |
 | 26 | Supersedes 25's reuse rule: a result with problems is reused for 2 minutes after it finished | The hub sends a thread's starts one at a time, so arrival-time reuse never fires | review-round-7 |
+| 27 | Rare timing cases around the connection check (a start, cancel, handoff or service restart landing mid-check; two near-simultaneous starts) are accepted as known limits when their worst effect is a stale problem card or result until the next tools-getting start. Still fixed: anything that would build the wrong thing, leave a tool or card wrong permanently, leak a secret, or leave processes or files behind | Collin's pick "Accept as known limits" after rounds 6-8 | user |
 
 ## Spec
 
@@ -215,6 +216,7 @@ re-raise them.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| Rare timing cases during the connection check (Decision 27) can leave the card or `session list` result stale until the next tools-getting start | Collin's choice; the next start sends the whole state again | user |
 | The check and an agent's CLI can run the same stdio server at once; a server holding an exclusive resource (fixed port) may fail in one of them | Several agents in one thread already run their own copies at once; such a server is broken for wheelchair regardless of the check | review-round-1 |
 | An Antigravity skip line for an unset variable stays on the card after Collin sets it, until the next Antigravity start in the thread | The check line clears sooner; a CLI's lines can only change when that CLI starts | review-round-3 |
 | A start waits up to ~11 s (at most ~21 s if queued), on top of today's start time, and the hub holds the thread's lock meanwhile (other requests in that thread wait too); a handoff during a check waits up to 5 s more, after `.mcp.json` changes or while a tool has a problem | Collin's choice (Decision 24) for a simpler, more reliable check | user |
@@ -397,6 +399,15 @@ exit. Downgrades and declines cite evidence.
 | mechanics | major | Retried `initialize` needs id 3 | upheld | §5 |
 | mechanics | major | Clock-based `seq` can fall below the hub's | upheld | §6/§8 `boot` id per service start |
 | mechanics | minor | Token-fix edge case vs 2-minute reuse | upheld | Edge cases (digest) |
+
+### Round 9 — 2026-11-18
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 8:** §5 retried `initialize` id 3; §6 environment digest for reuse, 10 s queue-wait race, abort leaves the queue, per-thread ordered state writes, `boot` id, marker-save failure is a problem; §8 `boot` handling; Edge cases; Validation; Accepted Risks; Decision 27 (rare timing cases accepted as known limits).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
