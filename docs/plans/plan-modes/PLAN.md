@@ -192,8 +192,8 @@ posted (`git log -1 --format=%cI -- docs/plans/<slug>/PLAN.md` earlier than the 
 `created_at`), the build counts as accepted. If PLAN.md changed after the card, the
 press is stale: the lead posts a fresh approval card. The mode is fixed
 and the lead does not reopen planning; it starts the sub-lead if `session list` shows
-none. (A stale press is possible only after a change, which the `Build accepted:` line
-covers.)
+none. (This also closes a stale-press case that exists in thorough today, after a
+"talk about" Spec change.)
 
 ### PLAN.md `## Deferred` (D11)
 
@@ -405,7 +405,8 @@ it), then: what was
 The offer card, the approval card, the Ready check, the progress line, small fixes,
 thorough mode, the stub mechanism (except the restart context's new `card_kinds` field, and D43's restart fix, which repairs an existing
 gap for every stub, and D50's `removed` check, which also covers `idea` cards but
-refuses only presses the app never sends), the app's slug and document rules.
+refuses only presses the app never sends; D55's early draft IDEA.md commit; and D56's
+restart staleness check, which also closes an existing thorough stale-press case), the app's slug and document rules.
 
 ### Validation
 
@@ -639,6 +640,8 @@ exit. Downgrades and declines cite evidence.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent (claude) | minor | D56 changes thorough restart; stated reason wrong | upheld | Named as an exception; reason corrected |
+| intent (claude) | minor | D55 changes when thorough commits IDEA.md | upheld | Named as an exception |
 
 ## Prior Work
 
