@@ -322,7 +322,7 @@ means today's behaviour, byte for byte: same settings file, same argv.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | Read `.mcp.json` (`machine/lib/project-mcp.js`), service wiring and log lines, Claude and Antigravity adapters, README section | `machine/lib/project-mcp.js`, `machine/service.js` (startIn/commandFor), `machine/adapters/claude.js`, `machine/adapters/agy.js`, `machine/test/project-mcp.test.js`, `README.md`, `machine/AGENTS.md` | standard / gpt-6.1-terra | wc-21cc83a58882-worker | `node --test machine/test/project-mcp.test.js`; `bash machine/test/run.sh`; `node --test viewer/test/*.test.js` | dispatched |
+| T1 | Read `.mcp.json` (`machine/lib/project-mcp.js`), service wiring and log lines, Claude and Antigravity adapters, README section | `machine/lib/project-mcp.js`, `machine/service.js` (startIn/commandFor), `machine/adapters/claude.js`, `machine/adapters/agy.js`, `machine/test/project-mcp.test.js`, `README.md`, `machine/AGENTS.md` | standard / gpt-6.1-terra | wc-21cc83a58882-worker | `node --test machine/test/project-mcp.test.js`; `bash machine/test/run.sh`; `node --test viewer/test/*.test.js` | done |
 | T2 | Codex adapter: project servers as `-c mcp_servers.project_<name>.*` overrides, skips as warnings | `machine/adapters/codex.js` (command), `machine/test/project-mcp-codex.test.js` | standard / gpt-6.1-terra | wc-21cc83a58882-worker-2 | `node --test machine/test/project-mcp-codex.test.js`; `bash machine/test/run.sh` | done |
 
 ## Log
@@ -333,3 +333,12 @@ means today's behaviour, byte for byte: same settings file, same argv.
 - 2026-11-18 — Choice: T2, `machine/adapters/codex.js` command: any `type` other than `"http"` is written as stdio; relies on the reader having already dropped other types.
 - 2026-11-18 — T2: the worker's report said "none" for choices; the scout's list gave the 2 above.
 - 2026-11-18 — T2 accepted (band: scout): Codex `-c mcp_servers.project_<name>.*` overrides and skip warnings; focused tests 6/6 and machine suite 160/160 re-run by the sub-lead.
+- 2026-11-18 — Choice: T1, `machine/lib/project-mcp.js`: valid servers stored with `Object.defineProperty` so a name like `__proto__` is kept as data.
+- 2026-11-18 — Choice: T1, `machine/lib/project-mcp.js`: fallback reasons `stat failed` / `read failed` when an error has no code, and a catch-all returning `read failed`.
+- 2026-11-18 — Choice: T1, `machine/lib/project-mcp.js`: `names` follow `Object.keys` order (integer-like names first), not strict file order.
+- 2026-11-18 — Choice: T1, `machine/adapters/claude.js`: `Object.hasOwn` for the rejected-name check.
+- 2026-11-18 — Choice: T1, `machine/test/project-mcp.test.js`: the service test stubs `agy.prepare` and uses its own fake bin on `PATH` instead of `service.test.js`'s helpers.
+- 2026-11-18 — T1: the worker's report said "none" for choices; the scout's list gave the 5 above.
+- 2026-11-18 — T1 accepted (band: scout): reader, service wiring and log lines, Claude and Antigravity adapters, README section, router row. Sub-lead re-ran: focused 6/6, machine 160/160; viewer 632/632 on the merged branch.
+- 2026-11-18 — Integration (sub-lead): `machine/lib/project-mcp.js` now opens `.mcp.json` non-blocking and re-checks regular-file and size on the open handle, closing the stat-then-open window the scout flagged.
+- 2026-11-18 — Integration (sub-lead): the existing test `Codex and Antigravity first messages point to prompt files` (`machine/test/service.test.js`) ran Antigravity's `prepare` against the real home and repointed `~/.gemini/config/hooks.json` at whichever worktree ran the suite; it now runs under a temp `HOME`. The real file was restored to the canonical clone's hook by running the canonical `prepare`. Outside the Spec; test-only.
