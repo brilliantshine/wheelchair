@@ -62,6 +62,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 22 | The check is keyed by the file's hash only; any checkout with the same file reuses it | Honours Decision 2 ("once per change"); avoids rerunning tools on every worker start | review-round-5 |
 | 23 | A server that rejects the 2025-06-18 handshake is "not checked", not a problem | Antigravity's newer client may reach servers the check cannot; avoid false cards | review-round-5 |
 | 24 | Supersedes 12, 17, 20, 21 where they differ: the check runs during the agent start (bounded ~11 s, only after a change or while a tool has a problem) and its result returns with the start answer as a whole-state snapshot ordered by `seq`. No background check, no hub pulling, no new route | Collin's pick after three review rounds kept finding race and recovery problems in the background design | user |
+| 25 | The check runs before the tmux launch, not alongside it; starts queued behind a check that began after they arrived reuse its result even with problems | Nothing to roll back on cancel, restart or write failure; a burst of starts never runs a hanging check more than once | review-round-6 |
 
 ## Spec
 
@@ -130,7 +131,7 @@ For a tools-getting session with servers:
 - sse (legacy 2024-11-05 transport): GET `url` with the configured headers and `Accept: text/event-stream`; require 200, content type `text/event-stream` and an `endpoint` event. Resolve its data against `url`; an endpoint on a different origin (scheme, host, port) → `answered, but not as an MCP server`, and nothing is sent to it; then run the same three-step handshake by POSTing each message to that endpoint with the configured headers (expect 2xx) and reading answers from the stream. ok only when `tools/list` answers. Close the stream after.
 - Reasons (fixed text; never variable values, header values, server output or exception messages):
   `program not found` (ENOENT), `program could not start`, `exited before answering`, `did not answer within 10 seconds`, `needs login` (HTTP 401/403), `server error <status>`, `could not connect`, `uses a variable that isn't set: NAME`, `answered, but not as an MCP server`.
-- Protocol: if `initialize` gets a JSON-RPC error, or an answer whose `protocolVersion` the check does not support, the result is `{ ok: false, reason: "uses a protocol version wheelchair can't check", unsupported: true }`: information, like `login`, never a problem. (Antigravity's client opens with `server/discover`; a server that only speaks newer protocol versions may work for agents and still not answer this check.)
+- Protocol: the check requests `2025-06-18` and accepts an answer of `2025-06-18`, `2025-03-26` or `2024-11-05` (legacy SSE servers answer `2024-11-05`). It is `{ ok: false, reason: "uses a protocol version wheelchair can't check", unsupported: true }` (information, never a problem) only when `initialize` answers with another `protocolVersion`, or with a JSON-RPC error whose `data.supported` is an array (the MCP form of a version rejection). Any other error answer is `answered, but not as an MCP server`, a problem. (Antigravity's client opens with `server/discover`; a server that only speaks newer versions may work for agents and still not pass this check.)
 - `login: true` on a `needs login` result when the server's config has no `Authorization` header and no header with `${...}` in it: the tool expects a login that a CLI keeps itself (OAuth). Such a result is information, not a problem (section 8).
 - Exceptions inside the check are logged with fixed text plus the server name only.
 
@@ -144,16 +145,16 @@ The check runs during the start; its result comes back with the start answer (De
   { seq, file: [{names, text}], clis: { claude: [...], codex: [...], agy: [...] },
     hash, result: null | { started, at, results }, probes: [{marker, pid, started}] }
   ```
-- At every tools-getting start of the thread (any worktree), after the reader and adapter ran, this runs in one per-thread serial queue (a promise chain keyed by thread id), concurrently with the tmux launch; `startIn` awaits both before registering the session (`this.sessions[name] = session`):
+- At every tools-getting start of the thread (any worktree), after the reader and adapter ran, this runs in one per-thread serial queue (a promise chain keyed by thread id), **before** the tmux launch and before `startIn`'s existing cancellation check that precedes `systemd-run` (`machine/service.js:621`). Nothing is launched until it finishes, so a service restart or a handoff cancel during the check leaves no pane:
   1. Reader failure (`mcp: null`, not a reset): if in the thread's worktree, `file` = reader lines. Nothing else changes; no check.
   2. Reset (reader confirmed no tools: no `.mcp.json`, or a valid file whose `mcpServers` is empty), in the thread's worktree only: `file` = [], every `clis[*]` = [], `hash` = null, `result = { at: now, results: [] }`. In another worktree a reset changes nothing.
   3. Otherwise: `clis[cli]` = this start's adapter skip lines; in the thread's worktree also `file` = reader lines. Each start notes `arrived` (time it entered the queue). Reuse the result when `hash` equals this start's and either no result is a problem (not ok, not `login`, not `unsupported`) or `result.started` ≥ `arrived` (a check that began after this start arrived, so it is as fresh as this start could get). Otherwise run the check in this start's worktree and set `hash` and `result = { started, at: now, results }`.
   4. `seq` += 1; save; set `session.project_tools = { seq, file, clis, result }` (a copy of the whole state).
-- Because the queue is per thread, starts that arrive during a check wait for it and then reuse its result (same hash), even when it found problems, so a burst of starts runs at most one check after the burst begins: no start waits for more than two checks (~22 s). A check that throws logs fixed text and leaves `hash` and `result` unchanged.
+- Because the queue is per thread, starts that arrive during a check wait for it and then reuse its result (same hash), even when it found problems, so a burst of starts runs at most one check after the burst begins: no start waits for more than two checks (~22 s). A check that throws logs fixed text and leaves `hash` and `result` unchanged. A state-file write that fails is logged; the start goes on with the in-memory state and its snapshot (the file is rewritten at the next change).
 - The check is bounded: each server 10 s, all servers in parallel, so a start waits at most about 11 s (10 s plus 1 s for killing). It runs only after `.mcp.json` changed or while a tool has a problem.
 - A retried start that returns the registered session (or joins the starting one via `startingNames`) carries the same `project_tools`; it changes no state.
 - Probe processes, reusing `createProc` from `machine/lib/aside-turns.js` (export it; parameterize `marked` by variable name): before spawning, record `{marker}` in `probes` and save, `marker` = `<thread_id>-<seq>-<n>`; spawn with env `WHEELCHAIR_PROJECT_PROBE=<marker>`; then add `pid` and its start time. Remove the entry when reaped. At service startup, for each recorded probe, kill the groups of `proc.marked(marker)` plus the recorded pid if its start time still matches (as `AsideTurns.load` does), then clear `probes`.
-- No new route, no event: the start answer is the only way results leave the machine.
+- No new route, no event: the start answer is the only way results leave the machine. `project_tools` is stored on the machine session (so a retried start returns it) but omitted from the machine's session-list and status responses (`machine/service.js:1149-1165`, `:1476`, `:1511-1512`).
 
 ### 7. Skip lines
 
@@ -197,8 +198,8 @@ The check runs during the start; its result comes back with the start answer (De
 - `bash machine/test/run.sh`, new tests:
   - Codex: bearer, env header, literal header (real in argv, `<redacted>` in `session.command`), mixed `${}` header skip, duplicate header skip, sse skip, non-ASCII budget (under 64 Ki UTF-16 units, over 64 KiB bytes → dropped).
   - Antigravity: plugin files and `--add-dir` for tool roles, none for reviewer; http entry written with `type: "http"`; `${NAME}` and `${NAME:-default}` expanded in env, args, url and headers from a fake tmux environment; unset variable → skip line naming only the variable; other forms skip; same-key env left out of the file; files 0600 and dirs 0700; the expanded value absent from `session.command`, the log, `project_tools.clis` and the card; sweep deletes the expanded file; sweep removes dirs of sessions not live, keeps live and starting ones, removes nothing when tmux state is unknown; no old warning.
-  - Check: no redirect followed; SSE endpoint on another origin refused with nothing sent; `ping` from server answered; mismatched ids ignored; legacy SSE full handshake via endpoint (endpoint POST 401 → needs login); fake stdio servers (ok with tools array; ENOENT; exit early; hang → timeout; result without `tools` array → not MCP; server request answered `-32601`; unset variable); fake HTTP server (ok with session id and protocol header asserted on later requests; 401 → needs login, `login: true` only without auth headers); fake SSE server (endpoint event → ok; HTML 200 → not ok); no variable value in any result or log line.
-  - Service: a burst of starts behind a check with a problem reuses it (no start waits more than two checks); check runs during the start and before registration, concurrently with the tmux launch; start waits at most ~11 s with a hanging server; a second concurrent start waits and reuses the result; `seq` increases per start; worker start replaces its CLI's lines but never `file` or resets; reset only from the thread's worktree (by path; a verifier checkout on the same branch does not qualify); reader failure keeps CLI lines and results; rerun on hash change or a problem, not on a checkout change with the same hash, not for `login`/`unsupported`-only results; no check for non-tool roles; repeated start returns the same `project_tools`; probe recorded before spawn and killed by marker at startup; budget-drop line names every dropped server; sweep timer removes an agy dir after its pane exits.
+  - Check: no redirect followed; SSE endpoint on another origin refused with nothing sent; `ping` from server answered; mismatched ids ignored; legacy SSE full handshake via endpoint answering `2024-11-05` (endpoint POST 401 → needs login); `initialize` error with `data.supported` → unsupported, other error → problem; fake stdio servers (ok with tools array; ENOENT; exit early; hang → timeout; result without `tools` array → not MCP; server request answered `-32601`; unset variable); fake HTTP server (ok with session id and protocol header asserted on later requests; 401 → needs login, `login: true` only without auth headers); fake SSE server (endpoint event → ok; HTML 200 → not ok); no variable value in any result or log line.
+  - Service: nothing launched until the check finishes (a cancel during the check leaves no pane); a failed state write still starts the agent; `project_tools` absent from machine session-list and status responses; a burst of starts behind a check with a problem reuses it (no start waits more than two checks); check runs during the start, before the tmux launch; start waits at most ~11 s with a hanging server; a second concurrent start waits and reuses the result; `seq` increases per start; worker start replaces its CLI's lines but never `file` or resets; reset only from the thread's worktree (by path; a verifier checkout on the same branch does not qualify); reader failure keeps CLI lines and results; rerun on hash change or a problem, not on a checkout change with the same hash, not for `login`/`unsupported`-only results; no check for non-tool roles; repeated start returns the same `project_tools`; probe recorded before spawn and killed by marker at startup; budget-drop line names every dropped server; sweep timer removes an agy dir after its pane exits.
 - `node --test viewer/test/*.test.js`, new tests: card opens; same names with different reasons keep the card and update its body; different names replace it; reset closes it; per-CLI lines kept apart; an older `seq` snapshot (delayed retry) ignored; `login` and `unsupported` results not problems; "Connects … (not on Codex)"; applied in `startSession`, a queued promotion and `resumeUnanswered` without re-taking the thread lock; `project_tools` not left on the session record; default `wc.js session list` shows `project_tools`.
 - `node --test test-support/test/*.test.js` still passes.
 - Manual (hearth only, one model turn): an Antigravity worker in a project with a stdio tool can call it; an Antigravity reviewer in the same thread cannot.
@@ -213,7 +214,7 @@ re-raise them.
 |------|--------------|-------|
 | The check and an agent's CLI can run the same stdio server at once; a server holding an exclusive resource (fixed port) may fail in one of them | Several agents in one thread already run their own copies at once; such a server is broken for wheelchair regardless of the check | review-round-1 |
 | An Antigravity skip line for an unset variable stays on the card after Collin sets it, until the next Antigravity start in the thread | The check line clears sooner; a CLI's lines can only change when that CLI starts | review-round-3 |
-| A start waits up to ~11 s (~22 s if it queues behind a running check) after `.mcp.json` changes or while a tool has a problem | Collin's choice (Decision 24) for a simpler, more reliable check | user |
+| A start waits up to ~11 s (~22 s if it queues behind a running check), on top of today's start time, after `.mcp.json` changes or while a tool has a problem | Collin's choice (Decision 24) for a simpler, more reliable check | user |
 | The check result describes the checkout last checked; a relative program present in one checkout and not another can make it differ from what another agent sees | Checkouts of a thread share the file; a different file reruns the check | review-round-4 |
 | A tool that needs an OAuth login (`login` result) is never on a card by itself; a Codex or Antigravity agent without that CLI's login silently lacks it | wheelchair cannot see CLI logins; the default `session list` shows it, and Collin logs in per CLI | review-round-2 |
 | `--add-dir` makes the per-session plugin dir part of an Antigravity agent's workspace, so the agent could edit its own `mcp_config.json` | The agent already has a shell and can launch any program; the dir is its own and removed when it ends | review-round-1 |
@@ -343,9 +344,27 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 6 — 2026-11-18
 
-**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: started with no provider flag (intent start was waiting); cross-family: unknown.
 
 **Changed since Round 5:** Collin chose to run the check during agent start (Decision 24). §6 rewritten (check in a per-thread queue during the start, whole-state snapshot with `seq` on the start answer, probe markers); §8 hub applies snapshots by `seq`, no pulling; §5 `unsupported` (Decision 23); check keyed by hash (Decision 22); Edge cases; Validation; Accepted Risks.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Queued starts each rerun a failing check (K×11 s) | upheld | §6 `arrived`/`started` reuse rule; Decision 25 |
+| intent | minor | `cli_lines` leftover in Validation | upheld | Validation |
+| mechanics | blocking | Service restart between tmux launch and check end | upheld | §6 check before launch |
+| mechanics | blocking | Handoff cancel during the check registers a killed pane | upheld | §6 check before the existing cancel check and launch |
+| mechanics | major | State write failure with a live pane | upheld | §6 write failure logged, start continues |
+| mechanics | blocking | Queue and retry break the start bound | upheld | §6 (same as intent major) |
+| mechanics | blocking | `initialize` error classification | upheld | §5 version rejection needs `data.supported` |
+| mechanics | major | Legacy SSE version negotiation | upheld | §5 accepted versions; Validation fixture |
+| mechanics | minor | Snapshot exposed via machine session list/status | upheld | §6 omitted there |
+
+### Round 7 — 2026-11-18
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 6:** §5 protocol versions and version-rejection rule; §6 check runs before the tmux launch, `arrived`/`started` reuse rule, write-failure handling, snapshot hidden from machine list/status; Validation; Accepted Risks; Decision 25.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
