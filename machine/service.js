@@ -1222,6 +1222,46 @@ class MachineService {
       return { idea_status: status(idea), plan_status: status(plan), map_committed: map.ok };
     };
     const { action, branch, head, worktree, slug } = input;
+    const claimState = async () => {
+      let remote;
+      try { remote = await this.fetchHandoffBranch(repo, branch); }
+      catch (error) { return { result: 'unknown', error: error.message }; }
+      const tip = remote.remote_tip;
+      if (!remote.remote_has_branch) return { result: 'unknown' };
+      if (tip === input.sha || await ancestor(input.sha, tip)) return { result: 'landed', remote_tip: tip };
+      if (tip === input.parent) return { result: 'parent', remote_tip: tip };
+      let picked_up_at = null;
+      if (await ancestor(input.parent, tip)) {
+        const commits = await run('rev-list', '--reverse', '--ancestry-path', `${input.parent}..${tip}`);
+        if (commits) picked_up_at = await run('show', '-s', '--format=%cI', commits.split('\n')[0]);
+      }
+      return { result: 'moved', remote_tip: tip, picked_up_at };
+    };
+    if (action === 'claim-commit') return { sha: await run('commit-tree', `${input.parent}^{tree}`, '-p', input.parent, '-m', input.message) };
+    if (action === 'claim-state') return claimState();
+    if (action === 'claim-push') {
+      let state = await claimState(); let pushed;
+      if (state.result === 'parent') {
+        pushed = await git('push', `--force-with-lease=refs/heads/${branch}:${input.parent}`, 'origin', `${input.sha}:refs/heads/${branch}`);
+        state = await claimState();
+      }
+      if (state.result === 'parent' || state.result === 'unknown') {
+        const error = pushed && !pushed.ok ? (pushed.stderr || pushed.stdout).trim().split('\n').pop() : state.error;
+        return { result: 'unknown', ...(error ? { error } : {}) };
+      }
+      return state;
+    }
+    if (action === 'claim-revoke') {
+      let state = await claimState();
+      if (state.result === 'unknown' || state.remote_tip === input.parent) return { result: 'waiting' };
+      if (state.remote_tip !== input.sha) return { result: 'gone' };
+      const pushed = await git('push', `--force-with-lease=refs/heads/${branch}:${input.sha}`, 'origin', `${input.parent}:refs/heads/${branch}`);
+      if (pushed.ok) return { result: 'revoked' };
+      state = await claimState();
+      if (state.result === 'unknown' || state.remote_tip === input.parent) return { result: 'waiting' };
+      if (state.remote_tip !== input.sha) return { result: 'gone' };
+      return { result: 'failed', error: (pushed.stderr || pushed.stdout).trim().split('\n').pop() || 'git push failed' };
+    }
     if (action === 'status') {
       const symbolic = await git('-C', worktree, 'symbolic-ref', '--quiet', '--short', 'HEAD');
       const current = symbolic.ok ? symbolic.stdout.trim() : null;

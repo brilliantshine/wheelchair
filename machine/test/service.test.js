@@ -1478,3 +1478,33 @@ test('handoff status, exact push, and inspect read committed state and ancestry'
     body = await call('inspect', { branch, head: old, slug: 'sample', fallback_head: old }); assert.equal(body.local_head, old, JSON.stringify(body)); assert.equal(body.worktree_exists, false, JSON.stringify(body));
   } finally { await env.close(); }
 });
+
+test('handoff claims use exact leases, state checks, and safe revocation', async () => {
+  const root = await temp(); const env = await service(root, { realGit: true }); try {
+    const id = '012345abcdef'; const repo = await project(root); const branch = `wc/${id}`;
+    const parent = git(['-C', repo, 'rev-parse', 'HEAD']).stdout.trim();
+    git(['-C', repo, 'push', 'origin', `HEAD:refs/heads/${branch}`]);
+    const call = async (action, fields) => { const response = await api(env, 'POST', '/v1/handoff', { action, thread_id: id, project: repo, ...fields }, hubHeader); assert.equal(response.status, 200, JSON.stringify(response.body)); return response.body; };
+    const first = await call('claim-commit', { parent, message: 'pickup nonce1' });
+    const second = await call('claim-commit', { parent, message: 'pickup nonce2' });
+    assert.notEqual(first.sha, second.sha, JSON.stringify({ first, second }));
+    const args = { branch, parent, sha: first.sha };
+    let body = await call('claim-state', args); assert.equal(body.result, 'parent', JSON.stringify(body)); assert.equal(body.remote_tip, parent, JSON.stringify(body));
+    body = await call('claim-revoke', args); assert.equal(body.result, 'waiting', JSON.stringify(body));
+    body = await call('claim-push', args); assert.equal(body.result, 'landed', JSON.stringify(body)); assert.equal(body.remote_tip, first.sha, JSON.stringify(body));
+    const hook = path.join(root, 'origin.git/hooks/pre-receive'); await write(hook, '#!/bin/sh\necho denied >&2\nexit 1\n', 0o755);
+    body = await call('claim-revoke', args); assert.equal(body.result, 'failed', JSON.stringify(body)); assert.ok(body.error, JSON.stringify(body));
+    await fs.unlink(hook);
+    body = await call('claim-revoke', args); assert.equal(body.result, 'revoked', JSON.stringify(body));
+    const replacement = await call('claim-push', { branch, parent, sha: second.sha }); assert.equal(replacement.result, 'landed', JSON.stringify(replacement));
+    body = await call('claim-push', args); assert.equal(body.result, 'moved', JSON.stringify(body)); assert.equal(body.remote_tip, second.sha, JSON.stringify(body));
+    body = await call('claim-revoke', args); assert.equal(body.result, 'gone', JSON.stringify(body));
+    const child = await call('claim-commit', { parent: second.sha, message: 'child' });
+    git(['-C', repo, 'push', 'origin', `${child.sha}:refs/heads/${branch}`]);
+    body = await call('claim-revoke', { branch, parent, sha: second.sha }); assert.equal(body.result, 'gone', JSON.stringify(body));
+    git(['-C', repo, 'push', '--force', 'origin', `${parent}:refs/heads/${branch}`]);
+    body = await call('claim-push', { branch, parent: second.sha, sha: child.sha }); assert.equal(body.result, 'moved', JSON.stringify(body)); assert.equal(body.remote_tip, parent, JSON.stringify(body));
+    git(['-C', repo, 'push', 'origin', `:refs/heads/${branch}`]);
+    body = await call('claim-push', args); assert.equal(body.result, 'unknown', JSON.stringify(body));
+  } finally { await env.close(); }
+});
