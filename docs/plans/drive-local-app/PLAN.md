@@ -12,14 +12,7 @@ get buried as this file grows. **Map:** `MAP.md`.
 
 ## Open Questions
 
-### Q1: System tools with a one-time root install, or wheelchair's own input code?
-- **Context:** hearth already has Xvfb (the invisible screen) and ffmpeg (can capture it),
-  but not xdotool (sends mouse and keys); installing it needs root (`apt install xdotool`).
-  `libxtst6` is installed, so a hand-written X11 client in Node could send input without root.
-- **Options:** (a) depend on Xvfb, ffmpeg and xdotool, installed once through a sudo card,
-  and report clearly when one is missing; (b) write a small X11 input client into wheelchair
-  so nothing new needs root.
-- **Recommendation:** (a). Proven tools, little code; the one-time install is cheap.
+(none open)
 
 ## Watch List
 
@@ -40,6 +33,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 6 | Screenshots stay as files the agent reads; they reach the thread only when the lead posts an image card | Reuses the existing image card; no flood of pictures in the thread | defaulted |
 | 7 | The agent chooses the launch command for the project; no per-project launch config | Matches "without app-specific setup" in IDEA.md | defaulted |
 | 8 | Linux only in this part; macOS is out of this thread | IDEA.md constraints: runs on hearth | defaulted |
+| 9 | Use the system tools Xvfb (screen), ffmpeg (capture) and xdotool (mouse and keys); xdotool is installed once on hearth through a sudo card; a missing tool is reported by name | Collin's pick ("Install xdotool once") | user |
 
 ## Spec
 
