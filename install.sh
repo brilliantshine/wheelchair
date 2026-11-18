@@ -39,13 +39,17 @@ codex_home=${WHEELCHAIR_CODEX_HOME:-"$HOME/.codex"}
 if [[ ${WHEELCHAIR_PRESENT+x} ]]; then
   case ",$WHEELCHAIR_PRESENT," in *,claude,*) claude_present=1 ;; *) claude_present=0 ;; esac
   case ",$WHEELCHAIR_PRESENT," in *,codex,*) codex_present=1 ;; *) codex_present=0 ;; esac
+  case ",$WHEELCHAIR_PRESENT," in *,agy,*) agy_present=1 ;; *) agy_present=0 ;; esac
+  case ",$WHEELCHAIR_PRESENT," in *,kimi,*) kimi_present=1 ;; *) kimi_present=0 ;; esac
 else
   command -v claude >/dev/null 2>&1 && claude_present=1 || claude_present=0
   command -v codex >/dev/null 2>&1 && codex_present=1 || codex_present=0
+  command -v agy >/dev/null 2>&1 && agy_present=1 || agy_present=0
+  if command -v kimi >/dev/null 2>&1 || [[ -x $HOME/.kimi-code/bin/kimi ]]; then kimi_present=1; else kimi_present=0; fi
 fi
 
-if (( ! claude_present && ! codex_present )); then
-  printf '%s: neither claude nor codex is on PATH; installed nothing\n' "${0##*/}" >&2
+if (( ! claude_present && ! codex_present && ! agy_present && ! kimi_present )); then
+  printf '%s: no claude, codex, agy or kimi found; installed nothing\n' "${0##*/}" >&2
   exit 1
 fi
 
@@ -68,6 +72,8 @@ esac
 
 (( claude_present )) && printf 'harness found: claude\n'
 (( codex_present )) && printf 'harness found: codex\n'
+(( agy_present )) && printf 'harness found: agy\n'
+(( kimi_present )) && printf 'harness found: kimi\n'
 if [[ $(platform) == Darwin ]]; then
   echo "sudo helper: not available on macOS; sudo cards won't work on this machine"
 elif [[ ! -f ${WHEELCHAIR_SUDO_TEST_ROOT:-}/etc/systemd/system/wheelchair-sudo.service || ! -f ${WHEELCHAIR_SUDO_TEST_ROOT:-}/usr/local/lib/wheelchair-sudo/helper.py ]]; then
@@ -104,7 +110,7 @@ for i in "${!retired_names[@]}"; do
   fi
 done
 
-if (( codex_present )); then
+if (( claude_present || codex_present || agy_present || kimi_present )); then
   if "$ROOT/codex/model.sh" init; then
     echo "codex models: initialized"
   else
@@ -365,11 +371,13 @@ configure_service() {
   mkdir -p "$cache_root"
   printf '{"serve": true, "origin": "%s"}\n' "$origin" > "$serving_file"
   # systemd starts user services with a bare PATH, and every agent session inherits the
-  # service's PATH through tmux. Give it this login's PATH, led by wherever claude and codex
-  # live, or a session dies at once with "claude: not found".
+  # service's PATH through tmux. Give it this login's PATH, led by the CLI directories.
   service_path=$PATH
-  for cli in codex claude; do
-    cli_path=$(command -v "$cli" 2>/dev/null) || continue
+  for cli in codex claude agy kimi; do
+    cli_path=$(command -v "$cli" 2>/dev/null) || {
+      [[ $cli == kimi && -x $HOME/.kimi-code/bin/kimi ]] || continue
+      cli_path=$HOME/.kimi-code/bin/kimi
+    }
     service_path="${cli_path%/*}:$service_path"
   done
   if [[ $(platform) == Darwin ]]; then
