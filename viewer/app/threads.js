@@ -135,7 +135,9 @@ async function restartLead(hub, id) {
       .filter((message) => message.source === 'collin' || message.source === 'card')
       .slice(-20),
   };
-  const context = `[wc:context restart] Thread state:\n${JSON.stringify(state)}`;
+  if (thread.imported) state.import = { stage: thread.imported.stage, exported_at: thread.imported.exported_at, pr_url: thread.imported.pr_url, history: (thread.imported.history || []).slice(-50) };
+  const firstImport = thread.imported && !thread.sessions.some((session) => session.role === 'lead' && Date.parse(session.created_at) > Date.parse(thread.imported.at));
+  const context = `[wc:context ${firstImport ? 'import' : 'restart'}] Thread state:\n${JSON.stringify(state)}`;
   // The thread keeps its worktree across leads; asking for a new one would fail on the
   // existing wc/<thread-id> branch.
   const lead = await startSession(hub, thread, {
@@ -356,8 +358,7 @@ async function dismiss(hub, id, cardId) {
 }
 
 function mergedPr(thread) {
-  return [...(thread.cards || [])].reverse().find((card) =>
-    card.kind === 'done' && !card.replaced && typeof card.pr_url === 'string' && card.pr_url.trim())?.pr_url || null;
+  return require('./handoff.js').donePr(thread);
 }
 
 async function pollMerged(hub) {
