@@ -84,6 +84,10 @@ function buildHandoffFile(thread, { head, stage, repository, pr_url }) {
 const NOT_POINT = 'Not at a stopping point: export after the idea is confirmed, once the plan is approved, or when it’s done'.replace('it’s', "it's");
 function unfinished(hub, thread) { return Boolean(thread.handoff_op && !hub.runningHandoffOps?.has(thread.id)); }
 function frozen(hub, thread) { return Boolean(thread.handed_off || unfinished(hub, thread)); }
+function refuseFrozen(hub, thread) {
+  if (unfinished(hub, thread)) throw require('./state.js').appError(409, 'Retry the unfinished import first');
+  if (thread.handed_off) throw require('./state.js').appError(409, 'handed off');
+}
 function quietReason(hub, thread) {
   const sessions = thread.sessions || [];
   if (sessions.some((s) => s.role !== 'lead' && s.live) || (thread.asides || []).some((aside) => aside.status === 'open' || aside.turn)) return 'Agents are still working';
@@ -121,5 +125,5 @@ function exportReason(hub, thread, status, { pressed = false } = {}) {
   if (!status || status.branch !== `wc/${thread.id}` || !stageFor(thread, status)) return NOT_POINT;
   return null;
 }
-module.exports = { historyText, buildHandoffFile, validateHandoffFile, handoffFileName, unfinished, frozen, quietReason, stageFor, exportReason };
+module.exports = { historyText, buildHandoffFile, validateHandoffFile, handoffFileName, unfinished, frozen, refuseFrozen, quietReason, stageFor, exportReason };
 

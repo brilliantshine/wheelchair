@@ -89,3 +89,37 @@ test('export reasons follow their order and committed stopping points', () => {
   status.plan_status = 'done'; thread.cards.push({ kind: 'done', pr_url: 'url' }); status.remote_tip = 'b'; assert.equal(reason(), 'A fix is still being checked');
   status.remote_tip = 'a'; status.pr_state = 'CLOSED'; assert.match(reason(), /merged or closed/);
 });
+
+test('frozen threads refuse mutation entry points and never deliver queued work', async () => {
+  const { setup, close, api, machinePost, thread: makeThread } = require('./helpers/app.js');
+  const { Hub } = require('../app/hub.js');
+  const c = await setup();
+  try {
+    const made = await makeThread(c); const lead = made.sessions[0];
+    const hub = new Hub({ stateDir: c.state });
+    for (const field of ['handed_off', 'handoff_op']) {
+      const current = await hub.thread(made.id);
+      current[field] = {}; current.sessions[0].queue = [{ text: 'waiting', source: 'collin', at }]; current.sessions[0].ready = true; current.sessions[0].turn_ended = true;
+      await hub.save(current);
+      const expected = field === 'handed_off' ? 'handed off' : 'Retry the unfinished import first';
+      for (const [route, body] of [
+        [`/threads/${made.id}/messages`, { text: 'hi' }], [`/threads/${made.id}/send-now`, { at }],
+        [`/threads/${made.id}/cards/no/press`, { action: 'picked', value: 'x' }], [`/threads/${made.id}/cards/no/dismiss`, {}],
+        [`/threads/${made.id}/restart`, {}], [`/threads/${made.id}/asides`, {}], [`/threads/${made.id}/asides/no/messages`, { text: 'hi' }],
+        [`/sessions/${lead.name}/keys`, { keys: 'Enter' }],
+      ]) { const response = await api(c, route, { method: 'POST', body }); assert.equal(response.status, 409, route); assert.equal(response.body.detail, expected); }
+      const posted = await machinePost(c, '/machine/cards', { thread_id: made.id, session: lead.name, kind: 'title', title: 'x' }); assert.equal(posted.status, 409); assert.equal(posted.body.detail, expected);
+      const start = await machinePost(c, '/machine/session', { calling_session: lead.name, action: 'start', role: 'worker', attempt_id: 'frozen', brief: 'x' }); assert.equal(start.status, 409); assert.equal(start.body.detail, expected);
+      const upload = await fetch(`${c.server.url}/api/threads/${made.id}/uploads?name=x`, { method: 'POST', headers: { 'x-graph-token': c.server.token, origin: new URL(c.server.url).origin }, body: 'hi' }); assert.equal(upload.status, 409);
+      if (field === 'handoff_op') { const archived = await api(c, `/threads/${made.id}/archive`, { method: 'POST', body: {} }); assert.equal(archived.status, 409); assert.equal(archived.body.detail, expected); }
+      const frozen = await hub.thread(made.id); const target = frozen.sessions[0];
+      const before = target.queue.length; await hub.enqueue(frozen, target.name, 'discarded', 'app'); assert.equal(target.queue.length, before); assert.equal(await hub.deliver(frozen, target.name), false);
+      frozen.sessions[0].limited_until = '2000-01-01T00:00:00.000Z'; await hub.save(frozen);
+      await require('../app/sessions.js').releaseLimits(hub);
+      assert.equal((await hub.thread(made.id)).sessions[0].queue.length, before);
+      delete frozen[field]; await hub.save(frozen);
+    }
+    const archivedThread = await hub.thread(made.id); archivedThread.handed_off = {}; await hub.save(archivedThread);
+    assert.equal((await api(c, `/threads/${made.id}/archive`, { method: 'POST', body: {} })).status, 200);
+  } finally { await close(c); }
+});

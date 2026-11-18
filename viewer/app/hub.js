@@ -126,7 +126,7 @@ class Hub {
   enqueue(thread, name, text, source, first) {
     return sessions.enqueue(this, thread, name, text, source, first);
   }
-  sendNow(id, at) { return this.withThread(id, async () => sessions.sendNow(this, await this.thread(id), String(at || ''))); }
+  sendNow(id, at) { return this.withThread(id, async () => { const thread = await this.thread(id); handoff.refuseFrozen(this, thread); return sessions.sendNow(this, thread, String(at || '')); }); }
   deliver(thread, name, options) { return sessions.deliver(this, thread, sessions.session(thread, name), options); }
   appendSent(thread, entries) { return this.state.appendSent(thread.id, entries); }
   async event(payload) { const result = await this.withThread(payload.thread_id, () => sessions.event(this, payload)); if (payload.reading && !result.duplicate) await sessions.retryWaiting(this); return result; }

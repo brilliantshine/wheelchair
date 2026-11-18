@@ -71,6 +71,7 @@ async function upload(hub, request, response, url, id) {
   if (typeof length !== 'string' || !/^\d+$/.test(length) || Number(length) > UPLOAD_LIMIT) throw appError(413, 'missing or oversized content-length');
   const thread = await hub.withThread(id, async () => {
     const current = await hub.thread(id);
+    require('./handoff.js').refuseFrozen(hub, current);
     const lead = current.sessions.find((session) => session.role === 'lead' && session.live);
     if (current.archived || !lead) throw appError(409, 'no live lead or thread is archived');
     hub.uploadsInFlight.set(id, (hub.uploadsInFlight.get(id) || 0) + 1);
@@ -429,6 +430,7 @@ async function handleThreads(hub, request, response, url, bits, body) {
     const asides = require('./asides.js');
     const result = await hub.withThread(id, async () => {
       const thread = await hub.thread(id);
+      if (request.method !== 'GET') require('./handoff.js').refuseFrozen(hub, thread);
       if (request.method !== 'GET' && thread.archived) throw appError(409, 'this thread is archived');
       if (bits.length === 3 && request.method === 'POST') return { status: 201, body: asides.brief(await asides.create(hub, thread, body)) };
       if (!bits[3]) throw appError(404, 'route not found');
@@ -475,6 +477,7 @@ async function handleThreads(hub, request, response, url, bits, body) {
   if (request.method === 'POST' && bits[2] === 'messages') {
     await hub.withThread(id, async () => {
       const thread = await hub.thread(id);
+      require('./handoff.js').refuseFrozen(hub, thread);
       const lead = [...thread.sessions].reverse().find((item) => item.role === 'lead' && item.live);
       if (!lead) throw appError(409, 'no live lead');
       await hub.enqueue(thread, lead.name, String(body.text || ''), 'collin');
@@ -537,6 +540,7 @@ async function handleSessions(hub, request, response, bits, body) {
     }
     const result = await hub.withThread(thread.id, async () => {
       const current = await hub.thread(thread.id);
+      require('./handoff.js').refuseFrozen(hub, current);
       const sent = await hub.call(
         current.machine,
         `/v1/sessions/${encoded}/keys`,

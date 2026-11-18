@@ -211,6 +211,7 @@ async function resumeUnanswered(hub, thread, session) {
 }
 
 async function startSession(hub, thread, input) {
+  require('./handoff.js').refuseFrozen(hub, thread);
   const role = input.role;
   const title = typeof input.title === 'string' ? input.title.trim().slice(0, 80) : '';
   if (!SESSION_ROLES.has(role)) throw appError(400, 'unknown role');
@@ -407,6 +408,7 @@ function session(thread, name) {
 
 async function enqueue(hub, thread, name, text, source = 'app', first = false, { save = true, deliver: deliverNow = true, quiet: quietTag, about } = {}) {
   const target = session(thread, name);
+  if (require('./handoff.js').frozen(hub, thread)) return target;
   target.queue ||= [];
   thread.queues ||= {};
   const message = { text, source, at: new Date().toISOString(), ...(quietTag ? { quiet: quietTag } : {}), ...(about ? { about } : {}) };
@@ -425,12 +427,12 @@ function held(target) {
 }
 
 // `midTurn` skips only the wait for the turn to end; a held or unready session still waits.
-function canDeliver(target, midTurn = false) {
-  return Boolean(target.live && target.ready && (target.turn_ended || midTurn) && !held(target) && target.queue?.length);
+function canDeliver(hub, thread, target, midTurn = false) {
+  return Boolean(!require('./handoff.js').frozen(hub, thread) && target.live && target.ready && (target.turn_ended || midTurn) && !held(target) && target.queue?.length);
 }
 
 async function deliver(hub, thread, target, { midTurn = false } = {}) {
-  if (!canDeliver(target, midTurn)) return false;
+  if (!canDeliver(hub, thread, target, midTurn)) return false;
   const next = target.queue[0];
   let submitted = next.text;
   let deliveredStyleVersion;
@@ -588,6 +590,7 @@ async function sessionRequest(hub, payload) {
     return { sessions: thread.sessions.map(publicSession), review_families: (await settingsStore.load(hub)).review_families };
   }
   if (payload.action === 'stop') return stopSession(hub, thread, caller, payload.name);
+  if (payload.action === 'start') require('./handoff.js').refuseFrozen(hub, thread);
   if (payload.action === 'start' && payload.effort !== undefined && (caller.role !== 'sub-lead' || payload.role !== 'worker')) throw appError(400, 'effort can only be set for a worker');
   if (payload.action !== 'start' || !ALLOWED_START[caller.role]?.has(payload.role)) {
     throw appError(403, `${caller.role} may not start that session`);
@@ -777,7 +780,7 @@ async function retryQueues(hub) {
       await hub.withThread(listedThread.id, async () => {
         const thread = await hub.thread(listedThread.id);
         for (const target of thread.sessions) {
-          if (canDeliver(target)) await deliver(hub, thread, target);
+          if (canDeliver(hub, thread, target)) await deliver(hub, thread, target);
         }
       });
     } catch {
