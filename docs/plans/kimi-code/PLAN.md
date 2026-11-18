@@ -945,12 +945,17 @@ Filled by Stage 3. One row per worker brief.
 | T4 | Kimi chat parser, report function, hub `last_turn_id`, interrupted turns, `end_reason` in ended notices, Stop 202 in hub | `viewer/app/{chat,sessions,threads}.js`, their tests | standard / gpt-6.1-terra | wc-01b8cb1bf051-worker-3 | `node --test viewer/test/*.test.js` | done |
 | T5 | Installer detects Kimi; protocol docs and README | `install.sh`, `install/`, `protocol/`, `README.md` | standard / gpt-6.1-terra | wc-01b8cb1bf051-worker-4 | `bash install/test/run.sh` | done |
 | T7 | Hub archive keeps the thread unarchived and pending sessions live on a machine `pending: true` archive reply (found by T3, outside its boundary) | `viewer/app/threads.js` `archive()`, `viewer/test/app-kimi-archive.test.js` | light / gpt-6-luna | wc-01b8cb1bf051-worker-8 | `node --test viewer/test/*.test.js` | done |
-| T8 | Kimi has no effort (Decision 46): `effort: false`, no effort select, API and `model.sh` refuse a Kimi effort, Kimi sessions start with none | `viewer/app/providers.js`, `viewer/app/sessions.js` (effort), `viewer/app/routes.js` (models route), `viewer/pages/settings.js`, `codex/`, `viewer/app/API.md`, their tests | standard / claude-sonnet-5-5 | wc-01b8cb1bf051-worker-11 | `bash codex/test/run.sh`; `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser` | running |
+| T8 | Kimi has no effort (Decision 46): `effort: false`, no effort select, API and `model.sh` refuse a Kimi effort, Kimi sessions start with none | `viewer/app/providers.js`, `viewer/app/sessions.js` (effort), `viewer/app/routes.js` (models route), `viewer/pages/settings.js`, `codex/`, `viewer/app/API.md`, their tests | standard / claude-sonnet-5-5 | wc-01b8cb1bf051-worker-11 | `bash codex/test/run.sh`; `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser` | done |
 | T6 | Live checks 1–5 against an isolated machine service and hub from the merged branch (after T1–T5) | `docs/plans/kimi-code/reports/T6.md`; fixes go back as remediation | standard xhigh / gpt-6.1-terra (rung 1: effort, after guardrail) | wc-01b8cb1bf051-worker-10 (attempt 2; attempt 1 wc-01b8cb1bf051-worker-9) | live checks + full validation | done |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
 ## Log
+
+- 2026-11-18 — Choice: T8, `viewer/app/sessions.js`: an `effort` on a Kimi session start is ignored (stored null, not sent), not refused; but `checkEffort` still runs first, so an effort above the Settings ceiling is refused for Kimi too (scout-found, not reported).
+- 2026-11-18 — Choice: T8, `codex/model.sh`: `effort <provider>` usage text still lists kimi (the command accepts it and prints nothing); an existing `kimi.* @effort` pin line now reads as malformed.
+- 2026-11-18 — Choice: T8, `viewer/test/app-hub.test.js`: Kimi session-start test placed there, with the fake machine's kimi marked installed and logged in.
+- 2026-11-18 — T8 accepted (band: scout): codex 123/0, viewer 643/0, browser 774 passed, re-run by the sub-lead.
 
 - 2026-11-18 — T6 late evidence (worker-10, before it was stopped): on the light pin `kimi-code/kimi-for-coding`, launches with `KIMI_MODEL_THINKING_EFFORT=low` and `=max` both showed `thinking: max` and recorded max in `profile.bind`; confirms Decision 46.
 
