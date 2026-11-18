@@ -16,6 +16,7 @@ const shown = new Set([
   'progress',
   'needs',
   'done',
+  'check',
   'diagram',
   'image',
   'stub',
@@ -31,6 +32,7 @@ const roles = {
   progress: ['lead', 'sub-lead'],
   needs: ['lead'],
   done: ['lead'],
+  check: ['lead'],
   diagram: ['lead'],
   image: ['lead'],
   stub: ['lead'],
@@ -129,6 +131,18 @@ const fields = {
     pr_url: text,
     head: (value) => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value),
     note: (value) => value === undefined || text(value),
+  },
+  check: {
+    head: (value) => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value),
+    update: (value) => text(value) && value.length <= 300,
+    steps: (value) => array(value, (step) => object(step)
+      && Object.keys(step).every((key) => ['where', 'do', 'see', 'command', 'agent', 'note'].includes(key))
+      && ['app', 'machine'].includes(step.where)
+      && text(step.do) && step.do.length <= 300 && text(step.see) && step.see.length <= 300
+      && (step.command === undefined || (step.where === 'machine' && text(step.command) && step.command.length <= 1000))
+      && ['matched', 'not-tried', 'broken'].includes(step.agent)
+      && (step.agent === 'matched' ? step.note === undefined
+        : text(step.note) && step.note.length <= 300 && !/[\n\v\f\r\u0085\u2028\u2029]/.test(step.note)), 1) && value.length <= 6,
   },
   diagram: { plan: text, graph: text, title: text, format: (value) => value === undefined || ['graph', 'form', 'html'].includes(value) },
   image: { path: (value) => text(value) && path.isAbsolute(value), title: text },

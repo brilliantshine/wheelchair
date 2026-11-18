@@ -65,8 +65,8 @@ Commit with `node <root>/viewer/app/wc.js git commit --paths <a,b> --message "<m
 a commit without a message is refused.
 
 - You may start: a **mapper** (mapping session), **reviewer** sessions, a **sub-lead**
-  for your own thread, and a **verifier** (for a small fix, or for a fix you make in a
-  done thread). Never a worker: the sub-lead starts those.
+  for your own thread, and a **verifier** (for a small fix, for a fix you make in a
+  done thread, or a steps-only one after any `done`, step 10). Never a worker: the sub-lead starts those.
 - You may stop only sessions your role started in this thread, which includes sessions
   started by an earlier lead that has since died. You stop the sub-lead, and each
   reviewer, verifier and mapper once its `result` arrives. Reviewers and verifiers run in
@@ -119,7 +119,8 @@ Collin picks the project and the machine, then writes in plain words.
   gap surviving two attempts comes to Collin as a `question` card (push the fix as it is,
   or drop it, which you do with `wc.js git revert`). Then push with `wc.js git push -u origin HEAD:wc/<thread-id>`, open the pull request
   with `wc.js git pr`, and follow **Making the pull request mergeable** before posting
-  `done`. Say in your reply what changed.
+  `done`. Say in your reply what changed. After the `done` card, follow step 10 (Check it
+  yourself).
 - **Anything bigger** gets an `offer` card: "Take it into planning?" Taking it into planning,
   or typing instead of answering, makes the thread a feature. "Keep talking first"
   means not yet: keep talking; do not create the plan directory, start mapping or post an
@@ -397,6 +398,7 @@ After the sub-lead's `result` and once it is stopped:
 2. Follow **Making the pull request mergeable** before posting a `done` card: what he can
    do now, what was left as is (each gets a "Start a thread about it"), and the pull request link.
 3. Sub-lead and worker sessions are stopped; their transcripts stay.
+4. After the `done` card is accepted, follow step 10 (Check it yourself).
 
 In two-part mode, if Deferred has rows, post a `stub` immediately after `done`, titled
 "Make <feature> solid", with `depends_on_parent: true`. Its summary starts exactly
@@ -436,10 +438,123 @@ When Collin reports a problem, first run `gh pr view --json state`:
      updated the pull request branch), merge them with `wc.js git merge` and re-verify
      first. Then push with `wc.js git push -u origin HEAD:wc/<thread-id>`.
   4. Follow **Making the pull request mergeable** before posting a new `done` card for the
-     fix, saying what changed, what was re-checked and the pull request link.
+     fix, saying what changed, what was re-checked and the pull request link. Then follow
+     step 10 (Check it yourself) for that `done` card; its steps cover only what the fix
+     changed.
 
 No thread ever pushes to another thread's branch. Every stub starts from the default
 branch and opens its own pull request.
+
+### 10. Check it yourself
+
+Nothing before `done` changes. After every accepted `done` card (planned build, small fix,
+after-done fix) you write steps Collin can follow, have an agent try them, and post one
+`check` card (fields in `cards-lead.md`). The check card is never a condition for `done` or
+the stub.
+
+**Where the steps are done.** A change he can see in an app (wheelchair's or the project's)
+gets steps he follows on his phone: what to open or tap, what he should see. Only a change
+with nothing to see in an app (scripts, the machine service) gets machine commands, each
+with the output to look for. One card may mix both; app steps first. A protocol-only change
+shows in the app, so its steps are `where: app` and name the behaviour to watch for and when
+it shows ("next time a thread finishes, a Check it yourself card follows Done"); if no agent
+could stage that in isolation the step is `agent: not-tried`, `note` "only shows in a later
+thread". Never a step that only proves the merge landed (such as grepping for the new
+text). Machine commands use the installed paths Collin will have after updating.
+
+**Writing.** Draft 1 to 6 steps (usually 3 to 5; a sentence or two per field, readable on a
+phone) from what the change is for: IDEA.md's "What good looks like" for a planned build,
+Collin's request for a small fix, the reported problem for an after-done fix (its steps
+cover only what that fix changed). Each `see` is something he can observe, not "it works".
+Commands use full paths and name the output to look for. `update` says how this project
+picks up a merged change; when you do not know, say so plainly and give your best guess
+marked as such. When the done card is for an already merged pull request, `update` leaves
+out the merge. Never write steps into the Spec (verifiers grade every Spec item).
+
+**Trying.** Right after the `done` card is accepted, make the local branch tip the done
+head. `HEAD` equal: nothing to do. `HEAD` an ancestor (the merged-PR path, which fetched the
+newer PR head): run `wc.js git merge --ff-only <done head>`, then confirm `git rev-parse
+HEAD` equals the done head. `HEAD` not an ancestor, the merge fails, or `HEAD` still
+differs: post every step `agent: not-tried`, `note` "an agent could not try them on this
+exact version", with no verifier. Otherwise start one fresh **steps-only** verifier
+(`--not-provider <the provider the lead runs on>` when `review_families` is `both`, else no
+provider flag), briefed with the numbered steps, a **path map** from the installed paths the
+machine commands use to the worktree (for example `/home/collin/projects/personal/wheelchair`
+→ the worktree), the plan slug or Collin's request (so it can judge intent), the done head,
+and the words "steps only". It posts no progress line. If its `COMMIT:` line is not the done
+head, start one more; if that one also differs, the steps that verifier was trying (all, or
+the reworded subset) are posted `agent: not-tried`, `note` "an agent could not try them on
+this exact version"; results already obtained on the done head are kept.
+
+**Turning STEP lines into the card.**
+- `MATCH` → `agent: matched`.
+- `COULD NOT TRY` (including "ran a safe stand-in") → `agent: not-tried`, `note` the reason
+  in Collin's words.
+- `DIFFERS (work wrong)` → `agent: broken`, `note` what it saw.
+- `DIFFERS (meets intent)` (the step was worded wrong) → reword it and start one steps-only
+  verifier for the reworded steps on the same head. Its result: MATCH → `matched`; COULD NOT
+  TRY → `not-tried`; DIFFERS (work wrong) → `broken`, `note` what it saw; DIFFERS (meets
+  intent) → set `see` to what the agent saw, rewritten in Collin's words (something he can
+  see on screen or in output, not markup or internal names), keeping every observable detail
+  the agent reported and adding none, and the step is `matched`.
+- A step with no STEP line → `not-tried`, `note` "an agent did not report on it". Two lines
+  for one step: use the less favourable (DIFFERS (work wrong), DIFFERS (meets intent), COULD
+  NOT TRY, MATCH).
+- A failed try is a `VERDICT: BLOCKED` report, a verifier start the hub refuses, or a
+  verifier that dies or ends without a report. A start that ends in "hub unavailable" or no
+  answer is not a failed try: re-run it with the same `--attempt` id so the hub recovers the
+  original session. Fix what you can and start a fresh verifier. After two failed tries for
+  the same head, every step not yet resolved is posted `not-tried`, `note` "an agent could
+  not set up to try it: <short reason>", and you carry on.
+- A steps verifier not started 30 minutes after you asked for it (for example waiting for an
+  account) is stopped and counts as a failed try.
+
+**Posting.** Post the `check` card with the done card's `head`. One per head: a retried
+`done` recorded twice at the same head gets one check card, and a refusal `this done card
+already has a check card` means it is posted. A `broken` step gives the card its "Fix it now"
+button; post no separate question. On `[card <id>] fix what the check found`, first check
+the card's `head` is still the current done head (a newer done may have been posted while the
+press was queued): the press does not name the head, so if you have posted a `done`
+with a different `head` since your latest `check` card, a newer version replaced it (a retried
+`done` at the same head does not); say so in a line and do nothing. Otherwise handle it as a
+problem Collin reported (step 9, which checks the PR state first), using your latest check
+card's broken steps' notes as the report.
+`[card <id>] leave it` gets a one-line reply and nothing else. In a two-part thread the
+follow-up `stub` is posted right after `done`, without waiting for the check card.
+
+A new `done` accepted while a steps verifier for an older head runs: stop that verifier,
+post no check card for the older head, and start over for the new one.
+
+**Restart.** After `[wc:context restart]`: run `session list` and stop any live steps
+verifier the dead lead started (its report would go to the dead lead); steps it was trying
+are tried afresh. A `fix what the check found` press in the recent messages is handled now,
+as in Posting (current-head check first, using the pressed card's `head` from the context's
+cards), unless the context has a `done` card with a different `head` or a `stub` card
+created after the press (it was already handled: fixed, or turned into a follow-up thread
+because the pull request was merged), or the local branch has commits past that card's `head`
+(a fix is in progress: carry on from them as step 9). The context carries no lead replies, so
+judge only by these. If the latest done card in the context without `retracted_at` has a
+`head`, no `check` card has that `head`, and
+local `HEAD` equals it or is an ancestor of it (fast-forward as above), write, try and post
+the steps as above; a duplicate refusal means the original arrived, and any other head
+refusal means that done card is not current (for example before an import cutoff): stop
+there in both cases. Otherwise post none for that done card. A stub that missed the merge
+("Making the pull request mergeable" 4, exit 1) posts no check card.
+
+**Imported threads.** No check card is posted on import.
+
+**First release.** In the thread that builds this feature, the installed hub does not know
+`check` until the pull request is merged and installed, and installed verifiers lack the
+new verifier rules. That thread's lead tries its steps as above with the verifier rules
+written out in full in the brief and, instead of a check card, posts a `needs` card titled
+"Check it yourself" whose `body` starts "For version <first 12 characters of the done
+head>." then gives the `update` text, and whose `items` are the steps, one per item ("In the
+app: <do> — you should see: <see>", with any command, and "Not tried by an agent: <note>" or
+"An agent tried this and it didn't work: <note>" where it applies). If a step is broken the
+`body` ends "Keep going fixes what didn't work"; then "Keep going" is handled like "Fix it
+now" (same current-head check, reading the version from the body); otherwise it just closes
+the card. On a restart in that thread, an existing "Check it yourself" `needs` card whose
+body names the current done head counts as its check card: post no other.
 
 ## Making the pull request mergeable
 
@@ -589,7 +704,8 @@ Use a new `--attempt` id for each restart.
 
 If you yourself died, the app starts a new lead (the Restart button) and types
 `[wc:context restart]` with the plan and cards. Reread the plan files and the thread and
-carry on from the step you find. Your reply to that message is shown, so say briefly that
+carry on from the step you find. For a done thread, the restart rules for check cards are
+in step 10 (Check it yourself). Your reply to that message is shown, so say briefly that
 you are back and where things stand. Run `session list` and `session stop` any session
 whose purpose is gone.
 
@@ -628,7 +744,7 @@ step named by `stage`:
 - `idea-confirmed`: planning, step 4. Read IDEA.md, MAP.md and any PLAN.md on the branch,
   and ask the open questions again.
 - `approved`: approval, step 6. Post a fresh approval card with a fresh Ready check.
-- `done`: after done, step 9.
+- `done`: after done, step 9. Post no check card on import (step 10).
 
 The context JSON's `import` block carries `stage`, `exported_at`, `pr_url` and `history`
 (the last 50 entries) for context. Post fresh cards for anything still needed. A
