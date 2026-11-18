@@ -1527,3 +1527,23 @@ test('handoff local branch operations guard divergence and report ownership', as
     git(['-C', repo, 'branch', '-D', branch]); body = await call('known', { head: old }); assert.equal(body.local_branch, false, JSON.stringify(body)); assert.equal(body.local_ancestor, null, JSON.stringify(body));
   } finally { await env.close(); }
 });
+
+test('handoff kills exact session names and cancels starts before tmux', async () => {
+  const root = await temp(); const env = await service(root); const oldSessions = process.env.FAKE_SESSIONS; try {
+    const id = '012345abcdef'; const lead = `wc-${id}-lead`; const sub = `wc-${id}-sub-lead`; const lead2 = `${lead}-2`;
+    process.env.FAKE_SESSIONS = `${lead} ${sub} ${lead2}`;
+    const call = async (action, fields = {}) => { const response = await api(env, 'POST', '/v1/handoff', { action, thread_id: id, ...fields }, hubHeader); assert.equal(response.status, 200, JSON.stringify(response.body)); return response.body; };
+    let body = await call('running'); assert.deepEqual(body.names.sort(), [lead, lead2, sub].sort(), JSON.stringify(body));
+    await call('kill', { names: [lead] }); const recorded = await log(env);
+    assert.match(recorded, new RegExp(`kill-session -t =${lead}\\n`)); assert.doesNotMatch(recorded, new RegExp(`kill-session -t =${lead2}\\n|kill-session -t =${sub}\\n`));
+    process.env.FAKE_SESSIONS = '';
+    let release; const original = env.instance.createWorktree.bind(env.instance);
+    env.instance.createWorktree = async (...args) => { await new Promise(resolve => { release = resolve; }); return original(...args); };
+    const worktree = path.join(root, 'waiting'); await fs.mkdir(worktree);
+    const pending = api(env, 'POST', '/v1/sessions', { name: lead, role: 'lead', cli: 'claude', thread_id: id, token: 'token', worktree }, hubHeader);
+    while (!release) await new Promise(resolve => setImmediate(resolve));
+    body = await call('kill', { names: [lead] }); assert.ok(body.names.includes(lead), JSON.stringify(body));
+    release(); const result = await pending; assert.notEqual(result.status, 201, JSON.stringify(result.body)); assert.match(result.body.error, /cancelled/);
+    const after = await log(env); assert.doesNotMatch(after, new RegExp(`new-session .* -s ${lead}(?: |\\n)`));
+  } finally { if (oldSessions === undefined) delete process.env.FAKE_SESSIONS; else process.env.FAKE_SESSIONS = oldSessions; await env.close(); }
+});

@@ -214,6 +214,7 @@ class MachineService {
     this.codexStepChunkSize = options.codexStepChunkSize || 8 * 1024 * 1024;
     this.startingWorktrees = new Set();
     this.startingNames = new Map(); // name -> the start in progress, so a repeated start joins it
+    this.cancelledStarts = new Set();
     this.startingBranches = new Set(); // worker branches named by a start not yet recorded
     this.repoQueues = new Map(); // repo -> tail of its fetch-and-add chain; one git writer per repo at a time
     this.logins = {};
@@ -515,7 +516,7 @@ class MachineService {
     if (this.startingNames.has(name)) return this.startingNames.get(name);
     const starting = this.startNamed(input, name);
     this.startingNames.set(name, starting);
-    try { return await starting; } finally { this.startingNames.delete(name); }
+    try { return await starting; } finally { this.startingNames.delete(name); this.cancelledStarts.delete(name); }
   }
   async startNamed(input, name) {
     const adapter = adapters[input.cli];
@@ -556,8 +557,11 @@ class MachineService {
     const tmuxArgs = ['new-session', '-d', '-s', name, '-x', '200', '-y', '50', '-c', worktree, commandText];
     // systemd-run scope prevents service restarts killing tmux; installer sets KillMode=process too.
     // Both asynchronous, like the git above: a slow systemd-run must not hold up the service.
+    if (this.cancelledStarts.has(name)) die('session start was cancelled');
     const scoped = process.platform === 'darwin' ? { ok: false } : await commandAsync('systemd-run', ['--user', '--scope', 'tmux', ...tmuxArgs]);
+    if (this.cancelledStarts.has(name)) { if (scoped.ok) this.tmux(['kill-session', '-t', `=${name}`]); die('session start was cancelled'); }
     const result = scoped.ok ? scoped : await commandAsync('tmux', tmuxArgs);
+    if (this.cancelledStarts.has(name)) { if (result.ok) this.tmux(['kill-session', '-t', `=${name}`]); die('session start was cancelled'); }
     if (!result.ok) die(result.stderr.trim() || 'tmux session failed to start');
     this.sessions[name] = session;
     await this.persistSessions();
@@ -1297,6 +1301,21 @@ class MachineService {
       for (const project of dirs) if (await fsp.stat(path.join(this.stateDir, 'worktrees', project, 'wc', input.thread_id)).catch(() => null)) { worktreeKnown = true; break; }
       const known = worktreeKnown || Object.values(this.sessions).some(session => session.thread_id === input.thread_id) || this.archivedThreads.has(input.thread_id) || !!this.archivingThreads?.has(input.thread_id);
       return { known, local_branch: local.ok, local_ancestor: local.ok ? await ancestor(local.stdout.trim(), head) : null, checked_out };
+    }
+    if (action === 'running' || action === 'kill') {
+      const prefix = `wc-${input.thread_id}-`;
+      const running = () => {
+        const live = this.liveTmux();
+        if (!live) throw new Error('Could not list tmux sessions.');
+        return [...new Set([...this.startingNames.keys(), ...live].filter(name => name.startsWith(prefix)))];
+      };
+      if (action === 'kill') {
+        for (const name of input.names) {
+          if (this.startingNames.has(name)) this.cancelledStarts.add(name);
+          if (running().includes(name)) this.tmux(['kill-session', '-t', `=${name}`]);
+        }
+      }
+      return { names: running() };
     }
     if (action === 'status') {
       const symbolic = await git('-C', worktree, 'symbolic-ref', '--quiet', '--short', 'HEAD');
