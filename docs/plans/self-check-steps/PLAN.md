@@ -75,7 +75,7 @@ Lead-only, shown, not pinned, no presses. Fields:
 
 | Field | Type | Required | Rule |
 |---|---|---|---|
-| `head` | string | yes | 40-char lowercase hex. Must equal the `head` of the most recent `done` card in the thread (done cards are never replaced or retracted: `viewer/app/cards.js:9,22-31`, `viewer/app/card.js:224-233`); the hub refuses otherwise (422 `check head must match the latest done card`), and refuses when the thread has no `done` card (422 `post the done card first`) |
+| `head` | string | yes | 40-char lowercase hex. Must equal the `head` of the most recent `done` card in the thread (done cards are never replaced or retracted: `viewer/app/cards.js:9,22-31`, `viewer/app/card.js:224-233`); the hub refuses otherwise (422 `check head must match the latest done card`), refuses when the thread has no `done` card (422 `post the done card first`), and refuses a second check card for the same `head` (422 `this done card already has a check card`) |
 | `update` | string | yes | How to get the merged change running, e.g. "Merge the pull request, then on the machine run `cd /home/collin/projects/personal/wheelchair && git pull && ./install.sh`". At most 300 chars |
 | `merged` | boolean | no | true when the done card was posted for an already merged pull request; `update` then leaves out the merge |
 | `steps` | array | yes | 1 to 6 items, each `{where, do, see, command?, tried, why_not?}` |
@@ -92,8 +92,13 @@ Each step:
 | `why_not` | string | when `tried` is false | Forbidden when `tried` is true. One line, at most 300 chars |
 
 Unknown fields are refused, as for every kind. The card is posted through the normal
-spooled path (not synchronous like `done`); the head rule is checked at the hub when the
-card is accepted (`viewer/app/cards.js` `acceptCard`, under the thread lock).
+spooled path (not synchronous like `done`); the head and duplicate rules are checked at the
+hub when the card is accepted (`viewer/app/cards.js` `acceptCard`, under the thread lock).
+The duplicate rule makes posting idempotent: a lead that gets
+`this done card already has a check card` treats it as posted.
+
+No presses: `press` in `viewer/app/threads.js` refuses every action on a `check` card
+(400 `a check card has no buttons`), before anything is marked answered or enqueued.
 
 Rendering (`viewer/pages/thread.js` `renderCard`): heading "Check it yourself", an eyebrow
 "After you merge" (or "Already merged" when `merged` is true), the `update` text, then an ordered list. Each item shows a small label
@@ -119,54 +124,81 @@ Other app touch points:
 
 ### How the lead writes and tries the steps (`protocol/app/lead.md`)
 
-Writing: after the work's own verification passes, the lead drafts 1 to 6 steps (usually
-3 to 5; a sentence or two per field, readable on a phone) from what
-the change is for (IDEA.md's "What good looks like" for a feature; Collin's request for a
-small fix; the reported problem for an after-done fix). Steps follow "Where the steps are
-done". Each `see` is something he can observe, not "it works". Commands use full paths and
-name the output to look for. `update` says how this project picks up a merged change; when
-the lead does not know (no README guidance, nothing obvious), it says so plainly and gives
-its best guess marked as such. When the done card is for an already merged pull request,
-`update` starts from updating (no merge step) and the card sets `merged: true`.
+**Writing.** The lead drafts 1 to 6 steps (usually 3 to 5; a sentence or two per field,
+readable on a phone) from what the change is for: IDEA.md's "What good looks like" for a
+planned build, Collin's request for a small fix, the reported problem for an after-done fix
+(whose steps cover only what that fix changed). Steps follow "Where the steps are done".
+Each `see` is something he can observe, not "it works". Commands use full paths and name
+the output to look for. `update` says how this project picks up a merged change; when the
+lead does not know, it says so plainly and gives its best guess marked as such. When the
+done card is for an already merged pull request, `update` leaves out the merge and the
+card sets `merged: true`.
 
-Trying (Decision 4), before the push that leads to `done`:
-- Small fix and after-done fix: the verifier the lead already starts gets the draft steps
-  in the same brief; it checks the fix as today and also tries the steps (one session).
-- Planned build: after the sub-lead's `result` (sub-lead stopped as today), and before
-  setting `status: done`, the lead starts a fresh verifier on the verified commit,
-  briefed with the plan slug and the draft steps only, using step 9's provider rule
-  (`--not-provider <lead's provider>` when `review_families` is `both`). It posts no
-  progress line. Then status `done`, push and PR as today.
-- The verifier reports one line per step:
-  `STEP <n>: MATCH|DIFFERS|COULD NOT TRY — <what it saw or why>`.
-- MATCH → `tried: true`. COULD NOT TRY → `tried: false`, `why_not` from the reason in his
-  terms. DIFFERS where what it saw is what the change should do (the step's wording was
-  wrong) → the lead rewrites `see`/`do` to match; a rewritten `do` is re-tried once by a
-  fresh verifier, and a step still not matching after that is posted `tried: false` with
-  `why_not` "an agent saw something different". DIFFERS where what it saw shows the work is
-  wrong → a gap: the lead fixes it in the worktree (Decision 8; never starts a sub-lead or
-  workers; if the fix needs parallel workers, a `question` card offering a stub instead),
-  commits, and starts a fresh verifier on the fix plus all steps. Two failed attempts → a
-  `question` card: finish with that step marked not matching, or drop the fix (revert) and
-  finish without that step.
-- A `VERDICT: BLOCKED` from a steps verifier is a setup problem, as today: fix it and start
-  a fresh one; not a failed attempt.
+When the lead drafts:
+- Small fix and after-done fix: before starting the fix's verifier, so the draft goes in
+  that verifier's brief.
+- Planned build: after the sub-lead's `result` (sub-lead stopped as today).
 
-Posting: immediately after the `done` card is accepted, post the `check` card with the
-same `head` as that done card (including a done posted at a merged head other than the
-pushed commit, per "Making the pull request mergeable" step 4). The `check` card is never a
-condition for `done`; `done` keeps its own gate unchanged.
+**Trying (Decision 4).** Steps are tried by verifiers, reported as STEP lines (see the
+verifier section). Which verifiers carry the steps:
+- Small fix and after-done fix: the verifier the lead already starts gets the steps in the
+  same brief ("check the fix, and try these steps"). One session, one report: the fix's
+  verdict is handled first by today's rules; the STEP lines are used from the report whose
+  verdict the lead acts on (a PASS, or the last report when Collin chose "push it as it
+  is").
+- Planned build: before setting `status: done`, the lead starts one **steps-only** verifier
+  on the sub-lead's verified commit (`--not-provider <lead's provider>` when
+  `review_families` is `both`, else no provider flag), briefed with the plan slug and the
+  draft steps, and told it is steps-only. It posts no progress line.
+- Every later verifier the lead starts before the next `done` (a repair or merge re-verify
+  in "Making the pull request mergeable" 6 and 7, or a re-verify after a step showed the
+  work wrong) also gets the current steps, and its STEP lines replace the earlier ones.
+- Commits the lead does not verify (someone else's fast-forward, a done at a merged head
+  with others' commits) keep the STEP results from the last verifier (Accepted Risks).
 
-Restart: after `[wc:context restart]`, if the latest accepted `done` card has no `check`
-card with its `head`, the lead writes the steps afresh and has them tried (as above) before
-posting. A stub that missed the merge (step 4, exit 1) posts no check card; its own thread
-will.
+**Using the STEP lines.**
+- `MATCH` → `tried: true`.
+- `COULD NOT TRY` (including "ran a safe stand-in") → `tried: false`, `why_not` in
+  Collin's words from the reason.
+- `DIFFERS`, and what it saw is what the change should do (the step was worded wrong) →
+  the lead rewrites `see` to what was seen. If `do` must change, those steps are re-tried
+  once by a fresh steps-only verifier on the same commit; a step still not matching is
+  posted `tried: false`, `why_not` "an agent saw something different".
+- `DIFFERS`, and what it saw shows the work is wrong → a gap (Decision 8). The lead fixes
+  it in the worktree itself (no sub-lead or workers), commits, and starts a fresh verifier
+  briefed with the Spec or request, the gap and all steps. If it still fails after two
+  fix attempts, or the fix needs parallel workers, the lead posts a `question` card with
+  two options: "Finish with that step marked" (the step is posted `tried: false`, `why_not`
+  "an agent saw something different: <short>") and "Finish and start a follow-up thread"
+  (the same, plus a `stub` with `depends_on_parent: true` naming the gap). Either way the
+  thread then finishes as usual. Nothing is reverted on this path.
+- A report missing a step's line: one fresh steps-only verifier tries just the missing
+  steps; still missing → `tried: false`, `why_not` "an agent did not report on it". Two
+  lines for one step: use the less favourable (DIFFERS, then COULD NOT TRY, then MATCH).
+- `VERDICT: BLOCKED` is a setup problem, as today: fix it and start a fresh verifier; not
+  a failed attempt.
+- A small fix Collin chose to drop (reverted, no `done`) gets no check card.
 
-Imported threads: no check card is posted retroactively on import.
+**Posting.** Immediately after a `done` card is accepted, post the `check` card with that
+done card's `head` (including a done at a merged head other than the pushed commit). Order
+in a two-part thread: `done`, then `check`, then the follow-up `stub`. The `check` card is
+never a condition for `done`; `done` keeps its own gate unchanged.
+
+**Restart.** After `[wc:context restart]`, the lead posts a missing check card only when
+all of these hold: the latest `done` card in the conversation it was given has a `head`;
+no `check` card has that `head`; and the local `HEAD` equals that `head`. Then it drafts
+the steps and has them tried by a steps-only verifier on `HEAD` before posting (a
+duplicate refusal means the original arrived; stop there). Otherwise it posts none for
+that done card; the next `done` gets its own. A stub that missed the merge ("Making the
+pull request mergeable" 4, exit 1) posts no check card.
+
+**Imported threads.** No check card is posted on import.
 
 ### How the verifier tries steps (`protocol/app/verifier.md`)
 
 A new section, used only when the brief includes check steps:
+- **Remit.** A brief that says "steps only" asks only for the steps: do not verify the
+  Spec. Otherwise check the work as today and also try the steps.
 - Try each step against the commit being checked, in the throwaway worktree. Run any app in
   isolation, never against Collin's live apps, their data, or his other checkouts: find how
   this project starts its app from its own README, AGENTS/CLAUDE files, scripts and test
@@ -176,51 +208,65 @@ A new section, used only when the brief includes check steps:
   it has one, otherwise any headless browser available on the machine.
 - If the project gives no safe way to run its app in isolation (it needs real accounts,
   devices, paid services or its live data), report those steps COULD NOT TRY with that
-  reason; do not improvise against live systems. In such projects many app steps will be
-  posted "Not tried by an agent"; that is expected (see Accepted Risks). Machine commands
-  are run as written unless they would touch Collin's live state or install system-wide;
-  then try the closest isolated equivalent and say so, or report COULD NOT TRY.
-- A step that needs state the isolated app lacks (for example a thread at Done) may be
-  set up in the isolated copy; if it cannot be, COULD NOT TRY with the reason.
+  reason; do not improvise against live systems.
+- Machine commands are run exactly as written unless they would touch Collin's live state
+  or install system-wide. Then you may run a safe stand-in, but the step is
+  `COULD NOT TRY — ran a safe stand-in: <what>; saw <what>`, never MATCH. MATCH means the
+  step was followed as written and showed what `see` says.
+- A step that needs state the isolated app lacks (for example a thread at Done) may be set
+  up in the isolated copy; if it cannot be, COULD NOT TRY with the reason.
 - The `update` text is not run.
-- Report the STEP lines after the verdict lines. A step that DIFFERS is not by itself a
-  `GAP`; a `GAP` is still only about the work (Spec, request or reported problem).
+- **Report.** `COMMIT:` first as today. A steps-only report's verdict is `VERDICT: PASS`
+  when every step has a line, or `VERDICT: BLOCKED`; it has no GAP lines. A combined report
+  keeps today's verdict and GAP lines. Then exactly one line per step, numbered as in the
+  brief: `STEP <n>: MATCH|DIFFERS|COULD NOT TRY — <what it saw or why>`. A DIFFERS step is
+  not by itself a GAP; a GAP is only about the work.
 
 ### Non-goals
 
 - No pass/fail buttons or tracking of whether he followed the steps (Decision 10).
 - No preview of the unmerged branch (Decision 5).
 - No change to the done card, its fields, its GitHub gate or "Making the pull request
-  mergeable", beyond posting `check` after `done` is accepted.
-- No check cards for threads finished before this ships, or on import.
+  mergeable", beyond giving its verifiers the steps and posting `check` after `done`.
+- No check cards posted on import. A thread finished before this ships gets none, except
+  that a lead restarted in one may post one under the restart rule (harmless, and not
+  worth telling apart).
 - The sub-lead and worker protocols do not change.
 
 ### Edge cases
 
 - Several done cards in one thread (fixes after done): each gets its own check card; older
   ones stay in the conversation unchanged.
-- A `check` with a head matching an older, not latest, done card is refused.
+- A `check` with a head matching an older, not latest, done card is refused; so is a second
+  `check` for the same head.
 - An archived or handed-off thread refuses `check` like any card.
 - More than 6 steps seem needed: the lead picks the few that best show the change works
   from Collin's side; detail belongs to the verifier, not the card.
+- Largest valid card (6 steps at the limits plus `update`) is about 12,000 characters of
+  history text, under the handoff's 20,000-character entry limit; no truncation expected.
 
 ### Validation
 
 - `cd viewer && npm test` passes, including new node tests:
   - `card.js` validation: accepts a valid card; refuses each missing required field,
     `command` with `where: app`, `why_not` with `tried: true`, missing `why_not` with
-    `tried: false`, 0 or 7 steps, over-length fields, a non-boolean `merged`, unknown fields, a non-lead role.
+    `tried: false`, 0 or 7 steps, over-length fields, a non-boolean `merged`, unknown
+    fields, a non-lead role.
   - hub acceptance: refused with no done card; refused when `head` differs from the latest
-    done; accepted when it matches; accepted after a second done only with the second head.
-  - handoff: a thread with a `check` card exports and the file validates; `historyText`
-    output matches the format above.
+    done; accepted when it matches; refused as a duplicate for the same head; accepted
+    after a second done only with the second head.
+  - press: every action on a `check` card is refused with 400 and leaves it unanswered and
+    nothing enqueued.
+  - handoff: a thread with a `check` card at the size limits exports, the file validates,
+    and its `historyText` is untruncated and matches the format above.
 - `cd viewer && npx playwright test` passes, including a new browser test: a posted check
-  card renders the heading, "After you merge", the update text, numbered steps with "In the
-  app"/"On the machine" labels, the command block with Copy, "You should see:", and the
-  "Not tried by an agent" line; at 390px wide the page has no horizontal scroll.
+  card renders the heading, "After you merge" (and "Already merged" with `merged: true`),
+  the update text, numbered steps with "In the app"/"On the machine" labels, the command
+  block with Copy, "You should see:", and the "Not tried by an agent" line; no buttons
+  other than Copy; at 390px wide the page has no horizontal scroll.
 - `grep -n "check" protocol/app/cards.md protocol/app/cards-lead.md protocol/app/lead.md protocol/app/verifier.md`
   shows the new kind row, its section, the lead's writing/trying/posting rules on all three
-  done paths and the restart rule, and the verifier's steps section.
+  done paths, the restart rule, and the verifier's steps section with the STEP format.
 
 ## Accepted Risks
 
@@ -231,12 +277,15 @@ re-raise them.
 | Risk | Why accepted | Round |
 |------|--------------|-------|
 | In projects that cannot run their app in isolation, many app steps reach Collin marked "Not tried by an agent" | Trying them would mean touching live systems; the mark keeps the card honest and the steps are still useful to him | 1 |
+| Commits the lead does not verify (someone else's fast-forward, a merged head with others' commits) keep the STEP results from the last verifier | lead.md already accepts those commits without re-verifying; re-trying steps for them would add a verifier the work itself does not get | 1 |
+| A check card still queued when the thread is archived or handed off is refused and lost | Archive and handoff end the thread's work; the done card and PR remain | 1 |
+| A delayed or restarted delivery can put other items between `done` and `check` in the conversation | The card names what it checks and the order is fixed when posting; rare and harmless | 1 |
 
 ## Review Rounds
 
 ### Round 1 — 2026-11-18
 
-**Lanes:** intent: claude / claude-opus-5-5; mechanics: see table; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 Written for every round, including one where the table below stays empty. The table gets a row
 per finding, so a clean round would otherwise leave no record of which gate ran — which is the
@@ -254,10 +303,39 @@ round where knowing it matters most.
 | intent | minor | Work-is-wrong branch turns steps into another gate; just mark and tell Collin | declined | A step showing the work is wrong is a defect found before push; shipping it marked contradicts IDEA's "not have to trust" and lead.md already fixes defects found before Done the same way. Adding a check is not replacing the automatic checks |
 | intent | minor | "After you merge" and the update text are wrong when done is posted for an already merged PR | upheld | Optional `merged` flag; label "Already merged"; update leaves out the merge |
 | intent | minor | Hub head check is unnecessary; "non-replaced" never applies to done | upheld (wording) | Wording fixed: done cards are never replaced or retracted. Hub check kept: it is small and stops a card attached to the wrong done |
+| mechanics | blocking | Combined small-fix verifier gets steps drafted after it passes; one report per session | upheld | Lead drafts before starting the fix verifier; fix verdict handled first, STEP lines from the acted-on report |
+| mechanics | blocking | Repairs/merges change code after steps were tried; restart may try an unverified tip | upheld | Every later verifier carries the steps and replaces STEP results; unverified commits carry results forward (accepted risk); restart only when HEAD equals the done head |
+| mechanics | blocking | Restart backfills pre-release/legacy/pre-import dones | upheld | Restart eligibility: latest done in the given conversation, has head, no check for it, HEAD equals it; non-goal amended to allow the harmless old-thread case |
+| mechanics | blocking | Crash between spool and accept can duplicate or lose a check | upheld | Hub refuses a second check per head and the lead treats it as posted; loss at archive/handoff accepted |
+| mechanics | major | Ordering with two-part stub; timestamps can interleave | upheld | Order done, check, stub; interleaving accepted |
+| mechanics | major | Finish path undefined when steps dropped, fix reverted, or parallel workers needed | upheld | No steps dropped or reverted on this path; question offers finish-with-step-marked or finish-plus-stub; dropped small fix gets no check |
+| mechanics | major | Steps-only remit and incomplete STEP reports undefined | upheld | Steps-only remit and report format in verifier section; missing lines re-tried once, duplicates take the less favourable |
+| mechanics | major | Safe stand-in commands could show as MATCH | upheld | Stand-in is COULD NOT TRY with what ran; MATCH only when followed as written |
+| mechanics | major | Press API would accept presses on a check card | upheld | `press` refuses every action on check (400); test added |
+| mechanics | minor | Check could exceed handoff's 20,000-char history entry | declined | With the round-1 limits the largest card is about 12,000 chars; edge case noted and the test exercises it |
 
 Reported severity is the reviewer's opinion; the lead verdict
 (`upheld`/`downgraded`/`declined`/`accepted-risk`/`user-decision`) is what gates the
 exit. Downgrades and declines cite evidence.
+
+### Round 2 — 2026-11-18
+
+**Lanes:** intent: see table; mechanics: see table; cross-family: yes.
+
+**Changed since Round 1:**
+- Card limits tightened (1–6 steps; 300/300/1000/300 chars), optional `merged` flag and
+  "Already merged" label.
+- Hub refuses a duplicate check per head; `press` refuses all actions on check.
+- Lead section rewritten: when steps are drafted per path, which verifiers carry them,
+  how STEP lines are used (wording vs work-wrong, missing/duplicate lines), the
+  finish question (no revert), posting order with the two-part stub, restart eligibility.
+- Verifier section: project-neutral isolation, steps-only remit, stand-in rule, report
+  format.
+- New Accepted Risks (isolation-less projects, unverified commits, queued card lost at
+  archive/handoff, interleaving); non-goals and edge cases amended; validation extended.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
