@@ -68,7 +68,7 @@ test('import restart saves context before launch, moves queues, and uses checkou
 });
 
 test('import restart relabels owner tags in context without changing saved state', async (t) => {
-  const { setup, close, thread: makeThread } = require('./helpers/app.js');
+  const { setup, close, event, thread: makeThread } = require('./helpers/app.js');
   const { Hub } = require('../app/hub.js');
   const c = await setup(); t.after(() => close(c));
   const made = await makeThread(c);
@@ -82,7 +82,10 @@ test('import restart relabels owner tags in context without changing saved state
   thread.imported = { at: '2099-01-01', history: [{ who: 'collin', text: 'history' }] };
   await hub.save(thread);
   const lead = await hub.restartLead(made.id);
-  const state = JSON.parse(lead.queue[0].text.split('Thread state:\n')[1]);
+  await event(c, made.id, lead.name, 'turn-ended');
+  const delivered = c.machine.sessions.get(lead.name).submits[0];
+  assert.match(delivered, /^\[wc:context import\]/);
+  const state = JSON.parse(delivered.split('Thread state:\n')[1]);
   assert.equal(state.recent_messages[0].source, 'user');
   assert.equal(state.cards[0].resolved_by, 'user');
   assert.equal(state.pinned.needs.resolved_by, 'user');

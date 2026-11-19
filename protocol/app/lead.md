@@ -488,7 +488,7 @@ text). Machine commands use the installed paths the user will have after updatin
 
 **Writing.** Draft 1 to 6 steps (usually 3 to 5; a sentence or two per field, readable on a
 phone) from what the change is for: IDEA.md's "What good looks like" for a planned build,
-The user's request for a small fix, the reported problem for an after-done fix (its steps
+the user's request for a small fix, the reported problem for an after-done fix (its steps
 cover only what that fix changed). Each `see` is something they can observe, not "it works".
 Commands use full paths and name the output to look for. `update` says how this project
 picks up a merged change; when you do not know, say so plainly and give your best guess
