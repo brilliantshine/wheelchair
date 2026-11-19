@@ -127,27 +127,29 @@ For a tools-getting session with servers:
 
 `missingPrograms({ worktree, mcp, path })` → lines (section 7). Synchronous file checks only; never launches anything.
 - For each valid stdio server whose `command` contains no `${`:
-  - `command` containing `/`: resolved against `worktree` (absolute stays absolute); missing or not executable (`fs.accessSync(..., X_OK)` fails) → line.
-  - Otherwise searched in each directory of `path` (empty entries skipped); not found as an executable file in any → line.
+  - A candidate counts only when `fs.statSync` (following symlinks) says it is a regular file and `fs.accessSync(..., X_OK)` succeeds; a directory never counts.
+  - `command` containing `/`: resolved against `worktree` (absolute stays absolute); not a counting candidate → line.
+  - Otherwise searched in each directory of `path` in order; empty and relative entries are resolved against `worktree` (the agent's working directory), as a shell would; no counting candidate in any → line.
   - Line: `{ names: [name], text: "<name>: its program can't be found" }`. The command itself is not printed.
 - A `command` containing `${` is not checked.
 - `path`: the start reads the tmux server's global `PATH` (`tmux show-environment -g PATH`, async, 2 s bound; `NAME=value` output used, `-NAME` or failure falls back to the service's own `process.env.PATH`), because an agent's pane gets the tmux global environment. Read once per tools-getting start whose reader returned servers, before section 6's update.
 
 ### 6. Machine project-tools state (`machine/service.js`)
 
-- **Thread worktree:** a start is in the thread's worktree when `realpath(worktree)` equals `realpath(<stateDir>/worktrees/<project>/wc/<thread_id>)` (the path `createWorktree` gives the thread branch; `machine/service.js:490-492`).
+- **Thread worktree:** a start is in the thread's worktree when `realpath(worktree)` equals `realpath(<stateDir>/worktrees/<project>/wc/<thread_id>)` (the path `createWorktree` gives the thread branch; `machine/service.js:490-492`). If either `realpath` fails (for example the thread directory does not exist), the start is not in the thread's worktree; the failure never aborts the start.
 - State per thread, in memory and in `<stateDir>/project-tools/<thread_id>.json`:
   ```
   { seq, file: [{names, text}], programs: [{names, text}],
     clis: { <cli>: { hash, thread: bool, lines: [{names, text}] } } }
   ```
   Loaded from disk on first use after a service start (a missing or unreadable file means empty state with `seq` 0).
-- At every tools-getting start of the thread (any worktree), after the reader, the PATH read and the adapter ran and before the tmux launch, the service updates the state in one synchronous block (no `await` between reading and replacing the in-memory state, so concurrent starts cannot interleave):
+- Ticket: each tools-getting start takes `ticket = ++tickets[thread_id]` synchronously before it reads `.mcp.json` (in memory only; starts at 0 per service process). The state remembers `applied`, the highest ticket applied. A start whose ticket is lower than `applied` when it reaches the block below (a later start read the file after it and already published) changes no state and carries the current snapshot unchanged, so an older read never overwrites a newer one. (The hub already sends a thread's starts one at a time, `viewer/app/hub.js:153-155`; this covers starts it does not serialize.)
+- At every tools-getting start of the thread (any worktree), after the reader, the PATH read and the adapter ran and before the tmux launch, the service updates the state in one synchronous block (no `await` between checking the ticket and replacing the in-memory state, so concurrent starts cannot interleave), then sets `applied = ticket`:
   1. Reader failure (`mcp: null`, not a reset): if in the thread's worktree, `file` = reader lines. Nothing else changes.
   2. Reset (reader confirmed no tools: no `.mcp.json`, or a valid file whose `mcpServers` is empty), in the thread's worktree only: `file` = [], `programs` = [], `clis` = {}. In another worktree a reset changes nothing.
   3. Otherwise:
      a. `clis[cli] = { hash: <this start's file hash>, thread: <in the thread's worktree>, lines: <this start's adapter skip lines> }`; in the thread's worktree also `file` = reader lines.
-     b. `programs` = this start's `missingPrograms` lines.
+     b. In the thread's worktree only: `programs` = this start's `missingPrograms` lines. Other checkouts never change `programs` (a program git ignores, such as `.venv/bin/python`, may be missing from a fresh worker checkout, and a relative program may exist in one checkout and not another; the thread's own checkout is the one the card describes). Workers still log their own missing-program lines.
      c. Recompute other CLIs' lines: for every other CLI X with lines, if `clis[X].hash` equals this start's hash, or this start and `clis[X]` are both in the thread's worktree, call X's adapter `command()` with this start's file and worktree and a stand-in tools-getting session, keep only its skip lines (no files written, nothing launched) and store them with this start's `hash` and `thread`. Adapters read no environment values (section 2), so the result is X's real lines for that file. Lines from another checkout with a different file stay until that CLI starts again.
   4. `seq` += 1; set `session.project_tools = { boot, seq, file, programs, clis }` (a copy of the whole state), where `boot` is a random id chosen once per machine-service process start; then queue a save.
 - Saves go through one per-thread write chain, each write taking the latest in-memory state, so an older write never lands after a newer one. A save writes `<file>.tmp` then renames it over `<file>`; a failed write removes `<file>.tmp` and is logged, and the start goes on. At startup, leftover `*.tmp` files in `<stateDir>/project-tools/` are removed.
@@ -177,7 +179,8 @@ For a tools-getting session with servers:
 
 - `.mcp.json` deleted or emptied: the next tools-getting start in the thread's worktree resets; the card closes. Worker checkouts never reset or change `file`.
 - `.mcp.json` unreadable or invalid in the thread's worktree: its line shows; CLI and program lines stay until the file is fixed.
-- A program installed after a failure: the next tools-getting start in any checkout clears its line and the card.
+- A program installed after a failure: the next tools-getting start in the thread's worktree clears its line and the card.
+- A reader failure or invalid entry seen only in a worker checkout is logged, not shown: workers check out the thread branch, so the same file in the thread's worktree shows it (Decision 21's ownership rule).
 - A worker on Codex or Antigravity: its skip lines replace that CLI's lines and show on the card.
 - A hub restart between the machine starting a session and the hub saving its answer loses that snapshot; the next tools-getting start brings the whole state again.
 - Lines never contain variable values, header values or commands.
@@ -196,10 +199,13 @@ For a tools-getting session with servers:
   - Codex: bearer, env header, every project override (real in argv, `<redacted>` in `session.command`, including args and url query strings), mixed `${}` header skip, duplicate header skip, sse skip, non-ASCII budget (under 64 Ki UTF-16 units, over 64 KiB bytes → dropped; line names every dropped server); `systemd-run` gets `--description`.
   - Antigravity: plugin files and `--add-dir` for tool roles, none for reviewer; http entry written with `type: "http"`; same-key env left out of the file; any other `${` skips the server with its line; literal header copied into the file and absent from `session.command` and logs; files 0600 and dirs 0700; sweep removes dirs of sessions not live, keeps live and starting ones and any dir younger than 60 s, removes nothing when tmux state is unknown, has no await between its checks and removals; dir removed by the timer after its pane exits even with the record at `ready`; a session name containing `/` maps to one encoded directory; no old warning.
   - Program check: absolute, worktree-relative and PATH programs found; missing or non-executable reported without printing the command; `${` command not checked; PATH from `tmux set-environment -g PATH` is used; fallback to the service PATH when tmux has none.
-  - State: `seq` increases per start; `boot` changes per service start; worker start replaces its CLI's lines and `programs` but never `file` or resets; reset only from the thread's worktree (by path; a verifier checkout on the same branch does not qualify); reader failure keeps other lines; a fixed or removed server loses its skip lines on every CLI whose lines came from the same file hash or the thread's checkout (a worker checkout's line with another file survives a thread start); repeated start returns the same `project_tools`; two concurrent starts both land and their `seq` values differ; writes land in order; `.tmp` leftovers swept at startup; a failed state write still starts the agent; `project_tools` absent from machine session-list and status responses; no state change for non-tool roles.
+  - State: a start whose ticket is older than the applied one changes nothing and returns the current snapshot; `realpath` of a missing thread directory does not abort a worker start; `programs` changes only from the thread's worktree;
+  - Program check: a directory named like the program does not count; a relative PATH entry is searched under the worktree.
+  - State (cont.): `seq` increases per start; `boot` changes per service start; worker start replaces its CLI's lines and `programs` but never `file` or resets; reset only from the thread's worktree (by path; a verifier checkout on the same branch does not qualify); reader failure keeps other lines; a fixed or removed server loses its skip lines on every CLI whose lines came from the same file hash or the thread's checkout (a worker checkout's line with another file survives a thread start); repeated start returns the same `project_tools`; two concurrent starts both land and their `seq` values differ; writes land in order; `.tmp` leftovers swept at startup; a failed state write still starts the agent; `project_tools` absent from machine session-list and status responses; no state change for non-tool roles.
 - `node --test viewer/test/*.test.js`, new tests: card opens; same names with different text keep the card and update its body; different names replace it; reset closes it; per-CLI lines kept apart; program lines shown; an older `seq` snapshot ignored; a new `boot` with a lower `seq` applied, but not from an older session; applied in `startSession`, a queued promotion and `resumeUnanswered` without re-taking the thread lock; `project_tools` not left on the session record; default `wc.js session list` shows `project_tools`.
 - `node --test test-support/test/*.test.js` still passes.
-- Manual (hearth only, one model turn): an Antigravity worker in a project with a stdio tool can call it; an Antigravity reviewer in the same thread cannot.
+- `README.md` "Project MCP tools" section rewritten for the new behaviour: Codex header forms and what is skipped, Antigravity support and its `${...}` limit, the "Project tools problem" card and `session list`'s `project_tools`.
+- Manual (hearth only, one model turn each): an Antigravity worker in a project with a stdio tool can call it, and one with an http tool carrying a literal header can call that; an Antigravity reviewer in the same thread cannot; a Codex worker can call an http tool whose token comes through `bearer_token_env_var`.
 
 ## Accepted Risks
 
@@ -593,6 +599,20 @@ exit. Downgrades and declines cite evidence.
 ### Round 21 — 2026-11-19
 
 **Changed since Round 20:** Decision 33 cut scope: the connection test (old §5), environment capture, check caching and digest, the per-thread queue, and checkout cancel/restart cleanup are removed. New §5 program check (file check against the tmux global PATH). §4 Antigravity no longer expands variables: any `${` other than same-key env skips the server. §6 rewritten as a synchronous state update. §8 card without connection results; `session list` shows problem lines. Edge cases, Non-goals, Validation and Accepted Risks rewritten. Because so much changed, review the whole Spec in depth. Earlier rounds' findings about removed parts no longer apply.
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: started with no provider flag; cross-family: unknown.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | `programs` overwritten by every checkout flaps the card | upheld | §6 3b: only the thread's worktree sets `programs` |
+| intent | minor | Move state to the hub, drop the machine store | declined | Cross-CLI recompute (§6 3c) needs the adapters on the machine; the store is small and its ordering rules are already specified |
+| intent | minor | No manual check of Codex token or Antigravity http | upheld | Validation manual checks |
+| mechanics | blocking | Reader errors in a worker checkout never shown | declined | Decision 21: only the thread's worktree owns `file`; workers check out the thread branch, so the same error shows from there; Edge cases note added |
+| mechanics | blocking | Another checkout clears a missing-program line | downgraded (minor) | Wrong only until the next thread start; fixed with the intent finding above |
+| mechanics | blocking | Concurrent starts publish an older read under a higher `seq` | downgraded (minor) | The hub serializes a thread's starts (`viewer/app/hub.js:153-155`); fixed anyway with a per-start ticket (§6) |
+| mechanics | blocking | `realpath` of a missing thread directory aborts the start | upheld | §6: failure means not the thread's worktree |
+| mechanics | blocking | Directory passes `X_OK`; relative PATH entries undefined | downgraded (minor) | A false "found" only misses a warning; §5 requires a regular file and resolves relative entries against the worktree |
+| mechanics | minor | README still describes the old behaviour | upheld | Validation: README section rewritten |
 
 ## Prior Work
 
