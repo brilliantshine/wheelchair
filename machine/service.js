@@ -655,7 +655,7 @@ class MachineService {
     if (!live || live.has(session.name)) return { pending: true, end_reason: session.end_reason };
     session.status = 'stopped'; session.prompt_open = false; session.stopped_at = new Date().toISOString();
     await this.persistSessions();
-    return { ok: true };
+    return { ok: true, end_reason: session.end_reason };
   }
   async kimiBinding(session) {
     try {
