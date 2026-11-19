@@ -241,12 +241,12 @@ def kimi_config(text):
         for line in text.splitlines():
             line = line.strip()
             if line.startswith("["):
-                match = re.fullmatch(r'\[models\."([^"\\]*)"\]', line)
+                match = re.fullmatch(r'\[\s*models\s*\.\s*"([^"\\]*)"\s*\]\s*(?:#.*)?', line)
                 current = match.group(1) if match else None
                 if current is not None:
                     models.setdefault(current, {})
             elif current is not None:
-                match = re.fullmatch(r'display_name\s*=\s*"([^"\\]*)"', line)
+                match = re.fullmatch(r'display_name\s*=\s*"([^"\\]*)"\s*(?:#.*)?', line)
                 if match:
                     models[current]["display_name"] = match.group(1)
         return {"models": models}
