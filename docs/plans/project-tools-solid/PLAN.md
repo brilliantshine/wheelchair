@@ -834,3 +834,4 @@ anything a future session needs that fits nowhere above.
 - 2026-11-19 — R8 accepted (band: scout): 7/7 focused re-run; scout confirmed a refused start (no record) can no longer take protection. Its residual holes (overlapping look-alike starts, unnoticed end, lost record) go to Accepted Risks under the lead's rare-setup rule.
 - 2026-11-19 — R10: worker reported "none"; scout listed 0 beyond the brief (the change and test row are verbatim from it).
 - 2026-11-19 — R10 accepted (band: scout): 34/34 handoff + project-tools re-run; `historyText` on the new card gives title, body, then each item.
+- 2026-11-19 — Verification attempt 5 started on 4d8ae9c: verifier-9 (Claude), verifier-10 (GPT); brief asks each gap to be classed NORMAL-USE or RARE-SETUP per the lead's rule.
