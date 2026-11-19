@@ -8,10 +8,7 @@ test('validates all actions and their fields', async () => {
   for (const input of [{ ...base, action: 'bad' }, { ...base, action: 'try', thread_id: 'bad' }, { ...base, action: 'back' }, { ...base, action: 'forget', version: 'v' }, { ...base, action: 'try', kept: 'x' }]) {
     await assert.rejects(service.handle(input), { status: 422 });
   }
-  for (const action of ['forget']) {
-    const answer = await service.handle({ ...base, action, version: 'v', ...(action === 'forget' ? { kept: 'ref' } : {}) });
-    assert.equal(answer.reason, 'Not built yet');
-  }
+
 });
 test('record and protected list use the real folder hash and version every write', async () => {
   const fs = require('node:fs/promises'); const path = require('node:path');
@@ -249,4 +246,11 @@ test('Done after an interrupted Back with HEAD at the return branch counts as su
   const f = await tryFixture(); await f.instance.handle(f.request); await f.done(); const record = await f.instance.read(f.repo); const from = await f.instance.head(f.repo);
   f.git('switch', 'main'); record.pending = { op: 'back', from, to: await f.instance.head(f.repo) }; await f.instance.write(f.repo, record);
   const answer = await f.instance.handle({ ...f.request, action: 'dismiss', version: record.version }); assert.equal(answer.ok, true); assert.equal(answer.status.state, 'none'); assert.equal(await f.instance.resolveRef(f.repo, record.active.return_ref), null);
+});
+test('Forget during an interrupted switch leaves pending, active and the return pin and last', async () => {
+  const f = await tryFixture(); await f.instance.handle(f.request); await f.done(); const record = await f.instance.read(f.repo);
+  const ref = 'refs/wheelchair/kept/test/01234567'; f.git('update-ref', ref, record.active.commit); record.kept.push({ ref, label: 'test', thread_id: f.request.thread_id, at: new Date().toISOString() });
+  record.pending = { op: 'back', from: await f.instance.head(f.repo), to: record.active.return_point }; await f.instance.write(f.repo, record);
+  const answer = await f.instance.handle({ ...f.request, action: 'forget', version: record.version, kept: ref }); assert.equal(answer.ok, true);
+  const next = await f.instance.read(f.repo); assert.deepEqual(next.active, record.active); assert.deepEqual(next.pending, record.pending); assert.deepEqual(next.last, record.last); assert.equal(f.git('rev-parse', next.active.return_ref), next.active.return_point.sha); assert.equal(await f.instance.resolveRef(f.repo, ref), null);
 });

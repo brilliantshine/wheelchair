@@ -130,9 +130,18 @@ class TryService {
     if (!this.acquire(folder)) return { accepted: false, reason: 'A switch is already running', status: await this.status(input, folder) };
     let retained = false;
     try {
-      if (input.action === 'forget') { this.release(folder); retained = true; return { accepted: false, reason: 'Not built yet', status: await this.status(input, folder) }; }
       const record = await this.read(folder);
       if (input.action !== 'try' && input.version !== record.version) { this.release(folder); retained = true; return { accepted: false, reason: 'Your copy changed since this page loaded', status: await this.status(input, folder) }; }
+      if (input.action === 'forget') {
+        const entry = (record.kept || []).find(item => item.ref === input.kept);
+        let reason = null;
+        if (!entry) reason = 'That kept entry no longer exists.';
+        else if (!entry.old_identity && (await this.git(folder, ['update-ref', '-d', entry.ref])).status !== 0) reason = 'Git could not delete the kept pin.';
+        else { record.kept = record.kept.filter(item => item.ref !== input.kept); await this.write(folder, record); }
+        this.release(folder); retained = true;
+        const status = await this.status(input, folder);
+        return reason ? { accepted: false, reason, status } : { ok: true, status };
+      }
       if (input.action === 'dismiss') {
         const reason = await this.dismiss(folder, record);
         this.release(folder); retained = true;
