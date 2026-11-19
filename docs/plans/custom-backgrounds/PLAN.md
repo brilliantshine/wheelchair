@@ -183,9 +183,9 @@ Backend and frontend run in disjoint checkouts. T1 owns the shared format helper
 | T1 | tricky: persistence, bounded HTTP and shared format parser | viewer/app/background.js, settings.js, state.js, routes.js, hub.js, API.md; viewer/server.js; pages/background-format.js; test/background*.test.js; test/fixtures/background/ | standard gpt/gpt-6.1-terra | wc-7108adfdf9ea-worker | node --test viewer/test/background*.test.js; full Node suite | partial, integrated; next attempt needed |
 | T2 | tricky: shared renderer, Settings editor, page surfaces and browser checks | viewer/pages except background-format.js; viewer/doc.html; test/background*.spec.js; test/fixtures/background-browser/ | standard gpt/gpt-6.1-terra (Claude unavailable) | wc-7108adfdf9ea-worker-2 | focused browser tests; full browser suite | partial, integrated; next attempt needed |
 
-| T3 | tricky: complete backend/parser and focused missing checks; T1 hit twice-failed environment gate | T1 boundary and report T3.md | standard gpt/gpt-6.1-terra, xhigh (effort step) | pending | private TMPDIR node --test viewer/test/background*.test.js | dispatched |
-| T4 | tricky: complete renderer/editor lifecycle and surfaces; T2 hit twice-failed incomplete gate | pages source excluding format helper, legacy doc; report T4.md | standard gpt/gpt-6.1-terra, xhigh (effort step) | pending | JS syntax, diff check, focused Chromium | dispatched |
-| T5 | tricky: complete representative browser checks | test/background*.spec.js, fixtures/background-browser, app-settings.spec.js section expectation only; report T5.md | standard gpt/gpt-6.1-terra | pending | private TMPDIR focused Chromium then integrated both browsers | dispatched |
+| T3 | tricky: complete backend/parser and focused missing checks; T1 hit twice-failed environment gate | T1 boundary and report T3.md | standard gpt/gpt-6.1-terra, xhigh (effort step) | wc-7108adfdf9ea-worker-4 | private TMPDIR node --test viewer/test/background*.test.js | dispatched |
+| T4 | tricky: complete renderer/editor lifecycle and surfaces; T2 hit twice-failed incomplete gate | pages source excluding format helper, legacy doc; report T4.md | standard gpt/gpt-6.1-terra, xhigh (effort step) | wc-7108adfdf9ea-worker-5 | JS syntax, diff check, focused Chromium | dispatched |
+| T5 | tricky: complete representative browser checks | test/background*.spec.js, fixtures/background-browser, app-settings.spec.js section expectation only; report T5.md | standard gpt/gpt-6.1-terra | wc-7108adfdf9ea-worker-3 | private TMPDIR focused Chromium then integrated both browsers | dispatched |
 
 ## Log
 
@@ -202,3 +202,5 @@ Backend and frontend run in disjoint checkouts. T1 owns the shared format helper
 - 2026-11-19 — Choice: T2, rendering: fixed native image with object-fit cover.
 - 2026-11-19 — Choice: T2, file size copy: two-decimal MiB.
 - 2026-11-19 — Test environment: isolate each validation command with a private TMPDIR to prevent shared /tmp sweeps between separate PID namespaces. Full Node commands use command-local init.defaultBranch=main for existing slug fixtures. No live/user state is used.
+
+- 2026-11-19 — Firefox setup resolved with temporary writable XDG_CONFIG_HOME/cache/runtime and explicit installed PLAYWRIGHT_BROWSERS_PATH. Independent integrated Firefox focused tests pass 3/3 (8.3s); Chromium3/3 (4.8s). No HOME change, live state, installation, or browser sandbox relaxation.
