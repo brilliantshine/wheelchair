@@ -604,3 +604,4 @@ Accepted then: a SIGKILL at the instant a tmux client is launching a server can 
 - 2026-11-19 — Choice: R1-T1, `viewer/test/app-snapshot.test.js`: 200 ms padding on every settle wait.
 - 2026-11-19 — Supersedes the premise of #51: a cache entry is reused only when its file's mtime and ctime were more than 2 s older than the moment it was cached (`SETTLE_MS`), because timestamp ticks are coarse; a file changed within that window is re-read on the next call.
 - 2026-11-19 — R1-T1 accepted (band: scout): scout found no deviations; re-ran `node --test viewer/test/*.test.js` on the worker branch: 694 pass, 0 fail.
+- 2026-11-19 — Verification attempt 2 on 8c187a2: Claude verifier PASS, GPT verifier PASS. Installer suite's live `~/.wheelchair` comparison fails when an agent writes there mid-run (environment, not this branch).
