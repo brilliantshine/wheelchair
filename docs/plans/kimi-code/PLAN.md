@@ -964,6 +964,8 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — Choice: K1, `machine/test/kimi-turns.test.js:201-211`: a sentence-only Claude lookalike fixture `wc-j` and the kill-order expectation; the trust-screen fixture's rule lines are shorter than the recording (scout-found). K1 accepted (band: scout): machine 207/207 re-run by the sub-lead. Remediation 9 complete.
+
 - 2026-11-18 — Collin on remediation 9 gap 2: fix it (Decision 54); K1 (light, gpt) dispatched.
 
 - 2026-11-18 — Choice: V1, `machine/service.js`: floor comparison factored into `kimiVersionStatus`; `kimiLaunchPath()` re-resolves and re-checks right before the launch command is built and fails closed if the cache entry changed; `commandFor` takes a `context` with `kimiExecutable`. A start refused at that point leaves its newly created worktree on disk (the existing `finally` only releases reservations; other post-creation failures such as a tmux error already leak the same way) — residual risk, scout-found. V1 accepted (band: scout): machine 207/207 re-run by the sub-lead. Remediation 9 gap 1 fixed.

@@ -10,3 +10,5 @@ Verification attempt 9 at `697d145`: `wc-01b8cb1bf051-verifier-17` (claude-opus-
 ## Status
 
 Gap 2 (recovered-pane classification) has survived R1 and W1: sent to the lead for Collin. Gap 1 is a new aspect of the version floor (a binary swapped between the check and the launch); sent to the lead with it.
+
+**Resolutions:** gap 1 fixed by V1; gap 2 by K1 (Decision 54).

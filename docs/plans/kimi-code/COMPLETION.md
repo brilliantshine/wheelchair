@@ -334,3 +334,23 @@ node --test viewer/test/*.test.js   # in two halves: 439/439 and 208/208
 npm --prefix viewer run test:browser   # 28 skipped, 774 passed (4.4m)
 node --test test-support/test/*.test.js   # tests 9, pass 9, fail 0
 ```
+
+### Remediation 9 — 2026-11-18
+
+Verification attempt 9 (`697d145`): Claude verifier PASS; GPT verifier FAIL with 2 gaps (`REMEDIATION-9.md`).
+
+| Gap | Resolution | Fixed at | Test |
+|-----|------------|----------|------|
+| 1. The binary checked at start could differ from the one launched | Lead's decision: `kimiLaunchPath()` re-resolves and re-checks the binary right before the launch command is built; that exact path is launched. Residual: a start refused at that point leaves its new worktree on disk, as other post-creation failures already do | `machine/service.js:622,1313-1330`; `machine/adapters/kimi.js:113` | `machine/test/kimi.test.js:155` |
+| 2. A recovered Kimi pane at folder trust was classed as Claude | Collin (Decision 54): a pane showing Kimi's trust screen is Kimi, checked before the fallbacks | `machine/service.js:402` | `machine/test/kimi-turns.test.js:201-211` |
+
+Validation on the merged branch at `3e0ccc2`:
+
+```
+bash machine/test/run.sh            # tests 207, pass 207, fail 0
+bash codex/test/run.sh              # RESULT 123 passed, 0 failed
+bash install/test/run.sh            # RESULT 191 passed, 1 failed — only "real wheelchair directory is byte-identical after suite"
+node --test viewer/test/*.test.js   # in two halves: 439/439 and 207/208 (server.test.js "groups default on writes…", untouched by this build; the file passes 50/50 alone twice)
+npm --prefix viewer run test:browser   # TZ=UTC: 773 passed, 1 failed, 28 skipped; the failure (chromium pages.spec.js:360) passes alone
+node --test test-support/test/*.test.js   # tests 9, pass 9, fail 0
+```
