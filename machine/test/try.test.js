@@ -65,3 +65,15 @@ test('folder checks reject service root, worktrees and operations in progress', 
   instance.root = path.join(root, 'outside'); await fs.writeFile(path.join(repo, '.git', 'rebase-apply'), 'in progress');
   assert.match(instance.folderCheck(repo, record), /operation in progress/);
 });
+test('Status on a repo with an LFS filter runs no filter; pending is interrupted after reload', async () => {
+  const { makeTemp } = require('../../test-support/run-dir'); const fs = require('node:fs/promises'); const path = require('node:path'); const { spawnSync } = require('node:child_process');
+  const root = await makeTemp('try-status-'); const repo = path.join(root, 'repo'); await fs.mkdir(repo);
+  const git = (...args) => { const r = spawnSync('git', ['-C', repo, ...args]); assert.equal(r.status, 0, r.stderr.toString()); };
+  git('init'); git('config', 'user.email', 'test@example.com'); git('config', 'user.name', 'Test');
+  const log = path.join(root, 'filter-log'); git('config', 'filter.lfs.smudge', `echo hit >> '${log}'; cat`);
+  await fs.writeFile(path.join(repo, 'file'), 'data'); git('add', 'file'); git('commit', '-m', 'base');
+  const instance = new TryService({ stateDir: path.join(root, 'state'), root: path.join(root, 'other'), projects: async () => ({ checked: { ok: true } }) });
+  const record = await instance.read(repo); record.identity = instance.identity(repo); record.pending = { from: instance.head(repo), files: ['file'], thread_id: '0123456789ab' }; await instance.write(repo, record);
+  const status = await instance.handle({ action: 'status', project: repo, thread_id: '0123456789ab' });
+  assert.equal(status.state, 'interrupted'); assert.deepEqual(status.files, ['file']); await assert.rejects(fs.access(log));
+});

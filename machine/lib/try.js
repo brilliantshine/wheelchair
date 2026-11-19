@@ -130,8 +130,29 @@ class TryService {
     try { return { accepted: false, reason: 'Not built yet', status: await this.status(input, folder) }; }
     finally { this.release(folder); }
   }
-  async status() {
-    return { version: null, state: 'none', active_thread_id: null, active_commit: null, target_available: false, newest: false, refused: null, earlier_branch: null, files: [], files_count: 0, index_lock: null, last: null, kept: [] };
+  async status(input, folder = this.folder(input.project)) {
+    const lock = this.lockState(folder), generation = lock.generation;
+    const record = await this.read(folder); const head = this.head(folder);
+    const refused = this.folderCheck(folder, record);
+    const target = this.resolveRef(folder, `refs/heads/wc/${input.thread_id}`);
+    const kept = (record.kept || []).map(entry => ({ ...entry, missing: !this.resolveRef(folder, entry.ref), old_identity: !!entry.old_identity }));
+    const busy = lock.held || generation !== lock.generation;
+    const mismatch = (record.active || record.pending) && !this.sameIdentity(record.identity, this.identity(folder));
+    let state = 'none';
+    if (mismatch) state = 'mismatch';
+    else if (busy) state = 'busy';
+    else if (record.pending) state = 'interrupted';
+    else if (record.active && head?.branch) state = 'stale';
+    else if (record.active && head?.sha !== record.active.commit) state = 'moved';
+    else if (record.active) state = record.active.thread_id === input.thread_id ? 'trying-this' : 'trying-other';
+    const pending = state === 'interrupted' ? record.pending : null;
+    const earlier = pending && (pending.return_point || record.active?.return_point || pending.from);
+    const files = pending?.files || [];
+    return { version: record.version, state, active_thread_id: record.active?.thread_id || null, active_commit: record.active?.commit || null,
+      target_available: !!target, newest: state === 'trying-this' && !!target && target !== record.active.commit,
+      refused, earlier_branch: earlier ? (earlier.branch ? earlier.branch.replace(/^refs\/heads\//, '') : earlier.sha.slice(0, 7)) : null,
+      files: files.slice(0, 50), files_count: pending ? (pending.files_count ?? files.length) : 0,
+      index_lock: busy ? null : this.indexLock(folder), last: record.last || null, kept };
   }
 }
 module.exports = { TryService };
