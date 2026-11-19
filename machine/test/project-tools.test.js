@@ -207,3 +207,11 @@ test('alias and thread worktree share keys through routes', async () => {
     assert.deepEqual((await server.post('read', { path: worktree })).body.keys, ['TOKEN']);
   } finally { await server.close(); }
 });
+test('failed worktree add after registration removes and prunes the temporary worktree', async () => {
+  const f = await fixture(), read = (await f.tools.read({ path: f.repo })).body;
+  await fs.writeFile(path.join(f.repo, '.git', 'hooks', 'post-checkout'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+  const reply = await f.tools.save({ path: f.repo, token: read.token, tools: { x: { command: 'run' } }, keys: {} });
+  assert.equal(reply.status, 502);
+  assert.equal(reply.body.outcome, 'failed');
+  assert.deepEqual(git('-C', f.repo, 'worktree', 'list', '--porcelain').split('\n').filter(line => line.startsWith('worktree ')), [`worktree ${f.repo}`]);
+});
