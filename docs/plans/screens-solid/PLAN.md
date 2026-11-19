@@ -532,7 +532,7 @@ Collin moved the window manager to its own thread; review budget reset.
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | S7: drag reserve for mouseup; runTool resolves at once on timeout; tests | `machine/lib/screen-input.js`, `machine/test/screen-input.test.js` | standard · gpt-6.1-terra | wc-2aac26176dff-worker | `node --test machine/test/screen-input.test.js`; `bash machine/test/run.sh` | done |
 | T2 | tricky — S2 cap, S3 pruning, S5 pids, S6 hand-over marker, plus `screenTools` export (S1 part); tests | `machine/lib/screen.js`, `machine/test/screen.test.js` (+ optional `machine/test/screen-hardening.test.js`) | standard · gpt-6.1-terra | wc-2aac26176dff-worker-2 | `node --test machine/test/screen.test.js`; `bash machine/test/run.sh` | done |
-| T3 | S1: approval-card warning and installer warning; tests (after T2, needs `screenTools`) | `machine/service.js` (approval block), `install.sh`, `install/test/run.sh`, a new machine test file | standard | wc-2aac26176dff-worker-3 | `bash machine/test/run.sh`; `bash install/test/run.sh` | dispatched |
+| T3 | S1: approval-card warning and installer warning; tests (after T2, needs `screenTools`) | `machine/service.js` (approval block), `install.sh`, `install/test/run.sh`, a new machine test file | standard · gpt-6.1-terra | wc-2aac26176dff-worker-3 | `bash machine/test/run.sh`; `bash install/test/run.sh` | done |
 
 ## Log
 
@@ -548,3 +548,9 @@ Collin moved the window manager to its own thread; review budget reset.
 - 2026-11-19 — Choice: T2, `machine/lib/screen.js`: `TOOLS` is exported alongside `screenTools`; pruning sorts `shot-<n>.png` by numeric n and unlinks synchronously.
 - 2026-11-19 — T2 accepted (band: self): diff read against S2, S3, S5, S6; merged-tree machine suite 368/368.
 - 2026-11-19 — Deviation fix (sub-lead): T2's timeout test ran at `handoverMs = 1000` and asserted `1 s`; changed it to the production 5 s deadline and the exact Spec message plus status 422.
+- 2026-11-19 — Choice: T3, `machine/service.js`: the platform seam is the instance property `platform` (`process.platform`), read only in the approval-card block.
+- 2026-11-19 — Choice: T3, `install/test/run.sh`: a `restricted_path` per-case switch (default 0) limits the shim PATH so the screen tools are absent unless shimmed.
+- 2026-11-19 — Choice: T3, `machine/test/screen-tools-warning.test.js`: a fake hub HTTP server captures posted cards, and `refreshStartupWarning` is stubbed to a no-op.
+- 2026-11-19 — Choice: T3, `install.sh`: package de-duplication by a nested loop over the packages already listed; the warning prints on every Linux run, including `--no-serve`.
+- 2026-11-19 — T3 accepted (band: scout): merged-tree machine suite 369/369; installer suite 197 passed, 1 failed. The one failure, `real wheelchair directory is byte-identical after suite`, also fails on the base branch without T3: it hashes the live `~/.wheelchair`, which the running app writes to during the suite. Viewer suite 694/694 (an earlier run stalled at load average ~33).
+- 2026-11-19 — Addition (sub-lead): installer tests now also assert exit status 0 in the missing, present and Darwin cases, and a new `screen_partial` case covers some tools missing (xdotool, xwininfo, systemd-run → xdotool x11-utils systemd). The scout found the present and Darwin cases would pass on an installer crash.

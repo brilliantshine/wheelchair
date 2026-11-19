@@ -688,6 +688,16 @@ run_case screen_missing
 expected_screen_warning="screens: warning — missing Xvfb, xauth, mcookie, ffmpeg, xdotool, xwininfo, systemd-run; agents can't use screens until they're installed (Debian: sudo apt install xvfb xauth util-linux ffmpeg xdotool x11-utils systemd)"
 assert 'Linux screen warning lists missing tools and unique packages' bash -c '[[ $1 == *"$2"* ]]' _ "${output[screen_missing]}" "$expected_screen_warning"
 assert 'screen warning leaves bookmark last' last_line_is "${output[screen_missing]}" 'https://fixture.tailnet.ts.net/?token=fixture'
+assert 'screen warning leaves the exit status at 0' bash -c '[[ $1 == 0 ]]' _ "${status[screen_missing]}"
+new_case screen_partial
+restricted_path[screen_partial]=1
+args[screen_partial]=--serve
+for tool in Xvfb xauth mcookie ffmpeg; do
+  printf '#!/usr/bin/env bash\nexit 0\n' > "${shim[screen_partial]}/$tool"
+  chmod +x "${shim[screen_partial]}/$tool"
+done
+run_case screen_partial
+assert 'Linux screen warning names only the missing tools and their packages' bash -c '[[ $1 == *"$2"* && $3 == 0 ]]' _ "${output[screen_partial]}" "screens: warning — missing xdotool, xwininfo, systemd-run; agents can't use screens until they're installed (Debian: sudo apt install xdotool x11-utils systemd)" "${status[screen_partial]}"
 new_case screen_present
 restricted_path[screen_present]=1
 for tool in Xvfb xauth mcookie ffmpeg xdotool xwininfo systemd-run systemctl; do
@@ -695,12 +705,12 @@ for tool in Xvfb xauth mcookie ffmpeg xdotool xwininfo systemd-run systemctl; do
   chmod +x "${shim[screen_present]}/$tool"
 done
 run_case screen_present
-assert 'Linux with screen tools prints no screen warning' bash -c '[[ $1 != *"screens:"* ]]' _ "${output[screen_present]}"
+assert 'Linux with screen tools prints no screen warning' bash -c '[[ $1 != *"screens:"* && $2 == 0 ]]' _ "${output[screen_present]}" "${status[screen_present]}"
 case_platform=Darwin
 new_case screen_darwin
 restricted_path[screen_darwin]=1
 run_case screen_darwin
-assert 'Darwin prints no screen warning' bash -c '[[ $1 != *"screens:"* ]]' _ "${output[screen_darwin]}"
+assert 'Darwin prints no screen warning' bash -c '[[ $1 != *"screens:"* && $2 == 0 ]]' _ "${output[screen_darwin]}" "${status[screen_darwin]}"
 unset case_platform
 
 new_case sudo_hint
