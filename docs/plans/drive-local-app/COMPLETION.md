@@ -2,7 +2,25 @@
 slug: drive-local-app
 date: 2026-11-18
 implemented-by: "gpt standard / gpt-6.1-terra (T1a, T1c, T1d at effort xhigh); gpt light / gpt-6-luna (T2, T4, T1e, T1f); claude standard / claude-sonnet-5-5 (T3 attempt 1); claude light / claude-haiku-5-5 (T3 attempt 2, T3c); sub-lead: claude-opus-5-5"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude / claude-opus-5-5
+    checks: gpt standard + light, claude standard + light (all tasks)
+  - round: 1
+    lane: gpt / gpt-6.2-sol
+    checks: gpt standard + light, claude standard + light (all tasks)
+  - round: 2
+    lane: claude / claude-opus-5-5
+    checks: gpt standard + light, claude standard + light (all tasks)
+  - round: 2
+    lane: gpt / gpt-6.2-sol
+    checks: gpt standard + light, claude standard + light (all tasks)
+  - round: 3
+    lane: claude / claude-opus-5-5
+    checks: gpt standard + light, claude standard + light (all tasks)
+  - round: 3
+    lane: gpt / gpt-6.2-sol
+    checks: gpt standard + light, claude standard + light (all tasks)
 ---
 
 # Completion Report — Agents run, screenshot and drive the app they build
@@ -238,3 +256,8 @@ ok - no process from the screen survives stop (polled up to 10 s)
 ok - no wcscreen unit of this test is left
 live: 22 ok, 0 failed
 ```
+
+### Verification attempts 2 and 3
+
+- Attempt 2 at `115b91f`: claude PASS; gpt FAIL with one gap, a launch where `systemd-run` itself fails is reported as success. The lead deferred it (PLAN.md Deferred row 7) and the all-deferred re-check was used (`45451ef`).
+- Attempt 3 at `45451ef`: claude PASS (machine 209/209, viewer 653/653, live 22/22); gpt FAIL with one hardening gap, `drag` can overrun its 10 s by up to 1 s for the guaranteed mouseup (`machine/lib/screen-input.js:79`). Collin chose to defer and finish (PLAN.md Deferred row 8). No further verification.
