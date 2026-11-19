@@ -247,6 +247,8 @@ re-raise them.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| Lead restarts after its `lead-check` record commit but before pushing: the PR restart rules see a local commit ahead of the PR and ask Collin about a check that already passed (`lead.md:103-111`, `:651-667`) | Rare path: a restart landing in the seconds between two back-to-back steps; the worst outcome is one extra question, no lost work or wrong build | verification-3 |
+| Lighter mode: sub-lead restarts after recording a rare-only attempt's Accepted Risks but before sending the build result; resume starts a fresh verification attempt on the record-only commit (`sub-lead.md:30-38`, `:241-251`) | Rare path: same seconds-wide restart window; the worst outcome is one redundant verification attempt | verification-3 |
 
 ## Review Rounds
 
@@ -402,3 +404,4 @@ anything a future session needs that fits nowhere above.
 - 2026-11-19 — Choice: R1, lead.md:286-288 and 319-322: re-wrap only the touched lines, leaving short orphan lines.
 - 2026-11-19 — Verification attempt 2: claude PASS, gpt FAIL with 2 gaps, both judged normal use: closure sentence swept in upheld findings (T1b brief text), lead's own verifier briefs lacked Accepted Risks. R2 dispatched.
 - 2026-11-19 — R2 accepted (band: scout): both edits verbatim. Worker reported no choices; scout noted it proceeded without REMEDIATION-2.md in its checkout (sub-lead told it to read it from the feature branch) and omitted one pasted stat.
+- 2026-11-19 — Verification attempt 3 on `f0535c9`: claude-opus-5-5 PASS; gpt-6.2-sol FAIL with 2 gaps (restart between a record-only commit and push/result). Sub-lead judged both rare paths (seconds-wide restart window, benign outcome) and recorded them in Accepted Risks, round verification-3. Merged list empty: attempt 3 PASS. 2 rare paths accepted.
