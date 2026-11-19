@@ -1,8 +1,8 @@
 ---
 slug: lighter-server
 date: 2026-11-19
-implemented-by: "T1 standard / gpt-6.1-terra; T2 standard / claude-sonnet-5-5 (sub-lead: claude-opus-5-5)"
-verified-by: []
+implemented-by: "T1 standard / gpt-6.1-terra; T2 standard / claude-sonnet-5-5; R1-T1 light / gpt-6-luna (sub-lead: claude-opus-5-5)"
+verified-by: see below
 ---
 
 # Completion Report — A lighter server when many agents run
@@ -10,7 +10,16 @@ verified-by: []
 Written for a hostile reviewer: every claim checkable, no claim without evidence.
 
 ```yaml
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude / claude-opus-5-5
+    checks: "T1 gpt-6.1-terra, T2 claude-sonnet-5-5"
+  - round: 2
+    lane: claude / claude-opus-5-5
+    checks: "T1 gpt-6.1-terra, T2 claude-sonnet-5-5, R1-T1 gpt-6-luna"
+  - round: 2
+    lane: gpt / gpt-6.2-sol
+    checks: "T1 gpt-6.1-terra, T2 claude-sonnet-5-5, R1-T1 gpt-6-luna"
 ```
 
 ## Spec coverage
@@ -87,6 +96,8 @@ both logs end: 1040 passed (14.5m)
 
 - Live CPU saving is not measured here; the lead measures it after install against a fresh baseline (S7).
 - A caller added later that mutates an `allThreads()` record will throw (strict mode) rather than corrupt the cache; that is the intended failure mode (#17).
+- `bash install/test/run.sh` fails one check ("real wheelchair directory is byte-identical after suite") whenever a live agent writes under `~/.wheelchair` during the run; this branch changes nothing under `install/`. Both verifiers saw 191 pass, 1 fail for this reason; the sub-lead's run with no write in that window passed 192.
+- The GPT verifier's first parallel unit run failed one quiet-reminder timing assertion (50 ms grace) once; all 18 quiet tests passed alone and the full suite passed on rerun. Timing flake under load, not touched by this change.
 - Accepted Risks in PLAN.md stand: timers' locked re-reads remain; memory growth from transcripts until the chat follow-up.
 
 ## Remediation rounds
@@ -103,3 +114,7 @@ Fix (R1-T1, light / gpt-6-luna): `viewer/app/state.js:141` takes `checkedAt` bef
 # pass 694
 # fail 0
 ```
+
+### Verification attempt 2 — PASS
+
+Commit 8c187a2918279997aa8580caa95ba6edd0dad4ec. Claude verifier (claude-opus-5-5) PASS: 0 of 200 immediate same-size rewrites stale; unit 694 pass; browser 1040 passed, 34 skipped. GPT verifier (gpt-6.2-sol) PASS: pre-fix commit stale on 187 of 200 rewrites, fixed commit fresh on all 200 (172 of them with identical stat); unit 694 pass on rerun; browser 1040 passed, 34 skipped. Both: installer 191 pass, 1 fail (the live `~/.wheelchair` check above).
