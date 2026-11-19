@@ -124,7 +124,7 @@ async function runOperation(hub, id, { reimport = false } = {}) {
 // starts the lead after releasing that lock once the returned operation completed.
 async function createLocked(hub, { file, machine, project }) {
   const id = file.thread.id, now = new Date().toISOString();
-  const thread = { id, title: file.thread.title, slug: file.thread.slug, machine, project, branch: `wc/${id}`, stub: false, context: '', depends_on_parent: false, waiting_on_parent: false, sessions: [], cards: [], asides: [], pinned: {}, queues: {}, sent: [], archived: false, created_at: now, updated_at: now };
+  const thread = { id, title: file.thread.title, slug: file.thread.slug, machine, project, branch: `wc/${id}`, stub: false, context: '', depends_on_parent: false, waiting_on_parent: false, sessions: [], cards: [], asides: [], pinned: {}, queues: {}, sent: [], archived: false, project_tools: require('./threads.js').defaultProjectTools(), created_at: now, updated_at: now };
   await firstPreclaim(hub, thread, file.head);
   thread.handoff_op = operation('create', file.head, file);
   await hub.save(thread);
