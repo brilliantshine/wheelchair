@@ -70,6 +70,7 @@ None.
 | 43 | Supersedes the deferred parts of 35, 36, 38, 39, 40 and 41 (all-URL checks, commit trailer, lock-held display, machine-bound token, field checks and 504 `transport`, read-only tools in keys-only mode): see Deferred | Two-part mode | review-round-10 |
 | 44 | `failed` outcome for errors after validation; Read falls back to keys when GitHub is unreachable; Save round-trips the raw document; key headers have a prefix field; key writes return `keys` | Close round 10 gaps | review-round-10 |
 | 45 | Tool edits patch the original raw entry; `keys` updates only set status; key store writes are atomic with `failed` on error | Close round 11 gaps | review-round-11 |
+| 46 | Unrepresentable settings/headers kept verbatim and read-only; Keys list rebuilt from full stored names plus baseline references; key-store temp file cleaned up | Close round 12 gaps | review-round-12 |
 
 ## Spec
 
@@ -137,11 +138,11 @@ project's tools and lets him add, change and remove them. Works at phone width.
   - **key revision**: a counter the machine bumps on every key write.
   The screen sends it back on Save and Remove.
 - The tool form stays bound to the baseline it was loaded with. A reply after a key write
-  returns the key revision and a `keys` list (each stored name with set); the screen updates
-  the revision and the set / not set status of every key name it shows from that list (a name
-  missing from it is not set). Usage, "shared with" and held-back warnings stay as computed
-  from the loaded baseline; a removed key that the baseline still references stays listed as
-  not set. The form and its baseline are kept. After a Save that pushed a branch, the form reloads from the default branch.
+  returns the key revision and `keys`, the full list of stored key names. The screen
+  rebuilds the Keys list as: every name in `keys` (set) plus every key name the loaded baseline
+  references (not set if absent from `keys`). So an added key appears, a removed key that the
+  baseline still references stays as not set, and a removed unused key disappears. Usage,
+  "shared with" and held-back warnings stay as computed from the loaded baseline. The form and its baseline are kept. After a Save that pushed a branch, the form reloads from the default branch.
 - Each tool shows its name, kind (command or web address), what it runs, and its settings
   (env names; plain values shown, key values shown as "set" or "not set" on this machine).
 - Each tool shows any reason it would be skipped, by the machine's validator or by Codex, and
@@ -168,8 +169,10 @@ project's tools and lets him add, change and remove them. Works at phone width.
 - Fields the form doesn't know, and entries it can't represent, are kept as they were and
   shown read-only with "edit in the file". Editing a tool applies the form's
   fields onto that tool's original raw entry: fields the form knows are replaced or removed,
-  every other field in the entry is kept. An entry whose shape the form can't represent at
-  all (not a stdio or http entry) is read-only. Save sends the whole `mcpServers` object built
+  every other field in the entry is kept. A single setting or header the form can't represent
+  (for example a header with two `${...}` references, or text after the key) is shown
+  read-only and kept verbatim through any edit of that entry's other fields. An entry whose
+  shape the form can't represent at all (not a stdio or http entry) is read-only. Save sends the whole `mcpServers` object built
   that way (untouched entries exactly as read); the machine keeps every other
   top-level field of the source document as it was.
 - A tool name already used is refused.
@@ -247,8 +250,11 @@ project's tools and lets him add, change and remove them. Works at phone width.
   2. For a tool change: serialize the candidate (2-space JSON, trailing newline) and run the
      reader's checks on it. A whole-file failure blocks Save (400) with the reason. Per-entry
      skip reasons and the Codex size result are warnings, for edited and untouched entries.
-  3. Store the keys being set, all at once (write a temporary file, then rename). If that
-     fails, reply `failed` with the unchanged key revision. With no tool change, stop: reply
+  3. Store the keys being set, all at once: write a mode-600 temporary file in the same
+     directory, then rename it over the store; on any failure delete the temporary file (in a
+     `finally`) and reply `failed` with the unchanged key revision. Don't reuse
+     `atomicWrite` (`machine/service.js:68-73`) unless it gains that cleanup. Remove uses the
+     same write. With no tool change, stop: reply
      `saved`.
   4. In a temporary worktree (never Collin's checkout) at the default-branch head just
      fetched, replace `.mcp.json` with a regular file holding the candidate and commit
@@ -299,7 +305,9 @@ account-level tools; merging the PR; everything under Deferred.
 - `bash machine/test/run.sh` (fake git remote and fake `gh`): reading from the remote default
   branch via a private ref with `FETCH_HEAD` and tags untouched; keys-only without a GitHub
   origin; temp-worktree commit, new-branch push and PR; two saves make two PRs; push refuses an
-  existing branch name; `failed` (offline fetch, commit or push failure, with the new key revision) and `pr_failed`
+  existing branch name; `failed` for an offline fetch (original key revision and `keys`) and for a commit or
+  push failure after keys were stored (updated key revision and `keys`); a failed key write
+  leaves no temporary file; and `pr_failed`
   (with compare link) replies; Read with GitHub unreachable falls back to the keys list;
   editing one tool keeps read-only entries and other top-level fields byte-for-byte in meaning;
   `Bearer ${NAME}` header round-trips; key writes return `keys`; key store
@@ -622,7 +630,7 @@ round-trip); Saving (`tools` is the `mcpServers` object, `failed` outcome replac
 
 ### Round 12 — 2026-11-18
 
-**Lanes:** intent — pending; mechanics — pending; cross-family: pending.
+**Lanes:** intent — claude / claude-opus-5-5 (no findings); mechanics — gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 11:** Editing (form fields patched onto the original raw entry; only
 unrepresentable entries are read-only); Reading (`keys` merge updates set status only); Saving
@@ -631,6 +639,10 @@ Validation (502 path through the hub); Accepted Risks (large integers); Decision
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | blocking | RE-RAISE: URL edit can rewrite an unrepresentable header | downgraded to major: needs a rule, not a wrong build | Kept verbatim, read-only (Log 46) |
+| mechanics | blocking | RE-RAISE: Keys list rows after Add/Remove | downgraded to major | Rebuild rule (Log 46) |
+| mechanics | major | RE-RAISE: plaintext temp file left on failure | upheld | Cleanup in `finally` |
+| mechanics | minor | Validation groups offline fetch with post-write failures | upheld | Split |
 
 ## Implementation Tasks
 
@@ -642,5 +654,6 @@ Validation (502 path through the hub); Accepted Risks (large integers); Decision
 Round 3 was the third round without a clean result since Collin's last decision; budget stop. The `wc-tools` shared-branch design (Log 9, 12, 18) drew findings in all three rounds. Put to Collin; he chose one PR per save (Log 23). Budget reset.
 Round 6 was the third round without a clean result since that decision (rounds 4-6); budget stop. Recurring: recovering a Save whose reply was lost (rounds 4-6) and GitHub destination checks (rounds 5-6). Round 6 fixes applied before asking. Collin chose no save tracking (Log 34). Budget reset.
 Round 9 was the third round without a clean result since that decision (rounds 7-9); budget stop. Recurring: lost-reply and reply-contract handling, token binding, destination checks. All findings fixed before asking. Collin chose two-part mode (Log 42). Budget reset.
+Round 12 was the third round without a clean result since that decision (rounds 10-12); budget stop. Intent lens clean in rounds 11 and 12; mechanics findings are now precise edge rules in the form and key list. All fixed before asking.
 
 Watch List items 1-6 (Antigravity note, Codex flags, project identity, unknown fields, key values in argv, second save) were settled as Decision Log 4-9.
