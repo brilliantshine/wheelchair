@@ -31,7 +31,7 @@ class TryService {
       const finish = (status, error) => { if (finished) return; finished = true; clearTimeout(timer); resolve({ status, stdout, stderr, error }); };
       child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
       child.stdout.on('data', data => { stdout += data; }); child.stderr.on('data', data => { stderr += data; });
-      const timer = setTimeout(() => { try { process.kill(-child.pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; } finish(1, Object.assign(new Error('Git metadata timed out.'), { code: 'ETIMEDOUT' })); }, this.metadataTimeout);
+      const timer = setTimeout(() => { if (child.pid) { try { process.kill(-child.pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; } } finish(1, Object.assign(new Error('Git metadata timed out.'), { code: 'ETIMEDOUT' })); }, this.metadataTimeout);
       child.on('error', error => finish(1, error)); child.on('close', code => finish(code ?? 1));
     });
   }
@@ -41,8 +41,8 @@ class TryService {
       let stdout = Buffer.alloc(0), stderr = Buffer.alloc(0), killed = false, code = null, closed = false, failed = null;
       child.stdout.on('data', b => { stdout = Buffer.concat([stdout, b]); });
       child.stderr.on('data', b => { stderr = Buffer.concat([stderr, b]); });
-      const signal = sig => { try { process.kill(-child.pid, sig); } catch (error) { if (error.code !== 'ESRCH') throw error; } };
-      const groupAlive = () => { try { process.kill(-child.pid, 0); return true; } catch (error) { return error.code !== 'ESRCH'; } };
+      const signal = sig => { if (!child.pid) return; try { process.kill(-child.pid, sig); } catch (error) { if (error.code !== 'ESRCH') throw error; } };
+      const groupAlive = () => { if (!child.pid) return false; try { process.kill(-child.pid, 0); return true; } catch (error) { return error.code !== 'ESRCH'; } };
       let deadline = setTimeout(() => { killed = true; signal('SIGTERM'); killer = setTimeout(() => signal('SIGKILL'), this.killGrace); }, timeout);
       let killer;
       const finish = () => {
@@ -51,7 +51,10 @@ class TryService {
         clearTimeout(deadline); clearTimeout(killer);
         resolve({ code: killed ? 'killed' : code, stdout, stderr, error: failed });
       };
-      child.on('error', error => { failed = error; });
+      child.on('error', error => {
+        failed = error;
+        if (!child.pid) { clearTimeout(deadline); clearTimeout(killer); resolve({ code: 1, stdout, stderr, error }); }
+      });
       child.on('close', value => { code = value; closed = true; finish(); });
     });
   }
@@ -216,10 +219,13 @@ class TryService {
           record.identity = await this.identity(folder);
         }
         if (record.active && !from.branch && from.sha !== record.active.commit) {
-          const ref = `refs/wheelchair/kept/${this.hash(folder).slice(0, 16)}/${crypto.randomBytes(4).toString('hex')}`;
-          const entry = { ref, label: `commits made while trying thread ${record.active.thread_id}`, thread_id: record.active.thread_id, at: new Date().toISOString() };
-          record.kept.push(entry); await this.write(folder, record);
-          if ((await this.git(folder, ['update-ref', ref, from.sha])).status !== 0) throw new Error('Git could not keep your commits.');
+          const alreadyKept = await Promise.all(record.kept.filter(entry => !entry.old_identity).map(entry => this.resolveRef(folder, entry.ref)));
+          if (!alreadyKept.includes(from.sha)) {
+            const ref = `refs/wheelchair/kept/${this.hash(folder).slice(0, 16)}/${crypto.randomBytes(4).toString('hex')}`;
+            const entry = { ref, label: `commits made while trying thread ${record.active.thread_id}`, thread_id: record.active.thread_id, at: new Date().toISOString() };
+            record.kept.push(entry); await this.write(folder, record);
+            if ((await this.git(folder, ['update-ref', ref, from.sha])).status !== 0) throw new Error('Git could not keep your commits.');
+          }
         }
         const to = { branch: null, sha: target };
         const returnRef = first ? `refs/wheelchair/return/${this.hash(folder).slice(0, 16)}/${crypto.randomBytes(4).toString('hex')}` : null;
@@ -298,12 +304,6 @@ class TryService {
     try {
       const active = record.active;
       const to = { branch: active.return_point.branch, sha: target };
-      if (!from.branch && from.sha !== active.commit) {
-        const ref = `refs/wheelchair/kept/${this.hash(folder).slice(0, 16)}/${crypto.randomBytes(4).toString('hex')}`;
-        record.kept.push({ ref, label: `commits made while trying thread ${active.thread_id}`, thread_id: active.thread_id, at: new Date().toISOString() });
-        await this.write(folder, record);
-        if ((await this.git(folder, ['update-ref', ref, from.sha])).status !== 0) throw new Error('Git could not keep your commits.');
-      }
       const before = await this.scan(folder); const clean = await this.filtered(folder, before);
       if (before.some(entry => entry.submodule) || await this.gitlinkChanged(folder, from.sha, target)) {
         last.reason = "This thread changes a submodule, which isn't supported.";
@@ -311,6 +311,15 @@ class TryService {
         last.reason = 'These files have changes. Commit, undo or delete them at your computer, then press again.';
         Object.assign(last, this.listFields(clean));
       } else {
+        if (!from.branch && from.sha !== active.commit) {
+          const alreadyKept = await Promise.all(record.kept.filter(entry => !entry.old_identity).map(entry => this.resolveRef(folder, entry.ref)));
+          if (!alreadyKept.includes(from.sha)) {
+            const ref = `refs/wheelchair/kept/${this.hash(folder).slice(0, 16)}/${crypto.randomBytes(4).toString('hex')}`;
+            record.kept.push({ ref, label: `commits made while trying thread ${active.thread_id}`, thread_id: active.thread_id, at: new Date().toISOString() });
+            await this.write(folder, record);
+            if ((await this.git(folder, ['update-ref', ref, from.sha])).status !== 0) throw new Error('Git could not keep your commits.');
+          }
+        }
         record.pending = { op: 'back', first: false, thread_id: input.thread_id, from, to };
         await this.write(folder, record); pendingWritten = true;
         const args = ['-c', 'submodule.recurse=false', 'switch', '--no-guess', '--no-overwrite-ignore', '--no-recurse-submodules'];
