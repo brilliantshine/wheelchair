@@ -93,7 +93,7 @@
       command: kind === 'command' ? raw.command : '',
       url: kind === 'http' ? raw.url : '',
       args,
-      argsRO: args.some((a) => typeof a !== 'string' || a === '' || a.includes('\n') || a.includes('${')),
+      argsRO: args.some((a) => typeof a !== 'string' || a === '' || a.includes('\n') || a.includes('\r') || a.includes('${')),
       commandRO: kind === 'command' && raw.command.includes('${'),
       urlRO: kind === 'http' && raw.url.includes('${'),
       extras: Object.entries(raw).filter(([k]) => !KNOWN_FIELDS.includes(k)),
@@ -114,7 +114,7 @@
       picker: null, machine: '', path: '',
       read: null, token: null, keys: [], tools: {}, sourceTools: {},
       pending: nullObj(),     // key values typed in the tool form, by name
-      busy: false, readSeq: 0, pickSeq: 0, gen: 0,
+      busy: false, loading: false, loads: 0, readSeq: 0, pickSeq: 0, gen: 0,
     };
     let els = {};
     let formState = null;
@@ -139,6 +139,18 @@
       status.replaceChildren(...[].concat(parts || []).map((p) => (typeof p === 'string' ? h('p', { text: p }) : p)));
       if (parts) status.scrollIntoView?.({ block: 'nearest' });
     }
+
+    // ---- loading lock ------------------------------------------------------------------
+    // While the picker or a read is in flight nothing in the section can be used.
+
+    function applyLock() {
+      state.loading = state.loads > 0;
+      machineSel.disabled = state.loading;
+      projectSel.disabled = state.loading;
+      if (state.loading) for (const el of view.querySelectorAll('button,input,select,textarea')) el.disabled = true;
+    }
+    function startLoad() { state.loads++; applyLock(); }
+    function endLoad() { state.loads = Math.max(0, state.loads - 1); applyLock(); }
 
     // ---- picker -----------------------------------------------------------------------
 
@@ -167,10 +179,15 @@
       state.path = '';
       state.machine = machine || 'hub';
       clearView();
+      projectSel.replaceChildren(h('option', { value: '', text: 'Choose a project…' }));
       const t = tag();
+      startLoad();
+      let ended = false;
+      const end = () => { if (!ended) { ended = true; endLoad(); } };
       try {
         const res = await fetch(API + '/new-thread?machine=' + encodeURIComponent(machine || 'hub'));
         const data = await res.json().catch(() => ({}));
+        end();
         if (!res.ok) throw new Error(data.detail || data.error || 'http ' + res.status);
         if (seq !== state.pickSeq || !fresh(t)) return;
         state.picker = data;
@@ -179,6 +196,7 @@
         state.machine = machineSel.value;
         fillProjects(data);
       } catch (e) {
+        end();
         if (seq !== state.pickSeq || !fresh(t)) return;
         setStatus('Could not load the project list: ' + e.message, true);
       }
@@ -211,7 +229,10 @@
       const path = state.path;
       const t = tag();
       view.replaceChildren(h('p', { class: 'hint', text: 'Reading the project…' }));
-      const { status: code, body } = await post('/project-tools/read', { machine, path });
+      startLoad();
+      let res;
+      try { res = await post('/project-tools/read', { machine, path }); } finally { endLoad(); }
+      const { status: code, body } = res;
       if (seq !== state.readSeq || !fresh(t)) return;
       if (!body || !body.mode || code >= 400) {
         view.replaceChildren();
@@ -282,7 +303,7 @@
       const names = Object.keys(state.tools);
       const kids = names.map((name) => toolCard(name));
       if (!names.length) kids.push(h('p', { class: 'hint', text: 'No tools yet.' }));
-      kids.push(h('div', { class: 'actions' }, button('Add a tool', () => openForm(null), { id: 'pt-add' })));
+      kids.push(h('div', { class: 'actions' }, button('Add a tool', () => openForm(null), { id: 'pt-add', disabled: state.loading })));
       els.tools.replaceChildren(...kids);
     }
 
@@ -300,17 +321,11 @@
       return h('li', {}, h('span', { class: 'mono', text: row.name }), ' = ', h('span', { class: 'mono', text: row.value }));
     }
 
-    // Other tools in the current draft that use the key `key`, leaving out `except`.
+    // Tools other than `except` whose loaded checks name the key `key`.
     function toolsUsingKey(key, except) {
-      const out = [];
-      for (const [n, raw] of Object.entries(state.tools)) {
-        if (n === except) continue;
-        const p = parseEntry(raw);
-        if (!p) continue;
-        const kind = p.kind === 'command' ? 'env' : 'hdr';
-        if ((p.kind === 'command' ? p.envRows : p.hdrRows).some((row) => rowKeyName(row, kind) === key)) out.push(n);
-      }
-      return out;
+      const checks = state.read?.checks;
+      if (!isPlain(checks)) return [];
+      return Object.keys(checks).filter((n) => n !== except && (own(checks, n)?.keys || []).includes(key));
     }
 
     function toolCard(name) {
@@ -331,25 +346,18 @@
           card.append(h('p', { class: 'hint', text: p.kind === 'command' ? 'Settings' : 'Headers' }),
             h('ul', { class: 'pt-rows' }, rows.map((row) => rowLine(row, p.kind === 'command' ? 'env' : 'hdr'))));
         }
-        const myKeys = [...new Set(rows.map((row) => rowKeyName(row, p.kind === 'command' ? 'env' : 'hdr')).filter(Boolean))];
-        for (const key of myKeys) {
-          for (const other of toolsUsingKey(key, name)) card.append(h('p', { class: 'hint', text: 'shared with ' + other + ' (' + key + ')' }));
-        }
-        card.dataset.needs = myKeys.filter((k) => !state.keys.includes(k)).join(',');
       }
       for (const s of checks.skip || []) card.append(h('p', { class: 'pt-warn', text: s }));
-      // The machine's key warnings are the source; a "needs" one shows only while the key is unset.
-      const named = new Set();
+      // The machine's own key warnings, except "needs" ones, which follow the key status here.
       for (const w of Array.isArray(checks.key_warnings) ? checks.key_warnings : []) {
-        const m = NEEDS_RE.exec(w);
-        if (m) {
-          if (state.keys.includes(m[1])) continue;
-          named.add(m[1]);
-        }
-        card.append(h('p', { class: 'pt-warn', text: w }));
+        if (!NEEDS_RE.test(w)) card.append(h('p', { class: 'pt-warn', text: w }));
       }
-      for (const key of (card.dataset.needs || '').split(',').filter(Boolean)) {
-        if (!named.has(key)) card.append(h('p', { class: 'pt-warn', text: 'needs ' + key + ', not set on this machine' }));
+      const myKeys = Array.isArray(checks.keys) ? checks.keys : [];
+      for (const key of myKeys) {
+        for (const other of toolsUsingKey(key, name)) card.append(h('p', { class: 'hint', text: 'shared with ' + other + ' (' + key + ')' }));
+      }
+      for (const key of myKeys) {
+        if (!state.keys.includes(key)) card.append(h('p', { class: 'pt-warn', text: 'needs ' + key + ', not set on this machine' }));
       }
       const actions = h('div', { class: 'actions' });
       if (p) actions.append(button('Edit', () => openForm(name), { 'aria-label': 'Edit ' + name }));
@@ -360,7 +368,7 @@
         confirmHost.replaceChildren(
           h('p', { text: 'Remove ' + name + '? It goes away when you Save.' }),
           h('div', { class: 'actions' },
-            button('Yes, remove ' + name, () => { delete state.tools[name]; paintTools(); paintSave(); }, { class: 'danger' }),
+            button('Yes, remove ' + name, () => { if (state.loading) return; delete state.tools[name]; paintTools(); paintSave(); }, { class: 'danger' }),
             button('Cancel', () => { confirmHost.hidden = true; remove.hidden = false; })));
       }, { 'aria-label': 'Remove ' + name });
       actions.append(remove);
@@ -380,6 +388,7 @@
     }
 
     function openForm(origName) {
+      if (state.loading) return;
       const raw = origName !== null ? own(state.tools, origName) || null : null;
       const p = raw ? parseEntry(raw) : null;
       if (raw && !p) return;
@@ -482,6 +491,7 @@
       });
 
       function apply() {
+        if (state.loading) return;
         showErr('');
         const name = f.name.trim();
         if (!name) return showErr('Give the tool a name.');
@@ -490,9 +500,9 @@
         const rk = f.kind === 'command' ? 'env' : 'hdr';
         if (f.kind === 'command' && !f.command.trim()) return showErr('Enter the command to run.');
         if (f.kind === 'http' && !f.url.trim()) return showErr('Enter the web address.');
-        const seen = new Set();
+        const seen = new Set(rows.filter((row) => row.ro).map((row) => row.name));
         for (const row of rows) {
-          if (row.ro) { seen.add(row.name); continue; }
+          if (row.ro) continue;
           const nm = row.name.trim();
           if (!nm) return showErr('Every ' + (rk === 'env' ? 'setting' : 'header') + ' needs a name.');
           if (seen.has(nm)) return showErr(nm + ' is listed twice.');
@@ -578,7 +588,7 @@
       if (!els.save) return;
       const dirty = isDirty();
       const hasKeys = Object.values(state.pending).some(Boolean);
-      const btn = button('Save', saveTools, { class: 'primary', id: 'pt-save', disabled: state.busy || (!dirty && !hasKeys) });
+      const btn = button('Save', saveTools, { class: 'primary', id: 'pt-save', disabled: state.busy || state.loading || (!dirty && !hasKeys) });
       els.save.replaceChildren(btn, h('span', { class: 'hint', text: dirty ? 'Unsaved changes. Saving opens a pull request against the default branch.' : hasKeys ? 'Key values will be stored on this machine.' : 'No changes.' }));
     }
 
@@ -602,7 +612,7 @@
     }
 
     async function saveTools() {
-      if (state.busy) return;
+      if (state.busy || state.loading) return;
       const dirty = isDirty();
       const refs = currentRefs(state.tools);
       const keys = nullObj();
@@ -611,11 +621,11 @@
       await send({ tools: dirty ? state.tools : null, keys });
     }
     async function startOver() {
-      if (state.busy) return;
+      if (state.busy || state.loading) return;
       await send({ tools: {}, keys: {}, start_over: true });
     }
     async function setKey(name, value) {
-      if (state.busy) return false;
+      if (state.busy || state.loading) return false;
       return send({ tools: null, keys: setOwn(nullObj(), name, value) });
     }
 
@@ -723,7 +733,7 @@
         if (bad) { addErr.textContent = bad; return; }
         if (!newValue.value) { addErr.textContent = 'Enter a value.'; return; }
         if (await setKey(name, newValue.value)) { newName.value = ''; newValue.value = ''; }
-      }, { disabled: state.busy });
+      }, { disabled: state.busy || state.loading });
       els.keys.replaceChildren(
         h('h2', { text: 'Keys on this machine' }),
         h('p', { class: 'hint', text: "Key values are stored on this machine and never shown again." }),
@@ -739,7 +749,7 @@
         err.textContent = '';
         if (!value.value) { err.textContent = 'Enter a value.'; return; }
         if (await setKey(name, value.value)) value.value = '';
-      }, { 'aria-label': 'Set ' + name, disabled: state.busy });
+      }, { 'aria-label': 'Set ' + name, disabled: state.busy || state.loading });
       const rm = isSet ? button('Remove', () => {
         const users = own(state.read?.references, name) || [];
         rm.hidden = true;
@@ -748,7 +758,7 @@
           h('p', { text: 'Remove ' + name + '? ' + (state.read?.token?.baseline ? (users.length ? 'Tools on main using it: ' + users.join(', ') + '. ' : 'No tools on main use it. ') : '') + 'Waiting pull requests may need it too.' }),
           h('div', { class: 'actions' },
             button('Yes, remove ' + name, async () => {
-              if (state.busy) return;
+              if (state.busy || state.loading) return;
               setBusy(true); setStatus('Removing…');
               const c = tag();
               try {
@@ -758,7 +768,7 @@
               } finally { setBusy(false); }
             }, { class: 'danger' }),
             button('Cancel', () => { confirmHost.hidden = true; rm.hidden = false; })));
-      }, { 'aria-label': 'Remove ' + name, disabled: state.busy }) : null;
+      }, { 'aria-label': 'Remove ' + name, disabled: state.busy || state.loading }) : null;
       return h('div', { class: 'pt-key', 'data-key': name },
         h('div', { class: 'pt-key-head' }, h('span', { class: 'mono', text: name }),
           h('span', { class: 'pt-chip ' + (isSet ? 'set' : 'unset'), text: isSet ? 'set' : 'not set' }),
