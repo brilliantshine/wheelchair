@@ -2,7 +2,19 @@
 slug: remove-owner-name
 date: 2026-11-19
 implemented-by: "T1, T2: standard (claude-sonnet-5-5); T3: standard (gpt-6.1-terra); sub-lead: claude-opus-5-5"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude-opus-5-5 (PASS)
+    checks: T1, T2 claude-sonnet-5-5; T3 gpt-6.1-terra
+  - round: 1
+    lane: gpt-6.2-sol (FAIL, 3 gaps)
+    checks: T1, T2 claude-sonnet-5-5; T3 gpt-6.1-terra
+  - round: 2
+    lane: claude-opus-5-5 (PASS)
+    checks: T1, T2 claude-sonnet-5-5; T3, R1-1 gpt-6.1-terra
+  - round: 2
+    lane: gpt-6.2-sol (FAIL, 1 gap, ruled not a gap by the lead)
+    checks: T1, T2 claude-sonnet-5-5; T3, R1-1 gpt-6.1-terra
 ---
 
 # Completion Report — Remove the owner's name from wheelchair
@@ -95,3 +107,11 @@ Verification attempt 1 on 1188b129: Claude verifier PASS, GPT verifier FAIL with
 - **G1 — full viewer/browser suites exit 1 (Validation 4).** Lead's ruling: not a gap in this change, and not deferred. Evidence: every failing test differed between runs (`app-uploads-archive.test.js:72`, `app-quiet.test.js` "6 message clears debt", `server.test.js` "global write lock" and a port refusal, browser `app-handoff.spec.js:222`, `app-threads.spec.js:340,550,620`, `app-agents-decks.spec.js:247`). None of those files, nor `viewer/server.js`, is changed on this branch. The GPT verifier reproduced the Firefox approval timeout on the pre-change commit. Each passes when rerun alone. The sub-lead's full `node --test viewer/test/*.test.js` run passed 686/686 (above), and T3's full browser run passed 1028.
 - **G2 — Validation 6 test read the queue, not delivery.** Fixed: `viewer/test/app-handoff-restart.test.js:85-88` now fires `turn-ended` and asserts on `c.machine.sessions.get(lead.name).submits[0]` (prefix `[wc:context import]`), keeping the saved-state assertions. `node --test viewer/test/app-handoff-restart.test.js` → 13 pass, 0 fail (rerun by the sub-lead); `app-hub.test.js` 115 pass.
 - **G3 — `protocol/app/lead.md:491` capitalised "The user's" mid-sentence.** Fixed to "the user's".
+
+### Verification attempt 2 — 2026-11-19
+
+On 4c8a35d6: Claude verifier PASS, GPT verifier FAIL on one gap. Validations 1-3, 5 and 6 passed in both.
+
+- **Validation 4, port race.** In the GPT verifier's full viewer run, `viewer/test/app-settings.test.js:352` ("removed worker providers stay removed after saving") could not start its fixture server because the port was held. It passed 15/15 when run alone. The lead ruled it not a gap in this change, the same as G1. This branch changes only lines 273 and 278 of that file, two escalation-sentence strings. Test 352 covers `worker_order`. The failure is a port race in `viewer/test/helpers/server.js:20`: it probes a free port, closes it, then starts the server on it, and both verifiers ran full suites on the same machine at once.
+- The verifiers' other full-run failures were all in unchanged files and passed when rerun alone: `project-tools-service.test.js` tmux buffer, `app-quiet.test.js` "6 message clears debt", browser `app-threads.spec.js:538` and others. The changed viewer test files passed 143/143 run alone.
+- Not changed: `protocol/app/lead.md:342` "put the fork to them as a `question` card". The lead ruled that the referent is clear.
