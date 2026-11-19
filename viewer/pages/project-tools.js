@@ -59,8 +59,10 @@
 
   // ---- reading a raw entry into what the form can show ------------------------------------
 
+  // True when a single-line input could not show the string exactly: a C0 control character or DEL.
+  function unshowable(s) { return /[\u0000-\u001f\u007f]/.test(s); }
   function classifyEnv(name, value) {
-    if (typeof value !== 'string') return { ro: true, name, raw: value };
+    if (typeof value !== 'string' || unshowable(name) || unshowable(value)) return { ro: true, name, raw: value };
     const m = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(value);
     if (m && m[1] === name && isReservedName(name)) return { ro: true, env: true, name, raw: value };
     if (m && m[1] === name) return { name, mode: 'key', value: '', secret: '' };
@@ -68,7 +70,7 @@
     return { name, mode: 'plain', value, secret: '' };
   }
   function classifyHeader(name, value) {
-    if (typeof value !== 'string') return { ro: true, name, raw: value };
+    if (typeof value !== 'string' || unshowable(name) || unshowable(value)) return { ro: true, name, raw: value };
     const m = /^([^$]*)\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(value);
     if (m && isReservedName(m[2])) return { ro: true, env: true, name, raw: value };
     if (m) return { name, mode: 'key', prefix: m[1], keyName: m[2], value: '', secret: '' };
@@ -93,12 +95,30 @@
       command: kind === 'command' ? raw.command : '',
       url: kind === 'http' ? raw.url : '',
       args,
-      argsRO: args.some((a) => typeof a !== 'string' || a === '' || a.includes('\n') || a.includes('\r') || a.includes('${')),
-      commandRO: kind === 'command' && raw.command.includes('${'),
-      urlRO: kind === 'http' && raw.url.includes('${'),
+      argsRO: args.some((a) => typeof a !== 'string' || a === '' || unshowable(a) || a.includes('${')),
+      commandRO: kind === 'command' && (raw.command.includes('${') || unshowable(raw.command)),
+      urlRO: kind === 'http' && (raw.url.includes('${') || unshowable(raw.url)),
       extras: Object.entries(raw).filter(([k]) => !KNOWN_FIELDS.includes(k)),
       envRows: kind === 'command' ? Object.entries(raw.env || {}).map(([k, v]) => ({ ...classifyEnv(k, v), rawName: k, rawValue: v, dirty: false })) : [],
       hdrRows: kind === 'http' ? Object.entries(raw.headers || {}).map(([k, v]) => ({ ...classifyHeader(k, v), rawName: k, rawValue: v, dirty: false })) : [],
+    };
+  }
+  // What a card can show of any entry, including ones the form can't edit. Rows are classified the
+  // same way as for the form; whatever isn't shown as a field or rows is listed as an extra.
+  function viewEntry(raw) {
+    if (!isPlain(raw)) return null;
+    const kind = typeof raw.command === 'string' ? 'command' : typeof raw.url === 'string' ? 'http' : null;
+    if (!kind) return null;
+    const args = kind === 'command' && Array.isArray(raw.args) ? raw.args : [];
+    const rowsOf = (v, classify) => (isPlain(v) ? Object.entries(v).map(([k, x]) => ({ ...classify(k, x), rawName: k, rawValue: x, dirty: false })) : []);
+    const shown = new Set(['type']);
+    if (raw.type !== undefined && raw.type !== 'stdio' && raw.type !== 'http') shown.delete('type');
+    if (kind === 'command') { shown.add('command'); if (Array.isArray(raw.args)) shown.add('args'); if (isPlain(raw.env)) shown.add('env'); }
+    else { shown.add('url'); if (isPlain(raw.headers)) shown.add('headers'); }
+    return {
+      kind, command: kind === 'command' ? raw.command : '', url: kind === 'http' ? raw.url : '', args,
+      extras: Object.entries(raw).filter(([k]) => !shown.has(k)),
+      rows: kind === 'command' ? rowsOf(raw.env, classifyEnv) : rowsOf(raw.headers, classifyHeader),
     };
   }
   const NEEDS_RE = /^needs ([A-Za-z_][A-Za-z0-9_]*), not set on this machine$/;
@@ -365,21 +385,19 @@
       const p = parseEntry(raw);
       const checks = checksFor(name);
       const card = h('div', { class: 'pt-tool', 'data-tool': name });
-      const roKind = !p && isPlain(raw) ? (typeof raw.command === 'string' ? 'command' : typeof raw.url === 'string' ? 'web address' : '') : '';
+      const v = viewEntry(raw);
+      const editable = !!p && !unshowable(name);
       card.append(h('div', { class: 'pt-tool-head' }, h('h3', { text: name }),
-        h('span', { class: 'pt-chip', text: p ? (p.kind === 'command' ? 'command' : 'web address') : roKind || 'edit in the file' })));
-      if (!p) {
-        if (roKind) card.append(h('p', { class: 'pt-runs mono', text: roKind === 'command' ? [raw.command, ...(Array.isArray(raw.args) ? raw.args.filter((a) => typeof a === 'string') : [])].join(' ') : raw.url }));
-        card.append(h('p', { class: 'hint', text: "This entry's shape can't be shown here. Edit in the file." }));
-      } else {
-        for (const [k, v] of p.extras) card.append(h('p', { class: 'hint' }, h('span', { class: 'mono', text: k + ': ' + JSON.stringify(v) }), ' (edit in the file)'));
-        card.append(h('p', { class: 'pt-runs mono', text: p.kind === 'command' ? [p.command, ...p.args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a)))].join(' ') : p.url }));
-        const rows = p.kind === 'command' ? p.envRows : p.hdrRows;
-        if (rows.length) {
-          card.append(h('p', { class: 'hint', text: p.kind === 'command' ? 'Settings' : 'Headers' }),
-            h('ul', { class: 'pt-rows' }, rows.map((row) => rowLine(row, p.kind === 'command' ? 'env' : 'hdr'))));
+        h('span', { class: 'pt-chip', text: v ? (v.kind === 'command' ? 'command' : 'web address') : 'edit in the file' })));
+      if (v) {
+        for (const [k, x] of v.extras) card.append(h('p', { class: 'hint' }, h('span', { class: 'mono', text: k + ': ' + JSON.stringify(x) }), ' (edit in the file)'));
+        card.append(h('p', { class: 'pt-runs mono', text: v.kind === 'command' ? [v.command, ...v.args.map((x) => (typeof x === 'string' ? x : JSON.stringify(x)))].join(' ') : v.url }));
+        if (v.rows.length) {
+          card.append(h('p', { class: 'hint', text: v.kind === 'command' ? 'Settings' : 'Headers' }),
+            h('ul', { class: 'pt-rows' }, v.rows.map((row) => rowLine(row, v.kind === 'command' ? 'env' : 'hdr'))));
         }
       }
+      if (!editable) card.append(h('p', { class: 'hint', text: v ? 'The form can\'t edit this tool. Edit in the file.' : "This entry's shape can't be shown here. Edit in the file." }));
       for (const s of checks.skip || []) card.append(h('p', { class: 'pt-warn', text: s }));
       // The machine's own key warnings, except "needs" ones, which follow the key status here.
       for (const w of Array.isArray(checks.key_warnings) ? checks.key_warnings : []) {
@@ -393,7 +411,7 @@
         if (!state.keys.includes(key)) card.append(h('p', { class: 'pt-warn', text: 'needs ' + key + ', not set on this machine' }));
       }
       const actions = h('div', { class: 'actions' });
-      if (p) actions.append(button('Edit', () => openForm(name), { 'aria-label': 'Edit ' + name }));
+      if (editable) actions.append(button('Edit', () => openForm(name), { 'aria-label': 'Edit ' + name }));
       const confirmHost = h('div', { class: 'pt-confirm', hidden: true });
       const remove = button('Remove', () => {
         confirmHost.hidden = false;
@@ -424,7 +442,7 @@
       if (state.loading) return;
       const raw = origName !== null ? own(state.tools, origName) || null : null;
       const p = raw ? parseEntry(raw) : null;
-      if (raw && !p) return;
+      if (raw && (!p || unshowable(origName))) return;
       const f = formState = {
         origName, raw, p, refreshers: [], touched: { name: false, command: false, url: false, args: false }, rowsTouched: { env: false, hdr: false }, name: origName || '', kind: p ? p.kind : 'command',
         command: p?.command || '', url: p?.url || '', argsText: (p?.args || []).join('\n'), argsRO: !!p?.argsRO,
