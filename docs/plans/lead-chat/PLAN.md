@@ -58,6 +58,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 21 | Split off: the formal rules for turning an overlap into a user decision (when to post a card, holding or changing builds, pending changes during review, restarts) and `card.js` printing card ids move to a stub thread. Here, a lead mentions an overlap in one line and the user decides in chat as usual | That part drew blocking/major findings in rounds 4-6 while the rest settled; the user picked "Split it off" | user |
 | 22 | Check (b) moves from "right before the approval card" to the visible turn that sets `ready-for-review`; the pre-approval question card from round 7 is dropped | The approval turn is hidden, and a card there tangled with approval, restart and handoff rules; a shown reply before review needs no new rule | review-round-8 |
 | 23 | After the review budget was reached again (rounds 7-9), run one more review pass | User's pick ("One more pass") | user |
+| 24 | A new overlap found at check (b) becomes an ordinary Open Question in PLAN.md, asked as a question card before `ready-for-review` | Reuses planning's existing question and restart rules; no hidden wait | review-round-10 |
 
 ## Spec
 
@@ -206,11 +207,12 @@ turn is hidden; the sender's own tool calls show as any tool call does today), e
 
 **`protocol/app/lead.md`**: add a section "Other leads on this machine":
 - **When to look:** run `wc.js session leads` (a) after the mapper's `result` arrives and
-  you have read MAP.md, (b) in the turn that sets `status: ready-for-review`, whatever started it
-  (a settled question, IDEA.md's confirmation when every design question was defaulted, or
-  a hidden message); if that turn is hidden, carry the line as "Leads inform" says. If (b)
-  finds an overlap you have not already told your user about, start no reviewers until your
-  user has replied to it, (c) whenever the user asks.
+  you have read MAP.md, (b) when Open Questions and the Watch List are empty, before you set
+  `status: ready-for-review`, whatever turn that is. A new overlap found there (one you
+  have not already told your user about) becomes an Open Question in PLAN.md, asked as a
+  `question` card like any other ("<thread title> is also working on <what>: what should
+  this plan do?", with options such as keep the plan as it is, or change it), so the status
+  stays `planning` until it is settled and a restarted lead finds it in PLAN.md, (c) whenever the user asks.
   For a small fix, once before making the edits. Show the user nothing unless something
   overlaps; when something does, say so in one line in your reply.
 - **Overlap:** when a listed thread's title, idea or stage suggests it touches the same files
@@ -230,8 +232,8 @@ turn is hidden; the sender's own tool calls show as any tool call does today), e
   in one line in your next reply they see (a turn started by a `[wc:from ...]` message is
   hidden, so carry it to the next visible reply): which thread, what it is doing, and what
   it might mean for this one. Your user decides in chat, and you handle what they say like
-  anything else they say at that step under lead.md's existing rules. No new card or
-  timing rule applies.
+  anything else they say at that step under lead.md's existing rules. Apart from check (b)
+  turning a new overlap into an Open Question, no new card or timing rule applies.
 - **Never wait on another lead.** Asking another lead never holds up your own step: carry
   on. A late answer gets the same one-line mention when it arrives.
 - **Another project:** only when the user names a thread or project. Find it with
@@ -493,9 +495,22 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 10 — 2026-11-19
 
-**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 9:** §4 check (b) runs in whatever turn sets `ready-for-review` and holds reviewers until the user replies to a new overlap; §3 one open `reach` card per thread; Accepted Risk on the dropped-message gap reworded; Validation line for a second `reach` card.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | major | Hidden (b) turn stalls review with nothing for the user to answer | upheld | New overlap at (b) becomes an Open Question card (Decision 24) |
+| intent | minor | "No new card or timing rule" contradicts (b) | upheld | Sentence names the (b) exception |
+| mechanics | blocking | Waiting at (b) needs a question card | upheld | Decision 24 |
+| mechanics | blocking | Restart loses the (b) hold | upheld | Held as an Open Question in PLAN.md with status `planning` (Decision 24) |
+
+### Round 11 — 2026-11-19
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 10:** Decision 24: §4 check (b) runs before `ready-for-review` and a new overlap becomes an ordinary Open Question asked by card; "Leads inform" last sentence names that exception.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
