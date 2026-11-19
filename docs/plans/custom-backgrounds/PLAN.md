@@ -183,6 +183,10 @@ Backend and frontend run in disjoint checkouts. T1 owns the shared format helper
 | T1 | tricky: persistence, bounded HTTP and shared format parser | viewer/app/background.js, settings.js, state.js, routes.js, hub.js, API.md; viewer/server.js; pages/background-format.js; test/background*.test.js; test/fixtures/background/ | standard gpt/gpt-6.1-terra | wc-7108adfdf9ea-worker | node --test viewer/test/background*.test.js; full Node suite | partial, integrated; next attempt needed |
 | T2 | tricky: shared renderer, Settings editor, page surfaces and browser checks | viewer/pages except background-format.js; viewer/doc.html; test/background*.spec.js; test/fixtures/background-browser/ | standard gpt/gpt-6.1-terra (Claude unavailable) | wc-7108adfdf9ea-worker-2 | focused browser tests; full browser suite | partial, integrated; next attempt needed |
 
+| T3 | tricky: complete backend/parser and focused missing checks; T1 hit twice-failed environment gate | T1 boundary and report T3.md | standard gpt/gpt-6.1-terra, xhigh (effort step) | pending | private TMPDIR node --test viewer/test/background*.test.js | dispatched |
+| T4 | tricky: complete renderer/editor lifecycle and surfaces; T2 hit twice-failed incomplete gate | pages source excluding format helper, legacy doc; report T4.md | standard gpt/gpt-6.1-terra, xhigh (effort step) | pending | JS syntax, diff check, focused Chromium | dispatched |
+| T5 | tricky: complete representative browser checks | test/background*.spec.js, fixtures/background-browser, app-settings.spec.js section expectation only; report T5.md | standard gpt/gpt-6.1-terra | pending | private TMPDIR focused Chromium then integrated both browsers | dispatched |
+
 ## Log
 
 2026-11-19: Adopted user attachments and the requested realism changes. User explicitly authorized implementation. Source review history remains in the uploaded original. No feature implementation has started.
