@@ -1,6 +1,6 @@
 ---
 slug: local-checkout-handoff
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-18
 ---
 
@@ -63,6 +63,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 26 | Done, Try and Back refused while `index.lock` exists; git output reporting a failed removal counts as interrupted; Back judges and finalizes from one scan; Status checks a lock generation before showing an interruption; Done re-creates a missing return pin before keeping it | Round 9 findings | review-round-9 |
 | 27 | Only `unable to unlink`/`unable to rmdir` with HEAD at the target overrides the table; scan-free checks run before acknowledging, and every accepted action writes `last` with an outcome; the lock-file line shows in any state; `appeared` lists raw paths, capped at 50 | Round 10 findings | review-round-10 |
 | 28 | Removal override matches only git's own warning lines; hook outcome follows its exit code; pre-switch scan failure is a refusal; lock-file line only when no switch runs; `appeared` is the raw post-minus-pre difference and the only list on a Back success; all file lists capped at 50 with counts; Status returns `last` and `index_lock`; only `try`/`back` write `last` | Round 11 findings | review-round-11 |
+| 29 | Approve after round 11 without a further round; the remaining findings were wording and consistency, left to the build and its verification | Collin chose "Approve now" after the review budget stopped | user |
 
 ## Spec
 
@@ -72,6 +73,27 @@ non-goals, and concrete validation commands.
 
 A Mermaid diagram of the flow belongs here, added by Stage 2 at approval — not while the
 Spec is still churning. See `protocol/diagrams.md`.
+
+### Flow
+
+```mermaid
+flowchart TD
+  A[Collin presses Try it in my copy] --> B{Folder fine and nothing changed in it?}
+  B -- no --> R[Stop and say why, listing any changed files]
+  B -- yes --> C[Remember his branch, then git switches the folder to the thread's work]
+  C --> D{How did it end?}
+  D -- switched --> E[Panel: your copy is showing this thread]
+  D -- git refused, nothing moved --> R
+  D -- anything else --> I[Panel: a switch was interrupted, check at your computer, then Done]
+  E --> F[Collin presses Switch back]
+  F --> G{Anything changed while trying?}
+  G -- yes --> R
+  G -- no --> H[git switches back to his branch]
+  H --> D2{How did it end?}
+  D2 -- switched --> J[Panel: nothing; he is back on his branch]
+  D2 -- git refused --> E
+  D2 -- anything else --> I
+```
 
 ### Behaviour
 
