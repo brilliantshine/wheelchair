@@ -8,7 +8,7 @@ test('validates all actions and their fields', async () => {
   for (const input of [{ ...base, action: 'bad' }, { ...base, action: 'try', thread_id: 'bad' }, { ...base, action: 'back' }, { ...base, action: 'forget', version: 'v' }, { ...base, action: 'try', kept: 'x' }]) {
     await assert.rejects(service.handle(input), { status: 422 });
   }
-  for (const action of ['dismiss', 'forget']) {
+  for (const action of ['forget']) {
     const answer = await service.handle({ ...base, action, version: 'v', ...(action === 'forget' ? { kept: 'ref' } : {}) });
     assert.equal(answer.reason, 'Not built yet');
   }
@@ -235,4 +235,18 @@ test('back after the return branch advanced', async () => {
   const old = f.git('rev-parse', 'main'); const tree = f.git('rev-parse', `${old}^{tree}`); const { spawnSync } = require('node:child_process');
   const commit = spawnSync('git', ['-C', f.repo, 'commit-tree', tree, '-p', old, '-m', 'advanced'], { encoding: 'utf8' }); assert.equal(commit.status, 0); f.git('update-ref', 'refs/heads/main', commit.stdout.trim());
   await f.instance.handle({ ...f.request, action: 'back', version: trial.version }); const result = await f.done(); assert.equal(result.last.outcome, 'success'); assert.equal(f.git('rev-parse', 'HEAD'), commit.stdout.trim());
+});
+test('Done refused while index.lock exists', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture(); await f.instance.handle(f.request); const trial = await f.done();
+  await fs.writeFile(path.join(f.repo, '.git', 'index.lock'), ''); const answer = await f.instance.handle({ ...f.request, action: 'dismiss', version: trial.version }); assert.match(answer.reason, /Git may still be running/); assert.equal(answer.status.version, trial.version);
+});
+test('Done after an interrupted Try with HEAD at the target keeps Switch back', async () => {
+  const f = await tryFixture(); await f.instance.handle(f.request); const trial = await f.done(); const record = await f.instance.read(f.repo);
+  record.pending = { op: 'try', first: true, thread_id: f.request.thread_id, from: record.active.return_point, to: { branch: null, sha: record.active.commit }, return_point: record.active.return_point, return_ref: record.active.return_ref }; record.active = null; await f.instance.write(f.repo, record);
+  const answer = await f.instance.handle({ ...f.request, action: 'dismiss', version: record.version }); assert.equal(answer.ok, true); assert.equal(answer.status.state, 'trying-this'); assert.deepEqual(answer.status.last, trial.last);
+});
+test('Done after an interrupted Back with HEAD at the return branch counts as success', async () => {
+  const f = await tryFixture(); await f.instance.handle(f.request); await f.done(); const record = await f.instance.read(f.repo); const from = await f.instance.head(f.repo);
+  f.git('switch', 'main'); record.pending = { op: 'back', from, to: await f.instance.head(f.repo) }; await f.instance.write(f.repo, record);
+  const answer = await f.instance.handle({ ...f.request, action: 'dismiss', version: record.version }); assert.equal(answer.ok, true); assert.equal(answer.status.state, 'none'); assert.equal(await f.instance.resolveRef(f.repo, record.active.return_ref), null);
 });

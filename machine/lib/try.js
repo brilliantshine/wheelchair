@@ -130,9 +130,15 @@ class TryService {
     if (!this.acquire(folder)) return { accepted: false, reason: 'A switch is already running', status: await this.status(input, folder) };
     let retained = false;
     try {
-      if (input.action === 'dismiss' || input.action === 'forget') { this.release(folder); retained = true; return { accepted: false, reason: 'Not built yet', status: await this.status(input, folder) }; }
+      if (input.action === 'forget') { this.release(folder); retained = true; return { accepted: false, reason: 'Not built yet', status: await this.status(input, folder) }; }
       const record = await this.read(folder);
-      if (input.action === 'back' && input.version !== record.version) { this.release(folder); retained = true; return { accepted: false, reason: 'Your copy changed since this page loaded', status: await this.status(input, folder) }; }
+      if (input.action !== 'try' && input.version !== record.version) { this.release(folder); retained = true; return { accepted: false, reason: 'Your copy changed since this page loaded', status: await this.status(input, folder) }; }
+      if (input.action === 'dismiss') {
+        const reason = await this.dismiss(folder, record);
+        this.release(folder); retained = true;
+        const status = await this.status(input, folder);
+        return reason ? { accepted: false, reason, status } : { ok: true, status };
+      }
       const head = await this.head(folder);
       let reason = await this.folderCheck(folder, record);
       if (!reason && record.pending) reason = 'A switch was interrupted. Check your copy at your computer, then press Done.';
@@ -219,6 +225,42 @@ class TryService {
       if (pendingWritten) { last.outcome = 'interrupted'; last.reason = 'A switch was interrupted. Check your copy at your computer, then press Done.'; }
     }
     record.last = last; await this.write(folder, record);
+  }
+  async dismiss(folder, record) {
+    if (await this.indexLock(folder)) return 'Git may still be running in this folder. Check at your computer.';
+    const pending = record.pending, active = record.active;
+    const point = active?.return_point || pending?.return_point;
+    const ref = active?.return_ref || pending?.return_ref;
+    const owner = active?.thread_id || pending?.thread_id;
+    const mismatch = (active || pending) && !this.sameIdentity(record.identity, await this.identity(folder));
+    const keepReturn = () => {
+      if (ref && !record.kept.some(entry => entry.ref === ref)) record.kept.push({ ref, label: `where your copy was before trying thread ${owner}`, thread_id: owner, ...(point?.branch ? { branch: point.branch.replace(/^refs\/heads\//, '') } : {}), at: new Date().toISOString(), ...(mismatch ? { old_identity: true } : {}) });
+    };
+    if (mismatch) {
+      record.kept = record.kept.map(entry => ({ ...entry, old_identity: true }));
+      keepReturn(); record.active = null;
+    } else {
+      const head = await this.head(folder);
+      if (pending?.op === 'try' && !head?.branch && this.sameHead(head, pending.to)) {
+        record.active = pending.first ? { thread_id: pending.thread_id, commit: pending.to.sha, return_point: pending.return_point, return_ref: pending.return_ref } : { ...active, thread_id: pending.thread_id, commit: pending.to.sha };
+      } else if (pending?.op === 'back' && this.sameHead(head, pending.to)) {
+        if (ref && (await this.git(folder, ['update-ref', '-d', ref])).status !== 0) return 'Git could not delete the return pin.';
+        record.active = null;
+      } else if ((active && head?.branch) || (pending?.op === 'try' && pending.first)) {
+        let contains = false;
+        if (point?.branch && await this.resolveRef(folder, point.branch)) contains = (await this.git(folder, ['merge-base', '--is-ancestor', point.sha, point.branch])).status === 0;
+        if (ref && contains) {
+          if ((await this.git(folder, ['update-ref', '-d', ref])).status !== 0) return 'Git could not delete the return pin.';
+        } else if (ref) {
+          if (!await this.resolveRef(folder, ref) && (await this.git(folder, ['update-ref', ref, point.sha])).status !== 0) return 'Git could not keep your earlier commit.';
+          keepReturn();
+        }
+        record.active = null;
+      }
+    }
+    record.pending = null;
+    if (!record.active) await fsp.unlink(this.protectedPath(folder)).catch(error => { if (error.code !== 'ENOENT') throw error; });
+    await this.write(folder, record); return null;
   }
   async performBack(input, folder, record, from, target) {
     const last = { op: 'back', thread_id: input.thread_id, at: new Date().toISOString(), outcome: 'refused', reason: 'Git could not switch your copy.' };
