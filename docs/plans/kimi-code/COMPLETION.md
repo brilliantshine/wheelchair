@@ -394,3 +394,24 @@ node --test viewer/test/*.test.js   # in two halves: 437/439 (app-hub "starts a 
 TZ=UTC npm --prefix viewer run test:browser   # 28 skipped, 774 passed (4.3m)
 node --test test-support/test/*.test.js   # tests 9, pass 9, fail 0
 ```
+
+## Remediation 12
+
+Verification attempt 12 at `d8545fa`: Claude verifier PASS; GPT verifier FAIL with 2 gaps (`REMEDIATION-12.md`).
+
+| Gap | Resolution | Fixed at | Test |
+|-----|------------|----------|------|
+| 1. A recovered Kimi pane with thinking off was classified as Claude | Collin: fix (Decision 58). The footer is matched by a line starting `Ask When Needed`/`Never Ask` plus a `context: N%` line, without `thinking` | `machine/service.js:402` | `machine/test/kimi-turns.test.js` "recovery stops Kimi…" (`wc-k-worker` thinking-off pane stopped; `wc-l-worker` Claude pane with the phrase mid-line left as Claude) |
+| 2. A directory named `credentials/<id>.json` counted as a credential | F1: only regular files count, trusted and untrusted paths | `machine/adapters/kimi.js:53-56` | `machine/test/kimi.test.js` (directory vs file, both paths) |
+
+Validation on the merged branch at `569d4fe`:
+
+```
+bash machine/test/run.sh            # pass 211, fail 0
+bash codex/test/run.sh              # exit 0
+bash sensitivity/test/run.sh        # exit 0
+bash install/test/run.sh            # RESULT 191 passed, 1 failed — only "real wheelchair directory is byte-identical after suite"
+node --test viewer/test/*.test.js   # in two halves: 439/439 and 207/208 (routes "PUT /wheelchair/graph accepts a remember cookie…"; routes.test.js untouched, 22/22 alone)
+TZ=UTC npm --prefix viewer run test:browser   # 773 passed, 1 failed; re-run: no failures
+node --test test-support/test/*.test.js   # pass 9, fail 0
+```

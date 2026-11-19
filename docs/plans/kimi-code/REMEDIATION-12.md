@@ -11,3 +11,4 @@ Verification attempt 12 at `d8545fa`: `wc-01b8cb1bf051-verifier-23` (claude-opus
 
 Gap 1 is recovered-pane classification again (after R1, W1, K1): sent to the lead. Gap 2 is new.
 Gap 2 fixed by F1.
+Gap 1 fixed at Collin's choice (Decision 58), commit `569d4fe`.
