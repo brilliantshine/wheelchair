@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 const { startupWarning } = require('./lib/startup-warning');
+const { createProjectTools } = require('./lib/project-tools');
 const { TOOL_ROLES, readProjectMcp } = require('./lib/project-mcp');
 const { projectIdentity, readKeyStore, launchKeys, keyReferences } = require('./lib/project-keys');
 
@@ -210,6 +211,8 @@ function requestJson(urlText, method, headers, payload, timeout = 5000) {
 class MachineService {
   constructor(options) {
     this.stateDir = path.resolve(options.stateDir || DEFAULT_STATE);
+    this.projectTools = createProjectTools({ commandAsync, stateDir: this.stateDir });
+    this.projectToolsLocks = new Map();
     this.configPath = path.join(this.stateDir, 'machine.json');
     this.sessionsPath = path.join(this.stateDir, 'sessions.json');
     this.config = {};
@@ -1494,6 +1497,20 @@ class MachineService {
         } finally { this.sensitivityWriting = false; }
       }
       if (request.method === 'GET' && url.pathname === '/v1/status') { await this.authorize(request, 'hub'); return send(response, 200, this.status()); }
+      if (request.method === 'POST' && ['/v1/project-tools/read', '/v1/project-tools/save', '/v1/project-tools/remove-key'].includes(url.pathname)) {
+        await this.authorize(request, 'hub');
+        const input = await bodyOf(request);
+        const action = url.pathname.endsWith('/read') ? 'read' : url.pathname.endsWith('/save') ? 'save' : 'removeKey';
+        if (action === 'read') { const result = await this.projectTools.read(input); return send(response, result.status, result.body); }
+        let identity;
+        try { identity = await this.projectTools.identity(input.path); } catch { const result = await this.projectTools[action](input); return send(response, result.status, result.body); }
+        const previous = this.projectToolsLocks.get(identity) || Promise.resolve();
+        let release; const current = new Promise(resolve => { release = resolve; });
+        this.projectToolsLocks.set(identity, current);
+        await previous;
+        try { const result = await this.projectTools[action](input); return send(response, result.status, result.body); }
+        finally { if (this.projectToolsLocks.get(identity) === current) this.projectToolsLocks.delete(identity); release(); }
+      }
       if (request.method === 'GET' && url.pathname === '/v1/projects') { await this.authorize(request, 'hub'); return send(response, 200, await this.projects(url.searchParams)); }
       if (request.method === 'POST' && url.pathname === '/v1/usage') {
         await this.authorize(request, 'hub');

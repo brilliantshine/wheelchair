@@ -1,0 +1,150 @@
+'use strict';
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const { isDeepStrictEqual } = require('node:util');
+const { entryReason, checkDocumentText } = require('./project-mcp');
+const { codexEntryReason, codexOverrides } = require('../adapters/codex');
+const { KEY_NAME, reservedNames, isReserved, keyReferences, projectIdentity, readKeyStore, writeKeyStore } = require('./project-keys');
+const object = x => x !== null && typeof x === 'object' && !Array.isArray(x);
+const reason = r => (r.stderr || r.stdout || 'command failed').trim();
+const keys = store => Object.keys(store.keys);
+const refused = (reason, status = 400) => ({ status, body: { outcome: 'refused', reason } });
+const changed = () => refused('changed since you opened it', 409);
+const tooLarge = 'project tools skipped on Codex: .mcp.json is too large to pass on the command line';
+function repoName(url) {
+  const m = /^(?:https:\/\/github\.com\/|ssh:\/\/(?:git@)?github\.com\/|git@github\.com:)([a-z0-9_.-]+)\/([a-z0-9_.-]+?)(?:\.git)?$/i.exec(url.trim());
+  return m ? `${m[1]}/${m[2]}` : null;
+}
+function checksFor(servers, store) {
+  const checks = {}, valid = {}, { references, heldBack } = keyReferences(servers);
+  for (const [name, entry] of Object.entries(servers)) {
+    const skip = [], key_warnings = [], why = entryReason(name, entry);
+    if (why) skip.push(why);
+    else { Object.defineProperty(valid, name, { value: entry, enumerable: true }); const codex = codexEntryReason(name, entry); if (codex) skip.push(`on Codex: ${codex}`); }
+    for (const [key, tools] of Object.entries(references)) if (tools.includes(name)) {
+      if (!Object.hasOwn(store.keys, key)) key_warnings.push(`needs ${key}, not set on this machine`);
+      for (const item of heldBack[key] || []) key_warnings.push(`${key} is held back: also used in ${item.field}`);
+    }
+    Object.defineProperty(checks, name, { value: { skip, key_warnings }, enumerable: true });
+  }
+  return { checks, references, file_warnings: codexOverrides({ servers: valid }).tooLarge ? [tooLarge] : [] };
+}
+function createProjectTools({ commandAsync, stateDir, id = () => crypto.randomBytes(6).toString('hex') }) {
+  const run = (program, args, options = {}) => commandAsync(program, args, { ...options, timeout: 60000, env: { ...process.env, GH_PROMPT_DISABLED: '1', GIT_TERMINAL_PROMPT: '0' } });
+  const git = (dir, ...args) => run('git', ['-C', dir, ...args]);
+  const identity = dir => projectIdentity(dir, (p, a) => run(p, a));
+  const must = async promise => { const r = await promise; if (!r.ok) throw new Error(reason(r)); return r.stdout; };
+  async function remote(dir) {
+    const a = await git(dir, 'remote', 'get-url', 'origin'), b = await git(dir, 'remote', 'get-url', '--push', 'origin');
+    if (!a.ok || !b.ok) return null;
+    const repo = repoName(a.stdout), pushRepo = repoName(b.stdout);
+    return repo && pushRepo && repo.toLowerCase() === pushRepo.toLowerCase() ? { repo, url: b.stdout.trim() } : null;
+  }
+  async function sourceAt(dir, ref) {
+    const tree = await must(git(dir, 'ls-tree', ref, '--', '.mcp.json'));
+    if (!tree.trim()) return { state: 'missing', reason: null, document: null, mode: null, oid: null };
+    const m = /^(\d+) (\S+) ([0-9a-f]+)\t/.exec(tree);
+    if (!m) throw new Error('invalid git ls-tree response');
+    const [, mode, type, oid] = m;
+    if (!['100644', '100755'].includes(mode) || type !== 'blob') return { state: 'unreadable', reason: 'not a regular file; edit it by hand or Start over', document: null, mode, oid };
+    const text = await must(git(dir, 'cat-file', 'blob', oid)), checked = checkDocumentText(text);
+    return checked.ok ? { state: 'ok', reason: null, document: checked.data, mode, oid } : { state: 'unreadable', reason: checked.reason, document: null, mode, oid };
+  }
+  async function fetched(dir, destination, action) {
+    const output = await must(git(dir, 'ls-remote', '--symref', destination.url, 'HEAD'));
+    const match = /^ref: refs\/heads\/(.+)\s+HEAD$/m.exec(output);
+    if (!match) throw new Error('could not determine default branch');
+    const branch = match[1], ref = `refs/wheelchair/tools/${id()}`;
+    try {
+      await must(git(dir, 'fetch', '--no-write-fetch-head', '--no-tags', destination.url, `+refs/heads/${branch}:${ref}`));
+      return await action({ branch, ref, source: await sourceAt(dir, ref) });
+    } finally { await git(dir, 'update-ref', '-d', ref); }
+  }
+  async function project(dir) { if (typeof dir !== 'string' || !dir) throw new Error('invalid project path'); return identity(dir); }
+  async function read(input) {
+    let projectId; try { projectId = await project(input.path); } catch (e) { return refused(e.message); }
+    let store, notice = null;
+    try { store = await readKeyStore(stateDir, projectId); } catch (e) { store = { revision: 0, keys: {} }; notice = e.message; }
+    const base = { mode: 'keys-only', notice: "Tools can't be shown or edited here: pull requests need a GitHub origin", repo: null, default_branch: null, token: { project: projectId, baseline: null, key_revision: store.revision }, source: null, checks: {}, file_warnings: [], keys: keys(store), references: {}, reserved: reservedNames(), waiting: [], waiting_error: null };
+    const destination = await remote(input.path);
+    if (!destination) { if (notice) base.notice += `; ${notice}`; return { status: 200, body: base }; }
+    try {
+      return await fetched(input.path, destination, async ({ branch, source }) => {
+        const result = { ...base, mode: 'tools', notice, repo: destination.repo, default_branch: branch, source: { state: source.state, reason: source.reason, document: source.document }, token: { ...base.token, baseline: { repo: destination.repo, source_state: source.state, branch, mode: source.mode, oid: source.oid } } };
+        if (source.document) Object.assign(result, checksFor(source.document.mcpServers, store));
+        const listed = await run('gh', ['pr', 'list', '--repo', destination.repo, '--base', branch, '--state', 'open', '--limit', '1000', '--json', 'number,url,title,headRefName,isCrossRepository']);
+        if (!listed.ok) result.waiting_error = reason(listed);
+        else try { result.waiting = JSON.parse(listed.stdout).filter(p => !p.isCrossRepository && p.headRefName.startsWith('wc-tools/')).map(p => ({ number: p.number, url: p.url, title: p.title, branch: p.headRefName })); } catch { result.waiting_error = 'invalid pull request response'; }
+        return { status: 200, body: result };
+      });
+    } catch (e) { base.mode = 'unreachable'; base.notice = `Couldn't reach GitHub: ${e.message}${notice ? `; ${notice}` : ''}`; return { status: 200, body: base }; }
+  }
+  function validateName(name) { if (!KEY_NAME.test(name)) return `invalid key name: ${name}`; if (isReserved(name)) return `${name} can't be set here: it would change how the agent itself runs`; return null; }
+  async function save(input) {
+    let projectId; try { projectId = await project(input.path); } catch (e) { return refused(e.message); }
+    let store; try { store = await readKeyStore(stateDir, projectId); } catch (e) { return { status: 502, body: { outcome: 'failed', error: e.message } }; }
+    const failed = error => ({ status: 502, body: { outcome: 'failed', key_revision: store.revision, keys: keys(store), error: error.message || String(error) } });
+    if (input.token?.project !== projectId || input.token?.key_revision !== store.revision) return changed();
+    if (!object(input.keys) || !(input.tools === null || object(input.tools))) return refused('invalid save request');
+    for (const [name, value] of Object.entries(input.keys)) { const error = validateName(name); if (error) return refused(error); if (typeof value !== 'string') return refused('invalid key value'); }
+    const baseline = input.token.baseline;
+    let toolsChanged = input.tools !== null;
+    if (toolsChanged && baseline?.source_state === 'ok' && baseline.oid && /^[a-f0-9]+$/.test(baseline.oid)) {
+      const blob = await git(input.path, 'cat-file', 'blob', baseline.oid);
+      if (blob.ok) { const checked = checkDocumentText(blob.stdout); if (checked.ok && isDeepStrictEqual(input.tools, checked.data.mcpServers)) toolsChanged = false; }
+    } else if (toolsChanged && baseline?.source_state === 'missing' && isDeepStrictEqual(input.tools, {})) toolsChanged = false;
+    if (input.start_over && (!toolsChanged || baseline?.source_state !== 'unreadable')) return refused('start over is only allowed for an unreadable file');
+    if (!toolsChanged && !Object.keys(input.keys).length) return refused('nothing to save');
+    const storeKeys = async () => { if (Object.keys(input.keys).length) store = await writeKeyStore(stateDir, projectId, { set: input.keys }); };
+    if (!toolsChanged) { try { await storeKeys(); return { status: 200, body: { outcome: 'saved', key_revision: store.revision, keys: keys(store), warnings: [] } }; } catch (e) { return failed(e); } }
+    if (!baseline) return changed();
+    if (baseline.source_state === 'unreadable' && !input.start_over) return refused('unreadable source requires Start over');
+    const destination = await remote(input.path); if (!destination || destination.repo.toLowerCase() !== String(baseline.repo).toLowerCase()) return changed();
+    try {
+      return await fetched(input.path, destination, async ({ branch, ref, source }) => {
+        if (branch !== baseline.branch || source.state !== baseline.source_state || source.mode !== baseline.mode || source.oid !== baseline.oid) return changed();
+        if (input.start_over && source.state !== 'unreadable') return refused('start over is only allowed for an unreadable file');
+        const candidate = { ...(source.document || {}), mcpServers: input.tools }, text = `${JSON.stringify(candidate, null, 2)}\n`, checked = checkDocumentText(text);
+        if (!checked.ok) return refused(checked.reason);
+        const refs = keyReferences(input.tools), old = source.document?.mcpServers || {}, oldRefs = keyReferences(old);
+        for (const [name, users] of Object.entries(refs.references)) for (const held of refs.heldBack[name] || []) {
+          for (const tool of users) {
+            const existed = (oldRefs.references[name] || []).includes(tool) && (oldRefs.heldBack[name] || []).some(item => item.tool === held.tool && item.field === held.field);
+            if (!existed && (!isDeepStrictEqual(input.tools[tool], old[tool]) || !isDeepStrictEqual(input.tools[held.tool], old[held.tool]))) return refused(`${name} is also used in ${held.field}`);
+          }
+        }
+        const report = checksFor(input.tools, store), warnings = Object.entries(report.checks).flatMap(([name, check]) => check.skip.map(s => `${name}: ${s}`)).concat(report.file_warnings);
+        try { await storeKeys(); } catch (e) { return failed(e); }
+        let worktree, added = false;
+        try {
+          await fs.mkdir(path.join(stateDir, 'project-tools'), { recursive: true, mode: 0o700 });
+          worktree = path.join(stateDir, 'project-tools', `worktree-${crypto.randomUUID()}`);
+          await must(git(input.path, 'worktree', 'add', '--detach', worktree, ref)); added = true;
+          if (source.mode && !['100644', '100755'].includes(source.mode)) { await must(git(worktree, 'rm', '-r', '-f', '--cached', '--', '.mcp.json')); await fs.rm(path.join(worktree, '.mcp.json'), { recursive: true, force: true }); }
+          await fs.writeFile(path.join(worktree, '.mcp.json'), text);
+          await must(git(worktree, 'add', '--', '.mcp.json'));
+          const authorName = await git(worktree, 'config', 'user.name'), authorEmail = await git(worktree, 'config', 'user.email');
+          const config = authorName.ok && authorName.stdout.trim() && authorEmail.ok && authorEmail.stdout.trim() ? [] : ['-c', 'user.name=wheelchair', '-c', 'user.email=wheelchair@localhost'];
+          await must(git(worktree, ...config, 'commit', '-m', 'Update project tools'));
+          const newBranch = `wc-tools/${id()}`;
+          await must(git(worktree, 'push', `--force-with-lease=refs/heads/${newBranch}:`, destination.url, `HEAD:refs/heads/${newBranch}`));
+          const pr = await run('gh', ['pr', 'create', '--repo', destination.repo, '--head', newBranch, '--base', branch, '--title', 'Update project tools', '--body', "Saved from the wheelchair app's Project tools screen."]);
+          if (!pr.ok) return { status: 200, body: { outcome: 'pr_failed', key_revision: store.revision, keys: keys(store), branch: newBranch, compare_url: `https://github.com/${destination.repo}/compare/${branch}...${newBranch}?expand=1`, error: reason(pr) } };
+          return { status: 200, body: { outcome: 'opened', key_revision: store.revision, keys: keys(store), pr_url: pr.stdout.trim(), warnings } };
+        } catch (e) { return failed(e); } finally { if (added) await git(input.path, 'worktree', 'remove', '--force', worktree); }
+      });
+    } catch (e) { return failed(e); }
+  }
+  async function removeKey(input) {
+    let projectId; try { projectId = await project(input.path); } catch (e) { return refused(e.message); }
+    let store; try { store = await readKeyStore(stateDir, projectId); } catch (e) { return { status: 502, body: { outcome: 'failed', error: e.message } }; }
+    if (input.token?.project !== projectId || input.token?.key_revision !== store.revision) return changed();
+    const error = typeof input.name === 'string' ? validateName(input.name) : 'invalid key name'; if (error) return refused(error);
+    if (!Object.hasOwn(store.keys, input.name)) return refused('key is not stored');
+    try { store = await writeKeyStore(stateDir, projectId, { remove: [input.name] }); return { status: 200, body: { outcome: 'removed', key_revision: store.revision, keys: keys(store) } }; }
+    catch (e) { return { status: 502, body: { outcome: 'failed', key_revision: store.revision, keys: keys(store), error: e.message } }; }
+  }
+  return { read, save, removeKey, identity };
+}
+module.exports = { createProjectTools };
