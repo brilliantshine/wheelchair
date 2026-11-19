@@ -1,6 +1,6 @@
 ---
 slug: screens-solid
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-18
 ---
 
@@ -55,6 +55,24 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 25 | `maxScreens` stays an instance property here (the part of Decision 20 this plan keeps); only `allowOpenbox` moved with Decision 24 | S2 and its tests still use it | review-round-7 |
 ## Spec
 
+```mermaid
+flowchart TD
+  A[Agent asks to run an app on its screen] --> B{Does this agent already have a screen?}
+  B -- yes --> L
+  B -- no --> C{8 screens already running on the machine?}
+  C -- yes --> X1[Refuse: screen limit reached]
+  C -- no --> D[Start the invisible screen]
+  D --> L[Start the app in its own group]
+  L --> M{Within 5 s: did the app get handed over to run?}
+  M -- "agent stopped or thread archived meanwhile" --> X2[Stop the app; report it was cancelled]
+  M -- "launcher failed or timed out" --> X3[Stop the app; report why it did not start]
+  M -- yes --> N[Record its process id; focus its window; report success]
+  N --> P[Later screenshots keep only the newest 50 per agent]
+```
+
+The picture shows the `run` path only: S1's warnings, S5's process ids and S7's drag limit
+sit beside it. The prose below is complete without it.
+
 Builds on the merged screens work (`wc.js screen`, PR #113). Everything in
 `docs/plans/drive-local-app/PLAN.md` (branch `wc/940599e3df66`) still holds unless changed
 here. File references are to `main` at `e4117bd`. Screens are Linux-only; nothing below
@@ -70,7 +88,8 @@ returning `{ missing: [names in TOOLS order] }`. It uses the same
 existing missing-tools 422 (message unchanged).
 
 **Approval card.** In `machine/service.js`, where a lead's `approval` card gets
-`input.warnings` (`:1571-1574`), on Linux, when `missing` is non-empty, also add this after the startup-size warning:
+`input.warnings` (`:1571-1574`), on Linux, when `missing` is non-empty, also add this warning. It goes after the
+startup-size warning when both are present, keeping today's position for that one:
 `Screens won't work on <hostname>: missing <a, b>. Builds that don't use a screen are unaffected.`
 
 `<hostname>` is `os.hostname()`. `warnings` is present only when it has at least one
@@ -97,8 +116,9 @@ The installer never installs anything and its exit status is unchanged.
 - The cap is 8, held in the instance property `maxScreens` (set to 8 in the
   `ScreenManager` constructor). Tests set it on `service.screens` after construction, as
   the fixture already overrides `service.liveTmux`. There is no environment variable.
-- Checked in `start()` only when a new screen would be created (a reused running screen
-  never counts against the cap). The check and `this.screens.set(...)` happen with no
+- Checked in `start()` only when a new screen would be created. Reusing a session's own
+  running screen skips the check, while that screen still occupies its one slot for
+  every other session. The check and `this.screens.set(...)` happen with no
   `await` between them, so two sessions starting at once cannot both slip under the cap.
 - Past the cap, `start` and `run` fail with 422:
   `screen limit reached: <n> screens running on this machine (limit <cap>); try again later`. Nothing is created and no state file changes.
@@ -183,7 +203,9 @@ directory. `exec` keeps the pid (S5 unchanged).
   - `spawn` throws: keep the app record (`pid: null`) and fail with 422
     `app did not start: <error message>`.
   - **Hand-over wait.** After spawn, wait until one of these, polling every 50 ms, with a
-    single 5 s deadline from spawn. Scope activation does not end this wait.
+    single 5 s deadline from spawn. Scope activation does not end this wait. When the
+    deadline is reached, check the marker and the child's exit once more first: an
+    outcome seen in that last check wins over the timeout.
     - `app-<n>.started` exists: hand-over happened. Continue as today.
     - The child emitted `error`, or exited with any code (including a non-zero code, or
       `null` from a signal), and the marker does not exist: fail with 422
@@ -276,8 +298,9 @@ Every item gets a test with fake tools in the existing style (`machine/test/scre
   - A fake `systemd-run` that marks the scope active, then exits 1 without running the
     command, gives 422 (scope activation does not count as hand-over).
   - A fake `systemd-run` killed by a signal before running the command gives 422.
-  - A fake `systemd-run` that hangs without running the command gives 422
-    `app did not start: no hand-over within 5 s`, and the child is killed.
+  - A fake `systemd-run` that writes a `Failed to …` line and then hangs without running
+    the command gives exactly 422 `app did not start: no hand-over within 5 s` (not the
+    log line). The child is killed, and the app scope is stopped exactly once.
   - The marker file is mode `0600`, and the app sees the service's umask (not `077`).
   - Failed launches show `exited` in `status` even while the fake scope still reports
     active.
@@ -298,6 +321,8 @@ Every item gets a test with fake tools in the existing style (`machine/test/scre
   - The second `mousemove` hangs and `mouseup` also hangs: the drag rejects in under
     3.3 s, and `mouseup` was attempted.
   - With the old code, the second case takes about 4 s, so the test fails.
+  - The first `mousemove` fails: the drag rejects with that error, and neither
+    `mousedown` nor `mouseup` was called.
 
 Commands:
 
@@ -480,7 +505,7 @@ Collin moved the window manager to its own thread; review budget reset.
 
 ### Round 8 — 2026-11-18
 
-**Lanes:** intent — claude; mechanics — not claude; cross-family: yes.
+**Lanes:** intent — claude / claude-opus-5-5; mechanics — gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 7:**
 - S1: one warning, no ordering; the installer guard is `platform` = `Linux`.
@@ -490,6 +515,11 @@ Collin moved the window manager to its own thread; review budget reset.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | major | S6 deadline boundary: late poll vs timeout precedence | downgraded (minor) | Either reading is safe, and the window is one 50 ms poll at a 5 s deadline. Clarified: a last check wins |
+| mechanics | minor | Timeout test can't catch a double cleanup or a log-derived reason | upheld | Test uses a `Failed to` line; asserts one cleanup |
+| mechanics | minor | No test for a failing first move | upheld | Added |
+| mechanics | minor | S1 ordering wording | upheld | Clarified |
+| mechanics | minor | Reused screen and the cap | upheld | Clarified |
 
 ## Prior Work
 
