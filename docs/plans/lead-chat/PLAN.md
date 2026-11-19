@@ -249,7 +249,9 @@ turn is hidden; the sender's own tool calls show as any tool call does today), e
   `--all-projects`. If its entry shows `linked: true`, message its lead directly. Otherwise
   post a `reach` card and message only after `picked: allow`. On `don't allow` or
   `allow failed: <reason>`, drop it and say so in a line. A link works both ways: when you
-  receive a message from a lead in another project, reply without a `reach` card.
+  receive a message from a lead in another project, reply without a `reach` card. A linked
+  thread in your normal `session leads` list may be messaged like a peer, whichever side
+  asked for the link.
 - **Passing a question on:** a question from another thread's lead that only your user can
   answer becomes your own `question` card with no `passes_on` (the hub accepts `passes_on`
   only for your own thread's questions); send the answer back as a `message`.
@@ -311,6 +313,7 @@ New tests in `viewer/test/` must cover:
 - `card.js` prints only `{"id","kind"}` on a direct accept of a stored card (never the card's text), `{"spooled":true}` when spooled, and `{"ok":true}` for `title`, `resolve`, `retract` and a duplicate.
 - A `reach` press with no live lead is refused 409 and the card stays open; an open `reach`
   card's Needs you entry shows its title.
+- `viewer/test/protocol-rules.test.js`'s explicit list of lead card kinds includes `reach`.
 - A browser test shows a `reach` card with its two buttons and its answered state.
 
 ## Deferred
@@ -452,12 +455,21 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 6 — 2026-11-19
 
-**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 5:** §2 locking: `deliver` after the target update returns; §4 "Leads inform": when to ask (after IDEA.md confirmation), changes after Start building never touch the running build, `Pending change:` Log line and a pending change makes a round not clean; §5 `card.js` receipt for non-card successes; Validation wording.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Small-fix overlap held for an IDEA.md that never comes | upheld | Pending split decision (§4 "Leads inform") |
+| intent | minor | User can't stop a running build over a duplicate | upheld | Pending split decision |
+| intent | minor | Early overlap could go on the IDEA.md confirmation card | upheld | Pending split decision |
+| mechanics | blocking | Zero-finding round with a pending change has no progress transition | upheld | Pending split decision |
+| mechanics | major | `Pending change:` matching on restart | upheld | Pending split decision |
+| mechanics | major | Open peer question when Start building is pressed | upheld | Pending split decision |
+| mechanics | major | Small fix can't ask before editing | upheld | Pending split decision (same as intent major) |
+| mechanics | major | May a lead message a linked thread found in a routine check? | upheld | §4: yes, a link works both ways at any time |
+| mechanics | minor | Protocol rules test needs `reach` in its kind list | upheld | Added to Validation |
 
 ## Prior Work
 
