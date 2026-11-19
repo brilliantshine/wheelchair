@@ -1303,7 +1303,7 @@
   function providerBar(provider, f) {
     const left = f.left;
     const lines = [];
-    if (f.all_paused) lines.push(h('p', { class: 'usage-line', text: 'All accounts paused' }));
+    if (f.all_paused) lines.push(h('p', { class: 'usage-line', text: (f.accounts || []).length ? 'All accounts paused' : 'No accounts added' }));
     else if (left === null) lines.push(h('p', { class: 'usage-line dim', text: 'no reading yet' }));
     if (f.amber && f.runs_out_at) lines.push(h('p', { class: 'usage-line amber', text: `Runs out ${dayPart(f.runs_out_at)}, before the first refill ${f.first_refill ? dayTime(f.first_refill) : ''}`.trim() }));
     if (f.below_notify) lines.push(h('p', { class: 'usage-line amber', text: 'Under your notify line for this week.' }));
