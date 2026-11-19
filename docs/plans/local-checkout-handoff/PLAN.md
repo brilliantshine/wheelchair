@@ -512,6 +512,20 @@ commits kept as `kept`; Deferred D1-D2; the clearing Accepted Risk removed; cont
 | mechanics | major | Deleting a kept pin shares Dismiss | upheld | Separate `forget` |
 | mechanics | major | Slow LFS checkout outlives timeouts | upheld (`viewer/app/machine-client.js:10`, 5 s default) | Deadline, busy flag, 16-minute hub timeout |
 
+### Round 7 — 2026-11-18
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 6:** half-switched outcomes (including HEAD at target with a git
+failure) recorded as `pending.half`/`files` and finished by Finish; Dismiss keeps
+`active` unless the trial is gone; new `forget` action for kept pins; protected paths are
+an exact file list stored beside the record; switch deadline, busy flag and 16-minute
+hub timeout; identity is real paths only; refusal wording; confirmations suggest closing
+the app; one Accepted Risk; validation additions. Decisions 21-22.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 Parts of the Spec already built before this plan reached Stage 3 — adopted from outside
