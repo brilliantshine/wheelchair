@@ -468,6 +468,17 @@ Collin chose "Move it" (budget reset).
 
 **Budget:** third round since Collin's last decision without a clean one; stopped and asked Collin.
 
+### Round 17 — 2026-11-18
+
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
+
+Collin chose "Keep going" (budget reset).
+
+**Changed since Round 16:** S7 leftover fix narrowed to `machine/test/run.sh` with run marker, run record, exit and next-start cleanup; run-dir sets the marker for other test processes (#65); S1 `threadSnapshot` not-found matches `thread(id)`; S7 benchmark checks machine reachability only; Validation leftover case narrowed.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
