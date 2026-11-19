@@ -117,7 +117,7 @@ function buildAgents(threads, stages = {}) {
       if (s.role === 'reviewer' && result) {
         const lines = result.summary.split(/\r?\n/).filter(line => /^(?:RE-RAISE: )?SEVERITY:/.test(line));
         const fields = lines[0]?.replace(/^RE-RAISE: /, '').split(' — ');
-        node.report = { findings: lines.length, first: fields ? (fields.length >= 4 ? fields.slice(2, -1) : fields.slice(1)).join(' — ').trim() : null };
+        node.report = { findings: lines.length, first: fields ? (fields.length >= 4 ? fields.slice(2, -1) : fields.slice(1)).join(' — ').trim() || null : null };
       }
       if (node.state === 'finished') node.finished_at = s.ended_at || result?.created_at || s.created_at;
       counts.total++; counts[node.state === 'needs-you' ? 'waiting' : node.state.replace('-', '_')]++;
