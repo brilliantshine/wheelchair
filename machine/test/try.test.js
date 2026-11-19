@@ -32,3 +32,10 @@ test('lock is keyed by real folder path and advances its generation', async () =
   assert.equal(service.acquire(folder), true); assert.equal(service.acquire(service.folder(alias)), false);
   assert.equal(service.lockState(folder).generation, 1); service.release(folder); assert.equal(service.lockState(folder).generation, 2);
 });
+test('git runner uses a deadline and reports killed', async () => {
+  const { makeTemp } = require('../../test-support/run-dir'); const fs = require('node:fs/promises'); const path = require('node:path');
+  const root = await makeTemp('try-runner-'); const git = path.join(root, 'git');
+  await fs.writeFile(git, '#!/bin/sh\nexec sleep 5\n', { mode: 0o755 });
+  const runner = new TryService({ stateDir: root, root, projects: null, gitExecutable: git, killGrace: 50 });
+  const result = await runner.runGit(root, [], 80); assert.equal(result.code, 'killed');
+});
