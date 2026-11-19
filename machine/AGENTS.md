@@ -12,6 +12,8 @@ agents own neither tmux nor the machine secret.
 | `lib/aside-turns.js` | Durable headless aside turns, CLI spawning, parsing and restart recovery. |
 | `lib/sudo.js` | Durable sudo request registration, polling, outcome delivery and cancellation. |
 | `lib/screen.js` | Per-session invisible X screens for `POST /v1/agent/screen`: Xvfb with a per-screen cookie, app launch (sandboxed for Codex), screenshots, validated xdotool input, one systemd user slice per screen for teardown, the 60 s sweep and startup cleanup. `test/screen-live.sh` drives it against real Xvfb. |
+| `lib/screen-input.js` | X-tool layer for screens: window listing, screenshots, pointer, typing, key deadlines and releases, auto-focus. |
+| `lib/screen-args.js` | Pure validation of `wc.js screen` arguments (fixed key list, limits) and `xwininfo` output parsing. |
 | `lib/usage-probe.js` | Asynchronous, timed CLI usage probe runner. |
 | `lib/project-mcp.js` | Reads and validates project MCP servers for session adapters. |
 | `lib/limits.js` | Pure exhausted-window reset calculation. |

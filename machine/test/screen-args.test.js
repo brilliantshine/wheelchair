@@ -58,6 +58,15 @@ xwininfo: Window id: 0x50d (the root window) (has no name)
      0x800002 "Other": ("other" "Other")  10x10+1+1  +1+1
 `;
   assert.deepEqual(parseRootChildren(root), [0x400001,0x600001,0x800002]);
+  const oneChild = `
+xwininfo: Window id: 0x39f (the root window) (has no name)
+
+  Root window id: 0x39f (the root window) (has no name)
+  Parent window id: 0x0 (none)
+     1 child:
+     0x200001 "xmessage": ("xmessage" "Xmessage")  184x68+0+0  +0+0
+`;
+  assert.deepEqual(parseRootChildren(oneChild), [0x200001]);
   assert.deepEqual(parseRootChildren('xwininfo: Window id: 0x50d\n     0 children.\n'), []);
   assert.deepEqual(parseRootChildren('no output'), []);
   const info = `

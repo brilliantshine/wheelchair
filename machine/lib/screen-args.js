@@ -86,7 +86,7 @@ function parseOp(op, args) {
 function typeTimeoutMs(text) { return 10000 + 30 * text.length; }
 function parseRootChildren(stdout) {
   const lines = stdout.split(/\r?\n/);
-  const index = lines.findIndex(line => /^\s*\d+ children:/.test(line));
+  const index = lines.findIndex(line => /^\s*\d+ child(ren)?:/.test(line));
   if (index < 0) return [];
   const count = Number(lines[index].match(/\d+/)[0]);
   const ids = [];
