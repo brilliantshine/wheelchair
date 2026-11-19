@@ -113,3 +113,19 @@ test('Usage: one Kimi account signed in on one machine and with a problem on ano
   assert.equal(ranked('a').next, true);
   assert.match(ranked('b').reason, /^skipped: signed out on b/);
 });
+
+test('Usage: a named Kimi account with no home on a machine below the floor shows the version problem', async () => {
+  const floor = 'Kimi Code 2.6.3 or newer is needed (found 2.6.2)';
+  const hub = await hubWith({
+    a: { version: 'v1', kimi: row({ problem: floor }), accounts: [{ id: 'default-kimi', cli: 'kimi', logged_in: false }, { id: 'default-claude', cli: 'claude', logged_in: true }] },
+    b: { version: 'v1', kimi: row(), accounts: [{ id: 'default-kimi', cli: 'kimi', logged_in: false }] },
+  }, (s) => { s.accounts.push({ id: 'k-two', provider: 'kimi', name: 'Work', plan: 'unknown', weight: 1, paused: false }); });
+  const machines = await usage.machineAccounts(hub);
+  // The named account has no entry in a's accounts[], so the boolean map has no key for it.
+  assert.equal(machines.a.accounts['k-two'], undefined);
+  const { providers } = await usage.summary(hub);
+  const byId = Object.fromEntries(providers.kimi.accounts.map((x) => [x.id, x.machines]));
+  assert.deepEqual(byId['k-two'], { a: { state: 'problem', text: floor }, b: 'signed_out' });
+  assert.deepEqual(byId['default-kimi'], { a: { state: 'problem', text: floor }, b: 'signed_out' });
+  assert.equal(providers.claude.accounts.find((x) => x.id === 'default-claude').machines.a, 'signed_in');
+});

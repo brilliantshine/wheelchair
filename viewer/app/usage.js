@@ -66,8 +66,9 @@ async function machineAccounts(hub) {
           accounts[`default-${provider}`] = Boolean(status[info.cli]?.logged_in);
           if (provider === 'kimi' && cliProblem('kimi')) problems['default-kimi'] = cliProblem('kimi');
         }
-        return [name, { reachable: true, accounts, problems }];
-      } catch { return [name, { reachable: false, accounts: {}, problems: {} }]; }
+        const cliProblems = cliProblem('kimi') ? { kimi: cliProblem('kimi') } : {};
+        return [name, { reachable: true, accounts, problems, cliProblems }];
+      } catch { return [name, { reachable: false, accounts: {}, problems: {}, cliProblems: {} }]; }
     }));
     return Object.fromEntries(entries);
   })();
@@ -106,7 +107,7 @@ async function summary(hub, includeMachines = true, now = Date.now()) {
     const f = forecast(accounts, data.readings || {}, now);
     const below_notify = f.left !== null && f.left < settings.notify_below / 100;
     const ranked = rank(accounts, data.readings || {}, machines, settings, localName, now, data.last_chosen);
-    providers[provider] = { label: info.label, left: f.left, amber: f.amber, runs_out_at: f.runs_out_at, first_refill: f.first_refill, below_notify, all_paused: f.all_paused, accounts: ranked.map((a) => ({ ...a, machines: Object.fromEntries(Object.entries(machines).map(([name, m]) => [name, !m.reachable ? 'unknown' : m.accounts[a.id] ? 'signed_in' : m.problems?.[a.id] ? { state: 'problem', text: m.problems[a.id] } : 'signed_out'])), reading: data.readings?.[a.id] || null })) };
+    providers[provider] = { label: info.label, left: f.left, amber: f.amber, runs_out_at: f.runs_out_at, first_refill: f.first_refill, below_notify, all_paused: f.all_paused, accounts: ranked.map((a) => ({ ...a, machines: Object.fromEntries(Object.entries(machines).map(([name, m]) => [name, !m.reachable ? 'unknown' : m.accounts[a.id] ? 'signed_in' : a.provider === 'kimi' && m.cliProblems?.kimi ? { state: 'problem', text: m.cliProblems.kimi } : m.problems?.[a.id] ? { state: 'problem', text: m.problems[a.id] } : 'signed_out'])), reading: data.readings?.[a.id] || null })) };
   }
   return { providers, seen: data.seen || {} };
 }
