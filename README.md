@@ -169,7 +169,17 @@ implementing → verifying → done`.
 
 Put project tools in `.mcp.json` at the repository root in Claude Code's format, committed on the branch threads start from. Leads, sub-leads, workers and verifiers get them; reviewers and the mapper do not. Codex sees each server as `project_<name>`, so project instructions naming a tool should give both names.
 
-Codex skips servers with `headers`, dotted names, or `${...}` except an `env` value exactly equal to `${KEY}` for that key. Antigravity does not get project tools yet. Problems are logged only in the machine service's log for now. On Codex, project tools are pre-approved, so agents can call them without an approval prompt.
+On Codex, project tools are pre-approved, so agents can call them without an approval prompt.
+
+**Codex headers.** A header `Authorization: Bearer ${NAME}` takes its token from the variable `NAME`. A header whose whole value is `${NAME}` takes it from that variable. A literal header is passed as written. Codex skips a server that is sse, that has the same header twice, that uses any other `${...}` form, or whose name uses anything but letters, digits, `_` and `-`. An `env` value exactly equal to `${KEY}` for that key passes through.
+
+**Antigravity.** It now gets project tools through a private file made for each agent and deleted when the agent ends. Its `${...}` limit: only a stdio `env` entry `KEY: ${KEY}` passes through. Any other server with `${...}` in it is skipped. Antigravity also skips sse servers, names that use anything but letters, digits, `_` and `-`, and a header given twice.
+
+**Missing programs.** A stdio server whose program cannot be found is reported.
+
+**Where you see problems.** A "Project tools problem" card appears in the thread and lists each tool that was skipped or is broken. It closes itself after a start with no problems. `wc.js session list` shows `project_tools.problems` on the lead's entry.
+
+Whether a tool actually connects is not tested yet; that is a follow-up.
 
 ## Pictures
 

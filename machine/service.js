@@ -3,6 +3,7 @@
 const { startupWarning } = require('./lib/startup-warning');
 const { createProjectTools } = require('./lib/project-tools');
 const { TOOL_ROLES, readProjectMcp } = require('./lib/project-mcp');
+const { missingPrograms } = require('./lib/project-programs');
 const { projectIdentity, readKeyStore, launchKeys, keyReferences } = require('./lib/project-keys');
 
 /*
@@ -224,6 +225,9 @@ class MachineService {
     this.config = {};
     this.asideTurns = new AsideTurns(this.stateDir, atomicWrite, accountDir);
     this.sessions = {};
+    this.projectToolsBoot = crypto.randomUUID();
+    this.projectToolsState = new Map();
+    this.projectToolsWrites = new Map();
     this.startupWarning = null;
     this.startupSamples = new Map();
     this.startupWarningRunning = false;
@@ -361,6 +365,8 @@ class MachineService {
   }
   async init() {
     await mkdir(this.stateDir);
+    const toolsDir = path.join(this.stateDir, 'project-tools');
+    try { for (const name of await fsp.readdir(toolsDir)) if (name.endsWith('.tmp')) await fsp.unlink(path.join(toolsDir, name)).catch(error => this.log(error)); } catch (error) { if (error.code !== 'ENOENT') this.log(error); }
     this.config = await readJson(this.configPath, {});
     this.config.host = this.options.host || this.config.host || maybeTailscaleIp();
     this.config.port = Number(this.options.port || this.config.port || 7374);
@@ -390,6 +396,8 @@ class MachineService {
     // worktree feel stalled. Stuck sessions and open prompts remain on pollTimer.
     this.trustTimer = setInterval(() => this.pollTrust().catch(error => this.log(error)), 500);
     this.trustTimer.unref();
+    this.agyToolsTimer = setInterval(() => this.sweepAgyTools(), 60000);
+    this.agyToolsTimer.unref();
   }
   // The names of the running tmux sessions, or null when tmux could not be asked. "No server" is
   // a real empty answer; any other failure is unknown, and must not read as "every session ended".
@@ -399,6 +407,65 @@ class MachineService {
     if (/no server running|error connecting to .*\(No such file or directory\)/.test(ls.stderr)) return new Set();
     this.log(`tmux list-sessions failed: ${ls.stderr.trim() || `exit ${ls.status}`}`);
     return null;
+  }
+  sweepAgyTools() {
+    if (!this.stateDir) return;
+    const dir = path.join(this.stateDir, 'agy-tools');
+    let entries;
+    // Read the directory first so a machine with no Antigravity tool files never asks tmux.
+    try { entries = fs.readdirSync(dir); } catch (error) { if (error.code !== 'ENOENT') this.log(error); return; }
+    if (!entries.length) return;
+    const starting = new Set(this.startingNames.keys());
+    const live = this.liveTmux();
+    if (!live) return;
+    const groups = new Map();
+    const decoded = entries.map(entry => {
+      let name;
+      try { name = decodeURIComponent(entry); safeName(name, 'session name'); if (!name.startsWith('wc-')) name = null; } catch { name = null; }
+      const item = { entry, name };
+      if (name) {
+        const tmuxName = name.replace(/[.:]/g, '_');
+        if (!groups.has(tmuxName)) groups.set(tmuxName, []);
+        groups.get(tmuxName).push(item);
+      }
+      return item;
+    });
+    const protectedEntries = new Set();
+    const mtime = item => {
+      if (!('mtime' in item)) {
+        try { item.mtime = fs.lstatSync(path.join(dir, item.entry)).mtimeMs; }
+        catch (error) { this.log(error); item.mtime = null; }
+      }
+      return item.mtime;
+    };
+    const byName = (a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : a.entry < b.entry ? -1 : a.entry > b.entry ? 1 : 0;
+    // tmux rewrites `.` and `:` to `_`, so several dirs can map to one live name.
+    // The machine's record identifies the running session; a refused start has no record.
+    for (const [tmuxName, group] of groups) {
+      if (!live.has(tmuxName)) continue;
+      const recorded = group.filter(item => this.sessions[item.name] && this.sessions[item.name].status !== 'stopped');
+      let chosen;
+      if (recorded.length) {
+        recorded.sort((a, b) => (Date.parse(this.sessions[b.name].created_at) - Date.parse(this.sessions[a.name].created_at)) ||
+          Number(b.name === tmuxName) - Number(a.name === tmuxName) || byName(a, b));
+        chosen = recorded[0];
+      } else {
+        chosen = group.find(item => item.name === tmuxName);
+        if (!chosen) {
+          const readable = group.filter(item => mtime(item) !== null);
+          readable.sort((a, b) => mtime(b) - mtime(a) || byName(a, b));
+          chosen = readable[0];
+        }
+      }
+      if (chosen) protectedEntries.add(chosen);
+    }
+    for (const item of decoded) {
+      if (protectedEntries.has(item) || (item.name && starting.has(item.name))) continue;
+      const age = mtime(item);
+      if (age === null || Date.now() - age < 60000) continue;
+      try { fs.rmSync(path.join(dir, item.entry), { recursive: true, force: true }); }
+      catch (error) { this.log(error); }
+    }
   }
   // Spec "Machine service on the hub": a live wc-* tmux session missing from sessions.json (a lost or
   // stale file) is adopted again, so it can still be read, typed into and stopped.  It has no token.
@@ -585,6 +652,71 @@ class MachineService {
     return adapter.command(input, session, worktree, { stateDir: this.stateDir, promptPath, rolePrompt, mcp, tools: TOOL_ROLES.has(input.role), accountDir: session.account_dir, kimiExecutable: context.kimiExecutable });
   }
 
+  threadWorktree(input, worktree) {
+    try {
+      const repo = input.project_dir || input.projectDir || input.repo;
+      const project = safeName(input.project || (repo && path.basename(repo)), 'project');
+      const thread = safeName(input.thread_id, 'thread id');
+      return fs.realpathSync(worktree) === fs.realpathSync(path.join(this.stateDir, 'worktrees', project, 'wc', thread));
+    } catch { return false; }
+  }
+  async tmuxPath() {
+    return new Promise(resolve => {
+      let stdout = '', done = false;
+      const finish = value => { if (!done) { done = true; clearTimeout(timer); resolve(value); } };
+      let child;
+      try { child = spawn('tmux', ['show-environment', '-g', 'PATH'], { stdio: ['ignore', 'pipe', 'ignore'] }); }
+      catch { return resolve(process.env.PATH || ''); }
+      const timer = setTimeout(() => { child.kill('SIGKILL'); finish(process.env.PATH || ''); }, 2000);
+      child.stdout.setEncoding('utf8');
+      child.stdout.on('data', chunk => { stdout += chunk; });
+      child.on('error', () => finish(process.env.PATH || ''));
+      child.on('close', code => finish(code === 0 && stdout.startsWith('PATH=') ? stdout.slice(5).replace(/\r?\n$/, '') : (process.env.PATH || '')));
+    });
+  }
+  validProjectToolsState(value) {
+    const plain = v => v !== null && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype;
+    const lines = v => Array.isArray(v) && v.every(line => plain(line) && Array.isArray(line.names) && line.names.every(name => typeof name === 'string') && typeof line.text === 'string');
+    return plain(value) && Number.isSafeInteger(value.seq) && value.seq >= 0 && lines(value.file) && lines(value.programs) && plain(value.clis) && Object.values(value.clis).every(cli => plain(cli) && lines(cli.lines) && typeof cli.thread === 'boolean' && (typeof cli.hash === 'string' || cli.hash === null));
+  }
+  updateProjectTools(input, session, worktree, promptPath, rolePrompt, read, built, thread, programs) {
+    // Machines built without the constructor (some tests) get the maps on first use.
+    this.projectToolsBoot ||= crypto.randomUUID(); this.projectToolsState ||= new Map(); this.projectToolsWrites ||= new Map();
+    const id = encodeURIComponent(safeName(input.thread_id, 'thread id'));
+    let state = this.projectToolsState.get(id);
+    if (!state) {
+      try { state = JSON.parse(fs.readFileSync(path.join(this.stateDir, 'project-tools', `${id}.json`), 'utf8')); }
+      catch { state = null; }
+      if (!this.validProjectToolsState(state)) state = { seq: 0, file: [], programs: [], clis: {} };
+      this.projectToolsState.set(id, state);
+    }
+    const { mcp, warnings, hash } = read;
+    if (mcp === null && warnings.length) {
+      if (thread) state.file = warnings;
+    } else if (mcp === null || mcp.names.length === 0) {
+      if (thread) { state.file = []; state.programs = []; state.clis = {}; }
+    } else {
+      state.clis[input.cli] = { hash, thread, lines: built.warnings || [] };
+      if (thread) { state.file = warnings; state.programs = programs; }
+      for (const [cli, prior] of Object.entries(state.clis)) {
+        if (cli === input.cli || !prior.lines.length || !(prior.hash === hash || (thread && prior.thread))) continue;
+        const other = adapters[cli];
+        if (!other) continue;
+        const result = other.command({ ...input, cli, role: 'worker' }, { ...session }, worktree, { stateDir: this.stateDir, promptPath, rolePrompt, mcp, tools: true });
+        state.clis[cli] = { hash, thread, lines: result.warnings || [] };
+      }
+    }
+    state.seq += 1;
+    const previous = this.projectToolsWrites.get(id) || Promise.resolve();
+    const write = previous.then(async () => {
+      const file = path.join(this.stateDir, 'project-tools', `${id}.json`), temp = `${file}.tmp`;
+      try { await mkdir(path.dirname(file)); await fsp.writeFile(temp, `${json(this.projectToolsState.get(id))}\n`, { mode: 0o600 }); await fsp.rename(temp, file); }
+      catch (error) { await fsp.unlink(temp).catch(() => {}); this.log(error); }
+    });
+    this.projectToolsWrites.set(id, write);
+    session.project_tools = JSON.parse(json({ boot: this.projectToolsBoot, ...state }));
+  }
+
   async start(input) {
     for (const key of ['role', 'cli', 'thread_id', 'token']) if (!input[key]) die(`missing ${key}`);
     const name = input.name || this.sessionName(input.thread_id, input.role);
@@ -596,7 +728,7 @@ class MachineService {
     if (this.startingNames.has(name)) return publicSession(await this.startingNames.get(name));
     const starting = this.startNamed(input, name);
     this.startingNames.set(name, starting);
-    try { return publicSession(await starting); } finally { this.startingNames.delete(name); this.cancelledStarts.delete(name); }
+    try { return publicSession(await starting); } finally { this.startingNames.delete(name); this.sweepAgyTools(); this.cancelledStarts.delete(name); }
   }
   async startNamed(input, name) {
     const adapter = adapters[input.cli];
@@ -634,11 +766,35 @@ class MachineService {
       worktree, created_worktree: createdWorktree, attempt_id: input.attempt_id || null, started_by: input.started_by || null,
       branch: created.branch || input.branch || null, default_branch: created.defaultBranch || input.default_branch || input.defaultBranch || null,
       cli_session_id: input.cli_session_id || crypto.randomUUID(), status: 'starting', created_at: new Date().toISOString() };
-    const { mcp, warnings } = await readProjectMcp(worktree);
+    const read = await readProjectMcp(worktree);
+    const { mcp, warnings } = read;
+    const tools = TOOL_ROLES.has(input.role);
+    const thread = tools && this.threadWorktree(input, worktree);
+    let programs = [];
+    if (thread && mcp && Object.keys(mcp.servers).length) programs = missingPrograms({ worktree, mcp, path: await this.tmuxPath() });
     const context = input.cli === 'kimi' ? { kimiExecutable: (await this.kimiLaunchPath()).executable } : {};
     const built = this.commandFor(input, session, worktree, promptPath, rolePrompt, mcp, context);
-    if (TOOL_ROLES.has(input.role)) for (const warning of [...warnings, ...(built.warnings || [])]) console.error(`${session.name}: project tools: ${warning}`);
+    if (TOOL_ROLES.has(input.role)) for (const warning of [...warnings, ...(built.warnings || [])]) console.error(`${session.name}: project tools: ${warning.text}`);
+    if (tools) this.updateProjectTools(input, session, worktree, promptPath, rolePrompt, read, built, thread, programs);
     if (built.settingsPath) await atomicWrite(built.settingsPath, `${json(built.settings)}\n`);
+    if (built.toolFiles) {
+      const root = path.join(this.stateDir, 'agy-tools');
+      for (const file of built.toolFiles.files) {
+        const relative = path.relative(root, path.dirname(file.path));
+        let dir = root;
+        for (const part of ['', ...relative.split(path.sep)]) {
+          if (part) dir = path.join(dir, part);
+          await fsp.mkdir(dir, { recursive: true, mode: 0o700 });
+          await fsp.chmod(dir, 0o700);
+        }
+        const temp = `${file.path}.${crypto.randomUUID()}.tmp`;
+        await fsp.writeFile(temp, file.text, { mode: 0o600 });
+        await fsp.chmod(temp, 0o600);
+        await fsp.rename(temp, file.path);
+      }
+      const now = new Date();
+      await fsp.utimes(built.toolFiles.dir, now, now);
+    }
     let wrapper = [];
     if (mcp && TOOL_ROLES.has(input.role) && (input.cli === 'claude' || input.cli === 'codex') && Object.keys(keyReferences(mcp.rawServers).references).length) {
       try {
@@ -659,13 +815,14 @@ class MachineService {
     const env = this.launchEnv(session, adapter);
     env.splice(adapter.sessionNameEnv ? 2 : 1, 0, ['WHEELCHAIR_SESSION_TOKEN', session.token]);
     const commandText = ['env', ...env.map(([key, value]) => `${key}=${value}`), ...Object.entries(built.env || {}).map(([key, value]) => `${key}=${value}`), ...wrapper, ...built.argv].map(shellQuote).join(' ');
-    session.command = built.argv;
+    const redactions = new Set(built.redactions || []);
+    session.command = built.argv.map((arg, index) => redactions.has(index) ? `${arg.slice(0, arg.indexOf('=') + 1)}<redacted>` : arg);
     session.pending_initial = adapter.firstMessage(input, promptPath, name);
     const tmuxArgs = ['new-session', '-d', '-s', name, '-x', '200', '-y', '50', '-c', worktree, commandText];
     // systemd-run scope prevents service restarts killing tmux; installer sets KillMode=process too.
     // Both asynchronous, like the git above: a slow systemd-run must not hold up the service.
     if (this.cancelledStarts.has(name)) die('session start was cancelled');
-    const scoped = process.platform === 'darwin' ? { ok: false } : await commandAsync('systemd-run', ['--user', '--scope', 'tmux', ...tmuxArgs]);
+    const scoped = process.platform === 'darwin' ? { ok: false } : await commandAsync('systemd-run', ['--user', '--scope', `--description=wheelchair ${name}`, 'tmux', ...tmuxArgs]);
     if (this.cancelledStarts.has(name)) { if (scoped.ok) this.tmux(['kill-session', '-t', `=${name}`]); die('session start was cancelled'); }
     const result = scoped.ok ? scoped : await commandAsync('tmux', tmuxArgs);
     if (this.cancelledStarts.has(name)) { if (result.ok) this.tmux(['kill-session', '-t', `=${name}`]); die('session start was cancelled'); }
@@ -920,6 +1077,7 @@ class MachineService {
     this.screens.killSession(name);
     await this.persistSessions();
     if (session.role === 'verifier' && session.created_worktree) command('git', ['-C', session.worktree, 'worktree', 'remove', '--force', session.worktree]);
+    this.sweepAgyTools();
   }
   gitPath(worktree, name) {
     const result = command('git', ['-C', worktree, 'rev-parse', '--git-path', name]);
@@ -1317,7 +1475,7 @@ class MachineService {
   sessionList() {
     const live = this.liveTmux();
     const others = [...(live || [])].filter(name => !name.startsWith('wc-login-') && !this.sessions[name]).map(name => ({ name, managed: false, running: true }));
-    return [...Object.values(this.sessions).filter(s => !s.name.startsWith('wc-login-')).map(s => ({ ...publicSession(s), codex_thread_id: s.codex_thread_id || null, managed: true, ...(live ? { running: live.has(s.name) } : {}) })), ...others];
+    return [...Object.values(this.sessions).filter(s => !s.name.startsWith('wc-login-')).map(({ project_tools, ...s }) => ({ ...publicSession(s), codex_thread_id: s.codex_thread_id || null, managed: true, ...(live ? { running: live.has(s.name) } : {}) })), ...others];
   }
   status() {
     const defaults = Object.fromEntries(Object.entries(adapters).map(([cli, adapter]) => [cli, adapter.loginStatus(null)]));
@@ -1842,7 +2000,7 @@ class MachineService {
     this.startupWarningTimer.unref();
     this.sudoTimer = setInterval(() => this.sudo.tick().catch(error => this.log(error)), Number(process.env.WHEELCHAIR_SUDO_POLL_MS || 2000));
     this.sudoTimer.unref();
-    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.startupWarningTimer); clearInterval(this.pollTimer); clearInterval(this.stepsTimer); clearInterval(this.kimiTimer); clearInterval(this.trustTimer); clearInterval(this.sudoTimer); clearInterval(this.screenTimer); this.screens.stopTimers(); });
+    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.startupWarningTimer); clearInterval(this.pollTimer); clearInterval(this.stepsTimer); clearInterval(this.kimiTimer); clearInterval(this.trustTimer); clearInterval(this.sudoTimer); clearInterval(this.screenTimer); clearInterval(this.agyToolsTimer); this.screens.stopTimers(); });
     process.stdout.write(`machine service listening on ${this.config.host}:${this.config.port}\n`);
     await this.drainSpool('events'); await this.drainSpool('cards');
   }

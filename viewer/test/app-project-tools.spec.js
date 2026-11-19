@@ -93,7 +93,7 @@ test('shows tools, key status, skip reasons, key warnings, waiting pull requests
   await expect(page.locator('.pt-waiting a')).toHaveAttribute('href', 'https://github.com/o/n/pull/12');
   await expect(page.getByText('Waiting to merge')).toBeVisible();
   await expect(page.getByText("don't include these")).toBeVisible();
-  await expect(page.getByText("Antigravity agents don't get project tools")).toBeVisible();
+  await expect(page.getByText("Antigravity agents don't get tools that use ${...}")).toBeVisible();
   await expect(page.getByText('another machine running this project needs its own keys')).toBeVisible();
   await expect(keyRow(page, 'API_KEY')).toContainText('used by web, other-tool');
   await expect(keyRow(page, 'DB_TOKEN')).toContainText('not set');
@@ -212,9 +212,9 @@ test('add a tool, edit one keeping unknown fields, remove one with a confirmatio
   // header warning shows at once on a web-address form
   await page.locator('#pt-add').click();
   await page.getByLabel('Kind', { exact: true }).selectOption('http');
-  await expect(page.getByText("Codex agents don't get tools with headers")).toBeHidden();
+  await expect(page.getByText('Codex takes a header only when')).toBeHidden();
   await page.getByRole('button', { name: 'Add a header' }).click();
-  await expect(page.getByText("Codex agents don't get tools with headers. Claude may read some credential-like names as empty in headers, so check the tool signs in.")).toBeVisible();
+  await expect(page.getByText("Codex takes a header only when it is plain text, ${NAME} or Bearer ${NAME}. Claude may read some credential-like names as empty in headers, so check the tool signs in.")).toBeVisible();
   await page.getByRole('button', { name: 'Cancel' }).click();
 
   // edit db: args and a plain setting; the unknown `timeout` field and the key setting stay

@@ -17,6 +17,7 @@ function newId() {
   return crypto.randomBytes(6).toString('hex');
 }
 
+function defaultProjectTools() { return { boot: null, seq: 0, created_at: null, state: null, card: null, card_names: [] }; }
 function emptyThread(input) {
   return {
     id: newId(),
@@ -33,6 +34,7 @@ function emptyThread(input) {
     queues: {},
     sent: [],
     archived: false,
+    project_tools: defaultProjectTools(),
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
@@ -480,6 +482,7 @@ async function pollWaiting(hub) {
 }
 
 module.exports = {
+  defaultProjectTools,
   archive,
   archivedDocument,
   archivedGraph,

@@ -26,6 +26,7 @@ test('history renders shown cards and skips hidden and progress cards', () => {
     [{ kind: 'approval', objections: [{ finding: 'F', reason: 'R' }], answered_action: 'start-building' }, ['F', 'R', 'start-building']],
     [{ kind: 'done', title: 'Done', can_do: ['C'], left_as_is: ['L'], pr_url: 'P' }, ['Done', 'C', 'L', 'P']],
     [{ kind: 'needs', title: 'N', body: 'B' }, ['N', 'B']],
+    [{ kind: 'needs', title: 'N', body: 'B', items: ['_tool_: x', 'and 3 more'] }, ['N', 'B', '_tool_: x', 'and 3 more']],
     [{ kind: 'offer', summary: 'S', retracted_at: at }, ['S', 'withdrawn']],
     ...['stub', 'diagram', 'image'].map((kind) => [{ kind, title: 'T' }, ['T']]),
     [{ kind: 'sudo', command: 'cmd', state: 'ran', exit_code: 0 }, ['cmd', 'ran', 'exit 0']],

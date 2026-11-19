@@ -113,3 +113,8 @@ test('nested and unbalanced substitutions hold back every referenced name', () =
   for (const name of ['A', 'B', 'C']) assert.deepEqual(heldBack[name], [{ tool: 'web', field: 'url' }]);
   assert.equal(Object.hasOwn(launchKeys(servers, { keys: { FALLBACK: 'secret' } }).env, 'FALLBACK'), false);
 });
+
+test('an sse tool header key is a key reference', () => {
+  const { references } = keyReferences({ s: { type: 'sse', url: 'https://example.test/sse', headers: { Authorization: 'Bearer ${SSE_TOKEN}' } } });
+  assert.ok(Object.hasOwn(references, 'SSE_TOKEN'));
+});

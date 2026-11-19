@@ -5,6 +5,7 @@ const c = require('./common');
 const usual = () => c.home('CODEX_HOME', '.codex');
 const loginEnv = dir => dir ? { CODEX_HOME: dir } : {};
 const { run } = require('../lib/usage-probe');
+const { DUPLICATE_HEADERS, serverLabel } = require('../lib/project-mcp');
 function parseUsage(response) {
   if (response?.error || !response?.result?.rateLimits) throw new Error('invalid Codex usage response');
   const limits = response.result.rateLimits; let five_hour = null, week = null;
@@ -25,48 +26,70 @@ const tomlString = value => `"${String(value).replace(/[\\"\u0000-\u001f\u007f]/
 // grow the overrides about fourfold, so they are measured after quoting and dropped as a whole
 // when over budget, rather than letting the session fail to start.
 const PROJECT_OVERRIDE_BUDGET = 64 * 1024;
-const quotedLength = value => `'${String(value).replace(/'/g, `'\\''`)}'`.length + 1;
+const quotedLength = value => Buffer.byteLength(`'${String(value).replace(/'/g, `'\\''`)}'`, 'utf8') + 1;
+// Why Codex skips a server, or null. Shared by the launch and the project tools screen.
 function codexEntryReason(name, entry) {
-  let reason;
-  if (!/^[A-Za-z0-9_-]+$/.test(name)) reason = 'its name must use only letters, digits, _ and -';
-  else if (Object.hasOwn(entry, 'headers')) reason = 'servers with headers are not supported on Codex yet';
-        // Only the fields this transport uses are read: the reader validates stdio fields for stdio
-        // entries and only `url` for http ones, so an http entry's other keys may be anything.
-  else if (entry.type === 'http' ? entry.url.includes('${') :
-          [entry.command, ...(entry.args || [])].some(value => value.includes('${')) ||
-          Object.entries(entry.env || {}).some(([key, value]) => value.includes('${') &&
-            (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || value !== `\${${key}}`))) {
-    reason = 'it uses ${...} that Codex cannot pass through';
+  if (!/^[A-Za-z0-9_-]+$/.test(name)) return 'its name must use only letters, digits, _ and -';
+  if (entry.type === 'sse') return 'uses sse, which Codex does not support';
+  const headers = entry.type === 'http' ? Object.entries(entry.headers || {}) : [];
+  if (entry.type === 'http' && (entry[DUPLICATE_HEADERS] || new Set(headers.map(([key]) => key.toLowerCase())).size !== headers.length)) return 'has the same header twice';
+  // Only the fields this transport uses are read: the reader validates stdio fields for stdio
+  // entries and only `url` and `headers` for http ones, so an entry's other keys may be anything.
+  if (entry.type === 'http' ? entry.url.includes('${') :
+    [entry.command, ...(entry.args || [])].some(value => value.includes('${')) ||
+    Object.entries(entry.env || {}).some(([key, value]) => value.includes('${') &&
+      (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || value !== `\${${key}}`))) {
+    return 'it uses ${...} that Codex cannot pass through';
   }
-  return reason || null;
+  for (const [key, value] of headers) {
+    const bearer = key.toLowerCase() === 'authorization' && /^Bearer \$\{[A-Za-z_][A-Za-z0-9_]*\}$/.test(value);
+    if (!bearer && !/^\$\{[A-Za-z_][A-Za-z0-9_]*\}$/.test(value) && value.includes('${')) return 'a header uses ${...} that Codex cannot pass through';
+  }
+  return null;
 }
+// The -c overrides for every server Codex can take, measured against the budget as a whole.
 function codexOverrides(mcp) {
-  const args = [], warnings = [];
-  if (mcp) {
-      for (const name of Object.keys(mcp.servers)) {
-        const entry = mcp.servers[name];
-        const reason = codexEntryReason(name, entry);
-        if (reason) { warnings.push(`server ${JSON.stringify(name)} skipped on Codex: ${reason}`); continue; }
-        const prefix = `mcp_servers.project_${name}`;
-        const add = (key, value) => args.push('-c', `${prefix}.${key}=${value}`);
-        if (entry.type === 'http') add('url', tomlString(entry.url));
-        else {
-          const literal = [], passthrough = [];
-          for (const [key, value] of Object.entries(entry.env || {})) {
-            if (value === `\${${key}}` && /^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) passthrough.push(tomlString(key));
-            else literal.push(`${tomlString(key)}=${tomlString(value)}`);
-          }
-          add('command', tomlString(entry.command));
-          add('args', `[${(entry.args || []).map(tomlString).join(',')}]`);
-          add('env', `{${literal.join(',')}}`);
-          add('env_vars', `[${passthrough.join(',')}]`);
-        }
-        add('default_tools_approval_mode', '"approve"');
-        add('enabled', 'true');
+  const args = [], warnings = [], included = [];
+  for (const name of Object.keys(mcp?.servers || {})) {
+    const entry = mcp.servers[name];
+    const reason = codexEntryReason(name, entry);
+    if (reason) { warnings.push({ names: [name], text: `${serverLabel(name)}: skipped on Codex: ${reason}` }); continue; }
+    included.push(name);
+    const prefix = `mcp_servers.project_${name}`;
+    const add = (key, value) => args.push('-c', `${prefix}.${key}=${value}`);
+    if (entry.type === 'http') {
+      const literalHeaders = [], envHeaders = [];
+      let bearer;
+      for (const [key, value] of Object.entries(entry.headers || {})) {
+        const token = /^Bearer \$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(value);
+        const env = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(value);
+        if (key.toLowerCase() === 'authorization' && token) bearer = token[1];
+        else if (env) envHeaders.push(`${tomlString(key)}=${tomlString(env[1])}`);
+        else literalHeaders.push(`${tomlString(key)}=${tomlString(value)}`);
       }
+      add('url', tomlString(entry.url));
+      if (bearer !== undefined) add('bearer_token_env_var', tomlString(bearer));
+      if (literalHeaders.length) add('http_headers', `{${literalHeaders.join(',')}}`);
+      if (envHeaders.length) add('env_http_headers', `{${envHeaders.join(',')}}`);
+    } else {
+      const literal = [], passthrough = [];
+      for (const [key, value] of Object.entries(entry.env || {})) {
+        if (value === `\${${key}}` && /^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) passthrough.push(tomlString(key));
+        else literal.push(`${tomlString(key)}=${tomlString(value)}`);
+      }
+      add('command', tomlString(entry.command));
+      add('args', `[${(entry.args || []).map(tomlString).join(',')}]`);
+      add('env', `{${literal.join(',')}}`);
+      add('env_vars', `[${passthrough.join(',')}]`);
     }
+    add('default_tools_approval_mode', '"approve"');
+    add('enabled', 'true');
+  }
   const tooLarge = args.reduce((sum, value) => sum + quotedLength(value), 0) > PROJECT_OVERRIDE_BUDGET;
-  if (tooLarge) { args.length = 0; warnings.push('project tools skipped on Codex: .mcp.json is too large to pass on the command line'); }
+  if (tooLarge) {
+    args.length = 0;
+    warnings.push({ names: included, text: `${included.map(serverLabel).join(', ')}: skipped on Codex: .mcp.json is too large to pass on the command line` });
+  }
   return { args, tooLarge, warnings };
 }
 module.exports = {
@@ -103,9 +126,13 @@ module.exports = {
     const notify = `notify=[${JSON.stringify(path.join(c.root, 'machine', 'hook.sh'))},"codex",${JSON.stringify(session.name)}]`;
     const access = input.role === 'reviewer' ? ['-s', 'read-only', '-a', 'never'] : session.codex_mode === 'unrestricted' ? ['--dangerously-bypass-approvals-and-sandbox'] : ['-s', 'workspace-write', '-a', 'never', '-c', 'sandbox_workspace_write.network_access=true'];
     const argv = ['codex', ...access, '-c', notify, '-c', trust, ...(input.model ? ['-m', input.model] : []), ...(session.effort ? ['-c', `model_reasoning_effort=${session.effort}`] : [])];
+    const projectStart = argv.length;
     const { args, warnings } = codexOverrides(context?.tools ? context.mcp : null);
     argv.push(...args);
-    return { argv, warnings };
+    // Every project override is redacted in the stored command (Spec §3): '-c' then 'key=value'.
+    const redactions = [];
+    for (let i = projectStart + 1; i < argv.length; i += 2) redactions.push(i);
+    return { argv, warnings, redactions };
   },
   firstMessage(input, promptPath) { const first = input.brief || input.first_message || ''; return `[wc:role] Role: ${input.role}\nRead ${promptPath} before responding: it holds your role rules and card rules. Read it again only if it is no longer in your context.\n\n${first}`; },
   readyText(session, pane) { return pane.includes('Ask Codex to do anything'); }, answerPrompts() { return null; },

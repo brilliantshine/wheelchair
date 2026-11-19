@@ -43,7 +43,7 @@ test('invalid entries are disabled independently, including when all are invalid
     const result = command(claude, mcp, true).settings;
     const rejected = Object.keys(servers).filter(name => name !== 'good');
     assert.deepEqual(result.disabledMcpjsonServers, rejected); assert.equal(warnings.length, rejected.length);
-    assert.match(warnings[0], /server "bad" skipped/);
+    assert.match(warnings[0].text, /bad: skipped/);
     assert.equal(result.enableAllProjectMcpServers, servers.good ? true : undefined);
   }
 });
@@ -69,9 +69,9 @@ test('service start logs warnings only for tool roles', async () => {
       return instance.start({ role, cli, thread_id: id, token: id, worktree, name: `wc-${id}-${role}` });
     };
     await run('worker', 'claude', JSON.stringify({ mcpServers: { 'bad\nname': null } }), 'one');
-    assert.deepEqual(lines.splice(0), ['wc-one-worker: project tools: server "bad\\nname" skipped: not a valid stdio or http entry']);
+    assert.deepEqual(lines.splice(0), ['wc-one-worker: project tools: "bad\\nname": skipped: not a valid stdio, http or sse entry']);
     await run('worker', 'agy', JSON.stringify({ mcpServers: good }), 'two');
-    assert.deepEqual(lines.splice(0), ["wc-two-worker: project tools: project tools aren't supported on Antigravity yet; this agent runs without them"]);
+    assert.deepEqual(lines.splice(0), []);
     await run('reviewer', 'agy', JSON.stringify({ mcpServers: good }), 'three');
     await run('reviewer', 'claude', '{', 'four'); assert.deepEqual(lines, []);
     const dir = await fixture(); await fs.mkdir(path.join(dir, '.mcp.json'));
@@ -86,5 +86,5 @@ test('shared document and entry validators report the reader reasons', () => {
   assert.deepEqual(checkDocumentText(' '.repeat(32769)), { ok: false, reason: 'larger than 32 KiB' });
   assert.equal(checkDocumentText('{"mcpServers":{}}').ok, true);
   assert.equal(entryReason('x', { command: 'run' }), null);
-  assert.equal(entryReason('x', null), 'not a valid stdio or http entry');
+  assert.equal(entryReason('x', null), 'not a valid stdio, http or sse entry');
 });

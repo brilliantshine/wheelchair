@@ -103,7 +103,7 @@ function screenRequest(operation, tail) {
   return { path: '/screen', body: { op: operation, args: tail } };
 }
 
-const compactFields = ['name', 'role', 'provider', 'model', 'status', 'live', 'ready', 'started_by', 'attempt_id', 'round', 'title', 'branch', 'worktree'];
+const compactFields = ['name', 'role', 'provider', 'model', 'status', 'live', 'ready', 'started_by', 'attempt_id', 'round', 'title', 'branch', 'worktree', 'project_tools'];
 function compact(session) {
   return Object.fromEntries(compactFields.filter(key => Object.hasOwn(session, key)).map(key => [key, session[key]]));
 }
