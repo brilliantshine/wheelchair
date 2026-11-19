@@ -182,15 +182,15 @@ test('copier does not open source after fatal and ignores swapped opened file', 
 
 test('recovery stops Kimi while leaving Claude and marker-priority panes alone', async () => {
   const { machine } = setup(); machine.sessions = {};
-  const panes = { 'wc-a-worker': '│ >\nAsk When Needed  K3.1 Pro thinking: high  …/clone/wc/db3f0b03dcf6  wc/db3f0b03dcf6\ncontext: 0% (0/256k)', 'wc-b-worker': '│ >\ncontext: 10%', 'wc-c-worker': 'Codex\n› input\ncontext: 0%', 'wc-d-worker': '│ >\nNever Ask  K3 thinking: high  …/worktrees/clone/wc-smoke-w2  wc-smoke-w2\ncontext: 7% (17.5k/256k)', 'wc-e-worker': '│ >\nAsk When Needed  K2.7 Code Highspeed thinking\ncontext: 0% (0/256k)', 'wc-f-worker': 'Antigravity CLI\n> input', 'wc-g-worker': 'Claude Code\n│ >\ncontext: 10%\n  bypass permissions on'  };
+  const panes = { 'wc-a-worker': '│ >\nAsk When Needed  K3.1 Pro thinking: high  …/clone/wc/db3f0b03dcf6  wc/db3f0b03dcf6\ncontext: 0% (0/256k)', 'wc-b-worker': '│ >\ncontext: 10%', 'wc-c-worker': 'Codex\n› input\ncontext: 0%', 'wc-d-worker': '│ >\nNever Ask  K3 thinking: high  …/worktrees/clone/wc-smoke-w2  wc-smoke-w2\ncontext: 7% (17.5k/256k)', 'wc-e-worker': '│ >\nAsk When Needed  K2.7 Code Highspeed thinking\ncontext: 0% (0/256k)', 'wc-f-worker': 'Antigravity CLI\n> input', 'wc-g-worker': 'Claude Code\n│ >\ncontext: 10%\n  bypass permissions on', 'wc-h-worker': '▶ Run this command?\n▶ 1. Approve once\n  2. Reject\nAsk When Needed  K3.1 Pro thinking: high\ncontext: 5% (13k/256k)' };
   machine.liveTmux = () => new Set(Object.keys(panes));
   machine.tmux = args => ({ ok:true, stdout: args[0] === 'capture-pane' ? panes[args.at(-1)] : '/tmp' });
   await machine.recoverFromTmux();
   assert.equal(machine.sessions['wc-a-worker'].end_reason, 'Lost track of this Kimi Code session after a machine restart; restart it');
   assert.equal(machine.sessions['wc-b-worker'].cli, 'claude'); assert.equal(machine.sessions['wc-c-worker'].cli, 'codex');
-  assert.equal(machine.sessions['wc-d-worker'].cli, 'kimi'); assert.equal(machine.sessions['wc-e-worker'].cli, 'kimi'); assert.equal(machine.sessions['wc-f-worker'].cli, 'agy'); assert.equal(machine.sessions['wc-g-worker'].cli, 'claude');
+  assert.equal(machine.sessions['wc-h-worker'].cli, 'kimi'); assert.equal(machine.sessions['wc-h-worker'].end_reason, 'Lost track of this Kimi Code session after a machine restart; restart it'); assert.equal(machine.sessions['wc-d-worker'].cli, 'kimi'); assert.equal(machine.sessions['wc-e-worker'].cli, 'kimi'); assert.equal(machine.sessions['wc-f-worker'].cli, 'agy'); assert.equal(machine.sessions['wc-g-worker'].cli, 'claude');
   const targets = []; machine.tmux = args => { targets.push(args); return { ok:true, stdout:'' }; }; machine.liveTmux = () => new Set();
-  await machine.pollKimiTurns(); assert.deepEqual(targets, [['kill-session','-t','=wc-a-worker'], ['kill-session','-t','=wc-d-worker'], ['kill-session','-t','=wc-e-worker']]); assert.equal(machine.sessions['wc-a-worker'].status, 'stopped');
+  await machine.pollKimiTurns(); assert.deepEqual(targets, [['kill-session','-t','=wc-a-worker'], ['kill-session','-t','=wc-d-worker'], ['kill-session','-t','=wc-e-worker'], ['kill-session','-t','=wc-h-worker']]); assert.equal(machine.sessions['wc-a-worker'].status, 'stopped');
 });
 
 test('outage spools one turn at a time and drains in order even when the clock moves backwards', async () => {
@@ -280,8 +280,8 @@ test('duplicate turn ends in one read hand off once', async () => {
 test('HTTP start retry and listing keep Kimi binding state private', async () => {
   const { machine: source, session, log, metadata, prompt } = setup();
   log('bound', [metadata, prompt(session.name), { type:'turn.ended', agentId:'main', turnId:0, reason:'completed' }]);
-  await source.pollKimiTurns(); session.kimi_missing_since = 123; session.end_reason = 'lost';
-  const fields = ['kimi_session_id', 'source_transcript', 'kimi_log_id', 'kimi_offset', 'kimi_last_turn', 'kimi_missing_since'];
+  await source.pollKimiTurns(); await source.transcript(session.name); session.kimi_missing_since = 123; session.end_reason = 'lost';
+  const fields = ['kimi_session_id', 'source_transcript', 'kimi_log_id', 'kimi_offset', 'kimi_last_turn', 'kimi_missing_since', 'transcript_source'];
   const root = makeTempSync('kimi-public-'), secret = path.join(root, 'secret'); fs.writeFileSync(secret, 'secret');
   const http = require('node:http'), probe = http.createServer(); await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve));
   const port = probe.address().port; await new Promise(resolve => probe.close(resolve));
@@ -295,7 +295,7 @@ test('HTTP start retry and listing keep Kimi binding state private', async () =>
     const retried = await start(session), otherReply = await start(other);
     const listed = await (await fetch(`http://127.0.0.1:${port}/v1/sessions`, { headers })).json();
     for (const field of fields) { assert.ok(Object.hasOwn(session, field), field); assert.ok(!Object.hasOwn(retried, field), field); assert.ok(!Object.hasOwn(listed.find(s => s.name === session.name), field), field); }
-    assert.equal(retried.end_reason, 'lost'); assert.equal(listed.find(s => s.name === session.name).end_reason, 'lost');
+    assert.ok(session.transcript_source); assert.equal(retried.end_reason, 'lost'); assert.equal(listed.find(s => s.name === session.name).end_reason, 'lost');
     assert.deepEqual(otherReply, other); assert.deepEqual(listed.find(s => s.name === other.name), { ...other, codex_thread_id:null, managed:true, running:false });
     let finish; machine.startNamed = () => new Promise(resolve => { finish = resolve; });
     const input = { name:'wc-abc-worker-3', role:'worker', cli:'kimi', thread_id:'abc', token:'token' };
