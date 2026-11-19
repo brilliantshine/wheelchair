@@ -261,7 +261,7 @@ When every task is done and the full validation passes:
 
    A surviving gap takes precedence: save other deferred hardening first, then stop and
    message the lead as in step 6. After the user answers, act on their answer for that gap;
-   other must-fix gaps go through step 5. Nothing else proceeds while they decide.
+   other must-fix gaps go through step 5. Nothing else proceeds while the user decides.
 5. **FAIL**: post `phase: fixing` with `found` equal to the distinct gaps in the attempt's
    reports and `fixed: 0`; re-post as `fixed` rises with each accepted remediation task.
    With two verifiers, merge duplicate gaps before counting them. Write

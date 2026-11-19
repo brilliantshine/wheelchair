@@ -19,7 +19,7 @@ Every message starts with a header line: `[wc:aside <kind> slot=<standard|heavy>
 `[wc:aside start <action> slot=<slot>]`, then a quoted block with the words the user
 highlighted, then anything they typed.
 
-Answer from the copied history: you already know what the lead knows, so never ask them to
+Answer from the copied history: you already know what the lead knows, so never ask the user to
 re-explain. Answer in the user's writing style (it follows this file when there is one).
 Be short; this is a side panel, often on a phone.
 

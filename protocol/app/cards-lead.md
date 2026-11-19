@@ -115,7 +115,7 @@ An open lead `needs` card has two buttons, "Keep going" and "Talk about it". Eit
 the card as answered by the user and reaches you as `[card <id>] keep going` or
 `[card <id>] talk about: <card title>`. Your reply is shown, so always answer: say in a line
 what you are doing next, or, for "talk about it", explain the problem plainly and post a
-`question` card for the decision they have to make. An older form, `[card <id>] dismissed`, gets
+`question` card for the decision the user has to make. An older form, `[card <id>] dismissed`, gets
 the same treatment: say what you will do now instead of going quiet.
 
 ### `done`
@@ -274,7 +274,7 @@ The password is never in any of these.
 
 ### `retract`
 
-Withdraws an open card that no longer applies. Unlike `resolve`, which records that they
+Withdraws an open card that no longer applies. Unlike `resolve`, which records that the user
 answered in chat, `retract` says the card is no longer relevant. It is never stored as a
 card of its own.
 
