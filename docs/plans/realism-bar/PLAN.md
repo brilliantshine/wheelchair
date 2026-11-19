@@ -372,6 +372,8 @@ Filled by Stage 3. One row per worker brief.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T1 | Protocol text: realism.md (S1, S8 def), reviewer/verifier/lead/sub-lead rules (S3–S6, S8), fallback lines and router row (S2), template (S7, S8) | protocol/app/{realism,reviewer,verifier,lead,sub-lead,AGENTS}.md, protocol/templates/PLAN.md | standard / claude-sonnet-5-5 | wc-ac6641ae7c16-worker | grep checks in brief | dispatched |
+| T2 | Load realism.md for lead, sub-lead, reviewer, verifier (S2 code) and update tests | machine/service.js, viewer/app/settings.js, machine/test/service.test.js, viewer/test/app-settings.test.js, viewer/test/protocol-rules.test.js | light / (after T1) | | node --test viewer/test/*.test.js; bash machine/test/run.sh | not started (needs T1's realism.md) |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
