@@ -146,5 +146,5 @@
   if (new URLSearchParams(location.search).get('new')) location.replace('/wheelchair/app/new');
 
   poll();
-  setInterval(poll, 5000);
+  window.wcPoller(poll, 5000);
 })();

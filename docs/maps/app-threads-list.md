@@ -3,6 +3,8 @@
 Checked against: `7c380321f4556a08b63485203d613feeeae1f640` (origin/main)
 Files covered: `viewer/app/threads.js`, `viewer/app/routes.js`, `viewer/app/sessions.js`, `viewer/pages/threads.js`, `viewer/pages/threads.html`
 
+> The covered files changed after the checked-against commit. The lighter-server paths were rechecked against `e4117bdcacf06f2a3c73dd22d8af8d8086cb00e3`; see [lighter-server/MAP.md](../plans/lighter-server/MAP.md). Other claims below retain their historical checked-against commit.
+
 ## Flow
 
 The browser polls `/threads` and `/features` every five seconds (`viewer/pages/threads.js:88-111`). The thread endpoint returns each whole stored thread with session tokens removed (`viewer/app/routes.js:314-325`, `viewer/app/sessions.js:48-51`). Each thread therefore already carries its recorded sessions, including their roles, operational names, parent links and live state when recorded (`viewer/app/threads.js:20-36`, `viewer/app/sessions.js:130-146`).
