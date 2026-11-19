@@ -55,3 +55,13 @@ test('protected filter excludes exact untracked paths only', async () => {
   const entries = [{ path: 'ignored/a', untracked: true }, { path: 'ignored/a', untracked: false }, { path: 'ignored/b', untracked: true }];
   assert.deepEqual(await instance.filtered(root, entries), entries.slice(1));
 });
+test('folder checks reject service root, worktrees and operations in progress', async () => {
+  const { makeTemp } = require('../../test-support/run-dir'); const fs = require('node:fs/promises'); const path = require('node:path'); const { spawnSync } = require('node:child_process');
+  const root = await makeTemp('try-check-'); const repo = path.join(root, 'repo'); await fs.mkdir(repo);
+  assert.equal(spawnSync('git', ['init', repo]).status, 0);
+  const instance = new TryService({ stateDir: path.join(root, 'state'), root: path.join(repo, 'wheelchair'), projects: null });
+  const record = await instance.read(repo);
+  assert.match(instance.folderCheck(repo, record), /runs wheelchair/);
+  instance.root = path.join(root, 'outside'); await fs.writeFile(path.join(repo, '.git', 'rebase-apply'), 'in progress');
+  assert.match(instance.folderCheck(repo, record), /operation in progress/);
+});

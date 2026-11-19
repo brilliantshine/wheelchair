@@ -91,6 +91,29 @@ class TryService {
     const temp = `${file}.${crypto.randomBytes(8).toString('hex')}.tmp`;
     await fsp.writeFile(temp, paths, { mode: 0o600 }); await fsp.rename(temp, file);
   }
+  gitDir(folder) {
+    const result = this.git(folder, ['rev-parse', '--absolute-git-dir']); return result.status === 0 ? result.stdout.trim() : null;
+  }
+  folderCheck(folder, record) {
+    const top = this.git(folder, ['rev-parse', '--show-toplevel']);
+    const bare = this.git(folder, ['rev-parse', '--is-bare-repository']);
+    if (top.status !== 0 || bare.stdout.trim() !== 'false' || (() => { try { return fs.realpathSync(top.stdout.trim()) !== folder; } catch { return true; } })()) return 'This folder is not the top level of a git working tree.';
+    const beneath = (child, parent) => child === parent || child.startsWith(parent + path.sep);
+    if (beneath(folder, path.join(this.stateDir, 'worktrees'))) return "This folder is an agent's copy.";
+    let root = this.root; try { root = fs.realpathSync(root); } catch { /* root may be absent in tests */ }
+    if (beneath(root, folder)) return 'This folder runs wheelchair itself; switching it would swap the running app for untested code.';
+    const dir = this.gitDir(folder);
+    if (!dir || ['MERGE_HEAD', 'rebase-merge', 'rebase-apply', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'BISECT_LOG'].some(name => fs.existsSync(path.join(dir, name))) || this.git(folder, ['ls-files', '-u']).stdout.trim()) return 'Git has an operation in progress. Finish it at your computer first.';
+    if ((record.active || record.pending) && !this.sameIdentity(record.identity, this.identity(folder))) return 'This folder is no longer the copy that was switched';
+    return null;
+  }
+  resolveRef(folder, ref) { const result = this.git(folder, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]); return result.status === 0 ? result.stdout.trim() : null; }
+  indexLock(folder) { const dir = this.gitDir(folder); const file = dir && path.join(dir, 'index.lock'); return file && fs.existsSync(file) ? file : null; }
+  gitlinkChanged(folder, from, to) {
+    const result = this.git(folder, ['diff', '--raw', '--no-renames', '--ignore-submodules=none', from, to]);
+    if (result.status !== 0) throw new Error('Git could not compare the commits.');
+    return result.stdout.split('\n').some(line => /^:160000 |^:[0-7]{6} 160000 /.test(line));
+  }
   async handle(input) {
     const invalid = message => { throw Object.assign(new Error(message), { status: 422 }); };
     if (!input || typeof input !== 'object' || Array.isArray(input)) invalid('Invalid request.');
