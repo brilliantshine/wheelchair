@@ -10,7 +10,7 @@ created: 2026-11-18
 ## What we're building
 
 On the Agents screen, finished agents with the same role and the same parent stack into one
-"deck" card instead of one box each. Reviewer and verifier decks also show one colored
+"deck" card instead of one box each. Reviewer decks also show one colored
 square per round, so you can see at a glance whether review is settling down or going in
 circles. Clicking a deck opens a list of its rounds or agents, and a `?` button explains how
 to read the tree.
@@ -30,7 +30,7 @@ working agents are hard to find and the review history is unreadable.
 - A reviewer deck shows one square per round, oldest to newest, colored by how many
   objections that round had (5+ red, 3–4 orange, 1–2 yellow, none green), and a title such
   as "Plan review · 20 rounds, last round clean".
-- A verifier deck does the same with problems found per attempt.
+- A verifier deck stacks like any other deck, without round squares (Collin's choice, PLAN.md Decision 14).
 - Clicking a deck opens a popover under it: rounds newest first (square, "Round 18",
   reviewers and objections) for reviewers and verifiers, agents newest first for the rest.
   Opening a round lists its agents, and picking one shows it in the right-hand panel like

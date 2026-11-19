@@ -47,46 +47,47 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 10 | Verifier deck title uses the newest verifier's title (supersedes the verifier half of #8) | Matches the proposal's "Checked parts 1–4" example | review-round-1 |
 | 12 | Deck titles end ", last round clean" from round H's progress line, not "then approved"/"passed" (supersedes the suffix rules in Spec §3) | Approval tracking kept breaking in review; the progress line is certain | user |
 | 13 | IDEA.md's example title and Constraint updated to match Decision 12 | Keeps IDEA and the proposal reference consistent with Collin's choice | idea-change |
+| 14 | Round squares are for reviewer decks only; verifier decks stack like worker decks; no change to verification numbering, sub-lead.md or cards.md. Supersedes the verifier parts of Decisions 2, 10 and 11, and removes Deferred D3 | Verifier numbering caused most of the review churn; builds rarely need more than two or three checks | user |
+| 15 | IDEA.md updated: verifier decks have no squares | Follows Decision 14 | idea-change |
 | 9 | Popover shows the latest 5 rounds (or agents) before "Show all" | Proposal says "the latest few" | defaulted |
 
 ## Spec
 
 ### Scope
-Viewer hub and Agents page (`viewer/app/sessions.js`, `viewer/app/agents.js`, `viewer/app/wc.js`, `viewer/app/API.md`, `viewer/pages/agents.js`, `viewer/pages/views.css`, tests in `viewer/test/`), plus protocol text in `protocol/app/lead.md`, `protocol/app/sub-lead.md` and `protocol/app/cards.md`. Also add Collin's proposal files to the repo unchanged: `docs/proposals/app-shell/finished-agents.md` and `docs/proposals/app-shell/design/AgentsFinishedDecks.dc.html` (sources: the attached copies the lead hands to the build). Routers (`viewer/AGENTS.md`) updated if a file's role changes.
+Viewer hub and Agents page (`viewer/app/sessions.js`, `viewer/app/agents.js`, `viewer/app/wc.js`, `viewer/app/API.md`, `viewer/pages/agents.js`, `viewer/pages/views.css`, tests in `viewer/test/`), plus protocol text in `protocol/app/lead.md`. `protocol/app/sub-lead.md` and `protocol/app/cards.md` are not changed (Decision 14). Also add Collin's proposal files to the repo unchanged: `docs/proposals/app-shell/finished-agents.md` and `docs/proposals/app-shell/design/AgentsFinishedDecks.dc.html` (sources: the attached copies the lead hands to the build). Routers (`viewer/AGENTS.md`) updated if a file's role changes.
 
-### 1. Round number on reviewer and verifier sessions
-- `wc.js session start` accepts `--round <N>` (integer >= 1). A bare `--round` with no value (last argument, or followed by another `--flag`) is refused by `wc.js` itself before calling the hub. The hub stores it on the session as `round`. Accepted only for roles `reviewer` and `verifier`; any other role, or a non-integer / < 1 value, is refused with a reason naming the flag. This validation runs before the attempt dedupe below, so an invalid `--round` is refused even when the attempt matches an existing session. Absent means no round.
+### 1. Round number on reviewer sessions
+- `wc.js session start` accepts `--round <N>` (integer >= 1). A bare `--round` with no value (last argument, or followed by another `--flag`) is refused by `wc.js` itself before calling the hub. The hub stores it on the session as `round`. Accepted only for role `reviewer`; any other role, or a non-integer / < 1 value, is refused with a reason naming the flag. This validation runs before the attempt dedupe below, so an invalid `--round` is refused even when the attempt matches an existing session. Absent means no round.
 - Retries keep today's attempt dedupe (`viewer/app/sessions.js:606-611`): a start whose `--attempt` matches a live or unanswered session returns that session (an unanswered one is retried as today); its stored `round` never changes, and the new call's `--round` is ignored; otherwise a new session is created carrying the `--round` of its own start call. No other change to dedupe.
 - `round` is included in the public session and in the Agents API node.
-- Protocol: lead.md step 5 tells the lead to pass `--round <N>` (the review round number, same as the progress `pass`) when starting reviewers, including restarts within a round. sub-lead.md tells the sub-lead to pass `--round <N>` (the verification attempt number, same as the verify progress `pass`) when starting build verifiers. Small-fix, after-done and steps-only verifiers are started without `--round`.
-- Verification attempt numbering (sub-lead.md, and the `pass` definition in `protocol/app/cards.md`): a build's attempts are numbered 1, 2, 3 in start order, every fresh attempt (including the all-deferred re-check) taking 1 + the larger of: the highest `round` among this thread's verifiers in `wc.js session list`, and the highest N among committed `docs/plans/<slug>/REMEDIATION-N.md` files (so a remediation file is never overwritten, including for a build that straddles this change); restarting a dead or blocked verifier within an attempt (by the same sub-lead) reuses that attempt's number. A replacement sub-lead always starts a new number by the rule above, even if the dead sub-lead's last attempt never reported; that attempt then simply shows as a grey "not counted" square. No verdict lookup is needed. The sub-lead.md rule "Attempt 1 sharpens the brief" is reworded to apply to the build's first remediation (no `REMEDIATION-*.md` committed yet), whatever its attempt number, so a skipped number never changes how remediation behaves. The verify progress `pass` is that same number. Replace the cards.md wording "`REMEDIATION-N.md`'s N + 1 for a re-verify" with this rule. `wc.js session list` shows each session's `round` (it is in the public session).
+- Protocol: lead.md step 5 tells the lead to pass `--round <N>` (the review round number, same as the progress `pass`) when starting reviewers, including restarts within a round. Verifiers are never started with `--round`.
 
 ### 2. Per-round counts and outcome in the Agents API
-For each lead in `GET /wheelchair/api/agents`, add `rounds: { review: {<N>: R}, verify: {<N>: R} }` built from the thread's `progress` cards (including replaced ones) with `stage` `review` / `verify`. For each pass N, use the latest card for that stage and pass whose phase is `fixing` or `clean`:
+For each lead in `GET /wheelchair/api/agents`, add `rounds: { review: {<N>: R} }` built from the thread's `progress` cards (including replaced ones) with `stage` `review`. For each pass N, use the latest such card for that pass whose phase is `fixing` or `clean`:
 - `fixing` → `found: F`.
 - `clean` → `found` = its `found` if present, else 0; `clean: true`.
 - Only `checking` cards for that pass → no entry (count unknown).
 
-Per reviewer/verifier node add `report: { findings: <int>, first: <string|null> }` parsed from the newest result summary: reviewers count lines starting `SEVERITY:` or `RE-RAISE: SEVERITY:` (strip the `RE-RAISE: ` prefix before parsing) and take the finding text of the first: split on ` — `, drop the first two fields (severity, lens) and the last (evidence), and rejoin the rest with ` — `. Verifiers count lines starting `GAP:` and take the text between the first and the last ` — ` (rejoined the same way). A line with too few fields uses everything after the first field. No result → no `report`.
+Per reviewer node add `report: { findings: <int>, first: <string|null> }` parsed from the newest result summary: reviewers count lines starting `SEVERITY:` or `RE-RAISE: SEVERITY:` (strip the `RE-RAISE: ` prefix before parsing) and take the finding text of the first: split on ` — `, drop the first two fields (severity, lens) and the last (evidence), and rejoin the rest with ` — `. A line with too few fields uses everything after the first field. No result → no `report`.
 
 ### 3. Decks on the tree (Hide finished agents OFF)
 - Among one parent's children, finished nodes with the same `role` form a deck when there are 2 or more. A single finished node stays a normal box. Live (working, waiting, idle) nodes are never in a deck. "Finished" is the existing page definition.
-- The deck replaces those boxes, placed at the position of its newest member in the existing creation order. The deck is a parent in its own right: the children of all its members are merged into one child list under the deck (sorted by creation), and grouping under it uses the deck as their parent. So the verifiers of two decked sub-leads can share one deck. This is the meaning of "same parent" for agents under a deck.
+- The deck replaces those boxes, placed at the position of its newest member in the existing creation order. The deck is a parent in its own right: the children of all its members are merged into one child list under the deck (sorted by creation), and grouping under it uses the deck as their parent. So the workers of two decked sub-leads can share one deck. This is the meaning of "same parent" for agents under a deck.
 - Deck card: role, count (`×40`), one-line title, and "Finished <clock time, HH:MM, same format as `clock()` in viewer/pages/agents.js>" from the latest `ended_at` across all members (a member without `ended_at` uses the `created_at` of its newest result card, else its own `created_at`). Drawn with two offset outlines behind it (CSS only), dashed like finished boxes.
-- Title: reviewer → "Plan review · N rounds"; verifier → "<newest member's title> · N rounds" (e.g. "Checked parts 1–4 · 3 rounds"; "Checks" when it has no title). Either gets the suffix ", last round clean" when the `rounds` entry for H (same stage) has `clean: true`. N (the count shown) = number of distinct `round` values among members; H = the highest of them. Members with no `round` are not counted in N; if no member has a round, reviewer/verifier decks use the other-deck title. Other decks: the newest member's title (role when it has none).
+- Title: reviewer → "Plan review · N rounds", with the suffix ", last round clean" when `rounds.review[H]` has `clean: true`. N (the count shown) = number of distinct `round` values among members; H = the highest of them. Members with no `round` are not counted in N; if no member has a round, a reviewer deck uses the other-deck title. Other decks (including verifiers): the newest member's title (role when it has none).
   - No approval tracking: the suffix reports only what round H's progress line says.
 - Hide finished agents ON: behaviour unchanged (decks never shown; a selected finished agent and needed ancestors still shown as boxes).
 
 ### 4. Round squares
-- Reviewer and verifier decks with at least one member `round` show one square per distinct round, oldest to newest, wrapping to further lines.
-- Color from `rounds.<review|verify>[N].found`: 5+ red `#d9645a`, 3–4 orange `#e0904a`, 1–2 yellow `#d9c45a`, 0 green `#4ea87b`; no entry → grey, meaning not counted.
-- The square row has an accessible label: "<N> rounds; objections went from <first counted> to <last counted>" (verifiers: "problems"); with fewer than two counted rounds, "<N> rounds".
+- Reviewer decks with at least one member `round` show one square per distinct round, oldest to newest, wrapping to further lines.
+- Color from `rounds.review[N].found`: 5+ red `#d9645a`, 3–4 orange `#e0904a`, 1–2 yellow `#d9c45a`, 0 green `#4ea87b`; no entry → grey, meaning not counted.
+- The square row has an accessible label: "<N> rounds; objections went from <first counted> to <last counted>"; with fewer than two counted rounds, "<N> rounds".
 
 ### 5. Deck popover
 - Clicking a deck (button, keyboard-activatable) opens a popover anchored under it; Escape, clicking outside or clicking the deck again closes it. Only one open at a time. It survives the 5-second refresh (stays open, content updates). The open popover, and any expanded round, is remembered by the name of one member session (the newest at opening); after a refresh it reopens on whichever deck now contains that session (for example after two child decks merge), with the same round expanded if it still exists and "Show all" restored if it was pressed (if the remembered round would fall past the five-row cutoff, the list opens in Show all); if no deck contains it, the popover closes.
-- Reviewer/verifier decks with rounds list rounds newest first: square, "Round N", "<k> reviewers · <text>" (verifiers: "<k> verifiers"). <text> is "1 objection: <first>" when found is 1 and the round's members' reports total exactly one finding line; else "<found> objections" (singular for 1; "problems" for verifiers); "no objections" for 0; "not counted" with no entry. A round whose entry has `clean: true` and found > 0 appends " · round clean" (a clean round can still hold counted findings, minor or moved to Deferred, so its square may be yellow or worse while the title says "last round clean"; that is intended). Members without a round are listed as a final group "Other". Shows the latest 5 rounds, then a "Show all N rounds" button that expands in place.
+- Reviewer decks with rounds list rounds newest first: square, "Round N", "<k> reviewers · <text>". <text> is "1 objection: <first>" when found is 1 and the round's members' reports total exactly one finding line; else "<found> objections" (singular for 1); "no objections" for 0; "not counted" with no entry. A round whose entry has `clean: true` and found > 0 appends " · round clean" (a clean round can still hold counted findings, minor or moved to Deferred, so its square may be yellow or worse while the title says "last round clean"; that is intended). Members without a round are listed as a final group "Other". Shows the latest 5 rounds, then a "Show all N rounds" button that expands in place.
 - Opening a round lists its agents (title, finished time); each is selectable exactly like a box: sets `?agent=` and shows that agent in the right panel. The deck containing the selected agent is drawn selected.
-- Other decks list their agents newest first, latest 5 then "Show all N agents", each selectable the same way.
+- Other decks (verifiers included) list their agents newest first, latest 5 then "Show all N agents", each selectable the same way.
 - Works at phone width (popover fits the viewport width).
 
 ### 6. Info popout
@@ -103,8 +104,8 @@ Changing Hide finished agents ON; decking live agents; closed asides; changing h
 - Two leads in a thread (old lead's children attach to newest lead today): unchanged; decks follow displayed parent.
 
 ### Validation
-- `node --test viewer/test/*.test.js` (unquoted glob) passes, with new tests for: `--round` accepted for reviewer/verifier, refused for other roles and bad values, kept on attempt re-run; `rounds` built from progress cards (fixing, clean with and without found, checking-only); `report` parsing for reviewer and verifier summaries.
-- `npm --prefix viewer run test:browser` passes, with new desktop and phone cases: 3 finished reviewers under one lead show one deck `×3` with squares in the right colors; one finished worker stays a box; a live reviewer is not decked; deck popover lists rounds newest first and selecting an agent opens the right panel; "Show all" expands; `?` popout opens and closes; Hide finished ON shows no decks; with a deck popover open and a round expanded, a poll that adds a finished member keeps the popover and round open and shows the new member.
+- `node --test viewer/test/*.test.js` (unquoted glob) passes, with new tests for: `--round` accepted for reviewer, refused for verifier and other roles and bad values, kept on attempt re-run; `rounds` built from progress cards (fixing, clean with and without found, checking-only); `report` parsing for reviewer summaries.
+- `npm --prefix viewer run test:browser` passes, with new desktop and phone cases: 3 finished reviewers under one lead show one deck `×3` with squares in the right colors; one finished worker stays a box; 2 finished verifiers show a deck with no squares; a live reviewer is not decked; deck popover lists rounds newest first and selecting an agent opens the right panel; "Show all" expands; `?` popout opens and closes; Hide finished ON shows no decks; with a deck popover open and a round expanded, a poll that adds a finished member keeps the popover and round open and shows the new member.
 - `bash machine/test/run.sh` still passes if `wc.js` changes touch machine-side forwarding.
 
 ## Deferred
@@ -112,7 +113,6 @@ Changing Hide finished agents ON; decking live agents; closed asides; changing h
 | # | Item | Why it can wait | Source | Notes for the follow-up |
 |---|------|-----------------|--------|-------------------------|
 | D1 | Full keyboard handling in the deck popover: arrow keys between rows, focus moved into the popover and returned to the deck on close | Mouse/tap, Enter/Space to open and Escape to close already work | planning | Follow the proposal's popover; check with Playwright keyboard tests on both browsers |
-| D3 | Threads mid-build when this change is installed: an old unnumbered attempt that wrote no remediation file may share a number with the first numbered one, so early squares and "last round clean" can be wrong for that one build | Only affects builds that straddle the update; new threads number correctly | review-round-3 | Seed the next attempt from the highest verify progress `pass` as well as verifier rounds |
 | D2 | Deck squares for agents started before this change (backfilling round numbers from old cards and plans) | New threads get rounds from now on; old ones still deck, just without squares | planning | Membership can't be recovered reliably from timestamps (MAP.md); would need a best-effort match against progress `checking` cards |
 
 ## Accepted Risks
@@ -254,6 +254,18 @@ exit. Downgrades and declines cite evidence.
 | mechanics | major | Surviving verifiers of a dead sub-lead vs the replacement's numbering | upheld | Same simplification: numbering no longer depends on them; their handling is unchanged from today's restart rules |
 | mechanics | minor | "none serious" wrong when a major finding moved to Deferred | upheld | Text is now " · round clean" |
 | mechanics | minor | "last activity time" fallback undefined | upheld | §3 uses newest result card time, else creation time |
+
+### Round 7 — 2026-11-18
+
+**Lanes:** intent: pending; mechanics: pending; cross-family: pending.
+
+**Changed since Round 6:**
+- Decision 14: squares, rounds, `--round`, `rounds.verify` and GAP parsing removed for verifiers; verifier decks behave like worker decks; sub-lead.md and cards.md out of scope; Deferred D3 removed.
+- §3: "Finished HH:MM" with fallback via newest result card time.
+- §5: " · round clean" text.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
