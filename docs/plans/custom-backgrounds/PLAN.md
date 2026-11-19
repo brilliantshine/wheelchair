@@ -175,13 +175,18 @@ No background implementation exists at adoption; shared Settings, state queues a
 
 ## Implementation Tasks
 
-Filled by the sub-lead at build start.
+Backend and frontend run in disjoint checkouts. T1 owns the shared format helper: CommonJS export and browser global `wcBackgroundFormat`, `normalize(Uint8Array, optionalMediaType)` returns `{bytes: Uint8Array, mediaType}`; it enforces the original 25 MiB bound, detects signatures, validates structure, and normalizes GIF looping. Frontend uploads original bytes using the detected mediaType. T1 alone owns server.js (including narrow img-src blob: permission). The sub-lead owns routers, test helper isolation, PLAN and COMPLETION.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
+| T0 | Isolate test state and preserve bootstrap routers | viewer/test/helpers/server.js, server-isolation.test.js; routers | sub-lead gpt/gpt-6.1-sol | sub-lead | node --test viewer/test/server-isolation.test.js | done |
+| T1 | tricky: persistence, bounded HTTP and shared format parser | viewer/app/background.js, settings.js, state.js, routes.js, hub.js, API.md; viewer/server.js; pages/background-format.js; test/background*.test.js; test/fixtures/background/ | standard gpt/gpt-6.1-terra | wc-7108adfdf9ea-worker | node --test viewer/test/background*.test.js; node --test viewer/test/*.test.js | dispatched |
+| T2 | tricky: shared renderer, Settings editor, page surfaces and browser checks | viewer/pages except background-format.js; viewer/doc.html; test/background*.spec.js; test/fixtures/background-browser/ | standard gpt/gpt-6.1-terra (Claude unavailable) | wc-7108adfdf9ea-worker-2 | npm --prefix viewer run test:browser -- --grep background; npm --prefix viewer run test:browser | dispatched |
 
 ## Log
 
 2026-11-19: Adopted user attachments and the requested realism changes. User explicitly authorized implementation. Source review history remains in the uploaded original. No feature implementation has started.
 
 2026-11-19: Focused adoption review is clean after minor resolutions. Build accepted: user chat “alright now work on it”; no repeated permission question.
+
+- 2026-11-19 — T0 accepted: two default isolated servers passed (1/1); every start now passes its own temporary stateDir. Bootstrap ROUTER.md files preserved in explicit preparation commit.
