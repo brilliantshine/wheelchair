@@ -428,6 +428,23 @@ openbox is installed, the live test also asserts `status` shows `window_manager:
 | mechanics | minor | Unrecognised `systemctl` output clears openbox mode | upheld | Only `inactive`/`failed` |
 | mechanics | minor | Fixture may start host openbox | upheld | `windowManager` option, off in the shared fixture |
 
+### Round 4 — 2026-11-18
+
+Collin chose Keep going after round 3; review budget reset.
+
+**Lanes:** intent — claude; mechanics — not claude; cross-family: yes.
+
+**Changed since Round 3:**
+- S2: cap counts map entries, with a 3 s teardown overlap accepted; `reset()` no longer throws, and the teardown guard is dropped.
+- S4: only `inactive` or `failed` clears openbox mode; `registered()` gets an optional deadline; `windowManager` constructor option for tests.
+- S5: a failed save after spawn is logged, and the hand-over wait continues.
+- S6: `launch()` drops `registered()`; failed records carry `failed: true` and show `exited`; the cancellation fence comes first.
+- S7: `runTool()` resolves at once on timeout.
+- Validation additions; one new Accepted Risk.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
