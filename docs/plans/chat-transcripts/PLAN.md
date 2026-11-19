@@ -42,6 +42,9 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 10 | On the machine, the dedupe hashes of the kept file live in memory per session: built from the kept file the first time a copy has new lines, updated only after a successful append, dropped after 10 minutes with no copy for that session and when the session is stopped or archived | Avoids rehashing the whole file on every new line without an unbounded set; committing after the append means a failed append cannot hide lines from the next try | defaulted |
 | 11 | The `known`/`full`/`unchanged` answer is computed inside the per-session copy queue (`copyTranscript`), after that read's copy | A hook-triggered copy appending at the same moment cannot leave a half-written tail in a reply | defaulted |
 | 12 | Kept as the parent split it: the thread lock, the 2-second poll, the page and the parsers do not change | IDEA "Not doing" and Constraints | adopted |
+| 14 | Idle drops on both hub and machine run from an `unref`'d timer, not only on traffic | Otherwise closing the last tab leaves everything held (round-1 finding) | review-round-1 |
+| 15 | The machine's dedupe set holds only non-empty lines and is dropped after a failed append | Matches today's rebuild-from-disk results exactly, including blank lines across batches and partial appends | review-round-1 |
+| 16 | `machines.json`'s `last_seen` is written at most once a minute per machine; the in-memory value updates every call | It is read from disk only at hub start; otherwise every chat poll rewrites the file | review-round-1 |
 | 13 | Refines #6: no text hash. A reply from an older machine is parsed every time, as today | Only mattered while hub and machine are on different versions; simpler entry | review-round-1 |
 
 ## Spec
@@ -89,12 +92,16 @@ Kimi and incomplete-line rules exactly:
    do not hash, do not append. Save the session registry only if `transcript_path` or
    `transcript_source` (`path`, `offset`, `ino`) actually changed.
 2. When there are new lines: get the session's dedupe set from memory, building it from
-   the kept file (as today's hashing) if absent. Filter the new lines as today, append,
-   and add the new hashes to the set only after the append succeeds. If the append
-   throws, the set is left as it was before this copy.
-3. Dedupe sets are dropped when a session has had no copy for 10 minutes (checked at
-   least once a minute, or on each copy; either is fine), and when the session is stopped
-   or its thread archived. A dropped set is rebuilt on the next copy with new lines.
+   the kept file (as today's hashing, non-empty lines only) if absent. Filter the new
+   lines exactly as today (within one batch a repeated line, including a repeated blank
+   line, is dropped). After the append succeeds, add the hashes of the appended
+   **non-empty** lines to the set, so the set always equals what a rebuild from the kept
+   file would give. If the append throws, drop the session's set (the next copy rebuilds
+   it from the kept file, as today's code does on every copy).
+3. Dedupe sets are dropped when a session has had no copy for 10 minutes, by an
+   `unref`'d timer that runs at least once a minute (so the drop happens with no further
+   traffic) and is stopped when the service closes; and when the session is stopped or
+   its thread archived. A dropped set is rebuilt on the next copy with new lines.
 4. Duplicate filtering results are identical to today's for every sequence of source
    contents (existing tests `machine/test/service.test.js:259`, `:412`, `:421` keep
    passing).
@@ -123,7 +130,9 @@ under today's thread lock:
    - `unavailable`, empty `data`, a thrown error or timeout → fallback: if an entry exists,
      use its `parsed` (whatever its parse key) and update `lastRead`; else read the local
      `session.transcript_path` as today and parse it without storing it; if that is empty
-     too, the session contributes nothing, as today (`chat.js:325`).
+     too, the session contributes nothing, as today (`chat.js:325`), except that a
+     session whose CLI has no parser still gets today's "no transcript reader" notice
+     (`chat.js:265`, `:325`).
 3. The items chat returns are the same, in the same order, as today's for the same
    transcript text. Reused `parsed` arrays are never mutated by later code: the worker
    checks every consumer of `items` in `chat()` and either confirms none mutates or
@@ -134,11 +143,24 @@ under today's thread lock:
 1. `hub.chat` (`viewer/app/hub.js:250`), when called and before waiting for the thread
    lock: increments a per-thread pending count, and sets `lastRead = now` on every entry
    held for that thread's lead sessions. It decrements the count when it returns or
-   throws.
-2. A sweep (at most once a minute, run from `hub.chat` or a timer; a timer must be
-   `unref`'d and stopped with the hub) drops entries whose `lastRead` is more than 10
-   minutes ago, unless their thread's pending count is above zero.
+   throws. `chat()` itself (`viewer/app/chat.js:318`) does the same for its own duration,
+   because aside creation calls it directly while already holding the lock
+   (`viewer/app/asides.js:34`).
+2. A sweep drops entries whose `lastRead` is more than 10 minutes ago, unless their
+   thread's pending count is above zero. It runs from an `unref`'d timer at least once a
+   minute, so entries are dropped after the last tab closes with no further traffic; the
+   timer is stopped when the hub stops.
 3. No size cap.
+
+### S4b. Hub: machine "last seen" writes
+
+Every `hub.call` today rewrites `machines.json` through `markMachineSeen`
+(`viewer/app/hub.js:105`, `viewer/app/state.js:241`), so each chat poll writes a file per
+lead even when the transcript is unchanged. Change `hub.markMachineSeen`: always update
+the in-memory `lastSeen` (what every reader uses: `agents.js:140`, `views.js:164`), but
+write it to `machines.json` only when the last write for that machine was 60 seconds or
+more ago. `machines.json`'s `last_seen` is only read at hub start to seed `lastSeen`
+(`viewer/app/hub.js:76`), so it may lag by up to a minute.
 
 ### S5. Tests
 
@@ -156,15 +178,20 @@ New tests, at least:
   read (spy on `fsp.readFile`/handle reads) and `sessions.json` was not rewritten (mtime
   and a spy on `persistSessions`); a new source line → `full` with the larger `end`;
   missing copy → `unavailable`; malformed `known` → 400; archived thread with `known`
-  works; a failed append leaves the dedupe set unchanged so the next copy appends the
-  lines; a dedupe set is dropped after 10 idle minutes (fake clock) and rebuilt correctly.
+  works; after a failed append the next copy appends exactly the lines not already in
+  the kept file; blank lines across separate batches are kept as today's code keeps
+  them; a dedupe set is dropped after 10 idle minutes (fake clock) and rebuilt correctly.
 - Hub (`viewer/test/app-chat.test.js`): second poll on an unchanged transcript sends
   `known` and does not call the parser; `full` re-parses; an older-machine reply (no
   `status`) works; `unavailable`, empty and thrown
   replies fall back to the held parsed chat, else the local path; a `parent_title` change
   re-requests with `known=-` and re-parses; an entry unread for 10 minutes is dropped
   (fake clock) but not while a chat request for its thread is pending; report readers
-  never send `known` and neither use nor fill entries (extend `app-chat.test.js:362`).
+  never send `known` and neither use nor fill entries (extend `app-chat.test.js:362`);
+  entries are dropped by the timer with no further chat calls; an aside created at the
+  idle cutoff still finds its message; an unknown CLI still shows its notice; two
+  `hub.call`s within a minute write `machines.json` once while `machineSeen` reflects
+  both.
 
 ### S6. Validation
 
@@ -195,6 +222,7 @@ discovery (`findTranscript`), to the parsers, or to the hub's other per-thread m
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| If the parent thread's title changes while the machine is unreachable, the stub's "Started from" line shows the old title until the next successful read | Needs an outage at the moment of a rename and fixes itself on the next read; keeping the raw text for this would double each entry | 1 |
 | If the filesystem reports no birth time (`birthtimeMs` 0), `gen` falls back to the inode alone, so a kept file deleted and recreated with the same inode and same size would read as `unchanged` | The machine never deletes and recreates a kept file of a live session; only archive cleanup removes them | planning |
 
 ## Review Rounds
@@ -209,6 +237,13 @@ discovery (`findTranscript`), to the parsers, or to the hub's other per-thread m
 |------|----------|---------|--------------|------------|
 | intent | minor | In-memory dedupe set (S2.2-S2.3) only speeds copies with new lines; could be deferred | declined | Hook-triggered copies run the same code for every session on every hook event (MAP.md: `machine/service.js:1307`), so while agents work, today's whole-file rehash happens per event, not per poll; the set is what makes an active agent cheap. Kept |
 | intent | minor | Text hash only helps older-machine replies; drop it | upheld | Decision #13; S3.2 and tests simplified |
+| mechanics | blocking | Idle drops only on traffic leave memory held after the last tab closes; same for machine dedupe sets | upheld | Decision #14; S2.3, S4.2 |
+| mechanics | blocking | In-memory dedupe set would suppress blank lines across batches, unlike today (`machine/service.js:1218` rebuild skips blanks) | downgraded (minor) | CLIs write JSONL, so blank source lines are practically absent; still fixed: Decision #15, S2.2 |
+| mechanics | major | Every poll still rewrites `machines.json` via `hub.call` → `markMachineSeen` | upheld | Confirmed `viewer/app/hub.js:144`, `state.js:241`; disk value only read at start (`hub.js:76`). Decision #16, S4b |
+| mechanics | minor | Unknown-CLI notice must survive an empty read | upheld | S3.2 |
+| mechanics | minor | Fallback after a parent-title change shows the old title | accepted-risk | Accepted Risks |
+| mechanics | minor | Aside creation calls `chat()` directly, bypassing pending protection | upheld | Confirmed `asides.js:34`; S4.1 |
+| mechanics | minor | After a failed append the kept set could let lines be appended twice | upheld | Decision #15, S2.2 |
 
 ## Implementation Tasks
 
