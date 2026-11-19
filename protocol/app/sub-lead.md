@@ -241,11 +241,13 @@ When every task is done and the full validation passes:
    Once every verifier has reported, merge all their GAP lines into one list (duplicates
    merged) and judge each by `realism.md`, whether or not it starts `Rare path:`. Write each
    rare path to PLAN.md Accepted Risks with round `verification-N` and a one-line reason,
-   and commit. The attempt's outcome is decided on the merged list after that; rare gaps
-   never go to remediation or count toward the two-attempt rule. When you cannot tell,
-   `message` the lead with `asks: true`.
-4. **PASS**: once the merged list is empty (every verifier passed, or only rare gaps remain), post `phase: clean`, then send the
-   lead a `result` (`task` `build`, `outcome` `done`, `report` COMPLETION.md, `commit` the
+   and commit; that PLAN.md-only record commit needs no re-verification. The attempt's
+   outcome is decided on the merged list after that; rare gaps never go to remediation or
+   count toward the two-attempt rule. When you cannot tell,
+   `message` the lead with `asks: true` and decide the attempt's outcome after the answer.
+4. **PASS**: once the merged list is empty after rare-path judgment, post `phase: clean`,
+   then send the lead a `result` (`task` `build`, `outcome` `done`, `report` COMPLETION.md,
+   `commit` the
    commit verified).
 4a. In a lighter mode, when the merged list is non-empty after rare-path judgment and before
    remediation, send the lead one `message` with `asks: true` listing every gap, each
@@ -269,8 +271,9 @@ When every task is done and the full validation passes:
    A surviving gap takes precedence: save other deferred hardening first, then stop and
    message the lead as in step 6. After Collin answers, act on his answer for that gap;
    other must-fix gaps go through step 5. Nothing else proceeds while he decides.
-5. **FAIL**: post `phase: fixing` with `found` equal to the distinct gaps in the attempt's
-   reports and `fixed: 0`; rare gaps are not counted; re-post as `fixed` rises with each accepted remediation task.
+5. **FAIL**: post `phase: fixing` with `found` equal to the distinct gaps that go to
+   remediation (never rare gaps) and `fixed: 0`; re-post as `fixed` rises with each
+   accepted remediation task.
    With two verifiers, merge duplicate gaps before counting them. Write
    `docs/plans/<slug>/REMEDIATION-N.md` (N is the verification attempt):
    the gap list verbatim, then one task per gap in the brief format. Route to the same

@@ -70,7 +70,8 @@ re-raise them. Rare paths per `protocol/app/realism.md` land here in every mode,
 ## Check Once Built
 
 Review findings only the built code can settle, per `protocol/app/realism.md`. Verifiers
-check each row against the build; a listed row is settled for later review rounds.
+check each row against the build; a listed row is settled for later review rounds and
+stays as review history.
 
 | # | What to check | Round |
 |---|---------------|-------|

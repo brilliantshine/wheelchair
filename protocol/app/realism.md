@@ -10,7 +10,7 @@ How likely a problem must be before it is chased. It applies in every plan mode.
   ordinary running. Examples: a crash or restart that also loses or corrupts state files;
   a race inside a sub-second window between two actors; files swapped or edited
   mid-operation; tampering by a local user or agent; malformed input the source never
-  writes; screen layouts or tool versions that are not shipped.
+  writes; unusual screen layouts or versions the tool does not ship.
 - **Always fixed, however rare**: secret or token leaks, permission or sandbox bypass,
   building the wrong thing, anything a Spec validation command checks, silent loss of
   Collin's work in normal use.
