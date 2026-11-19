@@ -705,3 +705,4 @@ Round 12 was the third round without a clean result since that decision (rounds 
 Watch List items 1-6 (Antigravity note, Codex flags, project identity, unknown fields, key values in argv, second save) were settled as Decision Log 4-9.
 
 Ready check 2026-11-18: hub and machine service answer (session list ok); claude, codex and gh installed; gh logged in to github.com; Codex preflight passed (token fresh). Ready.
+Build accepted: approval b3e3c9c4-f81c-47fc-ba9c-244926be6f2c
