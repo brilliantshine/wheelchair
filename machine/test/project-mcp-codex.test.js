@@ -121,3 +121,10 @@ test('skips a reader-marked duplicate header without overrides', () => {
   assert.deepEqual(result.argv, base);
   assert.deepEqual(result.redactions, []);
 });
+test('exported Codex checks share the command rules', () => {
+  const { codexEntryReason, codexOverrides } = require('../adapters/codex');
+  assert.equal(codexEntryReason('bad.name', { command: 'x' }), 'its name must use only letters, digits, _ and -');
+  assert.equal(codexEntryReason('valid', { command: 'x' }), null);
+  assert.equal(codexOverrides({ servers: { valid: { command: 'x' } } }).tooLarge, false);
+  assert.equal(codexOverrides({ servers: { valid: { command: 'x'.repeat(70000) } } }).tooLarge, true);
+});

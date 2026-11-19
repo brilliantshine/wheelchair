@@ -1,4 +1,36 @@
-# Map: project tools at session start
+# Map: project tools and project settings
+
+Checked against: `207c02f5e0b56cfbcc96046cca10a8df92002a9c` (origin/main).
+Files covered: `machine/lib/project-mcp.js`, `machine/service.js`, `machine/adapters/claude.js`, `machine/adapters/codex.js`, `machine/adapters/agy.js`, `machine/adapters/common.js`, `viewer/app/state.js`, `viewer/app/settings.js`, `viewer/app/routes.js`, `viewer/app/threads.js`, `viewer/app/sessions.js`, `viewer/app/machine-client.js`, `viewer/server.js`, `viewer/pages/settings.js`, `viewer/pages/settings.html`, `viewer/pages/nav.js`, `viewer/pages/new.js`, `install.sh`.
+
+```text
+choose machine and repo -> validate project -> create thread and fetch default branch
+  -> create session worktree -> read .mcp.json -> validate -> adapter -> CLI
+                                                    -> warnings in machine log
+```
+
+The hub asks the selected machine to validate a path as a directory containing `.git`, then saves the path and machine on the thread; `projects.json` separately stores only distinct path strings, not machine or default branch (`viewer/app/threads.js:20-25,41-73`; `viewer/app/state.js:171-173,196-203`; `machine/service.js:1198-1234`). New-thread discovery combines machine-specific saved directories, prior thread paths and repos found one level below a configured folder (`viewer/app/routes.js:125-152,163-178`). The machine fetches origin and normally creates the thread worktree from `origin/<default branch>`; default branch comes from origin HEAD, then `git remote show`, then `main`, and the hub records it after startup (`machine/service.js:529-542,554-560`; `viewer/app/sessions.js:304-330,360-365`). Uncommitted changes in the original checkout do not become the new worktree's files.
+
+At each session start the machine reads `.mcp.json` in that worktree. Missing is silent; a non-file, file over 32 KiB, read error, malformed JSON or non-object `mcpServers` produces a warning and no parsed config. Each server must have a nonempty stdio command with optional string args and string-valued env, or `type: http` and nonempty URL; invalid entries are skipped individually (`machine/lib/project-mcp.js:6-42`; `machine/service.js:606-614`). Only lead, sub-lead, worker and verifier are tool roles (`machine/lib/project-mcp.js:6`; `machine/service.js:562-565`).
+
+Claude sets `enableAllProjectMcpServers` for accepted names and disables rejected names; for other roles it disables all listed names. It relies on Claude reading the file, rather than serializing entries into argv (`machine/adapters/claude.js:63-74`). Codex converts accepted tool-role entries to `project_`-prefixed overrides: names have a restricted character set, headers are unsupported, and most `${...}` substitutions are rejected. Stdio env values exactly `${SAME_NAME}` become `env_vars` passthrough; other values become literal overrides. If overrides exceed the 64 KiB budget, all are removed (`machine/adapters/codex.js:27,58-102`). Antigravity adds no project servers and warns for tool roles when any names exist (`machine/adapters/agy.js:30-32`). Warnings are printed to machine-service stderr only for tool roles; they are not returned by this startup code as user-facing warnings (`machine/service.js:612-615,628-634`). Invalid whole-file parsing leaves Claude without a list of names to disable, so the adapter does not itself guarantee suppression in that case (`machine/lib/project-mcp.js:8,30-32`; `machine/adapters/claude.js:69-74`).
+
+```text
+settings page -> same-origin hub JSON API -> settings store
+                                        -> authenticated machine API -> project discovery
+```
+
+The Settings page has sections rather than a project page; app pages are an explicit server allowlist, with Settings in shared nav (`viewer/pages/settings.js:7-8`; `viewer/pages/nav.js:38-42`; `viewer/server.js:1705-1709,1748-1764`). The page sends JSON to `/wheelchair/api/settings`, renders returned data and errors, and routes validate and atomically update hub settings (`viewer/pages/settings.js:64-74,1406-1417`; `viewer/app/routes.js:186-191,315-324`; `viewer/app/state.js:176-191`). Browser API GET needs the remember cookie or token; writes need cookie or header token plus a matching Origin. Machine callbacks use machine authentication, and hub-to-machine calls resolve the machine and send its secret header (`viewer/server.js:1286-1298,2090-2111`; `viewer/app/machine-client.js:53-77`; `machine/service.js:407-410`).
+
+Project discovery is read-only (`machine/service.js:1198,1476-1477`). The agent Git route uses its authenticated session's worktree, restricts commit paths there and offers commit, push and PR (`machine/service.js:1042-1067,1603`). It is not the only Git-writing path: archive can commit dirty thread worktrees (`machine/service.js:789-794,813-841`), while hub-authorized handoff creates commit objects in the repo, pushes or revokes guarded `wc/<id>` branches, and fast-forwards recorded thread worktrees (`machine/service.js:1248-1286,1321-1344,1351-1357`). These inspected paths do not implement a project settings edit or default-branch commit/PR.
+
+The installer creates a mode-600 machine secret for hub authentication, and non-default CLI account homes contain login configuration; these are not a project MCP secret store (`install.sh:149-166`; `machine/adapters/common.js:9-14`). Session launch explicitly adds wheelchair and login variables, then starts tmux; it has no per-project secret lookup or injection in this path (`machine/service.js:612-625`). Codex's same-name passthrough could use a variable already available to its CLI environment, but a non-committed per-project store and injection mechanism would have to be added; inherited tmux environment was not verified. Literal Codex env values enter argv and `session.command`, which is persisted with sessions (`machine/adapters/codex.js:84-92`; `machine/service.js:401,616-629`). Claude's variable expansion and inherited environment depend on CLI behavior not checked here.
+
+## What I did not look at
+
+CLI vendor source or live behavior, actual service/tmux environment, all routes outside project discovery, session start and handoff, external credential managers, repository hosting permissions, or UI/browser tests.
+
+## Session start detail (from the project-tools-solid map)
 
 Checked against: `207c02f5e0b56cfbcc96046cca10a8df92002a9c` (origin/main).
 Files covered: `machine/lib/project-mcp.js`, `machine/adapters/agy.js`, `machine/adapters/claude.js`, `machine/adapters/codex.js`, `machine/service.js`, `machine/lib/aside-turns.js`, `machine/test/project-mcp.test.js`, `machine/test/project-mcp-codex.test.js`, `machine/test/accounts.test.js`, `machine/test/aside-probe.sh`, `viewer/app/sessions.js`, `viewer/app/cards.js`, `viewer/app/card.js`, `viewer/app/threads.js`, `viewer/app/quiet.js`, `install.sh`.

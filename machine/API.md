@@ -118,3 +118,7 @@ a session. Input is refused with that reason. A DELETE for such a session return
 `202 { pending: true, end_reason }` while the tmux session's absence is unconfirmed;
 repeat the request or inspect the listing for the stopped state. Archive likewise keeps
 its session and worktree until the stop is confirmed.
+
+## Project tools
+
+`POST /v1/project-tools/read`, `/v1/project-tools/save`, and `/v1/project-tools/remove-key` use machine-secret authentication. Request and response shapes are documented in [the project tools contract](../docs/plans/project-tools-screen/API.md#machine-http-routes-machine-secret-like-the-other-v1-routes).

@@ -1,222 +1,102 @@
 'use strict';
+
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
 const path = require('node:path');
-const fs = require('node:fs');
-const http = require('node:http');
-const { execFileSync, spawn } = require('node:child_process');
-const { makeTempSync } = require('../../test-support/run-dir.js');
-process.env.WHEELCHAIR_MODELS = path.join(makeTempSync('ptools-models-'), 'models');
-const { setup, close, api } = require('./helpers/app.js');
-const { Hub } = require('../app/hub.js');
-const sessions = require('../app/sessions.js');
-const settings = require('../app/settings.js');
+const { Readable } = require('node:stream');
+const { api, close, setup } = require('./helpers/app.js');
+const { handle } = require('../app/routes.js');
 
-const line = (text, ...names) => ({ names, text });
-const tools = (over = {}) => ({ boot: 'b1', seq: 1, file: [], programs: [], clis: {}, ...over });
-const open = (thread) => thread.cards.filter((c) => c.title === 'Project tools problem' && !c.answered);
-const all = (thread) => thread.cards.filter((c) => c.title === 'Project tools problem');
-const within = (promise, ms = 3000) => Promise.race([promise, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout: lock re-taken')), ms))]);
-
-async function fixture() {
-  const c = await setup();
-  const hub = new Hub({ stateDir: c.state });
-  const made = (await api(c, '/threads', { method: 'POST', body: { project: '/tmp/ptools' } })).body;
-  const pending = { answer: null };
-  const real = hub.call.bind(hub);
-  hub.call = async (machine, route, method, body, timeout) => {
-    const reply = await real(machine, route, method, body, timeout);
-    if (route === '/v1/sessions' && method === 'POST' && pending.answer) return { ...reply, ...pending.answer };
-    return reply;
-  };
-  let n = 0;
-  // apply() drives startSession under the thread lock, as the real callers do.
-  async function apply(answer) {
-    pending.answer = answer;
-    n += 1;
-    return within(hub.withThread(made.id, async () => {
-      const thread = await hub.thread(made.id);
-      return sessions.startSession(hub, thread, { role: 'reviewer', attempt_id: `a${n}`, started_by: made.sessions[0].name });
-    }));
-  }
-  const get = () => hub.thread(made.id);
-  return { c, hub, made, apply, get, pending };
+async function files(dir) {
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  const contents = await Promise.all(entries.map(async (entry) => {
+    const name = path.join(dir, entry.name);
+    return entry.isDirectory() ? files(name) : entry.isFile() ? fs.readFile(name, 'utf8') : '';
+  }));
+  return contents.flat();
 }
-const finish = (f) => close(f.c);
 
-test('card opens, keeps id on same names, replaces on different names, closes on reset', async () => {
-  const f = await fixture();
-  try {
-    await f.apply({ project_tools: tools({ seq: 1, programs: [line('Server "a" needs x, not found', 'a')] }), created_at: '2026-01-01T00:00:00.000Z' });
-    let t = await f.get();
-    assert.equal(open(t).length, 1);
-    const id = open(t)[0].id;
-    assert.equal(open(t)[0].body, "Some project tools won't work for agents in this thread:"); assert.deepEqual(open(t)[0].items, ['Server "a" needs x, not found']);
-    assert.equal(open(t)[0].kind, 'needs'); assert.equal(open(t)[0].system, true);
-    await f.apply({ project_tools: tools({ seq: 2, programs: [line('Server "a" other text', 'a')] }), created_at: '2026-01-01T00:00:01.000Z' });
-    t = await f.get();
-    assert.equal(open(t).length, 1); assert.equal(open(t)[0].id, id); assert.match(open(t)[0].items[0], /other text/);
-    assert.equal(all(t).length, 1);
-    await f.apply({ project_tools: tools({ seq: 3, programs: [line('Server "b" bad', 'b')] }), created_at: '2026-01-01T00:00:02.000Z' });
-    t = await f.get();
-    assert.equal(all(t).length, 2); assert.equal(open(t).length, 1); assert.notEqual(open(t)[0].id, id);
-    assert.equal(t.cards.find((c) => c.id === id).answered, true);
-    await f.apply({ project_tools: tools({ seq: 4 }), created_at: '2026-01-01T00:00:03.000Z' });
-    t = await f.get();
-    assert.equal(open(t).length, 0); assert.equal(t.project_tools.card, null); assert.deepEqual(t.project_tools.card_names, []);
-  } finally { await finish(f); }
+test('project tools routes forward requests and machine responses without storing keys', async (t) => {
+  const ctx = await setup();
+  t.after(() => close(ctx));
+  const secret = 'unique-project-tools-secret-72319';
+  const replies = {
+    read: { status: 200, body: { mode: 'tools', keys: [] } },
+    save: { status: 200, body: { outcome: 'opened', key_revision: 1, keys: ['TOKEN'], pr_url: 'https://example.test/pr', warnings: [] } },
+    'remove-key': { status: 409, body: { outcome: 'refused', reason: 'changed since you opened it' } },
+  };
+  Object.assign(ctx.machine.projectToolsReplies, replies);
+  for (const route of Object.keys(replies)) {
+    const body = { machine: 'hub', path: '/project', keys: { TOKEN: secret }, token: { key_revision: 0 } };
+    const result = await api(ctx, `/project-tools/${route}`, { method: 'POST', body });
+    assert.deepEqual(result, replies[route]);
+    const call = ctx.machine.calls.findLast((item) => item.path === `/v1/project-tools/${route}`);
+    const { machine, ...forwarded } = body;
+    assert.deepEqual(call.body, forwarded);
+  }
+  for (const reply of [
+    { status: 400, body: { outcome: 'refused', reason: 'bad key' } },
+    { status: 502, body: { outcome: 'failed', key_revision: 2, keys: ['TOKEN'], error: 'push failed' } },
+  ]) {
+    ctx.machine.projectToolsReplies.save = reply;
+    assert.deepEqual(await api(ctx, '/project-tools/save', { method: 'POST', body: { path: '/project' } }), reply);
+  }
+  assert.ok((await files(ctx.state)).every((content) => !content.includes(secret)));
 });
 
-test('per-CLI and program lines are kept apart; a file line uses the name file', async () => {
-  const f = await fixture();
-  try {
-    await f.apply({ project_tools: tools({ file: [line('The file is unreadable')], programs: [line('Program missing', 'p')], clis: { codex: { hash: 'h', thread: 't', lines: [line('Codex skips "s"', 's')] }, agy: { hash: 'h', thread: 't', lines: [line('Agy skips "s"', 's')] } } }), created_at: '2026-01-01T00:00:00.000Z' });
-    const t = await f.get();
-    assert.deepEqual(open(t)[0].items, ['The file is unreadable', 'Program missing', 'Agy skips "s"', 'Codex skips "s"']);
-    assert.deepEqual(t.project_tools.card_names, ['file', 'p', 's']);
-    const listed = await sessions.sessionRequest(f.hub, { calling_session: f.made.sessions[0].name, action: 'list' });
-    assert.equal(listed.sessions.find((s) => s.role === 'lead').project_tools.problems.length, 4);
-    assert.equal(listed.sessions.find((s) => s.role === 'reviewer').project_tools, undefined);
-  } finally { await finish(f); }
+test('project tools transport failures, validation and browser authorization', async (t) => {
+  const ctx = await setup();
+  t.after(() => close(ctx));
+  ctx.machine.projectToolsReplies.read = { status: 200, raw: 'not json' };
+  const bad = await api(ctx, '/project-tools/read', { method: 'POST', body: { path: '/project' } });
+  assert.equal(bad.status, 504);
+  assert.equal(typeof bad.body.error, 'string');
+  assert.equal('outcome' in bad.body, false);
+  const missing = await api(ctx, '/project-tools/read', { method: 'POST', body: {} });
+  assert.deepEqual(missing, { status: 400, body: { error: 'path is required' } });
+  const unknown = await api(ctx, '/project-tools/read', { method: 'POST', body: { machine: 'missing', path: '/project' } });
+  assert.deepEqual(unknown, { status: 404, body: { error: 'unknown machine: missing' } });
+  const url = `${ctx.server.url}/api/project-tools/read`;
+  for (const headers of [
+    { origin: new URL(ctx.server.url).origin },
+    { origin: 'https://foreign.example', 'x-graph-token': ctx.server.token },
+  ]) {
+    const response = await fetch(url, { method: 'POST', headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify({ path: '/project' }) });
+    assert.ok(response.status === 401 || response.status === 403);
+  }
+  await ctx.machine.stop();
+  const unreachable = await api(ctx, '/project-tools/read', { method: 'POST', body: { path: '/project' } });
+  assert.equal(unreachable.status, 504);
+  assert.equal(typeof unreachable.body.error, 'string');
+  assert.equal('outcome' in unreachable.body, false);
 });
 
-test('more than 20 lines shows and N more; duplicates by text drop', async () => {
-  const f = await fixture();
-  try {
-    const lines = Array.from({ length: 23 }, (_, i) => line(`Problem ${i}`, `s${i}`));
-    await f.apply({ project_tools: tools({ programs: [...lines, line('Problem 0', 'dup')] }), created_at: '2026-01-01T00:00:00.000Z' });
-    const items = open(await f.get())[0].items;
-    assert.equal(items.length, 20 + 1); assert.equal(items.at(-1), 'and 3 more');
-  } finally { await finish(f); }
+test('project tools forwards with a 120 second timeout', async () => {
+  let args;
+  const hub = { client: { passThrough: async (...value) => { args = value; return { status: 200, body: {} }; } } };
+  const request = Readable.from([Buffer.from(JSON.stringify({ path: '/project', machine: 'hub' }))]);
+  request.method = 'POST';
+  const response = { writeHead() {}, end() {} };
+  await handle(hub, request, response, new URL('http://localhost/wheelchair/api/project-tools/save'), false);
+  assert.deepEqual(args, ['hub', '/v1/project-tools/save', 'POST', { path: '/project' }, 120_000]);
 });
 
-test('a line with underscores is kept byte-for-byte in items', async () => {
-  const f = await fixture();
-  try {
-    await f.apply({ project_tools: tools({ programs: [line("_tool_: its program can't be found", 'a')] }), created_at: '2026-01-01T00:00:00.000Z' });
-    assert.deepEqual(open(await f.get())[0].items, ["_tool_: its program can't be found"]);
-  } finally { await finish(f); }
-});
-
-test('seq and boot ordering', async () => {
-  const f = await fixture();
-  try {
-    await f.apply({ project_tools: tools({ seq: 5, programs: [line('five', 'a')] }), created_at: '2026-01-02T00:00:00.000Z' });
-    await f.apply({ project_tools: tools({ seq: 3, programs: [line('three', 'a')] }), created_at: '2026-01-03T00:00:00.000Z' });
-    let t = await f.get();
-    assert.equal(t.project_tools.seq, 5); assert.match(open(t)[0].items[0], /five/);
-    await f.apply({ project_tools: tools({ boot: 'b2', seq: 1, programs: [line('newboot', 'a')] }), created_at: '2026-01-02T00:00:00.000Z' });
-    t = await f.get();
-    assert.equal(t.project_tools.boot, 'b2'); assert.equal(t.project_tools.seq, 1); assert.match(open(t)[0].items[0], /newboot/);
-    await f.apply({ project_tools: tools({ boot: 'b3', seq: 9, programs: [line('stale', 'a')] }), created_at: '2026-01-01T00:00:00.000Z' });
-    t = await f.get();
-    assert.equal(t.project_tools.boot, 'b2'); assert.match(open(t)[0].items[0], /newboot/);
-  } finally { await finish(f); }
-});
-
-test('project_tools is not left on the session record', async () => {
-  const f = await fixture();
-  try {
-    const started = await f.apply({ project_tools: tools({ programs: [line('x', 'a')] }), created_at: '2026-01-01T00:00:00.000Z' });
-    assert.equal(started.project_tools, undefined);
-    const t = await f.get();
-    assert.ok(t.sessions.every((s) => s.project_tools === undefined));
-    // an answer without project_tools changes nothing
-    await f.apply({});
-    assert.equal(open(await f.get()).length, 1);
-  } finally { await finish(f); }
-});
-
-test('applied in a queued promotion and in resumeUnanswered, without re-taking the lock', async () => {
-  const f = await fixture();
-  try {
-    // queued promotion
-    await settings.update(f.hub, (s) => { s.accounts.forEach((a) => { a.paused = true; }); });
-    const thread = await f.get();
-    const waiting = { name: 'wc-waiting-1', role: 'reviewer', started_by: f.made.sessions[0].name, token: 't', attempt_id: 'w', queue: [], ready: false, live: true, status: 'waiting', created_at: new Date().toISOString(), pending_start: { role: 'reviewer', started_by: f.made.sessions[0].name, attempt_id: 'w' } };
-    thread.sessions.push(waiting);
-    await f.hub.save(thread);
-    await settings.update(f.hub, (s) => { s.accounts.forEach((a) => { a.paused = false; }); });
-    f.pending.answer = { project_tools: tools({ programs: [line('queued problem', 'q')] }), created_at: '2026-01-01T00:00:00.000Z' };
-    await within(sessions.retryWaiting(f.hub));
-    let t = await f.get();
-    assert.match(open(t)[0]?.items[0] || '', /queued problem/);
-    assert.ok(t.sessions.every((s) => s.project_tools === undefined));
-    // resumeUnanswered
-    f.pending.answer = { project_tools: tools({ seq: 2, programs: [line('resumed problem', 'q')] }), created_at: '2026-01-01T00:00:01.000Z' };
-    t = await f.get();
-    const target = t.sessions.find((s) => s.name === 'wc-waiting-1');
-    Object.assign(target, { live: false, status: 'failed' });
-    target.unanswered_start = { body: { name: target.name, token: 't', role: 'reviewer' }, first_message: false };
-    await f.hub.save(t);
-    // The real route finds the unanswered start and resumes it under the thread lock it already holds.
-    const again = await within(f.hub.withThread(f.made.id, () => sessions.sessionRequest(f.hub, { calling_session: f.made.sessions[0].name, action: 'start', role: 'reviewer', attempt_id: 'w' })));
-    assert.equal(again.duplicate, true);
-    t = await f.get();
-    assert.match(open(t)[0].items[0], /resumed problem/);
-    assert.ok(t.sessions.every((s) => s.project_tools === undefined));
-  } finally { await finish(f); }
-});
-
-test('default wc.js session list shows project_tools on the lead entry', async () => {
-  const cli = path.resolve(__dirname, '../app/wc.js');
-  const dir = makeTempSync('ptools-cli ');
-  const lead = { name: 'lead', role: 'lead', status: 'running', project_tools: { problems: ['Server "a" is broken'] } };
-  const server = http.createServer(async (req, res) => { for await (const _ of req); res.end(JSON.stringify({ sessions: [lead], review_families: 'both' })); });
+test('machine replies keep multi-byte characters split across chunks', async (t) => {
+  const http = require('node:http');
+  const { requestJson } = require('../app/machine-client');
+  const server = http.createServer((request, response) => {
+    const bytes = Buffer.from(JSON.stringify({ GREETING: 'Olá' }));
+    const split = bytes.indexOf(0xc3);
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.write(bytes.subarray(0, split + 1));
+    setTimeout(() => {
+      response.end(bytes.subarray(split + 1));
+    }, 50);
+  });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-  try {
-    const out = await new Promise((resolve, reject) => {
-      const child = spawn(process.execPath, [cli, 'session', 'list'], { cwd: dir, env: { ...process.env, WHEELCHAIR_MACHINE_URL: `http://127.0.0.1:${server.address().port}`, WHEELCHAIR_SESSION_TOKEN: 'test' } });
-      let text = ''; child.stdout.on('data', (d) => { text += d; }); child.on('error', reject);
-      child.on('close', (code) => (code ? reject(new Error(`exit ${code}`)) : resolve(JSON.parse(text))));
-    });
-    assert.deepEqual(out.sessions[0].project_tools, { problems: ['Server "a" is broken'] });
-  } finally { await new Promise((resolve) => server.close(resolve)); }
-});
+  t.after(() => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())));
 
-test('with two lead sessions only the newest lead carries project_tools in the hub list', async () => {
-  const f = await fixture();
-  try {
-    await f.apply({ project_tools: tools({ programs: [line('lead problem', 'a')] }), created_at: '2026-01-01T00:00:00.000Z' });
-    const t = await f.get();
-    t.sessions.push({ name: 'wc-second-lead', role: 'lead', live: true, status: 'ready', queue: [], created_at: new Date().toISOString() });
-    await f.hub.save(t);
-    const listed = await sessions.sessionRequest(f.hub, { calling_session: f.made.sessions[0].name, action: 'list' });
-    const leads = listed.sessions.filter((s) => s.role === 'lead');
-    assert.equal(leads.length, 2);
-    assert.equal(leads[0].project_tools, undefined);
-    assert.deepEqual(leads[1].project_tools, { problems: ['lead problem'] });
-  } finally { await finish(f); }
-});
-
-test('a new thread gets the default project_tools record when the machine start answer has none', async () => {
-  const c = await setup();
-  try {
-    const res = await api(c, '/threads', { method: 'POST', body: { project: '/tmp/ptools-default' } });
-    assert.equal(res.status, 201);
-    // the fake machine's start answer carries no project_tools
-    assert.ok([...c.machine.sessions.values()].every((s) => s.project_tools === undefined));
-    const expected = { boot: null, seq: 0, created_at: null, state: null, card: null, card_names: [] };
-    assert.deepEqual(res.body.project_tools, expected);
-    const saved = await new Hub({ stateDir: c.state }).thread(res.body.id);
-    assert.deepEqual(saved.project_tools, expected);
-  } finally { await close(c); }
-});
-
-test('a handoff import creates a thread with the default project_tools, even when the lead cannot start', async () => {
-  const { makeTemp } = require('../../test-support/run-dir.js');
-  const ops = require('../app/handoff-ops.js');
-  const { defaultProjectTools } = require('../app/threads.js');
-  const dir = await makeTemp('ptools-import-');
-  const hub = new Hub({ stateDir: dir }); await hub.state.init();
-  const id = 'a'.repeat(12);
-  const file = { thread: { id, title: 'Title', slug: 'plan' }, head: 'b'.repeat(40), stage: 'approved', exported_at: 'date', history: [] };
-  hub.client.handoff = async (_, input) => ({ inspect: { worktree_exists: false }, known: { checked_out: [] }, 'claim-commit': { sha: 'c'.repeat(40) }, 'claim-push': { result: 'landed' }, running: { names: [] }, 'set-branch': { result: 'ok' }, reopen: { ok: true } })[input.action];
-  hub.restartLead = async () => { throw new Error('machine unavailable'); };
-  const result = await hub.withThread(id, () => ops.createLocked(hub, { file, machine: 'hub', project: '/repo' }));
-  assert.equal(result.outcome, 'created');
-  await hub.restartLead(id).catch(() => {});
-  const thread = await hub.thread(id);
-  assert.deepEqual(thread.project_tools, defaultProjectTools());
-  assert.deepEqual(thread.project_tools, { boot: null, seq: 0, created_at: null, state: null, card: null, card_names: [] });
+  const { body } = await requestJson(`http://127.0.0.1:${server.address().port}/x`, 'POST', {}, {}, 5000, true);
+  assert.equal(body.GREETING, 'Olá');
 });

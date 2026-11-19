@@ -15,7 +15,10 @@ agents own neither tmux nor the machine secret.
 | `lib/screen-input.js` | X-tool layer for screens: window listing, screenshots, pointer, typing, key deadlines and releases, auto-focus. |
 | `lib/screen-args.js` | Pure validation of `wc.js screen` arguments (fixed key list, limits) and `xwininfo` output parsing. |
 | `lib/usage-probe.js` | Asynchronous, timed CLI usage probe runner. |
-| `lib/project-mcp.js` | Reads and validates project MCP servers for session adapters. |
+| `lib/project-mcp.js` | Reads project MCP servers and exposes shared document and entry validation. |
+| `lib/project-tools.js` | Reads and saves project tools and manages stored keys through GitHub PRs. |
+| `lib/project-keys.js` | Shared project key references, identity, storage and launch selection. |
+| `lib/env-launch.js` | Session key launcher: reads and deletes the mode-600 JSON env file, then execs the CLI; never prints values. |
 | `lib/project-programs.js` | Synchronous check that each project stdio server's program exists, for the thread's project-tools lines. |
 | `lib/limits.js` | Pure exhausted-window reset calculation. |
 | `lib/startup-warning.js` | Background startup-size check: ledger tail and kept-transcript first-call samples against `STARTUP_TYPICAL`, giving the approval card's `warnings` line. |
