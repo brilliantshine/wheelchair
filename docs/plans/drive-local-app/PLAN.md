@@ -417,6 +417,7 @@ manager, no video, no Ready-check change.
 | 3 | A limit on how many screens run at once | One per session already bounds it; hearth has room | planning | Memory per Xvfb at 1280x800x24 is small; add a cap with a clear error |
 | 4 | Old screenshots removed before the thread is archived | Files are small and archive removes them | planning | Directory `<stateDir>/screens/<thread>/<session>/` |
 | 5 | A window manager on the screen, for apps that need one (resizing, full screen, dialog placement) | Apps tested without one work; keys go via explicit focus | planning | Candidate: a minimal WM started per screen if present on PATH |
+| 6 | Save each app's pid and process group in the screen's `state.json` (Spec, Ownership line) | Teardown is by systemd slice (Decision 21), so nothing reads the pid or process group | verification | Evidence `machine/lib/screen.js:185-192` (app records hold number, unit, log, command). Add them if anything ever needs them |
 
 ## Accepted Risks
 
@@ -622,3 +623,4 @@ manager, no video, no Ready-check change.
 - 2026-11-18 — Choice: T3c, `screen-live.js`: `client()` sets the URL and token again on top of `ctx.env`. Its early return keeps the normal result shape. `cleanup()` skips only `screen stop`. The guard is `if (ctx.env)`, with its own error text and comments (scout).
 - 2026-11-18 — T3c accepted (band: scout). In my 2 live runs at ba6a089, 22 ok each; Xvfb set unchanged, no `wcscreen-*` unit left. Residual (from the scout): the child env still spreads the caller's other `WHEELCHAIR_*` variables, but the URL and token are always the test's.
 - 2026-11-18 — All tasks done. Final suites at d1b7ee4: machine 205/205, viewer 653/653. COMPLETION.md written; status verifying.
+- 2026-11-18 — Verification attempt 1: both verifiers FAIL, 6 distinct gaps. The lead's answers: fix gaps 1–5 (one-window parse, archive keeping screens with uploads, baseline inside the 6 s phase, skip only BadWindow, router rows); defer gap 6 (app pid/pgid in state.json) as Deferred row 6, source verification. Four other findings not counted, which the lead agreed with.
