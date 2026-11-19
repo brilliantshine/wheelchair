@@ -144,7 +144,10 @@ turn is hidden; the sender's own tool calls show as any tool call does today), e
   2. After `withThread(sender)` resolves (in `hub.js`): `hub.withThread(target, () =>
      hub.updateThread(target, ...))` re-reads the target under its own lock, picks its
      latest live lead **at that moment**, pushes the queued text onto it and its
-     `thread.queues` entry, then calls `deliver` for it as `acceptCard` does today. If the
+     `thread.queues` entry; once that `updateThread` has returned (the queue is saved), and
+     still inside `withThread(target)`, call `deliver` for it, as `acceptCard` does today
+     after its own update returns (`viewer/app/cards.js:166-169`). Never call `deliver` inside
+     the `updateThread` callback. If the
      target no longer has a live lead, or is now archived or frozen, nothing is queued and the
      sender's card post still succeeds (the window is sub-second; see Accepted Risks).
 - The queued text is
@@ -217,12 +220,16 @@ turn is hidden; the sender's own tool calls show as any tool call does today), e
   suggests your work should change (leave a part to the other thread, wait for it, build
   on its branch, change an approach), post a `question` card to your user saying what the
   other thread is doing, in their words, and the options. Then:
+  - When to ask: before IDEA.md is confirmed, hold the overlap and ask it as the first
+    design question once it is; otherwise as soon as no other question of yours is open.
   - Their decision is handled like any other decision of theirs at that step: in planning,
-    fold it into the Spec; after the approval card is posted, a Spec change returns the plan
-    to review as lead.md already says (retract the open approval, using the id `card.js`
-    printed, section 5; if Start building was already pressed, the build goes ahead and
-    the change is passed to the sub-lead as a `message`, or becomes a `stub`); after a small
-    fix or `done`, it is a problem reported after done (step 9) or a `stub`.
+    fold it into the Spec; after the approval card is posted and before Start building, a
+    Spec change returns the plan to review as lead.md already says (retract the open
+    approval, using the id `card.js` printed, section 5).
+  - Once Start building is pressed, the running build is never changed: the question card
+    offers only what happens afterwards (a `stub` for the follow-up, or a change made after
+    `done` as a problem reported after done, step 9, or leaving it). The same applies after
+    a small fix or `done`.
   - When their decision affects the other thread, message its lead the outcome (no
     `asks`), so it can tell its own user.
   - Nothing that needs no change goes to your user beyond a one-line mention of the overlap.
@@ -232,7 +239,10 @@ turn is hidden; the sender's own tool calls show as any tool call does today), e
     until your open question is answered, then goes next.
   - While a review round is running, a Spec change your user approved waits: finish triage
     against the plan the reviewers were briefed with, then apply it and list it in the next
-    round's "Changed since" list (as lead.md already does for mode changes).
+    round's "Changed since" list (as lead.md already does for mode changes). Commit
+    `Pending change: <the decision>` to the PLAN.md Log as soon as it is made, so a restarted
+    lead applies it before briefing reviewers. A round with a pending change is not clean:
+    after applying it, run another round before approval.
 - **Never wait on another lead.** Asking another lead never holds up your own step: carry
   on. A late answer is handled by the bullet above whenever it arrives.
 - **Another project:** only when the user names a thread or project. Find it with
@@ -259,9 +269,10 @@ and press forms (`[card <id>] picked: allow`, `[card <id>] picked: don't allow`,
 
 ### 5. `card.js` prints the posted card's id
 
-On success `card.js` prints one JSON line with only the posted card's `id` and `kind`
-(`{"id":"…","kind":"…"}`) when the hub accepted it directly, or `{"spooled":true}` when the
-machine spooled it (no id yet). It never prints the card's text, so a message's body does not
+On success `card.js` prints one JSON line: `{"id":"…","kind":"…"}` when the response
+carries a stored card's `id`; `{"spooled":true}` when the machine spooled it (no id yet);
+otherwise `{"ok":true}` (a `title`, `resolve` or `retract`, or a duplicate accept, which
+store no new card). It never prints the card's text, so a message's body does not
 appear in the sender's visible tool output. Leads use the printed `id` when they later need
 to retract or resolve a card. The exit code and every refusal path are unchanged. Update
 `cards.md` "Posting a card" to say so.
@@ -297,7 +308,7 @@ New tests in `viewer/test/` must cover:
   can then message back; Allow on a target archived after posting answers the card, links
   nothing and queues `allow failed: that thread is archived`; Allow when already linked succeeds without change; Don't allow links
   nothing; a second press refused; retract works; an open `reach` card appears in Needs you.
-- `card.js` prints only `{"id","kind"}` on a direct accept (never the card's text) and `{"spooled":true}` when spooled.
+- `card.js` prints only `{"id","kind"}` on a direct accept of a stored card (never the card's text), `{"spooled":true}` when spooled, and `{"ok":true}` for `title`, `resolve`, `retract` and a duplicate.
 - A `reach` press with no live lead is refused 409 and the card stays open; an open `reach`
   card's Needs you entry shows its title.
 - A browser test shows a `reach` card with its two buttons and its answered state.
@@ -426,9 +437,24 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 5 — 2026-11-19
 
-**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5 (no findings); mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 4:** IDEA.md "What good looks like" bullet 3 (Decision 20); §4 Overlap message always asks; §4 "Leads inform" bullet: hidden-turn mention, one question at a time, changes during a running review; §1 `--all-projects` lists linked threads once; §5 `card.js` prints only id and kind; Validation wording.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| mechanics | blocking | `deliver` could run inside the target's update | downgraded (minor) | Spec already said "as acceptCard does today", which delivers after its update returns (`viewer/app/cards.js:166-169`); made explicit |
+| mechanics | blocking | No receipt for title/resolve/retract/duplicates | downgraded (major) | A worker would ask, not build wrong; `{"ok":true}` defined |
+| mechanics | major | Pending change when the round comes back clean | upheld | Round with a pending change is not clean |
+| mechanics | major | Pending change lost on lead restart | upheld | `Pending change:` Log line committed at once |
+| mechanics | major | Overlap found before IDEA.md is confirmed | upheld | Held until confirmed, then first design question |
+| mechanics | major | Changes after Start building have no path into the build | upheld | Running build never changes; follow-up only |
+
+### Round 6 — 2026-11-19
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 5:** §2 locking: `deliver` after the target update returns; §4 "Leads inform": when to ask (after IDEA.md confirmation), changes after Start building never touch the running build, `Pending change:` Log line and a pending change makes a round not clean; §5 `card.js` receipt for non-card successes; Validation wording.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
