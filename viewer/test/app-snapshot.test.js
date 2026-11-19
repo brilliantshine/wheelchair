@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { makeTemp } = require('../../test-support/run-dir');
-const { State } = require('../app/state');
+const { SETTLE_MS, State } = require('../app/state');
 const { Hub } = require('../app/hub');
 const { discoverSlug } = require('../app/views');
 const { handle } = require('../app/routes');
@@ -22,6 +22,7 @@ async function setup() {
   const dir = await makeTemp('snapshot-'); const hub = new Hub({stateDir:dir});
   await hub.state.init();
   for (const row of rows) await fs.writeFile(hub.threadPath(row.id), JSON.stringify(row));
+  await new Promise(resolve => setTimeout(resolve, SETTLE_MS + 200));
   return hub;
 }
 test('thread snapshots track external and internal changes and are frozen', async () => {
@@ -47,6 +48,28 @@ test('thread snapshots track external and internal changes and are frozen', asyn
     const mutable = await state.thread('alpha'); mutable.title='Saved'; await state.save(mutable); assert.equal((await state.allThreads())[0].title,'Saved');
     await fs.writeFile(file, 'null'); await assert.rejects(state.threadSnapshot('alpha'), {status:404});
     await fs.writeFile(file, '{'); await assert.rejects(state.allThreads(), SyntaxError); await assert.rejects(state.allThreads(), SyntaxError);
+  } finally { fs.readFile = read; }
+});
+test('recent rewrites are reread and settled files reuse their cached record', async () => {
+  const state = new State(await makeTemp('snapshot-settle-')); await state.init();
+  const file = state.threadPath('alpha');
+  await fs.writeFile(file, JSON.stringify(rows[0]));
+  await state.allThreads();
+  const contents = await fs.readFile(file, 'utf8');
+  await fs.writeFile(file, contents.replace('Alpha', 'Omega'));
+  assert.equal((await state.allThreads()).find(thread => thread.id === 'alpha').title, 'Omega');
+  assert.equal((await state.threadSnapshot('alpha')).title, 'Omega');
+
+  const id = 'settled'; const settledFile = state.threadPath(id);
+  await fs.writeFile(settledFile, JSON.stringify({...rows[1], id}));
+  await new Promise(resolve => setTimeout(resolve, SETTLE_MS + 200));
+  const read = fs.readFile; let reads = 0;
+  fs.readFile = async (...args) => { if (String(args[0]) === settledFile) reads++; return read(...args); };
+  try {
+    await state.threadSnapshot(id);
+    assert.equal(reads, 1);
+    await state.threadSnapshot(id);
+    assert.equal(reads, 1);
   } finally { fs.readFile = read; }
 });
 test('list matches the captured response without rereading unchanged files', async () => {
@@ -80,6 +103,7 @@ test('chat reuses thread and parent snapshots under the lock', async () => {
   const child = {...rows[0], parent:'beta', sessions:[], cards:[], pinned:{}, queues:{}};
   await fs.writeFile(hub.threadPath('alpha'), JSON.stringify(child));
   await fs.writeFile(hub.threadPath('beta'), JSON.stringify(parent));
+  await new Promise(resolve => setTimeout(resolve, SETTLE_MS + 200));
   const before = await hub.chat('alpha');
   const read = fs.readFile; let reads = 0;
   fs.readFile = async (...args) => { if (String(args[0]).startsWith(hub.threadsDir)) reads++; return read(...args); };
