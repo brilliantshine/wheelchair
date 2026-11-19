@@ -5,8 +5,8 @@ Serve authenticated graph and document viewers and the Wheelchair application hu
 
 ## Directories
 - app/ — persisted hub state, settings, session orchestration, cards, and HTTP dispatch
-- pages/ — browser pages, Settings editors, navigation, and shared rendering
-- test/ — isolated HTTP, state, graph, and browser checks
+- pages/ — browser pages, Settings editors, navigation, shared saved-background rendering and image format validation
+- test/ — isolated HTTP, state, graph, and browser checks; each helper server has independent temporary state and cache roots
 
 ## Important Files
 - AGENTS.md — component ownership and authentication boundaries

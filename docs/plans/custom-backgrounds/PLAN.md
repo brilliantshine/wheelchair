@@ -171,7 +171,7 @@ Clean: no upheld blocking/major finding and no user decision remains. Minor reso
 
 ## Prior Work
 
-No background implementation exists at adoption; shared Settings, state queues and browser infrastructure are reusable.
+At adoption no background implementation existed. T1 attempt 1 and T2 attempt 1 are now integrated partial work, not accepted completion: persistence/parser and renderer/editor baseline code exist; missing focused coverage, lifecycle/readability review and final suites remain. Their reports candidly record guardrail stops. New attempts must complete these partial implementations. Shared Settings, state queues and browser infrastructure are reusable.
 
 ## Implementation Tasks
 
@@ -180,8 +180,8 @@ Backend and frontend run in disjoint checkouts. T1 owns the shared format helper
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T0 | Isolate test state and preserve bootstrap routers | viewer/test/helpers/server.js, server-isolation.test.js; routers | sub-lead gpt/gpt-6.1-sol | sub-lead | node --test viewer/test/server-isolation.test.js | done |
-| T1 | tricky: persistence, bounded HTTP and shared format parser | viewer/app/background.js, settings.js, state.js, routes.js, hub.js, API.md; viewer/server.js; pages/background-format.js; test/background*.test.js; test/fixtures/background/ | standard gpt/gpt-6.1-terra | wc-7108adfdf9ea-worker | node --test viewer/test/background*.test.js; node --test viewer/test/*.test.js | dispatched |
-| T2 | tricky: shared renderer, Settings editor, page surfaces and browser checks | viewer/pages except background-format.js; viewer/doc.html; test/background*.spec.js; test/fixtures/background-browser/ | standard gpt/gpt-6.1-terra (Claude unavailable) | wc-7108adfdf9ea-worker-2 | npm --prefix viewer run test:browser -- --grep background; npm --prefix viewer run test:browser | dispatched |
+| T1 | tricky: persistence, bounded HTTP and shared format parser | viewer/app/background.js, settings.js, state.js, routes.js, hub.js, API.md; viewer/server.js; pages/background-format.js; test/background*.test.js; test/fixtures/background/ | standard gpt/gpt-6.1-terra | wc-7108adfdf9ea-worker | node --test viewer/test/background*.test.js; full Node suite | partial, integrated; next attempt needed |
+| T2 | tricky: shared renderer, Settings editor, page surfaces and browser checks | viewer/pages except background-format.js; viewer/doc.html; test/background*.spec.js; test/fixtures/background-browser/ | standard gpt/gpt-6.1-terra (Claude unavailable) | wc-7108adfdf9ea-worker-2 | focused browser tests; full browser suite | partial, integrated; next attempt needed |
 
 ## Log
 
@@ -190,3 +190,11 @@ Backend and frontend run in disjoint checkouts. T1 owns the shared format helper
 2026-11-19: Focused adoption review is clean after minor resolutions. Build accepted: user chat “alright now work on it”; no repeated permission question.
 
 - 2026-11-19 — T0 accepted: two default isolated servers passed (1/1); every start now passes its own temporary stateDir. Bootstrap ROUTER.md files preserved in explicit preparation commit.
+
+- 2026-11-19 — T1 attempt 1 not accepted (band: self, tricky; 184 code lines); partial commit 7cf0bcb2 integrated as Prior Work. Report matches partial diff. Root rerun of 2 focused tests passes, but JPEG/WEBP, limits/interruption, faults and GIF variants remain untested. Two full-gate failures triggered guardrail; next attempt is a sharper completion brief with effort escalation.
+- 2026-11-19 — Choice: T1, HTTP conflicts: current metadata is returned beside error at the top level.
+- 2026-11-19 — Choice: T1, reset: already-empty valid reset is unchanged.
+- 2026-11-19 — T2 attempt 1 not accepted (band: self, tricky; 284 code lines); partial commit 2b1b1a63 integrated as Prior Work. Report accurately names missing backend integration and coverage; integrated root Chromium baseline is 3/3 passing.
+- 2026-11-19 — Choice: T2, rendering: fixed native image with object-fit cover.
+- 2026-11-19 — Choice: T2, file size copy: two-decimal MiB.
+- 2026-11-19 — Test environment: isolate each validation command with a private TMPDIR to prevent shared /tmp sweeps between separate PID namespaces. Full Node commands use command-local init.defaultBranch=main for existing slug fixtures. No live/user state is used.
