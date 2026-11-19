@@ -955,6 +955,9 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — Choice: P1, `viewer/app/sessions.js`: notices moved into `notifyEnded`; because handoff export and handoff ops also call `stopManagedSession`, stopping a fatal-ended Kimi session during a handoff now sends the same reason notice and card (scout-found, not reported). Tests combine the worker, lead, no-reason and later-`pollDead` cases in one fixture.
+- 2026-11-18 — P1 accepted (band: scout): targeted 25/25, viewer 645/645, machine 200/200 re-run by the sub-lead. Remediation 3 gap 2 fixed.
+
 - 2026-11-18 — Collin chose to fix permission-prompt detection once more (Decision 48); dispatched as A1 (gpt). Version-floor question still with him.
 
 - 2026-11-18 — Lead: Collin is being asked about the permission-prompt gap first, the version-floor gap after. Meanwhile remediation 3 gap 2 dispatched as P1 (gpt, `wc-01b8cb1bf051-worker-18`): a hub Stop that confirms a fatal kill keeps `end_reason` and sends the same notice as `pollDead`.
