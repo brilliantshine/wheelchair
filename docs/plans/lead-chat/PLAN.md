@@ -56,6 +56,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 19 | Supersedes 8, 15 (agreement part) and 18 (late-answer handling): leads only inform each other; any change to a plan from what they learn goes to that lead's own user as a question card; leads never negotiate a split | Negotiation rules kept producing new edge cases over three review rounds; the user stays in charge | user |
 | 20 | IDEA.md "What good looks like" bullet 3 reworded: each lead learns of the overlap and tells its user, who decides who does what | Follows from the user's pick in Decision 19 ("leads just inform") | idea-change |
 | 21 | Split off: the formal rules for turning an overlap into a user decision (when to post a card, holding or changing builds, pending changes during review, restarts) and `card.js` printing card ids move to a stub thread. Here, a lead mentions an overlap in one line and the user decides in chat as usual | That part drew blocking/major findings in rounds 4-6 while the rest settled; the user picked "Split it off" | user |
+| 22 | Check (b) moves from "right before the approval card" to the visible turn that sets `ready-for-review`; the pre-approval question card from round 7 is dropped | The approval turn is hidden, and a card there tangled with approval, restart and handoff rules; a shown reply before review needs no new rule | review-round-8 |
 
 ## Spec
 
@@ -201,7 +202,8 @@ turn is hidden; the sender's own tool calls show as any tool call does today), e
 
 **`protocol/app/lead.md`**: add a section "Other leads on this machine":
 - **When to look:** run `wc.js session leads` (a) after the mapper's `result` arrives and
-  you have read MAP.md, (b) right before posting the approval card, (c) whenever the user asks.
+  you have read MAP.md, (b) in the turn where the last planning question is settled and you set
+  `status: ready-for-review` (that turn answers your user, so its reply is shown), (c) whenever the user asks.
   For a small fix, once before making the edits. Show the user nothing unless something
   overlaps; when something does, say so in one line in your reply.
 - **Overlap:** when a listed thread's title, idea or stage suggests it touches the same files
@@ -222,11 +224,7 @@ turn is hidden; the sender's own tool calls show as any tool call does today), e
   hidden, so carry it to the next visible reply): which thread, what it is doing, and what
   it might mean for this one. Your user decides in chat, and you handle what they say like
   anything else they say at that step under lead.md's existing rules. No new card or
-  timing rule applies, except one: if the check right before approval (b) finds an overlap,
-  do not post the approval card yet (that turn is usually hidden, so they would see Start
-  building without the overlap). Post a `question` card instead: what the other thread is
-  doing, with options "Build as planned" (then post the approval card) and "Talk about it
-  first" (then talk it through in chat and post the approval card once they are ready).
+  timing rule applies.
 - **Never wait on another lead.** Asking another lead never holds up your own step: carry
   on. A late answer gets the same one-line mention when it arrives.
 - **Another project:** only when the user names a thread or project. Find it with
@@ -461,9 +459,22 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 8 — 2026-11-19
 
-**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 **Changed since Round 7:** §4 "Leads inform": the plan pointer removed; an overlap found at the pre-approval check goes on a question card before the approval card; Validation line for lead.md; one Accepted Risk (handoff re-import).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+| intent | minor | Pre-approval card re-asks a settled overlap | upheld | Card dropped (Decision 22) |
+| mechanics | blocking | Pre-approval card bypassed on restart or handoff | upheld | Card dropped; check (b) moved to the visible ready-for-review turn (Decision 22) |
+| mechanics | blocking | "Talk about it first" Spec change skips review | upheld | Card dropped (Decision 22); a Spec change in planning follows the normal rules |
+| mechanics | major | No rule for an overlap already addressed | upheld | Card dropped; the one-line mention follows the Overlap bullet's "not already raised" (Decision 22) |
+
+### Round 9 — 2026-11-19
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 8:** Decision 22: §4 check (b) now runs in the visible turn that sets `ready-for-review`; the pre-approval overlap question card is removed, so "Leads inform" again ends at "No new card or timing rule applies."
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
