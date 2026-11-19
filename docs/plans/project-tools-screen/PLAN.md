@@ -697,7 +697,8 @@ Saving step 3 (temporary key file cleaned up, `atomicWrite` not reused as is); V
 | T1 | Machine: exported validators (project-mcp, Codex), shared key-reference rule, key store, key injection at launch, `commandAsync` timeout | `machine/lib/project-mcp.js`, `machine/adapters/codex.js`, `machine/lib/project-keys.js`, `machine/service.js` (commandAsync, launch only), `machine/test/project-keys.test.js`, `machine/test/project-mcp*.test.js`, `machine/AGENTS.md` | standard / gpt-6.1-terra | wc-406595075040-worker | `bash machine/test/run.sh` | done |
 | T2 | Machine: read, save and remove-key routes (fetch, temp worktree, push, PR) per API.md; tricky | `machine/lib/project-tools.js`, `machine/service.js` (routes), `machine/API.md`, `machine/test/project-tools.test.js`, `machine/AGENTS.md` | standard / gpt-6.1-terra | wc-406595075040-worker-4 | `bash machine/test/run.sh` | in progress |
 | T3 | Hub: pass-through forwarding of the three routes, 120 s timeout, machine double | `viewer/app/machine-client.js`, `viewer/app/routes.js`, `viewer/test/helpers/app-machine.js`, `viewer/test/app-project-tools.test.js`, `viewer/AGENTS.md` | standard / gpt-6.1-terra | wc-406595075040-worker-2 | `node --test viewer/test/*.test.js` | done |
-| T4 | Page: Project tools section in Settings (picker, tools, form, keys, replies) | `viewer/pages/project-tools.js`, `viewer/pages/settings.{html,js,css}`, `viewer/test/app-project-tools.spec.js` | standard / claude-sonnet-5-5 | wc-406595075040-worker-3 | `npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js` | in progress |
+| T4 | Page: Project tools section in Settings (picker, tools, form, keys, replies) | `viewer/pages/project-tools.js`, `viewer/pages/settings.{html,js,css}`, `viewer/test/app-project-tools.spec.js` | standard / claude-sonnet-5-5 | wc-406595075040-worker-3 | `npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js` | done (fixes in T4b) |
+| T4b | Page fixes from the T4 read: reserved-name `${NAME}` refs aren't keys; keep the section across panel re-renders | `viewer/pages/project-tools.js`, `viewer/pages/settings.js`, `viewer/test/app-project-tools.spec.js` | light / claude-haiku-5-5 | — | `npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js` | in progress |
 
 ## Log
 
@@ -723,3 +724,15 @@ Build accepted: approval b3e3c9c4-f81c-47fc-ba9c-244926be6f2c
 - 2026-11-18 — Choice: T1, `machine/adapters/codex.js`: `codexOverrides` returns `{ args, tooLarge, warnings }` (scout-listed).
 - 2026-11-18 — Choice: T1, key store: temp file `<store>.<uuid>.tmp`; `readKeyStore` throws on an invalid or mismatched store rather than treating it as empty; env file `<stateDir>/session-env/<name>.sh`; reserved prefixes compare case-sensitively, every exact name case-insensitively (scout-listed).
 - 2026-11-18 — T1 accepted (band: bigger-scout): machine suite 176/176 re-run by sub-lead. Scout noted minor gaps, accepted: nested `${A:-${B}}` holds back only A; an env file is left if tmux fails to start; tests don't assert env-file mode or a store-failure start.
+- 2026-11-18 — Choice: T4, `viewer/test/app-settings.spec.js`: two section-count assertions updated from five to six (outside the brief's boundary, forced by the new section; accepted).
+- 2026-11-18 — Choice: T4, picker: a "Choose a project…" placeholder, so nothing is read until a project is picked.
+- 2026-11-18 — Choice: T4, tool and key Remove: inline "Yes, remove / Cancel" confirmation rather than `window.confirm`.
+- 2026-11-18 — Choice: T4, form: edits go to a working list on "Keep changes"/"Add to the list"; one Save button sends them; Save disabled with no changes and no pending key values.
+- 2026-11-18 — Choice: T4, reserved check: exact names case-insensitive, prefixes case-sensitive (same as the machine).
+- 2026-11-18 — Choice: T4, entry shapes: stdio = no `type` or `stdio` with string `command`; http = `type: "http"` with string `url`; anything else (including `sse`, headers on stdio) is "edit in the file"; empty-string args make the arguments read-only.
+- 2026-11-18 — Choice: T4, form: a plain value containing `${` is refused ("use a key"); a header's text before the key may not contain `${`.
+- 2026-11-18 — Choice: T4, key values typed in the tool form are sent with the next Save only if the key is still referenced.
+- 2026-11-18 — Choice: T4, the tool list repaints on every key-carrying reply so set/not set updates; the open form and unsaved edits stay.
+- 2026-11-18 — Choice: T4, a 409 refusal reloads the section and shows the reason plus "make your change again".
+- 2026-11-18 — Choice: T4, the header note shows whenever a web-address form has at least one header.
+- 2026-11-18 — T4 accepted (band: self): browser 96/96 re-run by sub-lead; read the whole page file. Two defects sent to T4b: an env `PATH: "${PATH}"` (reserved name) is shown as an unset key and blocks editing that tool; any `renderPanel()` call (e.g. a late reply from another section) rebuilds the section and drops unsaved edits.
