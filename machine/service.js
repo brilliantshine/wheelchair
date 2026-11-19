@@ -567,10 +567,10 @@ class MachineService {
     const match = shown.stdout.match(/^\s*HEAD branch:\s*(\S+)\s*$/m);
     return match ? match[1] : 'main';
   }
-  commandFor(input, session, worktree, promptPath, rolePrompt) {
+  commandFor(input, session, worktree, promptPath, rolePrompt, context = {}) {
     const adapter = adapters[input.cli];
     if (!adapter) die('cli must be claude, codex, agy or kimi');
-    return adapter.command(input, session, worktree, { stateDir: this.stateDir, promptPath, rolePrompt, accountDir: session.account_dir });
+    return adapter.command(input, session, worktree, { stateDir: this.stateDir, promptPath, rolePrompt, accountDir: session.account_dir, kimiExecutable: context.kimiExecutable });
   }
 
   async start(input) {
@@ -619,7 +619,8 @@ class MachineService {
       worktree, created_worktree: createdWorktree, attempt_id: input.attempt_id || null, started_by: input.started_by || null,
       branch: created.branch || input.branch || null, default_branch: created.defaultBranch || input.default_branch || input.defaultBranch || null,
       cli_session_id: input.cli_session_id || crypto.randomUUID(), status: 'starting', created_at: new Date().toISOString() };
-    const built = this.commandFor(input, session, worktree, promptPath, rolePrompt);
+    const context = input.cli === 'kimi' ? { kimiExecutable: (await this.kimiLaunchPath()).executable } : {};
+    const built = this.commandFor(input, session, worktree, promptPath, rolePrompt, context);
     if (built.settingsPath) await atomicWrite(built.settingsPath, `${json(built.settings)}\n`);
     const commandText = ['env', 'WHEELCHAIR_LANE=1', ...(adapter.sessionNameEnv ? [`WHEELCHAIR_SESSION_NAME=${name}`] : []), `WHEELCHAIR_SESSION_TOKEN=${session.token}`, `WHEELCHAIR_STATE_DIR=${this.stateDir}`, `WHEELCHAIR_MACHINE_ORIGIN=http://${this.config.host}:${this.config.port}`, ...Object.entries(adapter.loginEnv(dir)).map(([key, value]) => `${key}=${value}`), ...Object.entries(built.env || {}).map(([key, value]) => `${key}=${value}`), ...built.argv].map(shellQuote).join(' ');
     session.command = built.argv;
@@ -1293,8 +1294,7 @@ class MachineService {
     if (kimi.problem) for (const entry of accounts) if (entry.cli === 'kimi') { entry.logged_in = false; delete entry.problem; }
     return { version: this.version, claude, codex, agy, kimi, accounts, sessions: this.sessionList() };
   }
-  checkKimiVersion() {
-    const executable = adapters.kimi.resolveCli();
+  checkKimiVersion(executable = adapters.kimi.resolveCli()) {
     if (!executable) return Promise.resolve();
     let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return Promise.resolve(); }
     this.kimiVersions ||= new Map();
@@ -1310,18 +1310,32 @@ class MachineService {
     }
     return this.kimiVersions.get(key).promise;
   }
+  async kimiLaunchPath() {
+    const executable = adapters.kimi.resolveCli();
+    if (!executable) die('Kimi Code is not installed');
+    let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { die('Kimi Code is not installed'); }
+    await this.checkKimiVersion(executable);
+    const entry = this.kimiVersions?.get(JSON.stringify([executable, mtime]));
+    if (!entry || entry.output === undefined) die('Kimi Code is not installed');
+    const status = this.kimiVersionStatus(entry, { logged_in: false });
+    if (status.problem) die(status.problem);
+    return { executable };
+  }
+  kimiVersionStatus(entry, login) {
+    if (!entry || entry.output === undefined) return { installed: true, logged_in: false, problem: "Checking Kimi Code's version" };
+    const output = entry.output;
+    const firstLine = output.split(/\r?\n/, 1)[0].replace(/^(?:kimi-code|kimi code|kimi)(?:\s+|,\s*)/i, '').replace(/^version\s+/i, '');
+    const match = (firstLine.split(/\s+/)[0] || '').match(/^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/);
+    const valid = !entry.failed && match && (Number(match[1]) > 2 || Number(match[1]) === 2 && (Number(match[2]) > 6 || Number(match[2]) === 6 && (Number(match[3]) > 3 || Number(match[3]) === 3 && !match[4])));
+    return { installed: true, logged_in: !!valid && login.logged_in, version: output, ...(!valid ? { problem: `Kimi Code 2.6.3 or newer is needed (found ${output})` } : {}) };
+  }
   cliStatus(cli, login = adapters[cli].loginStatus(null)) {
     if (cli === 'kimi') {
       const executable = adapters.kimi.resolveCli(); if (!executable) return { installed: false, logged_in: false };
       let mtime; try { mtime = fs.statSync(executable).mtimeMs; } catch { return { installed: false, logged_in: false }; }
       this.checkKimiVersion();
       const entry = this.kimiVersions.get(JSON.stringify([executable, mtime]));
-      if (!entry || entry.output === undefined) return { installed: true, logged_in: false, problem: "Checking Kimi Code's version" };
-      const output = entry.output;
-      const firstLine = output.split(/\r?\n/, 1)[0].replace(/^(?:kimi-code|kimi code|kimi)(?:\s+|,\s*)/i, '').replace(/^version\s+/i, '');
-      const match = (firstLine.split(/\s+/)[0] || '').match(/^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/);
-      const valid = !entry.failed && match && (Number(match[1]) > 2 || Number(match[1]) === 2 && (Number(match[2]) > 6 || Number(match[2]) === 6 && (Number(match[3]) > 3 || Number(match[3]) === 3 && !match[4])));
-      return { installed: true, logged_in: !!valid && login.logged_in, version: output, ...(!valid ? { problem: `Kimi Code 2.6.3 or newer is needed (found ${output})` } : {}) };
+      return this.kimiVersionStatus(entry, login);
     }
     const version = command('sh', ['-c', `command -v ${cli}`]);
     if (!version.ok) return { installed: false, logged_in: false };

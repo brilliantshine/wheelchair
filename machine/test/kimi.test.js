@@ -152,6 +152,32 @@ test('version cache checks semver and invalidates when mtime changes', async () 
   } finally { process.env.PATH = old; }
 });
 
+test('launch rechecks the executable after worktree creation and uses that path', async () => {
+  const root = makeTempSync('kimi-launch-version-'), bin = path.join(root, 'bin'), file = path.join(bin, 'kimi'), log = path.join(root, 'tmux.log');
+  fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, 'systemd-run'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'tmux'), `#!/bin/sh\nprintf '%s\\n' "$@" >> '${log}'\n`, { mode: 0o755 });
+  const old = process.env.PATH;
+  const version = (value, time) => { fs.writeFileSync(file, `#!/bin/sh\necho ${value}\n`, { mode: 0o755 }); fs.utimesSync(file, time, time); };
+  try {
+    process.env.PATH = `${bin}:/usr/bin:/bin`;
+    const machine = Object.create(MachineService.prototype);
+    Object.assign(machine, { stateDir: root, config: { host: '127.0.0.1', port: 0 }, sessions: {}, cancelledStarts: new Set(), startingNames: new Map(), startingBranches: new Set() });
+    machine.persistSessions = async () => {}; machine.checkReady = async () => {};
+    const input = { cli: 'kimi', role: 'worker', thread_id: 'test', token: 'token', role_prompt: 'rules' };
+    const time = Date.now() / 1000;
+    version('2.6.3', time);
+    machine.createWorktree = async () => { version('2.6.2', time + 2); return { worktree: root }; };
+    await assert.rejects(machine.start(input), /Kimi Code 2.6.3 or newer is needed \(found 2.6.2\)/);
+    assert.equal(fs.existsSync(log), false);
+    version('2.6.3', time + 4);
+    machine.createWorktree = async () => ({ worktree: root });
+    const session = await machine.start({ ...input, thread_id: 'success' });
+    assert.equal(session.command[0], file);
+    assert.match(fs.readFileSync(log, 'utf8'), /new-session/);
+  } finally { process.env.PATH = old; }
+});
+
 test('version timeout and nonzero exit make authenticated Kimi accounts ineligible', async () => {
   const root = makeTempSync('kimi-version-failures-'), bin = path.join(root, 'bin'), file = path.join(bin, 'kimi');
   const old = { HOME: process.env.HOME, PATH: process.env.PATH, KIMI_CODE_HOME: process.env.KIMI_CODE_HOME };
