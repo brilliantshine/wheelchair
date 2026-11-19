@@ -48,127 +48,186 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 11 | The cross-project OK is a new shown card kind `reach` with fixed Allow / Don't allow buttons, not a free-form question card | The hub must know exactly which thread was allowed; a question card's options are free text | defaulted |
 | 12 | A lead finds a thread in another project only through `wc.js session leads --all-projects`, which lists name, project and title only (no summary), and the rules allow it only after the user named that thread or project | The user said no extra security; this keeps unrelated projects out of normal summaries | defaulted |
 | 13 | A message to any lead session of another thread is delivered to that thread's latest live lead; with none live it is refused | Leads restart and get new names; a dead name would queue forever | defaulted |
+| 14 | Supersedes 4: threads whose lead has ended are listed too, with `lead: null`; frozen (handed-off) threads are excluded | A dormant thread's branch can still overlap; a handed-off thread can't receive | review-round-1 |
+| 15 | Agreement rules apply to both leads; only messages with `asks: true` need a reply | One-sided agreements break IDEA; replies to every answer loop | review-round-1 |
+| 16 | Cross-thread writes take the second thread's lock only after the first is released | Avoids deadlock between two leads posting at once | review-round-1 |
 
 ## Spec
 
 ### What changes, in one paragraph
 
-Leads gain two abilities across threads on the same machine: **list** the other active
-threads (with a short summary) in their project, and **message** another thread's lead.
-Messages reuse the existing `message` card; only lead-to-lead messages may cross threads.
-A lead in a different project can be messaged only after the user presses Allow on a new
-`reach` card. All of this is hidden from the user like in-thread messages today, except the
-`reach` card itself.
+Leads gain two abilities across threads on the same machine: **list** the other threads in
+their project (with a short summary), and **message** another thread's lead. Messages reuse
+the existing `message` card; only lead-to-lead messages may cross threads. A lead in a
+different project can be messaged only after the user presses Allow on a new `reach` card.
+Cross-thread messages are hidden exactly as in-thread messages are today (the receiving
+turn is hidden; the sender's own tool calls show as any tool call does today), except the
+`reach` card itself, which the user sees and answers.
 
 ### Terms
 
-- **Peer thread** of thread T: a thread that is not T, not archived, has a live lead, and has
-  the same `machine` and the same `project` (the stored resolved project path) as T.
-- **Linked thread** of T: a not-archived thread on the same machine, in another project,
-  whose id is in T's `lead_links` (set by an allowed `reach` card, below).
+- **Same machine:** two threads are on the same machine when their stored `machine` names
+  resolve to the same registry entry, using `hub.state.resolveMachine(machines, name)` as
+  `viewer/app/routes.js:158-161` does (so `hub` and the hub's hostname match).
+- **Same project:** the stored `thread.project` strings are equal. No symlink resolution
+  (see Accepted Risks).
+- **Reachable thread:** not archived and not frozen (`require('./handoff.js').frozen(hub, thread)`
+  is false).
+- **Peer thread** of thread T: a reachable thread other than T, on the same machine, in the
+  same project, whose sessions include at least one `lead` (live or not).
+- **Linked thread** of T: a reachable thread on the same machine in another project whose id is
+  in T's `lead_links` array (set by an allowed `reach` card, section 3). Links are two-way:
+  Allow writes each thread's id into the other's `lead_links`.
 - **Latest live lead** of a thread: `[...thread.sessions].reverse().find(s => s.role === 'lead' && s.live)`,
   the same rule user messages use (`viewer/app/threads.js:385`).
 
 ### 1. Listing: `wc.js session leads`
 
-- `node <root>/viewer/app/wc.js session leads` sends `{action: 'leads'}` along the existing
-  session path (`viewer/app/wc.js` `sessionRequest` → machine `/v1/agent/session`
-  `forwardSession` → hub `sessionRequest` in `viewer/app/sessions.js`). The machine needs no
-  change if it already forwards any action; confirm, and add `leads` if it filters.
+- `node <root>/viewer/app/wc.js session leads [--all-projects]` sends
+  `{action: 'leads', all_projects: <bool>}` along the existing session path (`viewer/app/wc.js`
+  `sessionRequest` → machine `/v1/agent/session` `forwardSession`, which forwards any body →
+  hub `sessionRequest` in `viewer/app/sessions.js`). `wc.js` accepts `leads` beside
+  `start|stop|list` and prints the hub's response as one JSON line.
 - Only a caller whose role is `lead` may use it; any other role gets 403
   `only a lead may list other leads`.
-- Output (printed as one JSON line; no `--full` variant): `{ "leads": [entry, ...] }`, one
-  entry per peer thread **and** per linked thread, newest thread first. Each entry:
+- Output: `{ "leads": [entry, ...] }`, one entry per peer thread and per linked thread,
+  most recently updated first. Each entry:
   - `thread`: the thread id
-  - `lead`: name of its latest live lead
-  - `project`: the project path (lets a lead tell peers from linked threads)
+  - `lead`: name of its latest live lead, or `null` when none is live (the thread can't be
+    messaged until its lead is restarted, but its work still exists)
+  - `project`: the project path
   - `linked`: `true` for a linked thread, else `false`
   - `title`: the thread title
-  - `stage`: the plan's `status:` when the hub knows a plan slug for the thread (the
-    `last_status` logic in `viewer/app/views.js`), else `"no plan"`
+  - `stage`: the plan's cached `status:` (`thread.last_status`, as kept by
+    `viewer/app/views.js`; the hub does not read a remote worktree for this) when present;
+    else `"no plan"` when the hub knows no plan slug for the thread; else `"unknown"`
   - `idea`: the texts of the pinned idea card's bullets, at most 6, else `[]`
-  - `progress`: the folded progress label text as the app shows it (see `cards.md`,
-    `progress`), else `null`
-  - `branch`: the thread's branch, `pr_url`: the latest non-retracted done card's `pr_url`, else `null`
-- `wc.js session leads --all-projects` additionally lists every other not-archived thread
-  with a live lead on the same machine in other projects, each with only `thread`, `lead`,
-  `project`, `title` and `linked`. It exists so a lead can find a thread the user named.
-- No thread is listed from another machine, ever.
+  - `progress`: the pinned progress card's folded label text as `cards.md` (`progress`)
+    defines it, else `null`
+  - `branch`: the thread's branch; `pr_url`: the latest non-retracted done card's `pr_url`, else `null`
+- `--all-projects` additionally lists every other reachable thread on the same machine in
+  other projects with at least one lead, each with only `thread`, `lead`, `project`, `title`
+  and `linked`. It exists so a lead can find a thread the user named.
+- Threads on other machines are never listed.
 
 ### 2. Messaging another lead
 
-- A `message` card whose `to` names a session that is not in the sender's thread is resolved
-  across threads **only when** the sender's role is `lead`. Otherwise the existing 404
-  `session not found in thread` stands.
-- Cross-thread resolution: find the thread whose `sessions` contain a session with that name
-  and role `lead`. Refuse with 422 and these reasons, in order:
-  1. no such lead on any thread, or the named session is not a lead → `no lead by that name`
-  2. the target thread is on another machine → `that lead is on another machine`
+- A `message` card whose `to` names a session not in the sender's thread is resolved across
+  threads **only when** the sender's role is `lead`. Otherwise the existing 404
+  `session not found in thread` stands. The same-thread path is unchanged in every respect.
+- Cross-thread resolution finds the thread whose `sessions` contain a session with that
+  name. Refusals (422), checked in order:
+  1. no thread has a session by that name, or that session's role is not `lead` → `no lead by that name`
+  2. not on the same machine → `that lead is on another machine`
   3. the target thread is archived → `that thread is archived`
-  4. the target thread is in another project and not linked to the sender's thread →
+  4. the target thread is frozen → `that thread was handed off`
+  5. another project and not linked to the sender's thread →
      `that lead is in another project; ask the user with a reach card first`
-  5. the target thread has no live lead → `that thread has no live lead right now`
-- On success: the card is stored in the sender's thread as today (with `to` as written).
-  The text queued is
-  `[wc:from <sender name>] [thread <sender thread id>: <sender thread title>] ` plus
-  `[question <card id>] ` when `asks` is true, plus the text, queued on the target thread's
-  **latest live lead** (not necessarily the named one) and delivered with the existing
-  `deliver`. The target thread's queue write is a second `hub.updateThread` on the target
-  after the sender's save; it is not atomic with it (see Accepted Risks).
+  6. the target has no latest live lead → `that thread has no live lead right now`
+- These checks run before the card is stored, so a refused card stores nothing.
 - `passes_on` still only names a question in the sender's own thread (unchanged check).
-- The same-thread path is unchanged in every respect.
-- The receiver's reply stays hidden (the message starts with `[wc:from`); the hub needs no
-  change for that. Check `viewer/app/chat.js` hides it in the receiving thread's view too.
+- **Locking.** `hub.acceptCard` today runs `cards.acceptCard` inside
+  `hub.withThread(sender)`. The cross-thread work is split so no thread lock is held while
+  another is taken:
+  1. Inside the sender's lock (in `cards.acceptCard`): run the refusal checks against a
+     fresh read of the target thread (`hub.thread(id)`), store the card in the sender's
+     thread, and return the target thread id with the result. No queue write on the sender
+     side.
+  2. After `withThread(sender)` resolves (in `hub.js`): `hub.withThread(target, () =>
+     hub.updateThread(target, ...))` re-reads the target under its own lock, picks its
+     latest live lead **at that moment**, pushes the queued text onto it and its
+     `thread.queues` entry, then calls `deliver` for it as `acceptCard` does today. If the
+     target no longer has a live lead, or is now archived or frozen, nothing is queued and the
+     sender's card post still succeeds (the window is sub-second; see Accepted Risks).
+- The queued text is
+  `[wc:from <sender name>] [thread <sender thread id>: <sender thread title>] ` plus
+  `[question <card id>] ` when `asks` is true, plus the text. It goes to the target's latest
+  live lead, not necessarily the name in `to`.
+- The receiving turn is hidden by the existing `[wc:from` rule (`viewer/app/chat.js:127`);
+  no chat change is needed. A test checks it in the receiving thread's view.
 
 ### 3. The `reach` card (cross-project OK)
 
-- New lead-only, shown, unpinned kind `reach`. Fields: `thread` (required, the other thread's
-  id from `--all-projects`), `why` (required, one line in the user's terms). The hub refuses
-  it (422) when the thread does not exist, is the sender's own thread, is on another machine,
-  is archived, is in the same project (`already in your project; no OK needed`), or is
-  already linked (`already allowed`). On accept, the hub stores on the card `target_title`
-  and `target_project` for display.
-- Shown as: "Let this thread's lead talk to the lead of **<target_title>** (<project folder
-  name>)?", the `why`, and two buttons **Allow** and **Don't allow**, styled like a question
-  card. Follows the question-card one-answer rule: a second press is refused
-  `card is already answered`.
-- Allow: in the same press, add each thread's id to the other's `lead_links` (two
-  `updateThread`s, the pressed thread first), mark the card answered, and queue
-  `[card <id>] picked: allow` to the lead. Don't allow: mark answered, queue
-  `[card <id>] picked: don't allow`. Nothing else changes.
-- Retractable like a question card (add `reach` to the retract kinds and its refusal text).
-- A link lasts until either thread is archived; archived threads are never listed or
-  reachable, so no cleanup is needed.
-- Add `reach` to `protocol/app/cards.md`'s kinds table and its fields and press forms to
-  `protocol/app/cards-lead.md`.
+- New lead-only, shown, unpinned kind `reach`. Fields: `thread` (required, the other
+  thread's id from `--all-projects`; the one card field that holds a thread id), `why`
+  (required, one line in the user's terms).
+- At post time the hub refuses it (422) when the thread does not exist (`no such thread`), is
+  the sender's own thread (`that is this thread`), is not on the same machine
+  (`that thread is on another machine`), is not reachable (`that thread is archived` /
+  `that thread was handed off`), is in the same project (`already in your project; no OK
+  needed`), or is already linked (`already allowed`). On accept the hub stores
+  `target_title` and `target_project` on the card for display.
+- Shown as: "Let this thread's lead talk to the lead of **<target_title>** (<last path
+  segment of target_project>)?", the `why`, and two buttons **Allow** and **Don't allow**,
+  styled like a question card. One answer only: a second press is refused
+  `card is already answered`. It counts as an open card in "Needs you": add `reach` to the
+  kinds in `addNeeds` (`viewer/app/views.js:141`).
+- **Allow press**, inside the pressed thread's lock: re-check the target is reachable and on
+  the same machine. If not, refuse the press (422, `that thread is archived` / `that thread
+  was handed off`) and leave the card open; the lead retracts it. If already linked, the press
+  succeeds without changing links. Otherwise add the target id to the pressed thread's
+  `lead_links`. In every success case mark the card answered and queue
+  `[card <id>] picked: allow` to the lead as other presses do. After the pressed thread's
+  lock is released (in `hub.js`), add the pressed thread's id to the target's `lead_links`
+  under `hub.withThread(target, ...)` + `updateThread`; if the target became unreachable in
+  between, skip it.
+- **Don't allow press:** mark answered, queue `[card <id>] picked: don't allow`. Nothing else changes.
+- Retractable like a question card: add `reach` to the retract kinds and to the refusal text
+  (`only a question, offer, approval, needs, sudo, deferred or reach card can be retracted`).
+- A link lasts until either thread is archived; unreachable threads are never listed or
+  messaged, so no cleanup is needed.
 
-### 4. Lead rules (`protocol/app/lead.md`)
+### 4. Rules
 
-Add a section "Other leads on this machine":
-- When to look: run `wc.js session leads` (a) when the mapper's `result` arrives and you
-  have read MAP.md, (b) right before posting the approval card, (c) when the user asks. For a
-  small fix, once before committing. Nothing is shown to the user unless something overlaps.
-- Overlap: when a listed thread's title, idea or stage suggests it touches the same files
-  or behaviour, message its lead once: what you are building, the areas you will touch,
-  and ask (`asks: true`) what it is doing there. Agree who does what.
-- Anything you agree that changes what your user asked for, IDEA.md or the Spec, goes to
-  your user as a `question` card before you act on it. Otherwise note the agreement in
-  the PLAN.md Log (or say it in your reply for a small fix) and tell your user in one line in
-  your next reply.
-- Receiving `[wc:from wc-<id>-lead...] [thread ...]`: answer with a `message` back to that
-  name, briefly and from what you know; it does not change your step. Never reply to a plain
-  acknowledgement, and send no acknowledgements yourself.
-- Another project: only when the user names a thread or project. Find it with
+**`protocol/app/lead.md`**: add a section "Other leads on this machine":
+- **When to look:** run `wc.js session leads` (a) after the mapper's `result` arrives and
+  you have read MAP.md, (b) right before posting the approval card, (c) whenever the user asks.
+  For a small fix, once before making the edits. Show the user nothing unless something
+  overlaps.
+- **Overlap:** when a listed thread's title, idea or stage suggests it touches the same files
+  or behaviour, and it has a `lead`, message that lead once with `asks: true`: what you are
+  building and the areas you will touch, and what it is doing there. A listed thread with
+  `lead: null` cannot be messaged: tell your user in one line that it exists and may overlap.
+- **Replies:** answer a cross-thread message only when it carries `[question <id>]`
+  (`asks: true`). Set `asks: true` on your own message only when you need an answer. A
+  message without a question is complete: read it and act on it; never send
+  acknowledgements.
+- **Waiting at approval:** if you asked a peer at check (b), end your turn and post the
+  approval card when its answer arrives. If the user writes before it arrives, post the
+  approval card and say in one line that the other lead has not answered yet.
+- **Agreements, for both leads (asker and answerer):** an agreement that changes what your
+  user asked for, IDEA.md or the Spec goes to your user as a `question` card before you act
+  on it. Otherwise record it: in the PLAN.md Log when the worktree is yours; while a
+  sub-lead owns the worktree, send it to the sub-lead as a `message` if it affects the build
+  and add the Log line after the sub-lead's `result`; for a small fix, in your reply. Tell
+  your user in one line in your next reply either way.
+- **Another project:** only when the user names a thread or project. Find it with
   `--all-projects`, post a `reach` card, and message only after `picked: allow`. On
-  `don't allow`, drop it and say so in a line.
-- A sub-lead never messages another thread; it asks you.
-- Mention in the lead rules that the sub-lead, workers, reviewers, verifiers and mappers
-  cannot message across threads (the hub refuses).
+  `don't allow`, drop it and say so in a line. A link works both ways: when you receive a
+  message from a lead in another project, the link already exists and you reply to it
+  without a `reach` card.
+- **Passing a question on:** a question from another thread's lead that only your user can
+  answer becomes your own `question` card with no `passes_on` (the hub accepts `passes_on`
+  only for your own thread's questions); send the answer back as a `message`.
+- Only leads talk across threads. The hub refuses a cross-thread `message` from any other
+  role; a sub-lead or worker that needs another thread asks you.
+
+**`protocol/app/cards.md`**: in `message`, say "to another session in the same thread, or,
+from a lead only, to another thread's lead (see `lead.md`, Other leads on this machine)"; note
+the `[thread <id>: <title>]` marker; say `passes_on` names only a question in your own
+thread. In the "every card" rules, add that `reach` is the one card that carries a thread id.
+Add `reach` to the kinds table (shown, lead, unpinned) and `wc.js session leads` to the
+commands list. In the markers table, add the `[thread ...]` part of `[wc:from ...]`.
+
+**`protocol/app/cards-lead.md`**: add a `reach` section with its fields, refusals, buttons
+and press forms (`[card <id>] picked: allow`, `[card <id>] picked: don't allow`), and add
+`reach` to the retract kinds and refusal text.
 
 ### Non-goals
 
-Other machines; non-lead roles across threads; showing cross-thread traffic in the thread;
-automatic coordination; leads writing their own summaries.
+Other machines; non-lead roles across threads; showing cross-thread traffic in the thread
+beyond what in-thread messages show today; automatic coordination; leads writing their own
+summaries.
 
 ### Validation
 
@@ -178,14 +237,22 @@ npm --prefix viewer run test:browser
 bash machine/test/run.sh
 ```
 
-New tests in `viewer/test/` must cover: `session leads` lists only same-machine, same-project
-peers with live leads and excludes the caller's own, archived and other-machine threads;
-`--all-projects` adds other-project threads with only the five fields; non-lead callers
-refused; each cross-thread message refusal in order; a successful cross-thread message
-lands on the target's latest live lead (after a lead restart) with the `[thread ...]`
-marker; a non-lead naming another thread's session still gets 404; a `reach` card's
-refusals, Allow linking both threads both ways, Don't allow linking nothing, and a second
-press refused. A browser test shows a `reach` card with its two buttons and the answered state.
+New tests in `viewer/test/` must cover:
+- `session leads`: lists same-machine, same-project peers including one with no live lead
+  (`lead: null`); treats `hub` and the hub's hostname as the same machine; excludes the
+  caller's own, archived, frozen and other-machine threads; `stage` is the cached status,
+  `"no plan"` or `"unknown"`; `--all-projects` adds other-project threads with only the five
+  fields; non-lead callers refused.
+- Cross-thread `message`: each refusal in order, with nothing stored; success lands on the
+  target's latest live lead (after a lead restart) with the `[thread ...]` marker and
+  `[question <id>]` when `asks`; a non-lead naming another thread's session still gets 404;
+  two leads sending to each other at the same moment both succeed (no deadlock); the
+  receiving thread's chat view hides the delivered message and the reply.
+- `reach`: each post-time refusal; Allow links both threads both ways and the other lead
+  can then message back; Allow on a target archived after posting is refused and the card
+  stays open; Allow when already linked succeeds without change; Don't allow links
+  nothing; a second press refused; retract works; an open `reach` card appears in Needs you.
+- A browser test shows a `reach` card with its two buttons and its answered state.
 
 ## Deferred
 
@@ -205,6 +272,8 @@ re-raise them. Rare paths per `protocol/app/realism.md` land here in every mode,
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| Two threads naming the same project through different paths (a symlink) are not treated as the same project | Users pick projects from the same list; needs an unusual setup | review-round-1 |
+| A target's lead dies or the target is archived in the sub-second gap between storing a cross-thread message and queuing it, so that message is dropped | Two unlikely events in a sub-second window; the sender can resend | review-round-1 |
 | A crash between saving a cross-thread message in the sender's thread and queuing it on the target loses that one delivery | Needs a hub crash inside a sub-second window; the sender can resend | planning |
 
 ## Check Once Built
@@ -218,9 +287,9 @@ stays as review history.
 
 ## Review Rounds
 
-### Round 1 — <date>
+### Round 1 — 2026-11-19
 
-**Lanes:** <family / model>; <family / model>; cross-family: <yes|no>.
+**Lanes:** intent: claude / claude-opus-5-5; mechanics: gpt / gpt-6.2-sol; cross-family: yes.
 
 Written for every round, including one where the table below stays empty. The table gets a row
 per finding, so a clean round would otherwise leave no record of which gate ran — which is the
@@ -232,6 +301,22 @@ round where knowing it matters most.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | major | Receiving lead isn't told to keep or escalate agreements | upheld | §4 agreement rules apply to both leads; Decision 15 |
+| intent | minor | Threads with an ended lead are left out of the list | upheld | Listed with `lead: null`; Decision 14 |
+| intent | minor | Small-fix check happens after the edits | upheld | Check before making the edits |
+| intent | minor | `reach` card is heavier than a question card + rule | declined | The hub must record a two-way link so the other lead can reply; a free-text question card can't name the thread reliably. Decision 11 stands |
+| mechanics | blocking | Two-thread writes have no locking contract | upheld | §2 and §3 split the work: second lock taken after the first is released; Decision 16 |
+| mechanics | blocking | Existing link unusable by the receiving lead | upheld | §4: link works both ways, no reach card to reply |
+| mechanics | blocking | Reply rule can loop | upheld | Reply only to `asks: true`; Decision 15 |
+| mechanics | blocking | Sender's tool calls and queue note visible | declined | Same as in-thread messages today, which is what IDEA.md's constraint asks for; Spec says so explicitly |
+| mechanics | major | No waiting rule at approval | upheld | §4 "Waiting at approval" |
+| mechanics | major | Recording an agreement during a build | upheld | §4: message the sub-lead, Log line after its result |
+| mechanics | major | No press-time checks on `reach` Allow | upheld | §3 Allow press re-checks; already-linked is a no-op |
+| mechanics | major | Frozen threads not excluded | upheld | "Reachable" excludes frozen; refusal `that thread was handed off` |
+| mechanics | major | Machine aliases and symlinked projects split threads | upheld | Machine compared via `resolveMachine`; symlinks are a rare path in Accepted Risks |
+| mechanics | major | `stage` undefined when status unknown | upheld | Cached status, `"no plan"` or `"unknown"`; no remote read |
+| mechanics | major | Shared card rules contradict cross-thread messages | upheld | §4 cards.md / cards-lead.md updates; passing questions on |
+| mechanics | minor | `reach` absent from Needs you | upheld | Added to `addNeeds` |
 
 Reported severity is the reviewer's opinion; the lead verdict
 (`upheld`/`downgraded`/`declined`/`accepted-risk`/`check-once-built`/`user-decision`) is what gates the
