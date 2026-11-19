@@ -170,10 +170,14 @@ comments, other test and fixture mentions, and everything under `docs/`.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | Rewrite `protocol/app/lead.md` per Rewriting rules 1-4 | `protocol/app/lead.md` | standard, claude / claude-sonnet-5-5 | wc-d4f6b0a949c2-worker | Validation 1, 2 on lead.md | running |
+| T1 | Rewrite `protocol/app/lead.md` per Rewriting rules 1-4 | `protocol/app/lead.md` | standard, claude / claude-sonnet-5-5 | wc-d4f6b0a949c2-worker | Validation 1, 2 on lead.md | done |
 | T2 | Rewrite the other protocol files and routers per Rewriting rules 1-5, incl. sudo message quote and legacy marker | `protocol/app/{sub-lead,worker,verifier,aside,cards,cards-lead,AGENTS}.md`, `protocol/{graphs,diagrams,sensitivity}.md`, `AGENTS.md`, `sudo-helper/AGENTS.md` | standard, claude / claude-sonnet-5-5 | wc-d4f6b0a949c2-worker-2 | Validation 1, 2, 3 | running |
 | T3 | Code: settings prompt lines, sudo message, history "You", lead-context relabel; tests | `viewer/app/settings.js`, `machine/service.js`, `viewer/pages/thread.js`, `viewer/app/threads.js`, `machine/test/sudo.test.js`, `viewer/test/*` | standard, gpt / gpt-6.1-terra | wc-d4f6b0a949c2-worker-3 | Validation 1 (code files), 4, 5, 6 | running |
 
 ## Log
 
 - Build accepted: approval 67f4cc66-477e-4074-b37c-d9b3f860b43c
+- 2026-11-19 — Choice: T1, lead.md pronouns: possessive "his" as a pronoun became "theirs" ("really theirs", "a decision of theirs"); "himself" became "themselves".
+- 2026-11-19 — Choice: T1, lead.md headings: renamed to "How you talk to the user" and "Asking the user to run something as root".
+- 2026-11-19 — Choice: T1, lead.md: the curly apostrophe in "Collin’s" kept as "the user’s".
+- 2026-11-19 — T1 accepted (band: bigger-scout): scout found one ambiguous "they" (lead.md:461); worker changed it to "the user".
