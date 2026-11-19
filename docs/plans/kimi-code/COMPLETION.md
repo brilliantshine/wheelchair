@@ -256,3 +256,34 @@ node --test viewer/test/*.test.js   # tests 646, pass 646, fail 0
 npm --prefix viewer run test:browser   # 28 skipped, 774 passed (5.5m)
 node --test test-support/test/*.test.js   # tests 9, pass 9, fail 0
 ```
+
+### Remediation 5 — 2026-11-18
+
+Verification attempt 5 (`031756a`): Claude verifier PASS; GPT verifier FAIL with 3 new gaps (`REMEDIATION-5.md`).
+
+| Gap | Fix | Fixed at | Test |
+|-----|-----|----------|------|
+| 1. A retried start returned and the hub saved `kimi_session_id` / `source_transcript` | `publicSession` strips the six machine-only binding fields from every session the HTTP API returns (start paths and `/v1/sessions`) | `machine/service.js:77,581-587,1281` | `machine/test/kimi-turns.test.js:280` |
+| 2. A confirmed fatal stop left a verifier's throwaway checkout registered | `stopFatal` removes a verifier's created worktree once absence is confirmed, as `stop()` does | `machine/service.js:663` | `machine/test/kimi-turns.test.js:307` |
+| 3. `#` inside a quoted `oauth_host` was read as a comment | Trailing comments stripped only outside double quotes | `machine/adapters/kimi.js:23-33` | `machine/test/kimi.test.js:423` |
+
+Validation on the merged branch at `60b09dc` (machine load average 20–50 from other threads throughout):
+
+```
+bash machine/test/run.sh            # tests 204, pass 204, fail 0
+bash codex/test/run.sh              # RESULT 123 passed, 0 failed
+bash install/test/run.sh            # RESULT 191 passed, 1 failed — only "real wheelchair directory is byte-identical after suite" (live account files)
+node --test viewer/test/*.test.js   # full run exceeded a 520 s limit under load; in halves: 436/438 (app-quiet "6 message clears debt", app-uploads-archive stalled upload) and 208/208; re-run alone: app-uploads-archive 3/3, app-quiet 18/18 three times (17/18 once)
+npm --prefix viewer run test:browser   # 773 passed, 1 failed, 28 skipped (4.6m); the failure (Firefox app-threads.spec.js:507 "approval: Start building…") passed alone, 2/2
+node --test test-support/test/*.test.js   # tests 9, pass 9, fail 0
+```
+
+#### Known gaps, current (supersedes the list in "Known gaps / residual risks" above)
+
+- Approval-prompt detection follows Decision 48 (panel replaces the input box; title then choice in the bottom 15 lines), from Kimi's shipped strings, never captured live; its remaining false positive is an Accepted Risk (Decision 50).
+- Malformed SemVer passing the version floor is an Accepted Risk (Decision 49).
+- Live check 5 now asserts the pinned light model (`K2.8 Preview`) and no effort (Decision 46); it passed live.
+- A failed or timed-out `kimi --version` check is cached until the binary changes or the service restarts.
+- Load-sensitive tests (`app-quiet` "6 message clears debt", status-latency checks, port collisions, Firefox timeouts) fail intermittently under heavy machine load and pass alone; none is in code this build changed in a way that touches them.
+- The installer's "real wheelchair directory is byte-identical" check fails while live sessions write `~/.wheelchair/accounts/`.
+- Leftover worker worktrees not removable by the service (unmerged or dirty): `wc-01b8cb1bf051-w1`, `-w6`, `-w7`, `-w9`, `-w10`.

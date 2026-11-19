@@ -960,6 +960,8 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — Remediation 5 complete at `60b09dc`; COMPLETION.md "Remediation 5" with a current known-gaps list. Verification attempt 6 next.
+
 - 2026-11-18 — Choice: Z1, `machine/service.js:77`: `publicSession` strips the six machine-only fields from every session the HTTP API returns, for every CLI (`source_transcript` is set for all CLIs; the hub never reads it). `stopFatal` removes a verifier's created checkout once absence is confirmed, so a fatal stop started by the poller itself also removes it (scout-found). The array-comment test temporarily wraps `JSON.parse`.
 - 2026-11-18 — Z1 accepted (band: scout): machine 204/204 re-run by the sub-lead. Remediation 5 gaps 1-3 fixed.
 
