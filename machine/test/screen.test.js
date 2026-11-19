@@ -41,6 +41,7 @@ else if (name === 'xwininfo') {
   if (args.includes('-root')) console.log(fs.existsSync(path.join(path.dirname(process.env.SCREEN_LOG), 'window')) ? '1 children:\\n  0x200001 \"App\": () 30x30+0+0' : '0 children.');
   else console.log('xwininfo: Window id: 0x200001 \"App\"\\n  Absolute upper-left X: 0\\n  Absolute upper-left Y: 0\\n  Width: 30\\n  Height: 30\\n  Map State: IsViewable');
 }
+
 else if (name === 'xdotool' && config.failFocus && args[0] === 'windowfocus') { console.error('focus failed'); process.exit(1); }
 else if (name === 'xdotool' && config.failRelease && args[0] === 'keyup') { console.error('release failed'); process.exit(1); }
 else if (name === 'ffmpeg') fs.writeFileSync(args[args.length - 1], Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/a1kAAAAASUVORK5CYII=', 'base64'));
@@ -57,6 +58,16 @@ else if (name === 'codex') { const i = args.indexOf('--'); if (i >= 0) cp.spawnS
   const a = session('wc-thread-worker'); const server = http.createServer((req, res) => service.handle(req, res)); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   async function call(op, args = [], who = a) { const res = await fetch(`http://127.0.0.1:${server.address().port}/v1/agent/screen`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-wheelchair-session-token': who.token }, body: JSON.stringify({ op, args }) }); return { status: res.status, body: await res.json() }; }
   return { root, bin, service, a, session, call, settings, async configure(value) { await fsp.writeFile(settings, JSON.stringify(value)); }, async calls() { try { return (await fsp.readFile(log, 'utf8')).trim().split('\n').filter(Boolean).map(JSON.parse); } catch { return []; } }, async close() { service.screens.stopTimers(); await new Promise(resolve => server.close(resolve)); Object.assign(process.env, previous); } };
+}
+
+async function waitForCall(f, predicate, ms = 5000) {
+  const until = Date.now() + ms;
+  while (Date.now() < until) {
+    const call = (await f.calls()).find(predicate);
+    if (call) return call;
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
+  throw new Error('call not logged: ' + predicate);
 }
 
 test('screen lifecycle and isolation', async () => {
@@ -85,7 +96,7 @@ test('run rebuilds environment, sandbox and command validation', async () => {
     const missing = await f.call('run', ['--', 'absent-command-123']); assert.equal(missing.status, 422); assert.match(missing.body.error, /command not found/);
     assert.equal((await f.call('run', ['--', '-'])).status, 400); assert.equal((await f.call('run', ['--', 'A=B'])).status, 400);
     const result = await f.call('run', ['--env', 'HELLO=$HOME', '--', 'app']); assert.equal(result.status, 200); assert.equal(result.body.focused, null);
-    const calls = await f.calls(); const launcher = calls.find(c => c.name === 'systemd-run' && c.args.includes('app'));
+    const launcher = await waitForCall(f, c => c.name === 'systemd-run' && c.args.includes('app'));
     assert(launcher.args.includes('--expand-environment=no')); assert(launcher.args.some(x => x.startsWith('--slice=wcscreen-')));
     assert.deepEqual(launcher.args.slice(launcher.args.indexOf('codex')), ['codex', 'sandbox', '-c', 'sandbox_mode="workspace-write"', '-c', 'sandbox_workspace_write.network_access=true', '--', 'env', '--', 'HELLO=$HOME', 'app']);
     assert.equal(launcher.token, undefined); assert.equal(launcher.display, ':77'); assert.equal(launcher.lane, '1'); assert.match(launcher.auth, /xauth$/);
@@ -95,7 +106,7 @@ test('systemd versions and executable option-like commands', async () => {
   const f = await fixture(); try {
     await f.configure({ version: 253 }); await fsp.copyFile(path.join(f.bin, 'app'), path.join(f.bin, '--help')); await fsp.chmod(path.join(f.bin, '--help'), 0o755);
     const result = await f.call('run', ['--', '--help']); assert.equal(result.status, 200);
-    const calls = await f.calls(); const launcher = calls.find(c => c.name === 'systemd-run' && c.args.includes('--help'));
+    const launcher = await waitForCall(f, c => c.name === 'systemd-run' && c.args.includes('--help'));
     assert(!launcher.args.includes('--expand-environment=no')); assert.deepEqual(launcher.args.slice(-3), ['env', '--', '--help']);
   } finally { await f.close(); }
 });
@@ -218,7 +229,7 @@ test('focus failure after a new window opens still returns a successful run', as
   const f = await fixture(); try {
     await f.configure({ showWindow: true, failFocus: true }); const result = await f.call('run', ['--', 'app']);
     assert.equal(result.status, 200); assert.equal(result.body.focused, null);
-    assert((await f.calls()).some(c => c.name === 'xdotool' && c.args[0] === 'windowfocus'));
+    await waitForCall(f, c => c.name === 'xdotool' && c.args[0] === 'windowfocus');
   } finally { await f.close(); }
 });
 test('graceful screen stop escalates after three seconds', async () => {
