@@ -579,7 +579,7 @@ manager, no video, no Ready-check change.
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1a | Pure argument validation and xwininfo parsing (`parseOp`, key grammar, window parsing) | `machine/lib/screen-args.js`, `machine/test/screen-args.test.js` | gpt standard / gpt-6.1-terra | wc-940599e3df66-worker-3 | `node --test machine/test/screen-args.test.js`; `bash machine/test/run.sh` | done |
 | T1b | tricky — Screen manager, route, stop/archive/startup/sweep wiring, fake-tool tests | `machine/lib/screen.js`, `machine/service.js` (wiring only), `machine/test/screen.test.js`, `machine/test/fixtures/screen/`, one line in `machine/test/service.test.js` | gpt standard / gpt-6.1-terra | wc-940599e3df66-worker-4 | `node --test machine/test/screen.test.js`; `bash machine/test/run.sh`; `node --test viewer/test/*.test.js` | in progress |
-| T2 | `wc.js screen <op>` thin client and its test | `viewer/app/wc.js`, `viewer/test/wc-screen.test.js` | gpt light / gpt-6-luna | wc-940599e3df66-worker-2 | `node --test viewer/test/*.test.js` | in progress |
+| T2 | `wc.js screen <op>` thin client and its test | `viewer/app/wc.js`, `viewer/test/wc-screen.test.js` | gpt light / gpt-6-luna (attempt 2 same tier: brief rewritten, no step up) | wc-940599e3df66-worker-2, then wc-940599e3df66-worker-5 | `node --test viewer/test/*.test.js` (3 runs) | attempt 2 |
 | T3 | Live check script against real Xvfb (after T1a, T1b, T2) | `machine/test/screen-live.sh` and helpers under `machine/test/` | not started | — | `bash machine/test/screen-live.sh` | not started |
 | T4 | Agent rules (worker, verifier, sub-lead, lead), API row, routers | `protocol/app/{worker,verifier,sub-lead,lead}.md`, `machine/API.md`, `machine/AGENTS.md`, `viewer/AGENTS.md` | gpt light / gpt-6-luna | wc-940599e3df66-worker | grep checks in brief | done |
 
@@ -593,3 +593,4 @@ manager, no video, no Ready-check change.
 - 2026-11-18 — Choice: T1a, `key --hold`: the hold value is capped at 4 digits (not reported; scout found it).
 - 2026-11-18 — Choice: T1a, `run` parsing: `--` is accepted as a command word (not reported; scout found it).
 - 2026-11-18 — T1a accepted (band: scout): interface matches; machine suite re-run 174 pass, 0 fail. parseWindowInfo throws a plain TypeError on malformed output; T1b told to turn that into 422.
+- 2026-11-18 — T2 attempt 1 sent back (band: scout): the wc.js change is right, but my full viewer run had 651 pass, 1 fail. The wc-screen test server choked on an empty request (`wc-screen.test.js:30`), and the server isn't closed on its error paths. The report's full-suite run had no exit code, and it listed no choices where the scout found several. Attempt 2 cherry-picks 5e0fec7 and fixes only the test.
