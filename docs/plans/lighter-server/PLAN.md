@@ -562,7 +562,7 @@ Collin chose "Keep going" (budget reset).
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | S1 + S2: stat-checked thread snapshot cache, `threadSnapshot`, caller audit, `discoverSlug`, `/threads` and chat on snapshots, timers list from cache (tricky) | `viewer/app/*.js`, `viewer/test/*.test.js`, new `viewer/test/` files | standard / gpt-6.1-terra | wc-f42d7a5b5e2f-worker | `node --test viewer/test/*.test.js` | done |
-| T2 | S6 + S7: shared hidden-tab poller in `nav.js` used by the listed page polls; `workers: 2`; hidden-tab browser spec; two-runs check | `viewer/pages/*.js`, `viewer/playwright.config.js`, new `viewer/test/*.spec.js` | standard / claude-sonnet-5-5 | wc-f42d7a5b5e2f-worker-2 | `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser`; two concurrent runs check | in progress |
+| T2 | S6 + S7: shared hidden-tab poller in `nav.js` used by the listed page polls; `workers: 2`; hidden-tab browser spec; two-runs check | `viewer/pages/*.js`, `viewer/playwright.config.js`, new `viewer/test/*.spec.js` | standard / claude-sonnet-5-5 | wc-f42d7a5b5e2f-worker-2 | `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser`; two concurrent runs check | done |
 
 ## Moved to the chat follow-up
 
@@ -589,3 +589,8 @@ Accepted then: a SIGKILL at the instant a tmux client is launching a server can 
 - 2026-11-19 — Choice: T1, `hub.js:readSnapshot`: one helper returns the snapshot, or `hub.thread()` (which saves the provider migration) when the record needs it; used by `/threads`, chat and its parent.
 - 2026-11-19 — Choice: T1, `threads.js:threadBySession`: clones the matching record at lookup, since session operations mutate it.
 - 2026-11-19 — T1 accepted (band: self): diff read in full; `node --test viewer/test/*.test.js` re-run on the worker branch, 693 pass, 0 fail.
+- 2026-11-19 — Choice: T2, `viewer/pages/nav.js`: `window.wcPoller` is defined before the `#app-nav` guard so pages without the nav bar still get it; call sites use it with no fallback.
+- 2026-11-19 — Choice: T2, poller: a change to hidden does nothing (the interval keeps running, ticks are no-ops); on show it clears and recreates the interval before calling `fn`; a `stopped` flag also guards tick and on-show.
+- 2026-11-19 — Choice: T2, `viewer/pages/aside.js`: `openAside` stops and nulls the poller even when the new aside has no id.
+- 2026-11-19 — Choice: T2, `viewer/test/app-hidden-tabs.spec.js`: overrides `document.visibilityState` and uses Playwright's clock paused after load (`pauseAt`/`runFor`).
+- 2026-11-19 — T2 accepted (band: bigger-scout): scout found no deviations; one flagged risk (term-view `stop()` before `start()`) checked and not reachable, `start()` runs synchronously at creation. Re-ran `app-hidden-tabs.spec.js`: 12 passed. Worker's two-runs check: max 2 browsers per run, 1074 traces each in its own output folder, both 1040 passed.
