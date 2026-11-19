@@ -736,7 +736,7 @@ Filled by Stage 3. One row per worker brief.
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Reader (§1) and Codex adapter (§2, §3 adapter parts) | machine/lib/project-mcp.js, machine/adapters/codex.js, machine/test/project-mcp-codex.test.js, machine/test/project-mcp-reader.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker | node --test codex + reader tests; machine/test/run.sh | done |
-| T2 | Antigravity adapter (§4 adapter parts) | machine/adapters/agy.js, machine/test/project-mcp-agy.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-2 | node --test agy + accounts tests; machine/test/run.sh | running |
+| T2 | Antigravity adapter (§4 adapter parts) | machine/adapters/agy.js, machine/test/project-mcp-agy.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-2 | node --test agy + accounts tests; machine/test/run.sh | done |
 | T3 | Program check module (§5 module) | machine/lib/project-programs.js, machine/test/project-programs.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-3 | node --test project-programs; machine/test/run.sh | done |
 | T4 | tricky — Service plumbing: line logging, Codex redaction and --description, Antigravity file writing and sweep (§3, §4 service parts) | machine/service.js, machine/test/service.test.js, machine/test/project-mcp.test.js, new machine tests | standard | | machine/test/run.sh | waiting on T1, T2 |
 | T5 | tricky — Thread project-tools state, PATH read, program check call (§5 service part, §6) | machine/service.js, machine/test (new state test file) | standard | | machine/test/run.sh | waiting on T3, T4 |
@@ -758,3 +758,8 @@ anything a future session needs that fits nowhere above.
 - 2026-11-18 — Choice: T1, machine/adapters/codex.js: the budget line's names are every server that passed the checks, in object order.
 - 2026-11-18 — Choice: T1, machine/lib/project-mcp.js: the outer catch-all failure returns `hash: null` even if bytes were read.
 - 2026-11-18 — T1 accepted (band: scout): reader and Codex adapter; 26/26 focused tests re-run. Interim: service still logs `[object Object]` and ignores redactions until T4.
+- 2026-11-18 — T2: worker didn't report its choices ("none"); I listed 3 from the scout's read:
+- 2026-11-18 — Choice: T2, machine/adapters/agy.js: env and server maps built with `Object.defineProperty` so names like `__proto__` are safe.
+- 2026-11-18 — Choice: T2, machine/adapters/agy.js: header values are not type-checked in the adapter (relies on T1's reader validating headers as strings).
+- 2026-11-18 — Choice: T2, machine/test/project-mcp-agy.test.js: a session name with `/` (`wc-a/b`) exercised for encoding.
+- 2026-11-18 — T2 accepted (band: scout): Antigravity adapter; scout's sse/headers concerns were against the pre-T1 reader and are covered on the feature branch. Focused machine tests re-run after merge.
