@@ -8,7 +8,7 @@ test('validates all actions and their fields', async () => {
   for (const input of [{ ...base, action: 'bad' }, { ...base, action: 'try', thread_id: 'bad' }, { ...base, action: 'back' }, { ...base, action: 'forget', version: 'v' }, { ...base, action: 'try', kept: 'x' }]) {
     await assert.rejects(service.handle(input), { status: 422 });
   }
-  for (const action of ['back', 'dismiss', 'forget']) {
+  for (const action of ['dismiss', 'forget']) {
     const answer = await service.handle({ ...base, action, version: 'v', ...(action === 'forget' ? { kept: 'ref' } : {}) });
     assert.equal(answer.reason, 'Not built yet');
   }
@@ -213,4 +213,26 @@ test('metadata calls are asynchronous and Status remains bounded when Git hangs'
   let ticked = false; setTimeout(() => { ticked = true; }, 50);
   const start = Date.now(); await instance.handle({ action: 'status', project: root, thread_id: '0123456789ab' });
   assert.equal(ticked, true); assert.ok(Date.now() - start < 4500);
+});
+test('try from a clean branch and back', async () => {
+  const f = await tryFixture(); await f.instance.handle(f.request); const trial = await f.done();
+  const reply = await f.instance.handle({ ...f.request, action: 'back', version: trial.version }); assert.equal(reply.accepted, true);
+  const result = await f.done(); assert.equal(result.state, 'none'); assert.equal(result.last.outcome, 'success'); assert.equal(f.git('branch', '--show-current'), 'main');
+});
+test('from a detached start and back', async () => {
+  const f = await tryFixture(); const sha = f.git('rev-parse', 'HEAD'); f.git('switch', '--detach', sha);
+  await f.instance.handle(f.request); const trial = await f.done(); await f.instance.handle({ ...f.request, action: 'back', version: trial.version });
+  const result = await f.done(); assert.equal(result.last.outcome, 'success'); assert.equal(f.git('rev-parse', 'HEAD'), sha); assert.equal(f.git('branch', '--show-current'), '');
+});
+test('back refused when files changed while trying, listing them, nothing deleted', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
+  await f.instance.handle(f.request); const trial = await f.done(); await fs.writeFile(path.join(f.repo, 'mine'), 'mine');
+  await f.instance.handle({ ...f.request, action: 'back', version: trial.version }); const result = await f.done();
+  assert.equal(result.last.outcome, 'refused'); assert.deepEqual(result.last.files, ['mine']); assert.equal(await fs.readFile(path.join(f.repo, 'mine'), 'utf8'), 'mine');
+});
+test('back after the return branch advanced', async () => {
+  const f = await tryFixture(); await f.instance.handle(f.request); const trial = await f.done();
+  const old = f.git('rev-parse', 'main'); const tree = f.git('rev-parse', `${old}^{tree}`); const { spawnSync } = require('node:child_process');
+  const commit = spawnSync('git', ['-C', f.repo, 'commit-tree', tree, '-p', old, '-m', 'advanced'], { encoding: 'utf8' }); assert.equal(commit.status, 0); f.git('update-ref', 'refs/heads/main', commit.stdout.trim());
+  await f.instance.handle({ ...f.request, action: 'back', version: trial.version }); const result = await f.done(); assert.equal(result.last.outcome, 'success'); assert.equal(f.git('rev-parse', 'HEAD'), commit.stdout.trim());
 });
