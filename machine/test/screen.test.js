@@ -35,7 +35,13 @@ if (name === 'systemctl') {
   process.exit(0);
 } else if (name === 'Xvfb') { setTimeout(() => { fs.writeSync(Number(args[args.indexOf('-displayfd') + 1]), '77\\n'); setTimeout(() => {}, 1200); }, config.displayDelay || 0); }
 else if (name === 'mcookie') console.log('0123456789abcdef');
-else if (name === 'xwininfo') process.exit(1);
+else if (name === 'app' && config.showWindow) fs.writeFileSync(path.join(path.dirname(process.env.SCREEN_LOG), 'window'), 'ready');
+else if (name === 'xwininfo') {
+  if (!config.showWindow) process.exit(1);
+  if (args.includes('-root')) console.log(fs.existsSync(path.join(path.dirname(process.env.SCREEN_LOG), 'window')) ? '1 children:\\n  0x200001 \"App\": () 30x30+0+0' : '0 children.');
+  else console.log('xwininfo: Window id: 0x200001 \"App\"\\n  Absolute upper-left X: 0\\n  Absolute upper-left Y: 0\\n  Width: 30\\n  Height: 30\\n  Map State: IsViewable');
+}
+else if (name === 'xdotool' && config.failFocus && args[0] === 'windowfocus') { console.error('focus failed'); process.exit(1); }
 else if (name === 'xdotool' && config.failRelease && args[0] === 'keyup') { console.error('release failed'); process.exit(1); }
 else if (name === 'ffmpeg') fs.writeFileSync(args[args.length - 1], Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/a1kAAAAASUVORK5CYII=', 'base64'));
 else if (name === 'codex') { const i = args.indexOf('--'); if (i >= 0) cp.spawnSync(args[i + 1], args.slice(i + 2), { stdio: 'inherit', env: process.env }); }
@@ -204,5 +210,24 @@ test('startup bounds stalled systemctl and still clears durable state', async ()
     await f.call('start'); const screen = f.service.screens.screens.get(f.a.name); f.service.screens.screens.clear();
     await f.configure({ stall: 'kill' }); const before = Date.now(); await f.service.screens.startup(); assert(Date.now() - before < 2700);
     assert.equal(JSON.parse(await fsp.readFile(path.join(screen.dir, 'state.json'))).status, 'none');
+  } finally { await f.close(); }
+});
+
+
+test('focus failure after a new window opens still returns a successful run', async () => {
+  const f = await fixture(); try {
+    await f.configure({ showWindow: true, failFocus: true }); const result = await f.call('run', ['--', 'app']);
+    assert.equal(result.status, 200); assert.equal(result.body.focused, null);
+    assert((await f.calls()).some(c => c.name === 'xdotool' && c.args[0] === 'windowfocus'));
+  } finally { await f.close(); }
+});
+test('graceful screen stop escalates after three seconds', async () => {
+  const f = await fixture(); try {
+    await f.call('start'); const screen = f.service.screens.screens.get(f.a.name); const slice = f.service.screens.slice(screen);
+    await f.call('stop'); let calls;
+    for (let i = 0; i < 100; i++) { calls = await f.calls(); if (calls.some(c => c.name === 'systemctl' && c.args.includes('stop') && c.args.includes(slice))) break; await new Promise(r => setTimeout(r, 50)); }
+    assert(calls.some(c => c.name === 'systemctl' && c.args.includes('--signal=SIGTERM') && c.args.includes(slice)));
+    assert(calls.some(c => c.name === 'systemctl' && c.args.includes('--signal=SIGKILL') && c.args.includes(slice)));
+    assert(calls.some(c => c.name === 'systemctl' && c.args.includes('stop') && c.args.includes(slice)));
   } finally { await f.close(); }
 });
