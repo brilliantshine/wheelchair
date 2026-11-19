@@ -97,8 +97,8 @@
       commandRO: kind === 'command' && raw.command.includes('${'),
       urlRO: kind === 'http' && raw.url.includes('${'),
       extras: Object.entries(raw).filter(([k]) => !KNOWN_FIELDS.includes(k)),
-      envRows: kind === 'command' ? Object.entries(raw.env || {}).map(([k, v]) => classifyEnv(k, v)) : [],
-      hdrRows: kind === 'http' ? Object.entries(raw.headers || {}).map(([k, v]) => classifyHeader(k, v)) : [],
+      envRows: kind === 'command' ? Object.entries(raw.env || {}).map(([k, v]) => ({ ...classifyEnv(k, v), rawName: k, rawValue: v, dirty: false })) : [],
+      hdrRows: kind === 'http' ? Object.entries(raw.headers || {}).map(([k, v]) => ({ ...classifyHeader(k, v), rawName: k, rawValue: v, dirty: false })) : [],
     };
   }
   const NEEDS_RE = /^needs ([A-Za-z_][A-Za-z0-9_]*), not set on this machine$/;
@@ -144,11 +144,18 @@
     // ---- loading lock ------------------------------------------------------------------
     // While the picker or a read is in flight nothing in the section can be used.
 
+    // Every control that starts a request is made with lockBtn: disabled while loading or busy,
+    // and its handler refuses too.
+    const locked = () => state.loading || state.busy;
+    function lockBtn(text, onclick, extra) {
+      return button(text, (ev) => { if (locked()) return; return onclick(ev); }, { ...(extra || {}), 'data-lock': '', disabled: locked() || !!extra?.disabled });
+    }
     function applyLock() {
       state.loading = state.loads > 0;
-      machineSel.disabled = state.loading;
-      projectSel.disabled = state.loading;
+      machineSel.disabled = locked();
+      projectSel.disabled = locked();
       if (state.loading) for (const el of view.querySelectorAll('button,input,select,textarea')) el.disabled = true;
+      if (locked()) for (const el of container.querySelectorAll('[data-lock]')) el.disabled = true;
     }
     function startLoad() { state.loads++; applyLock(); }
     function endLoad() { state.loads = Math.max(0, state.loads - 1); applyLock(); }
@@ -202,8 +209,9 @@
         setStatus('Could not load the project list: ' + e.message, true);
       }
     }
-    machineSel.addEventListener('change', () => { setStatus(null); loadPicker(machineSel.value); });
+    machineSel.addEventListener('change', () => { if (locked()) { machineSel.value = state.machine; return; } setStatus(null); loadPicker(machineSel.value); });
     projectSel.addEventListener('change', () => {
+      if (locked()) { projectSel.value = state.path; return; }
       state.gen++;
       state.path = projectSel.value;
       setStatus(null);
@@ -263,7 +271,7 @@
       if (res.ok) setStatus(okParts, bad);
       else {
         setStatus([...failParts, h('p', { text: "Couldn't reload the project: " + res.reason }),
-          button('Reload', () => { if (state.loading) return; reloadThenShow(okParts, failParts, bad, tag()); })], true);
+          lockBtn('Reload', () => { reloadThenShow(okParts, failParts, bad, tag()); })], true);
       }
       return true;
     }
@@ -283,7 +291,7 @@
           parts.push(h('div', { class: 'pt-box' },
             h('p', { class: 'pt-notice', text: 'The tools file can\'t be read: ' + (r.source.reason || 'unknown reason') }),
             h('p', { class: 'hint', text: 'Tools can\'t be edited here until it is fixed in the file, or you start over with an empty list (this replaces whatever is there).' }),
-            button('Start over', startOver, { class: 'danger' })), els.waiting);
+            lockBtn('Start over', startOver, { class: 'danger' })), els.waiting);
         } else {
           for (const w of r.file_warnings || []) parts.push(h('p', { class: 'pt-warn', text: w }));
           els.tools = h('div', { class: 'pt-tools' });
@@ -416,7 +424,7 @@
       const p = raw ? parseEntry(raw) : null;
       if (raw && !p) return;
       const f = formState = {
-        origName, raw, p, orig: raw ? parseEntry(raw) : null, name: origName || '', kind: p ? p.kind : 'command',
+        origName, raw, p, refreshers: [], touched: { command: false, url: false, args: false }, rowsTouched: { env: false, hdr: false }, name: origName || '', kind: p ? p.kind : 'command',
         command: p?.command || '', url: p?.url || '', argsText: (p?.args || []).join('\n'), argsRO: !!p?.argsRO,
         commandRO: !!p?.commandRO, urlRO: !!p?.urlRO,
         envRows: p ? p.envRows : [], hdrRows: p ? p.hdrRows : [],
@@ -430,11 +438,11 @@
         h('option', { value: 'command', text: 'Command' }), h('option', { value: 'http', text: 'Web address' }));
       kindSel.value = f.kind;
       const commandIn = h('input', { type: 'text', value: f.command, autocomplete: 'off', 'aria-label': 'Command', class: 'mono' });
-      commandIn.addEventListener('input', () => { f.command = commandIn.value; });
+      commandIn.addEventListener('input', () => { f.command = commandIn.value; f.touched.command = true; });
       const argsIn = h('textarea', { rows: 3, 'aria-label': 'Arguments, one per line', class: 'mono', value: f.argsText });
-      argsIn.addEventListener('input', () => { f.argsText = argsIn.value; });
+      argsIn.addEventListener('input', () => { f.argsText = argsIn.value; f.touched.args = true; });
       const urlIn = h('input', { type: 'text', value: f.url, autocomplete: 'off', 'aria-label': 'URL', class: 'mono' });
-      urlIn.addEventListener('input', () => { f.url = urlIn.value; });
+      urlIn.addEventListener('input', () => { f.url = urlIn.value; f.touched.url = true; });
 
       const envHost = h('div', { class: 'pt-rowlist' });
       const hdrHost = h('div', { class: 'pt-rowlist' });
@@ -456,7 +464,7 @@
         const keyField = h('input', { type: 'text', value: row.keyName || '', autocomplete: 'off', 'aria-label': 'Key name', placeholder: 'Key name' });
         const secretField = h('input', { type: 'password', value: row.secret || '', autocomplete: 'off', 'aria-label': 'Value for the new key', placeholder: 'Value for this key (optional)' });
         const sharedHint = h('p', { class: 'hint pt-shared', hidden: true });
-        const remove = button('Remove', () => { rows.splice(rows.indexOf(row), 1); paintRows(); }, { class: 'small', 'aria-label': 'Remove ' + word.toLowerCase() });
+        const remove = button('Remove', () => { rows.splice(rows.indexOf(row), 1); f.rowsTouched[kind] = true; paintRows(); }, { class: 'small', 'aria-label': 'Remove ' + word.toLowerCase() });
         const refresh = () => {
           const key = kind === 'env' ? row.name : row.keyName;
           const isKey = row.mode === 'key';
@@ -468,20 +476,23 @@
           sharedHint.hidden = !users.length;
           sharedHint.textContent = users.length ? 'shared with ' + users.join(', ') : '';
         };
-        nameField.addEventListener('input', () => { row.name = nameField.value; refresh(); });
-        modeSel.addEventListener('change', () => { row.mode = modeSel.value; if (row.mode === 'key' && kind === 'hdr' && row.keyName === undefined) row.keyName = ''; refresh(); });
-        valueField.addEventListener('input', () => { row.value = valueField.value; });
-        prefixField.addEventListener('input', () => { row.prefix = prefixField.value; });
-        keyField.addEventListener('input', () => { row.keyName = keyField.value; refresh(); });
+        const touch = () => { row.dirty = true; f.rowsTouched[kind] = true; };
+        nameField.addEventListener('input', () => { touch(); row.name = nameField.value; refresh(); });
+        modeSel.addEventListener('change', () => { touch(); row.mode = modeSel.value; if (row.mode === 'key' && kind === 'hdr' && row.keyName === undefined) row.keyName = ''; refresh(); });
+        valueField.addEventListener('input', () => { touch(); row.value = valueField.value; });
+        prefixField.addEventListener('input', () => { touch(); row.prefix = prefixField.value; });
+        keyField.addEventListener('input', () => { touch(); row.keyName = keyField.value; refresh(); });
         secretField.addEventListener('input', () => { row.secret = secretField.value; });
         refresh();
+        f.refreshers.push(refresh);
         return h('div', { class: 'pt-row' }, nameField, modeSel, valueField, prefixField, keyField, secretField, remove, sharedHint);
       }
       function paintRows() {
+        f.refreshers.length = 0;
         envHost.replaceChildren(...f.envRows.map((row) => rowEditor(row, f.envRows, 'env')),
-          button('Add a setting', () => { f.envRows.push({ name: '', mode: 'plain', value: '', secret: '' }); paintRows(); }, { class: 'small' }));
+          button('Add a setting', () => { f.envRows.push({ name: '', mode: 'plain', value: '', secret: '' }); f.rowsTouched.env = true; paintRows(); }, { class: 'small' }));
         hdrHost.replaceChildren(...f.hdrRows.map((row) => rowEditor(row, f.hdrRows, 'hdr')),
-          button('Add a header', () => { f.hdrRows.push({ name: '', mode: 'plain', value: '', prefix: '', keyName: '', secret: '' }); paintRows(); }, { class: 'small' }));
+          button('Add a header', () => { f.hdrRows.push({ name: '', mode: 'plain', value: '', prefix: '', keyName: '', secret: '' }); f.rowsTouched.hdr = true; paintRows(); }, { class: 'small' }));
         headerNote.hidden = !(f.kind === 'http' && f.hdrRows.length > 0);
       }
 
@@ -524,14 +535,17 @@
         if (f.kind === 'command' && !f.command.trim()) return showErr('Enter the command to run.');
         if (f.kind === 'http' && !f.url.trim()) return showErr('Enter the web address.');
         const seen = new Set(rows.filter((row) => row.ro).map((row) => row.name));
+        const isFresh = (row) => row.dirty || row.rawName === undefined;
+        for (const row of rows) if (!row.ro && !isFresh(row)) seen.add(row.rawName);
         for (const row of rows) {
-          if (row.ro) continue;
-          const nm = row.name.trim();
-          if (!nm) return showErr('Every ' + (rk === 'env' ? 'setting' : 'header') + ' needs a name.');
+          if (row.ro || !isFresh(row)) continue;
+          const nm = row.name;
+          if (!nm.trim()) return showErr('Every ' + (rk === 'env' ? 'setting' : 'header') + ' needs a name.');
+          if (nm !== nm.trim()) return showErr(nm + ' has a space at the start or end.');
           if (seen.has(nm)) return showErr(nm + ' is listed twice.');
           seen.add(nm);
           if (row.mode === 'key') {
-            const key = (rk === 'env' ? nm : (row.keyName || '').trim());
+            const key = (rk === 'env' ? nm : (row.keyName || ''));
             const bad = keyNameProblem(key);
             if (bad) return showErr(bad);
             if (rk === 'hdr' && (row.prefix || '').includes('$')) return showErr('The text before the key can\'t contain $.');
@@ -542,7 +556,7 @@
         for (const row of rows) {
           const key = rowKeyName(row, rk);
           const secret = row.secret || '';
-          const k = key && (rk === 'env' ? row.name.trim() : (row.keyName || '').trim());
+          const k = key && (rk === 'env' ? row.name : (row.keyName || ''));
           if (k && secret && !state.keys.includes(k)) setOwn(pending, k, secret);
         }
         state.pending = pending;
@@ -574,46 +588,40 @@
       nameIn.focus();
     }
 
-    // Applies the form's fields onto the original raw entry: fields the form knows are replaced
-    // or removed, every other field is kept.
+    // Applies the form's fields onto the original raw entry: fields and rows the user didn't touch
+    // are copied as read; touched fields, dirty rows and new rows are built from the form.
     function buildEntry(f, name) {
       void name;
       const e = f.raw ? structuredClone(f.raw) : {};
       const rowsObj = (rows, kind) => {
         const out = nullObj();
         for (const row of rows) {
-          if (row.ro) { setOwn(out, row.name, row.raw); continue; }
-          const nm = row.name.trim();
-          if (row.mode === 'key') setOwn(out, nm, kind === 'env' ? '${' + nm + '}' : (row.prefix || '') + '${' + (row.keyName || '').trim() + '}');
-          else setOwn(out, nm, row.value);
+          if (row.ro) { setOwn(out, row.rawName, row.rawValue); continue; }
+          if (row.rawName !== undefined && !row.dirty) { setOwn(out, row.rawName, row.rawValue); continue; }
+          if (row.mode === 'key') setOwn(out, row.name, kind === 'env' ? '${' + row.name + '}' : (row.prefix || '') + '${' + (row.keyName || '') + '}');
+          else setOwn(out, row.name, row.value);
         }
         return out;
       };
-      const same = !!f.orig && f.orig.kind === f.kind;
-      const rowsSame = (a, b) => a.length === b.length && a.every((x, i) => {
-        const y = b[i];
-        if (!!x.ro !== !!y.ro || x.name !== y.name) return false;
-        if (x.ro) return deepEqual(x.raw, y.raw);
-        return x.mode === y.mode && (x.value || '') === (y.value || '') && (x.prefix || '') === (y.prefix || '') && (x.keyName || '') === (y.keyName || '');
-      });
+      const kindChanged = !f.p || f.p.kind !== f.kind;
       if (f.kind === 'command') {
-        if (!same) {
+        if (kindChanged) {
           delete e.url; delete e.headers;
           if (e.type !== undefined && e.type !== 'stdio') delete e.type;
         }
-        if (!f.commandRO && !(same && f.command === f.orig.command)) e.command = f.command.trim();
-        if (!f.argsRO && !(same && f.argsText === f.orig.args.join('\n'))) {
+        if (!f.commandRO && (kindChanged || f.touched.command)) e.command = f.command.trim();
+        if (!f.argsRO && (kindChanged || f.touched.args)) {
           const args = f.argsText.split('\n').map((s) => s.replace(/\r$/, '')).filter((s) => s !== '');
           if (args.length) e.args = args; else delete e.args;
         }
-        if (!(same && rowsSame(f.envRows, f.orig.envRows))) {
+        if (kindChanged || f.rowsTouched.env) {
           const env = rowsObj(f.envRows, 'env');
           if (Object.keys(env).length) e.env = env; else delete e.env;
         }
       } else {
-        if (!same) { delete e.command; delete e.args; delete e.env; e.type = 'http'; }
-        if (!f.urlRO && !(same && f.url === f.orig.url)) e.url = f.url.trim();
-        if (!(same && rowsSame(f.hdrRows, f.orig.hdrRows))) {
+        if (kindChanged) { delete e.command; delete e.args; delete e.env; e.type = 'http'; }
+        if (!f.urlRO && (kindChanged || f.touched.url)) e.url = f.url.trim();
+        if (kindChanged || f.rowsTouched.hdr) {
           const headers = rowsObj(f.hdrRows, 'hdr');
           if (Object.keys(headers).length) e.headers = headers; else delete e.headers;
         }
@@ -629,7 +637,7 @@
       if (!els.save) return;
       const dirty = isDirty();
       const hasKeys = Object.values(state.pending).some(Boolean);
-      const btn = button('Save', saveTools, { class: 'primary', id: 'pt-save', disabled: state.busy || state.loading || (!dirty && !hasKeys) });
+      const btn = lockBtn('Save', saveTools, { class: 'primary', id: 'pt-save', disabled: !dirty && !hasKeys });
       els.save.replaceChildren(btn, h('span', { class: 'hint', text: dirty ? 'Unsaved changes. Saving opens a pull request against the default branch.' : hasKeys ? 'Key values will be stored on this machine.' : 'No changes.' }));
     }
 
@@ -648,8 +656,9 @@
 
     function setBusy(v) {
       state.busy = v;
+      applyLock();
+      if (!v && !state.loading) for (const b of container.querySelectorAll('[data-lock]')) b.disabled = false;
       paintSave();
-      for (const b of els.keys ? els.keys.querySelectorAll('button') : []) if (!b.closest('.pt-confirm') || v) b.disabled = v;
     }
 
     async function saveTools() {
@@ -677,6 +686,7 @@
         for (const k of Object.keys(state.pending)) if (state.keys.includes(k)) delete state.pending[k];
       }
       if (els.tools) paintTools();
+      for (const fn of formState?.refreshers || []) fn();
     }
 
     async function send(extra) {
@@ -760,14 +770,14 @@
       const newName = h('input', { type: 'text', autocomplete: 'off', 'aria-label': 'New key name', placeholder: 'Key name' });
       const newValue = h('input', { type: 'password', autocomplete: 'off', 'aria-label': 'New key value', placeholder: 'Value' });
       const addErr = h('p', { class: 'inline-err', role: 'alert' });
-      const add = button('Add a key', async () => {
+      const add = lockBtn('Add a key', async () => {
         addErr.textContent = '';
         const name = newName.value.trim();
         const bad = keyNameProblem(name);
         if (bad) { addErr.textContent = bad; return; }
         if (!newValue.value) { addErr.textContent = 'Enter a value.'; return; }
         if (await setKey(name, newValue.value)) { newName.value = ''; newValue.value = ''; }
-      }, { disabled: state.busy || state.loading });
+      });
       els.keys.replaceChildren(
         h('h2', { text: 'Keys on this machine' }),
         h('p', { class: 'hint', text: "Key values are stored on this machine and never shown again." }),
@@ -779,20 +789,19 @@
       const value = h('input', { type: 'password', autocomplete: 'off', 'aria-label': 'Value for ' + name, placeholder: isSet ? 'New value' : 'Value' });
       const err = h('p', { class: 'inline-err', role: 'alert' });
       const confirmHost = h('div', { class: 'pt-confirm', hidden: true });
-      const setBtn = button(isSet ? 'Replace' : 'Set', async () => {
+      const setBtn = lockBtn(isSet ? 'Replace' : 'Set', async () => {
         err.textContent = '';
         if (!value.value) { err.textContent = 'Enter a value.'; return; }
         if (await setKey(name, value.value)) value.value = '';
-      }, { 'aria-label': 'Set ' + name, disabled: state.busy || state.loading });
-      const rm = isSet ? button('Remove', () => {
+      }, { 'aria-label': 'Set ' + name });
+      const rm = isSet ? lockBtn('Remove', () => {
         const users = own(state.read?.references, name) || [];
         rm.hidden = true;
         confirmHost.hidden = false;
         confirmHost.replaceChildren(
           h('p', { text: 'Remove ' + name + '? ' + (state.read?.token?.baseline ? (users.length ? 'Tools on main using it: ' + users.join(', ') + '. ' : 'No tools on main use it. ') : '') + 'Waiting pull requests may need it too.' }),
           h('div', { class: 'actions' },
-            button('Yes, remove ' + name, async () => {
-              if (state.busy || state.loading) return;
+            lockBtn('Yes, remove ' + name, async () => {
               setBusy(true); setStatus('Removing…');
               const c = tag();
               try {
@@ -802,7 +811,7 @@
               } finally { setBusy(false); }
             }, { class: 'danger' }),
             button('Cancel', () => { confirmHost.hidden = true; rm.hidden = false; })));
-      }, { 'aria-label': 'Remove ' + name, disabled: state.busy || state.loading }) : null;
+      }, { 'aria-label': 'Remove ' + name }) : null;
       return h('div', { class: 'pt-key', 'data-key': name },
         h('div', { class: 'pt-key-head' }, h('span', { class: 'mono', text: name }),
           h('span', { class: 'pt-chip ' + (isSet ? 'set' : 'unset'), text: isSet ? 'set' : 'not set' }),

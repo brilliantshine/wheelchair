@@ -63,8 +63,6 @@ async function open(page, opts) {
   await expect(page.locator('.pt-keys')).toBeVisible();
   return calls;
 }
-// The selects are locked while loading; this forces a change anyway, to test the stale-reply guards.
-const forceProject = (page, value) => page.evaluate((v) => { const el = document.querySelector('#pt-project'); el.disabled = false; el.value = v; el.dispatchEvent(new Event('change')); }, value);
 const tool = (page, name) => page.locator(`.pt-tool[data-tool="${name}"]`);
 const keyRow = (page, name) => page.locator(`.pt-key[data-key="${name}"]`);
 const noSideScroll = async (page) => {
@@ -392,33 +390,19 @@ for (const [label, extra] of [
   });
 }
 
-test('a late save reply never lands on another project', async ({ page }) => {
+test('the pickers are locked while a save is pending, and the reply lands on its own project', async ({ page }) => {
   let release;
   const gate = new Promise((r) => { release = r; });
-  const calls = await open(page, {
-    gate,
-    read: (n, body) => (body.path === '/tmp/proj-beta'
-      ? readBody({ keys: ['BETA_K'], references: {}, token: { project: '/b', baseline: null, key_revision: 7 }, mode: 'keys-only', source: null })
-      : readBody()),
-    replies: [[200, { outcome: 'saved', key_revision: 99, keys: ['ALPHA_K'], warnings: [] }],
-      [200, { outcome: 'saved', key_revision: 8, keys: ['BETA_K', 'B2'], warnings: [] }]],
-  });
+  const calls = await open(page, { gate, replies: [[200, { outcome: 'saved', key_revision: 99, keys: ['ALPHA_K'], warnings: [] }]] });
   await page.getByLabel('Value for API_KEY').fill('v');
   await page.getByRole('button', { name: 'Set API_KEY' }).click();
   await expect.poll(() => calls.save.length).toBe(1);
-  await page.locator('#pt-project').selectOption('/tmp/proj-beta');
-  await expect(keyRow(page, 'BETA_K')).toBeVisible();
+  await expect(page.locator('#pt-project')).toBeDisabled();
+  await expect(page.locator('#pt-machine')).toBeDisabled();
   release();
-  await page.waitForTimeout(300);
-  await expect(keyRow(page, 'BETA_K')).toBeVisible();
-  await expect(keyRow(page, 'ALPHA_K')).toHaveCount(0);
-  await expect(page.locator('.pt-status')).not.toHaveText('Saved');
-  await page.getByLabel('New key name').fill('B2');
-  await page.getByLabel('New key value').fill('x');
-  await page.getByRole('button', { name: 'Add a key' }).click();
-  await expect(keyRow(page, 'B2')).toBeVisible();
-  expect(calls.save[1].token.key_revision).toBe(7);
-  expect(calls.save[1].path).toBe('/tmp/proj-beta');
+  await expect(page.locator('.pt-status')).toHaveText('Saved');
+  await expect(keyRow(page, 'ALPHA_K')).toBeVisible();
+  await expect(page.locator('#pt-project')).toBeEnabled();
 });
 
 test('arguments with a variable are read-only and kept as sent', async ({ page }) => {
@@ -516,88 +500,61 @@ test('machine key warnings show for read-only tools and rows, and follow the key
   await expect(tool(page, 'al')).toContainText('needs TOKEN, not set on this machine');
 });
 
-test('a late picker load never lands after the machine changed again', async ({ page }) => {
+test('the machine picker is locked while the project list loads', async ({ page }) => {
   let release;
   const gate = new Promise((r) => { release = r; });
   await openBare(page, {});
   await page.route('**/wheelchair/api/new-thread*', async (route) => {
-    if (new URL(route.request().url()).searchParams.get('machine') === 'node-2') {
-      await gate;
-      return route.fulfill({ json: { machine: 'node-2', machines: ['hub', 'node-2'], default_folder: '/tmp', saved: [{ name: 'gamma', path: '/tmp/proj-gamma' }], found: [], previous: [] } });
-    }
-    return route.fulfill({ json: { machine: 'hub', machines: ['hub', 'node-2'], default_folder: '/tmp', saved: [{ name: 'alpha', path: '/tmp/proj-alpha' }], found: [], previous: [] } });
+    await gate;
+    return route.fulfill({ json: { machine: 'node-2', machines: ['hub', 'node-2'], default_folder: '/tmp', saved: [{ name: 'gamma', path: '/tmp/proj-gamma' }], found: [], previous: [] } });
   });
   await page.locator('#pt-machine').selectOption('node-2');
-  // the selects are locked while loading; dispatch the change directly to test the stale guard
-  await page.evaluate(() => { const m = document.querySelector('#pt-machine'); m.disabled = false; m.value = 'hub'; m.dispatchEvent(new Event('change')); });
-  await expect(page.locator('#pt-project option[value="/tmp/proj-alpha"]')).toHaveCount(1);
+  await expect(page.locator('#pt-machine')).toBeDisabled();
+  await expect(page.locator('#pt-project')).toBeDisabled();
   release();
-  await page.waitForTimeout(300);
-  await expect(page.locator('#pt-project option[value="/tmp/proj-gamma"]')).toHaveCount(0);
-  await expect(page.locator('#pt-machine')).toHaveValue('hub');
+  await expect(page.locator('#pt-project option[value="/tmp/proj-gamma"]')).toHaveCount(1);
+  await expect(page.locator('#pt-machine')).toBeEnabled();
 });
 
-test('a late read never lands on another project', async ({ page }) => {
+test('the pickers are locked while a read is pending', async ({ page }) => {
   let release;
   const gate = new Promise((r) => { release = r; });
-  await openBare(page, { read: async (n, body) => {
-    if (body.path === '/tmp/proj-alpha') { await gate; return readBody(); }
-    return betaRead();
-  } });
+  await openBare(page, { read: async () => { await gate; return readBody(); } });
   await page.locator('#pt-project').selectOption('/tmp/proj-alpha');
-  await forceProject(page, '/tmp/proj-beta');
-  await expect(keyRow(page, 'BETA_K')).toBeVisible();
+  await expect(page.locator('#pt-project')).toBeDisabled();
   release();
-  await page.waitForTimeout(300);
-  await expect(keyRow(page, 'BETA_K')).toBeVisible();
-  await expect(tool(page, 'db')).toHaveCount(0);
-  await expect(keyRow(page, 'API_KEY')).toHaveCount(0);
+  await expect(tool(page, 'db')).toBeVisible();
+  await expect(page.locator('#pt-project')).toBeEnabled();
 });
 
-test('the post-save reload of one project never shows its pull request on another', async ({ page }) => {
+test('the pickers are locked during the reload after opened', async ({ page }) => {
   let release;
   const gate = new Promise((r) => { release = r; });
   const calls = await open(page, {
     replies: [[200, { outcome: 'opened', key_revision: 1, keys: ['API_KEY'], pr_url: 'https://github.com/o/n/pull/77', warnings: [] }]],
-    read: async (n, body) => {
-      if (body.path === '/tmp/proj-beta') return betaRead();
-      if (n === 2) { await gate; }
-      return readBody();
-    },
+    read: async (n) => { if (n === 2) { await gate; } return readBody(); },
   });
   await tool(page, 'web').getByRole('button', { name: 'Edit web' }).click();
   await page.getByLabel('URL', { exact: true }).fill('https://y.example/mcp');
   await page.getByRole('button', { name: 'Keep changes' }).click();
   await page.locator('#pt-save').click();
   await expect.poll(() => calls.read.length).toBe(2);
-  await forceProject(page, '/tmp/proj-beta');
-  await expect(keyRow(page, 'BETA_K')).toBeVisible();
+  await expect(page.locator('#pt-project')).toBeDisabled();
   release();
-  await page.waitForTimeout(300);
-  await expect(page.locator('.pt-status a')).toHaveCount(0);
-  await expect(page.locator('.pt-status')).not.toContainText('Pull request opened');
-  await expect(keyRow(page, 'BETA_K')).toBeVisible();
-  await expect(tool(page, 'web')).toHaveCount(0);
+  await expect(page.locator('.pt-status a')).toHaveAttribute('href', 'https://github.com/o/n/pull/77');
 });
 
-test('a late remove-key reply never lands on another project', async ({ page }) => {
+test('the pickers are locked while a remove-key reply is pending', async ({ page }) => {
   let release;
   const gate = new Promise((r) => { release = r; });
-  const calls = await open(page, {
-    gate,
-    read: (n, body) => (body.path === '/tmp/proj-beta' ? betaRead() : readBody()),
-    replies: [[200, { outcome: 'removed', key_revision: 5, keys: [] }]],
-  });
+  const calls = await open(page, { gate, replies: [[200, { outcome: 'removed', key_revision: 5, keys: [] }]] });
   await keyRow(page, 'API_KEY').getByRole('button', { name: 'Remove API_KEY' }).click();
   await page.getByRole('button', { name: 'Yes, remove API_KEY' }).click();
   await expect.poll(() => calls.remove.length).toBe(1);
-  await page.locator('#pt-project').selectOption('/tmp/proj-beta');
-  await expect(keyRow(page, 'BETA_K')).toBeVisible();
+  await expect(page.locator('#pt-project')).toBeDisabled();
   release();
-  await page.waitForTimeout(300);
-  await expect(page.locator('.pt-status')).not.toHaveText('Key removed');
-  await expect(keyRow(page, 'BETA_K').locator('.pt-chip.set')).toBeVisible();
-  await expect(keyRow(page, 'API_KEY')).toHaveCount(0);
+  await expect(page.locator('.pt-status')).toHaveText('Key removed');
+  await expect(page.locator('#pt-project')).toBeEnabled();
 });
 
 test('a __proto__ header survives an edit of its tool URL', async ({ page }) => {
@@ -819,4 +776,63 @@ test('a failed reload after opened shows the pull request link and the reload er
   await expect(st.locator('a')).toHaveAttribute('href', 'https://github.com/o/n/pull/7');
   await expect(st).toContainText("Couldn't reload the project: hub timeout");
   await expect(st.getByRole('button', { name: 'Reload' })).toBeVisible();
+});
+
+test('editing one field sends the raw entry with only that field changed', async ({ page }) => {
+  const mcpServers = {
+    w: { type: 'http', url: 'https://a', headers: { ' X-Legacy ': 'a', Authorization: 'Bearer ${TOK}', Weird: 5 }, timeout: 5 },
+    c: { command: 'old', args: ['x', 'y'], env: { ' E ': 'v', K: '${K}', N: 3 }, retries: 2 },
+  };
+  const calls = await open(page, { read: readBody({ source: { state: 'ok', reason: null, document: { mcpServers } }, keys: [], references: {}, checks: {} }) });
+  await tool(page, 'w').getByRole('button', { name: 'Edit w' }).click();
+  await page.getByLabel('URL', { exact: true }).fill('https://b');
+  await page.getByRole('button', { name: 'Keep changes' }).click();
+  await tool(page, 'c').getByRole('button', { name: 'Edit c' }).click();
+  await page.getByLabel('Command', { exact: true }).fill('new');
+  await page.getByRole('button', { name: 'Keep changes' }).click();
+  await page.locator('#pt-save').click();
+  await expect(page.locator('.pt-status')).toContainText('Saved');
+  const sent = calls.save[0].tools;
+  expect(sent.w).toEqual({ ...mcpServers.w, url: 'https://b' });
+  expect(Object.keys(sent.w.headers)).toEqual([' X-Legacy ', 'Authorization', 'Weird']);
+  expect(sent.c).toEqual({ ...mcpServers.c, command: 'new' });
+});
+
+test('an edited header name with a space at the end is refused', async ({ page }) => {
+  await open(page, { read: readBody({ source: { state: 'ok', reason: null, document: { mcpServers: { w: { type: 'http', url: 'https://a', headers: { 'X-A': '1' } } } } }, keys: [], references: {}, checks: {} }) });
+  await tool(page, 'w').getByRole('button', { name: 'Edit w' }).click();
+  await page.getByLabel('Header name').fill('X-A ');
+  await page.getByRole('button', { name: 'Keep changes' }).click();
+  await expect(page.getByRole('alert').filter({ hasText: 'has a space at the start or end' })).toBeVisible();
+});
+
+test('the open editor shows the value field when a key is removed from the Keys list', async ({ page }) => {
+  await open(page, { replies: [[200, { outcome: 'removed', key_revision: 2, keys: [] }]] });
+  await page.getByRole('button', { name: 'Add a tool' }).click();
+  await page.getByRole('button', { name: 'Add a setting' }).click();
+  await page.getByLabel('Setting name').fill('API_KEY');
+  await page.getByLabel('Setting kind').selectOption('key');
+  await expect(page.getByLabel('Value for the new key')).toBeHidden();
+  await keyRow(page, 'API_KEY').getByRole('button', { name: 'Remove API_KEY' }).click();
+  await page.getByRole('button', { name: 'Yes, remove API_KEY' }).click();
+  await expect(keyRow(page, 'API_KEY').locator('.pt-chip')).toHaveText('not set');
+  await expect(page.getByLabel('Value for the new key')).toBeVisible();
+});
+
+test('the Reload button is disabled while its own read is pending', async ({ page }) => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  await open(page, {
+    read: async (n) => { if (n === 3) await gate; return n === 2 ? [504, { error: 'hub timeout' }] : readBody(); },
+    replies: [[409, { outcome: 'refused', reason: 'changed since you opened it' }]],
+  });
+  await tool(page, 'db').getByRole('button', { name: 'Remove db' }).click();
+  await page.getByRole('button', { name: 'Yes, remove db' }).click();
+  await page.locator('#pt-save').click();
+  const reload = page.locator('.pt-status').getByRole('button', { name: 'Reload' });
+  await expect(reload).toBeEnabled();
+  await reload.click();
+  await expect(reload).toBeDisabled();
+  release();
+  await expect(page.locator('.pt-status')).toContainText('The project was reloaded');
 });
