@@ -474,6 +474,28 @@ disable_service() {
   fi
 }
 
+if [[ $(platform) == Linux ]]; then
+  # Keep these tools in step with TOOLS in machine/lib/screen.js.
+  missing_tools=() missing_packages=()
+  for tool in Xvfb xauth mcookie ffmpeg xdotool xwininfo systemd-run systemctl; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+      missing_tools+=("$tool")
+      case $tool in
+        Xvfb) package=xvfb ;; xauth) package=xauth ;; mcookie) package=util-linux ;;
+        ffmpeg) package=ffmpeg ;; xdotool) package=xdotool ;; xwininfo) package=x11-utils ;;
+        systemd-run|systemctl) package=systemd ;;
+      esac
+      seen=0
+      for existing in "${missing_packages[@]}"; do [[ $existing == "$package" ]] && seen=1; done
+      [[ $seen == 1 ]] || missing_packages+=("$package")
+    fi
+  done
+  if (( ${#missing_tools[@]} )); then
+    names=$(printf ', %s' "${missing_tools[@]}")
+    printf "screens: warning — missing %s; agents can't use screens until they're installed (Debian: sudo apt install %s)\n" "${names:2}" "${missing_packages[*]}" >&2
+  fi
+fi
+
 case $serve_flag in
   no-serve)
     disable_service

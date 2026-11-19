@@ -87,6 +87,7 @@ new_case() {
   node_stop_status[$name]=0
   tailscale_absent[$name]=0
   detect_path[$name]=0
+  restricted_path[$name]=0
   tailscale_ip[$name]=100.64.0.1
   tailscale_ip_status[$name]=0
   serve_status[$name]=$(status_with_handlers '{}')
@@ -159,7 +160,7 @@ EOF
 run_case() {
   local name=$1
   local command_path=$PATH
-  if [[ ${tailscale_absent[$name]} == 1 || ${detect_path[$name]} == 1 ]]; then
+  if [[ ${tailscale_absent[$name]} == 1 || ${detect_path[$name]} == 1 || ${restricted_path[$name]} == 1 ]]; then
     local tool
     for tool in awk basename bash cat chmod cp cut dirname grep head id mkdir mktemp od python3 rm sed tail tr uname; do
       ln -sf "$(command -v "$tool")" "${shim[$name]}/$tool"
@@ -679,6 +680,28 @@ run_case darwin
 assert 'Darwin disable boots out and removes both agents' bash -c '[[ ! -e $1 && ! -e $2 && $(grep -c "^launchctl bootout " "$3") == 6 ]]' _ "$viewer_plist" "$machine_plist" "$(log_path darwin)"
 assert 'Darwin removal commands omit sudo' bash -c '[[ $1 == *"serve --https=443 --set-path /wheelchair off"* && $1 == *"serve --https=443 --set-path / off"* && $1 != *"sudo tailscale serve"* ]]' _ "${output[darwin]}"
 unset case_platform case_tailscale_app
+
+new_case screen_missing
+restricted_path[screen_missing]=1
+args[screen_missing]=--serve
+run_case screen_missing
+expected_screen_warning="screens: warning — missing Xvfb, xauth, mcookie, ffmpeg, xdotool, xwininfo, systemd-run; agents can't use screens until they're installed (Debian: sudo apt install xvfb xauth util-linux ffmpeg xdotool x11-utils systemd)"
+assert 'Linux screen warning lists missing tools and unique packages' bash -c '[[ $1 == *"$2"* ]]' _ "${output[screen_missing]}" "$expected_screen_warning"
+assert 'screen warning leaves bookmark last' last_line_is "${output[screen_missing]}" 'https://fixture.tailnet.ts.net/?token=fixture'
+new_case screen_present
+restricted_path[screen_present]=1
+for tool in Xvfb xauth mcookie ffmpeg xdotool xwininfo systemd-run systemctl; do
+  printf '#!/usr/bin/env bash\nexit 0\n' > "${shim[screen_present]}/$tool"
+  chmod +x "${shim[screen_present]}/$tool"
+done
+run_case screen_present
+assert 'Linux with screen tools prints no screen warning' bash -c '[[ $1 != *"screens:"* ]]' _ "${output[screen_present]}"
+case_platform=Darwin
+new_case screen_darwin
+restricted_path[screen_darwin]=1
+run_case screen_darwin
+assert 'Darwin prints no screen warning' bash -c '[[ $1 != *"screens:"* ]]' _ "${output[screen_darwin]}"
+unset case_platform
 
 new_case sudo_hint
 run_case sudo_hint
