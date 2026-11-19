@@ -172,3 +172,20 @@ npm --prefix viewer run test:browser   # 34 skipped, 1070 passed (11.4m), exit 0
 ```
 
 Residual, seen on read: a refusal where git prints only a `fatal:` line now shows the plain fallback without git's line.
+
+### Remediation 4 — 2026-11-19
+
+Verification attempt 4 (`e6d49767`): Claude PASS, GPT FAIL with four gaps. The lead's per-gap answer fixed K1 and K3 and deferred K2 and K4 as PLAN.md D17 and D18. Details in `REMEDIATION-4.md`.
+
+| Gap | Fix | Where | Test |
+|-----|-----|-------|------|
+| K1: "Can't reach the hub." stayed after the connection came back | `copy.errorFrom` records whether the error came from a status load or a write; a successful load clears a load error, and a refusal or write error survives the quiet re-read | `viewer/pages/thread.js` `copyLoad`, `copyWrite` | `viewer/test/app-try.spec.js`: dropped poll then a successful poll clears the error; the refused-write test unchanged |
+| K3: a `fatal:` refusal (for example a leftover `HEAD.lock`) showed only "Git did not switch your copy." | `wayPaths` reads the first `error:` or `fatal:` line for its fallback | `machine/lib/try.js` `wayPaths` | `machine/test/try.test.js`: wayPaths unit case for the `HEAD.lock` fatal line; a real `HEAD.lock` Try (interrupted: git rewrites the files before failing to lock HEAD), HEAD unmoved and the lock kept |
+
+Validation after the fixes, on the feature branch:
+
+```text
+bash machine/test/run.sh               # tests 415, pass 415, fail 0
+node --test viewer/test/*.test.js      # tests 695, pass 695, fail 0
+npm --prefix viewer run test:browser   # 34 skipped, 1072 passed (11.1m), exit 0
+```
