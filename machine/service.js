@@ -371,6 +371,8 @@ class MachineService {
     // worktree feel stalled. Stuck sessions and open prompts remain on pollTimer.
     this.trustTimer = setInterval(() => this.pollTrust().catch(error => this.log(error)), 500);
     this.trustTimer.unref();
+    this.agyToolsTimer = setInterval(() => this.sweepAgyTools(), 60000);
+    this.agyToolsTimer.unref();
   }
   // The names of the running tmux sessions, or null when tmux could not be asked. "No server" is
   // a real empty answer; any other failure is unknown, and must not read as "every session ended".
@@ -380,6 +382,24 @@ class MachineService {
     if (/no server running|error connecting to .*\(No such file or directory\)/.test(ls.stderr)) return new Set();
     this.log(`tmux list-sessions failed: ${ls.stderr.trim() || `exit ${ls.status}`}`);
     return null;
+  }
+  sweepAgyTools() {
+    const starting = new Set(this.startingNames.keys());
+    const live = this.liveTmux();
+    if (!live) return;
+    const dir = path.join(this.stateDir, 'agy-tools');
+    let entries;
+    try { entries = fs.readdirSync(dir); } catch (error) { if (error.code !== 'ENOENT') this.log(error); return; }
+    for (const entry of entries) {
+      let name;
+      try { name = decodeURIComponent(entry); safeName(name, 'session name'); if (!name.startsWith('wc-')) name = null; } catch { name = null; }
+      if (name && (starting.has(name) || live.has(name))) continue;
+      const file = path.join(dir, entry);
+      try {
+        if (Date.now() - fs.lstatSync(file).mtimeMs < 60000) continue;
+        fs.rmSync(file, { recursive: true, force: true });
+      } catch (error) { this.log(error); }
+    }
   }
   // Spec "Machine service on the hub": a live wc-* tmux session missing from sessions.json (a lost or
   // stale file) is adopted again, so it can still be read, typed into and stopped.  It has no token.
@@ -576,7 +596,7 @@ class MachineService {
     if (this.startingNames.has(name)) return this.startingNames.get(name);
     const starting = this.startNamed(input, name);
     this.startingNames.set(name, starting);
-    try { return await starting; } finally { this.startingNames.delete(name); this.cancelledStarts.delete(name); }
+    try { return await starting; } finally { this.startingNames.delete(name); this.sweepAgyTools(); this.cancelledStarts.delete(name); }
   }
   async startNamed(input, name) {
     const adapter = adapters[input.cli];
@@ -611,16 +631,35 @@ class MachineService {
       cli_session_id: input.cli_session_id || crypto.randomUUID(), status: 'starting', created_at: new Date().toISOString() };
     const { mcp, warnings } = await readProjectMcp(worktree);
     const built = this.commandFor(input, session, worktree, promptPath, rolePrompt, mcp);
-    if (TOOL_ROLES.has(input.role)) for (const warning of [...warnings, ...(built.warnings || [])]) console.error(`${session.name}: project tools: ${warning}`);
+    if (TOOL_ROLES.has(input.role)) for (const warning of [...warnings, ...(built.warnings || [])]) console.error(`${session.name}: project tools: ${warning.text}`);
     if (built.settingsPath) await atomicWrite(built.settingsPath, `${json(built.settings)}\n`);
+    if (built.toolFiles) {
+      const root = path.join(this.stateDir, 'agy-tools');
+      for (const file of built.toolFiles.files) {
+        const relative = path.relative(root, path.dirname(file.path));
+        let dir = root;
+        for (const part of ['', ...relative.split(path.sep)]) {
+          if (part) dir = path.join(dir, part);
+          await fsp.mkdir(dir, { recursive: true, mode: 0o700 });
+          await fsp.chmod(dir, 0o700);
+        }
+        const temp = `${file.path}.${crypto.randomUUID()}.tmp`;
+        await fsp.writeFile(temp, file.text, { mode: 0o600 });
+        await fsp.chmod(temp, 0o600);
+        await fsp.rename(temp, file.path);
+      }
+      const now = new Date();
+      await fsp.utimes(built.toolFiles.dir, now, now);
+    }
     const commandText = ['env', 'WHEELCHAIR_LANE=1', ...(adapter.sessionNameEnv ? [`WHEELCHAIR_SESSION_NAME=${name}`] : []), `WHEELCHAIR_SESSION_TOKEN=${session.token}`, `WHEELCHAIR_STATE_DIR=${this.stateDir}`, `WHEELCHAIR_MACHINE_ORIGIN=http://${this.config.host}:${this.config.port}`, ...Object.entries(adapter.loginEnv(dir)).map(([key, value]) => `${key}=${value}`), ...built.argv].map(shellQuote).join(' ');
-    session.command = built.argv;
+    const redactions = new Set(built.redactions || []);
+    session.command = built.argv.map((arg, index) => redactions.has(index) ? `${arg.slice(0, arg.indexOf('=') + 1)}<redacted>` : arg);
     session.pending_initial = adapter.firstMessage(input, promptPath);
     const tmuxArgs = ['new-session', '-d', '-s', name, '-x', '200', '-y', '50', '-c', worktree, commandText];
     // systemd-run scope prevents service restarts killing tmux; installer sets KillMode=process too.
     // Both asynchronous, like the git above: a slow systemd-run must not hold up the service.
     if (this.cancelledStarts.has(name)) die('session start was cancelled');
-    const scoped = process.platform === 'darwin' ? { ok: false } : await commandAsync('systemd-run', ['--user', '--scope', 'tmux', ...tmuxArgs]);
+    const scoped = process.platform === 'darwin' ? { ok: false } : await commandAsync('systemd-run', ['--user', '--scope', `--description=wheelchair ${name}`, 'tmux', ...tmuxArgs]);
     if (this.cancelledStarts.has(name)) { if (scoped.ok) this.tmux(['kill-session', '-t', `=${name}`]); die('session start was cancelled'); }
     const result = scoped.ok ? scoped : await commandAsync('tmux', tmuxArgs);
     if (this.cancelledStarts.has(name)) { if (result.ok) this.tmux(['kill-session', '-t', `=${name}`]); die('session start was cancelled'); }
@@ -771,6 +810,7 @@ class MachineService {
     session.status = 'stopped'; session.stopped_at = new Date().toISOString();
     await this.persistSessions();
     if (session.role === 'verifier' && session.created_worktree) command('git', ['-C', session.worktree, 'worktree', 'remove', '--force', session.worktree]);
+    this.sweepAgyTools();
   }
   gitPath(worktree, name) {
     const result = command('git', ['-C', worktree, 'rev-parse', '--git-path', name]);
@@ -1617,7 +1657,7 @@ class MachineService {
     this.startupWarningTimer.unref();
     this.sudoTimer = setInterval(() => this.sudo.tick().catch(error => this.log(error)), Number(process.env.WHEELCHAIR_SUDO_POLL_MS || 2000));
     this.sudoTimer.unref();
-    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.startupWarningTimer); clearInterval(this.pollTimer); clearInterval(this.stepsTimer); clearInterval(this.trustTimer); clearInterval(this.sudoTimer); });
+    this.server.once('close', () => { clearInterval(this.spoolTimer); clearInterval(this.startupWarningTimer); clearInterval(this.pollTimer); clearInterval(this.stepsTimer); clearInterval(this.trustTimer); clearInterval(this.sudoTimer); clearInterval(this.agyToolsTimer); });
     process.stdout.write(`machine service listening on ${this.config.host}:${this.config.port}\n`);
     await this.drainSpool('events'); await this.drainSpool('cards');
   }
