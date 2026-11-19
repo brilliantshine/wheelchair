@@ -1783,3 +1783,102 @@ test('failed transcript append rebuilds dedupe from the kept file', async () => 
     assert.equal(await fs.readFile(session.transcript_path, 'utf8'), 'one\ntwo\nthree\n');
   } finally { await env.close(); }
 });
+
+test('conditional transcript versions match the kept file and legacy reply stays exact', async () => {
+  const root = await temp(); const env = await service(root);
+  try {
+    const s = await start(env, { thread_id: 'version' }); const session = env.instance.sessions[s.name];
+    const source = path.join(root, 'source'); await write(source, 'hello 🌍\n'); session.source_transcript = source;
+    const full = await env.instance.transcript(s.name, 0, '-');
+    const stat = require('node:fs').statSync(session.transcript_path);
+    const gen = stat.birthtimeMs ? `${stat.ino}-${stat.birthtimeMs}` : `${stat.ino}`;
+    assert.deepEqual(full, { status: 'full', gen, end: stat.size, data: 'hello 🌍\n' });
+    assert.deepEqual(await env.instance.transcript(s.name, 0, `${gen}:${stat.size}`), { status: 'unchanged', gen, end: stat.size });
+    assert.deepEqual(await env.instance.transcript(s.name, 1), { offset: stat.size, data: 'ello 🌍\n' });
+  } finally { await env.close(); }
+});
+
+test('malformed known transcript versions return 400', async () => {
+  const env = await service(await temp());
+  try {
+    const s = await start(env);
+    for (const known of ['bad', '1-2', '1-2:', ':5', '1-2:-1', '1-2:5x']) {
+      const result = await api(env, 'GET', `/v1/sessions/${s.name}/transcript?known=${encodeURIComponent(known)}`, undefined, hubHeader);
+      assert.equal(result.status, 400, known);
+    }
+  } finally { await env.close(); }
+});
+
+test('transcript copies preserve blank lines across separate batches', async () => {
+  const root = await temp(); const env = await service(root);
+  try {
+    const s = await start(env); const session = env.instance.sessions[s.name]; const source = path.join(root, 'source');
+    await write(source, 'a\n\n'); await env.instance.copyTranscript(session, source);
+    await fs.appendFile(source, '\nb\n'); await env.instance.copyTranscript(session, source);
+    assert.equal(await fs.readFile(session.transcript_path, 'utf8'), 'a\n\n\nb\n');
+  } finally { await env.close(); }
+});
+
+test('a partial kept line prevents caching the transcript dedupe set', async () => {
+  const root = await temp(); const env = await service(root);
+  try {
+    const s = await start(env); const session = env.instance.sessions[s.name]; const source = path.join(root, 'source');
+    const target = path.join(env.state, 'transcripts', session.thread_id, `${s.name}.jsonl`);
+    await write(target, 'x\npartial'); await write(source, 'x\npartial\nnew\n');
+    await env.instance.copyTranscript(session, source);
+    assert.equal(env.instance.transcriptSets.has(s.name), false);
+    assert.equal(await fs.readFile(target, 'utf8'), 'x\npartialnew\n');
+    await fs.appendFile(source, 'new\npartialnew\n'); await env.instance.copyTranscript(session, source);
+    assert.equal(await fs.readFile(target, 'utf8'), 'x\npartialnew\nnew\n');
+  } finally { await env.close(); }
+});
+
+test('stopping a session and archiving a thread drop their transcript sets', async () => {
+  const root = await temp(); const env = await service(root);
+  try {
+    const stopped = await start(env, { thread_id: 'stopset' }); const a = env.instance.sessions[stopped.name];
+    const sourceA = path.join(root, 'source-a'); await write(sourceA, 'a\n'); await env.instance.copyTranscript(a, sourceA);
+    assert.equal(env.instance.transcriptSets.has(a.name), true);
+    assert.equal((await api(env, 'DELETE', `/v1/sessions/${a.name}`, undefined, hubHeader)).status, 200);
+    assert.equal(env.instance.transcriptSets.has(a.name), false);
+    const archived = await start(env, { thread_id: 'archiveset' }); const b = env.instance.sessions[archived.name];
+    const sourceB = path.join(root, 'source-b'); await write(sourceB, 'b\n'); await env.instance.copyTranscript(b, sourceB);
+    assert.equal(env.instance.transcriptSets.has(b.name), true);
+    assert.equal((await api(env, 'POST', '/v1/archive', { thread_id: 'archiveset' }, hubHeader)).status, 200);
+    assert.equal(env.instance.transcriptSets.has(b.name), false);
+  } finally { await env.close(); }
+});
+
+test('idle transcript set expires at ten minutes and rebuilds before deduping', async () => {
+  const root = await temp(); const env = await service(root); let now = 0;
+  try {
+    env.instance.transcriptNow = () => now;
+    const s = await start(env); const session = env.instance.sessions[s.name]; const source = path.join(root, 'source');
+    await write(source, 'old\n'); await env.instance.copyTranscript(session, source);
+    assert.equal(env.instance.transcriptSets.has(s.name), true);
+    now = 599999; env.instance.sweepTranscriptSets(); assert.equal(env.instance.transcriptSets.has(s.name), true);
+    now = 600000; env.instance.sweepTranscriptSets(); assert.equal(env.instance.transcriptSets.has(s.name), false);
+    await fs.appendFile(source, 'old\nnew\n'); await env.instance.copyTranscript(session, source);
+    assert.equal(env.instance.transcriptSets.has(s.name), true);
+    assert.equal(await fs.readFile(session.transcript_path, 'utf8'), 'old\nnew\n');
+  } finally { await env.close(); }
+});
+
+test('archived transcript read waits for an already running copy', async () => {
+  const root = await temp(); const env = await service(root); const append = fs.appendFile; let release;
+  try {
+    const s = await start(env, { thread_id: 'queued' }); const session = env.instance.sessions[s.name]; const source = path.join(root, 'source');
+    await write(source, 'old\n'); await env.instance.copyTranscript(session, source);
+    await fs.appendFile(source, 'new\n');
+    let entered; const started = new Promise(resolve => { entered = resolve; });
+    const gate = new Promise(resolve => { release = resolve; });
+    fs.appendFile = async (target, ...args) => { if (target === session.transcript_path) { entered(); await gate; } return append(target, ...args); };
+    const copying = env.instance.copyTranscript(session, source); await started;
+    assert.equal((await api(env, 'POST', '/v1/archive', { thread_id: 'queued' }, hubHeader)).status, 200);
+    assert.equal(env.instance.sessions[s.name], undefined);
+    let settled = false; const reading = env.instance.transcript(s.name, 0, '-').then(value => { settled = true; return value; });
+    await new Promise(resolve => setImmediate(resolve)); assert.equal(settled, false);
+    release(); await copying;
+    assert.equal((await reading).data, 'old\nnew\n');
+  } finally { if (release) release(); fs.appendFile = append; await env.close(); }
+});
