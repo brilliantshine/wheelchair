@@ -33,6 +33,7 @@ function emptyThread(input) {
     queues: {},
     sent: [],
     archived: false,
+    project_tools: { boot: null, seq: 0, created_at: null, state: null, card: null, card_names: [] },
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
