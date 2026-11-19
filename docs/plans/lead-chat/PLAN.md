@@ -1,6 +1,6 @@
 ---
 slug: lead-chat
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved           # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-19
 ---
 
@@ -62,6 +62,25 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 
 ## Spec
 
+```mermaid
+flowchart TD
+  A[Lead runs "session leads"] --> B{Other threads in this project on this machine?}
+  B -- none overlap --> Z[Carry on; tell the user nothing]
+  B -- one overlaps --> C{Does it have a live lead?}
+  C -- no --> D[Tell the user in one line it exists]
+  C -- yes --> E[Message that lead: what I'm building, ask what it's doing]
+  E --> F[Other lead answers only if asked]
+  F --> G[Tell the user in one line; the user decides in chat]
+  H[User names a thread in another project] --> I{Already linked?}
+  I -- yes --> E
+  I -- no --> J[Post an Allow card]
+  J -- Allow --> E
+  J -- Don't allow or allow failed --> K[Drop it, say so in a line]
+```
+
+The diagram repeats sections 1 to 4 below: the listing, messaging, the Allow card for other
+projects, and the lead rules.
+
 ### What changes, in one paragraph
 
 Leads gain two abilities across threads on the same machine: **list** the other threads in
@@ -113,7 +132,7 @@ turn is hidden; the sender's own tool calls show as any tool call does today), e
   - `idea`: the texts of the pinned idea card's bullets, at most 6, else `[]`
   - `progress`: the pinned progress card's folded label text as `cards.md` (`progress`)
     defines it, else `null`
-  - `branch`: the thread's branch; `pr_url`: the latest non-retracted done card's `pr_url`, else `null`
+  - `branch`: the thread's branch, or `null` before its worktree exists; `pr_url`: the latest non-retracted done card's `pr_url`, else `null`
 - `--all-projects` additionally lists every other reachable thread on the same machine in
   other projects with at least one lead that is not already listed (linked threads keep
   their full entry and appear once), each with only `thread`, `lead`, `project`, `title`
@@ -170,6 +189,8 @@ turn is hidden; the sender's own tool calls show as any tool call does today), e
 - New lead-only, shown, unpinned kind `reach`. Fields: `thread` (required, the other
   thread's id from `--all-projects`; the one card field that holds a thread id), `why`
   (required, one line in the user's terms).
+- A handoff export carries answered `reach` cards in its history like answered question
+  cards: add `reach` to the card kinds `viewer/app/handoff.js` exports and validates.
 - An open (unanswered, not retracted) `reach` card blocks handing the thread off: add it to
   `quietReason` in `viewer/app/handoff.js` with the reason `A request to talk to another
   project is waiting`, beside the waiting sudo check.
@@ -249,7 +270,9 @@ turn is hidden; the sender's own tool calls show as any tool call does today), e
   asked for the link.
 - **Passing a question on:** a question from another thread's lead that only your user can
   answer becomes your own `question` card with no `passes_on` (the hub accepts `passes_on`
-  only for your own thread's questions); send the answer back as a `message`.
+  only for your own thread's questions); send the answer back as a `message`. It waits its
+  turn like any question card: after IDEA.md is confirmed and when no other question card
+  of yours is open.
 - Only leads talk across threads. The hub refuses a cross-thread `message` from any other
   role; a sub-lead or worker that needs another thread asks you.
 
@@ -524,12 +547,16 @@ exit. Downgrades and declines cite evidence.
 
 ### Round 12 — 2026-11-19
 
-**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+**Lanes:** intent: claude / claude-opus-5-5 (no findings); mechanics: gpt / gpt-6.2-sol; cross-family: yes. **Clean** (no upheld blocking or major finding).
 
 **Changed since Round 11:** §4 check (b) only on the first move from `planning` to `ready-for-review`; §3 an open `reach` card blocks handoff (`quietReason`); Validation line.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| mechanics | major | No rule when `session leads` fails | declined | The existing rule for every `wc.js session` command applies: on "hub unavailable", wait a minute and rerun, never work around it (`protocol/app/cards.md`, commands) |
+| mechanics | major | Timing of a forwarded peer question | downgraded (minor) | Existing lead.md rules already govern every question card (one at a time, `protocol/app/lead.md:36`); clarifying clause added |
+| mechanics | minor | Answered `reach` cards missing from handoff history | upheld | `reach` added to handoff card kinds |
+| mechanics | minor | `branch` undefined before checkout | upheld | `null` before the worktree exists |
 
 ## Prior Work
 
