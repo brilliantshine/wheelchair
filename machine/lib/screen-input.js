@@ -15,7 +15,7 @@ function runTool(cmd, argv, { env, timeoutMs }) {
       child.on('error', err => { stderr += err.message; finish(null); });
       child.on('exit', code => { if (timedOut) finish(code); });
       child.on('close', finish);
-      timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, Math.max(0, timeoutMs));
+      timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); child.stdout.destroy(); child.stderr.destroy(); finish(null); }, Math.max(0, timeoutMs));
     } catch (err) { stderr += err.message; finish(null); }
   });
 }
@@ -66,17 +66,18 @@ async function shot(ctx, { size, window, outPath }) {
   } catch (err) { await fs.unlink(tmp).catch(() => {}); throw err.status === 422 ? err : invalid(err); }
   return { path: outPath, width, height };
 }
-// baseDeadlineMs is a test hook; production uses the specified 10 second base.
-async function pointer(ctx, op, p, { baseDeadlineMs = 10000 } = {}) {
+// baseDeadlineMs and mouseupReserveMs are test hooks; production uses a 10 second base and 1 second reserve.
+async function pointer(ctx, op, p, { baseDeadlineMs = 10000, mouseupReserveMs = 1000 } = {}) {
   const end = Date.now() + baseDeadlineMs;
   const run = args => call(ctx, 'xdotool', args, Math.max(0, end - Date.now()));
   if (op === 'move') await run(['mousemove', '--', p.x, p.y]);
   else if (op === 'click') { await run(['mousemove', '--', p.x, p.y]); await run(['click', ...(p.double ? ['--repeat', '2'] : []), '--', p.button]); }
   else if (op === 'drag') {
-    await run(['mousemove', '--', p.x1, p.y1]);
+    const dragRun = args => call(ctx, 'xdotool', args, Math.max(0, end - mouseupReserveMs - Date.now()));
+    await dragRun(['mousemove', '--', p.x1, p.y1]);
     let error;
-    try { await run(['mousedown', '--', 1]); await run(['mousemove', '--', p.x2, p.y2]); } catch (err) { error = err; }
-    try { await call(ctx, 'xdotool', ['mouseup', '--', 1], 1000); } catch (err) { error ||= err; }
+    try { await dragRun(['mousedown', '--', 1]); await dragRun(['mousemove', '--', p.x2, p.y2]); } catch (err) { error = err; }
+    try { await call(ctx, 'xdotool', ['mouseup', '--', 1], Math.max(0, end - Date.now())); } catch (err) { error ||= err; }
     if (error) throw error;
   } else throw invalid(new Error('invalid pointer operation'));
   return { ok: true };

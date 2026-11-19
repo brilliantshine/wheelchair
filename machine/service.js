@@ -28,7 +28,7 @@ const { limitedUntil } = require('./lib/limits');
 const { readLines: readCodexSteps } = require('./lib/codex-steps');
 const { AsideTurns } = require('./lib/aside-turns');
 const { SudoRequests } = require('./lib/sudo');
-const { ScreenManager } = require('./lib/screen');
+const { ScreenManager, screenTools } = require('./lib/screen');
 
 const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_STATE = path.join(os.homedir(), '.local', 'state', 'wheelchair');
@@ -230,6 +230,7 @@ class MachineService {
     this.projectToolsBoot = crypto.randomUUID();
     this.projectToolsState = new Map();
     this.projectToolsWrites = new Map();
+    this.platform = process.platform;
     this.startupWarning = null;
     this.startupSamples = new Map();
     this.startupWarningRunning = false;
@@ -1942,7 +1943,13 @@ class MachineService {
         let input = await bodyOf(request);
         delete input.warnings;
         if (input.kind === 'approval' && agent.role === 'lead') {
-          if (typeof this.startupWarning === 'string') input.warnings = [this.startupWarning];
+          const warnings = [];
+          if (typeof this.startupWarning === 'string') warnings.push(this.startupWarning);
+          if (this.platform === 'linux') {
+            const { missing } = screenTools();
+            if (missing.length) warnings.push(`Screens won't work on ${os.hostname()}: missing ${missing.join(', ')}. Builds that don't use a screen are unaffected.`);
+          }
+          if (warnings.length) input.warnings = warnings.slice(0, 10);
           this.refreshStartupWarning();
         }
         if (input.kind === 'image') input = await this.copyImage(agent, input);

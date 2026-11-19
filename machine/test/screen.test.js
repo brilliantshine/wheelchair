@@ -17,6 +17,7 @@ const path = require('node:path');
 const http = require('node:http');
 const { makeTemp } = require('../../test-support/run-dir');
 const { MachineService } = require('../service');
+const { screenTools, TOOLS } = require('../lib/screen');
 
 async function fixture() {
   const root = await makeTemp('wheelchair-screen-test-'); const bin = path.join(root, 'bin'); await fsp.mkdir(bin);
@@ -32,6 +33,9 @@ if (name === 'systemctl') {
   if (args.includes('list-units')) console.log(config.units || '');
 } else if (name === 'systemd-run') {
   if (args[0] === '--version') { console.log('systemd ' + (config.version || 254)); process.exit(0); }
+  if (config.launch === 'fail') { console.error('Failed to start transient scope unit: boom'); process.exit(1); }
+  if (config.launch === 'signal') process.kill(process.pid, 'SIGKILL');
+  if (config.launch === 'hang') { console.error('Failed to hang'); const parent = process.ppid; return setInterval(() => { if (process.ppid !== parent) process.exit(0); }, 100); }
   process.exit(0);
 } else if (name === 'Xvfb') { setTimeout(() => { fs.writeSync(Number(args[args.indexOf('-displayfd') + 1]), '77\\n'); setTimeout(() => {}, 1200); }, config.displayDelay || 0); }
 else if (name === 'mcookie') console.log('0123456789abcdef');
@@ -49,7 +53,7 @@ else if (name === 'codex') { const i = args.indexOf('--'); if (i >= 0) cp.spawnS
 `;
   for (const name of ['systemctl', 'tmux', 'git', 'Xvfb', 'mcookie', 'xauth', 'ffmpeg', 'xdotool', 'xwininfo', 'codex', 'app']) await fsp.writeFile(path.join(bin, name), script, { mode: 0o755 });
   const logger = path.join(bin, 'scope-log'); await fsp.writeFile(logger, script, { mode: 0o755 });
-  await fsp.writeFile(path.join(bin, 'systemd-run'), '#!/bin/sh\nSCREEN_TOOL=systemd-run node "$SCREEN_LOGGER" "$@"\n[ "$1" = --version ] && exit 0\nwhile [ "$1" != -- ] && [ "$#" -gt 0 ]; do shift; done\n[ "$#" -gt 0 ] || exit 1\nshift\nexec "$@"\n', { mode: 0o755 });
+  await fsp.writeFile(path.join(bin, 'systemd-run'), '#!/bin/sh\nSCREEN_TOOL=systemd-run node "$SCREEN_LOGGER" "$@"\nstatus=$?\n[ "$status" = 137 ] && kill -KILL $$\n[ "$status" = 0 ] || exit "$status"\n[ "$1" = --version ] && exit 0\nwhile [ "$1" != -- ] && [ "$#" -gt 0 ]; do shift; done\n[ "$#" -gt 0 ] || exit 1\nshift\nexec "$@"\n', { mode: 0o755 });
   await fsp.writeFile(settings, '{}'); const previous = { PATH: process.env.PATH, SCREEN_LOG: process.env.SCREEN_LOG, SCREEN_SETTINGS: process.env.SCREEN_SETTINGS, SCREEN_LOGGER: process.env.SCREEN_LOGGER };
   process.env.PATH = `${bin}:${previous.PATH}`; process.env.SCREEN_LOG = log; process.env.SCREEN_SETTINGS = settings; process.env.SCREEN_LOGGER = logger;
   const service = new MachineService({ stateDir: path.join(root, 'state'), host: '127.0.0.1', port: 1 });
@@ -247,5 +251,149 @@ test('graceful screen stop escalates after three seconds', async () => {
     assert(calls.some(c => c.name === 'systemctl' && c.args.includes('--signal=SIGTERM') && c.args.includes(slice)));
     assert(calls.some(c => c.name === 'systemctl' && c.args.includes('--signal=SIGKILL') && c.args.includes(slice)));
     assert(calls.some(c => c.name === 'systemctl' && c.args.includes('stop') && c.args.includes(slice)));
+  } finally { await f.close(); }
+});
+
+
+test('screenTools reports missing tools in TOOLS order', async () => {
+  const f = await fixture(); try {
+    assert.deepEqual(screenTools(f.bin).missing, []);
+    const empty = path.join(f.root, 'empty'); await fsp.mkdir(empty);
+    assert.deepEqual(screenTools(empty).missing, TOOLS);
+  } finally { await f.close(); }
+});
+test('screen cap refuses second session, permits reuse and releases on stop', async () => {
+  const f = await fixture(); try {
+    f.service.screens.maxScreens = 1; const b = f.session('wc-thread-worker-2');
+    assert.equal((await f.call('start')).status, 200); assert.equal((await f.call('start')).status, 200);
+    const refused = await f.call('start', [], b); assert.equal(refused.status, 422); assert.match(refused.body.error, /screen limit reached: 1/);
+    assert.equal((await f.call('status')).body.running, true); await f.call('stop'); assert.equal((await f.call('start', [], b)).status, 200);
+    assert((await f.calls()).some(c => c.name === 'systemctl' && c.args.includes('--signal=SIGTERM')));
+  } finally { await f.close(); }
+});
+test('simultaneous starts reserve exactly one screen', async () => {
+  const f = await fixture(); try {
+    f.service.screens.maxScreens = 1; const b = f.session('wc-thread-worker-2');
+    const results = await Promise.all([f.call('start'), f.call('start', [], b)]);
+    assert.deepEqual(results.map(r => r.status).sort(), [200, 422]); assert.equal(f.service.screens.screens.size, 1);
+  } finally { await f.close(); }
+});
+test('first state write failure releases slot without spawning scope', async () => {
+  const f = await fixture(); try {
+    const m = f.service.screens, save = m.save; let fail = true; m.maxScreens = 1;
+    m.save = function(s) { if (fail) { fail = false; throw Error('write failed'); } return save.call(this, s); };
+    assert.notEqual((await f.call('start')).status, 200); assert.equal(m.screens.size, 0);
+    assert(!(await f.calls()).some(c => c.name === 'systemd-run' && c.args.includes('--scope')));
+    assert.equal((await f.call('start')).status, 200);
+  } finally { await f.close(); }
+});
+test('final start write failure still removes cookie and signals slice', async () => {
+  const f = await fixture(); try {
+    const m = f.service.screens, save = m.save; m.save = function(s) { if (s.state.status === 'running' || s.state.status === 'none') throw Error('write failed'); return save.call(this, s); };
+    assert.equal((await f.call('start')).status, 422); assert.equal(m.screens.size, 0);
+    assert.equal(fs.existsSync(path.join(m.dir(f.a), 'xauth')), false);
+    assert((await f.calls()).some(c => c.name === 'systemctl' && c.args.includes('--signal=SIGTERM')));
+  } finally { await f.close(); }
+});
+test('screenshots prune oldest 50 and preserve other files and numbering', async () => {
+  const f = await fixture(); try {
+    await f.call('start'); const dir = f.service.screens.dir(f.a); await fsp.writeFile(path.join(dir, 'other'), 'keep');
+    for (let i = 1; i <= 52; i++) assert.equal((await f.call('shot')).status, 200);
+    assert(!fs.existsSync(path.join(dir, 'shot-1.png'))); assert(!fs.existsSync(path.join(dir, 'shot-2.png')));
+    for (let i = 3; i <= 52; i++) assert(fs.existsSync(path.join(dir, `shot-${i}.png`)));
+    assert(fs.existsSync(path.join(dir, 'other'))); assert.match((await f.call('shot')).body.path, /shot-53\.png$/);
+  } finally { await f.close(); }
+});
+test('pruning errors do not fail shots', async () => {
+  const f = await fixture(); try {
+    await f.call('start'); const original = fs.readdirSync; let failed = false;
+    fs.readdirSync = function(dir, ...args) { if (dir === f.service.screens.dir(f.a)) { failed = true; throw Error('prune'); } return original.call(this, dir, ...args); };
+    try { assert.equal((await f.call('shot')).status, 200); assert(failed); } finally { fs.readdirSync = original; }
+  } finally { await f.close(); }
+});
+test('app pid and pgid are saved and status exposes pid', async () => {
+  const f = await fixture(); try {
+    assert.equal((await f.call('run', ['--', 'app'])).status, 200); const s = f.service.screens.screens.get(f.a.name);
+    const app = JSON.parse(await fsp.readFile(path.join(s.dir, 'state.json'))).apps[0]; assert.equal(typeof app.pid, 'number'); assert.equal(app.pid, app.pgid);
+    assert.equal((await f.call('status')).body.apps[0].pid, app.pid);
+  } finally { await f.close(); }
+});
+test('launcher failure uses log reason and failed status ignores active scope', async () => {
+  const f = await fixture(); try {
+    await f.call('start'); await f.configure({ launch: 'fail' }); const result = await f.call('run', ['--', 'app']);
+    assert.equal(result.status, 422); assert.equal(result.body.error, 'app did not start: Failed to start transient scope unit: boom');
+    assert.equal((await f.call('status')).body.apps[0].state, 'exited');
+  } finally { await f.close(); }
+});
+test('launcher signal before hand-over fails', async () => {
+  const f = await fixture(); try { await f.call('start'); await f.configure({ launch: 'signal' }); assert.equal((await f.call('run', ['--', 'app'])).status, 422); } finally { await f.close(); }
+});
+test('handover timeout kills launcher and stops scope once with fixed reason', async () => {
+  const f = await fixture(); try {
+    await f.call('start'); await f.configure({ launch: 'hang' });
+    const result = await f.call('run', ['--', 'app']); assert.equal(result.body.error, 'app did not start: no hand-over within 5 s'); assert.equal(result.status, 422);
+    const pid = f.service.screens.screens.get(f.a.name).state.apps[0].pid; await new Promise(resolve => setTimeout(resolve, 100)); assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
+    const calls = await f.calls(); assert.equal(calls.filter(c => c.name === 'systemctl' && c.args.includes('stop') && c.args.some(a => /-app1\.scope$/.test(a))).length, 1);
+  } finally { await f.close(); }
+});
+test('marker mode and app umask preserve service umask', async () => {
+  const f = await fixture(); try {
+    const output = path.join(f.root, 'umask'); const result = await f.call('run', ['--', 'sh', '-c', `umask > "${output}"`]); assert.equal(result.status, 200);
+    const marker = path.join(f.service.screens.dir(f.a), 'app-1.started'); assert.equal((await fsp.stat(marker)).mode & 0o777, 0o600);
+    assert.equal(parseInt((await fsp.readFile(output, 'utf8')).trim(), 8), process.umask());
+  } finally { await f.close(); }
+});
+test('missing interpreter and fast failing app after handover succeed', async () => {
+  const f = await fixture(); try {
+    const bad = path.join(f.root, 'bad'); await fsp.writeFile(bad, '#!/missing/interpreter\n', { mode: 0o755 });
+    await f.configure({ appExited: true }); assert.equal((await f.call('run', ['--', bad])).status, 200);
+    assert.equal((await f.call('status')).body.apps[0].state, 'exited');
+    assert.equal((await f.call('run', ['--', 'sh', '-c', 'echo Failed to x; exit 1'])).status, 200);
+  } finally { await f.close(); }
+});
+test('post-spawn and failed state write errors preserve handover outcome', async () => {
+  const f = await fixture(); try {
+    await f.call('start'); const m = f.service.screens, save = m.save;
+    m.save = function(s) { if (s.state.apps.some(a => a.pid !== null || a.failed)) throw Error('write failed'); return save.call(this, s); };
+    assert.equal((await f.call('run', ['--', 'app'])).status, 200); await f.configure({ launch: 'fail' });
+    // Allow the pre-spawn write for the second record.
+    m.save = function(s) { if (s.state.apps.at(-1)?.pid !== null || s.state.apps.at(-1)?.failed) throw Error('write failed'); return save.call(this, s); };
+    assert.equal((await f.call('run', ['--', 'app'])).status, 422);
+  } finally { await f.close(); }
+});
+
+test('asynchronous spawn error retains null process ids', async () => {
+  const f = await fixture(); try {
+    await f.call('start'); const m = f.service.screens, scopeArgs = m.scopeArgs;
+    const launchEnv = f.service.launchEnv.bind(f.service); f.service.launchEnv = (...args) => [...launchEnv(...args), ['PATH', f.bin]];
+    m.scopeArgs = async function(s, suffix) { const args = await scopeArgs.call(this, s, suffix); if (suffix.startsWith('app')) await fsp.rename(path.join(f.bin, 'systemd-run'), path.join(f.bin, 'absent-run')); return args; };
+    const result = await f.call('run', ['--', 'app']); assert.equal(result.status, 422);
+    const app = m.screens.get(f.a.name).state.apps[0]; assert.equal(app.pid, null); assert.equal(app.pgid, null);
+  } finally { await f.close(); }
+});
+test('active scope followed by launcher exit without marker fails', async () => {
+  const f = await fixture(); try { await f.call('start'); await f.configure({ launch: 'fail', active: true }); assert.equal((await f.call('run', ['--', 'app'])).status, 422); } finally { await f.close(); }
+});
+test('stopping during handover fences failure and stops app scope', async () => {
+  const f = await fixture(); try {
+    await f.call('start'); await f.configure({ launch: 'hang' }); f.service.screens.handoverMs = 1000;
+    const pending = f.call('run', ['--', 'app']); await waitForCall(f, c => c.name === 'systemd-run' && c.args.includes('app'));
+    f.a.status = 'stopped'; f.service.screens.killSession(f.a.name); assert.equal((await pending).status, 409);
+    assert((await f.calls()).some(c => c.name === 'systemctl' && c.args.includes('stop') && c.args.some(a => /-app1\.scope$/.test(a))));
+  } finally { await f.close(); }
+});
+test('removed failure log falls back and archive does not recreate directory', async () => {
+  const f = await fixture(); try {
+    await f.call('start'); await f.configure({ launch: 'hang' }); f.service.screens.handoverMs = 1000;
+    const pending = f.call('run', ['--', 'app']); await waitForCall(f, c => c.name === 'systemd-run' && c.args.includes('app'));
+    await f.service.archive('thread'); assert.equal((await pending).status, 409);
+    assert.equal(fs.existsSync(path.join(f.service.screens.root, 'thread')), false);
+  } finally { await f.close(); }
+});
+test('unreadable failure log uses launcher fallback reason', async () => {
+  const f = await fixture(); try {
+    await f.call('start'); await f.configure({ launch: 'fail' }); const m = f.service.screens, immediate = m.immediate;
+    m.immediate = function(unit) { immediate.call(this, unit); fs.unlinkSync(path.join(m.dir(f.a), 'app-1.log')); };
+    const result = await f.call('run', ['--', 'app']); assert.equal(result.status, 422); assert.match(result.body.error, /app did not start: systemd-run exited 1/);
   } finally { await f.close(); }
 });
