@@ -104,3 +104,17 @@ push read the `ROLE_REALISM` sets at `:22` and `:146`), the router and all four 
 ## Remediation rounds
 
 Appended by Stage 4 loops; never erase earlier content.
+
+### Remediation 1 — 2026-11-19
+
+Attempt 1 (claude-opus-5-5, gpt-6.2-sol on `648d1d3`): FAIL, 3 distinct gaps, all judged normal
+use (no rare paths). See `REMEDIATION-1.md`. Fixed by R1 (light, claude-haiku-5-5):
+
+| Gap | Fix at |
+|-----|--------|
+| `RE-RAISE:` evidence exception lost (T1b brief text) | `protocol/app/reviewer.md:54-59` |
+| Review `fixed` could exceed `found` for rare Accepted Risks | `protocol/app/lead.md:319-322` |
+| Lighter-mode plan review sent rare hardening to Deferred | `protocol/app/lead.md:286-288` |
+
+Validation after the merge: `node --test viewer/test/*.test.js` 685 pass, 0 fail;
+`bash machine/test/run.sh` exit 0, 345 pass, 0 fail; the Validation grep matches all seven files.
