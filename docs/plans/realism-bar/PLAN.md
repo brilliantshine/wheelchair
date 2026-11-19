@@ -372,8 +372,9 @@ Filled by Stage 3. One row per worker brief.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | Protocol text: realism.md (S1, S8 def), reviewer/verifier/lead/sub-lead rules (S3–S6, S8), fallback lines and router row (S2), template (S7, S8) | protocol/app/{realism,reviewer,verifier,lead,sub-lead,AGENTS}.md, protocol/templates/PLAN.md | standard / claude-sonnet-5-5 | wc-ac6641ae7c16-worker | grep checks in brief | dispatched |
-| T2 | Load realism.md for lead, sub-lead, reviewer, verifier (S2 code) and update tests | machine/service.js, viewer/app/settings.js, machine/test/service.test.js, viewer/test/app-settings.test.js, viewer/test/protocol-rules.test.js | light / (after T1) | | node --test viewer/test/*.test.js; bash machine/test/run.sh | not started (needs T1's realism.md) |
+| T1 | Protocol text: realism.md (S1, S8 def), reviewer/verifier/lead/sub-lead rules (S3–S6, S8), fallback lines and router row (S2), template (S7, S8) | protocol/app/{realism,reviewer,verifier,lead,sub-lead,AGENTS}.md, protocol/templates/PLAN.md | standard / claude-sonnet-5-5 | wc-ac6641ae7c16-worker | grep checks in brief; protocol-rules test | done |
+| T2 | Load realism.md for lead, sub-lead, reviewer, verifier (S2 code) and update tests | machine/service.js, viewer/app/settings.js, machine/test/service.test.js, viewer/test/app-settings.test.js, viewer/test/protocol-rules.test.js | light / gpt-6-luna | wc-ac6641ae7c16-worker-3 | node --test viewer/test/*.test.js; bash machine/test/run.sh | dispatched |
+| T1b | Exact wording fixes to T1 found on review (reviewer RE-RAISE removed, realism.md example, sub-lead record commit/found count/PASS wording, lead pull-back, template history line) | protocol/app/{realism,reviewer,sub-lead,lead}.md, protocol/templates/PLAN.md | light / gpt-6-luna | wc-ac6641ae7c16-worker-2 | grep + protocol-rules test | dispatched |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -381,3 +382,15 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 Free-form running notes: deviations discovered mid-implementation, scope events,
 anything a future session needs that fits nowhere above.
+
+- 2026-11-19 — T1 accepted (band: scout): every S1–S8 protocol item landed; scout flagged wording deviations, sent as exact edits in follow-up T1b rather than a re-run. Report's stat was stale and it ran only the protocol-rules suite; full suites run at the end.
+- 2026-11-19 — Choice: T1, lead.md: own-verifier gap handling placed as a "Gaps from your own verifiers" paragraph near the top of the verification text.
+- 2026-11-19 — Choice: T1, lead.md: progress counting lists only `check-once-built` and rare-path `accepted-risk` as excluded; a non-rare `accepted-risk` still counts.
+- 2026-11-19 — Choice: T1, sub-lead.md: PASS wording tied to the merged list (reworded again in T1b).
+- 2026-11-19 — Choice: T1, realism.md: unusual-layouts example reworded (restored to Spec wording in T1b).
+- 2026-11-19 — Choice (not reported by worker, found by scout): T1, reviewer.md: a RE-RAISE exception for variants of accepted rare paths (removed in T1b, contradicts S3).
+- 2026-11-19 — Choice (not reported by worker, found by scout): T1, reviewer.md: new "## The realism bar" heading.
+- 2026-11-19 — Choice (not reported by worker, found by scout): T1, lead.md and sub-lead.md: never-deferrable sentences point to the always-fixed list in realism.md instead of repeating it (kept: a rule lives in one file).
+- 2026-11-19 — Choice (not reported by worker, found by scout): T1, sub-lead.md: merge-and-judge text sits in step 3; the rare-path count sentence for the result sits after the steps.
+- 2026-11-19 — Choice (not reported by worker, found by scout): T1, realism.md: added "It applies in every plan mode." and "Problems in normal use are fixed."
+- 2026-11-19 — Choice (not reported by worker, found by scout): T1, templates/PLAN.md: Check Once Built note is two sentences.
