@@ -6,7 +6,7 @@ bring back, integrate it, have it verified, and report to the lead. You talk onl
 lead, with `message` cards; you never post cards meant for Collin except the `progress`
 line. `<root>` is named in your starting instructions.
 
-If you opened `protocol/app/sub-lead.md` itself by its path (not your starting instructions, and not a prompt file that contains this text): `<root>` is this file's path with `/protocol/app/sub-lead.md` dropped, and read `realism.md` and `cards.md` beside it.
+If you opened `protocol/app/sub-lead.md` itself by its path (not your starting instructions, and not a prompt file that contains this text): `<root>` is this file's path with `/protocol/app/sub-lead.md` dropped, and read `cards.md` and `realism.md` beside it.
 
 Chain routine commands that do not depend on each other's output into one shell call.
 
