@@ -11,6 +11,7 @@ const reason = r => (r.stderr || r.stdout || 'command failed').trim();
 const keys = store => Object.keys(store.keys);
 const refused = (reason, status = 400) => ({ status, body: { outcome: 'refused', reason } });
 const changed = () => refused('changed since you opened it', 409);
+const encBranch = b => encodeURIComponent(b).replace(/%2F/gi, '/');
 const tooLarge = 'project tools skipped on Codex: .mcp.json is too large to pass on the command line';
 function repoName(url) {
   const m = /^(?:https:\/\/github\.com\/|ssh:\/\/(?:git@)?github\.com\/|git@github\.com:)([a-z0-9_.-]+)\/([a-z0-9_.-]+?)(?:\.git)?$/i.exec(url.trim());
@@ -136,7 +137,7 @@ function createProjectTools({ commandAsync, stateDir, id = () => crypto.randomBy
           const newBranch = `wc-tools/${id()}`;
           await must(git(worktree, 'push', `--force-with-lease=refs/heads/${newBranch}:`, destination.url, `HEAD:refs/heads/${newBranch}`));
           const pr = await run('gh', ['pr', 'create', '--repo', destination.repo, '--head', newBranch, '--base', branch, '--title', 'Update project tools', '--body', "Saved from the wheelchair app's Project tools screen."]);
-          if (!pr.ok) return { status: 200, body: { outcome: 'pr_failed', key_revision: store.revision, keys: keys(store), branch: newBranch, compare_url: `https://github.com/${destination.repo}/compare/${branch}...${newBranch}?expand=1`, error: reason(pr) } };
+          if (!pr.ok) return { status: 200, body: { outcome: 'pr_failed', key_revision: store.revision, keys: keys(store), branch: newBranch, compare_url: `https://github.com/${destination.repo}/compare/${encBranch(branch)}...${encBranch(newBranch)}?expand=1`, error: reason(pr) } };
           return { status: 200, body: { outcome: 'opened', key_revision: store.revision, keys: keys(store), pr_url: pr.stdout.split(/\r?\n/).map(line => line.trim()).filter(line => line.startsWith('https://')).at(-1) || pr.stdout.trim(), warnings } };
         } catch (e) { return failed(e); } finally {
           if (worktree) {

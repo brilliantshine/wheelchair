@@ -296,3 +296,11 @@ test('malformed key stores never expose values in replies or launch logs', async
     for (const line of logs) assert.doesNotMatch(line, /SECRET-VALUE-123/);
   } finally { console.error = previousError; process.env.PATH = previousPath; }
 });
+test('R7-1: compare_url encodes branch names but keeps slashes', async () => {
+  const f = await fixture(); f.env.TEST_GH_FAIL = '1';
+  git('-C', f.repo, 'push', '-q', f.remote, 'main:release#2026'); git('--git-dir', f.remote, 'symbolic-ref', 'HEAD', 'refs/heads/release#2026');
+  const read = (await f.tools.read({ path: f.repo })).body;
+  const reply = await f.tools.save({ path: f.repo, token: read.token, tools: { x: { command: 'run' } }, keys: {} });
+  assert.equal(reply.body.outcome, 'pr_failed');
+  assert.match(reply.body.compare_url, /^https:\/\/github\.com\/owner\/name\/compare\/release%232026\.\.\.wc-tools\/[0-9a-f]+\?expand=1$/);
+});

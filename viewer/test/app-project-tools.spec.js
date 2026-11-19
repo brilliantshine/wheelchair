@@ -935,3 +935,49 @@ test('R6-2: typing in the web address and restoring it sends the entry unchanged
   await page.getByRole('button', { name: 'Keep changes' }).click();
   await expect(page.locator('#pt-save')).toBeDisabled();
 });
+
+test('R7-1: a setting with a newline is read-only, refuses a kind change and is sent unchanged', async ({ page }) => {
+  const calls = await open(page, { read: withTools({ n: { command: 'a', env: { NOTE: 'first\nsecond' } } }) });
+  await page.getByRole('button', { name: 'Edit n' }).click();
+  await expect(page.locator('.pt-row.ro')).toHaveCount(1);
+  await page.getByLabel('Kind', { exact: true }).selectOption('http');
+  await expect(page.getByRole('alert').filter({ hasText: KIND_MSG })).toBeVisible();
+  await page.getByLabel('Command', { exact: true }).fill('b');
+  await page.getByRole('button', { name: 'Keep changes' }).click();
+  await page.locator('#pt-save').click();
+  await expect.poll(() => calls.save.length).toBe(1);
+  expect(calls.save[0].tools.n).toEqual({ command: 'b', env: { NOTE: 'first\nsecond' } });
+});
+
+test('R7-1: a header value with a tab is read-only', async ({ page }) => {
+  await open(page, { read: withTools({ w: { type: 'http', url: 'https://x', headers: { A: 'a\tb' } } }) });
+  await page.getByRole('button', { name: 'Edit w' }).click();
+  await expect(page.locator('.pt-row.ro')).toHaveCount(1);
+});
+
+test('R7-1: a command with a control character is read-only and kept on an unrelated edit', async ({ page }) => {
+  const calls = await open(page, { read: withTools({ c: { command: 'run\u0007', args: ['a'] } }) });
+  await page.getByRole('button', { name: 'Edit c' }).click();
+  await expect(page.getByLabel('Command', { exact: true })).toHaveCount(0);
+  await page.getByLabel('Arguments, one per line').fill('b');
+  await page.getByRole('button', { name: 'Keep changes' }).click();
+  await page.locator('#pt-save').click();
+  await expect.poll(() => calls.save.length).toBe(1);
+  expect(calls.save[0].tools.c).toEqual({ command: 'run\u0007', args: ['b'] });
+});
+
+test('R7-1: a tool name with a newline shows read-only with no Edit button', async ({ page }) => {
+  await open(page, { read: withTools({ 'a\nb': { command: 'x' } }) });
+  await expect(page.locator('.pt-tool')).toHaveCount(1);
+  await expect(page.locator('.pt-tool')).toContainText('Edit in the file');
+  await expect(page.getByRole('button', { name: /^Edit / })).toHaveCount(0);
+});
+
+test('R7-1: a read-only web tool card shows its headers, key chip and unknown fields', async ({ page }) => {
+  await open(page, { read: withTools({ w: { type: 'http', url: 'https://x', env: {}, headers: { A: 'plain', B: 'Bearer ${TOK}' }, timeout: 5 } }) });
+  const card = tool(page, 'w');
+  await expect(card).toContainText('A = plain');
+  await expect(card).toContainText('B');
+  await expect(card.locator('.pt-chip.unset')).toHaveText('not set');
+  await expect(card).toContainText('timeout: 5');
+});
