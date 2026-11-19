@@ -81,3 +81,22 @@ test('project tools forwards with a 120 second timeout', async () => {
   await handle(hub, request, response, new URL('http://localhost/wheelchair/api/project-tools/save'), false);
   assert.deepEqual(args, ['hub', '/v1/project-tools/save', 'POST', { path: '/project' }, 120_000]);
 });
+
+test('machine replies keep multi-byte characters split across chunks', async (t) => {
+  const http = require('node:http');
+  const { requestJson } = require('../app/machine-client');
+  const server = http.createServer((request, response) => {
+    const bytes = Buffer.from(JSON.stringify({ GREETING: 'Olá' }));
+    const split = bytes.indexOf(0xc3);
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.write(bytes.subarray(0, split + 1));
+    setTimeout(() => {
+      response.end(bytes.subarray(split + 1));
+    }, 50);
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())));
+
+  const { body } = await requestJson(`http://127.0.0.1:${server.address().port}/x`, 'POST', {}, {}, 5000, true);
+  assert.equal(body.GREETING, 'Olá');
+});
