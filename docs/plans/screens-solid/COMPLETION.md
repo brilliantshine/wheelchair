@@ -2,7 +2,10 @@
 slug: screens-solid
 date: 2026-11-19
 implemented-by: "standard · gpt-6.1-terra (T1, T2, T3); sub-lead claude-opus-5-5 (two test adjustments, one test addition)"
-verified-by: []
+verified-by:
+  - round: 1
+    lane: claude-opus-5-5 (top-tier verifier)
+    checks: standard · gpt-6.1-terra
 ---
 
 # Completion Report — Make agent screens solid
