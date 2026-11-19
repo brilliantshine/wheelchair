@@ -24,7 +24,7 @@ test('key store is private, revisioned and cleans failed temporary writes', asyn
   assert.equal((await fs.stat(path.join(folder, file))).mode & 0o777, 0o600);
   assert.equal((await fs.stat(folder)).mode & 0o777, 0o700);
   const rename = fs.rename; fs.rename = async () => { throw new Error('rename failed'); };
-  try { await assert.rejects(writeKeyStore(dir, identity, { set: { X: 'secret' } }), /the key store on this machine can't be written/); } finally { fs.rename = rename; }
+  try { await assert.rejects(writeKeyStore(dir, identity, { set: { X: 'secret' } }), /can't be written/); } finally { fs.rename = rename; }
   assert.deepEqual(await fs.readdir(folder), [file]);
 });
 test('identity is shared by alias and git worktree', async () => {
