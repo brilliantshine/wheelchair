@@ -280,6 +280,42 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
         change: s => { s.members = [...workers(W, W), ...s.members, reviewer(41, 0)]; s.rounds = roundsOf(41); },
       });
       scenario('expanded round, long popover', { expand: true });
+
+      test('popover scrolled to the bottom grows on refresh', async ({ page }) => {
+        const before = workers(W);
+        const state = { members: [...before, ...base()], rounds: roundsOf(40) };
+        await open(page, () => lead(state.members, state.rounds));
+        const deck = page.locator('.agents-deck').filter({ hasText: 'reviewer' });
+        await spacer(page, 1000);
+        await deck.evaluate(d => d.scrollIntoView({ block: 'center' }));
+        await deck.click();
+        const pop = page.locator('.deck-pop');
+        await pop.getByRole('button', { name: 'Show all 40 rounds' }).click();
+        await pop.locator('[data-round="40"]').click();
+        await pop.evaluate(e => { e.scrollTop = e.scrollHeight; });
+        const visibleRounds = () => pop.evaluate(e => { const c = e.getBoundingClientRect(); return [...e.querySelectorAll('.deck-round-btn')].filter(b => { const r = b.getBoundingClientRect(); return r.top >= c.top + e.clientTop - 1 && r.bottom <= c.top + e.clientTop + e.clientHeight + 1; }).map(b => b.dataset.round); });
+        const want = await pop.evaluate(e => e.scrollTop);
+        expect(want).toBeGreaterThan(0);
+        const heightBefore = await pop.evaluate(e => e.clientHeight);
+        const seen = await visibleRounds();
+        expect(seen.length).toBeGreaterThan(0);
+        state.members = [...workers(W, W), ...state.members, reviewer(41, 0)]; state.rounds = roundsOf(41);
+        await spacer(page, 3000);
+        await page.waitForResponse(r => r.url().includes('/api/agents'), { timeout: 8000 });
+        await raf2(page);
+        const vh = page.viewportSize().height;
+        await expect.poll(async () => { const d = await deck.boundingBox(); return !!d && (d.y > vh || d.y + d.height > vh); }).toBe(true);
+        await expect(pop).toHaveCount(1);
+        const b = await pop.boundingBox(), vp = page.viewportSize();
+        expect(b.x).toBeGreaterThanOrEqual(8 - 0.5); expect(b.y).toBeGreaterThanOrEqual(8 - 0.5);
+        expect(b.x + b.width).toBeLessThanOrEqual(vp.width - 8 + 0.5); expect(b.y + b.height).toBeLessThanOrEqual(vp.height - 8 + 0.5);
+        const after = await pop.evaluate(e => ({ top: e.scrollTop, h: e.clientHeight, max: e.scrollHeight - e.clientHeight }));
+        console.log(`R8 ${label}: scrollTop ${want} -> ${after.top}, clientHeight ${heightBefore} -> ${after.h}`);
+        expect(after.h).toBeGreaterThan(heightBefore);
+        expect(Math.abs(after.top - Math.min(want, after.max))).toBeLessThanOrEqual(2);
+        const still = await visibleRounds();
+        for (const r of seen) expect(still).toContain(r);
+      });
     });
   });
 }
