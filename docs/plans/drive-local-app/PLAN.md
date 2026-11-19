@@ -581,9 +581,11 @@ manager, no video, no Ready-check change.
 | T1b | tricky — Screen manager, route, stop/archive/startup/sweep wiring, fake-tool tests | `machine/lib/screen.js`, `machine/service.js` (wiring only), `machine/test/screen.test.js`, `machine/test/fixtures/screen/`, one line in `machine/test/service.test.js` | gpt standard / gpt-6.1-terra | wc-940599e3df66-worker-4 | `node --test machine/test/screen.test.js`; `bash machine/test/run.sh`; `node --test viewer/test/*.test.js` | in progress |
 | T2 | `wc.js screen <op>` thin client and its test | `viewer/app/wc.js`, `viewer/test/wc-screen.test.js` | gpt light / gpt-6-luna | wc-940599e3df66-worker-2 | `node --test viewer/test/*.test.js` | in progress |
 | T3 | Live check script against real Xvfb (after T1a, T1b, T2) | `machine/test/screen-live.sh` and helpers under `machine/test/` | not started | — | `bash machine/test/screen-live.sh` | not started |
-| T4 | Agent rules (worker, verifier, sub-lead, lead), API row, routers | `protocol/app/{worker,verifier,sub-lead,lead}.md`, `machine/API.md`, `machine/AGENTS.md`, `viewer/AGENTS.md` | gpt light / gpt-6-luna | wc-940599e3df66-worker | grep checks in brief | in progress |
+| T4 | Agent rules (worker, verifier, sub-lead, lead), API row, routers | `protocol/app/{worker,verifier,sub-lead,lead}.md`, `machine/API.md`, `machine/AGENTS.md`, `viewer/AGENTS.md` | gpt light / gpt-6-luna | wc-940599e3df66-worker | grep checks in brief | done |
 
 ## Log
 
 - 2026-11-18: xdotool installed on hearth by Collin (sudo card, exit 0).
 - Build accepted: approval 4539cede-7a2f-4576-905c-0593dfb80fc6
+- 2026-11-18 — Choice: T4, line wrapping: appended text left unwrapped in worker.md, verifier.md, sub-lead.md and lead.md (report said none; scout listed this one).
+- 2026-11-18 — T4 accepted (band: scout): all seven doc changes present with the brief's text; greps re-run.
