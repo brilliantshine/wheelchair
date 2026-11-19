@@ -16,3 +16,4 @@ Verification attempt 4 at `c29a95b`: `wc-01b8cb1bf051-verifier-7` (claude-opus-5
 Gap 3 is new. Per the sub-lead rules, work stops while the surviving gaps are with Collin.
 
 **Gap 1 settled by the plan (Collin, Decision 50):** live with it; Accepted Risk added. Gap 3 fixed by C1.
+Gap 2 fixed by B1 (Decision 51).

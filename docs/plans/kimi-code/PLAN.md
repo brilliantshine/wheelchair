@@ -960,6 +960,8 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — B1 accepted (band: scout): exactly the brief; targeted 6/6 re-run by the sub-lead. Remediation 4 complete (gap 1 Decision 50, gap 2 B1, gap 3 C1).
+
 - 2026-11-18 — Collin on remediation 4 gap 2: fix it (Decision 51); dispatched as B1 (light, gpt).
 
 - 2026-11-18 — Collin on remediation 4 gap 1: live with it (Decision 50, Accepted Risk). Gap 2 (duplicate notice on a retried Stop) is with him.
