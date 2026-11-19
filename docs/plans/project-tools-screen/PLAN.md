@@ -696,7 +696,7 @@ Saving step 3 (temporary key file cleaned up, `atomicWrite` not reused as is); V
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Machine: exported validators (project-mcp, Codex), shared key-reference rule, key store, key injection at launch, `commandAsync` timeout | `machine/lib/project-mcp.js`, `machine/adapters/codex.js`, `machine/lib/project-keys.js`, `machine/service.js` (commandAsync, launch only), `machine/test/project-keys.test.js`, `machine/test/project-mcp*.test.js`, `machine/AGENTS.md` | standard / gpt-6.1-terra | wc-406595075040-worker | `bash machine/test/run.sh` | in progress |
 | T2 | Machine: read, save and remove-key routes (fetch, temp worktree, push, PR) per API.md; tricky | `machine/lib/project-tools.js`, `machine/service.js` (routes), `machine/API.md`, `machine/test/project-tools.test.js`, `machine/AGENTS.md` | standard | — | `bash machine/test/run.sh` | not started (after T1) |
-| T3 | Hub: pass-through forwarding of the three routes, 120 s timeout, machine double | `viewer/app/machine-client.js`, `viewer/app/routes.js`, `viewer/test/helpers/app-machine.js`, `viewer/test/app-project-tools.test.js`, `viewer/AGENTS.md` | standard / gpt-6.1-terra | wc-406595075040-worker-2 | `node --test viewer/test/*.test.js` | in progress |
+| T3 | Hub: pass-through forwarding of the three routes, 120 s timeout, machine double | `viewer/app/machine-client.js`, `viewer/app/routes.js`, `viewer/test/helpers/app-machine.js`, `viewer/test/app-project-tools.test.js`, `viewer/AGENTS.md` | standard / gpt-6.1-terra | wc-406595075040-worker-2 | `node --test viewer/test/*.test.js` | done |
 | T4 | Page: Project tools section in Settings (picker, tools, form, keys, replies) | `viewer/pages/project-tools.js`, `viewer/pages/settings.{html,js,css}`, `viewer/test/app-project-tools.spec.js` | standard / claude-sonnet-5-5 | wc-406595075040-worker-3 | `npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js` | in progress |
 
 ## Log
@@ -710,3 +710,9 @@ Watch List items 1-6 (Antigravity note, Codex flags, project identity, unknown f
 
 Ready check 2026-11-18: hub and machine service answer (session list ok); claude, codex and gh installed; gh logged in to github.com; Codex preflight passed (token fresh). Ready.
 Build accepted: approval b3e3c9c4-f81c-47fc-ba9c-244926be6f2c
+- 2026-11-18 — Choice: T3, `viewer/app/routes.js`: transport failures answer 504 with a generic "machine unavailable" (plus "machine timeout" / "machine returned invalid JSON"), so no request data leaks into errors.
+- 2026-11-18 — Choice: T3, `viewer/test/helpers/app-machine.js`: replies configured per route with `status`, `body`, `raw` and `delay`.
+- 2026-11-18 — Choice: T3, `viewer/app/machine-client.js`: a `strict` mode on `requestJson` (aborted response rejects, empty or non-JSON body rejects); `passThrough` defaults to 5 s and the routes pass 120 s; the timeout is the existing socket-idle timeout, as `call()` uses (scout-listed, not in the report).
+- 2026-11-18 — Choice: T3, `viewer/app/routes.js`: a non-string or empty `machine` falls back to `hub`; unknown machine detected by its error message (scout-listed, not in the report).
+- 2026-11-18 — Choice: T3, `viewer/AGENTS.md`: reworded the `machine-client.js` and `routes.js` rows (scout-listed, not in the report).
+- 2026-11-18 — T3 accepted (band: scout): viewer suite 641/641 re-run by sub-lead; scout found no brief deviation; untested 504 timeout path and idle-vs-overall timeout noted as minor.
