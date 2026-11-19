@@ -101,7 +101,9 @@ comments, other test and fixture mentions, and everything under `docs/`.
    lead on an imported thread that has a typed message, a `collin`-resolved needs card and
    imported history with `who: 'collin'`, and asserts the delivered context has `source`
    `user`, `resolved_by` `user` and `who` `user`, while the thread's stored state still has
-   `collin`.
+   `collin`. The test also puts a card record with `resolved_by: 'collin'` into
+   `thread.pinned` directly and asserts it is `user` in the delivered `pinned` and still
+   `collin` in saved state.
 
 ## Deferred
 
@@ -115,6 +117,8 @@ comments, other test and fixture mentions, and everything under `docs/`.
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A restart/import context message already queued before the upgrade is delivered later with the old `collin` tags | Needs a lead waiting (e.g. for an account) across the upgrade; one-off and harmless (a data tag, not prose) | 2 |
+| `wc.js session list --full` shows queued messages with `source: "collin"` | No rule tells agents to use `--full`; it is a data tag, not wording; D1's rename removes it | 2 |
 
 ## Review Rounds
 
@@ -143,6 +147,10 @@ comments, other test and fixture mentions, and everything under `docs/`.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | — | No findings | — | — |
+| mechanics | major | Pre-upgrade queued restart/import context keeps old tags | downgraded to minor, accepted-risk: only a lead queued across the upgrade (`viewer/app/sessions.js:846-855`); a worker needs no answer to build the Spec | Accepted Risks |
+| mechanics | major | `session list --full` exposes queued `source: "collin"` | downgraded to minor, accepted-risk: `--full` appears in no protocol file (`git grep -- --full protocol` empty); a data tag D1 renames | Accepted Risks |
+| mechanics | minor | Validation 6 does not cover `pinned` | upheld | Validation 6 seeds and asserts a pinned record |
 
 ## Prior Work
 
