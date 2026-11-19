@@ -229,3 +229,15 @@ Attempt 6: the claude verifier passed; the gpt verifier failed with 3 gaps. A (a
 | 2 Read-only cards hid kind and what they run | Kind and command+args or URL shown from the raw entry | `viewer/pages/project-tools.js:368-372` | read-only web tool test |
 
 Validation after remediation (sub-lead): `bash machine/test/run.sh` pass 208 fail 0; `node --test viewer/test/*.test.js` pass 641 fail 0; `npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js` 176 passed, twice.
+
+### Remediation 7 (after verification attempt 7, commit db0f8df)
+
+Attempt 7: the claude verifier passed; the gpt verifier failed with 3 gaps. Lead: fix all three in one task. Details are in `REMEDIATION-7.md`.
+
+| Gap | Fix | Where | Test |
+|---|---|---|---|
+| 1 A newline in a setting value flattened, and a kind change dropped it | One `unshowable` rule (C0 controls and DEL) makes setting/header names and values, command, URL, args and the tool name read-only and blocks kind changes; R7-2 shows such values in escaped form | `viewer/pages/project-tools.js:63-65,73,98-100,389,445,536` | newline setting, tab header, `\u0007` command, `\n` tool name, escaped display tests |
+| 2 Compare link not URL-encoded | Branch names encoded, `/` kept | `machine/lib/project-tools.js:14,140` | `release#2026` compare-link test |
+| 3 Read-only cards hid headers, key status, unknown fields | One card renderer (`toolCard` via `viewEntry` and `rowLine`) for editable and read-only tools | `viewer/pages/project-tools.js:108-123,356-368,382` | read-only web tool card test |
+
+Validation after remediation (sub-lead): `bash machine/test/run.sh` pass 209 fail 0; `node --test viewer/test/*.test.js` pass 641 fail 0; Project tools and Settings browser tests 186 passed twice (R7-1) and 188 passed (R7-2). The Chromium full suite fails only on the clock-dependent `app-accounts.spec.js` "lead waiting line" tests (they fail within 3 hours of midnight and do so on the pre-build merge base).
