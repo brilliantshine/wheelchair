@@ -13,7 +13,7 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 |---|---|
 | `server.js` | The whole server, with no runtime dependencies: routes, token and remember-cookie auth, graph validation, the layout pass, the app-hub glue, the agent-write contract, the lock and registry kept under the cache root. Its header comment is the route and error-code list |
 | `app/state.js` | Hub-state paths, atomic JSON writes, and thread persistence. |
-| `app/machine-client.js` | The authenticated client for every machine-service route. |
+| `app/machine-client.js` | The authenticated client for machine-service routes, including JSON status and body pass-through. |
 | `app/cards.js`, `card.js` | Hub card handling, including hidden `resolve` and `retract` cards, and the agent-side card validator/CLI. |
 | `app/sessions.js`, `wc.js` | Session policy, queues, lifecycle events, and the agent-side CLI (including `wc.js screen`, the invisible-screen commands). |
 | `app/quiet.js` | The quiet-turn detector: who owes a report, the reminders to an agent and its starter, and the system `needs` card, run on the queue retry timer. |
@@ -23,7 +23,7 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 | `app/handoff-ops.js` | Handoff operations (Create, Advance, Undo): the saved operation record, pre-claim checks, claims, Retry and Cancel, and the cancelled-claim revoke list and sweep. |
 | `app/handoff-import.js` | `POST /threads/import`: validation, repository, branch and stage checks, and the outcome table that opens, creates or advances a thread. |
 | `app/chat.js`, `threads.js`, `views.js` | Transcript assembly, thread lifecycle, and view data. |
-| `app/routes.js`, `hub.js`, `API.md` | App HTTP dispatch, module composition, and the page-facing JSON contract. |
+| `app/routes.js`, `hub.js`, `API.md` | App HTTP dispatch, including Project tools forwarding, module composition, and the page-facing JSON contract. |
 | `app/names.js`, `agents.js` | Lead name allocation and the public agent tree and machine reachability view. |
 | `app/providers.js` | Hub provider names, CLI mappings and labels: Claude, GPT, Antigravity (`gemini`) and Kimi Code (`kimi`). |
 | `app/balancer.js` | Provider and account placement, constraints and waiting decisions. |
@@ -32,6 +32,7 @@ render and send edits; a rule that decides whether a graph is accepted belongs i
 | `app/ready.js` | The Ready check before Start building: each machine reachable, on the hub's commit, and its CLIs logged in. |
 | `index.html` | The graph page, at `/wheelchair/?path=<graph>`; `/wheelchair/` with no path redirects to the app's Threads page. Holds the second copy of the box and group size constants the server's layout reserves room for |
 | `doc.html`, `doc.js` | The plan document page, read from a plan's `docs/plans/<slug>/`; its Markdown renderer is the shared `pages/markdown.js` |
+| `pages/project-tools.js` | Settings' Project tools section: machine and project picker, tool list and form, keys list, save and remove-key calls. |
 | `pages/aside.js` | Thread-page aside selection, panel, marks and list. |
 | `pages/` | The app's pages (threads, thread, doc, features, agents, settings, terminal), served at `/wheelchair/app/<page>` behind the remember cookie; their scripts and styles are public assets under `/wheelchair/assets/pages/`. `agents.html`/`agents.js` show the lead sidebar, agent tree, side panel and bottom terminal panel. `term-view.js` is the terminal view (xterm, View only / Typing switch, mouse-report filter, scrollback history) that both the Agents panel and `terminal.html`/`terminal.js` mount. `doc` opens a thread's MAP/IDEA/PLAN in the app (`doc.html`/`doc.js`/`doc.css`), and `markdown.js` is the Markdown renderer it shares with `doc.js` above, taking a link resolver |
 | `vendor/` | Vendored browser libraries for the app pages (xterm.js), public assets under `/wheelchair/assets/vendor/`. The app's fonts are not here: `/wheelchair/assets/fonts/<name>.woff2` serves four allowlisted files from `node_modules/@fontsource` (`FONT_FILES` in `server.js`) |

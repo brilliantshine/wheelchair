@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 'use strict';
 const { startupWarning } = require('./lib/startup-warning');
+const { createProjectTools } = require('./lib/project-tools');
 const { TOOL_ROLES, readProjectMcp } = require('./lib/project-mcp');
+const { projectIdentity, readKeyStore, launchKeys, keyReferences } = require('./lib/project-keys');
 
 /*
  * Wheelchair machine service.  The HTTP API is documented in machine/API.md.
@@ -92,16 +94,18 @@ function command(program, args, options = {}) {
 // fetch can take many seconds), so /v1/status, hooks and other sessions keep being answered.
 function commandAsync(program, args, options = {}) {
   return new Promise((resolve) => {
-    let stdout = ''; let stderr = ''; let settled = false;
-    const finish = (value) => { if (!settled) { settled = true; resolve(value); } };
+    let stdout = ''; let stderr = ''; let settled = false; let timer; let timedOut = false;
+    const finish = (value) => { if (!settled) { settled = true; clearTimeout(timer); resolve(value); } };
+    const { timeout, ...spawnOptions } = options;
     let child;
-    try { child = spawn(program, args, { ...options, stdio: ['ignore', 'pipe', 'pipe'] }); }
+    try { child = spawn(program, args, { ...spawnOptions, stdio: ['ignore', 'pipe', 'pipe'] }); }
     catch (error) { return finish({ ok: false, status: 127, stdout: '', stderr: error.message }); }
+    if (timeout != null) timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, timeout);
     child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
     child.stdout.on('data', (chunk) => { stdout += chunk; });
     child.stderr.on('data', (chunk) => { stderr += chunk; });
     child.on('error', (error) => finish({ ok: false, status: 127, stdout, stderr: stderr || error.message }));
-    child.on('close', (status) => finish({ ok: status === 0, status, stdout, stderr }));
+    child.on('close', (status) => finish(timedOut ? { ok: false, status: null, stdout, stderr: `${stderr}\ntimed out after ${timeout / 1000}s`, timedOut: true } : { ok: status === 0, status, stdout, stderr }));
   });
 }
 // A new worktree has no installed packages (node_modules is never committed), so tests that
@@ -213,6 +217,8 @@ function requestJson(urlText, method, headers, payload, timeout = 5000) {
 class MachineService {
   constructor(options) {
     this.stateDir = path.resolve(options.stateDir || DEFAULT_STATE);
+    this.projectTools = createProjectTools({ commandAsync, stateDir: this.stateDir });
+    this.projectToolsLocks = new Map();
     this.configPath = path.join(this.stateDir, 'machine.json');
     this.sessionsPath = path.join(this.stateDir, 'sessions.json');
     this.config = {};
@@ -633,9 +639,26 @@ class MachineService {
     const built = this.commandFor(input, session, worktree, promptPath, rolePrompt, mcp, context);
     if (TOOL_ROLES.has(input.role)) for (const warning of [...warnings, ...(built.warnings || [])]) console.error(`${session.name}: project tools: ${warning}`);
     if (built.settingsPath) await atomicWrite(built.settingsPath, `${json(built.settings)}\n`);
+    let wrapper = [];
+    if (mcp && TOOL_ROLES.has(input.role) && (input.cli === 'claude' || input.cli === 'codex') && Object.keys(keyReferences(mcp.rawServers).references).length) {
+      try {
+        const identity = await projectIdentity(worktree, commandAsync);
+        const store = await readKeyStore(this.stateDir, identity);
+        const { env, heldBack } = launchKeys(mcp.rawServers, store);
+        if (heldBack.length) console.error(`${session.name}: project tools: held back ${heldBack.join(', ')}: also used in a command, args or URL`);
+        if (Object.keys(env).length) {
+          const envDir = path.join(this.stateDir, 'session-env');
+          await mkdir(envDir);
+          const file = path.join(envDir, `${name}.json`);
+          await fsp.writeFile(file, JSON.stringify(env), { mode: 0o600 });
+          await fsp.chmod(file, 0o600);
+          wrapper = [process.execPath, path.join(__dirname, 'lib', 'env-launch.js'), file];
+        }
+      } catch (error) { console.error("the key store on this machine can't be read"); }
+    }
     const env = this.launchEnv(session, adapter);
     env.splice(adapter.sessionNameEnv ? 2 : 1, 0, ['WHEELCHAIR_SESSION_TOKEN', session.token]);
-    const commandText = ['env', ...env.map(([key, value]) => `${key}=${value}`), ...Object.entries(built.env || {}).map(([key, value]) => `${key}=${value}`), ...built.argv].map(shellQuote).join(' ');
+    const commandText = ['env', ...env.map(([key, value]) => `${key}=${value}`), ...Object.entries(built.env || {}).map(([key, value]) => `${key}=${value}`), ...wrapper, ...built.argv].map(shellQuote).join(' ');
     session.command = built.argv;
     session.pending_initial = adapter.firstMessage(input, promptPath, name);
     const tmuxArgs = ['new-session', '-d', '-s', name, '-x', '200', '-y', '50', '-c', worktree, commandText];
@@ -1661,6 +1684,20 @@ class MachineService {
         } finally { this.sensitivityWriting = false; }
       }
       if (request.method === 'GET' && url.pathname === '/v1/status') { await this.authorize(request, 'hub'); return send(response, 200, this.status()); }
+      if (request.method === 'POST' && ['/v1/project-tools/read', '/v1/project-tools/save', '/v1/project-tools/remove-key'].includes(url.pathname)) {
+        await this.authorize(request, 'hub');
+        const input = await bodyOf(request);
+        const action = url.pathname.endsWith('/read') ? 'read' : url.pathname.endsWith('/save') ? 'save' : 'removeKey';
+        if (action === 'read') { const result = await this.projectTools.read(input); return send(response, result.status, result.body); }
+        let identity;
+        try { identity = await this.projectTools.identity(input.path); } catch { const result = await this.projectTools[action](input); return send(response, result.status, result.body); }
+        const previous = this.projectToolsLocks.get(identity) || Promise.resolve();
+        let release; const current = new Promise(resolve => { release = resolve; });
+        this.projectToolsLocks.set(identity, current);
+        await previous;
+        try { const result = await this.projectTools[action](input); return send(response, result.status, result.body); }
+        finally { if (this.projectToolsLocks.get(identity) === current) this.projectToolsLocks.delete(identity); release(); }
+      }
       if (request.method === 'GET' && url.pathname === '/v1/projects') { await this.authorize(request, 'hub'); return send(response, 200, await this.projects(url.searchParams)); }
       if (request.method === 'POST' && url.pathname === '/v1/usage') {
         await this.authorize(request, 'hub');
@@ -1815,4 +1852,4 @@ if (require.main === module) {
   const options = parseArgs(process.argv.slice(2));
   new MachineService(options).listen().catch(error => { process.stderr.write(`machine: ${error.message}\n`); process.exitCode = 1; });
 }
-module.exports = { MachineService, command, DEFAULT_STATE, normalizeGithubOrigin };
+module.exports = { MachineService, command, commandAsync, DEFAULT_STATE, normalizeGithubOrigin };
