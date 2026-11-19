@@ -79,3 +79,12 @@ test('service start logs warnings only for tool roles', async () => {
     assert.match(lines[0], /not a regular file/);
   } finally { agy.prepare = oldPrepare; console.error = oldError; process.env.PATH = prior; }
 });
+test('shared document and entry validators report the reader reasons', () => {
+  const { checkDocumentText, entryReason } = require('../lib/project-mcp');
+  assert.deepEqual(checkDocumentText('{'), { ok: false, reason: 'invalid JSON' });
+  assert.deepEqual(checkDocumentText('{"mcpServers":[]}'), { ok: false, reason: 'mcpServers is not an object' });
+  assert.deepEqual(checkDocumentText(' '.repeat(32769)), { ok: false, reason: 'larger than 32 KiB' });
+  assert.equal(checkDocumentText('{"mcpServers":{}}').ok, true);
+  assert.equal(entryReason('x', { command: 'run' }), null);
+  assert.equal(entryReason('x', null), 'not a valid stdio or http entry');
+});

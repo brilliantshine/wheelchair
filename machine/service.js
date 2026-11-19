@@ -2,6 +2,7 @@
 'use strict';
 const { startupWarning } = require('./lib/startup-warning');
 const { TOOL_ROLES, readProjectMcp } = require('./lib/project-mcp');
+const { projectIdentity, readKeyStore, launchKeys, keyReferences } = require('./lib/project-keys');
 
 /*
  * Wheelchair machine service.  The HTTP API is documented in machine/API.md.
@@ -86,16 +87,18 @@ function command(program, args, options = {}) {
 // fetch can take many seconds), so /v1/status, hooks and other sessions keep being answered.
 function commandAsync(program, args, options = {}) {
   return new Promise((resolve) => {
-    let stdout = ''; let stderr = ''; let settled = false;
-    const finish = (value) => { if (!settled) { settled = true; resolve(value); } };
+    let stdout = ''; let stderr = ''; let settled = false; let timer; let timedOut = false;
+    const finish = (value) => { if (!settled) { settled = true; clearTimeout(timer); resolve(value); } };
+    const { timeout, ...spawnOptions } = options;
     let child;
-    try { child = spawn(program, args, { ...options, stdio: ['ignore', 'pipe', 'pipe'] }); }
+    try { child = spawn(program, args, { ...spawnOptions, stdio: ['ignore', 'pipe', 'pipe'] }); }
     catch (error) { return finish({ ok: false, status: 127, stdout: '', stderr: error.message }); }
+    if (timeout != null) timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, timeout);
     child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
     child.stdout.on('data', (chunk) => { stdout += chunk; });
     child.stderr.on('data', (chunk) => { stderr += chunk; });
     child.on('error', (error) => finish({ ok: false, status: 127, stdout, stderr: stderr || error.message }));
-    child.on('close', (status) => finish({ ok: status === 0, status, stdout, stderr }));
+    child.on('close', (status) => finish(timedOut ? { ok: false, status: null, stdout, stderr: `${stderr}\ntimed out after ${timeout / 1000}s`, timedOut: true } : { ok: status === 0, status, stdout, stderr }));
   });
 }
 // A new worktree has no installed packages (node_modules is never committed), so tests that
@@ -613,7 +616,24 @@ class MachineService {
     const built = this.commandFor(input, session, worktree, promptPath, rolePrompt, mcp);
     if (TOOL_ROLES.has(input.role)) for (const warning of [...warnings, ...(built.warnings || [])]) console.error(`${session.name}: project tools: ${warning}`);
     if (built.settingsPath) await atomicWrite(built.settingsPath, `${json(built.settings)}\n`);
-    const commandText = ['env', 'WHEELCHAIR_LANE=1', ...(adapter.sessionNameEnv ? [`WHEELCHAIR_SESSION_NAME=${name}`] : []), `WHEELCHAIR_SESSION_TOKEN=${session.token}`, `WHEELCHAIR_STATE_DIR=${this.stateDir}`, `WHEELCHAIR_MACHINE_ORIGIN=http://${this.config.host}:${this.config.port}`, ...Object.entries(adapter.loginEnv(dir)).map(([key, value]) => `${key}=${value}`), ...built.argv].map(shellQuote).join(' ');
+    let wrapper = [];
+    if (mcp && TOOL_ROLES.has(input.role) && (input.cli === 'claude' || input.cli === 'codex') && Object.keys(keyReferences(mcp.rawServers).references).length) {
+      try {
+        const identity = await projectIdentity(worktree, commandAsync);
+        const store = await readKeyStore(this.stateDir, identity);
+        const { env, heldBack } = launchKeys(mcp.rawServers, store);
+        if (heldBack.length) console.error(`${session.name}: project tools: held back ${heldBack.join(', ')}: also used in a command, args or URL`);
+        if (Object.keys(env).length) {
+          const envDir = path.join(this.stateDir, 'session-env');
+          await mkdir(envDir);
+          const file = path.join(envDir, `${name}.sh`);
+          await fsp.writeFile(file, Object.entries(env).map(([key, value]) => `export ${key}=${shellQuote(value)}\n`).join(''), { mode: 0o600 });
+          await fsp.chmod(file, 0o600);
+          wrapper = ['sh', '-c', '. "$0" && rm -f -- "$0" && exec "$@"', file];
+        }
+      } catch (error) { console.error(`${session.name}: project tools: could not load keys: ${error.message}`); }
+    }
+    const commandText = ['env', 'WHEELCHAIR_LANE=1', ...(adapter.sessionNameEnv ? [`WHEELCHAIR_SESSION_NAME=${name}`] : []), `WHEELCHAIR_SESSION_TOKEN=${session.token}`, `WHEELCHAIR_STATE_DIR=${this.stateDir}`, `WHEELCHAIR_MACHINE_ORIGIN=http://${this.config.host}:${this.config.port}`, ...Object.entries(adapter.loginEnv(dir)).map(([key, value]) => `${key}=${value}`), ...wrapper, ...built.argv].map(shellQuote).join(' ');
     session.command = built.argv;
     session.pending_initial = adapter.firstMessage(input, promptPath);
     const tmuxArgs = ['new-session', '-d', '-s', name, '-x', '200', '-y', '50', '-c', worktree, commandText];
@@ -1627,4 +1647,4 @@ if (require.main === module) {
   const options = parseArgs(process.argv.slice(2));
   new MachineService(options).listen().catch(error => { process.stderr.write(`machine: ${error.message}\n`); process.exitCode = 1; });
 }
-module.exports = { MachineService, command, DEFAULT_STATE, normalizeGithubOrigin };
+module.exports = { MachineService, command, commandAsync, DEFAULT_STATE, normalizeGithubOrigin };
