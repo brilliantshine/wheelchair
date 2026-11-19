@@ -1,6 +1,6 @@
 ---
 slug: local-checkout-handoff
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-18
 ---
 
@@ -789,3 +789,5 @@ Build accepted: approval 299bc31c-a6e3-48d7-ad41-a29f94b6a272
 - 2026-11-19 — Choice: T1c, `machine/test/try.test.js`: the delayed-filter fixture moves HEAD itself (`update-ref --no-deref HEAD`) before failing, because this git version had not moved HEAD at a natural delayed failure.
 - 2026-11-19 — Choice (self-read, not in report): T1c, `machine/lib/try.js`: a metadata timeout in a folder check or identity check gives "Git did not answer in time. Try again." and is never read as a mismatch; `metadataTimeout` constructor option, default 4000.
 - 2026-11-19 — T1c accepted (band: self, tricky): heavy calls (`ls-files --others --ignored`, `diff --raw`, `merge-base --is-ancestor`) on the scan deadline; metadata 4 s. My re-run: try tests 64/64, machine suite 409/409.
+
+- 2026-11-19 — All tasks done; full validation on the feature branch: machine 409/409, viewer node 695/695, browser 1057 passed with one unrelated Firefox flake (`app-send-now`, 24/24 on repeat). COMPLETION.md written; status verifying.
