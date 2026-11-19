@@ -5,7 +5,7 @@
 // copy of its own beyond the unsaved editor drafts.
 (() => {
   const API = '/wheelchair/api';
-  const SECTIONS = [['accounts', 'Accounts'], ['usage', 'Usage'], ['models', 'Models and preferences'], ['templates', 'Behavior templates'], ['writing', 'Writing style'], ['tools', 'Project tools']];
+  const SECTIONS = [['accounts', 'Accounts'], ['usage', 'Usage'], ['models', 'Models and preferences'], ['templates', 'Behavior templates'], ['writing', 'Writing style'], ['tools', 'Project tools'], ['background', 'Background Customization']];
   const TIERS = [
     ['light', 'Light', 'Spelled-out changes, few files'],
     ['standard', 'Standard', 'Most building'],
@@ -1375,6 +1375,106 @@
     return row;
   }
 
+  // Background state belongs to a section visit, not to its replaceable DOM.
+  let backgroundVisit = null;
+  let backgroundGeneration = 0;
+  const bg = window.wcBackground;
+  function discardBackground() {
+    const visit = backgroundVisit;
+    backgroundVisit = null; backgroundGeneration++;
+    if (!visit) return;
+    visit.op++;
+    if (visit.token) bg.release(visit.token);
+    if (visit.url) URL.revokeObjectURL(visit.url);
+  }
+  function ensureBackground() {
+    if (!backgroundVisit) backgroundVisit = { generation: ++backgroundGeneration, dirty: false, op: 0, pending: false, saving: false, error: '', status: '', url: null };
+    return backgroundVisit;
+  }
+  function beginBackground(v) {
+    if (v.dirty) return;
+    const m = bg.current().metadata;
+    if (!m) return;
+    v.dirty = true; v.revision = m.revision; v.imageId = m.image_id;
+    v.opacity = m.opacity; v.image = null; v.token = bg.acquire();
+  }
+  function repaintBackground(v) {
+    if (section === 'background' && backgroundVisit === v) renderPanel();
+  }
+  async function selectBackground(v, file) {
+    if (!file || v.saving) return;
+    const op = ++v.op; v.pending = true; v.error = ''; repaintBackground(v);
+    let url;
+    try {
+      if (file.size > 25 * 1024 * 1024) throw new Error('Choose an image no larger than 25 MiB.');
+      const original = new Uint8Array(await file.arrayBuffer());
+      const normalized = window.wcBackgroundFormat.normalize(original);
+      url = URL.createObjectURL(new Blob([normalized.bytes], { type: normalized.mediaType }));
+      const image = new Image();
+      await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = () => reject(new Error('Could not decode this image.')); image.src = url; });
+      if (backgroundVisit !== v || op !== v.op) return;
+      beginBackground(v);
+      if (!v.dirty) throw new Error('Background settings are not available yet.');
+      const previous = v.url;
+      v.url = url; url = null; v.image = image; v.file = original; v.mediaType = normalized.mediaType;
+      v.filename = file.name; v.size = file.size; v.imageId = null; v.status = '';
+      bg.publish(v.token, v.image, v.opacity);
+      if (previous) URL.revokeObjectURL(previous);
+    } catch (error) { if (backgroundVisit === v && op === v.op) v.error = error.message || 'Could not read this image.'; }
+    finally { if (url) URL.revokeObjectURL(url); if (backgroundVisit === v && op === v.op) { v.pending = false; repaintBackground(v); } }
+  }
+  async function saveBackground(v) {
+    if (!v.dirty || v.pending || v.saving) return;
+    v.saving = true; v.error = ''; v.status = ''; repaintBackground(v);
+    try {
+      let response;
+      if (v.file) response = await fetch(API + '/settings/background/upload?revision=' + v.revision + '&opacity=' + v.opacity, { method: 'POST', headers: { 'content-type': v.mediaType }, body: v.file });
+      else response = await fetch(API + '/settings/background', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ revision: v.revision, image_id: v.imageId, opacity: v.opacity }) });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) { const e = new Error(response.status === 409 ? 'The background changed elsewhere. Choose Cancel to load the saved version.' : (body.detail || body.error || 'Could not save background.')); throw e; }
+      void bg.accept(body);
+      if (backgroundVisit !== v) return;
+      discardBackground();
+      const next = ensureBackground(); next.status = 'Saved'; repaintBackground(next);
+    } catch (error) { if (backgroundVisit === v) { v.error = error.message || 'Could not save background.'; v.saving = false; repaintBackground(v); } }
+  }
+  function renderBackground() {
+    const v = ensureBackground();
+    const state = bg.current(), m = state.metadata;
+    const opacity = v.dirty ? v.opacity : (m?.opacity ?? 35);
+    const hasImage = v.dirty ? !!(v.image || v.imageId) : !!(m?.image_id && !m.missing_image);
+    const input = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', disabled: v.saving, 'aria-label': 'Choose background image', onchange: e => selectBackground(v, e.target.files[0]) });
+    const slider = h('input', { type: 'range', min: '0', max: '100', step: '1', value: String(opacity), disabled: v.saving || !hasImage || (!v.dirty && !state.ready), 'aria-label': 'Visibility' });
+    const value = h('span', { text: opacity + '%' });
+    slider.addEventListener('input', () => {
+      beginBackground(v); if (!v.dirty) return;
+      v.opacity = Number(slider.value); v.status = ''; value.textContent = v.opacity + '%';
+      if (v.image) bg.publish(v.token, v.image, v.opacity);
+      else bg.publishSaved(v.token, v.opacity);
+      const save = document.getElementById('background-save'); if (save) save.disabled = v.pending || v.saving;
+      const cancel = document.getElementById('background-cancel'); if (cancel) cancel.disabled = false;
+    });
+    return h('div', { class: 'background-editor' },
+      h('div', {}, h('h1', { text: 'Background Customization' }), h('p', { class: 'lede', text: 'Previews stay on this page. Save applies your background across devices.' })),
+      h('div', { class: 'box' }, h('label', {}, 'Choose an image', input),
+        v.filename && h('p', { class: 'hint', text: v.filename + ' · ' + (v.size / 1024 / 1024).toFixed(2) + ' MiB' }),
+        h('label', {}, 'Visibility ', value, slider),
+        h('div', { class: 'actions' },
+          h('button', { id: 'background-save', type: 'button', class: 'primary', text: 'Save', disabled: !v.dirty || v.pending || v.saving, onclick: () => saveBackground(v) }),
+          h('button', { id: 'background-cancel', type: 'button', text: 'Cancel', disabled: !v.dirty || v.saving, onclick: () => { discardBackground(); bg.refresh(); repaintBackground(ensureBackground()); } }),
+          h('button', { type: 'button', text: 'Remove background', disabled: v.saving || !m, onclick: () => {
+            ++v.op; v.pending = false; beginBackground(v); if (!v.dirty) return;
+            const old = v.url; v.url = null; v.image = null; v.file = null; v.imageId = null; v.filename = ''; v.opacity = 35; v.error = ''; v.status = '';
+            bg.publish(v.token, null, 35); if (old) URL.revokeObjectURL(old); repaintBackground(v);
+          } })),
+        v.error && h('p', { class: 'inline-err', role: 'alert', text: v.error }),
+        h('p', { class: 'note', role: 'status', text: v.status || (v.pending ? 'Loading image…' : (!m ? 'Loading background…' : '')) })));
+  }
+  if (bg) {
+    bg.subscribe(() => { if (section === 'background' && backgroundVisit && !backgroundVisit.dirty && !backgroundVisit.pending) repaintBackground(backgroundVisit); });
+    window.addEventListener('backgroundrestore', () => { discardBackground(); if (section === 'background') repaintBackground(ensureBackground()); });
+  }
+
   // ---------------------------------------------------------------- shell
 
   function renderSections() {
@@ -1394,7 +1494,7 @@
 
   function renderPanel() {
     if (!data) return;
-    const view = section === 'tools' ? renderProjectTools()
+    const view = section === 'background' && bg ? renderBackground() : section === 'tools' ? renderProjectTools()
       : section === 'templates' ? renderTemplates() : section === 'writing' ? renderWriting()
       : section === 'accounts' ? renderAccounts() : section === 'usage' ? renderUsage() : renderModels();
     const keep = document.getElementById('error');
@@ -1406,7 +1506,7 @@
   function readHash() {
     const key = location.hash.replace(/^#/, '');
     const next = SECTIONS.some(([k]) => k === key) ? key : 'models';
-    if (next !== section) { section = next; setNote('', false); styleNote = ''; diagram = null; }
+    if (next !== section) { if (section === 'background') discardBackground(); section = next; setNote('', false); styleNote = ''; diagram = null; }
   }
 
   window.addEventListener('hashchange', () => { readHash(); renderPanel(); syncSection(); });
