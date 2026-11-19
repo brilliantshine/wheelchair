@@ -235,3 +235,24 @@ node --test viewer/test/*.test.js   # tests 645: first run 644 pass, 1 fail ("6 
 npm --prefix viewer run test:browser   # 28 skipped, 774 passed (5.2m)
 node --test test-support/test/*.test.js   # tests 9, pass 9, fail 0
 ```
+
+### Remediation 4 — 2026-11-18
+
+Verification attempt 4 (`c29a95b`): Claude verifier PASS; GPT verifier FAIL with 3 gaps (`REMEDIATION-4.md`). Two were repeat survivors and went to Collin.
+
+| Gap | Resolution | Fixed at | Test |
+|-----|------------|----------|------|
+| 1. Title and choice from separate blocks of ordinary output (no input box) raised a permission hold | Collin: live with it (Decision 50); Accepted Risk added | — | — |
+| 2. A retried Stop after a confirmed fatal stop notified the starter twice | Collin: fix (Decision 51). `stopManagedSession` notifies only if the session was live in the hub before this Stop | `viewer/app/sessions.js:684,696` | `viewer/test/app-kimi-hub.test.js:107-109` |
+| 3. A named Kimi account with no home on a below-floor machine showed "signed out" | The machine's per-CLI Kimi problem is shown on every Kimi account there that is not signed in | `viewer/app/usage.js:69-71,110` | `viewer/test/app-kimi-settings.test.js:117` |
+
+Validation on the merged branch at `654ba6e`:
+
+```
+bash machine/test/run.sh            # tests 201, pass 201, fail 0
+bash codex/test/run.sh              # RESULT 123 passed, 0 failed
+bash install/test/run.sh            # RESULT 191 passed, 1 failed — only "real wheelchair directory is byte-identical after suite" (live Codex account files)
+node --test viewer/test/*.test.js   # tests 646, pass 646, fail 0
+npm --prefix viewer run test:browser   # 28 skipped, 774 passed (5.5m)
+node --test test-support/test/*.test.js   # tests 9, pass 9, fail 0
+```
