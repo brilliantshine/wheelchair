@@ -7,7 +7,9 @@ const { spawn, spawnSync } = require('node:child_process');
 const adapters = require('../adapters');
 const { parseOp } = require('./screen-args');
 
+// Keep in step with the screen tool list in install.sh.
 const TOOLS = ['Xvfb', 'xauth', 'mcookie', 'ffmpeg', 'xdotool', 'xwininfo', 'systemd-run', 'systemctl'];
+const KEEP_SHOTS = 50;
 const LOCKED = 'keys may still be held; run wc.js screen stop';
 const error = (status, message) => Object.assign(new Error(message), { status });
 const hash = value => crypto.createHash('sha256').update(value).digest('hex').slice(0, 12);
@@ -18,6 +20,9 @@ function executable(file) {
 function findCommand(word, cwd, searchPath) {
   if (word.includes('/')) return executable(path.resolve(cwd, word));
   return (searchPath || '').split(path.delimiter).some(dir => executable(path.resolve(cwd, dir || '.', word)));
+}
+function screenTools(searchPath = process.env.PATH) {
+  return { missing: TOOLS.filter(name => !findCommand(name, process.cwd(), searchPath)) };
 }
 function run(cmd, args, { env = process.env, timeout = 10000 } = {}) {
   return new Promise(resolve => {
@@ -32,6 +37,7 @@ function run(cmd, args, { env = process.env, timeout = 10000 } = {}) {
 class ScreenManager {
   constructor(service) {
     this.service = service; this.root = path.join(service.stateDir, 'screens'); this.prefix = `wcscreen-${hash(service.stateDir)}`;
+    this.maxScreens = 8; this.handoverMs = 5000;
     this.screens = new Map(); this.queues = new Map(); this.timers = new Set(); this.version = null;
   }
   dir(session) { return path.join(this.root, session.thread_id, session.name); }
@@ -42,6 +48,7 @@ class ScreenManager {
     const file = path.join(screen.dir, 'state.json'); const tmp = `${file}.${crypto.randomUUID()}.tmp`;
     fs.writeFileSync(tmp, `${JSON.stringify(screen.state)}\n`, { mode: 0o600 }); fs.renameSync(tmp, file);
   }
+  trySave(screen) { try { this.save(screen); } catch (e) { this.service.log(e); } }
   load(session) {
     const dir = this.dir(session); let state = {};
     try { state = JSON.parse(fs.readFileSync(path.join(dir, 'state.json'), 'utf8')); } catch (e) { if (e.code !== 'ENOENT') throw e; }
@@ -53,8 +60,8 @@ class ScreenManager {
   }
   reset(screen) {
     screen.state.generation++; screen.state.status = 'none'; screen.state.display = null; screen.state.size = null; screen.state.xvfb_pid = null; screen.state.apps = []; screen.state.input_locked = false;
-    this.save(screen); try { fs.unlinkSync(path.join(screen.dir, 'xauth')); } catch (e) { if (e.code !== 'ENOENT') this.service.log(e); }
-    if (this.screens.get(screen.name) === screen) this.screens.delete(screen.name);
+    try { this.trySave(screen); try { fs.unlinkSync(path.join(screen.dir, 'xauth')); } catch (e) { if (e.code !== 'ENOENT') this.service.log(e); } }
+    finally { if (this.screens.get(screen.name) === screen) this.screens.delete(screen.name); }
   }
   immediate(slice) {
     const end = Date.now() + 1000;
@@ -132,13 +139,15 @@ class ScreenManager {
   async start(session, size) {
     let existing = this.screens.get(session.name);
     if (existing && existing.state.status === 'running') { if (await this.scopeActive(this.unit(existing, 'x'))) return existing; await this.teardown(existing); }
-    const missing = TOOLS.filter(name => !findCommand(name, process.cwd(), process.env.PATH));
+    const { missing } = screenTools();
     if (missing.length) throw error(422, `missing on this machine: ${missing.join(', ')}`);
     const reachable = await this.ctl(['list-units', '--all', `${this.prefix}-*`]);
     if (!reachable.ok) throw error(422, 'screens need a systemd user session on this machine');
     this.check(session, true);
+    if (this.screens.size >= this.maxScreens) throw error(422, `screen limit reached: ${this.screens.size} screens running on this machine (limit ${this.maxScreens}); try again later`);
     const screen = this.load(session); screen.state.generation++; screen.state.status = 'starting'; screen.state.size = size; screen.state.display = null; screen.state.apps = []; screen.state.input_locked = false;
-    screen.base = `${this.prefix}-${session.thread_id}-${hash(session.name)}g${screen.state.generation}`; this.screens.set(session.name, screen); this.save(screen);
+    screen.base = `${this.prefix}-${session.thread_id}-${hash(session.name)}g${screen.state.generation}`; this.screens.set(session.name, screen);
+    try { this.save(screen); } catch (e) { if (this.screens.get(session.name) === screen) this.screens.delete(session.name); throw e; }
     const generation = screen.state.generation, cookieFile = path.join(screen.dir, 'xauth'); let child;
     try {
       const cookie = await run('mcookie', [], { timeout: 10000 }); if (!cookie.ok || !cookie.stdout.trim()) throw error(422, 'screen did not start');
@@ -185,11 +194,38 @@ class ScreenManager {
     const n = screen.state.next_app++; const log = path.join(screen.dir, `app-${n}.log`); const unit = this.unit(screen, `app${n}`);
     const command = ['env', '--', ...parsed.env.map(([k, v]) => `${k}=${v}`), ...parsed.command];
     const inner = session.cli === 'codex' && session.codex_mode !== 'unrestricted' ? ['codex', 'sandbox', '-c', 'sandbox_mode="workspace-write"', '-c', 'sandbox_workspace_write.network_access=true', '--', ...command] : command;
-    const args = [...await this.scopeArgs(screen, `app${n}`), ...inner]; this.fence(session, screen, generation);
-    screen.state.apps.push({ n, unit, log, command: parsed.command }); this.save(screen);
-    const fd = fs.openSync(log, 'a', 0o600); let child;
-    try { child = spawn('systemd-run', args, { env, cwd: session.worktree, detached: true, stdio: ['ignore', fd, fd] }); } finally { fs.closeSync(fd); }
-    child.unref(); await this.registered(child, unit);
+    const marker = path.join(screen.dir, `app-${n}.started`);
+    const args = [...await this.scopeArgs(screen, `app${n}`), 'sh', '-c', '(umask 077; : > "$0") || exit 127; exec "$@"', marker, ...inner]; this.fence(session, screen, generation);
+    const app = { n, unit, log, command: parsed.command, pid: null, pgid: null }; screen.state.apps.push(app); this.save(screen);
+    const fd = fs.openSync(log, 'a', 0o600); const logSize = fs.fstatSync(fd).size; let child, failure, exited = false;
+    const deadline = Date.now() + this.handoverMs;
+    try {
+      child = spawn('systemd-run', args, { env, cwd: session.worktree, detached: true, stdio: ['ignore', fd, fd] });
+      child.once('exit', (code, signal) => { exited = true; failure = `systemd-run exited ${signal || code}`; });
+      child.once('error', e => { exited = true; failure = e.message; });
+      // For Codex sessions this top process is the codex sandbox wrapper.
+      app.pid = app.pgid = child.pid ?? null; this.trySave(screen); child.unref();
+    } catch (e) { failure = e.message; exited = true; } finally { fs.closeSync(fd); }
+    let handed = false, timedOut = false;
+    for (;;) {
+      if (fs.existsSync(marker)) { handed = true; break; }
+      if (exited) break;
+      if (Date.now() >= deadline) { timedOut = true; child.kill('SIGKILL'); break; }
+      await delay(Math.min(50, Math.max(0, deadline - Date.now())));
+    }
+    if (!handed) {
+      this.immediate(unit);
+      this.fence(session, screen, generation);
+      let reason = failure;
+      if (timedOut) reason = `no hand-over within ${Math.round(this.handoverMs / 1000)} s`;
+      else {
+        try {
+          const lines = fs.readFileSync(log).subarray(logSize).toString().split(/\r?\n/).filter(line => line.trim());
+          reason = lines.filter(line => line.startsWith('Failed to')).at(-1) || lines.at(-1) || reason;
+        } catch { /* The log may have been removed. */ }
+      }
+      app.failed = true; this.trySave(screen); throw error(422, `app did not start: ${reason}`);
+    }
     try { this.fence(session, screen, generation); } catch (e) { this.immediate(unit); throw e; }
     const focused = await input.autoFocus(ctx, baseline, { startedAt: phaseStart }); this.fence(session, screen, generation);
     return { ok: true, app: n, log, focused };
@@ -213,7 +249,7 @@ class ScreenManager {
     if (op === 'stop') { if (screen) await this.teardown(screen); return { ok: true }; }
     if (op === 'status') {
       if (!screen) return { ok: true, running: false };
-      const apps = await Promise.all(screen.state.apps.map(async app => ({ n: app.n, state: await this.scopeActive(app.unit) ? 'running' : 'exited', log: app.log })));
+      const apps = await Promise.all(screen.state.apps.map(async app => ({ n: app.n, state: !app.failed && await this.scopeActive(app.unit) ? 'running' : 'exited', log: app.log, pid: app.pid ?? null })));
       return { ok: true, running: true, display: screen.state.display, size: screen.state.size, apps };
     }
     if (!screen) throw error(422, 'no screen; run wc.js screen start first');
@@ -221,7 +257,9 @@ class ScreenManager {
     const input = require('./screen-input'); const ctx = { env: { ...process.env, DISPLAY: screen.state.display, XAUTHORITY: path.join(screen.dir, 'xauth') } }; const generation = screen.state.generation;
     let result;
     try {
-      if (op === 'shot') { const n = screen.state.next_shot++; this.save(screen); result = { ok: true, ...await input.shot(ctx, { size: screen.state.size, window: parsed.window, outPath: path.join(screen.dir, `shot-${n}.png`) }) }; }
+      if (op === 'shot') { const n = screen.state.next_shot++; this.save(screen); result = { ok: true, ...await input.shot(ctx, { size: screen.state.size, window: parsed.window, outPath: path.join(screen.dir, `shot-${n}.png`) }) };
+        try { const shots = fs.readdirSync(screen.dir).map(name => ({ name, match: /^shot-(\d+)\.png$/.exec(name) })).filter(item => item.match).sort((a, b) => Number(b.match[1]) - Number(a.match[1])); for (const item of shots.slice(KEEP_SHOTS)) fs.unlinkSync(path.join(screen.dir, item.name)); } catch (e) { this.service.log(e); }
+      }
       else if (op === 'windows') result = { ok: true, windows: await input.listWindows(ctx) };
       else if (['move', 'click', 'drag'].includes(op)) result = await input.pointer(ctx, op, parsed);
       else if (op === 'type') result = await input.typeText(ctx, parsed.text);
@@ -231,4 +269,4 @@ class ScreenManager {
     this.fence(session, screen, generation); return result;
   }
 }
-module.exports = { ScreenManager };
+module.exports = { ScreenManager, screenTools, TOOLS };
