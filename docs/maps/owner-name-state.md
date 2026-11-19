@@ -6,7 +6,7 @@ Files covered: `viewer/app/state.js`, `sessions.js`, `threads.js`, `agents.js`, 
 ```text
 user message or card press -> queue and timestamp -> thread JSON -> delivery -> sent JSON / JSONL
                                                              -> restart context and pages
-sent records + imported history -> v1 export -> validate import -> stored history -> page / restart / export
+sent records + imported history -> v2 export -> validate v1 or v2 import -> stored history -> page / restart / export
 ```
 
 New messages and card actions use `user` and stamp `user_at`; queues are mirrored in the session and thread. Thread reads normalize old owner labels in both queues, sent records, cards, pinned cards, imported history and interrupted handoff history. The append-only `sent.jsonl` overflow is unchanged.
@@ -15,6 +15,6 @@ Lists order by `user_at` with a creation-time fallback. Restart, pending bubbles
 
 Handoff exports use version 2 and `who: user`. Import accepts version 1 with `who: collin`, converting it to `user`, and version 2 with `who: user`; older installs reject version 2 as an unknown format or version.
 
-A migration must cover both queue copies, bounded sent, JSONL, timestamps, cards and imported history, or keep compatible readers; export can retain v1's old wire value while internal values change. Readers for old v1 exports remain necessary independently of local state migration. JSONL is appended here, but export and restart read `thread.sent`, not the spill (`viewer/app/state.js:101`, `viewer/app/handoff.js:60`, `viewer/app/threads.js:146`). Converting previously downloaded files cannot be accomplished by migrating local state alone.
+JSONL is appended here, but export and restart read `thread.sent`, not the spill, so the spill keeps whatever labels it was written with. Previously downloaded v1 files are not converted on disk; the v1 reader converts them on import.
 
 Not checked: third-party consumers, arbitrary externally edited state, all handoff operation failure paths, or older releases beyond the validator shown here.
