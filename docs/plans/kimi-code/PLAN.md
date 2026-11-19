@@ -960,6 +960,8 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — L1 accepted (band: scout): exactly the brief's helper (reads the isolated machine's name-keyed `sessions.json`); syntax and test-support 9/9 re-run by the sub-lead; the worker's live check 5 run: `5 pinned light model | PASS`, cleanup clean, `1 passed; 0 failed`. Remediation 6 gap 4 fixed; gap 1 with Collin.
+
 - 2026-11-18 — Choice: W1, `machine/test/kimi-turns.test.js:185,280-303`: both tests folded into existing ones (approval-panel recovery fixture `wc-h-worker`; `transcript_source` after a copy), with the kill-session expectation extended (scout-found; report said none). W1 accepted (band: scout): machine 204/204 re-run by the sub-lead. Remediation 6 gaps 2 and 3 fixed.
 
 - 2026-11-18 — Lead: proceed with remediation 6 gaps 2-4. W1 (light, gpt: recovery at a prompt, strip `transcript_source`) and L1 (light, gpt: live script reads the machine state file) dispatched; both waiting for account room. Gap 1 with Collin.
