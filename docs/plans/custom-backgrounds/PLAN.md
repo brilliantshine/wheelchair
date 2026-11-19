@@ -1,6 +1,6 @@
 ---
 slug: custom-backgrounds
-status: approved
+status: implementing
 created: 2026-11-19
 adopted-from: user-supplied 1-plan.md and realism review copy
 ---
