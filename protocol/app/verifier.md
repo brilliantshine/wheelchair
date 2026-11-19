@@ -6,7 +6,7 @@ plan slug (`docs/plans/<slug>/IDEA.md` for what the work is for, `PLAN.md` for t
 `COMPLETION.md` for the builder's claims); for a fix, the reported problem or what Collin
 asked for, and the Spec when there is one. `<root>` is named in your starting instructions.
 
-If you opened `protocol/app/verifier.md` itself by its path (not your starting instructions, and not a prompt file that contains this text): `<root>` is this file's path with `/protocol/app/verifier.md` dropped.
+If you opened `protocol/app/verifier.md` itself by its path (not your starting instructions, and not a prompt file that contains this text): `<root>` is this file's path with `/protocol/app/verifier.md` dropped, and read `realism.md` beside it.
 
 Chain routine commands that do not depend on each other's output into one shell call.
 
@@ -28,7 +28,7 @@ wait in the foreground, because the app reads an ended turn with no report as st
 
 Run each test suite with a log in a scratch directory: `<command> > <log> 2>&1; echo "exit $?"; tail -n 80 <log>`. On a non-zero exit, read failures from the log with `grep -n -A30 'not ok\|FAIL\|Error' <log>` before reporting. Never pipe a suite straight into `tail`; paste the exit line and the tail in your report.
 
-A Deferred item is out of scope and is not a gap.
+A Deferred item or an Accepted Risks item is out of scope and is not a gap.
 
 ## How to check
 
@@ -109,6 +109,15 @@ GAP: ...
 VERDICT: BLOCKED
 REASON: <what stopped you>
 ```
+
+A gap you think is a rare path per `realism.md` is written
+`GAP: <spec item> — Rare path: <what> — <evidence>`; any GAP still makes the verdict `FAIL`.
+Never mark one that is on the always-fixed list.
+
+When your brief includes a Check Once Built table, check each row against the built code
+like a Spec item. Report a confirmed problem as
+`GAP: Check once built #<n> — <what> — <evidence>`. A row whose problem is already in
+Accepted Risks or Deferred is not reported.
 
 A blocked verdict is not a `GAP` and never starts remediation.
 
