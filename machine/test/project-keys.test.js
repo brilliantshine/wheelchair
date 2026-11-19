@@ -95,6 +95,17 @@ test('launcher errors are fixed messages and remove the file', async () => {
   assert.ok(!missing.stderr.includes("a'b")); await assert.rejects(fs.stat(file), { code: 'ENOENT' });
 });
 
+test('an invalid executable cannot leak key values in startup errors', async () => {
+  const dir = await makeTemp('env-bad-exec-'), file = path.join(dir, 'env.json'), agent = path.join(dir, 'agent');
+  const value = "a'b\"c $(x) ${y}\nnext";
+  await fs.writeFile(file, JSON.stringify({ PLAIN: value }));
+  await fs.writeFile(agent, 'not an executable format\n', { mode: 0o755 });
+  const result = spawnSync(process.execPath, [path.join(__dirname, '../lib/env-launch.js'), file, agent], { encoding: 'utf8' });
+  assert.notEqual(result.status, 0);
+  for (const part of [value, "a'b", 'next']) assert.ok(!(result.stdout + result.stderr).includes(part));
+  await assert.rejects(fs.stat(file), { code: 'ENOENT' });
+});
+
 test('nested and unbalanced substitutions hold back every referenced name', () => {
   const servers = { x: { command: 'run', args: ['${PRIMARY:-${FALLBACK}}', '${BROKEN:-${INNER}'], env: { FALLBACK: '${FALLBACK}' } }, web: { type: 'http', url: 'https://x/${A:-x${B:-${C}}}' } };
   const { heldBack } = keyReferences(servers);
