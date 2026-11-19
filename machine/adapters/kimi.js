@@ -16,16 +16,21 @@ function readConfig(dir) {
   catch (e) { return e.code === 'ENOENT' ? {} : { problem: "Kimi Code's config.toml can't be read" }; }
   if (text.includes('"""') || text.includes("'''")) return { problem: "Kimi Code's config.toml has multi-line strings wheelchair can't read" };
   const result = {}; let table = '', depth = 0;
-  const bracketDelta = raw => {
-    let delta = 0, quoted = false, escaped = false;
-    for (const char of raw) {
-      if (quoted && escaped) { escaped = false; continue; }
-      if (quoted && char === '\\') { escaped = true; continue; }
-      if (char === '"') quoted = !quoted;
-      else if (!quoted && char === '#') break;
-      else if (!quoted && char === '[') delta++;
-      else if (!quoted && char === ']') delta--;
+  // TOML basic strings ("…", with \ escapes) and literal strings ('…', no escapes) hide brackets and #.
+  const scan = (raw, onChar) => {
+    let quote = '', escaped = false;
+    for (let i = 0; i < raw.length; i++) {
+      const char = raw[i];
+      if (quote === '"' && escaped) { escaped = false; continue; }
+      if (quote === '"' && char === '\\') { escaped = true; continue; }
+      if (quote) { if (char === quote) quote = ''; continue; }
+      if (char === '"' || char === "'") { quote = char; continue; }
+      if (onChar(char, i) === false) return;
     }
+  };
+  const bracketDelta = raw => {
+    let delta = 0;
+    scan(raw, char => { if (char === '#') return false; if (char === '[') delta++; else if (char === ']') delta--; });
     return delta;
   };
   for (const line of text.split(/\r?\n/)) {
@@ -34,14 +39,8 @@ function readConfig(dir) {
     if (header) { table = header[1].trim(); continue; }
     if (/^\s*\[\[/.test(line)) { table = null; continue; }
     const kv = line.match(/^\s*([\w-]+)\s*=\s*(.*)$/); if (!kv) continue;
-    let raw = kv[2], quoted = false, escaped = false;
-    for (let i = 0; i < raw.length; i++) {
-      const char = raw[i];
-      if (quoted && escaped) { escaped = false; continue; }
-      if (quoted && char === '\\') { escaped = true; continue; }
-      if (char === '"') quoted = !quoted;
-      else if (char === '#' && !quoted) { raw = raw.slice(0, i); break; }
-    }
+    let raw = kv[2];
+    scan(kv[2], (char, i) => { if (char === '#') { raw = kv[2].slice(0, i); return false; } });
     const valueDepth = bracketDelta(raw);
     if (valueDepth > 0) { depth = valueDepth; continue; }
     let value; try { value = JSON.parse(raw.trim()); } catch { continue; }

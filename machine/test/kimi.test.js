@@ -75,6 +75,13 @@ test('config reader tracks nested brackets outside quoted strings and comments',
   assert.deepEqual(kimi.loginStatus(dir), { logged_in: true, authenticated: true });
 });
 
+test('config reader treats single-quoted literal strings like quoted text', () => {
+  const dir = fixture(), file = path.join(dir, 'config.toml');
+  fs.writeFileSync(file, `default_model = "kimi-code/k3"\nignored = [\n  'a]b',\n  'c#d',\n  '[e]',\n]\nnote = 'x # y' # comment\n[providers."managed:kimi-code".oauth]\nkey = "oauth/dummy" # note\noauth_host = "https://auth.kimi.ai"\n`);
+  assert.deepEqual(kimi.readConfig(dir), { default_model: 'kimi-code/k3', key: 'oauth/dummy', oauth_host: 'https://auth.kimi.ai' });
+  assert.deepEqual(kimi.loginStatus(dir), { logged_in: true, authenticated: true });
+});
+
 test('China or absent oauth host prevents eligibility despite authentication', () => {
   const dir = fixture(), file = path.join(dir, 'config.toml'), original = fs.readFileSync(file, 'utf8');
   for (const host of ['https://auth.kimi.com', null]) {
