@@ -171,7 +171,7 @@ comments, other test and fixture mentions, and everything under `docs/`.
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Rewrite `protocol/app/lead.md` per Rewriting rules 1-4 | `protocol/app/lead.md` | standard, claude / claude-sonnet-5-5 | wc-d4f6b0a949c2-worker | Validation 1, 2 on lead.md | done |
-| T2 | Rewrite the other protocol files and routers per Rewriting rules 1-5, incl. sudo message quote and legacy marker | `protocol/app/{sub-lead,worker,verifier,aside,cards,cards-lead,AGENTS}.md`, `protocol/{graphs,diagrams,sensitivity}.md`, `AGENTS.md`, `sudo-helper/AGENTS.md` | standard, claude / claude-sonnet-5-5 | wc-d4f6b0a949c2-worker-2 | Validation 1, 2, 3 | running |
+| T2 | Rewrite the other protocol files and routers per Rewriting rules 1-5, incl. sudo message quote and legacy marker | `protocol/app/{sub-lead,worker,verifier,aside,cards,cards-lead,AGENTS}.md`, `protocol/{graphs,diagrams,sensitivity}.md`, `AGENTS.md`, `sudo-helper/AGENTS.md` | standard, claude / claude-sonnet-5-5 | wc-d4f6b0a949c2-worker-2 | Validation 1, 2, 3 | done |
 | T3 | Code: settings prompt lines, sudo message, history "You", lead-context relabel; tests | `viewer/app/settings.js`, `machine/service.js`, `viewer/pages/thread.js`, `viewer/app/threads.js`, `machine/test/sudo.test.js`, `viewer/test/*` | standard, gpt / gpt-6.1-terra | wc-d4f6b0a949c2-worker-3 | Validation 1 (code files), 4, 5, 6 | running |
 
 ## Log
@@ -181,3 +181,7 @@ comments, other test and fixture mentions, and everything under `docs/`.
 - 2026-11-19 — Choice: T1, lead.md headings: renamed to "How you talk to the user" and "Asking the user to run something as root".
 - 2026-11-19 — Choice: T1, lead.md: the curly apostrophe in "Collin’s" kept as "the user’s".
 - 2026-11-19 — T1 accepted (band: bigger-scout): scout found one ambiguous "they" (lead.md:461); worker changed it to "the user".
+- 2026-11-19 — Choice: T2, cards.md marker table: "The user" capitalised at the start of table cells.
+- 2026-11-19 — Choice: T2, aside.md: "answer him" became "answer the user", to avoid ambiguity with the lead.
+- 2026-11-19 — Choice: T2, sub-lead.md step 1a: the reader sentence reflowed over lines 32-35 so the older phrase sits on one line.
+- 2026-11-19 — T2 accepted (band: scout): scout flagged four ambiguous "they/them" (sub-lead.md:264, aside.md:22, cards-lead.md:118, :277); the worker changed each to "the user".
