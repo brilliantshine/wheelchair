@@ -327,7 +327,7 @@ discovery (`findTranscript`), to the parsers, or to the hub's other per-thread m
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Machine: S1 `known` transcript route, S2 cheap copies and dedupe sets, API.md, machine S5 tests | `machine/service.js`, `machine/API.md`, `machine/test/` | standard, gpt-6.1-terra | wc-76fb8f56e690-worker | `bash machine/test/run.sh` | done |
-| T2 | Hub: S3 chat/report split, S4 idle sweep, S4b last-seen throttle, fake machine new form, hub S5 tests | `viewer/app/{chat,hub,state,sessions,asides,routes}.js`, `viewer/test/` | standard, gpt-6.1-terra | wc-76fb8f56e690-worker-2 | `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser` | running |
+| T2 | Hub: S3 chat/report split, S4 idle sweep, S4b last-seen throttle, fake machine new form, hub S5 tests | `viewer/app/{chat,hub,state,sessions,asides,routes}.js`, `viewer/test/` | standard, gpt-6.1-terra | wc-76fb8f56e690-worker-2 | `node --test viewer/test/*.test.js`; `npm --prefix viewer run test:browser` | done |
 | T3 | Machine test gaps from T1 review (gen/end, malformed known, blank lines across batches, no-trailing-newline set, stop/archive drops, idle boundary, archived queue wait) | `machine/test/service.test.js` | standard, gpt-6.1-terra | wc-76fb8f56e690-worker-3 | `bash machine/test/run.sh` | done |
 
 ## Log
@@ -340,3 +340,10 @@ discovery (`findTranscript`), to the parsers, or to the hub's other per-thread m
 - 2026-11-19 — Choice: T3, machine/test/service.test.js: a second copy after the partial-tail append checks the rebuild against the fused line.
 - 2026-11-19 — Choice: T3, machine/test/service.test.js: archived-queue test uses the archive API and a deferred `fs/promises.appendFile` stub (restored in `finally`), plus a still-pending check before release.
 - 2026-11-19 — Choice: T3, machine/test/service.test.js: worker listed 2 choices; scout also saw: malformed `known` tested over HTTP, `gen` computed inline with `statSync`, the idle test adds a final kept-file content check.
+- 2026-11-19 — T2 accepted (band: scout): hub chat/report split, idle sweep, last-seen throttle. Sent back once (same session) for: parser exceptions swallowed by the fetch try (restored to propagate), and tests for mismatched/no-entry `unchanged` and a pending `hub.chat` protecting its entry. Sub-lead re-ran `node --test viewer/test/*.test.js`: one run 696/698 (2 failures, not reproduced), then three runs 698/698; the worker also saw one unrelated address-in-use flake. Timer stop: the hub has no shutdown path and its other timers are not cleared either; the sweep timer is unref'd, and the lead agreed no shutdown hook is needed.
+- 2026-11-19 — Choice: T2, viewer/app/hub.js: injectable `now` and `transcriptSweepInterval` constructor options; sweep is an exported module function `sweepTranscripts(hub)`; 600 000 ms cutoff (strictly older) and 60 000 ms interval.
+- 2026-11-19 — Choice: T2, viewer/app/chat.js: parse key is `JSON.stringify([cli, name, parent_title])`; no other thread field reaches the parsers.
+- 2026-11-19 — Choice: T2, viewer/app/chat.js: `localTranscript` helper shared by report and chat paths; `chatTranscript` exported for tests; `keepLast` option removed.
+- 2026-11-19 — Choice: T2, viewer/test/helpers/app-machine.js: fake-machine option `versionedTranscripts`, which answers empty data as `unavailable`.
+- 2026-11-19 — Choice: T2, viewer/app/hub.js: a failed `machines.json` write keeps the 60 s reservation (no retry within the minute).
+- 2026-11-19 — Choice: T2, tests: the held-lock aside test uses a manual `withThread` gate; machines.json write count is measured by spying on `state.markMachineSeen`.
