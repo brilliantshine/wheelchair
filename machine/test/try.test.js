@@ -77,3 +77,28 @@ test('Status on a repo with an LFS filter runs no filter; pending is interrupted
   const status = await instance.handle({ action: 'status', project: repo, thread_id: '0123456789ab' });
   assert.equal(status.state, 'interrupted'); assert.deepEqual(status.files, ['file']); await assert.rejects(fs.access(log));
 });
+async function tryFixture() {
+  const { makeTemp } = require('../../test-support/run-dir'); const fs = require('node:fs/promises'); const path = require('node:path'); const { spawnSync } = require('node:child_process');
+  const root = await makeTemp('try-fixture-'); const repo = path.join(root, 'repo'); await fs.mkdir(repo);
+  const git = (...args) => { const r = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8' }); assert.equal(r.status, 0, r.stderr); return r.stdout.trim(); };
+  git('init', '-b', 'main'); git('config', 'user.email', 'test@example.com'); git('config', 'user.name', 'Test');
+  await fs.writeFile(path.join(repo, 'file'), 'base\n'); git('add', 'file'); git('commit', '-m', 'base');
+  git('switch', '-c', 'wc/0123456789ab'); await fs.writeFile(path.join(repo, 'file'), 'thread\n'); git('commit', '-am', 'thread'); git('switch', 'main');
+  const instance = new TryService({ stateDir: path.join(root, 'state'), root: path.join(root, 'wheelchair'), projects: async () => ({ checked: { ok: true } }) });
+  const request = { action: 'try', project: repo, thread_id: '0123456789ab' };
+  const done = async () => { for (let i = 0; i < 200; i++) { const status = await instance.handle({ ...request, action: 'status' }); if (status.state !== 'busy') return status; await new Promise(resolve => setTimeout(resolve, 20)); } throw new Error('switch did not finish'); };
+  return { root, repo, git, instance, request, done };
+}
+test('try from a clean branch acknowledges, switches and remembers the return point', async () => {
+  const f = await tryFixture(); const initial = f.git('rev-parse', 'HEAD');
+  const answer = await f.instance.handle(f.request); assert.equal(answer.accepted, true); assert.equal(answer.status.state, 'busy');
+  const status = await f.done(); assert.equal(status.state, 'trying-this'); assert.equal(status.last.outcome, 'success');
+  const record = await f.instance.read(f.repo); assert.equal(record.active.return_point.sha, initial); assert.equal(f.git('rev-parse', record.active.return_ref), initial);
+  assert.equal((await f.instance.handle(f.request)).reason, 'Already showing the newest');
+});
+test('a dirty first Try answers accepted then writes last as refused with the files', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
+  await fs.writeFile(path.join(f.repo, 'new file'), 'mine'); f.git('config', 'status.showUntrackedFiles', 'no');
+  assert.equal((await f.instance.handle(f.request)).accepted, true);
+  const status = await f.done(); assert.equal(status.state, 'none'); assert.equal(status.last.outcome, 'refused'); assert.deepEqual(status.last.files, ['new file']);
+});
