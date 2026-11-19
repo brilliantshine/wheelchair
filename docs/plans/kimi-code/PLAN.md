@@ -89,6 +89,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 52 | Kimi approval detection allows an optional `▶` or `❯` before both the title and the choice, keeping Decision 48's shape; tested with the installed renderer's exact lines, false-positive tests unchanged | Verification attempt 6: the real renderer draws `▶ Run this command?` / `▶ 1. Approve once`, which Decision 48's matcher rejected | user |
 | 53 | Stop refining Kimi approval detection; layouts beyond the tested ones (long write previews, plan reviews with custom choices) are an Accepted Risk | Approval detection failed verification again in attempt 7 after R1, Q1, A1 and A2 | user |
 | 54 | A recovered pane showing Kimi's folder-trust screen (`Trust this folder?` with `Trust and continue` and `Exit`) is classed as Kimi, checked before the Claude fallback; tested with the recorded trust screen | Recovered-pane classification failed verification attempt 9 after R1 and W1 (a Kimi pane at folder trust was classed as Claude) | user |
+| 55 | Live with the sub-second window between the final Kimi version check and launch; recorded as an Accepted Risk | Verification attempt 10: a binary replaced during the final `--version` check still launched after V1 | user |
 
 ## Spec
 
@@ -626,6 +627,7 @@ re-raise them.
 | Malformed SemVer strings such as 02.6.3 or 2.6.4-01 pass the version floor; only kimi --version output is parsed and it prints plain versions | Collin's decision after the version-floor gap survived two fix attempts (Decision 49) | verification |
 | Under the auto permission setting, ordinary Kimi output showing both approval phrases near the bottom while no input box shows can raise a stray permission card; it clears when the input box returns. Under bypass, Kimi runs Never Ask and shows no approval screen | Collin's decision after permission-prompt detection failed verification again (Decision 50) | verification |
 | Under the auto permission setting, Kimi approval panels whose title scrolls above the detection window (long write previews) or plan reviews with custom choices raise no card; the agent waits until someone looks at its terminal. Under bypass Kimi runs Never Ask and shows no approvals | Collin's decision to stop refining approval detection after verification attempt 7 (Decision 53) | verification |
+| A kimi binary replaced by an older one during the final version check (under a second, right before launch) can still launch | Collin's decision after the version-at-launch gap survived V1 (Decision 55) | verification |
 
 ## Review Rounds
 
@@ -963,6 +965,8 @@ Filled by Stage 3. One row per worker brief.
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
 ## Log
+
+- 2026-11-18 — Collin on remediation 10 gap 1: live with it (Decision 55, Accepted Risk). Remediation 10 complete.
 
 - 2026-11-18 — N1 accepted (band: scout): only user prompts, text parts, tool calls and tool results count as recognised; targeted 27/27 and app-quiet 18/18 twice re-run by the sub-lead (the app-quiet file is untouched by this build). Remediation 10 gap 2 fixed; gap 1 with Collin.
 

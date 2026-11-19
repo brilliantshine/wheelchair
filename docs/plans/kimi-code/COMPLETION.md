@@ -354,3 +354,12 @@ node --test viewer/test/*.test.js   # in two halves: 439/439 and 207/208 (server
 npm --prefix viewer run test:browser   # TZ=UTC: 773 passed, 1 failed, 28 skipped; the failure (chromium pages.spec.js:360) passes alone
 node --test test-support/test/*.test.js   # tests 9, pass 9, fail 0
 ```
+
+### Remediation 10 — 2026-11-18
+
+Verification attempt 10 (`0f8b93f`): Claude verifier PASS; GPT verifier FAIL with 2 gaps (`REMEDIATION-10.md`).
+
+| Gap | Resolution | Fixed at | Test |
+|-----|------------|----------|------|
+| 1. A binary replaced during the final version check still launched | Collin: live with it (Decision 55); Accepted Risk added | — | — |
+| 2. A thinking-only Kimi log rendered an empty chat | Only user prompts, text parts, tool calls and tool results count as recognised rows | `viewer/app/chat.js:214` | `viewer/test/app-kimi-hub.test.js:27-29` |

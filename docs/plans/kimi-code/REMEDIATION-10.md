@@ -12,3 +12,4 @@ Verification attempt 10 at `0f8b93f`: `wc-01b8cb1bf051-verifier-19` (claude-opus
 Gap 1 is the version-at-launch gap again after V1: sent to the lead. Gap 2 is new and small.
 
 Gap 2 fixed by N1.
+Gap 1 settled by Collin (Decision 55): Accepted Risk.
