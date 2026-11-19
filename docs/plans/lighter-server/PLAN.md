@@ -140,7 +140,7 @@ Dropped (#27). The machine service's tmux, readiness, trust, Codex step and `sta
 ### S7. Browser tests and measurement
 
 - `viewer/playwright.config.js` sets `workers: 2` (#11). `--workers` on the command line still overrides.
-- No benchmark script (#70). After the change is merged and installed, the lead measures the live hub's CPU by hand as the Log baseline was taken: CPU seconds of `viewer/server.js --service` over 60 seconds with a similar number of agents live and one thread page open, compared with 30.8 CPU-seconds per 60 s. This is reported to Collin, not a build gate.
+- No benchmark script (#70). After the change is merged and installed, the lead measures the live hub's CPU by hand as the Log baseline was taken: CPU seconds of `viewer/server.js --service` over 60 seconds with a similar number of agents live, one thread page open and the hub up about 47 minutes (as at the baseline), compared with 30.8 CPU-seconds per 60 s; RSS is recorded beside the reading. This is reported to Collin, not a build gate.
 - Machine tests and `test-support/run-dir.js` are not changed by this plan; the leftover tmux fix is its own thread (#70).
 
 ### Non-goals
@@ -161,8 +161,6 @@ Commands (all must pass):
 ```bash
 node --test viewer/test/*.test.js
 npm --prefix viewer run test:browser
-bash machine/test/run.sh
-node --test test-support/test/*.test.js
 bash install/test/run.sh
 ```
 
@@ -532,6 +530,9 @@ Collin chose "Keep going" (budget reset).
 
 | Lens | Severity | Finding | Verdict | Fix |
 |------|----------|---------|---------|-----|
+| intent | minor | Moved section hands over the benchmark and `workers: 2` | upheld | Section keeps only tmux; benchmark marked dropped |
+| intent | minor | By-hand reading needs comparable uptime | upheld | S7: about 47 min uptime, RSS recorded |
+| intent | minor | Commands still run machine and test-support suites this plan no longer touches | upheld | Removed from Commands |
 
 ## Prior Work
 
@@ -554,11 +555,9 @@ For the lead of the "Chat fetches only changed transcripts" thread (#60). Settle
 
 ## Moved to the test cleanup thread
 
-For the lead of the machine-test cleanup thread (#70). The S7 text as it stood after review round 19; treat as a starting design:
+For the lead of the machine-test cleanup thread (#70). The tmux part of S7 as it stood after review round 19; treat as a starting design. (The benchmark that sat beside it was dropped, not moved.)
 
-- `viewer/playwright.config.js` sets `workers: 2` (#11). `--workers` on the command line still overrides.
 - Machine tests never touch the real tmux server (#66, #68). The leaked process was a test `claude` (settings under `/tmp/wheelchair-machine-test-VRhNCN`, session `wc-t-worker-1`, test token `twice`, `machine/test/service.test.js:345-353`) running as a pane of Collin's real tmux server since 2026-11-15, even though the fake `tmux` was already on `PATH` then (since 2026-11-14), so real tmux was reached anyway. The worker first finds how (for example `close()` restoring `PATH` while an async start is in flight, `machine/test/service.test.js:61-69`), records it in the Log, and fixes it. Then, in `test-support/run-dir.js`'s `runDir()` (on first call, before it returns, so before anything a test spawns through it): set `process.env.TMUX_TMPDIR` to a `tmux` folder inside `runDir()`, delete `TMUX` and `TMUX_PANE`, and register `onCleanup(() => tmux kill-server against that folder)`, following `test-support/smoke/harness.js:108,174`. Cleanup and sweep run the real tmux by the absolute path resolved when `runDir()` first runs (before any test puts a fake `tmux` on `PATH`); if no real tmux is installed there is nothing to kill. If `kill-server` fails for a reason other than "no server running", the folder is kept so a later sweep can retry. In `test-support/run-dir.js`'s sweep of an abandoned owner's folder (owner PID gone or start time changed), if the folder has a `tmux` subfolder, run `tmux kill-server` against it (with `TMUX_TMPDIR` set to it) before removing the folder. `machine/test/run.sh` is unchanged.
-- Add `test-support/bench/hub-idle.js` (#19, #30). It creates a temp state directory and passes it with `--state-dir`, plus `--port` and `--cache-root` as in `viewer/test/helpers/server.js:66-74`, so the real hub state is never opened. Fixture: 120 thread files totalling about 19 MB, sized like the live state: the 8 non-archived lead threads hold about 6 MB together (largest about 2.7 MB) and the 3 rewritten threads about 0.5 MB each, about 7.5 MB non-archived in all, the archived ones the rest; 8 non-archived lead threads, 6 with one lead session and 2 with two (10 lead sessions), the archived threads' sessions have no transcripts on the fake machine; each non-archived lead transcript is 3 MB. The script runs a fake machine: an HTTP server answering `/v1/sessions` (listing all 10 non-archived lead sessions as running) and `/v1/sessions/<name>/transcript` as today's machine does. Only the newest lead session of 2 non-archived threads grows, by a few lines every 2s; the rest are idle, as most leads are while Collin reads. Every 3s it rewrites 3 extra non-archived thread files that have no sessions, queues, stubs or plans (so no hub timer or route saves them): it changes only `updated_at` and replaces each atomically. The 8 lead threads (10 lead sessions) are never rewritten by the benchmark. Phase 1 (CPU, first 4 minutes): two "tabs" poll `/threads?view=list`, `/features` and `/agents` every 5s; no chat. Phase 2 (open chat, 4 minutes): the same, plus one tab's chat for one non-archived thread every 2s, moving to the next of the 8 lead threads every 30s. Before measuring it checks that the API returns the fixture thread ids, that chat replies succeed with items from the fake transcripts, that a revisited growing thread's chat shows more items than on the previous visit; it aborts otherwise. It runs 8 minutes by default (`--scale` shortens both phases for a quick smoke run with no pass or fail; only a default-length run counts), and prints phase 1 CPU seconds, phase 2 CPU seconds and peak RSS. It counts every scheduled request and its status; a run is valid only if every scheduled poll in both phases succeeded, all 10 fixture lead sessions are still live in `/threads` at the end, and the fake machine answered `/v1/sessions` throughout each timed phase and, in phase 2, one transcript request per lead session of the open thread for each chat poll; otherwise it exits non-zero. Run it on unchanged code first and record the numbers in the Log.
 
 Accepted then: a SIGKILL at the instant a tmux client is launching a server can let that server start after the next sweep (round 19).
 
