@@ -83,6 +83,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 46 | Kimi has no effort control: KIMI_MODEL_THINKING_EFFORT applies only to env-defined models; tiers differ by model only. Supersedes 15 and 18 | The live check found the variable has no effect on an account login; the only other route is `[thinking]` in `config.toml`, which Decision 35 forbids editing | verification |
 | 47 | Kimi limit-hits use the hub's shared limit-hit handling unchanged (cooldown recorded, session resumes later); only a failed turn tells the starter. The Spec flowchart's "Rate limit, or turn failed: starter is told" was shorthand and is reworded | Verification attempt 2 read the flowchart as requiring a starter notice; changing shared handling would change Claude, Codex and Antigravity, which IDEA.md rules out | verification |
 | 48 | A Kimi permission prompt counts only when the input box (`│ >`) is gone and the approval title and choice lines sit together at the bottom of the pane; tested with output that merely mentions the words (no card) and with the real panel (card) | Permission-prompt detection survived two fix attempts (verification attempt 3: ordinary output mentioning the words raised a card every poll); Kimi's approval panel replaces the input box | user |
+| 49 | Leave the version floor's handling of malformed SemVer as is; recorded as an Accepted Risk | Version-floor parsing survived two fix attempts (verification attempt 3: `02.6.3`, `2.6.3+abc..def`, `2.6.4-01` accepted); real `kimi --version` prints plain versions | user |
 
 ## Spec
 
@@ -617,6 +618,7 @@ re-raise them.
 | If Collin types a new message in a Kimi session's terminal while the machine service is down, replaying the missed earlier turn end can release a queued message into his new turn | Needs Collin typing in the terminal during a service outage; tracking superseded turns added more edge cases than it removed (round 14) | 14 |
 | If Collin types `/new` or `/sessions` in a Kimi session's terminal, the app keeps following the old conversation | Only Collin can do it, from the terminal; agents never type slash commands | 10 |
 | Placement can pick a Kimi account on a machine where the `kimi` binary was removed after login | Same for every CLI today; Ready reports the missing CLI | 4 |
+| Malformed SemVer strings such as 02.6.3 or 2.6.4-01 pass the version floor; only kimi --version output is parsed and it prints plain versions | Collin's decision after the version-floor gap survived two fix attempts (Decision 49) | verification |
 
 ## Review Rounds
 
@@ -954,6 +956,8 @@ Filled by Stage 3. One row per worker brief.
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
 ## Log
+
+- 2026-11-18 — Collin on the version-floor gap: leave it (Decision 49, Accepted Risk). Remediation 3 gap 3 settled by the plan.
 
 - 2026-11-18 — Choice: P1, `viewer/app/sessions.js`: notices moved into `notifyEnded`; because handoff export and handoff ops also call `stopManagedSession`, stopping a fatal-ended Kimi session during a handoff now sends the same reason notice and card (scout-found, not reported). Tests combine the worker, lead, no-reason and later-`pollDead` cases in one fixture.
 - 2026-11-18 — P1 accepted (band: scout): targeted 25/25, viewer 645/645, machine 200/200 re-run by the sub-lead. Remediation 3 gap 2 fixed.
