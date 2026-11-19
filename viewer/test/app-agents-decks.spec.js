@@ -236,5 +236,50 @@ for (const [label, viewport] of Object.entries(VIEWPORTS)) {
       await expect(pop.locator('[data-agent="wx"] .agents-muted')).toHaveText('Finished');
       await expect(pop.locator('[data-agent="wy"] .agents-muted')).toHaveText(/^Finished \d\d:\d\d$/);
     });
+
+    test.describe('popover invariant across a refresh', () => {
+      // Phone stacks children, so 12 live workers scroll the page. Desktop lays them out side by side, so a spacer above the layout stands in for the extra height.
+      const W = 12, spacer = async (page, px) => { if (label === 'phone') return; await page.evaluate(h => { document.documentElement.style.overflowAnchor = 'none'; let d = document.getElementById('test-spacer'); if (!d) { d = document.createElement('div'); d.id = 'test-spacer'; document.body.prepend(d); } d.style.height = `${h}px`; }, px); };
+      const base = () => Array.from({ length: 40 }, (_, i) => reviewer(i + 1, 0));
+      const roundsOf = n => ({ review: Object.fromEntries(Array.from({ length: n }, (_, i) => [i + 1, { found: 1 }])) });
+      const workers = (n, from = 0) => Array.from({ length: n }, (_, i) => node(`lw-${from + i}`, 'worker', -100 + from + i, { live: true, state: 'working' }));
+      const raf2 = page => page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+      const scenario = (title, { before = [], expand = false, scrolled = false, change }) => test(title, async ({ page }) => {
+        const state = { members: [...before, ...base()], rounds: roundsOf(40) };
+        await open(page, () => lead(state.members, state.rounds));
+        const deck = page.locator('.agents-deck').filter({ hasText: 'reviewer' });
+        if (before.length) await spacer(page, 1000);
+        await deck.evaluate(d => d.scrollIntoView({ block: 'center' }));
+        await deck.click();
+        const pop = page.locator('.deck-pop');
+        await pop.getByRole('button', { name: 'Show all 40 rounds' }).click();
+        if (expand) await pop.locator('[data-round="40"]').click();
+        await pop.evaluate(e => { e.scrollTop = 250; });
+        const want = await pop.evaluate(e => e.scrollTop);
+        expect(want).toBeGreaterThan(0);
+        if (scrolled) expect(await page.evaluate(() => scrollY)).toBeGreaterThan(0);
+        if (change) {
+          change(state); await spacer(page, 3000);
+        }
+        await page.waitForResponse(r => r.url().includes('/api/agents'), { timeout: 8000 });
+        await raf2(page);
+        if (change) {
+          const vh = page.viewportSize().height;
+          await expect.poll(async () => { const d = await deck.boundingBox(); return !!d && (d.y > vh || d.y + d.height > vh); }).toBe(true);
+        }
+        await expect(pop).toHaveCount(1);
+        const b = await pop.boundingBox(), vp = page.viewportSize();
+        expect(b.x).toBeGreaterThanOrEqual(8 - 0.5); expect(b.y).toBeGreaterThanOrEqual(8 - 0.5);
+        expect(b.x + b.width).toBeLessThanOrEqual(vp.width - 8 + 0.5); expect(b.y + b.height).toBeLessThanOrEqual(vp.height - 8 + 0.5);
+        expect(Math.abs(await pop.evaluate(e => e.scrollTop) - want)).toBeLessThanOrEqual(2);
+      });
+      scenario('deck on screen, page not scrolled', {});
+      scenario('page scrolled', { before: workers(W), scrolled: true });
+      scenario('deck pushed off screen by a new finished member', {
+        before: workers(W), scrolled: true,
+        change: s => { s.members = [...workers(W, W), ...s.members, reviewer(41, 0)]; s.rounds = roundsOf(41); },
+      });
+      scenario('expanded round, long popover', { expand: true });
+    });
   });
 }

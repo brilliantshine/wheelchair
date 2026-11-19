@@ -3,7 +3,7 @@
   const $ = id => document.getElementById(id);
   const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
   const button = (text, fn, cls = '') => { const b = el('button', cls, text); b.type = 'button'; b.onclick = fn; return b; };
-  let data = { leads: [], machines: [] }, threads = [], term = null, termName = null, folded = true, showFinished = false, pathObserver = null, redrawPaths = null, pop = null, infoOpen = false, redrawPop = null, popKeep = null, placePopNow = null, deckNow = [], lastLead = null;
+  let data = { leads: [], machines: [] }, threads = [], term = null, termName = null, folded = true, showFinished = false, pathObserver = null, redrawPaths = null, pop = null, infoOpen = false, redrawPop = null, popKeep = null, placePopNow = null, deckNow = [], lastLead = null, popTop = null;
   window.addEventListener('resize', () => redrawPaths?.());
   const panel = $('agents-terminal');
   const phone = () => matchMedia('(max-width: 899px)').matches;
@@ -225,25 +225,26 @@
         box.append(head); const order = newestFirst(members); const list = el('div', 'deck-agents'); (pop.all ? order : order.slice(0, CUT)).forEach(m => list.append(agentRow(m))); box.append(list);
         if (!pop.all && order.length > CUT) box.append(button(`Show all ${order.length} agents`, () => { pop.all = true; redrawPop(); }, 'deck-more'));
       }
-      document.body.append(box); placePop(); if (prev && prev.member === pop.member && prev.top) box.scrollTop = prev.top;
+      document.body.append(box); popTop = prev && prev.member === pop.member ? prev.top : null; placePop(popTop);
     };
-    const placePop = () => {
+    const placePop = (want) => {
       const box = document.querySelector('.deck-pop'), hit = box && deckNow.find(d => d.members.some(m => m.name === pop?.member)); if (!hit) return;
-      const r = hit.card.getBoundingClientRect(), w = Math.min(360, innerWidth - 16), M = 8, GAP = 6;
+      const r = hit.card.getBoundingClientRect(), w = Math.min(360, innerWidth - 16), M = 8, GAP = 6, maxH = Math.max(40, innerHeight - 2 * M);
       box.style.width = `${w}px`; box.style.left = `${Math.max(M, Math.min(r.left, innerWidth - w - M))}px`;
-      const saved = box.scrollTop, h = box.scrollHeight + (box.offsetHeight - box.clientHeight), below = innerHeight - M - (r.bottom + GAP), above = r.top - GAP - M;
-      let top, room;
-      if (h <= below) { top = r.bottom + GAP; room = below; }
-      else if (h <= above) { top = r.top - GAP - h; room = above; }
-      else if (below >= above) { top = r.bottom + GAP; room = below; }
-      else { top = M; room = above; }
-      room = Math.max(40, room); box.style.maxHeight = `${room}px`;
-      if (h > room) top = below >= above ? r.bottom + GAP : r.top - GAP - room;
-      box.style.top = `${Math.max(M, Math.min(top, innerHeight - M - Math.min(h, room)))}px`; box.scrollTop = saved;
+      const saved = want ?? box.scrollTop, h = Math.min(maxH, box.scrollHeight + (box.offsetHeight - box.clientHeight));
+      // Room actually visible on each side of the deck; never more than the viewport, never negative.
+      const below = Math.max(0, innerHeight - M - Math.max(r.bottom + GAP, M)), above = Math.max(0, Math.min(r.top - GAP, innerHeight - M) - M);
+      let height = h, top;
+      if (h <= below) top = r.bottom + GAP;
+      else if (h <= above) top = Math.min(r.top - GAP, innerHeight - M) - h;
+      else if (Math.max(below, above) >= 160) { height = Math.max(below, above); top = below >= above ? r.bottom + GAP : Math.min(r.top - GAP, innerHeight - M) - height; }
+      else top = M;
+      top = Math.max(M, Math.min(top, innerHeight - M - height));
+      box.style.maxHeight = `${height}px`; box.style.top = `${top}px`; box.scrollTop = saved;
     };
     placePopNow = placePop; redrawPop();
     const side = el('aside','agents-side'); if (selected) { side.append(button(`‹ ${lead.lead_name || 'Lead'}`, () => go(lead.thread_id), 'agents-back'),el('div','agents-role',selected.role || 'agent'),el('h2','',selected.display_title || selected.role || 'Agent'),el('p','agents-muted',[selected.model,selected.effort].filter(Boolean).join(' · ')),el('p','agents-muted',lead.machine || ''),el('p','agents-muted',duration(selected)),el('p','agents-side-status',status(selected))); if (selected.result_summary) side.append(el('h3','agents-report-head','Report'),el('p','agents-report',selected.result_summary)); if (selected.live) side.append(button('Open terminal', () => openTerm(selected), 'primary')); if (selected.has_brief) side.append(button('Read its brief', async () => { try { const res = await fetch(`/wheelchair/api/sessions/${encodeURIComponent(selected.name)}/brief`); if (!res.ok) throw new Error(`HTTP ${res.status}`); $('brief-text').textContent = (await res.json()).brief; } catch (e) { $('brief-text').textContent = `Could not load brief: ${e.message}`; } $('brief-dialog').showModal(); })); side.append(activityPanel(selected, lead, nodes(lead.session))); } else side.append(el('p','agents-muted','Select an agent to see details.')); root.append(side);
-    if (selected) { side.dataset.agent = selected.name; if (kept.agent === selected.name) side.scrollTop = kept.side; } if (lead.thread_id === lastLead && selected?.name === kept.agent) scrollTo(scrollX, kept.page); lastLead = lead.thread_id; placePopNow?.();
+    if (selected) { side.dataset.agent = selected.name; if (kept.agent === selected.name) side.scrollTop = kept.side; } if (lead.thread_id === lastLead && selected?.name === kept.agent) scrollTo(scrollX, kept.page); lastLead = lead.thread_id; placePopNow?.(popTop); popTop = null;
   }
   async function refresh() { try { const [a,t] = await Promise.all([fetch('/wheelchair/api/agents'),fetch('/wheelchair/api/threads?view=list')]); if (!a.ok) throw new Error(`agents ${a.status}`); data = await a.json(); threads = t.ok ? (await t.json()).threads || [] : []; if (active.size) pending = true; else render(); $('error').hidden = true; } catch (e) { $('error').textContent = `Could not load agents: ${e.message}`; $('error').hidden = false; } }
   refresh(); setInterval(refresh,5000); setInterval(() => { for (const n of document.querySelectorAll('.activity-now')) n.textContent = `now · ${timer(seconds(n.dataset.since))}`; },1000);
