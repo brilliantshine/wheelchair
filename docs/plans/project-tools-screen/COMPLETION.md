@@ -199,3 +199,7 @@ Both verifiers failed with 4 distinct gaps; all Remediation 3 items were confirm
 | 4 Failed post-save reload hidden | Save message + "Couldn't reload the project: <reason>" + Reload button | `viewer/pages/project-tools.js:260-269,719,725,737` | 409+504 and opened+failed-read tests |
 
 Validation after remediation (sub-lead): `bash machine/test/run.sh` pass 208 fail 0; `node --test viewer/test/*.test.js` pass 641 fail 0; `npm --prefix viewer run test:browser -- app-project-tools.spec.js app-settings.spec.js` 152 passed, twice.
+
+### Verification attempt 5 (commit 1e162e0): declined gap
+
+- `pushInsteadOf` can send pushes to another repository than the configured URL text that Read validated (`machine/lib/project-tools.js:40-47`). Declined by the lead: covered by the round-8 Accepted Risk on git `insteadOf` rewriting; `pushInsteadOf` is the same mechanism in Collin's own git config. Gaps 2-4 are in `REMEDIATION-5.md`.
