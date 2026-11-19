@@ -33,6 +33,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 6 | Imported handoff history shows the stored `who: collin` value as "You" on screen; the stored value itself is not changed | Visible text (`viewer/pages/thread.js:231`) without touching data formats | defaulted |
 | 7 | Tests that assert changed strings (e.g. `machine/test/sudo.test.js:91`, `viewer/test/app-settings.test.js:273,278`) are updated in this thread; other test mentions are deferred | Keeps the suites green | defaulted |
 | 8 | Agents call the person "the user" | Simplest, fits any install. The user plans a name in Settings later; that can be one added prompt line ("The user's name is X") with no change to the rules' wording, so doing "the user" now costs nothing extra | user |
+| 9 | The restart/import context the hub sends a lead relabels the stored owner tag `collin` as `user` (message `source`, import history `who`, card `resolved_by`), on copies only; the screen keeps showing "You" | Stored tags otherwise reach the lead's prompt and reintroduce the name; one agent-facing value avoids two names for the same tag | review-round-1 |
 
 ## Spec
 
@@ -53,6 +54,13 @@ start of a sentence) and referred to with they/them/their. Behaviour is otherwis
   and the quoted form in `protocol/app/cards-lead.md` (sudo section) matches it.
 - Imported handoff history display: `viewer/pages/thread.js:231` shows an entry whose
   `who` is `collin` as `You`; other `who` values unchanged. Stored data is not changed.
+- Lead context: `viewer/app/threads.js` (the `[wc:context restart|import]` state built
+  around lines 138-150). In the JSON sent to the lead, replace the value `collin` with
+  `user` in: each `recent_messages[].source`, each `import.history[].who`, and
+  `resolved_by` on every card in `cards` and every card object in `pinned`. Work on copies:
+  `thread.sent`, `thread.cards`, `thread.pinned` and `thread.imported` on disk keep
+  `collin`. Other values pass through unchanged. The serialized context must contain no
+  case-insensitive "collin" coming from these tags (text a person typed is passed as is).
 - Tests asserting changed strings: `machine/test/sudo.test.js:91`,
   `viewer/test/app-settings.test.js:273,278`, and any other test that fails because of
   the wording changes above.
@@ -64,8 +72,9 @@ start of a sentence) and referred to with they/them/their. Behaviour is otherwis
    anything else are untouched.
 3. Rewrite only the words needed; do not restructure or reflow paragraphs beyond the
    lines touched. Meaning and every rule stay the same.
-4. Example paths: `protocol/graphs.md` uses `/home/you/...` (URL-encoded `%2Fhome%2Fyou%2F...`)
-   where it showed `/home/collin`. The sensitivity template keeps `{{WHEELCHAIR_ROOT}}`.
+4. Example paths: every `/home/collin` example in scope becomes `/home/you`, keeping the
+   rest of the path: `protocol/graphs.md` (URL-encoded `%2Fhome%2Fyou%2F...`) and
+   `protocol/app/lead.md` (step 10 path map example: `/home/you/projects/personal/wheelchair`). The sensitivity template keeps `{{WHEELCHAIR_ROOT}}`.
 5. Legacy marker: the sub-lead now writes `Deferred and finished at the user's choice`.
    `protocol/app/sub-lead.md` step 1a treats a Log containing either that phrase or the
    older `Deferred and finished at Collin's choice` as the same marker. That one reader line
@@ -79,14 +88,20 @@ comments, other test and fixture mentions, and everything under `docs/`.
 ### Validation
 1. `git grep -n -i collin -- protocol AGENTS.md sudo-helper/AGENTS.md viewer/app/settings.js machine/service.js`
    prints exactly one line: the legacy-marker reader in `protocol/app/sub-lead.md`.
-2. `git grep -n -w -E 'he|him|his|himself' -- protocol` : every remaining hit refers to
-   something other than the user (expected: none).
+2. After the rewrite, `git grep -n -i -w -E 'he|him|his|himself' -- protocol`: every
+   remaining hit refers to something other than the user (today about 89 hits, nearly all
+   about the user, e.g. `protocol/app/lead.md:37`; after the change, expected none).
 3. `git grep -n "finished at the user's choice" -- protocol/app/sub-lead.md` shows the
    writer (step "Defer them and finish") and the reader in step 1a.
 4. `bash machine/test/run.sh`, `node --test viewer/test/*.test.js` and
    `npm --prefix viewer run test:browser` pass.
 5. A browser or unit test shows an imported history entry with `who: 'collin'` rendered as
    `You` on the thread page.
+6. A test in `viewer/test/app-handoff-restart.test.js` (or `app-hub.test.js`) restarts a
+   lead on an imported thread that has a typed message, a `collin`-resolved needs card and
+   imported history with `who: 'collin'`, and asserts the delivered context has `source`
+   `user`, `resolved_by` `user` and `who` `user`, while the thread's stored state still has
+   `collin`.
 
 ## Deferred
 
@@ -111,6 +126,11 @@ comments, other test and fixture mentions, and everything under `docs/`.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent + mechanics | major / blocking | Restart/import context still sends stored `collin` tags to the lead | upheld (major: a worker would build it incompletely but the Goal states the rule) | Spec "Lead context" item, Decision 9, Validation 6 |
+| intent | major | `protocol/app/lead.md:506` home path example not covered by rule 4 | upheld | Rule 4 covers every `/home/collin` example |
+| intent | minor | Pronoun check's "expected: none" reads as true today | upheld | Validation 2 says it is the post-change result |
+| intent | minor | Two names for one stored tag | upheld | Decision 9 names `user` for agents, "You" on screen |
+| mechanics | minor | Pronoun check is case-sensitive, misses `He` at `lead.md:37` | upheld | Validation 2 uses `-i` |
 
 ## Prior Work
 
