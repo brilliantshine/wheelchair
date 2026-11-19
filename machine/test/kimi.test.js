@@ -356,6 +356,15 @@ test('approval panels require ordered bottom lines and no input box', () => {
   const panel = (title, choice = 'Approve once') => `Earlier output\nMore output\n╭────────────╮\n│ ${title} │\n│ command │\n│ ❯ ${choice} │\n│   Approve for this session │\n│   Reject │\n╰────────────╯`;
   for (const title of ['Run this command?', 'Write this file?', 'Apply these edits?', 'Stop this task?', 'Approve SomeTool?']) assert.equal(kimi.promptText(panel(title)), true, title);
   assert.equal(kimi.promptText('Earlier output\n│ Ready to build with this plan? │\n│ ❯ Approve │\n│ Reject │\n│ Revise plan │'), true);
+  const kimiPanel = (title, choice = '1. Approve once', bordered = false) => {
+    const rows = [`▶ ${title}`, 'command', `▶ ${choice}`, '  2. Approve for this session', '  3. Reject'];
+    return bordered ? rows.map(line => `│ ${line} │`).join('\n') : rows.join('\n');
+  };
+  for (const title of ['Run this command?', 'Write this file?', 'Apply these edits?', 'Stop this task?', 'Approve SomeTool?']) {
+    assert.equal(kimi.promptText(kimiPanel(title)), true, title);
+    assert.equal(kimi.promptText(kimiPanel(title, '1. Approve once', true)), true, `${title} bordered`);
+  }
+  assert.equal(kimi.promptText(kimiPanel('Ready to build with this plan?', '1. Approve')), true);
   assert.equal(kimi.promptText('Run this command?\n  1. Approve once'), true);
   for (const text of [
     'The tool asks "Run this command?" and offers Approve once.\n│ >\ncontext: 10%',
@@ -366,6 +375,7 @@ test('approval panels require ordered bottom lines and no input box', () => {
     'The assistant asks: Run this command?\nApprove once',
     'Approve once\nRun this command?',
     'Ready to build with this plan?\nThe choice is Approve',
+    '▶ Run this command?\ncommand\n▶ 1. Approve once\n│ >\ncontext: 10%',
   ]) assert.equal(kimi.promptText(text), false, text);
 });
 
