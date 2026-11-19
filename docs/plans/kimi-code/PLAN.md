@@ -960,6 +960,8 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — Choice: W1, `machine/test/kimi-turns.test.js:185,280-303`: both tests folded into existing ones (approval-panel recovery fixture `wc-h-worker`; `transcript_source` after a copy), with the kill-session expectation extended (scout-found; report said none). W1 accepted (band: scout): machine 204/204 re-run by the sub-lead. Remediation 6 gaps 2 and 3 fixed.
+
 - 2026-11-18 — Lead: proceed with remediation 6 gaps 2-4. W1 (light, gpt: recovery at a prompt, strip `transcript_source`) and L1 (light, gpt: live script reads the machine state file) dispatched; both waiting for account room. Gap 1 with Collin.
 
 - 2026-11-18 — Verification attempt 6: Claude PASS, GPT FAIL with 4 gaps (REMEDIATION-6.md). Permission-prompt detection survived again (now a false negative on the real `▶` panel): sent to the lead.
