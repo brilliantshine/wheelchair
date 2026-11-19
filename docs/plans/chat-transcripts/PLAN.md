@@ -1,6 +1,6 @@
 ---
 slug: chat-transcripts
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-19
 ---
 
@@ -48,8 +48,25 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 16 | `machines.json`'s `last_seen` is written at most once a minute per machine; the in-memory value updates every call | It is read from disk only at hub start; otherwise every chat poll rewrites the file | review-round-1 |
 | 17 | An `unchanged` reply is matched against the entry before any empty-data check; empty data means fall back only for `full` and older-machine replies | Refines #5, which read as covering `unchanged` too | review-round-2 |
 | 18 | Pending protection for a thread's entries starts before joining the thread lock, both in `hub.chat` and the aside route | Supersedes the `chat()` part of S4.1 from round 1 | review-round-2 |
+| 19 | Supersedes #18 and the pending-count and before-lock `lastRead` parts of #7: the sweep skips any entry whose thread has an entry in `hub.threadLocks`; entries record their thread id | Same protection with no counter or wrappers, and it covers any future direct `chat()` caller | review-round-3 |
+| 20 | A dedupe set built from a kept file with a half-written last line is used for that copy only, not kept | Keeps today's behaviour exactly in that state without pulling in D1 | review-round-3 |
 
 ## Spec
+
+```mermaid
+flowchart TD
+  poll["page asks for chat every 2 s"] --> lock["wait for the thread's turn"]
+  lock --> ask["ask the machine: here is the version I hold"]
+  ask --> copy["machine copies any new finished lines from the agent's file"]
+  copy --> cmp{"same version as the hub holds?"}
+  cmp -- yes --> same["answer 'unchanged', no text"] --> reuse["hub reuses the chat it already worked out"]
+  cmp -- no --> whole["answer with the whole transcript"] --> parse["hub works out the chat and keeps it"]
+  cmp -- no copy --> none["answer 'unavailable'"] --> fall["hub shows its last chat, or the local file"]
+  idle["timer, every minute"] --> drop["drop chat nobody read for 10 minutes, unless its thread is busy"]
+```
+
+The diagram repeats S1-S4: a version check on the machine, reuse on the hub, the
+fallbacks, and the idle drop. It leaves out older machines (S3.2) and report readers.
 
 ### S0. Words used here
 
@@ -95,13 +112,17 @@ Kimi and incomplete-line rules exactly:
    do not hash, do not append. Save the session registry only if `transcript_path` or
    `transcript_source` (`path`, `offset`, `ino`) actually changed.
 2. When there are new lines: get the session's dedupe set from memory, building it from
-   the kept file (as today's hashing, non-empty lines only) if absent. Filter the new
+   the kept file (as today's hashing, non-empty lines only) if absent. If the kept file
+   does not end with a newline (a half-written line left by an earlier failed append),
+   build the set for this copy only and do not keep it in memory, so that state behaves
+   exactly as today's rebuild-every-copy code. Filter the new
    lines exactly as today (within one batch a repeated line, including a repeated blank
    line, is dropped). After the append succeeds, add the hashes of the appended
    **non-empty** lines to the set, so the set always equals what a rebuild from the kept
    file would give. If the append throws, drop the session's set (the next copy rebuilds
    it from the kept file, as today's code does on every copy).
-3. Dedupe sets are dropped when a session has had no copy for 10 minutes, by an
+3. Dedupe sets are dropped when a session's set has not been used (by a copy with new
+   lines) for 10 minutes, by an
    `unref`'d timer that runs at least once a minute (so the drop happens with no further
    traffic) and is stopped when the service closes; and when the session is stopped or
    its thread archived. A dropped set is rebuilt on the next copy with new lines.
@@ -146,17 +167,18 @@ under today's thread lock:
 
 ### S4. Hub: dropping idle entries
 
-1. `hub.chat` (`viewer/app/hub.js:250`), when called and before waiting for the thread
-   lock: increments a per-thread pending count, and sets `lastRead = now` on every entry
-   held for that thread's lead sessions. It decrements the count when it returns or
-   throws. The aside route does the same before it joins the thread lock
-   (`viewer/app/routes.js:480`, around its `hub.withThread` call), because aside creation
-   calls `chat()` directly inside that lock (`viewer/app/asides.js:34`). One helper does
-   this bookkeeping for both callers.
-2. A sweep drops entries whose `lastRead` is more than 10 minutes ago, unless their
-   thread's pending count is above zero. It runs from an `unref`'d timer at least once a
-   minute, so entries are dropped after the last tab closes with no further traffic; the
-   timer is stopped when the hub stops.
+1. Each entry also records its `threadId` (entries stay keyed `${machine}/${session}`).
+   `lastRead` is set when an entry is stored and whenever chat uses it (`unchanged`
+   reuse or fallback).
+2. A sweep drops entries whose `lastRead` is more than 10 minutes ago, unless
+   `hub.threadLocks` currently has an entry for their `threadId`. `withThread`
+   (`viewer/app/hub.js:117`) sets that entry synchronously when a request joins the
+   queue and deletes it only when the chain settles, so a chat poll or an aside creation
+   (`viewer/app/routes.js:480`, `viewer/app/asides.js:34`) waiting behind the lock keeps
+   its thread's entries. Unrelated work on the same thread only delays a drop, which is
+   harmless. The sweep runs from an `unref`'d timer at least once a minute, so entries
+   are dropped after the last tab closes with no further traffic; the timer is stopped
+   when the hub stops.
 3. No size cap.
 
 ### S4b. Hub: machine "last seen" writes
@@ -199,7 +221,9 @@ New tests, at least:
   (fake clock) but not while a chat request for its thread is pending; report readers
   never send `known` and neither use nor fill entries (extend `app-chat.test.js:362`);
   entries are dropped by the timer with no further chat calls; an aside created at the
-  idle cutoff, queued behind a held thread lock, still finds its message; an unknown CLI still shows its notice; two
+  idle cutoff still finds its message (prime the entry, make the fake machine
+  unavailable, hold the thread lock, queue the aside, run the sweep past the cutoff, then
+  release; without the lock check the aside must fail); an unknown CLI still shows its notice; two
   `hub.call`s within a minute write `machines.json` once while `machineSeen` reflects
   both. Update `viewer/test/app-hub.test.js:898` ("persists its last-seen time"): with
   throttling, the in-memory time can be newer than the persisted one; assert the
@@ -234,6 +258,7 @@ discovery (`findTranscript`), to the parsers, or to the hub's other per-thread m
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| If a thread is archived while a chat poll is still finding a session's transcript, one archived read may show a half-written last line | Needs an archive at that exact moment; the next poll sees the file changed and reads it whole | 3 |
 | If the parent thread's title changes while the machine is unreachable, the stub's "Started from" line shows the old title until the next successful read | Needs an outage at the moment of a rename and fixes itself on the next read; keeping the raw text for this would double each entry | 1 |
 | If the filesystem reports no birth time (`birthtimeMs` 0), `gen` falls back to the inode alone, so a kept file deleted and recreated with the same inode and same size would read as `unchanged` | The machine never deletes and recreates a kept file of a live session; only archive cleanup removes them | planning |
 
@@ -291,6 +316,11 @@ discovery (`findTranscript`), to the parsers, or to the hub's other per-thread m
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | Use `hub.threadLocks` instead of a pending counter and wrappers | upheld | Confirmed `hub.js:117-125`. Decision #19, S4 |
+| mechanics | blocking | Kept set records a line fused onto a half-written tail, later dropping a valid line | downgraded (minor) | Needs a failed append and then a source rewind; still fixed: Decision #20, S2.2 |
+| mechanics | minor | Archive can race a read still discovering its source | accepted-risk | Accepted Risks |
+| mechanics | minor | Stopped session's set kept alive by polls | upheld | S2.3: idle measured from last use of the set |
+| mechanics | minor | Queued-aside test could pass without protection | upheld | S5 test steps |
 
 ## Implementation Tasks
 
