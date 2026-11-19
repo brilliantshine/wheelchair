@@ -963,6 +963,8 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — Choice: V1, `machine/service.js`: floor comparison factored into `kimiVersionStatus`; `kimiLaunchPath()` re-resolves and re-checks right before the launch command is built and fails closed if the cache entry changed; `commandFor` takes a `context` with `kimiExecutable`. A start refused at that point leaves its newly created worktree on disk (the existing `finally` only releases reservations; other post-creation failures such as a tmux error already leak the same way) — residual risk, scout-found. V1 accepted (band: scout): machine 207/207 re-run by the sub-lead. Remediation 9 gap 1 fixed.
+
 - 2026-11-18 — Lead on remediation 9 gap 1: fix (resolve once, check that path, pass it to `command()`); V1 (gpt) dispatched, with the final check placed right before the launch command is built so a swap during worktree creation is caught. Gap 2 with Collin.
 
 - 2026-11-18 — Verification attempt 9: Claude PASS, GPT FAIL with 2 gaps (REMEDIATION-9.md), both sent to the lead (recovery classification survived two fixes; version check vs launch race).
