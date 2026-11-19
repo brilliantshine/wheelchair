@@ -102,3 +102,44 @@ test('a dirty first Try answers accepted then writes last as refused with the fi
   assert.equal((await f.instance.handle(f.request)).accepted, true);
   const status = await f.done(); assert.equal(status.state, 'none'); assert.equal(status.last.outcome, 'refused'); assert.deepEqual(status.last.files, ['new file']);
 });
+test('try A, then B at the same sha updates the record without running git switch', async () => {
+  const f = await tryFixture(); assert.equal((await f.instance.handle(f.request)).accepted, true); await f.done();
+  f.git('branch', 'wc/abcdefabcdef', 'wc/0123456789ab');
+  const original = f.instance.runGit.bind(f.instance); let switches = 0;
+  f.instance.runGit = (folder, args, timeout) => { if (args.includes('switch')) switches++; return original(folder, args, timeout); };
+  assert.equal((await f.instance.handle({ ...f.request, thread_id: 'abcdefabcdef' })).accepted, true);
+  const status = await f.done(); assert.equal(status.active_thread_id, 'abcdefabcdef'); assert.equal(switches, 0);
+});
+test('commit made while trying is pinned and listed; stale record refuses Try', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
+  await f.instance.handle(f.request); await f.done(); await fs.writeFile(path.join(f.repo, 'file'), 'my commit'); f.git('commit', '-am', 'my commit');
+  const mine = f.git('rev-parse', 'HEAD'); await f.instance.handle(f.request); const status = await f.done();
+  assert.equal(status.kept.length, 1); assert.equal(f.git('rev-parse', status.kept[0].ref), mine); assert.equal(status.kept[0].missing, false);
+  f.git('switch', 'main'); assert.match((await f.instance.handle(f.request)).reason, /switched your copy by hand/);
+});
+test('Try refused while pending or index.lock exists; index.lock is reported and retained', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
+  const lock = path.join(f.repo, '.git', 'index.lock'); await fs.writeFile(lock, '');
+  const refused = await f.instance.handle(f.request); assert.match(refused.reason, /Git may still be running/); assert.equal(refused.status.index_lock, lock); await fs.access(lock);
+  const record = await f.instance.read(f.repo); record.identity = f.instance.identity(f.repo); record.pending = { from: f.instance.head(f.repo), thread_id: f.request.thread_id }; await f.instance.write(f.repo, record);
+  assert.match((await f.instance.handle(f.request)).reason, /interrupted/);
+});
+test('post-checkout hook exiting nonzero or printing error follows its exit code', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path');
+  for (const code of [0, 1]) {
+    const f = await tryFixture(); await fs.writeFile(path.join(f.repo, '.git', 'hooks', 'post-checkout'), `#!/bin/sh\necho 'error: hook text' >&2\nexit ${code}\n`, { mode: 0o755 });
+    await f.instance.handle(f.request); const status = await f.done(); assert.equal(status.last.outcome, code ? 'warning' : 'success');
+  }
+});
+test('gitlink change with diff.ignoreSubmodules=all is refused', async () => {
+  const f = await tryFixture(); const sha = f.git('rev-parse', 'wc/0123456789ab');
+  f.git('switch', 'wc/0123456789ab'); f.git('update-index', '--add', '--cacheinfo', `160000,${sha},sub`); f.git('commit', '-m', 'gitlink'); f.git('switch', 'main'); f.git('config', 'diff.ignoreSubmodules', 'all');
+  await f.instance.handle(f.request); const status = await f.done(); assert.equal(status.last.outcome, 'refused'); assert.match(status.last.reason, /submodule/);
+});
+test('a second write while one runs refuses at once and Status hides index.lock', async () => {
+  const fs = require('node:fs/promises'); const path = require('node:path'); const f = await tryFixture();
+  await fs.writeFile(path.join(f.repo, '.git', 'hooks', 'post-checkout'), '#!/bin/sh\nsleep 1\n', { mode: 0o755 });
+  assert.equal((await f.instance.handle(f.request)).accepted, true); const second = await f.instance.handle(f.request);
+  assert.equal(second.reason, 'A switch is already running'); assert.equal(second.status.state, 'busy'); assert.equal(second.status.index_lock, null);
+  const status = await f.done(); assert.equal(status.last.outcome, 'success');
+});
