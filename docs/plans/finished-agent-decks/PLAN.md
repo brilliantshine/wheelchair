@@ -1,6 +1,6 @@
 ---
 slug: finished-agent-decks
-status: ready-for-review   # planning | ready-for-review | approved | implementing | verifying | done
+status: approved   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-18
 ---
 
@@ -53,6 +53,22 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 9 | Popover shows the latest 5 rounds (or agents) before "Show all" | Proposal says "the latest few" | defaulted |
 
 ## Spec
+
+```mermaid
+flowchart TD
+  A[Lead starts reviewers with the round number] --> B[Hub stores the round on each reviewer]
+  C[Lead posts progress lines with what it upheld per round] --> D[Agents API: rounds and counts per lead]
+  B --> E[Agents API: each agent with role, parent, round, report, finish time]
+  D --> F
+  E --> F{Hide finished agents?}
+  F -- on --> G[Tree as today]
+  F -- off --> H[Finished agents with same role and parent stack into a deck]
+  H --> I{Reviewer deck with rounds?}
+  I -- yes --> J[One colored square per round, title says if last round was clean]
+  I -- no --> K[Count, newest title, finish time]
+  J --> L[Click: rounds newest first, open a round to pick an agent]
+  K --> M[Click: agents newest first, pick one]
+```
 
 ### Scope
 Viewer hub and Agents page (`viewer/app/sessions.js`, `viewer/app/agents.js`, `viewer/app/wc.js`, `viewer/app/API.md`, `viewer/pages/agents.js`, `viewer/pages/views.css`, tests in `viewer/test/`), plus protocol text in `protocol/app/lead.md`. `protocol/app/sub-lead.md` and `protocol/app/cards.md` are not changed (Decision 14). Also add Collin's proposal files to the repo unchanged: `docs/proposals/app-shell/finished-agents.md` and `docs/proposals/app-shell/design/AgentsFinishedDecks.dc.html` (sources: the attached copies the lead hands to the build). Routers (`viewer/AGENTS.md`) updated if a file's role changes.
