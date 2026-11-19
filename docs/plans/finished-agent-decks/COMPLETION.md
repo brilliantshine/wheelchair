@@ -178,3 +178,28 @@ $ bash machine/test/run.sh
 # pass 170
 # fail 0
 ```
+
+### Remediation 3 — 2026-11-18
+
+Verification attempt 3 ran on ca38d35. The Claude verifier passed. The GPT verifier failed with two new gaps, recorded in `REMEDIATION-3.md`. The lead said to fix both.
+
+| Gap | Fix | Where | Validated by |
+|-----|-----|-------|--------------|
+| D connectors missed the deck by 5px sideways and 10px below | The deck's `margin: 0 10px 10px 0` is removed, so the card fills its branch | `viewer/pages/views.css` `.agents-deck` | `viewer/test/app-agents-decks.spec.js` desktop geometry case (fails on the old CSS) |
+| E page fell back to `ended_at` | `finishedAt` reads only `finished_at` | `viewer/pages/agents.js:83` | `viewer/test/app-agents-decks.spec.js` case where a member has `ended_at` but no `finished_at` |
+
+This was done in lane R4 (light, claude-haiku-5-5).
+
+Validation after the fix:
+
+```text
+$ npm --prefix viewer run test:browser      # worker branch 5f04746, merged fast-forward
+  32 skipped
+  862 passed (7.1m)
+(exit 0)
+
+$ node --test viewer/test/*.test.js         # merged
+# tests 641
+# pass 641
+# fail 0
+```
