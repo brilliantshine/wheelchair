@@ -747,7 +747,9 @@ Filled by Stage 3. One row per worker brief.
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
-| T1 | Machine `POST /v1/try`: record, lock, checks, switches, outcomes, all actions, tests (tricky) | `machine/lib/try.js` (new), `/v1/try` route in `machine/service.js`, `machine/test/try.test.js` (new), `machine/API.md`, `machine/AGENTS.md` | standard / gpt-6.1-terra | | `node --test machine/test/try.test.js`; `bash machine/test/run.sh` | not started |
+| T1 | (split into T1a/T1b after attempt 1) Machine `POST /v1/try`: record, lock, checks, switches, outcomes, all actions, tests (tricky) | `machine/lib/try.js` (new), `/v1/try` route in `machine/service.js`, `machine/test/try.test.js` (new), `machine/API.md`, `machine/AGENTS.md` | standard / gpt-6.1-terra | | `node --test machine/test/try.test.js`; `bash machine/test/run.sh` | replaced |
+| T1a | Machine part 1: route, record, lock, git runner, scan and outcome table, checks, Status, Try, start-up, their tests (tricky) | same as T1 | standard xhigh / gpt-6.1-terra | wc-74b646d1bdd0-worker-3 | `node --test machine/test/try.test.js`; `bash machine/test/run.sh` | running |
+| T1b | Machine part 2: Switch back, Dismiss/Done, Forget, their tests (tricky; after T1a) | same as T1 | standard / tbd | | same | not started |
 | T2 | Hub `GET`/`POST /api/threads/<id>/try`, machine-client method, own-root check, tests | `viewer/app/routes.js`, `viewer/app/machine-client.js`, `viewer/server.js` (auth only), `viewer/test/app-try.test.js` (new), viewer router docs | standard / gpt-6.1-terra | | `node --test viewer/test/app-try.test.js`; `node --test viewer/test/*.test.js` | not started |
 | T3 | Thread page "Your copy" panel and browser tests (after T2) | `viewer/pages/thread.js` (+ its CSS), new browser spec | standard / claude-sonnet-5-5 | | `npm --prefix viewer run test:browser`; `node --test viewer/test/*.test.js` | not started |
 
@@ -761,3 +763,5 @@ anything a future session needs that fits nowhere above.
 Build accepted: approval 299bc31c-a6e3-48d7-ad41-a29f94b6a272
 
 2026-11-19: main merged in before the build (merge 6ff3eb7c, about 745 commits). No conflicts; the plan is unchanged, but file:line references in the Spec predate the merge and may point a few lines off. Find the code by name.
+
+- 2026-11-19 — T1 attempt 1 (standard, gpt-6.1-terra, worker wc-74b646d1bdd0-worker) came back blocked with no code written. Brief rewritten: split into T1a (foundation, Status, Try) and T1b (Back, Dismiss, Forget); T1a escalated one rung to effort xhigh (rung: effort high→xhigh; reason: failed attempt with no output).
