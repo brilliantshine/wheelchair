@@ -644,6 +644,18 @@ Validation (502 path through the hub); Accepted Risks (large integers); Decision
 | mechanics | major | RE-RAISE: plaintext temp file left on failure | upheld | Cleanup in `finally` |
 | mechanics | minor | Validation groups offline fetch with post-write failures | upheld | Split |
 
+### Round 13 — 2026-11-18
+
+**Lanes:** intent — pending; mechanics — pending; cross-family: pending.
+
+**Changed since Round 12:** Editing (unrepresentable settings and headers kept verbatim and
+read-only); Reading (Keys list rebuilt from the full stored names plus baseline references);
+Saving step 3 (temporary key file cleaned up, `atomicWrite` not reused as is); Validation
+(offline fetch vs post-write failures); Decision Log 46.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Implementation Tasks
 
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
@@ -654,6 +666,6 @@ Validation (502 path through the hub); Accepted Risks (large integers); Decision
 Round 3 was the third round without a clean result since Collin's last decision; budget stop. The `wc-tools` shared-branch design (Log 9, 12, 18) drew findings in all three rounds. Put to Collin; he chose one PR per save (Log 23). Budget reset.
 Round 6 was the third round without a clean result since that decision (rounds 4-6); budget stop. Recurring: recovering a Save whose reply was lost (rounds 4-6) and GitHub destination checks (rounds 5-6). Round 6 fixes applied before asking. Collin chose no save tracking (Log 34). Budget reset.
 Round 9 was the third round without a clean result since that decision (rounds 7-9); budget stop. Recurring: lost-reply and reply-contract handling, token binding, destination checks. All findings fixed before asking. Collin chose two-part mode (Log 42). Budget reset.
-Round 12 was the third round without a clean result since that decision (rounds 10-12); budget stop. Intent lens clean in rounds 11 and 12; mechanics findings are now precise edge rules in the form and key list. All fixed before asking.
+Round 12 was the third round without a clean result since that decision (rounds 10-12); budget stop. Intent lens clean in rounds 11 and 12; mechanics findings are now precise edge rules in the form and key list. All fixed before asking. Collin pressed Keep going; budget reset.
 
 Watch List items 1-6 (Antigravity note, Codex flags, project identity, unknown fields, key values in argv, second save) were settled as Decision Log 4-9.
