@@ -743,6 +743,8 @@ Filled by Stage 3. One row per worker brief.
 | T6 | Hub card, session list field, README (§8, README) | viewer/app/sessions.js, viewer/app/wc.js, viewer/test/app-project-tools.test.js, README.md section | standard (claude) / claude-sonnet-5-5 | wc-b9ca1682b0fa-worker-4 | node --test viewer/test/*.test.js | done |
 | R1 | Remediation 1, gap 1: exact duplicate header keys | machine/lib/project-mcp.js, machine/adapters/codex.js, machine/adapters/agy.js, their tests | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-7 | reader/codex/agy tests; machine/test/run.sh | done |
 | R2 | Remediation 1, gap 2: saved state shape check; flaky PATH test | machine/service.js (state loader), machine/test/project-tools-state.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-8 | project-tools-state test; machine/test/run.sh x3 | done |
+| R3 | Remediation 2, gap 1 (2nd attempt): iterative duplicate-header scan | machine/lib/project-mcp.js (duplicateHeaderServers), machine/test/project-mcp-reader.test.js | standard / gpt-6.1-terra | wc-b9ca1682b0fa-worker-9 | reader/codex/agy tests; machine/test/run.sh | running |
+| R4 | Remediation 2, gap 2: default project_tools on new threads | viewer/app/threads.js (emptyThread), viewer/test/app-project-tools.test.js | light / claude-haiku-5-5 | wc-b9ca1682b0fa-worker-10 | app-project-tools; viewer/test/*.test.js | running |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
@@ -790,3 +792,4 @@ anything a future session needs that fits nowhere above.
 - 2026-11-18 — Choice: R2, machine/service.js: `validProjectToolsState` is a method beside `updateProjectTools`; extra unlisted keys are tolerated.
 - 2026-11-18 — Choice: R2, machine/test/project-tools-state.test.js: the fake tmux drains stdin on `load-buffer` (cause of the `tmux buffer failed` flake: the fake exited without reading the piped message, giving an EPIPE under load; not reproduced on demand); extra invalid cases for program lines and cli `thread`/`hash`; the valid-state case starts a worker in the worker checkout.
 - 2026-11-18 — R2 accepted (band: scout): saved state shape validated, invalid → empty; worker pasted three full machine runs at 191/191.
+- 2026-11-18 — Verification attempt 2 on f37b1b8: Claude PASS, GPT FAIL (2 gaps). Gap 1 (duplicate headers) is the R1 gap again, caused by my give-up catch; R3 is its second and last fix attempt. REMEDIATION-2.md written; R3 to GPT, R4 to Claude (light: a one-field transcription).
