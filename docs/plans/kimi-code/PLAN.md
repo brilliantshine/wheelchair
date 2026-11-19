@@ -966,6 +966,8 @@ Session id = the `thread_id` of a `codex exec` lane, so remediation can resume i
 
 ## Log
 
+- 2026-11-18 — Verification attempt 11 at `f4da961`: `wc-01b8cb1bf051-verifier-21` (claude) and `wc-01b8cb1bf051-verifier-22` (gpt).
+
 - 2026-11-18 — Remediation 10 validation passes; verification attempt 11 next.
 
 - 2026-11-18 — Collin on remediation 10 gap 1: live with it (Decision 55, Accepted Risk). Remediation 10 complete.
