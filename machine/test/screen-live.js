@@ -12,6 +12,8 @@ const { MachineService } = require('../service');
 const chrome = process.argv[2];
 const wc = path.join(__dirname, '..', '..', 'viewer', 'app', 'wc.js');
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+// `screen stop` sends SIGTERM and escalates to SIGKILL + stop 3 s later, so it returns before processes are dead.
+const TEARDOWN_MS = 10000;
 let ok = 0, bad = 0;
 function check(name, pass, detail) {
   if (pass) { ok++; console.log(`ok - ${name}`); } else { bad++; console.log(`not ok - ${name}${detail === undefined ? '' : `: ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`}`); }
@@ -29,11 +31,38 @@ function client(args, timeout = 60000) {
     child.on('close', status => { clearTimeout(timer); let body = null; try { body = JSON.parse(out); } catch { /* not json */ } resolve({ status, out, err, body }); });
   });
 }
+// The unit's pids across its whole cgroup subtree (a slice keeps its processes in child scopes, so its own
+// cgroup.procs is empty), or null when anything could not be read (no unit, no ControlGroup, read error).
 function cgroupPids(unit) {
+  if (!unit) return null;
   const cg = ctl('show', '-p', 'ControlGroup', '--value', unit).stdout.trim();
-  if (!cg) return [];
-  try { return fs.readFileSync(`/sys/fs/cgroup${cg}/cgroup.procs`, 'utf8').split('\n').filter(Boolean).map(Number); } catch { return []; }
+  if (!cg) return null;
+  try {
+    const pids = [];
+    const walk = dir => {
+      pids.push(...fs.readFileSync(path.join(dir, 'cgroup.procs'), 'utf8').split('\n').filter(Boolean).map(Number));
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) if (entry.isDirectory()) walk(path.join(dir, entry.name));
+    };
+    walk(`/sys/fs/cgroup${cg}`);
+    return pids;
+  } catch { return null; }
 }
+function pidsOf(unit) { return cgroupPids(unit) || []; }
+// The screen slice is gone when systemd no longer knows it, or when its cgroup was read and is empty.
+function sliceGone(slice) {
+  const ls = ctl('show', '-p', 'LoadState', '--value', slice).stdout.trim();
+  const as = ctl('show', '-p', 'ActiveState', '--value', slice).stdout.trim();
+  if (ls === 'not-found' || as === 'inactive') return true;
+  const pids = cgroupPids(slice);
+  return Array.isArray(pids) && pids.length === 0;
+}
+function alive(p) { try { return !fs.readFileSync(`/proc/${p}/stat`, 'utf8').split(') ')[1]?.startsWith('Z'); } catch { return false; } }
+async function pollUntil(fn, ms = TEARDOWN_MS) {
+  const end = Date.now() + ms; let v = fn();
+  while (!v && Date.now() < end) { await delay(250); v = fn(); }
+  return v;
+}
+function readState(dir) { try { return JSON.parse(fs.readFileSync(path.join(dir, 'state.json'), 'utf8')); } catch { return { apps: [] }; } }
 function cmdline(pid) { try { return fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0').filter(Boolean); } catch { return []; }
 }
 function leftovers() { return ctl('list-units', '--all', '--no-legend', `${ctx.slicePrefix}*`).stdout.trim(); }
@@ -78,6 +107,8 @@ exit 0
   await fsp.writeFile(path.join(stateDir, 'machine.json'), JSON.stringify({ secret_file: secret, host: '127.0.0.1', port: listen }));
   process.env.PATH = `${bin}:${process.env.PATH}`; process.env.LIVE_PANE = pane; process.env.LIVE_SESSIONS = sessions;
   const service = new MachineService({ stateDir, host: '127.0.0.1', port: listen });
+  // Expected, not a failure: the startup cleanup logs "machine: screen startup cleanup failed: wcscreen-<s>.slice"
+  // because the parent slice does not exist yet on a fresh state dir.
   await service.listen();
   const slicePrefix = `wcscreen-${crypto.createHash('sha256').update(service.stateDir).digest('hex').slice(0, 12)}`;
   ctx = { root, stateDir, service, server: service.server, slicePrefix, env: null };
@@ -98,14 +129,16 @@ exit 0
   const win1 = run1.body?.focused?.id; const t1 = Date.now() - t0;
   async function windows() { const r = await client(['windows']); return r.body?.windows || []; }
   let first = null; for (let i = 0; i < 30 && !first; i++) { first = (await windows()).find(w => w.id === win1 && /clicks=/.test(w.name)); if (!first) await delay(500); }
-  check('run chromium reports focused as its own window', typeof win1 === 'number' && !!first, { focused: run1.body?.focused, elapsedMs: t1, windows: await windows() });
+  const focusOk = typeof win1 === 'number' && !!first;
+  check('run chromium reports focused as its own window', focusOk, focusOk ? undefined : { focused: run1.body?.focused, elapsedMs: t1, status: (await client(['status'])).body, windows: await windows() });
   const run2 = await client(['run', '--', 'xmessage', '-name', 'wcmsg', 'literal $HOME here']);
   check('run xmessage succeeds', run2.status === 0 && run2.body?.ok, run2.err || run2.out);
   const win2 = run2.body?.focused?.id;
   check('run xmessage reports focused as its own window, not the first', typeof win2 === 'number' && win2 !== win1, run2.body);
 
   // Clear the second window's name directly, with the screen's own display and cookie.
-  const dirs = fs.readdirSync(shotDir); const sdir = path.join(shotDir, dirs[0]);
+  let dirs = []; try { dirs = fs.readdirSync(shotDir); } catch { /* no screen dir: the checks below fail visibly */ }
+  const sdir = dirs[0] ? path.join(shotDir, dirs[0]) : shotDir;
   const xenv = { ...process.env, DISPLAY: started.body?.display, XAUTHORITY: path.join(sdir, 'xauth') };
   const cleared = spawnSync('xdotool', ['set_window', '--name', '', String(win2)], { env: xenv, encoding: 'utf8', timeout: 10000 });
   check('xdotool clears the xmessage window name', cleared.status === 0, cleared.stderr);
@@ -116,20 +149,23 @@ exit 0
 
   // $HOME stays literal: read the xmessage process argv from the app scope.
   const apps = (await client(['status'])).body?.apps || [];
-  const state = JSON.parse(fs.readFileSync(path.join(sdir, 'state.json'), 'utf8'));
-  const unit2 = state.apps.find(a => a.n === run2.body?.app)?.unit;
-  const argvs = cgroupPids(unit2).map(cmdline);
+  const unit2 = readState(sdir).apps.find(a => a.n === run2.body?.app)?.unit;
+  const argvs = unit2 ? pidsOf(unit2).map(cmdline) : [];
   check('xmessage argument with $HOME arrived unexpanded', argvs.some(a => a.includes('literal $HOME here')), { unit2, argvs, apps });
 
   // Pointer and keyboard on the Chromium window.
   const g = listed.find(w => w.id === win1);
-  const click = await client(['click', String(g.x + Math.floor(g.width / 2)), String(g.y + Math.floor(g.height / 3))]);
-  let title = ''; for (let i = 0; i < 20; i++) { title = (await windows()).find(w => w.id === win1)?.name || ''; if (/clicks=1/.test(title)) break; await delay(250); }
-  check('click on the button changes the first window title', click.status === 0 && /clicks=1/.test(title), { click: click.out || click.err, title });
-  const text = 'abcdefghij'.repeat(40);
-  const typed = await client(['type', text], 90000);
-  for (let i = 0; i < 40; i++) { title = (await windows()).find(w => w.id === win1)?.name || ''; if (/len=400/.test(title)) break; await delay(500); }
-  check('type of 400 characters arrives whole', typed.status === 0 && /len=400\b/.test(title), { typed: typed.out || typed.err, title });
+  if (!g) {
+    check('the Chromium window is listed for pointer and keyboard checks', false, { win1, listed });
+  } else {
+    const click = await client(['click', String(g.x + Math.floor(g.width / 2)), String(g.y + Math.floor(g.height / 3))]);
+    let title = ''; for (let i = 0; i < 20; i++) { title = (await windows()).find(w => w.id === win1)?.name || ''; if (/clicks=1/.test(title)) break; await delay(250); }
+    check('click on the button changes the first window title', click.status === 0 && /clicks=1/.test(title), { click: click.out || click.err, title });
+    const text = 'abcdefghij'.repeat(40);
+    const typed = await client(['type', text], 90000);
+    for (let i = 0; i < 40; i++) { title = (await windows()).find(w => w.id === win1)?.name || ''; if (/len=400/.test(title)) break; await delay(500); }
+    check('type of 400 characters arrives whole', typed.status === 0 && /len=400\b/.test(title), { typed: typed.out || typed.err, title });
+  }
 
   // Full-screen shot showing both windows, copied to a stable path.
   const shot = await client(['shot']); const shotPath = shot.body?.path;
@@ -148,21 +184,24 @@ exit 0
   const run3 = await client(['run', '--', 'sh', '-c', 'env -i sleep 300 & exit 0']);
   check('run of the env-clearing child launcher succeeds', run3.status === 0 && run3.body?.ok, run3.err || run3.out);
   await delay(500);
-  const state3 = JSON.parse(fs.readFileSync(path.join(sdir, 'state.json'), 'utf8'));
-  const unit3 = state3.apps.find(a => a.n === run3.body?.app)?.unit;
-  const sleepers = cgroupPids(unit3).filter(p => cmdline(p)[0] === 'sleep' && cmdline(p)[1] === '300');
+  const apps3 = readState(sdir).apps || [];
+  const unit3 = apps3.find(a => a.n === run3.body?.app)?.unit;
+  const sleepers = pidsOf(unit3).filter(p => cmdline(p)[0] === 'sleep' && cmdline(p)[1] === '300');
   check('the env-clearing child is alive before stop', sleepers.length === 1, { unit3, sleepers });
-  const slice = `${path.basename(unit3 || '').replace(/-app\d+\.scope$/, '')}.slice`;
-  const allPids = [...new Set([...cgroupPids(slice), ...(state3.apps || []).flatMap(a => cgroupPids(a.unit))])];
-  check('the slice holds processes before stop', allPids.length > 0, { slice });
+  const slice = unit3 ? `${path.basename(unit3).replace(/-app\d+\.scope$/, '')}.slice` : null;
+  // The screen slice itself must be readable and hold processes before stop.
+  const slicePids = slice ? cgroupPids(slice) : null;
+  check('the screen slice has a readable cgroup with processes before stop', Array.isArray(slicePids) && slicePids.length > 0, { slice, slicePids });
+  const allPids = [...new Set([...pidsOf(slice), ...apps3.flatMap(a => pidsOf(a.unit))])];
 
   const stop = await client(['stop']); check('stop succeeds', stop.status === 0, stop.err || stop.out);
-  let gone = false; for (let i = 0; i < 30 && !gone; i++) { gone = !sleepers.some(p => fs.existsSync(`/proc/${p}`) && !/^Z/.test((fs.readFileSync(`/proc/${p}/stat`, 'utf8').split(') ')[1] || ''))); if (!gone) await delay(250); }
-  check('the env-clearing child is gone after stop', gone, sleepers);
-  let empty = false; for (let i = 0; i < 30 && !empty; i++) { empty = cgroupPids(slice).length === 0; if (!empty) await delay(250); }
-  check('after stop the screen slice has no processes', empty, cgroupPids(slice));
-  const chromeLeft = allPids.filter(p => fs.existsSync(`/proc/${p}`) && !/^Z/.test((fs.readFileSync(`/proc/${p}/stat`, 'utf8').split(') ')[1] || '')));
-  check('no process from the screen survives stop', chromeLeft.length === 0, chromeLeft.map(p => [p, cmdline(p).slice(0, 2)]));
+  const childGone = await pollUntil(() => sleepers.every(p => !alive(p)));
+  check(`the env-clearing child is gone after stop (polled up to ${TEARDOWN_MS / 1000} s)`, childGone, sleepers.filter(alive));
+  const sliceOk = slice ? await pollUntil(() => sliceGone(slice)) : false;
+  check(`after stop the screen slice is gone or its cgroup is empty (polled up to ${TEARDOWN_MS / 1000} s)`, sliceOk, { slice, pids: slice ? cgroupPids(slice) : null, unit: slice ? ctl('show', '-p', 'LoadState', '-p', 'ActiveState', slice).stdout.trim() : '' });
+  const survivors = () => allPids.filter(alive);
+  const survived = await pollUntil(() => survivors().length === 0);
+  check(`no process from the screen survives stop (polled up to ${TEARDOWN_MS / 1000} s)`, survived, survivors().map(p => [p, cmdline(p).slice(0, 2)]));
 }
 
 (async () => {

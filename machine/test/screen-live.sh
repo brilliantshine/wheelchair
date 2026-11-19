@@ -3,7 +3,7 @@
 # Not run by machine/test/run.sh. Usage: bash machine/test/screen-live.sh
 set -u
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-for tool in Xvfb xauth mcookie ffmpeg xdotool xwininfo systemd-run systemctl xmessage xdpyinfo node; do
+for tool in Xvfb xauth mcookie ffmpeg xdotool xwininfo systemd-run systemctl xmessage node; do
   command -v "$tool" >/dev/null 2>&1 || { echo "SKIP: $tool is not installed"; exit 0; }
 done
 systemctl --user show-environment >/dev/null 2>&1 || { echo "SKIP: systemctl --user cannot reach the user manager"; exit 0; }
