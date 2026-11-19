@@ -1,6 +1,6 @@
 ---
 slug: cheap-chat-refresh
-status: implementing   # planning | ready-for-review | approved | implementing | verifying | done
+status: verifying   # planning | ready-for-review | approved | implementing | verifying | done
 created: 2026-11-19
 ---
 
@@ -179,3 +179,4 @@ None.
 - 2026-11-19 — Choice: T2, `viewer/app/chat.js`: parsing goes through `module.exports.transcriptItems` so tests can spy on it.
 - 2026-11-19 — Choice: T2, `viewer/app/hub.js`: the shared pending-and-lock helper is `withChatThread`, counts kept in `transcriptPending`.
 - 2026-11-19 — T2 accepted (band: scout): the worker hit its fails-twice gate on `app-quiet.test.js` "6 message clears debt" and two Chromium pending-bubble specs. The app-quiet test also fails 1 in 3 on the unchanged feature branch, and both browser specs pass 3/3 in isolation on the worker branch, so these are load flakes from two suites running at once, not regressions. The scout found no deviation from S3-S5.
+- 2026-11-19 — Build complete; verification attempt 1 started on the tip below.
