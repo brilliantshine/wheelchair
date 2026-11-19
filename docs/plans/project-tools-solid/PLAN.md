@@ -74,6 +74,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 34 | IDEA.md What, Why, What good looks like and Not doing updated for Decision 33 | Collin agreed to the cut on the scope card | idea-change |
 | 35 | Accept both limits: a missing-program line clears only at a start in the thread's own checkout, and starts the hub does not serialize get no extra ordering (Accepted Risks, review-round-23) | Collin's pick "Accept, review again": both only delay a warning clearing | user |
 | 36 | The Antigravity private-file exception covers every literal value copied as written from `.mcp.json` (env, args, url, headers), not only headers | Decision 7: literal values are already in the project's file; the file is private and deleted when the agent ends | review-round-24 |
+| 37 | Confirms 36: the private Antigravity file may hold any value written in `.mcp.json` (env, args, url, headers); the IDEA constraint wording stands | Collin's pick "Yes, any written value" | user |
 
 ## Spec
 
@@ -672,10 +673,14 @@ exit. Downgrades and declines cite evidence.
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
-| intent | minor | Decision 36 widens an IDEA constraint without Collin's agreement | user-decision | Question to Collin |
+| intent | minor | Decision 36 widens an IDEA constraint without Collin's agreement | user-decision | Collin confirmed (Decision 37) |
 | mechanics | major | "Anywhere" scan inspects unvalidated stray fields | upheld | §4 only translated fields are read or scanned |
 | mechanics | minor | `programs` undefined when a file has no valid servers | upheld | §5: set to [] |
 | mechanics | minor | No hung-tmux test for the PATH read | upheld | §5 real deadline; Validation |
+
+### Round 26 — 2026-11-19
+
+**Changed since Round 25:** §4 only translated fields per transport are read or scanned; §5 `programs` = [] for a file with no valid servers, PATH read has a real 2 s deadline; Validation; Decision 37 (Collin confirmed the private-file exception covers every written value).
 
 ## Prior Work
 
