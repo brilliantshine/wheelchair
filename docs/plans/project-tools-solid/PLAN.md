@@ -67,6 +67,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 27 | Rare timing cases around the connection check (a start, cancel, handoff or service restart landing mid-check; two near-simultaneous starts) are accepted as known limits when their worst effect is a stale problem card or result until the next tools-getting start. Still fixed: anything that would build the wrong thing, leave a tool or card wrong permanently, leak a secret, or leave processes or files behind | Collin's pick "Accept as known limits" after rounds 6-8 | user |
 | 28 | Supersedes 22: a check result is reused only when both the file's hash and the in-memory environment digest match (§6) | Round 9: a removed or changed token must rerun the check | review-round-10 |
 | 29 | Clutter left by a machine service restart during a connection test (an empty checkout, an unused branch, a stray test program) is a known limit; the cleanup already in §6 stays as best effort. Token-bearing files (Antigravity plugin dirs) must still always be cleaned up | Collin's pick "Accept the clutter" after rounds 9-11 | user |
+| 30 | Final review round with a strict filter: only findings that would build the wrong thing, leak a token or secret, or leave a tool missing for good are fixed; everything else is recorded as an accepted risk. A clean result goes to approval | Collin's pick "Final round, then approve" after 14 rounds | user |
 
 ## Spec
 
@@ -512,6 +513,15 @@ exit. Downgrades and declines cite evidence.
 | mechanics | blocking | Launcher surviving a restart beats the sweep/journal | downgraded (minor) → accepted-risk | Restart mid-launch plus a stuck launcher; Accepted Risks |
 | mechanics | blocking | Check sees variables tmux clears from the pane | upheld | §5 apply `update-environment` |
 | mechanics | blocking | Recompute from a different checkout erases a valid warning | upheld | §6 recompute only for an equal hash |
+
+### Round 15 — 2026-11-18
+
+**Lanes:** intent: claude; mechanics: not claude; cross-family: yes.
+
+**Changed since Round 14:** §3 `systemd-run --description`; §4 sweep never removes a dir younger than 60 s; §5 check environment applies tmux `update-environment`; §6 other CLIs' lines recomputed only for an equal file hash; Accepted Risks; Decision 30 (final round, strict filter).
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
