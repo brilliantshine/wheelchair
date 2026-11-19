@@ -859,3 +859,4 @@ Build accepted: approval b3e3c9c4-f81c-47fc-ba9c-244926be6f2c
 - 2026-11-19 — Remediation 9 dispatched: R9-1 (gap 1, hub UTF-8 decoding; light / gpt-6-luna, wc-406595075040-worker-24).
 - 2026-11-19 — Choice: R9-1, `viewer/test/app-project-tools.test.js`: the test requires `node:http` and the client inside its body, listens on 127.0.0.1, closes the server with `t.after`, and doesn't guard the split index (report said none; scout-listed).
 - 2026-11-19 — R9-1 accepted (band: scout): viewer node 642/642 and the Project tools hub tests 4/4 re-run by sub-lead; the report shows the new test failing with `Ol��` without the line. The scout found the one line before the data listener and no Buffer consumer of `requestJson`; streamed routes are untouched.
+- 2026-11-19 — Verification attempt 10 started on 7fefd39: verifier-19 (claude-opus-5-5) and verifier-20 (gpt-6.2-sol); the brief carries Log 52's gap bar and Deferred rows 1-13.
