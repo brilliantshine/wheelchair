@@ -24,3 +24,28 @@ test('reader accepts sse, validates headers and hashes file bytes', async () => 
 test('missing file has null hash', async () => {
   assert.deepEqual(await readProjectMcp(makeTempSync()), { mcp: null, warnings: [], hash: null });
 });
+
+test('marks duplicate header keys from every header object without marking other paths', async () => {
+  const { DUPLICATE_HEADERS } = require('../lib/project-mcp');
+  const dir = makeTempSync();
+  fs.writeFileSync(path.join(dir, '.mcp.json'), String.raw`{
+    "mcpServers": {
+      "exact": {"type":"http", "url":"x", "headers":{"X-Fixture":"1", "X-Fixture":"2"}},
+      "case": {"type":"sse", "url":"x", "headers":{"Authorization":"1", "authorization":"2"}},
+      "escaped": {"type":"http", "url":"x", "headers":{"X":"1", "\u0058":"2"}},
+      "repeated": {"type":"http", "url":"x", "headers":{"a":"1", "a":"2"}, "headers":{"b":"3"}},
+      "clean": {"type":"http", "url":"x", "headers":{"X":"1"}, "env":{"z":"1", "z":"2"}},
+      "local": {"command":"x", "headers":{"a":"1", "a":"2"}}
+    },
+    "other": {"mcpServers":{"clean":{"headers":{"a":"1", "a":"2"}}}}
+  }`);
+  const { mcp, warnings } = await readProjectMcp(dir);
+  assert.deepEqual(warnings, []);
+  for (const name of ['exact', 'case', 'escaped', 'repeated']) {
+    const entry = mcp.servers[name];
+    assert.equal(entry[DUPLICATE_HEADERS], true, name);
+    assert.deepEqual(Object.keys(entry), Object.keys(JSON.parse(JSON.stringify(entry))));
+    assert.ok(!JSON.stringify(entry).includes('duplicate headers'));
+  }
+  for (const name of ['clean', 'local']) assert.equal(mcp.servers[name][DUPLICATE_HEADERS], undefined, name);
+});

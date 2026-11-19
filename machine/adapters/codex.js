@@ -5,7 +5,7 @@ const c = require('./common');
 const usual = () => c.home('CODEX_HOME', '.codex');
 const loginEnv = dir => dir ? { CODEX_HOME: dir } : {};
 const { run } = require('../lib/usage-probe');
-const { serverLabel } = require('../lib/project-mcp');
+const { DUPLICATE_HEADERS, serverLabel } = require('../lib/project-mcp');
 function parseUsage(response) {
   if (response?.error || !response?.result?.rateLimits) throw new Error('invalid Codex usage response');
   const limits = response.result.rateLimits; let five_hour = null, week = null;
@@ -70,7 +70,7 @@ module.exports = {
         let reason;
         if (!/^[A-Za-z0-9_-]+$/.test(name)) reason = 'its name must use only letters, digits, _ and -';
         else if (entry.type === 'sse') reason = 'uses sse, which Codex does not support';
-        else if (entry.type === 'http' && new Set(Object.keys(entry.headers || {}).map(key => key.toLowerCase())).size !== Object.keys(entry.headers || {}).length) reason = 'has the same header twice';
+        else if (entry.type === 'http' && (entry[DUPLICATE_HEADERS] || new Set(Object.keys(entry.headers || {}).map(key => key.toLowerCase())).size !== Object.keys(entry.headers || {}).length)) reason = 'has the same header twice';
         // Only the fields this transport uses are read: the reader validates stdio fields for stdio
         // entries and only `url` for http ones, so an http entry's other keys may be anything.
         else if (entry.type === 'http' ? entry.url.includes('${') :

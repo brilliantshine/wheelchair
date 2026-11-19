@@ -112,3 +112,12 @@ test('budget counts UTF-8 bytes and names all dropped servers', () => {
   assert.deepEqual(result.redactions, []);
   assert.deepEqual(result.warnings, [{ names: ['a', 'b'], text: 'a, b: skipped on Codex: .mcp.json is too large to pass on the command line' }]);
 });
+
+test('skips a reader-marked duplicate header without overrides', () => {
+  const { DUPLICATE_HEADERS } = require('../lib/project-mcp');
+  const entry = { type: 'http', url: 'ok', headers: { 'X-Fixture': 'last' }, [DUPLICATE_HEADERS]: true };
+  const result = call({ duplicate: entry });
+  assert.deepEqual(result.warnings, [warning('duplicate', 'has the same header twice')]);
+  assert.deepEqual(result.argv, base);
+  assert.deepEqual(result.redactions, []);
+});

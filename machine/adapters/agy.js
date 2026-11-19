@@ -4,7 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const c = require('./common');
-const { serverLabel } = require('../lib/project-mcp');
+const { DUPLICATE_HEADERS, serverLabel } = require('../lib/project-mcp');
 const onboarding = ['Choose your color scheme', 'Terms of Service & Data Use', 'Do you trust the contents of this project?', 'Requesting permission for:'];
 module.exports = {
   provider: 'gemini', loginEnv: () => ({}), sessionNameEnv: true,
@@ -38,7 +38,7 @@ module.exports = {
         else if (entry.type === 'sse') reason = 'uses sse, which Antigravity does not support here';
         else if (entry.type === 'http') {
           const headers = entry.headers || {}, names = Object.keys(headers);
-          if (new Set(names.map(key => key.toLowerCase())).size !== names.length) reason = 'has the same header twice';
+          if (entry[DUPLICATE_HEADERS] || new Set(names.map(key => key.toLowerCase())).size !== names.length) reason = 'has the same header twice';
           else if ([entry.url, ...names, ...Object.values(headers)].some(value => value.includes('${'))) reason = 'uses ${...} that Antigravity cannot pass through';
           else translated = { type: 'http', url: entry.url, headers };
         } else {

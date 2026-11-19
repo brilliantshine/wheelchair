@@ -57,3 +57,12 @@ test('skips unsupported entries in precedence order without exposing values', ()
   assert.ok(!JSON.stringify(result.warnings).includes('SECRET'));
   assert.equal(command(entries, false).warnings, undefined);
 });
+
+test('skips a reader-marked duplicate header without a plugin', () => {
+  const { DUPLICATE_HEADERS } = require('../lib/project-mcp');
+  const entry = { type: 'http', url: 'ok', headers: { 'X-Fixture': 'last' }, [DUPLICATE_HEADERS]: true };
+  const result = command({ duplicate: entry });
+  assert.deepEqual(result.warnings, [{ names: ['duplicate'], text: 'duplicate: skipped on Antigravity: has the same header twice' }]);
+  assert.equal(result.toolFiles, undefined);
+  assert.ok(!result.argv.includes('--add-dir'));
+});

@@ -4,12 +4,63 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const fsc = require('node:fs').constants;
 
+const DUPLICATE_HEADERS = Symbol('duplicate headers');
 const TOOL_ROLES = new Set(['lead', 'sub-lead', 'worker', 'verifier']);
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 // How a server is named in a skip line: bare when it is a plain name, JSON-quoted otherwise, so a
 // name with control characters or spaces cannot break the line's text.
 const serverLabel = name => /^[A-Za-z0-9_-]+$/.test(name) ? name : JSON.stringify(name);
 const failure = (reason, hash = null) => ({ mcp: null, warnings: [{ names: [], text: `.mcp.json could not be read: ${JSON.stringify(reason)}` }], hash });
+
+// JSON.parse has already validated the text, but discards repeated object keys.
+function duplicateHeaderServers(text) {
+  const duplicates = new Set();
+  let i = 0;
+  const whitespace = () => { while (' \t\r\n'.includes(text[i]) && i < text.length) i++; };
+  function string() {
+    const start = i++;
+    while (text[i] !== '"') {
+      if (text[i] === '\\') i++;
+      i++;
+    }
+    return JSON.parse(text.slice(start, ++i));
+  }
+  function value(path) {
+    whitespace();
+    if (text[i] === '{') {
+      i++;
+      const headers = path.length === 3 && path[0] === 'mcpServers' && path[2] === 'headers';
+      const seen = new Set();
+      whitespace();
+      while (text[i] !== '}') {
+        const key = string();
+        if (headers) {
+          const lower = key.toLowerCase();
+          if (seen.has(lower)) duplicates.add(path[1]);
+          seen.add(lower);
+        }
+        whitespace(); i++; // colon
+        value([...path, key]);
+        whitespace();
+        if (text[i] !== ',') break;
+        i++; whitespace();
+      }
+      i++;
+    } else if (text[i] === '[') {
+      i++; whitespace();
+      while (text[i] !== ']') {
+        value([...path, null]);
+        whitespace();
+        if (text[i] !== ',') break;
+        i++; whitespace();
+      }
+      i++;
+    } else if (text[i] === '"') string();
+    else while (i < text.length && !' \t\r\n,]}'.includes(text[i])) i++;
+  }
+  value([]);
+  return duplicates;
+}
 
 async function readProjectMcp(worktree) {
   try {
@@ -43,7 +94,12 @@ async function readProjectMcp(worktree) {
       if (stdio || http) Object.defineProperty(servers, name, { value: entry, enumerable: true, writable: true, configurable: true });
       else warnings.push({ names: [name], text: `${serverLabel(name)}: skipped: not a valid stdio, http or sse entry` });
     }
+    const duplicates = duplicateHeaderServers(bytes.toString('utf8'));
+    for (const name of Object.keys(servers)) {
+      const entry = servers[name];
+      if ((entry.type === 'http' || entry.type === 'sse') && duplicates.has(name)) entry[DUPLICATE_HEADERS] = true;
+    }
     return { mcp: { names, servers }, warnings, hash };
   } catch { return failure('read failed'); }
 }
-module.exports = { TOOL_ROLES, readProjectMcp, serverLabel };
+module.exports = { DUPLICATE_HEADERS, TOOL_ROLES, readProjectMcp, serverLabel };
