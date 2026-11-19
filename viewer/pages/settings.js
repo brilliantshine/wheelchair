@@ -650,7 +650,7 @@
     if (fullPrompt.error) return h('p', { id: 'full-prompt', class: 'inline-err', role: 'alert', text: fullPrompt.error });
     return h('div', { class: 'full-prompt-wrap' },
       h('pre', { id: 'full-prompt', class: 'full', text: fullPrompt.text }),
-      h('span', { class: 'hint', id: 'full-prompt-caption', text: 'Claude gets this as its starting instructions; GPT and Antigravity sessions get it as a file, through a two-line first message that points to it.' }));
+      h('span', { class: 'hint', id: 'full-prompt-caption', text: 'Claude gets this as its starting instructions; GPT, Antigravity and Kimi Code sessions get it as a file, through a short first message that points to it.' }));
   }
 
   function switchRow(title, hint, control) {
