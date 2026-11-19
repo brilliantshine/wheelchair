@@ -51,11 +51,11 @@ test('card opens, keeps id on same names, replaces on different names, closes on
     let t = await f.get();
     assert.equal(open(t).length, 1);
     const id = open(t)[0].id;
-    assert.match(open(t)[0].body, /^Some project tools won't work for agents in this thread:\n• Server "a" needs x, not found$/);
+    assert.equal(open(t)[0].body, "Some project tools won't work for agents in this thread:"); assert.deepEqual(open(t)[0].items, ['Server "a" needs x, not found']);
     assert.equal(open(t)[0].kind, 'needs'); assert.equal(open(t)[0].system, true);
     await f.apply({ project_tools: tools({ seq: 2, programs: [line('Server "a" other text', 'a')] }), created_at: '2026-01-01T00:00:01.000Z' });
     t = await f.get();
-    assert.equal(open(t).length, 1); assert.equal(open(t)[0].id, id); assert.match(open(t)[0].body, /other text/);
+    assert.equal(open(t).length, 1); assert.equal(open(t)[0].id, id); assert.match(open(t)[0].items[0], /other text/);
     assert.equal(all(t).length, 1);
     await f.apply({ project_tools: tools({ seq: 3, programs: [line('Server "b" bad', 'b')] }), created_at: '2026-01-01T00:00:02.000Z' });
     t = await f.get();
@@ -72,8 +72,7 @@ test('per-CLI and program lines are kept apart; a file line uses the name file',
   try {
     await f.apply({ project_tools: tools({ file: [line('The file is unreadable')], programs: [line('Program missing', 'p')], clis: { codex: { hash: 'h', thread: 't', lines: [line('Codex skips "s"', 's')] }, agy: { hash: 'h', thread: 't', lines: [line('Agy skips "s"', 's')] } } }), created_at: '2026-01-01T00:00:00.000Z' });
     const t = await f.get();
-    const body = open(t)[0].body.split('\n');
-    assert.deepEqual(body.slice(1), ['• The file is unreadable', '• Program missing', '• Agy skips "s"', '• Codex skips "s"']);
+    assert.deepEqual(open(t)[0].items, ['The file is unreadable', 'Program missing', 'Agy skips "s"', 'Codex skips "s"']);
     assert.deepEqual(t.project_tools.card_names, ['file', 'p', 's']);
     const listed = await sessions.sessionRequest(f.hub, { calling_session: f.made.sessions[0].name, action: 'list' });
     assert.equal(listed.sessions.find((s) => s.role === 'lead').project_tools.problems.length, 4);
@@ -86,8 +85,16 @@ test('more than 20 lines shows and N more; duplicates by text drop', async () =>
   try {
     const lines = Array.from({ length: 23 }, (_, i) => line(`Problem ${i}`, `s${i}`));
     await f.apply({ project_tools: tools({ programs: [...lines, line('Problem 0', 'dup')] }), created_at: '2026-01-01T00:00:00.000Z' });
-    const body = open(await f.get())[0].body.split('\n');
-    assert.equal(body.length, 1 + 20 + 1); assert.equal(body.at(-1), 'and 3 more');
+    const items = open(await f.get())[0].items;
+    assert.equal(items.length, 20 + 1); assert.equal(items.at(-1), 'and 3 more');
+  } finally { await finish(f); }
+});
+
+test('a line with underscores is kept byte-for-byte in items', async () => {
+  const f = await fixture();
+  try {
+    await f.apply({ project_tools: tools({ programs: [line("_tool_: its program can't be found", 'a')] }), created_at: '2026-01-01T00:00:00.000Z' });
+    assert.deepEqual(open(await f.get())[0].items, ["_tool_: its program can't be found"]);
   } finally { await finish(f); }
 });
 
@@ -97,13 +104,13 @@ test('seq and boot ordering', async () => {
     await f.apply({ project_tools: tools({ seq: 5, programs: [line('five', 'a')] }), created_at: '2026-01-02T00:00:00.000Z' });
     await f.apply({ project_tools: tools({ seq: 3, programs: [line('three', 'a')] }), created_at: '2026-01-03T00:00:00.000Z' });
     let t = await f.get();
-    assert.equal(t.project_tools.seq, 5); assert.match(open(t)[0].body, /five/);
+    assert.equal(t.project_tools.seq, 5); assert.match(open(t)[0].items[0], /five/);
     await f.apply({ project_tools: tools({ boot: 'b2', seq: 1, programs: [line('newboot', 'a')] }), created_at: '2026-01-02T00:00:00.000Z' });
     t = await f.get();
-    assert.equal(t.project_tools.boot, 'b2'); assert.equal(t.project_tools.seq, 1); assert.match(open(t)[0].body, /newboot/);
+    assert.equal(t.project_tools.boot, 'b2'); assert.equal(t.project_tools.seq, 1); assert.match(open(t)[0].items[0], /newboot/);
     await f.apply({ project_tools: tools({ boot: 'b3', seq: 9, programs: [line('stale', 'a')] }), created_at: '2026-01-01T00:00:00.000Z' });
     t = await f.get();
-    assert.equal(t.project_tools.boot, 'b2'); assert.match(open(t)[0].body, /newboot/);
+    assert.equal(t.project_tools.boot, 'b2'); assert.match(open(t)[0].items[0], /newboot/);
   } finally { await finish(f); }
 });
 
@@ -133,7 +140,7 @@ test('applied in a queued promotion and in resumeUnanswered, without re-taking t
     f.pending.answer = { project_tools: tools({ programs: [line('queued problem', 'q')] }), created_at: '2026-01-01T00:00:00.000Z' };
     await within(sessions.retryWaiting(f.hub));
     let t = await f.get();
-    assert.match(open(t)[0]?.body || '', /queued problem/);
+    assert.match(open(t)[0]?.items[0] || '', /queued problem/);
     assert.ok(t.sessions.every((s) => s.project_tools === undefined));
     // resumeUnanswered
     f.pending.answer = { project_tools: tools({ seq: 2, programs: [line('resumed problem', 'q')] }), created_at: '2026-01-01T00:00:01.000Z' };
@@ -146,7 +153,7 @@ test('applied in a queued promotion and in resumeUnanswered, without re-taking t
     const again = await within(f.hub.withThread(f.made.id, () => sessions.sessionRequest(f.hub, { calling_session: f.made.sessions[0].name, action: 'start', role: 'reviewer', attempt_id: 'w' })));
     assert.equal(again.duplicate, true);
     t = await f.get();
-    assert.match(open(t)[0].body, /resumed problem/);
+    assert.match(open(t)[0].items[0], /resumed problem/);
     assert.ok(t.sessions.every((s) => s.project_tools === undefined));
   } finally { await finish(f); }
 });
