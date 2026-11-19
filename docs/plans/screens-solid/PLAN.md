@@ -100,8 +100,10 @@ The installer never installs anything and its exit status is unchanged.
   `await` between them, so two sessions starting at once cannot both slip under the cap.
 - Past the cap, `start` and `run` fail with 422:
   `screen limit reached: <n> screens running on this machine (limit <cap>); try again later`. Nothing is created and no state file changes.
-- A screen leaves the count exactly when it leaves `screens` today (teardown, reset, stop,
-  archive, sweep).
+- The cap counts map entries. A screen leaves the count exactly when it leaves `screens`
+  today (teardown, reset, stop, archive, sweep). A screen being torn down can overlap a
+  new one for up to the existing 3 s SIGTERM-to-SIGKILL window; this is accepted (see
+  Accepted Risks).
 - **No stranded slots.** If the first `save()` after `this.screens.set(...)` in `start()`
   throws, the entry is deleted from `screens` (if it is still that screen) before the
   error propagates. `reset()` deletes the entry in a `finally`, so a failing `save()` there
@@ -109,8 +111,8 @@ The installer never installs anything and its exit status is unchanged.
   can retry.
 - **Cleanup survives a failed write.** In `reset()`, a failing `save()` is logged and does
   not stop the rest: the `xauth` cookie is still removed and the map entry still deleted.
-  `teardown()` always signals the slice (`gracefulSlice`) even if `reset()` threw, so
-  Xvfb, openbox and apps never outlive a freed slot.
+  So `reset()` no longer throws, and `teardown()` (unchanged) always goes on to signal the
+  slice.
 
 ### S3. Screenshot pruning
 
@@ -135,7 +137,8 @@ The installer never installs anything and its exit status is unchanged.
   (`scopeArgs(screen, 'wm')`), with `DISPLAY` and `XAUTHORITY` set to the screen's, stdio
   to `wm.log` in the screen directory.
 - **Readiness, one deadline.** A single deadline of 5 s from spawning openbox covers both
-  waits. First registration (`registered()`, bounded by the time left), then polling
+  waits. First registration (`registered()`, given an optional `deadline` argument so it
+  stops at the time left; its return value stays unused), then polling
   `xprop -root _NET_SUPPORTING_WM_CHECK` (screen's `DISPLAY`/`XAUTHORITY`) every 100 ms.
   Each probe's timeout is `min(1000, time left)`. openbox counts as ready when that
   returns a window id.
@@ -151,10 +154,11 @@ The installer never installs anything and its exit status is unchanged.
 - **openbox exiting later.** Before each window op (`windows`, `focus`, `shot --window`,
   and `run`'s autofocus), when `state.window_manager` is `"openbox"`, query the `wm`
   scope with `systemctl --user show --property=ActiveState --value`. Only a confirmed
-  inactive result clears the mode: the command succeeded and the state is not `active`,
-  `activating` or `reloading`. Then set `state.window_manager` to `null`, save, and use
-  today's behaviour for that op and after; openbox is not restarted. A failed or timed-out
-  query changes nothing, and the op runs in openbox mode.
+  inactive result clears the mode: the command succeeded and its trimmed output is exactly
+  `inactive` or `failed`. Then set `state.window_manager` to `null`, save, and use
+  today's behaviour for that op and after; openbox is not restarted. Any other result
+  changes nothing, and the op runs in openbox mode: a failed or timed-out query, or empty
+  or unrecognised output.
 - `status` adds `window_manager` (the state value).
 - **Windows with openbox running** (`state.window_manager === "openbox"`):
   - Listing windows (`windows`, `windowIds`, `autoFocus` baseline and polling) takes ids
@@ -185,6 +189,9 @@ The installer never installs anything and its exit status is unchanged.
   S6's wait reads), then set `pid`/`pgid` to `child.pid ?? null`, then `save()`. An
   asynchronous spawn failure leaves `child.pid` undefined, so both are stored as `null`.
   They are never omitted. If `spawn` throws, the record keeps `pid: null, pgid: null`.
+- If this `save()` throws, the error is logged with `service.log` and launch carries on
+  with the hand-over wait: the in-memory record is complete, and the next successful save
+  writes it. The app is never left running behind an error response.
 - Teardown does not read them; teardown stays by slice (parent Decision 21).
   `status` adds `pid` to each app entry.
 
@@ -204,19 +211,12 @@ command is `env -- …`, or `codex sandbox … -- env -- …` for sandboxed Code
 marker sits outside the Codex sandbox, so the sandbox never has to write to the screen
 directory. `exec` keeps the pid (S5 unchanged).
 
-- `registered(child, unit, displayPromise)` returns
-  `{ active, exited, code, error }`:
-  - `active`: the scope was seen active, or the display marker was received.
-  - `exited` and `code`: from the child's `exit` event, if it fired within the wait.
-  - `error`: the message of an `error` event.
-
-  Callers that ignore the return keep working.
+- `launch()` no longer calls `registered()`; the hand-over wait below replaces it.
 - In `launch()`, record the log size just before `spawn`, then:
   - `spawn` throws: keep the app record (`pid: null`) and fail with 422
     `app did not start: <error message>`.
   - **Hand-over wait.** After spawn, wait until one of these, polling every 50 ms, with a
-    single 5 s deadline from spawn. Scope activation alone does not end this wait;
-    `registered()` runs inside it, bounded by the same deadline.
+    single 5 s deadline from spawn. Scope activation does not end this wait.
     - `app-<n>.started` exists: hand-over happened. Continue as today.
     - The child emitted `error`, or exited with any code (including a non-zero code, or
       `null` from a signal), and the marker does not exist: fail with 422
@@ -228,8 +228,13 @@ directory. `exec` keeps the pid (S5 unchanged).
     the last non-empty line of the log bytes written since spawn, preferring the last line
     starting `Failed to`. If there is none, it is the error message or
     `systemd-run exited <code|signal>`.
-  - In every failure case the app record stays (it shows `exited` in `status`) and autofocus is
-    skipped.
+  - In every failure case the app record stays with `failed: true`, autofocus is skipped,
+    and the app scope is stopped at once (`immediate(unit)`). `status` reports a record
+    with `failed: true` as `exited` without querying its scope.
+- **Cancellation first.** After every post-spawn outcome (hand-over, any failure, or
+  timeout), the existing generation fence runs before anything is returned. If the
+  session stopped or the thread was archived meanwhile, the app scope is stopped at once
+  and the response is the existing 409. A 422 is never returned for a cancelled launch.
 - After hand-over, launch returns as today, `{ ok: true, app, log, focused }`. The marker file is
   left in place; it is small and goes with the directory on archive.
 
@@ -243,6 +248,10 @@ directory. `exec` keeps the pid (S5 unchanged).
 - A drag therefore finishes within the base deadline (10 s in production) plus process
   overhead. Mouseup is still always attempted, and the first error still wins.
 - `move` and `click` are unchanged.
+- **Timeouts really end.** In `runTool()` (`screen-input.js:7-19`), when the timeout
+  fires, SIGKILL the child, destroy its stdout and stderr streams, and resolve at once
+  with `timedOut: true`, without waiting for `close`. A descendant holding the pipes open
+  can no longer delay the result. This applies to every screen tool call.
 - The existing drag test that uses `baseDeadlineMs: 100` (`machine/test/screen-input.test.js:39`)
   passes `mouseupReserveMs: 25`.
 
@@ -283,7 +292,12 @@ Every item gets a test with fake tools in the existing style (`machine/test/scre
   - A fake `xprop` that never reports `_NET_SUPPORTING_WM_CHECK`: the `wm` scope is
     stopped, the value is `null`, today's calls are used, and the screen is running by 5 s
     plus overhead.
-  - A `systemctl show` that fails once during a window op leaves the mode as openbox.
+  - A `systemctl show` that fails once, or succeeds with empty or unrecognised output,
+    during a window op leaves the mode as openbox.
+  - Fixture: `ScreenManager` takes a constructor option `windowManager` (default `true`).
+    The shared fake-tool fixture passes `false`, so a host with openbox installed never
+    starts it in other tests. S4 tests pass `true` and shim `openbox` and `xprop`.
+    `screenTools(searchPath)` is unit-tested with temp PATHs for presence and absence.
   - A `wm` scope that goes inactive after start: the next `windows` call switches to
     `null` and today's calls.
 - S5: `state.json` app record has numeric `pid` equal to `pgid`, and `status` shows `pid`.
@@ -303,6 +317,14 @@ Every item gets a test with fake tools in the existing style (`machine/test/scre
   - A fake `systemd-run` that hangs without running the command gives 422
     `app did not start: no hand-over within 5 s`, and the child is killed.
   - The marker file is mode `0600`, and the app sees the service's umask (not `077`).
+  - Failed launches show `exited` in `status` even while the fake scope still reports
+    active.
+  - A session stopped while hand-over is pending gets 409, not 422, and the app scope is
+    stopped.
+  - A failing state write right after spawn still gives the hand-over outcome, not 500.
+- S7, `runTool`: a fake tool that starts a background `sleep 5` holding its stdout and
+  exits at once, then a tool that hangs, called with a 100 ms timeout, resolves within
+  300 ms with `timedOut: true`.
 - S7, with `baseDeadlineMs: 3000` and the default 1 s reserve, using a fake `xdotool`
   whose stalls are set per subcommand. A stall hangs until the process is killed, not for
   a fixed time:
@@ -328,6 +350,7 @@ openbox is installed, the live test also asserts `status` shows `window_manager:
 
 | Risk | Why accepted | Round |
 |------|--------------|-------|
+| A screen being torn down can overlap a newly started one for up to 3 s, so briefly more than the cap run | The cap guards against runaway use, not a hard memory limit; holding slots through teardown would add state for a 3 s window | 3 |
 | A thread keeps up to 50 screenshots per screen-using session until it is archived | Deleting on session stop would break posting a stopped agent's screenshot; growth is bounded per session | 1 |
 
 ## Review Rounds
@@ -382,7 +405,7 @@ openbox is installed, the live test also asserts `status` shows `window_manager:
 
 ### Round 3 — 2026-11-18
 
-**Lanes:** intent and mechanics, families as started; cross-family: as recorded at start.
+**Lanes:** intent — claude; mechanics — gpt; cross-family: yes.
 
 **Changed since Round 2:**
 - S1: the installer warnings are printed before `configure_service`.
@@ -395,6 +418,15 @@ openbox is installed, the live test also asserts `status` shows `window_manager:
 
 | Lane | Reported | Finding | Lead verdict | Resolution |
 |------|----------|---------|--------------|------------|
+| intent | minor | `registered()`'s new return shape has no reader | upheld | `launch()` drops `registered()`; return unchanged, optional deadline only |
+| intent | minor | Double guard in teardown after `reset()` stops throwing | upheld | Only the `reset()` rule stays |
+| mechanics | blocking | Failed state write after spawn is undefined (500 while app runs) | upheld | Logged; hand-over wait continues |
+| mechanics | major | 422 vs 409 when cancelled during hand-over | upheld | Fence first on every outcome |
+| mechanics | major | Cap frees the slot before teardown ends | downgraded (minor) | 3 s overlap is harmless for a runaway guard. Accepted Risk |
+| mechanics | major | `status` shows failed launches as running while the scope is active | upheld | `failed: true` record; scope stopped |
+| mechanics | major | `runTool` timeout waits for pipes held by descendants | upheld | Resolve at once on timeout |
+| mechanics | minor | Unrecognised `systemctl` output clears openbox mode | upheld | Only `inactive`/`failed` |
+| mechanics | minor | Fixture may start host openbox | upheld | `windowManager` option, off in the shared fixture |
 
 ## Prior Work
 
