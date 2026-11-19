@@ -373,7 +373,7 @@ Filled by Stage 3. One row per worker brief.
 | # | Objective | Ownership boundary | Lane | Session id | Validation | Status |
 |---|-----------|--------------------|------|-----------|------------|--------|
 | T1 | Protocol text: realism.md (S1, S8 def), reviewer/verifier/lead/sub-lead rules (S3–S6, S8), fallback lines and router row (S2), template (S7, S8) | protocol/app/{realism,reviewer,verifier,lead,sub-lead,AGENTS}.md, protocol/templates/PLAN.md | standard / claude-sonnet-5-5 | wc-ac6641ae7c16-worker | grep checks in brief; protocol-rules test | done |
-| T2 | Load realism.md for lead, sub-lead, reviewer, verifier (S2 code) and update tests | machine/service.js, viewer/app/settings.js, machine/test/service.test.js, viewer/test/app-settings.test.js, viewer/test/protocol-rules.test.js | light / gpt-6-luna | wc-ac6641ae7c16-worker-3 | node --test viewer/test/*.test.js; bash machine/test/run.sh | dispatched |
+| T2 | Load realism.md for lead, sub-lead, reviewer, verifier (S2 code) and update tests | machine/service.js, viewer/app/settings.js, machine/test/service.test.js, viewer/test/app-settings.test.js, viewer/test/protocol-rules.test.js | light / gpt-6-luna | wc-ac6641ae7c16-worker-3 | node --test viewer/test/*.test.js; bash machine/test/run.sh | done |
 | T1b | Exact wording fixes to T1 found on review (reviewer RE-RAISE removed, realism.md example, sub-lead record commit/found count/PASS wording, lead pull-back, template history line) | protocol/app/{realism,reviewer,sub-lead,lead}.md, protocol/templates/PLAN.md | light / gpt-6-luna | wc-ac6641ae7c16-worker-2 | grep + protocol-rules test | done |
 
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
@@ -396,3 +396,4 @@ anything a future session needs that fits nowhere above.
 - 2026-11-19 — Choice (not reported by worker, found by scout): T1, templates/PLAN.md: Check Once Built note is two sentences.
 - 2026-11-19 — T1b accepted (band: scout): all eight replacements verbatim; report's pasted diff stat did not come from its commit (diff itself checked correct); grep and protocol-rules suite re-run by sub-lead, 35 pass.
 - 2026-11-19 — Choice (not reported by worker, found by scout): T1b, sub-lead.md:248-251 and lead.md:320-323, 406-409: line-wrap points; a slightly ragged wrap left as is.
+- 2026-11-19 — T2 accepted (band: scout): all five changes match the brief; report's machine-suite paste was truncated, sub-lead re-ran both suites on the T2 branch: viewer 685/685, machine 345/345, exit 0. Worker reported no choices; scout found none.
