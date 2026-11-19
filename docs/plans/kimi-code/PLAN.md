@@ -87,6 +87,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 50 | Live with the remaining permission-prompt false positive; recorded as an Accepted Risk | Permission-prompt detection failed verification attempt 4 after R1, Q1 and A1 (Decision 48): title and choice from separate blocks of ordinary output can still match | user |
 | 51 | A hub Stop sends the fatal-stop notice only when the session was still live in the hub before that Stop; tested with a retried Stop | Fatal-stop notification failed verification attempt 4 after R3 and P1 (a retried Stop notified twice) | user |
 | 52 | Kimi approval detection allows an optional `▶` or `❯` before both the title and the choice, keeping Decision 48's shape; tested with the installed renderer's exact lines, false-positive tests unchanged | Verification attempt 6: the real renderer draws `▶ Run this command?` / `▶ 1. Approve once`, which Decision 48's matcher rejected | user |
+| 53 | Stop refining Kimi approval detection; layouts beyond the tested ones (long write previews, plan reviews with custom choices) are an Accepted Risk | Approval detection failed verification again in attempt 7 after R1, Q1, A1 and A2 | user |
 
 ## Spec
 
@@ -623,6 +624,7 @@ re-raise them.
 | Placement can pick a Kimi account on a machine where the `kimi` binary was removed after login | Same for every CLI today; Ready reports the missing CLI | 4 |
 | Malformed SemVer strings such as 02.6.3 or 2.6.4-01 pass the version floor; only kimi --version output is parsed and it prints plain versions | Collin's decision after the version-floor gap survived two fix attempts (Decision 49) | verification |
 | Under the auto permission setting, ordinary Kimi output showing both approval phrases near the bottom while no input box shows can raise a stray permission card; it clears when the input box returns. Under bypass, Kimi runs Never Ask and shows no approval screen | Collin's decision after permission-prompt detection failed verification again (Decision 50) | verification |
+| Under the auto permission setting, Kimi approval panels whose title scrolls above the detection window (long write previews) or plan reviews with custom choices raise no card; the agent waits until someone looks at its terminal. Under bypass Kimi runs Never Ask and shows no approvals | Collin's decision to stop refining approval detection after verification attempt 7 (Decision 53) | verification |
 
 ## Review Rounds
 
@@ -960,6 +962,8 @@ Filled by Stage 3. One row per worker brief.
 Session id = the `thread_id` of a `codex exec` lane, so remediation can resume it.
 
 ## Log
+
+- 2026-11-18 — Collin on remediation 7 gap 1: stop here (Decision 53, Accepted Risk). Remediation 7 settled.
 
 - 2026-11-18 — Lead on remediation 7: gap 2 settled by the plan (shared `transcript_path`); gap 3 settled as unverified, and the sub-lead changed the live sampler in `test-support/smoke/kimi-live.js` to call the production `promptText` (syntax check and test-support 9/9). Gap 1 with Collin.
 

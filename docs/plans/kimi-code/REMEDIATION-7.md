@@ -13,3 +13,4 @@ Verification attempt 7 at `6b30111`: `wc-01b8cb1bf051-verifier-13` (claude-opus-
 All three sent to the lead: gap 1 is the approval-detection gap surviving again; gap 2 conflicts with the Spec ("Events": the service calls `hook()` with `transcript_path` set to the bound file); gap 3 concerns a live check the lead earlier allowed to be recorded as unverified.
 
 **Lead's answers:** gap 2 settled by the plan: `transcript_path` is the shared field every CLI sends with turn events (Spec "Events"); the rule that `kimi_session_id` stays on the machine is about that id field only. No change. Gap 3 settled as unverified (no real approval prompt was captured live); the sub-lead made the smoke script's sampler use the production `promptText`, so the two cannot disagree. Gap 1 is with Collin.
+Gap 1 settled by Collin (Decision 53): stop refining; Accepted Risk added.
