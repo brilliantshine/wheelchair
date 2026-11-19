@@ -401,3 +401,4 @@ anything a future session needs that fits nowhere above.
 - 2026-11-19 — R1 accepted (band: scout): three edits verbatim; lines 286-288 and 319-322 of lead.md wrap raggedly (cosmetic, left).
 - 2026-11-19 — Choice: R1, lead.md:286-288 and 319-322: re-wrap only the touched lines, leaving short orphan lines.
 - 2026-11-19 — Verification attempt 2: claude PASS, gpt FAIL with 2 gaps, both judged normal use: closure sentence swept in upheld findings (T1b brief text), lead's own verifier briefs lacked Accepted Risks. R2 dispatched.
+- 2026-11-19 — R2 accepted (band: scout): both edits verbatim. Worker reported no choices; scout noted it proceeded without REMEDIATION-2.md in its checkout (sub-lead told it to read it from the feature branch) and omitted one pasted stat.
