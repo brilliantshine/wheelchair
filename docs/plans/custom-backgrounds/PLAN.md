@@ -183,9 +183,12 @@ Backend and frontend run in disjoint checkouts. T1 owns the shared format helper
 | T1 | tricky: persistence, bounded HTTP and shared format parser | viewer/app/background.js, settings.js, state.js, routes.js, hub.js, API.md; viewer/server.js; pages/background-format.js; test/background*.test.js; test/fixtures/background/ | standard gpt/gpt-6.1-terra | wc-7108adfdf9ea-worker | node --test viewer/test/background*.test.js; full Node suite | partial, integrated; next attempt needed |
 | T2 | tricky: shared renderer, Settings editor, page surfaces and browser checks | viewer/pages except background-format.js; viewer/doc.html; test/background*.spec.js; test/fixtures/background-browser/ | standard gpt/gpt-6.1-terra (Claude unavailable) | wc-7108adfdf9ea-worker-2 | focused browser tests; full browser suite | partial, integrated; next attempt needed |
 
-| T3 | tricky: complete backend/parser and focused missing checks; T1 hit twice-failed environment gate | T1 boundary and report T3.md | standard gpt/gpt-6.1-terra, xhigh (effort step) | wc-7108adfdf9ea-worker-4 | private TMPDIR node --test viewer/test/background*.test.js | dispatched |
-| T4 | tricky: complete renderer/editor lifecycle and surfaces; T2 hit twice-failed incomplete gate | pages source excluding format helper, legacy doc; report T4.md | standard gpt/gpt-6.1-terra, xhigh (effort step) | wc-7108adfdf9ea-worker-5 | JS syntax, diff check, focused Chromium | dispatched |
-| T5 | tricky: complete representative browser checks | test/background*.spec.js, fixtures/background-browser, app-settings.spec.js section expectation only; report T5.md | standard gpt/gpt-6.1-terra | wc-7108adfdf9ea-worker-3 | private TMPDIR focused Chromium then integrated both browsers | dispatched |
+| T3 | tricky: complete backend/parser and focused missing checks; T1 hit twice-failed environment gate | T1 boundary and report T3.md; routes.test.js CSP expectations | standard gpt/gpt-6.1-terra, xhigh (effort step) | wc-7108adfdf9ea-worker-4 | private TMPDIR node --test viewer/test/background*.test.js and routes.test.js | done (30/30; reuse correction8/8) |
+| T4 | tricky: complete renderer/editor lifecycle and surfaces; T2 hit twice-failed incomplete gate | pages source excluding format helper, legacy doc; report T4.md | standard gpt/gpt-6.1-terra, xhigh (effort step) | wc-7108adfdf9ea-worker-5 | JS syntax, diff check, focused both browsers | done (6/6 root baseline) |
+| T5 | tricky: complete representative browser checks | test/background*.spec.js, fixtures/background-browser, app-settings.spec.js section expectation only; report T5.md | standard gpt/gpt-6.1-terra | wc-7108adfdf9ea-worker-3 | private TMPDIR focused Chromium then integrated both browsers | partial integrated; superseded by T6/T7 |
+
+| T6 | tricky: native GIF timing and representative signed-in page/interaction coverage | test/background-rendering.spec.js, fixtures/background-browser; report T6.md | standard gpt/gpt-6.1-terra, xhigh (T5 completion effort step) | pending | isolated both-browser background-rendering.spec.js | dispatched |
+| T7 | tricky: real delayed polling, timeouts/fallback and native decode lifecycle | test/background-network.spec.js and background-editor.spec.js; report T7.md | standard gpt/gpt-6.1-terra, xhigh (T5 completion effort step) | pending | isolated both-browser background-editor.spec.js background-network.spec.js | dispatched |
 
 ## Log
 
@@ -204,3 +207,15 @@ Backend and frontend run in disjoint checkouts. T1 owns the shared format helper
 - 2026-11-19 — Test environment: isolate each validation command with a private TMPDIR to prevent shared /tmp sweeps between separate PID namespaces. Full Node commands use command-local init.defaultBranch=main for existing slug fixtures. No live/user state is used.
 
 - 2026-11-19 — Firefox setup resolved with temporary writable XDG_CONFIG_HOME/cache/runtime and explicit installed PLAYWRIGHT_BROWSERS_PATH. Independent integrated Firefox focused tests pass 3/3 (8.3s); Chromium3/3 (4.8s). No HOME change, live state, installation, or browser sandbox relaxation.
+
+- 2026-11-19 — T3 accepted (band: self, tricky512): reviewed full diff/report and reread parser ending; root focused+routes30/30 passes. Source reuses settings queue and commit boundary; root integration additionally corrected same-ID immutable file reuse with inode assertion, focused8/8 passes.
+- 2026-11-19 — Choice: T3, parser: reject trailing data after terminal container marker.
+- 2026-11-19 — Choice: T3, faults: export commit for narrow in-process filesystem fault tests.
+- 2026-11-19 — Choice: T3, fixtures: synthetic JPEG checks minimum container structure rather than pixel decoding (native browser remains decoder).
+- 2026-11-19 — T4 accepted (band: self, tricky112): entire diff/report checked; root JS syntax and both-browser baseline6/6 passes (6.6s). Full representative integration evidence continues in T6/T7.
+- 2026-11-19 — Choice: T4, baseline image failure: disable clean slider until current saved image is displayed; choose/remove and normal retry remain available.
+- 2026-11-19 — Choice: T4, surfaces: existing palette on actual content surfaces with transparent outer Settings gutters.
+- 2026-11-19 — Choice: T4, UI errors: concise retry/format/size messages instead of raw parser/server details.
+- 2026-11-19 — T5 partial integrated (band: self, tricky123), not accepted complete. Honest report names missing GIF/pages/network cases; test-ready image wait fixed after initial failure. Remaining coverage decomposed into disjoint T6/T7 with explicit correct Playwright filenames and working two-browser environment.
+- 2026-11-19 — Choice: T5, pending selection: file arrayBuffer hold is deterministic but does not cover native decode; T7 adds that coverage.
+- 2026-11-19 — Choice: T5, screenshots: retained in /tmp/backgrounds-T5-artifacts by browser/width; seen desktop screenshot confirms solid controls and exposed gutters. Paths: /tmp/backgrounds-T5-artifacts/chromium-settings-1280.png and chromium-settings-390.png. Final representative nonuniform-background screenshots requested in T6.
