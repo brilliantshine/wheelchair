@@ -2,6 +2,7 @@
 'use strict';
 const { startupWarning } = require('./lib/startup-warning');
 const { TOOL_ROLES, readProjectMcp } = require('./lib/project-mcp');
+const { missingPrograms } = require('./lib/project-programs');
 
 /*
  * Wheelchair machine service.  The HTTP API is documented in machine/API.md.
@@ -212,6 +213,9 @@ class MachineService {
     this.config = {};
     this.asideTurns = new AsideTurns(this.stateDir, atomicWrite, accountDir);
     this.sessions = {};
+    this.projectToolsBoot = crypto.randomUUID();
+    this.projectTools = new Map();
+    this.projectToolsWrites = new Map();
     this.startupWarning = null;
     this.startupSamples = new Map();
     this.startupWarningRunning = false;
@@ -348,6 +352,8 @@ class MachineService {
   }
   async init() {
     await mkdir(this.stateDir);
+    const toolsDir = path.join(this.stateDir, 'project-tools');
+    try { for (const name of await fsp.readdir(toolsDir)) if (name.endsWith('.tmp')) await fsp.unlink(path.join(toolsDir, name)).catch(error => this.log(error)); } catch (error) { if (error.code !== 'ENOENT') this.log(error); }
     this.config = await readJson(this.configPath, {});
     this.config.host = this.options.host || this.config.host || maybeTailscaleIp();
     this.config.port = Number(this.options.port || this.config.port || 7374);
@@ -585,6 +591,63 @@ class MachineService {
     return adapter.command(input, session, worktree, { stateDir: this.stateDir, promptPath, rolePrompt, mcp, tools: TOOL_ROLES.has(input.role) });
   }
 
+  threadWorktree(input, worktree) {
+    try {
+      const repo = input.project_dir || input.projectDir || input.repo;
+      const project = safeName(input.project || (repo && path.basename(repo)), 'project');
+      const thread = safeName(input.thread_id, 'thread id');
+      return fs.realpathSync(worktree) === fs.realpathSync(path.join(this.stateDir, 'worktrees', project, 'wc', thread));
+    } catch { return false; }
+  }
+  async tmuxPath() {
+    return new Promise(resolve => {
+      let stdout = '', done = false;
+      const finish = value => { if (!done) { done = true; clearTimeout(timer); resolve(value); } };
+      let child;
+      try { child = spawn('tmux', ['show-environment', '-g', 'PATH'], { stdio: ['ignore', 'pipe', 'ignore'] }); }
+      catch { return resolve(process.env.PATH || ''); }
+      const timer = setTimeout(() => { child.kill('SIGKILL'); finish(process.env.PATH || ''); }, 2000);
+      child.stdout.setEncoding('utf8');
+      child.stdout.on('data', chunk => { stdout += chunk; });
+      child.on('error', () => finish(process.env.PATH || ''));
+      child.on('close', code => finish(code === 0 && stdout.startsWith('PATH=') ? stdout.slice(5).replace(/\r?\n$/, '') : (process.env.PATH || '')));
+    });
+  }
+  updateProjectTools(input, session, worktree, promptPath, rolePrompt, read, built, thread, programs) {
+    const id = encodeURIComponent(safeName(input.thread_id, 'thread id'));
+    let state = this.projectTools.get(id);
+    if (!state) {
+      try { state = JSON.parse(fs.readFileSync(path.join(this.stateDir, 'project-tools', `${id}.json`), 'utf8')); }
+      catch { state = { seq: 0, file: [], programs: [], clis: {} }; }
+      this.projectTools.set(id, state);
+    }
+    const { mcp, warnings, hash } = read;
+    if (mcp === null && warnings.length) {
+      if (thread) state.file = warnings;
+    } else if (mcp === null || mcp.names.length === 0) {
+      if (thread) { state.file = []; state.programs = []; state.clis = {}; }
+    } else {
+      state.clis[input.cli] = { hash, thread, lines: built.warnings || [] };
+      if (thread) { state.file = warnings; state.programs = programs; }
+      for (const [cli, prior] of Object.entries(state.clis)) {
+        if (cli === input.cli || !prior.lines.length || !(prior.hash === hash || (thread && prior.thread))) continue;
+        const other = adapters[cli];
+        if (!other) continue;
+        const result = other.command({ ...input, cli, role: 'worker' }, { ...session }, worktree, { stateDir: this.stateDir, promptPath, rolePrompt, mcp, tools: true });
+        state.clis[cli] = { hash, thread, lines: result.warnings || [] };
+      }
+    }
+    state.seq += 1;
+    const previous = this.projectToolsWrites.get(id) || Promise.resolve();
+    const write = previous.then(async () => {
+      const file = path.join(this.stateDir, 'project-tools', `${id}.json`), temp = `${file}.tmp`;
+      try { await mkdir(path.dirname(file)); await fsp.writeFile(temp, `${json(this.projectTools.get(id))}\n`, { mode: 0o600 }); await fsp.rename(temp, file); }
+      catch (error) { await fsp.unlink(temp).catch(() => {}); this.log(error); }
+    });
+    this.projectToolsWrites.set(id, write);
+    session.project_tools = JSON.parse(json({ boot: this.projectToolsBoot, ...state }));
+  }
+
   async start(input) {
     for (const key of ['role', 'cli', 'thread_id', 'token']) if (!input[key]) die(`missing ${key}`);
     const name = input.name || this.sessionName(input.thread_id, input.role);
@@ -629,9 +692,15 @@ class MachineService {
       worktree, created_worktree: createdWorktree, attempt_id: input.attempt_id || null, started_by: input.started_by || null,
       branch: created.branch || input.branch || null, default_branch: created.defaultBranch || input.default_branch || input.defaultBranch || null,
       cli_session_id: input.cli_session_id || crypto.randomUUID(), status: 'starting', created_at: new Date().toISOString() };
-    const { mcp, warnings } = await readProjectMcp(worktree);
+    const read = await readProjectMcp(worktree);
+    const { mcp, warnings } = read;
+    const tools = TOOL_ROLES.has(input.role);
+    const thread = tools && this.threadWorktree(input, worktree);
+    let programs = [];
+    if (thread && mcp && Object.keys(mcp.servers).length) programs = missingPrograms({ worktree, mcp, path: await this.tmuxPath() });
     const built = this.commandFor(input, session, worktree, promptPath, rolePrompt, mcp);
     if (TOOL_ROLES.has(input.role)) for (const warning of [...warnings, ...(built.warnings || [])]) console.error(`${session.name}: project tools: ${warning.text}`);
+    if (tools) this.updateProjectTools(input, session, worktree, promptPath, rolePrompt, read, built, thread, programs);
     if (built.settingsPath) await atomicWrite(built.settingsPath, `${json(built.settings)}\n`);
     if (built.toolFiles) {
       const root = path.join(this.stateDir, 'agy-tools');
@@ -1191,7 +1260,7 @@ class MachineService {
   sessionList() {
     const live = this.liveTmux();
     const others = [...(live || [])].filter(name => !name.startsWith('wc-login-') && !this.sessions[name]).map(name => ({ name, managed: false, running: true }));
-    return [...Object.values(this.sessions).filter(s => !s.name.startsWith('wc-login-')).map(s => ({ ...s, codex_thread_id: s.codex_thread_id || null, managed: true, ...(live ? { running: live.has(s.name) } : {}) })), ...others];
+    return [...Object.values(this.sessions).filter(s => !s.name.startsWith('wc-login-')).map(({ project_tools, ...s }) => ({ ...s, codex_thread_id: s.codex_thread_id || null, managed: true, ...(live ? { running: live.has(s.name) } : {}) })), ...others];
   }
   status() {
     const defaults = Object.fromEntries(Object.entries(adapters).map(([cli, adapter]) => [cli, adapter.loginStatus(null)]));
