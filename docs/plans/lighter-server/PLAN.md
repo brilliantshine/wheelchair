@@ -12,10 +12,7 @@ get buried as this file grows. Current code is mapped in `MAP.md`.
 
 ## Open Questions
 
-### Q1: Keep the machine-service tmux change?
-- **Context:** Measured, the machine service is light (128 MB, about 3% of a core). Making its tmux and CLI checks non-blocking means several checks can run at once, which needs extra coordination so two checks don't both answer the same trust prompt or mark a stopped session ready (review round 1).
-- **Options:** (a) drop it from this plan; (b) keep it with per-session coordination; (c) keep only the Settings status check non-blocking.
-- **Recommendation:** (a): small gain, real risk.
+None.
 
 ## Watch List
 
@@ -54,6 +51,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 24 | Transcript replies prove continuity: the hub sends a hash of the last bytes before its offset; on mismatch the machine returns the whole file flagged as a reset | A same-size or larger replacement would otherwise splice old and new text | review-round-1 |
 | 25 | Hub transcript memory: 10-minute idle eviction plus a total budget of 64 MB, least-recently-read evicted first | A time limit alone does not bound memory for frequently read large transcripts | review-round-1 |
 | 26 | Codex step registry writes are left as they are | Batching writes adds failure-ordering risk for a small saving | review-round-1 |
+| 27 | Supersedes #8: the machine service's tmux and CLI checks stay synchronous; no machine polling changes in this plan | Collin's pick: the machine service is already light (128 MB, ~3% of a core), and non-blocking checks need extra coordination to avoid races | user |
 
 ## Spec
 
@@ -93,7 +91,7 @@ Current code is described in `MAP.md` (file:line). Decision numbers refer to the
 
 ### S5. Non-blocking machine polling
 
-Pending Collin's decision (Q1 below). Codex step registry writes are unchanged (#26).
+Dropped (#27). The machine service's tmux, readiness, trust, Codex step and `status()` code is not changed by this plan, except the transcript code in S4. Codex step registry writes are unchanged (#26).
 
 ### S6. Hidden tabs (`viewer/pages/*.js`)
 
@@ -109,7 +107,7 @@ Pending Collin's decision (Q1 below). Codex step registry writes are unchanged (
 
 ### Non-goals
 
-Agent CLIs' own usage; poll intervals; server push; ETags; moving or deleting archived threads or transcripts; changes to what any page shows.
+Agent CLIs' own usage; machine-service polling and subprocess calls (#27); poll intervals; server push; ETags; moving or deleting archived threads or transcripts; changes to what any page shows.
 
 ### Validation
 
@@ -154,7 +152,7 @@ bash install/test/run.sh
 | intent | minor | Live thread files are large and rewritten often, so they re-parse often | accepted-risk | Accepted Risks |
 | intent | minor | Aside panel poll missing from S6 list | upheld | S6 |
 | mechanics | blocking | Smaller offset is not proof of continuity; same-size or larger replacement splices | upheld | #24, S3, S4 |
-| mechanics | blocking | Async checkReady callers can race on trust prompt and stopped sessions | user-decision | Q1 |
+| mechanics | blocking | Async checkReady callers can race on trust prompt and stopped sessions | user-decision | #27: dropped S5 |
 | mechanics | blocking | Sign-in GET answers prompts; pausing stalls it | upheld | #20, S6 |
 | mechanics | major | Malformed JSON throws today, not null | upheld | #21, S1 |
 | mechanics | major | /threads discovers slug only; Spec added status | upheld | #22, S2 |
@@ -162,11 +160,20 @@ bash install/test/run.sh
 | mechanics | major | Parsed cache ignores parent_title | upheld | S3 parsedKey |
 | mechanics | major | No byte budget; outage after eviction undefined | upheld | #25, S3 |
 | mechanics | major | Dedupe set commit point on failed append | upheld | S4 |
-| mechanics | major | status() CLI checks stay synchronous | user-decision | Q1 |
+| mechanics | major | status() CLI checks stay synchronous | user-decision | #27: dropped S5 |
 | mechanics | major | Codex batch persistence failure behaviour undefined | upheld | #26, dropped |
 | mechanics | major | Aside poll missing; helper must not restart disposed pollers | upheld | S6 |
 | mechanics | major | Leftover check misses descendants, viewer runner, SIGINT | upheld | S7, Validation |
 | mechanics | major | No repeatable acceptance check for CPU/RAM | upheld | #19, S7 bench |
+
+### Round 2 — 2026-11-18
+
+**Lanes:** pending.
+
+**Changed since Round 1:** S1 malformed-file behaviour (#21); S2 rewritten: `/threads` slug-only, timers check eligibility on snapshots before locking (#22, #23); S3 continuity tail hash, parsedKey with thread fields, 64 MB budget, eviction behaviour (#24, #25); S4 tail check and reset, dedupe set committed after append; S5 dropped (#26, #27); S6 shared poller with stop(), aside poll added, sign-in excluded (#20); S7 run-marker leftover check and `hub-idle.js` benchmark (#19); Validation updated; Accepted Risk on large live thread files; Log baseline.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
 
 ## Prior Work
 
