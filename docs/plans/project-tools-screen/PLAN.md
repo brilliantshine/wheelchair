@@ -75,6 +75,7 @@ None.
 | 48 | While a machine or project is loading (including the reload after a Save), the picker and every action are disabled until it answers; nothing from the previous selection can be sent or shown | Stale-switch gaps survived two fix attempts in verification | user |
 | 49 | The machine returns, per tool, the key names its warnings are about (including read-only references and held-back names); the page shows "needs X, not set on this machine" whenever X is unset in the current key list, from the loaded baseline's references (not unsaved draft edits); "shared with" uses the same per-tool names | Key-warning gaps survived two fix attempts in verification | user |
 | 50 | Anything the user didn't edit (tool names, row names, values, whole fields, empty objects) is written back byte-for-byte in meaning as read, and only what the user edited is validated; an edited name with leading or trailing spaces is refused rather than trimmed | Untouched-data gaps survived two fix attempts in verification | user |
+| 51 | A tool the form can't edit shows every raw field in file order as `name: value` (escaped text, never HTML), plus set/not-set chips for every key it references, from the machine's per-tool keys; its kind label comes from `type`: `http` = web address, absent or `stdio` = command, anything else shown as written. Collin picked "Show every field as written" | Read-only card display gaps survived two fix attempts in verification | user |
 
 ## Spec
 
@@ -176,6 +177,11 @@ project's tools and lets him add, change and remove them. Works at phone width.
   selection can be sent or shown (Log 48).
 - Each tool shows its name, kind (command or web address), what it runs, and its settings
   (env names; plain values shown, key values shown as "set" or "not set" on this machine).
+  A tool the form can't edit instead shows every raw field in file order as `name: value`
+  (escaped text, never HTML), plus a set or not set chip for every key it references (the
+  machine's per-tool `keys`); its kind label comes from `type`: `http` is web address, absent
+  or `stdio` is command, anything else is shown as written (Log 51). A read-only setting or
+  header row on any card shows a set or not set chip for each key it references.
 - Each tool shows any reason it would be skipped, by the machine's validator or by Codex, and
   the section shows the Codex "too large for the command line" result
   (`machine/adapters/codex.js:98-101`) when the whole file trips it. The Codex per-entry
@@ -243,7 +249,8 @@ project's tools and lets him add, change and remove them. Works at phone width.
   - process and loader: `PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `TERM`, `TMPDIR`, `PWD`,
     `LANG`, `TZ`, `NODE_OPTIONS`, `NODE_PATH`, `NODE_EXTRA_CA_CERTS`, `PYTHONPATH`,
     `PYTHONHOME`, `SSL_CERT_FILE`, `SSL_CERT_DIR`, `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`
-    (any case); prefixes `LD_`, `DYLD_`, `LC_`, `XDG_`, `TMUX`, `SSH_`, `DBUS_`, `GIT_`, `GH_`; exact
+    (any case); the shell's special names `IFS`, `OPTIND`, `OPTARG`, `PS1`, `PS2`, `PS4`,
+    `PPID`, `ENV`, `CDPATH`, `HISTFILE`, `MAIL`, `MAILPATH` (any case); prefixes `LD_`, `DYLD_`, `LC_`, `XDG_`, `TMUX`, `SSH_`, `DBUS_`, `GIT_`, `GH_`; exact
     `GITHUB_TOKEN` (they change which account the agent's own `gh` and git use);
   - wheelchair: prefix `WHEELCHAIR_`;
   - the CLIs' own login and config: prefixes `CLAUDE_`, `CODEX_`, `ANTHROPIC_`; exact
@@ -255,8 +262,9 @@ project's tools and lets him add, change and remove them. Works at phone width.
 - At session start, only lead, sub-lead, worker and verifier sessions on Claude or Codex get
   keys, and only the keys that session's worktree `.mcp.json` references and that are not
   reserved. They are added to the session environment without putting values in argv,
-  `session.command`, persisted session data or logs (for example a launcher that reads the
-  file).
+  `session.command`, persisted session data or logs: a Node launcher reads them from a
+  mode-600 JSON file, deletes it and starts the CLI; no shell reads the values, and the
+  launcher's own errors never print a value.
 - A "Keys on this machine" list shows every stored key and every key the default branch
   references, each as set or not set, with where main uses it ("used by <tool>" or "not used
   on main"; a key only a waiting PR uses shows "not used on main"). Any listed key can be set
@@ -828,3 +836,4 @@ Build accepted: approval b3e3c9c4-f81c-47fc-ba9c-244926be6f2c
 - 2026-11-18 — R7-2 accepted (band: scout): Project tools and Settings browser 188/188 re-run by sub-lead; display-only change, nothing saved changes.
 - 2026-11-18 — Verification attempt 8 (2eac321): claude verifier PASS; gpt verifier FAIL with 4 gaps. 1 (new, must-fix): a shell special key name such as OPTIND breaks the launcher and prints the value. 2-4: the read-only card display family survived R6 and R7, so it's a plan defect. Sent to the lead with a proposed Spec line.
 - 2026-11-18 — Lead on attempt 8: fix gap 1 as proposed (a node launcher reading the mode-600 JSON env file, no shell sourcing, launcher errors never print values; reserve POSIX shell special names; test OPTIND). The read-only card rule went to Collin; remediation 8 is held until his answer, so gaps 1-4 go in one pass.
+- 2026-11-19 — Collin answered the read-only card rule: Decision Log 51 (user; he picked "Show every field as written"), folded into the Spec's Reading section. Gap 1's launcher and the shell's special names are in the Spec's Keys section. Remediation 8 covers attempt-8 gaps 1-4 in one pass.
