@@ -34,6 +34,9 @@ verifiers, the lead or the sub-lead.
   to Collin, and later rounds do not raise them again.
 - A thorough plan still gets full review of everything that affects normal use; rounds
   end once only rare-path findings remain.
+- A plan-review finding that can only be settled once the code exists ("this could race
+  if it's built like X") does not loop plan review: it is noted for the verifiers to check
+  against the real build.
 - Collin is asked only when it is genuinely unclear whether something is normal use, or
   when a fix is required and cannot be made.
 

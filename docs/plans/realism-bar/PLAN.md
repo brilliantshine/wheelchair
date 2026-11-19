@@ -55,6 +55,7 @@ Append-only. A reversal is a new entry superseding the old, never an edit.
 | 23 | BLOCKED verifier reports are handled as today and never judged as lines | A BLOCKED report has no lines; it must not read as a pass | review-round-3 |
 | 24 | An attempt's outcome is decided on the merged lines of all its verifiers after rare judgment | Avoids one verifier passing while another fails | review-round-3 |
 | 25 | The always-fixed list governs what agents may accept without asking; it does not remove Collin's existing choices on a gap that survives two fixes | Collin owns the decision; IDEA.md only says the bar does not class these as rare | review-round-3 |
+| 26 | Add "check once built": a review finding that only the built code can settle is noted for verification instead of reworking the plan | Collin asked for it in chat after seeing review loop on guesses about unwritten code | idea-change |
 
 ## Spec
 
@@ -171,6 +172,28 @@ One short section, the single source of the bar:
 Accepted Risks table header: `| Risk | Why accepted | Round |` keeps its shape; the
 explanatory text adds that rare paths per `protocol/app/realism.md` land here in every mode
 with round `review-round-N` or `verification-N`.
+
+### S8. Check once built
+
+- **What it is** (defined in `realism.md`): a finding about how code not yet written might
+  behave ("this could race if the poller is written like X"), where the Spec is clear and
+  correct and only the built code can show whether the problem exists. A finding that the
+  Spec itself is wrong, contradictory or leaves a worker needing to ask is not this; it is
+  a normal finding.
+- **Reviewer** (`reviewer.md`): such a finding starts its finding text with
+  `Check once built:`; line format unchanged.
+- **Lead triage** (`lead.md`): a finding the lead judges to be check-once-built (prefixed or
+  not) gets the new verdict `check-once-built`, is added as one row to a new PLAN.md
+  section `## Check Once Built` (`| # | What to check | Round |`), does not count in
+  `found`/`fixed`, and does not block a clean round. Later rounds treat a listed item as
+  settled, like Accepted Risks. Add the verdict to lead.md's verdict table and the template's
+  Review Rounds note.
+- **Verification** (`sub-lead.md`, `verifier.md`): the sub-lead's verifier brief includes the
+  Check Once Built table; the verifier checks each row against the built code like a Spec
+  item and reports a confirmed problem as a GAP, which then goes through the realism bar
+  like any other gap.
+- **Template** (`protocol/templates/PLAN.md`): add the `## Check Once Built` section after
+  Accepted Risks, with one line saying what it holds.
 
 ### Non-goals
 
