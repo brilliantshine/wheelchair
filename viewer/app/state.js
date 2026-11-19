@@ -26,9 +26,14 @@ async function atomicWrite(file, value, mode = 0o600) {
     path.dirname(file),
     `.${path.basename(file)}.${crypto.randomUUID()}.tmp`,
   );
-  await fs.writeFile(temporary, value, { mode });
-  await fs.rename(temporary, file);
-  await fs.chmod(file, mode);
+  try {
+    await fs.writeFile(temporary, value, { mode });
+    await fs.chmod(temporary, mode);
+    await fs.rename(temporary, file);
+  } catch (error) {
+    await fs.unlink(temporary).catch(() => {});
+    throw error;
+  }
 }
 
 async function readJson(file, fallback) {
