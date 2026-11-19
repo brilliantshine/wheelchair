@@ -132,6 +132,18 @@ comments, other test and fixture mentions, and everything under `docs/`.
 | intent | minor | Two names for one stored tag | upheld | Decision 9 names `user` for agents, "You" on screen |
 | mechanics | minor | Pronoun check is case-sensitive, misses `He` at `lead.md:37` | upheld | Validation 2 uses `-i` |
 
+### Round 2 — 2026-11-19
+
+**Lanes:** intent: claude; mechanics: non-claude; cross-family: yes.
+
+**Changed since Round 1:**
+- New Spec item "Lead context": restart/import context relabels stored `collin` tags as `user` (Decision 9).
+- Rule 4 now covers every `/home/collin` example, including `protocol/app/lead.md` step 10.
+- Validation 2 is case-insensitive and stated as a post-change result; new Validation 6.
+
+| Lane | Reported | Finding | Lead verdict | Resolution |
+|------|----------|---------|--------------|------------|
+
 ## Prior Work
 
 | Spec item | State | Evidence (file:line) | Confidence |
