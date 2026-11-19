@@ -100,6 +100,19 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
   test.describe(label, () => {
     test.use({ viewport: size });
 
+    test('a Kimi account shows each machine\'s problem sentence in place of "signed out"', async ({ page }) => {
+      const usage = usageBody();
+      usage.providers.kimi = { label: 'Kimi Code', left: null, accounts: [{ id: 'default-kimi', provider: 'kimi', name: 'default', plan: 'unknown', weight: 1, paused: false, machines: { hub: 'signed_in', beelink: { state: 'problem', text: "signed in to Kimi's China region; log in again" }, laptop: 'signed_out' }, reading: null, live_sessions: 0 }] };
+      await mock(page, { usage });
+      await open(page, 'accounts');
+      const kimi = page.locator('.prov-group[data-provider="kimi"] .acct[data-account="default-kimi"]');
+      await expect(kimi.locator('li[data-machine="hub"] .mstate')).toHaveText('signed in');
+      await expect(kimi.locator('li[data-machine="beelink"] .mstate')).toHaveText("signed in to Kimi's China region; log in again");
+      await expect(kimi.locator('li[data-machine="beelink"] button')).toHaveText('Sign in');
+      await expect(kimi.locator('li[data-machine="hub"] button')).toHaveCount(0);
+      await expect(kimi.locator('li[data-machine="laptop"] .mstate')).toHaveText('signed out');
+    });
+
     test('Accounts groups accounts by provider with each machine\'s state', async ({ page }) => {
       await mock(page, {});
       await open(page, 'accounts');
@@ -295,7 +308,7 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
       await mock(page, state);
       await open(page, 'models');
       const group = page.getByRole('radiogroup', { name: 'Reviewers and checkers' });
-      await expect(group.getByRole('radio')).toHaveText(['Mix families', 'Claude', 'GPT', 'Antigravity']);
+      await expect(group.getByRole('radio')).toHaveText(['Mix families', 'Claude', 'GPT', 'Antigravity', 'Kimi Code']);
       await group.getByRole('radio', { name: 'Antigravity' }).click();
       await expect(group.getByRole('radio', { name: 'Antigravity' })).toHaveAttribute('aria-checked', 'true');
       expect(state.calls.find((c) => c[1] === '/settings/preferences')[2]).toEqual({ review_families: 'gemini' });
@@ -473,7 +486,7 @@ test.describe('accounts interface paths', () => {
     await mock(page, state);
     await page.clock.install();
     await open(page, 'accounts');
-    await expect(page.locator('.acct')).toHaveCount(4);
+    await expect(page.locator('.acct')).toHaveCount(5);
     let seen = state.usageGets;
     await page.clock.runFor(30500);
     await expect.poll(() => state.usageGets).toBeGreaterThan(seen);
