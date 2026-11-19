@@ -142,6 +142,8 @@ const PERMISSION_MODES = { auto: 'auto', bypass: 'bypassPermissions' };
 const CODEX_MODES = ['sandboxed', 'unrestricted'];
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const PREVIEW_TIMEOUT_MS = 60_000;
+// A session's in-memory copy hashes are dropped when it stops or ends, or after this long without new lines.
+const COPY_HASHES_IDLE_MS = 10 * 60_000;
 const ROLE_CARDS = { lead: ['cards.md', 'cards-lead.md'], 'sub-lead': ['cards.md'], worker: ['cards.md'], mapper: ['cards.md'], reviewer: [], verifier: [] };
 const ROLE_REALISM = new Set(['lead', 'sub-lead', 'reviewer', 'verifier']);
 function composeRolePrompt(input) {
@@ -848,7 +850,7 @@ class MachineService {
     return spool;
   }
   async fatalKimi(session, reason) {
-    if (!session.end_reason) { session.end_reason = reason; await this.persistSessions(); }
+    if (!session.end_reason) { session.end_reason = reason; this.copyHashes?.delete(session.name); await this.persistSessions(); }
     return this.stopFatal(session);
   }
   async stopFatal(session) {
@@ -1075,6 +1077,7 @@ class MachineService {
     const session = this.managed(name);
     if (session.end_reason) return this.stopFatal(session);
     this.tmux(['kill-session', '-t', name]);
+    this.copyHashes?.delete(name);
     session.prompt_open = false;
     session.status = 'stopped'; session.stopped_at = new Date().toISOString();
     this.screens.killSession(name);
@@ -1205,6 +1208,8 @@ class MachineService {
     return run;
   }
   async copyTranscriptNow(session, source) {
+    this.copyHashes ??= new Map();
+    for (const [name, entry] of this.copyHashes) if (Date.now() - entry.used > COPY_HASHES_IDLE_MS) this.copyHashes.delete(name);
     if (!source || (session.cli === 'kimi' && session.end_reason)) return { offset: 0, lines: [] };
     let stat = session.cli === 'kimi' ? null : await fsp.stat(source);
     const current = session.transcript_source;
@@ -1221,12 +1226,34 @@ class MachineService {
     const target = path.join(this.stateDir, 'transcripts', session.thread_id, `${session.name}.jsonl`);
     let additions = [];
     if (lines.length) {
-      let copied = '';
-      try { copied = await fsp.readFile(target, 'utf8'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-      if (copied && !copied.endsWith('\n')) { copied = copied.slice(0, copied.lastIndexOf('\n') + 1); await fsp.truncate(target, Buffer.byteLength(copied)); }
-      const hashes = new Set(copied.split('\n').filter(Boolean).map(line => crypto.createHash('sha256').update(line).digest('hex')));
-      additions = lines.filter(line => { const hash = crypto.createHash('sha256').update(line).digest('hex'); if (hashes.has(hash)) return false; hashes.add(hash); return true; });
-      if (additions.length) { await mkdir(path.dirname(target)); await fsp.appendFile(target, `${additions.join('\n')}\n`, { mode: 0o600 }); }
+      // Each session keeps its kept copy's line hashes in memory, valid while the kept
+      // file's inode and size match what this copier last left there.  Anything else
+      // (first copy, restart, a crash fragment, an outside edit) rebuilds from the file.
+      const now = Date.now();
+      let kept = this.copyHashes.get(session.name);
+      let keptStat = null;
+      try { keptStat = await fsp.stat(target); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      if (!kept || kept.target !== target || !keptStat || keptStat.ino !== kept.ino || keptStat.size !== kept.size) {
+        this.copyHashes.delete(session.name);
+        let copied = '';
+        try { copied = await fsp.readFile(target, 'utf8'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+        if (copied && !copied.endsWith('\n')) { copied = copied.slice(0, copied.lastIndexOf('\n') + 1); await fsp.truncate(target, Buffer.byteLength(copied)); }
+        kept = { target, ino: keptStat?.ino, size: Buffer.byteLength(copied), hashes: new Set(copied.split('\n').filter(Boolean).map(line => crypto.createHash('sha256').update(line).digest('hex'))) };
+      }
+      kept.used = now;
+      const fresh = new Map();
+      for (const line of lines) { const hash = crypto.createHash('sha256').update(line).digest('hex'); if (!kept.hashes.has(hash) && !fresh.has(hash)) fresh.set(hash, line); }
+      additions = [...fresh.values()];
+      if (additions.length) {
+        await mkdir(path.dirname(target));
+        // Hashes join the set only once the append succeeded; a failed append may have
+        // left part of a write behind, so the next copy rebuilds from the file.
+        try { await fsp.appendFile(target, `${additions.join('\n')}\n`, { mode: 0o600 }); }
+        catch (error) { this.copyHashes.delete(session.name); throw error; }
+        for (const hash of fresh.keys()) kept.hashes.add(hash);
+        const after = await fsp.stat(target); kept.ino = after.ino; kept.size = after.size;
+      }
+      if (kept.ino !== undefined) this.copyHashes.set(session.name, kept);
     }
     const changed = session.transcript_path !== target || !current || current.path !== source || current.offset !== nextOffset || current.ino !== stat.ino;
     session.transcript_path = target;
