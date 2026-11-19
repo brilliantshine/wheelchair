@@ -229,3 +229,28 @@ $ npm --prefix viewer run test:browser      # while another session's suites loa
 $ npx playwright test test/app-handoff.spec.js test/app-threads.spec.js test/pages.spec.js test/browser.spec.js
   338 passed (2.5m)
 ```
+
+### Remediation 5 — 2026-11-18
+
+Verification attempt 5 ran on 55abd18. The Claude verifier passed. The GPT verifier failed with two popover gaps that had already survived two fix attempts. Collin chose one more fix plus an invariant test (PLAN.md Decision 18). Details are in `REMEDIATION-5.md`.
+
+| Gap | Fix | Where | Validated by |
+|-----|-----|-------|--------------|
+| Popover scroll reset by a refresh (R5's restore order) | The popover's scroll is restored after its final placement: `popTop` is passed from `redrawPop` to the last `placePopNow` call in `render` | `viewer/pages/agents.js` (the `let` list; the end of `redrawPop`; the end of `render`) | `viewer/test/app-agents-decks.spec.js` "popover invariant across a refresh" (4 scenarios × phone/desktop × Chromium/Firefox = 16; 6 fail on the old code) |
+| Popover taller than the viewport when its deck is off screen | `placePop` measures only the room visible above and below the deck, caps the height at the viewport minus margins, and always clamps the box on screen | `viewer/pages/agents.js` `placePop` | same |
+
+Lane: R6, standard, claude-sonnet-5-5.
+
+Validation on the merged branch (fecd632):
+
+```text
+$ npm --prefix viewer run test:browser
+  7 failed      # app-accounts.spec.js:519/527/534 ×2 browsers (fail identically without this change; time-of-day), app-handoff.spec.js:227 (known intermittent)
+  34 skipped
+  873 passed (7.0m)
+
+$ node --test viewer/test/*.test.js      # load average 24-30 from other sessions
+# tests 642
+# pass 639
+# fail 2      # app-machines.test.js, app-uploads-archive.test.js: 8/8 and 3/3 when run alone
+```
