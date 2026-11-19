@@ -137,6 +137,8 @@ test('late save cannot release a newer section visit preview', async ({ page }) 
   await page.getByRole('button', { name: 'Save', exact: true }).click(); await sent;
   await page.locator('#sections a[data-section="models"]').click();
   await page.locator('#sections a[data-section="background"]').click(); await choose(page, 'second.png');
+  await expect(page.getByText(/second.png/)).toBeVisible();
+  await expect(page.locator('.background-layer img')).toHaveCount(1);
   await page.evaluate(() => { window.newPreview = document.querySelector('.background-layer img'); });
   const response = page.waitForResponse(r => r.url().includes('/background/upload') && r.request().method() === 'POST');
   release(); await response;
