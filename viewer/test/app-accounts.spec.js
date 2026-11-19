@@ -265,6 +265,16 @@ for (const [label, size] of [['phone', { width: 375, height: 800 }], ['desktop',
       await expect(page.locator('.usage-prov[data-provider="gpt"]')).toContainText('no reading yet');
     });
 
+    test('Usage says no accounts added when a provider has none', async ({ page }) => {
+      const usage = usageBody();
+      usage.providers.gpt.accounts = [];
+      await mock(page, { usage });
+      await open(page, 'usage');
+      const gpt = page.locator('.usage-prov[data-provider="gpt"]');
+      await expect(gpt).toContainText('No accounts added');
+      await expect(gpt).not.toContainText('All accounts paused');
+    });
+
     test('balancing saves, and a 400 shows inline', async ({ page }) => {
       const state = { balancingError: 'leave must be between 0 and 100' };
       await mock(page, state);
