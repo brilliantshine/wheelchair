@@ -253,6 +253,8 @@ test('HTTP pending stop, archive and hook preserve pending session and its workt
     }
     assert.equal(hookCalls,0); assert.equal(session.source_transcript,undefined); assert.equal(session.prompt_open,undefined);
     response = await request('/v1/sessions','GET'); assert.equal((await response.json()).find(s => s.name === session.name).end_reason,'lost');
+    machine.liveTmux = () => new Set();
+    response = await request(`/v1/sessions/${session.name}`,'DELETE'); assert.equal(response.status,200); assert.deepEqual(await response.json(),{ok:true,end_reason:'lost'});
     const deadline = { name:'wc-ghi-worker', thread_id:'ghi', cli:'kimi', status:'ready', account_dir:root, created_at:new Date(Date.now()-130000).toISOString(), ready_at:new Date(Date.now()-120000).toISOString() };
     machine.sessions[deadline.name] = deadline; machine.liveTmux = () => new Set(); await machine.pollKimiTurns();
     response = await request('/v1/sessions','GET'); const listed = (await response.json()).find(s => s.name === deadline.name);

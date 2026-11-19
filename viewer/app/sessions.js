@@ -681,15 +681,18 @@ async function stopSession(hub, thread, caller, name) {
 // The caller holds the thread lock. Authorization is checked by sessionRequest; export
 // stops its own sessions through the same lifecycle without needing a session caller.
 async function stopManagedSession(hub, thread, target) {
+  let result;
   if (target.status !== 'waiting') {
-    const result = await hub.call(thread.machine, `/v1/sessions/${encodeURIComponent(target.name)}`, 'DELETE');
+    result = await hub.call(thread.machine, `/v1/sessions/${encodeURIComponent(target.name)}`, 'DELETE');
     if (result?.pending) return result;
+    if (result?.end_reason) target.end_reason = result.end_reason;
   }
   target.ended_at = new Date().toISOString();
   endTurn(target, target.ended_at);
   target.live = false;
   target.status = 'stopped';
   quiet.reset(thread, target, true);
+  if (result?.end_reason) await notifyEnded(hub, thread, target);
   await hub.save(thread);
   return { ok: true };
 }
@@ -703,6 +706,26 @@ function liveNames(listed) {
       .filter((item) => item.running === true || (item.running === undefined && item.status !== 'stopped'))
       .map((item) => item.name),
   );
+}
+
+async function notifyEnded(hub, thread, target) {
+  if (target.started_by) {
+    const text = `[wc:from app] your session ${target.name} ended${target.end_reason ? `: ${target.end_reason}` : ''}`;
+    await enqueue(hub, thread, target.started_by, text, 'app');
+    if (target.end_reason) {
+      addCard(thread, { kind: 'needs', title: 'Session ended', body: `${target.name} ended: ${target.end_reason}. Its starter has been told.` }, { system: true });
+    }
+  } else if (target.role === 'lead') {
+    addCard(
+      thread,
+      {
+        kind: 'needs',
+        title: 'Sessions ended',
+        body: `The lead session ended${target.end_reason ? `: ${target.end_reason}` : ''}. Restart it to continue.`,
+      },
+      { system: true },
+    );
+  }
 }
 
 async function pollDead(hub) {
@@ -754,23 +777,7 @@ async function pollDead(hub) {
           target.status = 'ended';
           quiet.reset(thread, target, true);
           changed = true;
-          if (target.started_by) {
-            const text = `[wc:from app] your session ${target.name} ended${target.end_reason ? `: ${target.end_reason}` : ''}`;
-            await enqueue(hub, thread, target.started_by, text, 'app');
-            if (target.end_reason) {
-              addCard(thread, { kind: 'needs', title: 'Session ended', body: `${target.name} ended: ${target.end_reason}. Its starter has been told.` }, { system: true });
-            }
-          } else if (target.role === 'lead') {
-            addCard(
-              thread,
-              {
-                kind: 'needs',
-                title: 'Sessions ended',
-                body: `The lead session ended${target.end_reason ? `: ${target.end_reason}` : ''}. Restart it to continue.`,
-              },
-              { system: true },
-            );
-          }
+          await notifyEnded(hub, thread, target);
         }
         if (changed) await hub.save(thread);
       });

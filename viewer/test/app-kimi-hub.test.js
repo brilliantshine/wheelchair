@@ -88,3 +88,32 @@ test('ended workers notify their starter and only those with a reason add a card
   assert.equal(thread.cards[0].title,'Session ended');
   assert.equal(thread.cards[0].body,'worker-reason ended: lost log. Its starter has been told.');
 });
+
+test('confirmed fatal stops notify once while ordinary stops stay silent', async () => {
+  const starter = {name:'starter',role:'lead',live:true,status:'ready',ready:false,queue:[]};
+  const worker = {name:'worker',role:'worker',started_by:'starter',live:true,status:'ready',queue:[]};
+  const lead = {name:'other-lead',role:'lead',live:true,status:'ready',queue:[]};
+  const ordinary = {name:'ordinary',role:'worker',started_by:'starter',live:true,status:'ready',queue:[]};
+  const thread = {id:'t',machine:'m',sessions:[starter,worker,lead,ordinary],cards:[],queues:{}};
+  const hub = {allThreads:async()=>[thread],thread:async()=>thread,withThread:async(_id,fn)=>fn(),save:async()=>{},call:async(_m,route,method)=> method === 'DELETE'
+    ? (route.endsWith('/ordinary') ? {ok:true} : {ok:true,end_reason:'lost'})
+    : [{name:'starter',running:true}]};
+  await sessions.stopManagedSession(hub,thread,worker);
+  assert.equal(worker.end_reason,'lost');
+  assert.deepEqual(starter.queue.map(item=>item.text),['[wc:from app] your session worker ended: lost']);
+  assert.equal(thread.cards.length,1);
+  assert.equal(thread.cards[0].title,'Session ended');
+  assert.match(thread.cards[0].body,/worker ended: lost/);
+  await sessions.stopManagedSession(hub,thread,lead);
+  assert.equal(lead.end_reason,'lost');
+  assert.equal(thread.cards.length,2);
+  assert.equal(thread.cards[1].title,'Sessions ended');
+  assert.match(thread.cards[1].body,/lost/);
+  await sessions.stopManagedSession(hub,thread,ordinary);
+  assert.equal(ordinary.end_reason,undefined);
+  assert.equal(starter.queue.length,1);
+  assert.equal(thread.cards.length,2);
+  await sessions.pollDead(hub);
+  assert.equal(starter.queue.length,1);
+  assert.equal(thread.cards.length,2);
+});
